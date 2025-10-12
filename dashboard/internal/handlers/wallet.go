@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"decred-pulse-backend/rpc"
-	"decred-pulse-backend/services"
-	"decred-pulse-backend/types"
+	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
+	"dcrpulse/internal/types"
 
 	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
 

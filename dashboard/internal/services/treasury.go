@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"decred-pulse-backend/rpc"
-	"decred-pulse-backend/types"
+	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/types"
 )
 
 // Constants for treasury

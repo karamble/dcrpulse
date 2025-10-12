@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"decred-pulse-backend/rpc"
-	"decred-pulse-backend/types"
+	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/types"
 )
 
 // FetchRecentBlocks gets the last N blocks

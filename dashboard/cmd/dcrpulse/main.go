@@ -5,17 +5,22 @@
 package main
 
 import (
+	"embed"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gorilla/mux"
-	"github.com/rs/cors"
 
-	"decred-pulse-backend/handlers"
-	"decred-pulse-backend/rpc"
+	"dcrpulse/internal/handlers"
+	"dcrpulse/internal/rpc"
 )
+
+//go:embed web/dist
+var embeddedFiles embed.FS
 
 func main() {
 	// Load dcrd configuration from environment variables
@@ -112,24 +117,49 @@ func main() {
 	api.HandleFunc("/treasury/scan-progress", handlers.GetTSpendScanProgressHandler).Methods("GET")
 	api.HandleFunc("/treasury/scan-results", handlers.GetTSpendScanResultsHandler).Methods("GET")
 
-	// CORS configuration
-	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"*"},
-		AllowCredentials: true,
-	})
+	// Serve embedded static files for frontend
+	distFS, err := fs.Sub(embeddedFiles, "web/dist")
+	if err != nil {
+		log.Printf("Warning: Could not load embedded frontend files: %v", err)
+		log.Println("Frontend will not be available. This is expected in development mode.")
+	} else {
+		// Serve static files with SPA fallback
+		r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			path := req.URL.Path
+
+			// Skip API routes
+			if strings.HasPrefix(path, "/api") {
+				http.NotFound(w, req)
+				return
+			}
+
+			// Try to serve the requested file
+			if path != "/" {
+				filePath := strings.TrimPrefix(path, "/")
+				if _, err := distFS.Open(filePath); err == nil {
+					http.FileServer(http.FS(distFS)).ServeHTTP(w, req)
+					return
+				}
+			}
+
+			// Fallback to index.html for SPA routing
+			req.URL.Path = "/"
+			http.FileServer(http.FS(distFS)).ServeHTTP(w, req)
+		})
+	}
 
 	// Start server
 	port := getEnv("PORT", "8080")
 	address := fmt.Sprintf(":%s", port)
 
-	log.Printf("Starting Decred Dashboard API server on %s", address)
+	log.Printf("Starting dcrpulse Dashboard server on %s", address)
 	log.Println("Node endpoints: /api/dashboard, /api/node/*, /api/blockchain/*, /api/network/*")
 	log.Println("Wallet endpoints: /api/wallet/status, /api/wallet/dashboard, /api/wallet/importxpub")
 	log.Println("Wallet gRPC endpoints: /api/wallet/grpc/stream-rescan (real-time streaming)")
 	log.Println("Explorer endpoints: /api/explorer/search, /api/explorer/blocks/*, /api/explorer/transactions/*")
-	log.Fatal(http.ListenAndServe(address, corsHandler.Handler(r)))
+	log.Println("Treasury endpoints: /api/treasury/info, /api/treasury/scan-history, /api/treasury/scan-progress")
+	log.Println("Frontend: Embedded static files served at /")
+	log.Fatal(http.ListenAndServe(address, r))
 }
 
 func getEnv(key, defaultValue string) string {

@@ -3,18 +3,15 @@
 .env.local
 .env.*.local
 
-# Backend
-backend/decred-pulse-backend
-backend/.env
-backend/.env.local
-backend/go.sum
-
-# Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/.env
-frontend/.env.local
-frontend/.vite/
+# Dashboard
+dashboard/cmd/dcrpulse/dcrpulse
+dashboard/cmd/dcrpulse/web/
+dashboard/.env
+dashboard/.env.local
+dashboard/web/node_modules/
+dashboard/web/dist/
+dashboard/web/.vite/
+dashboard/web/package-lock.json
 
 # Docker volumes and data
 dcrd-data/

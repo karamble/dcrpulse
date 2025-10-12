@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"decred-pulse-backend/rpc"
-	"decred-pulse-backend/types"
-	"decred-pulse-backend/utils"
+	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 var (

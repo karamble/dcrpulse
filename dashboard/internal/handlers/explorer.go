@@ -14,7 +14,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"decred-pulse-backend/services"
+	"dcrpulse/internal/services"
 )
 
 // SearchHandler handles universal search requests
