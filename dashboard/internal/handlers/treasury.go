@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	"decred-pulse-backend/services"
+	"dcrpulse/internal/services"
 )
 
 // GetTreasuryInfoHandler returns current treasury status

@@ -4,7 +4,7 @@
 
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const API_BASE_URL = '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -285,10 +285,9 @@ export const streamRescanProgress = (
   onError?: (error: Error) => void,
   onClose?: () => void
 ): (() => void) => {
-  // Get WebSocket URL from API base URL
-  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-  // Use gRPC streaming endpoint (real-time progress updates)
-  const wsUrl = baseUrl.replace(/^http/, 'ws') + '/wallet/grpc/stream-rescan';
+  // Get WebSocket URL from current origin
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/api/wallet/grpc/stream-rescan`;
   
   console.log('Connecting to gRPC WebSocket:', wsUrl);
   const ws = new WebSocket(wsUrl);

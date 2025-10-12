@@ -1,4 +1,4 @@
-.PHONY: help start stop restart logs logs-dcrd logs-backend logs-frontend build clean status shell-dcrd shell-backend backup backup-wallet backup-certs restore restore-wallet
+.PHONY: help start stop restart logs logs-dcrd logs-dashboard build clean status shell-dcrd shell-dashboard backup backup-wallet backup-certs restore restore-wallet
 
 # Force bash shell for bash-specific syntax (needed for clean target)
 SHELL := /bin/bash
@@ -19,10 +19,10 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-start: ## Start all services (dcrd + backend + frontend)
-	@echo "Starting Decred Dashboard stack..."
+start: ## Start all services (dcrd + dcrwallet + dashboard)
+	@echo "Starting dcrpulse stack..."
 	docker compose up -d
-	@echo "Services started! Dashboard will be available at http://localhost:3000"
+	@echo "Services started! Dashboard will be available at http://localhost:8080"
 	@echo "Note: dcrd needs to sync the blockchain on first run (may take several hours)"
 
 stop: ## Stop all services
@@ -39,11 +39,8 @@ logs: ## View logs from all services
 logs-dcrd: ## View dcrd logs
 	docker compose logs -f dcrd
 
-logs-backend: ## View backend logs
-	docker compose logs -f backend
-
-logs-frontend: ## View frontend logs
-	docker compose logs -f frontend
+logs-dashboard: ## View dashboard logs
+	docker compose logs -f dashboard
 
 build: ## Build/rebuild all images
 	@echo "Building images..."
@@ -54,7 +51,7 @@ status: ## Show status of all services
 	docker compose ps
 	@echo ""
 	@echo "=== dcrd Info ==="
-	@docker exec decred-pulse-dcrd dcrctl \
+	@docker exec dcrpulse-dcrd dcrctl \
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
@@ -76,8 +73,8 @@ clean-dcrd: ## Remove only dcrd data volumes (blockchain and certs)
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker compose stop dcrd dcrwallet backend; \
-		docker volume rm decred-pulse_dcrd-data decred-pulse_dcrd-certs 2>/dev/null || true; \
+		docker compose stop dcrd dcrwallet dashboard; \
+		docker volume rm dcrpulse_dcrd-data dcrpulse_dcrd-certs 2>/dev/null || true; \
 		echo "dcrd data cleaned! Run 'docker compose up -d' to restart with fresh blockchain."; \
 	fi
 
@@ -88,18 +85,18 @@ clean-dcrwallet: ## Remove only dcrwallet data (wallet database)
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose stop dcrwallet; \
-		docker volume rm decred-pulse_dcrwallet-data 2>/dev/null || true; \
+		docker volume rm dcrpulse_dcrwallet-data 2>/dev/null || true; \
 		echo "Wallet data cleaned! Run 'docker compose up -d dcrwallet' to create a new wallet."; \
 	fi
 
 shell-dcrd: ## Open shell in dcrd container
-	docker exec -it decred-pulse-dcrd /bin/sh
+	docker exec -it dcrpulse-dcrd /bin/sh
 
-shell-backend: ## Open shell in backend container
-	docker exec -it decred-pulse-backend /bin/sh
+shell-dashboard: ## Open shell in dashboard container
+	docker exec -it dcrpulse-dashboard /bin/sh
 
 dcrctl: ## Run dcrctl command for dcrd (usage: make dcrctl CMD="getblockcount")
-	@docker exec decred-pulse-dcrd dcrctl \
+	@docker exec dcrpulse-dcrd dcrctl \
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
@@ -107,7 +104,7 @@ dcrctl: ## Run dcrctl command for dcrd (usage: make dcrctl CMD="getblockcount")
 		$(CMD)
 
 dcrctl-wallet: ## Run dcrctl wallet command (usage: make dcrctl-wallet CMD="getbalance")
-	@docker exec decred-pulse-dcrwallet dcrctl \
+	@docker exec dcrpulse-dcrwallet dcrctl \
 		--wallet \
 		--rpcuser=$(DCRWALLET_RPC_USER) \
 		--rpcpass=$(DCRWALLET_RPC_PASS) \
@@ -117,7 +114,7 @@ dcrctl-wallet: ## Run dcrctl wallet command (usage: make dcrctl-wallet CMD="getb
 
 sync-status: ## Check blockchain sync status
 	@echo "=== Blockchain Sync Status ==="
-	@docker exec decred-pulse-dcrd dcrctl \
+	@docker exec dcrpulse-dcrd dcrctl \
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
@@ -126,7 +123,7 @@ sync-status: ## Check blockchain sync status
 
 peers: ## Show connected peers
 	@echo "=== Connected Peers ==="
-	@docker exec decred-pulse-dcrd dcrctl \
+	@docker exec dcrpulse-dcrd dcrctl \
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
@@ -137,7 +134,7 @@ backup: ## Backup blockchain data
 	@echo "Creating backup of dcrd data..."
 	@mkdir -p backups
 	docker run --rm \
-		-v decred-pulse_dcrd-data:/data \
+		-v dcrpulse_dcrd-data:/data \
 		-v $(PWD)/backups:/backup \
 		alpine tar czf /backup/dcrd-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
 	@echo "Backup created in backups/"
@@ -146,7 +143,7 @@ backup-wallet: ## Backup wallet data
 	@echo "Creating backup of wallet data..."
 	@mkdir -p backups
 	docker run --rm \
-		-v decred-pulse_dcrwallet-data:/data \
+		-v dcrpulse_dcrwallet-data:/data \
 		-v $(PWD)/backups:/backup \
 		alpine tar czf /backup/dcrwallet-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
 	@echo "Wallet backup created in backups/"
@@ -155,7 +152,7 @@ backup-certs: ## Backup certificates
 	@echo "Creating backup of certificates..."
 	@mkdir -p backups
 	docker run --rm \
-		-v decred-pulse_dcrd-certs:/certs \
+		-v dcrpulse_dcrd-certs:/certs \
 		-v $(PWD)/backups:/backup \
 		alpine tar czf /backup/dcrd-certs-$$(date +%Y%m%d-%H%M%S).tar.gz -C /certs .
 	@echo "Certificates backup created in backups/"
@@ -172,7 +169,7 @@ restore: ## Restore blockchain data from backup (usage: make restore BACKUP=back
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose down; \
 		docker run --rm \
-			-v decred-pulse_dcrd-data:/data \
+			-v dcrpulse_dcrd-data:/data \
 			-v $(PWD):/backup \
 			alpine sh -c "rm -rf /data/* && tar xzf /backup/$(BACKUP) -C /data"; \
 		docker compose up -d; \
@@ -191,7 +188,7 @@ restore-wallet: ## Restore wallet data from backup (usage: make restore-wallet B
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose stop dcrwallet; \
 		docker run --rm \
-			-v decred-pulse_dcrwallet-data:/data \
+			-v dcrpulse_dcrwallet-data:/data \
 			-v $(PWD):/backup \
 			alpine sh -c "rm -rf /data/* && tar xzf /backup/$(BACKUP) -C /data"; \
 		docker compose up -d dcrwallet; \
@@ -228,16 +225,16 @@ build-dcrd: ## Build dcrd (usage: make build-dcrd VERSION=release-v2.0.6)
 	fi
 
 dev-backend: ## Run backend in development mode (outside Docker)
-	cd backend && go run main.go
+	cd dashboard && go run cmd/dcrpulse/main.go
 
 dev-frontend: ## Run frontend in development mode (outside Docker)
-	cd frontend && npm run dev
+	cd dashboard/web && npm run dev
 
 install-frontend: ## Install frontend dependencies
-	cd frontend && npm install
+	cd dashboard/web && npm install
 
 install-backend: ## Install backend dependencies
-	cd backend && go mod download
+	cd dashboard && go mod download
 
 # Wallet-specific commands
 
@@ -245,10 +242,10 @@ logs-dcrwallet: ## View dcrwallet logs
 	docker compose logs -f dcrwallet
 
 shell-dcrwallet: ## Open shell in dcrwallet container
-	docker exec -it decred-pulse-dcrwallet /bin/sh
+	docker exec -it dcrpulse-dcrwallet /bin/sh
 
 wallet-info: ## Get wallet info
-	@docker exec decred-pulse-dcrwallet dcrctl \
+	@docker exec dcrpulse-dcrwallet dcrctl \
 		--wallet \
 		--rpcuser=$(DCRWALLET_RPC_USER:-dcrwallet) \
 		--rpcpass=$(DCRWALLET_RPC_PASS:-dcrwalletpass) \
@@ -257,7 +254,7 @@ wallet-info: ## Get wallet info
 		walletinfo 2>/dev/null || echo "dcrwallet not ready yet..."
 
 wallet-balance: ## Get wallet balance
-	@docker exec decred-pulse-dcrwallet dcrctl \
+	@docker exec dcrpulse-dcrwallet dcrctl \
 		--wallet \
 		--rpcuser=$(DCRWALLET_RPC_USER:-dcrwallet) \
 		--rpcpass=$(DCRWALLET_RPC_PASS:-dcrwalletpass) \
@@ -269,7 +266,7 @@ wallet-seed: ## View wallet seed from logs (first-time setup only)
 	@echo "============================================"
 	@echo "WALLET SEED (if found in logs)"
 	@echo "============================================"
-	@docker logs decred-pulse-dcrwallet 2>&1 | sed -n '/Your wallet generation seed is:/,/Hex:/p' || echo "Seed not found in logs (wallet may have been created before logging was enabled)"
+	@docker logs dcrpulse-dcrwallet 2>&1 | sed -n '/Your wallet generation seed is:/,/Hex:/p' || echo "Seed not found in logs (wallet may have been created before logging was enabled)"
 	@echo ""
 	@echo "⚠️  IMPORTANT: Store this seed in a safe place!"
 	@echo "============================================"

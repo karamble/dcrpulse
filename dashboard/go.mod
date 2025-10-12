@@ -1,4 +1,4 @@
-module decred-pulse-backend
+module dcrpulse
 
 go 1.21
 
@@ -7,7 +7,6 @@ require (
 	github.com/decred/dcrd/rpcclient/v8 v8.0.1
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.1
-	github.com/rs/cors v1.10.1
 	google.golang.org/grpc v1.65.0
 )
 

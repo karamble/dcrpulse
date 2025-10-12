@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"time"
 
-	"decred-pulse-backend/rpc"
-	"decred-pulse-backend/services"
-	"decred-pulse-backend/types"
+	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
+	"dcrpulse/internal/types"
 )
 
 // GetDashboardDataHandler handles requests for complete dashboard data
