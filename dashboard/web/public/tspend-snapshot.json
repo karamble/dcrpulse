@@ -1,0 +1,341 @@
+{
+  "version": 1,
+  "tspends": [
+    {
+      "txHash": "36e4e2c03d6f3b8398bf78bdef8aeeedb210fb2056d46321a5315714e2b380fd",
+      "amount": 5159.24337955,
+      "payee": "Treasury Payment",
+      "blockHeight": 1012032,
+      "timestamp": "2025-09-21T16:14:14Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "74d192e838ea3f183c364cdf3eec7e960204bebdb6ab02dc8487dcea11377e02",
+      "amount": 5572.70373813,
+      "payee": "Treasury Payment",
+      "blockHeight": 1003680,
+      "timestamp": "2025-08-23T17:21:20Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "7b8fdf9489f352dceda5706c3a6145eed11a9fed1923113960c651d8dac004bf",
+      "amount": 5815.77531993,
+      "payee": "Treasury Payment",
+      "blockHeight": 991872,
+      "timestamp": "2025-07-13T12:41:19Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "52d36455668854b743c7795d0081533e12636aab343e0b7cd859a7032a82bb20",
+      "amount": 6409.49601029,
+      "payee": "Treasury Payment",
+      "blockHeight": 982656,
+      "timestamp": "2025-06-11T17:55:26Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "d212d85b2737c6576aabb5c80e00c8e79dc3b67e015c665aff02fedd5437f619",
+      "amount": 5600.24499673,
+      "payee": "Treasury Payment",
+      "blockHeight": 972288,
+      "timestamp": "2025-05-06T20:03:44Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "7cc8215870835c04063347db1b1f9bb90bb424ff8ce2b6cd32b22fff8ba8e340",
+      "amount": 6643.43226260,
+      "payee": "Treasury Payment",
+      "blockHeight": 960192,
+      "timestamp": "2025-03-25T11:30:01Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "1d11754f4bd174bb62ddfbf2366c46a0298a2a90fa8cc390a17dd8ef274ccfe4",
+      "amount": 5040.50063151,
+      "payee": "Treasury Payment",
+      "blockHeight": 943200,
+      "timestamp": "2025-01-25T16:50:47Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "9c8e1af91d1d82d838f3fbaa9713428aa689bba74794909fe01e52af2dca96cc",
+      "amount": 6803.13407846,
+      "payee": "Treasury Payment",
+      "blockHeight": 931680,
+      "timestamp": "2024-12-16T21:25:33Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "fcc62361588e0609bbed14db7e8de8222fe696598b19d21e07393adae023ae67",
+      "amount": 6457.65489567,
+      "payee": "Treasury Payment",
+      "blockHeight": 921600,
+      "timestamp": "2024-11-12T00:44:21Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "80b55fa6ed15275cea78b8d289901652dc280703ca7cd6c48e902c84b8836526",
+      "amount": 5222.62506879,
+      "payee": "Treasury Payment",
+      "blockHeight": 913248,
+      "timestamp": "2024-10-14T01:07:03Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "d00acf2dbc9b9bce3d3df3db74ad52808568824079d8b91147aef124d132d0df",
+      "amount": 4374.52551800,
+      "payee": "Treasury Payment",
+      "blockHeight": 903456,
+      "timestamp": "2024-09-09T21:35:59Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "8634a20b06d3d1f0b171a992c541b3a844b6b73e20fd0c2f3cef3aab5c4fe8d5",
+      "amount": 4017.29818053,
+      "payee": "Treasury Payment",
+      "blockHeight": 891648,
+      "timestamp": "2024-07-30T17:40:30Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "ec75a48e1c7bfe2892e29c5725f10ce473fcd9a41c9989a2d2e2402e1b1a92ee",
+      "amount": 5841.30137733,
+      "payee": "Treasury Payment",
+      "blockHeight": 883872,
+      "timestamp": "2024-07-03T20:12:04Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "e9f1dac20a5448748ad802f15c5980230dcb0b7bccec94c44fcdc378e48cd5ad",
+      "amount": 4109.12954791,
+      "payee": "Treasury Payment",
+      "blockHeight": 870912,
+      "timestamp": "2024-05-19T20:13:06Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "6fa5cab238f83ed7ac4e54d2e3b257f73ed6b58ce30df81b31e4c75e28c43af6",
+      "amount": 4552.74697601,
+      "payee": "Treasury Payment",
+      "blockHeight": 857664,
+      "timestamp": "2024-04-03T23:23:45Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "f87024987ee5c5c30e331716eff5bf5092d20e7411fb0a666016855b1a79f46c",
+      "amount": 3762.74108591,
+      "payee": "Treasury Payment",
+      "blockHeight": 850464,
+      "timestamp": "2024-03-09T17:24:42Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "d310ad4c1e3695ab29ac0e7f034bc74b84994cb4443043de5f7993678ada0b95",
+      "amount": 8177.00087388,
+      "payee": "Treasury Payment",
+      "blockHeight": 836640,
+      "timestamp": "2024-01-21T23:15:07Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "bbe950023801d9a9a082b15374cb5b30385172431dec0961207b2adb7197e82d",
+      "amount": 8427.44816317,
+      "payee": "Treasury Payment",
+      "blockHeight": 826848,
+      "timestamp": "2023-12-19T07:52:53Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "ca24ed5e5d4819ca68b270a78345be07d5a18890b83ada366e970807425e8bfc",
+      "amount": 8471.34286709,
+      "payee": "Treasury Payment",
+      "blockHeight": 818784,
+      "timestamp": "2023-11-21T02:00:09Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "dad857ec261237d51247d4bfae1a1ffb4348c8a7ed8933b2b877e6cac1d75436",
+      "amount": 8411.62753921,
+      "payee": "Treasury Payment",
+      "blockHeight": 804096,
+      "timestamp": "2023-10-01T00:27:08Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "144c17b0542e4aecb6c2b00b905552b001055dcf8298a0cd8ce0c1409e4bb2e4",
+      "amount": 5961.44924081,
+      "payee": "Treasury Payment",
+      "blockHeight": 794016,
+      "timestamp": "2023-08-28T10:38:33Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "bf3fcf63697c2191260690aa8471088e863e4f25434564196f8110464b669a51",
+      "amount": 4943.22547587,
+      "payee": "Treasury Payment",
+      "blockHeight": 784224,
+      "timestamp": "2023-07-25T05:39:39Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "4734a7e88ecb366d5c3be8510c35e846ff5a117fa92e24a0ad9329ac65b4925f",
+      "amount": 4604.85420065,
+      "payee": "Treasury Payment",
+      "blockHeight": 772128,
+      "timestamp": "2023-06-13T00:25:31Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "5efdb2de7cbea2682d389aa274a1ef79c5996201226054b28e08e286b1809519",
+      "amount": 3590.74781106,
+      "payee": "Treasury Payment",
+      "blockHeight": 765504,
+      "timestamp": "2023-05-20T22:27:24Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "5aa2142e4dce72d28fb3cef3e7d1b565a90655304fdd284016fb585cc96431e9",
+      "amount": 3087.20818013,
+      "payee": "Treasury Payment",
+      "blockHeight": 755712,
+      "timestamp": "2023-04-16T19:18:40Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "57c226c50632baf64aa3bb366e11c586c38689248a067b4642173a6a96fd47d0",
+      "amount": 4270.81580519,
+      "payee": "Treasury Payment",
+      "blockHeight": 745920,
+      "timestamp": "2023-03-13T21:22:23Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "e09505dbb877e5efdd184129858be5655a3de235cdac2cfa749442f0ccf7de81",
+      "amount": 3389.12075009,
+      "payee": "Treasury Payment",
+      "blockHeight": 737280,
+      "timestamp": "2023-02-11T17:41:20Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "49f141f51421a499d319bc617a4430f87db3a73ffa605dee8408eefb081bd11b",
+      "amount": 3907.99417994,
+      "payee": "Treasury Payment",
+      "blockHeight": 726048,
+      "timestamp": "2023-01-03T16:19:33Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "95ebb23a0846417eb1aa6a59bf6b4ad49d8cd72ff44c869d4af366fd1aef402e",
+      "amount": 3218.33890378,
+      "payee": "Treasury Payment",
+      "blockHeight": 717696,
+      "timestamp": "2022-12-05T17:08:39Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "f79381e591ef46c9ed911d936a9c329d62ac63cd9674d9c2db5855d2e4317358",
+      "amount": 2645.93996922,
+      "payee": "Treasury Payment",
+      "blockHeight": 708192,
+      "timestamp": "2022-11-02T10:43:38Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "c8a4d7fae86645449561a3b414ac7df0ea33b5de03e58ded345ad71c485c9c6b",
+      "amount": 3088.63019798,
+      "payee": "Treasury Payment",
+      "blockHeight": 696960,
+      "timestamp": "2022-09-24T05:43:30Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "c3f990e6c43babdfb782be90ca58ca6f6f8b6bcd3da96a622aba098d4e88c012",
+      "amount": 3787.95037258,
+      "payee": "Treasury Payment",
+      "blockHeight": 688896,
+      "timestamp": "2022-08-27T06:38:18Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "453e713358bb3c5662ebc1f58c50c50ceb66a950dae925701d8e25a3c4c72d4e",
+      "amount": 3205.32939019,
+      "payee": "Treasury Payment",
+      "blockHeight": 679104,
+      "timestamp": "2022-07-24T04:38:48Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "18cede674d4d47919e7fcdb48fef0f56162a1a2f9536d5f08ac70e093a14e4f5",
+      "amount": 2425.97845132,
+      "payee": "Treasury Payment",
+      "blockHeight": 671616,
+      "timestamp": "2022-06-27T19:09:43Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "c20c6ead8a45a03020b3083691ee79bf6abd74f4a6054cbf7a6d20753443e252",
+      "amount": 1156.08219006,
+      "payee": "Treasury Payment",
+      "blockHeight": 628704,
+      "timestamp": "2022-01-28T20:40:35Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "f57f2f35abcfc58cb8d45da6315982610203c1335ee0d68b36240f22c24a557a",
+      "amount": 1006.24006991,
+      "payee": "Treasury Payment",
+      "blockHeight": 619776,
+      "timestamp": "2021-12-28T18:29:50Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    },
+    {
+      "txHash": "7507bcc72bfde895065034e12e6d462f2360163cd0c879f0db35514f9456b2c1",
+      "amount": 0.10002550,
+      "payee": "Treasury Payment",
+      "blockHeight": 556416,
+      "timestamp": "2021-05-22T01:22:34Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-10-10T00:00:00Z"
+    }
+  ],
+  "totalSpent": 173159.97772498,
+  "lastSyncHeight": 1012032
+}
+

@@ -1,0 +1,12 @@
+# Decred Dashboard Backend Configuration
+# Copy this file to .env and fill in your values
+
+# Server Configuration
+PORT=8080
+
+# Decred RPC Configuration
+DCRD_RPC_HOST=localhost
+DCRD_RPC_PORT=9109
+DCRD_RPC_USER=your_rpc_username
+DCRD_RPC_PASS=your_rpc_password
+

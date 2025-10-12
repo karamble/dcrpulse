@@ -4,7 +4,7 @@ services:
       context: ./dcrd
       args:
         DCRD_VERSION: ${DCRD_VERSION:-master}
-    container_name: decred-pulse-dcrd
+    container_name: dcrpulse-dcrd
     ports:
       - "9108:9108"  # P2P port
       - "9109:9109"  # RPC port
@@ -35,7 +35,7 @@ services:
       context: ./dcrwallet
       args:
         DCRWALLET_VERSION: ${DCRWALLET_VERSION:-master}
-    container_name: decred-pulse-dcrwallet
+    container_name: dcrpulse-dcrwallet
     ports:
       - "9110:9110"  # RPC port
       - "9111:9111"  # gRPC port
@@ -64,9 +64,9 @@ services:
       retries: 5
       start_period: 90s
 
-  backend:
-    build: ./backend
-    container_name: decred-pulse-backend
+  dashboard:
+    build: ./dashboard
+    container_name: dcrpulse-dashboard
     ports:
       - "8080:8080"
     volumes:
@@ -90,19 +90,6 @@ services:
         condition: service_healthy
       dcrwallet:
         condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - decred-network
-
-  frontend:
-    build: ./frontend
-    container_name: decred-pulse-frontend
-    ports:
-      - "3000:80"
-    environment:
-      - VITE_API_URL=http://localhost:8080/api
-    depends_on:
-      - backend
     restart: unless-stopped
     networks:
       - decred-network
