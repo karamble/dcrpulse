@@ -4,6 +4,7 @@
 .env.*.local
 
 # Dashboard
+dashboard/dcrpulse
 dashboard/cmd/dcrpulse/dcrpulse
 dashboard/cmd/dcrpulse/web/
 dashboard/.env

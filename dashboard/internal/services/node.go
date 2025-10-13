@@ -358,7 +358,7 @@ func FetchStakingInfo() (*types.StakingInfo, error) {
 	chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(ctx)
 	isSynced := err == nil && !chainInfo.InitialBlockDownload
 
-	// Get stake difficulty (ticket price) - using RawRequest to get both current and next
+	// Get stake difficulty (ticket price) - using RawRequest to get current price
 	ticketPrice := float64(0)
 	nextTicketPrice := float64(0)
 
@@ -373,7 +373,19 @@ func FetchStakingInfo() (*types.StakingInfo, error) {
 	}
 	if err := json.Unmarshal(result, &diffResult); err == nil {
 		ticketPrice = diffResult.Current
-		nextTicketPrice = diffResult.Next
+	}
+
+	// Get estimated next ticket price based on current pool size
+	estimateResult, err := rpc.DcrdClient.RawRequest(ctx, "estimatestakediff", []json.RawMessage{})
+	if err == nil {
+		var estimateData struct {
+			Min      float64 `json:"min"`
+			Max      float64 `json:"max"`
+			Expected float64 `json:"expected"`
+		}
+		if err := json.Unmarshal(estimateResult, &estimateData); err == nil {
+			nextTicketPrice = estimateData.Expected
+		}
 	}
 
 	// Get live tickets from pool - direct RPC method

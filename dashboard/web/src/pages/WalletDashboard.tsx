@@ -101,19 +101,11 @@ export const WalletDashboard = () => {
     const cleanup = streamRescanProgress(
       // onProgress callback - called every second with wallet state
       (progress) => {
-        console.log('📊 Sync update:', {
-          isRescanning: progress.isRescanning,
-          scanHeight: progress.scanHeight,
-          chainHeight: progress.chainHeight,
-          progress: progress.progress,
-          message: progress.message
-        });
-        
         // Purely reactive: Show progress bar when rescanning, hide when not
         if (progress.isRescanning) {
           // Wallet is behind chain - show progress bar
           if (!showSyncProgress) {
-            console.log('✅ Rescan active - SHOWING progress bar');
+            console.log('✅ Rescan active - showing progress bar');
           }
           setShowSyncProgress(true);
           setSyncProgress(progress);
@@ -121,7 +113,7 @@ export const WalletDashboard = () => {
         } else {
           // Wallet is synced - hide progress bar
           if (showSyncProgress) {
-            console.log('✅ Wallet synced - HIDING progress bar');
+            console.log('✅ Wallet synced - hiding progress bar');
           }
           setShowSyncProgress(false);
           setIsPreparingRescan(false); // Clear preparing state

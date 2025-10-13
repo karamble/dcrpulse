@@ -188,6 +188,10 @@ export interface WalletTransaction {
   vout: number;
   generated?: boolean;
   isMixed?: boolean; // true if from CoinJoin/StakeShuffle
+  // Ticket-specific fields
+  blockHeight?: number;         // Block height where transaction was confirmed
+  isTicketMature?: boolean;     // For votes: whether the 256-block maturity period has passed
+  blocksUntilSpendable?: number; // For votes: remaining blocks until funds are spendable (0 if already spendable)
 }
 
 export interface TransactionListResponse {
