@@ -651,8 +651,8 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 	if count <= 0 {
 		count = 50 // Default to 50 transactions
 	}
-	if count > 200 {
-		count = 200 // Cap at 200 for performance
+	if count > 10000 {
+		count = 10000 // Cap at 10000 for performance
 	}
 
 	// Get current chain height for maturity calculations
@@ -698,44 +698,155 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 		return nil, fmt.Errorf("failed to unmarshal transactions: %w", err)
 	}
 
-	// Group transactions by txid and category to combine multiple outputs
-	// Only group "receive" transactions - this is especially important for CoinJoin which may have many receive outputs
-	// "send" transactions should NOT be grouped to show the actual send amount
-	txGroups := make(map[string]*types.Transaction)
-	transactions := make([]types.Transaction, 0, len(rpcTransactions))
+	// Group by txid - multiple entries indicate CoinJoin or ticket with change
+	type TxGroup struct {
+		Entries []int
+		TxType  string
+	}
+	txMap := make(map[string]*TxGroup)
 
-	txGroupKey := func(txid, category string) string {
-		return fmt.Sprintf("%s-%s", txid, category)
+	for i, rpcTx := range rpcTransactions {
+		if _, exists := txMap[rpcTx.TxID]; !exists {
+			txMap[rpcTx.TxID] = &TxGroup{
+				Entries: []int{},
+				TxType:  rpcTx.TxType,
+			}
+		}
+		txMap[rpcTx.TxID].Entries = append(txMap[rpcTx.TxID].Entries, i)
 	}
 
+	// Process transactions - use gettransaction for accurate net amounts on multi-entry txs
+	txGroups := make(map[string]*types.Transaction)
+	transactions := make([]types.Transaction, 0)
+	processed := make(map[string]bool)
+
 	for _, rpcTx := range rpcTransactions {
-		// Check if this transaction is from a CoinJoin/StakeShuffle
-		// Check both send and receive transactions since CoinJoin involves both
+		if processed[rpcTx.TxID] {
+			continue
+		}
+
+		group := txMap[rpcTx.TxID]
+
+		// Multi-entry transactions need special handling
+		if len(group.Entries) > 1 {
+			isMixed := false
+			if rpcTx.TxType == "regular" {
+				isMixed = isCoinJoinTransaction(ctx, rpcTx.TxID)
+			}
+
+			var netAmount float64
+			var accountName string
+			accountsInvolved := make(map[string]bool)
+
+			// Collect account info from all entries
+			for _, idx := range group.Entries {
+				entry := rpcTransactions[idx]
+				if entry.Account != "" {
+					accountsInvolved[entry.Account] = true
+				}
+				if accountName == "" && entry.Account != "" {
+					accountName = entry.Account
+				}
+			}
+
+			// CoinJoin: use gettransaction (listtransactions includes other participants)
+			if isMixed {
+				var err error
+				netAmount, err = getTransactionNetAmount(ctx, rpcTx.TxID)
+				if err != nil {
+					log.Printf("Warning: Could not get net amount for CoinJoin %s: %v, skipping", rpcTx.TxID[:12], err)
+					processed[rpcTx.TxID] = true
+					continue
+				}
+				log.Printf("CoinJoin %s: wallet net amount = %.8f DCR", rpcTx.TxID[:12], netAmount)
+			} else {
+				// Non-CoinJoin: sum entries (already wallet-filtered)
+				for _, idx := range group.Entries {
+					entry := rpcTransactions[idx]
+					netAmount += entry.Amount
+				}
+			}
+
+			if len(accountsInvolved) > 1 {
+				accounts := make([]string, 0, len(accountsInvolved))
+				for acc := range accountsInvolved {
+					accounts = append(accounts, acc)
+				}
+				log.Printf("TX %s involves multiple accounts: %v", rpcTx.TxID[:12], accounts)
+			}
+
+			var blockHeight int64 = 0
+			if currentHeight > 0 && rpcTx.Confirmations > 0 {
+				blockHeight = currentHeight - rpcTx.Confirmations + 1
+			}
+
+			// Determine category from net amount for regular txs
+			category := rpcTx.Category
+			if rpcTx.TxType == "regular" {
+				if isMixed {
+					category = "coinjoin"
+				} else if netAmount > 0 {
+					category = "receive"
+				} else if netAmount < 0 {
+					category = "send"
+				} else {
+					category = "self"
+				}
+			}
+
+			// CoinJoin fee is the cost to participate
+			var fee float64 = 0
+			if isMixed && netAmount < 0 {
+				fee = -netAmount
+			}
+
+			tx := types.Transaction{
+				TxID:          rpcTx.TxID,
+				Amount:        netAmount,
+				Fee:           fee,
+				Confirmations: rpcTx.Confirmations,
+				BlockHash:     rpcTx.BlockHash,
+				BlockTime:     rpcTx.BlockTime,
+				Time:          time.Unix(rpcTx.Time, 0),
+				Category:      category,
+				TxType:        rpcTx.TxType,
+				Address:       "",
+				Account:       accountName,
+				Vout:          0,
+				Generated:     false,
+				IsMixed:       isMixed,
+				BlockHeight:   blockHeight,
+			}
+			transactions = append(transactions, tx)
+			processed[rpcTx.TxID] = true
+			continue
+		}
+
 		isMixed := false
-		if rpcTx.TxType == "regular" && (rpcTx.Category == "receive" || rpcTx.Category == "send") {
+		if rpcTx.TxType == "regular" {
 			isMixed = isCoinJoinTransaction(ctx, rpcTx.TxID)
 		}
 
-		// Only group "receive" transactions, not "send"
+		txGroupKey := func(txid, category string) string {
+			return fmt.Sprintf("%s-%s", txid, category)
+		}
+
+		// Group receive transactions with same txid
 		if rpcTx.Category == "receive" {
 			groupKey := txGroupKey(rpcTx.TxID, rpcTx.Category)
 
 			if existing, exists := txGroups[groupKey]; exists {
-				// This txid already exists, add the amount
 				existing.Amount += rpcTx.Amount
-				// Keep the most relevant address (prefer non-empty)
 				if existing.Address == "" && rpcTx.Address != "" {
 					existing.Address = rpcTx.Address
 				}
 			} else {
-				// First time seeing this receive transaction
-				// Calculate block height from confirmations
 				var blockHeight int64 = 0
 				if currentHeight > 0 && rpcTx.Confirmations > 0 {
 					blockHeight = currentHeight - rpcTx.Confirmations + 1
 				}
 
-				// Calculate maturity for vote transactions
+				// Vote maturity: 256 blocks required before funds are spendable
 				var isTicketMature bool = false
 				var blocksUntilSpendable int64 = 0
 				if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
@@ -771,14 +882,11 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				txGroups[groupKey] = tx
 			}
 		} else {
-			// Don't group send/other transactions - add them directly
-			// Calculate block height from confirmations
 			var blockHeight int64 = 0
 			if currentHeight > 0 && rpcTx.Confirmations > 0 {
 				blockHeight = currentHeight - rpcTx.Confirmations + 1
 			}
 
-			// Calculate maturity for vote transactions
 			var isTicketMature bool = false
 			var blocksUntilSpendable int64 = 0
 			if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
@@ -813,15 +921,25 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 			}
 			transactions = append(transactions, tx)
 		}
+
+		processed[rpcTx.TxID] = true
 	}
 
-	// Add grouped receive transactions to the main list
+	// Add grouped receives to main list
 	for _, tx := range txGroups {
 		transactions = append(transactions, *tx)
 	}
 
-	// Sort transactions by time, newest first
-	// Use blockTime for confirmed transactions, fallback to time for pending
+	// Detect VSP fees (paid exactly 6 blocks after ticket)
+	for i := range transactions {
+		isVSPFee, relatedTicket := isVSPFeeTransaction(transactions[i], transactions)
+		if isVSPFee {
+			transactions[i].Category = "vspfee"
+			transactions[i].IsVSPFee = true
+			transactions[i].RelatedTicket = relatedTicket
+		}
+	}
+
 	sort.Slice(transactions, func(i, j int) bool {
 		timeI := transactions[i].BlockTime
 		if timeI == 0 {
@@ -831,7 +949,7 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 		if timeJ == 0 {
 			timeJ = transactions[j].Time.Unix()
 		}
-		return timeI > timeJ // Descending order (newest first)
+		return timeI > timeJ
 	})
 
 	return &types.TransactionListResponse{
@@ -840,27 +958,47 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 	}, nil
 }
 
-// isCoinJoinTransaction checks if a transaction is a CoinJoin/StakeShuffle by analyzing its structure
-// CoinJoin transactions typically have:
-// 1. Multiple inputs (usually 5+)
-// 2. Multiple outputs with equal or very similar amounts
+// getTransactionNetAmount returns wallet's net position (credits - debits) using gettransaction
+func getTransactionNetAmount(ctx context.Context, txHash string) (float64, error) {
+	if rpc.WalletClient == nil {
+		return 0, fmt.Errorf("wallet client not available")
+	}
+
+	result, err := rpc.WalletClient.RawRequest(ctx, "gettransaction", []json.RawMessage{
+		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("gettransaction failed: %w", err)
+	}
+
+	var txInfo struct {
+		Amount float64 `json:"amount"`
+		Fee    float64 `json:"fee"`
+	}
+
+	if err := json.Unmarshal(result, &txInfo); err != nil {
+		return 0, fmt.Errorf("failed to parse gettransaction: %w", err)
+	}
+
+	return txInfo.Amount, nil
+}
+
+// isCoinJoinTransaction detects CoinJoin by analyzing tx structure (3+ inputs/outputs, matching amounts)
 func isCoinJoinTransaction(ctx context.Context, txHash string) bool {
 	if rpc.DcrdClient == nil {
 		log.Printf("CoinJoin check skipped for %s: no dcrd connection", txHash)
-		return false // Can't check without node connection
+		return false
 	}
 
-	// Get raw transaction
 	rawTxResult, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
 		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
-		json.RawMessage("1"), // verbose=1 to get decoded transaction (must be int, not bool)
+		json.RawMessage("1"),
 	})
 	if err != nil {
 		log.Printf("CoinJoin check failed for %s: getrawtransaction error: %v", txHash, err)
 		return false
 	}
 
-	// Parse the verbose transaction response
 	var tx struct {
 		Vin []struct {
 			Txid string `json:"txid,omitempty"`
@@ -877,31 +1015,24 @@ func isCoinJoinTransaction(ctx context.Context, txHash string) bool {
 
 	log.Printf("Analyzing tx %s: %d inputs, %d outputs", txHash, len(tx.Vin), len(tx.Vout))
 
-	// CoinJoin heuristics:
-	// 1. Must have multiple inputs (typically 5+ participants)
 	if len(tx.Vin) < 3 {
 		log.Printf("TX %s: not enough inputs (%d < 3)", txHash, len(tx.Vin))
 		return false
 	}
 
-	// 2. Must have multiple outputs
 	if len(tx.Vout) < 3 {
 		log.Printf("TX %s: not enough outputs (%d < 3)", txHash, len(tx.Vout))
 		return false
 	}
 
-	// 3. Check if outputs have similar amounts (CoinJoin signature)
-	// Count outputs with the same value
 	outputValues := make(map[float64]int)
 	for _, vout := range tx.Vout {
-		// Round to 8 decimal places to account for floating point precision
 		rounded := float64(int64(vout.Value*100000000)) / 100000000
 		outputValues[rounded]++
 	}
 
 	log.Printf("TX %s: output value distribution: %v", txHash, outputValues)
 
-	// If we have 3+ outputs with the same value, it's likely a CoinJoin
 	for value, count := range outputValues {
 		if count >= 3 {
 			log.Printf("TX %s: IDENTIFIED AS COINJOIN - %d outputs with value %.8f", txHash, count, value)
@@ -911,4 +1042,37 @@ func isCoinJoinTransaction(ctx context.Context, txHash string) bool {
 
 	log.Printf("TX %s: not a CoinJoin (no 3+ matching output values)", txHash)
 	return false
+}
+
+// isVSPFeeTransaction detects VSP fees by 6-block timing after ticket purchase (validated pattern)
+func isVSPFeeTransaction(tx types.Transaction, allTransactions []types.Transaction) (bool, string) {
+	if tx.Category != "send" || tx.TxType != "regular" {
+		return false, ""
+	}
+
+	absAmount := tx.Amount
+	if absAmount < 0 {
+		absAmount = -absAmount
+	}
+	if absAmount < 0.001 || absAmount > 0.02 {
+		return false, ""
+	}
+
+	if tx.BlockHeight == 0 {
+		return false, ""
+	}
+
+	for _, otherTx := range allTransactions {
+		if otherTx.TxType != "ticket" || otherTx.BlockHeight == 0 {
+			continue
+		}
+
+		if tx.BlockHeight-otherTx.BlockHeight == 6 {
+			log.Printf("VSP FEE DETECTED: %s (block %d) is fee for ticket %s (block %d)",
+				tx.TxID[:12], tx.BlockHeight, otherTx.TxID[:12], otherTx.BlockHeight)
+			return true, otherTx.TxID
+		}
+	}
+
+	return false, ""
 }

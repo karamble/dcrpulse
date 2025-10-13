@@ -44,24 +44,25 @@ type AccountInfo struct {
 }
 
 type Transaction struct {
-	TxID          string    `json:"txid"`
-	Amount        float64   `json:"amount"`
-	Fee           float64   `json:"fee,omitempty"`
-	Confirmations int64     `json:"confirmations"`
-	BlockHash     string    `json:"blockHash,omitempty"`
-	BlockTime     int64     `json:"blockTime,omitempty"`
-	Time          time.Time `json:"time"`
-	Category      string    `json:"category"` // "send", "receive", "immature", "generate"
-	TxType        string    `json:"txType"`   // "regular", "ticket", "vote", "revocation"
-	Address       string    `json:"address,omitempty"`
-	Account       string    `json:"account,omitempty"`
-	Vout          uint32    `json:"vout"`
-	Generated     bool      `json:"generated,omitempty"`
-	IsMixed       bool      `json:"isMixed,omitempty"` // true if from CoinJoin/StakeShuffle
-	// Ticket-specific fields
-	BlockHeight         int64 `json:"blockHeight,omitempty"`         // Block height where transaction was confirmed
-	IsTicketMature      bool  `json:"isTicketMature,omitempty"`      // For votes: whether the 256-block maturity period has passed
-	BlocksUntilSpendable int64 `json:"blocksUntilSpendable,omitempty"` // For votes: remaining blocks until funds are spendable (0 if already spendable)
+	TxID                 string    `json:"txid"`
+	Amount               float64   `json:"amount"`
+	Fee                  float64   `json:"fee,omitempty"`
+	Confirmations        int64     `json:"confirmations"`
+	BlockHash            string    `json:"blockHash,omitempty"`
+	BlockTime            int64     `json:"blockTime,omitempty"`
+	Time                 time.Time `json:"time"`
+	Category             string    `json:"category"` // "send", "receive", "immature", "generate"
+	TxType               string    `json:"txType"`   // "regular", "ticket", "vote", "revocation"
+	Address              string    `json:"address,omitempty"`
+	Account              string    `json:"account,omitempty"`
+	Vout                 uint32    `json:"vout"`
+	Generated            bool      `json:"generated,omitempty"`
+	IsMixed              bool      `json:"isMixed,omitempty"`              // CoinJoin/StakeShuffle transaction
+	IsVSPFee             bool      `json:"isVSPFee,omitempty"`             // VSP fee payment
+	RelatedTicket        string    `json:"relatedTicket,omitempty"`        // Ticket txid for VSP fees
+	BlockHeight          int64     `json:"blockHeight,omitempty"`          // Confirmed block height
+	IsTicketMature       bool      `json:"isTicketMature,omitempty"`       // Vote: passed 256-block maturity
+	BlocksUntilSpendable int64     `json:"blocksUntilSpendable,omitempty"` // Vote: blocks until spendable
 }
 
 type TransactionListResponse struct {

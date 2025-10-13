@@ -237,38 +237,53 @@ export const WalletDashboard = () => {
       {!showSyncProgress && !isPreparingRescan && (
         <>
 
-          {/* Left Column: Account Balance + Accounts | Right Column: Transaction History */}
+          {/* Row 1: Account Balance | Accounts */}
           {data && data.walletStatus.status !== 'no_wallet' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
-          {/* Left Column */}
-          <div className="space-y-6">
-            {/* Account Info */}
-            <AccountInfo
-              accountName={data.accountInfo.accountName}
-              totalBalance={data.accountInfo.totalBalance}
-              spendableBalance={data.accountInfo.spendableBalance}
-              immatureBalance={data.accountInfo.immatureBalance}
-              unconfirmedBalance={data.accountInfo.unconfirmedBalance}
-              lockedByTickets={data.accountInfo.lockedByTickets}
-              cumulativeTotal={data.accountInfo.cumulativeTotal}
-              totalSpendable={data.accountInfo.totalSpendable}
-              totalLockedByTickets={data.accountInfo.totalLockedByTickets}
-            />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+              {/* Account Info */}
+              <AccountInfo
+                accountName={data.accountInfo.accountName}
+                totalBalance={data.accountInfo.totalBalance}
+                spendableBalance={data.accountInfo.spendableBalance}
+                immatureBalance={data.accountInfo.immatureBalance}
+                unconfirmedBalance={data.accountInfo.unconfirmedBalance}
+                lockedByTickets={data.accountInfo.lockedByTickets}
+                cumulativeTotal={data.accountInfo.cumulativeTotal}
+                totalSpendable={data.accountInfo.totalSpendable}
+                totalLockedByTickets={data.accountInfo.totalLockedByTickets}
+              />
 
-            {/* Accounts List */}
-            {data.accounts && (
-              <AccountsList accounts={data.accounts} />
-            )}
-          </div>
-
-          {/* Right Column: Transaction History */}
-          {!loading && !showSyncProgress && !isPreparingRescan && (
-            <TransactionHistory />
+              {/* Accounts List */}
+              {data.accounts && (
+                <AccountsList accounts={data.accounts} />
+              )}
+            </div>
           )}
-        </div>
-      )}
 
-          {/* Row 2: Ticket Pool | My Tickets */}
+          {/* Row 2: Transaction History | My Tickets */}
+          {data && data.walletStatus.status !== 'no_wallet' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+              {/* Transaction History */}
+              {!loading && !showSyncProgress && !isPreparingRescan && (
+                <TransactionHistory />
+              )}
+
+              {/* My Tickets Info */}
+              {data.stakingInfo && (
+                <MyTicketsInfo
+                  ownMempoolTix={data.stakingInfo.ownMempoolTix}
+                  immature={data.stakingInfo.immature}
+                  unspent={data.stakingInfo.unspent}
+                  voted={data.stakingInfo.voted}
+                  revoked={data.stakingInfo.revoked}
+                  unspentExpired={data.stakingInfo.unspentExpired}
+                  totalSubsidy={data.stakingInfo.totalSubsidy}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Row 3: Ticket Pool & Difficulty | Address Bookmarks */}
           {data && data.walletStatus.status !== 'no_wallet' && data.stakingInfo && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
               {/* Ticket Pool & Difficulty Info */}
@@ -281,21 +296,10 @@ export const WalletDashboard = () => {
                 allMempoolTix={data.stakingInfo.allMempoolTix}
               />
 
-              {/* My Tickets Info */}
-              <MyTicketsInfo
-                ownMempoolTix={data.stakingInfo.ownMempoolTix}
-                immature={data.stakingInfo.immature}
-                unspent={data.stakingInfo.unspent}
-                voted={data.stakingInfo.voted}
-                revoked={data.stakingInfo.revoked}
-                unspentExpired={data.stakingInfo.unspentExpired}
-                totalSubsidy={data.stakingInfo.totalSubsidy}
-              />
+              {/* Address Bookmarks */}
+              <AddressBookmarksCard />
             </div>
           )}
-
-          {/* Address Bookmarks */}
-          <AddressBookmarksCard />
 
           {/* Last Update */}
           {data && (

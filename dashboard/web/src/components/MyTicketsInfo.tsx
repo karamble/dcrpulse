@@ -35,9 +35,9 @@ export const MyTicketsInfo = ({
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true); // Start with loading state
   const [error, setError] = useState<string | null>(null);
-  const [visibleTicketCount, setVisibleTicketCount] = useState(10);
+  const [visibleTicketCount, setVisibleTicketCount] = useState(5);
   const [filterStatus, setFilterStatus] = useState<'all' | 'live' | 'voted' | 'purchased'>('all');
-  const loadMoreCount = 20;
+  const loadMoreCount = 10;
 
   // Always fetch transactions on mount to build stats for xpub wallets
   useEffect(() => {
@@ -302,7 +302,7 @@ export const MyTicketsInfo = ({
               {/* Filter Buttons */}
               <div className="flex items-center gap-2 mb-4 flex-wrap">
                 <button
-                  onClick={() => { setFilterStatus('all'); setVisibleTicketCount(10); }}
+                  onClick={() => { setFilterStatus('all'); setVisibleTicketCount(5); }}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     filterStatus === 'all'
                       ? 'bg-primary text-white'
@@ -312,7 +312,7 @@ export const MyTicketsInfo = ({
                   All ({allTicketsUnfiltered.length})
                 </button>
                 <button
-                  onClick={() => { setFilterStatus('purchased'); setVisibleTicketCount(10); }}
+                  onClick={() => { setFilterStatus('purchased'); setVisibleTicketCount(5); }}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     filterStatus === 'purchased'
                       ? 'bg-primary text-white'
@@ -322,7 +322,7 @@ export const MyTicketsInfo = ({
                   Purchased ({uniqueTickets.length})
                 </button>
                 <button
-                  onClick={() => { setFilterStatus('live'); setVisibleTicketCount(10); }}
+                  onClick={() => { setFilterStatus('live'); setVisibleTicketCount(5); }}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     filterStatus === 'live'
                       ? 'bg-primary text-white'
@@ -332,7 +332,7 @@ export const MyTicketsInfo = ({
                   Live ({uniqueTickets.filter(t => t.confirmations >= 256).length})
                 </button>
                 <button
-                  onClick={() => { setFilterStatus('voted'); setVisibleTicketCount(10); }}
+                  onClick={() => { setFilterStatus('voted'); setVisibleTicketCount(5); }}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     filterStatus === 'voted'
                       ? 'bg-primary text-white'
