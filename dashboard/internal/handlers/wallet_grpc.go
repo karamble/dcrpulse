@@ -63,6 +63,10 @@ func StreamRescanGrpcHandler(w http.ResponseWriter, r *http.Request) {
 	syncStatusTicker := time.NewTicker(3 * time.Second)
 	defer syncStatusTicker.Stop()
 
+	// Re-subscribe ticker - check if we need a fresh channel for new rescans
+	resubscribeTicker := time.NewTicker(1 * time.Second)
+	defer resubscribeTicker.Stop()
+
 	// Track if we have an active gRPC rescan
 	hasActiveGrpcRescan := false
 
@@ -140,6 +144,8 @@ func StreamRescanGrpcHandler(w http.ResponseWriter, r *http.Request) {
 				// Channel closed - rescan finished
 				log.Println("✅ gRPC Rescan complete")
 				hasActiveGrpcRescan = false
+				progressCh = nil // Stop receiving from closed channel (nil channels block in select)
+
 				// Check if wallet sync is still ongoing
 				status := checkWalletSync()
 				if status != nil {
@@ -180,6 +186,13 @@ func StreamRescanGrpcHandler(w http.ResponseWriter, r *http.Request) {
 			if err := conn.WriteJSON(progressData); err != nil {
 				log.Printf("❌ WebSocket write failed: %v", err)
 				return
+			}
+
+		case <-resubscribeTicker.C:
+			// Re-subscribe if channel was closed (set to nil) to catch next rescan
+			if progressCh == nil {
+				progressCh = subscribeToRescanUpdates()
+				log.Println("🔄 Re-subscribed to rescan updates for next rescan")
 			}
 
 		case <-syncStatusTicker.C:
