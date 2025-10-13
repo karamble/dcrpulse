@@ -58,6 +58,10 @@ type Transaction struct {
 	Vout          uint32    `json:"vout"`
 	Generated     bool      `json:"generated,omitempty"`
 	IsMixed       bool      `json:"isMixed,omitempty"` // true if from CoinJoin/StakeShuffle
+	// Ticket-specific fields
+	BlockHeight         int64 `json:"blockHeight,omitempty"`         // Block height where transaction was confirmed
+	IsTicketMature      bool  `json:"isTicketMature,omitempty"`      // For votes: whether the 256-block maturity period has passed
+	BlocksUntilSpendable int64 `json:"blocksUntilSpendable,omitempty"` // For votes: remaining blocks until funds are spendable (0 if already spendable)
 }
 
 type TransactionListResponse struct {
