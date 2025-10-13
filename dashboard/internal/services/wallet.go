@@ -655,6 +655,15 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 		count = 200 // Cap at 200 for performance
 	}
 
+	// Get current chain height for maturity calculations
+	var currentHeight int64 = 0
+	if rpc.DcrdClient != nil {
+		chainHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
+		if err == nil {
+			currentHeight = chainHeight
+		}
+	}
+
 	// Call listtransactions RPC with parameters
 	result, err := rpc.WalletClient.RawRequest(ctx, "listtransactions", []json.RawMessage{
 		json.RawMessage(`"*"`),                    // account (all accounts)
@@ -720,41 +729,87 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				}
 			} else {
 				// First time seeing this receive transaction
+				// Calculate block height from confirmations
+				var blockHeight int64 = 0
+				if currentHeight > 0 && rpcTx.Confirmations > 0 {
+					blockHeight = currentHeight - rpcTx.Confirmations + 1
+				}
+
+				// Calculate maturity for vote transactions
+				var isTicketMature bool = false
+				var blocksUntilSpendable int64 = 0
+				if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
+					blocksPassed := currentHeight - blockHeight
+					if blocksPassed >= 256 {
+						isTicketMature = true
+						blocksUntilSpendable = 0
+					} else {
+						isTicketMature = false
+						blocksUntilSpendable = 256 - blocksPassed
+					}
+				}
+
 				tx := &types.Transaction{
-					TxID:          rpcTx.TxID,
-					Amount:        rpcTx.Amount,
-					Fee:           rpcTx.Fee,
-					Confirmations: rpcTx.Confirmations,
-					BlockHash:     rpcTx.BlockHash,
-					BlockTime:     rpcTx.BlockTime,
-					Time:          time.Unix(rpcTx.Time, 0),
-					Category:      rpcTx.Category,
-					TxType:        rpcTx.TxType,
-					Address:       rpcTx.Address,
-					Account:       rpcTx.Account,
-					Vout:          rpcTx.Vout,
-					Generated:     rpcTx.Generated,
-					IsMixed:       isMixed,
+					TxID:                 rpcTx.TxID,
+					Amount:               rpcTx.Amount,
+					Fee:                  rpcTx.Fee,
+					Confirmations:        rpcTx.Confirmations,
+					BlockHash:            rpcTx.BlockHash,
+					BlockTime:            rpcTx.BlockTime,
+					Time:                 time.Unix(rpcTx.Time, 0),
+					Category:             rpcTx.Category,
+					TxType:               rpcTx.TxType,
+					Address:              rpcTx.Address,
+					Account:              rpcTx.Account,
+					Vout:                 rpcTx.Vout,
+					Generated:            rpcTx.Generated,
+					IsMixed:              isMixed,
+					BlockHeight:          blockHeight,
+					IsTicketMature:       isTicketMature,
+					BlocksUntilSpendable: blocksUntilSpendable,
 				}
 				txGroups[groupKey] = tx
 			}
 		} else {
 			// Don't group send/other transactions - add them directly
+			// Calculate block height from confirmations
+			var blockHeight int64 = 0
+			if currentHeight > 0 && rpcTx.Confirmations > 0 {
+				blockHeight = currentHeight - rpcTx.Confirmations + 1
+			}
+
+			// Calculate maturity for vote transactions
+			var isTicketMature bool = false
+			var blocksUntilSpendable int64 = 0
+			if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
+				blocksPassed := currentHeight - blockHeight
+				if blocksPassed >= 256 {
+					isTicketMature = true
+					blocksUntilSpendable = 0
+				} else {
+					isTicketMature = false
+					blocksUntilSpendable = 256 - blocksPassed
+				}
+			}
+
 			tx := types.Transaction{
-				TxID:          rpcTx.TxID,
-				Amount:        rpcTx.Amount,
-				Fee:           rpcTx.Fee,
-				Confirmations: rpcTx.Confirmations,
-				BlockHash:     rpcTx.BlockHash,
-				BlockTime:     rpcTx.BlockTime,
-				Time:          time.Unix(rpcTx.Time, 0),
-				Category:      rpcTx.Category,
-				TxType:        rpcTx.TxType,
-				Address:       rpcTx.Address,
-				Account:       rpcTx.Account,
-				Vout:          rpcTx.Vout,
-				Generated:     rpcTx.Generated,
-				IsMixed:       isMixed,
+				TxID:                 rpcTx.TxID,
+				Amount:               rpcTx.Amount,
+				Fee:                  rpcTx.Fee,
+				Confirmations:        rpcTx.Confirmations,
+				BlockHash:            rpcTx.BlockHash,
+				BlockTime:            rpcTx.BlockTime,
+				Time:                 time.Unix(rpcTx.Time, 0),
+				Category:             rpcTx.Category,
+				TxType:               rpcTx.TxType,
+				Address:              rpcTx.Address,
+				Account:              rpcTx.Account,
+				Vout:                 rpcTx.Vout,
+				Generated:            rpcTx.Generated,
+				IsMixed:              isMixed,
+				BlockHeight:          blockHeight,
+				IsTicketMature:       isTicketMature,
+				BlocksUntilSpendable: blocksUntilSpendable,
 			}
 			transactions = append(transactions, tx)
 		}
