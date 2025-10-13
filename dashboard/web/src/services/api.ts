@@ -181,13 +181,15 @@ export interface WalletTransaction {
   blockHash?: string;
   blockTime?: number;
   time: string;
-  category: string; // "send", "receive", "immature", "generate"
+  category: string; // "send", "receive", "immature", "generate", "vspfee"
   txType: string;   // "regular", "ticket", "vote", "revocation"
   address?: string;
   account?: string;
   vout: number;
   generated?: boolean;
   isMixed?: boolean; // true if from CoinJoin/StakeShuffle
+  isVSPFee?: boolean; // true if VSP fee payment
+  relatedTicket?: string; // For VSP fees: the ticket txid this fee is for
   // Ticket-specific fields
   blockHeight?: number;         // Block height where transaction was confirmed
   isTicketMature?: boolean;     // For votes: whether the 256-block maturity period has passed
