@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, ChevronLeft, ChevronRight, ArrowRightLeft, Ticket, CheckCircle, XCircle, FileJson } from 'lucide-react';
+import { Box, ChevronLeft, ChevronRight, ArrowRightLeft, Ticket, CheckCircle, XCircle, FileJson, Landmark } from 'lucide-react';
 import { getBlockByHeight, BlockDetail as BlockDetailType } from '../services/explorerApi';
 import { CopyButton } from '../components/explorer/CopyButton';
 import { TimeAgo } from '../components/explorer/TimeAgo';
@@ -59,6 +59,10 @@ export const BlockDetail = () => {
         return <CheckCircle className="h-4 w-4 text-success" />;
       case 'revocation':
         return <XCircle className="h-4 w-4 text-red-500" />;
+      case 'tspend':
+        return <Landmark className="h-4 w-4 text-amber-500" />;
+      case 'treasurybase':
+        return <Landmark className="h-4 w-4 text-amber-600" />;
       default:
         return <ArrowRightLeft className="h-4 w-4 text-blue-500" />;
     }
@@ -74,13 +78,17 @@ export const BlockDetail = () => {
         return 'text-red-500';
       case 'coinbase':
         return 'text-purple-500';
+      case 'tspend':
+        return 'text-amber-500';
+      case 'treasurybase':
+        return 'text-amber-600';
       default:
         return 'text-blue-500';
     }
   };
 
   const groupTransactionsByType = () => {
-    if (!block) return { regular: [], tickets: [], votes: [], revocations: [], coinbase: [] };
+    if (!block) return { regular: [], tickets: [], votes: [], revocations: [], coinbase: [], treasury: [] };
 
     return {
       regular: block.transactions.filter(tx => tx.type === 'regular'),
@@ -88,6 +96,7 @@ export const BlockDetail = () => {
       votes: block.transactions.filter(tx => tx.type === 'vote'),
       revocations: block.transactions.filter(tx => tx.type === 'revocation'),
       coinbase: block.transactions.filter(tx => tx.type === 'coinbase'),
+      treasury: block.transactions.filter(tx => tx.type === 'tspend' || tx.type === 'treasurybase'),
     };
   };
 
@@ -290,6 +299,42 @@ export const BlockDetail = () => {
             </div>
 
             <div className="space-y-6">
+              {/* Treasury Transactions */}
+              {txGroups.treasury.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-amber-500 mb-3 flex items-center gap-2">
+                    <Landmark className="h-4 w-4" />
+                    Treasury ({txGroups.treasury.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {txGroups.treasury.map((tx) => (
+                      <button
+                        key={tx.txid}
+                        onClick={() => navigate(`/explorer/tx/${tx.txid}`)}
+                        className="w-full p-4 rounded-lg bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 transition-colors text-left"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            {getTxTypeIcon(tx.type)}
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className="font-mono text-sm truncate">{tx.txid}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {tx.type === 'tspend' ? 'Treasury Spend' : 'Treasury Addition'}
+                              </span>
+                            </div>
+                            <CopyButton text={tx.txid} />
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="text-muted-foreground">{tx.size} bytes</span>
+                            <span className={getTxTypeColor(tx.type) + ' font-semibold'}>{tx.totalValue.toFixed(2)} DCR</span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Coinbase Transactions */}
               {txGroups.coinbase.length > 0 && (
                 <div>

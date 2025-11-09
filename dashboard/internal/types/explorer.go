@@ -53,6 +53,28 @@ type TransactionDetail struct {
 	Inputs   []TxInput  `json:"inputs"`
 	Outputs  []TxOutput `json:"outputs"`
 	RawHex   string     `json:"rawHex,omitempty"`
+	// Treasury spend specific fields
+	PoliteiaKey    string            `json:"politeiaKey,omitempty"`    // Politeia key from OP_RETURN
+	RecipientCount int               `json:"recipientCount,omitempty"` // Number of treasury payout recipients
+	VotingInfo     *TSpendVotingInfo `json:"votingInfo,omitempty"`     // Voting data for tspend transactions
+}
+
+// TSpendVotingInfo contains voting data for a treasury spend transaction
+type TSpendVotingInfo struct {
+	VotingStartBlock int64     `json:"votingStartBlock"` // When voting started
+	VotingEndBlock   int64     `json:"votingEndBlock"`   // When tspend was mined (or expiry)
+	YesVotes         int       `json:"yesVotes"`         // Number of yes votes
+	NoVotes          int       `json:"noVotes"`          // Number of no votes
+	EligibleVotes    int       `json:"eligibleVotes"`    // Total possible votes in period
+	VotesCast        int       `json:"votesCast"`        // Total votes cast
+	QuorumRequired   int       `json:"quorumRequired"`   // Minimum votes needed
+	ApprovalRate     float64   `json:"approvalRate"`     // Yes / (Yes + No)
+	TurnoutRate      float64   `json:"turnoutRate"`      // VotesCast / EligibleVotes
+	QuorumAchieved   bool      `json:"quorumAchieved"`
+	VotingComplete   bool      `json:"votingComplete"`
+	InMempool        bool      `json:"inMempool"`
+	VotingStartTime  time.Time `json:"votingStartTime"`
+	VotingEndTime    time.Time `json:"votingEndTime"`
 }
 
 // TxInput represents a transaction input
