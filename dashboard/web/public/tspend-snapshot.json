@@ -2,6 +2,15 @@
   "version": 1,
   "tspends": [
     {
+      "txHash": "381af81ac0bcfe5b0b7febe2dbc0086ba33b2e29d7a932fa8b9d1cd57648510f",
+      "amount": 5106.6984124,
+      "payee": "Treasury Payment",
+      "blockHeight": 1025856,
+      "timestamp": "2025-11-08T05:17:13Z",
+      "voteResult": "approved",
+      "detectedAt": "2025-11-09T00:00:00Z"
+    },
+    {
       "txHash": "36e4e2c03d6f3b8398bf78bdef8aeeedb210fb2056d46321a5315714e2b380fd",
       "amount": 5159.24337955,
       "payee": "Treasury Payment",
@@ -335,7 +344,7 @@
       "detectedAt": "2025-10-10T00:00:00Z"
     }
   ],
-  "totalSpent": 173159.97772498,
-  "lastSyncHeight": 1012032
+  "totalSpent": 178266.67613738,
+  "lastSyncHeight": 1025856
 }
 

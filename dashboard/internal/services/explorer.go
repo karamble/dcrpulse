@@ -399,6 +399,30 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 		size = len(rawTx.Hex) / 2
 	}
 
+	// Extract treasury-specific information for tspend transactions
+	var politeiaKey string
+	recipientCount := 0
+	var votingInfo *types.TSpendVotingInfo
+
+	if txType == "tspend" {
+		politeiaKey = extractPoliteiaKey(rawTx.Vout)
+		// Count recipients (exclude OP_RETURN output at index 0)
+		for _, vout := range rawTx.Vout {
+			if strings.Contains(vout.ScriptPubKey.Type, "treasurygen") {
+				recipientCount++
+			}
+		}
+
+		// Get voting information
+		// Determine if in mempool (blockHeight == 0 or no block hash)
+		inMempool := rawTx.BlockHeight == 0 || rawTx.BlockHash == ""
+		if vInfo, err := GetTSpendVotingInfo(ctx, rawTx.Txid, rawTx.BlockHeight, rawTx.Expiry, inMempool); err == nil {
+			votingInfo = vInfo
+		} else {
+			log.Printf("Warning: Could not get voting info for tspend %s: %v", rawTx.Txid, err)
+		}
+	}
+
 	return &types.TransactionDetail{
 		TransactionSummary: types.TransactionSummary{
 			TxID:          rawTx.Txid,
@@ -411,13 +435,56 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 			Fee:           fee,
 			Size:          size,
 		},
-		Version:  rawTx.Version,
-		LockTime: rawTx.LockTime,
-		Expiry:   rawTx.Expiry,
-		Inputs:   inputs,
-		Outputs:  outputs,
-		RawHex:   rawTx.Hex,
+		Version:        rawTx.Version,
+		LockTime:       rawTx.LockTime,
+		Expiry:         rawTx.Expiry,
+		Inputs:         inputs,
+		Outputs:        outputs,
+		RawHex:         rawTx.Hex,
+		PoliteiaKey:    politeiaKey,
+		RecipientCount: recipientCount,
+		VotingInfo:     votingInfo,
 	}, nil
+}
+
+// extractPoliteiaKey extracts the politeia key from a tspend transaction's OP_RETURN output
+func extractPoliteiaKey(vout []struct {
+	Value        float64 `json:"value"`
+	N            uint32  `json:"n"`
+	Version      uint16  `json:"version"`
+	ScriptPubKey struct {
+		Asm       string   `json:"asm"`
+		Hex       string   `json:"hex"`
+		Type      string   `json:"type"`
+		ReqSigs   int      `json:"reqSigs,omitempty"`
+		Addresses []string `json:"addresses,omitempty"`
+	} `json:"scriptPubKey"`
+}) string {
+	// TSpend transactions have OP_RETURN as the first output (index 0)
+	if len(vout) == 0 {
+		return ""
+	}
+
+	firstOutput := vout[0]
+	if firstOutput.ScriptPubKey.Type != "nulldata" {
+		return ""
+	}
+
+	// Parse hex: format is "6a20" + 32-byte politeia key
+	// 6a = OP_RETURN, 20 = push 32 bytes (0x20 = 32 decimal)
+	hex := firstOutput.ScriptPubKey.Hex
+	if len(hex) < 68 { // 4 (6a20) + 64 (32 bytes hex) = 68 minimum
+		return ""
+	}
+
+	// Check for OP_RETURN prefix
+	if !strings.HasPrefix(hex, "6a20") {
+		return ""
+	}
+
+	// Extract the 32-byte politeia key (64 hex characters after "6a20")
+	politeiaKey := hex[4:68]
+	return politeiaKey
 }
 
 // UniversalSearch auto-detects and searches for block/tx/address
@@ -636,11 +703,20 @@ func categorizeTransaction(vin []interface{}, vout []interface{}) string {
 		}
 	}
 
-	// Check outputs for stake transaction types
+	// Check outputs for treasury and stake transaction types
 	for _, v := range vout {
 		if voutMap, ok := v.(map[string]interface{}); ok {
 			if scriptPubKey, ok := voutMap["scriptPubKey"].(map[string]interface{}); ok {
 				if scriptType, ok := scriptPubKey["type"].(string); ok {
+					// Treasury transactions
+					if strings.Contains(scriptType, "treasurygen") {
+						return "tspend"
+					}
+					if strings.Contains(scriptType, "treasurybase") || strings.Contains(scriptType, "treasuryadd") {
+						return "treasurybase"
+					}
+
+					// Stake transactions
 					if strings.Contains(scriptType, "stakesubmission") {
 						return "ticket"
 					}
@@ -699,9 +775,19 @@ func categorizeTransactionTyped(vin []struct {
 		}
 	}
 
-	// Check outputs for stake transaction types
+	// Check outputs for treasury and stake transaction types
 	for _, v := range vout {
 		scriptType := v.ScriptPubKey.Type
+
+		// Treasury transactions
+		if strings.Contains(scriptType, "treasurygen") {
+			return "tspend"
+		}
+		if strings.Contains(scriptType, "treasurybase") || strings.Contains(scriptType, "treasuryadd") {
+			return "treasurybase"
+		}
+
+		// Stake transactions
 		if strings.Contains(scriptType, "stakesubmission") {
 			return "ticket"
 		}

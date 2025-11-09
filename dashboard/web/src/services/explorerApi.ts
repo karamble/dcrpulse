@@ -28,7 +28,7 @@ export interface BlockDetail extends BlockSummary {
 
 export interface TransactionSummary {
   txid: string;
-  type: string; // regular, ticket, vote, revocation, coinbase
+  type: string; // regular, ticket, vote, revocation, coinbase, tspend, treasurybase
   blockHeight: number;
   blockHash?: string;
   timestamp: string;
@@ -45,6 +45,38 @@ export interface TransactionDetail extends TransactionSummary {
   inputs: TxInput[];
   outputs: TxOutput[];
   rawHex?: string;
+  // Treasury spend specific fields
+  politeiaKey?: string;
+  recipientCount?: number;
+  votingInfo?: TSpendVotingInfo;
+}
+
+export interface TSpendVotingInfo {
+  votingStartBlock: number;
+  votingEndBlock: number;
+  yesVotes: number;
+  noVotes: number;
+  eligibleVotes: number;
+  votesCast: number;
+  quorumRequired: number;
+  approvalRate: number;
+  turnoutRate: number;
+  quorumAchieved: boolean;
+  votingComplete: boolean;
+  inMempool: boolean;
+  votingStartTime: string;
+  votingEndTime: string;
+}
+
+export interface VoteParsingProgress {
+  isParsing: boolean;
+  progress: number;      // 0-100
+  currentBlock: number;
+  totalBlocks: number;
+  yesVotes: number;
+  noVotes: number;
+  estimatedTime: number; // Seconds remaining
+  message: string;
 }
 
 export interface TxInput {
@@ -155,6 +187,14 @@ export async function getAddressInfo(address: string): Promise<AddressInfo> {
   const response = await fetch(`${API_BASE_URL}/explorer/address/${address}`);
   if (!response.ok) {
     throw new Error('Failed to fetch address information');
+  }
+  return response.json();
+}
+
+export async function getVoteParsingProgress(txhash: string): Promise<VoteParsingProgress> {
+  const response = await fetch(`${API_BASE_URL}/treasury/votes/${txhash}/progress`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch vote parsing progress');
   }
   return response.json();
 }

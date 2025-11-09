@@ -50,3 +50,15 @@ type TSpendScanProgress struct {
 	NewTSpends    []TSpendHistory `json:"newTSpends"`  // TSpends found since last progress check
 	Message       string          `json:"message"`
 }
+
+// VoteParsingProgress tracks progress of vote counting for a tspend
+type VoteParsingProgress struct {
+	IsParsing     bool    `json:"isParsing"`
+	Progress      float64 `json:"progress"` // 0-100
+	CurrentBlock  int64   `json:"currentBlock"`
+	TotalBlocks   int64   `json:"totalBlocks"`
+	YesVotes      int     `json:"yesVotes"`      // Current count
+	NoVotes       int     `json:"noVotes"`       // Current count
+	EstimatedTime int     `json:"estimatedTime"` // Seconds remaining
+	Message       string  `json:"message"`
+}
