@@ -6,20 +6,19 @@ services:
         DCRD_VERSION: ${DCRD_VERSION:-master}
     container_name: dcrpulse-dcrd
     ports:
-      - "9108:9108"  # P2P port
-      - "9109:9109"  # RPC port
+      - "9108:9108"
+      - "9109:9109"
     volumes:
-      - dcrd-data:/home/dcrd/.dcrd
-      - dcrd-certs:/certs
-      - ./dcrd.conf:/home/dcrd/.dcrd/dcrd.conf:ro
+      - app-data:/app-data
+      - ./dcrd.conf:/app-data/dcrd/dcrd.conf:ro
     environment:
       - DCRD_EXTRA_ARGS=${DCRD_EXTRA_ARGS:---txindex}
     command: >
       --rpcuser=${DCRD_RPC_USER:-decred}
       --rpcpass=${DCRD_RPC_PASS:-decredpass}
       --rpclisten=0.0.0.0:9109
-      --rpccert=/certs/rpc.cert
-      --rpckey=/certs/rpc.key
+      --rpccert=/app-data/certs/rpc.cert
+      --rpckey=/app-data/certs/rpc.key
     restart: unless-stopped
     networks:
       - decred-network
@@ -37,18 +36,17 @@ services:
         DCRWALLET_VERSION: ${DCRWALLET_VERSION:-master}
     container_name: dcrpulse-dcrwallet
     ports:
-      - "9110:9110"  # RPC port
-      - "9111:9111"  # gRPC port
+      - "9110:9110"
+      - "9111:9111"
     volumes:
-      - dcrwallet-data:/home/dcrwallet/.dcrwallet
-      - dcrd-certs:/certs:ro  # Read-only access to dcrd's certs
+      - app-data:/app-data
     environment:
       - DCRWALLET_RPC_USER=${DCRWALLET_RPC_USER:-dcrwallet}
       - DCRWALLET_RPC_PASS=${DCRWALLET_RPC_PASS:-dcrwalletpass}
       - DCRD_RPC_USER=${DCRD_RPC_USER:-decred}
       - DCRD_RPC_PASS=${DCRD_RPC_PASS:-decredpass}
       - DCRD_RPC_HOST=dcrd
-      - DCRWALLET_GAP_LIMIT=${DCRWALLET_GAP_LIMIT:-400}  # Address gap limit for discovery
+      - DCRWALLET_GAP_LIMIT=${DCRWALLET_GAP_LIMIT:-400}
     command: >
       --gaplimit=${DCRWALLET_GAP_LIMIT:-400}
     depends_on:
@@ -70,21 +68,20 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - dcrd-certs:/certs:ro
-      - dcrwallet-data:/wallet-data:ro  # Read-only access to wallet logs
+      - app-data:/app-data:ro
     environment:
       - PORT=8080
       - DCRD_RPC_HOST=dcrd
       - DCRD_RPC_PORT=9109
       - DCRD_RPC_USER=${DCRD_RPC_USER:-decred}
       - DCRD_RPC_PASS=${DCRD_RPC_PASS:-decredpass}
-      - DCRD_RPC_CERT=/certs/rpc.cert
+      - DCRD_RPC_CERT=/app-data/certs/rpc.cert
       - DCRWALLET_RPC_HOST=dcrwallet
       - DCRWALLET_RPC_PORT=9110
       - DCRWALLET_GRPC_PORT=9111
       - DCRWALLET_RPC_USER=${DCRWALLET_RPC_USER:-dcrwallet}
       - DCRWALLET_RPC_PASS=${DCRWALLET_RPC_PASS:-dcrwalletpass}
-      - DCRWALLET_RPC_CERT=/certs/rpc.cert
+      - DCRWALLET_RPC_CERT=/app-data/certs/rpc.cert
     depends_on:
       dcrd:
         condition: service_healthy
@@ -99,9 +96,5 @@ networks:
     driver: bridge
 
 volumes:
-  dcrd-data:
-    driver: local
-  dcrd-certs:
-    driver: local
-  dcrwallet-data:
+  app-data:
     driver: local

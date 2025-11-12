@@ -43,9 +43,9 @@ COPY --from=builder /go/bin/dcrctl /usr/local/bin/
 # Create dcrwallet user
 RUN addgroup -S dcrwallet && adduser -S -G dcrwallet dcrwallet
 
-# Create data directory and certs directory
-RUN mkdir -p /home/dcrwallet/.dcrwallet /certs && \
-    chown -R dcrwallet:dcrwallet /home/dcrwallet /certs
+# Create data directory structure
+RUN mkdir -p /app-data/dcrwallet /app-data/certs && \
+    chown -R dcrwallet:dcrwallet /app-data
 
 # Copy entrypoint script
 COPY --chown=dcrwallet:dcrwallet docker-entrypoint.sh /usr/local/bin/

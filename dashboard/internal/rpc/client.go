@@ -159,7 +159,7 @@ func InitWalletGrpcClient(config GrpcConfig) error {
 
 	// Load the client certificate and key (same files used by dcrwallet)
 	// We use the same cert/key that dcrwallet uses, enabling mutual TLS
-	cert, err := tls.LoadX509KeyPair(config.GrpcCert, "/certs/rpc.key")
+	cert, err := tls.LoadX509KeyPair(config.GrpcCert, "/app-data/certs/rpc.key")
 	if err != nil {
 		return fmt.Errorf("failed to load client certificate/key pair: %v", err)
 	}
