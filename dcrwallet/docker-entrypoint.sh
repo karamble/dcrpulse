@@ -6,125 +6,12 @@
 set -e
 
 WALLET_DIR="/home/dcrwallet/.dcrwallet"
-WALLET_DB="${WALLET_DIR}/mainnet/wallet.db"
-PASSPHRASE_FILE="${WALLET_DIR}/.passphrase"
 CERT_DIR="/certs"
 RPC_CERT="${CERT_DIR}/rpc.cert"
 RPC_KEY="${CERT_DIR}/rpc.key"
 
 # Create wallet directory if it doesn't exist
 mkdir -p "${WALLET_DIR}"
-
-# Check if wallet database exists
-if [ ! -f "${WALLET_DB}" ]; then
-    echo "============================================"
-    echo "No wallet database found. Creating new wallet..."
-    echo "============================================"
-    
-    # Generate a secure random passphrase for private keys
-    echo "Generating secure passphrase..."
-    PRIVATE_PASS=$(openssl rand -base64 32)
-    echo "${PRIVATE_PASS}" > "${PASSPHRASE_FILE}"
-    chmod 600 "${PASSPHRASE_FILE}"
-    echo "✓ Passphrase generated and stored securely"
-    
-    # Create wallet using expect to automate interactive prompts
-    echo "Creating wallet database..."
-    
-    # Create expect script for automated wallet creation
-    cat > /tmp/create-wallet.exp <<'EXPECTEOF'
-#!/usr/bin/expect -f
-set timeout 120
-set passphrase [lindex $argv 0]
-
-log_user 1
-spawn dcrwallet --create
-
-expect {
-    -re "Enter the private passphrase.*:" {
-        send "$passphrase\r"
-        exp_continue
-    }
-    -re "Confirm.*:" {
-        send "$passphrase\r"
-        exp_continue
-    }
-    -re "additional layer.*:" {
-        send "no\r"
-        exp_continue
-    }
-    -re "existing.*seed.*:" {
-        send "no\r"
-        exp_continue
-    }
-    -re "Your wallet generation seed is:" {
-        expect -re "(\[a-z\]+ ){5,}"
-        set seed $expect_out(0,string)
-        puts "\n============================================"
-        puts "WALLET SEED GENERATED (stored for backup)"
-        puts "============================================\n"
-        exp_continue
-    }
-    -re "Hex:" {
-        expect -re "\[0-9a-f\]{32,}"
-        exp_continue
-    }
-    -re "(?i)(enter|type).*(OK|ok)" {
-        send "OK\r"
-        exp_continue
-    }
-    -re "(?i)additional account.*extended public key" {
-        send "no\r"
-        exp_continue
-    }
-    -re "Creating the wallet" {
-        puts "\n✓ Wallet creation successful\n"
-    }
-    eof {
-        puts "\n✓ Wallet setup complete\n"
-    }
-    timeout {
-        puts "\nERROR: Timeout during wallet creation\n"
-        exit 1
-    }
-}
-
-exit 0
-EXPECTEOF
-    
-    chmod +x /tmp/create-wallet.exp
-    
-    # Run the expect script
-    if /tmp/create-wallet.exp "${PRIVATE_PASS}"; then
-        echo "✓ Wallet created successfully"
-        echo ""
-        echo "============================================"
-        echo "IMPORTANT NOTES:"
-        echo "1. This is a WATCH-ONLY wallet setup"
-        echo "2. You need to import an xpub key via the web interface"
-        echo "3. The seed above is for backup purposes only"
-        echo "4. Private passphrase is stored in: ${PASSPHRASE_FILE}"
-        echo "============================================"
-        echo ""
-        rm -f /tmp/create-wallet.exp
-    else
-        echo "ERROR: Failed to create wallet"
-        rm -f /tmp/create-wallet.exp
-        exit 1
-    fi
-else
-    echo "✓ Wallet database found, loading existing wallet..."
-    
-    # Read existing passphrase
-    if [ -f "${PASSPHRASE_FILE}" ]; then
-        PRIVATE_PASS=$(cat "${PASSPHRASE_FILE}")
-        echo "✓ Passphrase loaded from storage"
-    else
-        echo "ERROR: Wallet database exists but passphrase file not found!"
-        echo "Please restore the passphrase file or recreate the wallet."
-        exit 1
-    fi
-fi
 
 # Verify RPC certificates exist (shared from dcrd)
 if [ ! -f "${RPC_CERT}" ] || [ ! -f "${RPC_KEY}" ]; then
@@ -154,8 +41,11 @@ echo "  RPC Listen: 0.0.0.0:9110"
 echo "  gRPC Listen: 0.0.0.0:9111"
 echo "  dcrd Connection: ${DCRD_RPC_HOST:-dcrd}:9109"
 echo ""
+echo "Wallet will be created via the web interface"
+echo ""
 
 # Execute dcrwallet with all provided arguments
+# Note: Wallet is created via gRPC LoaderService API from frontend
 exec dcrwallet \
     --username="${DCRWALLET_RPC_USER}" \
     --password="${DCRWALLET_RPC_PASS}" \
@@ -168,6 +58,5 @@ exec dcrwallet \
     --cafile="${RPC_CERT}" \
     --grpclisten=0.0.0.0:9111 \
     --clientcafile="${RPC_CERT}" \
-    --pass="${PRIVATE_PASS}" \
+    --noinitialload \
     "$@"
-

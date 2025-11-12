@@ -58,11 +58,11 @@ services:
     networks:
       - decred-network
     healthcheck:
-      test: ["CMD", "sh", "-c", "dcrctl --wallet --rpcuser=$${DCRWALLET_RPC_USER} --rpcpass=$${DCRWALLET_RPC_PASS} --rpcserver=127.0.0.1:9110 --rpccert=/certs/rpc.cert walletinfo || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 90s
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9110 && nc -z 127.0.0.1 9111 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   dashboard:
     build: ./dashboard

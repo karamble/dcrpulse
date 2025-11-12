@@ -335,5 +335,60 @@ export const getWalletTransactions = async (count: number = 50, from: number = 0
   return response.data;
 };
 
+// Wallet Creation/Loader Types
+export interface WalletExistsResponse {
+  exists: boolean;
+}
+
+export interface GenerateSeedRequest {
+  seedLength?: number; // Optional, defaults to 33
+}
+
+export interface GenerateSeedResponse {
+  seedMnemonic: string; // 33-word mnemonic phrase
+  seedHex: string;      // Hex-encoded seed
+}
+
+export interface CreateWalletRequest {
+  publicPassphrase: string;  // Optional: Encrypts wallet database for viewing
+  privatePassphrase: string; // Required: Encrypts private keys for spending
+  seedHex: string;           // Required: Hex-encoded seed
+}
+
+export interface CreateWalletResponse {
+  success: boolean;
+  message?: string;
+}
+
+export interface OpenWalletRequest {
+  publicPassphrase: string; // Optional: Wallet database passphrase (empty if wallet created without one)
+}
+
+export interface OpenWalletResponse {
+  success: boolean;
+  message?: string;
+}
+
+// Wallet Creation/Loader API Functions
+export const checkWalletExists = async (): Promise<WalletExistsResponse> => {
+  const response = await api.get<WalletExistsResponse>('/wallet/exists');
+  return response.data;
+};
+
+export const generateSeed = async (seedLength: number = 33): Promise<GenerateSeedResponse> => {
+  const response = await api.post<GenerateSeedResponse>('/wallet/generate-seed', { seedLength });
+  return response.data;
+};
+
+export const createWallet = async (request: CreateWalletRequest): Promise<CreateWalletResponse> => {
+  const response = await api.post<CreateWalletResponse>('/wallet/create', request);
+  return response.data;
+};
+
+export const openWallet = async (request: OpenWalletRequest): Promise<OpenWalletResponse> => {
+  const response = await api.post<OpenWalletResponse>('/wallet/open', request);
+  return response.data;
+};
+
 export default api;
 

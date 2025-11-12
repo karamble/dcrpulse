@@ -13,9 +13,11 @@ import { TicketPoolInfo } from '../components/TicketPoolInfo';
 import { MyTicketsInfo } from '../components/MyTicketsInfo';
 import { TransactionHistory } from '../components/TransactionHistory';
 import { AddressBookmarksCard } from '../components/wallet/AddressBookmarksCard';
-import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData } from '../services/api';
+import { WalletSetup } from '../components/WalletSetup';
+import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, openWallet } from '../services/api';
 
 export const WalletDashboard = () => {
+  const [walletExists, setWalletExists] = useState<boolean | null>(null);
   const [data, setData] = useState<WalletDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +25,10 @@ export const WalletDashboard = () => {
   const [syncProgress, setSyncProgress] = useState<SyncProgressData | null>(null);
   const [showSyncProgress, setShowSyncProgress] = useState(false);
   const [isPreparingRescan, setIsPreparingRescan] = useState(false); // Immediate loading state
+  const [showPassphraseModal, setShowPassphraseModal] = useState(false);
+  const [publicPassphrase, setPublicPassphrase] = useState('');
+  const [passphraseError, setPassphraseError] = useState<string | null>(null);
+  const [isOpeningWallet, setIsOpeningWallet] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -60,27 +66,85 @@ export const WalletDashboard = () => {
     }
   };
 
-  // Initial load - check for active rescan first
+  const handleOpenWallet = async () => {
+    setIsOpeningWallet(true);
+    setPassphraseError(null);
+    
+    try {
+      await openWallet({ publicPassphrase });
+      console.log('Wallet opened successfully with provided passphrase');
+      setShowPassphraseModal(false);
+      setPublicPassphrase('');
+      
+      // Reload the page to initialize everything with opened wallet
+      window.location.reload();
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.message || 'Failed to open wallet';
+      setPassphraseError(errorMsg);
+    } finally {
+      setIsOpeningWallet(false);
+    }
+  };
+
+  // Initial load - check if wallet exists first
   useEffect(() => {
     const initialize = async () => {
       try {
-        const progress = await getSyncProgress();
-        if (progress.isRescanning && progress.progress < 100) {
-          // Active rescan detected - show progress bar only
-          console.log('Active rescan detected on load - showing progress bar');
-          setSyncProgress(progress);
-          setShowSyncProgress(true);
+        // First check if wallet exists
+        const existsResponse = await checkWalletExists();
+        setWalletExists(existsResponse.exists);
+        
+        if (!existsResponse.exists) {
+          // No wallet exists, show setup wizard
           setLoading(false);
-          // Still fetch wallet data for the status card, but in background
-          fetchData();
           return;
         }
+
+        // Wallet exists, try to open it if not already loaded
+        try {
+          await openWallet({ publicPassphrase: '' });
+          console.log('Wallet opened successfully with empty passphrase');
+        } catch (err: any) {
+          const errorMsg = err.response?.data?.message || err.message || '';
+          
+          // Check if error is due to wrong passphrase
+          if (errorMsg.includes('passphrase') || errorMsg.includes('invalid') || errorMsg.includes('incorrect')) {
+            console.log('Wallet requires public passphrase - showing modal');
+            setShowPassphraseModal(true);
+            setLoading(false);
+            return;
+          }
+          
+          // Wallet might already be open, which is fine
+          if (!errorMsg.includes('already')) {
+            console.log('Wallet open attempt:', errorMsg);
+          }
+        }
+
+        // Check for active rescan
+        try {
+          const progress = await getSyncProgress();
+          if (progress.isRescanning && progress.progress < 100) {
+            // Active rescan detected - show progress bar only
+            console.log('Active rescan detected on load - showing progress bar');
+            setSyncProgress(progress);
+            setShowSyncProgress(true);
+            setLoading(false);
+            // Still fetch wallet data for the status card, but in background
+            fetchData();
+            return;
+          }
+        } catch (err) {
+          console.log('No active rescan, loading wallet data normally');
+        }
+        
+        // No active rescan - fetch wallet data normally
+        fetchData();
       } catch (err) {
-        console.log('No active rescan, loading wallet data normally');
+        console.error('Error checking wallet existence:', err);
+        setError('Failed to check wallet status');
+        setLoading(false);
       }
-      
-      // No active rescan - fetch wallet data normally
-      fetchData();
     };
     
     initialize();
@@ -165,6 +229,23 @@ export const WalletDashboard = () => {
       setIsPreparingRescan(false); // Clear preparing state on error
     }
   };
+
+  // Show wallet setup if no wallet exists
+  if (walletExists === false) {
+    return <WalletSetup />;
+  }
+
+  // Show loading state while checking wallet existence
+  if (walletExists === null && loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
+          <p className="text-muted-foreground">Checking wallet status...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -316,6 +397,61 @@ export const WalletDashboard = () => {
         onClose={() => setShowImportModal(false)}
         onSuccess={handleImportSuccess}
       />
+
+      {/* Public Passphrase Modal */}
+      {showPassphraseModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+            <h2 className="text-2xl font-bold">Wallet Passphrase Required</h2>
+            <p className="text-sm text-muted-foreground">
+              Your wallet is protected with a public passphrase. Please enter it to open the wallet.
+            </p>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Public Passphrase</label>
+              <input
+                type="password"
+                value={publicPassphrase}
+                onChange={(e) => {
+                  setPublicPassphrase(e.target.value);
+                  if (passphraseError) setPassphraseError(null);
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && !isOpeningWallet && handleOpenWallet()}
+                className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="Enter your public passphrase"
+                autoFocus
+              />
+            </div>
+
+            {passphraseError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <p className="text-sm text-red-500">{passphraseError}</p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowPassphraseModal(false);
+                  setPublicPassphrase('');
+                  setPassphraseError(null);
+                }}
+                disabled={isOpeningWallet}
+                className="flex-1 py-2 border border-border rounded-lg hover:bg-background/50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleOpenWallet}
+                disabled={isOpeningWallet || !publicPassphrase}
+                className="flex-1 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+              >
+                {isOpeningWallet ? 'Opening...' : 'Open Wallet'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -29,8 +29,17 @@ var (
 	// WalletGrpcClient is the gRPC client for dcrwallet (for streaming)
 	WalletGrpcClient pb.WalletServiceClient
 
+	// WalletLoaderClient is the gRPC client for wallet lifecycle management
+	WalletLoaderClient pb.WalletLoaderServiceClient
+
+	// SeedServiceClient is the gRPC client for seed generation
+	SeedServiceClient pb.SeedServiceClient
+
 	// WalletGrpcConn is the gRPC connection (kept for cleanup)
 	WalletGrpcConn *grpc.ClientConn
+
+	// DcrdConfig stores the dcrd connection details for RpcSync
+	DcrdConfig Config
 )
 
 // Config holds the RPC connection configuration
@@ -51,6 +60,9 @@ type GrpcConfig struct {
 
 // InitDcrdClient initializes the dcrd RPC client
 func InitDcrdClient(config Config) error {
+	// Store config for later use (e.g., RpcSync)
+	DcrdConfig = config
+
 	// Read the TLS certificate if provided
 	var certs []byte
 	var err error
@@ -175,8 +187,10 @@ func InitWalletGrpcClient(config GrpcConfig) error {
 
 	WalletGrpcConn = conn
 	WalletGrpcClient = pb.NewWalletServiceClient(conn)
+	WalletLoaderClient = pb.NewWalletLoaderServiceClient(conn)
+	SeedServiceClient = pb.NewSeedServiceClient(conn)
 
-	log.Println("dcrwallet gRPC client initialized with mutual TLS authentication")
+	log.Println("dcrwallet gRPC clients initialized with mutual TLS authentication")
 	return nil
 }
 
