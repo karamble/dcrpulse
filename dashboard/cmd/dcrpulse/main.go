@@ -92,6 +92,10 @@ func main() {
 	api.HandleFunc("/connect", handlers.ConnectRPCHandler).Methods("POST")
 
 	// Wallet routes
+	api.HandleFunc("/wallet/exists", handlers.WalletExistsHandler).Methods("GET")
+	api.HandleFunc("/wallet/generate-seed", handlers.GenerateSeedHandler).Methods("POST")
+	api.HandleFunc("/wallet/create", handlers.CreateWalletHandler).Methods("POST")
+	api.HandleFunc("/wallet/open", handlers.OpenWalletHandler).Methods("POST")
 	api.HandleFunc("/wallet/status", handlers.GetWalletStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/dashboard", handlers.GetWalletDashboardHandler).Methods("GET")
 	api.HandleFunc("/wallet/transactions", handlers.ListTransactionsHandler).Methods("GET")
