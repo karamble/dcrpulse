@@ -55,7 +55,7 @@ status: ## Show status of all services
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
-		--rpccert=/certs/rpc.cert \
+		--rpccert=/app-data/certs/rpc.cert \
 		getinfo 2>/dev/null || echo "dcrd not ready yet..."
 
 clean: ## Stop and remove all containers, networks, and volumes (WARNING: deletes ALL data!)
@@ -65,28 +65,6 @@ clean: ## Stop and remove all containers, networks, and volumes (WARNING: delete
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose down -v; \
 		echo "Cleaned up!"; \
-	fi
-
-clean-dcrd: ## Remove only dcrd data volumes (blockchain and certs)
-	@echo "WARNING: This will delete the blockchain data and certificates!"
-	@echo "Note: You'll need to resync the blockchain from scratch."
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker compose stop dcrd dcrwallet dashboard; \
-		docker volume rm dcrpulse_dcrd-data dcrpulse_dcrd-certs 2>/dev/null || true; \
-		echo "dcrd data cleaned! Run 'docker compose up -d' to restart with fresh blockchain."; \
-	fi
-
-clean-dcrwallet: ## Remove only dcrwallet data (wallet database)
-	@echo "WARNING: This will delete the wallet database!"
-	@echo "Note: If you haven't backed up your seed, your funds will be LOST!"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker compose stop dcrwallet; \
-		docker volume rm dcrpulse_dcrwallet-data 2>/dev/null || true; \
-		echo "Wallet data cleaned! Run 'docker compose up -d dcrwallet' to create a new wallet."; \
 	fi
 
 shell-dcrd: ## Open shell in dcrd container
@@ -100,7 +78,7 @@ dcrctl: ## Run dcrctl command for dcrd (usage: make dcrctl CMD="getblockcount")
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
-		--rpccert=/certs/rpc.cert \
+		--rpccert=/app-data/certs/rpc.cert \
 		$(CMD)
 
 dcrctl-wallet: ## Run dcrctl wallet command (usage: make dcrctl-wallet CMD="getbalance")
@@ -109,7 +87,7 @@ dcrctl-wallet: ## Run dcrctl wallet command (usage: make dcrctl-wallet CMD="getb
 		--rpcuser=$(DCRWALLET_RPC_USER) \
 		--rpcpass=$(DCRWALLET_RPC_PASS) \
 		--rpcserver=127.0.0.1:9110 \
-		--rpccert=/certs/rpc.cert \
+		--rpccert=/app-data/certs/rpc.cert \
 		$(CMD)
 
 sync-status: ## Check blockchain sync status
@@ -118,7 +96,7 @@ sync-status: ## Check blockchain sync status
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
-		--rpccert=/certs/rpc.cert \
+		--rpccert=/app-data/certs/rpc.cert \
 		getblockchaininfo 2>/dev/null || echo "dcrd not ready yet..."
 
 peers: ## Show connected peers
@@ -127,58 +105,58 @@ peers: ## Show connected peers
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
-		--rpccert=/certs/rpc.cert \
+		--rpccert=/app-data/certs/rpc.cert \
 		getpeerinfo 2>/dev/null | grep -E '"addr"|"id"' || echo "dcrd not ready yet..."
 
-backup: ## Backup blockchain data
-	@echo "Creating backup of dcrd data..."
+backup: ## Backup all app data
+	@echo "Creating backup of all app data..."
 	@mkdir -p backups
 	docker run --rm \
-		-v dcrpulse_dcrd-data:/data \
+		-v dcrpulse_app-data:/app-data \
 		-v $(PWD)/backups:/backup \
-		alpine tar czf /backup/dcrd-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
+		alpine tar czf /backup/app-data-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /app-data .
 	@echo "Backup created in backups/"
 
-backup-wallet: ## Backup wallet data
+backup-wallet: ## Backup wallet data only
 	@echo "Creating backup of wallet data..."
 	@mkdir -p backups
 	docker run --rm \
-		-v dcrpulse_dcrwallet-data:/data \
+		-v dcrpulse_app-data:/app-data \
 		-v $(PWD)/backups:/backup \
-		alpine tar czf /backup/dcrwallet-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
+		alpine tar czf /backup/wallet-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /app-data/dcrwallet .
 	@echo "Wallet backup created in backups/"
 
-backup-certs: ## Backup certificates
+backup-certs: ## Backup certificates only
 	@echo "Creating backup of certificates..."
 	@mkdir -p backups
 	docker run --rm \
-		-v dcrpulse_dcrd-certs:/certs \
+		-v dcrpulse_app-data:/app-data \
 		-v $(PWD)/backups:/backup \
-		alpine tar czf /backup/dcrd-certs-$$(date +%Y%m%d-%H%M%S).tar.gz -C /certs .
+		alpine tar czf /backup/certs-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /app-data/certs .
 	@echo "Certificates backup created in backups/"
 
-restore: ## Restore blockchain data from backup (usage: make restore BACKUP=backups/dcrd-backup-xxx.tar.gz)
+restore: ## Restore all app data from backup (usage: make restore BACKUP=backups/app-data-backup-xxx.tar.gz)
 	@if [ -z "$(BACKUP)" ]; then \
-		echo "Usage: make restore BACKUP=backups/dcrd-backup-xxx.tar.gz"; \
+		echo "Usage: make restore BACKUP=backups/app-data-backup-xxx.tar.gz"; \
 		exit 1; \
 	fi
 	@echo "Restoring from $(BACKUP)..."
-	@echo "WARNING: This will overwrite existing blockchain data!"
+	@echo "WARNING: This will overwrite ALL app data!"
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose down; \
 		docker run --rm \
-			-v dcrpulse_dcrd-data:/data \
+			-v dcrpulse_app-data:/app-data \
 			-v $(PWD):/backup \
-			alpine sh -c "rm -rf /data/* && tar xzf /backup/$(BACKUP) -C /data"; \
+			alpine sh -c "rm -rf /app-data/* && tar xzf /backup/$(BACKUP) -C /app-data"; \
 		docker compose up -d; \
 		echo "Restored!"; \
 	fi
 
-restore-wallet: ## Restore wallet data from backup (usage: make restore-wallet BACKUP=backups/dcrwallet-backup-xxx.tar.gz)
+restore-wallet: ## Restore wallet data from backup (usage: make restore-wallet BACKUP=backups/wallet-backup-xxx.tar.gz)
 	@if [ -z "$(BACKUP)" ]; then \
-		echo "Usage: make restore-wallet BACKUP=backups/dcrwallet-backup-xxx.tar.gz"; \
+		echo "Usage: make restore-wallet BACKUP=backups/wallet-backup-xxx.tar.gz"; \
 		exit 1; \
 	fi
 	@echo "Restoring wallet from $(BACKUP)..."
@@ -188,9 +166,9 @@ restore-wallet: ## Restore wallet data from backup (usage: make restore-wallet B
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose stop dcrwallet; \
 		docker run --rm \
-			-v dcrpulse_dcrwallet-data:/data \
+			-v dcrpulse_app-data:/app-data \
 			-v $(PWD):/backup \
-			alpine sh -c "rm -rf /data/* && tar xzf /backup/$(BACKUP) -C /data"; \
+			alpine sh -c "rm -rf /app-data/dcrwallet/* && tar xzf /backup/$(BACKUP) -C /app-data/dcrwallet"; \
 		docker compose up -d dcrwallet; \
 		echo "Wallet restored!"; \
 	fi
@@ -250,7 +228,7 @@ wallet-info: ## Get wallet info
 		--rpcuser=$(DCRWALLET_RPC_USER:-dcrwallet) \
 		--rpcpass=$(DCRWALLET_RPC_PASS:-dcrwalletpass) \
 		--rpcserver=127.0.0.1:9110 \
-		--rpccert=/certs/rpc.cert \
+		--rpccert=/app-data/certs/rpc.cert \
 		walletinfo 2>/dev/null || echo "dcrwallet not ready yet..."
 
 wallet-balance: ## Get wallet balance
@@ -259,7 +237,7 @@ wallet-balance: ## Get wallet balance
 		--rpcuser=$(DCRWALLET_RPC_USER:-dcrwallet) \
 		--rpcpass=$(DCRWALLET_RPC_PASS:-dcrwalletpass) \
 		--rpcserver=127.0.0.1:9110 \
-		--rpccert=/certs/rpc.cert \
+		--rpccert=/app-data/certs/rpc.cert \
 		getbalance 2>/dev/null || echo "dcrwallet not ready yet..."
 
 wallet-seed: ## View wallet seed from logs (first-time setup only)

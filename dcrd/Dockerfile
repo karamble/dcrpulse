@@ -66,9 +66,9 @@ RUN --mount=type=bind,from=builder,source=/go/bin,target=/tmp/gobin \
 # Create dcrd user
 RUN addgroup -S dcrd && adduser -S -G dcrd dcrd
 
-# Create data directory and certs directory
-RUN mkdir -p /home/dcrd/.dcrd /certs && \
-    chown -R dcrd:dcrd /home/dcrd /certs
+# Create data directory structure
+RUN mkdir -p /app-data/dcrd /app-data/certs && \
+    chown -R dcrd:dcrd /app-data
 
 # Copy entrypoint script
 COPY --chown=dcrd:dcrd docker-entrypoint.sh /usr/local/bin/
