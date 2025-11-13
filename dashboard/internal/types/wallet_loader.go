@@ -9,6 +9,12 @@ type WalletExistsResponse struct {
 	Exists bool `json:"exists"`
 }
 
+// WalletLoadedResponse indicates whether a wallet is currently loaded and ready
+type WalletLoadedResponse struct {
+	Loaded bool   `json:"loaded"`
+	Error  string `json:"error,omitempty"`
+}
+
 // GenerateSeedRequest contains parameters for seed generation
 type GenerateSeedRequest struct {
 	SeedLength uint32 `json:"seedLength,omitempty"` // Optional, defaults to 33

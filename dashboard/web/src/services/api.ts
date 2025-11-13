@@ -340,6 +340,11 @@ export interface WalletExistsResponse {
   exists: boolean;
 }
 
+export interface WalletLoadedResponse {
+  loaded: boolean;
+  error?: string;
+}
+
 export interface GenerateSeedRequest {
   seedLength?: number; // Optional, defaults to 33
 }
@@ -372,6 +377,11 @@ export interface OpenWalletResponse {
 // Wallet Creation/Loader API Functions
 export const checkWalletExists = async (): Promise<WalletExistsResponse> => {
   const response = await api.get<WalletExistsResponse>('/wallet/exists');
+  return response.data;
+};
+
+export const checkWalletLoaded = async (): Promise<WalletLoadedResponse> => {
+  const response = await api.get<WalletLoadedResponse>('/wallet/loaded');
   return response.data;
 };
 

@@ -1,4 +1,4 @@
-.PHONY: help start stop restart logs logs-dcrd logs-dashboard build clean status shell-dcrd shell-dashboard backup backup-wallet backup-certs restore restore-wallet
+.PHONY: help start stop restart logs logs-dcrd logs-dashboard build clean clean-dcrd clean-dcrwallet clean-build status shell-dcrd shell-dashboard backup backup-wallet backup-certs restore restore-wallet
 
 # Force bash shell for bash-specific syntax (needed for clean target)
 SHELL := /bin/bash
@@ -66,6 +66,45 @@ clean: ## Stop and remove all containers, networks, and volumes (WARNING: delete
 		docker compose down -v; \
 		echo "Cleaned up!"; \
 	fi
+
+clean-dcrd: ## Remove only dcrd blockchain data (WARNING: will need to resync!)
+	@echo "WARNING: This will delete dcrd blockchain data!"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker compose stop dcrd; \
+		docker run --rm \
+			-v dcrpulse_app-data:/app-data \
+			alpine sh -c "rm -rf /app-data/dcrd/*"; \
+		docker compose up -d dcrd; \
+		echo "dcrd data cleaned! Blockchain will resync from scratch."; \
+	fi
+
+clean-dcrwallet: ## Remove only dcrwallet data (WARNING: deletes wallet!)
+	@echo "WARNING: This will delete your wallet data!"
+	@echo "Make sure you have your seed phrase backed up!"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker compose stop dcrwallet dashboard; \
+		docker run --rm \
+			-v dcrpulse_app-data:/app-data \
+			alpine sh -c "rm -rf /app-data/dcrwallet/*"; \
+		docker compose up -d dcrwallet dashboard; \
+		echo "Wallet data cleaned! You can create a new wallet via the web interface."; \
+	fi
+
+clean-build: ## Clean all build artifacts (node_modules, dist, Go cache, Docker build cache)
+	@echo "Cleaning build artifacts..."
+	@echo "→ Removing frontend build artifacts..."
+	@rm -rf dashboard/web/node_modules dashboard/web/dist dashboard/web/.vite
+	@echo "→ Removing backend build artifacts..."
+	@rm -rf dashboard/cmd/dcrpulse/web/dist
+	@cd dashboard && go clean -cache -modcache -testcache 2>/dev/null || true
+	@echo "→ Pruning Docker build cache..."
+	@docker builder prune -f
+	@echo "Build artifacts cleaned!"
+	@echo "Run 'make build' to rebuild all services"
 
 shell-dcrd: ## Open shell in dcrd container
 	docker exec -it dcrpulse-dcrd /bin/sh
@@ -239,13 +278,3 @@ wallet-balance: ## Get wallet balance
 		--rpcserver=127.0.0.1:9110 \
 		--rpccert=/app-data/certs/rpc.cert \
 		getbalance 2>/dev/null || echo "dcrwallet not ready yet..."
-
-wallet-seed: ## View wallet seed from logs (first-time setup only)
-	@echo "============================================"
-	@echo "WALLET SEED (if found in logs)"
-	@echo "============================================"
-	@docker logs dcrpulse-dcrwallet 2>&1 | sed -n '/Your wallet generation seed is:/,/Hex:/p' || echo "Seed not found in logs (wallet may have been created before logging was enabled)"
-	@echo ""
-	@echo "⚠️  IMPORTANT: Store this seed in a safe place!"
-	@echo "============================================"
-

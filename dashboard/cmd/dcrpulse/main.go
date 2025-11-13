@@ -93,6 +93,7 @@ func main() {
 
 	// Wallet routes
 	api.HandleFunc("/wallet/exists", handlers.WalletExistsHandler).Methods("GET")
+	api.HandleFunc("/wallet/loaded", handlers.WalletLoadedHandler).Methods("GET")
 	api.HandleFunc("/wallet/generate-seed", handlers.GenerateSeedHandler).Methods("POST")
 	api.HandleFunc("/wallet/create", handlers.CreateWalletHandler).Methods("POST")
 	api.HandleFunc("/wallet/open", handlers.OpenWalletHandler).Methods("POST")
