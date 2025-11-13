@@ -1,15 +1,16 @@
 services:
   dcrd:
+    image: ghcr.io/karamble/dcrpulse-dcrd:${DCRD_IMAGE_TAG:-latest}
     build:
       context: ./dcrd
       args:
-        DCRD_VERSION: ${DCRD_VERSION:-master}
+        DCRD_VERSION: ${DCRD_VERSION:-release-v2.0.6}
     container_name: dcrpulse-dcrd
     ports:
       - "9108:9108"
       - "9109:9109"
     volumes:
-      - app-data:/app-data
+      - ${APP_DATA_DIR:-app-data}:/app-data
       - ./dcrd.conf:/app-data/dcrd/dcrd.conf:ro
     environment:
       - DCRD_EXTRA_ARGS=${DCRD_EXTRA_ARGS:---txindex}
@@ -28,18 +29,26 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+        reservations:
+          memory: 2G
 
   dcrwallet:
+    image: ghcr.io/karamble/dcrpulse-dcrwallet:${DCRWALLET_IMAGE_TAG:-latest}
     build:
       context: ./dcrwallet
       args:
-        DCRWALLET_VERSION: ${DCRWALLET_VERSION:-master}
+        DCRWALLET_VERSION: ${DCRWALLET_VERSION:-release-v2.0.6}
     container_name: dcrpulse-dcrwallet
     ports:
       - "9110:9110"
       - "9111:9111"
     volumes:
-      - app-data:/app-data
+      - ${APP_DATA_DIR:-app-data}:/app-data
     environment:
       - DCRWALLET_RPC_USER=${DCRWALLET_RPC_USER:-dcrwallet}
       - DCRWALLET_RPC_PASS=${DCRWALLET_RPC_PASS:-dcrwalletpass}
@@ -61,14 +70,22 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1'
+        reservations:
+          memory: 1G
 
   dashboard:
+    image: ghcr.io/karamble/dcrpulse-dashboard:${DASHBOARD_IMAGE_TAG:-latest}
     build: ./dashboard
     container_name: dcrpulse-dashboard
     ports:
       - "8080:8080"
     volumes:
-      - app-data:/app-data:ro
+      - ${APP_DATA_DIR:-app-data}:/app-data:ro
     environment:
       - PORT=8080
       - DCRD_RPC_HOST=dcrd
@@ -90,6 +107,13 @@ services:
     restart: unless-stopped
     networks:
       - decred-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
 
 networks:
   decred-network:
@@ -97,4 +121,5 @@ networks:
 
 volumes:
   app-data:
+    name: ${APP_DATA_DIR:-dcrpulse_app-data}
     driver: local
