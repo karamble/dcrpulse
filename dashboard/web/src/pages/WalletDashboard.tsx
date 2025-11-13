@@ -14,7 +14,7 @@ import { MyTicketsInfo } from '../components/MyTicketsInfo';
 import { TransactionHistory } from '../components/TransactionHistory';
 import { AddressBookmarksCard } from '../components/wallet/AddressBookmarksCard';
 import { WalletSetup } from '../components/WalletSetup';
-import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, openWallet } from '../services/api';
+import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet } from '../services/api';
 
 export const WalletDashboard = () => {
   const [walletExists, setWalletExists] = useState<boolean | null>(null);
@@ -100,25 +100,36 @@ export const WalletDashboard = () => {
           return;
         }
 
-        // Wallet exists, try to open it if not already loaded
+        // Wallet exists, check if it's already loaded
         try {
-          await openWallet({ publicPassphrase: '' });
-          console.log('Wallet opened successfully with empty passphrase');
+          const loadedResponse = await checkWalletLoaded();
+          
+          if (!loadedResponse.loaded) {
+            // Wallet not loaded, try to open it with empty passphrase
+            console.log('Wallet exists but not loaded, attempting to open...');
+            try {
+              await openWallet({ publicPassphrase: '' });
+              console.log('Wallet opened successfully with empty passphrase');
+            } catch (err: any) {
+              const errorMsg = err.response?.data?.message || err.message || '';
+              
+              // Check if error is due to wrong passphrase
+              if (errorMsg.includes('passphrase') || errorMsg.includes('invalid') || errorMsg.includes('incorrect')) {
+                console.log('Wallet requires public passphrase - showing modal');
+                setShowPassphraseModal(true);
+                setLoading(false);
+                return;
+              }
+              
+              console.log('Failed to open wallet:', errorMsg);
+              setLoading(false);
+              return;
+            }
+          } else {
+            console.log('Wallet already loaded and ready');
+          }
         } catch (err: any) {
-          const errorMsg = err.response?.data?.message || err.message || '';
-          
-          // Check if error is due to wrong passphrase
-          if (errorMsg.includes('passphrase') || errorMsg.includes('invalid') || errorMsg.includes('incorrect')) {
-            console.log('Wallet requires public passphrase - showing modal');
-            setShowPassphraseModal(true);
-            setLoading(false);
-            return;
-          }
-          
-          // Wallet might already be open, which is fine
-          if (!errorMsg.includes('already')) {
-            console.log('Wallet open attempt:', errorMsg);
-          }
+          console.log('Error checking wallet load status:', err);
         }
 
         // Check for active rescan

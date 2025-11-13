@@ -31,6 +31,24 @@ func WalletExistsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// WalletLoadedHandler checks if a wallet is currently loaded and ready
+func WalletLoadedHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	loaded, err := services.CheckWalletLoaded(ctx)
+	resp := types.WalletLoadedResponse{
+		Loaded: loaded,
+	}
+
+	if err != nil {
+		resp.Error = err.Error()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 // GenerateSeedHandler generates a new cryptographic seed
 func GenerateSeedHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)

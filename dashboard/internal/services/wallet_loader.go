@@ -150,13 +150,20 @@ func OpenWallet(ctx context.Context, publicPass string) error {
 		return fmt.Errorf("wallet loader client not initialized")
 	}
 
+	// First check if wallet is already loaded to avoid unnecessary open attempts
+	loaded, err := CheckWalletLoaded(ctx)
+	if err == nil && loaded {
+		log.Println("Wallet is already loaded and ready")
+		return nil
+	}
+
 	log.Println("Opening wallet...")
 
 	req := &pb.OpenWalletRequest{
 		PublicPassphrase: []byte(publicPass),
 	}
 
-	_, err := rpc.WalletLoaderClient.OpenWallet(ctx, req)
+	_, err = rpc.WalletLoaderClient.OpenWallet(ctx, req)
 	if err != nil {
 		// Check if wallet is already opened
 		if strings.Contains(err.Error(), "already opened") {
@@ -239,6 +246,26 @@ func CloseWallet(ctx context.Context) error {
 
 	log.Println("Wallet closed successfully")
 	return nil
+}
+
+// CheckWalletLoaded checks if a wallet is currently loaded and ready
+func CheckWalletLoaded(ctx context.Context) (bool, error) {
+	if rpc.WalletGrpcClient == nil {
+		return false, fmt.Errorf("wallet gRPC client not initialized")
+	}
+
+	// Try to ping the wallet service - this only works if wallet is loaded
+	req := &pb.PingRequest{}
+	_, err := rpc.WalletGrpcClient.Ping(ctx, req)
+	if err != nil {
+		if strings.Contains(err.Error(), "wallet has not loaded") ||
+			strings.Contains(err.Error(), "wallet is not opened") {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check wallet status: %w", err)
+	}
+
+	return true, nil
 }
 
 // OpenWalletWithRetry attempts to open wallet with retries for startup scenarios
