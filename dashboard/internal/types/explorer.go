@@ -136,3 +136,10 @@ type PaginatedBlocksResponse struct {
 	TotalBlocks int64          `json:"totalBlocks"`
 	TotalPages  int            `json:"totalPages"`
 }
+
+// MempoolTransactions for mempool view
+type MempoolTransactions struct {
+	Transactions []TransactionSummary `json:"transactions"`
+	Count        int                  `json:"count"`
+	Size         uint64               `json:"size"`
+}

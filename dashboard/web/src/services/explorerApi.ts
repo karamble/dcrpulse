@@ -133,6 +133,12 @@ export interface PaginatedBlocksResponse {
   totalPages: number;
 }
 
+export interface MempoolTransactions {
+  transactions: TransactionSummary[];
+  count: number;
+  size: number;
+}
+
 // API Functions
 
 export async function searchExplorer(query: string): Promise<SearchResult> {
@@ -195,6 +201,14 @@ export async function getVoteParsingProgress(txhash: string): Promise<VoteParsin
   const response = await fetch(`${API_BASE_URL}/treasury/votes/${txhash}/progress`);
   if (!response.ok) {
     throw new Error('Failed to fetch vote parsing progress');
+  }
+  return response.json();
+}
+
+export async function getMempoolTransactions(): Promise<MempoolTransactions> {
+  const response = await fetch(`${API_BASE_URL}/explorer/mempool`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch mempool transactions');
   }
   return response.json();
 }

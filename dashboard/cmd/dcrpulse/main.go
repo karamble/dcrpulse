@@ -115,6 +115,7 @@ func main() {
 	api.HandleFunc("/explorer/blocks/hash/{hash}", handlers.GetBlockByHashHandler).Methods("GET")
 	api.HandleFunc("/explorer/transactions/{txhash}", handlers.GetTransactionHandler).Methods("GET")
 	api.HandleFunc("/explorer/address/{address}", handlers.GetAddressHandler).Methods("GET")
+	api.HandleFunc("/explorer/mempool", handlers.GetMempoolTransactionsHandler).Methods("GET")
 
 	// Treasury/Governance routes
 	api.HandleFunc("/treasury/info", handlers.GetTreasuryInfoHandler).Methods("GET")

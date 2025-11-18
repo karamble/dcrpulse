@@ -172,3 +172,19 @@ func GetAddressHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(info)
 }
+
+// GetMempoolTransactionsHandler returns all current mempool transactions
+func GetMempoolTransactionsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	mempool, err := services.FetchMempoolTransactions(ctx)
+	if err != nil {
+		log.Printf("Error fetching mempool transactions: %v", err)
+		http.Error(w, "Failed to fetch mempool transactions", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(mempool)
+}

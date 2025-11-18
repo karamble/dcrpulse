@@ -568,7 +568,7 @@ export const TransactionDetail = () => {
 
             {showRawHex && (
               <div className="relative">
-                <pre className="p-4 rounded-lg bg-muted/10 overflow-auto max-h-96 text-xs font-mono">
+                <pre className="p-4 pt-12 rounded-lg bg-muted/10 overflow-y-auto max-h-96 text-xs font-mono whitespace-pre-wrap break-all">
                   {tx.rawHex}
                 </pre>
                 <div className="absolute top-2 right-2">

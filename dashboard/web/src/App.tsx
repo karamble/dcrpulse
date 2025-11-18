@@ -11,6 +11,7 @@ import { ExplorerLanding } from './pages/ExplorerLanding';
 import { BlockDetail } from './pages/BlockDetail';
 import { TransactionDetail } from './pages/TransactionDetail';
 import { AddressView } from './pages/AddressView';
+import { MempoolView } from './pages/MempoolView';
 import { GovernanceDashboard } from './pages/GovernanceDashboard';
 import { getDashboardData } from './services/api';
 
@@ -42,6 +43,7 @@ function App() {
             <Route path="/explorer/block/:heightOrHash" element={<BlockDetail />} />
             <Route path="/explorer/tx/:txhash" element={<TransactionDetail />} />
             <Route path="/explorer/address/:address" element={<AddressView />} />
+            <Route path="/explorer/mempool" element={<MempoolView />} />
             <Route path="/governance" element={<GovernanceDashboard />} />
           </Routes>
         </div>
