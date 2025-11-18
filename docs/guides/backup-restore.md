@@ -40,7 +40,6 @@ This guide covers backing up and restoring your Decred Pulse data, including blo
 ```
 decred-pulse/
 ├── .env                          # RPC credentials (CRITICAL)
-├── dcrd.conf                     # dcrd configuration
 ├── docker-compose.yml            # Service configuration
 ├── backups/                      # Backup directory
 └── Docker Volumes:
@@ -61,7 +60,6 @@ decred-pulse/
 ```bash
 # Backup configuration
 cp .env .env.backup
-cp dcrd.conf dcrd.conf.backup
 ```
 
 ### Standard Backup (Config + Wallet)
@@ -227,13 +225,6 @@ cat backups/.env.backup-*
 - Gap limit settings
 - Extra dcrd/dcrwallet arguments
 
-### dcrd Configuration
-
-```bash
-# Backup dcrd.conf
-cp dcrd.conf backups/dcrd.conf.backup-$(date +%Y%m%d)
-```
-
 ### Docker Compose Configuration
 
 ```bash
@@ -247,7 +238,6 @@ cp docker-compose.yml backups/docker-compose.yml.backup-$(date +%Y%m%d)
 # Backup all configuration files
 mkdir -p backups/config-$(date +%Y%m%d)
 cp .env backups/config-$(date +%Y%m%d)/
-cp dcrd.conf backups/config-$(date +%Y%m%d)/
 cp docker-compose.yml backups/config-$(date +%Y%m%d)/
 cp env.example backups/config-$(date +%Y%m%d)/
 
@@ -279,7 +269,6 @@ mkdir -p "${BACKUP_DIR}"
 # 1. Configuration files
 echo "📄 Backing up configuration..."
 cp .env "${BACKUP_DIR}/.env" 2>/dev/null || echo "No .env file"
-cp dcrd.conf "${BACKUP_DIR}/dcrd.conf" 2>/dev/null || echo "No dcrd.conf"
 cp docker-compose.yml "${BACKUP_DIR}/docker-compose.yml"
 
 # 2. Blockchain data
@@ -379,9 +368,6 @@ make wallet-info
 # Restore .env file
 cp backups/.env.backup-YYYYMMDD .env
 
-# Restore dcrd.conf
-cp backups/dcrd.conf.backup-YYYYMMDD dcrd.conf
-
 # Restart services to apply
 docker compose restart
 ```
@@ -432,7 +418,6 @@ docker compose down
 
 # Restore configuration
 cp .env ../../.env
-cp dcrd.conf ../../dcrd.conf
 cp docker-compose.yml ../../docker-compose.yml
 
 # Restore dcrd data
@@ -749,7 +734,6 @@ cd decred-pulse
 tar xzf backups/full-backup-*.tar.gz
 cd full-backup-*
 cp .env ../../.env
-cp dcrd.conf ../../dcrd.conf
 # ... (follow complete restore procedure above)
 
 # 5. Start services

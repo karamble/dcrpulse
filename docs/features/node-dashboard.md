@@ -550,7 +550,7 @@ Stacks vertically:
 2. **Verify RPC credentials**:
    - Check `.env` file
    - Ensure `DCRD_RPC_USER` and `DCRD_RPC_PASS` are set
-   - Match `dcrd.conf` settings
+   - These are passed to dcrd via docker-compose.yml
 
 3. **Check RPC port**:
    ```bash
@@ -618,15 +618,13 @@ Stacks vertically:
    sudo iptables -A INPUT -p tcp --dport 9108 -j ACCEPT
    ```
 
-2. **Check dcrd.conf**:
-   ```ini
-   listen=0.0.0.0:9108
-   ```
-
-3. **Add seed nodes manually**:
-   ```ini
-   addpeer=mainnet-seed.decred.org
-   addpeer=mainnet-seed.decredbrasil.com
+2. **Add seed nodes manually** via .env:
+   ```bash
+   # Edit .env
+   DCRD_EXTRA_ARGS=--txindex --addpeer=mainnet-seed.decred.org --addpeer=mainnet-seed.decredbrasil.com
+   
+   # Restart
+   docker compose restart dcrd
    ```
 
 4. **Verify internet connection**:
@@ -689,10 +687,9 @@ Stacks vertically:
    docker stats decred-pulse-dcrd
    ```
 
-4. **Increase mempool limit** (if needed):
-   ```ini
-   # dcrd.conf
-   maxorphantx=1000
+4. **Check for dcrd errors**:
+   ```bash
+   docker compose logs dcrd | tail -50
    ```
 
 ---

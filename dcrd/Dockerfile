@@ -63,20 +63,21 @@ RUN --mount=type=bind,from=builder,source=/go/bin,target=/tmp/gobin \
         echo "certgen not available, openssl fallback will be used"; \
     fi
 
-# Create dcrd user
-RUN addgroup -S dcrd && adduser -S -G dcrd dcrd
+# Create user with UID 1000 for Umbrel compatibility
+# Umbrel requires UID 1000, but username can be anything
+RUN addgroup -g 1000 dcrpulse && adduser -u 1000 -G dcrpulse -s /bin/sh -D dcrpulse
 
 # Create data directory structure
-RUN mkdir -p /app-data/dcrd /app-data/certs && \
-    chown -R dcrd:dcrd /app-data
+RUN mkdir -p /app-data/dcrd && \
+    chown -R 1000:1000 /app-data
 
 # Copy entrypoint script
-COPY --chown=dcrd:dcrd docker-entrypoint.sh /usr/local/bin/
+COPY --chown=1000:1000 docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Switch to dcrd user
-USER dcrd
-WORKDIR /home/dcrd
+# Switch to dcrpulse user (UID 1000)
+USER 1000:1000
+WORKDIR /home/dcrpulse
 
 # Expose ports
 # 9108 - Mainnet P2P

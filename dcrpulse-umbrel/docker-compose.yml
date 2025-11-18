@@ -1,0 +1,89 @@
+services:
+  app_proxy:
+    environment:
+      APP_HOST: dashboard
+      APP_PORT: 8080
+
+  dcrd:
+    image: ghcr.io/karamble/dcrpulse-dcrd:latest
+    restart: on-failure
+    stop_grace_period: 5m
+    volumes:
+      - ${APP_DATA_DIR}/dcrd:/app-data/dcrd
+    environment:
+      DCRD_RPC_USER: ${APP_SEED}
+      DCRD_RPC_PASS: ${APP_SEED}
+      DCRD_EXTRA_ARGS: --txindex
+    command: >
+      --rpcuser=${APP_SEED}
+      --rpcpass=${APP_SEED}
+      --rpclisten=0.0.0.0:9109
+      --rpccert=/app-data/dcrd/rpc.cert
+      --rpckey=/app-data/dcrd/rpc.key
+    networks:
+      - dcrpulse_internal
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -k -u ${APP_SEED}:${APP_SEED} -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"1.0\",\"method\":\"getinfo\",\"params\":[],\"id\":1}' https://127.0.0.1:9109 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  dcrwallet:
+    image: ghcr.io/karamble/dcrpulse-dcrwallet:latest
+    restart: on-failure
+    stop_grace_period: 1m
+    volumes:
+      - ${APP_DATA_DIR}/dcrwallet:/app-data/dcrwallet
+      - ${APP_DATA_DIR}/dcrd:/app-data/dcrd:ro
+    environment:
+      DCRWALLET_RPC_USER: ${APP_SEED}
+      DCRWALLET_RPC_PASS: ${APP_SEED}
+      DCRD_RPC_USER: ${APP_SEED}
+      DCRD_RPC_PASS: ${APP_SEED}
+      DCRD_RPC_HOST: dcrd
+      DCRWALLET_GAP_LIMIT: 400
+    command: >
+      --gaplimit=400
+    depends_on:
+      dcrd:
+        condition: service_healthy
+    networks:
+      - dcrpulse_internal
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9110 && nc -z 127.0.0.1 9111 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  dashboard:
+    image: ghcr.io/karamble/dcrpulse-dashboard:latest
+    restart: on-failure
+    volumes:
+      - ${APP_DATA_DIR}/dcrd:/app-data/dcrd:ro
+    environment:
+      PORT: 8080
+      DCRD_RPC_HOST: dcrd
+      DCRD_RPC_PORT: 9109
+      DCRD_RPC_USER: ${APP_SEED}
+      DCRD_RPC_PASS: ${APP_SEED}
+      DCRD_RPC_CERT: /app-data/dcrd/rpc.cert
+      DCRWALLET_RPC_HOST: dcrwallet
+      DCRWALLET_RPC_PORT: 9110
+      DCRWALLET_GRPC_PORT: 9111
+      DCRWALLET_RPC_USER: ${APP_SEED}
+      DCRWALLET_RPC_PASS: ${APP_SEED}
+      DCRWALLET_RPC_CERT: /app-data/dcrd/rpc.cert
+    depends_on:
+      dcrd:
+        condition: service_healthy
+      dcrwallet:
+        condition: service_healthy
+    networks:
+      - default
+      - dcrpulse_internal
+
+networks:
+  dcrpulse_internal:
+    internal: true

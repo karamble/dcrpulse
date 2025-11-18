@@ -6,7 +6,7 @@
 set -e
 
 WALLET_DIR="/app-data/dcrwallet"
-CERT_DIR="/app-data/certs"
+CERT_DIR="/app-data/dcrd"
 RPC_CERT="${CERT_DIR}/rpc.cert"
 RPC_KEY="${CERT_DIR}/rpc.key"
 

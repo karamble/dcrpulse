@@ -5,12 +5,11 @@
 
 set -e
 
-CERT_DIR="/app-data/certs"
+CERT_DIR="/app-data/dcrd"
 RPC_CERT="${CERT_DIR}/rpc.cert"
 RPC_KEY="${CERT_DIR}/rpc.key"
 
 mkdir -p "${CERT_DIR}"
-mkdir -p "/app-data/dcrd"
 
 if [ ! -f "${RPC_CERT}" ] || [ ! -f "${RPC_KEY}" ]; then
     echo "Generating TLS certificates..."

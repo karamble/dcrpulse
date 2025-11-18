@@ -33,8 +33,8 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   return (
     <div className="flex items-center justify-between mb-8 animate-fade-in">
       <div className="flex items-center gap-4">
-        <div className="h-16 w-16 rounded-xl flex items-center justify-center text-2xl font-bold bg-gradient-primary">
-          DCR
+        <div className="h-16 w-16 rounded-xl flex items-center justify-center bg-gradient-primary p-3">
+          <img src="/images/dcrpulse.svg" alt="Decred Pulse" className="w-full h-full" />
         </div>
         <div>
           <h1 className="text-4xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">
@@ -55,8 +55,8 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
               : 'bg-primary/10 border-primary/20 hover:bg-primary/20'
           }`}
         >
-          <div className="h-10 w-10 rounded-lg flex items-center justify-center font-bold text-sm bg-gradient-primary">
-            DCR
+          <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary p-2">
+            <img src="/images/dcrpulse.svg" alt="Decred" className="w-full h-full" />
           </div>
           <span className="text-primary font-semibold">Node</span>
         </Link>
