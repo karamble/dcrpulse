@@ -8,6 +8,9 @@ services:
     image: ghcr.io/karamble/dcrpulse-dcrd:latest
     restart: on-failure
     stop_grace_period: 5m
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     volumes:
       - ${APP_DATA_DIR}/dcrd:/app-data/dcrd
     environment:
@@ -21,6 +24,7 @@ services:
       --rpccert=/app-data/dcrd/rpc.cert
       --rpckey=/app-data/dcrd/rpc.key
     networks:
+      - default
       - dcrpulse_internal
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -k -u ${APP_SEED}:${APP_SEED} -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"1.0\",\"method\":\"getinfo\",\"params\":[],\"id\":1}' https://127.0.0.1:9109 || exit 1"]
@@ -49,6 +53,7 @@ services:
       dcrd:
         condition: service_healthy
     networks:
+      - default
       - dcrpulse_internal
     healthcheck:
       test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9110 && nc -z 127.0.0.1 9111 || exit 1"]

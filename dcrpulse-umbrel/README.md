@@ -23,15 +23,16 @@ All services use pre-built images from GitHub Container Registry (GHCR).
 ## Data Storage
 
 All persistent data is stored in `${APP_DATA_DIR}`:
-- `dcrd/` - Blockchain data
+- `dcrd/` - Blockchain data and RPC certificates
 - `dcrwallet/` - Wallet data
-- `certs/` - RPC certificates (shared)
 
 ## Network Access
 
 - Dashboard is accessible via Umbrel's app proxy (requires authentication)
-- dcrd and dcrwallet are isolated on an internal network
-- Only the dashboard can access dcrd and dcrwallet (not accessible to other Umbrel apps)
+- dcrd and dcrwallet are connected to both:
+  - **default network** - For internet access (blockchain sync, peer discovery)
+  - **dcrpulse_internal** - For secure inter-service communication
+- Custom DNS servers (1.1.1.1, 8.8.8.8) configured for reliable peer discovery
 - No ports are exposed to the host or external network
 
 ## Testing
