@@ -48,9 +48,9 @@ website: https://github.com/karamble/dcrpulse
 repo: https://github.com/karamble/dcrpulse
 support: https://github.com/karamble/dcrpulse/issues
 gallery:
-  - https://raw.githubusercontent.com/karamble/dcrpulse/refs/heads/master/dcrpulse-umbrel/images/screenshot_1.jpg
-  - https://raw.githubusercontent.com/karamble/dcrpulse/refs/heads/master/dcrpulse-umbrel/images/screenshot_2.jpg
-  - https://raw.githubusercontent.com/karamble/dcrpulse/refs/heads/master/dcrpulse-umbrel/images/screenshot_3.jpg
+  - images/screenshot_1.jpg
+  - images/screenshot_2.jpg
+  - images/screenshot_3.jpg
 dependencies: []
 submitter: karamble
 submission: https://github.com/getumbrel/umbrel-apps/pull/TBD
