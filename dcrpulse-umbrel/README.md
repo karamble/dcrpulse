@@ -49,40 +49,83 @@ All persistent data is stored in `${APP_DATA_DIR}`:
    # Install dependencies
    npm install
    
-   # Start umbrelOS development environment
+   # Start umbrelOS development environment (runs in background)
    npm run dev
    ```
 
-   Wait for umbrelOS to start and visit http://umbrel-dev.local to create an account.
+   Wait for umbrelOS to start (about 30-60 seconds).
 
-2. **Copy the app directory to the umbrel-dev app store:**
+2. **Find your umbrel-dev container IP (if http://umbrel-dev.local domain doesn't work):**
 
    ```bash
-   # From your machine, copy dcrpulse-umbrel to umbrel's app-stores directory
-   rsync -av --exclude=".gitkeep" /path/to/dcrpulse/dcrpulse-umbrel ~/path/to/umbrel/app-stores/dcrpulse
-   ```
-
-3. **Install the app:**
-
-   From the umbrelOS homescreen at http://umbrel-dev.local, go to the App Store and find Decred Pulse, then click Install.
+   # Get the container IP address
+   docker inspect umbrel-dev --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+   # Example output: 172.17.0.2
    
-   Or install using umbrel-dev scripts:
-   ```bash
-   # From the umbrel repository directory
-   npm run dev client -- apps.install.mutate -- --appId dcrpulse
+   # Access via IP: http://172.17.0.2
    ```
 
-4. **Access the app:**
+   Create an account at http://umbrel-dev.local or http://<container-ip> and set a password
 
-   The app should now be accessible at http://umbrel-dev.local (via the homescreen icon)
-
-5. **Check logs:**
+3. **Copy the app directory to the umbrel-dev container:**
 
    ```bash
-   docker compose logs -f dcrpulse_dcrd_1
-   docker compose logs -f dcrpulse_dcrwallet_1
-   docker compose logs -f dcrpulse_dashboard_1
+   # Get the app store hash (changes on each fresh start)
+   docker exec umbrel-dev ls /home/umbrel/umbrel/app-stores/
+   # Example output: getumbrel-umbrel-apps-github-53f74447
+   
+   # Copy files directly to the container
+   rsync -av --exclude=".gitkeep" \
+     /path/to/dcrpulse/dcrpulse-umbrel/ \
+     umbrel@<container-ip>:/home/umbrel/umbrel/app-stores/getumbrel-umbrel-apps-github-<hash>/dcrpulse/
    ```
+
+4. **Fix permissions (required in dev environment):**
+
+   ```bash
+   # Pre-create app data directories with correct ownership
+   docker exec umbrel-dev sh -c "mkdir -p /home/umbrel/umbrel/app-data/dcrpulse/dcrd \
+     /home/umbrel/umbrel/app-data/dcrpulse/dcrwallet && \
+     chown -R 1000:1000 /home/umbrel/umbrel/app-data/dcrpulse"
+   ```
+
+5. **Install the app:**
+
+   From the umbrelOS homescreen, go to the App Store and find Decred Pulse, then click Install.
+   
+   Or install via command line:
+   ```bash
+   docker exec umbrel-dev sh -c "cd /umbrel-dev && \
+     npm run start --prefix packages/umbreld client apps.install.mutate '{\"appId\":\"dcrpulse\"}'"
+   ```
+
+6. **Access the app:**
+
+   - Via homescreen: http://umbrel-dev.local or http://<container-ip>
+   - Direct API access: http://<container-ip>:8080/api/dashboard
+
+7. **Monitor sync progress:**
+
+   ```bash
+   # Check dcrd logs
+   docker exec umbrel-dev docker logs dcrpulse_dcrd_1 --tail 50
+   
+   # Check all containers status
+   docker exec umbrel-dev docker ps --filter name=dcrpulse
+   
+   # API endpoint for dashboard data
+   docker exec umbrel-dev docker exec dcrpulse_dashboard_1 \
+     wget -q -O- http://localhost:8080/api/dashboard | python3 -m json.tool
+   ```
+
+8. **Uninstall (for testing):**
+
+   ```bash
+   docker exec umbrel-dev sh -c "cd /umbrel-dev && \
+     npm run start --prefix packages/umbreld client apps.uninstall.mutate '{\"appId\":\"dcrpulse\"}'"
+   ```
+
+> **Note:** The permission fix (step 4) is only needed in the dev environment. Production Umbrel installations have proper ownership configured automatically.
 
 ### Testing on Physical Device
 
@@ -91,30 +134,28 @@ If you have umbrelOS running on a Raspberry Pi, Umbrel Home, or other hardware:
 1. **Copy the app to your umbrelOS device:**
 
    ```bash
-   rsync -av --exclude=".gitkeep" dcrpulse-umbrel/ umbrel@umbrel.local:/home/umbrel/umbrel/app-stores/getumbrel-umbrel-apps-github-53f74447/dcrpulse/
+   # Find the app store directory hash
+   ssh umbrel@umbrel.local "ls /home/umbrel/umbrel/app-stores/"
+   
+   # Copy files to the device
+   rsync -av --exclude=".gitkeep" \
+     dcrpulse-umbrel/ \
+     umbrel@umbrel.local:/home/umbrel/umbrel/app-stores/getumbrel-umbrel-apps-github-<hash>/dcrpulse/
    ```
 
-2. **Install via the App Store UI** or via terminal:
+2. **Install via the App Store UI** or SSH:
 
    ```bash
-   ssh umbrel@umbrel.local
-   umbreld client apps.install.mutate --appId dcrpulse
+   ssh umbrel@umbrel.local "umbreld client apps.install.mutate --appId dcrpulse"
    ```
 
-### Uninstall
+3. **Uninstall (for testing):**
 
-**Development environment:**
-```bash
-# From umbrel repository directory
-npm run dev client -- apps.uninstall.mutate -- --appId dcrpulse
-```
+   ```bash
+   ssh umbrel@umbrel.local "umbreld client apps.uninstall.mutate --appId dcrpulse"
+   ```
 
-**Physical device:**
-```bash
-umbreld client apps.uninstall.mutate --appId dcrpulse
-```
-
-> **Note:** When testing, verify that application state persists across restarts. Restart the app (right-click icon → Restart) and ensure no data is lost. All persistent data should be in volumes.
+> **Note:** When testing, verify that application state persists across restarts. Restart the app (right-click icon → Restart) and ensure no data is lost. All persistent data should be in volumes. On production Umbrel, permissions are handled automatically.
 
 ## Submission to Umbrel App Store
 
