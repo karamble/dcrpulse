@@ -1,4 +1,4 @@
-.PHONY: help start stop restart logs logs-dcrd logs-dashboard build clean clean-dcrd clean-dcrwallet clean-build status shell-dcrd shell-dashboard backup backup-wallet backup-certs restore restore-wallet
+.PHONY: help start stop restart logs logs-dcrd logs-dashboard build push push-dcrd push-dcrwallet push-dashboard login clean clean-dcrd clean-dcrwallet clean-build status shell-dcrd shell-dashboard backup backup-wallet backup-certs restore restore-wallet
 
 # Force bash shell for bash-specific syntax (needed for clean target)
 SHELL := /bin/bash
@@ -45,6 +45,40 @@ logs-dashboard: ## View dashboard logs
 build: ## Build/rebuild all images
 	@echo "Building images..."
 	docker compose build --no-cache
+
+login: ## Login to GitHub Container Registry (ghcr.io)
+	@echo "=== GitHub Container Registry Authentication ==="
+	@echo ""
+	@echo "You need a Personal Access Token (PAT) with 'write:packages' and 'read:packages' scopes"
+	@echo "Create one at: https://github.com/settings/tokens/new"
+	@echo ""
+	@echo "Select these scopes:"
+	@echo "  ✓ write:packages"
+	@echo "  ✓ read:packages"
+	@echo "  ✓ delete:packages (optional)"
+	@echo ""
+	@read -p "GitHub username: " username; \
+	echo ""; \
+	echo "Paste your Personal Access Token (PAT) when prompted:"; \
+	docker login ghcr.io -u $$username
+	@echo ""
+	@echo "✓ Login successful! You can now run 'make push'"
+
+push: ## Push all images to GitHub Container Registry
+	@echo "Pushing images to ghcr.io/karamble..."
+	docker compose push
+
+push-dcrd: ## Push only dcrd image
+	@echo "Pushing dcrd image..."
+	docker compose push dcrd
+
+push-dcrwallet: ## Push only dcrwallet image
+	@echo "Pushing dcrwallet image..."
+	docker compose push dcrwallet
+
+push-dashboard: ## Push only dashboard image
+	@echo "Pushing dashboard image..."
+	docker compose push dashboard
 
 status: ## Show status of all services
 	@echo "=== Service Status ==="
