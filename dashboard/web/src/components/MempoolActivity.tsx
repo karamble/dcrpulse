@@ -2,7 +2,8 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { Activity, Database, Ticket, CheckCircle, XCircle, ArrowRightLeft, Shuffle } from 'lucide-react';
+import { Activity, Database, Ticket, CheckCircle, XCircle, ArrowRightLeft, Shuffle, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { MempoolInfo } from '../services/api';
 
 interface MempoolActivityProps {
@@ -22,14 +23,23 @@ export const MempoolActivity = ({ data }: MempoolActivityProps) => {
 
   return (
     <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
-          <Activity className="h-6 w-6 text-primary" />
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
+            <Activity className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">Mempool Activity</h3>
+            <p className="text-sm text-muted-foreground">Current pending transactions</p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-lg font-semibold">Mempool Activity</h3>
-          <p className="text-sm text-muted-foreground">Current pending transactions</p>
-        </div>
+        <Link
+          to="/explorer/mempool"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-sm transition-colors"
+        >
+          Details
+          <ExternalLink className="h-3 w-3" />
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

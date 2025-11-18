@@ -731,6 +731,28 @@ func categorizeTransaction(vin []interface{}, vout []interface{}) string {
 		}
 	}
 
+	// Check if it's a CoinJoin transaction
+	// Heuristic: 3+ inputs, 3+ outputs, 3+ outputs with matching values
+	if len(vin) >= 3 && len(vout) >= 3 {
+		// Count output values (rounded to avoid floating point issues)
+		outputValues := make(map[int64]int)
+		for _, v := range vout {
+			if voutMap, ok := v.(map[string]interface{}); ok {
+				if value, ok := voutMap["value"].(float64); ok {
+					rounded := int64(value * 1e8) // Convert to atoms
+					outputValues[rounded]++
+				}
+			}
+		}
+
+		// If we have 3+ outputs with the same value, likely a CoinJoin
+		for _, count := range outputValues {
+			if count >= 3 {
+				return "coinjoin"
+			}
+		}
+	}
+
 	return "regular"
 }
 
@@ -796,6 +818,24 @@ func categorizeTransactionTyped(vin []struct {
 		}
 		if strings.Contains(scriptType, "stakerevoke") {
 			return "revocation"
+		}
+	}
+
+	// Check if it's a CoinJoin transaction
+	// Heuristic: 3+ inputs, 3+ outputs, 3+ outputs with matching values
+	if len(vin) >= 3 && len(vout) >= 3 {
+		// Count output values (rounded to avoid floating point issues)
+		outputValues := make(map[int64]int)
+		for _, v := range vout {
+			rounded := int64(v.Value * 1e8) // Convert to atoms
+			outputValues[rounded]++
+		}
+
+		// If we have 3+ outputs with the same value, likely a CoinJoin
+		for _, count := range outputValues {
+			if count >= 3 {
+				return "coinjoin"
+			}
 		}
 	}
 
@@ -870,4 +910,60 @@ func FetchAddressInfo(ctx context.Context, address string) (*types.AddressInfo, 
 	}
 
 	return info, nil
+}
+
+// FetchMempoolTransactions retrieves all current mempool transactions
+func FetchMempoolTransactions(ctx context.Context) (*types.MempoolTransactions, error) {
+	if rpc.DcrdClient == nil {
+		return nil, fmt.Errorf("dcrd client not available")
+	}
+
+	// Get raw mempool transaction hashes
+	result, err := rpc.DcrdClient.RawRequest(ctx, "getrawmempool", []json.RawMessage{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mempool: %w", err)
+	}
+
+	var txHashes []string
+	if err := json.Unmarshal(result, &txHashes); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal mempool hashes: %w", err)
+	}
+
+	// Limit to reasonable number for performance
+	maxTxs := 500
+	if len(txHashes) > maxTxs {
+		txHashes = txHashes[:maxTxs]
+	}
+
+	// Get mempool info for size
+	mempoolInfoResult, err := rpc.DcrdClient.RawRequest(ctx, "getmempoolinfo", []json.RawMessage{})
+	var mempoolSize uint64
+	if err == nil {
+		var mempoolInfo struct {
+			Size  int    `json:"size"`
+			Bytes uint64 `json:"bytes"`
+		}
+		if err := json.Unmarshal(mempoolInfoResult, &mempoolInfo); err == nil {
+			mempoolSize = mempoolInfo.Bytes
+		}
+	}
+
+	// Fetch each transaction
+	transactions := make([]types.TransactionSummary, 0, len(txHashes))
+	for _, txHash := range txHashes {
+		tx, err := FetchTransaction(ctx, txHash)
+		if err != nil {
+			log.Printf("Warning: Failed to fetch mempool transaction %s: %v", txHash, err)
+			continue
+		}
+
+		// Convert to TransactionSummary
+		transactions = append(transactions, tx.TransactionSummary)
+	}
+
+	return &types.MempoolTransactions{
+		Transactions: transactions,
+		Count:        len(transactions),
+		Size:         mempoolSize,
+	}, nil
 }
