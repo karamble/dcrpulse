@@ -130,6 +130,29 @@ func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if dcrd is still syncing before attempting wallet operations
+	if rpc.DcrdClient != nil {
+		checkCtx, checkCancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer checkCancel()
+
+		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
+		if err == nil && chainInfo.InitialBlockDownload {
+			// dcrd is still syncing - return a user-friendly message
+			syncProgress := float64(0)
+			if chainInfo.SyncHeight > 0 {
+				if chainInfo.Headers > 0 {
+					syncProgress = (float64(chainInfo.Headers) / float64(chainInfo.SyncHeight)) * 100
+				} else if chainInfo.Blocks > 0 {
+					syncProgress = (float64(chainInfo.Blocks) / float64(chainInfo.SyncHeight)) * 100
+				}
+			}
+
+			errorMsg := fmt.Sprintf("Blockchain is syncing (%.1f%% complete). Wallet will be available once sync is complete.", syncProgress)
+			http.Error(w, errorMsg, http.StatusServiceUnavailable)
+			return
+		}
+	}
+
 	status, err := services.FetchWalletStatus()
 	if err != nil {
 		log.Printf("Error fetching wallet status: %v", err)
@@ -146,6 +169,29 @@ func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletClient == nil {
 		http.Error(w, "Wallet RPC client not initialized", http.StatusServiceUnavailable)
 		return
+	}
+
+	// Check if dcrd is still syncing before attempting wallet operations
+	if rpc.DcrdClient != nil {
+		checkCtx, checkCancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer checkCancel()
+
+		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
+		if err == nil && chainInfo.InitialBlockDownload {
+			// dcrd is still syncing - return a user-friendly message
+			syncProgress := float64(0)
+			if chainInfo.SyncHeight > 0 {
+				if chainInfo.Headers > 0 {
+					syncProgress = (float64(chainInfo.Headers) / float64(chainInfo.SyncHeight)) * 100
+				} else if chainInfo.Blocks > 0 {
+					syncProgress = (float64(chainInfo.Blocks) / float64(chainInfo.SyncHeight)) * 100
+				}
+			}
+
+			errorMsg := fmt.Sprintf("Blockchain is syncing (%.1f%% complete). Wallet will be available once sync is complete.", syncProgress)
+			http.Error(w, errorMsg, http.StatusServiceUnavailable)
+			return
+		}
 	}
 
 	// Create a context with timeout to prevent hanging on slow RPC calls
