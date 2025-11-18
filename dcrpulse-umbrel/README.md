@@ -75,23 +75,19 @@ All persistent data is stored in `${APP_DATA_DIR}`:
    # Example output: getumbrel-umbrel-apps-github-53f74447
    
    # Copy files directly to the container
-   rsync -av --exclude=".gitkeep" \
-     /path/to/dcrpulse/dcrpulse-umbrel/ \
-     umbrel@<container-ip>:/home/umbrel/umbrel/app-stores/getumbrel-umbrel-apps-github-<hash>/dcrpulse/
+   rsync -av --exclude=".gitkeep" /path/to/dcrpulse/dcrpulse-umbrel/ umbrel@<container-ip>:/home/umbrel/umbrel/app-stores/getumbrel-umbrel-apps-github-<hash>/dcrpulse/
    ```
 
 4. **Fix permissions (required in dev environment):**
 
    ```bash
    # Pre-create app data directories with correct ownership
-   docker exec umbrel-dev sh -c "mkdir -p /home/umbrel/umbrel/app-data/dcrpulse/dcrd \
-     /home/umbrel/umbrel/app-data/dcrpulse/dcrwallet && \
-     chown -R 1000:1000 /home/umbrel/umbrel/app-data/dcrpulse"
+   docker exec umbrel-dev sh -c "mkdir -p /home/umbrel/umbrel/app-data/dcrpulse/dcrd /home/umbrel/umbrel/app-data/dcrpulse/dcrwallet && chown -R 1000:1000 /home/umbrel/umbrel/app-data/dcrpulse"
    ```
 
 5. **Install the app:**
 
-   From the umbrelOS homescreen, go to the App Store and find Decred Pulse, then click Install.
+   From the umbrelOS homescreen, go to the App Store and find dcrpulse, then click Install.
    
    Or install via command line:
    ```bash
