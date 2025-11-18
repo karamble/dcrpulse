@@ -9,7 +9,6 @@ Decred Pulse uses multiple configuration files:
 ```
 decred-pulse/
 ├── .env                    # Main environment configuration
-├── dcrd.conf               # dcrd node configuration
 ├── dcrwallet/
 │   └── dcrwallet.conf      # dcrwallet configuration (in container)
 └── docker-compose.yml      # Docker services configuration
@@ -277,49 +276,19 @@ DCRWALLET_GAP_LIMIT=100
 
 ---
 
-## ⚙️ dcrd Configuration (dcrd.conf)
+## ⚙️ dcrd Configuration
 
-The `dcrd.conf` file configures the Decred node.
-
-**Location**: `./dcrd.conf` (mounted into container at `/home/dcrd/.dcrd/dcrd.conf`)
+dcrd configuration is set via command-line arguments in `docker-compose.yml`. There is no separate `dcrd.conf` file.
 
 ### Key Settings
 
-#### Network
-
-```ini
-# Mainnet (default)
-# testnet=0
-
-# Testnet
-testnet=1
-```
-
-**Note**: Also set `DCRD_TESTNET=1` in `.env`
-
----
-
-#### Logging
-
-```ini
-# Log level
-debuglevel=info
-
-# Options: trace, debug, info, warn, error, critical
-```
-
-**Recommendations**:
-- Development: `debug` or `trace`
-- Production: `info` or `warn`
-- Troubleshooting: `debug`
-
----
-
 #### Transaction Indexing
 
-```ini
-# Enable full transaction index (enables getrawmempool verbose, etc.)
-txindex=1
+Set via `DCRD_EXTRA_ARGS` in `.env`:
+
+```bash
+# Enable full transaction index
+DCRD_EXTRA_ARGS=--txindex
 ```
 
 **Impact**:
@@ -328,134 +297,39 @@ txindex=1
 - ⚠️ Increases disk usage (~15-20%)
 - ⚠️ Slower initial sync
 
-**Recommendation**: Enable for full functionality
+**Recommendation**: Enabled by default for full functionality
 
 ---
 
-#### Connections
+#### Advanced Configuration
 
-```ini
-# Maximum peer connections
-maxpeers=125
+To add additional dcrd flags, append them to `DCRD_EXTRA_ARGS`:
 
-# Minimum peer connections
-# minpeers=8
-
-# Manual peer connections
-# addpeer=192.0.2.1:9108
-# addpeer=198.51.100.42:9108
-
-# Seed nodes (auto-connected if no peers)
-# addseeder=mainnet-seed.decred.org
+```bash
+# Multiple flags (space-separated)
+DCRD_EXTRA_ARGS=--txindex --debuglevel=debug --maxpeers=50
 ```
 
-**Tuning**:
-```ini
-# Low bandwidth
-maxpeers=25
+**Common Flags**:
+- `--txindex` - Enable transaction indexing (enabled by default)
+- `--debuglevel=LEVEL` - Set log level (trace, debug, info, warn, error, critical)
+- `--maxpeers=N` - Maximum peer connections (default: 125)
+- `--testnet` - Use testnet instead of mainnet
 
-# Normal (default)
-maxpeers=125
+**Example Configurations**:
 
-# High availability
-maxpeers=200
+```bash
+# Low bandwidth (fewer peers)
+DCRD_EXTRA_ARGS=--txindex --maxpeers=25
+
+# High performance (more peers)
+DCRD_EXTRA_ARGS=--txindex --maxpeers=200
+
+# Debug mode
+DCRD_EXTRA_ARGS=--txindex --debuglevel=debug
 ```
 
----
-
-#### RPC
-
-```ini
-# RPC listen address (set via command args in docker-compose.yml)
-# rpclisten=:9109
-
-# RPC authentication (set via environment in docker-compose.yml)
-# rpcuser=...
-# rpcpass=...
-```
-
-**Note**: RPC credentials are set via environment variables in Docker Compose for security.
-
----
-
-#### Data Directory
-
-```ini
-# Data directory (automatic in container)
-datadir=/home/dcrd/.dcrd
-
-# Logs directory
-logdir=/home/dcrd/.dcrd/logs
-```
-
-**Note**: Mounted as Docker volume, don't change unless customizing
-
----
-
-#### Memory & Performance
-
-```ini
-# Database cache (MB)
-dbcache=200
-
-# Block index cache
-# blocksonly=0
-
-# Prune old blocks (not recommended)
-# prune=550
-```
-
-**Tuning**:
-```ini
-# Low memory system
-dbcache=100
-
-# Normal (default)
-dbcache=200
-
-# High performance
-dbcache=500
-```
-
----
-
-### Example dcrd.conf
-
-**Minimal**:
-```ini
-debuglevel=info
-maxpeers=125
-```
-
-**Recommended**:
-```ini
-# Logging
-debuglevel=info
-
-# Enable transaction indexing
-txindex=1
-
-# Network
-maxpeers=125
-
-# Performance
-dbcache=200
-```
-
-**High Performance**:
-```ini
-# Logging
-debuglevel=warn
-
-# Indexing
-txindex=1
-
-# Network (more peers)
-maxpeers=200
-
-# Performance (more cache)
-dbcache=500
-```
+**Note**: RPC settings (`rpcuser`, `rpcpass`, `rpclisten`) are configured in `docker-compose.yml` and should not be changed.
 
 ---
 
@@ -659,13 +533,7 @@ DCRWALLET_RPC_USER=dcrwallet
 DCRWALLET_RPC_PASS=walletpass
 DCRWALLET_GAP_LIMIT=100
 # DCRD_TESTNET=1  # Consider testnet
-```
-
-**dcrd.conf**:
-```ini
-debuglevel=debug
-maxpeers=50
-dbcache=100
+DCRD_EXTRA_ARGS=--txindex --debuglevel=debug
 ```
 
 ---
@@ -683,15 +551,7 @@ DCRWALLET_RPC_PASS=$(openssl rand -base64 32)
 DCRD_VERSION=release-v2.0.6
 DCRWALLET_VERSION=release-v2.0.6
 DCRWALLET_GAP_LIMIT=400
-DCRD_EXTRA_ARGS=--txindex
-```
-
-**dcrd.conf**:
-```ini
-debuglevel=info
-txindex=1
-maxpeers=125
-dbcache=200
+DCRD_EXTRA_ARGS=--txindex --debuglevel=info
 ```
 
 ---
@@ -708,13 +568,7 @@ DCRWALLET_RPC_USER=testnet_wallet
 DCRWALLET_RPC_PASS=testwalletpass456
 DCRD_TESTNET=1
 DCRWALLET_GAP_LIMIT=100
-```
-
-**dcrd.conf**:
-```ini
-testnet=1
-debuglevel=debug
-maxpeers=50
+DCRD_EXTRA_ARGS=--testnet --txindex
 ```
 
 ---
@@ -730,13 +584,7 @@ DCRD_RPC_PASS=password123
 DCRWALLET_RPC_USER=dcrwallet
 DCRWALLET_RPC_PASS=walletpass456
 DCRWALLET_GAP_LIMIT=100
-```
-
-**dcrd.conf**:
-```ini
-debuglevel=warn
-maxpeers=25
-dbcache=50
+DCRD_EXTRA_ARGS=--txindex --maxpeers=25
 ```
 
 **docker-compose.yml additions**:
@@ -758,8 +606,8 @@ services:
 # View current .env
 cat .env
 
-# View dcrd config
-docker exec decred-pulse-dcrd cat /home/dcrd/.dcrd/dcrd.conf
+# Check dcrd command-line args
+docker exec decred-pulse-dcrd ps aux | grep dcrd
 
 # Check what dcrd is using
 docker exec decred-pulse-dcrd dcrctl \

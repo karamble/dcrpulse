@@ -307,26 +307,27 @@ npm uninstall <unused-package>
 
 ### dcrd Configuration
 
-```ini
-# dcrd.conf
+Configure via `DCRD_EXTRA_ARGS` in `.env`:
 
-# Database cache (MB) - increase for better performance
-dbcache=500  # Default: 200, Range: 25-2000
+```bash
+# High-performance: more peer connections for faster sync
+DCRD_EXTRA_ARGS=--txindex --maxpeers=200
 
-# Block database type (default: ffldb - fastest)
-dbtype=ffldb
+# Default (recommended for most users):
+DCRD_EXTRA_ARGS=--txindex
 
-# Maximum peers (more = faster sync)
-maxpeers=200  # Default: 125
+# Low bandwidth/resource usage:
+DCRD_EXTRA_ARGS=--txindex --maxpeers=25
+```
 
-# Minimum peers (ensure connectivity)
-minpeers=8
+**Valid command-line flags:**
+- `--txindex` - Enable transaction indexing (required for block explorer)
+- `--debuglevel=LEVEL` - Set log level (trace, debug, info, warn, error, critical)
+- `--maxpeers=N` - Maximum peer connections (default: 125)
 
-# Transaction indexing (enables fast tx lookups)
-txindex=1
-
-# Adjust log level (reduce I/O)
-debuglevel=info  # Or: warn, error
+**Restart dcrd to apply**:
+```bash
+docker compose restart dcrd
 ```
 
 ---

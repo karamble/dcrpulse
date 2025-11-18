@@ -177,7 +177,6 @@ services:
     volumes:
       - dcrd-data:/home/dcrd/.dcrd
       - certs:/certs
-      - ./dcrd.conf:/home/dcrd/.dcrd/dcrd.conf:ro
     ports:
       - "9108:9108"  # P2P
     networks:
@@ -527,7 +526,7 @@ cp .env "$BACKUP_DIR/env-$DATE"
 
 # Backup configs
 tar czf "$BACKUP_DIR/configs-$DATE.tar.gz" \
-    dcrd.conf \
+    .env \
     docker-compose.prod.yml
 
 # Backup volumes (blockchain data - optional, large)

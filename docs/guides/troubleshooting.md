@@ -51,8 +51,8 @@ docker compose up -d dcrd
 # View current credentials
 cat .env | grep DCRD_RPC
 
-# Ensure they match dcrd.conf
-docker exec decred-pulse-dcrd cat /home/dcrd/.dcrd/dcrd.conf | grep rpc
+# Verify dcrd is using these credentials
+docker exec decred-pulse-dcrd ps aux | grep dcrd
 ```
 
 **Common mistake**: Mismatched username/password
@@ -249,13 +249,11 @@ sudo ufw status | grep 9108
 
 #### 2. Add Seed Nodes
 ```bash
-# Edit dcrd.conf
-nano dcrd.conf
+# Edit .env to add peer flags
+nano .env
 
-# Add:
-addpeer=mainnet-seed.decred.org
-addpeer=mainnet-seed.decredbrasil.com
-addpeer=mainnet-seed.decredcommunity.org
+# Add to DCRD_EXTRA_ARGS:
+DCRD_EXTRA_ARGS=--txindex --addpeer=mainnet-seed.decred.org --addpeer=mainnet-seed.decredbrasil.com
 
 # Restart
 docker compose restart dcrd
@@ -263,12 +261,10 @@ docker compose restart dcrd
 
 #### 3. Check Listen Address
 ```bash
-# View dcrd.conf
-docker exec decred-pulse-dcrd cat /home/dcrd/.dcrd/dcrd.conf | grep listen
+# View dcrd process
+docker exec decred-pulse-dcrd ps aux | grep dcrd
 
-# Should show:
-# listen=0.0.0.0:9108
-# Or no "listen" line (defaults to listening)
+# dcrd listens on default port 9108 for P2P connections
 ```
 
 #### 4. Verify Network Mode
@@ -1066,8 +1062,8 @@ docker compose restart backend frontend
 # Check .env
 cat .env | grep RPC
 
-# Check dcrd.conf
-docker exec decred-pulse-dcrd cat /home/dcrd/.dcrd/dcrd.conf | grep rpc
+# Check dcrd command-line args
+docker exec decred-pulse-dcrd ps aux | grep dcrd
 
 # Check dcrwallet.conf
 docker exec decred-pulse-dcrwallet cat /home/dcrwallet/.dcrwallet/dcrwallet.conf | grep rpc
@@ -1111,10 +1107,7 @@ openssl rand -base64 32
 # Update .env
 nano .env
 
-# Update dcrd.conf (if needed)
-docker exec -it decred-pulse-dcrd nano /home/dcrd/.dcrd/dcrd.conf
-
-# Restart
+# Restart services
 docker compose restart dcrd dcrwallet backend
 ```
 
@@ -1232,14 +1225,14 @@ services:
 
 #### 4. Optimize Node Configuration
 ```bash
-# Edit dcrd.conf
-nano dcrd.conf
+# Edit .env to reduce resource usage
+nano .env
 
-# Reduce cache:
-dbcache=100  # MB (default 200)
+# Reduce peers to lower bandwidth/memory usage:
+DCRD_EXTRA_ARGS=--txindex --maxpeers=25
 
-# Reduce mempool:
-maxorphantx=100  # (default 1000)
+# Restart dcrd
+docker compose restart dcrd
 ```
 
 #### 5. Upgrade System Memory
@@ -1297,11 +1290,11 @@ docker inspect decred-pulse-dcrd | grep LogConfig -A 5
 
 #### 5. Increase Log Level
 ```bash
-# Edit dcrd.conf
-nano dcrd.conf
+# Edit .env
+nano .env
 
-# Add:
-debuglevel=info  # Or: debug, trace
+# Add to DCRD_EXTRA_ARGS:
+DCRD_EXTRA_ARGS=--txindex --debuglevel=debug
 
 # Restart
 docker compose restart dcrd

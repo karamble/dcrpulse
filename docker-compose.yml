@@ -11,15 +11,14 @@ services:
       - "9109:9109"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data
-      - ./dcrd.conf:/app-data/dcrd/dcrd.conf:ro
     environment:
       - DCRD_EXTRA_ARGS=${DCRD_EXTRA_ARGS:---txindex}
     command: >
       --rpcuser=${DCRD_RPC_USER:-decred}
       --rpcpass=${DCRD_RPC_PASS:-decredpass}
       --rpclisten=0.0.0.0:9109
-      --rpccert=/app-data/certs/rpc.cert
-      --rpckey=/app-data/certs/rpc.key
+      --rpccert=/app-data/dcrd/rpc.cert
+      --rpckey=/app-data/dcrd/rpc.key
     restart: unless-stopped
     networks:
       - decred-network
@@ -92,13 +91,13 @@ services:
       - DCRD_RPC_PORT=9109
       - DCRD_RPC_USER=${DCRD_RPC_USER:-decred}
       - DCRD_RPC_PASS=${DCRD_RPC_PASS:-decredpass}
-      - DCRD_RPC_CERT=/app-data/certs/rpc.cert
+      - DCRD_RPC_CERT=/app-data/dcrd/rpc.cert
       - DCRWALLET_RPC_HOST=dcrwallet
       - DCRWALLET_RPC_PORT=9110
       - DCRWALLET_GRPC_PORT=9111
       - DCRWALLET_RPC_USER=${DCRWALLET_RPC_USER:-dcrwallet}
       - DCRWALLET_RPC_PASS=${DCRWALLET_RPC_PASS:-dcrwalletpass}
-      - DCRWALLET_RPC_CERT=/app-data/certs/rpc.cert
+      - DCRWALLET_RPC_CERT=/app-data/dcrd/rpc.cert
     depends_on:
       dcrd:
         condition: service_healthy

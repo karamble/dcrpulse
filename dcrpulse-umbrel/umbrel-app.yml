@@ -1,0 +1,57 @@
+manifestVersion: 1
+id: dcrpulse
+name: Decred Pulse
+tagline: Full Decred node with wallet and block explorer
+category: finance
+version: "1.0.0"
+port: 8080
+icon: images/dcrpulse.svg
+description: >-
+  Decred Pulse is a comprehensive dashboard for running a full Decred node.
+  
+  
+  It includes:
+  
+  - Full dcrd blockchain node with transaction indexing
+  
+  - dcrwallet with watch-only wallet support
+  
+  - Block explorer with mempool monitoring
+  
+  - Transaction categorization (regular, tickets, votes, revocations, CoinJoin)
+  
+  - Wallet management with xpub/vpub import support
+  
+  
+  Perfect for staking, exploring the blockchain, or monitoring Decred network activity.
+
+releaseNotes: >-
+  Initial Umbrel release of Decred Pulse.
+  
+  
+  Features:
+  
+  - Full Decred node (dcrd v2.0.6)
+  
+  - Wallet support (dcrwallet v2.0.6)
+  
+  - Modern block explorer
+  
+  - Mempool monitoring
+  
+  - Watch-only wallet with xpub import
+  
+  - CoinJoin transaction detection
+
+developer: karamble
+website: https://github.com/karamble/dcrpulse
+repo: https://github.com/karamble/dcrpulse
+support: https://github.com/karamble/dcrpulse/issues
+gallery:
+  - images/screenshot_1.jpg
+  - images/screenshot_2.jpg
+  - images/screenshot_3.jpg
+dependencies: []
+submitter: karamble
+submission: https://github.com/getumbrel/umbrel-apps/pull/TBD
+
