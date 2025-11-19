@@ -1,11 +1,11 @@
 manifestVersion: 1
 id: dcrpulse
 name: Decred Pulse
-tagline: Full Decred node with wallet and block explorer
+tagline: Full Decred node with watch-only wallet and database-free block explorer
 category: finance
 version: "1.0.0"
 port: 8080
-icon: https://raw.githubusercontent.com/karamble/dcrpulse/refs/heads/master/dcrpulse-umbrel/images/dcrpulse.svg
+icon: ""
 description: >-
   Decred Pulse is a comprehensive dashboard for running a full Decred node.
   
@@ -16,18 +16,12 @@ description: >-
   
   - dcrwallet with watch-only wallet support
   
-  - Block explorer with mempool monitoring
+  - Block explorer with mempool and tspends monitoring
   
-  - Transaction categorization (regular, tickets, votes, revocations, CoinJoin)
-  
-  - Wallet management with xpub/vpub import support
-  
-  
-  Perfect for staking, exploring the blockchain, or monitoring Decred network activity.
+  - Watch-Only Wallet management with xpub import support
 
-releaseNotes: >-
-  Initial Umbrel release of Decred Pulse.
   
+  Perfect for Decred node and wallet monitoring, exploring the blockchain, or monitoring Decred network activity.
   
   Features:
   
@@ -41,17 +35,17 @@ releaseNotes: >-
   
   - Watch-only wallet with xpub import
   
-  - CoinJoin transaction detection
 
-developer: karamble
-website: https://github.com/karamble/dcrpulse
+developer: Decred
+website: https://decred.org
+submitter: karamble
 repo: https://github.com/karamble/dcrpulse
 support: https://github.com/karamble/dcrpulse/issues
-gallery:
-  - https://raw.githubusercontent.com/karamble/dcrpulse/refs/heads/master/dcrpulse-umbrel/images/screenshot_1.jpg
-  - https://raw.githubusercontent.com/karamble/dcrpulse/refs/heads/master/dcrpulse-umbrel/images/screenshot_2.jpg
-  - https://raw.githubusercontent.com/karamble/dcrpulse/refs/heads/master/dcrpulse-umbrel/images/screenshot_3.jpg
+gallery: []
 dependencies: []
-submitter: karamble
+releaseNotes: ""
+path: ""
+defaultUsername: ""
+defaultPassword: ""
 submission: https://github.com/getumbrel/umbrel-apps/pull/TBD
 

@@ -41,17 +41,14 @@ FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates
 
-# Create user with UID 1000 for Umbrel compatibility
-# Umbrel requires UID 1000, but username can be anything
-RUN addgroup -g 1000 dcrpulse && adduser -u 1000 -G dcrpulse -s /bin/sh -D dcrpulse
-
-WORKDIR /home/dcrpulse
+WORKDIR /app
 
 # Copy the binary from go-builder
-COPY --from=go-builder --chown=1000:1000 /app/dcrpulse .
+COPY --from=go-builder /app/dcrpulse .
+RUN chown 1000:1000 /app/dcrpulse
 
-# Switch to dcrpulse user (UID 1000)
-USER 1000:1000
+# Switch to UID 1000 for Umbrel compatibility
+USER 1000
 
 # Expose port
 EXPOSE 8080

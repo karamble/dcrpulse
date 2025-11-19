@@ -17,6 +17,8 @@ services:
       DCRD_RPC_USER: ${APP_SEED}
       DCRD_RPC_PASS: ${APP_SEED}
       DCRD_EXTRA_ARGS: --txindex
+      TOR_PROXY_IP: ${TOR_PROXY_IP}
+      TOR_PROXY_PORT: ${TOR_PROXY_PORT}
     command: >
       --rpcuser=${APP_SEED}
       --rpcpass=${APP_SEED}
@@ -47,6 +49,8 @@ services:
       DCRD_RPC_PASS: ${APP_SEED}
       DCRD_RPC_HOST: dcrd
       DCRWALLET_GAP_LIMIT: 400
+      TOR_PROXY_IP: ${TOR_PROXY_IP}
+      TOR_PROXY_PORT: ${TOR_PROXY_PORT}
     command: >
       --gaplimit=400
     depends_on:

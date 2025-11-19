@@ -40,21 +40,18 @@ RUN apk add --no-cache ca-certificates tzdata curl openssl expect
 COPY --from=builder /go/bin/dcrwallet /usr/local/bin/
 COPY --from=builder /go/bin/dcrctl /usr/local/bin/
 
-# Create user with UID 1000 for Umbrel compatibility
-# Umbrel requires UID 1000, but username can be anything
-RUN addgroup -g 1000 dcrpulse && adduser -u 1000 -G dcrpulse -s /bin/sh -D dcrpulse
-
 # Create data directory structure
 RUN mkdir -p /app-data/dcrwallet && \
     chown -R 1000:1000 /app-data
 
 # Copy entrypoint script
-COPY --chown=1000:1000 docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
+    chown 1000:1000 /usr/local/bin/docker-entrypoint.sh
 
-# Switch to dcrpulse user (UID 1000)
-USER 1000:1000
-WORKDIR /home/dcrpulse
+# Switch to UID 1000 for Umbrel compatibility
+USER 1000
+WORKDIR /app
 
 # Expose ports
 # 9110 - Mainnet RPC
