@@ -34,10 +34,19 @@ echo "Starting dcrwallet..."
 echo "  RPC: 0.0.0.0:9110"
 echo "  gRPC: 0.0.0.0:9111"
 echo "  dcrd: ${DCRD_RPC_HOST:-dcrd}:9109"
+
+# Check for Tor proxy configuration
+TOR_ARGS=""
+if [ -n "$TOR_PROXY_IP" ] && [ -n "$TOR_PROXY_PORT" ]; then
+    TOR_ARGS="--proxy=${TOR_PROXY_IP}:${TOR_PROXY_PORT} --torisolation --nodcrdproxy"
+    echo "✓ Using Tor proxy at ${TOR_PROXY_IP}:${TOR_PROXY_PORT} with stream isolation (dcrd connections excluded)"
+fi
+
 echo ""
 echo "Wallet creation available via web interface"
 echo ""
 
+# shellcheck disable=SC2086
 exec dcrwallet \
     --appdata="${WALLET_DIR}" \
     --username="${DCRWALLET_RPC_USER}" \
@@ -52,4 +61,5 @@ exec dcrwallet \
     --grpclisten=0.0.0.0:9111 \
     --clientcafile="${RPC_CERT}" \
     --noinitialload \
+    $TOR_ARGS \
     "$@"

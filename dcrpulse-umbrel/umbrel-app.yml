@@ -52,6 +52,9 @@ gallery:
   - https://raw.githubusercontent.com/karamble/dcrpulse/refs/heads/master/dcrpulse-umbrel/images/screenshot_2.jpg
   - https://raw.githubusercontent.com/karamble/dcrpulse/refs/heads/master/dcrpulse-umbrel/images/screenshot_3.jpg
 dependencies: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
 submitter: karamble
 submission: https://github.com/getumbrel/umbrel-apps/pull/TBD
 

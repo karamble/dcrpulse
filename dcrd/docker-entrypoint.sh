@@ -38,10 +38,18 @@ else
     echo "✓ Using existing TLS certificates"
 fi
 
+# Check for Tor proxy configuration
+TOR_ARGS=""
+if [ -n "$TOR_PROXY_IP" ] && [ -n "$TOR_PROXY_PORT" ]; then
+    TOR_ARGS="--proxy=${TOR_PROXY_IP}:${TOR_PROXY_PORT} --torisolation"
+    echo "✓ Using Tor proxy at ${TOR_PROXY_IP}:${TOR_PROXY_PORT} with stream isolation"
+fi
+
 if [ -n "$DCRD_EXTRA_ARGS" ]; then
     # shellcheck disable=SC2086
-    exec dcrd --appdata=/app-data/dcrd "$@" $DCRD_EXTRA_ARGS
+    exec dcrd --appdata=/app-data/dcrd "$@" $DCRD_EXTRA_ARGS $TOR_ARGS
 else
-    exec dcrd --appdata=/app-data/dcrd "$@"
+    # shellcheck disable=SC2086
+    exec dcrd --appdata=/app-data/dcrd "$@" $TOR_ARGS
 fi
 
