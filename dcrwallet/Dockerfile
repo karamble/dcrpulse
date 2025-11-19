@@ -40,14 +40,9 @@ RUN apk add --no-cache ca-certificates tzdata curl openssl expect
 COPY --from=builder /go/bin/dcrwallet /usr/local/bin/
 COPY --from=builder /go/bin/dcrctl /usr/local/bin/
 
-# Create data directory structure
-RUN mkdir -p /app-data/dcrwallet && \
-    chown -R 1000:1000 /app-data
-
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
-    chown 1000:1000 /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Switch to UID 1000 for Umbrel compatibility
 USER 1000

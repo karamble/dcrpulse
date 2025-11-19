@@ -63,14 +63,9 @@ RUN --mount=type=bind,from=builder,source=/go/bin,target=/tmp/gobin \
         echo "certgen not available, openssl fallback will be used"; \
     fi
 
-# Create data directory structure
-RUN mkdir -p /app-data/dcrd && \
-    chown -R 1000:1000 /app-data
-
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
-    chown 1000:1000 /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Switch to UID 1000 for Umbrel compatibility
 USER 1000
