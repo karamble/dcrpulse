@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 
 	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
 	"github.com/decred/dcrd/rpcclient/v8"
@@ -159,7 +160,9 @@ func InitWalletGrpcClient(config GrpcConfig) error {
 
 	// Load the client certificate and key (same files used by dcrwallet)
 	// We use the same cert/key that dcrwallet uses, enabling mutual TLS
-	cert, err := tls.LoadX509KeyPair(config.GrpcCert, "/app-data/certs/rpc.key")
+	// Derive key path from cert path (replace .cert with .key)
+	keyPath := strings.Replace(config.GrpcCert, ".cert", ".key", 1)
+	cert, err := tls.LoadX509KeyPair(config.GrpcCert, keyPath)
 	if err != nil {
 		return fmt.Errorf("failed to load client certificate/key pair: %v", err)
 	}
