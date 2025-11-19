@@ -19,7 +19,15 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-start: ## Start all services (dcrd + dcrwallet + dashboard)
+init-volumes: ## Initialize volume directories with correct permissions
+	@echo "Initializing volume directories..."
+	@docker volume create dcrpulse_app-data >/dev/null 2>&1 || true
+	@docker run --rm \
+		-v dcrpulse_app-data:/app-data \
+		alpine sh -c "mkdir -p /app-data/dcrd /app-data/dcrwallet && chown -R 1000:1000 /app-data"
+	@echo "✓ Volumes initialized"
+
+start: init-volumes ## Start all services (dcrd + dcrwallet + dashboard)
 	@echo "Starting dcrpulse stack..."
 	docker compose up -d
 	@echo "Services started! Dashboard will be available at http://localhost:8080"
