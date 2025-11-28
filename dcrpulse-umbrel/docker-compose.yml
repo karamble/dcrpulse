@@ -5,7 +5,7 @@ services:
       APP_PORT: 8080
 
   dcrd:
-    image: ghcr.io/karamble/dcrpulse-dcrd:latest
+    image: ghcr.io/karamble/dcrpulse-dcrd@sha256:63dde66bb5c06107192e12bc7431ef7f8f25be49c8be29b070aba92e691d4e24
     restart: on-failure
     stop_grace_period: 5m
     dns:
@@ -36,7 +36,7 @@ services:
       start_period: 120s
 
   dcrwallet:
-    image: ghcr.io/karamble/dcrpulse-dcrwallet:latest
+    image: ghcr.io/karamble/dcrpulse-dcrwallet@sha256:32a2336a07f72627e1ba82177f72cca20671c808606c08325b0cdda5c585a386
     restart: on-failure
     stop_grace_period: 1m
     volumes:
@@ -66,7 +66,7 @@ services:
       start_period: 10s
 
   dashboard:
-    image: ghcr.io/karamble/dcrpulse-dashboard:latest
+    image: ghcr.io/karamble/dcrpulse-dashboard@sha256:c7b0bd714e2dac2a3a5ae73cd6c27b2f8c595370e3377672cb6ee802a8fc5981
     restart: on-failure
     volumes:
       - ${APP_DATA_DIR}:/app-data:ro
