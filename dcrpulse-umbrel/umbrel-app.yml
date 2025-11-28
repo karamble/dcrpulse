@@ -25,9 +25,9 @@ description: >-
   
   Features:
   
-  - Full Decred node (dcrd v2.0.6)
+  - Full Decred node (dcrd v2.1.0)
   
-  - Wallet support (dcrwallet v2.0.6)
+  - Wallet support (dcrwallet v2.1.0)
   
   - Modern block explorer
   
