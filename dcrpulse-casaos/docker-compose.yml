@@ -1,0 +1,277 @@
+name: dcrpulse
+services:
+  dcrd:
+    image: ghcr.io/karamble/dcrpulse-dcrd:2.1.0@sha256:63dde66bb5c06107192e12bc7431ef7f8f25be49c8be29b070aba92e691d4e24
+    container_name: dcrpulse-dcrd
+    restart: unless-stopped
+    stop_grace_period: 5m
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+      DCRD_RPC_USER: casaos
+      DCRD_RPC_PASS: casaos
+      DCRD_EXTRA_ARGS: --txindex
+    command: >
+      --rpcuser=casaos
+      --rpcpass=casaos
+      --rpclisten=0.0.0.0:9109
+      --rpccert=/app-data/dcrd/rpc.cert
+      --rpckey=/app-data/dcrd/rpc.key
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/dcrd
+        target: /app-data
+    networks:
+      - dcrpulse
+      - dcrpulse_internal
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -k -u casaos:casaos -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"1.0\",\"method\":\"getinfo\",\"params\":[],\"id\":1}' https://127.0.0.1:9109 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    deploy:
+      resources:
+        reservations:
+          memory: 2048M
+    x-casaos:
+      envs:
+        - container: PUID
+          description:
+            en_us: User ID for file permissions
+        - container: PGID
+          description:
+            en_us: Group ID for file permissions
+        - container: TZ
+          description:
+            en_us: Timezone (e.g., America/New_York)
+        - container: DCRD_RPC_USER
+          description:
+            en_us: RPC username for dcrd
+        - container: DCRD_RPC_PASS
+          description:
+            en_us: RPC password for dcrd
+        - container: DCRD_EXTRA_ARGS
+          description:
+            en_us: Additional arguments for dcrd (--txindex required for block explorer)
+      volumes:
+        - container: /app-data
+          description:
+            en_us: dcrd blockchain data and configuration directory
+
+  dcrwallet:
+    image: ghcr.io/karamble/dcrpulse-dcrwallet:2.1.0@sha256:32a2336a07f72627e1ba82177f72cca20671c808606c08325b0cdda5c585a386
+    container_name: dcrpulse-dcrwallet
+    restart: unless-stopped
+    stop_grace_period: 1m
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+      DCRWALLET_RPC_USER: casaos
+      DCRWALLET_RPC_PASS: casaos
+      DCRD_RPC_USER: casaos
+      DCRD_RPC_PASS: casaos
+      DCRD_RPC_HOST: dcrd
+      DCRWALLET_GAP_LIMIT: 400
+    command: >
+      --gaplimit=400
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/dcrwallet
+        target: /app-data
+      - type: bind
+        source: /DATA/AppData/$AppID/dcrd/dcrd
+        target: /app-data/dcrd
+        read_only: true
+    networks:
+      - dcrpulse_internal
+    depends_on:
+      dcrd:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -e /proc/1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        reservations:
+          memory: 1024M
+    x-casaos:
+      envs:
+        - container: PUID
+          description:
+            en_us: User ID for file permissions
+        - container: PGID
+          description:
+            en_us: Group ID for file permissions
+        - container: TZ
+          description:
+            en_us: Timezone
+        - container: DCRWALLET_RPC_USER
+          description:
+            en_us: RPC username for dcrwallet
+        - container: DCRWALLET_RPC_PASS
+          description:
+            en_us: RPC password for dcrwallet
+        - container: DCRD_RPC_HOST
+          description:
+            en_us: dcrd container hostname
+        - container: DCRWALLET_GAP_LIMIT
+          description:
+            en_us: Address gap limit for HD wallet discovery
+      volumes:
+        - container: /app-data
+          description:
+            en_us: dcrwallet data directory
+        - container: /app-data/dcrd
+          description:
+            en_us: Read-only access to dcrd certificates directory
+
+  dashboard:
+    image: ghcr.io/karamble/dcrpulse-dashboard:1.0.0@sha256:c7b0bd714e2dac2a3a5ae73cd6c27b2f8c595370e3377672cb6ee802a8fc5981
+    container_name: dcrpulse-dashboard
+    restart: unless-stopped
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+      PORT: 8080
+      DCRD_RPC_HOST: dcrd
+      DCRD_RPC_PORT: 9109
+      DCRD_RPC_USER: casaos
+      DCRD_RPC_PASS: casaos
+      DCRD_RPC_CERT: /app-data/dcrd/rpc.cert
+      DCRWALLET_RPC_HOST: dcrwallet
+      DCRWALLET_RPC_PORT: 9110
+      DCRWALLET_GRPC_PORT: 9111
+      DCRWALLET_RPC_USER: casaos
+      DCRWALLET_RPC_PASS: casaos
+      DCRWALLET_RPC_CERT: /app-data/dcrd/rpc.cert
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/dcrd
+        target: /app-data
+        read_only: true
+    ports:
+      - target: 8080
+        published: "8080"
+        protocol: tcp
+    networks:
+      - dcrpulse
+      - dcrpulse_internal
+    depends_on:
+      dcrd:
+        condition: service_healthy
+      dcrwallet:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          memory: 256M
+    x-casaos:
+      envs:
+        - container: PUID
+          description:
+            en_us: User ID for file permissions
+        - container: PGID
+          description:
+            en_us: Group ID for file permissions
+        - container: TZ
+          description:
+            en_us: Timezone
+        - container: PORT
+          description:
+            en_us: Dashboard web UI port
+        - container: DCRD_RPC_HOST
+          description:
+            en_us: dcrd container hostname
+        - container: DCRWALLET_RPC_HOST
+          description:
+            en_us: dcrwallet container hostname
+      ports:
+        - container: "8080"
+          description:
+            en_us: Dashboard Web UI Port
+      volumes:
+        - container: /app-data
+          description:
+            en_us: Read-only access to dcrd certificates
+
+networks:
+  dcrpulse:
+    driver: bridge
+  dcrpulse_internal:
+    driver: bridge
+    internal: true
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: dashboard
+  author: karamble
+  category: Finance
+  description:
+    en_us: |
+      dcrpulse is a comprehensive Decred blockchain explorer and wallet dashboard combining a full dcrd node, dcrwallet, and an intuitive web interface. Monitor the Decred network, manage your wallet, and explore transactions all in one secure, self-hosted application.
+      
+      **Key Features:**
+      - Full Decred node (dcrd) with blockchain synchronization
+      - Integrated wallet (dcrwallet) with HD wallet support
+      - Real-time mempool monitoring and transaction tracking
+      - Block explorer with transaction categorization (regular, tickets, votes, revocations, coinbase, treasury spend, coinjoin)
+      - Wallet management with xpub import and address generation
+      - Network-isolated backend services for enhanced security
+      - No external dependencies or third-party APIs
+      
+      **Security Architecture:**
+      - dcrd: Has internet access for blockchain P2P synchronization
+      - dcrwallet: Network-isolated, no internet access (secure)
+      - dashboard: Network-isolated, no internet access (secure)
+      - Services communicate internally via secure RPC connections
+      
+      **Default Credentials:**
+      RPC Username: `casaos`
+      RPC Password: `casaos`
+      
+      **Important Notes:**
+      - Initial blockchain sync may take 4-8 hours
+      - Requires ~15GB disk space for blockchain data
+      - Change default RPC credentials after installation for production use
+  developer: karamble
+  icon: https://cdn.jsdelivr.net/gh/karamble/dcrpulse@main/dcrpulse-casaos/icon.png
+  screenshot_link:
+    - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@main/dcrpulse-casaos/screenshot_1.jpg
+    - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@main/dcrpulse-casaos/screenshot_2.jpg
+    - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@main/dcrpulse-casaos/screenshot_3.jpg
+  tagline:
+    en_us: Decred blockchain explorer and wallet dashboard with full node
+  title:
+    en_us: dcrpulse
+  index: /
+  port_map: "8080"
+  scheme: http
+  tips:
+    before_install:
+      en_us: |
+        **Default RPC Credentials:**
+        Username: `casaos`
+        Password: `casaos`
+        
+        **System Requirements:**
+        - ~15GB disk space for blockchain
+        - 4GB RAM minimum recommended
+        - Stable internet connection for initial sync
+        
+        **Network Security:**
+        - dcrd has internet access for blockchain sync
+        - dcrwallet is network-isolated (no internet)
+        - dashboard is network-isolated (no internet)
+        
+        **First Run:**
+        Initial blockchain synchronization takes 4-8 hours depending on your connection speed. You can monitor progress in the dashboard.
+
