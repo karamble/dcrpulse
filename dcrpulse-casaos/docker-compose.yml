@@ -243,11 +243,11 @@ x-casaos:
       - Requires ~15GB disk space for blockchain data
       - Change default RPC credentials after installation for production use
   developer: karamble
-  icon: https://cdn.jsdelivr.net/gh/karamble/dcrpulse@main/dcrpulse-casaos/icon.png
+  icon: https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/icon.png
   screenshot_link:
-    - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@main/dcrpulse-casaos/screenshot_1.jpg
-    - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@main/dcrpulse-casaos/screenshot_2.jpg
-    - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@main/dcrpulse-casaos/screenshot_3.jpg
+    - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/screenshot_1.jpg
+    - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/screenshot_2.jpg
+    - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/screenshot_3.jpg
   tagline:
     en_us: Decred blockchain explorer and wallet dashboard with full node
   title:
