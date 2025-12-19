@@ -51,7 +51,7 @@ RUN chown 1000:1000 /app/dcrpulse
 USER 1000
 
 # Expose port
-EXPOSE 8080
+EXPOSE 8735
 
 # Run the application
 CMD ["./dcrpulse"]
