@@ -65,9 +65,9 @@ jobs:
             type=ref,event=pr
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=2.1.0,enable=${{ matrix.component.name == 'dcrd' && github.ref_type == 'tag' }}
+            type=raw,value=2.1.2,enable=${{ matrix.component.name == 'dcrd' && github.ref_type == 'tag' }}
             type=raw,value=2.1,enable=${{ matrix.component.name == 'dcrd' && github.ref_type == 'tag' }}
-            type=raw,value=2.1.0,enable=${{ matrix.component.name == 'dcrwallet' && github.ref_type == 'tag' }}
+            type=raw,value=2.1.2,enable=${{ matrix.component.name == 'dcrwallet' && github.ref_type == 'tag' }}
             type=raw,value=2.1,enable=${{ matrix.component.name == 'dcrwallet' && github.ref_type == 'tag' }}
             type=semver,pattern={{version}},enable=${{ matrix.component.name == 'dashboard' }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ matrix.component.name == 'dashboard' }}
@@ -84,5 +84,5 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            ${{ matrix.component.name == 'dcrd' && 'DCRD_VERSION=release-v2.1.0' || '' }}
-            ${{ matrix.component.name == 'dcrwallet' && 'DCRWALLET_VERSION=release-v2.1.0' || '' }}
+            ${{ matrix.component.name == 'dcrd' && 'DCRD_VERSION=release-v2.1.2' || '' }}
+            ${{ matrix.component.name == 'dcrwallet' && 'DCRWALLET_VERSION=release-v2.1.2' || '' }}
