@@ -392,13 +392,6 @@ export const WalletDashboard = () => {
               <AddressBookmarksCard />
             </div>
           )}
-
-          {/* Last Update */}
-          {data && (
-            <div className="text-center text-sm text-muted-foreground animate-fade-in">
-              Last updated: {new Date(data.lastUpdate).toLocaleString()}
-            </div>
-          )}
         </>
       )}
 

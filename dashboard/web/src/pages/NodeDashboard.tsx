@@ -144,13 +144,6 @@ export const NodeDashboard = () => {
         <MempoolActivity data={data?.mempoolInfo} />
         <PeersList peers={data?.peers} />
       </div>
-
-      {/* Last Update */}
-      {data && (
-        <div className="text-center text-sm text-muted-foreground animate-fade-in">
-          Last updated: {new Date(data.lastUpdate).toLocaleString()}
-        </div>
-      )}
     </div>
   );
 };

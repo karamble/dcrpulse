@@ -11,7 +11,7 @@ RUN apk add --no-cache git openssl
 WORKDIR /go/src/github.com/decred
 
 # Clone the dcrd repository
-ARG DCRD_VERSION=release-v2.1.0
+ARG DCRD_VERSION=release-v2.1.2
 RUN git clone --depth 1 --branch ${DCRD_VERSION} https://github.com/decred/dcrd.git
 
 # Build dcrd
