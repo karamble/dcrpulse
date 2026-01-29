@@ -5,7 +5,7 @@ services:
       APP_PORT: 8735
 
   dcrd:
-    image: ghcr.io/karamble/dcrpulse-dcrd:2.1.3
+    image: ghcr.io/karamble/dcrpulse-dcrd:2.1.3@sha256:d5c6c04af574d949db5b32181e3d8f223707e019c7745b45424634f3af6714a3
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 5m
@@ -31,7 +31,7 @@ services:
       start_period: 120s
 
   dcrwallet:
-    image: ghcr.io/karamble/dcrpulse-dcrwallet:2.1.3
+    image: ghcr.io/karamble/dcrpulse-dcrwallet:2.1.3@sha256:94caf7a6c57d49083dd73003f94e4dec804a85ed18c5413f489e4550ffb2f395
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -59,7 +59,7 @@ services:
       start_period: 10s
 
   dashboard:
-    image: ghcr.io/karamble/dcrpulse-dashboard:1.0.3
+    image: ghcr.io/karamble/dcrpulse-dashboard:1.0.3@sha256:d6d991150e570b3c473873f350a122f2cfc3ffd43e50b87e15821777c28d70dc
     user: "1000:1000"
     restart: on-failure
     volumes:
