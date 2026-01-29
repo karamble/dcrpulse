@@ -12,7 +12,7 @@ RUN apk add --no-cache git openssl
 WORKDIR /go/src/github.com/decred
 
 # Clone the dcrwallet repository
-ARG DCRWALLET_VERSION=release-v2.1.2
+ARG DCRWALLET_VERSION=release-v2.1.3
 RUN git clone --depth 1 --branch ${DCRWALLET_VERSION} https://github.com/decred/dcrwallet.git
 
 # Build dcrwallet
