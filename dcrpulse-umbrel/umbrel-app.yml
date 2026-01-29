@@ -3,7 +3,7 @@ id: dcrpulse
 name: Decred Pulse
 tagline: Full Decred node with watch-only wallet and database-free block explorer
 category: crypto
-version: "1.0.2"
+version: "1.0.3"
 port: 8735
 icon: ""
 description: |-
