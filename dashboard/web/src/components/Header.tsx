@@ -11,7 +11,7 @@ interface HeaderProps {
 
 export const Header = ({ nodeVersion }: HeaderProps) => {
   const location = useLocation();
-  const isWalletPage = location.pathname === '/wallet';
+  const isWalletPage = location.pathname.startsWith('/wallet');
   const isExplorerPage = location.pathname.startsWith('/explorer');
   const isGovernancePage = location.pathname.startsWith('/governance');
   const isNodePage = location.pathname === '/';

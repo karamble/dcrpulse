@@ -11,7 +11,7 @@ import { ImportXpubModal } from '../components/ImportXpubModal';
 import { SyncProgressBar } from '../components/SyncProgressBar';
 import { TicketPoolInfo } from '../components/TicketPoolInfo';
 import { MyTicketsInfo } from '../components/MyTicketsInfo';
-import { TransactionHistory } from '../components/TransactionHistory';
+import { RecentTransactions } from '../components/RecentTransactions';
 import { AddressBookmarksCard } from '../components/wallet/AddressBookmarksCard';
 import { WalletSetup } from '../components/WalletSetup';
 import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet } from '../services/api';
@@ -350,12 +350,12 @@ export const WalletDashboard = () => {
             </div>
           )}
 
-          {/* Row 2: Transaction History | My Tickets */}
+          {/* Row 2: Recent Transactions | My Tickets */}
           {data && data.walletStatus.status !== 'no_wallet' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
-              {/* Transaction History */}
+              {/* Recent Transactions */}
               {!loading && !showSyncProgress && !isPreparingRescan && (
-                <TransactionHistory />
+                <RecentTransactions />
               )}
 
               {/* My Tickets Info */}

@@ -6,6 +6,7 @@ package services
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,6 +15,9 @@ import (
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+
+	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	"github.com/decred/dcrd/chaincfg/chainhash"
 )
 
 func FetchWalletStatus() (*types.WalletStatus, error) {
@@ -315,7 +319,6 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 		Total                   float64 `json:"total"`
 		Unconfirmed             float64 `json:"unconfirmed"`
 		VotingAuthority         float64 `json:"votingauthority"`
-		AccountNumber           uint32  `json:"accountnumber"`
 	}
 	type BalanceResponse struct {
 		Balances  []AccountBalance `json:"balances"`
@@ -326,6 +329,18 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 	if err := json.Unmarshal(result, &balanceResp); err != nil {
 		log.Printf("Warning: Failed to unmarshal accounts: %v", err)
 		return []types.AccountInfo{}, nil
+	}
+
+	// getbalance does not return account numbers; resolve them via gRPC Accounts.
+	numbers := map[string]uint32{}
+	if rpc.WalletGrpcClient != nil {
+		if acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{}); err != nil {
+			log.Printf("Warning: gRPC Accounts call failed, account numbers will be 0: %v", err)
+		} else {
+			for _, a := range acctsResp.Accounts {
+				numbers[a.AccountName] = a.AccountNumber
+			}
+		}
 	}
 
 	accounts := make([]types.AccountInfo, 0, len(balanceResp.Balances))
@@ -340,7 +355,7 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 			VotingAuthority:         acct.VotingAuthority,
 			ImmatureCoinbaseRewards: acct.ImmatureCoinbaseRewards,
 			ImmatureStakeGeneration: acct.ImmatureStakeGeneration,
-			AccountNumber:           0, // Account numbers not reliably available from RPC
+			AccountNumber:           numbers[acct.AccountName],
 		})
 	}
 
@@ -906,4 +921,99 @@ func isVSPFeeTransaction(tx types.Transaction, allTransactions []types.Transacti
 	}
 
 	return false, ""
+}
+
+func GetNextAddress(ctx context.Context, account uint32) (string, error) {
+	if rpc.WalletGrpcClient == nil {
+		return "", fmt.Errorf("wallet gRPC client not initialized")
+	}
+	resp, err := rpc.WalletGrpcClient.NextAddress(ctx, &pb.NextAddressRequest{
+		Account:   account,
+		Kind:      pb.NextAddressRequest_BIP0044_EXTERNAL,
+		GapPolicy: pb.NextAddressRequest_GAP_POLICY_WRAP,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Address, nil
+}
+
+func ValidateAddress(ctx context.Context, address string) (*pb.ValidateAddressResponse, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	return rpc.WalletGrpcClient.ValidateAddress(ctx, &pb.ValidateAddressRequest{Address: address})
+}
+
+func ConstructTransaction(ctx context.Context, sourceAccount uint32, recipient string, amountAtoms int64, sendAll bool) (*pb.ConstructTransactionResponse, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	req := &pb.ConstructTransactionRequest{
+		SourceAccount:         sourceAccount,
+		RequiredConfirmations: 1,
+	}
+	if sendAll {
+		req.OutputSelectionAlgorithm = pb.ConstructTransactionRequest_ALL
+		req.ChangeDestination = &pb.ConstructTransactionRequest_OutputDestination{Address: recipient}
+	} else {
+		req.OutputSelectionAlgorithm = pb.ConstructTransactionRequest_UNSPECIFIED
+		req.NonChangeOutputs = []*pb.ConstructTransactionRequest_Output{{
+			Destination: &pb.ConstructTransactionRequest_OutputDestination{Address: recipient},
+			Amount:      amountAtoms,
+		}}
+	}
+	return rpc.WalletGrpcClient.ConstructTransaction(ctx, req)
+}
+
+func DecodeRawTransaction(ctx context.Context, txBytes []byte) (*pb.DecodedTransaction, error) {
+	if rpc.DecodeMessageClient == nil {
+		return nil, fmt.Errorf("decode message gRPC client not initialized")
+	}
+	resp, err := rpc.DecodeMessageClient.DecodeRawTransaction(ctx, &pb.DecodeRawTransactionRequest{SerializedTransaction: txBytes})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Transaction, nil
+}
+
+func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsignedTxBytes []byte, passphrase []byte) (string, error) {
+	if rpc.WalletGrpcClient == nil {
+		return "", fmt.Errorf("wallet gRPC client not initialized")
+	}
+	defer func() {
+		for i := range passphrase {
+			passphrase[i] = 0
+		}
+	}()
+
+	if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
+		Passphrase:    passphrase,
+		AccountNumber: sourceAccount,
+	}); err != nil {
+		return "", err
+	}
+	defer func() {
+		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount})
+	}()
+
+	signResp, err := rpc.WalletGrpcClient.SignTransaction(ctx, &pb.SignTransactionRequest{
+		SerializedTransaction: unsignedTxBytes,
+	})
+	if err != nil {
+		return "", err
+	}
+	pubResp, err := rpc.WalletGrpcClient.PublishTransaction(ctx, &pb.PublishTransactionRequest{
+		SignedTransaction: signResp.Transaction,
+	})
+	if err != nil {
+		return "", err
+	}
+	hash, err := chainhash.NewHash(pubResp.TransactionHash)
+	if err != nil {
+		return hex.EncodeToString(pubResp.TransactionHash), nil
+	}
+	return hash.String(), nil
 }

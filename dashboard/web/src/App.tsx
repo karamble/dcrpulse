@@ -2,12 +2,18 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
+import { WalletLayout } from './components/wallet/WalletLayout';
+import { OnChainTransactions } from './pages/OnChainTransactions';
+import { SendTab } from './components/onchain/SendTab';
+import { ReceiveTab } from './components/onchain/ReceiveTab';
+import { HistoryTab } from './components/onchain/HistoryTab';
+import { ExportTab } from './components/onchain/ExportTab';
 import { ExplorerLanding } from './pages/ExplorerLanding';
 import { BlockDetail } from './pages/BlockDetail';
 import { TransactionDetail } from './pages/TransactionDetail';
@@ -54,7 +60,16 @@ function AppContent() {
         <Header nodeVersion={nodeVersion} />
         <Routes>
           <Route path="/" element={<NodeDashboard />} />
-          <Route path="/wallet" element={<WalletDashboard />} />
+          <Route path="/wallet" element={<WalletLayout />}>
+            <Route index element={<WalletDashboard />} />
+            <Route path="transactions" element={<OnChainTransactions />}>
+              <Route index element={<Navigate to="send" replace />} />
+              <Route path="send" element={<SendTab />} />
+              <Route path="receive" element={<ReceiveTab />} />
+              <Route path="history" element={<HistoryTab />} />
+              <Route path="export" element={<ExportTab />} />
+            </Route>
+          </Route>
           <Route path="/explorer" element={<ExplorerLanding />} />
           <Route path="/explorer/block/:heightOrHash" element={<BlockDetail />} />
           <Route path="/explorer/tx/:txhash" element={<TransactionDetail />} />

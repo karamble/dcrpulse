@@ -108,6 +108,11 @@ func main() {
 	api.HandleFunc("/wallet/dashboard", handlers.GetWalletDashboardHandler).Methods("GET")
 	api.HandleFunc("/wallet/transactions", handlers.ListTransactionsHandler).Methods("GET")
 	api.HandleFunc("/wallet/importxpub", handlers.ImportXpubHandler).Methods("POST")
+	api.HandleFunc("/wallet/accounts", handlers.GetAccountsHandler).Methods("GET")
+	api.HandleFunc("/wallet/next-address", handlers.NextAddressHandler).Methods("GET")
+	api.HandleFunc("/wallet/validate-address", handlers.ValidateAddressHandler).Methods("GET")
+	api.HandleFunc("/wallet/construct-transaction", handlers.ConstructTransactionHandler).Methods("POST")
+	api.HandleFunc("/wallet/sign-publish-transaction", handlers.SignPublishTransactionHandler).Methods("POST")
 	api.HandleFunc("/wallet/rescan", handlers.RescanWalletHandler).Methods("POST")
 	api.HandleFunc("/wallet/sync-progress", handlers.GetSyncProgressHandler).Methods("GET")
 

@@ -268,6 +268,73 @@ export const importXpub = async (xpub: string, accountName: string, rescan: bool
   return response.data;
 };
 
+export interface NextAddressResponse {
+  address: string;
+  accountNumber: number;
+}
+
+export const getAccounts = async (): Promise<AccountInfo[]> => {
+  const response = await api.get<AccountInfo[]>('/wallet/accounts');
+  return response.data;
+};
+
+export const getNextAddress = async (account: number): Promise<NextAddressResponse> => {
+  const response = await api.get<NextAddressResponse>('/wallet/next-address', {
+    params: { account },
+  });
+  return response.data;
+};
+
+export interface ValidateAddressResponse {
+  isValid: boolean;
+  isMine: boolean;
+  accountNumber: number;
+}
+
+export interface ConstructTransactionRequest {
+  sourceAccount: number;
+  address: string;
+  amountAtoms: number;
+  sendAll: boolean;
+}
+
+export interface ConstructTransactionResponse {
+  unsignedTxHex: string;
+  inputsTotalAtoms: number;
+  outputsTotalAtoms: number;
+  feeAtoms: number;
+  estimatedSignedSize: number;
+}
+
+export interface SignPublishTransactionResponse {
+  txHash: string;
+}
+
+export const validateAddress = async (address: string): Promise<ValidateAddressResponse> => {
+  const response = await api.get<ValidateAddressResponse>('/wallet/validate-address', {
+    params: { address },
+  });
+  return response.data;
+};
+
+export const constructTransaction = async (req: ConstructTransactionRequest): Promise<ConstructTransactionResponse> => {
+  const response = await api.post<ConstructTransactionResponse>('/wallet/construct-transaction', req);
+  return response.data;
+};
+
+export const signPublishTransaction = async (
+  sourceAccount: number,
+  unsignedTxHex: string,
+  passphrase: string,
+): Promise<SignPublishTransactionResponse> => {
+  const response = await api.post<SignPublishTransactionResponse>('/wallet/sign-publish-transaction', {
+    sourceAccount,
+    unsignedTxHex,
+    passphrase,
+  });
+  return response.data;
+};
+
 export const triggerRescan = async (): Promise<any> => {
   const response = await api.post('/wallet/rescan', { beginHeight: 0 });
   return response.data;

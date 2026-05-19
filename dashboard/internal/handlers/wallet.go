@@ -6,11 +6,14 @@ package handlers
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -570,4 +573,182 @@ func phaseProgress(snap services.SyncSnapshot) (int64, int64) {
 	default:
 		return 0, chainTip
 	}
+}
+
+func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	accounts, err := services.FetchAllAccounts(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(accounts)
+}
+
+func ValidateAddressHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	address := r.URL.Query().Get("address")
+	if address == "" {
+		http.Error(w, "address required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	resp, err := services.ValidateAddress(ctx, address)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("validate failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.ValidateAddressResponse{
+		IsValid:       resp.IsValid,
+		IsMine:        resp.IsMine,
+		AccountNumber: resp.AccountNumber,
+	})
+}
+
+func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil || rpc.DecodeMessageClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	var req types.ConstructTransactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Address == "" {
+		http.Error(w, "address required", http.StatusBadRequest)
+		return
+	}
+	if !req.SendAll && req.AmountAtoms <= 0 {
+		http.Error(w, "amount must be positive", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	cResp, err := services.ConstructTransaction(ctx, req.SourceAccount, req.Address, req.AmountAtoms, req.SendAll)
+	if err != nil {
+		log.Printf("ConstructTransaction failed: %v", err)
+		http.Error(w, fmt.Sprintf("construct failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	decoded, err := services.DecodeRawTransaction(ctx, cResp.UnsignedTransaction)
+	if err != nil {
+		log.Printf("DecodeRawTransaction failed: %v", err)
+		http.Error(w, fmt.Sprintf("decode failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	var inputs, outputs int64
+	for _, in := range decoded.Inputs {
+		inputs += in.AmountIn
+	}
+	for _, out := range decoded.Outputs {
+		outputs += out.Value
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.ConstructTransactionResponse{
+		UnsignedTxHex:       hex.EncodeToString(cResp.UnsignedTransaction),
+		InputsTotalAtoms:    inputs,
+		OutputsTotalAtoms:   outputs,
+		FeeAtoms:            inputs - outputs,
+		EstimatedSignedSize: cResp.EstimatedSignedSize,
+	})
+}
+
+func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
+	// CSRF protection: require Origin to match Host when Origin is set.
+	// Browsers always send Origin on cross-origin and most same-origin POSTs.
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req types.SignPublishTransactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.UnsignedTxHex == "" || req.Passphrase == "" {
+		http.Error(w, "unsignedTxHex and passphrase required", http.StatusBadRequest)
+		return
+	}
+	txBytes, err := hex.DecodeString(req.UnsignedTxHex)
+	if err != nil {
+		http.Error(w, "invalid unsigned tx hex", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	txHash, err := services.SignAndPublishTransaction(ctx, req.SourceAccount, txBytes, passphrase)
+	if err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "watching only"), strings.Contains(lower, "watchingonly"):
+			http.Error(w, "This account is watch-only — cannot sign", http.StatusBadRequest)
+		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		default:
+			log.Printf("SignAndPublishTransaction failed: %v", err)
+			http.Error(w, "sign/publish failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.SignPublishTransactionResponse{TxHash: txHash})
+}
+
+func NextAddressHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletClient == nil || rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	accountStr := r.URL.Query().Get("account")
+	if accountStr == "" {
+		accountStr = "0"
+	}
+	accountU64, err := strconv.ParseUint(accountStr, 10, 32)
+	if err != nil {
+		http.Error(w, "invalid account", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	addr, err := services.GetNextAddress(ctx, uint32(accountU64))
+	if err != nil {
+		log.Printf("NextAddress RPC failed: %v", err)
+		http.Error(w, fmt.Sprintf("failed to derive address: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.NextAddressResponse{
+		Address:       addr,
+		AccountNumber: uint32(accountU64),
+	})
 }

@@ -36,6 +36,9 @@ var (
 	// SeedServiceClient is the gRPC client for seed generation
 	SeedServiceClient pb.SeedServiceClient
 
+	// DecodeMessageClient is the gRPC client for decoding raw transactions
+	DecodeMessageClient pb.DecodeMessageServiceClient
+
 	// WalletGrpcConn is the gRPC connection (kept for cleanup)
 	WalletGrpcConn *grpc.ClientConn
 
@@ -192,6 +195,7 @@ func InitWalletGrpcClient(config GrpcConfig) error {
 	WalletGrpcClient = pb.NewWalletServiceClient(conn)
 	WalletLoaderClient = pb.NewWalletLoaderServiceClient(conn)
 	SeedServiceClient = pb.NewSeedServiceClient(conn)
+	DecodeMessageClient = pb.NewDecodeMessageServiceClient(conn)
 
 	log.Println("dcrwallet gRPC clients initialized with mutual TLS authentication")
 	return nil

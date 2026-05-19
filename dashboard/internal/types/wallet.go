@@ -90,6 +90,42 @@ type ImportXpubResponse struct {
 	AccountNum uint32 `json:"accountNum,omitempty"`
 }
 
+type NextAddressResponse struct {
+	Address       string `json:"address"`
+	AccountNumber uint32 `json:"accountNumber"`
+}
+
+type ValidateAddressResponse struct {
+	IsValid       bool   `json:"isValid"`
+	IsMine        bool   `json:"isMine"`
+	AccountNumber uint32 `json:"accountNumber"`
+}
+
+type ConstructTransactionRequest struct {
+	SourceAccount uint32 `json:"sourceAccount"`
+	Address       string `json:"address"`
+	AmountAtoms   int64  `json:"amountAtoms"`
+	SendAll       bool   `json:"sendAll"`
+}
+
+type ConstructTransactionResponse struct {
+	UnsignedTxHex       string `json:"unsignedTxHex"`
+	InputsTotalAtoms    int64  `json:"inputsTotalAtoms"`
+	OutputsTotalAtoms   int64  `json:"outputsTotalAtoms"`
+	FeeAtoms            int64  `json:"feeAtoms"`
+	EstimatedSignedSize uint32 `json:"estimatedSignedSize"`
+}
+
+type SignPublishTransactionRequest struct {
+	SourceAccount uint32 `json:"sourceAccount"`
+	UnsignedTxHex string `json:"unsignedTxHex"`
+	Passphrase    string `json:"passphrase"`
+}
+
+type SignPublishTransactionResponse struct {
+	TxHash string `json:"txHash"`
+}
+
 type RescanRequest struct {
 	BeginHeight int32 `json:"beginHeight"`
 }
