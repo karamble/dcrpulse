@@ -54,8 +54,12 @@ const amountColor = (tx: WalletTransaction) => {
 };
 
 const formatAmount = (amount: number) => {
+  const abs = Math.abs(amount);
   const sign = amount < 0 ? '-' : '+';
-  return `${sign}${Math.abs(amount).toFixed(4)} DCR`;
+  // Small amounts (e.g. CoinJoin fees ~0.00002530 DCR) need more decimals
+  // to be visible; larger transfers stay readable at 4.
+  const decimals = abs > 0 && abs < 0.0001 ? 8 : 4;
+  return `${sign}${abs.toFixed(decimals)} DCR`;
 };
 
 const formatWhen = (tx: WalletTransaction) => {
