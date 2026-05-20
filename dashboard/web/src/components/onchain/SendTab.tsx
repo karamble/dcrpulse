@@ -9,6 +9,7 @@ import {
   getNextAddress,
   validateAddress,
 } from '../../services/api';
+import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
 
 const MAX_DCR = 21_000_000;
@@ -118,6 +119,14 @@ export const SendTab = () => {
       setAddrCheck({ state: 'idle' });
       return;
     }
+    const cached = nextAddressCache.get(destAccount);
+    if (cached) {
+      setRecipient(cached);
+      setAddrCheck({ state: 'valid', isMine: true });
+      setDerivingAddress(false);
+      setDeriveError(null);
+      return;
+    }
     let cancelled = false;
     setDerivingAddress(true);
     setDeriveError(null);
@@ -126,6 +135,7 @@ export const SendTab = () => {
       try {
         const r = await getNextAddress(destAccount);
         if (cancelled) return;
+        nextAddressCache.set(destAccount, 0, r.address);
         setRecipient(r.address);
         setAddrCheck({ state: 'valid', isMine: true });
       } catch (err: any) {
@@ -218,6 +228,9 @@ export const SendTab = () => {
   };
 
   const handleSuccess = (txHash: string) => {
+    if (mode === 'internal' && destAccount !== null) {
+      nextAddressCache.invalidate(destAccount);
+    }
     setSuccessTxHash(txHash);
     setModalOpen(false);
     setRecipient('');
