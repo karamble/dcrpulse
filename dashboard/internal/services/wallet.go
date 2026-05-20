@@ -362,6 +362,52 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 	return accounts, nil
 }
 
+// CreateAccount creates a new BIP44 account via gRPC NextAccount. Requires the
+// private passphrase because dcrwallet must unlock to derive the next account
+// key. Returns the newly-assigned account number.
+func CreateAccount(ctx context.Context, accountName string, passphrase []byte) (uint32, error) {
+	if rpc.WalletGrpcClient == nil {
+		return 0, fmt.Errorf("wallet gRPC unavailable")
+	}
+	resp, err := rpc.WalletGrpcClient.NextAccount(ctx, &pb.NextAccountRequest{
+		Passphrase:  passphrase,
+		AccountName: accountName,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return resp.AccountNumber, nil
+}
+
+// RenameAccount renames an existing account. dcrwallet's RenameAccount gRPC
+// does not require the passphrase — the account name is metadata, not key
+// material.
+func RenameAccount(ctx context.Context, accountNumber uint32, newName string) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC unavailable")
+	}
+	_, err := rpc.WalletGrpcClient.RenameAccount(ctx, &pb.RenameAccountRequest{
+		AccountNumber: accountNumber,
+		NewName:       newName,
+	})
+	return err
+}
+
+// GetAccountExtendedPubKey returns the BIP32 extended public key for the given
+// account. Used for watch-only export. No passphrase needed — it's a public key.
+func GetAccountExtendedPubKey(ctx context.Context, accountNumber uint32) (string, error) {
+	if rpc.WalletGrpcClient == nil {
+		return "", fmt.Errorf("wallet gRPC unavailable")
+	}
+	resp, err := rpc.WalletGrpcClient.GetAccountExtendedPubKey(ctx, &pb.GetAccountExtendedPubKeyRequest{
+		AccountNumber: accountNumber,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.AccExtendedPubKey, nil
+}
+
 // Old FetchTransactions functions removed - replaced by ListTransactions
 
 func FetchAddresses() ([]types.Address, error) {

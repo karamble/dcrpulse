@@ -278,6 +278,28 @@ export const getAccounts = async (): Promise<AccountInfo[]> => {
   return response.data;
 };
 
+export const createAccount = async (
+  accountName: string,
+  passphrase: string,
+): Promise<{ accountNumber: number }> => {
+  const response = await api.post<{ accountNumber: number }>('/wallet/create-account', {
+    accountName,
+    passphrase,
+  });
+  return response.data;
+};
+
+export const renameAccount = async (accountNumber: number, newName: string): Promise<void> => {
+  await api.post('/wallet/rename-account', { accountNumber, newName });
+};
+
+export const getAccountExtendedPubKey = async (accountNumber: number): Promise<string> => {
+  const response = await api.get<{ xpub: string }>('/wallet/account-extended-pubkey', {
+    params: { accountNumber },
+  });
+  return response.data.xpub;
+};
+
 export const getNextAddress = async (account: number): Promise<NextAddressResponse> => {
   const response = await api.get<NextAddressResponse>('/wallet/next-address', {
     params: { account },

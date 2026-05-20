@@ -14,6 +14,7 @@ import { SendTab } from './components/onchain/SendTab';
 import { ReceiveTab } from './components/onchain/ReceiveTab';
 import { HistoryTab } from './components/onchain/HistoryTab';
 import { ExportTab } from './components/onchain/ExportTab';
+import { AccountsPage } from './pages/AccountsPage';
 import { ExplorerLanding } from './pages/ExplorerLanding';
 import { BlockDetail } from './pages/BlockDetail';
 import { TransactionDetail } from './pages/TransactionDetail';
@@ -62,6 +63,7 @@ function AppContent() {
           <Route path="/" element={<NodeDashboard />} />
           <Route path="/wallet" element={<WalletLayout />}>
             <Route index element={<WalletDashboard />} />
+            <Route path="accounts" element={<AccountsPage />} />
             <Route path="transactions" element={<OnChainTransactions />}>
               <Route index element={<Navigate to="send" replace />} />
               <Route path="send" element={<SendTab />} />

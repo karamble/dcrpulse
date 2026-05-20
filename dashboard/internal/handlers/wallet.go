@@ -591,6 +591,170 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(accounts)
 }
 
+// importedAccountNumber is dcrwallet's reserved bucket for unencrypted
+// private-key imports. It cannot be renamed and is never returned by
+// NextAccount.
+const importedAccountNumber uint32 = 2147483647
+
+func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		AccountName string `json:"accountName"`
+		Passphrase  string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.AccountName)
+	if name == "" {
+		http.Error(w, "accountName required", http.StatusBadRequest)
+		return
+	}
+	if len(name) > 50 {
+		http.Error(w, "accountName must be 50 characters or fewer", http.StatusBadRequest)
+		return
+	}
+	if strings.EqualFold(name, "imported") {
+		http.Error(w, "'imported' is a reserved account name", http.StatusBadRequest)
+		return
+	}
+	if req.Passphrase == "" {
+		http.Error(w, "passphrase required", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	num, err := services.CreateAccount(ctx, name, passphrase)
+	if err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		case strings.Contains(lower, "already"):
+			http.Error(w, "An account with that name already exists", http.StatusConflict)
+		default:
+			log.Printf("CreateAccount failed: %v", err)
+			http.Error(w, "create account failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]uint32{"accountNumber": num})
+}
+
+func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		AccountNumber uint32 `json:"accountNumber"`
+		NewName       string `json:"newName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.NewName)
+	if name == "" {
+		http.Error(w, "newName required", http.StatusBadRequest)
+		return
+	}
+	if len(name) > 50 {
+		http.Error(w, "newName must be 50 characters or fewer", http.StatusBadRequest)
+		return
+	}
+	if strings.EqualFold(name, "imported") {
+		http.Error(w, "'imported' is a reserved account name", http.StatusBadRequest)
+		return
+	}
+	if req.AccountNumber == importedAccountNumber {
+		http.Error(w, "the imported account cannot be renamed", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if err := services.RenameAccount(ctx, req.AccountNumber, name); err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "already"):
+			http.Error(w, "An account with that name already exists", http.StatusConflict)
+		case strings.Contains(lower, "not found"):
+			http.Error(w, "account not found", http.StatusNotFound)
+		default:
+			log.Printf("RenameAccount failed: %v", err)
+			http.Error(w, "rename failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte("{}"))
+}
+
+func GetAccountExtendedPubKeyHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	accountStr := r.URL.Query().Get("accountNumber")
+	if accountStr == "" {
+		http.Error(w, "accountNumber required", http.StatusBadRequest)
+		return
+	}
+	accountU64, err := strconv.ParseUint(accountStr, 10, 32)
+	if err != nil {
+		http.Error(w, "invalid accountNumber", http.StatusBadRequest)
+		return
+	}
+	accountNum := uint32(accountU64)
+	if accountNum == importedAccountNumber {
+		http.Error(w, "the imported account has no extended pubkey", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	xpub, err := services.GetAccountExtendedPubKey(ctx, accountNum)
+	if err != nil {
+		log.Printf("GetAccountExtendedPubKey failed: %v", err)
+		http.Error(w, "failed to fetch extended pubkey", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"xpub": xpub})
+}
+
 func ValidateAddressHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletGrpcClient == nil {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)

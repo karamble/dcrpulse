@@ -2,8 +2,9 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+import { Link } from 'react-router-dom';
 import { AccountInfo } from '../services/api';
-import { Wallet, Coins, Lock, Clock, AlertCircle, Vote } from 'lucide-react';
+import { Wallet, Coins, Lock, Clock, AlertCircle, Vote, ArrowRight } from 'lucide-react';
 
 interface AccountsListProps {
   accounts: AccountInfo[];
@@ -95,6 +96,16 @@ export const AccountsList = ({ accounts }: AccountsListProps) => {
           ))}
         </div>
       )}
+
+      <div className="mt-4 pt-3 border-t border-border/30 text-right">
+        <Link
+          to="/wallet/accounts"
+          className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+        >
+          Manage accounts
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
     </div>
   );
 };
