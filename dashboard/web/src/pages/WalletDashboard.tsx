@@ -35,19 +35,8 @@ export const WalletDashboard = () => {
       const walletData = await getWalletDashboard();
       setData(walletData);
       setError(null);
-      
-      // Check if wallet is syncing and show unified progress bar
-      if (walletData.walletStatus.status === 'syncing' && !showSyncProgress) {
-        console.log('Wallet syncing detected - activating progress bar stream');
-        setSyncProgress({
-          progress: walletData.walletStatus.syncProgress || 0,
-          scanHeight: walletData.walletStatus.syncHeight || 0,
-          chainHeight: 1016874, // Will be updated by WebSocket
-          message: walletData.walletStatus.syncMessage || 'Connecting to sync stream...',
-          isRescanning: true,
-        });
-        setShowSyncProgress(true);
-      }
+      // Sync status comes ONLY from the WebSocket (event-driven snapshot).
+      // Polling here just refreshes balances/account data.
     } catch (err: any) {
       console.error('Error fetching wallet data:', err);
       
@@ -161,13 +150,13 @@ export const WalletDashboard = () => {
     initialize();
   }, []);
 
-  // Auto-refresh wallet data every 10 seconds (but NOT during rescan)
+  // Auto-refresh balances every 10 seconds. Unconditional — sync state
+  // belongs to the WebSocket, not polling, so polling doesn't need to pause
+  // during rescan.
   useEffect(() => {
-    if (!showSyncProgress) {
-      const interval = setInterval(fetchData, 10000);
-      return () => clearInterval(interval);
-    }
-  }, [showSyncProgress]);
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   // WebSocket streaming for wallet sync status (always active, purely reactive)
   useEffect(() => {
@@ -198,11 +187,10 @@ export const WalletDashboard = () => {
       (error) => {
         console.error('❌ WebSocket error:', error);
       },
-      // onClose callback
+      // onClose callback - just log; do NOT mutate sync state. A stream
+      // close means the server hung up, not that sync finished.
       () => {
-        console.log('🔌 WebSocket stream closed - wallet fully synced');
-        setShowSyncProgress(false);
-        fetchData(); // Refresh wallet data
+        console.log('🔌 WebSocket stream closed');
       }
     );
 
@@ -260,6 +248,16 @@ export const WalletDashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Disconnected-from-dcrd indicator (event-driven from RpcSync). */}
+      {data?.walletStatus && data.walletStatus.daemonConnected === false && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2 animate-fade-in">
+          <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-sm text-red-400">
+            Disconnected from dcrd — wallet won't see new blocks. Auto-reconnecting…
+          </span>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="flex justify-end gap-3">
         <button

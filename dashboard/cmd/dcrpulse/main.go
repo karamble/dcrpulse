@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -12,11 +13,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 
 	"dcrpulse/internal/handlers"
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
 )
 
 //go:embed web/dist
@@ -72,6 +75,10 @@ func main() {
 		if err := rpc.InitWalletGrpcClient(grpcConfig); err != nil {
 			log.Printf("Warning: Could not connect to dcrwallet gRPC on startup: %v", err)
 			log.Println("Streaming features will be unavailable")
+		} else {
+			// Supervise RpcSync from dcrd. Resumes automatically when the
+			// wallet is loaded, reconnects with backoff if the stream dies.
+			go superviseRpcSync(context.Background())
 		}
 	} else {
 		log.Println("No gRPC certificate provided. Streaming features disabled.")
@@ -176,4 +183,63 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// superviseRpcSync keeps an RpcSync stream open whenever the wallet is
+// loaded; reconnects with backoff on failure.
+func superviseRpcSync(ctx context.Context) {
+	firstStart := true
+	backoff := 5 * time.Second
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		// Wait for wallet to be loaded (user must open via UI on a fresh
+		// dashboard restart, OR auto-loaded if dcrwallet kept state).
+		if !waitForWalletLoaded(ctx) {
+			return
+		}
+
+		if firstStart {
+			log.Println("RPC sync resumed on startup")
+			firstStart = false
+		} else {
+			log.Println("Reconnecting RPC sync to dcrd")
+		}
+
+		err := services.EnsureRpcSync(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			services.MarkSyncDisconnected(err.Error())
+			log.Printf("RPC sync error (will retry in %v): %v", backoff, err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 60*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+func waitForWalletLoaded(ctx context.Context) bool {
+	for {
+		loadCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		loaded, _ := services.CheckWalletLoaded(loadCtx)
+		cancel()
+		if loaded {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(2 * time.Second):
+		}
+	}
 }

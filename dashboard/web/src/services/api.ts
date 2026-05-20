@@ -152,6 +152,7 @@ export interface WalletStatus {
   bestBlockHash: string;
   version: string;
   unlocked: boolean;
+  daemonConnected: boolean;
   rescanInProgress: boolean;
   syncMessage: string;
 }
@@ -278,6 +279,17 @@ export interface SyncProgressData {
   chainHeight: number;
   progress: number;
   message: string;
+  phase?: string;
+  daemonConnected?: boolean;
+  peerCount?: number;
+  cfiltersStart?: number;
+  cfiltersEnd?: number;
+  headersCount?: number;
+  // Unix seconds. firstHeaderTime is the timestamp of the FIRST header
+  // received in this sync cycle; lastHeaderTime is the most recent. Their
+  // difference is a usable wall-clock elapsed for the headers-fetch phase.
+  firstHeaderTime?: number;
+  lastHeaderTime?: number;
 }
 
 export const getSyncProgress = async (): Promise<SyncProgressData> => {
