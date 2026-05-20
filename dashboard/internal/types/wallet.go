@@ -16,12 +16,13 @@ type WalletDashboardData struct {
 }
 
 type WalletStatus struct {
-	Status           string  `json:"status"` // "locked", "unlocked", "syncing", "synced", "no_wallet"
+	Status           string  `json:"status"` // "locked", "unlocked", "syncing", "synced", "no_wallet", "disconnected"
 	SyncProgress     float64 `json:"syncProgress"`
 	SyncHeight       int64   `json:"syncHeight"`
 	BestBlockHash    string  `json:"bestBlockHash"`
 	Version          string  `json:"version"`
 	Unlocked         bool    `json:"unlocked"`
+	DaemonConnected  bool    `json:"daemonConnected"`
 	RescanInProgress bool    `json:"rescanInProgress"`
 	SyncMessage      string  `json:"syncMessage"`
 }

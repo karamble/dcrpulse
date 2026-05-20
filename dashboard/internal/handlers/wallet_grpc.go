@@ -5,28 +5,23 @@
 package handlers
 
 import (
-	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
 
-	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 
 	"github.com/gorilla/websocket"
 )
 
-// StreamRescanGrpcHandler streams rescan progress via WebSocket
-// by subscribing to the gRPC rescan progress broadcast
+// StreamRescanGrpcHandler streams the SyncSnapshot to WebSocket clients.
+// On connect: pushes the current snapshot immediately. Then forwards every
+// snapshot update as the RpcSync supervisor + user-initiated rescans feed
+// the snapshot. Replaces the previous heuristic polling + log-parsing path.
 func StreamRescanGrpcHandler(w http.ResponseWriter, r *http.Request) {
-	// Upgrade to WebSocket
 	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true // Allow all origins for development
-		},
+		CheckOrigin: func(r *http.Request) bool { return true },
 	}
-
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Failed to upgrade to WebSocket: %v", err)
@@ -34,195 +29,43 @@ func StreamRescanGrpcHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	log.Println("🔌 WebSocket: Client connected for rescan progress")
+	log.Println("🔌 WebSocket: Client connected for sync state stream")
 
-	// Subscribe to rescan progress updates
-	progressCh := subscribeToRescanUpdates()
-	defer unsubscribeFromRescanUpdates(progressCh)
-
-	// Get chain height for progress calculation
-	getChainHeight := func() int64 {
-		if rpc.DcrdClient != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			height, err := rpc.DcrdClient.GetBlockCount(ctx)
-			if err == nil {
-				return height
-			}
-		}
-		return 0
+	if err := conn.WriteJSON(snapshotPayload(services.GetSyncSnapshot())); err != nil {
+		return
 	}
 
-	chainHeight := getChainHeight()
+	ch, unsubscribe := services.SubscribeSyncEvents()
+	defer unsubscribe()
 
-	// Keep-alive ticker
-	keepAliveTicker := time.NewTicker(5 * time.Second)
-	defer keepAliveTicker.Stop()
-
-	// Wallet sync status ticker - ONLY check when no active gRPC rescan
-	syncStatusTicker := time.NewTicker(3 * time.Second)
-	defer syncStatusTicker.Stop()
-
-	// Re-subscribe ticker - check if we need a fresh channel for new rescans
-	resubscribeTicker := time.NewTicker(1 * time.Second)
-	defer resubscribeTicker.Stop()
-
-	// Track if we have an active gRPC rescan
-	hasActiveGrpcRescan := false
-
-	// Helper to check wallet sync status (for initial sync, not user-triggered rescans)
-	checkWalletSync := func() map[string]interface{} {
-		if rpc.WalletClient == nil {
-			return map[string]interface{}{
-				"isRescanning": false,
-				"message":      "Wallet not connected",
-				"progress":     0.0,
-				"scanHeight":   0,
-				"chainHeight":  0,
+	notify := make(chan struct{})
+	go func() {
+		defer close(notify)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
 			}
 		}
+	}()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		// Get wallet height
-		_, walletHeight, err := rpc.WalletClient.GetBestBlock(ctx)
-		if err != nil {
-			return nil // Skip this update on error
-		}
-
-		// Get chain height
-		chainHeight := getChainHeight()
-		if chainHeight == 0 {
-			return nil // Skip if we can't get chain height
-		}
-
-		// Calculate blocks behind
-		blocksBehind := chainHeight - walletHeight
-
-		// During initial sync, wallet is typically 100+ blocks behind
-		// Use CheckRescanProgress to get accurate state
-		isRescanning, _, checkErr := services.CheckRescanProgress()
-		if checkErr == nil && isRescanning && blocksBehind > 10 {
-			progress := (float64(walletHeight) / float64(chainHeight)) * 100
-			if progress > 100 {
-				progress = 100
-			}
-
-			return map[string]interface{}{
-				"isRescanning": true,
-				"scanHeight":   walletHeight,
-				"chainHeight":  chainHeight,
-				"progress":     progress,
-				"message":      fmt.Sprintf("Syncing wallet... %d/%d blocks", walletHeight, chainHeight),
-			}
-		}
-
-		// Wallet is synced
-		return map[string]interface{}{
-			"isRescanning": false,
-			"message":      "Wallet fully synced",
-			"progress":     100.0,
-			"scanHeight":   walletHeight,
-			"chainHeight":  chainHeight,
-		}
-	}
-
-	// Initial check - send current status immediately
-	initialStatus := checkWalletSync()
-	if initialStatus != nil {
-		conn.WriteJSON(initialStatus)
-	}
-
-	log.Println("📡 Monitoring wallet sync and rescan progress (gRPC + RPC)")
+	keepAlive := time.NewTicker(15 * time.Second)
+	defer keepAlive.Stop()
 
 	for {
 		select {
-		case update, ok := <-progressCh:
-			// Priority 1: gRPC rescan updates (user-triggered rescans)
+		case snap, ok := <-ch:
 			if !ok {
-				// Channel closed - rescan finished
-				log.Println("✅ gRPC Rescan complete")
-				hasActiveGrpcRescan = false
-				progressCh = nil // Stop receiving from closed channel (nil channels block in select)
-
-				// Check if wallet sync is still ongoing
-				status := checkWalletSync()
-				if status != nil {
-					conn.WriteJSON(status)
-				}
-				continue
-			}
-
-			// Active gRPC rescan - this takes priority
-			hasActiveGrpcRescan = true
-
-			// Update chain height periodically
-			chainHeight = getChainHeight()
-
-			// Calculate progress
-			rescannedHeight := int64(update.RescannedThrough)
-			progress := 0.0
-			if chainHeight > 0 {
-				progress = (float64(rescannedHeight) / float64(chainHeight)) * 100
-				if progress > 100 {
-					progress = 100
-				}
-			}
-
-			message := fmt.Sprintf("Rescanning blockchain... %d/%d blocks", rescannedHeight, chainHeight)
-
-			// Forward to WebSocket client
-			progressData := map[string]interface{}{
-				"isRescanning": true,
-				"scanHeight":   rescannedHeight,
-				"chainHeight":  chainHeight,
-				"progress":     progress,
-				"message":      message,
-			}
-
-			log.Printf("📊 gRPC Rescan progress: %d/%d (%.1f%%)", rescannedHeight, chainHeight, progress)
-
-			if err := conn.WriteJSON(progressData); err != nil {
-				log.Printf("❌ WebSocket write failed: %v", err)
 				return
 			}
-
-		case <-resubscribeTicker.C:
-			// Re-subscribe if channel was closed (set to nil) to catch next rescan
-			if progressCh == nil {
-				progressCh = subscribeToRescanUpdates()
-				log.Println("🔄 Re-subscribed to rescan updates for next rescan")
-			}
-
-		case <-syncStatusTicker.C:
-			// Priority 2: Check wallet sync ONLY if no active gRPC rescan
-			if hasActiveGrpcRescan {
-				continue // Skip - gRPC rescan is active
-			}
-
-			status := checkWalletSync()
-			if status != nil {
-				if err := conn.WriteJSON(status); err != nil {
-					log.Printf("❌ WebSocket write failed: %v", err)
-					return
-				}
-
-				// Log progress if syncing
-				if isSyncing, ok := status["isRescanning"].(bool); ok && isSyncing {
-					scanHeight, _ := status["scanHeight"].(int64)
-					chainHeight, _ := status["chainHeight"].(int64)
-					progress, _ := status["progress"].(float64)
-					log.Printf("📊 Wallet sync progress: %d/%d (%.1f%%)", scanHeight, chainHeight, progress)
-				}
-			}
-
-		case <-keepAliveTicker.C:
-			// Send ping to detect if client disconnected
-			if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-				log.Println("🔌 WebSocket client disconnected")
+			if err := conn.WriteJSON(snapshotPayload(snap)); err != nil {
 				return
 			}
+		case <-keepAlive.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		case <-notify:
+			return
 		}
 	}
 }

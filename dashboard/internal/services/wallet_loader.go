@@ -91,55 +91,9 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 
 	log.Println("Wallet created and opened successfully")
 
-	// Start RPC sync with dcrd in background
-	// Use background context so it doesn't get canceled when HTTP request completes
-	go func() {
-		bgCtx := context.Background()
-
-		// Read dcrd certificate
-		var cert []byte
-		if rpc.DcrdConfig.RPCCert != "" {
-			var err error
-			cert, err = os.ReadFile(rpc.DcrdConfig.RPCCert)
-			if err != nil {
-				log.Printf("Failed to read dcrd cert for RPC sync: %v", err)
-				return
-			}
-		}
-
-		// Build network address
-		networkAddr := fmt.Sprintf("%s:%s", rpc.DcrdConfig.RPCHost, rpc.DcrdConfig.RPCPort)
-
-		rpcSyncReq := &pb.RpcSyncRequest{
-			NetworkAddress:    networkAddr,
-			Username:          rpc.DcrdConfig.RPCUser,
-			Password:          []byte(rpc.DcrdConfig.RPCPassword),
-			Certificate:       cert,
-			DiscoverAccounts:  false,    // Don't discover on new wallet (no transactions yet)
-			PrivatePassphrase: []byte{}, // Not needed without account discovery
-		}
-
-		stream, err := rpc.WalletLoaderClient.RpcSync(bgCtx, rpcSyncReq)
-		if err != nil {
-			log.Printf("Failed to start RPC sync: %v", err)
-			return
-		}
-
-		log.Printf("RPC sync started with dcrd at %s", networkAddr)
-
-		// Consume the stream to keep sync active
-		// If stream fails, it will be restarted on next wallet open/operation
-		for {
-			_, err := stream.Recv()
-			if err != nil {
-				log.Printf("RPC sync stream ended: %v (sync will resume on wallet reopen)", err)
-				return
-			}
-		}
-	}()
-
-	// Give the sync a moment to start
-	time.Sleep(100 * time.Millisecond)
+	// RpcSync is started + supervised by the goroutine in cmd/dcrpulse/main.go
+	// (SuperviseRpcSync). It polls for wallet-loaded state and kicks
+	// EnsureRpcSync; reconnects automatically if the stream dies.
 
 	return nil
 }
@@ -175,59 +129,55 @@ func OpenWallet(ctx context.Context, publicPass string) error {
 		log.Println("Wallet opened successfully")
 	}
 
-	// Start RPC sync with dcrd in background
-	// Use background context so it doesn't get canceled when HTTP request completes
-	go func() {
-		bgCtx := context.Background()
-
-		// Read dcrd certificate
-		var cert []byte
-		if rpc.DcrdConfig.RPCCert != "" {
-			var err error
-			cert, err = os.ReadFile(rpc.DcrdConfig.RPCCert)
-			if err != nil {
-				log.Printf("Failed to read dcrd cert for RPC sync: %v", err)
-				return
-			}
-		}
-
-		// Build network address
-		networkAddr := fmt.Sprintf("%s:%s", rpc.DcrdConfig.RPCHost, rpc.DcrdConfig.RPCPort)
-
-		rpcSyncReq := &pb.RpcSyncRequest{
-			NetworkAddress:    networkAddr,
-			Username:          rpc.DcrdConfig.RPCUser,
-			Password:          []byte(rpc.DcrdConfig.RPCPassword),
-			Certificate:       cert,
-			DiscoverAccounts:  false, // Don't need to discover on reopening
-			PrivatePassphrase: []byte{},
-		}
-
-		stream, err := rpc.WalletLoaderClient.RpcSync(bgCtx, rpcSyncReq)
-		if err != nil {
-			// RpcSync might already be running, which is okay
-			if !strings.Contains(err.Error(), "already") {
-				log.Printf("Warning: Failed to start RPC sync (may already be syncing): %v", err)
-			}
-			return
-		}
-
-		log.Printf("RPC sync started/resumed with dcrd at %s", networkAddr)
-
-		// Consume stream to keep sync active
-		for {
-			_, err := stream.Recv()
-			if err != nil {
-				log.Printf("RPC sync stream ended: %v", err)
-				return
-			}
-		}
-	}()
-
-	// Give the sync a moment to start
-	time.Sleep(100 * time.Millisecond)
+	// RpcSync is kicked + supervised by SuperviseRpcSync in main.go.
 
 	return nil
+}
+
+// EnsureRpcSync opens an RpcSync stream and dispatches notifications until
+// ctx is cancelled or the stream errors.
+func EnsureRpcSync(ctx context.Context) error {
+	if rpc.WalletLoaderClient == nil {
+		return fmt.Errorf("wallet loader client not initialized")
+	}
+
+	var cert []byte
+	if rpc.DcrdConfig.RPCCert != "" {
+		var err error
+		cert, err = os.ReadFile(rpc.DcrdConfig.RPCCert)
+		if err != nil {
+			return fmt.Errorf("read dcrd cert for RPC sync: %w", err)
+		}
+	}
+
+	networkAddr := fmt.Sprintf("%s:%s", rpc.DcrdConfig.RPCHost, rpc.DcrdConfig.RPCPort)
+	req := &pb.RpcSyncRequest{
+		NetworkAddress:    networkAddr,
+		Username:          rpc.DcrdConfig.RPCUser,
+		Password:          []byte(rpc.DcrdConfig.RPCPassword),
+		Certificate:       cert,
+		DiscoverAccounts:  false,
+		PrivatePassphrase: []byte{},
+	}
+
+	stream, err := rpc.WalletLoaderClient.RpcSync(ctx, req)
+	if err != nil {
+		if strings.Contains(err.Error(), "already") {
+			log.Println("RPC sync already running in dcrwallet — will resync on next opportunity")
+			return nil
+		}
+		return fmt.Errorf("open RpcSync stream: %w", err)
+	}
+
+	log.Printf("RPC sync stream open to dcrd at %s", networkAddr)
+
+	for {
+		resp, err := stream.Recv()
+		if err != nil {
+			return fmt.Errorf("RpcSync stream ended: %w", err)
+		}
+		ApplyRpcSyncNotification(resp)
+	}
 }
 
 // CloseWallet closes the currently open wallet

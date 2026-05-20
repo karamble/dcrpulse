@@ -10,265 +10,95 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"sync"
 	"time"
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
-	"dcrpulse/internal/utils"
 )
-
-var (
-	// Track wallet sync
-	prevWalletHeight int64
-	walletSyncMutex  sync.Mutex
-
-	// Track pending rescan requests
-	pendingRescanMutex sync.RWMutex
-	pendingRescanTime  *time.Time
-)
-
-// SetPendingRescan marks that a rescan has been requested
-func SetPendingRescan() {
-	pendingRescanMutex.Lock()
-	defer pendingRescanMutex.Unlock()
-	now := time.Now()
-	pendingRescanTime = &now
-	log.Printf("Rescan request marked as pending at %v", now)
-}
-
-// ClearPendingRescan clears the pending rescan flag
-func ClearPendingRescan() {
-	pendingRescanMutex.Lock()
-	defer pendingRescanMutex.Unlock()
-	if pendingRescanTime != nil {
-		log.Printf("Clearing pending rescan flag (was pending since %v)", *pendingRescanTime)
-	}
-	pendingRescanTime = nil
-}
-
-// IsPendingRescan checks if a rescan is pending and returns how long to wait
-func IsPendingRescan() (bool, int) {
-	pendingRescanMutex.RLock()
-	defer pendingRescanMutex.RUnlock()
-
-	if pendingRescanTime == nil {
-		return false, 0
-	}
-
-	// Check if pending rescan is recent (within last 5 minutes)
-	elapsed := time.Since(*pendingRescanTime)
-	if elapsed > 5*time.Minute {
-		return false, 0
-	}
-
-	// Wait up to 120 seconds (2 minutes) for rescan to start when pending
-	return true, 120
-}
-
-// CheckRescanProgress checks if a rescan is active using ONLY the pending flag and RPC
-// No log parsing whatsoever - clean RPC-based solution
-func CheckRescanProgress() (bool, int64, error) {
-	if rpc.WalletClient == nil {
-		return false, 0, fmt.Errorf("wallet RPC client not initialized")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	// Always get wallet and chain height
-	_, walletHeight, err := rpc.WalletClient.GetBestBlock(ctx)
-	if err != nil {
-		// Can't get wallet height - might be busy
-		isPending, _ := IsPendingRescan()
-		return isPending, 0, nil
-	}
-
-	chainHeight := int64(0)
-	if rpc.DcrdClient != nil {
-		height, err := rpc.DcrdClient.GetBlockCount(ctx)
-		if err == nil {
-			chainHeight = height
-		}
-	}
-
-	// Check if we have a pending rescan
-	isPending, _ := IsPendingRescan()
-
-	if isPending {
-		// Pending rescan - could be discovering addresses OR rescanning blocks
-		// Check how far behind we are
-		blocksBehind := chainHeight - walletHeight
-
-		if blocksBehind > 100 {
-			// Significantly behind - actively rescanning!
-			// Clear the pending flag since rescan is confirmed active
-			ClearPendingRescan()
-			return true, walletHeight, nil
-		}
-
-		// At chain tip - probably in address discovery phase
-		// Return as rescanning but with current height
-		return true, walletHeight, nil
-	}
-
-	// No pending flag - check for unexpected rescan activity
-	blocksBehind := chainHeight - walletHeight
-
-	// Track height changes for progress detection
-	walletSyncMutex.Lock()
-	deltaHeight := walletHeight - prevWalletHeight
-	prevWalletHeight = walletHeight
-	walletSyncMutex.Unlock()
-
-	// Detect rescans without pending flag (e.g., from page reload)
-	isRescanning := false
-	if blocksBehind > 100 {
-		// Significantly behind - rescanning
-		isRescanning = true
-	} else if blocksBehind > 2 && deltaHeight > 50 {
-		// Slightly behind + rapid progress = rescanning
-		isRescanning = true
-	}
-
-	return isRescanning, walletHeight, nil
-}
-
-// Deprecated: Use CheckRescanProgress instead
-// ParseWalletLogsForRescan is kept for backward compatibility but should not be used
-func ParseWalletLogsForRescan() (bool, int64, error) {
-	// Redirect to RPC-based check
-	return CheckRescanProgress()
-}
 
 func FetchWalletStatus() (*types.WalletStatus, error) {
-	// Use a longer timeout for wallet status to handle rescan scenarios
-	// During rescan, RPC calls can be slow but should still respond
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Get wallet info using getinfo
+	// getinfo also serves as a "wallet is loaded" probe.
 	walletInfo, err := rpc.WalletClient.GetInfo(ctx)
 	if err != nil {
-		// If RPC fails, check if it's because of an active rescan
-		isRescanning, logScanHeight, logErr := ParseWalletLogsForRescan()
-		if logErr == nil && isRescanning {
-			// Wallet is busy rescanning, use log data
-			if rpc.DcrdClient != nil {
-				chainHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
-				if err == nil {
-					syncProgress := (float64(logScanHeight) / float64(chainHeight)) * 100
-					return &types.WalletStatus{
-						Status:           "syncing",
-						SyncProgress:     syncProgress,
-						SyncHeight:       logScanHeight,
-						BestBlockHash:    "",
-						Version:          "unknown",
-						Unlocked:         true,
-						RescanInProgress: true,
-						SyncMessage:      fmt.Sprintf("Rescanning... %d/%d blocks (%.1f%%)", logScanHeight, chainHeight, syncProgress),
-					}, nil
-				}
-			}
-		}
-
 		return &types.WalletStatus{
 			Status:      "no_wallet",
 			SyncMessage: fmt.Sprintf("Wallet not available: %v", err),
 		}, nil
 	}
 
-	// Determine wallet status
+	snap := GetSyncSnapshot()
+
+	unlocked := true
+	daemonConnected := snap.DaemonConnected
+	if rpc.WalletClient != nil {
+		if raw, werr := rpc.WalletClient.RawRequest(ctx, "walletinfo", nil); werr == nil {
+			var wi struct {
+				Unlocked        bool `json:"unlocked"`
+				DaemonConnected bool `json:"daemonconnected"`
+			}
+			if jerr := json.Unmarshal(raw, &wi); jerr == nil {
+				unlocked = wi.Unlocked
+				if !snap.DaemonConnected {
+					daemonConnected = wi.DaemonConnected
+				}
+			}
+		}
+	}
+
+	bestBlockHash := ""
+	var syncHeight int64
+	if bestHash, bestHeight, berr := rpc.WalletClient.GetBestBlock(ctx); berr == nil {
+		syncHeight = bestHeight
+		bestBlockHash = bestHash.String()
+	}
+
 	status := "synced"
 	syncProgress := 100.0
 	syncMessage := "Fully synced"
 	rescanInProgress := false
-	var syncHeight int64 = 0
-	bestBlockHash := ""
 
-	// Get best block from wallet
-	bestHash, bestHeight, err := rpc.WalletClient.GetBestBlock(ctx)
-	if err == nil {
-		syncHeight = bestHeight
-		bestBlockHash = bestHash.String()
-
-		// Get current block count from dcrd for comparison
-		if rpc.DcrdClient != nil {
-			chainHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
-			if err == nil {
-				walletHeight := bestHeight
-
-				// Calculate sync progress
-				// During rescan, wallet height changes rapidly through already-synced blocks
-				// Allow a buffer of 2 blocks to account for chain growth during sync
-				blocksBehind := chainHeight - walletHeight
-				if blocksBehind > 2 {
-					status = "syncing"
-					syncProgress = (float64(walletHeight) / float64(chainHeight)) * 100
-
-					// Calculate delta for sync message
-					walletSyncMutex.Lock()
-					deltaHeight := walletHeight - prevWalletHeight
-					prevWalletHeight = walletHeight
-					walletSyncMutex.Unlock()
-
-					if deltaHeight > 0 {
-						// If scanning more than 100 blocks per check (30s), likely a rescan
-						if deltaHeight > 100 {
-							syncMessage = fmt.Sprintf("Rescanning... %d/%d blocks (%.1f%%)", walletHeight, chainHeight, syncProgress)
-							rescanInProgress = true
-						} else {
-							syncMessage = fmt.Sprintf("Syncing... scanned %s blocks recently", utils.FormatNumber(deltaHeight))
-						}
-					} else {
-						syncMessage = fmt.Sprintf("Syncing... %d/%d blocks", walletHeight, chainHeight)
-					}
-					rescanInProgress = true
-				} else {
-					// Even if heights match, check if we were recently rescanning
-					walletSyncMutex.Lock()
-					deltaHeight := walletHeight - prevWalletHeight
-					if deltaHeight > 100 {
-						// Just finished a fast rescan
-						syncMessage = "Rescan completed, wallet fully synced"
-					}
-					prevWalletHeight = walletHeight
-					walletSyncMutex.Unlock()
-				}
-			}
-		}
-	} else {
+	switch {
+	case !daemonConnected:
 		status = "disconnected"
-		syncMessage = "Wallet not connected to dcrd"
-	}
-
-	// Check Docker logs for active rescan (especially for manual rescans via rescan button or xpub import)
-	// This is more reliable than RPC during intensive rescans
-	isRescanning, logScanHeight, logErr := ParseWalletLogsForRescan()
-	if logErr == nil && isRescanning {
-		// Get chain height for progress calculation
+		syncMessage = "Disconnected from dcrd"
+		syncProgress = 0
+	case snap.Phase == SyncPhaseRescanning:
+		status = "syncing"
+		rescanInProgress = true
+		syncProgress = snap.RescanProgressPc
+		syncMessage = fmt.Sprintf("Rescanning... %d/%d blocks (%.1f%%)", snap.RescanThrough, snap.RescanFrom, snap.RescanProgressPc)
+	case snap.Phase == SyncPhaseFetchingCfilters:
+		status = "syncing"
+		if snap.CfiltersEnd > snap.CfiltersStart {
+			syncMessage = fmt.Sprintf("Fetching committed filters (block %d → %d)", snap.CfiltersStart, snap.CfiltersEnd)
+		} else {
+			syncMessage = "Fetching committed filters"
+		}
+		syncProgress = 0
+	case snap.Phase == SyncPhaseFetchingHeaders:
+		status = "syncing"
+		syncMessage = fmt.Sprintf("Fetching headers (%d so far)", snap.HeadersCount)
 		if rpc.DcrdClient != nil {
-			chainHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
-			if err == nil {
-				// Only override status if the wallet is actually behind
-				// Allow a small buffer of 2 blocks to account for chain growth during sync
-				blocksBehind := chainHeight - logScanHeight
-				if blocksBehind > 2 {
-					status = "syncing"
-					rescanInProgress = true
-					syncHeight = logScanHeight
-					syncProgress = (float64(logScanHeight) / float64(chainHeight)) * 100
-					syncMessage = fmt.Sprintf("Rescanning... %d/%d blocks (%.1f%%)", logScanHeight, chainHeight, syncProgress)
-					log.Printf("Rescan detected from logs: block %d / %d (%.1f%%)", logScanHeight, chainHeight, syncProgress)
-				} else {
-					log.Printf("Rescan message found in logs but wallet is at chain tip (%d/%d, %d blocks behind) - rescan complete", logScanHeight, chainHeight, blocksBehind)
+			if chainHeight, cherr := rpc.DcrdClient.GetBlockCount(ctx); cherr == nil && chainHeight > 0 {
+				syncProgress = float64(snap.HeadersCount) / float64(chainHeight) * 100
+				if syncProgress > 100 {
+					syncProgress = 100
 				}
 			}
 		}
+	case snap.Phase == SyncPhaseDiscoverAddresses:
+		status = "syncing"
+		syncMessage = "Discovering addresses"
+		syncProgress = 0
+	case snap.Phase == SyncPhaseUnsynced || snap.Phase == SyncPhaseUnknown:
+		status = "syncing"
+		syncMessage = "Sync starting"
+		syncProgress = 0
 	}
 
-	// Parse version number from single integer
-	// dcrwallet version format: version = major * 1000000 + minor * 10000 + patch * 100 + build
 	major := walletInfo.Version / 1000000
 	minor := (walletInfo.Version / 10000) % 100
 	patch := (walletInfo.Version / 100) % 100
@@ -279,7 +109,8 @@ func FetchWalletStatus() (*types.WalletStatus, error) {
 		SyncHeight:       syncHeight,
 		BestBlockHash:    bestBlockHash,
 		Version:          fmt.Sprintf("v%d.%d.%d", major, minor, patch),
-		Unlocked:         true, // Assume unlocked since we auto-unlock
+		Unlocked:         unlocked,
+		DaemonConnected:  daemonConnected,
 		RescanInProgress: rescanInProgress,
 		SyncMessage:      syncMessage,
 	}, nil

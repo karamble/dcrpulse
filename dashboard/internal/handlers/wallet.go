@@ -69,7 +69,12 @@ func startRescanViaGrpc(beginHeight int32) {
 			break
 		}
 
-		// Broadcast to all listening WebSocket clients
+		// Update the unified SyncSnapshot so all subscribers (incl. the
+		// WebSocket fan-out below) see consistent rescan state.
+		services.MarkRescanProgress(update.RescannedThrough)
+
+		// Broadcast to all listening WebSocket clients (legacy channel —
+		// SyncSnapshot subscribers get the same data via the new path).
 		rescanChannelsMutex.Lock()
 		for _, ch := range rescanStreamChannels {
 			select {
@@ -96,6 +101,7 @@ func startRescanViaGrpc(beginHeight int32) {
 	rescanStreamChannels = nil
 	rescanChannelsMutex.Unlock()
 
+	services.MarkRescanFinished()
 	log.Println("✅ Rescan completed - all transactions imported")
 }
 
@@ -361,43 +367,11 @@ func RescanWalletHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// GetSyncProgressHandler handles requests for wallet sync progress from log files
 func GetSyncProgressHandler(w http.ResponseWriter, r *http.Request) {
-	// Get sync progress from log file parsing
-	isRescanning, scanHeight, err := services.ParseWalletLogsForRescan()
-	if err != nil {
-		log.Printf("Error parsing wallet logs: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Get chain height from dcrd for progress calculation
-	var progress float64 = 100.0
-	var chainHeight int64 = 0
-	var message string = "No active rescan"
-
-	if isRescanning && rpc.DcrdClient != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		height, err := rpc.DcrdClient.GetBlockCount(ctx)
-		if err == nil {
-			chainHeight = height
-			progress = (float64(scanHeight) / float64(chainHeight)) * 100
-			message = fmt.Sprintf("Rescanning... %d/%d blocks", scanHeight, chainHeight)
-		}
-	}
-
-	response := types.SyncProgressResponse{
-		IsRescanning: isRescanning,
-		ScanHeight:   scanHeight,
-		ChainHeight:  chainHeight,
-		Progress:     progress,
-		Message:      message,
-	}
-
+	snap := services.GetSyncSnapshot()
+	payload := snapshotPayload(snap)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(payload)
 }
 
 // ListTransactionsHandler handles requests for wallet transaction history
@@ -439,20 +413,10 @@ func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(transactions)
 }
 
-// StreamRescanProgressHandler streams rescan progress via WebSocket using gRPC
 func StreamRescanProgressHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "Wallet gRPC client not initialized", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Upgrade HTTP connection to WebSocket
 	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true // Allow all origins (configure appropriately for production)
-		},
+		CheckOrigin: func(r *http.Request) bool { return true },
 	}
-
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Failed to upgrade to WebSocket: %v", err)
@@ -460,112 +424,121 @@ func StreamRescanProgressHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	log.Println("WebSocket connection established for rescan progress streaming")
+	// Initial snapshot.
+	if err := conn.WriteJSON(snapshotPayload(services.GetSyncSnapshot())); err != nil {
+		return
+	}
 
-	// Get chain height from dcrd for progress calculation
-	chainHeight := int64(1)
-	if rpc.DcrdClient != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		height, err := rpc.DcrdClient.GetBlockCount(ctx)
-		cancel()
-		if err == nil {
-			chainHeight = height
+	ch, unsubscribe := services.SubscribeSyncEvents()
+	defer unsubscribe()
+
+	notify := make(chan struct{})
+	go func() {
+		defer close(notify)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
 		}
-	}
+	}()
 
-	log.Println("Starting rescan progress monitoring (polling log-based method)")
-
-	// Poll rescan progress and stream to WebSocket
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	// Track consecutive "not rescanning" responses to avoid premature close
-	notRescanningCount := 0
-
-	// Check if a rescan is pending
-	isPending, pendingGracePeriod := services.IsPendingRescan()
-	gracePeriodTicks := 8            // Default grace period
-	maxNotRescanningBeforeClose := 5 // Default: Wait for 5 consecutive "not rescanning" before closing
-
-	if isPending {
-		gracePeriodTicks = pendingGracePeriod
-		maxNotRescanningBeforeClose = 30 // Wait 30 more seconds after grace period when rescan is pending
-		log.Printf("Pending rescan detected - using extended grace period of %d seconds and extended timeout of %d checks", gracePeriodTicks, maxNotRescanningBeforeClose)
-	}
-
-	tickCount := 0
+	keepAlive := time.NewTicker(15 * time.Second)
+	defer keepAlive.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
-			tickCount++
-			// Check rescan progress
-			isRescanning, scanHeight, err := services.ParseWalletLogsForRescan()
-			if err != nil {
-				log.Printf("Error parsing logs: %v", err)
-				continue
-			}
-
-			// Update chain height
-			if rpc.DcrdClient != nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				height, err := rpc.DcrdClient.GetBlockCount(ctx)
-				cancel()
-				if err == nil {
-					chainHeight = height
-				}
-			}
-
-			progress := (float64(scanHeight) / float64(chainHeight)) * 100
-			if progress > 100 {
-				progress = 100
-			}
-
-			progressData := map[string]interface{}{
-				"isRescanning": isRescanning,
-				"scanHeight":   scanHeight,
-				"chainHeight":  chainHeight,
-				"progress":     progress,
-			}
-
-			if isRescanning {
-				progressData["message"] = fmt.Sprintf("Rescanning... %d/%d blocks", scanHeight, chainHeight)
-				log.Printf("Rescan progress: %d/%d (%.2f%%)", scanHeight, chainHeight, progress)
-				notRescanningCount = 0 // Reset counter
-				// Pending rescan flag is cleared automatically in CheckRescanProgress
-			} else {
-				// Only start counting "not rescanning" after grace period
-				if tickCount > gracePeriodTicks {
-					notRescanningCount++
-					log.Printf("Rescan not detected in logs (count: %d/%d, after grace period)", notRescanningCount, maxNotRescanningBeforeClose)
-					progressData["message"] = "Checking rescan status..."
-				} else {
-					log.Printf("Grace period: %d/%d seconds - waiting for rescan to start", tickCount, gracePeriodTicks)
-					if isPending {
-						progressData["message"] = "Discovering addresses, rescan will start soon..."
-					} else {
-						progressData["message"] = "Starting rescan..."
-					}
-				}
-			}
-
-			// Send update to client
-			if err := conn.WriteJSON(progressData); err != nil {
-				log.Printf("Failed to write to WebSocket: %v", err)
+		case snap, ok := <-ch:
+			if !ok {
 				return
 			}
-
-			// Only close if we've had multiple consecutive "not rescanning" responses AFTER grace period
-			if notRescanningCount >= maxNotRescanningBeforeClose {
-				log.Println("Rescan complete (no activity detected), closing WebSocket stream")
-				progressData["message"] = "Rescan complete"
-				progressData["isRescanning"] = false
-				conn.WriteJSON(progressData)
-				services.ClearPendingRescan() // Clear pending flag when closing
+			if err := conn.WriteJSON(snapshotPayload(snap)); err != nil {
 				return
 			}
+		case <-keepAlive.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		case <-notify:
+			return
 		}
 	}
+}
 
-	log.Println("WebSocket connection closed")
+// snapshotPayload renders a SyncSnapshot as the WebSocket / sync-progress JSON.
+func snapshotPayload(snap services.SyncSnapshot) map[string]interface{} {
+	isRescanning := snap.Phase == services.SyncPhaseFetchingCfilters ||
+		snap.Phase == services.SyncPhaseFetchingHeaders ||
+		snap.Phase == services.SyncPhaseDiscoverAddresses ||
+		snap.Phase == services.SyncPhaseRescanning
+
+	scanHeight, chainHeight := phaseProgress(snap)
+	progress := snap.RescanProgressPc
+	if snap.Phase != services.SyncPhaseRescanning && chainHeight > 0 {
+		progress = float64(scanHeight) / float64(chainHeight) * 100
+		if progress > 100 {
+			progress = 100
+		}
+	}
+	_ = progress
+	message := ""
+	switch snap.Phase {
+	case services.SyncPhaseRescanning:
+		message = fmt.Sprintf("Rescanning... %d/%d blocks (%.1f%%)", snap.RescanThrough, snap.RescanFrom, snap.RescanProgressPc)
+	case services.SyncPhaseFetchingCfilters:
+		if snap.CfiltersEnd > snap.CfiltersStart {
+			message = fmt.Sprintf("Fetching committed filters (block %d → %d)", snap.CfiltersStart, snap.CfiltersEnd)
+		} else {
+			message = "Fetching committed filters"
+		}
+	case services.SyncPhaseFetchingHeaders:
+		message = fmt.Sprintf("Fetching headers (%d so far)", snap.HeadersCount)
+	case services.SyncPhaseDiscoverAddresses:
+		message = "Discovering addresses"
+	case services.SyncPhaseSynced:
+		message = "Synced"
+	case services.SyncPhaseUnsynced:
+		message = "Not yet synced"
+	default:
+		message = "Sync state unknown"
+	}
+	if !snap.DaemonConnected {
+		message = "Disconnected from dcrd"
+	}
+	return map[string]interface{}{
+		"isRescanning":    isRescanning,
+		"scanHeight":      scanHeight,
+		"chainHeight":     chainHeight,
+		"progress":        progress,
+		"message":         message,
+		"phase":           string(snap.Phase),
+		"daemonConnected": snap.DaemonConnected,
+		"peerCount":       snap.PeerCount,
+		"cfiltersStart":   snap.CfiltersStart,
+		"cfiltersEnd":     snap.CfiltersEnd,
+		"headersCount":    snap.HeadersCount,
+		"firstHeaderTime": snap.FirstHeaderTime,
+		"lastHeaderTime":  snap.LastHeaderTime,
+	}
+}
+
+// phaseProgress returns (numerator, denominator) for the progress bar in the current sync phase.
+func phaseProgress(snap services.SyncSnapshot) (int64, int64) {
+	chainTip := int64(0)
+	if rpc.DcrdClient != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		if h, err := rpc.DcrdClient.GetBlockCount(ctx); err == nil {
+			chainTip = h
+		}
+		cancel()
+	}
+	switch snap.Phase {
+	case services.SyncPhaseRescanning:
+		return int64(snap.RescanThrough), snap.RescanFrom
+	case services.SyncPhaseFetchingHeaders:
+		return int64(snap.HeadersCount), chainTip
+	case services.SyncPhaseFetchingCfilters:
+		return int64(snap.CfiltersEnd), chainTip
+	default:
+		return 0, chainTip
+	}
 }
