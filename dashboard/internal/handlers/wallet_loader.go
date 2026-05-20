@@ -13,7 +13,30 @@ import (
 
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+
+	"decred.org/dcrwallet/v4/pgpwordlist"
 )
+
+// seedWordList caches the 512-word PGP wordlist sourced from dcrwallet's
+// pgpwordlist package. The list is a fixed standard (PGP biometric word
+// list, 256 even + 256 odd), so a one-time enumeration suffices.
+var seedWordList []string
+
+func init() {
+	seedWordList = make([]string, 512)
+	for b := 0; b < 256; b++ {
+		seedWordList[2*b] = pgpwordlist.ByteToMnemonic(byte(b), 0)
+		seedWordList[2*b+1] = pgpwordlist.ByteToMnemonic(byte(b), 1)
+	}
+}
+
+// SeedWordsHandler returns the PGP wordlist used for seed mnemonics, sourced
+// from dcrwallet's pgpwordlist package (upstream source of truth).
+func SeedWordsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	json.NewEncoder(w).Encode(seedWordList)
+}
 
 // WalletExistsHandler checks if a wallet database exists
 func WalletExistsHandler(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +93,31 @@ func GenerateSeedHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// DecodeSeedHandler validates a user-supplied seed (mnemonic or hex) via the
+// SeedService.DecodeSeed gRPC and returns the canonical hex on success.
+func DecodeSeedHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.DecodeSeedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.UserInput == "" {
+		http.Error(w, "userInput required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	seedHex, err := services.DecodeSeed(ctx, req.UserInput)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.DecodeSeedResponse{SeedHex: seedHex})
+}
+
 // CreateWalletHandler creates a new wallet
 func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.CreateWalletRequest
@@ -91,7 +139,7 @@ func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	err := services.CreateNewWallet(ctx, req.PublicPassphrase, req.PrivatePassphrase, req.SeedHex)
+	err := services.CreateNewWallet(ctx, req.PublicPassphrase, req.PrivatePassphrase, req.SeedHex, req.DiscoverAccounts)
 	if err != nil {
 		log.Printf("Error creating wallet: %v", err)
 		resp := types.CreateWalletResponse{

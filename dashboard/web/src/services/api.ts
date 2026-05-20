@@ -447,7 +447,9 @@ export interface WalletLoadedResponse {
 }
 
 export interface GenerateSeedRequest {
-  seedLength?: number; // Optional byte count; 0/unset lets dcrwallet pick 32 bytes (33-word mnemonic).
+  // Seed length in BYTES (not words). Zero or unset -> dcrwallet's
+  // recommended 32 bytes -> 33-word Decred-standard mnemonic.
+  seedLength?: number;
 }
 
 export interface GenerateSeedResponse {
@@ -459,6 +461,7 @@ export interface CreateWalletRequest {
   publicPassphrase: string;  // Optional: Encrypts wallet database for viewing
   privatePassphrase: string; // Required: Encrypts private keys for spending
   seedHex: string;           // Required: Hex-encoded seed
+  discoverAccounts: boolean; // True when restoring from existing seed
 }
 
 export interface CreateWalletResponse {
@@ -491,6 +494,11 @@ export const checkWalletLoaded = async (): Promise<WalletLoadedResponse> => {
 // you need a non-standard seed length.
 export const generateSeed = async (seedLength: number = 0): Promise<GenerateSeedResponse> => {
   const response = await api.post<GenerateSeedResponse>('/wallet/generate-seed', { seedLength });
+  return response.data;
+};
+
+export const decodeSeed = async (userInput: string): Promise<{ seedHex: string }> => {
+  const response = await api.post<{ seedHex: string }>('/wallet/decode-seed', { userInput });
   return response.data;
 };
 

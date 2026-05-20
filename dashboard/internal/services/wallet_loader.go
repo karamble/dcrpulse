@@ -59,8 +59,25 @@ func GenerateSeed(ctx context.Context, seedLength uint32) (*types.GenerateSeedRe
 	}, nil
 }
 
-// CreateNewWallet creates a new wallet with the provided passphrases and seed
-func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex string) error {
+// DecodeSeed validates and decodes a user-supplied seed. UserInput can be
+// the 33-word mnemonic or a 64-character hex string. dcrwallet's DecodeSeed
+// accepts both via a single field.
+func DecodeSeed(ctx context.Context, userInput string) (string, error) {
+	if rpc.SeedServiceClient == nil {
+		return "", fmt.Errorf("seed service client not initialized")
+	}
+	resp, err := rpc.SeedServiceClient.DecodeSeed(ctx, &pb.DecodeSeedRequest{UserInput: userInput})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(resp.DecodedSeed), nil
+}
+
+// CreateNewWallet creates a new wallet with the provided passphrases and seed.
+// When discoverAccounts is true (restoring from an existing seed), the
+// post-create RpcSync runs with DiscoverAccounts enabled and the private
+// passphrase so dcrwallet rescans the chain and rebuilds the address index.
+func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex string, discoverAccounts bool) error {
 	if rpc.WalletLoaderClient == nil {
 		return fmt.Errorf("wallet loader client not initialized")
 	}
@@ -84,13 +101,59 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 		return fmt.Errorf("failed to create wallet: %w", err)
 	}
 
+	// The default account stays without per-account encryption here.
+	// SignAndPublishTransaction lazily migrates it on first spend, matching
+	// Decrediton's setAccountsPass migration step.
+
 	log.Println("Wallet created and opened successfully")
 
-	// RpcSync is started + supervised by the goroutine in cmd/dcrpulse/main.go
-	// (SuperviseRpcSync). It polls for wallet-loaded state and kicks
-	// EnsureRpcSync; reconnects automatically if the stream dies.
+	// For restored wallets, kick a one-time RpcSync with DiscoverAccounts=true
+	// so dcrwallet scans the chain for addresses derived from the seed. The
+	// regular supervisor (cmd/dcrpulse/main.go) resumes with default args
+	// once this stream ends.
+	if discoverAccounts {
+		go runDiscoveryRpcSync(privatePass)
+	}
 
 	return nil
+}
+
+func runDiscoveryRpcSync(privatePass string) {
+	if rpc.WalletLoaderClient == nil {
+		return
+	}
+	var cert []byte
+	if rpc.DcrdConfig.RPCCert != "" {
+		c, err := os.ReadFile(rpc.DcrdConfig.RPCCert)
+		if err != nil {
+			log.Printf("Discovery RPC sync: failed to read dcrd cert: %v", err)
+			return
+		}
+		cert = c
+	}
+	networkAddr := fmt.Sprintf("%s:%s", rpc.DcrdConfig.RPCHost, rpc.DcrdConfig.RPCPort)
+	req := &pb.RpcSyncRequest{
+		NetworkAddress:    networkAddr,
+		Username:          rpc.DcrdConfig.RPCUser,
+		Password:          []byte(rpc.DcrdConfig.RPCPassword),
+		Certificate:       cert,
+		DiscoverAccounts:  true,
+		PrivatePassphrase: []byte(privatePass),
+	}
+	stream, err := rpc.WalletLoaderClient.RpcSync(context.Background(), req)
+	if err != nil {
+		log.Printf("Discovery RPC sync: failed to start: %v", err)
+		return
+	}
+	log.Printf("Discovery RPC sync started against %s", networkAddr)
+	for {
+		resp, err := stream.Recv()
+		if err != nil {
+			log.Printf("Discovery RPC sync stream ended: %v", err)
+			return
+		}
+		ApplyRpcSyncNotification(resp)
+	}
 }
 
 // OpenWallet opens an existing wallet with the provided public passphrase

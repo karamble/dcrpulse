@@ -3,15 +3,28 @@
 // license that can be found in the LICENSE file.
 
 import { useState } from 'react';
-import { Copy, Check, AlertCircle, Lock, Key, Shield, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { Copy, Check, AlertCircle, Lock, Key, Shield, CheckCircle, Eye, EyeOff, Sprout, RotateCcw } from 'lucide-react';
 import { generateSeed, createWallet } from '../services/api';
+import { SeedEntry } from './wallet/SeedEntry';
 
-type WizardStep = 'welcome' | 'generate' | 'passphrases' | 'confirm' | 'creating' | 'success';
+type WizardMode = 'create' | 'restore';
+type WizardStep =
+  | 'choose'
+  | 'welcome'
+  | 'generate'
+  | 'restore-welcome'
+  | 'restore-seed'
+  | 'passphrases'
+  | 'confirm'
+  | 'creating'
+  | 'success';
 
 export const WalletSetup = () => {
-  const [step, setStep] = useState<WizardStep>('welcome');
+  const [step, setStep] = useState<WizardStep>('choose');
+  const [mode, setMode] = useState<WizardMode>('create');
   const [seedMnemonic, setSeedMnemonic] = useState('');
   const [seedHex, setSeedHex] = useState('');
+  const [seedHexValid, setSeedHexValid] = useState(false);
   const [publicPassphrase, setPublicPassphrase] = useState('');
   const [privatePassphrase, setPrivatePassphrase] = useState('');
   const [confirmPublicPass, setConfirmPublicPass] = useState('');
@@ -100,6 +113,7 @@ export const WalletSetup = () => {
         publicPassphrase,
         privatePassphrase,
         seedHex,
+        discoverAccounts: mode === 'restore',
       });
 
       if (response.success) {
@@ -110,11 +124,11 @@ export const WalletSetup = () => {
         }, 2000);
       } else {
         setError(response.message || 'Failed to create wallet');
-        setStep('confirm'); // Go back to confirm step on error
+        setStep(mode === 'restore' ? 'passphrases' : 'confirm');
       }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to create wallet. Please try again.');
-      setStep('confirm'); // Go back to confirm step on error
+      setStep(mode === 'restore' ? 'passphrases' : 'confirm');
       console.error(err);
     }
   };
@@ -123,10 +137,167 @@ export const WalletSetup = () => {
   const publicStrength = getPassphraseStrength(publicPassphrase);
   const privateStrength = getPassphraseStrength(privatePassphrase);
 
+  // Live passphrase-match indicators. Empty confirm field = no indicator.
+  const publicMatch = publicPassphrase.length > 0 && confirmPublicPass.length > 0
+    ? publicPassphrase === confirmPublicPass
+    : null;
+  const privateMatch = privatePassphrase.length > 0 && confirmPrivatePass.length > 0
+    ? privatePassphrase === confirmPrivatePass
+    : null;
+  const canSubmitPassphrases =
+    privatePassphrase.length > 0 &&
+    privatePassphrase === confirmPrivatePass &&
+    (publicPassphrase.length === 0 || publicPassphrase === confirmPublicPass);
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-muted/20">
       <div className="w-full max-w-3xl">
         <div className="bg-gradient-card backdrop-blur-sm border border-border/50 rounded-xl shadow-xl p-8 animate-fade-in">
+          {/* Chooser Step */}
+          {step === 'choose' && (
+            <div className="text-center space-y-6">
+              <div className="flex justify-center">
+                <div className="p-4 rounded-full bg-primary/10 border border-primary/20">
+                  <Shield className="h-12 w-12 text-primary" />
+                </div>
+              </div>
+              <h1 className="text-3xl font-bold">Welcome to DCRPulse</h1>
+              <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+                Get started by creating a new Decred wallet, or restore an existing one from its seed phrase.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <button
+                  onClick={() => {
+                    setMode('create');
+                    setError(null);
+                    setStep('welcome');
+                  }}
+                  className="p-6 rounded-xl border border-border bg-background/50 hover:border-primary/50 hover:bg-background transition-colors text-left space-y-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <Sprout className="h-6 w-6 text-primary" />
+                    <h3 className="text-lg font-semibold">Create new wallet</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Generate a fresh seed phrase, set passphrases, and start with an empty wallet.
+                  </p>
+                </button>
+                <button
+                  onClick={() => {
+                    setMode('restore');
+                    setError(null);
+                    setStep('restore-welcome');
+                  }}
+                  className="p-6 rounded-xl border border-border bg-background/50 hover:border-primary/50 hover:bg-background transition-colors text-left space-y-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <RotateCcw className="h-6 w-6 text-primary" />
+                    <h3 className="text-lg font-semibold">Restore from seed</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Recover an existing wallet by entering its 33-word seed phrase or raw hex.
+                  </p>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Restore Welcome Step */}
+          {step === 'restore-welcome' && (
+            <div className="text-center space-y-6">
+              <div className="flex justify-center">
+                <div className="p-4 rounded-full bg-primary/10 border border-primary/20">
+                  <RotateCcw className="h-12 w-12 text-primary" />
+                </div>
+              </div>
+              <h1 className="text-3xl font-bold">Restore your wallet</h1>
+              <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+                Enter the seed phrase from your existing Decred wallet. The dashboard will rescan the blockchain to rebuild your address history.
+              </p>
+
+              <div className="bg-warning/10 border border-warning/20 rounded-lg p-4 text-left space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-warning flex-shrink-0 mt-0.5" />
+                  <div className="space-y-2 text-sm">
+                    <p className="font-semibold text-warning">What to expect</p>
+                    <ul className="space-y-1 text-muted-foreground">
+                      <li>• Decred seeds are 33 words. Or paste the raw hex (32 bytes) if you have that instead.</li>
+                      <li>• After restore, dcrwallet rescans the chain from genesis — this can take a while.</li>
+                      <li>• Keep the dashboard running during the rescan.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('choose');
+                  }}
+                  className="flex-1 py-3 border border-border rounded-lg hover:bg-background/50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('restore-seed');
+                  }}
+                  className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Restore Seed Entry Step */}
+          {step === 'restore-seed' && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+                  <Key className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold">Enter your seed</h2>
+                  <p className="text-sm text-muted-foreground">Words or hex — paste supported.</p>
+                </div>
+              </div>
+
+              <SeedEntry
+                onValidSeedHex={(hex) => {
+                  setSeedHex(hex);
+                  setSeedHexValid(true);
+                }}
+                onInvalid={() => setSeedHexValid(false)}
+              />
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setSeedHexValid(false);
+                    setStep('restore-welcome');
+                  }}
+                  className="flex-1 py-3 border border-border rounded-lg hover:bg-background/50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('passphrases');
+                  }}
+                  disabled={!seedHexValid}
+                  className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Welcome Step */}
           {step === 'welcome' && (
             <div className="text-center space-y-6">
@@ -156,12 +327,23 @@ export const WalletSetup = () => {
                 </div>
               </div>
 
-              <button
-                onClick={handleGenerateSeed}
-                className="px-8 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold text-lg"
-              >
-                Create New Wallet
-              </button>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('choose');
+                  }}
+                  className="px-6 py-3 border border-border rounded-lg hover:bg-background/50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleGenerateSeed}
+                  className="px-8 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold text-lg"
+                >
+                  Create New Wallet
+                </button>
+              </div>
             </div>
           )}
 
@@ -300,13 +482,27 @@ export const WalletSetup = () => {
                     </div>
                   )}
                   {publicPassphrase && (
-                    <input
-                      type={showPublicPass ? 'text' : 'password'}
-                      value={confirmPublicPass}
-                      onChange={(e) => setConfirmPublicPass(e.target.value)}
-                      className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                      placeholder="Confirm public passphrase"
-                    />
+                    <>
+                      <input
+                        type={showPublicPass ? 'text' : 'password'}
+                        value={confirmPublicPass}
+                        onChange={(e) => setConfirmPublicPass(e.target.value)}
+                        className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
+                          publicMatch === false ? 'border-red-500/50' : publicMatch === true ? 'border-green-500/50' : 'border-border'
+                        }`}
+                        placeholder="Confirm public passphrase"
+                      />
+                      {publicMatch === true && (
+                        <p className="text-xs text-green-500 flex items-center gap-1">
+                          <Check className="h-3 w-3" /> Public passphrases match
+                        </p>
+                      )}
+                      {publicMatch === false && (
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> Public passphrases do not match
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -341,15 +537,27 @@ export const WalletSetup = () => {
                     type={showPrivatePass ? 'text' : 'password'}
                     value={confirmPrivatePass}
                     onChange={(e) => setConfirmPrivatePass(e.target.value)}
-                    className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
+                      privateMatch === false ? 'border-red-500/50' : privateMatch === true ? 'border-green-500/50' : 'border-border'
+                    }`}
                     placeholder="Confirm private passphrase"
                   />
+                  {privateMatch === true && (
+                    <p className="text-xs text-green-500 flex items-center gap-1">
+                      <Check className="h-3 w-3" /> Private passphrases match
+                    </p>
+                  )}
+                  {privateMatch === false && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Private passphrases do not match
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="flex gap-4">
                 <button
-                  onClick={() => setStep('generate')}
+                  onClick={() => setStep(mode === 'restore' ? 'restore-seed' : 'generate')}
                   className="flex-1 py-3 border border-border rounded-lg hover:bg-background/50 transition-colors"
                 >
                   Back
@@ -358,12 +566,18 @@ export const WalletSetup = () => {
                   onClick={() => {
                     if (validatePassphrases()) {
                       setError(null);
-                      setStep('confirm');
+                      if (mode === 'restore') {
+                        setStep('creating');
+                        handleCreateWallet();
+                      } else {
+                        setStep('confirm');
+                      }
                     }
                   }}
-                  className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold"
+                  disabled={!canSubmitPassphrases}
+                  className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Continue
+                  {mode === 'restore' ? 'Restore Wallet' : 'Continue'}
                 </button>
               </div>
             </div>

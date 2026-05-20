@@ -102,6 +102,8 @@ func main() {
 	api.HandleFunc("/wallet/exists", handlers.WalletExistsHandler).Methods("GET")
 	api.HandleFunc("/wallet/loaded", handlers.WalletLoadedHandler).Methods("GET")
 	api.HandleFunc("/wallet/generate-seed", handlers.GenerateSeedHandler).Methods("POST")
+	api.HandleFunc("/wallet/decode-seed", handlers.DecodeSeedHandler).Methods("POST")
+	api.HandleFunc("/wallet/seed-words", handlers.SeedWordsHandler).Methods("GET")
 	api.HandleFunc("/wallet/create", handlers.CreateWalletHandler).Methods("POST")
 	api.HandleFunc("/wallet/open", handlers.OpenWalletHandler).Methods("POST")
 	api.HandleFunc("/wallet/status", handlers.GetWalletStatusHandler).Methods("GET")
