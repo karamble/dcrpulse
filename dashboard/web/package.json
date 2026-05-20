@@ -10,6 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "axios": "^1.7.7",
     "lucide-react": "^0.462.0",
     "qrcode.react": "^4.2.0",
