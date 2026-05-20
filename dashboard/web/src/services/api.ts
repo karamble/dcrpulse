@@ -300,6 +300,71 @@ export const getAccountExtendedPubKey = async (accountNumber: number): Promise<s
   return response.data.xpub;
 };
 
+// Privacy / Mixer
+export interface PrivacyStatus {
+  configured: boolean;
+  mixedAccount?: number;
+  changeAccount?: number;
+  mixerRunning: boolean;
+  lastError?: string;
+  csppsolverState: 'active' | 'missing' | 'unknown';
+}
+
+export interface MixerEvent {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+}
+
+export const getPrivacyStatus = async (): Promise<PrivacyStatus> => {
+  const response = await api.get<PrivacyStatus>('/wallet/privacy/status');
+  return response.data;
+};
+
+export const setupPrivacy = async (
+  passphrase: string,
+): Promise<{ mixedAccount: number; changeAccount: number }> => {
+  const response = await api.post<{ mixedAccount: number; changeAccount: number }>(
+    '/wallet/privacy/setup',
+    { passphrase },
+  );
+  return response.data;
+};
+
+export const startMixer = async (passphrase: string): Promise<void> => {
+  await api.post('/wallet/privacy/start', { passphrase });
+};
+
+export const stopMixer = async (): Promise<void> => {
+  await api.post('/wallet/privacy/stop');
+};
+
+export const subscribeMixerEvents = (
+  onEvent: (e: MixerEvent) => void,
+  onError?: (e: Error) => void,
+  onClose?: () => void,
+): (() => void) => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/api/wallet/privacy/events`;
+  const ws = new WebSocket(wsUrl);
+
+  ws.onmessage = (event) => {
+    try {
+      onEvent(JSON.parse(event.data) as MixerEvent);
+    } catch (err) {
+      onError?.(new Error('Failed to parse mixer event'));
+    }
+  };
+  ws.onerror = () => onError?.(new Error('Mixer events WebSocket error'));
+  ws.onclose = () => onClose?.();
+
+  return () => {
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
+  };
+};
+
 export const getNextAddress = async (account: number): Promise<NextAddressResponse> => {
   const response = await api.get<NextAddressResponse>('/wallet/next-address', {
     params: { account },
@@ -509,6 +574,16 @@ export const createWallet = async (request: CreateWalletRequest): Promise<Create
 
 export const openWallet = async (request: OpenWalletRequest): Promise<OpenWalletResponse> => {
   const response = await api.post<OpenWalletResponse>('/wallet/open', request);
+  return response.data;
+};
+
+export const getMixerDebug = async (): Promise<{ enabled: boolean }> => {
+  const response = await api.get<{ enabled: boolean }>('/wallet/mixer/debug');
+  return response.data;
+};
+
+export const setMixerDebug = async (enabled: boolean): Promise<{ enabled: boolean }> => {
+  const response = await api.post<{ enabled: boolean }>('/wallet/mixer/debug', { enabled });
   return response.data;
 };
 

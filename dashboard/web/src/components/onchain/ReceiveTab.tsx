@@ -40,7 +40,7 @@ export const ReceiveTab = () => {
         const data = await getAccounts();
         if (cancelled) return;
         const visible = data
-          .filter((a) => a.accountName !== 'imported')
+          .filter((a) => a.accountName !== 'imported' && a.accountName !== 'mixed')
           .sort((a, b) => a.accountNumber - b.accountNumber);
         setAccounts(visible);
         if (visible.length > 0) setSelectedAccount(visible[0].accountNumber);

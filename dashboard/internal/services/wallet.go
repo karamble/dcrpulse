@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"dcrpulse/internal/rpc"
@@ -362,9 +363,9 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 	return accounts, nil
 }
 
-// CreateAccount creates a new BIP44 account via gRPC NextAccount. Requires the
-// private passphrase because dcrwallet must unlock to derive the next account
-// key. Returns the newly-assigned account number.
+// CreateAccount creates a new BIP44 account via gRPC NextAccount and then
+// per-account-encrypts it with the same passphrase so signing can go through
+// UnlockAccount. Returns the new account number.
 func CreateAccount(ctx context.Context, accountName string, passphrase []byte) (uint32, error) {
 	if rpc.WalletGrpcClient == nil {
 		return 0, fmt.Errorf("wallet gRPC unavailable")
@@ -376,7 +377,42 @@ func CreateAccount(ctx context.Context, accountName string, passphrase []byte) (
 	if err != nil {
 		return 0, err
 	}
+	if _, err := rpc.WalletGrpcClient.SetAccountPassphrase(ctx, &pb.SetAccountPassphraseRequest{
+		AccountNumber:        resp.AccountNumber,
+		NewAccountPassphrase: passphrase,
+		WalletPassphrase:     passphrase,
+	}); err != nil {
+		return 0, fmt.Errorf("account created but failed to set per-account passphrase: %w", err)
+	}
 	return resp.AccountNumber, nil
+}
+
+// ensureAccountEncrypted lazily migrates an account to per-account encryption
+// if it isn't already (e.g. the default account on a freshly-created wallet).
+// Mirrors Decrediton's one-time setAccountsPass migration. Safe to call on
+// accounts that are already per-account-encrypted — it's a no-op then.
+func ensureAccountEncrypted(ctx context.Context, accountNumber uint32, passphrase []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC unavailable")
+	}
+	acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	if err != nil {
+		return err
+	}
+	for _, a := range acctsResp.Accounts {
+		if a.AccountNumber == accountNumber {
+			if a.AccountEncrypted {
+				return nil
+			}
+			_, err := rpc.WalletGrpcClient.SetAccountPassphrase(ctx, &pb.SetAccountPassphraseRequest{
+				AccountNumber:        accountNumber,
+				NewAccountPassphrase: passphrase,
+				WalletPassphrase:     passphrase,
+			})
+			return err
+		}
+	}
+	return fmt.Errorf("account %d not found", accountNumber)
 }
 
 // RenameAccount renames an existing account. dcrwallet's RenameAccount gRPC
@@ -406,6 +442,70 @@ func GetAccountExtendedPubKey(ctx context.Context, accountNumber uint32) (string
 		return "", err
 	}
 	return resp.AccExtendedPubKey, nil
+}
+
+// Names of the two accounts the mixer uses; Decrediton convention.
+const (
+	PrivacyMixedAccountName  = "mixed"
+	PrivacyChangeAccountName = "unmixed"
+)
+
+// FindPrivacyAccounts looks up the mixer's mixed and unmixed accounts by name.
+// `configured` is true only when both exist.
+func FindPrivacyAccounts(ctx context.Context) (mixed uint32, change uint32, configured bool, err error) {
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	var foundMixed, foundChange bool
+	for _, a := range accounts {
+		switch a.AccountName {
+		case PrivacyMixedAccountName:
+			mixed = a.AccountNumber
+			foundMixed = true
+		case PrivacyChangeAccountName:
+			change = a.AccountNumber
+			foundChange = true
+		}
+	}
+	return mixed, change, foundMixed && foundChange, nil
+}
+
+// SetupPrivacyAccounts creates whichever of "mixed" / "unmixed" is missing.
+// Idempotent — if both exist, returns their numbers without touching anything.
+func SetupPrivacyAccounts(ctx context.Context, passphrase []byte) (mixed uint32, change uint32, err error) {
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	var haveMixed, haveChange bool
+	for _, a := range accounts {
+		switch a.AccountName {
+		case PrivacyMixedAccountName:
+			mixed = a.AccountNumber
+			haveMixed = true
+		case PrivacyChangeAccountName:
+			change = a.AccountNumber
+			haveChange = true
+		}
+	}
+
+	if !haveMixed {
+		n, cerr := CreateAccount(ctx, PrivacyMixedAccountName, passphrase)
+		if cerr != nil {
+			return 0, 0, fmt.Errorf("create %q: %w", PrivacyMixedAccountName, cerr)
+		}
+		mixed = n
+	}
+	if !haveChange {
+		n, cerr := CreateAccount(ctx, PrivacyChangeAccountName, passphrase)
+		if cerr != nil {
+			return 0, 0, fmt.Errorf("create %q: %w", PrivacyChangeAccountName, cerr)
+		}
+		change = n
+	}
+
+	return mixed, change, nil
 }
 
 // Old FetchTransactions functions removed - replaced by ListTransactions
@@ -1033,11 +1133,27 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 		}
 	}()
 
+	// Per-account unlock + sign + auto-relock. If the source account isn't
+	// per-account-encrypted yet (e.g. the default account on a wallet created
+	// before this migration), migrate it on the fly with the user's typed
+	// passphrase, then retry. Matches Decrediton's setAccountsPass behavior.
 	if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
 		Passphrase:    passphrase,
 		AccountNumber: sourceAccount,
 	}); err != nil {
-		return "", err
+		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
+			if mErr := ensureAccountEncrypted(ctx, sourceAccount, passphrase); mErr != nil {
+				return "", fmt.Errorf("migrate account to per-account encryption: %w", mErr)
+			}
+			if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
+				Passphrase:    passphrase,
+				AccountNumber: sourceAccount,
+			}); err != nil {
+				return "", err
+			}
+		} else {
+			return "", err
+		}
 	}
 	defer func() {
 		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

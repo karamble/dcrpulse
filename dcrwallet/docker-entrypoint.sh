@@ -61,5 +61,6 @@ exec dcrwallet \
     --grpclisten=0.0.0.0:9111 \
     --clientcafile="${RPC_CERT}" \
     --noinitialload \
+    --mixing \
     $TOR_ARGS \
     "$@"

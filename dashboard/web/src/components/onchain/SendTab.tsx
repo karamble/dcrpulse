@@ -351,7 +351,7 @@ export const SendTab = () => {
                       Select destination account…
                     </option>
                     {accounts
-                      .filter((a) => a.accountNumber !== sourceAccount)
+                      .filter((a) => a.accountNumber !== sourceAccount && a.accountName !== 'mixed')
                       .map((a) => (
                         <option key={a.accountNumber} value={a.accountNumber}>
                           {a.accountName}

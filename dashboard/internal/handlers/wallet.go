@@ -721,6 +721,241 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("{}"))
 }
 
+type privacyStatusResponse struct {
+	Configured      bool    `json:"configured"`
+	MixedAccount    *uint32 `json:"mixedAccount,omitempty"`
+	ChangeAccount   *uint32 `json:"changeAccount,omitempty"`
+	MixerRunning    bool    `json:"mixerRunning"`
+	LastError       string  `json:"lastError,omitempty"`
+	CsppsolverState string  `json:"csppsolverState"` // "active" | "missing" | "unknown"
+}
+
+func PrivacyStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	mixed, change, configured, err := services.FindPrivacyAccounts(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	services.RefreshCsppsolverStateIfUnknown()
+	resp := privacyStatusResponse{
+		Configured:      configured,
+		MixerRunning:    services.IsMixerRunning(),
+		LastError:       services.LastMixerError(),
+		CsppsolverState: services.CsppsolverState(),
+	}
+	if configured {
+		m, c := mixed, change
+		resp.MixedAccount = &m
+		resp.ChangeAccount = &c
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Passphrase == "" {
+		http.Error(w, "passphrase required", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	mixed, change, err := services.SetupPrivacyAccounts(ctx, passphrase)
+	if err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		default:
+			log.Printf("PrivacySetup failed: %v", err)
+			http.Error(w, "privacy setup failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]uint32{
+		"mixedAccount":  mixed,
+		"changeAccount": change,
+	})
+}
+
+func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+
+	if rpc.AccountMixerClient == nil {
+		http.Error(w, "mixer gRPC client not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	if services.IsMixerRunning() {
+		http.Error(w, "mixer already running", http.StatusConflict)
+		return
+	}
+
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Passphrase == "" {
+		http.Error(w, "passphrase required", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	mixed, change, configured, err := services.FindPrivacyAccounts(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !configured {
+		http.Error(w, "privacy not configured — run setup first", http.StatusBadRequest)
+		return
+	}
+
+	if err := services.StartMixer(passphrase, mixed, 0, change); err != nil {
+		log.Printf("StartMixer failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte("{}"))
+}
+
+func PrivacyStopHandler(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+	services.StopMixer()
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte("{}"))
+}
+
+// MixerDebugHandler reads or toggles MIXC + TKBY debug logging on dcrwallet.
+func MixerDebugHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"enabled": services.MixerDebugEnabled()})
+		return
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := services.SetMixerDebug(ctx, req.Enabled); err != nil {
+		log.Printf("SetMixerDebug failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
+}
+
+func StreamMixerEventsHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade mixer-events WebSocket: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	for _, ev := range services.LastMixerEvents(200) {
+		if err := conn.WriteJSON(ev); err != nil {
+			return
+		}
+	}
+
+	ch, unsubscribe := services.SubscribeMixerEvents()
+	defer unsubscribe()
+
+	notify := make(chan struct{})
+	go func() {
+		defer close(notify)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(ev); err != nil {
+				return
+			}
+		case <-notify:
+			return
+		}
+	}
+}
+
 func GetAccountExtendedPubKeyHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletGrpcClient == nil {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)

@@ -39,6 +39,9 @@ var (
 	// DecodeMessageClient is the gRPC client for decoding raw transactions
 	DecodeMessageClient pb.DecodeMessageServiceClient
 
+	// AccountMixerClient is the gRPC client for running the P2P CoinJoin mixer
+	AccountMixerClient pb.AccountMixerServiceClient
+
 	// WalletGrpcConn is the gRPC connection (kept for cleanup)
 	WalletGrpcConn *grpc.ClientConn
 
@@ -196,6 +199,7 @@ func InitWalletGrpcClient(config GrpcConfig) error {
 	WalletLoaderClient = pb.NewWalletLoaderServiceClient(conn)
 	SeedServiceClient = pb.NewSeedServiceClient(conn)
 	DecodeMessageClient = pb.NewDecodeMessageServiceClient(conn)
+	AccountMixerClient = pb.NewAccountMixerServiceClient(conn)
 
 	log.Println("dcrwallet gRPC clients initialized with mutual TLS authentication")
 	return nil

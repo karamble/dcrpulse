@@ -84,6 +84,10 @@ func main() {
 		log.Println("No gRPC certificate provided. Streaming features disabled.")
 	}
 
+	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into
+	// the same ring buffer the /wallet/privacy/events WebSocket reads from.
+	services.StartWalletLogTail()
+
 	// Setup router
 	r := mux.NewRouter()
 
@@ -114,6 +118,12 @@ func main() {
 	api.HandleFunc("/wallet/create-account", handlers.CreateAccountHandler).Methods("POST")
 	api.HandleFunc("/wallet/rename-account", handlers.RenameAccountHandler).Methods("POST")
 	api.HandleFunc("/wallet/account-extended-pubkey", handlers.GetAccountExtendedPubKeyHandler).Methods("GET")
+	api.HandleFunc("/wallet/privacy/status", handlers.PrivacyStatusHandler).Methods("GET")
+	api.HandleFunc("/wallet/privacy/setup", handlers.PrivacySetupHandler).Methods("POST")
+	api.HandleFunc("/wallet/privacy/start", handlers.PrivacyStartHandler).Methods("POST")
+	api.HandleFunc("/wallet/privacy/stop", handlers.PrivacyStopHandler).Methods("POST")
+	api.HandleFunc("/wallet/privacy/events", handlers.StreamMixerEventsHandler).Methods("GET")
+	api.HandleFunc("/wallet/mixer/debug", handlers.MixerDebugHandler).Methods("GET", "POST")
 	api.HandleFunc("/wallet/next-address", handlers.NextAddressHandler).Methods("GET")
 	api.HandleFunc("/wallet/validate-address", handlers.ValidateAddressHandler).Methods("GET")
 	api.HandleFunc("/wallet/construct-transaction", handlers.ConstructTransactionHandler).Methods("POST")
