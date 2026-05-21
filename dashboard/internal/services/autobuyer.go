@@ -142,6 +142,10 @@ func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error 
 	autobuyerActive = &sCopy
 	autobuyerMu.Unlock()
 
+	// Remember the VSP for the picker, matching Decrediton's
+	// dispatch(updateUsedVSPs(vsp)) in ControlActions.js:519.
+	rememberVSPUsed(ctx, sCopy.VspHost, sCopy.VspPubkey)
+
 	go runAutobuyer(ctx, sCopy, passphrase)
 	return nil
 }

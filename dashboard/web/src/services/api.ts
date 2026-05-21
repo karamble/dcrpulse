@@ -626,8 +626,15 @@ export interface PurchaseTicketsResponse {
   splitTxHash?: string;
 }
 
-export const listVSPs = async (): Promise<VSPInfo[]> => {
-  const response = await api.get<VSPInfo[]>('/wallet/staking/vsps');
+export interface ListVSPsResponse {
+  vsps: VSPInfo[];
+  usedVSPs: VSPInfo[];
+  registryEnabled: boolean;
+  registryError?: string;
+}
+
+export const listVSPs = async (): Promise<ListVSPsResponse> => {
+  const response = await api.get<ListVSPsResponse>('/wallet/staking/vsps');
   return response.data;
 };
 

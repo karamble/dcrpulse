@@ -24,6 +24,17 @@ type VSPInfo struct {
 	Outdated         bool    `json:"outdated,omitempty"`
 }
 
+// ListVSPsResponse is the envelope returned by GET /api/wallet/staking/vsps.
+// VSPs is empty when the registry toggle is off or the upstream fetch
+// failed (in which case RegistryError carries a hint). UsedVSPs is the
+// per-wallet history from used_vsps and is always provided when present.
+type ListVSPsResponse struct {
+	VSPs            []VSPInfo `json:"vsps"`
+	UsedVSPs        []VSPInfo `json:"usedVSPs"`
+	RegistryEnabled bool      `json:"registryEnabled"`
+	RegistryError   string    `json:"registryError,omitempty"`
+}
+
 // PurchaseTicketsRequest is the body posted to /api/wallet/staking/purchase.
 type PurchaseTicketsRequest struct {
 	Account       uint32 `json:"account"`

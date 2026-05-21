@@ -12,10 +12,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
@@ -26,7 +28,7 @@ import (
 const (
 	vspRegistryURL    = "https://api.decred.org/?c=vsp"
 	vspInfoPathV3     = "/api/v3/vspinfo"
-	vspCacheTTL       = 5 * time.Minute
+	vspCacheTTL       = 24 * time.Hour
 	vspProbeTimeout   = 5 * time.Second
 	vspRegistryTimout = 8 * time.Second
 )
@@ -37,9 +39,33 @@ var (
 	vspCacheTime time.Time
 )
 
-// ListVSPs returns the public registry of VSPs. Result cached in-process
-// for vspCacheTTL to avoid hammering api.decred.org on every page mount.
+// VSPListingEnabled reports whether the user has the global VSP-registry
+// toggle on. Absent or true defaults to enabled (backward compatible).
+func VSPListingEnabled() bool {
+	gc, err := config.LoadGlobalCfg()
+	if err != nil {
+		return true
+	}
+	allowed, _ := gc.AllowedExternalRequests()
+	if allowed == nil {
+		return true
+	}
+	v, ok := allowed[config.ExternalRequestVSPListing]
+	if !ok {
+		return true
+	}
+	return v
+}
+
+// ListVSPs returns the public registry of VSPs. Honors the global
+// stakepool_listing toggle - when disabled, returns (nil, nil) without
+// any outbound HTTP. Otherwise fetches and caches the slice for
+// vspCacheTTL to avoid hammering api.decred.org.
 func ListVSPs(ctx context.Context) ([]types.VSPInfo, error) {
+	if !VSPListingEnabled() {
+		return nil, nil
+	}
+
 	vspCacheMu.RLock()
 	if time.Since(vspCacheTime) < vspCacheTTL && vspCache != nil {
 		cached := vspCache
@@ -58,6 +84,65 @@ func ListVSPs(ctx context.Context) ([]types.VSPInfo, error) {
 	vspCacheTime = time.Now()
 	vspCacheMu.Unlock()
 	return fetched, nil
+}
+
+// GetUsedVSPs returns the per-wallet used_vsps history sorted by
+// LastUsed descending. Returns (nil, nil) if no entries exist.
+func GetUsedVSPs(ctx context.Context) ([]types.VSPInfo, error) {
+	network, err := CurrentNetwork(ctx)
+	if err != nil || network == "" {
+		return nil, nil
+	}
+	wc, err := config.LoadWalletCfg(network, CurrentWalletName())
+	if err != nil {
+		return nil, err
+	}
+	m, err := wc.UsedVSPs()
+	if err != nil || len(m) == 0 {
+		return nil, err
+	}
+	out := make([]types.VSPInfo, 0, len(m))
+	for _, v := range m {
+		out = append(out, types.VSPInfo{
+			Host:   v.Host,
+			PubKey: v.Pubkey,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return m[out[i].Host].LastUsed > m[out[j].Host].LastUsed
+	})
+	return out, nil
+}
+
+// rememberVSPUsed upserts a VSP into the per-wallet used_vsps map.
+// Idempotent. Errors are logged and swallowed so the calling action
+// (ticket purchase, autobuyer start, etc.) is not blocked by a
+// best-effort persistence write.
+func rememberVSPUsed(ctx context.Context, host, pubkey string) {
+	if host == "" {
+		return
+	}
+	network, err := CurrentNetwork(ctx)
+	if err != nil || network == "" {
+		log.Printf("rememberVSPUsed: skipping, network not resolved: %v", err)
+		return
+	}
+	wc, err := config.LoadWalletCfg(network, CurrentWalletName())
+	if err != nil {
+		log.Printf("rememberVSPUsed: load wallet cfg: %v", err)
+		return
+	}
+	if err := wc.UpsertUsedVSP(config.VSPMetadata{
+		Host:     host,
+		Pubkey:   pubkey,
+		LastUsed: time.Now().Unix(),
+	}); err != nil {
+		log.Printf("rememberVSPUsed: upsert: %v", err)
+		return
+	}
+	if err := wc.Save(); err != nil {
+		log.Printf("rememberVSPUsed: save: %v", err)
+	}
 }
 
 func fetchVSPRegistry(ctx context.Context) ([]types.VSPInfo, error) {
@@ -228,6 +313,12 @@ func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, v
 	if len(resp.SplitTx) > 0 {
 		out.SplitTxHash = hex.EncodeToString(resp.SplitTx)
 	}
+
+	// Successful purchase - remember the VSP we used for next time the
+	// picker is opened, even when the registry toggle is off. Mirrors
+	// Decrediton's dispatch(updateUsedVSPs(vsp)) in ControlActions.js:379.
+	rememberVSPUsed(ctx, vspHost, vspPubkey)
+
 	return out, nil
 }
 
@@ -407,5 +498,6 @@ func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, accoun
 	}); err != nil {
 		return fmt.Errorf("SyncVSPFailedTickets RPC: %w", err)
 	}
+	rememberVSPUsed(ctx, vspHost, vspPubkey)
 	return nil
 }

@@ -19,18 +19,38 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// ListVSPsHandler returns the cached public VSP registry.
+// ListVSPsHandler returns the registry + per-wallet used_vsps envelope.
+// Registry is fetched only when the VSP-listing toggle is enabled;
+// either source may be empty without an error response, the frontend
+// renders accordingly.
 func ListVSPsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	vsps, err := services.ListVSPs(ctx)
-	if err != nil {
-		log.Printf("ListVSPs failed: %v", err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
+
+	envelope := types.ListVSPsResponse{
+		RegistryEnabled: services.VSPListingEnabled(),
+		VSPs:            []types.VSPInfo{},
+		UsedVSPs:        []types.VSPInfo{},
 	}
+
+	if envelope.RegistryEnabled {
+		vsps, err := services.ListVSPs(ctx)
+		if err != nil {
+			log.Printf("ListVSPs failed: %v", err)
+			envelope.RegistryError = err.Error()
+		} else if vsps != nil {
+			envelope.VSPs = vsps
+		}
+	}
+
+	if used, err := services.GetUsedVSPs(ctx); err != nil {
+		log.Printf("GetUsedVSPs failed: %v", err)
+	} else if used != nil {
+		envelope.UsedVSPs = used
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(vsps)
+	json.NewEncoder(w).Encode(envelope)
 }
 
 // VSPInfoHandler probes one VSP host's /api/v3/vspinfo.
