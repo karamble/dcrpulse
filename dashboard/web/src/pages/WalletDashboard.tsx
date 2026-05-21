@@ -15,7 +15,7 @@ import { MyTicketsInfo } from '../components/MyTicketsInfo';
 import { RecentTransactions } from '../components/RecentTransactions';
 import { AddressBookmarksCard } from '../components/wallet/AddressBookmarksCard';
 import { WalletSetup } from '../components/WalletSetup';
-import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet, getPrivacyStatus } from '../services/api';
+import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet, getPrivacyStatus, getAutobuyerStatus } from '../services/api';
 
 export const WalletDashboard = () => {
   const [walletExists, setWalletExists] = useState<boolean | null>(null);
@@ -31,6 +31,7 @@ export const WalletDashboard = () => {
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
   const [isOpeningWallet, setIsOpeningWallet] = useState(false);
   const [mixerRunning, setMixerRunning] = useState(false);
+  const [autobuyerRunning, setAutobuyerRunning] = useState(false);
 
   useEffect(() => {
     const poll = async () => {
@@ -39,6 +40,12 @@ export const WalletDashboard = () => {
         setMixerRunning(s.mixerRunning);
       } catch {
         setMixerRunning(false);
+      }
+      try {
+        const a = await getAutobuyerStatus();
+        setAutobuyerRunning(a.running);
+      } catch {
+        setAutobuyerRunning(false);
       }
     };
     poll();
@@ -337,6 +344,7 @@ export const WalletDashboard = () => {
           version={data.walletStatus.version}
           unlocked={data.walletStatus.unlocked}
           mixerRunning={mixerRunning}
+          autobuyerRunning={autobuyerRunning}
         />
       )}
 

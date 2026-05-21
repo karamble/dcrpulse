@@ -18,6 +18,7 @@ import { AccountsPage } from './pages/AccountsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { StakingPage } from './pages/StakingPage';
 import { PurchaseTab } from './components/staking/PurchaseTab';
+import { AutobuyerTab } from './components/staking/AutobuyerTab';
 import { TicketStatusTab } from './components/staking/TicketStatusTab';
 import { TicketHistoryTab } from './components/staking/TicketHistoryTab';
 import { StatisticsTab } from './components/staking/StatisticsTab';
@@ -73,6 +74,7 @@ function AppContent() {
             <Route path="staking" element={<StakingPage />}>
               <Route index element={<Navigate to="purchase" replace />} />
               <Route path="purchase" element={<PurchaseTab />} />
+              <Route path="autobuyer" element={<AutobuyerTab />} />
               <Route path="status" element={<TicketStatusTab />} />
               <Route path="history" element={<TicketHistoryTab />} />
               <Route path="statistics" element={<StatisticsTab />} />

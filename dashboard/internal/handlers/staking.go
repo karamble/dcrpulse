@@ -15,6 +15,8 @@ import (
 
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+
+	"github.com/gorilla/websocket"
 )
 
 // ListVSPsHandler returns the cached public VSP registry.
@@ -119,6 +121,176 @@ func ListTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tickets)
+}
+
+// AutobuyerStatusHandler returns running flag + last error + persisted settings.
+func AutobuyerStatusHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	status := services.AutobuyerStatusSnapshot(ctx)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+// GetAutobuyerSettingsHandler returns the persisted settings or null.
+func GetAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	settings, err := services.LoadAutobuyerSettings(ctx)
+	if err != nil {
+		log.Printf("LoadAutobuyerSettings: %v", err)
+		http.Error(w, "failed to load settings", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if settings == nil {
+		w.Write([]byte("null"))
+		return
+	}
+	json.NewEncoder(w).Encode(settings)
+}
+
+// SaveAutobuyerSettingsHandler atomically persists settings to disk.
+func SaveAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+	var s types.AutobuyerSettings
+	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if s.VspHost == "" || s.VspPubkey == "" {
+		http.Error(w, "vspHost and vspPubkey required", http.StatusBadRequest)
+		return
+	}
+	if s.BalanceToMaintain < 0 {
+		http.Error(w, "balanceToMaintain must be >= 0", http.StatusBadRequest)
+		return
+	}
+	saveCtx, saveCancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer saveCancel()
+	if err := services.SaveAutobuyerSettings(saveCtx, &s); err != nil {
+		log.Printf("SaveAutobuyerSettings: %v", err)
+		http.Error(w, "failed to save settings", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// StartAutobuyerHandler launches the autobuyer supervisor.
+func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+	var req types.StartAutobuyerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Passphrase == "" {
+		http.Error(w, "passphrase required", http.StatusBadRequest)
+		return
+	}
+	if req.VspHost == "" || req.VspPubkey == "" {
+		http.Error(w, "vspHost and vspPubkey required", http.StatusBadRequest)
+		return
+	}
+	if req.BalanceToMaintain < 0 {
+		http.Error(w, "balanceToMaintain must be >= 0", http.StatusBadRequest)
+		return
+	}
+
+	passphrase := []byte(req.Passphrase)
+	defer func() {
+		for i := range passphrase {
+			passphrase[i] = 0
+		}
+	}()
+
+	settings := req.AutobuyerSettings
+	if err := services.StartAutobuyer(&settings, passphrase); err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		case strings.Contains(lower, "already running"):
+			http.Error(w, msg, http.StatusConflict)
+		default:
+			log.Printf("StartAutobuyer failed: %v", err)
+			http.Error(w, msg, http.StatusInternalServerError)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// StopAutobuyerHandler cancels the running supervisor (idempotent).
+func StopAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+	services.StopAutobuyer()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// StreamAutobuyerEventsHandler upgrades to WebSocket and streams events.
+func StreamAutobuyerEventsHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade autobuyer-events WebSocket: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	for _, ev := range services.LastAutobuyerEvents(200) {
+		if err := conn.WriteJSON(ev); err != nil {
+			return
+		}
+	}
+
+	ch, unsubscribe := services.SubscribeAutobuyerEvents()
+	defer unsubscribe()
+
+	notify := make(chan struct{})
+	go func() {
+		defer close(notify)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(ev); err != nil {
+				return
+			}
+		case <-notify:
+			return
+		}
+	}
 }
 
 // SyncFailedVSPTicketsHandler retries VSP fee payments for failed tickets.

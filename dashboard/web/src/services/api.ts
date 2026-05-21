@@ -684,5 +684,72 @@ export const syncFailedVSPTickets = async (req: SyncFailedVSPTicketsRequest): Pr
   await api.post('/wallet/staking/sync-failed-vsp-tickets', req);
 };
 
+export interface AutobuyerSettings {
+  account: number;
+  vspHost: string;
+  vspPubkey: string;
+  balanceToMaintain: number;
+}
+
+export interface AutobuyerEvent {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+}
+
+export interface AutobuyerStatus {
+  running: boolean;
+  lastError: string;
+  settings: AutobuyerSettings | null;
+}
+
+export const getAutobuyerStatus = async (): Promise<AutobuyerStatus> => {
+  const response = await api.get<AutobuyerStatus>('/wallet/staking/autobuyer/status');
+  return response.data;
+};
+
+export const getAutobuyerSettings = async (): Promise<AutobuyerSettings | null> => {
+  const response = await api.get<AutobuyerSettings | null>('/wallet/staking/autobuyer/settings');
+  return response.data;
+};
+
+export const saveAutobuyerSettings = async (s: AutobuyerSettings): Promise<void> => {
+  await api.post('/wallet/staking/autobuyer/settings', s);
+};
+
+export const startAutobuyer = async (req: AutobuyerSettings & { passphrase: string }): Promise<void> => {
+  await api.post('/wallet/staking/autobuyer/start', req);
+};
+
+export const stopAutobuyer = async (): Promise<void> => {
+  await api.post('/wallet/staking/autobuyer/stop');
+};
+
+export const subscribeAutobuyerEvents = (
+  onEvent: (e: AutobuyerEvent) => void,
+  onError?: (e: Error) => void,
+  onClose?: () => void,
+): (() => void) => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/api/wallet/staking/autobuyer/events`;
+  const ws = new WebSocket(wsUrl);
+
+  ws.onmessage = (event) => {
+    try {
+      onEvent(JSON.parse(event.data) as AutobuyerEvent);
+    } catch (err) {
+      onError?.(new Error('Failed to parse autobuyer event'));
+    }
+  };
+  ws.onerror = () => onError?.(new Error('Autobuyer events WebSocket error'));
+  ws.onclose = () => onClose?.();
+
+  return () => {
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
+  };
+};
+
 export default api;
 

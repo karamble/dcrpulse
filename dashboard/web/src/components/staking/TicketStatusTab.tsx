@@ -80,9 +80,11 @@ export const TicketStatusTab = () => {
     load();
     getAccounts()
       .then((accs) => {
-        if (!cancelled) {
-          setAccounts(accs.filter((a) => a.accountName !== 'imported' && a.accountName !== 'mixed'));
-        }
+        if (cancelled) return;
+        const usable = accs.filter((a) => a.accountName !== 'imported');
+        setAccounts(usable);
+        const mixed = usable.find((a) => a.accountName === 'mixed');
+        if (mixed) setAccount(mixed.accountNumber);
       })
       .catch(() => {});
     const id = window.setInterval(load, 30000);

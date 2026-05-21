@@ -3,13 +3,14 @@
 // license that can be found in the LICENSE file.
 
 import { Link } from 'react-router-dom';
-import { Activity, AlertCircle, Loader2, Lock, ShieldCheck, Wallet } from 'lucide-react';
+import { Activity, AlertCircle, Loader2, Lock, ShieldCheck, Ticket, Wallet } from 'lucide-react';
 
 interface WalletStatusProps {
   status: 'synced' | 'syncing' | 'no_wallet' | 'disconnected' | 'locked';
   version?: string;
   unlocked?: boolean;
   mixerRunning?: boolean;
+  autobuyerRunning?: boolean;
 }
 
 export const WalletStatus = ({
@@ -17,6 +18,7 @@ export const WalletStatus = ({
   version,
   unlocked = false,
   mixerRunning = false,
+  autobuyerRunning = false,
 }: WalletStatusProps) => {
   const getStatusConfig = () => {
     switch (status) {
@@ -89,6 +91,15 @@ export const WalletStatus = ({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {autobuyerRunning && (
+            <Link
+              to="/wallet/staking/autobuyer"
+              title="Autobuyer running — open Staking page"
+              className="p-3 rounded-xl bg-success/15 border-2 border-success/30 hover:bg-success/25 transition-colors"
+            >
+              <Ticket className="h-6 w-6 text-success animate-pulse" />
+            </Link>
+          )}
           {mixerRunning && (
             <Link
               to="/wallet/privacy"

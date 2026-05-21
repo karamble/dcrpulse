@@ -7,6 +7,7 @@ import { Ticket } from 'lucide-react';
 
 const tabs = [
   { path: 'purchase', label: 'Purchase' },
+  { path: 'autobuyer', label: 'Auto Buyer' },
   { path: 'status', label: 'Ticket Status' },
   { path: 'history', label: 'History' },
   { path: 'statistics', label: 'Statistics' },

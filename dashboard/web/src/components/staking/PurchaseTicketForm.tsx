@@ -31,7 +31,13 @@ export const PurchaseTicketForm = () => {
       try {
         const [accs, dash] = await Promise.all([getAccounts(), getWalletDashboard()]);
         if (cancelled) return;
-        setAccounts(accs.filter((a) => a.accountName !== 'imported' && a.accountName !== 'mixed'));
+        const usable = accs.filter((a) => a.accountName !== 'imported');
+        setAccounts(usable);
+        setAccount((current) => {
+          if (current !== null) return current;
+          const mixed = usable.find((a) => a.accountName === 'mixed');
+          return mixed ? mixed.accountNumber : null;
+        });
         setStaking(dash.stakingInfo ?? null);
       } catch (err: any) {
         if (cancelled) return;

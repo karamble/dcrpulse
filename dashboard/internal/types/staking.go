@@ -4,6 +4,8 @@
 
 package types
 
+import "time"
+
 // VSPInfo describes one Voting Service Provider entry returned by the
 // public registry at api.decred.org or by a single VSP's /api/v3/vspinfo.
 type VSPInfo struct {
@@ -60,4 +62,33 @@ type SyncFailedVSPTicketsRequest struct {
 	Account       uint32 `json:"account"`
 	ChangeAccount uint32 `json:"changeAccount"`
 	Passphrase    string `json:"passphrase"`
+}
+
+// AutobuyerSettings is the persistable configuration for the ticket autobuyer.
+// No secret material is stored here; the passphrase is supplied per-start only.
+type AutobuyerSettings struct {
+	Account           uint32  `json:"account"`
+	VspHost           string  `json:"vspHost"`
+	VspPubkey         string  `json:"vspPubkey"`
+	BalanceToMaintain float64 `json:"balanceToMaintain"`
+}
+
+// AutobuyerEvent is a structured log line emitted by the autobuyer supervisor.
+type AutobuyerEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Level     string    `json:"level"`
+	Message   string    `json:"message"`
+}
+
+// AutobuyerStatus is what /api/wallet/staking/autobuyer/status returns.
+type AutobuyerStatus struct {
+	Running   bool               `json:"running"`
+	LastError string             `json:"lastError"`
+	Settings  *AutobuyerSettings `json:"settings"`
+}
+
+// StartAutobuyerRequest is the body posted to /api/wallet/staking/autobuyer/start.
+type StartAutobuyerRequest struct {
+	AutobuyerSettings
+	Passphrase string `json:"passphrase"`
 }

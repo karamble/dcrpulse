@@ -47,6 +47,10 @@ WORKDIR /app
 COPY --from=go-builder /app/dcrpulse .
 RUN chown 1000:1000 /app/dcrpulse
 
+# Create the writable config dir owned by the runtime UID so a fresh named
+# volume gets the right ownership when first mounted.
+RUN mkdir -p /dashboard-data && chown 1000:1000 /dashboard-data
+
 # Switch to UID 1000 for Umbrel compatibility
 USER 1000
 
