@@ -634,6 +634,44 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 		}
 	}
 
+	// Fetch dcrd getblocksubsidy for the next block (current PoS reward).
+	// chaincfg.MainNetParams SubsidyReductionInterval is 6144.
+	const subsidyReductionInterval int64 = 6144
+	stakingInfo.SubsidyReductionInterval = subsidyReductionInterval
+	if rpc.DcrdClient != nil {
+		chainHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
+		if err != nil {
+			log.Printf("Warning: Failed to get chain height for block subsidy: %v", err)
+		} else {
+			nextHeight := chainHeight + 1
+			subsidyResult, err := rpc.DcrdClient.RawRequest(ctx, "getblocksubsidy", []json.RawMessage{
+				json.RawMessage(fmt.Sprintf("%d", nextHeight)),
+				json.RawMessage("5"),
+			})
+			if err != nil {
+				log.Printf("Warning: Failed to get block subsidy: %v", err)
+			} else {
+				type SubsidyResponse struct {
+					Developer int64 `json:"developer"`
+					PoS       int64 `json:"pos"`
+					PoW       int64 `json:"pow"`
+					Total     int64 `json:"total"`
+				}
+				var subsidy SubsidyResponse
+				if err := json.Unmarshal(subsidyResult, &subsidy); err != nil {
+					log.Printf("Warning: Failed to unmarshal block subsidy: %v", err)
+				} else {
+					stakingInfo.BlockSubsidyHeight = nextHeight
+					stakingInfo.BlockSubsidyTotal = float64(subsidy.Total) / 1e8
+					stakingInfo.BlockSubsidyPoS = float64(subsidy.PoS) / 1e8
+					stakingInfo.BlockSubsidyPoW = float64(subsidy.PoW) / 1e8
+					stakingInfo.BlockSubsidyTreasury = float64(subsidy.Developer) / 1e8
+					stakingInfo.BlocksUntilSubsidyReduction = subsidyReductionInterval - (chainHeight % subsidyReductionInterval)
+				}
+			}
+		}
+	}
+
 	return stakingInfo, nil
 }
 

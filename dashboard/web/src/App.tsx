@@ -16,6 +16,7 @@ import { HistoryTab } from './components/onchain/HistoryTab';
 import { ExportTab } from './components/onchain/ExportTab';
 import { AccountsPage } from './pages/AccountsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
+import { StakingPage } from './pages/StakingPage';
 import { ExplorerLanding } from './pages/ExplorerLanding';
 import { BlockDetail } from './pages/BlockDetail';
 import { TransactionDetail } from './pages/TransactionDetail';
@@ -65,6 +66,7 @@ function AppContent() {
           <Route path="/wallet" element={<WalletLayout />}>
             <Route index element={<WalletDashboard />} />
             <Route path="privacy" element={<PrivacyPage />} />
+            <Route path="staking" element={<StakingPage />} />
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="transactions" element={<OnChainTransactions />}>
               <Route index element={<Navigate to="send" replace />} />

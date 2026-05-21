@@ -226,6 +226,13 @@ export interface StakingInfo {
   estimatedExpected: number;
   currentDifficulty: number;
   nextDifficulty: number;
+  blockSubsidyHeight: number;
+  blockSubsidyTotal: number;
+  blockSubsidyPos: number;
+  blockSubsidyPow: number;
+  blockSubsidyTreasury: number;
+  blocksUntilSubsidyReduction: number;
+  subsidyReductionInterval: number;
 }
 
 export interface WalletDashboardData {
@@ -584,6 +591,53 @@ export const getMixerDebug = async (): Promise<{ enabled: boolean }> => {
 
 export const setMixerDebug = async (enabled: boolean): Promise<{ enabled: boolean }> => {
   const response = await api.post<{ enabled: boolean }>('/wallet/mixer/debug', { enabled });
+  return response.data;
+};
+
+// Staking / VSP
+
+export interface VSPInfo {
+  host: string;
+  pubkey: string;
+  network: string;
+  apiVersions?: number[];
+  feePercentage: number;
+  vspdVersion?: string;
+  blockHeight?: number;
+  networkProportion?: number;
+  voting?: number;
+  voted?: number;
+  expired?: number;
+  missed?: number;
+  outdated?: boolean;
+}
+
+export interface PurchaseTicketsRequest {
+  account: number;
+  numTickets: number;
+  vspHost: string;
+  vspPubkey: string;
+  changeAccount: number;
+  passphrase: string;
+}
+
+export interface PurchaseTicketsResponse {
+  ticketHashes: string[];
+  splitTxHash?: string;
+}
+
+export const listVSPs = async (): Promise<VSPInfo[]> => {
+  const response = await api.get<VSPInfo[]>('/wallet/staking/vsps');
+  return response.data;
+};
+
+export const getVSPInfo = async (host: string): Promise<VSPInfo> => {
+  const response = await api.get<VSPInfo>(`/wallet/staking/vsp-info?host=${encodeURIComponent(host)}`);
+  return response.data;
+};
+
+export const purchaseTickets = async (req: PurchaseTicketsRequest): Promise<PurchaseTicketsResponse> => {
+  const response = await api.post<PurchaseTicketsResponse>('/wallet/staking/purchase', req);
   return response.data;
 };
 

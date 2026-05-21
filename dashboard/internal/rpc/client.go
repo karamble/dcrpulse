@@ -42,6 +42,12 @@ var (
 	// AccountMixerClient is the gRPC client for running the P2P CoinJoin mixer
 	AccountMixerClient pb.AccountMixerServiceClient
 
+	// TicketBuyerClient is the gRPC client for the ticket autobuyer (v2)
+	TicketBuyerClient pb.TicketBuyerV2ServiceClient
+
+	// VotingClient is the gRPC client for agenda voting
+	VotingClient pb.VotingServiceClient
+
 	// WalletGrpcConn is the gRPC connection (kept for cleanup)
 	WalletGrpcConn *grpc.ClientConn
 
@@ -200,6 +206,8 @@ func InitWalletGrpcClient(config GrpcConfig) error {
 	SeedServiceClient = pb.NewSeedServiceClient(conn)
 	DecodeMessageClient = pb.NewDecodeMessageServiceClient(conn)
 	AccountMixerClient = pb.NewAccountMixerServiceClient(conn)
+	TicketBuyerClient = pb.NewTicketBuyerV2ServiceClient(conn)
+	VotingClient = pb.NewVotingServiceClient(conn)
 
 	log.Println("dcrwallet gRPC clients initialized with mutual TLS authentication")
 	return nil

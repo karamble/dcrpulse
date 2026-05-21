@@ -164,4 +164,12 @@ type WalletStakingInfo struct {
 	// From getstakedifficulty
 	CurrentDifficulty float64 `json:"currentDifficulty"`
 	NextDifficulty    float64 `json:"nextDifficulty"`
+	// From dcrd getblocksubsidy at current height + 1, voters=5
+	BlockSubsidyHeight          int64   `json:"blockSubsidyHeight"`
+	BlockSubsidyTotal           float64 `json:"blockSubsidyTotal"`
+	BlockSubsidyPoS             float64 `json:"blockSubsidyPos"`
+	BlockSubsidyPoW             float64 `json:"blockSubsidyPow"`
+	BlockSubsidyTreasury        float64 `json:"blockSubsidyTreasury"`
+	BlocksUntilSubsidyReduction int64   `json:"blocksUntilSubsidyReduction"`
+	SubsidyReductionInterval    int64   `json:"subsidyReductionInterval"`
 }

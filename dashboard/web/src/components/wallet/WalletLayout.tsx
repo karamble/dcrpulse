@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, ArrowLeftRight, Users, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, ArrowLeftRight, Users, ShieldCheck, Ticket } from 'lucide-react';
 
 const navItemClass = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
@@ -23,6 +23,10 @@ export const WalletLayout = () => (
         <NavLink to="/wallet/privacy" className={navItemClass}>
           <ShieldCheck className="h-4 w-4" />
           <span>Privacy</span>
+        </NavLink>
+        <NavLink to="/wallet/staking" className={navItemClass}>
+          <Ticket className="h-4 w-4" />
+          <span>Staking</span>
         </NavLink>
         <NavLink to="/wallet/accounts" className={navItemClass}>
           <Users className="h-4 w-4" />

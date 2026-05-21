@@ -11,6 +11,7 @@ import { AccountsList } from '../components/AccountsList';
 import { ImportXpubModal } from '../components/ImportXpubModal';
 import { SyncProgressBar } from '../components/SyncProgressBar';
 import { TicketPoolInfo } from '../components/TicketPoolInfo';
+import { BlockSubsidyInfo } from '../components/BlockSubsidyInfo';
 import { MyTicketsInfo } from '../components/MyTicketsInfo';
 import { RecentTransactions } from '../components/RecentTransactions';
 import { AddressBookmarksCard } from '../components/wallet/AddressBookmarksCard';
@@ -400,7 +401,7 @@ export const WalletDashboard = () => {
             </div>
           )}
 
-          {/* Row 3: Ticket Pool & Difficulty | Address Bookmarks */}
+          {/* Row 3: Ticket Pool & Difficulty | Block Subsidy */}
           {data && data.walletStatus.status !== 'no_wallet' && data.stakingInfo && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
               {/* Ticket Pool & Difficulty Info */}
@@ -413,7 +414,22 @@ export const WalletDashboard = () => {
                 allMempoolTix={data.stakingInfo.allMempoolTix}
               />
 
-              {/* Address Bookmarks */}
+              {/* Block Subsidy */}
+              <BlockSubsidyInfo
+                blockSubsidyHeight={data.stakingInfo.blockSubsidyHeight}
+                blockSubsidyTotal={data.stakingInfo.blockSubsidyTotal}
+                blockSubsidyPos={data.stakingInfo.blockSubsidyPos}
+                blockSubsidyPow={data.stakingInfo.blockSubsidyPow}
+                blockSubsidyTreasury={data.stakingInfo.blockSubsidyTreasury}
+                blocksUntilSubsidyReduction={data.stakingInfo.blocksUntilSubsidyReduction}
+                subsidyReductionInterval={data.stakingInfo.subsidyReductionInterval}
+              />
+            </div>
+          )}
+
+          {/* Row 4: Address Bookmarks */}
+          {data && data.walletStatus.status !== 'no_wallet' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
               <AddressBookmarksCard />
             </div>
           )}
