@@ -30,8 +30,9 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
 
   if (!isOpen) return null;
 
+  const tooShort = newPass !== '' && newPass.length < 8;
   const mismatch = newPass !== '' && confirm !== '' && newPass !== confirm;
-  const canSubmit = oldPass && newPass && confirm && !mismatch && !submitting;
+  const canSubmit = oldPass && newPass && confirm && !tooShort && !mismatch && !submitting;
 
   const handleClose = () => {
     if (submitting) return;
@@ -95,11 +96,13 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
             <input
               type="password"
               autoComplete="new-password"
+              minLength={8}
               value={newPass}
               onChange={(e) => setNewPass(e.target.value)}
               disabled={submitting}
               className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
             />
+            {tooShort && <p className="text-xs text-destructive mt-1">Must be at least 8 characters.</p>}
           </div>
 
           <div>

@@ -51,6 +51,12 @@ RUN chown 1000:1000 /app/dcrpulse
 # volume gets the right ownership when first mounted.
 RUN mkdir -p /dashboard-data && chown 1000:1000 /dashboard-data
 
+# Pre-create /app-data/dcrlnd as a mountpoint. The dashboard binds
+# /app-data read-only and /app-data/dcrlnd writable on top; docker needs
+# the inner mount target to exist before the outer mount makes it
+# read-only, otherwise container start fails with "read-only file system".
+RUN mkdir -p /app-data/dcrlnd && chown -R 1000:1000 /app-data
+
 # Switch to UID 1000 for Umbrel compatibility
 USER 1000
 

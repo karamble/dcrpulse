@@ -87,6 +87,10 @@ export const WalletSetup = () => {
       setError('Private passphrase is required');
       return false;
     }
+    if (privatePassphrase.length < 8) {
+      setError('Private passphrase must be at least 8 characters');
+      return false;
+    }
     if (privatePassphrase !== confirmPrivatePass) {
       setError('Private passphrases do not match');
       return false;
@@ -509,14 +513,15 @@ export const WalletSetup = () => {
                 {/* Private Passphrase */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Private Passphrase <span className="text-red-500">*</span></label>
-                  <p className="text-xs text-muted-foreground">Required: Encrypts private keys for sending/signing transactions</p>
+                  <p className="text-xs text-muted-foreground">Required: Encrypts private keys for sending/signing transactions. Minimum 8 characters.</p>
                   <div className="relative">
                     <input
                       type={showPrivatePass ? 'text' : 'password'}
+                      minLength={8}
                       value={privatePassphrase}
                       onChange={(e) => setPrivatePassphrase(e.target.value)}
                       className="w-full px-4 py-2 pr-10 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                      placeholder="Enter private passphrase"
+                      placeholder="Enter private passphrase (min 8 chars)"
                     />
                     <button
                       onClick={() => setShowPrivatePass(!showPrivatePass)}

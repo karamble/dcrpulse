@@ -14,7 +14,7 @@ import (
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 
-	"decred.org/dcrwallet/v4/pgpwordlist"
+	"decred.org/dcrwallet/v5/pgpwordlist"
 )
 
 // seedWordList caches the 512-word PGP wordlist sourced from dcrwallet's
@@ -129,6 +129,10 @@ func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 	// Validate input
 	if req.PrivatePassphrase == "" {
 		http.Error(w, "Private passphrase is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.PrivatePassphrase) < 8 {
+		http.Error(w, "Private passphrase must be at least 8 characters", http.StatusBadRequest)
 		return
 	}
 	if req.SeedHex == "" {

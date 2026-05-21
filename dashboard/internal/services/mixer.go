@@ -16,7 +16,7 @@ import (
 
 	"dcrpulse/internal/rpc"
 
-	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
 
 var mixerDebugEnabled atomic.Bool
@@ -197,14 +197,14 @@ func runMixer(ctx context.Context, passphrase []byte, mixedAccount, mixedBranch,
 		_, _ = rpc.WalletGrpcClient.LockAccount(lockCtx, &pb.LockAccountRequest{AccountNumber: changeAccount})
 	}()
 
-	// v4.1.0 enables mixing whenever CsppServer != ""; the value is otherwise
-	// ignored. Future v4 minor will replace this with a bool enable_mixing.
+	// v5 dropped the CsppServer field. Mixing is implicitly enabled when
+	// the daemon is launched with --mixing and RunAccountMixer is invoked
+	// with a valid mixed/change account pair.
 	req := &pb.RunAccountMixerRequest{
 		Passphrase:         passphrase,
 		MixedAccount:       mixedAccount,
 		MixedAccountBranch: mixedBranch,
 		ChangeAccount:      changeAccount,
-		CsppServer:         "p2p",
 	}
 
 	stream, err := rpc.AccountMixerClient.RunAccountMixer(ctx, req)

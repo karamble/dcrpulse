@@ -16,6 +16,7 @@ type WalletSettings struct {
 type ExternalRequestSettings struct {
 	VSPListing bool `json:"vspListing"`
 	Politeia   bool `json:"politeia"`
+	Brseeder   bool `json:"brseeder"`
 }
 
 // GlobalSettings is the cross-wallet preferences surface.

@@ -14,7 +14,7 @@ import (
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
-	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
 
 // LoadAutobuyerSettings reads the autobuyer config from the per-wallet

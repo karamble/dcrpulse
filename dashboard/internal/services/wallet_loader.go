@@ -16,7 +16,7 @@ import (
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
-	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
 
 // CheckWalletExists checks if a wallet database exists

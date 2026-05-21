@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/rpcclient/v8"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -43,7 +43,7 @@ var (
 	AccountMixerClient pb.AccountMixerServiceClient
 
 	// TicketBuyerClient is the gRPC client for the ticket autobuyer (v2)
-	TicketBuyerClient pb.TicketBuyerV2ServiceClient
+	TicketBuyerClient pb.TicketBuyerServiceClient
 
 	// VotingClient is the gRPC client for agenda voting
 	VotingClient pb.VotingServiceClient
@@ -206,7 +206,7 @@ func InitWalletGrpcClient(config GrpcConfig) error {
 	SeedServiceClient = pb.NewSeedServiceClient(conn)
 	DecodeMessageClient = pb.NewDecodeMessageServiceClient(conn)
 	AccountMixerClient = pb.NewAccountMixerServiceClient(conn)
-	TicketBuyerClient = pb.NewTicketBuyerV2ServiceClient(conn)
+	TicketBuyerClient = pb.NewTicketBuyerServiceClient(conn)
 	VotingClient = pb.NewVotingServiceClient(conn)
 
 	log.Println("dcrwallet gRPC clients initialized with mutual TLS authentication")

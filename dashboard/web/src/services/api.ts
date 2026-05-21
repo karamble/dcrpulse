@@ -740,6 +740,7 @@ export interface WalletSettings {
 export interface ExternalRequestSettings {
   vspListing: boolean;
   politeia: boolean;
+  brseeder: boolean;
 }
 
 export interface GlobalSettings {
@@ -764,7 +765,7 @@ export const changePassphrase = async (oldPassphrase: string, newPassphrase: str
   await api.post('/wallet/settings/change-passphrase', { oldPassphrase, newPassphrase });
 };
 
-export type LogComponent = 'dcrd' | 'dcrwallet';
+export type LogComponent = 'dcrd' | 'dcrwallet' | 'dcrlnd';
 
 export interface LogTail {
   component: LogComponent;

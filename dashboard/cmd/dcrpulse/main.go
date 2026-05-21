@@ -85,9 +85,26 @@ func main() {
 		log.Println("No gRPC certificate provided. Streaming features disabled.")
 	}
 
+	// Best-effort dcrlnd connection. dcrlnd may still be locked or
+	// uninitialised at this point; failures are logged and the
+	// dashboard re-tries on demand via ReinitDcrlndClient.
+	dcrlndCfg := rpc.DcrlndConfig{
+		GrpcHost:     getEnv("DCRLND_HOST", "dcrlnd"),
+		GrpcPort:     getEnv("DCRLND_GRPC_PORT", "10009"),
+		TLSCertPath:  getEnv("DCRLND_TLS_CERT", "/app-data/dcrlnd/tls.cert"),
+		MacaroonPath: getEnv("DCRLND_MACAROON", "/app-data/dcrlnd/admin.macaroon"),
+	}
+	if err := rpc.InitDcrlndClient(dcrlndCfg); err != nil {
+		log.Printf("Warning: dcrlnd init: %v", err)
+	}
+
 	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into
 	// the same ring buffer the /wallet/privacy/events WebSocket reads from.
 	services.StartWalletLogTail()
+
+	// Background refresh of the Bison Relay peer-preset cache used by the
+	// Channels tab's open-channel form.
+	services.StartBrseederRefresh()
 
 	// Setup router
 	r := mux.NewRouter()
@@ -156,6 +173,21 @@ func main() {
 	api.HandleFunc("/wallet/governance/proposals", handlers.GetProposalsHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/proposals/{token}", handlers.GetProposalDetailHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/proposals/cast-vote", handlers.CastPoliteiaVoteHandler).Methods("POST")
+	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
+	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")
+	api.HandleFunc("/wallet/ln/info", handlers.LightningInfoHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/balance", handlers.LightningBalanceHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/activity", handlers.LightningActivityHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/channels", handlers.LightningChannelsHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/channels/open", handlers.LightningOpenChannelHandler).Methods("POST")
+	api.HandleFunc("/wallet/ln/channels/close", handlers.LightningCloseChannelHandler).Methods("POST")
+	api.HandleFunc("/wallet/ln/peer-presets", handlers.LightningPeerPresetsHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/autopilot", handlers.LightningAutopilotStatusHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/autopilot", handlers.LightningAutopilotSetHandler).Methods("POST")
+	api.HandleFunc("/wallet/ln/graph/search", handlers.LightningGraphSearchHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/channel-events", handlers.LightningChannelEventsHandler).Methods("GET")
+	api.HandleFunc("/wallet/ln/network", handlers.LightningNetworkHandler).Methods("GET")
 	api.HandleFunc("/wallet/next-address", handlers.NextAddressHandler).Methods("GET")
 	api.HandleFunc("/wallet/validate-address", handlers.ValidateAddressHandler).Methods("GET")
 	api.HandleFunc("/wallet/construct-transaction", handlers.ConstructTransactionHandler).Methods("POST")

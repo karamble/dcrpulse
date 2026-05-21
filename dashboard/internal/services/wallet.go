@@ -17,7 +17,7 @@ import (
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
-	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 )
 

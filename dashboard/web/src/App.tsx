@@ -19,6 +19,10 @@ import { AccountsPage } from './pages/AccountsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { StakingPage } from './pages/StakingPage';
 import { GovernancePage } from './pages/GovernancePage';
+import { LightningPage } from './pages/LightningPage';
+import { OverviewTab as LightningOverviewTab } from './components/lightning/OverviewTab';
+import { ChannelsTab } from './components/lightning/channels/ChannelsTab';
+import { ChannelDetailPage } from './components/lightning/channels/ChannelDetailPage';
 import { ConsensusTab } from './components/governance/ConsensusTab';
 import { TreasuryTab } from './components/governance/TreasuryTab';
 import { ProposalsTab } from './components/governance/ProposalsTab';
@@ -40,11 +44,13 @@ import { AddressView } from './pages/AddressView';
 import { MempoolView } from './pages/MempoolView';
 import { GovernanceDashboard } from './pages/GovernanceDashboard';
 import { getDashboardData, getWalletStatus } from './services/api';
+import { getLightningInfo } from './services/lightningApi';
 
 function AppContent() {
   const location = useLocation();
   const [nodeVersion, setNodeVersion] = useState<string>('');
   const [walletVersion, setWalletVersion] = useState<string>('');
+  const [lndVersion, setLndVersion] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<string>('');
 
   // Fetch versions for header and footer
@@ -65,6 +71,17 @@ function AppContent() {
         } catch (walletErr) {
           // Wallet might not be available, that's ok
           console.debug('Wallet version not available:', walletErr);
+        }
+
+        // Fetch dcrlnd version. The LN wallet may be locked / un-set-up;
+        // in those cases GetInfo returns 503 and we simply don't show the
+        // footer entry. Backend already normalises this to a clean
+        // "v0.8.1" via Versioner.GetVersion.
+        try {
+          const lnInfo = await getLightningInfo();
+          setLndVersion(lnInfo.version || '');
+        } catch (lnErr) {
+          console.debug('Lightning version not available:', lnErr);
         }
       } catch (err) {
         console.error('Error fetching versions:', err);
@@ -97,6 +114,11 @@ function AppContent() {
               <Route path="proposals" element={<ProposalsTab />} />
               <Route path="proposals/:token" element={<ProposalDetailPage />} />
             </Route>
+            <Route path="lightning" element={<LightningPage />}>
+              <Route index element={<LightningOverviewTab />} />
+              <Route path="channels" element={<ChannelsTab />} />
+              <Route path="channels/:channelPoint" element={<ChannelDetailPage />} />
+            </Route>
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="settings" element={<SettingsPage />}>
               <Route index element={<Navigate to="wallet" replace />} />
@@ -120,7 +142,12 @@ function AppContent() {
           <Route path="/explorer/mempool" element={<MempoolView />} />
           <Route path="/governance" element={<GovernanceDashboard />} />
         </Routes>
-        <Footer dcrdVersion={nodeVersion} dcrwalletVersion={walletVersion} lastUpdate={lastUpdate} />
+        <Footer
+          dcrdVersion={nodeVersion}
+          dcrwalletVersion={walletVersion}
+          dcrlndVersion={lndVersion}
+          lastUpdate={lastUpdate}
+        />
       </div>
       <ExternalLinkGuard />
     </div>

@@ -9,6 +9,7 @@ import { LogComponent, getLogs } from '../../services/api';
 const components: { value: LogComponent; label: string }[] = [
   { value: 'dcrwallet', label: 'dcrwallet' },
   { value: 'dcrd', label: 'dcrd' },
+  { value: 'dcrlnd', label: 'dcrlnd' },
 ];
 
 const lineOptions = [200, 500, 1000, 2000];
@@ -98,7 +99,7 @@ export const LogsSection = () => {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Read-only tail of <span className="font-mono">/app-data/{component}/logs/mainnet/{component}.log</span>.
+        Read-only tail of the {component} log file under <span className="font-mono">/app-data/{component}/logs/</span>.
         Logs are written by the {component} container; the dashboard does not interpret them.
       </p>
 

@@ -19,12 +19,28 @@ type LogComponent string
 const (
 	LogComponentDcrd      LogComponent = "dcrd"
 	LogComponentDcrwallet LogComponent = "dcrwallet"
+	LogComponentDcrlnd    LogComponent = "dcrlnd"
 )
 
 const (
 	logsRoot   = "/app-data"
 	maxLogTail = 5000
 )
+
+// logPath resolves the on-disk log file for a component. Each daemon
+// uses its own directory layout — dcrlnd writes under
+// `logs/decred/<network>/lnd.log` while dcrd and dcrwallet use
+// `logs/<network>/<component>.log`.
+func logPath(component LogComponent, network string) (string, error) {
+	switch component {
+	case LogComponentDcrd, LogComponentDcrwallet:
+		return filepath.Join(logsRoot, string(component), "logs", network, string(component)+".log"), nil
+	case LogComponentDcrlnd:
+		return filepath.Join(logsRoot, "dcrlnd", "logs", "decred", network, "lnd.log"), nil
+	default:
+		return "", fmt.Errorf("unknown log component: %q", component)
+	}
+}
 
 // TailLog returns the last `lines` lines of the named component's log
 // for the active network. The dashboard mounts /app-data read-only, so
@@ -42,15 +58,10 @@ func TailLog(ctx context.Context, component LogComponent, lines int) ([]string, 
 		network = "mainnet"
 	}
 
-	var subdir string
-	switch component {
-	case LogComponentDcrd, LogComponentDcrwallet:
-		subdir = string(component)
-	default:
-		return nil, fmt.Errorf("unknown log component: %q", component)
+	path, err := logPath(component, network)
+	if err != nil {
+		return nil, err
 	}
-
-	path := filepath.Join(logsRoot, subdir, "logs", network, string(component)+".log")
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)

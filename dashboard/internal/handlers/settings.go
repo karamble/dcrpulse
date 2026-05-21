@@ -33,6 +33,7 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		ExternalRequests: types.ExternalRequestSettings{
 			VSPListing: true,
 			Politeia:   true,
+			Brseeder:   true,
 		},
 	}
 
@@ -57,6 +58,9 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			if v, ok := allowed[config.ExternalRequestPoliteia]; ok {
 				globalOut.ExternalRequests.Politeia = v
+			}
+			if v, ok := allowed[config.ExternalRequestBrseeder]; ok {
+				globalOut.ExternalRequests.Brseeder = v
 			}
 		}
 	}
@@ -126,6 +130,7 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		allowed[config.ExternalRequestVSPListing] = req.Global.ExternalRequests.VSPListing
 		allowed[config.ExternalRequestPoliteia] = req.Global.ExternalRequests.Politeia
+		allowed[config.ExternalRequestBrseeder] = req.Global.ExternalRequests.Brseeder
 		if err := gc.SetAllowedExternalRequests(allowed); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -149,6 +154,10 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.NewPassphrase == "" {
 		http.Error(w, "newPassphrase required", http.StatusBadRequest)
+		return
+	}
+	if len(req.NewPassphrase) < 8 {
+		http.Error(w, "new passphrase must be at least 8 characters", http.StatusBadRequest)
 		return
 	}
 	if len(req.OldPassphrase) > 1024 || len(req.NewPassphrase) > 1024 {

@@ -43,4 +43,5 @@ const (
 const (
 	ExternalRequestVSPListing = "stakepool_listing"
 	ExternalRequestPoliteia   = "politeia"
+	ExternalRequestBrseeder   = "brseeder"
 )

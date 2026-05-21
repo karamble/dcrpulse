@@ -77,6 +77,40 @@ services:
         reservations:
           memory: 1G
 
+  dcrlnd:
+    image: ghcr.io/karamble/dcrpulse-dcrlnd:${DCRLND_IMAGE_TAG:-latest}
+    build:
+      context: ./dcrlnd
+      args:
+        DCRLND_VERSION: ${DCRLND_VERSION:-master}
+    container_name: dcrpulse-dcrlnd
+    volumes:
+      - ${APP_DATA_DIR:-app-data}:/app-data:ro
+      - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd
+    environment:
+      - DCRWALLET_HOST=dcrwallet
+      - DCRWALLET_GRPC_PORT=9111
+      - LN_TESTNET=${LN_TESTNET:-false}
+    depends_on:
+      dcrwallet:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - decred-network
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 10009 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+        reservations:
+          memory: 256M
+
   dashboard:
     image: ghcr.io/karamble/dcrpulse-dashboard:${DASHBOARD_IMAGE_TAG:-latest}
     build: ./dashboard
@@ -85,6 +119,7 @@ services:
       - "8080:8080"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
+      - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd
       - ${DASHBOARD_DATA_DIR:-dashboard-data}:/dashboard-data
     environment:
       - PORT=8080
@@ -99,6 +134,10 @@ services:
       - DCRWALLET_RPC_USER=${DCRWALLET_RPC_USER:-dcrwallet}
       - DCRWALLET_RPC_PASS=${DCRWALLET_RPC_PASS:-dcrwalletpass}
       - DCRWALLET_RPC_CERT=/app-data/dcrd/rpc.cert
+      - DCRLND_HOST=dcrlnd
+      - DCRLND_GRPC_PORT=10009
+      - DCRLND_TLS_CERT=/app-data/dcrlnd/tls.cert
+      - DCRLND_MACAROON=/app-data/dcrlnd/admin.macaroon
     depends_on:
       dcrd:
         condition: service_healthy
@@ -125,4 +164,7 @@ volumes:
     driver: local
   dashboard-data:
     name: ${DASHBOARD_DATA_DIR:-dcrpulse_dashboard-data}
+    driver: local
+  dcrlnd-data:
+    name: ${DCRLND_DATA_DIR:-dcrpulse_dcrlnd-data}
     driver: local

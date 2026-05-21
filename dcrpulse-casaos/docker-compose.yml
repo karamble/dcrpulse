@@ -131,6 +131,42 @@ services:
           description:
             en_us: Read-only access to dcrd certificates directory
 
+  dcrlnd:
+    image: ghcr.io/karamble/dcrpulse-dcrlnd:1.0.0
+    container_name: dcrpulse-dcrlnd
+    restart: unless-stopped
+    stop_grace_period: 1m
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+      DCRWALLET_HOST: dcrwallet
+      DCRWALLET_GRPC_PORT: 9111
+      LN_TESTNET: "false"
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/dcrd
+        target: /app-data
+        read_only: true
+      - type: bind
+        source: /DATA/AppData/$AppID/dcrlnd
+        target: /app-data/dcrlnd
+    networks:
+      - dcrpulse_internal
+    depends_on:
+      dcrwallet:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 10009 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    deploy:
+      resources:
+        reservations:
+          memory: 256M
+
   dashboard:
     image: ghcr.io/karamble/dcrpulse-dashboard:1.0.0@sha256:c7b0bd714e2dac2a3a5ae73cd6c27b2f8c595370e3377672cb6ee802a8fc5981
     container_name: dcrpulse-dashboard
@@ -151,11 +187,18 @@ services:
       DCRWALLET_RPC_USER: casaos
       DCRWALLET_RPC_PASS: casaos
       DCRWALLET_RPC_CERT: /app-data/dcrd/rpc.cert
+      DCRLND_HOST: dcrlnd
+      DCRLND_GRPC_PORT: 10009
+      DCRLND_TLS_CERT: /app-data/dcrlnd/tls.cert
+      DCRLND_MACAROON: /app-data/dcrlnd/admin.macaroon
     volumes:
       - type: bind
         source: /DATA/AppData/$AppID/dcrd
         target: /app-data
         read_only: true
+      - type: bind
+        source: /DATA/AppData/$AppID/dcrlnd
+        target: /app-data/dcrlnd
     ports:
       - target: 8080
         published: "8080"

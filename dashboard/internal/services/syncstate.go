@@ -11,7 +11,7 @@ import (
 
 	"dcrpulse/internal/rpc"
 
-	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
 
 // SyncPhase is the active stage of wallet sync.

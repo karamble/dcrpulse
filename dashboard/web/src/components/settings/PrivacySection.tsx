@@ -15,6 +15,7 @@ import {
 const defaultExternal: ExternalRequestSettings = {
   vspListing: true,
   politeia: true,
+  brseeder: true,
 };
 
 interface ToggleProps {
@@ -158,6 +159,13 @@ export const PrivacySection = () => {
           checked={external.politeia}
           disabled={externalBusy}
           onChange={(v) => updateExternal({ ...external, politeia: v })}
+        />
+        <Toggle
+          label="Bison Relay LN seeder"
+          description="Fetch Lightning peer suggestions from bisonrelay.org for the Channels tab's open-channel form. When disabled, the form shows no presets and you must type a peer URI manually."
+          checked={external.brseeder}
+          disabled={externalBusy}
+          onChange={(v) => updateExternal({ ...external, brseeder: v })}
         />
         <p className="text-xs text-muted-foreground">
           These preferences are persisted now; enforcement at each call site will be wired in a

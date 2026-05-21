@@ -7,10 +7,11 @@ import packageJson from '../../package.json';
 interface FooterProps {
   dcrdVersion?: string;
   dcrwalletVersion?: string;
+  dcrlndVersion?: string;
   lastUpdate?: string;
 }
 
-export const Footer = ({ dcrdVersion, dcrwalletVersion, lastUpdate }: FooterProps) => {
+export const Footer = ({ dcrdVersion, dcrwalletVersion, dcrlndVersion, lastUpdate }: FooterProps) => {
   const dashboardVersion = packageJson.version;
 
   return (
@@ -53,6 +54,19 @@ export const Footer = ({ dcrdVersion, dcrwalletVersion, lastUpdate }: FooterProp
               className="hover:text-primary transition-colors"
             >
               dcrwallet {dcrwalletVersion}
+            </a>
+          </>
+        )}
+        {dcrlndVersion && (
+          <>
+            <span className="text-border">•</span>
+            <a
+              href="https://github.com/decred/dcrlnd"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-primary transition-colors"
+            >
+              dcrlnd {dcrlndVersion}
             </a>
           </>
         )}
