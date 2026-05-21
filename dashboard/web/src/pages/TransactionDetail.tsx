@@ -534,7 +534,7 @@ export const TransactionDetail = () => {
                     >
                       {tx.votingInfo.votingStartBlock.toLocaleString()}
                     </button>
-                    <span className="text-muted-foreground">–</span>
+                    <span className="text-muted-foreground">-</span>
                     <button
                       onClick={() => navigate(`/explorer/block/${tx.votingInfo?.votingEndBlock}`)}
                       className="text-sm font-semibold hover:text-primary transition-colors"

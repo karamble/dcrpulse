@@ -29,7 +29,7 @@ const feeGroups: Array<{ key: TicketRecord['feeStatus'] | 'NONE'; label: string;
 const truncateHash = (h: string) => (h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-8)}` : h);
 const formatDcr = (v: number) => v.toFixed(8);
 const formatAge = (unixSec: number) => {
-  if (!unixSec) return '—';
+  if (!unixSec) return '-';
   const seconds = Math.floor(Date.now() / 1000 - unixSec);
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
@@ -117,7 +117,7 @@ export const TicketStatusTab = () => {
         changeAccount: account,
         passphrase,
       });
-      setSyncStatus('Sync requested — refreshing ticket list.');
+      setSyncStatus('Sync requested - refreshing ticket list.');
       setModalOpen(false);
       await load();
     } catch (err: any) {
@@ -239,7 +239,7 @@ export const TicketStatusTab = () => {
                         {formatDcr(t.ticketPrice)} DCR
                       </td>
                       <td className="py-2 pr-3 text-muted-foreground truncate max-w-[16rem]">
-                        {t.vspHost || '—'}
+                        {t.vspHost || '-'}
                       </td>
                       <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">
                         {t.blockHeight > 0 ? (

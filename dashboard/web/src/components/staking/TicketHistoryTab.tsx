@@ -12,7 +12,7 @@ const TERMINAL_STATES: TicketLifecycleStatus[] = ['VOTED', 'MISSED', 'EXPIRED', 
 const truncateHash = (h: string) => (h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-8)}` : h);
 const formatDcr = (v: number) => v.toFixed(8);
 const formatAge = (unixSec: number) => {
-  if (!unixSec) return '—';
+  if (!unixSec) return '-';
   const seconds = Math.floor(Date.now() / 1000 - unixSec);
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
@@ -195,7 +195,7 @@ export const TicketHistoryTab = () => {
                         <ExternalLink className="h-3 w-3" />
                       </Link>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">-</span>
                     )}
                   </td>
                   <td className="py-2 pr-3 text-right font-mono whitespace-nowrap">
@@ -205,7 +205,7 @@ export const TicketHistoryTab = () => {
                     {t.status === 'VOTED' ? (
                       <span className="text-success">+{formatDcr(t.reward)} DCR</span>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">-</span>
                     )}
                   </td>
                   <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">
@@ -214,7 +214,7 @@ export const TicketHistoryTab = () => {
                         {t.spenderHeight.toLocaleString()} · {formatAge(t.spenderTime)}
                       </>
                     ) : (
-                      '—'
+                      '-'
                     )}
                   </td>
                 </tr>

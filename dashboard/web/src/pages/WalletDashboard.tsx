@@ -173,7 +173,7 @@ export const WalletDashboard = () => {
     initialize();
   }, []);
 
-  // Auto-refresh balances every 10 seconds. Unconditional — sync state
+  // Auto-refresh balances every 10 seconds. Unconditional - sync state
   // belongs to the WebSocket, not polling, so polling doesn't need to pause
   // during rescan.
   useEffect(() => {
@@ -276,7 +276,7 @@ export const WalletDashboard = () => {
         <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2 animate-fade-in">
           <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
           <span className="text-sm text-red-400">
-            Disconnected from dcrd — wallet won't see new blocks. Auto-reconnecting…
+            Disconnected from dcrd - wallet won't see new blocks. Auto-reconnecting…
           </span>
         </div>
       )}

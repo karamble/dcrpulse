@@ -73,6 +73,26 @@ func (c *GlobalCfg) Has(key string) bool {
 	return ok
 }
 
+// AllowedExternalRequests returns the persisted allowlist map. Absent
+// keys are treated as allowed by callers; this preserves backward
+// compatibility when the file does not yet exist.
+func (c *GlobalCfg) AllowedExternalRequests() (map[string]bool, error) {
+	m := map[string]bool{}
+	ok, err := c.Get(KeyAllowedExternalRequests, &m)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return m, nil
+}
+
+// SetAllowedExternalRequests stages the full allowlist map.
+func (c *GlobalCfg) SetAllowedExternalRequests(m map[string]bool) error {
+	return c.Set(KeyAllowedExternalRequests, m)
+}
+
 // Save atomically rewrites the global config.
 func (c *GlobalCfg) Save() error {
 	c.mu.Lock()

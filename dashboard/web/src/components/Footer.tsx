@@ -39,7 +39,7 @@ export const Footer = ({ dcrdVersion, dcrwalletVersion, lastUpdate }: FooterProp
               rel="noopener noreferrer"
               className="hover:text-primary transition-colors"
             >
-              dcrd v{dcrdVersion}
+              dcrd {dcrdVersion}
             </a>
           </>
         )}
@@ -52,7 +52,7 @@ export const Footer = ({ dcrdVersion, dcrwalletVersion, lastUpdate }: FooterProp
               rel="noopener noreferrer"
               className="hover:text-primary transition-colors"
             >
-              dcrwallet v{dcrwalletVersion}
+              dcrwallet {dcrwalletVersion}
             </a>
           </>
         )}

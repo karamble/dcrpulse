@@ -725,6 +725,63 @@ export const stopAutobuyer = async (): Promise<void> => {
   await api.post('/wallet/staking/autobuyer/stop');
 };
 
+export interface WalletSettings {
+  gapLimit: number;
+  currencyDisplay?: string;
+}
+
+export interface ExternalRequestSettings {
+  vspListing: boolean;
+}
+
+export interface GlobalSettings {
+  externalRequests: ExternalRequestSettings;
+}
+
+export interface SettingsEnvelope {
+  wallet?: WalletSettings;
+  global?: GlobalSettings;
+}
+
+export const getSettings = async (): Promise<SettingsEnvelope> => {
+  const response = await api.get<SettingsEnvelope>('/wallet/settings');
+  return response.data;
+};
+
+export const saveSettings = async (e: SettingsEnvelope): Promise<void> => {
+  await api.post('/wallet/settings', e);
+};
+
+export const changePassphrase = async (oldPassphrase: string, newPassphrase: string): Promise<void> => {
+  await api.post('/wallet/settings/change-passphrase', { oldPassphrase, newPassphrase });
+};
+
+export type LogComponent = 'dcrd' | 'dcrwallet';
+
+export interface LogTail {
+  component: LogComponent;
+  lines: string[];
+}
+
+export const getLogs = async (component: LogComponent, lines = 500): Promise<LogTail> => {
+  const response = await api.get<LogTail>(
+    `/wallet/settings/logs?component=${component}&lines=${lines}`,
+  );
+  return response.data;
+};
+
+export const discoverAddresses = async (
+  passphrase: string,
+  discoverAccounts: boolean,
+  gapLimit?: number,
+): Promise<void> => {
+  await api.post(
+    '/wallet/settings/discover-addresses',
+    { passphrase, discoverAccounts, gapLimit },
+    { timeout: 10 * 60 * 1000 },
+  );
+};
+
 export const subscribeAutobuyerEvents = (
   onEvent: (e: AutobuyerEvent) => void,
   onError?: (e: Error) => void,

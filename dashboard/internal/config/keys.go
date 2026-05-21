@@ -23,4 +23,16 @@ const (
 	KeyChangeAccountCfg  = "change_account_cfg"
 	KeyMixedAccBranch    = "mixed_acc_branch"
 	KeySendFromUnmixed   = "send_from_unmixed"
+
+	// Global config keys (live in /dashboard-data/config.json).
+	KeyAllowedExternalRequests = "allowed_external_requests"
+)
+
+// External-request identifiers used as keys inside the
+// allowed_external_requests map. Names match Decrediton's constants.
+// Other Decrediton keys (e.g. "dcrdata", "update_check", "politeia",
+// "network_status") survive round-trip via the raw-JSON layer; add a
+// constant here when we wire a feature that calls the matching endpoint.
+const (
+	ExternalRequestVSPListing = "stakepool_listing"
 )

@@ -146,7 +146,7 @@ export const StatisticsTab = () => {
         />
         <StatCard
           label="Vote Success"
-          value={stats.voteSuccess === null ? '—' : `${stats.voteSuccess.toFixed(2)}%`}
+          value={stats.voteSuccess === null ? '-' : `${stats.voteSuccess.toFixed(2)}%`}
           sub="voted / (voted + revoked + missed)"
           icon={<Percent className="h-4 w-4 text-primary" />}
         />
@@ -165,7 +165,7 @@ export const StatisticsTab = () => {
         />
         <StatCard
           label="Avg Reward per Vote"
-          value={stats.avgReward === null ? '—' : `${formatDcr(stats.avgReward)} DCR`}
+          value={stats.avgReward === null ? '-' : `${formatDcr(stats.avgReward)} DCR`}
           sub="Total reward / tickets voted"
           icon={<Coins className="h-4 w-4 text-primary" />}
         />

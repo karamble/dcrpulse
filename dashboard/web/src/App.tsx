@@ -17,6 +17,11 @@ import { ExportTab } from './components/onchain/ExportTab';
 import { AccountsPage } from './pages/AccountsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { StakingPage } from './pages/StakingPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { WalletSection } from './components/settings/WalletSection';
+import { PrivacySection } from './components/settings/PrivacySection';
+import { LogsSection } from './components/settings/LogsSection';
+import { AboutSection } from './components/settings/AboutSection';
 import { PurchaseTab } from './components/staking/PurchaseTab';
 import { AutobuyerTab } from './components/staking/AutobuyerTab';
 import { TicketStatusTab } from './components/staking/TicketStatusTab';
@@ -80,6 +85,13 @@ function AppContent() {
               <Route path="statistics" element={<StatisticsTab />} />
             </Route>
             <Route path="accounts" element={<AccountsPage />} />
+            <Route path="settings" element={<SettingsPage />}>
+              <Route index element={<Navigate to="wallet" replace />} />
+              <Route path="wallet" element={<WalletSection />} />
+              <Route path="privacy" element={<PrivacySection />} />
+              <Route path="logs" element={<LogsSection />} />
+              <Route path="about" element={<AboutSection />} />
+            </Route>
             <Route path="transactions" element={<OnChainTransactions />}>
               <Route index element={<Navigate to="send" replace />} />
               <Route path="send" element={<SendTab />} />

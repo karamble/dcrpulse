@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bug, ChevronDown, ChevronRight, ScrollText } from 'lucide-react';
-import {
-  MixerEvent,
-  getMixerDebug,
-  setMixerDebug,
-  subscribeMixerEvents,
-} from '../../services/api';
+import { ChevronDown, ChevronRight, ScrollText } from 'lucide-react';
+import { MixerEvent, subscribeMixerEvents } from '../../services/api';
 
 const MAX_EVENTS = 200;
 
@@ -23,8 +18,6 @@ const levelClass = (level: MixerEvent['level']) => {
 export const MixerEventLog = () => {
   const [expanded, setExpanded] = useState(false);
   const [events, setEvents] = useState<MixerEvent[]>([]);
-  const [debugOn, setDebugOn] = useState(false);
-  const [debugBusy, setDebugBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,30 +35,10 @@ export const MixerEventLog = () => {
   }, []);
 
   useEffect(() => {
-    getMixerDebug()
-      .then((r) => setDebugOn(r.enabled))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
     if (expanded && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [events, expanded]);
-
-  const toggleDebug = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (debugBusy) return;
-    setDebugBusy(true);
-    try {
-      const next = await setMixerDebug(!debugOn);
-      setDebugOn(next.enabled);
-    } catch (err) {
-      console.error('Failed to toggle mixer debug:', err);
-    } finally {
-      setDebugBusy(false);
-    }
-  };
 
   return (
     <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden">
@@ -82,24 +55,9 @@ export const MixerEventLog = () => {
           <ScrollText className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Mixer events</h3>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleDebug}
-            disabled={debugBusy}
-            title="Toggle MIXC + TKBY debug logging on dcrwallet"
-            className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
-              debugOn
-                ? 'bg-warning/20 text-warning hover:bg-warning/30'
-                : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-            } disabled:opacity-50 disabled:cursor-wait`}
-          >
-            <Bug className="h-3 w-3" />
-            Debug
-          </button>
-          <span className="text-xs text-muted-foreground">
-            {events.length} event{events.length === 1 ? '' : 's'}
-          </span>
-        </div>
+        <span className="text-xs text-muted-foreground">
+          {events.length} event{events.length === 1 ? '' : 's'}
+        </span>
       </div>
       {expanded && (
         <div

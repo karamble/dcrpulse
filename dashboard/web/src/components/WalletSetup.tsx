@@ -222,7 +222,7 @@ export const WalletSetup = () => {
                     <p className="font-semibold text-warning">What to expect</p>
                     <ul className="space-y-1 text-muted-foreground">
                       <li>• Decred seeds are 33 words. Or paste the raw hex (32 bytes) if you have that instead.</li>
-                      <li>• After restore, dcrwallet rescans the chain from genesis — this can take a while.</li>
+                      <li>• After restore, dcrwallet rescans the chain from genesis - this can take a while.</li>
                       <li>• Keep the dashboard running during the rescan.</li>
                     </ul>
                   </div>
@@ -261,7 +261,7 @@ export const WalletSetup = () => {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold">Enter your seed</h2>
-                  <p className="text-sm text-muted-foreground">Words or hex — paste supported.</p>
+                  <p className="text-sm text-muted-foreground">Words or hex - paste supported.</p>
                 </div>
               </div>
 

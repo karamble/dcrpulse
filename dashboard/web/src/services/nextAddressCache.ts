@@ -1,7 +1,7 @@
 // In-memory cache of fresh receive addresses derived via getNextAddress.
 // Persists across component remounts within a tab session so users navigating
 // to/from the Privacy page don't burn a new BIP44 index every time. Lost on
-// page reload — that's deliberate, a full reload is a strong signal to refresh.
+// page reload - that's deliberate, a full reload is a strong signal to refresh.
 //
 // Callers must invalidate(account, branch) once the cached address has been
 // used on-chain (e.g. immediately after a successful send), since dcrwallet

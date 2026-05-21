@@ -9,7 +9,7 @@ interface Props {
 
 const solverLabel: Record<PrivacyStatus['csppsolverState'], { text: string; cls: string }> = {
   active: { text: 'Local · active', cls: 'text-success' },
-  missing: { text: 'Missing — relying on peer solvers', cls: 'text-warning' },
+  missing: { text: 'Missing - relying on peer solvers', cls: 'text-warning' },
   unknown: { text: 'Unknown', cls: 'text-muted-foreground' },
 };
 

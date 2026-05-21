@@ -29,7 +29,7 @@ export const PrivacySetupCard = ({ onConfigured }: Props) => {
         gradually mixed peer-to-peer over the Decred network with other participants.
       </p>
       <p className="max-w-xl mx-auto text-xs text-muted-foreground">
-        After mixing, only spend from the mixed account — sending from the unmixed account can
+        After mixing, only spend from the mixed account - sending from the unmixed account can
         compromise the privacy you just gained.
       </p>
       <button

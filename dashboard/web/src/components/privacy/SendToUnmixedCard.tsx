@@ -138,7 +138,7 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
   }, [formReady, sourceAccount, destAddress, amountAtoms, sendAll]);
 
   const handleSuccess = (txHash: string) => {
-    // Cached address has just been consumed on-chain — drop it so the next
+    // Cached address has just been consumed on-chain - drop it so the next
     // mount derives a fresh index.
     nextAddressCache.invalidate(changeAccount);
     setSuccessTxHash(txHash);

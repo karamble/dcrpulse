@@ -135,7 +135,7 @@ export const AccountRow = ({ account, onRename }: Props) => {
             </button>
             {isImported && (
               <span className="text-xs text-muted-foreground">
-                Imported account — actions disabled
+                Imported account - actions disabled
               </span>
             )}
           </div>

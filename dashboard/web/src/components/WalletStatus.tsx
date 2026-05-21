@@ -94,7 +94,7 @@ export const WalletStatus = ({
           {autobuyerRunning && (
             <Link
               to="/wallet/staking/autobuyer"
-              title="Autobuyer running — open Staking page"
+              title="Autobuyer running - open Staking page"
               className="p-3 rounded-xl bg-success/15 border-2 border-success/30 hover:bg-success/25 transition-colors"
             >
               <Ticket className="h-6 w-6 text-success animate-pulse" />
@@ -103,7 +103,7 @@ export const WalletStatus = ({
           {mixerRunning && (
             <Link
               to="/wallet/privacy"
-              title="Mixer running — open Privacy page"
+              title="Mixer running - open Privacy page"
               className="p-3 rounded-xl bg-success/15 border-2 border-success/30 hover:bg-success/25 transition-colors"
             >
               <ShieldCheck className="h-6 w-6 text-success animate-pulse" />

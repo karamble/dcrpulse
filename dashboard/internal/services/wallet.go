@@ -1217,3 +1217,49 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 	}
 	return hash.String(), nil
 }
+
+// ChangePrivatePassphrase rotates the wallet's private (signing)
+// passphrase via dcrwallet's ChangePassphrase gRPC with Key=PRIVATE.
+// The caller is expected to zero both byte slices after this returns.
+func ChangePrivatePassphrase(ctx context.Context, oldPass, newPass []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+	_, err := rpc.WalletGrpcClient.ChangePassphrase(ctx, &pb.ChangePassphraseRequest{
+		Key:           pb.ChangePassphraseRequest_PRIVATE,
+		OldPassphrase: oldPass,
+		NewPassphrase: newPass,
+	})
+	return err
+}
+
+// DiscoverUsage unlocks the wallet and runs dcrwallet's DiscoverUsage
+// gRPC to scan the chain for previously-used addresses under gapLimit.
+// Blocks until the scan completes. The wallet is re-locked on return.
+func DiscoverUsage(ctx context.Context, passphrase []byte, discoverAccounts bool, gapLimit uint32) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+
+	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
+	_, err := rpc.WalletGrpcClient.UnlockWallet(unlockCtx, &pb.UnlockWalletRequest{
+		Passphrase: passphrase,
+	})
+	unlockCancel()
+	if err != nil {
+		return fmt.Errorf("unlock wallet: %w", err)
+	}
+	defer func() {
+		lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer lockCancel()
+		_, _ = rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{})
+	}()
+
+	if _, err := rpc.WalletGrpcClient.DiscoverUsage(ctx, &pb.DiscoverUsageRequest{
+		DiscoverAccounts: discoverAccounts,
+		GapLimit:         gapLimit,
+	}); err != nil {
+		return fmt.Errorf("DiscoverUsage RPC: %w", err)
+	}
+	return nil
+}

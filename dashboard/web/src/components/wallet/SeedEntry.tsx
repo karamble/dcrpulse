@@ -19,7 +19,7 @@ const wordlistReady: Promise<void> = (async () => {
 
 const SEED_WORDS = 33;
 
-const HEX_LENGTH = 64; // 32 bytes — Decred standard
+const HEX_LENGTH = 64; // 32 bytes - Decred standard
 
 const VALIDATE_DEBOUNCE_MS = 300;
 
@@ -132,7 +132,7 @@ export const SeedEntry = ({ onValidSeedHex, onInvalid }: Props) => {
     }
   };
 
-  // Debounced validation — sends current words (joined) or hex to /decode-seed
+  // Debounced validation - sends current words (joined) or hex to /decode-seed
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     setError(null);

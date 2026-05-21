@@ -391,7 +391,7 @@ export const SendTab = () => {
               {mode === 'external' && addrCheck.state === 'valid' && (
                 <p className="mt-1 text-xs text-success flex items-center gap-1">
                   <Check className="h-3 w-3" />
-                  Valid address{addrCheck.isMine ? ' — belongs to your wallet' : ''}
+                  Valid address{addrCheck.isMine ? ' - belongs to your wallet' : ''}
                 </p>
               )}
               {mode === 'external' && addrCheck.state === 'invalid' && (
