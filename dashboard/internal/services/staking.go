@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -228,4 +229,183 @@ func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, v
 		out.SplitTxHash = hex.EncodeToString(resp.SplitTx)
 	}
 	return out, nil
+}
+
+// ListTickets streams every wallet ticket and joins each with its VSP fee
+// state. Errors from the VSP-fee-status calls are non-fatal: the records are
+// still returned, just without a FeeStatus value.
+func ListTickets(ctx context.Context) ([]types.TicketRecord, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
+	}
+
+	stream, err := rpc.WalletGrpcClient.GetTickets(ctx, &pb.GetTicketsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("GetTickets RPC: %w", err)
+	}
+
+	records := make([]types.TicketRecord, 0, 32)
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("GetTickets stream: %w", err)
+		}
+		records = append(records, ticketRecordFromResponse(resp))
+	}
+
+	feeStatusByHash := fetchFeeStatusMap(ctx)
+	for i := range records {
+		if fs, ok := feeStatusByHash[records[i].Hash]; ok {
+			records[i].FeeStatus = fs
+		}
+	}
+	return records, nil
+}
+
+// ticketStatusNames maps the dcrwallet enum to the canonical short names we
+// surface to the frontend.
+var ticketStatusNames = map[pb.GetTicketsResponse_TicketDetails_TicketStatus]string{
+	pb.GetTicketsResponse_TicketDetails_UNKNOWN:  "UNKNOWN",
+	pb.GetTicketsResponse_TicketDetails_UNMINED:  "UNMINED",
+	pb.GetTicketsResponse_TicketDetails_IMMATURE: "IMMATURE",
+	pb.GetTicketsResponse_TicketDetails_LIVE:     "LIVE",
+	pb.GetTicketsResponse_TicketDetails_VOTED:    "VOTED",
+	pb.GetTicketsResponse_TicketDetails_MISSED:   "MISSED",
+	pb.GetTicketsResponse_TicketDetails_EXPIRED:  "EXPIRED",
+	pb.GetTicketsResponse_TicketDetails_REVOKED:  "REVOKED",
+}
+
+func ticketRecordFromResponse(r *pb.GetTicketsResponse) types.TicketRecord {
+	out := types.TicketRecord{
+		VSPHost: r.GetVspHost(),
+	}
+	if b := r.GetBlock(); b != nil {
+		out.BlockHeight = b.GetHeight()
+		out.BlockTime = b.GetTimestamp()
+	}
+	td := r.GetTicket()
+	if td == nil {
+		return out
+	}
+	out.Status = ticketStatusNames[td.GetTicketStatus()]
+	if t := td.GetTicket(); t != nil {
+		if h, herr := chainhash.NewHash(t.GetHash()); herr == nil {
+			out.Hash = h.String()
+		} else {
+			out.Hash = hex.EncodeToString(t.GetHash())
+		}
+		var debitSum, creditSum int64
+		for _, in := range t.GetDebits() {
+			debitSum += in.GetPreviousAmount()
+		}
+		for _, c := range t.GetCredits() {
+			creditSum += c.GetAmount()
+		}
+		// ticket commit = funds spent into the stake submission output.
+		commit := debitSum - creditSum - t.GetFee()
+		if commit < 0 {
+			commit = 0
+		}
+		out.TicketPrice = float64(commit) / 1e8
+	}
+	if s := td.GetSpender(); s != nil {
+		if h, herr := chainhash.NewHash(s.GetHash()); herr == nil {
+			out.SpenderHash = h.String()
+		} else {
+			out.SpenderHash = hex.EncodeToString(s.GetHash())
+		}
+		out.SpenderTime = s.GetTimestamp()
+		if td.GetTicketStatus() == pb.GetTicketsResponse_TicketDetails_VOTED {
+			var spenderCredit int64
+			for _, c := range s.GetCredits() {
+				spenderCredit += c.GetAmount()
+			}
+			reward := float64(spenderCredit)/1e8 - out.TicketPrice
+			if reward < 0 {
+				reward = 0
+			}
+			out.Reward = reward
+		}
+	}
+	return out
+}
+
+// fetchFeeStatusMap returns ticket-hash -> short fee-status name.
+func fetchFeeStatusMap(ctx context.Context) map[string]string {
+	out := make(map[string]string)
+	feeStatuses := []struct {
+		enum pb.GetVSPTicketsByFeeStatusRequest_FeeStatus
+		name string
+	}{
+		{pb.GetVSPTicketsByFeeStatusRequest_VSP_FEE_PROCESS_STARTED, "UNPAID"},
+		{pb.GetVSPTicketsByFeeStatusRequest_VSP_FEE_PROCESS_PAID, "PAID"},
+		{pb.GetVSPTicketsByFeeStatusRequest_VSP_FEE_PROCESS_ERRORED, "ERRORED"},
+		{pb.GetVSPTicketsByFeeStatusRequest_VSP_FEE_PROCESS_CONFIRMED, "CONFIRMED"},
+	}
+	for _, fs := range feeStatuses {
+		resp, err := rpc.WalletGrpcClient.GetVSPTicketsByFeeStatus(ctx, &pb.GetVSPTicketsByFeeStatusRequest{
+			FeeStatus: fs.enum,
+		})
+		if err != nil {
+			log.Printf("GetVSPTicketsByFeeStatus(%s): %v", fs.name, err)
+			continue
+		}
+		for _, raw := range resp.GetTicketsHashes() {
+			if h, herr := chainhash.NewHash(raw); herr == nil {
+				out[h.String()] = fs.name
+			} else {
+				out[hex.EncodeToString(raw)] = fs.name
+			}
+		}
+	}
+	return out
+}
+
+// SyncFailedVSPTickets retries fee payment for tickets with VSP fee errors
+// against the given VSP. Uses the lazy per-account-encryption migration
+// pattern from PurchaseTickets.
+func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, account, changeAccount uint32, passphrase []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+	if vspHost == "" || vspPubkey == "" {
+		return fmt.Errorf("vspHost and vspPubkey are required")
+	}
+
+	if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
+		Passphrase:    passphrase,
+		AccountNumber: account,
+	}); err != nil {
+		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
+			if mErr := ensureAccountEncrypted(ctx, account, passphrase); mErr != nil {
+				return fmt.Errorf("migrate account to per-account encryption: %w", mErr)
+			}
+			if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
+				Passphrase:    passphrase,
+				AccountNumber: account,
+			}); err != nil {
+				return fmt.Errorf("unlock account: %w", err)
+			}
+		} else {
+			return fmt.Errorf("unlock account: %w", err)
+		}
+	}
+	defer func() {
+		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: account})
+	}()
+
+	if _, err := rpc.WalletGrpcClient.SyncVSPFailedTickets(ctx, &pb.SyncVSPTicketsRequest{
+		VspHost:       "https://" + strings.TrimPrefix(strings.TrimPrefix(vspHost, "https://"), "http://"),
+		VspPubkey:     vspPubkey,
+		Account:       account,
+		ChangeAccount: changeAccount,
+	}); err != nil {
+		return fmt.Errorf("SyncVSPFailedTickets RPC: %w", err)
+	}
+	return nil
 }

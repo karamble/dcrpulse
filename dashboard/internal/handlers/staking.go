@@ -106,3 +106,66 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
+// ListTicketsHandler returns every wallet ticket with status + VSP fee state.
+func ListTicketsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	tickets, err := services.ListTickets(ctx)
+	if err != nil {
+		log.Printf("ListTickets failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tickets)
+}
+
+// SyncFailedVSPTicketsHandler retries VSP fee payments for failed tickets.
+func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != r.Host {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+	}
+
+	var req types.SyncFailedVSPTicketsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Passphrase == "" {
+		http.Error(w, "passphrase required", http.StatusBadRequest)
+		return
+	}
+	if req.VspHost == "" || req.VspPubkey == "" {
+		http.Error(w, "vspHost and vspPubkey required", http.StatusBadRequest)
+		return
+	}
+
+	passphrase := []byte(req.Passphrase)
+	defer func() {
+		for i := range passphrase {
+			passphrase[i] = 0
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	if err := services.SyncFailedVSPTickets(ctx, req.VspHost, req.VspPubkey, req.Account, req.ChangeAccount, passphrase); err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		default:
+			log.Printf("SyncFailedVSPTickets failed: %v", err)
+			http.Error(w, msg, http.StatusInternalServerError)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

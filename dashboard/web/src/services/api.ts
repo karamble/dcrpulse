@@ -641,5 +641,48 @@ export const purchaseTickets = async (req: PurchaseTicketsRequest): Promise<Purc
   return response.data;
 };
 
+export type TicketLifecycleStatus =
+  | 'UNKNOWN'
+  | 'UNMINED'
+  | 'IMMATURE'
+  | 'LIVE'
+  | 'VOTED'
+  | 'MISSED'
+  | 'EXPIRED'
+  | 'REVOKED';
+
+export type TicketFeeStatus = '' | 'UNPAID' | 'PAID' | 'ERRORED' | 'CONFIRMED';
+
+export interface TicketRecord {
+  hash: string;
+  status: TicketLifecycleStatus;
+  feeStatus: TicketFeeStatus;
+  vspHost: string;
+  blockHeight: number;
+  blockTime: number;
+  ticketPrice: number;
+  spenderHash: string;
+  spenderHeight: number;
+  spenderTime: number;
+  reward: number;
+}
+
+export const listTickets = async (): Promise<TicketRecord[]> => {
+  const response = await api.get<TicketRecord[]>('/wallet/staking/tickets');
+  return response.data ?? [];
+};
+
+export interface SyncFailedVSPTicketsRequest {
+  vspHost: string;
+  vspPubkey: string;
+  account: number;
+  changeAccount: number;
+  passphrase: string;
+}
+
+export const syncFailedVSPTickets = async (req: SyncFailedVSPTicketsRequest): Promise<void> => {
+  await api.post('/wallet/staking/sync-failed-vsp-tickets', req);
+};
+
 export default api;
 

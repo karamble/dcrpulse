@@ -3,8 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { WalletStatus } from '../components/WalletStatus';
 import { AccountInfo } from '../components/AccountInfo';
 import { AccountsList } from '../components/AccountsList';
@@ -333,22 +332,12 @@ export const WalletDashboard = () => {
 
       {/* Wallet Status - always visible, but hides when unified progress bar or preparing is shown */}
       {data && !showSyncProgress && !isPreparingRescan && (
-        <div className="space-y-2">
-          <WalletStatus
-            status={data.walletStatus.status as any}
-            version={data.walletStatus.version}
-            unlocked={data.walletStatus.unlocked}
-          />
-          {mixerRunning && (
-            <Link
-              to="/wallet/privacy"
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-success/15 text-success border border-success/30 hover:bg-success/25 transition-colors"
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Mixer running — open Privacy page
-            </Link>
-          )}
-        </div>
+        <WalletStatus
+          status={data.walletStatus.status as any}
+          version={data.walletStatus.version}
+          unlocked={data.walletStatus.unlocked}
+          mixerRunning={mixerRunning}
+        />
       )}
 
       {/* Hide wallet data cards during rescan/preparing to prevent RPC flooding */}

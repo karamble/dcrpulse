@@ -37,3 +37,27 @@ type PurchaseTicketsResponse struct {
 	TicketHashes []string `json:"ticketHashes"`
 	SplitTxHash  string   `json:"splitTxHash,omitempty"`
 }
+
+// TicketRecord is one wallet ticket joined with its VSP fee state.
+type TicketRecord struct {
+	Hash          string  `json:"hash"`
+	Status        string  `json:"status"`
+	FeeStatus     string  `json:"feeStatus"`
+	VSPHost       string  `json:"vspHost"`
+	BlockHeight   int32   `json:"blockHeight"`
+	BlockTime     int64   `json:"blockTime"`
+	TicketPrice   float64 `json:"ticketPrice"`
+	SpenderHash   string  `json:"spenderHash"`
+	SpenderHeight int32   `json:"spenderHeight"`
+	SpenderTime   int64   `json:"spenderTime"`
+	Reward        float64 `json:"reward"`
+}
+
+// SyncFailedVSPTicketsRequest is the body posted to /api/wallet/staking/sync-failed-vsp-tickets.
+type SyncFailedVSPTicketsRequest struct {
+	VspHost       string `json:"vspHost"`
+	VspPubkey     string `json:"vspPubkey"`
+	Account       uint32 `json:"account"`
+	ChangeAccount uint32 `json:"changeAccount"`
+	Passphrase    string `json:"passphrase"`
+}

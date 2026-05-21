@@ -2,18 +2,21 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { Activity, AlertCircle, Loader2, Lock, Wallet } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Activity, AlertCircle, Loader2, Lock, ShieldCheck, Wallet } from 'lucide-react';
 
 interface WalletStatusProps {
   status: 'synced' | 'syncing' | 'no_wallet' | 'disconnected' | 'locked';
   version?: string;
   unlocked?: boolean;
+  mixerRunning?: boolean;
 }
 
-export const WalletStatus = ({ 
-  status, 
-  version, 
-  unlocked = false 
+export const WalletStatus = ({
+  status,
+  version,
+  unlocked = false,
+  mixerRunning = false,
 }: WalletStatusProps) => {
   const getStatusConfig = () => {
     switch (status) {
@@ -22,8 +25,8 @@ export const WalletStatus = ({
           icon: Activity,
           label: unlocked ? 'Fully Synced & Unlocked' : 'Fully Synced',
           color: 'text-success',
-          bgColor: 'bg-success/10',
-          borderColor: 'border-success/20',
+          bgColor: 'bg-success/15',
+          borderColor: 'border-success/30',
         };
       case 'syncing':
         return {
@@ -85,10 +88,21 @@ export const WalletStatus = ({
             </p>
           </div>
         </div>
-        <div className={`px-6 py-3 rounded-xl ${status === 'synced' ? 'bg-success text-white' : `${config.bgColor} border-2 ${config.borderColor}`}`}>
-          <span className={`${status === 'synced' ? 'text-white' : config.color} font-bold text-lg tracking-wide`}>
-            {config.label}
-          </span>
+        <div className="flex items-center gap-3">
+          {mixerRunning && (
+            <Link
+              to="/wallet/privacy"
+              title="Mixer running — open Privacy page"
+              className="p-3 rounded-xl bg-success/15 border-2 border-success/30 hover:bg-success/25 transition-colors"
+            >
+              <ShieldCheck className="h-6 w-6 text-success animate-pulse" />
+            </Link>
+          )}
+          <div className={`px-6 py-3 rounded-xl ${config.bgColor} border-2 ${config.borderColor}`}>
+            <span className={`${config.color} font-bold text-lg tracking-wide`}>
+              {config.label}
+            </span>
+          </div>
         </div>
       </div>
       

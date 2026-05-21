@@ -127,6 +127,8 @@ func main() {
 	api.HandleFunc("/wallet/staking/vsps", handlers.ListVSPsHandler).Methods("GET")
 	api.HandleFunc("/wallet/staking/vsp-info", handlers.VSPInfoHandler).Methods("GET")
 	api.HandleFunc("/wallet/staking/purchase", handlers.PurchaseTicketsHandler).Methods("POST")
+	api.HandleFunc("/wallet/staking/tickets", handlers.ListTicketsHandler).Methods("GET")
+	api.HandleFunc("/wallet/staking/sync-failed-vsp-tickets", handlers.SyncFailedVSPTicketsHandler).Methods("POST")
 	api.HandleFunc("/wallet/next-address", handlers.NextAddressHandler).Methods("GET")
 	api.HandleFunc("/wallet/validate-address", handlers.ValidateAddressHandler).Methods("GET")
 	api.HandleFunc("/wallet/construct-transaction", handlers.ConstructTransactionHandler).Methods("POST")

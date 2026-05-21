@@ -17,6 +17,10 @@ import { ExportTab } from './components/onchain/ExportTab';
 import { AccountsPage } from './pages/AccountsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { StakingPage } from './pages/StakingPage';
+import { PurchaseTab } from './components/staking/PurchaseTab';
+import { TicketStatusTab } from './components/staking/TicketStatusTab';
+import { TicketHistoryTab } from './components/staking/TicketHistoryTab';
+import { StatisticsTab } from './components/staking/StatisticsTab';
 import { ExplorerLanding } from './pages/ExplorerLanding';
 import { BlockDetail } from './pages/BlockDetail';
 import { TransactionDetail } from './pages/TransactionDetail';
@@ -66,7 +70,13 @@ function AppContent() {
           <Route path="/wallet" element={<WalletLayout />}>
             <Route index element={<WalletDashboard />} />
             <Route path="privacy" element={<PrivacyPage />} />
-            <Route path="staking" element={<StakingPage />} />
+            <Route path="staking" element={<StakingPage />}>
+              <Route index element={<Navigate to="purchase" replace />} />
+              <Route path="purchase" element={<PurchaseTab />} />
+              <Route path="status" element={<TicketStatusTab />} />
+              <Route path="history" element={<TicketHistoryTab />} />
+              <Route path="statistics" element={<StatisticsTab />} />
+            </Route>
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="transactions" element={<OnChainTransactions />}>
               <Route index element={<Navigate to="send" replace />} />
