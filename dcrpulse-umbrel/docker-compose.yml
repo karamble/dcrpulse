@@ -67,6 +67,7 @@ services:
       - ${APP_DATA_DIR}/dashboard:/dashboard-data
     environment:
       PORT: 8735
+      TRUSTED_PROXY: "true"
       DCRD_RPC_HOST: dcrd
       DCRD_RPC_PORT: 9109
       DCRD_RPC_USER: ${APP_SEED}

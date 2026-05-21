@@ -9,10 +9,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 
@@ -74,14 +74,6 @@ func VSPInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 // PurchaseTicketsHandler triggers a ticket purchase via dcrwallet.
 func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	var req types.PurchaseTicketsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -172,13 +164,6 @@ func GetAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 // SaveAutobuyerSettingsHandler atomically persists settings to disk.
 func SaveAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
 	var s types.AutobuyerSettings
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -204,13 +189,6 @@ func SaveAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 // StartAutobuyerHandler launches the autobuyer supervisor.
 func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
 	var req types.StartAutobuyerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -256,13 +234,6 @@ func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
 
 // StopAutobuyerHandler cancels the running supervisor (idempotent).
 func StopAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
 	services.StopAutobuyer()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -270,7 +241,7 @@ func StopAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
 // StreamAutobuyerEventsHandler upgrades to WebSocket and streams events.
 func StreamAutobuyerEventsHandler(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
+		CheckOrigin: middleware.SameOriginWS,
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -315,14 +286,6 @@ func StreamAutobuyerEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 // SyncFailedVSPTicketsHandler retries VSP fee payments for failed tickets.
 func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	var req types.SyncFailedVSPTicketsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)

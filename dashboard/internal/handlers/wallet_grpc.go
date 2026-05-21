@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 
 	"github.com/gorilla/websocket"
@@ -20,7 +21,7 @@ import (
 // the snapshot. Replaces the previous heuristic polling + log-parsing path.
 func StreamRescanGrpcHandler(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
+		CheckOrigin: middleware.SameOriginWS,
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {

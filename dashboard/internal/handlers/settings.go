@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -73,14 +72,6 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 // envelopes are accepted; unknown Decrediton keys in the underlying
 // files are preserved by the WalletCfg/GlobalCfg layers.
 func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	var req types.SettingsEnvelope
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -151,14 +142,6 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 // ChangePassphraseHandler rotates the wallet's private passphrase.
 func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	var req types.ChangePassphraseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -166,6 +149,10 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.NewPassphrase == "" {
 		http.Error(w, "newPassphrase required", http.StatusBadRequest)
+		return
+	}
+	if len(req.OldPassphrase) > 1024 || len(req.NewPassphrase) > 1024 {
+		http.Error(w, "passphrase too long", http.StatusBadRequest)
 		return
 	}
 
@@ -232,14 +219,6 @@ func GetLogsHandler(w http.ResponseWriter, r *http.Request) {
 // DiscoverAddressesHandler triggers a chain scan for previously-used
 // addresses under the requested gap limit. Long-running.
 func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	var req types.DiscoverUsageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -251,6 +230,10 @@ func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.GapLimit == 0 {
 		req.GapLimit = 200
+	}
+	if req.GapLimit > 10000 {
+		http.Error(w, "gapLimit too large (max 10000)", http.StatusBadRequest)
+		return
 	}
 
 	passphrase := []byte(req.Passphrase)

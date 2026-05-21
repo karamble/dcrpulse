@@ -12,12 +12,12 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
@@ -418,7 +418,7 @@ func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 func StreamRescanProgressHandler(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
+		CheckOrigin: middleware.SameOriginWS,
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -597,14 +597,6 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 const importedAccountNumber uint32 = 2147483647
 
 func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	if rpc.WalletGrpcClient == nil {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
 		return
@@ -661,14 +653,6 @@ func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	if rpc.WalletGrpcClient == nil {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
 		return
@@ -762,14 +746,6 @@ func PrivacyStatusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	if rpc.WalletGrpcClient == nil {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
 		return
@@ -813,14 +789,6 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	if rpc.AccountMixerClient == nil {
 		http.Error(w, "mixer gRPC client not initialized", http.StatusServiceUnavailable)
 		return
@@ -867,13 +835,6 @@ func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func PrivacyStopHandler(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
 	services.StopMixer()
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte("{}"))
@@ -885,13 +846,6 @@ func MixerDebugHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]bool{"enabled": services.MixerDebugEnabled()})
 		return
-	}
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
 	}
 	var req struct {
 		Enabled bool `json:"enabled"`
@@ -913,7 +867,7 @@ func MixerDebugHandler(w http.ResponseWriter, r *http.Request) {
 
 func StreamMixerEventsHandler(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
+		CheckOrigin: middleware.SameOriginWS,
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -1033,9 +987,18 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "amount must be positive", http.StatusBadRequest)
 		return
 	}
+	if req.AmountAtoms > 2_100_000_000_000_000 {
+		http.Error(w, "amount exceeds total supply", http.StatusBadRequest)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
+
+	if vResp, err := services.ValidateAddress(ctx, req.Address); err != nil || !vResp.IsValid {
+		http.Error(w, "address has invalid format", http.StatusBadRequest)
+		return
+	}
 
 	cResp, err := services.ConstructTransaction(ctx, req.SourceAccount, req.Address, req.AmountAtoms, req.SendAll)
 	if err != nil {
@@ -1069,16 +1032,6 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
-	// CSRF protection: require Origin to match Host when Origin is set.
-	// Browsers always send Origin on cross-origin and most same-origin POSTs.
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
-			return
-		}
-	}
-
 	if rpc.WalletGrpcClient == nil {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
 		return
@@ -1091,6 +1044,10 @@ func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.UnsignedTxHex == "" || req.Passphrase == "" {
 		http.Error(w, "unsignedTxHex and passphrase required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Passphrase) > 1024 {
+		http.Error(w, "passphrase too long", http.StatusBadRequest)
 		return
 	}
 	txBytes, err := hex.DecodeString(req.UnsignedTxHex)

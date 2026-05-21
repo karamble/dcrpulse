@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"dcrpulse/internal/handlers"
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 )
@@ -90,9 +91,11 @@ func main() {
 
 	// Setup router
 	r := mux.NewRouter()
+	r.Use(middleware.SecurityHeaders)
 
 	// API routes
 	api := r.PathPrefix("/api").Subrouter()
+	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20))
 
 	// Node/dcrd routes
 	api.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")
@@ -113,7 +116,9 @@ func main() {
 	api.HandleFunc("/wallet/status", handlers.GetWalletStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/dashboard", handlers.GetWalletDashboardHandler).Methods("GET")
 	api.HandleFunc("/wallet/transactions", handlers.ListTransactionsHandler).Methods("GET")
-	api.HandleFunc("/wallet/importxpub", handlers.ImportXpubHandler).Methods("POST")
+	api.Handle("/wallet/importxpub",
+		middleware.RateLimit("importxpub", 30*time.Second, 1)(
+			http.HandlerFunc(handlers.ImportXpubHandler))).Methods("POST")
 	api.HandleFunc("/wallet/accounts", handlers.GetAccountsHandler).Methods("GET")
 	api.HandleFunc("/wallet/create-account", handlers.CreateAccountHandler).Methods("POST")
 	api.HandleFunc("/wallet/rename-account", handlers.RenameAccountHandler).Methods("POST")
@@ -138,7 +143,9 @@ func main() {
 	api.HandleFunc("/wallet/settings", handlers.GetSettingsHandler).Methods("GET")
 	api.HandleFunc("/wallet/settings", handlers.SaveSettingsHandler).Methods("POST")
 	api.HandleFunc("/wallet/settings/change-passphrase", handlers.ChangePassphraseHandler).Methods("POST")
-	api.HandleFunc("/wallet/settings/discover-addresses", handlers.DiscoverAddressesHandler).Methods("POST")
+	api.Handle("/wallet/settings/discover-addresses",
+		middleware.RateLimit("discover-addresses", 30*time.Second, 1)(
+			http.HandlerFunc(handlers.DiscoverAddressesHandler))).Methods("POST")
 	api.HandleFunc("/wallet/settings/logs", handlers.GetLogsHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/agendas", handlers.GetAgendasHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/agendas/set", handlers.SetAgendaChoiceHandler).Methods("POST")
@@ -153,7 +160,9 @@ func main() {
 	api.HandleFunc("/wallet/validate-address", handlers.ValidateAddressHandler).Methods("GET")
 	api.HandleFunc("/wallet/construct-transaction", handlers.ConstructTransactionHandler).Methods("POST")
 	api.HandleFunc("/wallet/sign-publish-transaction", handlers.SignPublishTransactionHandler).Methods("POST")
-	api.HandleFunc("/wallet/rescan", handlers.RescanWalletHandler).Methods("POST")
+	api.Handle("/wallet/rescan",
+		middleware.RateLimit("rescan", 60*time.Second, 1)(
+			http.HandlerFunc(handlers.RescanWalletHandler))).Methods("POST")
 	api.HandleFunc("/wallet/sync-progress", handlers.GetSyncProgressHandler).Methods("GET")
 
 	// WebSocket streaming routes (log-based monitoring, does not start rescans)
@@ -171,7 +180,9 @@ func main() {
 
 	// Treasury/Governance routes
 	api.HandleFunc("/treasury/info", handlers.GetTreasuryInfoHandler).Methods("GET")
-	api.HandleFunc("/treasury/scan-history", handlers.TriggerTSpendScanHandler).Methods("POST")
+	api.Handle("/treasury/scan-history",
+		middleware.RateLimit("treasury-scan", 60*time.Second, 1)(
+			http.HandlerFunc(handlers.TriggerTSpendScanHandler))).Methods("POST")
 	api.HandleFunc("/treasury/scan-progress", handlers.GetTSpendScanProgressHandler).Methods("GET")
 	api.HandleFunc("/treasury/scan-results", handlers.GetTSpendScanResultsHandler).Methods("GET")
 	api.HandleFunc("/treasury/mempool", handlers.GetMempoolTSpendsHandler).Methods("GET")
