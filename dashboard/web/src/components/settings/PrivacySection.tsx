@@ -14,6 +14,7 @@ import {
 
 const defaultExternal: ExternalRequestSettings = {
   vspListing: true,
+  politeia: true,
 };
 
 interface ToggleProps {
@@ -150,6 +151,13 @@ export const PrivacySection = () => {
           checked={external.vspListing}
           disabled={externalBusy}
           onChange={(v) => updateExternal({ ...external, vspListing: v })}
+        />
+        <Toggle
+          label="Politeia"
+          description="Fetch off-chain proposals from proposals.decred.org for the Governance > Proposals tab."
+          checked={external.politeia}
+          disabled={externalBusy}
+          onChange={(v) => updateExternal({ ...external, politeia: v })}
         />
         <p className="text-xs text-muted-foreground">
           These preferences are persisted now; enforcement at each call site will be wired in a

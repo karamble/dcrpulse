@@ -33,6 +33,7 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	globalOut := types.GlobalSettings{
 		ExternalRequests: types.ExternalRequestSettings{
 			VSPListing: true,
+			Politeia:   true,
 		},
 	}
 
@@ -54,6 +55,9 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		if allowed != nil {
 			if v, ok := allowed[config.ExternalRequestVSPListing]; ok {
 				globalOut.ExternalRequests.VSPListing = v
+			}
+			if v, ok := allowed[config.ExternalRequestPoliteia]; ok {
+				globalOut.ExternalRequests.Politeia = v
 			}
 		}
 	}
@@ -130,6 +134,7 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			allowed = map[string]bool{}
 		}
 		allowed[config.ExternalRequestVSPListing] = req.Global.ExternalRequests.VSPListing
+		allowed[config.ExternalRequestPoliteia] = req.Global.ExternalRequests.Politeia
 		if err := gc.SetAllowedExternalRequests(allowed); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

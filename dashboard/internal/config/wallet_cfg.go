@@ -207,6 +207,33 @@ func (c *WalletCfg) UpsertUsedVSP(meta VSPMetadata) error {
 	return c.Set(KeyUsedVSPs, m)
 }
 
+// PoliteiaVotes returns the per-wallet cache of Politeia vote choices.
+// Map keyed by proposal token; value is "yes" | "no" | "abstain".
+func (c *WalletCfg) PoliteiaVotes() (map[string]string, error) {
+	m := map[string]string{}
+	ok, err := c.Get(KeyPoliteiaVotes, &m)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return m, nil
+}
+
+// UpsertPoliteiaVote records the vote choice for a proposal token.
+func (c *WalletCfg) UpsertPoliteiaVote(token, choice string) error {
+	m, err := c.PoliteiaVotes()
+	if err != nil {
+		return err
+	}
+	if m == nil {
+		m = map[string]string{}
+	}
+	m[token] = choice
+	return c.Set(KeyPoliteiaVotes, m)
+}
+
 // SetLastAccess records a unix-seconds timestamp under last_access.
 func (c *WalletCfg) SetLastAccess(ts int64) error {
 	return c.Set(KeyLastAccess, ts)

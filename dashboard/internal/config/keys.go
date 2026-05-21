@@ -26,6 +26,13 @@ const (
 
 	// Global config keys (live in /dashboard-data/config.json).
 	KeyAllowedExternalRequests = "allowed_external_requests"
+
+	// Per-wallet record of Politeia vote choices we cast through this
+	// dashboard. Map keyed by proposal token, value = "yes"|"no"|"abstain".
+	// Mirrors Decrediton's savePiVote local cache so the UI can show
+	// "you voted X" without a round-trip to proposals.decred.org for the
+	// vote-results endpoint after each cast.
+	KeyPoliteiaVotes = "politeia_votes"
 )
 
 // External-request identifiers used as keys inside the
@@ -35,4 +42,5 @@ const (
 // constant here when we wire a feature that calls the matching endpoint.
 const (
 	ExternalRequestVSPListing = "stakepool_listing"
+	ExternalRequestPoliteia   = "politeia"
 )

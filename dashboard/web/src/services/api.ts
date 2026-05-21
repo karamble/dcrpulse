@@ -739,6 +739,7 @@ export interface WalletSettings {
 
 export interface ExternalRequestSettings {
   vspListing: boolean;
+  politeia: boolean;
 }
 
 export interface GlobalSettings {
@@ -813,6 +814,133 @@ export const subscribeAutobuyerEvents = (
       ws.close();
     }
   };
+};
+
+// ---- Governance ----------------------------------------------------------
+
+export interface AgendaChoice {
+  id: string;
+  description: string;
+  isAbstain: boolean;
+  isNo: boolean;
+}
+
+export interface Agenda {
+  id: string;
+  description: string;
+  status: string;
+  startHeight: number;
+  expireHeight: number;
+  choices: AgendaChoice[];
+  currentChoice: string;
+}
+
+export interface TreasuryKeyPolicy {
+  key: string;
+  policy: string;
+}
+
+export interface TSpendPolicyEntry {
+  hash: string;
+  policy: string;
+  amount?: number;
+  expiry?: number;
+  blockHeight?: number;
+}
+
+export interface Proposal {
+  token: string;
+  name: string;
+  username: string;
+  status: string;
+  voteStatus: string;
+  voteCounts: Record<string, number>;
+  totalVotes: number;
+  quorumMin: number;
+  eligibleTickets: number;
+  endBlock: number;
+  blocksLeft: number;
+  currentChoice: string;
+}
+
+export interface ProposalVoteOption {
+  id: string;
+  bit: number;
+}
+
+export interface ProposalDetail extends Proposal {
+  description: string;
+  descriptionHtml?: string;
+  submittedAt: number;
+  voteOptions: ProposalVoteOption[];
+}
+
+export interface CastVoteResult {
+  cast: number;
+  skipped: number;
+  errors?: string[];
+}
+
+export const getAgendas = async (): Promise<Agenda[]> => {
+  const response = await api.get<Agenda[]>('/wallet/governance/agendas');
+  return response.data ?? [];
+};
+
+export const setAgendaChoice = async (
+  agendaID: string,
+  choiceID: string,
+  passphrase: string,
+): Promise<void> => {
+  await api.post('/wallet/governance/agendas/set', { agendaID, choiceID, passphrase });
+};
+
+export const getTreasuryKeyPolicies = async (): Promise<TreasuryKeyPolicy[]> => {
+  const response = await api.get<TreasuryKeyPolicy[]>('/wallet/governance/treasury/keys');
+  return response.data ?? [];
+};
+
+export const setTreasuryKeyPolicy = async (
+  key: string,
+  policy: string,
+  passphrase: string,
+): Promise<void> => {
+  await api.post('/wallet/governance/treasury/keys/set', { key, policy, passphrase });
+};
+
+export const getTSpendPolicies = async (): Promise<TSpendPolicyEntry[]> => {
+  const response = await api.get<TSpendPolicyEntry[]>('/wallet/governance/treasury/tspends');
+  return response.data ?? [];
+};
+
+export const setTSpendPolicy = async (
+  hash: string,
+  policy: string,
+  passphrase: string,
+): Promise<void> => {
+  await api.post('/wallet/governance/treasury/tspends/set', { hash, policy, passphrase });
+};
+
+export const getProposals = async (): Promise<Proposal[]> => {
+  const response = await api.get<Proposal[]>('/wallet/governance/proposals');
+  return response.data ?? [];
+};
+
+export const getProposalDetail = async (token: string): Promise<ProposalDetail> => {
+  const response = await api.get<ProposalDetail>(`/wallet/governance/proposals/${encodeURIComponent(token)}`);
+  return response.data;
+};
+
+export const castPoliteiaVote = async (
+  token: string,
+  voteOption: string,
+  passphrase: string,
+): Promise<CastVoteResult> => {
+  const response = await api.post<CastVoteResult>(
+    '/wallet/governance/proposals/cast-vote',
+    { token, voteOption, passphrase },
+    { timeout: 2 * 60 * 1000 },
+  );
+  return response.data;
 };
 
 export default api;

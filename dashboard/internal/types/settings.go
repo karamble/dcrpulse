@@ -12,10 +12,10 @@ type WalletSettings struct {
 }
 
 // ExternalRequestSettings is the global allowlist for outbound HTTP
-// calls the dashboard makes. Phase 1 persists these; call sites that
-// enforce them will be wired in a follow-up.
+// calls the dashboard makes.
 type ExternalRequestSettings struct {
 	VSPListing bool `json:"vspListing"`
+	Politeia   bool `json:"politeia"`
 }
 
 // GlobalSettings is the cross-wallet preferences surface.

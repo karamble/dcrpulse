@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
+import { ExternalLinkGuard } from './components/ExternalLinkGuard';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
 import { WalletLayout } from './components/wallet/WalletLayout';
@@ -17,6 +18,11 @@ import { ExportTab } from './components/onchain/ExportTab';
 import { AccountsPage } from './pages/AccountsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { StakingPage } from './pages/StakingPage';
+import { GovernancePage } from './pages/GovernancePage';
+import { ConsensusTab } from './components/governance/ConsensusTab';
+import { TreasuryTab } from './components/governance/TreasuryTab';
+import { ProposalsTab } from './components/governance/ProposalsTab';
+import { ProposalDetailPage } from './components/governance/ProposalDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { WalletSection } from './components/settings/WalletSection';
 import { PrivacySection } from './components/settings/PrivacySection';
@@ -84,6 +90,13 @@ function AppContent() {
               <Route path="history" element={<TicketHistoryTab />} />
               <Route path="statistics" element={<StatisticsTab />} />
             </Route>
+            <Route path="governance" element={<GovernancePage />}>
+              <Route index element={<Navigate to="consensus" replace />} />
+              <Route path="consensus" element={<ConsensusTab />} />
+              <Route path="treasury" element={<TreasuryTab />} />
+              <Route path="proposals" element={<ProposalsTab />} />
+              <Route path="proposals/:token" element={<ProposalDetailPage />} />
+            </Route>
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="settings" element={<SettingsPage />}>
               <Route index element={<Navigate to="wallet" replace />} />
@@ -109,6 +122,7 @@ function AppContent() {
         </Routes>
         <Footer dcrdVersion={nodeVersion} dcrwalletVersion={walletVersion} lastUpdate={lastUpdate} />
       </div>
+      <ExternalLinkGuard />
     </div>
   );
 }
