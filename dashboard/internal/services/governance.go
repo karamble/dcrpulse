@@ -13,10 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
 	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	"github.com/decred/dcrd/chaincfg/v3"
 )
 
 // ---- Consensus agendas -----------------------------------------------------
@@ -118,25 +120,70 @@ func SetAgendaChoice(ctx context.Context, agendaID, choiceID string, passphrase 
 	if err != nil {
 		return fmt.Errorf("SetVoteChoices: %w", err)
 	}
+	syncVoteChoicesToVSP(ctx)
 	return nil
 }
 
 // ---- Treasury (PI keys) ----------------------------------------------------
 
-func ListTreasuryKeyPolicies(ctx context.Context) ([]types.TreasuryKeyPolicy, error) {
-	if rpc.WalletGrpcClient == nil {
-		return nil, fmt.Errorf("wallet gRPC unavailable")
-	}
-	resp, err := rpc.VotingClient.TreasuryPolicies(ctx, &pb.TreasuryPoliciesRequest{})
+// sanctionedPiKeys returns the consensus-sanctioned Politeia key for the
+// current network as a lowercase hex string, sourced from dcrd's chaincfg.
+// Only the first key is exposed, matching Decrediton's
+// app/constants/decred.js:75-78 where the second mainnet key sits
+// commented out.
+func sanctionedPiKeys(ctx context.Context) ([]string, error) {
+	network, err := CurrentNetwork(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("TreasuryPolicies: %w", err)
+		return nil, err
 	}
-	out := make([]types.TreasuryKeyPolicy, 0, len(resp.GetPolicies()))
-	for _, p := range resp.GetPolicies() {
-		out = append(out, types.TreasuryKeyPolicy{
-			Key:    hex.EncodeToString(p.GetKey()),
-			Policy: p.GetPolicy(),
-		})
+	var params *chaincfg.Params
+	switch network {
+	case "mainnet":
+		params = chaincfg.MainNetParams()
+	case "testnet":
+		params = chaincfg.TestNet3Params()
+	case "simnet":
+		params = chaincfg.SimNetParams()
+	default:
+		return nil, fmt.Errorf("unsupported network %q", network)
+	}
+	if len(params.PiKeys) == 0 {
+		return nil, nil
+	}
+	return []string{hex.EncodeToString(params.PiKeys[0])}, nil
+}
+
+func ListTreasuryKeyPolicies(ctx context.Context) ([]types.TreasuryKeyPolicy, error) {
+	// Sanctioned keys are wallet-independent — we can always show them, even
+	// before the wallet's VotingService finishes initializing. Stored
+	// policies are best-effort: a transient gRPC failure should not hide
+	// the consensus key the user is here to vote on.
+	sanctioned, err := sanctionedPiKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stored := map[string]string{}
+	if rpc.WalletGrpcClient != nil && rpc.VotingClient != nil {
+		if resp, err := rpc.VotingClient.TreasuryPolicies(ctx, &pb.TreasuryPoliciesRequest{}); err == nil {
+			for _, p := range resp.GetPolicies() {
+				stored[hex.EncodeToString(p.GetKey())] = p.GetPolicy()
+			}
+		} else {
+			log.Printf("TreasuryPolicies: %v", err)
+		}
+	}
+
+	out := make([]types.TreasuryKeyPolicy, 0, len(sanctioned)+len(stored))
+	seen := make(map[string]struct{}, len(sanctioned))
+	for _, k := range sanctioned {
+		out = append(out, types.TreasuryKeyPolicy{Key: k, Policy: stored[k]})
+		seen[k] = struct{}{}
+	}
+	for k, pol := range stored {
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		out = append(out, types.TreasuryKeyPolicy{Key: k, Policy: pol})
 	}
 	return out, nil
 }
@@ -161,6 +208,7 @@ func SetTreasuryKeyPolicy(ctx context.Context, keyHex, policy string, passphrase
 	if err != nil {
 		return fmt.Errorf("SetTreasuryPolicy: %w", err)
 	}
+	syncVoteChoicesToVSP(ctx)
 	return nil
 }
 
@@ -206,7 +254,56 @@ func SetTSpendPolicyForHash(ctx context.Context, hashHex, policy string, passphr
 	if err != nil {
 		return fmt.Errorf("SetTSpendPolicy: %w", err)
 	}
+	syncVoteChoicesToVSP(ctx)
 	return nil
+}
+
+// ---- VSP sync --------------------------------------------------------------
+
+// syncVoteChoicesToVSP pushes the wallet's current vote/treasury/tspend
+// choices to every VSP we have tickets with. Mirrors Decrediton's
+// setVSPDVoteChoices (actions/VSPActions.js:470). dcrwallet handles the
+// signing + HTTP per-ticket internally; we just supply (host, pubkey,
+// fee_account, change_account) per VSP.
+//
+// Logged-and-swallowed: a VSP being briefly unreachable shouldn't roll
+// back a successful local policy change. Decrediton takes the same
+// SETVSPDVOTECHOICE_PARTIAL_SUCCESS path.
+func syncVoteChoicesToVSP(ctx context.Context) {
+	network, err := CurrentNetwork(ctx)
+	if err != nil {
+		log.Printf("VSP sync: resolve network: %v", err)
+		return
+	}
+	wc, err := config.LoadWalletCfg(network, CurrentWalletName())
+	if err != nil {
+		log.Printf("VSP sync: load wallet cfg: %v", err)
+		return
+	}
+	used, err := wc.UsedVSPs()
+	if err != nil {
+		log.Printf("VSP sync: list used VSPs: %v", err)
+		return
+	}
+	if len(used) == 0 {
+		return // nothing to do — wallet has never delegated to a VSP
+	}
+	for host, meta := range used {
+		if meta.Pubkey == "" {
+			continue
+		}
+		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		_, err := rpc.WalletGrpcClient.SetVspdVoteChoices(callCtx, &pb.SetVspdVoteChoicesRequest{
+			VspHost:       host,
+			VspPubkey:     meta.Pubkey,
+			FeeAccount:    0,
+			ChangeAccount: 0,
+		})
+		cancel()
+		if err != nil {
+			log.Printf("VSP sync %s: %v", host, err)
+		}
+	}
 }
 
 // ---- Shared helpers --------------------------------------------------------

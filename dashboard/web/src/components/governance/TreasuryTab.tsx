@@ -48,14 +48,22 @@ export const TreasuryTab = () => {
   const load = async () => {
     setError(null);
     try {
-      const [k, t] = await Promise.all([getTreasuryKeyPolicies(), getTSpendPolicies()]);
+      const k = await getTreasuryKeyPolicies();
       setKeys(k);
-      setTspends(t);
     } catch (err: any) {
       const body = err?.response?.data;
       setError(typeof body === 'string' ? body : err?.message || 'Failed to load treasury policies');
     } finally {
       setLoading(false);
+    }
+    // TSpend list is wallet-dependent; fetch independently so a transient
+    // walletrpc.VotingService outage does not hide the sanctioned PiKey
+    // cards above.
+    try {
+      const t = await getTSpendPolicies();
+      setTspends(t);
+    } catch {
+      setTspends([]);
     }
   };
 
@@ -119,36 +127,34 @@ export const TreasuryTab = () => {
           Blanket policy applied to all future TSpends signed by a given Politeia treasury key.
           Per-TSpend overrides below take precedence on individual spends.
         </p>
-        {keys.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No PI-key policies stored yet. Set one below by selecting an option.
-          </p>
-        ) : null}
-        {keys.map((k) => (
-          <div
-            key={k.key}
-            className="p-3 rounded-lg bg-muted/10 border border-border/50 flex flex-wrap items-center gap-3"
-          >
-            <span className="font-mono text-xs text-muted-foreground flex-1 break-all">
-              {truncateHex(k.key)}
-            </span>
-            <div className="flex gap-2">
-              {POLICIES.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => {
-                    setFeedback(null);
-                    setPending({ kind: 'key', id: k.key, policy: p });
-                  }}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${policyStyle(k.policy, p)}`}
-                >
-                  {policyLabel[p]}
-                </button>
-              ))}
+        {keys.map((k) => {
+          const effective = k.policy || 'abstain';
+          return (
+            <div
+              key={k.key}
+              className="p-3 rounded-lg bg-muted/10 border border-border/50 flex flex-wrap items-center gap-3"
+            >
+              <span className="font-mono text-xs text-muted-foreground flex-1 break-all">
+                {k.key}
+              </span>
+              <div className="flex gap-2">
+                {POLICIES.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setFeedback(null);
+                      setPending({ kind: 'key', id: k.key, policy: p });
+                    }}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${policyStyle(effective, p)}`}
+                  >
+                    {policyLabel[p]}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
