@@ -101,9 +101,20 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 		return fmt.Errorf("failed to create wallet: %w", err)
 	}
 
-	// The default account stays without per-account encryption here.
-	// SignAndPublishTransaction lazily migrates it on first spend, matching
-	// Decrediton's setAccountsPass migration step.
+	// Set the per-account passphrase on the default account (account 0)
+	// equal to the wallet's private passphrase. Matches Decrediton's
+	// post-create setAccountPassphrase call so account 0 is
+	// per-account-encrypted from the start, keeping every account on
+	// the single-passphrase invariant ChangePrivatePassphrase relies on.
+	if rpc.WalletGrpcClient != nil {
+		if _, err := rpc.WalletGrpcClient.SetAccountPassphrase(ctx, &pb.SetAccountPassphraseRequest{
+			AccountNumber:        0,
+			NewAccountPassphrase: []byte(privatePass),
+			WalletPassphrase:     []byte(privatePass),
+		}); err != nil {
+			return fmt.Errorf("set default account passphrase: %w", err)
+		}
+	}
 
 	log.Println("Wallet created and opened successfully")
 

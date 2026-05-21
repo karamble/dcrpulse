@@ -19,6 +19,7 @@ import (
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"golang.org/x/sync/errgroup"
 )
 
 func FetchWalletStatus() (*types.WalletStatus, error) {
@@ -1219,18 +1220,48 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 }
 
 // ChangePrivatePassphrase rotates the wallet's private (signing)
-// passphrase via dcrwallet's ChangePassphrase gRPC with Key=PRIVATE.
+// passphrase and every account's per-account passphrase. Mirrors
+// Decrediton's app/actions/ControlActions.js:187-232: wallet-wide
+// rotation first, then a parallel fan-out of SetAccountPassphrase over
+// every account with accountNumber < 2^31 - 1, always passing the old
+// passphrase as AccountPassphrase. Every account is expected to be
+// per-account-encrypted already (set at creation by CreateAccount).
 // The caller is expected to zero both byte slices after this returns.
 func ChangePrivatePassphrase(ctx context.Context, oldPass, newPass []byte) error {
 	if rpc.WalletGrpcClient == nil {
 		return fmt.Errorf("wallet gRPC client not initialized")
 	}
-	_, err := rpc.WalletGrpcClient.ChangePassphrase(ctx, &pb.ChangePassphraseRequest{
+
+	if _, err := rpc.WalletGrpcClient.ChangePassphrase(ctx, &pb.ChangePassphraseRequest{
 		Key:           pb.ChangePassphraseRequest_PRIVATE,
 		OldPassphrase: oldPass,
 		NewPassphrase: newPass,
-	})
-	return err
+	}); err != nil {
+		return err
+	}
+
+	acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	if err != nil {
+		return fmt.Errorf("list accounts: %w", err)
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+	for _, a := range acctsResp.GetAccounts() {
+		a := a
+		// Skip imported (2^31 - 1) and xpub-imported (>= 2^31) accounts.
+		if a.GetAccountNumber() >= 2147483647 {
+			continue
+		}
+		g.Go(func() error {
+			_, perr := rpc.WalletGrpcClient.SetAccountPassphrase(gctx, &pb.SetAccountPassphraseRequest{
+				AccountNumber:        a.GetAccountNumber(),
+				AccountPassphrase:    oldPass,
+				NewAccountPassphrase: newPass,
+			})
+			return perr
+		})
+	}
+	return g.Wait()
 }
 
 // DiscoverUsage unlocks the wallet and runs dcrwallet's DiscoverUsage
