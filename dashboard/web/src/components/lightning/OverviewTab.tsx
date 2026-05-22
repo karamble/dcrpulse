@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowDownLeft,
   ArrowUpRight,
+  Info,
   Loader2,
   Network,
   Wallet,
@@ -106,9 +108,46 @@ export const OverviewTab = () => {
             <div>
               Graph: {info.syncedToGraph ? <span className="text-success">synced</span> : <span className="text-warning">syncing</span>}
             </div>
+            <div>
+              Peers:{' '}
+              <span className={info.numPeers > 0 ? 'text-success' : 'text-warning'}>
+                {info.numPeers}
+              </span>
+            </div>
           </div>
         </div>
       )}
+
+      {info &&
+        (!info.syncedToChain || !info.syncedToGraph) &&
+        (() => {
+          // Surface the underlying reason the "syncing" label is sticky.
+          // With no peers, dcrlnd cannot receive the gossiped channel
+          // graph, so syncedToGraph never flips. With peers but no
+          // channels, the node is effectively idle; open one to start
+          // routing.
+          const noPeers = info.numPeers === 0;
+          const noChannels =
+            info.numActiveChannels === 0 && info.numPendingChannels === 0;
+          if (!noPeers && !noChannels) return null;
+          const msg = noPeers
+            ? 'No Lightning peers connected. dcrlnd cannot sync the channel graph until at least one peer is reachable.'
+            : 'Connected to peers, but no channels are open or pending. Open one to start sending and receiving payments.';
+          return (
+            <div className="p-4 rounded-xl bg-warning/10 border border-warning/30 text-sm flex items-start gap-3">
+              <Info className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div>{msg}</div>
+                <Link
+                  to="/wallet/lightning/channels"
+                  className="inline-block mt-1 text-xs text-primary hover:underline"
+                >
+                  Open a channel →
+                </Link>
+              </div>
+            </div>
+          );
+        })()}
 
       {balance && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
