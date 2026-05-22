@@ -120,11 +120,15 @@ func ApplyRpcSyncNotification(resp *pb.RpcSyncResponse) {
 	case pb.SyncNotificationType_FETCHED_MISSING_CFILTERS_FINISHED:
 	case pb.SyncNotificationType_FETCHED_HEADERS_STARTED:
 		syncSnap.Phase = SyncPhaseFetchingHeaders
+		syncSnap.HeadersCount = 0
 		syncSnap.FirstHeaderTime = 0
+		syncSnap.LastHeaderTime = 0
 	case pb.SyncNotificationType_FETCHED_HEADERS_PROGRESS:
 		syncSnap.Phase = SyncPhaseFetchingHeaders
 		if resp.FetchHeaders != nil {
-			syncSnap.HeadersCount = resp.FetchHeaders.FetchedHeadersCount
+			// FetchedHeadersCount is the per-batch count from
+			// dcrwallet/chain.getHeaders, not a running total, so accumulate.
+			syncSnap.HeadersCount += resp.FetchHeaders.FetchedHeadersCount
 			syncSnap.LastHeaderTime = resp.FetchHeaders.LastHeaderTime
 			if syncSnap.FirstHeaderTime == 0 {
 				syncSnap.FirstHeaderTime = resp.FetchHeaders.LastHeaderTime
