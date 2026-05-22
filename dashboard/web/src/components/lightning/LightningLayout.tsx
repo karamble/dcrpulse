@@ -32,10 +32,10 @@ export const LightningLayout = () => (
           <Network className="h-4 w-4" />
           <span>Channels</span>
         </NavLink>
-        <div className={comingSoonClass} title="Coming in a follow-up PR">
+        <NavLink to="/wallet/lightning/send" className={navItemClass}>
           <Send className="h-4 w-4" />
           <span>Send</span>
-        </div>
+        </NavLink>
         <div className={comingSoonClass} title="Coming in a follow-up PR">
           <Inbox className="h-4 w-4" />
           <span>Receive</span>

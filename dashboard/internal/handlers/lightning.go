@@ -380,3 +380,124 @@ func LightningNetworkHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
 }
+
+// ---- Send tab --------------------------------------------------------------
+
+// LightningDecodePayReqHandler validates a BOLT-11 invoice and returns
+// its decoded fields for the Send tab's preview. Mirrors Decrediton's
+// decodePayRequest action.
+func LightningDecodePayReqHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PayReq string `json:"payReq"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.PayReq) == "" {
+		http.Error(w, "payReq required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	resp, err := services.DecodeLightningInvoice(ctx, strings.TrimSpace(req.PayReq))
+	if err != nil {
+		lightningWriteErr(w, "DecodeLightningInvoice", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// LightningSendPaymentHandler is a WebSocket endpoint that forwards
+// Router.SendPaymentV2 snapshots to the browser. Mirrors Decrediton's
+// handlePaymentStream (LNActions.js:697-732): the user sees
+// IN_FLIGHT -> SUCCEEDED|FAILED transitions live.
+//
+// Protocol: client sends a single text frame with the
+// LightningSendPaymentRequest JSON, then receives LightningPayment
+// snapshots until the server closes. On non-transport errors a final
+// JSON frame `{"error": "..."}` is written before the socket closes.
+func LightningSendPaymentHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: middleware.SameOriginWS,
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("LightningSendPaymentHandler upgrade: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	// Read the first text frame as the send request.
+	_ = conn.SetReadDeadline(timeFrom(r.Context(), 30*time.Second))
+	mt, raw, err := conn.ReadMessage()
+	_ = conn.SetReadDeadline(time.Time{})
+	if err != nil {
+		_ = conn.WriteJSON(map[string]string{"error": "no request received"})
+		return
+	}
+	if mt != websocket.TextMessage {
+		_ = conn.WriteJSON(map[string]string{"error": "request must be a text frame"})
+		return
+	}
+	var req types.LightningSendPaymentRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		_ = conn.WriteJSON(map[string]string{"error": "invalid request body"})
+		return
+	}
+	if strings.TrimSpace(req.PayReq) == "" {
+		_ = conn.WriteJSON(map[string]string{"error": "payReq required"})
+		return
+	}
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// Reader goroutine: bail out if the client disconnects (closes tab,
+	// navigates away). Cancels the gRPC stream context so dcrlnd stops
+	// processing.
+	go func() {
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	snaps, err := services.StreamLightningPayment(ctx, &req)
+	if err != nil {
+		_ = conn.WriteJSON(map[string]string{"error": err.Error()})
+		return
+	}
+	for snap := range snaps {
+		if err := conn.WriteJSON(snap); err != nil {
+			return
+		}
+	}
+}
+
+// timeFrom returns ctx's deadline if it is sooner than now+d, otherwise
+// now+d. Avoids hanging reads when the parent request is closing.
+func timeFrom(ctx context.Context, d time.Duration) time.Time {
+	deadline := time.Now().Add(d)
+	if cd, ok := ctx.Deadline(); ok && cd.Before(deadline) {
+		return cd
+	}
+	return deadline
+}
+
+// LightningPaymentsHandler returns the wallet's payment history for the
+// Send tab's lower list. Mirrors Decrediton's listLatestPayments.
+func LightningPaymentsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	resp, err := services.ListLightningPayments(ctx)
+	if err != nil {
+		lightningWriteErr(w, "ListLightningPayments", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}

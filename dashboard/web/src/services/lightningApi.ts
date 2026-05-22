@@ -253,3 +253,115 @@ export const subscribeLightningChannelEvents = (
     }
   };
 };
+
+// ---- Send tab --------------------------------------------------------------
+
+export interface LightningDecodedPayReq {
+  destination: string;
+  paymentHash: string;
+  numAtoms: number;
+  timestamp: number;
+  expiry: number;
+  description: string;
+  fallbackAddr?: string;
+  cltvExpiry: number;
+  paymentAddr?: string;
+}
+
+export interface LightningHop {
+  pubKey: string;
+  feeAtoms: number;
+  amtToForward: number;
+}
+
+export interface LightningHTLC {
+  status: string;
+  totalAmt: number;
+  totalFees: number;
+  hops: LightningHop[];
+}
+
+export type LightningPaymentStatus = 'confirmed' | 'failed' | 'pending';
+
+export interface LightningPayment {
+  paymentHash: string;
+  destination?: string;
+  valueAtoms: number;
+  feeAtoms: number;
+  creationDate: number;
+  status: LightningPaymentStatus;
+  paymentPreimage?: string;
+  paymentRequest?: string;
+  description?: string;
+  failureReason?: string;
+  htlcs?: LightningHTLC[];
+}
+
+export interface LightningSendPaymentReq {
+  payReq: string;
+  amt?: number;
+  feeLimitAtoms?: number;
+}
+
+// decodeLnPayReq calls the unary backend that wraps lnrpc.DecodePayReq.
+export const decodeLnPayReq = async (
+  payReq: string,
+): Promise<LightningDecodedPayReq> => {
+  const { data } = await api.post<LightningDecodedPayReq>(
+    '/wallet/ln/send/decode',
+    { payReq },
+  );
+  return data;
+};
+
+// listLnPayments fetches the wallet's payment history (newest first).
+export const listLnPayments = async (): Promise<{ payments: LightningPayment[] }> => {
+  const { data } = await api.get<{ payments: LightningPayment[] }>('/wallet/ln/payments');
+  return data;
+};
+
+// streamLnPayment opens a WebSocket to /wallet/ln/send. The first text
+// frame is the LightningSendPaymentReq; every subsequent server frame is
+// either a LightningPayment snapshot or an {"error":"..."} terminal
+// frame. Mirrors Decrediton's handlePaymentStream (LNActions.js:697-732).
+// Returns a cleanup that closes the socket.
+export const streamLnPayment = (
+  req: LightningSendPaymentReq,
+  onSnapshot: (snap: LightningPayment) => void,
+  onError: (msg: string) => void,
+  onClose: () => void,
+): (() => void) => {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${proto}//${window.location.host}/api/wallet/ln/send`;
+  let ws: WebSocket | null = new WebSocket(url);
+  ws.onopen = () => {
+    try {
+      ws?.send(JSON.stringify(req));
+    } catch (e) {
+      onError(String(e));
+    }
+  };
+  ws.onmessage = (msg) => {
+    try {
+      const frame = JSON.parse(msg.data);
+      if (frame && typeof frame.error === 'string') {
+        onError(frame.error);
+        return;
+      }
+      onSnapshot(frame as LightningPayment);
+    } catch {
+      // ignore non-JSON frames
+    }
+  };
+  ws.onerror = () => onError('Lightning send connection failed');
+  ws.onclose = () => {
+    ws = null;
+    onClose();
+  };
+  return () => {
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+  };
+};

@@ -22,6 +22,7 @@ import (
 	dcrwpb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrlnd/lnrpc"
 	"github.com/decred/dcrlnd/lnrpc/autopilotrpc"
+	"github.com/decred/dcrlnd/lnrpc/routerrpc"
 	"github.com/decred/dcrlnd/lnrpc/verrpc"
 )
 
@@ -913,4 +914,179 @@ func takeTopN(in []types.TopLightningNode, n int) []types.TopLightningNode {
 		n = len(in)
 	}
 	return in[:n]
+}
+
+// ---- Send tab ---------------------------------------------------------------
+
+// DecodeLightningInvoice wraps lnrpc.Lightning.DecodePayReq for the Send
+// tab's invoice preview. Mirrors Decrediton's decodePayRequest action
+// (LNActions.js:683-690). PaymentAddr is converted from raw bytes to
+// lowercase hex for display.
+func DecodeLightningInvoice(ctx context.Context, payReq string) (*types.LightningDecodedPayReq, error) {
+	if rpc.LightningClient == nil {
+		return nil, fmt.Errorf("dcrlnd not available")
+	}
+	resp, err := rpc.LightningClient.DecodePayReq(ctx, &lnrpc.PayReqString{PayReq: payReq})
+	if err != nil {
+		return nil, fmt.Errorf("DecodePayReq: %w", err)
+	}
+	out := &types.LightningDecodedPayReq{
+		Destination:  resp.GetDestination(),
+		PaymentHash:  resp.GetPaymentHash(),
+		NumAtoms:     resp.GetNumAtoms(),
+		Timestamp:    resp.GetTimestamp(),
+		Expiry:       resp.GetExpiry(),
+		Description:  resp.GetDescription(),
+		FallbackAddr: resp.GetFallbackAddr(),
+		CltvExpiry:   resp.GetCltvExpiry(),
+	}
+	if pa := resp.GetPaymentAddr(); len(pa) > 0 {
+		const hexdig = "0123456789abcdef"
+		buf := make([]byte, len(pa)*2)
+		for i, b := range pa {
+			buf[i*2] = hexdig[b>>4]
+			buf[i*2+1] = hexdig[b&0x0f]
+		}
+		out.PaymentAddr = string(buf)
+	}
+	return out, nil
+}
+
+// paymentStatusToString maps lnrpc.Payment.PaymentStatus to the
+// frontend-facing label. Mirrors Decrediton's hooks.js logic which
+// treats SUCCEEDED as "confirmed", FAILED as "failed", IN_FLIGHT (and
+// the legacy UNKNOWN status before the daemon publishes a first
+// snapshot) as "pending".
+func paymentStatusToString(s lnrpc.Payment_PaymentStatus) string {
+	switch s {
+	case lnrpc.Payment_SUCCEEDED:
+		return "confirmed"
+	case lnrpc.Payment_FAILED:
+		return "failed"
+	default:
+		return "pending"
+	}
+}
+
+// paymentToType maps an lnrpc.Payment snapshot to the flat
+// types.LightningPayment used by the Send tab. Limits to the first 3
+// HTLC attempts and 5 hops per HTLC to keep the JSON payload bounded.
+func paymentToType(p *lnrpc.Payment) types.LightningPayment {
+	if p == nil {
+		return types.LightningPayment{}
+	}
+	out := types.LightningPayment{
+		PaymentHash:     p.GetPaymentHash(),
+		ValueAtoms:      p.GetValueAtoms(),
+		FeeAtoms:        p.GetFeeAtoms(),
+		CreationDate:    p.GetCreationTimeNs() / 1_000_000_000,
+		Status:          paymentStatusToString(p.GetStatus()),
+		PaymentPreimage: p.GetPaymentPreimage(),
+		PaymentRequest:  p.GetPaymentRequest(),
+	}
+	if p.GetStatus() == lnrpc.Payment_FAILED {
+		out.FailureReason = p.GetFailureReason().String()
+	}
+	for i, h := range p.GetHtlcs() {
+		if i >= 3 {
+			break
+		}
+		htlc := types.LightningHTLC{
+			Status: h.GetStatus().String(),
+		}
+		if route := h.GetRoute(); route != nil {
+			htlc.TotalAmt = route.GetTotalAmt()
+			htlc.TotalFees = route.GetTotalFees()
+			for j, hop := range route.GetHops() {
+				if j >= 5 {
+					break
+				}
+				htlc.Hops = append(htlc.Hops, types.LightningHop{
+					PubKey:       hop.GetPubKey(),
+					FeeAtoms:     hop.GetFee(),
+					AmtToForward: hop.GetAmtToForward(),
+				})
+			}
+			// Final-hop destination is implicit in lnrpc.Hop list.
+			if last := lastHop(route.GetHops()); last != nil && out.Destination == "" {
+				out.Destination = last.GetPubKey()
+			}
+		}
+		out.HTLCs = append(out.HTLCs, htlc)
+	}
+	return out
+}
+
+func lastHop(hops []*lnrpc.Hop) *lnrpc.Hop {
+	if len(hops) == 0 {
+		return nil
+	}
+	return hops[len(hops)-1]
+}
+
+// StreamLightningPayment opens Router.SendPaymentV2 and pushes every
+// snapshot the daemon emits onto the returned channel. The channel is
+// closed when the stream terminates (terminal snapshot) or ctx is
+// cancelled. Mirrors Decrediton's handlePaymentStream (LNActions.js:697-732):
+// NoInflightUpdates is false on purpose so the UI can render the
+// in-flight state, not just the terminal one.
+func StreamLightningPayment(ctx context.Context, req *types.LightningSendPaymentRequest) (<-chan types.LightningPayment, error) {
+	if rpc.RouterClient == nil {
+		return nil, fmt.Errorf("dcrlnd router not available")
+	}
+	timeout := req.TimeoutSec
+	if timeout <= 0 {
+		timeout = 60
+	}
+	rpcReq := &routerrpc.SendPaymentRequest{
+		PaymentRequest:    req.PayReq,
+		Amt:               req.Amt,
+		FeeLimitAtoms:     req.FeeLimitAtoms,
+		TimeoutSeconds:    timeout,
+		NoInflightUpdates: false,
+	}
+	stream, err := rpc.RouterClient.SendPaymentV2(ctx, rpcReq)
+	if err != nil {
+		return nil, fmt.Errorf("SendPaymentV2: %w", err)
+	}
+	out := make(chan types.LightningPayment, 8)
+	go func() {
+		defer close(out)
+		for {
+			snap, err := stream.Recv()
+			if err != nil {
+				// EOF on terminal snapshot is expected.
+				return
+			}
+			select {
+			case out <- paymentToType(snap):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+// ListLightningPayments wraps lnrpc.Lightning.ListPayments for the Send
+// tab's history list. Reversed: true returns newest-first.
+// IncludeIncomplete: true mirrors Decrediton's listLatestPayments
+// (LNActions.js) which also fetches pending and failed.
+func ListLightningPayments(ctx context.Context) (*types.LightningPaymentList, error) {
+	if rpc.LightningClient == nil {
+		return nil, fmt.Errorf("dcrlnd not available")
+	}
+	resp, err := rpc.LightningClient.ListPayments(ctx, &lnrpc.ListPaymentsRequest{
+		MaxPayments:       100,
+		Reversed:          true,
+		IncludeIncomplete: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ListPayments: %w", err)
+	}
+	out := &types.LightningPaymentList{Payments: make([]types.LightningPayment, 0, len(resp.GetPayments()))}
+	for _, p := range resp.GetPayments() {
+		out.Payments = append(out.Payments, paymentToType(p))
+	}
+	return out, nil
 }

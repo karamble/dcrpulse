@@ -215,3 +215,66 @@ type LightningNetworkPanel struct {
 	Info     LightningNetworkInfo `json:"info"`
 	TopNodes []TopLightningNode   `json:"topNodes"`
 }
+
+// LightningDecodedPayReq is the subset of dcrlnd's DecodePayReq response
+// surfaced to the Send tab. Mirrors the fields Decrediton renders in
+// DecodedPayRequest.jsx; payment-features and route-hints are omitted
+// for v1.
+type LightningDecodedPayReq struct {
+	Destination  string `json:"destination"`
+	PaymentHash  string `json:"paymentHash"`
+	NumAtoms     int64  `json:"numAtoms"`
+	Timestamp    int64  `json:"timestamp"`
+	Expiry       int64  `json:"expiry"`
+	Description  string `json:"description"`
+	FallbackAddr string `json:"fallbackAddr,omitempty"`
+	CltvExpiry   int64  `json:"cltvExpiry"`
+	PaymentAddr  string `json:"paymentAddr,omitempty"` // hex
+}
+
+// LightningSendPaymentRequest is the first WebSocket text frame sent
+// by the Send tab to /wallet/ln/send. Amt is required only for
+// zero-amount invoices.
+type LightningSendPaymentRequest struct {
+	PayReq        string `json:"payReq"`
+	Amt           int64  `json:"amt,omitempty"`
+	FeeLimitAtoms int64  `json:"feeLimitAtoms,omitempty"`
+	TimeoutSec    int32  `json:"timeoutSec,omitempty"`
+}
+
+// LightningHop is one node along a payment route in a confirmed
+// payment's HTLC. Mirrors lnrpc.Hop's display fields.
+type LightningHop struct {
+	PubKey       string `json:"pubKey"`
+	FeeAtoms     int64  `json:"feeAtoms"`
+	AmtToForward int64  `json:"amtToForward"`
+}
+
+// LightningHTLC is one HTLC attempt within a payment.
+type LightningHTLC struct {
+	Status    string         `json:"status"`
+	TotalAmt  int64          `json:"totalAmt"`
+	TotalFees int64          `json:"totalFees"`
+	Hops      []LightningHop `json:"hops"`
+}
+
+// LightningPayment is a flat row used by the Send tab's history list,
+// the WebSocket stream snapshots, and ListPayments.
+type LightningPayment struct {
+	PaymentHash     string          `json:"paymentHash"`
+	Destination     string          `json:"destination,omitempty"`
+	ValueAtoms      int64           `json:"valueAtoms"`
+	FeeAtoms        int64           `json:"feeAtoms"`
+	CreationDate    int64           `json:"creationDate"`
+	Status          string          `json:"status"` // confirmed | failed | pending
+	PaymentPreimage string          `json:"paymentPreimage,omitempty"`
+	PaymentRequest  string          `json:"paymentRequest,omitempty"`
+	Description     string          `json:"description,omitempty"`
+	FailureReason   string          `json:"failureReason,omitempty"`
+	HTLCs           []LightningHTLC `json:"htlcs,omitempty"`
+}
+
+// LightningPaymentList is the response to /wallet/ln/payments.
+type LightningPaymentList struct {
+	Payments []LightningPayment `json:"payments"`
+}

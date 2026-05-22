@@ -17,6 +17,7 @@ import (
 
 	"github.com/decred/dcrlnd/lnrpc"
 	"github.com/decred/dcrlnd/lnrpc/autopilotrpc"
+	"github.com/decred/dcrlnd/lnrpc/routerrpc"
 	"github.com/decred/dcrlnd/lnrpc/verrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -49,6 +50,10 @@ var (
 	// to a clean "0.8.1"-style version string (GetInfo returns
 	// "0.8.1-pre+<commit>").
 	VersionerClient verrpc.VersionerClient
+
+	// RouterClient drives Router.SendPaymentV2 for invoice payments.
+	// Reachable post-unlock.
+	RouterClient routerrpc.RouterClient
 
 	// DcrlndGrpcConn is the underlying connection, kept for shutdown.
 	DcrlndGrpcConn *grpc.ClientConn
@@ -94,6 +99,7 @@ func InitDcrlndClient(cfg DcrlndConfig) error {
 	WalletUnlockerClient = lnrpc.NewWalletUnlockerClient(conn)
 	AutopilotClient = autopilotrpc.NewAutopilotClient(conn)
 	VersionerClient = verrpc.NewVersionerClient(conn)
+	RouterClient = routerrpc.NewRouterClient(conn)
 
 	log.Println("dcrlnd gRPC clients initialised")
 	return nil
