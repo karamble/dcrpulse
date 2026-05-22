@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import {
   BisonrelayContact,
-  BisonrelayLiveEvent,
   BisonrelayMessage,
   acceptBisonrelayInvite,
   getBisonrelayContacts,
@@ -22,6 +21,7 @@ import {
   sendBisonrelayPM,
   writeBisonrelayInvite,
 } from '../../services/bisonrelayApi';
+import { useBisonrelayLive } from './BisonrelayLiveProvider';
 
 export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
@@ -34,6 +34,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [sending, setSending] = useState(false);
   const [showInviteCreate, setShowInviteCreate] = useState(false);
   const [showInviteAccept, setShowInviteAccept] = useState(false);
+  const { unread, clearUnread, setActiveUid, addListener } = useBisonrelayLive();
 
   const refreshContacts = useCallback(async () => {
     try {
@@ -65,46 +66,48 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   }, []);
 
   useEffect(() => {
-    if (selected) loadMessages(selected);
-    else setMessages([]);
-  }, [selected, loadMessages]);
+    if (selected) {
+      loadMessages(selected);
+      const uid = selected.id?.identity ?? '';
+      setActiveUid(uid);
+      clearUnread(uid);
+    } else {
+      setMessages([]);
+      setActiveUid('');
+    }
+  }, [selected, loadMessages, setActiveUid, clearUnread]);
+
+  const selectedRef = useRef<BisonrelayContact | null>(null);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   useEffect(() => {
-    const url = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/api/br/events`;
-    const ws = new WebSocket(url);
-    ws.onmessage = (e) => {
-      try {
-        const evt: BisonrelayLiveEvent = JSON.parse(e.data);
-        if (evt.type === 'kx') {
-          refreshContacts();
-          return;
-        }
-        if (evt.type === 'pm') {
-          const payload = evt.payload ?? {};
-          const senderNick = payload.nick ?? '';
-          const text = payload.msg?.message ?? '';
-          const fromUid = identityFromPayload(payload);
-          setMessages((prev) => {
-            if (selected && selected.id?.identity && fromUid === selected.id.identity) {
-              return [
-                ...prev,
-                {
-                  message: text,
-                  from: senderNick,
-                  timestamp: Math.floor(Date.now() / 1000),
-                  internal: false,
-                },
-              ];
-            }
-            return prev;
-          });
-        }
-      } catch {
-        /* ignore */
+    return addListener((evt) => {
+      if (evt.type === 'kx') {
+        refreshContacts();
+        return;
       }
-    };
-    return () => ws.close();
-  }, [refreshContacts, selected]);
+      if (evt.type === 'pm') {
+        const payload = evt.payload ?? {};
+        const senderNick = payload.nick ?? '';
+        const text = payload.msg?.message ?? '';
+        const fromUid = identityFromPayload(payload);
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity && fromUid === cur.id.identity) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              message: text,
+              from: senderNick,
+              timestamp: Math.floor(Date.now() / 1000),
+              internal: false,
+            },
+          ]);
+        }
+      }
+    });
+  }, [addListener, refreshContacts]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,15 +164,22 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           {contacts.map((c) => {
             const nick = displayNick(c);
             const isSel = selected?.id?.identity && c.id?.identity === selected.id.identity;
+            const uid = c.id?.identity ?? '';
+            const count = uid ? unread[uid] ?? 0 : 0;
             return (
               <button
-                key={c.id?.identity ?? nick}
+                key={uid || nick}
                 onClick={() => setSelected(c)}
-                className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm ${
+                className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center justify-between gap-2 ${
                   isSel ? 'bg-primary/20 text-foreground' : 'hover:bg-muted/30 text-muted-foreground'
                 }`}
               >
-                {nick}
+                <span className="truncate">{nick}</span>
+                {count > 0 && (
+                  <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -526,6 +536,15 @@ function nickOrUid(c: BisonrelayContact): string {
 function identityFromPayload(payload: any): string {
   if (!payload) return '';
   const uid = payload.uid;
-  if (typeof uid === 'string') return uid;
-  return '';
+  if (typeof uid !== 'string' || !uid) return '';
+  try {
+    const bin = atob(uid);
+    let hex = '';
+    for (let i = 0; i < bin.length; i++) {
+      hex += bin.charCodeAt(i).toString(16).padStart(2, '0');
+    }
+    return hex;
+  } catch {
+    return '';
+  }
 }

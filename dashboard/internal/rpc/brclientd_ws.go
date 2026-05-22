@@ -20,30 +20,32 @@ import (
 )
 
 // BrclientdWSClient maintains a persistent JSON-RPC 2.0 over WebSocket
-// connection to brclientd's clientrpc /ws endpoint and demultiplexes both
-// unary calls and server-streamed responses by request ID. Streaming
-// subscriptions are remembered and re-established automatically across
-// reconnects so consumers (e.g. the PM/KX event broadcaster) do not need
-// to handle disconnects themselves.
+// connection to brclientd's clientrpc /ws endpoint. Unary call responses
+// are demultiplexed by request ID; stream notifications carry no ID and
+// are routed by the suffixed method name ("<method>[<streamID>]") that
+// BR's clientrpc echoes back. Subscriptions are re-established on every
+// reconnect so callers do not handle disconnects themselves.
 type BrclientdWSClient struct {
 	mu      sync.Mutex
 	conn    *websocket.Conn
 	writeMu sync.Mutex
 
-	pending     map[string]chan inboundMsg
-	streams     map[string]chan inboundMsg
-	subscribers []*subscription
-	subMu       sync.RWMutex
+	pending         map[string]chan inboundMsg
+	streamsByMethod map[string]*subscription
+	subscribers     []*subscription
+	subMu           sync.RWMutex
 
-	nextID atomic.Int64
-	closed chan struct{}
+	nextID       atomic.Int64
+	nextStreamID atomic.Uint32
+	closed       chan struct{}
 }
 
 type subscription struct {
-	method    string
-	params    any
-	onEvent   func(json.RawMessage)
-	cancelled atomic.Bool
+	method        string
+	suffixedMethod string
+	params        any
+	onEvent       func(json.RawMessage)
+	cancelled     atomic.Bool
 }
 
 type inboundMsg struct {
@@ -75,9 +77,9 @@ var (
 func BrclientdWS() *BrclientdWSClient {
 	wsOnce.Do(func() {
 		wsClient = &BrclientdWSClient{
-			pending: make(map[string]chan inboundMsg),
-			streams: make(map[string]chan inboundMsg),
-			closed:  make(chan struct{}),
+			pending:         make(map[string]chan inboundMsg),
+			streamsByMethod: make(map[string]*subscription),
+			closed:          make(chan struct{}),
 		}
 	})
 	return wsClient
@@ -200,28 +202,39 @@ func (c *BrclientdWSClient) readLoop(conn *websocket.Conn) error {
 			continue
 		}
 		id := idAsString(msg.ID)
-		if id == "" {
+		if id != "" {
+			c.mu.Lock()
+			pendingCh, hasPending := c.pending[id]
+			c.mu.Unlock()
+			if hasPending {
+				c.mu.Lock()
+				delete(c.pending, id)
+				c.mu.Unlock()
+				select {
+				case pendingCh <- msg:
+				default:
+				}
+			}
+			continue
+		}
+		if msg.Method == nil {
 			continue
 		}
 		c.mu.Lock()
-		pendingCh, hasPending := c.pending[id]
-		streamCh, hasStream := c.streams[id]
+		sub, ok := c.streamsByMethod[*msg.Method]
 		c.mu.Unlock()
-		switch {
-		case hasPending:
-			c.mu.Lock()
-			delete(c.pending, id)
-			c.mu.Unlock()
-			select {
-			case pendingCh <- msg:
-			default:
-			}
-		case hasStream:
-			select {
-			case streamCh <- msg:
-			default:
-			}
+		if !ok || sub.cancelled.Load() {
+			continue
 		}
+		if msg.Error != nil {
+			log.Printf("brclientd-ws stream %s: code %d: %s", sub.method, msg.Error.Code, msg.Error.Message)
+			continue
+		}
+		payload := msg.Params
+		if len(payload) == 0 {
+			continue
+		}
+		sub.onEvent(payload)
 	}
 }
 
@@ -231,10 +244,7 @@ func (c *BrclientdWSClient) failAllPending(err error) {
 		close(ch)
 		delete(c.pending, id)
 	}
-	for id, ch := range c.streams {
-		close(ch)
-		delete(c.streams, id)
-	}
+	c.streamsByMethod = make(map[string]*subscription)
 	c.mu.Unlock()
 }
 
@@ -302,36 +312,30 @@ func (c *BrclientdWSClient) Subscribe(method string, params any, onEvent func(js
 			}
 		}
 		c.subMu.Unlock()
+		if s.suffixedMethod != "" {
+			c.mu.Lock()
+			delete(c.streamsByMethod, s.suffixedMethod)
+			c.mu.Unlock()
+		}
 	}, nil
 }
 
 func (c *BrclientdWSClient) openStream(s *subscription) error {
-	id := strconv.FormatInt(c.nextID.Add(1), 10)
-	ch := make(chan inboundMsg, 32)
+	streamID := c.nextStreamID.Add(1)
+	suffixed := fmt.Sprintf("%s[%.8x]", s.method, streamID)
+	s.suffixedMethod = suffixed
+
 	c.mu.Lock()
-	c.streams[id] = ch
+	c.streamsByMethod[suffixed] = s
 	c.mu.Unlock()
 
-	if err := c.send(outboundMsg{JSONRPC: "2.0", ID: id, Method: s.method, Params: s.params}); err != nil {
+	id := strconv.FormatInt(c.nextID.Add(1), 10)
+	if err := c.send(outboundMsg{JSONRPC: "2.0", ID: id, Method: suffixed, Params: s.params}); err != nil {
 		c.mu.Lock()
-		delete(c.streams, id)
+		delete(c.streamsByMethod, suffixed)
 		c.mu.Unlock()
 		return err
 	}
-	go func() {
-		for msg := range ch {
-			if s.cancelled.Load() {
-				return
-			}
-			if msg.Error != nil {
-				log.Printf("brclientd-ws stream %s: code %d: %s", s.method, msg.Error.Code, msg.Error.Message)
-				continue
-			}
-			if len(msg.Result) > 0 {
-				s.onEvent(msg.Result)
-			}
-		}
-	}()
 	return nil
 }
 

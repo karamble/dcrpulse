@@ -47,6 +47,7 @@ import { AddressView } from './pages/AddressView';
 import { MempoolView } from './pages/MempoolView';
 import { GovernanceDashboard } from './pages/GovernanceDashboard';
 import { BisonrelayPage } from './components/bisonrelay/BisonrelayPage';
+import { BisonrelayLiveProvider } from './components/bisonrelay/BisonrelayLiveProvider';
 import { getDashboardData, getWalletStatus } from './services/api';
 import { getLightningInfo } from './services/lightningApi';
 import { getBisonrelayVersion } from './services/bisonrelayApi';
@@ -175,7 +176,9 @@ function AppContent() {
 function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <BisonrelayLiveProvider>
+        <AppContent />
+      </BisonrelayLiveProvider>
     </BrowserRouter>
   );
 }
