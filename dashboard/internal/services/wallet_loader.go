@@ -36,15 +36,12 @@ func CheckWalletExists(ctx context.Context) (*types.WalletExistsResponse, error)
 	}, nil
 }
 
-// GenerateSeed generates a new cryptographically secure seed
+// GenerateSeed generates a new cryptographically secure seed.
+// seedLength is in BYTES. Zero passes through to dcrwallet, which uses its
+// RecommendedSeedLen (32 bytes -> 33-word mnemonic).
 func GenerateSeed(ctx context.Context, seedLength uint32) (*types.GenerateSeedResponse, error) {
 	if rpc.SeedServiceClient == nil {
 		return nil, fmt.Errorf("seed service client not initialized")
-	}
-
-	// Default to 33-word seed (264 bits) if not specified
-	if seedLength == 0 {
-		seedLength = 33
 	}
 
 	req := &pb.GenerateRandomSeedRequest{
@@ -55,8 +52,6 @@ func GenerateSeed(ctx context.Context, seedLength uint32) (*types.GenerateSeedRe
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate seed: %w", err)
 	}
-
-	log.Printf("Generated seed mnemonic with %d words", seedLength)
 
 	return &types.GenerateSeedResponse{
 		SeedMnemonic: resp.SeedMnemonic,

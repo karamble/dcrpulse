@@ -17,7 +17,7 @@ type WalletLoadedResponse struct {
 
 // GenerateSeedRequest contains parameters for seed generation
 type GenerateSeedRequest struct {
-	SeedLength uint32 `json:"seedLength,omitempty"` // Optional, defaults to 33
+	SeedLength uint32 `json:"seedLength,omitempty"` // Optional byte count; 0/unset lets dcrwallet pick 32 bytes (33-word mnemonic).
 }
 
 // GenerateSeedResponse contains the generated seed in multiple formats

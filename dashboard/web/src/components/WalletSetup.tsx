@@ -28,7 +28,7 @@ export const WalletSetup = () => {
   const handleGenerateSeed = async () => {
     try {
       setError(null);
-      const response = await generateSeed(33);
+      const response = await generateSeed(0);
       setSeedMnemonic(response.seedMnemonic);
       setSeedHex(response.seedHex);
       setStep('generate');
@@ -174,17 +174,7 @@ export const WalletSetup = () => {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold">Your Seed Phrase</h2>
-                  <p className="text-sm text-muted-foreground">33-word seed + birthday word (34 total)</p>
-                </div>
-              </div>
-
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 mb-4">
-                <div className="flex gap-3">
-                  <AlertCircle className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-muted-foreground">
-                    <p className="font-semibold text-foreground mb-1">About the birthday word</p>
-                    <p>The 34th word encodes your wallet creation date. This helps speed up initial blockchain scanning by starting from approximately when your wallet was created, rather than scanning from the beginning.</p>
-                  </div>
+                  <p className="text-sm text-muted-foreground">33-word recovery phrase</p>
                 </div>
               </div>
 
@@ -224,7 +214,7 @@ export const WalletSetup = () => {
                   className="mt-1"
                 />
                 <label className="text-sm text-muted-foreground cursor-pointer" onClick={() => setSeedBackupConfirmed(!seedBackupConfirmed)}>
-                  I have written down all 34 words of my seed phrase and stored them in a secure location. I understand that without this seed phrase, I cannot recover my wallet.
+                  I have written down all 33 words of my seed phrase and stored them in a secure location. I understand that without this seed phrase, I cannot recover my wallet.
                 </label>
               </div>
 

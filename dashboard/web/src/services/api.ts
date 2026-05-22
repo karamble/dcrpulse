@@ -358,7 +358,7 @@ export interface WalletLoadedResponse {
 }
 
 export interface GenerateSeedRequest {
-  seedLength?: number; // Optional, defaults to 33
+  seedLength?: number; // Optional byte count; 0/unset lets dcrwallet pick 32 bytes (33-word mnemonic).
 }
 
 export interface GenerateSeedResponse {
@@ -397,7 +397,10 @@ export const checkWalletLoaded = async (): Promise<WalletLoadedResponse> => {
   return response.data;
 };
 
-export const generateSeed = async (seedLength: number = 33): Promise<GenerateSeedResponse> => {
+// generateSeed lets dcrwallet pick the recommended length by default
+// (zero -> 32 bytes -> 33-word mnemonic). Pass a non-zero byte count only if
+// you need a non-standard seed length.
+export const generateSeed = async (seedLength: number = 0): Promise<GenerateSeedResponse> => {
   const response = await api.post<GenerateSeedResponse>('/wallet/generate-seed', { seedLength });
   return response.data;
 };
