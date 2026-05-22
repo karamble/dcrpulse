@@ -40,9 +40,11 @@ export const SyncProgressBar = ({
       
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground font-medium">
-            Block {scanHeight.toLocaleString()} of {chainHeight.toLocaleString()}
-          </span>
+          {(scanHeight > 0 || chainHeight > 0) ? (
+            <span className="text-muted-foreground font-medium">
+              Block {scanHeight.toLocaleString()} of {chainHeight.toLocaleString()}
+            </span>
+          ) : <span />}
           <span className="font-bold text-lg text-primary">{progress.toFixed(1)}%</span>
         </div>
         <div className="relative h-3 bg-muted rounded-full overflow-hidden border border-border/50">

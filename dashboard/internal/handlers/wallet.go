@@ -473,13 +473,34 @@ func snapshotPayload(snap services.SyncSnapshot) map[string]interface{} {
 
 	scanHeight, chainHeight := phaseProgress(snap)
 	progress := snap.RescanProgressPc
-	if snap.Phase != services.SyncPhaseRescanning && chainHeight > 0 {
-		progress = float64(scanHeight) / float64(chainHeight) * 100
-		if progress > 100 {
-			progress = 100
+	switch snap.Phase {
+	case services.SyncPhaseRescanning:
+		// progress = snap.RescanProgressPc (already assigned)
+	case services.SyncPhaseFetchingHeaders:
+		// Time-based ratio, mirroring Decrediton's
+		// AnimatedLinearProgressFull: how far through the blockchain's
+		// timestamp range we have synced.
+		if snap.FirstHeaderTime > 0 && snap.LastHeaderTime > snap.FirstHeaderTime {
+			now := time.Now().Unix()
+			denom := now - snap.FirstHeaderTime
+			if denom > 0 {
+				p := float64(snap.LastHeaderTime-snap.FirstHeaderTime) / float64(denom) * 100
+				if p > 100 {
+					p = 100
+				}
+				progress = p
+			}
+		} else {
+			progress = 0
+		}
+	default:
+		if chainHeight > 0 {
+			progress = float64(scanHeight) / float64(chainHeight) * 100
+			if progress > 100 {
+				progress = 100
+			}
 		}
 	}
-	_ = progress
 	message := ""
 	switch snap.Phase {
 	case services.SyncPhaseRescanning:
@@ -491,7 +512,11 @@ func snapshotPayload(snap services.SyncSnapshot) map[string]interface{} {
 			message = "Fetching committed filters"
 		}
 	case services.SyncPhaseFetchingHeaders:
-		message = fmt.Sprintf("Fetching headers (%d so far)", snap.HeadersCount)
+		if snap.HeadersCount > 0 {
+			message = fmt.Sprintf("Fetching block headers (%d fetched)", snap.HeadersCount)
+		} else {
+			message = "Fetching block headers"
+		}
 	case services.SyncPhaseDiscoverAddresses:
 		message = "Discovering addresses"
 	case services.SyncPhaseSynced:
@@ -535,7 +560,11 @@ func phaseProgress(snap services.SyncSnapshot) (int64, int64) {
 	case services.SyncPhaseRescanning:
 		return int64(snap.RescanThrough), snap.RescanFrom
 	case services.SyncPhaseFetchingHeaders:
-		return int64(snap.HeadersCount), chainTip
+		// HeadersCount is fetched-this-session; FetchHeadersNotification
+		// has no usable height for a block-of-block bar. Time-based
+		// progress is computed in snapshotPayload; return (0, 0) so the
+		// frontend hides the "Block X of Y" line.
+		return 0, 0
 	case services.SyncPhaseFetchingCfilters:
 		return int64(snap.CfiltersEnd), chainTip
 	default:
