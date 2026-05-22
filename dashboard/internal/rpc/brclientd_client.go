@@ -167,17 +167,57 @@ func BrclientdSendPM(ctx context.Context, user, msg string) error {
 	return brclientdCall(ctx, "ChatService.PM", params, &unused)
 }
 
-// BrclientdWriteNewInvite creates an OOB invite blob via
-// ChatService.WriteNewInvite. Returns the base64-encoded invite bytes a
-// peer can paste back into AcceptInvite.
-func BrclientdWriteNewInvite(ctx context.Context) (string, error) {
+// BrclientdInviteResult bundles the two share-forms BR's WriteNewInvite
+// produces: the binary OOB invite blob (base64 over the wire) and the
+// bech32 brpik1 key that points at the same prepaid invite on the BR
+// server. Sharing either gets a peer the same KX outcome.
+type BrclientdInviteResult struct {
+	InviteBytes string
+	InviteKey   string
+}
+
+// BrclientdWriteNewInvite creates an OOB invite via ChatService.WriteNewInvite
+// and returns both share-forms.
+func BrclientdWriteNewInvite(ctx context.Context) (*BrclientdInviteResult, error) {
 	var resp struct {
 		InviteBytes string `json:"inviteBytes"`
+		InviteKey   string `json:"inviteKey"`
 	}
 	if err := brclientdCall(ctx, "ChatService.WriteNewInvite", struct{}{}, &resp); err != nil {
-		return "", err
+		return nil, err
 	}
-	return resp.InviteBytes, nil
+	return &BrclientdInviteResult{InviteBytes: resp.InviteBytes, InviteKey: resp.InviteKey}, nil
+}
+
+// BrclientdRedeemPaidInviteKey resolves a brpik1 bech32 key against the BR
+// server and starts a key exchange with the resulting invite. Hits
+// brclientd's /invites/redeem-key bridge endpoint which clientrpc itself
+// does not expose.
+func BrclientdRedeemPaidInviteKey(ctx context.Context, key string) error {
+	cli, err := brclientdClient()
+	if err != nil {
+		return err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/invites/redeem-key", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	payload, _ := json.Marshal(map[string]string{"key": key})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return fmt.Errorf("brclientd /invites/redeem-key: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("brclientd /invites/redeem-key: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return nil
 }
 
 // BrclientdAcceptInvite hands a previously-shared OOB invite blob to

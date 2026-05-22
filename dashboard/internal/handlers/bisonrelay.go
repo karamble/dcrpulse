@@ -5,12 +5,19 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/gorilla/websocket"
+
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
 )
 
 // BisonrelayVersionHandler proxies brclientd's VersionService.Version
@@ -53,6 +60,54 @@ func BisonrelayIdentityHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(id)
 }
 
+// BisonrelayEventsHandler upgrades to WebSocket and streams live PM / KX /
+// GCM events from brclientd to the browser. Each frame is a JSON object
+// with {type, payload}; payload is the raw event JSON.
+func BisonrelayEventsHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("BisonrelayEventsHandler upgrade: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	events, unsubscribe := services.Bisonrelay().Subscribe(64)
+	defer unsubscribe()
+
+	go func() {
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	pinger := time.NewTicker(30 * time.Second)
+	defer pinger.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-pinger.C:
+			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+				return
+			}
+		case evt, ok := <-events:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(evt); err != nil {
+				return
+			}
+		}
+	}
+}
+
 // BisonrelayContactsHandler proxies brclientd's /contacts endpoint.
 // Returns the BR client's in-memory address book (peers with completed KX).
 func BisonrelayContactsHandler(w http.ResponseWriter, r *http.Request) {
@@ -90,34 +145,54 @@ func BisonrelayPMHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // BisonrelayInviteWriteHandler asks brclientd to mint a fresh OOB invite.
-// Returns {"invite_bytes": "<base64>"}.
+// Returns {"invite_bytes": "<base64 binary blob>", "invite_key": "brpik1..."}
+// so the caller can share whichever form is more convenient.
 func BisonrelayInviteWriteHandler(w http.ResponseWriter, r *http.Request) {
-	invite, err := rpc.BrclientdWriteNewInvite(r.Context())
+	result, err := rpc.BrclientdWriteNewInvite(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"invite_bytes": invite})
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"invite_bytes": result.InviteBytes,
+		"invite_key":   result.InviteKey,
+	})
 }
 
-// BisonrelayInviteAcceptHandler hands a previously-shared OOB invite blob
-// (base64) to brclientd. Body: {invite_bytes: "<base64>"}. Returns the
-// decoded invite envelope.
+// BisonrelayInviteAcceptHandler dispatches an inbound invite to the right
+// brclientd path based on its format. brpik1 bech32 keys go through
+// /invites/redeem-key (fetch encrypted blob + decrypt + accept); base64
+// invite blobs go through ChatService.AcceptInvite. Body accepts either
+// {invite: "..."} or the legacy {invite_bytes: "..."}.
 func BisonrelayInviteAcceptHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Invite      string `json:"invite"`
 		InviteBytes string `json:"invite_bytes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	req.InviteBytes = strings.TrimSpace(req.InviteBytes)
-	if req.InviteBytes == "" {
-		http.Error(w, "invite_bytes is required", http.StatusBadRequest)
+	value := strings.TrimSpace(req.Invite)
+	if value == "" {
+		value = strings.TrimSpace(req.InviteBytes)
+	}
+	if value == "" {
+		http.Error(w, "invite is required", http.StatusBadRequest)
 		return
 	}
-	body, err := rpc.BrclientdAcceptInvite(r.Context(), req.InviteBytes)
+
+	if strings.HasPrefix(value, "brpik1") {
+		if err := rpc.BrclientdRedeemPaidInviteKey(r.Context(), value); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	body, err := rpc.BrclientdAcceptInvite(r.Context(), value)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

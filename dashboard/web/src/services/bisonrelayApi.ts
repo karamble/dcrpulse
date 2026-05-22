@@ -42,3 +42,75 @@ export const getBisonrelayVersion = async (): Promise<BisonrelayVersion> => {
 export const setupBisonrelay = async (nick: string, name: string): Promise<void> => {
   await api.post('/br/setup', { nick, name });
 };
+
+export interface BisonrelayContact {
+  id?: {
+    nick?: string;
+    name?: string;
+    identity?: string;
+  };
+  nick_alias?: string;
+  first_created?: string;
+  last_completed_kx?: string;
+  last_read_msg_time?: string;
+  ignored?: boolean;
+}
+
+export interface BisonrelayContactsResponse {
+  entries: BisonrelayContact[] | null;
+}
+
+export const getBisonrelayContacts = async (): Promise<BisonrelayContact[]> => {
+  const { data } = await api.get<BisonrelayContactsResponse>('/br/contacts');
+  return data.entries ?? [];
+};
+
+export interface BisonrelayMessage {
+  message: string;
+  from: string;
+  timestamp: number;
+  internal: boolean;
+}
+
+export interface BisonrelayMessagesResponse {
+  uid: string;
+  page: number;
+  page_size: number;
+  entries: BisonrelayMessage[] | null;
+}
+
+export const getBisonrelayMessages = async (
+  contact: string,
+  page = 0,
+  pageSize = 50,
+): Promise<BisonrelayMessagesResponse> => {
+  const { data } = await api.get<BisonrelayMessagesResponse>('/br/messages', {
+    params: { contact, page, page_size: pageSize },
+  });
+  return data;
+};
+
+export const sendBisonrelayPM = async (user: string, msg: string): Promise<void> => {
+  await api.post('/br/pm', { user, msg });
+};
+
+export interface BisonrelayInvite {
+  invite_bytes: string;
+  invite_key: string;
+}
+
+export const writeBisonrelayInvite = async (): Promise<BisonrelayInvite> => {
+  const { data } = await api.post<BisonrelayInvite>('/br/invites/write');
+  return data;
+};
+
+export const acceptBisonrelayInvite = async (invite: string): Promise<void> => {
+  await api.post('/br/invites/accept', { invite });
+};
+
+export type BisonrelayEventType = 'pm' | 'kx' | 'gcm';
+
+export interface BisonrelayLiveEvent {
+  type: BisonrelayEventType;
+  payload: any;
+}
