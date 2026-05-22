@@ -49,16 +49,15 @@ func WalletLoadedHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GenerateSeedHandler generates a new cryptographic seed
+// GenerateSeedHandler generates a new cryptographic seed.
+// req.SeedLength is in BYTES. Zero (or unset) -> dcrwallet's recommended 32
+// bytes -> 33-word Decred-standard mnemonic.
 func GenerateSeedHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
 	var req types.GenerateSeedRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// Use default if no request body
-		req.SeedLength = 33
-	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	resp, err := services.GenerateSeed(ctx, req.SeedLength)
 	if err != nil {
