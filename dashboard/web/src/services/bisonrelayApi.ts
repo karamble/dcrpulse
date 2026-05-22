@@ -91,8 +91,25 @@ export const getBisonrelayMessages = async (
   return data;
 };
 
-export const sendBisonrelayPM = async (user: string, msg: string): Promise<void> => {
-  await api.post('/br/pm', { user, msg });
+export interface BisonrelayPMAttachment {
+  name: string;
+  mime: string;
+  data_b64: string;
+}
+
+export interface BisonrelayPMSendResult {
+  body: string;
+}
+
+export const sendBisonrelayPM = async (
+  user: string,
+  msg: string,
+  embed?: BisonrelayPMAttachment,
+): Promise<BisonrelayPMSendResult> => {
+  const payload: { user: string; msg: string; embed?: BisonrelayPMAttachment } = { user, msg };
+  if (embed) payload.embed = embed;
+  const { data } = await api.post<BisonrelayPMSendResult>('/br/pm', payload);
+  return data ?? { body: msg };
 };
 
 export interface BisonrelayInvite {

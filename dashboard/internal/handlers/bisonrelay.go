@@ -6,13 +6,17 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
 	"dcrpulse/internal/middleware"
@@ -108,6 +112,37 @@ func BisonrelayEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+var (
+	embedContactRe  = regexp.MustCompile(`^[0-9a-f]{16}$`)
+	embedFilenameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+)
+
+// BisonrelayEmbedHandler serves an inline embed file that BR's clientdb has
+// already extracted from a PM body and persisted at
+// <brclientd-data>/<network>/db/embeds/<contact_short>/<filename>. The
+// dashboard mounts the brclientd data volume read-only at /run/br-certs.
+func BisonrelayEmbedHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contact := vars["contact"]
+	filename := vars["filename"]
+	if !embedContactRe.MatchString(contact) || !embedFilenameRe.MatchString(filename) {
+		http.NotFound(w, r)
+		return
+	}
+
+	network, _ := services.CurrentNetwork(r.Context())
+	if network == "" {
+		network = "mainnet"
+	}
+	root := filepath.Clean(filepath.Join("/run/br-certs/data", network, "db", "embeds"))
+	candidate := filepath.Clean(filepath.Join(root, contact, filename))
+	if !strings.HasPrefix(candidate, root+string(filepath.Separator)) {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, candidate)
+}
+
 // BisonrelayContactsHandler proxies brclientd's /contacts endpoint.
 // Returns the BR client's in-memory address book (peers with completed KX).
 func BisonrelayContactsHandler(w http.ResponseWriter, r *http.Request) {
@@ -120,12 +155,25 @@ func BisonrelayContactsHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// BisonrelayPMHandler sends a PM through brclientd. Body: {user, msg}
-// where user is a nick / alias / hex UID.
+// maxInlineEmbedBytes is the size cap (in decoded bytes) for an inline
+// attachment that rides in the PM body via the bruig --embed[...]-- tag.
+// Stays comfortably under the 1 MiB floor of BR's per-PM payload limit.
+const maxInlineEmbedBytes = 800 * 1024
+
+// BisonrelayPMHandler sends a PM through brclientd. Body:
+// {user, msg, embed?: {name, mime, data_b64}}. When an embed is present
+// it is rendered into the bruig-compatible --embed[...]-- markdown tag
+// and appended to msg before forwarding to ChatService.PM. Responds with
+// {body: "<synthesised wire body>"} so the caller can echo it optimistically.
 func BisonrelayPMHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		User string `json:"user"`
-		Msg  string `json:"msg"`
+		User  string `json:"user"`
+		Msg   string `json:"msg"`
+		Embed *struct {
+			Name    string `json:"name"`
+			Mime    string `json:"mime"`
+			DataB64 string `json:"data_b64"`
+		} `json:"embed,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
@@ -133,15 +181,62 @@ func BisonrelayPMHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	req.User = strings.TrimSpace(req.User)
 	req.Msg = strings.TrimSpace(req.Msg)
-	if req.User == "" || req.Msg == "" {
-		http.Error(w, "user and msg are required", http.StatusBadRequest)
+	if req.User == "" {
+		http.Error(w, "user is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdSendPM(r.Context(), req.User, req.Msg); err != nil {
+	if req.Embed == nil && req.Msg == "" {
+		http.Error(w, "msg or embed is required", http.StatusBadRequest)
+		return
+	}
+
+	body := req.Msg
+	if req.Embed != nil {
+		decoded, err := base64.StdEncoding.DecodeString(req.Embed.DataB64)
+		if err != nil {
+			http.Error(w, "embed data_b64: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(decoded) > maxInlineEmbedBytes {
+			http.Error(w, "embed exceeds inline size cap", http.StatusRequestEntityTooLarge)
+			return
+		}
+		tag := buildEmbedTag(req.Embed.Name, req.Embed.Mime, req.Embed.DataB64)
+		if body == "" {
+			body = tag
+		} else {
+			body = body + "\n" + tag
+		}
+	}
+
+	if err := rpc.BrclientdSendPM(r.Context(), req.User, body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"body": body})
+}
+
+// buildEmbedTag renders bruig's --embed[...]-- tag. Field order mirrors
+// internal/mdembeds/mdembeds.go so an audited peer parses it identically.
+// Bruig does no escaping on name/type/data; commas in name would break the
+// parser, so we strip them defensively.
+func buildEmbedTag(name, mime, dataB64 string) string {
+	name = strings.ReplaceAll(name, ",", "")
+	name = strings.ReplaceAll(name, "=", "")
+	mime = strings.ReplaceAll(mime, ",", "")
+	mime = strings.ReplaceAll(mime, "=", "")
+	var parts []string
+	if name != "" {
+		parts = append(parts, "name="+name)
+	}
+	if mime != "" {
+		parts = append(parts, "type="+mime)
+	}
+	if dataB64 != "" {
+		parts = append(parts, "data="+dataB64)
+	}
+	return "--embed[" + strings.Join(parts, ",") + "]--"
 }
 
 // BisonrelayInviteWriteHandler asks brclientd to mint a fresh OOB invite.
