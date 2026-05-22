@@ -41,10 +41,12 @@ type DecodeSeedResponse struct {
 
 // CreateWalletRequest contains parameters for wallet creation
 type CreateWalletRequest struct {
-	PublicPassphrase  string `json:"publicPassphrase"`  // Optional: Encrypts wallet database for viewing
-	PrivatePassphrase string `json:"privatePassphrase"` // Required: Encrypts private keys for spending
-	SeedHex           string `json:"seedHex"`           // Required: Hex-encoded seed
-	DiscoverAccounts  bool   `json:"discoverAccounts"`  // True when restoring from an existing seed; enables post-create chain rescan
+	PublicPassphrase         string `json:"publicPassphrase"`         // Optional: Encrypts wallet database for viewing
+	ConfirmPublicPassphrase  string `json:"confirmPublicPassphrase"`  // Must equal PublicPassphrase when public is non-empty
+	PrivatePassphrase        string `json:"privatePassphrase"`        // Required: Encrypts private keys for spending
+	ConfirmPrivatePassphrase string `json:"confirmPrivatePassphrase"` // Must equal PrivatePassphrase
+	SeedHex                  string `json:"seedHex"`                  // Required: Hex-encoded seed
+	DiscoverAccounts         bool   `json:"discoverAccounts"`         // True when restoring from an existing seed; enables post-create chain rescan
 }
 
 // CreateWalletResponse indicates wallet creation success

@@ -135,6 +135,25 @@ func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Private passphrase must be at least 8 characters", http.StatusBadRequest)
 		return
 	}
+	if len(req.PrivatePassphrase) > 1024 || len(req.ConfirmPrivatePassphrase) > 1024 ||
+		len(req.PublicPassphrase) > 1024 || len(req.ConfirmPublicPassphrase) > 1024 {
+		http.Error(w, "Passphrase too long", http.StatusBadRequest)
+		return
+	}
+	if req.PrivatePassphrase != req.ConfirmPrivatePassphrase {
+		http.Error(w, "Private passphrases do not match", http.StatusBadRequest)
+		return
+	}
+	if req.PublicPassphrase != "" {
+		if len(req.PublicPassphrase) < 8 {
+			http.Error(w, "Public passphrase must be at least 8 characters", http.StatusBadRequest)
+			return
+		}
+		if req.PublicPassphrase != req.ConfirmPublicPassphrase {
+			http.Error(w, "Public passphrases do not match", http.StatusBadRequest)
+			return
+		}
+	}
 	if req.SeedHex == "" {
 		http.Error(w, "Seed is required", http.StatusBadRequest)
 		return

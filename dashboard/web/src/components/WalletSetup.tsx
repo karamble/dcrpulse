@@ -77,12 +77,16 @@ export const WalletSetup = () => {
   };
 
   const validatePassphrases = (): boolean => {
-    // Public passphrase is optional
-    if (publicPassphrase && publicPassphrase !== confirmPublicPass) {
-      setError('Public passphrases do not match');
-      return false;
+    if (publicPassphrase) {
+      if (publicPassphrase.length < 8) {
+        setError('Public passphrase must be at least 8 characters');
+        return false;
+      }
+      if (publicPassphrase !== confirmPublicPass) {
+        setError('Public passphrases do not match');
+        return false;
+      }
     }
-    // Private passphrase is mandatory
     if (!privatePassphrase) {
       setError('Private passphrase is required');
       return false;
@@ -115,7 +119,9 @@ export const WalletSetup = () => {
       
       const response = await createWallet({
         publicPassphrase,
+        confirmPublicPassphrase: confirmPublicPass,
         privatePassphrase,
+        confirmPrivatePassphrase: confirmPrivatePass,
         seedHex,
         discoverAccounts: mode === 'restore',
       });
@@ -148,10 +154,15 @@ export const WalletSetup = () => {
   const privateMatch = privatePassphrase.length > 0 && confirmPrivatePass.length > 0
     ? privatePassphrase === confirmPrivatePass
     : null;
+  const publicTooShort = publicPassphrase !== '' && publicPassphrase.length < 8;
+  const privateTooShort = privatePassphrase !== '' && privatePassphrase.length < 8;
   const canSubmitPassphrases =
-    privatePassphrase.length > 0 &&
+    privatePassphrase !== '' &&
+    confirmPrivatePass !== '' &&
+    !privateTooShort &&
     privatePassphrase === confirmPrivatePass &&
-    (publicPassphrase.length === 0 || publicPassphrase === confirmPublicPass);
+    !publicTooShort &&
+    (publicPassphrase === '' || (confirmPublicPass !== '' && publicPassphrase === confirmPublicPass));
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-muted/20">
@@ -485,28 +496,30 @@ export const WalletSetup = () => {
                       <p className="text-xs text-muted-foreground">Strength: {publicStrength.strength}</p>
                     </div>
                   )}
-                  {publicPassphrase && (
-                    <>
-                      <input
-                        type={showPublicPass ? 'text' : 'password'}
-                        value={confirmPublicPass}
-                        onChange={(e) => setConfirmPublicPass(e.target.value)}
-                        className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
-                          publicMatch === false ? 'border-red-500/50' : publicMatch === true ? 'border-green-500/50' : 'border-border'
-                        }`}
-                        placeholder="Confirm public passphrase"
-                      />
-                      {publicMatch === true && (
-                        <p className="text-xs text-green-500 flex items-center gap-1">
-                          <Check className="h-3 w-3" /> Public passphrases match
-                        </p>
-                      )}
-                      {publicMatch === false && (
-                        <p className="text-xs text-red-500 flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" /> Public passphrases do not match
-                        </p>
-                      )}
-                    </>
+                  {publicTooShort && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Must be at least 8 characters.
+                    </p>
+                  )}
+                  <input
+                    type={showPublicPass ? 'text' : 'password'}
+                    minLength={8}
+                    value={confirmPublicPass}
+                    onChange={(e) => setConfirmPublicPass(e.target.value)}
+                    className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
+                      publicMatch === false ? 'border-red-500/50' : publicMatch === true ? 'border-green-500/50' : 'border-border'
+                    }`}
+                    placeholder="Confirm public passphrase"
+                  />
+                  {publicMatch === true && (
+                    <p className="text-xs text-green-500 flex items-center gap-1">
+                      <Check className="h-3 w-3" /> Public passphrases match
+                    </p>
+                  )}
+                  {publicMatch === false && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Public passphrases do not match
+                    </p>
                   )}
                 </div>
 
@@ -538,8 +551,14 @@ export const WalletSetup = () => {
                       <p className="text-xs text-muted-foreground">Strength: {privateStrength.strength}</p>
                     </div>
                   )}
+                  {privateTooShort && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Must be at least 8 characters.
+                    </p>
+                  )}
                   <input
                     type={showPrivatePass ? 'text' : 'password'}
+                    minLength={8}
                     value={confirmPrivatePass}
                     onChange={(e) => setConfirmPrivatePass(e.target.value)}
                     className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${

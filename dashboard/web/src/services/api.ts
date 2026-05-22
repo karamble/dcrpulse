@@ -530,10 +530,12 @@ export interface GenerateSeedResponse {
 }
 
 export interface CreateWalletRequest {
-  publicPassphrase: string;  // Optional: Encrypts wallet database for viewing
-  privatePassphrase: string; // Required: Encrypts private keys for spending
-  seedHex: string;           // Required: Hex-encoded seed
-  discoverAccounts: boolean; // True when restoring from existing seed
+  publicPassphrase: string;          // Optional: Encrypts wallet database for viewing
+  confirmPublicPassphrase: string;   // Must equal publicPassphrase when public is non-empty
+  privatePassphrase: string;         // Required: Encrypts private keys for spending
+  confirmPrivatePassphrase: string;  // Must equal privatePassphrase
+  seedHex: string;                   // Required: Hex-encoded seed
+  discoverAccounts: boolean;         // True when restoring from existing seed
 }
 
 export interface CreateWalletResponse {
