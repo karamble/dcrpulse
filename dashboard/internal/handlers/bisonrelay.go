@@ -7,6 +7,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"dcrpulse/internal/rpc"
@@ -50,6 +51,38 @@ func BisonrelayIdentityHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(id)
+}
+
+// BisonrelayMessagesHandler proxies brclientd's /history/pm endpoint. Query
+// params: contact (hex peer UID, required), page (default 0), page_size
+// (default 50, max 500). Returns the raw JSON envelope brclientd produces so
+// the dashboard stays stateless w.r.t. chat history.
+func BisonrelayMessagesHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	contact := strings.TrimSpace(q.Get("contact"))
+	if contact == "" {
+		http.Error(w, "contact query param is required", http.StatusBadRequest)
+		return
+	}
+	page := 0
+	if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			page = n
+		}
+	}
+	pageSize := 50
+	if v := q.Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			pageSize = n
+		}
+	}
+	body, err := rpc.BrclientdHistoryPM(r.Context(), contact, page, pageSize)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
 }
 
 // BisonrelaySetupHandler proxies a nick/name pair to brclientd's pre-setup

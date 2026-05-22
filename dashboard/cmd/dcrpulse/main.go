@@ -189,6 +189,7 @@ func main() {
 	api.HandleFunc("/br/status", handlers.BisonrelayStatusHandler).Methods("GET")
 	api.HandleFunc("/br/setup", handlers.BisonrelaySetupHandler).Methods("POST")
 	api.HandleFunc("/br/identity", handlers.BisonrelayIdentityHandler).Methods("GET")
+	api.HandleFunc("/br/messages", handlers.BisonrelayMessagesHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")

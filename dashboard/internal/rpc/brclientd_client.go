@@ -125,6 +125,39 @@ func BrclientdCreateIdentity(ctx context.Context, nick, name string) error {
 	return nil
 }
 
+// BrclientdHistoryPM reads paginated PM history from brclientd's
+// /history/pm endpoint. UID is the hex-encoded zkidentity peer ID. The
+// dashboard does not cache messages locally - brclientd's BR clientdb is
+// the source of truth and this is a passthrough.
+func BrclientdHistoryPM(ctx context.Context, uid string, page, pageSize int) (json.RawMessage, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/history/pm?uid=%s&page=%d&page_size=%d",
+		BrclientdCfg.Host, BrclientdCfg.StatusPort, uid, page, pageSize)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build history request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /history/pm: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read history: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("brclientd /history/pm: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return body, nil
+}
+
 // BrclientdStatus calls brclientd's /status HTTP endpoint over mTLS and
 // returns the parsed snapshot. The status server is on a separate port
 // (default 7677) from clientrpc; both reuse the same cert triplet.
