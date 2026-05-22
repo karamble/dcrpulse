@@ -46,6 +46,7 @@ import { TransactionDetail } from './pages/TransactionDetail';
 import { AddressView } from './pages/AddressView';
 import { MempoolView } from './pages/MempoolView';
 import { GovernanceDashboard } from './pages/GovernanceDashboard';
+import { BisonrelayPage } from './components/bisonrelay/BisonrelayPage';
 import { getDashboardData, getWalletStatus } from './services/api';
 import { getLightningInfo } from './services/lightningApi';
 
@@ -147,6 +148,7 @@ function AppContent() {
           <Route path="/explorer/address/:address" element={<AddressView />} />
           <Route path="/explorer/mempool" element={<MempoolView />} />
           <Route path="/governance" element={<GovernanceDashboard />} />
+          <Route path="/br" element={<BisonrelayPage />} />
         </Routes>
         <Footer
           dcrdVersion={nodeVersion}

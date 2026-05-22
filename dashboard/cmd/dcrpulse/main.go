@@ -187,6 +187,7 @@ func main() {
 	api.HandleFunc("/wallet/governance/proposals/cast-vote", handlers.CastPoliteiaVoteHandler).Methods("POST")
 	api.HandleFunc("/br/version", handlers.BisonrelayVersionHandler).Methods("GET")
 	api.HandleFunc("/br/status", handlers.BisonrelayStatusHandler).Methods("GET")
+	api.HandleFunc("/br/setup", handlers.BisonrelaySetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")

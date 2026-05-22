@@ -80,6 +80,39 @@ type BrclientdStatusResult struct {
 	LastUpdated     string `json:"lastUpdated"`
 }
 
+// BrclientdCreateIdentity POSTs to brclientd's pre-setup HTTPS endpoint
+// at /create-identity (the same port as clientrpc, served only while the
+// daemon is in the needs-identity stage). Returns nil on HTTP 204.
+func BrclientdCreateIdentity(ctx context.Context, nick, name string) error {
+	cli, err := brclientdClient()
+	if err != nil {
+		return err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.Port == "" {
+		return errors.New("brclientd: host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/create-identity", BrclientdCfg.Host, BrclientdCfg.Port)
+	payload, err := json.Marshal(map[string]string{"nick": nick, "name": name})
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return fmt.Errorf("brclientd /create-identity: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("brclientd /create-identity: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
 // BrclientdStatus calls brclientd's /status HTTP endpoint over mTLS and
 // returns the parsed snapshot. The status server is on a separate port
 // (default 7677) from clientrpc; both reuse the same cert triplet.

@@ -7,6 +7,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"dcrpulse/internal/rpc"
 )
@@ -36,4 +37,30 @@ func BisonrelayStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(status)
+}
+
+// BisonrelaySetupHandler proxies a nick/name pair to brclientd's pre-setup
+// /create-identity endpoint. The frontend wizard only calls this when
+// /api/br/status reports stage=needs-identity; outside that window
+// brclientd's port is owned by clientrpc and the call 404s.
+func BisonrelaySetupHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Nick string `json:"nick"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Nick = strings.TrimSpace(req.Nick)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Nick == "" {
+		http.Error(w, "nick is required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdCreateIdentity(r.Context(), req.Nick, req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

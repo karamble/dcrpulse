@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Compass, Vote } from 'lucide-react';
+import { Wallet, Compass, Vote, MessageSquare } from 'lucide-react';
 
 interface HeaderProps {
   nodeVersion?: string;
@@ -14,12 +14,14 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   const isWalletPage = location.pathname.startsWith('/wallet');
   const isExplorerPage = location.pathname.startsWith('/explorer');
   const isGovernancePage = location.pathname.startsWith('/governance');
+  const isBisonrelayPage = location.pathname.startsWith('/br');
   const isNodePage = location.pathname === '/';
 
   const getPageTitle = () => {
     if (isWalletPage) return 'Wallet';
     if (isExplorerPage) return 'Explorer';
     if (isGovernancePage) return 'Governance';
+    if (isBisonrelayPage) return 'Bison Relay';
     return 'Node';
   };
 
@@ -27,6 +29,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
     if (isWalletPage) return 'Monitor your watch-only wallet and transactions';
     if (isExplorerPage) return 'Search and explore the Decred blockchain';
     if (isGovernancePage) return 'Track treasury, proposals, and voting activity';
+    if (isBisonrelayPage) return 'End-to-end encrypted messaging over Lightning';
     return 'Monitor your dcrd node performance and network status';
   };
 
@@ -101,6 +104,20 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
             <Vote className="h-5 w-5 text-white" />
           </div>
           <span className="text-primary font-semibold">Governance</span>
+        </Link>
+
+        <Link
+          to="/br"
+          className={`px-4 py-3 rounded-lg border transition-all duration-300 flex items-center gap-2 ${
+            isBisonrelayPage
+              ? 'bg-primary/20 border-primary/40'
+              : 'bg-primary/10 border-primary/20 hover:bg-primary/20'
+          }`}
+        >
+          <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
+            <MessageSquare className="h-5 w-5 text-white" />
+          </div>
+          <span className="text-primary font-semibold">Bison Relay</span>
         </Link>
 
         {nodeVersion && (
