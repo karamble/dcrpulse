@@ -170,11 +170,12 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               <button
                 key={uid || nick}
                 onClick={() => setSelected(c)}
-                className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center justify-between gap-2 ${
+                className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 ${
                   isSel ? 'bg-primary/20 text-foreground' : 'hover:bg-muted/30 text-muted-foreground'
                 }`}
               >
-                <span className="truncate">{nick}</span>
+                <ContactAvatar contact={c} nick={nick} />
+                <span className="truncate flex-1">{nick}</span>
                 {count > 0 && (
                   <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
                     {count > 99 ? '99+' : count}
@@ -547,4 +548,57 @@ function identityFromPayload(payload: any): string {
   } catch {
     return '';
   }
+}
+
+const ContactAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string }) => {
+  const dataUrl = avatarDataUrl(contact.id?.avatar);
+  const initial = nick.trim().charAt(0).toUpperCase() || '?';
+  const bgClass = colorForUid(contact.id?.identity ?? nick);
+  if (dataUrl) {
+    return (
+      <img
+        src={dataUrl}
+        alt=""
+        className="shrink-0 h-7 w-7 rounded-full object-cover bg-muted/30"
+      />
+    );
+  }
+  return (
+    <span className={`shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white ${bgClass}`}>
+      {initial}
+    </span>
+  );
+};
+
+function avatarDataUrl(b64?: string): string {
+  if (!b64) return '';
+  try {
+    const bin = atob(b64);
+    if (bin.length < 4) return '';
+    const b0 = bin.charCodeAt(0);
+    const b1 = bin.charCodeAt(1);
+    const b2 = bin.charCodeAt(2);
+    const b3 = bin.charCodeAt(3);
+    let mime = '';
+    if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4e && b3 === 0x47) mime = 'image/png';
+    else if (b0 === 0xff && b1 === 0xd8 && b2 === 0xff) mime = 'image/jpeg';
+    else if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46) mime = 'image/gif';
+    else if (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46 && bin.length > 11 &&
+      bin.substring(8, 12) === 'WEBP') mime = 'image/webp';
+    if (!mime) return '';
+    return `data:${mime};base64,${b64}`;
+  } catch {
+    return '';
+  }
+}
+
+const avatarPalette = [
+  'bg-rose-600', 'bg-amber-600', 'bg-emerald-600', 'bg-teal-600',
+  'bg-sky-600', 'bg-indigo-600', 'bg-fuchsia-600', 'bg-pink-600',
+];
+
+function colorForUid(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return avatarPalette[h % avatarPalette.length];
 }

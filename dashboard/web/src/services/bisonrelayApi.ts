@@ -48,6 +48,7 @@ export interface BisonrelayContact {
     nick?: string;
     name?: string;
     identity?: string;
+    avatar?: string;
   };
   nick_alias?: string;
   first_created?: string;
