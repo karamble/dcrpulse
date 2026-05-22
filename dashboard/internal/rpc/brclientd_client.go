@@ -80,6 +80,18 @@ type BrclientdStatusResult struct {
 	LastUpdated     string `json:"lastUpdated"`
 }
 
+// BrclientdUserPublicIdentity calls ChatService.UserPublicIdentity over
+// clientrpc and returns the raw JSON. Used by the dashboard to confirm
+// the BR client core is operational and to render the local user's
+// pubkey + nick on the BR overview.
+func BrclientdUserPublicIdentity(ctx context.Context) (json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := brclientdCall(ctx, "ChatService.UserPublicIdentity", struct{}{}, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
 // BrclientdCreateIdentity POSTs to brclientd's pre-setup HTTPS endpoint
 // at /create-identity (the same port as clientrpc, served only while the
 // daemon is in the needs-identity stage). Returns nil on HTTP 204.

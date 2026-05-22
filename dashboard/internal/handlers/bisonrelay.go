@@ -39,6 +39,19 @@ func BisonrelayStatusHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(status)
 }
 
+// BisonrelayIdentityHandler returns brclientd's local BR identity payload
+// (nick + zkidentity public keys) by proxying ChatService.UserPublicIdentity.
+// 502 if brclientd is unreachable or has not yet reached the ready stage.
+func BisonrelayIdentityHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := rpc.BrclientdUserPublicIdentity(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(id)
+}
+
 // BisonrelaySetupHandler proxies a nick/name pair to brclientd's pre-setup
 // /create-identity endpoint. The frontend wizard only calls this when
 // /api/br/status reports stage=needs-identity; outside that window
