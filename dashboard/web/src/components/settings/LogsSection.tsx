@@ -10,6 +10,7 @@ const components: { value: LogComponent; label: string }[] = [
   { value: 'dcrwallet', label: 'dcrwallet' },
   { value: 'dcrd', label: 'dcrd' },
   { value: 'dcrlnd', label: 'dcrlnd' },
+  { value: 'brclientd', label: 'brclientd' },
 ];
 
 const lineOptions = [200, 500, 1000, 2000];

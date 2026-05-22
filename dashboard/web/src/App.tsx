@@ -49,12 +49,14 @@ import { GovernanceDashboard } from './pages/GovernanceDashboard';
 import { BisonrelayPage } from './components/bisonrelay/BisonrelayPage';
 import { getDashboardData, getWalletStatus } from './services/api';
 import { getLightningInfo } from './services/lightningApi';
+import { getBisonrelayVersion } from './services/bisonrelayApi';
 
 function AppContent() {
   const location = useLocation();
   const [nodeVersion, setNodeVersion] = useState<string>('');
   const [walletVersion, setWalletVersion] = useState<string>('');
   const [lndVersion, setLndVersion] = useState<string>('');
+  const [brclientdVersion, setBrclientdVersion] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<string>('');
 
   // Fetch versions for header and footer
@@ -86,6 +88,13 @@ function AppContent() {
           setLndVersion(lnInfo.version || '');
         } catch (lnErr) {
           console.debug('Lightning version not available:', lnErr);
+        }
+
+        try {
+          const br = await getBisonrelayVersion();
+          setBrclientdVersion(br.appVersion || '');
+        } catch (brErr) {
+          console.debug('brclientd version not available:', brErr);
         }
       } catch (err) {
         console.error('Error fetching versions:', err);
@@ -154,6 +163,7 @@ function AppContent() {
           dcrdVersion={nodeVersion}
           dcrwalletVersion={walletVersion}
           dcrlndVersion={lndVersion}
+          brclientdVersion={brclientdVersion}
           lastUpdate={lastUpdate}
         />
       </div>

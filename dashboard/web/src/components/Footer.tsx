@@ -8,10 +8,11 @@ interface FooterProps {
   dcrdVersion?: string;
   dcrwalletVersion?: string;
   dcrlndVersion?: string;
+  brclientdVersion?: string;
   lastUpdate?: string;
 }
 
-export const Footer = ({ dcrdVersion, dcrwalletVersion, dcrlndVersion, lastUpdate }: FooterProps) => {
+export const Footer = ({ dcrdVersion, dcrwalletVersion, dcrlndVersion, brclientdVersion, lastUpdate }: FooterProps) => {
   const dashboardVersion = packageJson.version;
 
   return (
@@ -67,6 +68,19 @@ export const Footer = ({ dcrdVersion, dcrwalletVersion, dcrlndVersion, lastUpdat
               className="hover:text-primary transition-colors"
             >
               dcrlnd {dcrlndVersion}
+            </a>
+          </>
+        )}
+        {brclientdVersion && (
+          <>
+            <span className="text-border">•</span>
+            <a
+              href="https://github.com/karamble/brclientd"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-primary transition-colors"
+            >
+              brclientd {brclientdVersion}
             </a>
           </>
         )}
