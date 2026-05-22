@@ -20,6 +20,7 @@ import (
 	"github.com/decred/dcrlnd/lnrpc/invoicesrpc"
 	"github.com/decred/dcrlnd/lnrpc/routerrpc"
 	"github.com/decred/dcrlnd/lnrpc/verrpc"
+	"github.com/decred/dcrlnd/lnrpc/wtclientrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -59,6 +60,10 @@ var (
 	// InvoicesClient drives Invoices.CancelInvoice and HODL invoice flows.
 	// Reachable post-unlock.
 	InvoicesClient invoicesrpc.InvoicesClient
+
+	// WatchtowerClient is dcrlnd's wtclient sub-RPC for managing
+	// watchtower-client registrations. Reachable post-unlock.
+	WatchtowerClient wtclientrpc.WatchtowerClientClient
 
 	// DcrlndGrpcConn is the underlying connection, kept for shutdown.
 	DcrlndGrpcConn *grpc.ClientConn
@@ -106,6 +111,7 @@ func InitDcrlndClient(cfg DcrlndConfig) error {
 	VersionerClient = verrpc.NewVersionerClient(conn)
 	RouterClient = routerrpc.NewRouterClient(conn)
 	InvoicesClient = invoicesrpc.NewInvoicesClient(conn)
+	WatchtowerClient = wtclientrpc.NewWatchtowerClientClient(conn)
 
 	log.Println("dcrlnd gRPC clients initialised")
 	return nil

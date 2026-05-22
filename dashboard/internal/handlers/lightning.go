@@ -603,3 +603,131 @@ func LightningCancelInvoiceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// ---- Advanced tab ---------------------------------------------------------
+
+// LightningBackupExportHandler returns the latest Static Channel Backup
+// as a base64 blob plus the channel count. The frontend turns this into
+// a browser file download.
+func LightningBackupExportHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	out, err := services.ExportLightningChannelBackup(ctx)
+	if err != nil {
+		lightningWriteErr(w, "ExportLightningChannelBackup", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// LightningBackupVerifyHandler validates a user-uploaded backup blob.
+func LightningBackupVerifyHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.LightningVerifyBackupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.BackupBase64) == "" {
+		http.Error(w, "backupBase64 required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	resp := services.VerifyLightningChannelBackup(ctx, req.BackupBase64)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// LightningWatchtowersHandler lists registered watchtowers.
+func LightningWatchtowersHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	resp, err := services.ListLightningWatchtowers(ctx)
+	if err != nil {
+		lightningWriteErr(w, "ListLightningWatchtowers", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// LightningWatchtowerAddHandler registers a new watchtower.
+func LightningWatchtowerAddHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.LightningAddTowerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.PubKeyHex) == "" || strings.TrimSpace(req.Address) == "" {
+		http.Error(w, "pubKeyHex and address required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	if err := services.AddLightningWatchtower(ctx, req.PubKeyHex, req.Address); err != nil {
+		lightningWriteErr(w, "AddLightningWatchtower", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// LightningWatchtowerRemoveHandler deregisters a watchtower.
+func LightningWatchtowerRemoveHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.LightningRemoveTowerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.PubKeyHex) == "" {
+		http.Error(w, "pubKeyHex required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	if err := services.RemoveLightningWatchtower(ctx, req.PubKeyHex); err != nil {
+		lightningWriteErr(w, "RemoveLightningWatchtower", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// LightningGraphNodeHandler queries one node from dcrlnd's channel graph.
+func LightningGraphNodeHandler(w http.ResponseWriter, r *http.Request) {
+	pubkey := strings.TrimSpace(r.URL.Query().Get("pubkey"))
+	if pubkey == "" {
+		http.Error(w, "pubkey query param required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	out, err := services.QueryLightningNodeInfo(ctx, pubkey)
+	if err != nil {
+		lightningWriteErr(w, "QueryLightningNodeInfo", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// LightningGraphRoutesHandler queries candidate payment routes.
+func LightningGraphRoutesHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.LightningQueryRoutesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.PubKey) == "" || req.AmtAtoms <= 0 {
+		http.Error(w, "pubKey + positive amtAtoms required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	out, err := services.QueryLightningRoutes(ctx, req.PubKey, req.AmtAtoms)
+	if err != nil {
+		lightningWriteErr(w, "QueryLightningRoutes", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}

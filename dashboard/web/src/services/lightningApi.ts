@@ -441,3 +441,113 @@ export const subscribeLnInvoiceEvents = (
     }
   };
 };
+
+// ---- Advanced tab ---------------------------------------------------------
+
+export interface LightningChannelBackup {
+  backupBase64: string;
+  numChannels: number;
+}
+
+export interface LightningVerifyBackupResponse {
+  ok: boolean;
+  error?: string;
+}
+
+export interface LightningWatchtower {
+  pubKeyHex: string;
+  addresses: string[];
+  numSessions: number;
+  activeSessionCandidate: boolean;
+}
+
+export interface LightningNodePolicy {
+  disabled: boolean;
+  timeLockDelta: number;
+  minHtlcAtoms: number;
+  maxHtlcAtoms: number;
+  lastUpdate: number;
+  feeBaseMAtoms: number;
+  feeRateMAtoms: number;
+}
+
+export interface LightningNodeChannel {
+  channelId: number;
+  chanPoint: string;
+  capacity: number;
+  lastUpdate: number;
+  node1Pubkey: string;
+  node2Pubkey: string;
+  node1Policy?: LightningNodePolicy;
+  node2Policy?: LightningNodePolicy;
+}
+
+export interface LightningNodeInfo {
+  pubKey: string;
+  alias: string;
+  color: string;
+  lastUpdate: number;
+  totalCapacity: number;
+  channels: LightningNodeChannel[];
+}
+
+export interface LightningRouteHop {
+  pubKey: string;
+  feeAtoms: number;
+  amtToForward: number;
+}
+
+export interface LightningRoute {
+  totalAmtAtoms: number;
+  totalFeesAtoms: number;
+  hops: LightningRouteHop[];
+}
+
+export interface LightningQueryRoutesResponse {
+  successProb: number;
+  routes: LightningRoute[];
+}
+
+export const getLnChannelBackup = async (): Promise<LightningChannelBackup> => {
+  const { data } = await api.get<LightningChannelBackup>('/wallet/ln/backup');
+  return data;
+};
+
+export const verifyLnChannelBackup = async (
+  backupBase64: string,
+): Promise<LightningVerifyBackupResponse> => {
+  const { data } = await api.post<LightningVerifyBackupResponse>(
+    '/wallet/ln/backup/verify',
+    { backupBase64 },
+  );
+  return data;
+};
+
+export const listLnWatchtowers = async (): Promise<{ towers: LightningWatchtower[] }> => {
+  const { data } = await api.get<{ towers: LightningWatchtower[] }>('/wallet/ln/watchtowers');
+  return data;
+};
+
+export const addLnWatchtower = async (pubKeyHex: string, address: string): Promise<void> => {
+  await api.post('/wallet/ln/watchtowers/add', { pubKeyHex, address });
+};
+
+export const removeLnWatchtower = async (pubKeyHex: string): Promise<void> => {
+  await api.post('/wallet/ln/watchtowers/remove', { pubKeyHex });
+};
+
+export const queryLnNode = async (pubkey: string): Promise<LightningNodeInfo> => {
+  const { data } = await api.get<LightningNodeInfo>('/wallet/ln/graph/node', { params: { pubkey } });
+  return data;
+};
+
+export const queryLnRoutes = async (
+  pubKey: string,
+  amtAtoms: number,
+): Promise<LightningQueryRoutesResponse> => {
+  const { data } = await api.post<LightningQueryRoutesResponse>(
+    '/wallet/ln/graph/routes',
+    { pubKey, amtAtoms },
+  );
+  return data;
+};

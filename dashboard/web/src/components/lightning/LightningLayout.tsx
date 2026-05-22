@@ -8,9 +8,6 @@ const navItemClass = ({ isActive }: { isActive: boolean }) =>
       : 'text-foreground hover:bg-muted/20'
   }`;
 
-const comingSoonClass =
-  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground/60 cursor-not-allowed whitespace-nowrap shrink-0';
-
 export const LightningLayout = () => (
   <div className="flex flex-col md:flex-row gap-4 md:gap-6">
     {/* Content area: rendered first in source so screen readers see the
@@ -40,10 +37,10 @@ export const LightningLayout = () => (
           <Inbox className="h-4 w-4" />
           <span>Receive</span>
         </NavLink>
-        <div className={comingSoonClass} title="Coming in a follow-up PR">
+        <NavLink to="/wallet/lightning/advanced" className={navItemClass}>
           <Wrench className="h-4 w-4" />
           <span>Advanced</span>
-        </div>
+        </NavLink>
       </nav>
     </aside>
   </div>

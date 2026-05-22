@@ -22,11 +22,14 @@ import (
 	dcrwpb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"encoding/hex"
 
+	"encoding/base64"
+
 	"github.com/decred/dcrlnd/lnrpc"
 	"github.com/decred/dcrlnd/lnrpc/autopilotrpc"
 	"github.com/decred/dcrlnd/lnrpc/invoicesrpc"
 	"github.com/decred/dcrlnd/lnrpc/routerrpc"
 	"github.com/decred/dcrlnd/lnrpc/verrpc"
+	"github.com/decred/dcrlnd/lnrpc/wtclientrpc"
 )
 
 const (
@@ -1266,4 +1269,208 @@ func CancelLightningInvoice(ctx context.Context, paymentHashHex string) error {
 		return fmt.Errorf("CancelInvoice: %w", err)
 	}
 	return nil
+}
+
+// ---- Advanced tab ---------------------------------------------------------
+
+// ExportLightningChannelBackup wraps lnrpc.ExportAllChannelBackups and
+// returns the bytes base64-encoded for browser delivery.
+func ExportLightningChannelBackup(ctx context.Context) (*types.LightningChannelBackup, error) {
+	if rpc.LightningClient == nil {
+		return nil, fmt.Errorf("dcrlnd not available")
+	}
+	resp, err := rpc.LightningClient.ExportAllChannelBackups(ctx, &lnrpc.ChanBackupExportRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("ExportAllChannelBackups: %w", err)
+	}
+	multi := resp.GetMultiChanBackup()
+	if multi == nil {
+		return &types.LightningChannelBackup{}, nil
+	}
+	return &types.LightningChannelBackup{
+		BackupBase64: base64.StdEncoding.EncodeToString(multi.GetMultiChanBackup()),
+		NumChannels:  len(multi.GetChanPoints()),
+	}, nil
+}
+
+// VerifyLightningChannelBackup decodes the user-uploaded base64 blob and
+// calls lnrpc.VerifyChanBackup. Returns an OK/Error pair so the frontend
+// can surface validation results inline rather than as a 500 error.
+func VerifyLightningChannelBackup(ctx context.Context, b64 string) *types.LightningVerifyBackupResponse {
+	if rpc.LightningClient == nil {
+		return &types.LightningVerifyBackupResponse{OK: false, Error: "dcrlnd not available"}
+	}
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return &types.LightningVerifyBackupResponse{OK: false, Error: "invalid base64 payload"}
+	}
+	_, err = rpc.LightningClient.VerifyChanBackup(ctx, &lnrpc.ChanBackupSnapshot{
+		MultiChanBackup: &lnrpc.MultiChanBackup{MultiChanBackup: raw},
+	})
+	if err != nil {
+		return &types.LightningVerifyBackupResponse{OK: false, Error: err.Error()}
+	}
+	return &types.LightningVerifyBackupResponse{OK: true}
+}
+
+// AddLightningWatchtower registers a watchtower with dcrlnd's wtclient.
+func AddLightningWatchtower(ctx context.Context, pubKeyHex, addr string) error {
+	if rpc.WatchtowerClient == nil {
+		return fmt.Errorf("dcrlnd watchtower client not available")
+	}
+	pubkey, err := hex.DecodeString(strings.TrimSpace(pubKeyHex))
+	if err != nil {
+		return fmt.Errorf("invalid pubkey: %w", err)
+	}
+	if len(pubkey) != 33 {
+		return fmt.Errorf("invalid pubkey length: got %d, want 33", len(pubkey))
+	}
+	_, err = rpc.WatchtowerClient.AddTower(ctx, &wtclientrpc.AddTowerRequest{
+		Pubkey:  pubkey,
+		Address: strings.TrimSpace(addr),
+	})
+	if err != nil {
+		return fmt.Errorf("AddTower: %w", err)
+	}
+	return nil
+}
+
+// ListLightningWatchtowers maps the wtclient ListTowers response into the
+// flat shape the Advanced tab renders.
+func ListLightningWatchtowers(ctx context.Context) (*types.LightningWatchtowerList, error) {
+	if rpc.WatchtowerClient == nil {
+		return nil, fmt.Errorf("dcrlnd watchtower client not available")
+	}
+	resp, err := rpc.WatchtowerClient.ListTowers(ctx, &wtclientrpc.ListTowersRequest{
+		IncludeSessions: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ListTowers: %w", err)
+	}
+	out := &types.LightningWatchtowerList{
+		Towers: make([]types.LightningWatchtower, 0, len(resp.GetTowers())),
+	}
+	const hexdig = "0123456789abcdef"
+	for _, t := range resp.GetTowers() {
+		pk := t.GetPubkey()
+		pkHex := make([]byte, len(pk)*2)
+		for i, b := range pk {
+			pkHex[i*2] = hexdig[b>>4]
+			pkHex[i*2+1] = hexdig[b&0x0f]
+		}
+		out.Towers = append(out.Towers, types.LightningWatchtower{
+			PubKeyHex:              string(pkHex),
+			Addresses:              t.GetAddresses(),
+			NumSessions:            t.GetNumSessions(),
+			ActiveSessionCandidate: t.GetActiveSessionCandidate(),
+		})
+	}
+	return out, nil
+}
+
+// RemoveLightningWatchtower deregisters a watchtower.
+func RemoveLightningWatchtower(ctx context.Context, pubKeyHex string) error {
+	if rpc.WatchtowerClient == nil {
+		return fmt.Errorf("dcrlnd watchtower client not available")
+	}
+	pubkey, err := hex.DecodeString(strings.TrimSpace(pubKeyHex))
+	if err != nil {
+		return fmt.Errorf("invalid pubkey: %w", err)
+	}
+	_, err = rpc.WatchtowerClient.RemoveTower(ctx, &wtclientrpc.RemoveTowerRequest{
+		Pubkey: pubkey,
+	})
+	if err != nil {
+		return fmt.Errorf("RemoveTower: %w", err)
+	}
+	return nil
+}
+
+func nodePolicyToType(p *lnrpc.RoutingPolicy) *types.LightningNodePolicy {
+	if p == nil {
+		return nil
+	}
+	return &types.LightningNodePolicy{
+		Disabled:      p.GetDisabled(),
+		TimeLockDelta: p.GetTimeLockDelta(),
+		MinHtlcAtoms:  p.GetMinHtlc(),
+		MaxHtlcAtoms:  int64(p.GetMaxHtlcMAtoms() / 1000),
+		LastUpdate:    p.GetLastUpdate(),
+		FeeBaseMAtoms: p.GetFeeBaseMAtoms(),
+		FeeRateMAtoms: p.GetFeeRateMilliMAtoms(),
+	}
+}
+
+// QueryLightningNodeInfo wraps GetNodeInfo with includeChannels=true and
+// renders the per-channel policy summaries the Advanced tab displays.
+func QueryLightningNodeInfo(ctx context.Context, pubkeyHex string) (*types.LightningNodeInfo, error) {
+	if rpc.LightningClient == nil {
+		return nil, fmt.Errorf("dcrlnd not available")
+	}
+	resp, err := rpc.LightningClient.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+		PubKey:          strings.TrimSpace(pubkeyHex),
+		IncludeChannels: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetNodeInfo: %w", err)
+	}
+	node := resp.GetNode()
+	out := &types.LightningNodeInfo{
+		PubKey:     node.GetPubKey(),
+		Alias:      node.GetAlias(),
+		Color:      node.GetColor(),
+		LastUpdate: node.GetLastUpdate(),
+		Channels:   make([]types.LightningNodeChannel, 0, len(resp.GetChannels())),
+	}
+	var total int64
+	for _, c := range resp.GetChannels() {
+		total += c.GetCapacity()
+		out.Channels = append(out.Channels, types.LightningNodeChannel{
+			ChannelID:   c.GetChannelId(),
+			ChanPoint:   c.GetChanPoint(),
+			Capacity:    c.GetCapacity(),
+			LastUpdate:  c.GetLastUpdate(),
+			Node1Pubkey: c.GetNode1Pub(),
+			Node2Pubkey: c.GetNode2Pub(),
+			Node1Policy: nodePolicyToType(c.GetNode1Policy()),
+			Node2Policy: nodePolicyToType(c.GetNode2Policy()),
+		})
+	}
+	out.TotalCapacity = total
+	return out, nil
+}
+
+// QueryLightningRoutes wraps QueryRoutes for the Advanced tab's route
+// discovery panel.
+func QueryLightningRoutes(ctx context.Context, pubkeyHex string, amtAtoms int64) (*types.LightningQueryRoutesResponse, error) {
+	if rpc.LightningClient == nil {
+		return nil, fmt.Errorf("dcrlnd not available")
+	}
+	resp, err := rpc.LightningClient.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest{
+		PubKey: strings.TrimSpace(pubkeyHex),
+		Amt:    amtAtoms,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("QueryRoutes: %w", err)
+	}
+	out := &types.LightningQueryRoutesResponse{
+		SuccessProb: resp.GetSuccessProb(),
+		Routes:      make([]types.LightningRoute, 0, len(resp.GetRoutes())),
+	}
+	for _, r := range resp.GetRoutes() {
+		route := types.LightningRoute{
+			TotalAmtAtoms:  r.GetTotalAmt(),
+			TotalFeesAtoms: r.GetTotalFees(),
+			Hops:           make([]types.LightningRouteHop, 0, len(r.GetHops())),
+		}
+		for _, h := range r.GetHops() {
+			route.Hops = append(route.Hops, types.LightningRouteHop{
+				PubKey:       h.GetPubKey(),
+				FeeAtoms:     h.GetFee(),
+				AmtToForward: h.GetAmtToForward(),
+			})
+		}
+		out.Routes = append(out.Routes, route)
+	}
+	return out, nil
 }

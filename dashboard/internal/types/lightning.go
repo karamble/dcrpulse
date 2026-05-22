@@ -319,3 +319,110 @@ type LightningInvoiceList struct {
 type LightningCancelInvoiceRequest struct {
 	PaymentHash string `json:"paymentHash"`
 }
+
+// ---- Advanced tab ----------------------------------------------------------
+
+// LightningChannelBackup wraps the MultiChanBackup bytes for download. The
+// payload is base64-encoded because the dashboard's API is JSON-only; the
+// frontend decodes and triggers a browser file download.
+type LightningChannelBackup struct {
+	BackupBase64 string `json:"backupBase64"`
+	NumChannels  int    `json:"numChannels"`
+}
+
+// LightningVerifyBackupRequest carries a user-uploaded backup blob for
+// dcrlnd to validate.
+type LightningVerifyBackupRequest struct {
+	BackupBase64 string `json:"backupBase64"`
+}
+
+// LightningVerifyBackupResponse is the verify outcome. Non-OK responses
+// carry a human-readable error from dcrlnd.
+type LightningVerifyBackupResponse struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// LightningWatchtower is one registered watchtower client.
+type LightningWatchtower struct {
+	PubKeyHex              string   `json:"pubKeyHex"`
+	Addresses              []string `json:"addresses"`
+	NumSessions            uint32   `json:"numSessions"`
+	ActiveSessionCandidate bool     `json:"activeSessionCandidate"`
+}
+
+// LightningWatchtowerList is the response to /wallet/ln/watchtowers.
+type LightningWatchtowerList struct {
+	Towers []LightningWatchtower `json:"towers"`
+}
+
+// LightningAddTowerRequest is the body for /wallet/ln/watchtowers/add.
+type LightningAddTowerRequest struct {
+	PubKeyHex string `json:"pubKeyHex"`
+	Address   string `json:"address"`
+}
+
+// LightningRemoveTowerRequest is the body for /wallet/ln/watchtowers/remove.
+type LightningRemoveTowerRequest struct {
+	PubKeyHex string `json:"pubKeyHex"`
+}
+
+// LightningNodePolicy is one direction of a channel's routing policy.
+type LightningNodePolicy struct {
+	Disabled       bool   `json:"disabled"`
+	TimeLockDelta  uint32 `json:"timeLockDelta"`
+	MinHtlcAtoms   int64  `json:"minHtlcAtoms"`
+	MaxHtlcAtoms   int64  `json:"maxHtlcAtoms"`
+	LastUpdate     uint32 `json:"lastUpdate"`
+	FeeBaseMAtoms  int64  `json:"feeBaseMAtoms"`
+	FeeRateMAtoms  int64  `json:"feeRateMAtoms"`
+}
+
+// LightningNodeChannel is one channel involving the queried node.
+type LightningNodeChannel struct {
+	ChannelID   uint64               `json:"channelId"`
+	ChanPoint   string               `json:"chanPoint"`
+	Capacity    int64                `json:"capacity"`
+	LastUpdate  uint32               `json:"lastUpdate"`
+	Node1Pubkey string               `json:"node1Pubkey"`
+	Node2Pubkey string               `json:"node2Pubkey"`
+	Node1Policy *LightningNodePolicy `json:"node1Policy,omitempty"`
+	Node2Policy *LightningNodePolicy `json:"node2Policy,omitempty"`
+}
+
+// LightningNodeInfo is the GetNodeInfo response surfaced to the Network
+// section. TotalCapacity is computed by summing the channel capacities.
+type LightningNodeInfo struct {
+	PubKey        string                 `json:"pubKey"`
+	Alias         string                 `json:"alias"`
+	Color         string                 `json:"color"`
+	LastUpdate    uint32                 `json:"lastUpdate"`
+	TotalCapacity int64                  `json:"totalCapacity"`
+	Channels      []LightningNodeChannel `json:"channels"`
+}
+
+// LightningQueryRoutesRequest is the body for /wallet/ln/graph/routes.
+type LightningQueryRoutesRequest struct {
+	PubKey   string `json:"pubKey"`
+	AmtAtoms int64  `json:"amtAtoms"`
+}
+
+// LightningRouteHop is one hop along a candidate route.
+type LightningRouteHop struct {
+	PubKey       string `json:"pubKey"`
+	FeeAtoms     int64  `json:"feeAtoms"`
+	AmtToForward int64  `json:"amtToForward"`
+}
+
+// LightningRoute is one candidate path returned by QueryRoutes.
+type LightningRoute struct {
+	TotalAmtAtoms  int64               `json:"totalAmtAtoms"`
+	TotalFeesAtoms int64               `json:"totalFeesAtoms"`
+	Hops           []LightningRouteHop `json:"hops"`
+}
+
+// LightningQueryRoutesResponse wraps the QueryRoutes result.
+type LightningQueryRoutesResponse struct {
+	SuccessProb float64          `json:"successProb"`
+	Routes      []LightningRoute `json:"routes"`
+}
