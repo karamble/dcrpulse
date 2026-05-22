@@ -98,6 +98,17 @@ func main() {
 		log.Printf("Warning: dcrlnd init: %v", err)
 	}
 
+	// brclientd clientrpc config. The cert pair is owned by brclientd and
+	// mounted read-only into this container; lazy init means the dashboard
+	// starts even before brclientd has provisioned its identity and certs.
+	rpc.InitBrclientdConfig(rpc.BrclientdConfig{
+		Host:           getEnv("BRCLIENTD_HOST", "brclientd"),
+		Port:           getEnv("BRCLIENTD_PORT", "7676"),
+		ServerCertPath: getEnv("BRCLIENTD_SERVER_CERT", "/run/br-certs/rpc.cert"),
+		ClientCertPath: getEnv("BRCLIENTD_CLIENT_CERT", "/run/br-certs/rpc-client.cert"),
+		ClientKeyPath:  getEnv("BRCLIENTD_CLIENT_KEY", "/run/br-certs/rpc-client.key"),
+	})
+
 	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into
 	// the same ring buffer the /wallet/privacy/events WebSocket reads from.
 	services.StartWalletLogTail()
@@ -173,6 +184,7 @@ func main() {
 	api.HandleFunc("/wallet/governance/proposals", handlers.GetProposalsHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/proposals/{token}", handlers.GetProposalDetailHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/proposals/cast-vote", handlers.CastPoliteiaVoteHandler).Methods("POST")
+	api.HandleFunc("/br/version", handlers.BisonrelayVersionHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")

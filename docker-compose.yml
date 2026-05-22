@@ -111,6 +111,37 @@ services:
         reservations:
           memory: 256M
 
+  brclientd:
+    image: ghcr.io/karamble/dcrpulse-brclientd:${BRCLIENTD_IMAGE_TAG:-dev}
+    container_name: dcrpulse-brclientd
+    volumes:
+      - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd:ro
+      - ${BRCLIENTD_DATA_DIR:-brclientd-data}:/app-data/brclientd
+    command: >
+      --appdata=/app-data/brclientd
+      --dcrlnd.rpchost=dcrlnd:10009
+      --dcrlnd.tlscertpath=/app-data/dcrlnd/tls.cert
+      --dcrlnd.macaroonpath=/app-data/dcrlnd/admin.macaroon
+    depends_on:
+      dcrlnd:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - decred-network
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 7676 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+
   dashboard:
     image: ghcr.io/karamble/dcrpulse-dashboard:${DASHBOARD_IMAGE_TAG:-latest}
     build: ./dashboard
@@ -120,6 +151,7 @@ services:
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
       - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd
+      - ${BRCLIENTD_DATA_DIR:-brclientd-data}:/run/br-certs:ro
       - ${DASHBOARD_DATA_DIR:-dashboard-data}:/dashboard-data
     environment:
       - PORT=8080
@@ -138,6 +170,11 @@ services:
       - DCRLND_GRPC_PORT=10009
       - DCRLND_TLS_CERT=/app-data/dcrlnd/tls.cert
       - DCRLND_MACAROON=/app-data/dcrlnd/admin.macaroon
+      - BRCLIENTD_HOST=brclientd
+      - BRCLIENTD_PORT=7676
+      - BRCLIENTD_SERVER_CERT=/run/br-certs/data/mainnet/rpc/rpc.cert
+      - BRCLIENTD_CLIENT_CERT=/run/br-certs/data/mainnet/rpc/rpc-client.cert
+      - BRCLIENTD_CLIENT_KEY=/run/br-certs/data/mainnet/rpc/rpc-client.key
     depends_on:
       dcrd:
         condition: service_healthy
@@ -167,4 +204,7 @@ volumes:
     driver: local
   dcrlnd-data:
     name: ${DCRLND_DATA_DIR:-dcrpulse_dcrlnd-data}
+    driver: local
+  brclientd-data:
+    name: ${BRCLIENTD_DATA_DIR:-dcrpulse_brclientd-data}
     driver: local
