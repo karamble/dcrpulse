@@ -128,9 +128,11 @@ export const WalletSetup = () => {
 
       if (response.success) {
         setStep('success');
-        // Reload page after 2 seconds to load wallet dashboard
+        // Send the user to the Overview after a brief success screen so
+        // they land on the sync-progress card even if they navigated
+        // away from /wallet before triggering creation.
         setTimeout(() => {
-          window.location.reload();
+          window.location.assign('/wallet');
         }, 2000);
       } else {
         setError(response.message || 'Failed to create wallet');

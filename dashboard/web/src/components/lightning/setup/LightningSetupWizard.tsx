@@ -22,6 +22,11 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
+  // Non-null only on the setup path (i.e. we just called InitWallet via
+  // setupLightning). Used to label the dcrlnd boot window with an elapsed
+  // counter and to skip the auto-unlock that only makes sense in the
+  // dashboard-restart unlock-only flow.
+  const [setupStartedAt, setSetupStartedAt] = useState<number | null>(null);
 
   useEffect(() => {
     if (step !== 'running') return;
@@ -39,11 +44,38 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
             return;
           }
           if (status.stage === 'needs-unlock') {
-            // Setup succeeded; dcrlnd is up but its wallet is locked.
-            // Auto-unlock once with the passphrase the user just typed —
-            // matches Decrediton's chained init→unlock UX so the user is
-            // not prompted twice for the same passphrase.
-            if (!unlockAttempted && passphrase) {
+            if (setupStartedAt !== null) {
+              // Post-setup boot window. dcrlnd's InitWallet has run but
+              // the daemon still requires an explicit UnlockWallet to
+              // flip its Lightning RPC out of "wallet locked" state.
+              // The first attempt usually races with dcrlnd's startup
+              // and fails silently, so retry on every poll until status
+              // flips. Mirrors Decrediton's STARTUPSTAGE_UNLOCK feeding
+              // into STARTUPSTAGE_CONNECT (LNActions.js:140-177).
+              const secs = Math.max(0, Math.floor((Date.now() - setupStartedAt) / 1000));
+              setProgressMsg(
+                `Connecting to Lightning daemon (${secs}s)… this can take 1-2 minutes.`,
+              );
+              if (secs > 180) {
+                if (!cancelled) {
+                  setError(
+                    'Lightning daemon did not come up after 3 minutes. Check dashboard logs.',
+                  );
+                  setStep('passphrase');
+                }
+                return;
+              }
+              if (passphrase) {
+                try {
+                  await unlockLightning(passphrase);
+                } catch {
+                  // dcrlnd may not be ready yet; retry next poll.
+                }
+              }
+            } else if (!unlockAttempted && passphrase) {
+              // Unlock-only flow (dashboard restart with sentinel
+              // present). Single-shot auto-unlock matches Decrediton's
+              // LNWALLET_STARTUPSTAGE_UNLOCK.
               unlockAttempted = true;
               setProgressMsg('Unlocking Lightning wallet…');
               try {
@@ -55,7 +87,14 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
               setProgressMsg('Waiting for Lightning wallet to unlock…');
             }
           } else if (status.stage === 'unavailable') {
-            setProgressMsg('Starting dcrlnd…');
+            const secs = setupStartedAt
+              ? Math.max(0, Math.floor((Date.now() - setupStartedAt) / 1000))
+              : 0;
+            setProgressMsg(
+              setupStartedAt
+                ? `Starting Lightning daemon (${secs}s)…`
+                : 'Starting dcrlnd…',
+            );
           }
         } catch {
           // Transient — keep polling.
@@ -67,7 +106,7 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
     return () => {
       cancelled = true;
     };
-  }, [step, onReady, passphrase]);
+  }, [step, onReady, passphrase, setupStartedAt]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,15 +115,19 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
     setError(null);
     try {
       if (needsSetup) {
+        setSetupStartedAt(Date.now());
         setStep('running');
         setProgressMsg('Creating lightning account…');
         await setupLightning(passphrase);
       } else {
+        setSetupStartedAt(null);
         setStep('running');
         setProgressMsg('Unlocking Lightning wallet…');
         await unlockLightning(passphrase);
       }
-      setPassphrase('');
+      // Keep the passphrase in component state while the polling effect
+      // retries UnlockWallet during the dcrlnd boot window. It is cleared
+      // when the component unmounts on transition to the LN Overview.
     } catch (err: any) {
       const body = err?.response?.data;
       setError(typeof body === 'string' ? body : err?.message || 'Operation failed');
