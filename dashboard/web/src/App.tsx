@@ -24,6 +24,7 @@ import { OverviewTab as LightningOverviewTab } from './components/lightning/Over
 import { ChannelsTab } from './components/lightning/channels/ChannelsTab';
 import { ChannelDetailPage } from './components/lightning/channels/ChannelDetailPage';
 import { SendTab as LightningSendTab } from './components/lightning/send/SendTab';
+import { ReceiveTab as LightningReceiveTab } from './components/lightning/receive/ReceiveTab';
 import { ConsensusTab } from './components/governance/ConsensusTab';
 import { TreasuryTab } from './components/governance/TreasuryTab';
 import { ProposalsTab } from './components/governance/ProposalsTab';
@@ -120,6 +121,7 @@ function AppContent() {
               <Route path="channels" element={<ChannelsTab />} />
               <Route path="channels/:channelPoint" element={<ChannelDetailPage />} />
               <Route path="send" element={<LightningSendTab />} />
+              <Route path="receive" element={<LightningReceiveTab />} />
             </Route>
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="settings" element={<SettingsPage />}>

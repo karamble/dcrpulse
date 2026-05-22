@@ -501,3 +501,105 @@ func LightningPaymentsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
+
+// ---- Receive tab -----------------------------------------------------------
+
+// LightningAddInvoiceHandler mints a new invoice via lnrpc.AddInvoice and
+// returns the canonical record.
+func LightningAddInvoiceHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.LightningAddInvoiceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.ValueAtoms < 0 {
+		http.Error(w, "valueAtoms must be >= 0", http.StatusBadRequest)
+		return
+	}
+	if len(req.Memo) > 639 {
+		http.Error(w, "memo too long (max 639 chars)", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	inv, err := services.AddLightningInvoice(ctx, &req)
+	if err != nil {
+		lightningWriteErr(w, "AddLightningInvoice", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(inv)
+}
+
+// LightningInvoicesHandler returns the wallet's invoice history for the
+// Receive tab's lower list.
+func LightningInvoicesHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	resp, err := services.ListLightningInvoices(ctx)
+	if err != nil {
+		lightningWriteErr(w, "ListLightningInvoices", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// LightningInvoiceEventsHandler is a WebSocket endpoint that forwards
+// SubscribeInvoices snapshots so the Receive tab updates live as
+// invoices settle, expire, or are canceled.
+func LightningInvoiceEventsHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: middleware.SameOriginWS,
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("LightningInvoiceEventsHandler upgrade: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// Reader goroutine: bail out if the client disconnects.
+	go func() {
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	events, err := services.StreamLightningInvoiceEvents(ctx)
+	if err != nil {
+		_ = conn.WriteJSON(map[string]string{"error": err.Error()})
+		return
+	}
+	for ev := range events {
+		if err := conn.WriteJSON(ev); err != nil {
+			return
+		}
+	}
+}
+
+// LightningCancelInvoiceHandler cancels an OPEN invoice.
+func LightningCancelInvoiceHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.LightningCancelInvoiceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.PaymentHash) == "" {
+		http.Error(w, "paymentHash required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	if err := services.CancelLightningInvoice(ctx, req.PaymentHash); err != nil {
+		lightningWriteErr(w, "CancelLightningInvoice", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

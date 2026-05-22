@@ -278,3 +278,44 @@ type LightningPayment struct {
 type LightningPaymentList struct {
 	Payments []LightningPayment `json:"payments"`
 }
+
+// ---- Receive tab -----------------------------------------------------------
+
+// LightningAddInvoiceRequest is the body posted to /wallet/ln/invoices/add.
+// A zero ValueAtoms produces a zero-amount invoice that the payer fills in.
+type LightningAddInvoiceRequest struct {
+	Memo       string `json:"memo,omitempty"`
+	ValueAtoms int64  `json:"valueAtoms"`
+	ExpirySec  int64  `json:"expirySec,omitempty"` // default 3600
+}
+
+// LightningInvoice is the flat shape used by the Receive tab's form
+// result, the history list, and the SubscribeInvoices WebSocket. Status
+// is derived: "open" | "settled" | "expired" | "canceled". An OPEN
+// invoice past its expiry collapses to "expired" so the UI does not
+// have to recompute that on every tick.
+type LightningInvoice struct {
+	Memo           string `json:"memo,omitempty"`
+	RHashHex       string `json:"rHashHex"`
+	PaymentRequest string `json:"paymentRequest"`
+	ValueAtoms     int64  `json:"valueAtoms"`
+	AmtPaidAtoms   int64  `json:"amtPaidAtoms"`
+	CreationDate   int64  `json:"creationDate"`
+	SettleDate     int64  `json:"settleDate,omitempty"`
+	Expiry         int64  `json:"expiry"`
+	AddIndex       uint64 `json:"addIndex"`
+	SettleIndex    uint64 `json:"settleIndex,omitempty"`
+	Private        bool   `json:"private,omitempty"`
+	Status         string `json:"status"`
+}
+
+// LightningInvoiceList is the response to /wallet/ln/invoices.
+type LightningInvoiceList struct {
+	Invoices []LightningInvoice `json:"invoices"`
+}
+
+// LightningCancelInvoiceRequest takes the hex-encoded payment hash of an
+// OPEN invoice to cancel.
+type LightningCancelInvoiceRequest struct {
+	PaymentHash string `json:"paymentHash"`
+}

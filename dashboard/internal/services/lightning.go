@@ -20,8 +20,11 @@ import (
 	"dcrpulse/internal/types"
 
 	dcrwpb "decred.org/dcrwallet/v5/rpc/walletrpc"
+	"encoding/hex"
+
 	"github.com/decred/dcrlnd/lnrpc"
 	"github.com/decred/dcrlnd/lnrpc/autopilotrpc"
+	"github.com/decred/dcrlnd/lnrpc/invoicesrpc"
 	"github.com/decred/dcrlnd/lnrpc/routerrpc"
 	"github.com/decred/dcrlnd/lnrpc/verrpc"
 )
@@ -1089,4 +1092,178 @@ func ListLightningPayments(ctx context.Context) (*types.LightningPaymentList, er
 		out.Payments = append(out.Payments, paymentToType(p))
 	}
 	return out, nil
+}
+
+// ---- Receive tab ----------------------------------------------------------
+
+// invoiceToType maps an lnrpc.Invoice to the flat types.LightningInvoice the
+// Receive tab uses. Status is derived in the Decrediton manner: an OPEN
+// invoice whose creation+expiry has elapsed collapses to "expired"; a
+// CANCELED one past expiry also collapses to "expired" so the UI does not
+// need to recompute.
+func invoiceToType(inv *lnrpc.Invoice) types.LightningInvoice {
+	if inv == nil {
+		return types.LightningInvoice{}
+	}
+	rh := inv.GetRHash()
+	const hexdig = "0123456789abcdef"
+	rHashHex := make([]byte, len(rh)*2)
+	for i, b := range rh {
+		rHashHex[i*2] = hexdig[b>>4]
+		rHashHex[i*2+1] = hexdig[b&0x0f]
+	}
+	now := time.Now().Unix()
+	state := inv.GetState()
+	expiry := inv.GetExpiry()
+	creation := inv.GetCreationDate()
+	status := "open"
+	switch state {
+	case lnrpc.Invoice_SETTLED:
+		status = "settled"
+	case lnrpc.Invoice_CANCELED:
+		if creation+expiry < now {
+			status = "expired"
+		} else {
+			status = "canceled"
+		}
+	case lnrpc.Invoice_OPEN, lnrpc.Invoice_ACCEPTED:
+		if creation+expiry < now {
+			status = "expired"
+		} else {
+			status = "open"
+		}
+	}
+	return types.LightningInvoice{
+		Memo:           inv.GetMemo(),
+		RHashHex:       string(rHashHex),
+		PaymentRequest: inv.GetPaymentRequest(),
+		ValueAtoms:     inv.GetValue(),
+		AmtPaidAtoms:   inv.GetAmtPaidAtoms(),
+		CreationDate:   creation,
+		SettleDate:     inv.GetSettleDate(),
+		Expiry:         expiry,
+		AddIndex:       inv.GetAddIndex(),
+		SettleIndex:    inv.GetSettleIndex(),
+		Private:        inv.GetPrivate(),
+		Status:         status,
+	}
+}
+
+// AddLightningInvoice mints a fresh invoice via lnrpc.AddInvoice, then
+// fetches the canonical record via LookupInvoice so the returned object
+// has creationDate/expiry/state populated (AddInvoice's response is
+// minimal: r_hash, payment_request, add_index).
+func AddLightningInvoice(ctx context.Context, req *types.LightningAddInvoiceRequest) (*types.LightningInvoice, error) {
+	if rpc.LightningClient == nil {
+		return nil, fmt.Errorf("dcrlnd not available")
+	}
+	expiry := req.ExpirySec
+	if expiry <= 0 {
+		expiry = 3600
+	}
+	resp, err := rpc.LightningClient.AddInvoice(ctx, &lnrpc.Invoice{
+		Memo:   req.Memo,
+		Value:  req.ValueAtoms,
+		Expiry: expiry,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("AddInvoice: %w", err)
+	}
+	lookup, err := rpc.LightningClient.LookupInvoice(ctx, &lnrpc.PaymentHash{
+		RHash: resp.GetRHash(),
+	})
+	if err != nil {
+		// Fall back to a minimal record so the user still sees the
+		// payment request even if the second roundtrip fails.
+		const hexdig = "0123456789abcdef"
+		rh := resp.GetRHash()
+		rHashHex := make([]byte, len(rh)*2)
+		for i, b := range rh {
+			rHashHex[i*2] = hexdig[b>>4]
+			rHashHex[i*2+1] = hexdig[b&0x0f]
+		}
+		return &types.LightningInvoice{
+			Memo:           req.Memo,
+			RHashHex:       string(rHashHex),
+			PaymentRequest: resp.GetPaymentRequest(),
+			ValueAtoms:     req.ValueAtoms,
+			CreationDate:   time.Now().Unix(),
+			Expiry:         expiry,
+			AddIndex:       resp.GetAddIndex(),
+			Status:         "open",
+		}, nil
+	}
+	out := invoiceToType(lookup)
+	return &out, nil
+}
+
+// ListLightningInvoices wraps lnrpc.ListInvoices for the Receive tab's
+// history list. Reversed: true returns newest-first.
+func ListLightningInvoices(ctx context.Context) (*types.LightningInvoiceList, error) {
+	if rpc.LightningClient == nil {
+		return nil, fmt.Errorf("dcrlnd not available")
+	}
+	resp, err := rpc.LightningClient.ListInvoices(ctx, &lnrpc.ListInvoiceRequest{
+		NumMaxInvoices: 100,
+		Reversed:       true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ListInvoices: %w", err)
+	}
+	out := &types.LightningInvoiceList{Invoices: make([]types.LightningInvoice, 0, len(resp.GetInvoices()))}
+	for _, inv := range resp.GetInvoices() {
+		out.Invoices = append(out.Invoices, invoiceToType(inv))
+	}
+	return out, nil
+}
+
+// StreamLightningInvoiceEvents opens lnrpc.SubscribeInvoices and pushes
+// each snapshot onto the returned channel. Closes on stream end or ctx
+// cancel. Mirrors Decrediton's subscribeToInvoices (LNActions.js:620-663).
+func StreamLightningInvoiceEvents(ctx context.Context) (<-chan types.LightningInvoice, error) {
+	if rpc.LightningClient == nil {
+		return nil, fmt.Errorf("dcrlnd not available")
+	}
+	stream, err := rpc.LightningClient.SubscribeInvoices(ctx, &lnrpc.InvoiceSubscription{})
+	if err != nil {
+		return nil, fmt.Errorf("SubscribeInvoices: %w", err)
+	}
+	out := make(chan types.LightningInvoice, 16)
+	go func() {
+		defer close(out)
+		for {
+			snap, err := stream.Recv()
+			if err != nil {
+				return
+			}
+			select {
+			case out <- invoiceToType(snap):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+// CancelLightningInvoice cancels an OPEN invoice via invoicesrpc. Mirrors
+// Decrediton's cancelInvoice (LNActions.js:602-618 via inClient).
+func CancelLightningInvoice(ctx context.Context, paymentHashHex string) error {
+	if rpc.InvoicesClient == nil {
+		return fmt.Errorf("dcrlnd invoices service not available")
+	}
+	hashBytes, err := hex.DecodeString(strings.TrimSpace(paymentHashHex))
+	if err != nil {
+		return fmt.Errorf("invalid payment hash: %w", err)
+	}
+	if len(hashBytes) != 32 {
+		return fmt.Errorf("invalid payment hash length: got %d, want 32", len(hashBytes))
+	}
+	_, err = rpc.InvoicesClient.CancelInvoice(ctx, &invoicesrpc.CancelInvoiceMsg{
+		PaymentHash: hashBytes,
+	})
+	if err != nil {
+		return fmt.Errorf("CancelInvoice: %w", err)
+	}
+	return nil
 }

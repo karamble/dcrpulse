@@ -365,3 +365,79 @@ export const streamLnPayment = (
     }
   };
 };
+
+// ---- Receive tab -----------------------------------------------------------
+
+export type LightningInvoiceStatus = 'open' | 'settled' | 'expired' | 'canceled';
+
+export interface LightningInvoice {
+  memo?: string;
+  rHashHex: string;
+  paymentRequest: string;
+  valueAtoms: number;
+  amtPaidAtoms: number;
+  creationDate: number;
+  settleDate?: number;
+  expiry: number;
+  addIndex: number;
+  settleIndex?: number;
+  private?: boolean;
+  status: LightningInvoiceStatus;
+}
+
+export interface LightningAddInvoiceReq {
+  memo?: string;
+  valueAtoms: number;
+  expirySec?: number;
+}
+
+export interface LightningInvoiceList {
+  invoices: LightningInvoice[];
+}
+
+export const addLnInvoice = async (
+  req: LightningAddInvoiceReq,
+): Promise<LightningInvoice> => {
+  const { data } = await api.post<LightningInvoice>('/wallet/ln/invoices/add', req);
+  return data;
+};
+
+export const listLnInvoices = async (): Promise<LightningInvoiceList> => {
+  const { data } = await api.get<LightningInvoiceList>('/wallet/ln/invoices');
+  return data;
+};
+
+export const cancelLnInvoice = async (paymentHash: string): Promise<void> => {
+  await api.post('/wallet/ln/invoices/cancel', { paymentHash });
+};
+
+// subscribeLnInvoiceEvents opens a WebSocket to /wallet/ln/invoice-events
+// and invokes onSnapshot for every invoice snapshot dcrlnd emits. Returns
+// a cleanup that closes the socket. Mirrors Decrediton's subscribeToInvoices.
+export const subscribeLnInvoiceEvents = (
+  onSnapshot: (inv: LightningInvoice) => void,
+  onClose?: () => void,
+): (() => void) => {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${proto}//${window.location.host}/api/wallet/ln/invoice-events`;
+  let ws: WebSocket | null = new WebSocket(url);
+  ws.onmessage = (msg) => {
+    try {
+      const frame = JSON.parse(msg.data);
+      if (frame && typeof frame.error === 'string') return;
+      onSnapshot(frame as LightningInvoice);
+    } catch {
+      // ignore non-JSON frames
+    }
+  };
+  ws.onclose = () => {
+    ws = null;
+    onClose?.();
+  };
+  return () => {
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+  };
+};

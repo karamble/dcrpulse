@@ -17,6 +17,7 @@ import (
 
 	"github.com/decred/dcrlnd/lnrpc"
 	"github.com/decred/dcrlnd/lnrpc/autopilotrpc"
+	"github.com/decred/dcrlnd/lnrpc/invoicesrpc"
 	"github.com/decred/dcrlnd/lnrpc/routerrpc"
 	"github.com/decred/dcrlnd/lnrpc/verrpc"
 	"google.golang.org/grpc"
@@ -54,6 +55,10 @@ var (
 	// RouterClient drives Router.SendPaymentV2 for invoice payments.
 	// Reachable post-unlock.
 	RouterClient routerrpc.RouterClient
+
+	// InvoicesClient drives Invoices.CancelInvoice and HODL invoice flows.
+	// Reachable post-unlock.
+	InvoicesClient invoicesrpc.InvoicesClient
 
 	// DcrlndGrpcConn is the underlying connection, kept for shutdown.
 	DcrlndGrpcConn *grpc.ClientConn
@@ -100,6 +105,7 @@ func InitDcrlndClient(cfg DcrlndConfig) error {
 	AutopilotClient = autopilotrpc.NewAutopilotClient(conn)
 	VersionerClient = verrpc.NewVersionerClient(conn)
 	RouterClient = routerrpc.NewRouterClient(conn)
+	InvoicesClient = invoicesrpc.NewInvoicesClient(conn)
 
 	log.Println("dcrlnd gRPC clients initialised")
 	return nil

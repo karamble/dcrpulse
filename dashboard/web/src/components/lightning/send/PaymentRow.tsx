@@ -1,5 +1,6 @@
 import { ArrowUpRight, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import type { LightningPayment } from '../../../services/lightningApi';
+import { StatusPill, StatusTone } from '../StatusPill';
 
 const atomsPerDcr = 1e8;
 const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
@@ -13,26 +14,14 @@ const fmtDate = (sec: number) => {
   return `${date} ${time}`;
 };
 
-const StatusPill = ({ status }: { status: LightningPayment['status'] }) => {
+const paymentPill = (status: LightningPayment['status']): { label: string; tone: StatusTone; icon: JSX.Element } => {
   if (status === 'confirmed') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-success/15 text-success text-xs">
-        <CheckCircle2 className="h-3 w-3" /> Confirmed
-      </span>
-    );
+    return { label: 'Confirmed', tone: 'success', icon: <CheckCircle2 className="h-3 w-3" /> };
   }
   if (status === 'failed') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-destructive/15 text-destructive text-xs">
-        <XCircle className="h-3 w-3" /> Failed
-      </span>
-    );
+    return { label: 'Failed', tone: 'destructive', icon: <XCircle className="h-3 w-3" /> };
   }
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-warning/15 text-warning text-xs">
-      <Loader2 className="h-3 w-3 animate-spin" /> Pending
-    </span>
-  );
+  return { label: 'Pending', tone: 'warning', icon: <Loader2 className="h-3 w-3 animate-spin" /> };
 };
 
 interface Props {
@@ -58,7 +47,10 @@ export const PaymentRow = ({ payment, onClick }: Props) => (
       </div>
     </div>
     <div className="flex flex-col items-end gap-1 shrink-0">
-      <StatusPill status={payment.status} />
+      {(() => {
+        const { label, tone, icon } = paymentPill(payment.status);
+        return <StatusPill label={label} tone={tone} icon={icon} />;
+      })()}
       <span className="text-xs text-muted-foreground">{fmtDate(payment.creationDate)}</span>
     </div>
   </button>
