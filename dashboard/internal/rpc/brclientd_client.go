@@ -25,6 +25,7 @@ import (
 type BrclientdConfig struct {
 	Host           string
 	Port           string
+	StatusPort     string
 	ServerCertPath string
 	ClientCertPath string
 	ClientKeyPath  string
@@ -63,6 +64,50 @@ func BrclientdVersion(ctx context.Context) (*BrclientdVersionResult, error) {
 	var result BrclientdVersionResult
 	if err := brclientdCall(ctx, "VersionService.Version", struct{}{}, &result); err != nil {
 		return nil, err
+	}
+	return &result, nil
+}
+
+// BrclientdStatusResult is the wire shape served by brclientd's /status
+// endpoint. Mirrors the JSON the daemon writes verbatim so the dashboard's
+// /api/br/status handler can pass it through.
+type BrclientdStatusResult struct {
+	Stage           string `json:"stage"`
+	Nick            string `json:"nick,omitempty"`
+	ServerNode      string `json:"serverNode,omitempty"`
+	RecommendedPeer string `json:"recommendedPeer,omitempty"`
+	WalletCheckErr  string `json:"walletCheckErr,omitempty"`
+	LastUpdated     string `json:"lastUpdated"`
+}
+
+// BrclientdStatus calls brclientd's /status HTTP endpoint over mTLS and
+// returns the parsed snapshot. The status server is on a separate port
+// (default 7677) from clientrpc; both reuse the same cert triplet.
+func BrclientdStatus(ctx context.Context) (*BrclientdStatusResult, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/status", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build status request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /status: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("brclientd /status: HTTP %d: %s", resp.StatusCode, body)
+	}
+	var result BrclientdStatusResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode status: %w", err)
 	}
 	return &result, nil
 }

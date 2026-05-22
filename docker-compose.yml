@@ -114,6 +114,8 @@ services:
   brclientd:
     image: ghcr.io/karamble/dcrpulse-brclientd:${BRCLIENTD_IMAGE_TAG:-dev}
     container_name: dcrpulse-brclientd
+    ports:
+      - "7677:7677"
     volumes:
       - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd:ro
       - ${BRCLIENTD_DATA_DIR:-brclientd-data}:/app-data/brclientd
@@ -172,6 +174,7 @@ services:
       - DCRLND_MACAROON=/app-data/dcrlnd/admin.macaroon
       - BRCLIENTD_HOST=brclientd
       - BRCLIENTD_PORT=7676
+      - BRCLIENTD_STATUS_PORT=7677
       - BRCLIENTD_SERVER_CERT=/run/br-certs/data/mainnet/rpc/rpc.cert
       - BRCLIENTD_CLIENT_CERT=/run/br-certs/data/mainnet/rpc/rpc-client.cert
       - BRCLIENTD_CLIENT_KEY=/run/br-certs/data/mainnet/rpc/rpc-client.key

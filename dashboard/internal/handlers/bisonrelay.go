@@ -24,3 +24,16 @@ func BisonrelayVersionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ver)
 }
+
+// BisonrelayStatusHandler proxies brclientd's /status endpoint, returning
+// the current stage, server LN node, and the most recent CheckLNWalletUsable
+// error verbatim so the UI can render it.
+func BisonrelayStatusHandler(w http.ResponseWriter, r *http.Request) {
+	status, err := rpc.BrclientdStatus(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
+}

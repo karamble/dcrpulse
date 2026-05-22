@@ -104,6 +104,7 @@ func main() {
 	rpc.InitBrclientdConfig(rpc.BrclientdConfig{
 		Host:           getEnv("BRCLIENTD_HOST", "brclientd"),
 		Port:           getEnv("BRCLIENTD_PORT", "7676"),
+		StatusPort:     getEnv("BRCLIENTD_STATUS_PORT", "7677"),
 		ServerCertPath: getEnv("BRCLIENTD_SERVER_CERT", "/run/br-certs/rpc.cert"),
 		ClientCertPath: getEnv("BRCLIENTD_CLIENT_CERT", "/run/br-certs/rpc-client.cert"),
 		ClientKeyPath:  getEnv("BRCLIENTD_CLIENT_KEY", "/run/br-certs/rpc-client.key"),
@@ -185,6 +186,7 @@ func main() {
 	api.HandleFunc("/wallet/governance/proposals/{token}", handlers.GetProposalDetailHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/proposals/cast-vote", handlers.CastPoliteiaVoteHandler).Methods("POST")
 	api.HandleFunc("/br/version", handlers.BisonrelayVersionHandler).Methods("GET")
+	api.HandleFunc("/br/status", handlers.BisonrelayStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")
