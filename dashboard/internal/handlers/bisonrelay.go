@@ -53,6 +53,79 @@ func BisonrelayIdentityHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(id)
 }
 
+// BisonrelayContactsHandler proxies brclientd's /contacts endpoint.
+// Returns the BR client's in-memory address book (peers with completed KX).
+func BisonrelayContactsHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdContacts(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayPMHandler sends a PM through brclientd. Body: {user, msg}
+// where user is a nick / alias / hex UID.
+func BisonrelayPMHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		User string `json:"user"`
+		Msg  string `json:"msg"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.User = strings.TrimSpace(req.User)
+	req.Msg = strings.TrimSpace(req.Msg)
+	if req.User == "" || req.Msg == "" {
+		http.Error(w, "user and msg are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdSendPM(r.Context(), req.User, req.Msg); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayInviteWriteHandler asks brclientd to mint a fresh OOB invite.
+// Returns {"invite_bytes": "<base64>"}.
+func BisonrelayInviteWriteHandler(w http.ResponseWriter, r *http.Request) {
+	invite, err := rpc.BrclientdWriteNewInvite(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"invite_bytes": invite})
+}
+
+// BisonrelayInviteAcceptHandler hands a previously-shared OOB invite blob
+// (base64) to brclientd. Body: {invite_bytes: "<base64>"}. Returns the
+// decoded invite envelope.
+func BisonrelayInviteAcceptHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		InviteBytes string `json:"invite_bytes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.InviteBytes = strings.TrimSpace(req.InviteBytes)
+	if req.InviteBytes == "" {
+		http.Error(w, "invite_bytes is required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdAcceptInvite(r.Context(), req.InviteBytes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
 // BisonrelayMessagesHandler proxies brclientd's /history/pm endpoint. Query
 // params: contact (hex peer UID, required), page (default 0), page_size
 // (default 50, max 500). Returns the raw JSON envelope brclientd produces so

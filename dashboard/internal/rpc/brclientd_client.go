@@ -125,6 +125,72 @@ func BrclientdCreateIdentity(ctx context.Context, nick, name string) error {
 	return nil
 }
 
+// BrclientdContacts returns the BR client's address book entries from
+// brclientd's /contacts endpoint. Returns the raw JSON envelope so the
+// dashboard does not need to keep types in sync with BR's AddressBookEntry.
+func BrclientdContacts(ctx context.Context) (json.RawMessage, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/contacts", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build contacts request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /contacts: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read contacts: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("brclientd /contacts: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return body, nil
+}
+
+// BrclientdSendPM sends a private message through ChatService.PM. `user`
+// can be a nick, alias, or hex peer UID.
+func BrclientdSendPM(ctx context.Context, user, msg string) error {
+	params := map[string]any{
+		"user": user,
+		"msg":  map[string]any{"message": msg},
+	}
+	var unused json.RawMessage
+	return brclientdCall(ctx, "ChatService.PM", params, &unused)
+}
+
+// BrclientdWriteNewInvite creates an OOB invite blob via
+// ChatService.WriteNewInvite. Returns the base64-encoded invite bytes a
+// peer can paste back into AcceptInvite.
+func BrclientdWriteNewInvite(ctx context.Context) (string, error) {
+	var resp struct {
+		InviteBytes string `json:"inviteBytes"`
+	}
+	if err := brclientdCall(ctx, "ChatService.WriteNewInvite", struct{}{}, &resp); err != nil {
+		return "", err
+	}
+	return resp.InviteBytes, nil
+}
+
+// BrclientdAcceptInvite hands a previously-shared OOB invite blob to
+// ChatService.AcceptInvite. inviteBytes is base64-encoded.
+func BrclientdAcceptInvite(ctx context.Context, inviteBytesB64 string) (json.RawMessage, error) {
+	params := map[string]any{"inviteBytes": inviteBytesB64}
+	var raw json.RawMessage
+	if err := brclientdCall(ctx, "ChatService.AcceptInvite", params, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
 // BrclientdHistoryPM reads paginated PM history from brclientd's
 // /history/pm endpoint. UID is the hex-encoded zkidentity peer ID. The
 // dashboard does not cache messages locally - brclientd's BR clientdb is
