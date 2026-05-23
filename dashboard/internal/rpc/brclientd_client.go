@@ -521,6 +521,85 @@ func BrclientdStatsPosts(ctx context.Context) (json.RawMessage, error) {
 	return brclientdGetRaw(ctx, "/stats/posts", nil)
 }
 
+// ---- RTDT realtime-voice control plane ----------------------------------
+//
+// All wrappers below are thin pass-throughs over brclientd's /rtdt/sessions
+// routes. Audio (the binary WebSocket) is handled by a separate dashboard
+// proxy handler in Phase 3, not via this client.
+
+// BrclientdRTDTList returns the list of RTDT sessions known locally.
+func BrclientdRTDTList(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/rtdt/sessions", nil)
+}
+
+// BrclientdRTDTCreate creates a new RTDT session with the given capacity.
+func BrclientdRTDTCreate(ctx context.Context, size uint16, description string) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/rtdt/sessions/create", map[string]any{
+		"size":        size,
+		"description": description,
+	})
+}
+
+// BrclientdRTDTCreateInstant creates an instant 1:1 (or N:1) call invite +
+// auto-join in one shot.
+func BrclientdRTDTCreateInstant(ctx context.Context, uids []string) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/rtdt/sessions/create-instant", map[string]any{
+		"uids": uids,
+	})
+}
+
+// BrclientdRTDTInvite invites users to an existing RTDT session.
+func BrclientdRTDTInvite(ctx context.Context, rv string, uids []string, asPublisher bool) error {
+	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/invite", map[string]any{
+		"uids":         uids,
+		"as_publisher": asPublisher,
+	})
+}
+
+// BrclientdRTDTAccept accepts a pending invite to an RTDT session.
+func BrclientdRTDTAccept(ctx context.Context, rv, inviter string, asPublisher bool) error {
+	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/accept", map[string]any{
+		"inviter":      inviter,
+		"as_publisher": asPublisher,
+	})
+}
+
+// BrclientdRTDTJoin connects the live UDP audio for an accepted session.
+func BrclientdRTDTJoin(ctx context.Context, rv string) error {
+	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/join", map[string]any{})
+}
+
+// BrclientdRTDTLeave leaves an RTDT session (member action).
+func BrclientdRTDTLeave(ctx context.Context, rv string) error {
+	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/leave", map[string]any{})
+}
+
+// BrclientdRTDTDissolve tears down an RTDT session (owner only).
+func BrclientdRTDTDissolve(ctx context.Context, rv string) error {
+	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/dissolve", map[string]any{})
+}
+
+// BrclientdRTDTKick removes a peer from the live audio session.
+func BrclientdRTDTKick(ctx context.Context, rv string, peerID uint32, banSeconds int64) error {
+	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/kick", map[string]any{
+		"peer_id":     peerID,
+		"ban_seconds": banSeconds,
+	})
+}
+
+// BrclientdRTDTRemove removes a member from the session metadata.
+func BrclientdRTDTRemove(ctx context.Context, rv, uid, reason string) error {
+	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/remove", map[string]any{
+		"uid":    uid,
+		"reason": reason,
+	})
+}
+
+// BrclientdRTDTRotateCookies invalidates current appointment cookies.
+func BrclientdRTDTRotateCookies(ctx context.Context, rv string) error {
+	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/rotate-cookies", map[string]any{})
+}
+
 // BrclientdPostsFeed returns the raw JSON body of brclientd's /posts/feed.
 // Each entry is a PostSummary; the caller decodes as needed.
 func BrclientdPostsFeed(ctx context.Context) (json.RawMessage, error) {
@@ -734,6 +813,43 @@ func brclientdPostJSON(ctx context.Context, path string, body any) error {
 	return nil
 }
 
+// brclientdPostJSONRaw is the variant of brclientdPostJSON used when the
+// endpoint returns a JSON body (e.g. /rtdt/sessions/create returns the new
+// session summary). Accepts 200 OK with body.
+func brclientdPostJSONRaw(ctx context.Context, path string, body any) (json.RawMessage, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal payload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("brclientd %s: HTTP %d: %s", path, resp.StatusCode, buf)
+	}
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd %s: read body: %w", path, err)
+	}
+	return out, nil
+}
+
 // BrclientdAcceptInvite hands a previously-shared OOB invite blob to
 // ChatService.AcceptInvite. inviteBytes is base64-encoded.
 func BrclientdAcceptInvite(ctx context.Context, inviteBytesB64 string) (json.RawMessage, error) {
@@ -898,6 +1014,22 @@ func brclientdClient() (*http.Client, error) {
 		Timeout: 90 * time.Second,
 	}
 	return brclientdHTTPClient, nil
+}
+
+// BrclientdWSDialer returns a gorilla-websocket-compatible dialer plus the
+// base wss:// URL for brclientd's status port, both preconfigured with the
+// pinned mTLS chain. The RTDT audio proxy uses this to bridge browser <->
+// brclientd binary frames without re-implementing cert pinning.
+func BrclientdWSDialer() (tlsCfg *tls.Config, baseURL string, err error) {
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, "", errors.New("brclientd: status host/port not configured")
+	}
+	tlsCfg, err = loadBrclientdTLS(BrclientdCfg)
+	if err != nil {
+		return nil, "", err
+	}
+	baseURL = fmt.Sprintf("wss://%s:%s", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	return tlsCfg, baseURL, nil
 }
 
 func loadBrclientdTLS(cfg BrclientdConfig) (*tls.Config, error) {

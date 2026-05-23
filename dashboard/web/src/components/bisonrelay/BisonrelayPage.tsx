@@ -3,15 +3,16 @@
 // license that can be found in the LICENSE file.
 
 import { ComponentType, useEffect, useState } from 'react';
-import { BarChart3, FolderOpen, MessageSquare, Rss } from 'lucide-react';
+import { BarChart3, FolderOpen, MessageSquare, Phone, Rss } from 'lucide-react';
 import { BisonrelaySetupWizard } from './BisonrelaySetupWizard';
 import { BisonrelayMessagingPage } from './BisonrelayMessagingPage';
 import { BisonrelayFeed } from './BisonrelayFeed';
 import { BisonrelayFiles } from './BisonrelayFiles';
 import { BisonrelayStats } from './BisonrelayStats';
+import { BisonrelayRealtime } from './BisonrelayRealtime';
 import { BisonrelayStatus, getBisonrelayStatus } from '../../services/bisonrelayApi';
 
-type TabId = 'chat' | 'feed' | 'files' | 'stats';
+type TabId = 'chat' | 'feed' | 'files' | 'stats' | 'realtime';
 
 interface TabDef {
   id: TabId;
@@ -24,16 +25,19 @@ const tabs: TabDef[] = [
   { id: 'feed', label: 'Feed', icon: Rss },
   { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'stats', label: 'Stats', icon: BarChart3 },
+  { id: 'realtime', label: 'Realtime', icon: Phone },
 ];
 
 // readHashTab returns the active tab based on the URL hash. Feed, Files,
-// and Stats support subpaths (e.g. `feed/<author>/<pid>`, `files/shared`,
-// `stats/payments`) which the embedded surfaces parse on their own.
+// Stats, and Realtime support subpaths (e.g. `feed/<author>/<pid>`,
+// `files/shared`, `stats/payments`, `realtime/room/<rv>`) which the
+// embedded surfaces parse on their own.
 const readHashTab = (): TabId => {
   const h = window.location.hash.replace('#', '').toLowerCase();
   if (h.startsWith('feed')) return 'feed';
   if (h.startsWith('files')) return 'files';
   if (h.startsWith('stats')) return 'stats';
+  if (h.startsWith('realtime')) return 'realtime';
   return 'chat';
 };
 
@@ -118,6 +122,7 @@ export const BisonrelayPage = () => {
       {activeTab === 'feed' && <BisonrelayFeed />}
       {activeTab === 'files' && <BisonrelayFiles />}
       {activeTab === 'stats' && <BisonrelayStats />}
+      {activeTab === 'realtime' && <BisonrelayRealtime />}
     </div>
   );
 };

@@ -626,6 +626,168 @@ func BisonrelayStatsPostsHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// ---- RTDT realtime-voice control plane ----------------------------------
+
+// BisonrelayRTDTListHandler returns the list of RTDT sessions.
+func BisonrelayRTDTListHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdRTDTList(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayRTDTCreateHandler creates a fresh session.
+func BisonrelayRTDTCreateHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Size        uint16 `json:"size"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdRTDTCreate(r.Context(), req.Size, req.Description)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayRTDTCreateInstantHandler creates an instant call.
+func BisonrelayRTDTCreateInstantHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UIDs []string `json:"uids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdRTDTCreateInstant(r.Context(), req.UIDs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayRTDTInviteHandler invites users to an existing session.
+func BisonrelayRTDTInviteHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	var req struct {
+		UIDs        []string `json:"uids"`
+		AsPublisher bool     `json:"as_publisher"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdRTDTInvite(r.Context(), rv, req.UIDs, req.AsPublisher); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayRTDTAcceptHandler accepts a pending invite.
+func BisonrelayRTDTAcceptHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	var req struct {
+		Inviter     string `json:"inviter"`
+		AsPublisher bool   `json:"as_publisher"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdRTDTAccept(r.Context(), rv, req.Inviter, req.AsPublisher); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayRTDTJoinHandler joins the live audio for a session.
+func BisonrelayRTDTJoinHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	if err := rpc.BrclientdRTDTJoin(r.Context(), rv); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayRTDTLeaveHandler leaves a session.
+func BisonrelayRTDTLeaveHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	if err := rpc.BrclientdRTDTLeave(r.Context(), rv); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayRTDTDissolveHandler dissolves a session (owner).
+func BisonrelayRTDTDissolveHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	if err := rpc.BrclientdRTDTDissolve(r.Context(), rv); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayRTDTKickHandler kicks a peer from the live session.
+func BisonrelayRTDTKickHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	var req struct {
+		PeerID     uint32 `json:"peer_id"`
+		BanSeconds int64  `json:"ban_seconds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdRTDTKick(r.Context(), rv, req.PeerID, req.BanSeconds); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayRTDTRemoveHandler removes a member from the session metadata.
+func BisonrelayRTDTRemoveHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	var req struct {
+		UID    string `json:"uid"`
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdRTDTRemove(r.Context(), rv, req.UID, req.Reason); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayRTDTRotateCookiesHandler invalidates current appointment cookies.
+func BisonrelayRTDTRotateCookiesHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	if err := rpc.BrclientdRTDTRotateCookies(r.Context(), rv); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayPostsRenderHandler renders a draft post body server-side so
 // the editor's Preview tab matches the published Feed detail view. Body:
 // {post}. Response shape mirrors /api/br/posts/body — same segmented

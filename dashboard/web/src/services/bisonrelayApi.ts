@@ -382,7 +382,27 @@ export type BisonrelayEventType =
   | 'post-received'
   | 'post-status-received'
   | 'file-download-progress'
-  | 'file-download-completed';
+  | 'file-download-completed'
+  | 'rtdt-invited'
+  | 'rtdt-invite-accepted'
+  | 'rtdt-invite-canceled'
+  | 'rtdt-session-updated'
+  | 'rtdt-live-joined'
+  | 'rtdt-allowance-refreshed'
+  | 'rtdt-peer-joined'
+  | 'rtdt-peer-stalled'
+  | 'rtdt-send-error'
+  | 'rtdt-hot-audio'
+  | 'rtdt-peer-sound-changed'
+  | 'rtdt-peer-exited'
+  | 'rtdt-kicked'
+  | 'rtdt-dissolved'
+  | 'rtdt-removed'
+  | 'rtdt-cookies-rotated'
+  | 'rtdt-chat'
+  | 'rtdt-admin-cookies'
+  | 'rtdt-rtt'
+  | 'rtdt-joined-instant-call';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;
@@ -606,4 +626,87 @@ export interface BisonrelayStatsPosts {
 export const getBisonrelayStatsPosts = async (): Promise<BisonrelayStatsPosts> => {
   const { data } = await api.get<BisonrelayStatsPosts>('/br/stats/posts');
   return data;
+};
+
+// ---- RTDT realtime-voice control plane ----------------------------------
+
+export interface RTDTSessionMember {
+  uid: string;
+  peer_id: number;
+  publisher: boolean;
+  accepted: boolean;
+}
+
+export interface RTDTSessionPublisher {
+  uid: string;
+  peer_id: number;
+  alias: string;
+}
+
+export interface RTDTLivePeer {
+  peer_id: number;
+  has_sound_stream: boolean;
+  has_sound: boolean;
+}
+
+export interface RTDTSession {
+  rv: string;
+  description: string;
+  size: number;
+  owner: string;
+  is_instant: boolean;
+  local_peer_id: number;
+  is_admin: boolean;
+  live: boolean;
+  hot_audio: boolean;
+  members: RTDTSessionMember[];
+  publishers: RTDTSessionPublisher[];
+  live_peers?: RTDTLivePeer[];
+}
+
+export const listRTDTSessions = async (): Promise<RTDTSession[]> => {
+  const { data } = await api.get<{ sessions: RTDTSession[] | null }>('/br/rtdt/sessions');
+  return data?.sessions ?? [];
+};
+
+export const createRTDTSession = async (size: number, description: string): Promise<RTDTSession> => {
+  const { data } = await api.post<RTDTSession>('/br/rtdt/sessions/create', { size, description });
+  return data;
+};
+
+export const createInstantRTDTSession = async (uids: string[]): Promise<RTDTSession> => {
+  const { data } = await api.post<RTDTSession>('/br/rtdt/sessions/create-instant', { uids });
+  return data;
+};
+
+export const inviteToRTDTSession = async (rv: string, uids: string[], asPublisher: boolean): Promise<void> => {
+  await api.post(`/br/rtdt/sessions/${rv}/invite`, { uids, as_publisher: asPublisher });
+};
+
+export const acceptRTDTSession = async (rv: string, inviter: string, asPublisher: boolean): Promise<void> => {
+  await api.post(`/br/rtdt/sessions/${rv}/accept`, { inviter, as_publisher: asPublisher });
+};
+
+export const joinRTDTSession = async (rv: string): Promise<void> => {
+  await api.post(`/br/rtdt/sessions/${rv}/join`, {});
+};
+
+export const leaveRTDTSession = async (rv: string): Promise<void> => {
+  await api.post(`/br/rtdt/sessions/${rv}/leave`, {});
+};
+
+export const dissolveRTDTSession = async (rv: string): Promise<void> => {
+  await api.post(`/br/rtdt/sessions/${rv}/dissolve`, {});
+};
+
+export const kickRTDTPeer = async (rv: string, peerID: number, banSeconds: number): Promise<void> => {
+  await api.post(`/br/rtdt/sessions/${rv}/kick`, { peer_id: peerID, ban_seconds: banSeconds });
+};
+
+export const removeRTDTMember = async (rv: string, uid: string, reason: string): Promise<void> => {
+  await api.post(`/br/rtdt/sessions/${rv}/remove`, { uid, reason });
+};
+
+export const rotateRTDTCookies = async (rv: string): Promise<void> => {
+  await api.post(`/br/rtdt/sessions/${rv}/rotate-cookies`, {});
 };
