@@ -39,6 +39,8 @@ import {
   isImageMime,
   parseEmbeds,
 } from './embedParser';
+import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
+import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
 
 const MAX_INLINE_BYTES = 800 * 1024;
 const MAX_TRANSFER_BYTES = 100 * 1024 * 1024;
@@ -75,6 +77,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const [viewerImage, setViewerImage] = useState<ViewerImage | null>(null);
+  const [subNavContact, setSubNavContact] = useState<BisonrelayContact | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { unread, clearUnread, setActiveUid, addListener } = useBisonrelayLive();
 
@@ -283,7 +286,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
 
   return (
     <ImageViewerCtx.Provider value={openImageViewer}>
-    <div className="flex gap-4 h-[calc(100vh-12rem)] min-h-[480px]">
+    <div className="relative flex gap-4 h-[calc(100vh-12rem)] min-h-[480px]">
       <aside className="w-72 flex flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
         <div className="p-3 border-b border-border/50 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Contacts</h3>
@@ -320,21 +323,37 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             const uid = c.id?.identity ?? '';
             const count = uid ? unread[uid] ?? 0 : 0;
             return (
-              <button
+              <div
                 key={uid || nick}
                 onClick={() => setSelected(c)}
-                className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 ${
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') setSelected(c);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 cursor-pointer ${
                   isSel ? 'bg-primary/20 text-foreground' : 'hover:bg-muted/30 text-muted-foreground'
                 }`}
               >
-                <ContactAvatar contact={c} nick={nick} />
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSubNavContact(c);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`User actions for ${nick}`}
+                  className="inline-flex shrink-0 rounded-full hover:ring-2 hover:ring-primary/50 transition-shadow cursor-pointer"
+                >
+                  <ContactAvatar contact={c} nick={nick} />
+                </span>
                 <span className="truncate flex-1">{nick}</span>
                 {count > 0 && (
                   <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
                     {count > 99 ? '99+' : count}
                   </span>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -423,6 +442,18 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         )}
       </section>
 
+      {subNavContact && (
+        <BisonrelayUserSubNav
+          contact={subNavContact}
+          nick={displayNick(subNavContact)}
+          onClose={() => setSubNavContact(null)}
+          onSendFile={() => {
+            setSelected(subNavContact);
+            setSubNavContact(null);
+            fileInputRef.current?.click();
+          }}
+        />
+      )}
       {showInviteCreate && <InviteCreateModal onClose={() => setShowInviteCreate(false)} />}
       {showInviteAccept && (
         <InviteAcceptModal
@@ -758,28 +789,6 @@ const ContactAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: st
   );
 };
 
-function avatarDataUrl(b64?: string): string {
-  if (!b64) return '';
-  try {
-    const bin = atob(b64);
-    if (bin.length < 4) return '';
-    const b0 = bin.charCodeAt(0);
-    const b1 = bin.charCodeAt(1);
-    const b2 = bin.charCodeAt(2);
-    const b3 = bin.charCodeAt(3);
-    let mime = '';
-    if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4e && b3 === 0x47) mime = 'image/png';
-    else if (b0 === 0xff && b1 === 0xd8 && b2 === 0xff) mime = 'image/jpeg';
-    else if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46) mime = 'image/gif';
-    else if (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46 && bin.length > 11 &&
-      bin.substring(8, 12) === 'WEBP') mime = 'image/webp';
-    if (!mime) return '';
-    return `data:${mime};base64,${b64}`;
-  } catch {
-    return '';
-  }
-}
-
 const SENT_FILE_RE = /^Sent file "(.+)"(?:\s*\(([^)]*)\))?\s*$/;
 
 const MessageBody = ({ body }: { body: string }) => {
@@ -997,13 +1006,3 @@ const AttachmentPreview = ({
   );
 };
 
-const avatarPalette = [
-  'bg-rose-600', 'bg-amber-600', 'bg-emerald-600', 'bg-teal-600',
-  'bg-sky-600', 'bg-indigo-600', 'bg-fuchsia-600', 'bg-pink-600',
-];
-
-function colorForUid(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return avatarPalette[h % avatarPalette.length];
-}
