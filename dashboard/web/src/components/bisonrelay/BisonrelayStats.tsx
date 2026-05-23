@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { ComponentType, useCallback, useEffect, useMemo, useState } from 'react';
+import { ComponentType, useCallback, useEffect, useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -583,9 +583,11 @@ const PaymentsView = () => {
     { sent: 0, recv: 0, fees: 0 },
   );
   const principal = totals.sent - totals.fees;
-  const sortedUsers = useMemo(
-    () => [...data.users].sort((a, b) => (b.sent_atoms + b.received_atoms) - (a.sent_atoms + a.received_atoms)),
-    [data.users],
+  // Cheap to compute every render; the user count rarely exceeds ~20.
+  // useMemo would have to live above the early returns to be Rules-of-Hooks
+  // safe, but it's not worth the indirection for a trivial sort.
+  const sortedUsers = [...data.users].sort(
+    (a, b) => (b.sent_atoms + b.received_atoms) - (a.sent_atoms + a.received_atoms),
   );
   const openUser = sortedUsers.find((u) => u.uid === openUid) ?? null;
 
@@ -1077,12 +1079,11 @@ const ContentView = () => {
   const totalHearts = data.authored.reduce((s, p) => s + p.hearts, 0);
   const totalComments = data.authored.reduce((s, p) => s + p.comments, 0);
 
-  const ranked = useMemo<BisonrelayAuthoredPostStats[]>(
-    () =>
-      [...data.authored].sort(
-        (a, b) => b.hearts + b.comments - (a.hearts + a.comments),
-      ),
-    [data.authored],
+  // Inline sort (no useMemo) so this stays above the early returns'
+  // hook order. Authored posts list is small enough that recomputing
+  // on each render is free.
+  const ranked: BisonrelayAuthoredPostStats[] = [...data.authored].sort(
+    (a, b) => b.hearts + b.comments - (a.hearts + a.comments),
   );
 
   return (

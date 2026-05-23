@@ -18,14 +18,18 @@ import {
 import {
   BisonrelayContact,
   BisonrelayDownloadEntry,
+  BisonrelayGC,
   BisonrelayMessage,
   BisonrelayPMAttachment,
   acceptBisonrelayInvite,
   acceptBisonrelayKxSuggestion,
   getBisonrelayContacts,
   getBisonrelayDownloads,
+  getBisonrelayGCHistory,
   getBisonrelayMessages,
+  listBisonrelayGCs,
   sendBisonrelayFile,
+  sendBisonrelayGCMessage,
   sendBisonrelayPM,
   subscribeBisonrelayPosts,
   tipBisonrelayContact,
@@ -45,6 +49,10 @@ import {
 } from './embedParser';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
+import { CreateGCModal } from './gc/CreateGCModal';
+import { GCInviteModal } from './gc/GCInviteModal';
+import { GroupSubNav } from './gc/GroupSubNav';
+import { IncomingGCInvitesBanner } from './gc/IncomingGCInvitesBanner';
 
 const MAX_INLINE_BYTES = 800 * 1024;
 const MAX_TRANSFER_BYTES = 100 * 1024 * 1024;
@@ -67,10 +75,24 @@ interface ViewerImage {
   mime: string;
 }
 
+// ActiveTarget tags the chat-window subject as either a 1:1 PM contact or
+// an N-peer GC. Most existing code paths only care about the contact case;
+// the explicit kind lets us branch send / history / header at the few
+// places it matters without sprinkling null-checks everywhere.
+type ActiveTarget =
+  | { kind: 'contact'; value: BisonrelayContact }
+  | { kind: 'group'; value: BisonrelayGC };
+
 export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
   const [contactsErr, setContactsErr] = useState<string | null>(null);
-  const [selected, setSelected] = useState<BisonrelayContact | null>(null);
+  const [gcs, setGCs] = useState<BisonrelayGC[]>([]);
+  const [gcsErr, setGCsErr] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ActiveTarget | null>(null);
+  // Derived accessors keep the rest of the file's existing references to
+  // selectedContact?.* working without churn.
+  const selectedContact = selected?.kind === 'contact' ? selected.value : null;
+  const selectedGroup = selected?.kind === 'group' ? selected.value : null;
   const [messages, setMessages] = useState<BisonrelayMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesErr, setMessagesErr] = useState<string | null>(null);
@@ -82,8 +104,32 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const [viewerImage, setViewerImage] = useState<ViewerImage | null>(null);
   const [subNavContact, setSubNavContact] = useState<BisonrelayContact | null>(null);
+  const [contactsCollapsed, setContactsCollapsed] = useState(
+    () => localStorage.getItem('dcrpulse.br.sidebar.contacts-collapsed') === '1',
+  );
+  const [groupsCollapsed, setGroupsCollapsed] = useState(
+    () => localStorage.getItem('dcrpulse.br.sidebar.groups-collapsed') === '1',
+  );
+  const [showCreateGC, setShowCreateGC] = useState(false);
+  const [showGCInvite, setShowGCInvite] = useState(false);
+  const [showGroupSubNav, setShowGroupSubNav] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const { unread, clearUnread, setActiveUid, addListener } = useBisonrelayLive();
+  const {
+    unread,
+    clearUnread,
+    setActiveUid,
+    gcUnread,
+    clearGCUnread,
+    setActiveGCID,
+    addListener,
+  } = useBisonrelayLive();
+
+  useEffect(() => {
+    localStorage.setItem('dcrpulse.br.sidebar.contacts-collapsed', contactsCollapsed ? '1' : '0');
+  }, [contactsCollapsed]);
+  useEffect(() => {
+    localStorage.setItem('dcrpulse.br.sidebar.groups-collapsed', groupsCollapsed ? '1' : '0');
+  }, [groupsCollapsed]);
 
   const openImageViewer = useCallback<ImageViewerOpenFn>((src, name, mime) => {
     setViewerImage({ src, name, mime });
@@ -99,9 +145,20 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     }
   }, []);
 
+  const refreshGCs = useCallback(async () => {
+    try {
+      const entries = await listBisonrelayGCs();
+      setGCs(entries);
+      setGCsErr(null);
+    } catch (err: any) {
+      setGCsErr(err?.message || 'Could not load groups');
+    }
+  }, []);
+
   useEffect(() => {
     refreshContacts();
-  }, [refreshContacts]);
+    refreshGCs();
+  }, [refreshContacts, refreshGCs]);
 
   const loadMessages = useCallback(async (contact: BisonrelayContact) => {
     const uid = contact.id?.identity;
@@ -130,22 +187,63 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     }
   }, []);
 
+  const loadGCMessages = useCallback(async (gc: BisonrelayGC) => {
+    setMessagesLoading(true);
+    setMessagesErr(null);
+    try {
+      const resp = await getBisonrelayGCHistory(gc.id, 0, 100);
+      const entries = resp.entries ?? [];
+      const sorted = [...entries].sort((a, b) => a.timestamp - b.timestamp);
+      setMessages(sorted);
+    } catch (err: any) {
+      setMessagesErr(err?.message || 'Could not load group history');
+    } finally {
+      setMessagesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (selected) {
-      loadMessages(selected);
-      const uid = selected.id?.identity ?? '';
-      setActiveUid(uid);
-      clearUnread(uid);
-    } else {
+    if (!selected) {
       setMessages([]);
       setActiveUid('');
+      setActiveGCID('');
+      return;
     }
-  }, [selected, loadMessages, setActiveUid, clearUnread]);
+    if (selected.kind === 'contact') {
+      loadMessages(selected.value);
+      const uid = selected.value.id?.identity ?? '';
+      setActiveUid(uid);
+      setActiveGCID('');
+      clearUnread(uid);
+    } else {
+      loadGCMessages(selected.value);
+      setActiveUid('');
+      setActiveGCID(selected.value.id);
+      clearGCUnread(selected.value.id);
+    }
+  }, [
+    selected,
+    loadMessages,
+    loadGCMessages,
+    setActiveUid,
+    setActiveGCID,
+    clearUnread,
+    clearGCUnread,
+  ]);
 
+  // selectedRef tracks the currently-open *contact* (kept narrow because
+  // the live-event handlers below match PMs by contact uid).
+  // selectedGroupRef does the same for groups so the gc-message handler
+  // can decide whether to inject into the open thread.
   const selectedRef = useRef<BisonrelayContact | null>(null);
   useEffect(() => {
-    selectedRef.current = selected;
-  }, [selected]);
+    selectedRef.current = selectedContact;
+  }, [selectedContact]);
+
+  const selectedGroupRef = useRef<BisonrelayGC | null>(null);
+  useEffect(() => {
+    selectedGroupRef.current = selectedGroup;
+  }, [selectedGroup]);
 
   const handleAcceptSuggestion = useCallback(
     async (target: string, _targetNick: string) => {
@@ -452,6 +550,34 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         }
         return;
       }
+      if (evt.type === 'gc-message') {
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const gcid = String(payload.gcid ?? '');
+        const senderNick = String(payload.fromNick ?? '');
+        const text = String(payload.message ?? '');
+        if (!gcid || !text) return;
+        const cur = selectedGroupRef.current;
+        if (cur && cur.id === gcid) {
+          // brclientd timestamps the event on the bus; we use it when
+          // present, falling back to client time.
+          let ts = Math.floor(Date.now() / 1000);
+          const evtTs = (evt as { timestamp?: string }).timestamp;
+          if (evtTs) {
+            const parsed = Date.parse(evtTs);
+            if (Number.isFinite(parsed)) ts = Math.floor(parsed / 1000);
+          }
+          setMessages((prev) => [
+            ...prev,
+            {
+              message: text,
+              from: senderNick,
+              timestamp: ts,
+              internal: false,
+            },
+          ]);
+        }
+        return;
+      }
       if (evt.type === 'download') {
         const payload = evt.payload ?? {};
         const senderNick = payload.nick ?? '';
@@ -472,6 +598,29 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             },
           ]);
         }
+        return;
+      }
+      // GC structural state events that should refresh the sidebar so
+      // group names, member counts, and admin flags stay current.
+      if (
+        evt.type === 'gc-joined' ||
+        evt.type === 'gc-killed' ||
+        evt.type === 'gc-parted' ||
+        evt.type === 'gc-members-added' ||
+        evt.type === 'gc-members-removed' ||
+        evt.type === 'gc-admins-changed' ||
+        evt.type === 'gc-upgraded'
+      ) {
+        refreshGCs();
+        // If the currently-open GC was killed or we got kicked, bounce
+        // back to the empty thread; the BR side has already torn it down
+        // for us locally.
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const gcid = String(payload.gcid ?? '');
+        const cur = selectedGroupRef.current;
+        if (cur && cur.id === gcid && evt.type === 'gc-killed') {
+          setSelected(null);
+        }
       }
     });
   }, [addListener, refreshContacts]);
@@ -480,10 +629,47 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     e.preventDefault();
     if (!selected || sending) return;
     if (!draft.trim() && !attachment) return;
-    const recipient = nickOrUid(selected);
     const text = draft.trim();
     setSending(true);
     try {
+      if (selected.kind === 'group') {
+        // GC send. File-transfer-mode attachments are not supported in v1
+        // because BR's shared-file mechanism is per-peer, not broadcast;
+        // bruig doesn't ship GC file-transfer either. Inline embeds work
+        // because they ride in the body string. Phase 6 adds the inline
+        // path; for now PMs-only file send.
+        if (attachment && attachment.mode === 'transfer') {
+          setMessagesErr('File transfer in groups is not yet supported.');
+          return;
+        }
+        const embed: BisonrelayPMAttachment | undefined =
+          attachment && attachment.mode === 'inline' && attachment.dataB64
+            ? {
+                name: attachment.file.name,
+                mime: attachment.file.type || 'application/octet-stream',
+                data_b64: attachment.dataB64,
+              }
+            : undefined;
+        const result = await sendBisonrelayGCMessage(selected.value.id, text, embed);
+        // Sender's own GC message is logged immediately by BR on the
+        // backend (no notification loopback). Optimistic insert mirrors
+        // that exactly, internal: false so it renders as own bubble.
+        setMessages((prev) => [
+          ...prev,
+          {
+            message: result.body || text,
+            from: ownNick,
+            timestamp: Math.floor(Date.now() / 1000),
+            internal: false,
+          },
+        ]);
+        setDraft('');
+        setAttachment(null);
+        setAttachErr(null);
+        return;
+      }
+
+      const recipient = nickOrUid(selected.value);
       if (attachment && attachment.mode === 'transfer') {
         if (text) {
           await sendBisonrelayPM(recipient, text);
@@ -493,7 +679,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               message: text,
               from: ownNick,
               timestamp: Math.floor(Date.now() / 1000),
-              internal: true,
+              internal: false,
             },
           ]);
         }
@@ -523,7 +709,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             message: result.body || text,
             from: ownNick,
             timestamp: Math.floor(Date.now() / 1000),
-            internal: true,
+            internal: false,
           },
         ]);
       }
@@ -570,10 +756,12 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
 
   return (
     <ImageViewerCtx.Provider value={openImageViewer}>
+    <div className="flex flex-col">
+      <IncomingGCInvitesBanner onAccepted={refreshGCs} />
     <div className="relative flex gap-4 h-[calc(100vh-12rem)] min-h-[480px]">
       <aside className="w-72 flex flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
         <div className="p-3 border-b border-border/50 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Contacts</h3>
+          <h3 className="text-sm font-semibold">Chats</h3>
           <div className="flex gap-1">
             <button
               onClick={() => setShowInviteCreate(true)}
@@ -591,55 +779,124 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {contactsErr && (
-            <p className="text-xs text-destructive p-2">{contactsErr}</p>
+        <div className="flex-1 overflow-y-auto p-2">
+          <SidebarSectionHeader
+            label="Contacts"
+            count={contacts.length}
+            collapsed={contactsCollapsed}
+            onToggle={() => setContactsCollapsed((v) => !v)}
+          />
+          {!contactsCollapsed && (
+            <div className="space-y-1 mb-2">
+              {contactsErr && (
+                <p className="text-xs text-destructive p-2">{contactsErr}</p>
+              )}
+              {contacts.length === 0 && !contactsErr && (
+                <p className="text-xs text-muted-foreground p-2">
+                  No contacts yet. Create an invite and share it out-of-band, or
+                  paste a peer's invite to start a key exchange.
+                </p>
+              )}
+              {contacts.map((c) => {
+                const nick = displayNick(c);
+                const isSel =
+                  selectedContact?.id?.identity && c.id?.identity === selectedContact.id.identity;
+                const uid = c.id?.identity ?? '';
+                const count = uid ? unread[uid] ?? 0 : 0;
+                return (
+                  <div
+                    key={uid || nick}
+                    onClick={() => setSelected({ kind: 'contact', value: c })}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setSelected({ kind: 'contact', value: c });
+                      }
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 cursor-pointer ${
+                      isSel ? 'bg-primary/20 text-foreground' : 'hover:bg-muted/30 text-muted-foreground'
+                    }`}
+                  >
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSubNavContact(c);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`User actions for ${nick}`}
+                      className="inline-flex shrink-0 rounded-full hover:ring-2 hover:ring-primary/50 transition-shadow cursor-pointer"
+                    >
+                      <ContactAvatar contact={c} nick={nick} />
+                    </span>
+                    <span className="truncate flex-1">{nick}</span>
+                    {count > 0 && (
+                      <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
+                        {count > 99 ? '99+' : count}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
-          {contacts.length === 0 && !contactsErr && (
-            <p className="text-xs text-muted-foreground p-2">
-              No contacts yet. Create an invite and share it out-of-band, or
-              paste a peer's invite to start a key exchange.
-            </p>
+
+          <SidebarSectionHeader
+            label="Groups"
+            count={gcs.length}
+            collapsed={groupsCollapsed}
+            onToggle={() => setGroupsCollapsed((v) => !v)}
+            actionLabel="Create group"
+            onAction={() => setShowCreateGC(true)}
+          />
+          {!groupsCollapsed && (
+            <div className="space-y-1">
+              {gcsErr && <p className="text-xs text-destructive p-2">{gcsErr}</p>}
+              {gcs.length === 0 && !gcsErr && (
+                <p className="text-xs text-muted-foreground p-2">
+                  No groups yet. Group create / invite UX lands in a follow-up
+                  phase; for now any GC you join via another client will show
+                  up here.
+                </p>
+              )}
+              {gcs.map((g) => {
+                const label = g.alias || g.name;
+                const isSel = selectedGroup?.id === g.id;
+                const count = gcUnread[g.id] ?? 0;
+                return (
+                  <div
+                    key={g.id}
+                    onClick={() => setSelected({ kind: 'group', value: g })}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setSelected({ kind: 'group', value: g });
+                      }
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 cursor-pointer ${
+                      isSel ? 'bg-primary/20 text-foreground' : 'hover:bg-muted/30 text-muted-foreground'
+                    }`}
+                  >
+                    <span className="inline-flex shrink-0 h-7 w-7 rounded-full bg-muted/40 items-center justify-center text-[10px] font-semibold uppercase">
+                      {label.slice(0, 2)}
+                    </span>
+                    <span className="truncate flex-1">{label}</span>
+                    {count > 0 ? (
+                      <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
+                        {count > 99 ? '99+' : count}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                        {g.members.length}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
-          {contacts.map((c) => {
-            const nick = displayNick(c);
-            const isSel = selected?.id?.identity && c.id?.identity === selected.id.identity;
-            const uid = c.id?.identity ?? '';
-            const count = uid ? unread[uid] ?? 0 : 0;
-            return (
-              <div
-                key={uid || nick}
-                onClick={() => setSelected(c)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') setSelected(c);
-                }}
-                className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 cursor-pointer ${
-                  isSel ? 'bg-primary/20 text-foreground' : 'hover:bg-muted/30 text-muted-foreground'
-                }`}
-              >
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSubNavContact(c);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`User actions for ${nick}`}
-                  className="inline-flex shrink-0 rounded-full hover:ring-2 hover:ring-primary/50 transition-shadow cursor-pointer"
-                >
-                  <ContactAvatar contact={c} nick={nick} />
-                </span>
-                <span className="truncate flex-1">{nick}</span>
-                {count > 0 && (
-                  <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
-                    {count > 99 ? '99+' : count}
-                  </span>
-                )}
-              </div>
-            );
-          })}
         </div>
       </aside>
 
@@ -649,11 +906,54 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         ) : (
           <>
             <header className="p-3 border-b border-border/50">
-              <h3 className="text-sm font-semibold">{displayNick(selected)}</h3>
-              {selected.id?.identity && (
-                <p className="text-[10px] text-muted-foreground font-mono break-all mt-0.5">
-                  {selected.id.identity}
-                </p>
+              {selected.kind === 'contact' ? (
+                <>
+                  <h3 className="text-sm font-semibold">{displayNick(selected.value)}</h3>
+                  {selected.value.id?.identity && (
+                    <p className="text-[10px] text-muted-foreground font-mono break-all mt-0.5">
+                      {selected.value.id.identity}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+                      <span>{selected.value.alias || selected.value.name}</span>
+                      <span className="text-[10px] text-muted-foreground tabular-nums font-normal">
+                        {selected.value.members.length} members
+                      </span>
+                      {selected.value.local_is_owner && (
+                        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/15 text-primary">
+                          Owner
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-[10px] text-muted-foreground font-mono break-all mt-0.5">
+                      {selected.value.id}
+                    </p>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-1">
+                    {selected.value.local_is_admin && (
+                      <button
+                        type="button"
+                        onClick={() => setShowGCInvite(true)}
+                        className="px-2.5 py-1 rounded-md text-[11px] border border-border/50 text-foreground hover:bg-muted/30 inline-flex items-center gap-1"
+                        title="Invite a contact"
+                      >
+                        <UserPlus className="h-3 w-3" /> Invite
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowGroupSubNav(true)}
+                      className="px-2.5 py-1 rounded-md text-[11px] border border-border/50 text-foreground hover:bg-muted/30 inline-flex items-center gap-1"
+                      title="Manage group"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                </div>
               )}
             </header>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -673,7 +973,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 <MessageList
                   messages={messages}
                   ownNick={ownNick}
-                  mediatorUid={selected.id?.identity ?? ''}
+                  mediatorUid={selectedContact?.id?.identity ?? ''}
                   knownContactsByUid={knownContactsByUid}
                   onAcceptSuggestion={handleAcceptSuggestion}
                 />
@@ -740,7 +1040,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           displayNick={displayNick}
           onClose={() => setSubNavContact(null)}
           onSendFile={() => {
-            setSelected(subNavContact);
+            setSelected({ kind: 'contact', value: subNavContact });
             setSubNavContact(null);
             fileInputRef.current?.click();
           }}
@@ -750,21 +1050,24 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             refreshContacts();
             // Optimistically patch the selected contact's alias so the chat
             // header updates without waiting for refreshContacts to land.
-            if (uid && selected?.id?.identity === uid) {
-              setSelected({ ...selected, nick_alias: newNick });
+            if (uid && selectedContact?.id?.identity === uid) {
+              setSelected({
+                kind: 'contact',
+                value: { ...selectedContact, nick_alias: newNick },
+              });
             }
           }}
           onTip={(uid, nick, dcr) => {
             // Make sure the thread is open before the placeholder appears.
-            setSelected(subNavContact);
+            setSelected({ kind: 'contact', value: subNavContact });
             handleTip(uid, nick, dcr);
           }}
           onSubscribePosts={(uid, nick) => {
-            setSelected(subNavContact);
+            setSelected({ kind: 'contact', value: subNavContact });
             handleSubscribePosts('subscribe', uid, nick);
           }}
           onUnsubscribePosts={(uid, nick) => {
-            setSelected(subNavContact);
+            setSelected({ kind: 'contact', value: subNavContact });
             handleSubscribePosts('unsubscribe', uid, nick);
           }}
         />
@@ -779,6 +1082,37 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       {viewerImage && (
         <ImageViewerModal image={viewerImage} onClose={() => setViewerImage(null)} />
       )}
+      {showCreateGC && (
+        <CreateGCModal
+          onClose={() => setShowCreateGC(false)}
+          onCreated={(gc) => {
+            setShowCreateGC(false);
+            refreshGCs();
+            setSelected({ kind: 'group', value: gc });
+          }}
+        />
+      )}
+      {showGCInvite && selectedGroup && (
+        <GCInviteModal
+          gc={selectedGroup}
+          onClose={() => setShowGCInvite(false)}
+          onInvited={() => setShowGCInvite(false)}
+        />
+      )}
+      {showGroupSubNav && selectedGroup && (
+        <GroupSubNav
+          gc={selectedGroup}
+          contactsByUid={knownContactsByUid}
+          onClose={() => setShowGroupSubNav(false)}
+          onMutated={refreshGCs}
+          onPartedOrKilled={() => {
+            setShowGroupSubNav(false);
+            setSelected(null);
+            refreshGCs();
+          }}
+        />
+      )}
+    </div>
     </div>
     </ImageViewerCtx.Provider>
   );
@@ -797,6 +1131,51 @@ interface MessageListProps {
   knownContactsByUid: Map<string, BisonrelayContact>;
   onAcceptSuggestion: (target: string, targetNick: string) => Promise<void>;
 }
+
+// SidebarSectionHeader is the collapsible header for the Contacts / Groups
+// sections in the chat sidebar. Single click toggles. Persists state to
+// localStorage via the parent's effect on contactsCollapsed/groupsCollapsed.
+// Optional action button (e.g. "+ Create group") sits between count and
+// toggle, doesn't propagate to the toggle.
+const SidebarSectionHeader = ({
+  label,
+  count,
+  collapsed,
+  onToggle,
+  actionLabel,
+  onAction,
+}: {
+  label: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  actionLabel?: string;
+  onAction?: () => void;
+}) => (
+  <div className="w-full px-2 py-1.5 mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex-1 flex items-center gap-2 hover:text-foreground transition-colors text-left"
+    >
+      <span className="inline-flex items-center justify-center w-3">
+        {collapsed ? '▸' : '▾'}
+      </span>
+      <span className="flex-1">{label}</span>
+      <span className="tabular-nums">{count}</span>
+    </button>
+    {onAction && (
+      <button
+        type="button"
+        onClick={onAction}
+        title={actionLabel}
+        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors text-sm leading-none"
+      >
+        +
+      </button>
+    )}
+  </div>
+);
 
 const MessageList = ({
   messages,
