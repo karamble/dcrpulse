@@ -343,6 +343,12 @@ func BrclientdUnsubscribePosts(ctx context.Context, uidHex string) error {
 	return brclientdPostJSON(ctx, "/contacts/unsubscribe-posts", map[string]string{"uid": uidHex})
 }
 
+// BrclientdListUserPosts kicks off a request to the remote user for their
+// post list. Async: results arrive via the posts-list-received event.
+func BrclientdListUserPosts(ctx context.Context, uidHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/list-posts", map[string]string{"uid": uidHex})
+}
+
 // BrclientdTipUser calls PaymentsService.TipUser on the configured
 // brclientd instance. user is a nick or 64-hex identity; dcrAmount is the
 // tip amount in DCR; maxAttempts is the per-tip retry budget. BR fires

@@ -386,6 +386,21 @@ func BisonrelayContactUnsubscribePostsHandler(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayContactListPostsHandler proxies the brclientd list-posts
+// endpoint. Async: the response lands on the live-event bus as a
+// posts-list-received event for the matching uid.
+func BisonrelayContactListPostsHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	if err := rpc.BrclientdListUserPosts(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayContactTipHandler proxies PaymentsService.TipUser. Body:
 // {uid, dcrAmount, maxAttempts}. uid is the 64-hex identity. dcrAmount is
 // in DCR (float). maxAttempts is BR's retry budget for the tip; the

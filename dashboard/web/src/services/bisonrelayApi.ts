@@ -197,6 +197,16 @@ export const unsubscribeBisonrelayPosts = async (uid: string): Promise<void> => 
   await api.post('/br/contacts/unsubscribe-posts', { uid });
 };
 
+export interface BisonrelayPostListItem {
+  id: string;
+  title: string;
+  timestamp: number;
+}
+
+export const listBisonrelayUserPosts = async (uid: string): Promise<void> => {
+  await api.post('/br/contacts/list-posts', { uid });
+};
+
 export const tipBisonrelayContact = async (
   uid: string,
   dcrAmount: number,
@@ -216,7 +226,8 @@ export type BisonrelayEventType =
   | 'tip-failed'
   | 'posts-subscribed'
   | 'posts-unsubscribed'
-  | 'posts-subscriber-updated';
+  | 'posts-subscriber-updated'
+  | 'posts-list-received';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;

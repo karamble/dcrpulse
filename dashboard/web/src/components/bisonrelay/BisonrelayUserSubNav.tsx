@@ -13,6 +13,7 @@ import {
   Folder,
   Handshake,
   List,
+  Loader2,
   Paperclip,
   RotateCw,
   Rss,
@@ -22,8 +23,11 @@ import {
 } from 'lucide-react';
 import {
   BisonrelayContact,
+  BisonrelayLiveEvent,
+  BisonrelayPostListItem,
   handshakeBisonrelayContact,
   kxResetBisonrelayContact,
+  listBisonrelayUserPosts,
   renameBisonrelayContact,
   subscribeBisonrelayPosts,
   suggestKxBisonrelayContact,
@@ -31,6 +35,7 @@ import {
   transResetBisonrelayContact,
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
+import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 
 // Layout + action ordering mirrors bruig's chat_side_menu / user_context_menu
@@ -68,7 +73,8 @@ type ActiveModal =
   | 'trans-reset'
   | 'tip'
   | 'subscribe-posts'
-  | 'unsubscribe-posts';
+  | 'unsubscribe-posts'
+  | 'list-posts';
 
 export const BisonrelayUserSubNav = ({
   contact,
@@ -108,7 +114,7 @@ export const BisonrelayUserSubNav = ({
       icon: Rss,
       onClick: () => setModal(subscribed ? 'unsubscribe-posts' : 'subscribe-posts'),
     },
-    { id: 'list-posts', label: 'List Posts', icon: List, comingSoon: true },
+    { id: 'list-posts', label: 'List Posts', icon: List, onClick: () => setModal('list-posts') },
     { id: 'send-file', label: 'Send File', icon: Paperclip, onClick: onSendFile },
     { id: 'pages', label: 'View Pages', icon: FileText, comingSoon: true },
     { id: 'rename', label: 'Rename User', icon: Edit2, onClick: () => setModal('rename') },
@@ -220,6 +226,13 @@ export const BisonrelayUserSubNav = ({
           }}
           onSuccess={onClose}
           optimistic
+        />
+      )}
+      {modal === 'list-posts' && (
+        <PostsListModal
+          nick={nick}
+          uid={uid}
+          onClose={() => setModal(null)}
         />
       )}
       {modal === 'tip' && (
@@ -415,6 +428,114 @@ const BigAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string
     >
       {initial}
     </span>
+  );
+};
+
+const PostsListModal = ({
+  nick,
+  uid,
+  onClose,
+}: {
+  nick: string;
+  uid: string;
+  onClose: () => void;
+}) => {
+  const [posts, setPosts] = useState<BisonrelayPostListItem[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const { addListener } = useBisonrelayLive();
+
+  // Subscribe to the live event BEFORE kicking off the request so we
+  // don't miss a fast reply. Unsubscribe on unmount.
+  useEffect(() => {
+    const unsubscribe = addListener((evt: BisonrelayLiveEvent) => {
+      if (evt.type !== 'posts-list-received') return;
+      const payload = (evt.payload ?? {}) as Record<string, unknown>;
+      if (payload.uid !== uid) return;
+      const raw = (payload.posts ?? []) as Array<Record<string, unknown>>;
+      const list: BisonrelayPostListItem[] = raw.map((p) => ({
+        id: String(p.id ?? ''),
+        title: String(p.title ?? ''),
+        timestamp: Number(p.timestamp ?? 0),
+      }));
+      // Newest first
+      list.sort((a, b) => b.timestamp - a.timestamp);
+      setPosts(list);
+    });
+    listBisonrelayUserPosts(uid).catch((e: any) => {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not request post list');
+    });
+    return unsubscribe;
+  }, [addListener, uid]);
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
+      >
+        <div className="p-5 pb-3 flex items-start justify-between">
+          <div>
+            <h3 className="text-base font-semibold">Posts by {nick}</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Asks {nick} for their post list. If they're offline the reply
+              arrives whenever they come back online.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[160px]">
+          {err ? (
+            <div className="flex items-start gap-2 text-sm text-destructive px-3 py-4">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span className="break-words">{err}</span>
+            </div>
+          ) : posts === null ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4">
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              <span>Waiting for {nick}'s reply…</span>
+            </div>
+          ) : posts.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+              {nick} hasn't published any posts yet.
+            </p>
+          ) : (
+            posts.map((p) => (
+              <div
+                key={p.id}
+                className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5"
+              >
+                <span className="truncate font-medium text-foreground">
+                  {p.title || '(untitled)'}
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {new Date(p.timestamp * 1000).toLocaleString()}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
