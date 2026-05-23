@@ -71,6 +71,12 @@ export interface BisonrelayMessage {
   from: string;
   timestamp: number;
   internal: boolean;
+  // Client-side only fields used while an async operation (e.g. a tip
+  // payment) is in flight. pending=true renders a spinner next to the
+  // text; tipKey correlates the placeholder with the eventual live
+  // tip-sent / tip-failed event so we can replace it in place.
+  pending?: boolean;
+  tipKey?: string;
 }
 
 export interface BisonrelayMessagesResponse {
@@ -180,7 +186,23 @@ export const acceptBisonrelayKxSuggestion = async (
   await api.post('/br/contacts/accept-suggestion', { mediator, target });
 };
 
-export type BisonrelayEventType = 'pm' | 'kx' | 'gcm' | 'download' | 'kx-suggested';
+export const tipBisonrelayContact = async (
+  uid: string,
+  dcrAmount: number,
+  maxAttempts: number = 1,
+): Promise<void> => {
+  await api.post('/br/contacts/tip', { uid, dcrAmount, maxAttempts });
+};
+
+export type BisonrelayEventType =
+  | 'pm'
+  | 'kx'
+  | 'gcm'
+  | 'download'
+  | 'kx-suggested'
+  | 'tip-sent'
+  | 'tip-received'
+  | 'tip-failed';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;

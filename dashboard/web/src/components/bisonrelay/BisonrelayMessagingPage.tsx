@@ -27,6 +27,7 @@ import {
   getBisonrelayMessages,
   sendBisonrelayFile,
   sendBisonrelayPM,
+  tipBisonrelayContact,
   writeBisonrelayInvite,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
@@ -156,6 +157,50 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     [],
   );
 
+  // handleTip kicks off a tip in the background and surfaces progress as an
+  // optimistic placeholder in the chat thread. The placeholder is keyed by
+  // tipKey so the eventual tip-sent / tip-failed live event can swap its
+  // text + drop the spinner in place. If the brclientd call itself fails
+  // (e.g. unknown user, transport error), we update the placeholder
+  // ourselves with the error message — the BR notification path wouldn't
+  // fire in that case.
+  const handleTip = useCallback((recipientUid: string, nick: string, dcrAmount: number) => {
+    const tipKey = `tip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Pending text mirrors bruig's InflightTipW (events.dart:735).
+    const pendingLine = `Requesting invoice for ${dcrAmount} DCR to tip ${nick}...`;
+    setMessages((prev) => {
+      const cur = selectedRef.current;
+      if (!cur || cur.id?.identity !== recipientUid) return prev;
+      return [
+        ...prev,
+        {
+          message: pendingLine,
+          from: '',
+          timestamp: Math.floor(Date.now() / 1000),
+          internal: true,
+          pending: true,
+          tipKey,
+        },
+      ];
+    });
+    tipBisonrelayContact(recipientUid, dcrAmount).catch((err: any) => {
+      const body = err?.response?.data;
+      const msg = typeof body === 'string' ? body : err?.message || 'Tip failed';
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.tipKey === tipKey);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          message: `Tip attempt of ${dcrAmount} DCR failed due to ${msg}. Given up on attempting to tip.`,
+          pending: false,
+          tipKey: undefined,
+        };
+        return updated;
+      });
+    });
+  }, []);
+
   // Lookup map for "do we already have the suggested user in our address
   // book?" — drives the SuggestedKXCard's idle/already-kxed state. Also
   // surfaces the contact's displayed nick (alias if any).
@@ -190,6 +235,61 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               },
             ]);
           }
+        }
+        return;
+      }
+      if (evt.type === 'tip-sent' || evt.type === 'tip-failed') {
+        // Sender-side terminal events. If we have a pending placeholder
+        // (from handleTip) for the open thread, replace its text in place
+        // and drop the spinner — otherwise append fresh (e.g. tip was
+        // initiated elsewhere).
+        const payload = (evt.payload ?? {}) as Record<string, string>;
+        const recipient = payload.recipient;
+        const line = payload.line ?? '';
+        if (!recipient || !line) return;
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity === recipient) {
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.pending && m.tipKey);
+            if (idx !== -1) {
+              const updated = [...prev];
+              updated[idx] = {
+                ...updated[idx],
+                message: line,
+                pending: false,
+                tipKey: undefined,
+              };
+              return updated;
+            }
+            return [
+              ...prev,
+              {
+                message: line,
+                from: '',
+                timestamp: Math.floor(Date.now() / 1000),
+                internal: true,
+              },
+            ];
+          });
+        }
+        return;
+      }
+      if (evt.type === 'tip-received') {
+        const payload = (evt.payload ?? {}) as Record<string, string>;
+        const sender = payload.sender;
+        const line = payload.line ?? '';
+        if (!sender || !line) return;
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity === sender) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              message: line,
+              from: '',
+              timestamp: Math.floor(Date.now() / 1000),
+              internal: true,
+            },
+          ]);
         }
         return;
       }
@@ -541,6 +641,11 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               setSelected({ ...selected, nick_alias: newNick });
             }
           }}
+          onTip={(uid, nick, dcr) => {
+            // Make sure the thread is open before the placeholder appears.
+            setSelected(subNavContact);
+            handleTip(uid, nick, dcr);
+          }}
         />
       )}
       {showInviteCreate && <InviteCreateModal onClose={() => setShowInviteCreate(false)} />}
@@ -608,10 +713,11 @@ const MessageList = ({
           }
           return (
             <div key={i} className="flex justify-center py-0.5">
-              <p className="text-[11px] italic text-muted-foreground/80 px-3 text-center">
-                <span>{m.message}</span>
+              <p className="text-[11px] italic text-muted-foreground/80 px-3 text-center inline-flex items-center gap-1.5 max-w-full">
+                {m.pending && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
+                <span className="break-words">{m.message}</span>
                 <span className="mx-1 opacity-50">·</span>
-                <span className="opacity-70">{new Date(m.timestamp * 1000).toLocaleString()}</span>
+                <span className="opacity-70 shrink-0">{new Date(m.timestamp * 1000).toLocaleString()}</span>
               </p>
             </div>
           );

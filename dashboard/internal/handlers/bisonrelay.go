@@ -357,6 +357,39 @@ func BisonrelayContactTransResetHandler(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayContactTipHandler proxies PaymentsService.TipUser. Body:
+// {uid, dcrAmount, maxAttempts}. uid is the 64-hex identity. dcrAmount is
+// in DCR (float). maxAttempts is BR's retry budget for the tip; the
+// dashboard defaults to 1 when omitted to match the modal's "send tip
+// once" semantics.
+func BisonrelayContactTipHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID         string  `json:"uid"`
+		DCRAmount   float64 `json:"dcrAmount"`
+		MaxAttempts int32   `json:"maxAttempts"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" {
+		http.Error(w, "uid is required", http.StatusBadRequest)
+		return
+	}
+	if req.DCRAmount <= 0 {
+		http.Error(w, "dcrAmount must be positive", http.StatusBadRequest)
+		return
+	}
+	if req.MaxAttempts <= 0 {
+		req.MaxAttempts = 1
+	}
+	if err := rpc.BrclientdTipUser(r.Context(), req.UID, req.DCRAmount, req.MaxAttempts); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayContactAcceptSuggestionHandler accepts an inbound KX
 // suggestion: asks the mediator to introduce us to the target.
 func BisonrelayContactAcceptSuggestionHandler(w http.ResponseWriter, r *http.Request) {

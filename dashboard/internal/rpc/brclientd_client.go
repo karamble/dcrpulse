@@ -332,6 +332,21 @@ func BrclientdTransReset(ctx context.Context, mediatorHex, targetHex string) err
 	})
 }
 
+// BrclientdTipUser calls PaymentsService.TipUser on the configured
+// brclientd instance. user is a nick or 64-hex identity; dcrAmount is the
+// tip amount in DCR; maxAttempts is the per-tip retry budget. BR fires
+// OnTipAttemptProgress on the sender side per attempt; we surface the
+// terminal outcome via the notifications stream and don't wait for it here.
+func BrclientdTipUser(ctx context.Context, user string, dcrAmount float64, maxAttempts int32) error {
+	params := map[string]any{
+		"user":         user,
+		"dcr_amount":   dcrAmount,
+		"max_attempts": maxAttempts,
+	}
+	var unused struct{}
+	return brclientdCall(ctx, "PaymentsService.TipUser", params, &unused)
+}
+
 // BrclientdAcceptSuggestion accepts an incoming KX suggestion by asking the
 // mediator to introduce us to the target. Wraps brclientd's
 // /contacts/accept-suggestion which calls client.RequestMediateIdentity.
@@ -577,9 +592,14 @@ func brclientdClient() (*http.Client, error) {
 	brclientdHTTPClient = &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig:       tlsCfg,
-			ResponseHeaderTimeout: 10 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second,
 		},
-		Timeout: 15 * time.Second,
+		// Most calls return well under a second. PaymentsService.TipUser
+		// can legitimately take ~10s on the first call after startup
+		// (BR waits for tipAttemptsRunning) and a few seconds on each
+		// attempt thereafter while it fetches+pays an invoice. 90s is
+		// the worst-case ceiling we want to surface to the user.
+		Timeout: 90 * time.Second,
 	}
 	return brclientdHTTPClient, nil
 }

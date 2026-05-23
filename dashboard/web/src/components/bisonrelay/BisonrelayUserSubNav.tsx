@@ -26,6 +26,7 @@ import {
   kxResetBisonrelayContact,
   renameBisonrelayContact,
   suggestKxBisonrelayContact,
+  tipBisonrelayContact,
   transResetBisonrelayContact,
 } from '../../services/bisonrelayApi';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
@@ -43,6 +44,7 @@ interface Props {
   onClose: () => void;
   onSendFile: () => void;
   onRenamed?: (newNick: string) => void;
+  onTip?: (uid: string, nick: string, dcrAmount: number) => void;
 }
 
 interface Row {
@@ -53,7 +55,7 @@ interface Row {
   comingSoon?: boolean;
 }
 
-type ActiveModal = null | 'rename' | 'kx-reset' | 'handshake' | 'suggest-kx' | 'trans-reset';
+type ActiveModal = null | 'rename' | 'kx-reset' | 'handshake' | 'suggest-kx' | 'trans-reset' | 'tip';
 
 export const BisonrelayUserSubNav = ({
   contact,
@@ -63,6 +65,7 @@ export const BisonrelayUserSubNav = ({
   onClose,
   onSendFile,
   onRenamed,
+  onTip,
 }: Props) => {
   const [modal, setModal] = useState<ActiveModal>(null);
   const uid = contact.id?.identity ?? '';
@@ -80,7 +83,7 @@ export const BisonrelayUserSubNav = ({
   }, [onClose, modal]);
 
   const rows: Row[] = [
-    { id: 'tip', label: 'Pay Tip', icon: Coins, comingSoon: true },
+    { id: 'tip', label: 'Pay Tip', icon: Coins, onClick: () => setModal('tip') },
     { id: 'kx-reset', label: 'Request Ratchet Reset', icon: RotateCw, onClick: () => setModal('kx-reset') },
     { id: 'content', label: 'Show Content', icon: Folder, comingSoon: true },
     { id: 'subscribe', label: 'Subscribe to Posts', icon: Rss, comingSoon: true },
@@ -129,6 +132,7 @@ export const BisonrelayUserSubNav = ({
           confirmLabel="Reset ratchet"
           onClose={() => setModal(null)}
           onConfirm={() => kxResetBisonrelayContact(uid)}
+          onSuccess={onClose}
         />
       )}
       {modal === 'handshake' && (
@@ -138,6 +142,7 @@ export const BisonrelayUserSubNav = ({
           confirmLabel="Send handshake"
           onClose={() => setModal(null)}
           onConfirm={() => handshakeBisonrelayContact(uid)}
+          onSuccess={onClose}
         />
       )}
       {modal === 'suggest-kx' && (
@@ -151,6 +156,7 @@ export const BisonrelayUserSubNav = ({
           onPick={(picked) =>
             suggestKxBisonrelayContact(uid, picked.id?.identity ?? '')
           }
+          onSuccess={onClose}
         />
       )}
       {modal === 'trans-reset' && (
@@ -164,6 +170,19 @@ export const BisonrelayUserSubNav = ({
           onPick={(picked) =>
             transResetBisonrelayContact(picked.id?.identity ?? '', uid)
           }
+          onSuccess={onClose}
+        />
+      )}
+      {modal === 'tip' && (
+        <TipModal
+          nick={nick}
+          uid={uid}
+          onClose={() => setModal(null)}
+          onSubmit={(dcr) => {
+            if (onTip) onTip(uid, nick, dcr);
+            else tipBisonrelayContact(uid, dcr);
+            onClose();
+          }}
         />
       )}
     </>
@@ -350,6 +369,95 @@ const BigAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string
   );
 };
 
+const TipModal = ({
+  nick,
+  uid,
+  onClose,
+  onSubmit,
+}: {
+  nick: string;
+  uid: string;
+  onClose: () => void;
+  // Fire-and-forget. The page inserts a pending placeholder into the
+  // chat thread and tracks completion; this modal just collects the
+  // amount and dismisses.
+  onSubmit: (dcrAmount: number) => void;
+}) => {
+  const [value, setValue] = useState('');
+
+  const parsed = parseFloat(value);
+  const canSubmit = uid !== '' && Number.isFinite(parsed) && parsed > 0;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    onSubmit(parsed);
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSubmit}
+        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="text-base font-semibold">Pay tip to {nick}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The tip rides over your Lightning channel. Both you and {nick} must
+          be online; the payment is delivered when their client is reachable.
+        </p>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1" htmlFor="br-tip-amount">
+            Amount (DCR)
+          </label>
+          <input
+            id="br-tip-amount"
+            type="number"
+            autoFocus
+            min="0"
+            step="any"
+            inputMode="decimal"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="0.001"
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Send tip
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 const ContactPickerModal = ({
   title,
   body,
@@ -358,6 +466,7 @@ const ContactPickerModal = ({
   displayNick,
   onClose,
   onPick,
+  onSuccess,
 }: {
   title: string;
   body: string;
@@ -366,6 +475,7 @@ const ContactPickerModal = ({
   displayNick: (c: BisonrelayContact) => string;
   onClose: () => void;
   onPick: (c: BisonrelayContact) => Promise<void>;
+  onSuccess?: () => void;
 }) => {
   const [query, setQuery] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -385,6 +495,7 @@ const ContactPickerModal = ({
     try {
       await onPick(c);
       onClose();
+      onSuccess?.();
     } catch (e: any) {
       const body = e?.response?.data;
       setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
@@ -475,12 +586,14 @@ const ConfirmActionModal = ({
   confirmLabel,
   onClose,
   onConfirm,
+  onSuccess,
 }: {
   title: string;
   body: string;
   confirmLabel: string;
   onClose: () => void;
   onConfirm: () => Promise<void>;
+  onSuccess?: () => void;
 }) => {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -491,6 +604,7 @@ const ConfirmActionModal = ({
     try {
       await onConfirm();
       onClose();
+      onSuccess?.();
     } catch (e: any) {
       const body = e?.response?.data;
       setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
