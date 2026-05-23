@@ -4,6 +4,7 @@
 
 import { ComponentType, useEffect, useState } from 'react';
 import {
+  AlertCircle,
   Check,
   Coins,
   Copy,
@@ -19,7 +20,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { BisonrelayContact } from '../../services/bisonrelayApi';
+import { BisonrelayContact, renameBisonrelayContact } from '../../services/bisonrelayApi';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 
 // Layout + action ordering mirrors bruig's chat_side_menu / user_context_menu
@@ -32,6 +33,7 @@ interface Props {
   nick: string;
   onClose: () => void;
   onSendFile: () => void;
+  onRenamed?: (newNick: string) => void;
 }
 
 interface Row {
@@ -42,14 +44,19 @@ interface Row {
   comingSoon?: boolean;
 }
 
-export const BisonrelayUserSubNav = ({ contact, nick, onClose, onSendFile }: Props) => {
+export const BisonrelayUserSubNav = ({ contact, nick, onClose, onSendFile, onRenamed }: Props) => {
+  const [showRename, setShowRename] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      // Esc closes the rename modal first if it is open; otherwise the sub-nav.
+      if (e.key === 'Escape') {
+        if (showRename) setShowRename(false);
+        else onClose();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, showRename]);
 
   const rows: Row[] = [
     { id: 'tip', label: 'Pay Tip', icon: Coins, comingSoon: true },
@@ -59,7 +66,7 @@ export const BisonrelayUserSubNav = ({ contact, nick, onClose, onSendFile }: Pro
     { id: 'list-posts', label: 'List Posts', icon: List, comingSoon: true },
     { id: 'send-file', label: 'Send File', icon: Paperclip, onClick: onSendFile },
     { id: 'pages', label: 'View Pages', icon: FileText, comingSoon: true },
-    { id: 'rename', label: 'Rename User', icon: Edit2, comingSoon: true },
+    { id: 'rename', label: 'Rename User', icon: Edit2, onClick: () => setShowRename(true) },
     { id: 'suggest-kx', label: 'Suggest User to KX', icon: UserPlus, comingSoon: true },
     { id: 'trans-reset', label: 'Issue Transitive Reset', icon: Users, comingSoon: true },
     { id: 'handshake', label: 'Perform Handshake', icon: Handshake, comingSoon: true },
@@ -83,7 +90,121 @@ export const BisonrelayUserSubNav = ({ contact, nick, onClose, onSendFile }: Pro
           ))}
         </div>
       </aside>
+      {showRename && (
+        <RenameModal
+          contact={contact}
+          currentNick={nick}
+          onClose={() => setShowRename(false)}
+          onSuccess={(newNick) => {
+            setShowRename(false);
+            onRenamed?.(newNick);
+          }}
+        />
+      )}
     </>
+  );
+};
+
+const RenameModal = ({
+  contact,
+  currentNick,
+  onClose,
+  onSuccess,
+}: {
+  contact: BisonrelayContact;
+  currentNick: string;
+  onClose: () => void;
+  onSuccess: (newNick: string) => void;
+}) => {
+  const [value, setValue] = useState(currentNick);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const uid = contact.id?.identity ?? '';
+  const trimmed = value.trim();
+  const canSubmit = !submitting && trimmed.length > 0 && trimmed !== currentNick && uid !== '';
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await renameBisonrelayContact(uid, trimmed);
+      onSuccess(trimmed);
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Rename failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSubmit}
+        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="text-base font-semibold">Rename {currentNick}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Sets a local alias for this contact. The remote user is not notified
+          and their own nick is unchanged.
+        </p>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1" htmlFor="br-rename-input">
+            New nick
+          </label>
+          <input
+            id="br-rename-input"
+            type="text"
+            autoFocus
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={submitting}
+            maxLength={64}
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+          />
+        </div>
+        {err && (
+          <div className="flex items-start gap-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{err}</span>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Renaming…' : 'Rename'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 };
 

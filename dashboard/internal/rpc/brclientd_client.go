@@ -292,6 +292,35 @@ func BrclientdRedeemPaidInviteKey(ctx context.Context, key string) error {
 	return nil
 }
 
+// BrclientdRenameContact sets the local NickAlias on a contact. uidHex is
+// the 64-char hex identity. Pure clientdb mutation; nothing is broadcast.
+func BrclientdRenameContact(ctx context.Context, uidHex, newNick string) error {
+	cli, err := brclientdClient()
+	if err != nil {
+		return err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/contacts/rename", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	payload, _ := json.Marshal(map[string]string{"uid": uidHex, "new_nick": newNick})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return fmt.Errorf("brclientd /contacts/rename: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("brclientd /contacts/rename: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
 // BrclientdAcceptInvite hands a previously-shared OOB invite blob to
 // ChatService.AcceptInvite. inviteBytes is base64-encoded.
 func BrclientdAcceptInvite(ctx context.Context, inviteBytesB64 string) (json.RawMessage, error) {

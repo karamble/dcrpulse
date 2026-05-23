@@ -144,6 +144,13 @@ export const acceptBisonrelayInvite = async (invite: string): Promise<void> => {
   await api.post('/br/invites/accept', { invite });
 };
 
+export const renameBisonrelayContact = async (
+  uid: string,
+  newNick: string,
+): Promise<void> => {
+  await api.post('/br/contacts/rename', { uid, new_nick: newNick });
+};
+
 export type BisonrelayEventType = 'pm' | 'kx' | 'gcm' | 'download';
 
 export interface BisonrelayLiveEvent {

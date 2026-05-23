@@ -452,6 +452,16 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             setSubNavContact(null);
             fileInputRef.current?.click();
           }}
+          onRenamed={(newNick) => {
+            const uid = subNavContact.id?.identity;
+            setSubNavContact(null);
+            refreshContacts();
+            // Optimistically patch the selected contact's alias so the chat
+            // header updates without waiting for refreshContacts to land.
+            if (uid && selected?.id?.identity === uid) {
+              setSelected({ ...selected, nick_alias: newNick });
+            }
+          }}
         />
       )}
       {showInviteCreate && <InviteCreateModal onClose={() => setShowInviteCreate(false)} />}

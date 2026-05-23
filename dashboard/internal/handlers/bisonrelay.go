@@ -261,6 +261,29 @@ func BisonrelayContactsHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// BisonrelayContactRenameHandler proxies brclientd's /contacts/rename
+// endpoint. Body: {uid (hex), new_nick}. Persists a local NickAlias only;
+// nothing is broadcast.
+func BisonrelayContactRenameHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID     string `json:"uid"`
+		NewNick string `json:"new_nick"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" || req.NewNick == "" {
+		http.Error(w, "uid and new_nick are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdRenameContact(r.Context(), req.UID, req.NewNick); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // maxInlineEmbedBytes is the size cap (in decoded bytes) for an inline
 // attachment that rides in the PM body via the bruig --embed[...]-- tag.
 // Stays comfortably under the 1 MiB floor of BR's per-PM payload limit.
