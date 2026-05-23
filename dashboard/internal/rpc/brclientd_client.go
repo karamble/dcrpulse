@@ -349,6 +349,80 @@ func BrclientdListUserPosts(ctx context.Context, uidHex string) error {
 	return brclientdPostJSON(ctx, "/contacts/list-posts", map[string]string{"uid": uidHex})
 }
 
+// BrclientdListUserContent kicks off a request to the remote user for the
+// list of files they have shared. Async: results arrive via the
+// content-list-received event.
+func BrclientdListUserContent(ctx context.Context, uidHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/list-content", map[string]string{"uid": uidHex})
+}
+
+// BrclientdFetchPost asks the remote user for a specific post. Wraps
+// brclientd's /contacts/fetch-post which calls SubscribeToPostsAndFetch
+// (idempotent w.r.t. subscription state). The body arrives via the
+// post-received live event when the remote replies.
+func BrclientdFetchPost(ctx context.Context, uidHex, pidHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/fetch-post", map[string]string{
+		"uid": uidHex,
+		"pid": pidHex,
+	})
+}
+
+// BrclientdPostsFeed returns the raw JSON body of brclientd's /posts/feed.
+// Each entry is a PostSummary; the caller decodes as needed.
+func BrclientdPostsFeed(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/posts/feed", nil)
+}
+
+// BrclientdPostBody fetches the full PostMetadata for a single post.
+// Returns the raw JSON envelope so the caller can pull out attributes
+// (e.g. the markdown body under the "main" key) without taking a hard
+// dependency on the BR rpc.PostMetadata type.
+func BrclientdPostBody(ctx context.Context, uidHex, pidHex string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/posts/body", map[string]string{
+		"uid": uidHex,
+		"pid": pidHex,
+	})
+}
+
+// brclientdGetRaw issues a GET to brclientd's status server and returns
+// the response body as a json.RawMessage. Mirrors brclientdPostJSON but
+// for GET-shaped endpoints.
+func brclientdGetRaw(ctx context.Context, path string, query map[string]string) (json.RawMessage, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
+	if len(query) > 0 {
+		sep := "?"
+		for k, v := range query {
+			url += sep + k + "=" + v
+			sep = "&"
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("brclientd %s: HTTP %d: %s", path, resp.StatusCode, body)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	return json.RawMessage(body), nil
+}
+
 // BrclientdTipUser calls PaymentsService.TipUser on the configured
 // brclientd instance. user is a nick or 64-hex identity; dcrAmount is the
 // tip amount in DCR; maxAttempts is the per-tip retry budget. BR fires

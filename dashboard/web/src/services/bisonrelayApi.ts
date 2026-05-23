@@ -207,6 +207,66 @@ export const listBisonrelayUserPosts = async (uid: string): Promise<void> => {
   await api.post('/br/contacts/list-posts', { uid });
 };
 
+export const fetchBisonrelayUserPost = async (uid: string, pid: string): Promise<void> => {
+  await api.post('/br/contacts/fetch-post', { uid, pid });
+};
+
+export interface BisonrelayPostSummary {
+  id: string;
+  from: string;
+  author_id: string;
+  author_nick: string;
+  date: number;
+  last_status_ts: number;
+  title: string;
+}
+
+export interface BisonrelayPostBodySegment {
+  kind: 'text' | 'embed';
+  html?: string;
+  name?: string;
+  mime?: string;
+  data_b64?: string;
+  size?: number;
+  alt?: string;
+}
+
+export interface BisonrelayPostBody {
+  title: string;
+  markdown: string;
+  segments: BisonrelayPostBodySegment[] | null;
+  attributes: Record<string, string>;
+}
+
+export const getBisonrelayPosts = async (): Promise<BisonrelayPostSummary[]> => {
+  const { data } = await api.get<{ posts: BisonrelayPostSummary[] | null }>('/br/posts');
+  return data.posts ?? [];
+};
+
+export const getBisonrelayPostBody = async (
+  uid: string,
+  pid: string,
+): Promise<BisonrelayPostBody> => {
+  const { data } = await api.get<BisonrelayPostBody>('/br/posts/body', {
+    params: { uid, pid },
+  });
+  return data;
+};
+
+export interface BisonrelayContentItem {
+  file_id: string;
+  filename: string;
+  size: number;
+  directory: string;
+  description: string;
+  cost: number;
+  downloaded: boolean;
+}
+
+export const listBisonrelayUserContent = async (uid: string): Promise<void> => {
+  await api.post('/br/contacts/list-content', { uid });
+};
+
 export const tipBisonrelayContact = async (
   uid: string,
   dcrAmount: number,
@@ -227,7 +287,9 @@ export type BisonrelayEventType =
   | 'posts-subscribed'
   | 'posts-unsubscribed'
   | 'posts-subscriber-updated'
-  | 'posts-list-received';
+  | 'posts-list-received'
+  | 'content-list-received'
+  | 'post-received';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;

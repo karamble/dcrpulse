@@ -401,6 +401,90 @@ func BisonrelayContactListPostsHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayContactFetchPostHandler proxies the brclientd fetch-post
+// endpoint. Async: the post body arrives via the post-received event.
+func BisonrelayContactFetchPostHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID string `json:"uid"`
+		PID string `json:"pid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" || req.PID == "" {
+		http.Error(w, "uid and pid are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdFetchPost(r.Context(), req.UID, req.PID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayPostsFeedHandler returns the local list of all received posts
+// (summaries). Pure passthrough to brclientd's /posts/feed.
+func BisonrelayPostsFeedHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdPostsFeed(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayPostBodyHandler fetches a single post's full body, splits it
+// into segments around BR `--embed[...]--` tags, and renders each text
+// segment to sanitized HTML. Returns {title, markdown, segments, attributes}
+// where segments interleave rendered text and raw embed metadata.
+func BisonrelayPostBodyHandler(w http.ResponseWriter, r *http.Request) {
+	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
+	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
+	if uid == "" || pid == "" {
+		http.Error(w, "uid and pid query params are required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdPostBody(r.Context(), uid, pid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var pm struct {
+		Version    uint64            `json:"version"`
+		Attributes map[string]string `json:"attributes"`
+	}
+	if err := json.Unmarshal(body, &pm); err != nil {
+		http.Error(w, "decode post: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	mainMD := pm.Attributes["main"]
+	segments := services.SplitAndRenderBRPostBody(mainMD)
+	out := map[string]any{
+		"title":      pm.Attributes["title"],
+		"markdown":   mainMD,
+		"segments":   segments,
+		"attributes": pm.Attributes,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// BisonrelayContactListContentHandler proxies the brclientd list-content
+// endpoint. Async: the response lands as content-list-received.
+func BisonrelayContactListContentHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	if err := rpc.BrclientdListUserContent(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayContactTipHandler proxies PaymentsService.TipUser. Body:
 // {uid, dcrAmount, maxAttempts}. uid is the 64-hex identity. dcrAmount is
 // in DCR (float). maxAttempts is BR's retry budget for the tip; the

@@ -23,10 +23,13 @@ import {
 } from 'lucide-react';
 import {
   BisonrelayContact,
+  BisonrelayContentItem,
   BisonrelayLiveEvent,
   BisonrelayPostListItem,
+  fetchBisonrelayUserPost,
   handshakeBisonrelayContact,
   kxResetBisonrelayContact,
+  listBisonrelayUserContent,
   listBisonrelayUserPosts,
   renameBisonrelayContact,
   subscribeBisonrelayPosts,
@@ -74,7 +77,8 @@ type ActiveModal =
   | 'tip'
   | 'subscribe-posts'
   | 'unsubscribe-posts'
-  | 'list-posts';
+  | 'list-posts'
+  | 'show-content';
 
 export const BisonrelayUserSubNav = ({
   contact,
@@ -107,7 +111,7 @@ export const BisonrelayUserSubNav = ({
   const rows: Row[] = [
     { id: 'tip', label: 'Pay Tip', icon: Coins, onClick: () => setModal('tip') },
     { id: 'kx-reset', label: 'Request Ratchet Reset', icon: RotateCw, onClick: () => setModal('kx-reset') },
-    { id: 'content', label: 'Show Content', icon: Folder, comingSoon: true },
+    { id: 'content', label: 'Show Content', icon: Folder, onClick: () => setModal('show-content') },
     {
       id: 'posts-toggle',
       label: subscribed ? 'Unsubscribe from Posts' : 'Subscribe to Posts',
@@ -230,6 +234,14 @@ export const BisonrelayUserSubNav = ({
       )}
       {modal === 'list-posts' && (
         <PostsListModal
+          nick={nick}
+          uid={uid}
+          onClose={() => setModal(null)}
+          onPicked={onClose}
+        />
+      )}
+      {modal === 'show-content' && (
+        <ContentListModal
           nick={nick}
           uid={uid}
           onClose={() => setModal(null)}
@@ -431,7 +443,7 @@ const BigAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string
   );
 };
 
-const PostsListModal = ({
+const ContentListModal = ({
   nick,
   uid,
   onClose,
@@ -440,9 +452,174 @@ const PostsListModal = ({
   uid: string;
   onClose: () => void;
 }) => {
-  const [posts, setPosts] = useState<BisonrelayPostListItem[] | null>(null);
+  const [files, setFiles] = useState<BisonrelayContentItem[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const { addListener } = useBisonrelayLive();
+
+  useEffect(() => {
+    const unsubscribe = addListener((evt: BisonrelayLiveEvent) => {
+      if (evt.type !== 'content-list-received') return;
+      const payload = (evt.payload ?? {}) as Record<string, unknown>;
+      if (payload.uid !== uid) return;
+      if (typeof payload.error === 'string') {
+        setErr(payload.error);
+        return;
+      }
+      const raw = (payload.files ?? []) as Array<Record<string, unknown>>;
+      const list: BisonrelayContentItem[] = raw.map((f) => ({
+        file_id: String(f.file_id ?? ''),
+        filename: String(f.filename ?? ''),
+        size: Number(f.size ?? 0),
+        directory: String(f.directory ?? ''),
+        description: String(f.description ?? ''),
+        cost: Number(f.cost ?? 0),
+        downloaded: !!f.downloaded,
+      }));
+      list.sort((a, b) => a.filename.localeCompare(b.filename));
+      setFiles(list);
+    });
+    listBisonrelayUserContent(uid).catch((e: any) => {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not request content list');
+    });
+    return unsubscribe;
+  }, [addListener, uid]);
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
+      >
+        <div className="p-5 pb-3 flex items-start justify-between">
+          <div>
+            <h3 className="text-base font-semibold">Content shared by {nick}</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Asks {nick} for their list of shared files. If they're offline
+              the reply arrives whenever they come back online.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[160px]">
+          {err ? (
+            <div className="flex items-start gap-2 text-sm text-destructive px-3 py-4">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span className="break-words">{err}</span>
+            </div>
+          ) : files === null ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4">
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              <span>Waiting for {nick}'s reply…</span>
+            </div>
+          ) : files.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+              {nick} has no shared content.
+            </p>
+          ) : (
+            files.map((f) => (
+              <div
+                key={f.file_id}
+                className="px-3 py-2 rounded-md text-sm flex flex-col gap-0.5"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-medium text-foreground">
+                    {f.filename || '(unnamed file)'}
+                  </span>
+                  {f.downloaded && (
+                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-success/80">
+                      saved
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+                  <span>{formatBytesPretty(f.size)}</span>
+                  {f.directory && (
+                    <>
+                      <span className="opacity-50">·</span>
+                      <span className="font-mono">{f.directory}</span>
+                    </>
+                  )}
+                </div>
+                {f.description && (
+                  <p className="text-[11px] text-muted-foreground/90 mt-0.5 break-words">
+                    {f.description}
+                  </p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function formatBytesPretty(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+const PostsListModal = ({
+  nick,
+  uid,
+  onClose,
+  onPicked,
+}: {
+  nick: string;
+  uid: string;
+  onClose: () => void;
+  // Called after a post is clicked + its fetch has been requested. The
+  // page hash is already navigated by then; the sub-nav uses this to
+  // close itself so the Feed view is unobstructed.
+  onPicked?: () => void;
+}) => {
+  const [posts, setPosts] = useState<BisonrelayPostListItem[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [picking, setPicking] = useState<string | null>(null);
+  const { addListener } = useBisonrelayLive();
+
+  const handlePick = async (post: BisonrelayPostListItem) => {
+    if (picking) return;
+    setPicking(post.id);
+    setErr(null);
+    try {
+      await fetchBisonrelayUserPost(uid, post.id);
+      window.location.hash = `feed/${uid}/${post.id}`;
+      onClose();
+      onPicked?.();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not request post');
+      setPicking(null);
+    }
+  };
 
   // Subscribe to the live event BEFORE kicking off the request so we
   // don't miss a fast reply. Unsubscribe on unmount.
@@ -510,19 +687,28 @@ const PostsListModal = ({
               {nick} hasn't published any posts yet.
             </p>
           ) : (
-            posts.map((p) => (
-              <div
-                key={p.id}
-                className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5"
-              >
-                <span className="truncate font-medium text-foreground">
-                  {p.title || '(untitled)'}
-                </span>
-                <span className="text-[10px] text-muted-foreground">
-                  {new Date(p.timestamp * 1000).toLocaleString()}
-                </span>
-              </div>
-            ))
+            posts.map((p) => {
+              const isPicking = picking === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handlePick(p)}
+                  disabled={picking !== null}
+                  className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="truncate font-medium text-foreground">
+                      {p.title || '(untitled)'}
+                    </span>
+                    {isPicking && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(p.timestamp * 1000).toLocaleString()}
+                  </span>
+                </button>
+              );
+            })
           )}
         </div>
         <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">

@@ -24,10 +24,6 @@ import (
 	"dcrpulse/internal/types"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
-	"github.com/microcosm-cc/bluemonday"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/renderer/html"
 )
 
 const (
@@ -39,57 +35,11 @@ const (
 )
 
 // Markdown renderer + sanitizer for Politeia proposal descriptions.
-// Built once at process start; both are safe for concurrent use.
-var (
-	piMD     goldmark.Markdown
-	piPolicy *bluemonday.Policy
-)
-
-func init() {
-	piMD = goldmark.New(
-		goldmark.WithExtensions(extension.GFM),
-		goldmark.WithRendererOptions(
-			html.WithXHTML(),
-			html.WithHardWraps(),
-		),
-	)
-
-	// Start from a deny-by-default policy and explicitly allow the
-	// subset of tags goldmark emits for the markdown subset proposals
-	// actually use. <img> is intentionally NOT on the list, matching
-	// Decrediton's renderProposalImage (blocks embedded images so the
-	// dashboard tab never silently fetches third-party assets).
-	piPolicy = bluemonday.StrictPolicy()
-	piPolicy.AllowStandardURLs()
-	piPolicy.AllowElements(
-		"h1", "h2", "h3", "h4", "h5", "h6",
-		"p", "br", "hr",
-		"strong", "em", "del",
-		"code", "pre",
-		"blockquote",
-		"ul", "ol", "li",
-		"table", "thead", "tbody", "tr", "th", "td",
-		"a",
-	)
-	piPolicy.AllowAttrs("href").OnElements("a")
-	piPolicy.AllowAttrs("class").OnElements("code", "pre")
-	piPolicy.RequireNoFollowOnLinks(true)
-	piPolicy.AddTargetBlankToFullyQualifiedLinks(true)
-}
-
-// renderProposalMarkdown converts CommonMark + GFM source to a
-// sanitized HTML string. Returns "" if rendering fails; the caller
-// falls back to the raw description in that case.
+// renderProposalMarkdown is kept as a thin wrapper to minimise diff in
+// politeia.go's call sites. See services.RenderMarkdownHTML for the
+// underlying goldmark + bluemonday pipeline.
 func renderProposalMarkdown(src string) string {
-	if src == "" {
-		return ""
-	}
-	var buf bytes.Buffer
-	if err := piMD.Convert([]byte(src), &buf); err != nil {
-		log.Printf("politeia markdown render: %v", err)
-		return ""
-	}
-	return string(piPolicy.SanitizeBytes(buf.Bytes()))
+	return RenderMarkdownHTML(src)
 }
 
 // PoliteiaEnabled reports whether the Politeia external-request toggle
