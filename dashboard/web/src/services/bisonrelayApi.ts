@@ -151,6 +151,14 @@ export const renameBisonrelayContact = async (
   await api.post('/br/contacts/rename', { uid, new_nick: newNick });
 };
 
+export const kxResetBisonrelayContact = async (uid: string): Promise<void> => {
+  await api.post('/br/contacts/kx-reset', { uid });
+};
+
+export const handshakeBisonrelayContact = async (uid: string): Promise<void> => {
+  await api.post('/br/contacts/handshake', { uid });
+};
+
 export type BisonrelayEventType = 'pm' | 'kx' | 'gcm' | 'download';
 
 export interface BisonrelayLiveEvent {

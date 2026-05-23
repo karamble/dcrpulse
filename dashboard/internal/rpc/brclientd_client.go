@@ -295,6 +295,28 @@ func BrclientdRedeemPaidInviteKey(ctx context.Context, key string) error {
 // BrclientdRenameContact sets the local NickAlias on a contact. uidHex is
 // the 64-char hex identity. Pure clientdb mutation; nothing is broadcast.
 func BrclientdRenameContact(ctx context.Context, uidHex, newNick string) error {
+	return brclientdPostJSON(ctx, "/contacts/rename", map[string]string{
+		"uid":      uidHex,
+		"new_nick": newNick,
+	})
+}
+
+// BrclientdKXReset triggers a ratchet reset with the specified contact.
+// Wraps brclientd's /contacts/kx-reset which calls client.ResetRatchet.
+func BrclientdKXReset(ctx context.Context, uidHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/kx-reset", map[string]string{"uid": uidHex})
+}
+
+// BrclientdHandshake starts a 3-way handshake with the specified contact.
+// Wraps brclientd's /contacts/handshake which calls client.Handshake.
+func BrclientdHandshake(ctx context.Context, uidHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/handshake", map[string]string{"uid": uidHex})
+}
+
+// brclientdPostJSON issues a POST with a JSON body to brclientd's status
+// server and expects a 204 No Content reply. Used by per-contact action
+// endpoints that share the same fire-and-forget shape.
+func brclientdPostJSON(ctx context.Context, path string, body any) error {
 	cli, err := brclientdClient()
 	if err != nil {
 		return err
@@ -302,8 +324,11 @@ func BrclientdRenameContact(ctx context.Context, uidHex, newNick string) error {
 	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
 		return errors.New("brclientd: status host/port not configured")
 	}
-	url := fmt.Sprintf("https://%s:%s/contacts/rename", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	payload, _ := json.Marshal(map[string]string{"uid": uidHex, "new_nick": newNick})
+	url := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
@@ -311,12 +336,12 @@ func BrclientdRenameContact(ctx context.Context, uidHex, newNick string) error {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := cli.Do(req)
 	if err != nil {
-		return fmt.Errorf("brclientd /contacts/rename: %w", err)
+		return fmt.Errorf("brclientd %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return fmt.Errorf("brclientd /contacts/rename: HTTP %d: %s", resp.StatusCode, body)
+		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("brclientd %s: HTTP %d: %s", path, resp.StatusCode, buf)
 	}
 	return nil
 }

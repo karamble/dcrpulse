@@ -284,6 +284,51 @@ func BisonrelayContactRenameHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayContactKXResetHandler proxies brclientd's /contacts/kx-reset.
+// Triggers a ratchet reset with the specified contact.
+func BisonrelayContactKXResetHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	if err := rpc.BrclientdKXReset(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContactHandshakeHandler proxies brclientd's /contacts/handshake.
+// Starts a 3-way handshake with the specified contact.
+func BisonrelayContactHandshakeHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	if err := rpc.BrclientdHandshake(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// decodeBisonrelayUIDBody parses {uid: "<hex>"} from the request body.
+// Writes a 400 + returns false on failure so callers can return immediately.
+func decodeBisonrelayUIDBody(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var req struct {
+		UID string `json:"uid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return "", false
+	}
+	if req.UID == "" {
+		http.Error(w, "uid is required", http.StatusBadRequest)
+		return "", false
+	}
+	return req.UID, true
+}
+
 // maxInlineEmbedBytes is the size cap (in decoded bytes) for an inline
 // attachment that rides in the PM body via the bruig --embed[...]-- tag.
 // Stays comfortably under the 1 MiB floor of BR's per-PM payload limit.

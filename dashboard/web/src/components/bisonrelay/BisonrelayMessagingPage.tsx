@@ -147,6 +147,25 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     return addListener((evt) => {
       if (evt.type === 'kx') {
         refreshContacts();
+        // BR's client_kx.go:214 calls LogPM(internal=true) with "Completed
+        // KX" on completion. Optimistically append the same line to the
+        // open thread so the user sees feedback without a full refetch.
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity) {
+          const fromUid = identityFromPayload(evt.payload ?? {});
+          const matches = !fromUid || fromUid === cur.id.identity;
+          if (matches) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                message: 'Completed KX',
+                from: '',
+                timestamp: Math.floor(Date.now() / 1000),
+                internal: true,
+              },
+            ]);
+          }
+        }
         return;
       }
       if (evt.type === 'pm') {
@@ -487,7 +506,21 @@ const MessageList = ({ messages, ownNick }: { messages: BisonrelayMessage[]; own
   return (
     <>
       {messages.map((m, i) => {
-        const own = m.from === ownNick || m.internal;
+        // Internal log entries (BR writes "Completed KX", "Subscribed to
+        // user's posts!" etc. via LogPM(internal=true)) render as centered
+        // protocol notices, not chat bubbles. Mirrors bruig's chat events.
+        if (m.internal) {
+          return (
+            <div key={i} className="flex justify-center py-0.5">
+              <p className="text-[11px] italic text-muted-foreground/80 px-3 text-center">
+                <span>{m.message}</span>
+                <span className="mx-1 opacity-50">·</span>
+                <span className="opacity-70">{new Date(m.timestamp * 1000).toLocaleString()}</span>
+              </p>
+            </div>
+          );
+        }
+        const own = m.from === ownNick;
         return (
           <div key={i} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
             <div

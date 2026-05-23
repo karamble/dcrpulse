@@ -20,7 +20,12 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { BisonrelayContact, renameBisonrelayContact } from '../../services/bisonrelayApi';
+import {
+  BisonrelayContact,
+  handshakeBisonrelayContact,
+  kxResetBisonrelayContact,
+  renameBisonrelayContact,
+} from '../../services/bisonrelayApi';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 
 // Layout + action ordering mirrors bruig's chat_side_menu / user_context_menu
@@ -44,32 +49,36 @@ interface Row {
   comingSoon?: boolean;
 }
 
+type ActiveModal = null | 'rename' | 'kx-reset' | 'handshake';
+
 export const BisonrelayUserSubNav = ({ contact, nick, onClose, onSendFile, onRenamed }: Props) => {
-  const [showRename, setShowRename] = useState(false);
+  const [modal, setModal] = useState<ActiveModal>(null);
+  const uid = contact.id?.identity ?? '';
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Esc closes the rename modal first if it is open; otherwise the sub-nav.
+      // Esc closes the active modal first if any; otherwise the sub-nav.
       if (e.key === 'Escape') {
-        if (showRename) setShowRename(false);
+        if (modal) setModal(null);
         else onClose();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, showRename]);
+  }, [onClose, modal]);
 
   const rows: Row[] = [
     { id: 'tip', label: 'Pay Tip', icon: Coins, comingSoon: true },
-    { id: 'kx-reset', label: 'Request Ratchet Reset', icon: RotateCw, comingSoon: true },
+    { id: 'kx-reset', label: 'Request Ratchet Reset', icon: RotateCw, onClick: () => setModal('kx-reset') },
     { id: 'content', label: 'Show Content', icon: Folder, comingSoon: true },
     { id: 'subscribe', label: 'Subscribe to Posts', icon: Rss, comingSoon: true },
     { id: 'list-posts', label: 'List Posts', icon: List, comingSoon: true },
     { id: 'send-file', label: 'Send File', icon: Paperclip, onClick: onSendFile },
     { id: 'pages', label: 'View Pages', icon: FileText, comingSoon: true },
-    { id: 'rename', label: 'Rename User', icon: Edit2, onClick: () => setShowRename(true) },
+    { id: 'rename', label: 'Rename User', icon: Edit2, onClick: () => setModal('rename') },
     { id: 'suggest-kx', label: 'Suggest User to KX', icon: UserPlus, comingSoon: true },
     { id: 'trans-reset', label: 'Issue Transitive Reset', icon: Users, comingSoon: true },
-    { id: 'handshake', label: 'Perform Handshake', icon: Handshake, comingSoon: true },
+    { id: 'handshake', label: 'Perform Handshake', icon: Handshake, onClick: () => setModal('handshake') },
   ];
 
   return (
@@ -90,15 +99,33 @@ export const BisonrelayUserSubNav = ({ contact, nick, onClose, onSendFile, onRen
           ))}
         </div>
       </aside>
-      {showRename && (
+      {modal === 'rename' && (
         <RenameModal
           contact={contact}
           currentNick={nick}
-          onClose={() => setShowRename(false)}
+          onClose={() => setModal(null)}
           onSuccess={(newNick) => {
-            setShowRename(false);
+            setModal(null);
             onRenamed?.(newNick);
           }}
+        />
+      )}
+      {modal === 'kx-reset' && (
+        <ConfirmActionModal
+          title={`Request ratchet reset with ${nick}?`}
+          body="Both sides derive new ratchet keys. Use this when messages stop arriving in either direction; the user is not notified out-of-band."
+          confirmLabel="Reset ratchet"
+          onClose={() => setModal(null)}
+          onConfirm={() => kxResetBisonrelayContact(uid)}
+        />
+      )}
+      {modal === 'handshake' && (
+        <ConfirmActionModal
+          title={`Send handshake to ${nick}?`}
+          body="Starts a 3-way handshake. When the SYNACK comes back you know the connection is fully operational."
+          confirmLabel="Send handshake"
+          onClose={() => setModal(null)}
+          onConfirm={() => handshakeBisonrelayContact(uid)}
         />
       )}
     </>
@@ -282,6 +309,86 @@ const BigAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string
     >
       {initial}
     </span>
+  );
+};
+
+const ConfirmActionModal = ({
+  title,
+  body,
+  confirmLabel,
+  onClose,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleConfirm = async () => {
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await onConfirm();
+      onClose();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="text-base font-semibold pr-4">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">{body}</p>
+        {err && (
+          <div className="flex items-start gap-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{err}</span>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
