@@ -39,7 +39,7 @@ func logPath(component LogComponent, network string) (string, error) {
 	case LogComponentDcrlnd:
 		return filepath.Join(logsRoot, "dcrlnd", "logs", "decred", network, "lnd.log"), nil
 	case LogComponentBrclientd:
-		return filepath.Join("/run/br-certs", "logs", network, "brclientd.log"), nil
+		return BrclientdLogPath(network), nil
 	default:
 		return "", fmt.Errorf("unknown log component: %q", component)
 	}

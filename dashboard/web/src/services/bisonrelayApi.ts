@@ -112,6 +112,24 @@ export const sendBisonrelayPM = async (
   return data ?? { body: msg };
 };
 
+export interface BisonrelayFileSendResult {
+  filename: string;
+  size: number;
+}
+
+export const sendBisonrelayFile = async (
+  user: string,
+  file: File,
+): Promise<BisonrelayFileSendResult> => {
+  const form = new FormData();
+  form.append('user', user);
+  form.append('file', file, file.name);
+  const { data } = await api.post<BisonrelayFileSendResult>('/br/files/send', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data ?? { filename: file.name, size: file.size };
+};
+
 export interface BisonrelayInvite {
   invite_bytes: string;
   invite_key: string;
@@ -126,9 +144,33 @@ export const acceptBisonrelayInvite = async (invite: string): Promise<void> => {
   await api.post('/br/invites/accept', { invite });
 };
 
-export type BisonrelayEventType = 'pm' | 'kx' | 'gcm';
+export type BisonrelayEventType = 'pm' | 'kx' | 'gcm' | 'download';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;
   payload: any;
 }
+
+export interface BisonrelayDownloadEntry {
+  name: string;
+  size: number;
+  mtime: number;
+}
+
+export interface BisonrelayDownloadsResponse {
+  files: BisonrelayDownloadEntry[] | null;
+}
+
+export const getBisonrelayDownloads = async (
+  contactNick: string,
+): Promise<BisonrelayDownloadEntry[]> => {
+  if (!contactNick) return [];
+  try {
+    const { data } = await api.get<BisonrelayDownloadsResponse>(
+      `/br/downloads/${encodeURIComponent(contactNick)}`,
+    );
+    return data?.files ?? [];
+  } catch {
+    return [];
+  }
+};

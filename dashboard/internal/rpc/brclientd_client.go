@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"sync"
 	"time"
@@ -123,6 +125,76 @@ func BrclientdCreateIdentity(ctx context.Context, nick, name string) error {
 		return fmt.Errorf("brclientd /create-identity: HTTP %d: %s", resp.StatusCode, body)
 	}
 	return nil
+}
+
+// BrclientdSendFileResult is the JSON shape brclientd returns from
+// /files/send: the on-disk filename it stored under UploadDir and the
+// size of the upload.
+type BrclientdSendFileResult struct {
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+}
+
+// BrclientdSendFile uploads a file to brclientd's /files/send mTLS endpoint,
+// which persists the bytes under UploadDir and dispatches them to BR's
+// SendFile RPC. user can be a nick / alias / hex UID.
+func BrclientdSendFile(ctx context.Context, user, filename, mime string, body io.Reader) (*BrclientdSendFileResult, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+
+	pr, pw := io.Pipe()
+	mp := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		defer mp.Close()
+		if err := mp.WriteField("user", user); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		hdr := textproto.MIMEHeader{}
+		hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
+		if mime != "" {
+			hdr.Set("Content-Type", mime)
+		}
+		part, err := mp.CreatePart(hdr)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(part, body); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+	}()
+
+	url := fmt.Sprintf("https://%s:%s/files/send", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, pr)
+	if err != nil {
+		return nil, fmt.Errorf("build send-file request: %w", err)
+	}
+	req.Header.Set("Content-Type", mp.FormDataContentType())
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /files/send: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read send-file response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("brclientd /files/send: HTTP %d: %s", resp.StatusCode, respBody)
+	}
+	var result BrclientdSendFileResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("decode send-file response: %w", err)
+	}
+	return &result, nil
 }
 
 // BrclientdContacts returns the BR client's address book entries from

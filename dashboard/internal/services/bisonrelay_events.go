@@ -121,6 +121,16 @@ func StartBisonrelayStreams(ctx context.Context) {
 		}
 		return map[string]int64{"sequenceId": gcm.SequenceID}, true
 	})
+	go runStream(ctx, ws, "ChatService.DownloadsCompletedStream", "ChatService.AckDownloadCompleted", "download", func(payload json.RawMessage) (any, bool) {
+		var dl struct {
+			SequenceID int64 `json:"sequenceId"`
+		}
+		_ = json.Unmarshal(payload, &dl)
+		if dl.SequenceID == 0 {
+			return nil, false
+		}
+		return map[string]int64{"sequenceId": dl.SequenceID}, true
+	})
 }
 
 func runStream(

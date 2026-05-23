@@ -17,18 +17,37 @@ import {
 } from 'lucide-react';
 import {
   BisonrelayContact,
+  BisonrelayDownloadEntry,
   BisonrelayMessage,
   BisonrelayPMAttachment,
   acceptBisonrelayInvite,
   getBisonrelayContacts,
+  getBisonrelayDownloads,
   getBisonrelayMessages,
+  sendBisonrelayFile,
   sendBisonrelayPM,
   writeBisonrelayInvite,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
-import { EmbedSegment, embedFileUrl, formatBytes, isImageMime, parseEmbeds } from './embedParser';
+import {
+  DownloadSegment,
+  EmbedSegment,
+  buildDownloadTag,
+  downloadFileUrl,
+  embedFileUrl,
+  formatBytes,
+  isImageMime,
+  parseEmbeds,
+} from './embedParser';
 
 const MAX_INLINE_BYTES = 800 * 1024;
+const MAX_TRANSFER_BYTES = 100 * 1024 * 1024;
+
+interface StagedAttachment {
+  file: File;
+  mode: 'inline' | 'transfer';
+  dataB64?: string;
+}
 
 interface ImageViewerOpenFn {
   (src: string, name: string, mime: string): void;
@@ -53,7 +72,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [sending, setSending] = useState(false);
   const [showInviteCreate, setShowInviteCreate] = useState(false);
   const [showInviteAccept, setShowInviteAccept] = useState(false);
-  const [attachment, setAttachment] = useState<BisonrelayPMAttachment | null>(null);
+  const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const [viewerImage, setViewerImage] = useState<ViewerImage | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -83,8 +102,20 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     setMessagesLoading(true);
     setMessagesErr(null);
     try {
-      const resp = await getBisonrelayMessages(uid, 0, 100);
-      setMessages(resp.entries ?? []);
+      const peerNick = contact.id?.nick ?? '';
+      const [resp, downloads] = await Promise.all([
+        getBisonrelayMessages(uid, 0, 100),
+        peerNick ? getBisonrelayDownloads(peerNick) : Promise.resolve([] as BisonrelayDownloadEntry[]),
+      ]);
+      const pmEntries = resp.entries ?? [];
+      const downloadEntries: BisonrelayMessage[] = downloads.map((d) => ({
+        message: buildDownloadTag(peerNick, d.name, d.size, ''),
+        from: peerNick,
+        timestamp: d.mtime,
+        internal: false,
+      }));
+      const merged = [...pmEntries, ...downloadEntries].sort((a, b) => a.timestamp - b.timestamp);
+      setMessages(merged);
     } catch (err: any) {
       setMessagesErr(err?.message || 'Could not load messages');
     } finally {
@@ -132,6 +163,28 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             },
           ]);
         }
+        return;
+      }
+      if (evt.type === 'download') {
+        const payload = evt.payload ?? {};
+        const senderNick = payload.nick ?? '';
+        const fileMeta = payload.fileMetadata ?? payload.file_metadata ?? {};
+        const filename = fileMeta.filename ?? '';
+        const size = Number(fileMeta.size ?? 0);
+        const fromUid = identityFromPayload(payload);
+        if (!filename) return;
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity && fromUid === cur.id.identity) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              message: buildDownloadTag(senderNick, filename, size, ''),
+              from: senderNick,
+              timestamp: Math.floor(Date.now() / 1000),
+              internal: false,
+            },
+          ]);
+        }
       }
     });
   }, [addListener, refreshContacts]);
@@ -144,16 +197,49 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     const text = draft.trim();
     setSending(true);
     try {
-      const result = await sendBisonrelayPM(recipient, text, attachment ?? undefined);
-      setMessages((prev) => [
-        ...prev,
-        {
-          message: result.body || text,
-          from: ownNick,
-          timestamp: Math.floor(Date.now() / 1000),
-          internal: true,
-        },
-      ]);
+      if (attachment && attachment.mode === 'transfer') {
+        if (text) {
+          await sendBisonrelayPM(recipient, text);
+          setMessages((prev) => [
+            ...prev,
+            {
+              message: text,
+              from: ownNick,
+              timestamp: Math.floor(Date.now() / 1000),
+              internal: true,
+            },
+          ]);
+        }
+        await sendBisonrelayFile(recipient, attachment.file);
+        setMessages((prev) => [
+          ...prev,
+          {
+            message: `Sent file "${attachment.file.name}"`,
+            from: ownNick,
+            timestamp: Math.floor(Date.now() / 1000),
+            internal: true,
+          },
+        ]);
+      } else {
+        const embed: BisonrelayPMAttachment | undefined =
+          attachment && attachment.mode === 'inline' && attachment.dataB64
+            ? {
+                name: attachment.file.name,
+                mime: attachment.file.type || 'application/octet-stream',
+                data_b64: attachment.dataB64,
+              }
+            : undefined;
+        const result = await sendBisonrelayPM(recipient, text, embed);
+        setMessages((prev) => [
+          ...prev,
+          {
+            message: result.body || text,
+            from: ownNick,
+            timestamp: Math.floor(Date.now() / 1000),
+            internal: true,
+          },
+        ]);
+      }
       setDraft('');
       setAttachment(null);
       setAttachErr(null);
@@ -169,8 +255,14 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
-    if (f.size > MAX_INLINE_BYTES) {
-      setAttachErr(`File is ${formatBytes(f.size)}. Inline attachments cap at ${formatBytes(MAX_INLINE_BYTES)}.`);
+    if (f.size > MAX_TRANSFER_BYTES) {
+      setAttachErr(`File is ${formatBytes(f.size)}. Maximum is ${formatBytes(MAX_TRANSFER_BYTES)}.`);
+      return;
+    }
+    const inlineable = isImageMime(f.type) && f.size <= MAX_INLINE_BYTES;
+    if (!inlineable) {
+      setAttachment({ file: f, mode: 'transfer' });
+      setAttachErr(null);
       return;
     }
     try {
@@ -182,7 +274,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         binStr += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk) as unknown as number[]);
       }
       const dataB64 = btoa(binStr);
-      setAttachment({ name: f.name, mime: f.type || 'application/octet-stream', data_b64: dataB64 });
+      setAttachment({ file: f, mode: 'inline', dataB64 });
       setAttachErr(null);
     } catch (err: any) {
       setAttachErr(err?.message || 'Could not read file');
@@ -304,7 +396,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={sending}
-                  title="Attach a file (max 800 KiB)"
+                  title="Attach a file"
                   className="p-2 rounded-lg bg-muted/20 hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
                 >
                   <Paperclip className="h-4 w-4" />
@@ -688,7 +780,14 @@ function avatarDataUrl(b64?: string): string {
   }
 }
 
+const SENT_FILE_RE = /^Sent file "(.+)"(?:\s*\(([^)]*)\))?\s*$/;
+
 const MessageBody = ({ body }: { body: string }) => {
+  const trimmed = body.trim();
+  const sent = trimmed.match(SENT_FILE_RE);
+  if (sent) {
+    return <SentFileChip filename={sent[1]} fileid={sent[2] ?? ''} />;
+  }
   const segments = parseEmbeds(body);
   return (
     <div className="space-y-1">
@@ -701,8 +800,53 @@ const MessageBody = ({ body }: { body: string }) => {
             </p>
           );
         }
-        return <EmbedRenderer key={i} embed={seg} />;
+        if (seg.kind === 'embed') {
+          return <EmbedRenderer key={i} embed={seg} />;
+        }
+        return <DownloadRenderer key={i} download={seg} />;
       })}
+    </div>
+  );
+};
+
+const SentFileChip = ({ filename }: { filename: string; fileid: string }) => {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded border border-border/40 bg-background/40">
+      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium truncate">{filename}</p>
+        <p className="text-[10px] text-muted-foreground">sent</p>
+      </div>
+    </div>
+  );
+};
+
+const DownloadRenderer = ({ download }: { download: DownloadSegment }) => {
+  const url = downloadFileUrl(download.nick, download.filename);
+  if (!url) {
+    return (
+      <p className="text-[11px] text-muted-foreground italic">
+        [file {download.filename || 'unnamed'} not available]
+      </p>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded border border-border/40 bg-background/40">
+      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium truncate">{download.filename}</p>
+        <p className="text-[10px] text-muted-foreground">
+          {download.mime || 'file'}{download.size ? ' · ' + formatBytes(download.size) : ''}
+        </p>
+      </div>
+      <a
+        href={url}
+        download={download.filename}
+        className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors"
+        title="Save"
+      >
+        <Download className="h-4 w-4" />
+      </a>
     </div>
   );
 };
@@ -818,26 +962,27 @@ const AttachmentPreview = ({
   attachment,
   onRemove,
 }: {
-  attachment: BisonrelayPMAttachment;
+  attachment: StagedAttachment;
   onRemove: () => void;
 }) => {
-  const isImage = isImageMime(attachment.mime);
-  const bytes = Math.floor((attachment.data_b64.length * 3) / 4);
+  const mime = attachment.file.type || 'application/octet-stream';
+  const showImage = attachment.mode === 'inline' && isImageMime(mime) && attachment.dataB64;
+  const modeLabel = attachment.mode === 'inline' ? 'inline embed' : 'file transfer';
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-border/40 bg-muted/10">
-      {isImage ? (
+      {showImage ? (
         <img
-          src={`data:${attachment.mime};base64,${attachment.data_b64}`}
-          alt={attachment.name}
+          src={`data:${mime};base64,${attachment.dataB64}`}
+          alt={attachment.file.name}
           className="h-10 w-10 rounded object-cover"
         />
       ) : (
         <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
       )}
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium truncate">{attachment.name}</p>
+        <p className="text-xs font-medium truncate">{attachment.file.name}</p>
         <p className="text-[10px] text-muted-foreground">
-          {attachment.mime || 'unknown'} · {formatBytes(bytes)}
+          {mime} · {formatBytes(attachment.file.size)} · {modeLabel}
         </p>
       </div>
       <button

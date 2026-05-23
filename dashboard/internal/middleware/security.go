@@ -93,12 +93,16 @@ func SecurityHeaders(next http.Handler) http.Handler {
 
 // LimitJSONBody caps request bodies on state-changing methods. Oversized
 // bodies surface as a read error inside handlers, which already return 4xx.
+// Skipped for multipart uploads so file-attachment handlers can apply their
+// own (larger) limit.
 func LimitJSONBody(maxBytes int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+				if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+					r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+				}
 			}
 			next.ServeHTTP(w, r)
 		})

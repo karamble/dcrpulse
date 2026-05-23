@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -113,14 +114,17 @@ func BisonrelayEventsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 var (
-	embedContactRe  = regexp.MustCompile(`^[0-9a-f]{16}$`)
-	embedFilenameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	embedContactRe   = regexp.MustCompile(`^[0-9a-f]{16}$`)
+	embedFilenameRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	downloadNickRe   = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	downloadFileRe   = regexp.MustCompile(`^[A-Za-z0-9._ -]+$`)
 )
 
 // BisonrelayEmbedHandler serves an inline embed file that BR's clientdb has
 // already extracted from a PM body and persisted at
 // <brclientd-data>/<network>/db/embeds/<contact_short>/<filename>. The
-// dashboard mounts the brclientd data volume read-only at /run/br-certs.
+// dashboard locates the brclientd data root via services.BrclientdDataDir
+// (env-driven, see [[project-bisonrelay-integration]]).
 func BisonrelayEmbedHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	contact := vars["contact"]
@@ -134,13 +138,115 @@ func BisonrelayEmbedHandler(w http.ResponseWriter, r *http.Request) {
 	if network == "" {
 		network = "mainnet"
 	}
-	root := filepath.Clean(filepath.Join("/run/br-certs/data", network, "db", "embeds"))
+	root := filepath.Clean(services.BrclientdEmbedsDir(network))
 	candidate := filepath.Clean(filepath.Join(root, contact, filename))
 	if !strings.HasPrefix(candidate, root+string(filepath.Separator)) {
 		http.NotFound(w, r)
 		return
 	}
 	http.ServeFile(w, r, candidate)
+}
+
+// BisonrelayFileSendHandler accepts a multipart upload (user + file) from
+// the browser and proxies it to brclientd's /files/send endpoint, which
+// stores the file under brclientd's UploadDir and dispatches it to BR's
+// SendFile RPC. Caps the upload at 100 MiB.
+func BisonrelayFileSendHandler(w http.ResponseWriter, r *http.Request) {
+	const maxUpload = 100 << 20
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+
+	user := strings.TrimSpace(r.FormValue("user"))
+	if user == "" {
+		http.Error(w, "user field is required", http.StatusBadRequest)
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file part missing: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	mime := header.Header.Get("Content-Type")
+	result, err := rpc.BrclientdSendFile(r.Context(), user, header.Filename, mime, file)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// BisonrelayDownloadHandler serves a completed file-transfer download that
+// brclientd has written to <brclientd-data>/<network>/downloads/<nick>/<filename>.
+func BisonrelayDownloadHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contact := vars["contact"]
+	filename := vars["filename"]
+	if !downloadNickRe.MatchString(contact) || !downloadFileRe.MatchString(filename) {
+		http.NotFound(w, r)
+		return
+	}
+	network, _ := services.CurrentNetwork(r.Context())
+	if network == "" {
+		network = "mainnet"
+	}
+	root := filepath.Clean(services.BrclientdDownloadsDir(network))
+	candidate := filepath.Clean(filepath.Join(root, contact, filename))
+	if !strings.HasPrefix(candidate, root+string(filepath.Separator)) {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	http.ServeFile(w, r, candidate)
+}
+
+// BisonrelayDownloadsListHandler returns the list of files that brclientd has
+// completed downloading from a given contact. Mirrors what shows up in the
+// "files received from this contact" view of the chat thread. The contact
+// path segment is the sender's nick as recorded under
+// <brclientd-data>/<network>/downloads/<nick>/.
+func BisonrelayDownloadsListHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contact := vars["contact"]
+	if !downloadNickRe.MatchString(contact) {
+		http.NotFound(w, r)
+		return
+	}
+	network, _ := services.CurrentNetwork(r.Context())
+	if network == "" {
+		network = "mainnet"
+	}
+	dir := filepath.Join(services.BrclientdDownloadsDir(network), contact)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"files":[]}`))
+		return
+	}
+	type fileEntry struct {
+		Name     string `json:"name"`
+		Size     int64  `json:"size"`
+		ModTime  int64  `json:"mtime"`
+	}
+	out := make([]fileEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		out = append(out, fileEntry{Name: e.Name(), Size: fi.Size(), ModTime: fi.ModTime().Unix()})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string][]fileEntry{"files": out})
 }
 
 // BisonrelayContactsHandler proxies brclientd's /contacts endpoint.

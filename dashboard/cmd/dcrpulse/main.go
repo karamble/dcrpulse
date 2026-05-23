@@ -105,9 +105,9 @@ func main() {
 		Host:           getEnv("BRCLIENTD_HOST", "brclientd"),
 		Port:           getEnv("BRCLIENTD_PORT", "7676"),
 		StatusPort:     getEnv("BRCLIENTD_STATUS_PORT", "7677"),
-		ServerCertPath: getEnv("BRCLIENTD_SERVER_CERT", "/run/br-certs/rpc.cert"),
-		ClientCertPath: getEnv("BRCLIENTD_CLIENT_CERT", "/run/br-certs/rpc-client.cert"),
-		ClientKeyPath:  getEnv("BRCLIENTD_CLIENT_KEY", "/run/br-certs/rpc-client.key"),
+		ServerCertPath: getEnv("BRCLIENTD_SERVER_CERT", services.BrclientdDefaultCertPath("mainnet", "rpc.cert")),
+		ClientCertPath: getEnv("BRCLIENTD_CLIENT_CERT", services.BrclientdDefaultCertPath("mainnet", "rpc-client.cert")),
+		ClientKeyPath:  getEnv("BRCLIENTD_CLIENT_KEY", services.BrclientdDefaultCertPath("mainnet", "rpc-client.key")),
 	})
 
 	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into
@@ -195,6 +195,9 @@ func main() {
 	api.HandleFunc("/br/messages", handlers.BisonrelayMessagesHandler).Methods("GET")
 	api.HandleFunc("/br/contacts", handlers.BisonrelayContactsHandler).Methods("GET")
 	api.HandleFunc("/br/embeds/{contact}/{filename}", handlers.BisonrelayEmbedHandler).Methods("GET")
+	api.HandleFunc("/br/downloads/{contact}", handlers.BisonrelayDownloadsListHandler).Methods("GET")
+	api.HandleFunc("/br/downloads/{contact}/{filename}", handlers.BisonrelayDownloadHandler).Methods("GET")
+	api.HandleFunc("/br/files/send", handlers.BisonrelayFileSendHandler).Methods("POST")
 	api.HandleFunc("/br/pm", handlers.BisonrelayPMHandler).Methods("POST")
 	api.HandleFunc("/br/invites/write", handlers.BisonrelayInviteWriteHandler).Methods("POST")
 	api.HandleFunc("/br/invites/accept", handlers.BisonrelayInviteAcceptHandler).Methods("POST")

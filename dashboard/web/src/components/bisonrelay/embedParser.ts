@@ -21,20 +21,33 @@ export interface TextSegment {
   text: string;
 }
 
-export type MessageSegment = TextSegment | EmbedSegment;
+export interface DownloadSegment {
+  kind: 'download';
+  raw: string;
+  nick: string;
+  filename: string;
+  size: number;
+  mime: string;
+}
 
-const EMBED_RE = /--embed\[(.*?)\]--/g;
+export type MessageSegment = TextSegment | EmbedSegment | DownloadSegment;
+
+const TAG_RE = /--(embed|download)\[(.*?)\]--/g;
 
 export function parseEmbeds(body: string): MessageSegment[] {
   if (!body) return [];
   const segments: MessageSegment[] = [];
   let lastIndex = 0;
-  EMBED_RE.lastIndex = 0;
-  for (let m = EMBED_RE.exec(body); m !== null; m = EMBED_RE.exec(body)) {
+  TAG_RE.lastIndex = 0;
+  for (let m = TAG_RE.exec(body); m !== null; m = TAG_RE.exec(body)) {
     if (m.index > lastIndex) {
       segments.push({ kind: 'text', text: body.substring(lastIndex, m.index) });
     }
-    segments.push(parseEmbedArgs(m[0], m[1]));
+    if (m[1] === 'embed') {
+      segments.push(parseEmbedArgs(m[0], m[2]));
+    } else {
+      segments.push(parseDownloadArgs(m[0], m[2]));
+    }
     lastIndex = m.index + m[0].length;
   }
   if (lastIndex < body.length) {
@@ -100,6 +113,52 @@ function parseEmbedArgs(raw: string, inner: string): EmbedSegment {
     }
   }
   return out;
+}
+
+function parseDownloadArgs(raw: string, inner: string): DownloadSegment {
+  const out: DownloadSegment = {
+    kind: 'download',
+    raw,
+    nick: '',
+    filename: '',
+    size: 0,
+    mime: '',
+  };
+  for (const part of inner.split(',')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    const k = part.substring(0, eq);
+    const v = part.substring(eq + 1);
+    switch (k) {
+      case 'nick':
+        out.nick = v;
+        break;
+      case 'name':
+        out.filename = v;
+        break;
+      case 'size':
+        out.size = Number(v) || 0;
+        break;
+      case 'type':
+        out.mime = v;
+        break;
+    }
+  }
+  return out;
+}
+
+export function buildDownloadTag(nick: string, filename: string, size: number, mime: string): string {
+  const parts: string[] = [];
+  if (nick) parts.push('nick=' + nick.replace(/[,=]/g, ''));
+  if (filename) parts.push('name=' + filename.replace(/[,=]/g, ''));
+  if (size) parts.push('size=' + size);
+  if (mime) parts.push('type=' + mime.replace(/[,=]/g, ''));
+  return '--download[' + parts.join(',') + ']--';
+}
+
+export function downloadFileUrl(nick: string, filename: string): string {
+  if (!nick || !filename) return '';
+  return `/api/br/downloads/${encodeURIComponent(nick)}/${encodeURIComponent(filename)}`;
 }
 
 // embedFileUrl converts a localfilename of the form
