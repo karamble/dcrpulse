@@ -423,6 +423,105 @@ func BisonrelayContactFetchPostHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayPostCommentsHandler returns the comment list for a post.
+func BisonrelayPostCommentsHandler(w http.ResponseWriter, r *http.Request) {
+	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
+	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
+	if uid == "" || pid == "" {
+		http.Error(w, "uid and pid query params are required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdPostComments(r.Context(), uid, pid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayPostCommentHandler publishes a new comment on a post.
+func BisonrelayPostCommentHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID     string `json:"uid"`
+		PID     string `json:"pid"`
+		Comment string `json:"comment"`
+		Parent  string `json:"parent"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" || req.PID == "" || strings.TrimSpace(req.Comment) == "" {
+		http.Error(w, "uid, pid, and comment are required", http.StatusBadRequest)
+		return
+	}
+	identifier, err := rpc.BrclientdPostComment(r.Context(), req.UID, req.PID, req.Comment, req.Parent)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"identifier": identifier})
+}
+
+// BisonrelaySharedFilesHandler proxies brclientd's /shared-files list.
+func BisonrelaySharedFilesHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdSharedFiles(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayPostsRenderHandler renders a draft post body server-side so
+// the editor's Preview tab matches the published Feed detail view. Body:
+// {post}. Response shape mirrors /api/br/posts/body — same segmented
+// {title, markdown, segments, attributes}.
+func BisonrelayPostsRenderHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Post  string `json:"post"`
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	segments := services.SplitAndRenderBRPostBody(req.Post)
+	out := map[string]any{
+		"title":    req.Title,
+		"markdown": req.Post,
+		"segments": segments,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// BisonrelayPostsNewHandler authors a new post via brclientd.
+func BisonrelayPostsNewHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Post  string `json:"post"`
+		Descr string `json:"descr"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Post) == "" {
+		http.Error(w, "post body is required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdCreatePost(r.Context(), req.Post, req.Descr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
 // BisonrelayPostsFeedHandler returns the local list of all received posts
 // (summaries). Pure passthrough to brclientd's /posts/feed.
 func BisonrelayPostsFeedHandler(w http.ResponseWriter, r *http.Request) {

@@ -611,7 +611,7 @@ const PostsListModal = ({
     setErr(null);
     try {
       await fetchBisonrelayUserPost(uid, post.id);
-      window.location.hash = `feed/${uid}/${post.id}`;
+      window.location.hash = `feed/post/${uid}/${post.id}`;
       onClose();
       onPicked?.();
     } catch (e: any) {

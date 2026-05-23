@@ -243,12 +243,102 @@ export const getBisonrelayPosts = async (): Promise<BisonrelayPostSummary[]> => 
   return data.posts ?? [];
 };
 
+export interface BisonrelayIdentity {
+  nick?: string;
+  name?: string;
+  identity?: string;
+  avatar?: string;
+}
+
+export const getBisonrelayIdentity = async (): Promise<BisonrelayIdentity> => {
+  const { data } = await api.get<BisonrelayIdentity>('/br/identity');
+  return data;
+};
+
+export const createBisonrelayPost = async (
+  post: string,
+  descr?: string,
+): Promise<BisonrelayPostSummary> => {
+  const { data } = await api.post<BisonrelayPostSummary>('/br/posts/new', {
+    post,
+    descr: descr ?? '',
+  });
+  return data;
+};
+
+export interface BisonrelaySharedFile {
+  fid: string;
+  filename: string;
+  cost: number; // milliatoms
+  size: number;
+  global: boolean;
+}
+
+export const getBisonrelaySharedFiles = async (): Promise<BisonrelaySharedFile[]> => {
+  const { data } = await api.get<{ files: BisonrelaySharedFile[] | null }>(
+    '/br/shared-files',
+  );
+  return data.files ?? [];
+};
+
+// renderBisonrelayPostBody runs the editor's draft markdown through the
+// same server-side renderer the Feed detail view uses, so the Preview
+// tab matches exactly. Returns the segmented body shape.
+export const renderBisonrelayPostBody = async (
+  post: string,
+  title?: string,
+): Promise<BisonrelayPostBody> => {
+  const { data } = await api.post<BisonrelayPostBody>('/br/posts/render', {
+    post,
+    title: title ?? '',
+  });
+  return data;
+};
+
 export const getBisonrelayPostBody = async (
   uid: string,
   pid: string,
 ): Promise<BisonrelayPostBody> => {
   const { data } = await api.get<BisonrelayPostBody>('/br/posts/body', {
     params: { uid, pid },
+  });
+  return data;
+};
+
+export interface BisonrelayPostComment {
+  status_from: string;
+  from_nick: string;
+  comment: string;
+  parent?: string;
+  timestamp: number;
+  identifier?: string;
+  // Client-side fields used while a comment is in flight.
+  pending?: boolean;
+  commentKey?: string;
+}
+
+export const getBisonrelayPostComments = async (
+  uid: string,
+  pid: string,
+): Promise<BisonrelayPostComment[]> => {
+  const { data } = await api.get<{ comments: BisonrelayPostComment[] | null }>(
+    '/br/posts/comments',
+    { params: { uid, pid } },
+  );
+  return data.comments ?? [];
+};
+
+export const postBisonrelayComment = async (
+  uid: string,
+  pid: string,
+  comment: string,
+  parent?: string,
+): Promise<{ identifier: string }> => {
+  const { data } = await api.post<{ identifier: string }>('/br/posts/comment', {
+    uid,
+    pid,
+    comment,
+    parent: parent ?? '',
   });
   return data;
 };
@@ -289,7 +379,8 @@ export type BisonrelayEventType =
   | 'posts-subscriber-updated'
   | 'posts-list-received'
   | 'content-list-received'
-  | 'post-received';
+  | 'post-received'
+  | 'post-status-received';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;

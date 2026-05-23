@@ -367,10 +367,106 @@ func BrclientdFetchPost(ctx context.Context, uidHex, pidHex string) error {
 	})
 }
 
+// BrclientdCreatePost authors a new post and shares it with our existing
+// subscribers. Returns the new post's summary JSON envelope.
+func BrclientdCreatePost(ctx context.Context, post, descr string) (json.RawMessage, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/posts/new", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	payload, err := json.Marshal(map[string]string{
+		"post":  post,
+		"descr": descr,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal payload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /posts/new: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("brclientd /posts/new: HTTP %d: %s", resp.StatusCode, body)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	return json.RawMessage(body), nil
+}
+
+// BrclientdSharedFiles returns the list of files the local user has shared.
+// Used by the BR editor's "Link to shared content" picker.
+func BrclientdSharedFiles(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/shared-files", nil)
+}
+
 // BrclientdPostsFeed returns the raw JSON body of brclientd's /posts/feed.
 // Each entry is a PostSummary; the caller decodes as needed.
 func BrclientdPostsFeed(ctx context.Context) (json.RawMessage, error) {
 	return brclientdGetRaw(ctx, "/posts/feed", nil)
+}
+
+// BrclientdPostComments returns the comment status updates for a post.
+func BrclientdPostComments(ctx context.Context, uidHex, pidHex string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/posts/comments", map[string]string{
+		"uid": uidHex,
+		"pid": pidHex,
+	})
+}
+
+// BrclientdPostComment publishes a new comment on a remote user's post.
+// Returns the comment identifier on success.
+func BrclientdPostComment(ctx context.Context, uidHex, pidHex, comment, parent string) (string, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return "", err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return "", errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/posts/comment", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	payload, err := json.Marshal(map[string]string{
+		"uid":     uidHex,
+		"pid":     pidHex,
+		"comment": comment,
+		"parent":  parent,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal payload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("brclientd /posts/comment: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return "", fmt.Errorf("brclientd /posts/comment: HTTP %d: %s", resp.StatusCode, body)
+	}
+	var out struct {
+		Identifier string `json:"identifier"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+	return out.Identifier, nil
 }
 
 // BrclientdPostBody fetches the full PostMetadata for a single post.
