@@ -202,6 +202,8 @@ func main() {
 	api.HandleFunc("/br/contacts/trans-reset", handlers.BisonrelayContactTransResetHandler).Methods("POST")
 	api.HandleFunc("/br/contacts/accept-suggestion", handlers.BisonrelayContactAcceptSuggestionHandler).Methods("POST")
 	api.HandleFunc("/br/contacts/tip", handlers.BisonrelayContactTipHandler).Methods("POST")
+	api.HandleFunc("/br/contacts/subscribe-posts", handlers.BisonrelayContactSubscribePostsHandler).Methods("POST")
+	api.HandleFunc("/br/contacts/unsubscribe-posts", handlers.BisonrelayContactUnsubscribePostsHandler).Methods("POST")
 	api.HandleFunc("/br/embeds/{contact}/{filename}", handlers.BisonrelayEmbedHandler).Methods("GET")
 	api.HandleFunc("/br/downloads/{contact}", handlers.BisonrelayDownloadsListHandler).Methods("GET")
 	api.HandleFunc("/br/downloads/{contact}/{filename}", handlers.BisonrelayDownloadHandler).Methods("GET")

@@ -332,6 +332,17 @@ func BrclientdTransReset(ctx context.Context, mediatorHex, targetHex string) err
 	})
 }
 
+// BrclientdSubscribePosts asks the remote user to start sending us their
+// posts. Async: completion surfaces via the posts-subscribed live event.
+func BrclientdSubscribePosts(ctx context.Context, uidHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/subscribe-posts", map[string]string{"uid": uidHex})
+}
+
+// BrclientdUnsubscribePosts is the inverse of BrclientdSubscribePosts.
+func BrclientdUnsubscribePosts(ctx context.Context, uidHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/unsubscribe-posts", map[string]string{"uid": uidHex})
+}
+
 // BrclientdTipUser calls PaymentsService.TipUser on the configured
 // brclientd instance. user is a nick or 64-hex identity; dcrAmount is the
 // tip amount in DCR; maxAttempts is the per-tip retry budget. BR fires

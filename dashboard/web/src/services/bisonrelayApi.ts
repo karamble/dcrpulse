@@ -55,6 +55,7 @@ export interface BisonrelayContact {
   last_completed_kx?: string;
   last_read_msg_time?: string;
   ignored?: boolean;
+  posts_subscribed?: boolean;
 }
 
 export interface BisonrelayContactsResponse {
@@ -72,11 +73,13 @@ export interface BisonrelayMessage {
   timestamp: number;
   internal: boolean;
   // Client-side only fields used while an async operation (e.g. a tip
-  // payment) is in flight. pending=true renders a spinner next to the
-  // text; tipKey correlates the placeholder with the eventual live
-  // tip-sent / tip-failed event so we can replace it in place.
+  // payment or a posts subscribe/unsubscribe request) is in flight.
+  // pending=true renders a spinner next to the text. tipKey / subKey
+  // correlate the placeholder with the eventual live event so we can
+  // replace it in place.
   pending?: boolean;
   tipKey?: string;
+  subKey?: string;
 }
 
 export interface BisonrelayMessagesResponse {
@@ -186,6 +189,14 @@ export const acceptBisonrelayKxSuggestion = async (
   await api.post('/br/contacts/accept-suggestion', { mediator, target });
 };
 
+export const subscribeBisonrelayPosts = async (uid: string): Promise<void> => {
+  await api.post('/br/contacts/subscribe-posts', { uid });
+};
+
+export const unsubscribeBisonrelayPosts = async (uid: string): Promise<void> => {
+  await api.post('/br/contacts/unsubscribe-posts', { uid });
+};
+
 export const tipBisonrelayContact = async (
   uid: string,
   dcrAmount: number,
@@ -202,7 +213,10 @@ export type BisonrelayEventType =
   | 'kx-suggested'
   | 'tip-sent'
   | 'tip-received'
-  | 'tip-failed';
+  | 'tip-failed'
+  | 'posts-subscribed'
+  | 'posts-unsubscribed'
+  | 'posts-subscriber-updated';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;

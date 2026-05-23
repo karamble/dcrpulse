@@ -25,9 +25,11 @@ import {
   handshakeBisonrelayContact,
   kxResetBisonrelayContact,
   renameBisonrelayContact,
+  subscribeBisonrelayPosts,
   suggestKxBisonrelayContact,
   tipBisonrelayContact,
   transResetBisonrelayContact,
+  unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 
@@ -45,6 +47,8 @@ interface Props {
   onSendFile: () => void;
   onRenamed?: (newNick: string) => void;
   onTip?: (uid: string, nick: string, dcrAmount: number) => void;
+  onSubscribePosts?: (uid: string, nick: string) => void;
+  onUnsubscribePosts?: (uid: string, nick: string) => void;
 }
 
 interface Row {
@@ -55,7 +59,16 @@ interface Row {
   comingSoon?: boolean;
 }
 
-type ActiveModal = null | 'rename' | 'kx-reset' | 'handshake' | 'suggest-kx' | 'trans-reset' | 'tip';
+type ActiveModal =
+  | null
+  | 'rename'
+  | 'kx-reset'
+  | 'handshake'
+  | 'suggest-kx'
+  | 'trans-reset'
+  | 'tip'
+  | 'subscribe-posts'
+  | 'unsubscribe-posts';
 
 export const BisonrelayUserSubNav = ({
   contact,
@@ -66,6 +79,8 @@ export const BisonrelayUserSubNav = ({
   onSendFile,
   onRenamed,
   onTip,
+  onSubscribePosts,
+  onUnsubscribePosts,
 }: Props) => {
   const [modal, setModal] = useState<ActiveModal>(null);
   const uid = contact.id?.identity ?? '';
@@ -82,11 +97,17 @@ export const BisonrelayUserSubNav = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, modal]);
 
+  const subscribed = !!contact.posts_subscribed;
   const rows: Row[] = [
     { id: 'tip', label: 'Pay Tip', icon: Coins, onClick: () => setModal('tip') },
     { id: 'kx-reset', label: 'Request Ratchet Reset', icon: RotateCw, onClick: () => setModal('kx-reset') },
     { id: 'content', label: 'Show Content', icon: Folder, comingSoon: true },
-    { id: 'subscribe', label: 'Subscribe to Posts', icon: Rss, comingSoon: true },
+    {
+      id: 'posts-toggle',
+      label: subscribed ? 'Unsubscribe from Posts' : 'Subscribe to Posts',
+      icon: Rss,
+      onClick: () => setModal(subscribed ? 'unsubscribe-posts' : 'subscribe-posts'),
+    },
     { id: 'list-posts', label: 'List Posts', icon: List, comingSoon: true },
     { id: 'send-file', label: 'Send File', icon: Paperclip, onClick: onSendFile },
     { id: 'pages', label: 'View Pages', icon: FileText, comingSoon: true },
@@ -171,6 +192,34 @@ export const BisonrelayUserSubNav = ({
             transResetBisonrelayContact(picked.id?.identity ?? '', uid)
           }
           onSuccess={onClose}
+        />
+      )}
+      {modal === 'subscribe-posts' && (
+        <ConfirmActionModal
+          title={`Subscribe to ${nick}'s posts?`}
+          body={`Asks ${nick} to send their existing and future posts. The subscription becomes active once their client replies, which may take a while if they're offline.`}
+          confirmLabel="Subscribe"
+          onClose={() => setModal(null)}
+          onConfirm={() => {
+            if (onSubscribePosts) onSubscribePosts(uid, nick);
+            else subscribeBisonrelayPosts(uid);
+          }}
+          onSuccess={onClose}
+          optimistic
+        />
+      )}
+      {modal === 'unsubscribe-posts' && (
+        <ConfirmActionModal
+          title={`Unsubscribe from ${nick}'s posts?`}
+          body={`Tells ${nick}'s client to stop sending you their posts. Existing posts in your history stay.`}
+          confirmLabel="Unsubscribe"
+          onClose={() => setModal(null)}
+          onConfirm={() => {
+            if (onUnsubscribePosts) onUnsubscribePosts(uid, nick);
+            else unsubscribeBisonrelayPosts(uid);
+          }}
+          onSuccess={onClose}
+          optimistic
         />
       )}
       {modal === 'tip' && (
@@ -587,18 +636,36 @@ const ConfirmActionModal = ({
   onClose,
   onConfirm,
   onSuccess,
+  optimistic,
 }: {
   title: string;
   body: string;
   confirmLabel: string;
   onClose: () => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: () => Promise<void> | void;
   onSuccess?: () => void;
+  // optimistic=true: don't await onConfirm and skip the modal-local error
+  // state. The caller is responsible for showing in-flight + outcome
+  // feedback elsewhere (e.g. as a placeholder message in the chat). Used
+  // by posts subscribe/unsubscribe where the BR round-trip can take an
+  // unbounded amount of time depending on the remote's reachability.
+  optimistic?: boolean;
 }) => {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const handleConfirm = async () => {
+    if (optimistic) {
+      try {
+        onConfirm();
+      } catch {
+        // Optimistic callers handle errors via the placeholder; swallow
+        // anything thrown synchronously here so the modal still closes.
+      }
+      onClose();
+      onSuccess?.();
+      return;
+    }
     setSubmitting(true);
     setErr(null);
     try {

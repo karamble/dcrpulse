@@ -27,7 +27,9 @@ import {
   getBisonrelayMessages,
   sendBisonrelayFile,
   sendBisonrelayPM,
+  subscribeBisonrelayPosts,
   tipBisonrelayContact,
+  unsubscribeBisonrelayPosts,
   writeBisonrelayInvite,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
@@ -164,6 +166,57 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   // (e.g. unknown user, transport error), we update the placeholder
   // ourselves with the error message — the BR notification path wouldn't
   // fire in that case.
+  // handleSubscribePosts inserts an optimistic spinner placeholder into the
+  // open thread and kicks off the BR subscribe/unsubscribe request in the
+  // background. The live posts-subscribed / posts-unsubscribed event swaps
+  // the placeholder text in place when the remote replies (which may be
+  // immediately or much later if they're offline). If the dashboard call
+  // itself fails (e.g. unknown user, transport error) we update the
+  // placeholder ourselves with the failure reason.
+  const handleSubscribePosts = useCallback(
+    (kind: 'subscribe' | 'unsubscribe', uid: string, nick: string) => {
+      const subKey = `sub-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const verb = kind === 'subscribe' ? 'Subscribing to' : 'Unsubscribing from';
+      setMessages((prev) => {
+        const cur = selectedRef.current;
+        if (!cur || cur.id?.identity !== uid) return prev;
+        return [
+          ...prev,
+          {
+            message: `${verb} ${nick}'s posts...`,
+            from: '',
+            timestamp: Math.floor(Date.now() / 1000),
+            internal: true,
+            pending: true,
+            subKey,
+          },
+        ];
+      });
+      const apiCall =
+        kind === 'subscribe'
+          ? subscribeBisonrelayPosts(uid)
+          : unsubscribeBisonrelayPosts(uid);
+      apiCall.catch((err: any) => {
+        const body = err?.response?.data;
+        const msg = typeof body === 'string' ? body : err?.message || 'Request failed';
+        const failVerb = kind === 'subscribe' ? 'Subscribe' : 'Unsubscribe';
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.subKey === subKey);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = {
+            ...updated[idx],
+            message: `${failVerb} request failed: ${msg}`,
+            pending: false,
+            subKey: undefined,
+          };
+          return updated;
+        });
+      });
+    },
+    [],
+  );
+
   const handleTip = useCallback((recipientUid: string, nick: string, dcrAmount: number) => {
     const tipKey = `tip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     // Pending text mirrors bruig's InflightTipW (events.dart:735).
@@ -290,6 +343,66 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               internal: true,
             },
           ]);
+        }
+        return;
+      }
+      if (evt.type === 'posts-subscriber-updated') {
+        // The remote user changed THEIR subscription to OUR posts (the
+        // inverse of posts-subscribed). No local placeholder to swap;
+        // just append the LogPM'd line in the matching thread.
+        const payload = (evt.payload ?? {}) as Record<string, string>;
+        const uid = payload.uid;
+        const line = payload.line ?? '';
+        if (!uid || !line) return;
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity === uid) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              message: line,
+              from: '',
+              timestamp: Math.floor(Date.now() / 1000),
+              internal: true,
+            },
+          ]);
+        }
+        return;
+      }
+      if (evt.type === 'posts-subscribed' || evt.type === 'posts-unsubscribed') {
+        // The remote user confirmed our subscribe/unsubscribe request.
+        // refreshContacts picks up the new posts_subscribed flag. If we
+        // have an optimistic placeholder for this contact, swap its text
+        // in place + drop the spinner; otherwise append a fresh line
+        // (covers remote-initiated changes from other sessions).
+        const payload = (evt.payload ?? {}) as Record<string, string>;
+        const uid = payload.uid;
+        const line = payload.line ?? '';
+        if (!uid || !line) return;
+        refreshContacts();
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity === uid) {
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.pending && m.subKey);
+            if (idx !== -1) {
+              const updated = [...prev];
+              updated[idx] = {
+                ...updated[idx],
+                message: line,
+                pending: false,
+                subKey: undefined,
+              };
+              return updated;
+            }
+            return [
+              ...prev,
+              {
+                message: line,
+                from: '',
+                timestamp: Math.floor(Date.now() / 1000),
+                internal: true,
+              },
+            ];
+          });
         }
         return;
       }
@@ -645,6 +758,14 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             // Make sure the thread is open before the placeholder appears.
             setSelected(subNavContact);
             handleTip(uid, nick, dcr);
+          }}
+          onSubscribePosts={(uid, nick) => {
+            setSelected(subNavContact);
+            handleSubscribePosts('subscribe', uid, nick);
+          }}
+          onUnsubscribePosts={(uid, nick) => {
+            setSelected(subNavContact);
+            handleSubscribePosts('unsubscribe', uid, nick);
           }}
         />
       )}

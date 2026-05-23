@@ -357,6 +357,35 @@ func BisonrelayContactTransResetHandler(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayContactSubscribePostsHandler proxies the brclientd subscribe-
+// posts endpoint. Body: {uid (hex)}. Asynchronous; the new subscription
+// state is published as a posts-subscribed event.
+func BisonrelayContactSubscribePostsHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	if err := rpc.BrclientdSubscribePosts(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContactUnsubscribePostsHandler proxies the brclientd
+// unsubscribe-posts endpoint.
+func BisonrelayContactUnsubscribePostsHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	if err := rpc.BrclientdUnsubscribePosts(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayContactTipHandler proxies PaymentsService.TipUser. Body:
 // {uid, dcrAmount, maxAttempts}. uid is the 64-hex identity. dcrAmount is
 // in DCR (float). maxAttempts is BR's retry budget for the tip; the
