@@ -484,6 +484,10 @@ func pendingChannelRow(c *lnrpc.PendingChannelsResponse_PendingChannel, status, 
 		RemoteBalance: c.GetRemoteBalance(),
 		ClosingTxHash: closingTxid,
 		LimboBalance:  limbo,
+		// PendingChannel reports Initiator as an enum (Local/Remote/Both);
+		// open channels (above) use a bool. Map to bool so the type stays
+		// uniform across channel statuses.
+		Initiator: c.GetInitiator() == lnrpc.Initiator_INITIATOR_LOCAL,
 	}
 }
 

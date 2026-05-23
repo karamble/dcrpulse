@@ -20,6 +20,12 @@ import {
   getBisonrelayStatus,
   setupBisonrelay,
 } from '../../services/bisonrelayApi';
+import {
+  LightningChannel,
+  LightningStatus,
+  getLightningChannels,
+  getLightningStatus,
+} from '../../services/lightningApi';
 import { BisonrelayDisclaimer } from './BisonrelayDisclaimer';
 
 const DISCLAIMER_ACCEPTED_KEY = 'dcrpulse.br.disclaimer-accepted';
@@ -36,6 +42,10 @@ interface Step {
   description: string;
   status: StepStatus;
   detail?: string;
+  // rawDetail is the underlying brclientd error string when we replaced
+  // `detail` with a friendlier translation. Surfaced behind a toggle so
+  // we are not hiding the real reason from power users.
+  rawDetail?: string;
 }
 
 export const BisonrelaySetupWizard = ({ onReady }: Props) => {
@@ -47,6 +57,8 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
     }
   });
   const [status, setStatus] = useState<BisonrelayStatus | null>(null);
+  const [lnStatus, setLnStatus] = useState<LightningStatus | null>(null);
+  const [lnChannels, setLnChannels] = useState<LightningChannel[] | null>(null);
   const [statusErr, setStatusErr] = useState<string | null>(null);
   const [nick, setNick] = useState('');
   const [fullName, setFullName] = useState('');
@@ -58,20 +70,30 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
     let cancelled = false;
     const poll = async () => {
       while (!cancelled) {
-        try {
-          const s = await getBisonrelayStatus();
-          if (cancelled) return;
-          setStatus(s);
+        const [brRes, lnRes, chRes] = await Promise.allSettled([
+          getBisonrelayStatus(),
+          getLightningStatus(),
+          getLightningChannels(),
+        ]);
+        if (cancelled) return;
+        if (brRes.status === 'fulfilled') {
+          setStatus(brRes.value);
           setStatusErr(null);
-          if (s.stage === 'ready') {
+          if (brRes.value.stage === 'ready') {
             setTimeout(() => onReady(), 400);
             return;
           }
-        } catch (err: any) {
-          if (!cancelled) {
-            setStatus(null);
-            setStatusErr(err?.message || 'Could not reach brclientd');
-          }
+        } else {
+          setStatus(null);
+          setStatusErr(
+            (brRes.reason as any)?.message || 'Could not reach brclientd',
+          );
+        }
+        if (lnRes.status === 'fulfilled') {
+          setLnStatus(lnRes.value);
+        }
+        if (chRes.status === 'fulfilled') {
+          setLnChannels(chRes.value.channels);
         }
         await new Promise((r) => setTimeout(r, 2000));
       }
@@ -106,7 +128,10 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
     }
   };
 
-  const steps = useMemo<Step[]>(() => deriveSteps(status), [status]);
+  const steps = useMemo<Step[]>(
+    () => deriveSteps(status, lnStatus, lnChannels),
+    [status, lnStatus, lnChannels],
+  );
 
   if (!disclaimerAccepted) {
     return <BisonrelayDisclaimer onAcknowledge={acceptDisclaimer} />;
@@ -214,9 +239,19 @@ const ChecklistRow = ({ step }: { step: Step }) => {
           <InfoTooltip text={step.description} />
         </div>
         {step.detail && (
-          <pre className="mt-1 text-[11px] text-muted-foreground whitespace-pre-wrap break-words">
+          <p className="mt-1 text-[11px] text-muted-foreground whitespace-pre-wrap break-words">
             {step.detail}
-          </pre>
+          </p>
+        )}
+        {step.rawDetail && (
+          <details className="mt-1">
+            <summary className="text-[11px] text-muted-foreground/70 cursor-pointer hover:text-muted-foreground select-none">
+              Show technical details
+            </summary>
+            <pre className="mt-1 text-[11px] text-muted-foreground/80 whitespace-pre-wrap break-words">
+              {step.rawDetail}
+            </pre>
+          </details>
         )}
       </div>
     </li>
@@ -342,11 +377,28 @@ const IdentityForm = ({
   </form>
 );
 
-function deriveSteps(status: BisonrelayStatus | null): Step[] {
+function deriveSteps(
+  status: BisonrelayStatus | null,
+  lnStatus: LightningStatus | null,
+  channels: LightningChannel[] | null,
+): Step[] {
   const stage = status?.stage;
   const walletErr = status?.walletCheckErr ?? '';
   const peer = status?.recommendedPeer;
   const nick = status?.nick;
+
+  // recommendedPeer is "<pubkey>@<host>:<port>"; the pubkey alone is what
+  // dcrlnd reports in LightningChannel.remotePubkey, so split on '@'.
+  const hubPubkey = peer ? peer.split('@')[0] : '';
+  const hubChannelPendingOutbound =
+    !!hubPubkey &&
+    !!channels &&
+    channels.some(
+      (c) =>
+        c.status === 'pending-open' &&
+        c.initiator === true &&
+        c.remotePubkey === hubPubkey,
+    );
 
   // We treat "no status yet" as everything pending. The first row is
   // pinned to in-progress so the user sees the spinner.
@@ -372,6 +424,31 @@ function deriveSteps(status: BisonrelayStatus | null): Step[] {
     stage === 'disconnected' ||
     stage === 'connecting' ||
     (stage === 'starting' && walletErr !== '');
+
+  // BR's CheckLNWalletUsable returns "insufficient local balance" when no
+  // route to the relay server's LN node exists. When the user has just
+  // opened their first channel, the more accurate reason is almost always
+  // (a) the channel-to-hub0 is still confirming on-chain or (b) the LN
+  // graph has not learned about the channel yet. Translate to a friendlier
+  // message when we have positive evidence; otherwise fall back to
+  // walletErr verbatim so we never hide a genuinely surprising error.
+  // Priority: pending-outbound-to-hub0 beats graph-sync, because if the
+  // specific hub channel is still confirming the graph cannot help yet.
+  let graphDetail: string | undefined;
+  let graphRawDetail: string | undefined;
+  if (isGraphSyncing) {
+    if (hubChannelPendingOutbound) {
+      graphDetail =
+        'Your channel to the Bison Relay hub is still confirming on-chain. It needs three confirmations before Lightning can use it.';
+      graphRawDetail = walletErr || undefined;
+    } else if (lnStatus?.syncedToGraph === false) {
+      graphDetail =
+        'Lightning is still learning about the network graph. This usually takes a few minutes after your first channel opens; no action needed.';
+      graphRawDetail = walletErr || undefined;
+    } else if (walletErr) {
+      graphDetail = walletErr;
+    }
+  }
 
   return [
     {
@@ -413,7 +490,8 @@ function deriveSteps(status: BisonrelayStatus | null): Step[] {
         : isGraphSyncing
         ? 'in-progress'
         : 'done',
-      detail: isGraphSyncing && walletErr ? walletErr : undefined,
+      detail: graphDetail,
+      rawDetail: graphRawDetail,
     },
     {
       id: 'br-identity',
