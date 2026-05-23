@@ -492,6 +492,35 @@ func BrclientdCancelDownload(ctx context.Context, fidHex string) error {
 	return brclientdPostJSON(ctx, "/downloads/cancel", map[string]string{"fid": fidHex})
 }
 
+// BrclientdStatsOverview returns the compact summary shown on the Stats
+// landing page (hero counters + top contacts + connection-health).
+func BrclientdStatsOverview(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/stats/overview", nil)
+}
+
+// BrclientdStatsPayments returns the per-user payment table with
+// per-user prefix breakdowns and RMQ RTT quantiles.
+func BrclientdStatsPayments(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/stats/payments", nil)
+}
+
+// BrclientdStatsNetwork returns server policy + connection metadata + RMQ
+// quantile histogram.
+func BrclientdStatsNetwork(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/stats/network", nil)
+}
+
+// BrclientdStatsContacts returns per-contact metadata + ratchet debug info.
+func BrclientdStatsContacts(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/stats/contacts", nil)
+}
+
+// BrclientdStatsPosts returns authored-post engagement aggregates + sub
+// counts.
+func BrclientdStatsPosts(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/stats/posts", nil)
+}
+
 // BrclientdPostsFeed returns the raw JSON body of brclientd's /posts/feed.
 // Each entry is a PostSummary; the caller decodes as needed.
 func BrclientdPostsFeed(ctx context.Context) (json.RawMessage, error) {

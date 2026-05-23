@@ -3,14 +3,15 @@
 // license that can be found in the LICENSE file.
 
 import { ComponentType, useEffect, useState } from 'react';
-import { FolderOpen, MessageSquare, Rss } from 'lucide-react';
+import { BarChart3, FolderOpen, MessageSquare, Rss } from 'lucide-react';
 import { BisonrelaySetupWizard } from './BisonrelaySetupWizard';
 import { BisonrelayMessagingPage } from './BisonrelayMessagingPage';
 import { BisonrelayFeed } from './BisonrelayFeed';
 import { BisonrelayFiles } from './BisonrelayFiles';
+import { BisonrelayStats } from './BisonrelayStats';
 import { BisonrelayStatus, getBisonrelayStatus } from '../../services/bisonrelayApi';
 
-type TabId = 'chat' | 'feed' | 'files';
+type TabId = 'chat' | 'feed' | 'files' | 'stats';
 
 interface TabDef {
   id: TabId;
@@ -22,15 +23,17 @@ const tabs: TabDef[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
   { id: 'feed', label: 'Feed', icon: Rss },
   { id: 'files', label: 'Files', icon: FolderOpen },
+  { id: 'stats', label: 'Stats', icon: BarChart3 },
 ];
 
-// readHashTab returns the active tab based on the URL hash. Feed and
-// Files support subpaths (e.g. `feed/<author>/<pid>`, `files/shared`)
-// which the embedded surfaces parse on their own.
+// readHashTab returns the active tab based on the URL hash. Feed, Files,
+// and Stats support subpaths (e.g. `feed/<author>/<pid>`, `files/shared`,
+// `stats/payments`) which the embedded surfaces parse on their own.
 const readHashTab = (): TabId => {
   const h = window.location.hash.replace('#', '').toLowerCase();
   if (h.startsWith('feed')) return 'feed';
   if (h.startsWith('files')) return 'files';
+  if (h.startsWith('stats')) return 'stats';
   return 'chat';
 };
 
@@ -114,6 +117,7 @@ export const BisonrelayPage = () => {
       {activeTab === 'chat' && <BisonrelayMessagingPage ownNick={ready.nick ?? 'unknown'} />}
       {activeTab === 'feed' && <BisonrelayFeed />}
       {activeTab === 'files' && <BisonrelayFiles />}
+      {activeTab === 'stats' && <BisonrelayStats />}
     </div>
   );
 };

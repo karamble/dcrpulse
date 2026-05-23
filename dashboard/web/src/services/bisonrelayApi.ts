@@ -473,3 +473,137 @@ export const getBisonrelayManageDownloads = async (): Promise<BisonrelayDownload
 export const cancelBisonrelayDownload = async (fid: string): Promise<void> => {
   await api.post('/br/files/downloads/cancel', { fid });
 };
+
+// Stats bindings: each endpoint is a thin pass-through over the matching
+// brclientd /stats/* route. Values denominated in milliatoms (1 DCR = 1e11
+// matoms) on the wire; the UI converts at render time.
+
+export interface BisonrelayStatsTopContact {
+  uid: string;
+  nick: string;
+  sent_atoms: number;
+  received_atoms: number;
+}
+
+export interface BisonrelayStatsOverview {
+  nick: string;
+  identity: string;
+  stage: string;
+  connected_at?: string;
+  server_node?: string;
+  contacts_count: number;
+  posts_authored: number;
+  subscriptions_count: number;
+  subscribers_count: number;
+  total_sent_atoms: number;
+  total_received_atoms: number;
+  total_fees_atoms: number;
+  rmq_p50_ns: number;
+  top_contacts: BisonrelayStatsTopContact[];
+}
+
+export const getBisonrelayStatsOverview = async (): Promise<BisonrelayStatsOverview> => {
+  const { data } = await api.get<BisonrelayStatsOverview>('/br/stats/overview');
+  return data;
+};
+
+export interface BisonrelayPayStatsBreakdown {
+  prefix: string;
+  total: number;
+}
+
+export interface BisonrelayPayStatsUser {
+  uid: string;
+  nick: string;
+  sent_atoms: number;
+  received_atoms: number;
+  fees_atoms: number;
+  breakdowns?: BisonrelayPayStatsBreakdown[];
+}
+
+export interface BisonrelayQuantile {
+  rel: string;
+  n: number;
+  max_ns: number;
+}
+
+export interface BisonrelayStatsPayments {
+  users: BisonrelayPayStatsUser[];
+  rmq_rtt_quantiles: BisonrelayQuantile[];
+}
+
+export const getBisonrelayStatsPayments = async (): Promise<BisonrelayStatsPayments> => {
+  const { data } = await api.get<BisonrelayStatsPayments>('/br/stats/payments');
+  return data;
+};
+
+export interface BisonrelayServerPolicy {
+  push_pay_rate_matoms: number;
+  push_pay_rate_bytes: number;
+  push_pay_rate_min_matoms: number;
+  max_push_invoices: number;
+  max_msg_size: number;
+  expiration_days: number;
+}
+
+export interface BisonrelayStatsNetwork {
+  server_node?: string;
+  recommended_peer?: string;
+  connected_at?: string;
+  stage: string;
+  policy: BisonrelayServerPolicy;
+  rmq_quantiles: BisonrelayQuantile[];
+}
+
+export const getBisonrelayStatsNetwork = async (): Promise<BisonrelayStatsNetwork> => {
+  const { data } = await api.get<BisonrelayStatsNetwork>('/br/stats/network');
+  return data;
+};
+
+export interface BisonrelayRatchetInfo {
+  nb_saved_keys: number;
+  will_ratchet: boolean;
+  last_enc_time?: string;
+  last_dec_time?: string;
+  send_rv_plain?: string;
+  recv_rv_plain?: string;
+  drain_rv_plain?: string;
+}
+
+export interface BisonrelayStatsContact {
+  uid: string;
+  nick: string;
+  nick_alias?: string;
+  first_created: string;
+  last_completed_kx: string;
+  last_handshake_attempt?: string;
+  ignored: boolean;
+  ratchet?: BisonrelayRatchetInfo;
+}
+
+export const getBisonrelayStatsContacts = async (): Promise<BisonrelayStatsContact[]> => {
+  const { data } = await api.get<{ contacts: BisonrelayStatsContact[] | null }>(
+    '/br/stats/contacts',
+  );
+  return data?.contacts ?? [];
+};
+
+export interface BisonrelayAuthoredPostStats {
+  pid: string;
+  title: string;
+  date: string;
+  last_status_ts?: string;
+  hearts: number;
+  comments: number;
+}
+
+export interface BisonrelayStatsPosts {
+  authored: BisonrelayAuthoredPostStats[];
+  subscribers_count: number;
+  subscriptions_count: number;
+}
+
+export const getBisonrelayStatsPosts = async (): Promise<BisonrelayStatsPosts> => {
+  const { data } = await api.get<BisonrelayStatsPosts>('/br/stats/posts');
+  return data;
+};

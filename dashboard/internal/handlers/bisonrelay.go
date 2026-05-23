@@ -571,6 +571,61 @@ func BisonrelayManageCancelDownloadHandler(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayStatsOverviewHandler proxies brclientd's /stats/overview.
+func BisonrelayStatsOverviewHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdStatsOverview(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayStatsPaymentsHandler proxies brclientd's /stats/payments.
+func BisonrelayStatsPaymentsHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdStatsPayments(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayStatsNetworkHandler proxies brclientd's /stats/network.
+func BisonrelayStatsNetworkHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdStatsNetwork(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayStatsContactsHandler proxies brclientd's /stats/contacts.
+func BisonrelayStatsContactsHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdStatsContacts(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayStatsPostsHandler proxies brclientd's /stats/posts.
+func BisonrelayStatsPostsHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdStatsPosts(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
 // BisonrelayPostsRenderHandler renders a draft post body server-side so
 // the editor's Preview tab matches the published Feed detail view. Body:
 // {post}. Response shape mirrors /api/br/posts/body — same segmented
