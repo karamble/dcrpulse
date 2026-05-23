@@ -11,10 +11,11 @@ RPC_CERT="${CERT_DIR}/rpc.cert"
 RPC_KEY="${CERT_DIR}/rpc.key"
 
 mkdir -p "${WALLET_DIR}"
-# Pre-create the dcrlnd mountpoint inside the shared /app-data volume so
-# downstream containers (dcrlnd, dashboard) can bind their writable
-# /app-data/dcrlnd on top of the read-only outer mount.
-mkdir -p /app-data/dcrlnd
+# Pre-create mountpoints inside the shared /app-data volume so downstream
+# containers (dcrlnd, brclientd, dashboard) can bind their own data on top
+# of the read-only outer /app-data mount. Required for both fresh installs
+# and upgrades where new containers add nested mounts.
+mkdir -p /app-data/dcrlnd /app-data/brclientd
 
 if [ ! -f "${RPC_CERT}" ] || [ ! -f "${RPC_KEY}" ]; then
     echo "Waiting for dcrd to generate certificates..."

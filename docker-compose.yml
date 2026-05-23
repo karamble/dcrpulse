@@ -97,12 +97,6 @@ services:
     restart: unless-stopped
     networks:
       - decred-network
-    healthcheck:
-      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 10009 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 300s
     deploy:
       resources:
         limits:
@@ -113,6 +107,8 @@ services:
 
   brclientd:
     image: ghcr.io/karamble/dcrpulse-brclientd:${BRCLIENTD_IMAGE_TAG:-dev}
+    build:
+      context: ${BRCLIENTD_BUILD_CONTEXT:-../brclientd}
     container_name: dcrpulse-brclientd
     ports:
       - "7677:7677"
@@ -130,12 +126,6 @@ services:
     restart: unless-stopped
     networks:
       - decred-network
-    healthcheck:
-      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 7676 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 300s
     deploy:
       resources:
         limits:
