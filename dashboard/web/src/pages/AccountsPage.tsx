@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Users, AlertCircle } from 'lucide-react';
+import { Plus, AlertCircle } from 'lucide-react';
 import { AccountInfo, getAccounts } from '../services/api';
 import { AccountRow, isImportedAccount } from '../components/accounts/AccountRow';
 import { CreateAccountModal } from '../components/accounts/CreateAccountModal';
@@ -42,18 +42,7 @@ export const AccountsPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-            <Users className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold">Accounts</h2>
-            <p className="text-sm text-muted-foreground">
-              Manage the BIP44 accounts in your wallet.
-            </p>
-          </div>
-        </div>
+      <div className="flex items-center justify-end">
         <button
           onClick={() => setCreateOpen(true)}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all hover:opacity-90"

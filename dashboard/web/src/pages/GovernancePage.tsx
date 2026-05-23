@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Vote } from 'lucide-react';
 
 const tabs = [
   { path: 'consensus', label: 'Consensus' },
@@ -20,17 +19,6 @@ export const GovernancePage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-          <Vote className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h2 className="text-xl font-semibold">Governance</h2>
-          <p className="text-sm text-muted-foreground">
-            Cast on-chain and off-chain votes from this wallet.
-          </p>
-        </div>
-      </div>
 
       <nav className="flex gap-2 border-b border-border">
         {tabs.map((tab) => {

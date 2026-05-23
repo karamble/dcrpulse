@@ -17,37 +17,15 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   const isBisonrelayPage = location.pathname.startsWith('/br');
   const isNodePage = location.pathname === '/';
 
-  const getPageTitle = () => {
-    if (isWalletPage) return 'Wallet';
-    if (isExplorerPage) return 'Explorer';
-    if (isGovernancePage) return 'Governance';
-    if (isBisonrelayPage) return 'Bison Relay';
-    return 'Node';
-  };
-
-  const getPageDescription = () => {
-    if (isWalletPage) return 'Monitor your watch-only wallet and transactions';
-    if (isExplorerPage) return 'Search and explore the Decred blockchain';
-    if (isGovernancePage) return 'Track treasury, proposals, and voting activity';
-    if (isBisonrelayPage) return 'End-to-end encrypted messaging over Lightning';
-    return 'Monitor your dcrd node performance and network status';
-  };
-
   return (
     <div className="flex items-center justify-between mb-8 animate-fade-in">
-      <div className="flex items-center gap-4">
-        <div className="h-16 w-16 rounded-xl flex items-center justify-center bg-gradient-primary p-3">
-          <img src="/images/dcrpulse.svg" alt="Decred Pulse" className="w-full h-full" />
-        </div>
-        <div>
-          <h1 className="text-4xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">
-            Decred {getPageTitle()}
-          </h1>
-          <p className="text-muted-foreground">
-            {getPageDescription()}
-          </p>
-        </div>
-      </div>
+      <Link to="/" className="shrink-0">
+        <img
+          src="/images/decred-logo.svg"
+          alt="Decred"
+          className="h-[72px] w-auto"
+        />
+      </Link>
       <div className="flex items-center gap-4">
         {/* Navigation Buttons */}
         <Link
@@ -103,7 +81,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
           <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
             <Vote className="h-5 w-5 text-white" />
           </div>
-          <span className="text-primary font-semibold">Governance</span>
+          <span className="text-primary font-semibold">Treasury</span>
         </Link>
 
         <Link

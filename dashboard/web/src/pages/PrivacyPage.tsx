@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, ShieldCheck } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { AccountInfo, PrivacyStatus, getAccounts, getPrivacyStatus } from '../services/api';
 import { PrivacySetupCard } from '../components/privacy/PrivacySetupCard';
 import { MixerStatusBadge } from '../components/privacy/MixerStatusBadge';
@@ -46,20 +46,11 @@ export const PrivacyPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold">Privacy</h2>
-            <p className="text-sm text-muted-foreground">
-              Mix your DCR peer-to-peer to improve transaction privacy.
-            </p>
-          </div>
+      {status?.configured && (
+        <div className="flex items-center justify-end">
+          <MixerStatusBadge running={status.mixerRunning} />
         </div>
-        {status?.configured && <MixerStatusBadge running={status.mixerRunning} />}
-      </div>
+      )}
 
       {error && (
         <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/30 flex items-start gap-2 text-sm text-destructive">
