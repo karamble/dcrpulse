@@ -12,6 +12,10 @@ interface BisonrelayLiveCtx {
   totalUnread: number;
   clearUnread: (uid: string) => void;
   setActiveUid: (uid: string) => void;
+  gcUnread: Record<string, number>;
+  totalGCUnread: number;
+  clearGCUnread: (gcid: string) => void;
+  setActiveGCID: (gcid: string) => void;
   addListener: (fn: Listener) => () => void;
 }
 
@@ -25,8 +29,10 @@ export const useBisonrelayLive = (): BisonrelayLiveCtx => {
 
 export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) => {
   const [unread, setUnread] = useState<Record<string, number>>({});
+  const [gcUnread, setGCUnread] = useState<Record<string, number>>({});
   const listenersRef = useRef<Set<Listener>>(new Set());
   const activeUidRef = useRef<string>('');
+  const activeGCIDRef = useRef<string>('');
 
   const addListener = useCallback((fn: Listener) => {
     listenersRef.current.add(fn);
@@ -47,6 +53,20 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
 
   const setActiveUid = useCallback((uid: string) => {
     activeUidRef.current = uid;
+  }, []);
+
+  const clearGCUnread = useCallback((gcid: string) => {
+    if (!gcid) return;
+    setGCUnread((prev) => {
+      if (!prev[gcid]) return prev;
+      const next = { ...prev };
+      delete next[gcid];
+      return next;
+    });
+  }, []);
+
+  const setActiveGCID = useCallback((gcid: string) => {
+    activeGCIDRef.current = gcid;
   }, []);
 
   useEffect(() => {
@@ -74,6 +94,12 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
               setUnread((prev) => ({ ...prev, [uid]: (prev[uid] ?? 0) + 1 }));
             }
           }
+          if (evt.type === 'gc-message') {
+            const gcid = String((evt.payload as Record<string, unknown>)?.gcid ?? '');
+            if (gcid && gcid !== activeGCIDRef.current) {
+              setGCUnread((prev) => ({ ...prev, [gcid]: (prev[gcid] ?? 0) + 1 }));
+            }
+          }
         } catch {
           /* ignore */
         }
@@ -97,9 +123,22 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
   }, []);
 
   const totalUnread = Object.values(unread).reduce((a, b) => a + b, 0);
+  const totalGCUnread = Object.values(gcUnread).reduce((a, b) => a + b, 0);
 
   return (
-    <Ctx.Provider value={{ unread, totalUnread, clearUnread, setActiveUid, addListener }}>
+    <Ctx.Provider
+      value={{
+        unread,
+        totalUnread,
+        clearUnread,
+        setActiveUid,
+        gcUnread,
+        totalGCUnread,
+        clearGCUnread,
+        setActiveGCID,
+        addListener,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );

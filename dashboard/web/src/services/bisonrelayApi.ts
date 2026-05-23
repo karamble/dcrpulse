@@ -402,7 +402,19 @@ export type BisonrelayEventType =
   | 'rtdt-chat'
   | 'rtdt-admin-cookies'
   | 'rtdt-rtt'
-  | 'rtdt-joined-instant-call';
+  | 'rtdt-joined-instant-call'
+  | 'gc-message'
+  | 'gc-invited'
+  | 'gc-joined'
+  | 'gc-invite-accepted'
+  | 'gc-members-added'
+  | 'gc-members-removed'
+  | 'gc-parted'
+  | 'gc-killed'
+  | 'gc-upgraded'
+  | 'gc-admins-changed'
+  | 'gc-version-warning'
+  | 'gc-unkxd-member';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;
@@ -709,4 +721,147 @@ export const removeRTDTMember = async (rv: string, uid: string, reason: string):
 
 export const rotateRTDTCookies = async (rv: string): Promise<void> => {
   await api.post(`/br/rtdt/sessions/${rv}/rotate-cookies`, {});
+};
+
+// ---- GC (group-chat) control plane --------------------------------------
+
+export interface BisonrelayGC {
+  id: string;
+  name: string;
+  alias?: string;
+  generation: number;
+  version: number;
+  owner: string;
+  members: string[];
+  extra_admins?: string[];
+  blocked?: string[];
+  local_is_owner: boolean;
+  local_is_admin: boolean;
+}
+
+export interface BisonrelayGCInvite {
+  id: number;
+  gcid: string;
+  name: string;
+  description?: string;
+  from: string;
+  expires: number;
+  version: number;
+  accepted: boolean;
+}
+
+export const listBisonrelayGCs = async (): Promise<BisonrelayGC[]> => {
+  const { data } = await api.get<{ gcs: BisonrelayGC[] | null }>('/br/gc');
+  return data?.gcs ?? [];
+};
+
+export const createBisonrelayGC = async (name: string): Promise<BisonrelayGC> => {
+  const { data } = await api.post<BisonrelayGC>('/br/gc/create', { name });
+  return data;
+};
+
+export const listBisonrelayGCInvites = async (): Promise<BisonrelayGCInvite[]> => {
+  const { data } = await api.get<{ invites: BisonrelayGCInvite[] | null }>('/br/gc/invites');
+  return data?.invites ?? [];
+};
+
+export const acceptBisonrelayGCInvite = async (iid: number): Promise<void> => {
+  await api.post('/br/gc/invites/accept', { iid });
+};
+
+export const getBisonrelayGCDetail = async (gcid: string): Promise<BisonrelayGC> => {
+  const { data } = await api.get<BisonrelayGC>(`/br/gc/${gcid}`);
+  return data;
+};
+
+export const inviteToBisonrelayGC = async (gcid: string, uid: string): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/invite`, { uid });
+};
+
+// GC message send mirrors the PM shape (msg + optional embed). Returns
+// the synthesised wire body so the caller can optimistically echo.
+export const sendBisonrelayGCMessage = async (
+  gcid: string,
+  msg: string,
+  embed?: BisonrelayPMAttachment,
+): Promise<{ body: string }> => {
+  const { data } = await api.post<{ body: string }>(`/br/gc/${gcid}/message`, {
+    msg,
+    mode: 0,
+    embed,
+  });
+  return data;
+};
+
+export interface BisonrelayGCHistory {
+  gcid: string;
+  page: number;
+  page_size: number;
+  entries: BisonrelayMessage[];
+}
+
+export const getBisonrelayGCHistory = async (
+  gcid: string,
+  page = 0,
+  pageSize = 100,
+): Promise<BisonrelayGCHistory> => {
+  const { data } = await api.get<BisonrelayGCHistory>(`/br/gc/${gcid}/history`, {
+    params: { page, page_size: pageSize },
+  });
+  return data;
+};
+
+export const partBisonrelayGC = async (gcid: string, reason = ''): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/part`, { reason });
+};
+
+export const killBisonrelayGC = async (gcid: string, reason = ''): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/kill`, { reason });
+};
+
+export const kickFromBisonrelayGC = async (
+  gcid: string,
+  uid: string,
+  reason = '',
+): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/kick`, { uid, reason });
+};
+
+export const blockInBisonrelayGC = async (gcid: string, uid: string): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/block`, { uid });
+};
+
+export const unblockInBisonrelayGC = async (gcid: string, uid: string): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/unblock`, { uid });
+};
+
+export const modifyBisonrelayGCAdmins = async (
+  gcid: string,
+  extraAdmins: string[],
+  reason = '',
+): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/admins`, { extra_admins: extraAdmins, reason });
+};
+
+export const modifyBisonrelayGCOwner = async (
+  gcid: string,
+  newOwner: string,
+  reason = '',
+): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/owner`, { new_owner: newOwner, reason });
+};
+
+export const upgradeBisonrelayGCVersion = async (
+  gcid: string,
+  newVersion: number,
+): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/upgrade`, { new_version: newVersion });
+};
+
+export const aliasBisonrelayGC = async (gcid: string, alias: string): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/alias`, { alias });
+};
+
+export const resendBisonrelayGCList = async (gcid: string, uid?: string): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/resend-list`, uid ? { uid } : {});
 };

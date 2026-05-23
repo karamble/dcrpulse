@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -598,6 +599,107 @@ func BrclientdRTDTRemove(ctx context.Context, rv, uid, reason string) error {
 // BrclientdRTDTRotateCookies invalidates current appointment cookies.
 func BrclientdRTDTRotateCookies(ctx context.Context, rv string) error {
 	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/rotate-cookies", map[string]any{})
+}
+
+// ---- GC (group-chat) control plane --------------------------------------
+//
+// All wrappers are thin pass-throughs over brclientd's /gc routes. The
+// summary endpoints (List, Detail) return raw JSON; the mutator endpoints
+// either return raw JSON (Create) or expect 204 No Content.
+
+func BrclientdGCList(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/gc", nil)
+}
+
+func BrclientdGCCreate(ctx context.Context, name string) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/gc/create", map[string]any{"name": name})
+}
+
+func BrclientdGCInvitesList(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/gc/invites", nil)
+}
+
+func BrclientdGCInvitesAccept(ctx context.Context, iid uint64) error {
+	return brclientdPostJSON(ctx, "/gc/invites/accept", map[string]any{"iid": iid})
+}
+
+func BrclientdGCDetail(ctx context.Context, gcid string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/gc/"+gcid, nil)
+}
+
+func BrclientdGCInvite(ctx context.Context, gcid, uid string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/invite", map[string]any{"uid": uid})
+}
+
+func BrclientdGCMessage(ctx context.Context, gcid, message string, mode int) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/message", map[string]any{
+		"message": message,
+		"mode":    mode,
+	})
+}
+
+func BrclientdGCHistory(ctx context.Context, gcid string, page, pageSize int) (json.RawMessage, error) {
+	q := map[string]string{}
+	if page > 0 {
+		q["page"] = strconv.Itoa(page)
+	}
+	if pageSize > 0 {
+		q["page_size"] = strconv.Itoa(pageSize)
+	}
+	return brclientdGetRaw(ctx, "/gc/"+gcid+"/history", q)
+}
+
+func BrclientdGCPart(ctx context.Context, gcid, reason string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/part", map[string]any{"reason": reason})
+}
+
+func BrclientdGCKill(ctx context.Context, gcid, reason string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/kill", map[string]any{"reason": reason})
+}
+
+func BrclientdGCKick(ctx context.Context, gcid, uid, reason string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/kick", map[string]any{
+		"uid":    uid,
+		"reason": reason,
+	})
+}
+
+func BrclientdGCBlock(ctx context.Context, gcid, uid string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/block", map[string]any{"uid": uid})
+}
+
+func BrclientdGCUnblock(ctx context.Context, gcid, uid string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/unblock", map[string]any{"uid": uid})
+}
+
+func BrclientdGCModifyAdmins(ctx context.Context, gcid string, extraAdmins []string, reason string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/admins", map[string]any{
+		"extra_admins": extraAdmins,
+		"reason":       reason,
+	})
+}
+
+func BrclientdGCModifyOwner(ctx context.Context, gcid, newOwner, reason string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/owner", map[string]any{
+		"new_owner": newOwner,
+		"reason":    reason,
+	})
+}
+
+func BrclientdGCUpgrade(ctx context.Context, gcid string, newVersion uint8) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/upgrade", map[string]any{"new_version": newVersion})
+}
+
+func BrclientdGCAlias(ctx context.Context, gcid, alias string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/alias", map[string]any{"alias": alias})
+}
+
+func BrclientdGCResendList(ctx context.Context, gcid, uid string) error {
+	body := map[string]any{}
+	if uid != "" {
+		body["uid"] = uid
+	}
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/resend-list", body)
 }
 
 // BrclientdPostsFeed returns the raw JSON body of brclientd's /posts/feed.
