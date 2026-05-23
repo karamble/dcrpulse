@@ -159,7 +159,28 @@ export const handshakeBisonrelayContact = async (uid: string): Promise<void> => 
   await api.post('/br/contacts/handshake', { uid });
 };
 
-export type BisonrelayEventType = 'pm' | 'kx' | 'gcm' | 'download';
+export const suggestKxBisonrelayContact = async (
+  invitee: string,
+  target: string,
+): Promise<void> => {
+  await api.post('/br/contacts/suggest-kx', { invitee, target });
+};
+
+export const transResetBisonrelayContact = async (
+  mediator: string,
+  target: string,
+): Promise<void> => {
+  await api.post('/br/contacts/trans-reset', { mediator, target });
+};
+
+export const acceptBisonrelayKxSuggestion = async (
+  mediator: string,
+  target: string,
+): Promise<void> => {
+  await api.post('/br/contacts/accept-suggestion', { mediator, target });
+};
+
+export type BisonrelayEventType = 'pm' | 'kx' | 'gcm' | 'download' | 'kx-suggested';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;

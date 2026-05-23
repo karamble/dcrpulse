@@ -25,6 +25,8 @@ import {
   handshakeBisonrelayContact,
   kxResetBisonrelayContact,
   renameBisonrelayContact,
+  suggestKxBisonrelayContact,
+  transResetBisonrelayContact,
 } from '../../services/bisonrelayApi';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 
@@ -36,6 +38,8 @@ import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 interface Props {
   contact: BisonrelayContact;
   nick: string;
+  contacts: BisonrelayContact[];
+  displayNick: (c: BisonrelayContact) => string;
   onClose: () => void;
   onSendFile: () => void;
   onRenamed?: (newNick: string) => void;
@@ -49,9 +53,17 @@ interface Row {
   comingSoon?: boolean;
 }
 
-type ActiveModal = null | 'rename' | 'kx-reset' | 'handshake';
+type ActiveModal = null | 'rename' | 'kx-reset' | 'handshake' | 'suggest-kx' | 'trans-reset';
 
-export const BisonrelayUserSubNav = ({ contact, nick, onClose, onSendFile, onRenamed }: Props) => {
+export const BisonrelayUserSubNav = ({
+  contact,
+  nick,
+  contacts,
+  displayNick,
+  onClose,
+  onSendFile,
+  onRenamed,
+}: Props) => {
   const [modal, setModal] = useState<ActiveModal>(null);
   const uid = contact.id?.identity ?? '';
 
@@ -76,8 +88,8 @@ export const BisonrelayUserSubNav = ({ contact, nick, onClose, onSendFile, onRen
     { id: 'send-file', label: 'Send File', icon: Paperclip, onClick: onSendFile },
     { id: 'pages', label: 'View Pages', icon: FileText, comingSoon: true },
     { id: 'rename', label: 'Rename User', icon: Edit2, onClick: () => setModal('rename') },
-    { id: 'suggest-kx', label: 'Suggest User to KX', icon: UserPlus, comingSoon: true },
-    { id: 'trans-reset', label: 'Issue Transitive Reset', icon: Users, comingSoon: true },
+    { id: 'suggest-kx', label: 'Suggest User to KX', icon: UserPlus, onClick: () => setModal('suggest-kx') },
+    { id: 'trans-reset', label: 'Issue Transitive Reset', icon: Users, onClick: () => setModal('trans-reset') },
     { id: 'handshake', label: 'Perform Handshake', icon: Handshake, onClick: () => setModal('handshake') },
   ];
 
@@ -126,6 +138,32 @@ export const BisonrelayUserSubNav = ({ contact, nick, onClose, onSendFile, onRen
           confirmLabel="Send handshake"
           onClose={() => setModal(null)}
           onConfirm={() => handshakeBisonrelayContact(uid)}
+        />
+      )}
+      {modal === 'suggest-kx' && (
+        <ContactPickerModal
+          title={`Suggest a user for ${nick} to KX with`}
+          body={`Picks a contact and asks ${nick} to KX with them. The remote contact gets a message; they decide whether to follow up.`}
+          contacts={contacts}
+          excludeUid={uid}
+          displayNick={displayNick}
+          onClose={() => setModal(null)}
+          onPick={(picked) =>
+            suggestKxBisonrelayContact(uid, picked.id?.identity ?? '')
+          }
+        />
+      )}
+      {modal === 'trans-reset' && (
+        <ContactPickerModal
+          title={`Reset ratchet with ${nick} via a mediator`}
+          body={`Picks a common contact and asks them to forward a ratchet-reset request to ${nick}. Use this when a direct reset is not landing.`}
+          contacts={contacts}
+          excludeUid={uid}
+          displayNick={displayNick}
+          onClose={() => setModal(null)}
+          onPick={(picked) =>
+            transResetBisonrelayContact(picked.id?.identity ?? '', uid)
+          }
         />
       )}
     </>
@@ -309,6 +347,125 @@ const BigAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string
     >
       {initial}
     </span>
+  );
+};
+
+const ContactPickerModal = ({
+  title,
+  body,
+  contacts,
+  excludeUid,
+  displayNick,
+  onClose,
+  onPick,
+}: {
+  title: string;
+  body: string;
+  contacts: BisonrelayContact[];
+  excludeUid: string;
+  displayNick: (c: BisonrelayContact) => string;
+  onClose: () => void;
+  onPick: (c: BisonrelayContact) => Promise<void>;
+}) => {
+  const [query, setQuery] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const q = query.trim().toLowerCase();
+  const filtered = contacts.filter((c) => {
+    if (c.id?.identity === excludeUid) return false;
+    if (!q) return true;
+    return displayNick(c).toLowerCase().includes(q);
+  });
+
+  const handlePick = async (c: BisonrelayContact) => {
+    if (submitting) return;
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await onPick(c);
+      onClose();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
+      >
+        <div className="p-5 pb-3 space-y-3">
+          <div className="flex items-start justify-between">
+            <h3 className="text-base font-semibold pr-4">{title}</h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">{body}</p>
+          <input
+            type="text"
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search contacts…"
+            disabled={submitting}
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50"
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[120px]">
+          {filtered.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+              {contacts.length <= 1
+                ? 'You need at least one other contact to use this action.'
+                : 'No contacts match your search.'}
+            </p>
+          ) : (
+            filtered.map((c) => {
+              const n = displayNick(c);
+              return (
+                <button
+                  key={c.id?.identity ?? n}
+                  onClick={() => handlePick(c)}
+                  disabled={submitting}
+                  className="w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="truncate">{n}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
+        {err && (
+          <div className="flex items-start gap-2 text-sm text-destructive px-5 pb-3">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{err}</span>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 

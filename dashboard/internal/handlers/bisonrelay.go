@@ -312,6 +312,73 @@ func BisonrelayContactHandshakeHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayContactSuggestKXHandler proxies /contacts/suggest-kx. Body:
+// {invitee, target}. The invitee is asked (over BR) to KX with the target.
+func BisonrelayContactSuggestKXHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Invitee string `json:"invitee"`
+		Target  string `json:"target"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Invitee == "" || req.Target == "" {
+		http.Error(w, "invitee and target are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdSuggestKX(r.Context(), req.Invitee, req.Target); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContactTransResetHandler proxies /contacts/trans-reset. Body:
+// {mediator, target}. The mediator is asked to forward a reset request to
+// the target on our behalf.
+func BisonrelayContactTransResetHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Mediator string `json:"mediator"`
+		Target   string `json:"target"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Mediator == "" || req.Target == "" {
+		http.Error(w, "mediator and target are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdTransReset(r.Context(), req.Mediator, req.Target); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContactAcceptSuggestionHandler accepts an inbound KX
+// suggestion: asks the mediator to introduce us to the target.
+func BisonrelayContactAcceptSuggestionHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Mediator string `json:"mediator"`
+		Target   string `json:"target"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Mediator == "" || req.Target == "" {
+		http.Error(w, "mediator and target are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdAcceptSuggestion(r.Context(), req.Mediator, req.Target); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // decodeBisonrelayUIDBody parses {uid: "<hex>"} from the request body.
 // Writes a 400 + returns false on failure so callers can return immediately.
 func decodeBisonrelayUIDBody(w http.ResponseWriter, r *http.Request) (string, bool) {

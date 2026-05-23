@@ -313,6 +313,83 @@ func BrclientdHandshake(ctx context.Context, uidHex string) error {
 	return brclientdPostJSON(ctx, "/contacts/handshake", map[string]string{"uid": uidHex})
 }
 
+// BrclientdSuggestKX asks `invitee` to KX with `target`. Wraps
+// brclientd's /contacts/suggest-kx which calls client.SuggestKX.
+func BrclientdSuggestKX(ctx context.Context, inviteeHex, targetHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/suggest-kx", map[string]string{
+		"invitee": inviteeHex,
+		"target":  targetHex,
+	})
+}
+
+// BrclientdTransReset asks `mediator` to forward a reset request to
+// `target`. Wraps brclientd's /contacts/trans-reset which calls
+// client.RequestTransitiveReset.
+func BrclientdTransReset(ctx context.Context, mediatorHex, targetHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/trans-reset", map[string]string{
+		"mediator": mediatorHex,
+		"target":   targetHex,
+	})
+}
+
+// BrclientdAcceptSuggestion accepts an incoming KX suggestion by asking the
+// mediator to introduce us to the target. Wraps brclientd's
+// /contacts/accept-suggestion which calls client.RequestMediateIdentity.
+func BrclientdAcceptSuggestion(ctx context.Context, mediatorHex, targetHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/accept-suggestion", map[string]string{
+		"mediator": mediatorHex,
+		"target":   targetHex,
+	})
+}
+
+// BrclientdNotifEvent matches the {type, timestamp, payload} envelope
+// brclientd writes to /notifications. payload shape is event-specific.
+type BrclientdNotifEvent struct {
+	Type      string          `json:"type"`
+	Timestamp string          `json:"timestamp"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
+// BrclientdStreamNotifications opens a long-lived GET against brclientd's
+// /notifications JSONL endpoint and invokes onEvent per decoded line.
+// Returns when ctx is cancelled or the stream errors. Used by the dashboard
+// to forward brclientd-side events (e.g. OnKXSuggested) into the existing
+// browser-WS event bus.
+func BrclientdStreamNotifications(ctx context.Context, onEvent func(BrclientdNotifEvent)) error {
+	cli, err := brclientdClient()
+	if err != nil {
+		return err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/notifications", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return fmt.Errorf("dial brclientd /notifications: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("brclientd /notifications: HTTP %d: %s", resp.StatusCode, body)
+	}
+	dec := json.NewDecoder(resp.Body)
+	for {
+		var evt BrclientdNotifEvent
+		if err := dec.Decode(&evt); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return fmt.Errorf("decode notif: %w", err)
+		}
+		onEvent(evt)
+	}
+}
+
 // brclientdPostJSON issues a POST with a JSON body to brclientd's status
 // server and expects a 204 No Content reply. Used by per-contact action
 // endpoints that share the same fire-and-forget shape.

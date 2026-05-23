@@ -120,6 +120,7 @@ func main() {
 
 	// Persistent WS subscriptions to brclientd for chat / KX / GC events.
 	services.StartBisonrelayStreams(context.Background())
+	services.StartBrclientdNotifs(context.Background())
 
 	// Setup router
 	r := mux.NewRouter()
@@ -197,6 +198,9 @@ func main() {
 	api.HandleFunc("/br/contacts/rename", handlers.BisonrelayContactRenameHandler).Methods("POST")
 	api.HandleFunc("/br/contacts/kx-reset", handlers.BisonrelayContactKXResetHandler).Methods("POST")
 	api.HandleFunc("/br/contacts/handshake", handlers.BisonrelayContactHandshakeHandler).Methods("POST")
+	api.HandleFunc("/br/contacts/suggest-kx", handlers.BisonrelayContactSuggestKXHandler).Methods("POST")
+	api.HandleFunc("/br/contacts/trans-reset", handlers.BisonrelayContactTransResetHandler).Methods("POST")
+	api.HandleFunc("/br/contacts/accept-suggestion", handlers.BisonrelayContactAcceptSuggestionHandler).Methods("POST")
 	api.HandleFunc("/br/embeds/{contact}/{filename}", handlers.BisonrelayEmbedHandler).Methods("GET")
 	api.HandleFunc("/br/downloads/{contact}", handlers.BisonrelayDownloadsListHandler).Methods("GET")
 	api.HandleFunc("/br/downloads/{contact}/{filename}", handlers.BisonrelayDownloadHandler).Methods("GET")

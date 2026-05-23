@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+	"time"
 
 	"dcrpulse/internal/rpc"
 )
@@ -131,6 +132,43 @@ func StartBisonrelayStreams(ctx context.Context) {
 		}
 		return map[string]int64{"sequenceId": dl.SequenceID}, true
 	})
+}
+
+// StartBrclientdNotifs subscribes to brclientd's /notifications JSONL
+// stream and rebroadcasts each event to the dashboard event bus, using the
+// same {type, payload} envelope BR's clientrpc streams use. Reconnects on
+// failure with a short backoff.
+func StartBrclientdNotifs(ctx context.Context) {
+	go func() {
+		bus := Bisonrelay()
+		const minBackoff = 2 * time.Second
+		const maxBackoff = 30 * time.Second
+		backoff := minBackoff
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			err := rpc.BrclientdStreamNotifications(ctx, func(evt rpc.BrclientdNotifEvent) {
+				bus.broadcast(BisonrelayEvent{Type: evt.Type, Payload: evt.Payload})
+				backoff = minBackoff
+			})
+			if ctx.Err() != nil {
+				return
+			}
+			if err != nil {
+				log.Printf("brclientd notifications stream: %v (reconnecting in %s)", err, backoff)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}()
 }
 
 func runStream(

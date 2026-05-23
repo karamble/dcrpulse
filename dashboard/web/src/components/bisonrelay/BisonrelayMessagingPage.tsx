@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Copy,
@@ -21,6 +21,7 @@ import {
   BisonrelayMessage,
   BisonrelayPMAttachment,
   acceptBisonrelayInvite,
+  acceptBisonrelayKxSuggestion,
   getBisonrelayContacts,
   getBisonrelayDownloads,
   getBisonrelayMessages,
@@ -143,6 +144,30 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     selectedRef.current = selected;
   }, [selected]);
 
+  const handleAcceptSuggestion = useCallback(
+    async (target: string, _targetNick: string) => {
+      const cur = selectedRef.current;
+      const mediator = cur?.id?.identity ?? '';
+      if (!mediator || !target) {
+        throw new Error('Missing mediator or target identity');
+      }
+      await acceptBisonrelayKxSuggestion(mediator, target);
+    },
+    [],
+  );
+
+  // Lookup map for "do we already have the suggested user in our address
+  // book?" — drives the SuggestedKXCard's idle/already-kxed state. Also
+  // surfaces the contact's displayed nick (alias if any).
+  const knownContactsByUid = useMemo(() => {
+    const m = new Map<string, BisonrelayContact>();
+    for (const c of contacts) {
+      const id = c.id?.identity;
+      if (id) m.set(id, c);
+    }
+    return m;
+  }, [contacts]);
+
   useEffect(() => {
     return addListener((evt) => {
       if (evt.type === 'kx') {
@@ -165,6 +190,33 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               },
             ]);
           }
+        }
+        return;
+      }
+      if (evt.type === 'kx-suggested') {
+        // brclientd publishes this from its OnKXSuggested handler, having
+        // already LogPM'd the matching "Suggested KX to ..." line so it
+        // shows up on history scroll. We optimistically append the same
+        // text to the open thread when the suggestion targets us via the
+        // current contact (the invitee), so it renders without waiting
+        // for a reload.
+        const payload = (evt.payload ?? {}) as Record<string, string>;
+        const invitee = payload.invitee ?? '';
+        const target = payload.target ?? '';
+        const targetNick = payload.targetNick ?? '';
+        if (!invitee || !target) return;
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity === invitee) {
+          const line = `Suggested KX to ${target} "${targetNick}"`;
+          setMessages((prev) => [
+            ...prev,
+            {
+              message: line,
+              from: '',
+              timestamp: Math.floor(Date.now() / 1000),
+              internal: true,
+            },
+          ]);
         }
         return;
       }
@@ -405,7 +457,13 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               ) : messages.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No messages yet.</p>
               ) : (
-                <MessageList messages={messages} ownNick={ownNick} />
+                <MessageList
+                  messages={messages}
+                  ownNick={ownNick}
+                  mediatorUid={selected.id?.identity ?? ''}
+                  knownContactsByUid={knownContactsByUid}
+                  onAcceptSuggestion={handleAcceptSuggestion}
+                />
               )}
             </div>
             <form onSubmit={handleSend} className="p-3 border-t border-border/50 flex flex-col gap-2">
@@ -465,6 +523,8 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         <BisonrelayUserSubNav
           contact={subNavContact}
           nick={displayNick(subNavContact)}
+          contacts={contacts}
+          displayNick={displayNick}
           onClose={() => setSubNavContact(null)}
           onSendFile={() => {
             setSelected(subNavContact);
@@ -498,7 +558,27 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   );
 };
 
-const MessageList = ({ messages, ownNick }: { messages: BisonrelayMessage[]; ownNick: string }) => {
+// Matches BR's clientdb SuggestedKXLogMsg format ("Suggested KX to %s %q"
+// in fscdb.go:96). brclientd writes the same string for v0.2.4 since v0.2.4
+// doesn't auto-log; later BR versions write it natively. Capture group 1
+// is the 64-hex target identity, group 2 is the target nick.
+const SUGGESTED_KX_RE = /^Suggested KX to ([0-9a-f]{64}) "(.*)"$/;
+
+interface MessageListProps {
+  messages: BisonrelayMessage[];
+  ownNick: string;
+  mediatorUid: string;
+  knownContactsByUid: Map<string, BisonrelayContact>;
+  onAcceptSuggestion: (target: string, targetNick: string) => Promise<void>;
+}
+
+const MessageList = ({
+  messages,
+  ownNick,
+  mediatorUid,
+  knownContactsByUid,
+  onAcceptSuggestion,
+}: MessageListProps) => {
   const endRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -510,6 +590,22 @@ const MessageList = ({ messages, ownNick }: { messages: BisonrelayMessage[]; own
         // user's posts!" etc. via LogPM(internal=true)) render as centered
         // protocol notices, not chat bubbles. Mirrors bruig's chat events.
         if (m.internal) {
+          const sugg = m.message.match(SUGGESTED_KX_RE);
+          if (sugg) {
+            const targetUid = sugg[1];
+            const known = knownContactsByUid.get(targetUid);
+            return (
+              <SuggestedKXCard
+                key={i}
+                mediatorUid={mediatorUid}
+                targetUid={targetUid}
+                targetNick={sugg[2]}
+                timestamp={m.timestamp}
+                known={known}
+                onAccept={onAcceptSuggestion}
+              />
+            );
+          }
           return (
             <div key={i} className="flex justify-center py-0.5">
               <p className="text-[11px] italic text-muted-foreground/80 px-3 text-center">
@@ -538,6 +634,80 @@ const MessageList = ({ messages, ownNick }: { messages: BisonrelayMessage[]; own
       })}
       <div ref={endRef} />
     </>
+  );
+};
+
+const SuggestedKXCard = ({
+  mediatorUid,
+  targetUid,
+  targetNick,
+  timestamp,
+  known,
+  onAccept,
+}: {
+  mediatorUid: string;
+  targetUid: string;
+  targetNick: string;
+  timestamp: number;
+  known?: BisonrelayContact;
+  onAccept: (target: string, targetNick: string) => Promise<void>;
+}) => {
+  const [state, setState] = useState<'idle' | 'submitting' | 'accepted' | 'error'>('idle');
+  const [err, setErr] = useState<string | null>(null);
+
+  // Once the suggested user shows up in our contacts (either we just
+  // completed the KX they suggested, or we already knew them via another
+  // path), there is nothing to accept anymore — render a resolved state.
+  // Prefer the live contact's display nick over the embedded one.
+  const knownNick = known ? known.nick_alias || known.id?.nick || '' : '';
+  const displayName = knownNick || targetNick || targetUid.slice(0, 12);
+
+  const handleClick = async () => {
+    if (state === 'submitting' || state === 'accepted') return;
+    setState('submitting');
+    setErr(null);
+    try {
+      await onAccept(targetUid, targetNick);
+      setState('accepted');
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Accept failed');
+      setState('error');
+    }
+  };
+
+  return (
+    <div className="flex justify-center py-1">
+      <div className="rounded-lg border border-border/40 bg-muted/20 px-3 py-2 max-w-[80%] text-xs space-y-1.5">
+        <p className="italic text-muted-foreground/90">
+          Suggested KX with{' '}
+          <span className="font-mono text-foreground/90">{displayName}</span>
+          <span className="mx-1.5 opacity-50">·</span>
+          <span className="opacity-70">{new Date(timestamp * 1000).toLocaleString()}</span>
+        </p>
+        {known ? (
+          <p className="text-muted-foreground">
+            Already in your contacts.
+          </p>
+        ) : state === 'accepted' ? (
+          <p className="text-success">
+            Requested introduction. The KX completes once the mediator forwards your request.
+          </p>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleClick}
+              disabled={state === 'submitting' || !mediatorUid}
+              className="px-2.5 py-1 rounded-md bg-gradient-primary text-white text-[11px] font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {state === 'submitting' ? 'Accepting…' : 'Accept'}
+            </button>
+            {err && <span className="text-destructive break-words">{err}</span>}
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
