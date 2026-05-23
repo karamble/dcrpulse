@@ -412,6 +412,86 @@ func BrclientdSharedFiles(ctx context.Context) (json.RawMessage, error) {
 	return brclientdGetRaw(ctx, "/shared-files", nil)
 }
 
+// BrclientdShareFile streams a local file to brclientd's /shared-files/add
+// endpoint together with sharing parameters. costMatoms is the per-fetch
+// price in milliatoms (0 = free), targetUIDHex empty = global share.
+// Returns the new SharedFile envelope brclientd emits.
+func BrclientdShareFile(ctx context.Context, filename, mime string, body io.Reader, costMatoms uint64, targetUIDHex, descr string) (json.RawMessage, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	pr, pw := io.Pipe()
+	mp := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		defer mp.Close()
+		_ = mp.WriteField("cost_matoms", fmt.Sprintf("%d", costMatoms))
+		if targetUIDHex != "" {
+			_ = mp.WriteField("target_uid", targetUIDHex)
+		}
+		if descr != "" {
+			_ = mp.WriteField("descr", descr)
+		}
+		hdr := textproto.MIMEHeader{}
+		hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
+		if mime != "" {
+			hdr.Set("Content-Type", mime)
+		}
+		part, err := mp.CreatePart(hdr)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(part, body); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+	}()
+	url := fmt.Sprintf("https://%s:%s/shared-files/add", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, pr)
+	if err != nil {
+		return nil, fmt.Errorf("build share-file request: %w", err)
+	}
+	req.Header.Set("Content-Type", mp.FormDataContentType())
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /shared-files/add: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read share-file response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("brclientd /shared-files/add: HTTP %d: %s", resp.StatusCode, respBody)
+	}
+	return json.RawMessage(respBody), nil
+}
+
+// BrclientdUnshareFile revokes a share. targetUIDHex empty removes the
+// global share entry; otherwise revokes just the per-user share.
+func BrclientdUnshareFile(ctx context.Context, fidHex, targetUIDHex string) error {
+	return brclientdPostJSON(ctx, "/shared-files/remove", map[string]string{
+		"fid":        fidHex,
+		"target_uid": targetUIDHex,
+	})
+}
+
+// BrclientdListDownloads returns the flat list of in-flight + completed
+// file transfers tracked by BR.
+func BrclientdListDownloads(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/downloads", nil)
+}
+
+// BrclientdCancelDownload aborts an in-flight download by FID.
+func BrclientdCancelDownload(ctx context.Context, fidHex string) error {
+	return brclientdPostJSON(ctx, "/downloads/cancel", map[string]string{"fid": fidHex})
+}
+
 // BrclientdPostsFeed returns the raw JSON body of brclientd's /posts/feed.
 // Each entry is a PostSummary; the caller decodes as needed.
 func BrclientdPostsFeed(ctx context.Context) (json.RawMessage, error) {

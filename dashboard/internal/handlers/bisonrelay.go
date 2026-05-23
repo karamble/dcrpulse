@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -474,6 +475,100 @@ func BisonrelaySharedFilesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
+}
+
+// BisonrelayManageAddHandler accepts a multipart upload from the browser
+// (file + form fields cost_dcr, target_uid?, descr?) and proxies it as
+// the /shared-files/add request to brclientd. Cost is collected in DCR
+// for UX, converted to milliatoms before forwarding.
+func BisonrelayManageAddHandler(w http.ResponseWriter, r *http.Request) {
+	const maxUpload = 200 << 20 // 200 MiB upper bound; BR can store larger via chunks
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+
+	costDCRStr := strings.TrimSpace(r.FormValue("cost_dcr"))
+	var costMatoms uint64
+	if costDCRStr != "" {
+		costDCR, err := strconv.ParseFloat(costDCRStr, 64)
+		if err != nil || costDCR < 0 {
+			http.Error(w, "invalid cost_dcr", http.StatusBadRequest)
+			return
+		}
+		costMatoms = uint64(math.Round(costDCR * 1e11))
+	}
+	targetUID := strings.TrimSpace(r.FormValue("target_uid"))
+	descr := strings.TrimSpace(r.FormValue("descr"))
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file part missing: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	mime := header.Header.Get("Content-Type")
+	body, err := rpc.BrclientdShareFile(r.Context(), header.Filename, mime, file, costMatoms, targetUID, descr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayManageUnshareHandler removes a share. Body: {fid, target_uid?}.
+func BisonrelayManageUnshareHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		FID       string `json:"fid"`
+		TargetUID string `json:"target_uid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.FID == "" {
+		http.Error(w, "fid is required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdUnshareFile(r.Context(), req.FID, req.TargetUID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayManageDownloadsHandler returns the flat downloads list.
+func BisonrelayManageDownloadsHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdListDownloads(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayManageCancelDownloadHandler aborts an in-flight download.
+func BisonrelayManageCancelDownloadHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		FID string `json:"fid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.FID == "" {
+		http.Error(w, "fid is required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdCancelDownload(r.Context(), req.FID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // BisonrelayPostsRenderHandler renders a draft post body server-side so

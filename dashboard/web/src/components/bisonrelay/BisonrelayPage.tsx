@@ -3,13 +3,14 @@
 // license that can be found in the LICENSE file.
 
 import { ComponentType, useEffect, useState } from 'react';
-import { MessageSquare, Rss } from 'lucide-react';
+import { FolderOpen, MessageSquare, Rss } from 'lucide-react';
 import { BisonrelaySetupWizard } from './BisonrelaySetupWizard';
 import { BisonrelayMessagingPage } from './BisonrelayMessagingPage';
 import { BisonrelayFeed } from './BisonrelayFeed';
+import { BisonrelayFiles } from './BisonrelayFiles';
 import { BisonrelayStatus, getBisonrelayStatus } from '../../services/bisonrelayApi';
 
-type TabId = 'chat' | 'feed';
+type TabId = 'chat' | 'feed' | 'files';
 
 interface TabDef {
   id: TabId;
@@ -20,15 +21,17 @@ interface TabDef {
 const tabs: TabDef[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
   { id: 'feed', label: 'Feed', icon: Rss },
+  { id: 'files', label: 'Files', icon: FolderOpen },
 ];
 
-// readHashTab returns the active tab based on the URL hash. The feed
-// tab supports an optional subpath (`feed/<author>/<pid>`) used by the
-// "fetch + open" deep-link from PostsListModal — the BisonrelayFeed
-// component reads the subpath separately to auto-expand a card.
+// readHashTab returns the active tab based on the URL hash. Feed and
+// Files support subpaths (e.g. `feed/<author>/<pid>`, `files/shared`)
+// which the embedded surfaces parse on their own.
 const readHashTab = (): TabId => {
   const h = window.location.hash.replace('#', '').toLowerCase();
-  return h.startsWith('feed') ? 'feed' : 'chat';
+  if (h.startsWith('feed')) return 'feed';
+  if (h.startsWith('files')) return 'files';
+  return 'chat';
 };
 
 export const BisonrelayPage = () => {
@@ -110,6 +113,7 @@ export const BisonrelayPage = () => {
 
       {activeTab === 'chat' && <BisonrelayMessagingPage ownNick={ready.nick ?? 'unknown'} />}
       {activeTab === 'feed' && <BisonrelayFeed />}
+      {activeTab === 'files' && <BisonrelayFiles />}
     </div>
   );
 };

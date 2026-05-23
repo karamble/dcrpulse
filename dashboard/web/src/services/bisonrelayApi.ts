@@ -380,7 +380,9 @@ export type BisonrelayEventType =
   | 'posts-list-received'
   | 'content-list-received'
   | 'post-received'
-  | 'post-status-received';
+  | 'post-status-received'
+  | 'file-download-progress'
+  | 'file-download-completed';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;
@@ -409,4 +411,65 @@ export const getBisonrelayDownloads = async (
   } catch {
     return [];
   }
+};
+
+// Files-tab bindings: share-add, unshare, list-downloads, cancel-download.
+// Each is a thin proxy over the matching brclientd /shared-files or
+// /downloads route — see internal/handlers/bisonrelay.go.
+
+export interface BisonrelayShareFileResult {
+  fid: string;
+  filename: string;
+  cost: number;
+  size: number;
+  global: boolean;
+}
+
+export const shareBisonrelayFile = async (
+  file: File,
+  costDcr: number,
+  targetUid: string,
+  descr: string,
+): Promise<BisonrelayShareFileResult> => {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  if (costDcr > 0) form.append('cost_dcr', String(costDcr));
+  if (targetUid) form.append('target_uid', targetUid);
+  if (descr) form.append('descr', descr);
+  const { data } = await api.post<BisonrelayShareFileResult>(
+    '/br/files/add',
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data;
+};
+
+export const unshareBisonrelayFile = async (
+  fid: string,
+  targetUid?: string,
+): Promise<void> => {
+  await api.post('/br/files/shared/remove', { fid, target_uid: targetUid ?? '' });
+};
+
+export interface BisonrelayDownloadItem {
+  uid: string;
+  nick: string;
+  fid: string;
+  filename: string;
+  size: number;
+  total_chunks: number;
+  missing_chunks: number;
+  disk_path: string;
+  is_sent: boolean;
+}
+
+export const getBisonrelayManageDownloads = async (): Promise<BisonrelayDownloadItem[]> => {
+  const { data } = await api.get<{ downloads: BisonrelayDownloadItem[] | null }>(
+    '/br/files/downloads',
+  );
+  return data?.downloads ?? [];
+};
+
+export const cancelBisonrelayDownload = async (fid: string): Promise<void> => {
+  await api.post('/br/files/downloads/cancel', { fid });
 };
