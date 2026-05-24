@@ -537,8 +537,8 @@ export const cancelBisonrelayDownload = async (fid: string): Promise<void> => {
 export interface BisonrelayStatsTopContact {
   uid: string;
   nick: string;
-  sent_atoms: number;
-  received_atoms: number;
+  sent_matoms: number;
+  received_matoms: number;
 }
 
 export interface BisonrelayStatsOverview {
@@ -551,9 +551,9 @@ export interface BisonrelayStatsOverview {
   posts_authored: number;
   subscriptions_count: number;
   subscribers_count: number;
-  total_sent_atoms: number;
-  total_received_atoms: number;
-  total_fees_atoms: number;
+  total_sent_matoms: number;
+  total_received_matoms: number;
+  total_fees_matoms: number;
   rmq_p50_ns: number;
   top_contacts: BisonrelayStatsTopContact[];
 }
@@ -571,9 +571,9 @@ export interface BisonrelayPayStatsBreakdown {
 export interface BisonrelayPayStatsUser {
   uid: string;
   nick: string;
-  sent_atoms: number;
-  received_atoms: number;
-  fees_atoms: number;
+  sent_matoms: number;
+  received_matoms: number;
+  fees_matoms: number;
   breakdowns?: BisonrelayPayStatsBreakdown[];
 }
 

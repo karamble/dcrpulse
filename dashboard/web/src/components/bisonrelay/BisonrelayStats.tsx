@@ -64,12 +64,14 @@ const navigateTo = (hash: string): void => {
 
 // ---- formatting helpers --------------------------------------------------
 
-// BR exposes payment totals in atoms (1 DCR = 1e8 atoms). UI shows DCR
-// rounded to a sensible scale; sub-atom precision is meaningless for users.
-const formatDCR = (atoms: number, digits = 4): string => {
-  const dcr = atoms / 1e8;
-  if (!atoms) return '0';
-  if (Math.abs(dcr) < 0.0001) return `${atoms} atoms`;
+// clientdb records payment totals in milli-atoms (1 DCR = 1e11 matoms); see
+// bisonrelay client/clientdb/paystats.go RecordUserPayEvent. brclientd's
+// /stats JSON exposes them as "_matoms" fields. UI shows DCR rounded to a
+// sensible scale; sub-matom precision is meaningless for users.
+const formatDCR = (matoms: number, digits = 4): string => {
+  const dcr = matoms / 1e11;
+  if (!matoms) return '0';
+  if (Math.abs(dcr) < 0.0001) return `${matoms} matoms`;
   return dcr.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '');
 };
 
@@ -423,7 +425,7 @@ const OverviewView = () => {
   if (err) return <ErrorBanner msg={err} />;
   if (!data) return <Loading what="overview" />;
 
-  const totalMoved = data.total_sent_atoms + data.total_received_atoms;
+  const totalMoved = data.total_sent_matoms + data.total_received_matoms;
   const stageOk = data.stage === 'ready';
 
   return (
@@ -474,7 +476,7 @@ const OverviewView = () => {
           icon={Coins}
           label="DCR moved"
           value={formatDCR(totalMoved, 4)}
-          hint={`${formatDCR(data.total_fees_atoms, 5)} in fees`}
+          hint={`${formatDCR(data.total_fees_matoms, 5)} in fees`}
           tone="amber"
         />
         <HeroCard
@@ -508,17 +510,17 @@ const OverviewView = () => {
                         {c.nick || c.uid.slice(0, 12)}
                       </div>
                       <div className="mt-1">
-                        <MiniBars sent={c.sent_atoms} received={c.received_atoms} />
+                        <MiniBars sent={c.sent_matoms} received={c.received_matoms} />
                       </div>
                     </div>
                     <div className="text-right text-[11px] tabular-nums">
                       <div className="text-rose-400 flex items-center justify-end gap-1">
                         <ArrowUpRight className="h-3 w-3" />
-                        {formatDCR(c.sent_atoms)}
+                        {formatDCR(c.sent_matoms)}
                       </div>
                       <div className="text-emerald-400 flex items-center justify-end gap-1">
                         <ArrowDownRight className="h-3 w-3" />
-                        {formatDCR(c.received_atoms)}
+                        {formatDCR(c.received_matoms)}
                       </div>
                     </div>
                   </div>
@@ -575,9 +577,9 @@ const PaymentsView = () => {
 
   const totals = data.users.reduce(
     (acc, u) => {
-      acc.sent += u.sent_atoms;
-      acc.recv += u.received_atoms;
-      acc.fees += u.fees_atoms;
+      acc.sent += u.sent_matoms;
+      acc.recv += u.received_matoms;
+      acc.fees += u.fees_matoms;
       return acc;
     },
     { sent: 0, recv: 0, fees: 0 },
@@ -587,7 +589,7 @@ const PaymentsView = () => {
   // useMemo would have to live above the early returns to be Rules-of-Hooks
   // safe, but it's not worth the indirection for a trivial sort.
   const sortedUsers = [...data.users].sort(
-    (a, b) => (b.sent_atoms + b.received_atoms) - (a.sent_atoms + a.received_atoms),
+    (a, b) => (b.sent_matoms + b.received_matoms) - (a.sent_matoms + a.received_matoms),
   );
   const openUser = sortedUsers.find((u) => u.uid === openUid) ?? null;
 
@@ -676,12 +678,12 @@ const PaymentsView = () => {
                     {u.nick || u.uid.slice(0, 12)}
                   </div>
                   <div className="mt-1">
-                    <MiniBars sent={u.sent_atoms} received={u.received_atoms} />
+                    <MiniBars sent={u.sent_matoms} received={u.received_matoms} />
                   </div>
                 </div>
                 <div className="text-right text-[11px] tabular-nums shrink-0">
-                  <div className="text-rose-400">{formatDCR(u.sent_atoms)}</div>
-                  <div className="text-emerald-400">{formatDCR(u.received_atoms)}</div>
+                  <div className="text-rose-400">{formatDCR(u.sent_matoms)}</div>
+                  <div className="text-emerald-400">{formatDCR(u.received_matoms)}</div>
                 </div>
               </button>
             ))}
