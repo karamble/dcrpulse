@@ -343,6 +343,29 @@ export const postBisonrelayComment = async (
   return data;
 };
 
+export interface BisonrelayPostHearts {
+  count: number;
+  hearted_by_me: boolean;
+}
+
+export const getBisonrelayPostHearts = async (
+  uid: string,
+  pid: string,
+): Promise<BisonrelayPostHearts> => {
+  const { data } = await api.get<BisonrelayPostHearts>('/br/posts/hearts', {
+    params: { uid, pid },
+  });
+  return data;
+};
+
+export const heartBisonrelayPost = async (
+  uid: string,
+  pid: string,
+  heart: boolean,
+): Promise<void> => {
+  await api.post('/br/posts/heart', { uid, pid, heart });
+};
+
 export interface BisonrelayContentItem {
   file_id: string;
   filename: string;
@@ -381,6 +404,7 @@ export type BisonrelayEventType =
   | 'content-list-received'
   | 'post-received'
   | 'post-status-received'
+  | 'post-heart-received'
   | 'file-download-progress'
   | 'file-download-completed'
   | 'rtdt-invited'

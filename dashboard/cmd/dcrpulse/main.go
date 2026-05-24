@@ -211,6 +211,8 @@ func main() {
 	api.HandleFunc("/br/posts/body", handlers.BisonrelayPostBodyHandler).Methods("GET")
 	api.HandleFunc("/br/posts/comments", handlers.BisonrelayPostCommentsHandler).Methods("GET")
 	api.HandleFunc("/br/posts/comment", handlers.BisonrelayPostCommentHandler).Methods("POST")
+	api.HandleFunc("/br/posts/hearts", handlers.BisonrelayPostHeartsHandler).Methods("GET")
+	api.HandleFunc("/br/posts/heart", handlers.BisonrelayPostHeartHandler).Methods("POST")
 	api.HandleFunc("/br/posts/new", handlers.BisonrelayPostsNewHandler).Methods("POST")
 	api.HandleFunc("/br/posts/render", handlers.BisonrelayPostsRenderHandler).Methods("POST")
 	api.HandleFunc("/br/shared-files", handlers.BisonrelaySharedFilesHandler).Methods("GET")

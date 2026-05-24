@@ -466,6 +466,46 @@ func BisonrelayPostCommentHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"identifier": identifier})
 }
 
+// BisonrelayPostHeartsHandler returns the current heart count + my-own
+// state for a single post.
+func BisonrelayPostHeartsHandler(w http.ResponseWriter, r *http.Request) {
+	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
+	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
+	if uid == "" || pid == "" {
+		http.Error(w, "uid and pid query params are required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdPostHearts(r.Context(), uid, pid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayPostHeartHandler toggles the local identity's heart on a post.
+func BisonrelayPostHeartHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID   string `json:"uid"`
+		PID   string `json:"pid"`
+		Heart bool   `json:"heart"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" || req.PID == "" {
+		http.Error(w, "uid and pid are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdPostHeart(r.Context(), req.UID, req.PID, req.Heart); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelaySharedFilesHandler proxies brclientd's /shared-files list.
 func BisonrelaySharedFilesHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := rpc.BrclientdSharedFiles(r.Context())

@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   ChevronRight,
   Edit,
+  Heart,
   Loader2,
   Reply,
   Rss,
@@ -35,7 +36,9 @@ import {
   getBisonrelayIdentity,
   getBisonrelayPostBody,
   getBisonrelayPostComments,
+  getBisonrelayPostHearts,
   getBisonrelayPosts,
+  heartBisonrelayPost,
   postBisonrelayComment,
   subscribeBisonrelayPosts,
   unsubscribeBisonrelayPosts,
@@ -701,6 +704,10 @@ const PostDetailView = ({
   const [body, setBody] = useState<BisonrelayPostBody | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [hearts, setHearts] = useState<number | null>(null);
+  const [hearted, setHearted] = useState(false);
+  const [hearting, setHearting] = useState(false);
+  const { addListener } = useBisonrelayLive();
 
   const loadBody = useCallback(async () => {
     setLoading(true);
@@ -716,11 +723,49 @@ const PostDetailView = ({
     }
   }, [uid, pid]);
 
+  const loadHearts = useCallback(async () => {
+    try {
+      const h = await getBisonrelayPostHearts(uid, pid);
+      setHearts(h.count);
+      setHearted(h.hearted_by_me);
+    } catch {
+      /* leave count hidden on error; heart button still works */
+    }
+  }, [uid, pid]);
+
   useEffect(() => {
     setBody(null);
     setErr(null);
+    setHearts(null);
+    setHearted(false);
     loadBody();
-  }, [loadBody]);
+    loadHearts();
+  }, [loadBody, loadHearts]);
+
+  useEffect(() => {
+    return addListener((evt: BisonrelayLiveEvent) => {
+      if (evt.type !== 'post-heart-received') return;
+      const payload = (evt.payload ?? {}) as Record<string, unknown>;
+      if (payload.author !== uid || payload.pid !== pid) return;
+      loadHearts();
+    });
+  }, [addListener, uid, pid, loadHearts]);
+
+  const toggleHeart = async () => {
+    if (hearting) return;
+    const next = !hearted;
+    setHearting(true);
+    setHearted(next);
+    setHearts((prev) => (prev === null ? prev : prev + (next ? 1 : -1)));
+    try {
+      await heartBisonrelayPost(uid, pid, next);
+    } catch {
+      setHearted(!next);
+      setHearts((prev) => (prev === null ? prev : prev + (next ? -1 : 1)));
+    } finally {
+      setHearting(false);
+    }
+  };
 
   useEffect(() => {
     if (!summary || !onMarkSeen) return;
@@ -761,6 +806,22 @@ const PostDetailView = ({
               </>
             )}
           </div>
+          <button
+            type="button"
+            onClick={toggleHeart}
+            disabled={hearting}
+            aria-pressed={hearted}
+            className={`inline-flex items-center gap-1.5 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+              hearted ? 'text-rose-500' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Heart
+              className="h-4 w-4"
+              fill={hearted ? 'currentColor' : 'none'}
+              strokeWidth={hearted ? 0 : 2}
+            />
+            <span className="tabular-nums">{hearts ?? 0}</span>
+          </button>
         </div>
       </header>
       <article className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-3">

@@ -759,6 +759,50 @@ func BrclientdPostComment(ctx context.Context, uidHex, pidHex, comment, parent s
 	return out.Identifier, nil
 }
 
+// BrclientdPostHearts returns the current heart count + whether the local
+// identity hearted this post. Maps to brclientd's GET /posts/hearts.
+func BrclientdPostHearts(ctx context.Context, uidHex, pidHex string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/posts/hearts", map[string]string{
+		"uid": uidHex,
+		"pid": pidHex,
+	})
+}
+
+// BrclientdPostHeart toggles the local identity's heart on a remote post.
+func BrclientdPostHeart(ctx context.Context, uidHex, pidHex string, heart bool) error {
+	cli, err := brclientdClient()
+	if err != nil {
+		return err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/posts/heart", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	payload, err := json.Marshal(map[string]any{
+		"uid":   uidHex,
+		"pid":   pidHex,
+		"heart": heart,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return fmt.Errorf("brclientd /posts/heart: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("brclientd /posts/heart: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
 // BrclientdPostBody fetches the full PostMetadata for a single post.
 // Returns the raw JSON envelope so the caller can pull out attributes
 // (e.g. the markdown body under the "main" key) without taking a hard
