@@ -15,6 +15,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
+import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import {
   BisonrelayEditor,
   EditorEmbedMap,
@@ -122,6 +123,7 @@ export const BisonrelayFeed = () => {
   const [postsErr, setPostsErr] = useState<string | null>(null);
   const [seen, setSeen] = useState<Record<string, number>>(loadSeenMap);
   const [ownUid, setOwnUid] = useState<string>('');
+  const [avatars, setAvatars] = useState<Record<string, string>>({});
   const { addListener } = useBisonrelayLive();
 
   const markSeen = useCallback((key: string, ts: number) => {
@@ -136,10 +138,20 @@ export const BisonrelayFeed = () => {
 
   const reload = useCallback(async () => {
     try {
-      const list = await getBisonrelayPosts();
+      const [list, contacts] = await Promise.all([
+        getBisonrelayPosts(),
+        getBisonrelayContacts().catch(() => [] as BisonrelayContact[]),
+      ]);
       list.sort((a, b) => activityTs(b) - activityTs(a));
       setPosts(list);
       setPostsErr(null);
+      const map: Record<string, string> = {};
+      for (const c of contacts) {
+        const uid = c.id?.identity;
+        const av = c.id?.avatar;
+        if (uid && av) map[uid] = av;
+      }
+      setAvatars(map);
     } catch (e: any) {
       const body = e?.response?.data;
       setPostsErr(typeof body === 'string' ? body : e?.message || 'Could not load posts');
@@ -166,6 +178,7 @@ export const BisonrelayFeed = () => {
       });
   }, []);
 
+
   useEffect(() => {
     const onHashChange = () => setRoute(readHashRoute());
     window.addEventListener('hashchange', onHashChange);
@@ -183,6 +196,8 @@ export const BisonrelayFeed = () => {
           uid={route.target.uid}
           pid={route.target.pid}
           summary={summary}
+          avatarB64={avatars[route.target.uid]}
+          avatars={avatars}
           onBack={() => navigateTo('feed')}
           onMarkSeen={(ts) => markSeen(key, ts)}
         />
@@ -195,6 +210,7 @@ export const BisonrelayFeed = () => {
           err={postsErr}
           filter={(p) => !!ownUid && p.author_id === ownUid}
           seen={seen}
+          avatars={avatars}
           emptyTitle="You haven't published any posts yet"
           emptyHint='Use "New Post" in the sidebar to write your first one.'
         />
@@ -211,6 +227,7 @@ export const BisonrelayFeed = () => {
         posts={posts}
         err={postsErr}
         seen={seen}
+        avatars={avatars}
         emptyTitle="No posts yet"
         emptyHint="Subscribe to a contact's posts from their sub-nav (click their avatar in Chat) and new posts will land here as they publish."
       />
@@ -264,6 +281,7 @@ const PostsListView = ({
   posts,
   err,
   seen,
+  avatars,
   filter,
   emptyTitle,
   emptyHint,
@@ -271,6 +289,7 @@ const PostsListView = ({
   posts: BisonrelayPostSummary[] | null;
   err: string | null;
   seen: Record<string, number>;
+  avatars: Record<string, string>;
   filter?: (p: BisonrelayPostSummary) => boolean;
   emptyTitle: string;
   emptyHint: string;
@@ -301,6 +320,7 @@ const PostsListView = ({
                 key={key}
                 post={p}
                 hasActivity={hasNewActivity(p, seen[key])}
+                avatarB64={avatars[p.author_id]}
                 onOpen={() => navigateTo(`feed/post/${p.author_id}/${p.id}`)}
               />
             );
@@ -326,19 +346,23 @@ const EmptyState = ({ title, hint }: { title: string; hint: string }) => (
 const FeedRow = ({
   post,
   hasActivity,
+  avatarB64,
   onOpen,
 }: {
   post: BisonrelayPostSummary;
   hasActivity: boolean;
+  avatarB64?: string;
   onOpen: () => void;
 }) => {
   const dateStr = new Date(post.date * 1000).toLocaleString();
+  const nick = post.author_nick || post.author_id.slice(0, 12);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-muted/20 transition-colors"
     >
+      <AuthorAvatar uid={post.author_id} nick={nick} avatarB64={avatarB64} size="sm" />
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
           {hasActivity && (
@@ -351,7 +375,7 @@ const FeedRow = ({
           <span className="truncate">{post.title || '(untitled post)'}</span>
         </div>
         <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-          {post.author_nick || post.author_id.slice(0, 12)}
+          {nick}
           <span className="mx-1.5 opacity-50">·</span>
           {dateStr}
           {hasActivity && post.last_status_ts && (
@@ -366,6 +390,39 @@ const FeedRow = ({
       </div>
       <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
     </button>
+  );
+};
+
+const AuthorAvatar = ({
+  uid,
+  nick,
+  avatarB64,
+  size,
+}: {
+  uid: string;
+  nick: string;
+  avatarB64?: string;
+  size: 'sm' | 'md';
+}) => {
+  const dim = size === 'sm' ? 'h-7 w-7 text-[11px]' : 'h-10 w-10 text-sm';
+  const dataUrl = avatarDataUrl(avatarB64);
+  if (dataUrl) {
+    return (
+      <img
+        src={dataUrl}
+        alt=""
+        className={`shrink-0 rounded-full object-cover bg-muted/30 ${dim}`}
+      />
+    );
+  }
+  const initial = nick.trim().charAt(0).toUpperCase() || '?';
+  const bg = colorForUid(uid || nick);
+  return (
+    <span
+      className={`shrink-0 rounded-full flex items-center justify-center font-semibold text-white ${bg} ${dim}`}
+    >
+      {initial}
+    </span>
   );
 };
 
@@ -627,12 +684,16 @@ const PostDetailView = ({
   uid,
   pid,
   summary,
+  avatarB64,
+  avatars,
   onBack,
   onMarkSeen,
 }: {
   uid: string;
   pid: string;
   summary: BisonrelayPostSummary | undefined;
+  avatarB64?: string;
+  avatars: Record<string, string>;
   onBack: () => void;
   onMarkSeen?: (ts: number) => void;
 }) => {
@@ -686,16 +747,19 @@ const PostDetailView = ({
           Back to feed
         </button>
       </div>
-      <header className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-2">
-        <h2 className="text-lg font-semibold text-foreground break-words">{title}</h2>
-        <div className="text-xs text-muted-foreground">
-          {authorNick}
-          {dateStr && (
-            <>
-              <span className="mx-1.5 opacity-50">·</span>
-              {dateStr}
-            </>
-          )}
+      <header className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 flex items-start gap-3">
+        <AuthorAvatar uid={uid} nick={authorNick} avatarB64={avatarB64} size="md" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <h2 className="text-lg font-semibold text-foreground break-words">{title}</h2>
+          <div className="text-xs text-muted-foreground">
+            {authorNick}
+            {dateStr && (
+              <>
+                <span className="mx-1.5 opacity-50">·</span>
+                {dateStr}
+              </>
+            )}
+          </div>
         </div>
       </header>
       <article className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-3">
@@ -717,14 +781,22 @@ const PostDetailView = ({
       </article>
       {body && (
         <section className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5">
-          <PostComments authorId={uid} pid={pid} />
+          <PostComments authorId={uid} pid={pid} avatars={avatars} />
         </section>
       )}
     </div>
   );
 };
 
-const PostComments = ({ authorId, pid }: { authorId: string; pid: string }) => {
+const PostComments = ({
+  authorId,
+  pid,
+  avatars,
+}: {
+  authorId: string;
+  pid: string;
+  avatars: Record<string, string>;
+}) => {
   const [comments, setComments] = useState<BisonrelayPostComment[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -812,23 +884,36 @@ const PostComments = ({ authorId, pid }: { authorId: string; pid: string }) => {
         <p className="text-xs text-muted-foreground italic">No comments yet.</p>
       ) : (
         <div className="space-y-2">
-          {comments?.map((c, i) => (
-            <div key={c.identifier || c.commentKey || i} className="text-sm">
-              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                {c.pending && <Loader2 className="h-3 w-3 animate-spin" />}
-                <span className="font-medium text-foreground/90">
-                  {c.from_nick || (c.status_from ? c.status_from.slice(0, 12) : 'you')}
-                </span>
-                <span className="opacity-50">·</span>
-                <span className="opacity-70">
-                  {c.timestamp ? new Date(c.timestamp * 1000).toLocaleString() : ''}
-                </span>
+          {comments?.map((c, i) => {
+            const nick =
+              c.from_nick || (c.status_from ? c.status_from.slice(0, 12) : 'you');
+            return (
+              <div
+                key={c.identifier || c.commentKey || i}
+                className="flex items-start gap-2 text-sm"
+              >
+                <AuthorAvatar
+                  uid={c.status_from || ''}
+                  nick={nick}
+                  avatarB64={c.status_from ? avatars[c.status_from] : undefined}
+                  size="sm"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    {c.pending && <Loader2 className="h-3 w-3 animate-spin" />}
+                    <span className="font-medium text-foreground/90">{nick}</span>
+                    <span className="opacity-50">·</span>
+                    <span className="opacity-70">
+                      {c.timestamp ? new Date(c.timestamp * 1000).toLocaleString() : ''}
+                    </span>
+                  </div>
+                  <p className="text-sm text-foreground/90 break-words whitespace-pre-wrap">
+                    {c.comment}
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-foreground/90 break-words whitespace-pre-wrap">
-                {c.comment}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       <form onSubmit={handleSubmit} className="flex items-end gap-2 pt-2">
