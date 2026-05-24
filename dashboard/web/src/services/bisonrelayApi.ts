@@ -602,6 +602,86 @@ export const setBisonrelayStoreMode = async (
   return data;
 };
 
+// Storefront products. Price is in USD (the store converts to DCR at order
+// time). Managed as TOML files brclientd live-reloads.
+export interface BisonrelayStoreProduct {
+  title: string;
+  sku: string;
+  description: string;
+  tags: string[];
+  price: number;
+  shipping: boolean;
+  disabled: boolean;
+  // Relative path (under the store dir) of a file delivered to the buyer once
+  // the order's invoice settles - i.e. a digital download. Empty = no download.
+  sendfilename?: string;
+}
+
+export const getBisonrelayStoreProducts = async (): Promise<BisonrelayStoreProduct[]> => {
+  const { data } = await api.get<{ products: BisonrelayStoreProduct[] | null }>(
+    '/br/store/products',
+  );
+  return data.products ?? [];
+};
+
+export const saveBisonrelayStoreProduct = async (p: BisonrelayStoreProduct): Promise<void> => {
+  await api.post('/br/store/products', p);
+};
+
+export const deleteBisonrelayStoreProduct = async (sku: string): Promise<void> => {
+  await api.post('/br/store/products/delete', { sku });
+};
+
+// uploadBisonrelayStoreFile uploads a digital-download file into the store dir
+// at the given relative path (empty = use the file's own name) and returns the
+// stored path to use as a product's sendfilename.
+export const uploadBisonrelayStoreFile = async (path: string, file: File): Promise<string> => {
+  const form = new FormData();
+  if (path) form.append('path', path);
+  form.append('file', file, file.name);
+  const { data } = await api.post<{ path: string }>('/br/store/files/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data.path;
+};
+
+export interface BisonrelayStoreShipping {
+  name: string;
+  address1: string;
+  address2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  phone: string;
+  countrycode: string;
+}
+
+export interface BisonrelayStoreOrder {
+  id: number;
+  user: string;
+  cart: { items: { product: BisonrelayStoreProduct; quantity: number }[] | null; updated: string };
+  status: string; // placed | paid | shipped | completed | canceled
+  placed_ts: string;
+  ship_charge: number;
+  exchange_rate: number;
+  pay_type: string;
+  invoice: string;
+  shipping?: BisonrelayStoreShipping | null;
+}
+
+export const getBisonrelayStoreOrders = async (): Promise<BisonrelayStoreOrder[]> => {
+  const { data } = await api.get<{ orders: BisonrelayStoreOrder[] | null }>('/br/store/orders');
+  return data.orders ?? [];
+};
+
+export const setBisonrelayStoreOrderStatus = async (
+  uid: string,
+  id: number,
+  status: string,
+): Promise<void> => {
+  await api.post('/br/store/orders/status', { uid, id, status });
+};
+
 // Stats bindings: each endpoint is a thin pass-through over the matching
 // brclientd /stats/* route. Values denominated in milliatoms (1 DCR = 1e11
 // matoms) on the wire; the UI converts at render time.

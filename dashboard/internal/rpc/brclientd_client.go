@@ -549,6 +549,88 @@ func BrclientdSetStoreMode(ctx context.Context, body any) (json.RawMessage, erro
 	return brclientdPostJSONRaw(ctx, "/store/mode", body)
 }
 
+// BrclientdStoreProducts returns the storefront's product catalog.
+func BrclientdStoreProducts(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/store/products", nil)
+}
+
+// BrclientdSaveStoreProduct upserts a product (body is the product object).
+func BrclientdSaveStoreProduct(ctx context.Context, body any) error {
+	return brclientdPostJSON(ctx, "/store/products", body)
+}
+
+// BrclientdDeleteStoreProduct removes a product by SKU.
+func BrclientdDeleteStoreProduct(ctx context.Context, sku string) error {
+	return brclientdPostJSON(ctx, "/store/products/delete", map[string]string{"sku": sku})
+}
+
+// BrclientdUploadStoreFile streams a file to brclientd's /store/files/upload,
+// stored under the store dir at relPath, for products to reference via
+// sendfilename (digital downloads). Returns {path}.
+func BrclientdUploadStoreFile(ctx context.Context, relPath, filename, mime string, body io.Reader) (json.RawMessage, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	pr, pw := io.Pipe()
+	mp := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		defer mp.Close()
+		if relPath != "" {
+			_ = mp.WriteField("path", relPath)
+		}
+		hdr := textproto.MIMEHeader{}
+		hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
+		if mime != "" {
+			hdr.Set("Content-Type", mime)
+		}
+		part, err := mp.CreatePart(hdr)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(part, body); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+	}()
+	url := fmt.Sprintf("https://%s:%s/store/files/upload", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, pr)
+	if err != nil {
+		return nil, fmt.Errorf("build upload request: %w", err)
+	}
+	req.Header.Set("Content-Type", mp.FormDataContentType())
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /store/files/upload: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("brclientd /store/files/upload: HTTP %d: %s", resp.StatusCode, respBody)
+	}
+	return json.RawMessage(respBody), nil
+}
+
+// BrclientdStoreOrders returns all storefront orders (across customers).
+func BrclientdStoreOrders(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/store/orders", nil)
+}
+
+// BrclientdSetStoreOrderStatus updates one order's status. status is one of
+// placed/paid/shipped/completed/canceled.
+func BrclientdSetStoreOrderStatus(ctx context.Context, uid string, id uint64, status string) error {
+	return brclientdPostJSON(ctx, "/store/orders/status", map[string]any{
+		"uid":    uid,
+		"id":     id,
+		"status": status,
+	})
+}
+
 // BrclientdStatsOverview returns the compact summary shown on the Stats
 // landing page (hero counters + top contacts + connection-health).
 func BrclientdStatsOverview(ctx context.Context) (json.RawMessage, error) {

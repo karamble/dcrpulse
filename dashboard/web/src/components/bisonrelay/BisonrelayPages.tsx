@@ -32,6 +32,7 @@ import {
 } from '../../services/bisonrelayApi';
 import { BisonrelayEditor, composeBRBody, EditorEmbedMap } from './editor';
 import { BisonrelayStoreModePanel } from './BisonrelayStoreMode';
+import { BisonrelayStoreManager } from './BisonrelayStoreManager';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
 
 const navigateTo = (hash: string): void => {
@@ -218,10 +219,7 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
       <BisonrelayStoreModePanel onModeChange={(m) => setStoreEnabled(m.enabled)} />
 
       {storeEnabled ? (
-        <div className="rounded-xl border border-border/50 bg-gradient-card p-6 text-sm text-muted-foreground">
-          This node is hosting a storefront, so static-page hosting is paused. Product and order
-          management arrive in a later update; switch back to static pages above to manage pages.
-        </div>
+        <BisonrelayStoreManager />
       ) : (
         <>
       <div className="flex items-center justify-between">

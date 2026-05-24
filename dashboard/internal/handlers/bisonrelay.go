@@ -1154,6 +1154,112 @@ func BisonrelayStoreModeHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// BisonrelayStoreProductsHandler proxies brclientd's /store/products: GET lists
+// the catalog, POST upserts a product.
+func BisonrelayStoreProductsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		body, err := rpc.BrclientdStoreProducts(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+		return
+	}
+	var req map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdSaveStoreProduct(r.Context(), req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayStoreProductDeleteHandler removes a storefront product. Body: {sku}.
+func BisonrelayStoreProductDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SKU string `json:"sku"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.SKU == "" {
+		http.Error(w, "sku is required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdDeleteStoreProduct(r.Context(), req.SKU); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayStoreOrdersHandler proxies brclientd's /store/orders (the full
+// order list, newest first).
+func BisonrelayStoreOrdersHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdStoreOrders(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayStoreOrderStatusHandler updates one order's status. Body:
+// {uid, id, status}.
+func BisonrelayStoreOrderStatusHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID    string `json:"uid"`
+		ID     uint64 `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" || req.Status == "" {
+		http.Error(w, "uid and status are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdSetStoreOrderStatus(r.Context(), req.UID, req.ID, req.Status); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayStoreFileUploadHandler proxies a multipart upload to brclientd's
+// /store/files/upload (a digital-download file stored at the given path under
+// the store dir). Form: path + file.
+func BisonrelayStoreFileUploadHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+	relPath := strings.TrimSpace(r.FormValue("path"))
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file part missing: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	mime := header.Header.Get("Content-Type")
+	body, err := rpc.BrclientdUploadStoreFile(r.Context(), relPath, header.Filename, mime, file)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
 // BisonrelayContactListContentHandler proxies the brclientd list-content
 // endpoint. Async: the response lands as content-list-received.
 func BisonrelayContactListContentHandler(w http.ResponseWriter, r *http.Request) {
