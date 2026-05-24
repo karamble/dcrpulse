@@ -115,10 +115,10 @@ func BisonrelayEventsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 var (
-	embedContactRe   = regexp.MustCompile(`^[0-9a-f]{16}$`)
-	embedFilenameRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-	downloadNickRe   = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-	downloadFileRe   = regexp.MustCompile(`^[A-Za-z0-9._ -]+$`)
+	embedContactRe  = regexp.MustCompile(`^[0-9a-f]{16}$`)
+	embedFilenameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	downloadNickRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	downloadFileRe  = regexp.MustCompile(`^[A-Za-z0-9._ -]+$`)
 )
 
 // BisonrelayEmbedHandler serves an inline embed file that BR's clientdb has
@@ -231,9 +231,9 @@ func BisonrelayDownloadsListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type fileEntry struct {
-		Name     string `json:"name"`
-		Size     int64  `json:"size"`
-		ModTime  int64  `json:"mtime"`
+		Name    string `json:"name"`
+		Size    int64  `json:"size"`
+		ModTime int64  `json:"mtime"`
 	}
 	out := make([]fileEntry, 0, len(entries))
 	for _, e := range entries {
@@ -920,6 +920,122 @@ func BisonrelayPostBodyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// BisonrelayPagesFetchHandler fetches a single BR page (resource) via
+// brclientd and renders its markdown into structured segments. Body:
+// {uid, path, session_id?, parent_page?, data?, async_target_id?}. The
+// brclientd call blocks until the reply lands (or times out), so this is a
+// plain request/response from the dashboard's perspective.
+func BisonrelayPagesFetchHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID           string          `json:"uid"`
+		Path          []string        `json:"path"`
+		SessionID     uint64          `json:"session_id"`
+		ParentPage    uint64          `json:"parent_page"`
+		Data          json.RawMessage `json:"data,omitempty"`
+		AsyncTargetID string          `json:"async_target_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.UID) == "" {
+		http.Error(w, "uid is required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdPagesFetch(r.Context(), req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var fetched struct {
+		SessionID     uint64            `json:"session_id"`
+		PageID        uint64            `json:"page_id"`
+		ParentPage    uint64            `json:"parent_page"`
+		Status        uint16            `json:"status"`
+		Meta          map[string]string `json:"meta"`
+		Markdown      string            `json:"markdown"`
+		AsyncTargetID string            `json:"async_target_id"`
+	}
+	if err := json.Unmarshal(body, &fetched); err != nil {
+		http.Error(w, "decode page reply: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	out := map[string]any{
+		"session_id":      fetched.SessionID,
+		"page_id":         fetched.PageID,
+		"parent_page":     fetched.ParentPage,
+		"status":          fetched.Status,
+		"meta":            fetched.Meta,
+		"markdown":        fetched.Markdown,
+		"async_target_id": fetched.AsyncTargetID,
+		"segments":        services.SplitAndRenderBRPage(fetched.Markdown),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// BisonrelayPagesLocalListHandler proxies the list of markdown pages this
+// node hosts.
+func BisonrelayPagesLocalListHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdPagesLocalList(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayPagesLocalFileHandler proxies the raw markdown of one hosted page.
+func BisonrelayPagesLocalFileHandler(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		http.Error(w, "name query param is required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdPagesLocalFile(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayPagesLocalSaveHandler creates or overwrites one hosted page.
+// Body: {name, content}.
+func BisonrelayPagesLocalSaveHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name    string `json:"name"`
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdPagesLocalSave(r.Context(), req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayPagesLocalDeleteHandler removes one hosted page. Body: {name}.
+func BisonrelayPagesLocalDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdPagesLocalDelete(r.Context(), req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // BisonrelayContactListContentHandler proxies the brclientd list-content

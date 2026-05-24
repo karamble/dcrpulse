@@ -120,7 +120,15 @@ export const BisonrelayUserSubNav = ({
     },
     { id: 'list-posts', label: 'List Posts', icon: List, onClick: () => setModal('list-posts') },
     { id: 'send-file', label: 'Send File', icon: Paperclip, onClick: onSendFile },
-    { id: 'pages', label: 'View Pages', icon: FileText, comingSoon: true },
+    {
+      id: 'pages',
+      label: 'View Pages',
+      icon: FileText,
+      onClick: () => {
+        window.location.hash = `pages/visit/${uid}/index.md`;
+        onClose();
+      },
+    },
     { id: 'rename', label: 'Rename User', icon: Edit2, onClick: () => setModal('rename') },
     { id: 'suggest-kx', label: 'Suggest User to KX', icon: UserPlus, onClick: () => setModal('suggest-kx') },
     { id: 'trans-reset', label: 'Issue Transitive Reset', icon: Users, onClick: () => setModal('trans-reset') },

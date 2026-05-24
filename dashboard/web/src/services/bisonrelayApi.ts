@@ -889,3 +889,83 @@ export const aliasBisonrelayGC = async (gcid: string, alias: string): Promise<vo
 export const resendBisonrelayGCList = async (gcid: string, uid?: string): Promise<void> => {
   await api.post(`/br/gc/${gcid}/resend-list`, uid ? { uid } : {});
 };
+
+// ---- Pages ---------------------------------------------------------------
+// BR "pages" are markdown resources a user hosts and others fetch over the
+// relay. The dashboard renders fetched pages server-side into structured
+// segments (see services/markdown.go SplitAndRenderBRPage).
+
+export interface BisonrelayPageFormField {
+  type: string; // txtinput | intinput | submit | action | asynctarget | hidden
+  name?: string;
+  label?: string;
+  hint?: string;
+  value?: string;
+  regexp?: string;
+  regexpstr?: string;
+}
+
+export interface BisonrelayPageSegment {
+  kind: 'text' | 'embed' | 'form';
+  section_id?: string;
+  html?: string;
+  name?: string;
+  mime?: string;
+  data_b64?: string;
+  size?: number;
+  alt?: string;
+  fields?: BisonrelayPageFormField[];
+}
+
+export interface BisonrelayFetchedPage {
+  session_id: number;
+  page_id: number;
+  parent_page: number;
+  status: number; // 200 Ok, 404 NotFound, 400 BadRequest
+  meta?: Record<string, string>;
+  markdown: string;
+  async_target_id?: string;
+  segments: BisonrelayPageSegment[] | null;
+}
+
+export interface BisonrelayPageFetchRequest {
+  uid: string;
+  path: string[];
+  session_id?: number;
+  parent_page?: number;
+  data?: Record<string, unknown>;
+  async_target_id?: string;
+}
+
+export const fetchBisonrelayPage = async (
+  req: BisonrelayPageFetchRequest,
+): Promise<BisonrelayFetchedPage> => {
+  const { data } = await api.post<BisonrelayFetchedPage>('/br/pages/fetch', req);
+  return data;
+};
+
+export interface BisonrelayLocalPage {
+  name: string;
+  size: number;
+  modified: number;
+}
+
+export const listBisonrelayLocalPages = async (): Promise<BisonrelayLocalPage[]> => {
+  const { data } = await api.get<{ pages: BisonrelayLocalPage[] | null }>('/br/pages/local');
+  return data?.pages ?? [];
+};
+
+export const getBisonrelayLocalPage = async (name: string): Promise<string> => {
+  const { data } = await api.get<{ name: string; content: string }>('/br/pages/local/file', {
+    params: { name },
+  });
+  return data?.content ?? '';
+};
+
+export const saveBisonrelayLocalPage = async (name: string, content: string): Promise<void> => {
+  await api.post('/br/pages/local/save', { name, content });
+};
+
+export const deleteBisonrelayLocalPage = async (name: string): Promise<void> => {
+  await api.post('/br/pages/local/delete', { name });
+};

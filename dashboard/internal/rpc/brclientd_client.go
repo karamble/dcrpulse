@@ -996,6 +996,35 @@ func brclientdPostJSONRaw(ctx context.Context, path string, body any) (json.RawM
 	return out, nil
 }
 
+// BrclientdPagesFetch fetches a single page (resource) from brclientd,
+// blocking until the reply lands. body: {uid, path, session_id?,
+// parent_page?, data?, async_target_id?}. Returns the raw {session_id,
+// page_id, parent_page, status, meta, markdown, async_target_id} JSON.
+func BrclientdPagesFetch(ctx context.Context, body any) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/pages/fetch", body)
+}
+
+// BrclientdPagesLocalList lists the markdown pages this node hosts.
+func BrclientdPagesLocalList(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/pages/local", nil)
+}
+
+// BrclientdPagesLocalFile returns the raw markdown of one hosted page.
+func BrclientdPagesLocalFile(ctx context.Context, name string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/pages/local/file", map[string]string{"name": name})
+}
+
+// BrclientdPagesLocalSave creates or overwrites one hosted page. body:
+// {name, content}.
+func BrclientdPagesLocalSave(ctx context.Context, body any) error {
+	return brclientdPostJSON(ctx, "/pages/local/save", body)
+}
+
+// BrclientdPagesLocalDelete removes one hosted page. body: {name}.
+func BrclientdPagesLocalDelete(ctx context.Context, body any) error {
+	return brclientdPostJSON(ctx, "/pages/local/delete", body)
+}
+
 // BrclientdAcceptInvite hands a previously-shared OOB invite blob to
 // ChatService.AcceptInvite. inviteBytes is base64-encoded.
 func BrclientdAcceptInvite(ctx context.Context, inviteBytesB64 string) (json.RawMessage, error) {

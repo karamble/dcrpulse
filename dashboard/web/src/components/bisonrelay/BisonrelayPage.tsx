@@ -3,16 +3,17 @@
 // license that can be found in the LICENSE file.
 
 import { ComponentType, useEffect, useState } from 'react';
-import { BarChart3, FolderOpen, MessageSquare, Phone, Rss } from 'lucide-react';
+import { BarChart3, FileText, FolderOpen, MessageSquare, Phone, Rss } from 'lucide-react';
 import { BisonrelaySetupWizard } from './BisonrelaySetupWizard';
 import { BisonrelayMessagingPage } from './BisonrelayMessagingPage';
 import { BisonrelayFeed } from './BisonrelayFeed';
 import { BisonrelayFiles } from './BisonrelayFiles';
 import { BisonrelayStats } from './BisonrelayStats';
 import { BisonrelayRealtime } from './BisonrelayRealtime';
+import { BisonrelayPages } from './BisonrelayPages';
 import { BisonrelayStatus, getBisonrelayStatus } from '../../services/bisonrelayApi';
 
-type TabId = 'chat' | 'feed' | 'files' | 'stats' | 'realtime';
+type TabId = 'chat' | 'feed' | 'files' | 'stats' | 'realtime' | 'pages';
 
 interface TabDef {
   id: TabId;
@@ -26,6 +27,7 @@ const tabs: TabDef[] = [
   { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'stats', label: 'Stats', icon: BarChart3 },
   { id: 'realtime', label: 'Realtime', icon: Phone },
+  { id: 'pages', label: 'Pages', icon: FileText },
 ];
 
 // readHashTab returns the active tab based on the URL hash. Feed, Files,
@@ -38,6 +40,7 @@ const readHashTab = (): TabId => {
   if (h.startsWith('files')) return 'files';
   if (h.startsWith('stats')) return 'stats';
   if (h.startsWith('realtime')) return 'realtime';
+  if (h.startsWith('pages')) return 'pages';
   return 'chat';
 };
 
@@ -123,6 +126,7 @@ export const BisonrelayPage = () => {
       {activeTab === 'files' && <BisonrelayFiles />}
       {activeTab === 'stats' && <BisonrelayStats />}
       {activeTab === 'realtime' && <BisonrelayRealtime />}
+      {activeTab === 'pages' && <BisonrelayPages />}
     </div>
   );
 };
