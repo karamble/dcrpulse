@@ -530,6 +530,44 @@ export const cancelBisonrelayDownload = async (fid: string): Promise<void> => {
   await api.post('/br/files/downloads/cancel', { fid });
 };
 
+// startBisonrelayContentGet initiates a download of a shared file (FID) that a
+// page advertised via --embed[download=<fid>,cost=,...]--. BR auto-pays any
+// per-chunk cost; poll getBisonrelayManageDownloads to track completion, then
+// load the bytes from bisonrelayContentFileUrl.
+export const startBisonrelayContentGet = async (uid: string, fid: string): Promise<void> => {
+  await api.post('/br/content/get', { uid, fid });
+};
+
+// bisonrelayContentFileUrl is the same-origin URL the browser loads (as an
+// <img> src or a download link) for a fully-downloaded shared file.
+export const bisonrelayContentFileUrl = (fid: string, uid?: string): string => {
+  const q = new URLSearchParams({ fid });
+  if (uid) q.set('uid', uid);
+  return `/api/br/content/file?${q.toString()}`;
+};
+
+export interface BisonrelayRates {
+  dcr_usd: number;
+  btc_usd: number;
+  source: string; // "bisonrelay" | "kraken" | "" (none yet)
+  updated_at: string; // RFC3339; empty until a rate is first obtained
+}
+
+let ratesCache: { at: number; data: BisonrelayRates } | null = null;
+const RATES_CACHE_MS = 2 * 60 * 1000;
+
+// getBisonrelayRates returns the current DCR/USD (+ BTC/USD) rate, memoized for
+// a couple of minutes so many download embeds on one page share a single
+// request. brclientd already throttles the upstream sources behind this.
+export const getBisonrelayRates = async (): Promise<BisonrelayRates> => {
+  if (ratesCache && Date.now() - ratesCache.at < RATES_CACHE_MS) {
+    return ratesCache.data;
+  }
+  const { data } = await api.get<BisonrelayRates>('/br/rates');
+  ratesCache = { at: Date.now(), data };
+  return data;
+};
+
 // Stats bindings: each endpoint is a thin pass-through over the matching
 // brclientd /stats/* route. Values denominated in milliatoms (1 DCR = 1e11
 // matoms) on the wire; the UI converts at render time.
@@ -914,6 +952,12 @@ export interface BisonrelayPageSegment {
   data_b64?: string;
   size?: number;
   alt?: string;
+  // File-transfer embed (--embed[download=<fid>,cost=,filename=,...]--): the
+  // bytes are fetched over BR file transfer (paying cost, in milli-atoms),
+  // not delivered inline in data_b64.
+  download?: string;
+  cost?: number;
+  filename?: string;
   fields?: BisonrelayPageFormField[];
 }
 

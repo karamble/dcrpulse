@@ -19,12 +19,16 @@ import {
   BisonrelayLocalPage,
   BisonrelayPageFormField,
   BisonrelayPageSegment,
+  bisonrelayContentFileUrl,
   deleteBisonrelayLocalPage,
   fetchBisonrelayPage,
   getBisonrelayIdentity,
   getBisonrelayLocalPage,
+  getBisonrelayManageDownloads,
+  getBisonrelayRates,
   listBisonrelayLocalPages,
   saveBisonrelayLocalPage,
+  startBisonrelayContentGet,
 } from '../../services/bisonrelayApi';
 import { BisonrelayEditor, composeBRBody, EditorEmbedMap } from './editor';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
@@ -493,7 +497,11 @@ const PageView = ({
   }, []);
 
   const submitForm = useCallback(
-    async (actionPath: string[], formData: Record<string, unknown>, asyncTargetId: string) => {
+    async (
+      actionPath: string[],
+      formData: Record<string, unknown>,
+      asyncTargetId: string,
+    ): Promise<string | null> => {
       const cur = history[cursor];
       try {
         const res = await fetchBisonrelayPage({
@@ -504,15 +512,23 @@ const PageView = ({
           data: formData,
           async_target_id: asyncTargetId || undefined,
         });
+        // A non-200 reply (e.g. a static host can't process the action, or a
+        // dynamic host rejected it) carries no usable content; report it back
+        // to the form so the feedback appears where the user clicked, instead
+        // of blanking the page or wiping the target section.
+        if (res.status !== 200) {
+          return `Form action failed: page returned status ${res.status}.`;
+        }
         if (asyncTargetId) {
           applyAsync(asyncTargetId, res.segments ?? []);
         } else {
           setPage(res);
           setSegments(res.segments ?? []);
         }
+        return null;
       } catch (e: any) {
         const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Form submit failed');
+        return typeof body === 'string' ? body : e?.message || 'Form submit failed';
       }
     },
     [history, cursor, applyAsync],
@@ -593,7 +609,11 @@ const PageSegments = ({
   segments: BisonrelayPageSegment[];
   currentUid: string;
   onNavigate: (uid: string, path: string[]) => void;
-  onSubmitForm: (actionPath: string[], data: Record<string, unknown>, asyncTargetId: string) => void;
+  onSubmitForm: (
+    actionPath: string[],
+    data: Record<string, unknown>,
+    asyncTargetId: string,
+  ) => Promise<string | null>;
 }) => {
   // Intercept clicks on br:// and relative links so they navigate in-app
   // rather than reloading the dashboard. Fully-qualified http(s) links keep
@@ -602,7 +622,17 @@ const PageSegments = ({
     const anchor = (e.target as HTMLElement).closest('a');
     if (!anchor) return;
     const href = anchor.getAttribute('href') || '';
-    if (/^https?:\/\//i.test(href) || href.startsWith('mailto:')) return;
+    // Leave the browser to handle external links, mail, and embed download
+    // links (data:/blob: URIs carry a download attr); only in-app page links
+    // (relative or br://) are intercepted below.
+    if (
+      /^https?:\/\//i.test(href) ||
+      href.startsWith('mailto:') ||
+      href.startsWith('data:') ||
+      href.startsWith('blob:') ||
+      anchor.hasAttribute('download')
+    )
+      return;
     e.preventDefault();
     const resolved = resolvePageLink(href, currentUid);
     if (resolved) onNavigate(resolved.uid, resolved.path);
@@ -615,6 +645,9 @@ const PageSegments = ({
           return (
             <div key={i} className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: seg.html }} />
           );
+        }
+        if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
+          return <PageDownloadEmbed key={i} seg={seg} uid={currentUid} />;
         }
         if (seg.kind === 'embed' && seg.data_b64) {
           const isImage = !!seg.mime && seg.mime.startsWith('image/');
@@ -662,8 +695,193 @@ const resolvePageLink = (href: string, currentUid: string): { uid: string; path:
     return { uid, path: segs.length ? segs : ['index.md'] };
   }
   const segs = href.split('/').filter(Boolean).map(decodeURIComponent);
-  if (segs.length === 0) return null;
-  return { uid: currentUid, path: segs };
+  // A bare "/" (or empty) targets the host's index, matching bruig.
+  return { uid: currentUid, path: segs.length ? segs : ['index.md'] };
+};
+
+// formatDcrFromAtoms renders an atom amount as a trimmed DCR string. BR
+// shared-file / embed costs are in atoms (1 DCR = 1e8), distinct from the
+// milli-atoms used for payment and tip records.
+const formatDcrFromAtoms = (atoms: number): string =>
+  (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
+
+const formatDownloadBytes = (n: number): string => {
+  if (!n) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${i === 0 ? v : v.toFixed(1)} ${units[i]}`;
+};
+
+// PageDownloadEmbed renders a file-transfer embed
+// (--embed[download=<fid>,cost=,filename=,...]--): a file the host shares over
+// BR file transfer, optionally behind a Lightning paywall. Clicking starts the
+// download (the daemon auto-pays); for a paid file we require an explicit
+// confirm first. While in flight we poll the downloads list for progress; on
+// completion the bytes load from the dashboard's /content/file proxy - images
+// render inline, other types as a download link.
+const PageDownloadEmbed = ({ seg, uid }: { seg: BisonrelayPageSegment; uid: string }) => {
+  const fid = seg.download || '';
+  const filename = seg.filename || seg.name || 'file';
+  const cost = seg.cost || 0;
+  const isImage = !!seg.mime && seg.mime.startsWith('image/');
+  const [phase, setPhase] = useState<'idle' | 'confirm' | 'downloading' | 'ready' | 'error'>('idle');
+  const [err, setErr] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [usd, setUsd] = useState<{ amount: number; source: string; updatedAt: string } | null>(null);
+
+  // For a paid file, look up the USD value of the cost (DCR/USD via BR, with a
+  // Kraken fallback) so the price can be shown in both DCR and approximate USD.
+  useEffect(() => {
+    if (cost <= 0) return undefined;
+    let cancelled = false;
+    getBisonrelayRates()
+      .then((r) => {
+        if (!cancelled && r.dcr_usd > 0) {
+          setUsd({ amount: (cost / 1e8) * r.dcr_usd, source: r.source, updatedAt: r.updated_at });
+        }
+      })
+      .catch(() => {
+        /* USD is best-effort; the DCR price always shows. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cost]);
+
+  // costLabel renders "<n> DCR" plus an approximate USD value when known.
+  const usdSuffix = usd
+    ? ` (~$${usd.amount < 0.01 ? usd.amount.toFixed(4) : usd.amount.toFixed(2)})`
+    : '';
+  const costLabel = `${formatDcrFromAtoms(cost)} DCR${usdSuffix}`;
+  const usdTitle = usd
+    ? `USD via ${usd.source || 'unknown'}${usd.updatedAt ? `, updated ${new Date(usd.updatedAt).toLocaleString()}` : ''}`
+    : undefined;
+
+  useEffect(() => {
+    if (phase !== 'downloading') return undefined;
+    let cancelled = false;
+    let timer: number | undefined;
+    const tick = async () => {
+      try {
+        const items = await getBisonrelayManageDownloads();
+        const it = items.find((d) => d.fid === fid);
+        if (it) {
+          setProgress({ done: Math.max(0, it.total_chunks - it.missing_chunks), total: it.total_chunks });
+          if (it.missing_chunks === 0 && it.disk_path) {
+            if (!cancelled) setPhase('ready');
+            return;
+          }
+        }
+      } catch {
+        // Transient list error; keep polling.
+      }
+      if (!cancelled) timer = window.setTimeout(tick, 2000);
+    };
+    timer = window.setTimeout(tick, 800);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [phase, fid]);
+
+  const start = async () => {
+    setErr(null);
+    setPhase('downloading');
+    try {
+      await startBisonrelayContentGet(uid, fid);
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not start download');
+      setPhase('error');
+    }
+  };
+
+  if (!fid) return null;
+
+  if (phase === 'ready') {
+    const url = bisonrelayContentFileUrl(fid, uid);
+    if (isImage) {
+      return (
+        <img
+          src={url}
+          alt={seg.alt || filename}
+          className="rounded-lg border border-border/40 max-w-full h-auto"
+        />
+      );
+    }
+    return (
+      <a
+        href={url}
+        download={filename}
+        className="inline-block text-xs text-primary underline hover:no-underline"
+      >
+        {filename} ({seg.mime || 'binary'})
+      </a>
+    );
+  }
+
+  const meta = [filename, seg.size ? formatDownloadBytes(seg.size) : '', cost > 0 ? costLabel : 'free']
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <div className="rounded-lg border border-border/50 bg-background/40 p-3 text-sm space-y-2">
+      <div className="text-xs text-muted-foreground" title={usdTitle}>{meta}</div>
+      {phase === 'confirm' ? (
+        <div className="space-y-2">
+          <div>
+            Pay <span className="font-semibold text-foreground" title={usdTitle}>{costLabel}</span> to
+            download <span className="font-mono">{filename}</span>?
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={start}
+              className="px-3 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
+            >
+              Pay &amp; download
+            </button>
+            <button
+              type="button"
+              onClick={() => setPhase('idle')}
+              className="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : phase === 'downloading' ? (
+        <div className="text-muted-foreground">
+          Downloading{progress && progress.total ? ` ${progress.done}/${progress.total} chunks` : '…'}
+        </div>
+      ) : phase === 'error' ? (
+        <div className="space-y-2">
+          <div className="text-xs text-rose-300">{err}</div>
+          <button
+            type="button"
+            onClick={() => setPhase('idle')}
+            className="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 text-sm"
+          >
+            Try again
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => (cost > 0 ? setPhase('confirm') : start())}
+          title={usdTitle}
+          className="px-4 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
+        >
+          {cost > 0 ? `Download (${costLabel})` : `Download ${filename}`}
+        </button>
+      )}
+    </div>
+  );
 };
 
 const PageForm = ({
@@ -671,7 +889,11 @@ const PageForm = ({
   onSubmit,
 }: {
   fields: BisonrelayPageFormField[];
-  onSubmit: (actionPath: string[], data: Record<string, unknown>, asyncTargetId: string) => void;
+  onSubmit: (
+    actionPath: string[],
+    data: Record<string, unknown>,
+    asyncTargetId: string,
+  ) => Promise<string | null>;
 }) => {
   const initial = useMemo(() => {
     const m: Record<string, string> = {};
@@ -681,27 +903,59 @@ const PageForm = ({
     return m;
   }, [fields]);
   const [values, setValues] = useState<Record<string, string>>(initial);
+  const [fieldErrs, setFieldErrs] = useState<Record<string, string>>({});
+  const [submitErr, setSubmitErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const action = fields.find((f) => f.type === 'action')?.value ?? '';
   const asyncTarget = fields.find((f) => f.type === 'asynctarget')?.value ?? '';
   const submitField = fields.find((f) => f.type === 'submit');
 
-  const handleSubmit = (e: FormEvent) => {
+  // validateField mirrors bruig's FormField validator (forms.dart): a field is
+  // checked only when it carries a regexp, and the value must match it or the
+  // field's regexpstr is shown. Authors mark a field required with regexp=".+".
+  // A malformed author regexp is treated as no constraint rather than blocking.
+  const validateField = (f: BisonrelayPageFormField, value: string): string | null => {
+    if (!f.regexp) return null;
+    try {
+      return new RegExp(f.regexp).test(value) ? null : f.regexpstr || 'Invalid value';
+    } catch {
+      return null;
+    }
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!action) return;
+    if (!action || submitting) return;
     const data: Record<string, unknown> = {};
+    const errs: Record<string, string> = {};
     for (const f of fields) {
       if (!f.name) continue;
-      data[f.name] = values[f.name] ?? f.value ?? '';
+      const v = values[f.name] ?? f.value ?? '';
+      data[f.name] = v;
+      if (f.type === 'txtinput' || f.type === 'intinput') {
+        const msg = validateField(f, v);
+        if (msg) errs[f.name] = msg;
+      }
     }
+    if (Object.keys(errs).length > 0) {
+      setFieldErrs(errs);
+      return;
+    }
+    setFieldErrs({});
     const actionPath = action.split('/').filter(Boolean).map(decodeURIComponent);
-    onSubmit(actionPath, data, asyncTarget);
+    setSubmitErr(null);
+    setSubmitting(true);
+    const err = await onSubmit(actionPath, data, asyncTarget);
+    setSubmitting(false);
+    setSubmitErr(err);
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-border/50 bg-background/40 p-4">
       {fields.map((f, i) => {
         if (f.type === 'txtinput' || f.type === 'intinput') {
+          const fieldErr = f.name ? fieldErrs[f.name] : undefined;
           return (
             <label key={i} className="block">
               {f.label && <span className="text-xs text-muted-foreground">{f.label}</span>}
@@ -709,11 +963,26 @@ const PageForm = ({
                 type={f.type === 'intinput' ? 'number' : 'text'}
                 value={f.name ? values[f.name] ?? '' : ''}
                 placeholder={f.hint}
-                onChange={(e) =>
-                  f.name && setValues((v) => ({ ...v, [f.name as string]: e.target.value }))
-                }
-                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                aria-invalid={!!fieldErr}
+                onChange={(e) => {
+                  if (!f.name) return;
+                  const v = e.target.value;
+                  setValues((prev) => ({ ...prev, [f.name as string]: v }));
+                  // Clear the field's error once the new value passes, so the
+                  // message disappears as the user corrects it.
+                  if (fieldErr && !validateField(f, v)) {
+                    setFieldErrs((prev) => {
+                      const next = { ...prev };
+                      delete next[f.name as string];
+                      return next;
+                    });
+                  }
+                }}
+                className={`mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm ${
+                  fieldErr ? 'border-rose-500/60' : 'border-border'
+                }`}
               />
+              {fieldErr && <span className="mt-1 block text-xs text-rose-300">{fieldErr}</span>}
             </label>
           );
         }
@@ -721,11 +990,12 @@ const PageForm = ({
       })}
       <button
         type="submit"
-        disabled={!action}
+        disabled={!action || submitting}
         className="px-4 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 disabled:opacity-50 transition-colors"
       >
-        {submitField?.label || 'Submit'}
+        {submitting ? 'Submitting…' : submitField?.label || 'Submit'}
       </button>
+      {submitErr && <div className="text-xs text-rose-300">{submitErr}</div>}
     </form>
   );
 };

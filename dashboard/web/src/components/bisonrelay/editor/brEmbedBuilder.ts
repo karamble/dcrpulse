@@ -25,7 +25,7 @@ export interface EditorEmbed {
   download?: string;
   filename?: string;
   size?: number;
-  cost?: number; // milliatoms
+  cost?: number; // atoms (1 DCR = 1e8)
 }
 
 export type EditorEmbedMap = Record<string, EditorEmbed>;

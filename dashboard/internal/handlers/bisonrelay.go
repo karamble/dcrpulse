@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -531,14 +532,16 @@ func BisonrelayManageAddHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.MultipartForm.RemoveAll()
 
 	costDCRStr := strings.TrimSpace(r.FormValue("cost_dcr"))
-	var costMatoms uint64
+	var costAtoms uint64
 	if costDCRStr != "" {
 		costDCR, err := strconv.ParseFloat(costDCRStr, 64)
 		if err != nil || costDCR < 0 {
 			http.Error(w, "invalid cost_dcr", http.StatusBadRequest)
 			return
 		}
-		costMatoms = uint64(math.Round(costDCR * 1e11))
+		// BR shared-file costs are in atoms (1 DCR = 1e8), not the milli-atoms
+		// used for payment/tip records.
+		costAtoms = uint64(math.Round(costDCR * 1e8))
 	}
 	targetUID := strings.TrimSpace(r.FormValue("target_uid"))
 	descr := strings.TrimSpace(r.FormValue("descr"))
@@ -550,7 +553,7 @@ func BisonrelayManageAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 	mime := header.Header.Get("Content-Type")
-	body, err := rpc.BrclientdShareFile(r.Context(), header.Filename, mime, file, costMatoms, targetUID, descr)
+	body, err := rpc.BrclientdShareFile(r.Context(), header.Filename, mime, file, costAtoms, targetUID, descr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -1036,6 +1039,72 @@ func BisonrelayPagesLocalDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContentGetHandler initiates a download of a shared file (FID) that
+// a page or post advertised via --embed[download=<fid>,cost=,...]--. BR
+// auto-pays any per-chunk cost; the bytes are served by
+// BisonrelayContentFileHandler once the download completes. Body: {uid, fid}.
+func BisonrelayContentGetHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID string `json:"uid"`
+		FID string `json:"fid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" || req.FID == "" {
+		http.Error(w, "uid and fid are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdContentGet(r.Context(), req.UID, req.FID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContentFileHandler streams the bytes of a downloaded shared file
+// from brclientd so the viewer can show it inline or offer it for download.
+// Query: fid (required), uid (optional). Returns 404 until the download is
+// complete. The brclientd side serves only files from its download records.
+func BisonrelayContentFileHandler(w http.ResponseWriter, r *http.Request) {
+	fid := strings.TrimSpace(r.URL.Query().Get("fid"))
+	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
+	if fid == "" {
+		http.Error(w, "fid query param is required", http.StatusBadRequest)
+		return
+	}
+	resp, err := rpc.BrclientdContentFile(r.Context(), uid, fid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		http.Error(w, string(body), resp.StatusCode)
+		return
+	}
+	for _, h := range []string{"Content-Type", "Content-Disposition", "Content-Length"} {
+		if v := resp.Header.Get(h); v != "" {
+			w.Header().Set(h, v)
+		}
+	}
+	_, _ = io.Copy(w, resp.Body)
+}
+
+// BisonrelayRatesHandler proxies brclientd's /rates (DCR/USD + BTC/USD, with
+// the source that produced them and a last-updated stamp).
+func BisonrelayRatesHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdRates(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
 }
 
 // BisonrelayContactListContentHandler proxies the brclientd list-content

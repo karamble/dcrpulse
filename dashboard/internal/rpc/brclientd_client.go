@@ -414,10 +414,10 @@ func BrclientdSharedFiles(ctx context.Context) (json.RawMessage, error) {
 }
 
 // BrclientdShareFile streams a local file to brclientd's /shared-files/add
-// endpoint together with sharing parameters. costMatoms is the per-fetch
-// price in milliatoms (0 = free), targetUIDHex empty = global share.
+// endpoint together with sharing parameters. costAtoms is the per-fetch price
+// in atoms (1 DCR = 1e8; 0 = free), targetUIDHex empty = global share.
 // Returns the new SharedFile envelope brclientd emits.
-func BrclientdShareFile(ctx context.Context, filename, mime string, body io.Reader, costMatoms uint64, targetUIDHex, descr string) (json.RawMessage, error) {
+func BrclientdShareFile(ctx context.Context, filename, mime string, body io.Reader, costAtoms uint64, targetUIDHex, descr string) (json.RawMessage, error) {
 	cli, err := brclientdClient()
 	if err != nil {
 		return nil, err
@@ -430,7 +430,7 @@ func BrclientdShareFile(ctx context.Context, filename, mime string, body io.Read
 	go func() {
 		defer pw.Close()
 		defer mp.Close()
-		_ = mp.WriteField("cost_matoms", fmt.Sprintf("%d", costMatoms))
+		_ = mp.WriteField("cost_atoms", fmt.Sprintf("%d", costAtoms))
 		if targetUIDHex != "" {
 			_ = mp.WriteField("target_uid", targetUIDHex)
 		}
@@ -491,6 +491,50 @@ func BrclientdListDownloads(ctx context.Context) (json.RawMessage, error) {
 // BrclientdCancelDownload aborts an in-flight download by FID.
 func BrclientdCancelDownload(ctx context.Context, fidHex string) error {
 	return brclientdPostJSON(ctx, "/downloads/cancel", map[string]string{"fid": fidHex})
+}
+
+// BrclientdContentGet asks brclientd to start downloading a shared file (FID)
+// from a remote user, as advertised by an --embed[download=<fid>,cost=,...]--
+// tag. BR auto-pays any per-chunk cost the uploader set; progress is tracked
+// via BrclientdListDownloads and the file-download-* events.
+func BrclientdContentGet(ctx context.Context, uidHex, fidHex string) error {
+	return brclientdPostJSON(ctx, "/content/get", map[string]string{
+		"uid": uidHex,
+		"fid": fidHex,
+	})
+}
+
+// BrclientdContentFile opens a streaming GET against brclientd's /content/file
+// for a fully-downloaded shared file. The caller owns resp.Body and must close
+// it. uidHex may be empty to match the file from any peer.
+func BrclientdContentFile(ctx context.Context, uidHex, fidHex string) (*http.Response, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/content/file?fid=%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, fidHex)
+	if uidHex != "" {
+		url += "&uid=" + uidHex
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /content/file: %w", err)
+	}
+	return resp, nil
+}
+
+// BrclientdRates returns the current exchange rates as {dcr_usd, btc_usd,
+// source, updated_at}. brclientd serves BR's built-in rate, falling back to
+// Kraken's DCR/USD when BR has none.
+func BrclientdRates(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/rates", nil)
 }
 
 // BrclientdStatsOverview returns the compact summary shown on the Stats

@@ -54,10 +54,12 @@ const formatBytes = (n: number): string => {
   return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
 };
 
-const formatDCR = (matoms: number): string => {
-  if (!matoms) return 'Free';
-  const dcr = matoms / 1e11;
-  if (dcr < 0.0001) return `${matoms} matoms`;
+// Shared-file costs are in atoms (1 DCR = 1e8), not the milli-atoms used for
+// payment/tip records.
+const formatDCR = (atoms: number): string => {
+  if (!atoms) return 'Free';
+  const dcr = atoms / 1e8;
+  if (dcr < 0.0001) return `${atoms} atoms`;
   return `${dcr.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} DCR`;
 };
 

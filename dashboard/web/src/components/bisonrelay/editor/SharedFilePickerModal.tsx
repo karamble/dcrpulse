@@ -18,7 +18,8 @@ interface Props {
 // SharedFilePickerModal is the second toolbar button in the BR editor.
 // Two-step modal: list our shared files → set DCR price → return the
 // embed-shape the editor splices into the post body. BR's `cost=` is in
-// milliatoms (1 DCR = 1e11), but we collect DCR for UX and convert.
+// atoms (1 DCR = 1e8) - distinct from the milli-atoms of payment records -
+// but we collect DCR for UX and convert.
 export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
   const [files, setFiles] = useState<BisonrelaySharedFile[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -42,14 +43,14 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
     if (!picked) return;
     const parsedDcr = parseFloat(priceDcr);
     const dcrAmount = Number.isFinite(parsedDcr) && parsedDcr > 0 ? parsedDcr : 0;
-    // BR wire uses milli-atoms; 1 DCR = 1e11 matoms.
-    const matoms = Math.round(dcrAmount * 1e11);
+    // BR shared-file costs are in atoms; 1 DCR = 1e8 atoms.
+    const atoms = Math.round(dcrAmount * 1e8);
     onSubmit({
       displayName: picked.filename || picked.fid.slice(0, 12),
       download: picked.fid,
       filename: picked.filename,
       size: picked.size,
-      cost: matoms,
+      cost: atoms,
     });
     onClose();
   };
@@ -111,7 +112,7 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
                     // Pre-fill the DCR price if BR already has a non-zero
                     // cost configured on the share itself.
                     if (f.cost > 0) {
-                      setPriceDcr(String(f.cost / 1e11));
+                      setPriceDcr(String(f.cost / 1e8));
                     }
                   }}
                   className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5 hover:bg-muted/30 transition-colors"
@@ -131,7 +132,7 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
                       <>
                         <span className="opacity-50">·</span>
                         <span className="text-primary/80">
-                          default {(f.cost / 1e11).toFixed(8).replace(/\.?0+$/, '')} DCR
+                          default {(f.cost / 1e8).toFixed(8).replace(/\.?0+$/, '')} DCR
                         </span>
                       </>
                     )}

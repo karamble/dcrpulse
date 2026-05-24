@@ -535,8 +535,10 @@ const SizeIndicator = ({
   );
 };
 
-function formatCost(matoms: number): string {
-  const dcr = matoms / 1e11;
+// Embed download costs are in atoms (1 DCR = 1e8), not the milli-atoms used
+// for payment/tip records.
+function formatCost(atoms: number): string {
+  const dcr = atoms / 1e8;
   return `${dcr.toFixed(8).replace(/\.?0+$/, '')} DCR`;
 }
 

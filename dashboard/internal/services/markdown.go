@@ -127,6 +127,14 @@ type BRPostBodySegment struct {
 	DataB64 string `json:"data_b64,omitempty"`
 	Size    int    `json:"size,omitempty"`
 	Alt     string `json:"alt,omitempty"`
+	// Download (a 64-hex FID), Cost (in atoms; 1 DCR = 1e8, distinct from the
+	// milli-atoms of payment records) and Filename describe a file-transfer
+	// embed: --embed[download=<fid>,cost=,filename=,size=,...]--. The bytes are
+	// not inline; the viewer fetches them over BR's file-transfer subsystem
+	// (paying Cost) rather than from DataB64.
+	Download string `json:"download,omitempty"`
+	Cost     uint64 `json:"cost,omitempty"`
+	Filename string `json:"filename,omitempty"`
 }
 
 // brPostEmbedRE matches BR's --embed[k=v,k=v]-- (and the parallel
@@ -181,15 +189,20 @@ func SplitAndRenderBRPostBody(src string) []BRPostBodySegment {
 // "form" (an interactive --form-- block) and section tagging so the viewer
 // can patch a single --section id=X-- region when an async form reply lands.
 type BRPageSegment struct {
-	Kind      string            `json:"kind"` // "text" | "embed" | "form"
-	SectionID string            `json:"section_id,omitempty"`
-	HTML      string            `json:"html,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Mime      string            `json:"mime,omitempty"`
-	DataB64   string            `json:"data_b64,omitempty"`
-	Size      int               `json:"size,omitempty"`
-	Alt       string            `json:"alt,omitempty"`
-	Fields    []BRPageFormField `json:"fields,omitempty"`
+	Kind      string `json:"kind"` // "text" | "embed" | "form"
+	SectionID string `json:"section_id,omitempty"`
+	HTML      string `json:"html,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Mime      string `json:"mime,omitempty"`
+	DataB64   string `json:"data_b64,omitempty"`
+	Size      int    `json:"size,omitempty"`
+	Alt       string `json:"alt,omitempty"`
+	// Download/Cost/Filename describe a file-transfer embed (see
+	// BRPostBodySegment): bytes are fetched over BR file transfer, not inline.
+	Download string            `json:"download,omitempty"`
+	Cost     uint64            `json:"cost,omitempty"`
+	Filename string            `json:"filename,omitempty"`
+	Fields   []BRPageFormField `json:"fields,omitempty"`
 }
 
 // BRPageFormField mirrors bruig's FormField (components/pages/forms.dart):
@@ -292,6 +305,7 @@ func renderPageTextRun(text, section string) []BRPageSegment {
 			out = append(out, BRPageSegment{
 				Kind: "embed", SectionID: section,
 				Name: emb.Name, Mime: emb.Mime, DataB64: emb.DataB64, Size: emb.Size, Alt: emb.Alt,
+				Download: emb.Download, Cost: emb.Cost, Filename: emb.Filename,
 			})
 		}
 		last = m[1]
@@ -367,6 +381,14 @@ func parseBREmbedTag(inner string) BRPostBodySegment {
 			} else {
 				seg.Alt = v
 			}
+		case "download":
+			seg.Download = v
+		case "cost":
+			if n, err := strconv.ParseUint(v, 10, 64); err == nil {
+				seg.Cost = n
+			}
+		case "filename":
+			seg.Filename = v
 		}
 	}
 	return seg
