@@ -237,7 +237,6 @@ export const BisonrelayUserSubNav = ({
           nick={nick}
           uid={uid}
           onClose={() => setModal(null)}
-          onPicked={onClose}
         />
       )}
       {modal === 'show-content' && (
@@ -590,53 +589,83 @@ const PostsListModal = ({
   nick,
   uid,
   onClose,
-  onPicked,
 }: {
   nick: string;
   uid: string;
   onClose: () => void;
-  // Called after a post is clicked + its fetch has been requested. The
-  // page hash is already navigated by then; the sub-nav uses this to
-  // close itself so the Feed view is unobstructed.
-  onPicked?: () => void;
 }) => {
   const [posts, setPosts] = useState<BisonrelayPostListItem[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [picking, setPicking] = useState<string | null>(null);
+  const [inflight, setInflight] = useState<Set<string>>(new Set());
+  const [received, setReceived] = useState<Set<string>>(new Set());
   const { addListener } = useBisonrelayLive();
 
   const handlePick = async (post: BisonrelayPostListItem) => {
-    if (picking) return;
-    setPicking(post.id);
+    if (inflight.has(post.id)) return;
     setErr(null);
+    setInflight((prev) => {
+      const next = new Set(prev);
+      next.add(post.id);
+      return next;
+    });
+    setReceived((prev) => {
+      if (!prev.has(post.id)) return prev;
+      const next = new Set(prev);
+      next.delete(post.id);
+      return next;
+    });
     try {
       await fetchBisonrelayUserPost(uid, post.id);
-      window.location.hash = `feed/post/${uid}/${post.id}`;
-      onClose();
-      onPicked?.();
     } catch (e: any) {
       const body = e?.response?.data;
       setErr(typeof body === 'string' ? body : e?.message || 'Could not request post');
-      setPicking(null);
+      setInflight((prev) => {
+        if (!prev.has(post.id)) return prev;
+        const next = new Set(prev);
+        next.delete(post.id);
+        return next;
+      });
     }
   };
 
-  // Subscribe to the live event BEFORE kicking off the request so we
+  // Subscribe to live events BEFORE kicking off the request so we
   // don't miss a fast reply. Unsubscribe on unmount.
   useEffect(() => {
     const unsubscribe = addListener((evt: BisonrelayLiveEvent) => {
-      if (evt.type !== 'posts-list-received') return;
-      const payload = (evt.payload ?? {}) as Record<string, unknown>;
-      if (payload.uid !== uid) return;
-      const raw = (payload.posts ?? []) as Array<Record<string, unknown>>;
-      const list: BisonrelayPostListItem[] = raw.map((p) => ({
-        id: String(p.id ?? ''),
-        title: String(p.title ?? ''),
-        timestamp: Number(p.timestamp ?? 0),
-      }));
-      // Newest first
-      list.sort((a, b) => b.timestamp - a.timestamp);
-      setPosts(list);
+      if (evt.type === 'posts-list-received') {
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        if (payload.uid !== uid) return;
+        const raw = (payload.posts ?? []) as Array<Record<string, unknown>>;
+        const list: BisonrelayPostListItem[] = raw.map((p) => ({
+          id: String(p.id ?? ''),
+          title: String(p.title ?? ''),
+          timestamp: Number(p.timestamp ?? 0),
+        }));
+        // Newest first
+        list.sort((a, b) => b.timestamp - a.timestamp);
+        setPosts(list);
+        return;
+      }
+      if (evt.type === 'post-received') {
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const from = String(payload.from ?? '');
+        const author = String(payload.author_id ?? '');
+        if (from !== uid && author !== uid) return;
+        const pid = String(payload.id ?? '');
+        if (!pid) return;
+        setInflight((prev) => {
+          if (!prev.has(pid)) return prev;
+          const next = new Set(prev);
+          next.delete(pid);
+          return next;
+        });
+        setReceived((prev) => {
+          if (prev.has(pid)) return prev;
+          const next = new Set(prev);
+          next.add(pid);
+          return next;
+        });
+      }
     });
     listBisonrelayUserPosts(uid).catch((e: any) => {
       const body = e?.response?.data;
@@ -658,8 +687,8 @@ const PostsListModal = ({
           <div>
             <h3 className="text-base font-semibold">Posts by {nick}</h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Asks {nick} for their post list. If they're offline the reply
-              arrives whenever they come back online.
+              Click a post to queue its download. The checkmark appears once
+              it arrives; open the Feed tab to read it.
             </p>
           </div>
           <button
@@ -688,20 +717,25 @@ const PostsListModal = ({
             </p>
           ) : (
             posts.map((p) => {
-              const isPicking = picking === p.id;
+              const isInflight = inflight.has(p.id);
+              const isReceived = received.has(p.id);
               return (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => handlePick(p)}
-                  disabled={picking !== null}
+                  disabled={isInflight}
                   className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="flex items-center gap-2">
                     <span className="truncate font-medium text-foreground">
                       {p.title || '(untitled)'}
                     </span>
-                    {isPicking && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                    {isInflight ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                    ) : isReceived ? (
+                      <Check className="h-3 w-3 text-emerald-400" />
+                    ) : null}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
                     {new Date(p.timestamp * 1000).toLocaleString()}
