@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Edit,
   Loader2,
+  Reply,
   Rss,
   Users,
   Send,
@@ -788,6 +789,38 @@ const PostDetailView = ({
   );
 };
 
+type CommentTree = {
+  roots: BisonrelayPostComment[];
+  childrenOf: Map<string, BisonrelayPostComment[]>;
+};
+
+// Builds a parent/child tree from the flat comment list. Comments whose
+// parent isn't in the set (orphans) are promoted to the root so they're
+// still visible. Pending optimistic comments slot in by their `parent`
+// field too (children) or by absence of one (top-level).
+const buildCommentTree = (list: BisonrelayPostComment[]): CommentTree => {
+  const byId = new Map<string, BisonrelayPostComment>();
+  for (const c of list) {
+    if (c.identifier) byId.set(c.identifier, c);
+  }
+  const roots: BisonrelayPostComment[] = [];
+  const childrenOf = new Map<string, BisonrelayPostComment[]>();
+  for (const c of list) {
+    if (c.parent && byId.has(c.parent)) {
+      const arr = childrenOf.get(c.parent) ?? [];
+      arr.push(c);
+      childrenOf.set(c.parent, arr);
+    } else {
+      roots.push(c);
+    }
+  }
+  const byTs = (a: BisonrelayPostComment, b: BisonrelayPostComment) =>
+    a.timestamp - b.timestamp;
+  roots.sort(byTs);
+  childrenOf.forEach((arr) => arr.sort(byTs));
+  return { roots, childrenOf };
+};
+
 const PostComments = ({
   authorId,
   pid,
@@ -801,12 +834,12 @@ const PostComments = ({
   const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const { addListener } = useBisonrelayLive();
 
   const reload = useCallback(async () => {
     try {
       const list = await getBisonrelayPostComments(authorId, pid);
-      list.sort((a, b) => a.timestamp - b.timestamp);
       setComments(list);
       setErr(null);
     } catch (e: any) {
@@ -825,45 +858,58 @@ const PostComments = ({
     });
   }, [addListener, authorId, pid, reload]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const tree = useMemo(
+    () => buildCommentTree(comments ?? []),
+    [comments],
+  );
+
+  const submitComment = useCallback(
+    async (text: string, parent?: string) => {
+      const commentKey = `c-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      setSubmitting(true);
+      setComments((prev) => [
+        ...(prev ?? []),
+        {
+          status_from: '',
+          from_nick: '',
+          comment: text,
+          parent,
+          timestamp: Math.floor(Date.now() / 1000),
+          pending: true,
+          commentKey,
+        },
+      ]);
+      try {
+        await postBisonrelayComment(authorId, pid, text, parent);
+      } catch (e: any) {
+        const body = e?.response?.data;
+        const msg = typeof body === 'string' ? body : e?.message || 'Comment failed';
+        setComments((prev) => {
+          if (!prev) return prev;
+          const idx = prev.findIndex((c) => c.commentKey === commentKey);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = {
+            ...updated[idx],
+            comment: `${text}  —  Failed: ${msg}`,
+            pending: false,
+            commentKey: undefined,
+          };
+          return updated;
+        });
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [authorId, pid],
+  );
+
+  const handleTopLevelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
     if (!text || submitting) return;
-    const commentKey = `c-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setSubmitting(true);
-    setComments((prev) => [
-      ...(prev ?? []),
-      {
-        status_from: '',
-        from_nick: '',
-        comment: text,
-        timestamp: Math.floor(Date.now() / 1000),
-        pending: true,
-        commentKey,
-      },
-    ]);
     setDraft('');
-    try {
-      await postBisonrelayComment(authorId, pid, text);
-    } catch (e: any) {
-      const body = e?.response?.data;
-      const msg = typeof body === 'string' ? body : e?.message || 'Comment failed';
-      setComments((prev) => {
-        if (!prev) return prev;
-        const idx = prev.findIndex((c) => c.commentKey === commentKey);
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        updated[idx] = {
-          ...updated[idx],
-          comment: `${text}  —  Failed: ${msg}`,
-          pending: false,
-          commentKey: undefined,
-        };
-        return updated;
-      });
-    } finally {
-      setSubmitting(false);
-    }
+    await submitComment(text);
   };
 
   return (
@@ -884,39 +930,22 @@ const PostComments = ({
         <p className="text-xs text-muted-foreground italic">No comments yet.</p>
       ) : (
         <div className="space-y-2">
-          {comments?.map((c, i) => {
-            const nick =
-              c.from_nick || (c.status_from ? c.status_from.slice(0, 12) : 'you');
-            return (
-              <div
-                key={c.identifier || c.commentKey || i}
-                className="flex items-start gap-2 text-sm"
-              >
-                <AuthorAvatar
-                  uid={c.status_from || ''}
-                  nick={nick}
-                  avatarB64={c.status_from ? avatars[c.status_from] : undefined}
-                  size="sm"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                    {c.pending && <Loader2 className="h-3 w-3 animate-spin" />}
-                    <span className="font-medium text-foreground/90">{nick}</span>
-                    <span className="opacity-50">·</span>
-                    <span className="opacity-70">
-                      {c.timestamp ? new Date(c.timestamp * 1000).toLocaleString() : ''}
-                    </span>
-                  </div>
-                  <p className="text-sm text-foreground/90 break-words whitespace-pre-wrap">
-                    {c.comment}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+          {tree.roots.map((c) => (
+            <CommentNode
+              key={c.identifier || c.commentKey || `${c.timestamp}-${c.status_from}`}
+              comment={c}
+              level={0}
+              childrenOf={tree.childrenOf}
+              avatars={avatars}
+              replyTargetId={replyTargetId}
+              setReplyTargetId={setReplyTargetId}
+              onSubmitReply={submitComment}
+              submitting={submitting}
+            />
+          ))}
         </div>
       )}
-      <form onSubmit={handleSubmit} className="flex items-end gap-2 pt-2">
+      <form onSubmit={handleTopLevelSubmit} className="flex items-end gap-2 pt-2">
         <textarea
           rows={2}
           value={draft}
@@ -934,6 +963,150 @@ const PostComments = ({
         </button>
       </form>
     </div>
+  );
+};
+
+const CommentNode = ({
+  comment,
+  level,
+  childrenOf,
+  avatars,
+  replyTargetId,
+  setReplyTargetId,
+  onSubmitReply,
+  submitting,
+}: {
+  comment: BisonrelayPostComment;
+  level: number;
+  childrenOf: Map<string, BisonrelayPostComment[]>;
+  avatars: Record<string, string>;
+  replyTargetId: string | null;
+  setReplyTargetId: (id: string | null) => void;
+  onSubmitReply: (text: string, parent?: string) => Promise<void>;
+  submitting: boolean;
+}) => {
+  const id = comment.identifier;
+  const nick =
+    comment.from_nick ||
+    (comment.status_from ? comment.status_from.slice(0, 12) : 'you');
+  const isReplyTarget = !!id && replyTargetId === id;
+  const canReply = !!id;
+  const children = id ? childrenOf.get(id) ?? [] : [];
+  // Beyond level 5 we stop adding visual indent so deep threads don't push
+  // off-screen; nesting semantics are preserved either way.
+  const indentWrap = level < 5
+    ? 'pl-4 ml-2 border-l border-border/40 space-y-2'
+    : 'space-y-2';
+  return (
+    <div className="space-y-2">
+      <div className="flex items-start gap-2 text-sm">
+        <AuthorAvatar
+          uid={comment.status_from || ''}
+          nick={nick}
+          avatarB64={comment.status_from ? avatars[comment.status_from] : undefined}
+          size="sm"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            {comment.pending && <Loader2 className="h-3 w-3 animate-spin" />}
+            <span className="font-medium text-foreground/90">{nick}</span>
+            <span className="opacity-50">·</span>
+            <span className="opacity-70">
+              {comment.timestamp ? new Date(comment.timestamp * 1000).toLocaleString() : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => setReplyTargetId(isReplyTarget ? null : id ?? null)}
+              disabled={!canReply}
+              title={canReply ? undefined : 'Waiting for delivery'}
+              className="inline-flex items-center gap-1 ml-2 text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Reply className="h-3 w-3" />
+              <span>{isReplyTarget ? 'Cancel' : 'Reply'}</span>
+            </button>
+          </div>
+          <p className="text-sm text-foreground/90 break-words whitespace-pre-wrap">
+            {comment.comment}
+          </p>
+        </div>
+      </div>
+      {(isReplyTarget || children.length > 0) && (
+        <div className={indentWrap}>
+          {isReplyTarget && id && (
+            <InlineReplyComposer
+              submitting={submitting}
+              onCancel={() => setReplyTargetId(null)}
+              onSubmit={async (text) => {
+                await onSubmitReply(text, id);
+                setReplyTargetId(null);
+              }}
+            />
+          )}
+          {children.map((child) => (
+            <CommentNode
+              key={child.identifier || child.commentKey || `${child.timestamp}-${child.status_from}`}
+              comment={child}
+              level={level + 1}
+              childrenOf={childrenOf}
+              avatars={avatars}
+              replyTargetId={replyTargetId}
+              setReplyTargetId={setReplyTargetId}
+              onSubmitReply={onSubmitReply}
+              submitting={submitting}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const InlineReplyComposer = ({
+  submitting,
+  onCancel,
+  onSubmit,
+}: {
+  submitting: boolean;
+  onCancel: () => void;
+  onSubmit: (text: string) => Promise<void>;
+}) => {
+  const [text, setText] = useState('');
+  const handle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const t = text.trim();
+    if (!t || submitting) return;
+    setText('');
+    await onSubmit(t);
+  };
+  return (
+    <form onSubmit={handle} className="space-y-2">
+      <textarea
+        rows={2}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Write a reply…"
+        disabled={submitting}
+        autoFocus
+        className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50 resize-y min-h-[44px]"
+      />
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={submitting}
+          className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={!text.trim() || submitting}
+          className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-xs font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitting ? 'Sending…' : 'Reply'}
+        </button>
+      </div>
+    </form>
   );
 };
 
