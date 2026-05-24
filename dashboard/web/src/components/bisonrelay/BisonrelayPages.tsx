@@ -31,6 +31,7 @@ import {
   startBisonrelayContentGet,
 } from '../../services/bisonrelayApi';
 import { BisonrelayEditor, composeBRBody, EditorEmbedMap } from './editor';
+import { BisonrelayStoreModePanel } from './BisonrelayStoreMode';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
 
 const navigateTo = (hash: string): void => {
@@ -185,6 +186,7 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
   const [pages, setPages] = useState<BisonrelayLocalPage[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [storeEnabled, setStoreEnabled] = useState(false);
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -213,6 +215,15 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
 
   return (
     <div className="space-y-4">
+      <BisonrelayStoreModePanel onModeChange={(m) => setStoreEnabled(m.enabled)} />
+
+      {storeEnabled ? (
+        <div className="rounded-xl border border-border/50 bg-gradient-card p-6 text-sm text-muted-foreground">
+          This node is hosting a storefront, so static-page hosting is paused. Product and order
+          management arrive in a later update; switch back to static pages above to manage pages.
+        </div>
+      ) : (
+        <>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">My Pages</h2>
@@ -282,6 +293,8 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
             </li>
           ))}
         </ul>
+      )}
+        </>
       )}
     </div>
   );

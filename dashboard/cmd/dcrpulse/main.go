@@ -228,6 +228,7 @@ func main() {
 	api.HandleFunc("/br/content/get", handlers.BisonrelayContentGetHandler).Methods("POST")
 	api.HandleFunc("/br/content/file", handlers.BisonrelayContentFileHandler).Methods("GET")
 	api.HandleFunc("/br/rates", handlers.BisonrelayRatesHandler).Methods("GET")
+	api.HandleFunc("/br/store/mode", handlers.BisonrelayStoreModeHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/pages/fetch", handlers.BisonrelayPagesFetchHandler).Methods("POST")
 	api.HandleFunc("/br/pages/local", handlers.BisonrelayPagesLocalListHandler).Methods("GET")
 	api.HandleFunc("/br/pages/local/file", handlers.BisonrelayPagesLocalFileHandler).Methods("GET")

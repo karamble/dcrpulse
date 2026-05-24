@@ -1126,6 +1126,34 @@ func BisonrelayRatesHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// BisonrelayStoreModeHandler proxies brclientd's /store/mode. GET returns the
+// node's current resource-hosting mode; POST switches it (body {enabled,
+// pay_type, account, ship_charge}).
+func BisonrelayStoreModeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		body, err := rpc.BrclientdStoreMode(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+		return
+	}
+	var req map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdSetStoreMode(r.Context(), req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
 // BisonrelayContactListContentHandler proxies the brclientd list-content
 // endpoint. Async: the response lands as content-list-received.
 func BisonrelayContactListContentHandler(w http.ResponseWriter, r *http.Request) {

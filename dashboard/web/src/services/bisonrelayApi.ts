@@ -581,6 +581,27 @@ export const getBisonrelayRates = async (): Promise<BisonrelayRates> => {
   return data;
 };
 
+// Resource-hosting mode: a node hosts static pages (enabled=false) or a
+// simplestore (enabled=true) - mutually exclusive, switchable at runtime.
+export interface BisonrelayStoreMode {
+  enabled: boolean;
+  pay_type: string; // "ln" | "onchain"
+  account: string;
+  ship_charge: number;
+}
+
+export const getBisonrelayStoreMode = async (): Promise<BisonrelayStoreMode> => {
+  const { data } = await api.get<BisonrelayStoreMode>('/br/store/mode');
+  return data;
+};
+
+export const setBisonrelayStoreMode = async (
+  mode: BisonrelayStoreMode,
+): Promise<BisonrelayStoreMode> => {
+  const { data } = await api.post<BisonrelayStoreMode>('/br/store/mode', mode);
+  return data;
+};
+
 // Stats bindings: each endpoint is a thin pass-through over the matching
 // brclientd /stats/* route. Values denominated in milliatoms (1 DCR = 1e11
 // matoms) on the wire; the UI converts at render time.

@@ -537,6 +537,18 @@ func BrclientdRates(ctx context.Context) (json.RawMessage, error) {
 	return brclientdGetRaw(ctx, "/rates", nil)
 }
 
+// BrclientdStoreMode returns the node's resource-hosting mode {enabled,
+// pay_type, account, ship_charge}: static pages or a simplestore.
+func BrclientdStoreMode(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/store/mode", nil)
+}
+
+// BrclientdSetStoreMode flips the node between pages and store hosting. body is
+// {enabled, pay_type, account, ship_charge}.
+func BrclientdSetStoreMode(ctx context.Context, body any) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/store/mode", body)
+}
+
 // BrclientdStatsOverview returns the compact summary shown on the Stats
 // landing page (hero counters + top contacts + connection-health).
 func BrclientdStatsOverview(ctx context.Context) (json.RawMessage, error) {
