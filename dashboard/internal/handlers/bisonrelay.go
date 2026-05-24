@@ -854,6 +854,25 @@ func BisonrelayPostsRenderHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+// BisonrelayPagesRenderHandler renders draft page markdown into structured
+// segments (text/embed/form) with the same SplitAndRenderBRPage the Pages
+// viewer uses, so the editor's Preview matches a hosted page (forms, sections,
+// br:// links). Dashboard-only, no brclientd hop. Body: {markdown}.
+func BisonrelayPagesRenderHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Markdown string `json:"markdown"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"markdown": req.Markdown,
+		"segments": services.SplitAndRenderBRPage(req.Markdown),
+	})
+}
+
 // BisonrelayPostsNewHandler authors a new post via brclientd.
 func BisonrelayPostsNewHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {

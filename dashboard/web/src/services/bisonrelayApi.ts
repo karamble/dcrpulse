@@ -269,7 +269,7 @@ export const createBisonrelayPost = async (
 export interface BisonrelaySharedFile {
   fid: string;
   filename: string;
-  cost: number; // milliatoms
+  cost: number; // atoms (1 DCR = 1e8)
   size: number;
   global: boolean;
 }
@@ -292,6 +292,19 @@ export const renderBisonrelayPostBody = async (
     post,
     title: title ?? '',
   });
+  return data;
+};
+
+// renderBisonrelayPageBody runs draft page markdown through the same
+// SplitAndRenderBRPage the Pages viewer uses, so the editor's page Preview
+// matches a hosted page (forms, sections, br:// links). Dashboard-only.
+export const renderBisonrelayPageBody = async (
+  markdown: string,
+): Promise<{ markdown: string; segments: BisonrelayPageSegment[] | null }> => {
+  const { data } = await api.post<{ markdown: string; segments: BisonrelayPageSegment[] | null }>(
+    '/br/pages/render',
+    { markdown },
+  );
   return data;
 };
 

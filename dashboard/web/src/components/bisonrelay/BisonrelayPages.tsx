@@ -317,8 +317,10 @@ const PageEditorView = ({ ownId, name }: { ownId: string; name?: string }) => {
 
   const onSave = async () => {
     const finalName = normalizedName(fileName);
-    if (!/^[A-Za-z0-9_.-]+\.md$/.test(finalName) || finalName.includes('..')) {
-      setErr('Name must be a single .md file (letters, digits, dash, underscore, dot).');
+    // A .md file, optionally under subdirectories (docs/intro.md); mirrors
+    // brclientd's pageNameRE. The ".." guard keeps it inside PagesDir.
+    if (!/^([A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.md$/.test(finalName) || finalName.includes('..')) {
+      setErr('Name must be a .md file (letters, digits, dash, underscore, dot; / for subfolders).');
       return;
     }
     setSaving(true);
@@ -369,6 +371,7 @@ const PageEditorView = ({ ownId, name }: { ownId: string; name?: string }) => {
           onChange={setBody}
           embeds={embeds}
           onEmbedsChange={setEmbeds}
+          features={{ pageBlocks: true }}
           placeholder="# My page&#10;&#10;Write markdown here. Link other pages with [text](other.md)."
         />
       )}

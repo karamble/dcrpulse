@@ -365,7 +365,10 @@ func parseBREmbedTag(inner string) BRPostBodySegment {
 		k := part[:eq]
 		v := part[eq+1:]
 		switch k {
-		case "name":
+		case "name", "part":
+			// A host's ProcessEmbeds re-serializes an embed's name as "part="
+			// (mdembeds.EmbeddedArgs.String), so a remotely-fetched embed
+			// arrives with part= where the author wrote name=. Accept both.
 			seg.Name = v
 		case "type":
 			seg.Mime = v

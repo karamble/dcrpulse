@@ -9,7 +9,9 @@ import {
   Code,
   Eye,
   FileCode,
+  FileSymlink,
   FileText,
+  FormInput,
   Heading1,
   Image as ImageIcon,
   Info,
@@ -20,11 +22,14 @@ import {
   Loader2,
   Pencil,
   Quote,
+  SquareStack,
   Strikethrough,
 } from 'lucide-react';
 import {
-  BisonrelayPostBody,
+  BisonrelayPageFormField,
+  BisonrelayPageSegment,
   BisonrelayPostBodySegment,
+  renderBisonrelayPageBody,
   renderBisonrelayPostBody,
 } from '../../../services/bisonrelayApi';
 import { BR_PROSE_CLASSES } from '../bisonrelayProse';
@@ -48,18 +53,21 @@ const SOFT_WARN_BYTES = 700 * 1024;
 const HARD_CAP_BYTES = 1024 * 1024;
 
 // EditorFeatures toggles individual toolbar groups so the same editor can
-// host different compose surfaces. All default to true. Examples:
-//   - posts: leave everything on (default).
+// host different compose surfaces. Examples:
+//   - posts / Politeia (default): everything on, pageBlocks off.
 //   - comment field: disable `attach`, `linkContent`, `preview` to get
 //     just markdown helpers.
 //   - chat composer (future migration): disable `linkContent`, `preview`,
 //     `sizeFooter`; attach + markdown helpers stay.
+//   - Bison Relay pages: enable `pageBlocks` for the page-only --form--,
+//     --section-- and subpage-link inserts (irrelevant to posts/Politeia).
 export interface EditorFeatures {
   attach?: boolean;
   linkContent?: boolean;
   markdownHelpers?: boolean;
   preview?: boolean;
   sizeFooter?: boolean;
+  pageBlocks?: boolean;
 }
 
 interface Props {
@@ -81,7 +89,27 @@ const DEFAULT_FEATURES: Required<EditorFeatures> = {
   markdownHelpers: true,
   preview: true,
   sizeFooter: true,
+  // Page-only constructs are off by default; only the Bison Relay pages
+  // editor opts in. Posts and Politeia proposals never use them.
+  pageBlocks: false,
 };
+
+// Templates the pageBlocks toolbar inserts at the cursor. The --section--
+// marker keeps BR's exact "--section id=ID --" spelling (trailing space before
+// the closing dashes); the form mirrors bruig's field syntax.
+const FORM_SNIPPET = `
+--form--
+type="action" value="/submit"
+type="txtinput" label="Your name" name="name"
+type="submit" label="Submit"
+--/form--
+`;
+
+const SECTION_SNIPPET = `
+--section id=section1 --
+Section content.
+--/section--
+`;
 
 export const BisonrelayEditor = ({
   value,
@@ -348,6 +376,33 @@ export const BisonrelayEditor = ({
               />
             </>
           )}
+          {feat.markdownHelpers && feat.pageBlocks && <ToolbarSeparator />}
+          {feat.pageBlocks && (
+            <>
+              <ToolbarButton
+                icon={FormInput}
+                label="Insert form block"
+                disabled={disabled}
+                onClick={() => spliceAtCursor(FORM_SNIPPET)}
+              />
+              <ToolbarButton
+                icon={SquareStack}
+                label="Insert section block"
+                disabled={disabled}
+                onClick={() => spliceAtCursor(SECTION_SNIPPET)}
+              />
+              <ToolbarButton
+                icon={FileSymlink}
+                label="Insert page link"
+                disabled={disabled}
+                onClick={() => {
+                  const target = window.prompt('Page path (e.g. about.md) or br://<uid>/<path>:');
+                  if (!target) return;
+                  wrapSelection('[', `](${target})`, 'link text');
+                }}
+              />
+            </>
+          )}
         </div>
         {feat.preview && (
           <div className="flex items-center gap-1 shrink-0">
@@ -362,7 +417,7 @@ export const BisonrelayEditor = ({
       </div>
 
       {feat.preview && mode === 'preview' ? (
-        <PreviewPane displayBody={value} embeds={embeds} />
+        <PreviewPane displayBody={value} embeds={embeds} page={feat.pageBlocks} />
       ) : (
         <textarea
           ref={textareaRef}
@@ -560,21 +615,27 @@ function formatBytes(n: number): string {
 const PreviewPane = ({
   displayBody,
   embeds,
+  page,
 }: {
   displayBody: string;
   embeds: EditorEmbedMap;
+  page?: boolean;
 }) => {
-  const [rendered, setRendered] = useState<BisonrelayPostBody | null>(null);
+  const [postSegs, setPostSegs] = useState<BisonrelayPostBodySegment[] | null>(null);
+  const [pageSegs, setPageSegs] = useState<BisonrelayPageSegment[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   // Recompose + re-render whenever the source changes. Debounce 300ms so
-  // typing in the Write tab doesn't bombard the server.
+  // typing in the Write tab doesn't bombard the server. A pages editor renders
+  // through SplitAndRenderBRPage (forms/sections/br:// links); everything else
+  // through the post renderer, so each Preview matches its published surface.
   useEffect(() => {
     let cancelled = false;
     const wire = composeBRBody(displayBody, embeds);
     if (!wire.trim()) {
-      setRendered(null);
+      setPostSegs(null);
+      setPageSegs(null);
       return () => {
         cancelled = true;
       };
@@ -583,9 +644,13 @@ const PreviewPane = ({
       setLoading(true);
       setErr(null);
       try {
-        const body = await renderBisonrelayPostBody(wire);
-        if (cancelled) return;
-        setRendered(body);
+        if (page) {
+          const body = await renderBisonrelayPageBody(wire);
+          if (!cancelled) setPageSegs(body.segments ?? []);
+        } else {
+          const body = await renderBisonrelayPostBody(wire);
+          if (!cancelled) setPostSegs(body.segments ?? []);
+        }
       } catch (e: any) {
         if (cancelled) return;
         const body = e?.response?.data;
@@ -598,7 +663,11 @@ const PreviewPane = ({
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [displayBody, embeds]);
+  }, [displayBody, embeds, page]);
+
+  const hasContent = page
+    ? !!pageSegs && pageSegs.length > 0
+    : !!postSegs && postSegs.length > 0;
 
   return (
     <div className="px-4 py-3 min-h-[280px] space-y-3">
@@ -609,14 +678,99 @@ const PreviewPane = ({
         </div>
       ) : !displayBody.trim() ? (
         <p className="text-xs text-muted-foreground italic">Nothing to preview yet.</p>
-      ) : loading && !rendered ? (
+      ) : loading && !hasContent ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           <span>Rendering preview…</span>
         </div>
-      ) : rendered && rendered.segments && rendered.segments.length > 0 ? (
-        <PreviewSegments segments={rendered.segments} />
+      ) : page && pageSegs && pageSegs.length > 0 ? (
+        <PreviewPageSegments segments={pageSegs} />
+      ) : !page && postSegs && postSegs.length > 0 ? (
+        <PreviewSegments segments={postSegs} />
       ) : null}
+    </div>
+  );
+};
+
+// PreviewPageSegments mirrors the Pages viewer's rendering but non-interactive:
+// it shows how forms, sections and embeds will look, without initiating real
+// downloads or in-app navigation.
+const PreviewPageSegments = ({ segments }: { segments: BisonrelayPageSegment[] }) => (
+  <div className="space-y-3">
+    {segments.map((seg, i) => {
+      if (seg.kind === 'text' && seg.html) {
+        return (
+          <div key={i} className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: seg.html }} />
+        );
+      }
+      if (seg.kind === 'embed' && seg.data_b64) {
+        if (seg.mime && seg.mime.startsWith('image/')) {
+          return (
+            <img
+              key={i}
+              src={`data:${seg.mime};base64,${seg.data_b64}`}
+              alt={seg.alt || seg.name || ''}
+              className="rounded-lg border border-border/40 max-w-full h-auto"
+            />
+          );
+        }
+        return (
+          <a
+            key={i}
+            href={`data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`}
+            download={seg.name || 'attachment'}
+            className="inline-block text-xs text-primary underline hover:no-underline"
+          >
+            {seg.name || 'attachment'} ({seg.mime || 'binary'})
+          </a>
+        );
+      }
+      if (seg.kind === 'embed' && seg.download) {
+        const label = seg.filename || seg.name || 'file';
+        const price = seg.cost ? `${(seg.cost / 1e8).toFixed(8).replace(/\.?0+$/, '')} DCR` : 'free';
+        return (
+          <div
+            key={i}
+            className="rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-xs text-muted-foreground"
+          >
+            Download: {label} ({price})
+          </div>
+        );
+      }
+      if (seg.kind === 'form' && seg.fields) {
+        return <PreviewForm key={i} fields={seg.fields} />;
+      }
+      return null;
+    })}
+  </div>
+);
+
+// PreviewForm renders a page form's controls disabled, for visual preview only.
+const PreviewForm = ({ fields }: { fields: BisonrelayPageFormField[] }) => {
+  const submit = fields.find((f) => f.type === 'submit');
+  return (
+    <div className="space-y-3 rounded-lg border border-border/50 bg-background/40 p-4">
+      {fields.map((f, i) =>
+        f.type === 'txtinput' || f.type === 'intinput' ? (
+          <label key={i} className="block">
+            {f.label && <span className="text-xs text-muted-foreground">{f.label}</span>}
+            <input
+              type={f.type === 'intinput' ? 'number' : 'text'}
+              placeholder={f.hint}
+              defaultValue={f.value}
+              disabled
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm opacity-70"
+            />
+          </label>
+        ) : null,
+      )}
+      <button
+        type="button"
+        disabled
+        className="px-4 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold opacity-70"
+      >
+        {submit?.label || 'Submit'}
+      </button>
     </div>
   );
 };
