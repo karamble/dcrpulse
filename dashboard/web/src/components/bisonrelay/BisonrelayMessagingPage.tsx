@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Copy,
   Download,
+  EyeOff,
   FileText,
   Loader2,
   MessageSquare,
@@ -803,6 +804,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   selectedContact?.id?.identity && c.id?.identity === selectedContact.id.identity;
                 const uid = c.id?.identity ?? '';
                 const count = uid ? unread[uid] ?? 0 : 0;
+                const ignored = !!c.ignored;
                 return (
                   <div
                     key={uid || nick}
@@ -816,7 +818,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                     }}
                     className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 cursor-pointer ${
                       isSel ? 'bg-primary/20 text-foreground' : 'hover:bg-muted/30 text-muted-foreground'
-                    }`}
+                    } ${ignored ? 'opacity-50' : ''}`}
                   >
                     <span
                       onClick={(e) => {
@@ -831,6 +833,12 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                       <ContactAvatar contact={c} nick={nick} />
                     </span>
                     <span className="truncate flex-1">{nick}</span>
+                    {ignored && (
+                      <EyeOff
+                        className="shrink-0 h-3.5 w-3.5 text-muted-foreground"
+                        aria-label="Ignored"
+                      />
+                    )}
                     {count > 0 && (
                       <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
                         {count > 99 ? '99+' : count}
@@ -1069,6 +1077,16 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           onUnsubscribePosts={(uid, nick) => {
             setSelected({ kind: 'contact', value: subNavContact });
             handleSubscribePosts('unsubscribe', uid, nick);
+          }}
+          onContactsChanged={() => {
+            // Block removes the contact; ignore flips its flag. If the changed
+            // contact is the open thread, drop the selection so we don't keep
+            // a stale/removed thread on screen.
+            const changed = subNavContact.id?.identity;
+            if (changed && selectedContact?.id?.identity === changed) {
+              setSelected(null);
+            }
+            refreshContacts();
           }}
         />
       )}

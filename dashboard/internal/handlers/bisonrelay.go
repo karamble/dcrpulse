@@ -67,6 +67,24 @@ func BisonrelayIdentityHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(id)
 }
 
+// BisonrelaySetAvatarHandler proxies brclientd's /avatar. Body: {avatar}
+// base64-encoded image bytes; an empty string clears the avatar. BR caps the
+// raw size at 200KiB and broadcasts the change to all contacts.
+func BisonrelaySetAvatarHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Avatar string `json:"avatar"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdSetAvatar(r.Context(), req.Avatar); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayEventsHandler upgrades to WebSocket and streams live PM / KX /
 // GCM events from brclientd to the browser. Each frame is a JSON object
 // with {type, payload}; payload is the raw event JSON.
@@ -308,6 +326,42 @@ func BisonrelayContactHandshakeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdHandshake(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContactBlockHandler proxies brclientd's /contacts/block. Blocks
+// the contact: BR notifies the peer and the contact is removed locally.
+func BisonrelayContactBlockHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	if err := rpc.BrclientdBlockContact(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContactIgnoreHandler proxies brclientd's /contacts/ignore. Body:
+// {uid, ignore}. Sets or clears the local ignore flag for the contact.
+func BisonrelayContactIgnoreHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID    string `json:"uid"`
+		Ignore bool   `json:"ignore"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.UID) == "" {
+		http.Error(w, "uid is required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdIgnoreContact(r.Context(), req.UID, req.Ignore); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -1228,6 +1282,72 @@ func BisonrelayStoreOrderStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdSetStoreOrderStatus(r.Context(), req.UID, req.ID, req.Status); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayStoreTemplatesHandler proxies brclientd's /store/templates (the
+// list of storefront *.tmpl files).
+func BisonrelayStoreTemplatesHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdStoreTemplates(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayStoreTemplateFileHandler returns one template's content. Query:
+// name.
+func BisonrelayStoreTemplateFileHandler(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		http.Error(w, "name query param is required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdStoreTemplateFile(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayStoreTemplateSaveHandler writes a template. Body: {name, content}.
+func BisonrelayStoreTemplateSaveHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name    string `json:"name"`
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdSaveStoreTemplate(r.Context(), req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayStoreTemplateDeleteHandler removes a template. Body: {name}.
+func BisonrelayStoreTemplateDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdDeleteStoreTemplate(r.Context(), req.Name); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}

@@ -5,10 +5,13 @@
 import { ComponentType, useEffect, useState } from 'react';
 import {
   AlertCircle,
+  Ban,
   Check,
   Coins,
   Copy,
   Edit2,
+  Eye,
+  EyeOff,
   FileText,
   Folder,
   Handshake,
@@ -26,8 +29,10 @@ import {
   BisonrelayContentItem,
   BisonrelayLiveEvent,
   BisonrelayPostListItem,
+  blockBisonrelayContact,
   fetchBisonrelayUserPost,
   handshakeBisonrelayContact,
+  ignoreBisonrelayContact,
   kxResetBisonrelayContact,
   listBisonrelayUserContent,
   listBisonrelayUserPosts,
@@ -57,6 +62,7 @@ interface Props {
   onTip?: (uid: string, nick: string, dcrAmount: number) => void;
   onSubscribePosts?: (uid: string, nick: string) => void;
   onUnsubscribePosts?: (uid: string, nick: string) => void;
+  onContactsChanged?: () => void;
 }
 
 interface Row {
@@ -78,7 +84,9 @@ type ActiveModal =
   | 'subscribe-posts'
   | 'unsubscribe-posts'
   | 'list-posts'
-  | 'show-content';
+  | 'show-content'
+  | 'ignore'
+  | 'block';
 
 export const BisonrelayUserSubNav = ({
   contact,
@@ -91,9 +99,11 @@ export const BisonrelayUserSubNav = ({
   onTip,
   onSubscribePosts,
   onUnsubscribePosts,
+  onContactsChanged,
 }: Props) => {
   const [modal, setModal] = useState<ActiveModal>(null);
   const uid = contact.id?.identity ?? '';
+  const ignored = !!contact.ignored;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -133,6 +143,13 @@ export const BisonrelayUserSubNav = ({
     { id: 'suggest-kx', label: 'Suggest User to KX', icon: UserPlus, onClick: () => setModal('suggest-kx') },
     { id: 'trans-reset', label: 'Issue Transitive Reset', icon: Users, onClick: () => setModal('trans-reset') },
     { id: 'handshake', label: 'Perform Handshake', icon: Handshake, onClick: () => setModal('handshake') },
+    {
+      id: 'ignore',
+      label: ignored ? 'Un-ignore User' : 'Ignore User',
+      icon: ignored ? Eye : EyeOff,
+      onClick: () => setModal('ignore'),
+    },
+    { id: 'block', label: 'Block User', icon: Ban, onClick: () => setModal('block') },
   ];
 
   return (
@@ -182,6 +199,36 @@ export const BisonrelayUserSubNav = ({
           onClose={() => setModal(null)}
           onConfirm={() => handshakeBisonrelayContact(uid)}
           onSuccess={onClose}
+        />
+      )}
+      {modal === 'ignore' && (
+        <ConfirmActionModal
+          title={ignored ? `Un-ignore ${nick}?` : `Ignore ${nick}?`}
+          body={
+            ignored
+              ? `Their messages and posts will show up again. This is a local-only setting; ${nick} is not notified.`
+              : `Their messages and posts will be hidden locally. The contact stays KX'd and nothing is sent to ${nick}; reversible at any time.`
+          }
+          confirmLabel={ignored ? 'Un-ignore' : 'Ignore'}
+          onClose={() => setModal(null)}
+          onConfirm={() => ignoreBisonrelayContact(uid, !ignored)}
+          onSuccess={() => {
+            onClose();
+            onContactsChanged?.();
+          }}
+        />
+      )}
+      {modal === 'block' && (
+        <ConfirmActionModal
+          title={`Block ${nick}?`}
+          body={`This notifies ${nick} that you blocked them and removes the contact and your message history locally. It cannot be undone without a fresh invite/KX.`}
+          confirmLabel="Block user"
+          onClose={() => setModal(null)}
+          onConfirm={() => blockBisonrelayContact(uid)}
+          onSuccess={() => {
+            onClose();
+            onContactsChanged?.();
+          }}
         />
       )}
       {modal === 'suggest-kx' && (

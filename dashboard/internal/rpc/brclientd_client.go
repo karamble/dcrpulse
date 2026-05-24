@@ -61,12 +61,16 @@ type BrclientdVersionResult struct {
 	GoRuntime  string `json:"goRuntime"`
 }
 
-// BrclientdVersion calls VersionService.Version on the configured brclientd
-// instance and returns the appName / appVersion / goRuntime triple.
+// BrclientdVersion reads brclientd's /version status endpoint and returns the
+// appName / appVersion / goRuntime triple.
 func BrclientdVersion(ctx context.Context) (*BrclientdVersionResult, error) {
-	var result BrclientdVersionResult
-	if err := brclientdCall(ctx, "VersionService.Version", struct{}{}, &result); err != nil {
+	raw, err := brclientdGetRaw(ctx, "/version", nil)
+	if err != nil {
 		return nil, err
+	}
+	var result BrclientdVersionResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("decode version: %w", err)
 	}
 	return &result, nil
 }
@@ -83,16 +87,19 @@ type BrclientdStatusResult struct {
 	LastUpdated     string `json:"lastUpdated"`
 }
 
-// BrclientdUserPublicIdentity calls ChatService.UserPublicIdentity over
-// clientrpc and returns the raw JSON. Used by the dashboard to confirm
-// the BR client core is operational and to render the local user's
-// pubkey + nick on the BR overview.
+// BrclientdUserPublicIdentity reads brclientd's /public-identity status
+// endpoint and returns the raw JSON. Used by the dashboard to confirm the BR
+// client core is operational and to render the local user's pubkey + nick on
+// the BR overview. identity and sigKey are base64-encoded.
 func BrclientdUserPublicIdentity(ctx context.Context) (json.RawMessage, error) {
-	var raw json.RawMessage
-	if err := brclientdCall(ctx, "ChatService.UserPublicIdentity", struct{}{}, &raw); err != nil {
-		return nil, err
-	}
-	return raw, nil
+	return brclientdGetRaw(ctx, "/public-identity", nil)
+}
+
+// BrclientdSetAvatar sets or clears the local user's avatar via brclientd's
+// /avatar status endpoint. avatarB64 is base64-encoded image bytes; an empty
+// string clears it. BR caps avatars at 200KiB and broadcasts the change.
+func BrclientdSetAvatar(ctx context.Context, avatarB64 string) error {
+	return brclientdPostJSON(ctx, "/avatar", map[string]string{"avatar": avatarB64})
 }
 
 // BrclientdCreateIdentity POSTs to brclientd's pre-setup HTTPS endpoint
@@ -229,15 +236,13 @@ func BrclientdContacts(ctx context.Context) (json.RawMessage, error) {
 	return body, nil
 }
 
-// BrclientdSendPM sends a private message through ChatService.PM. `user`
-// can be a nick, alias, or hex peer UID.
+// BrclientdSendPM sends a private message through brclientd's /messages/send
+// status endpoint. `user` can be a nick, alias, or hex peer UID.
 func BrclientdSendPM(ctx context.Context, user, msg string) error {
-	params := map[string]any{
-		"user": user,
-		"msg":  map[string]any{"message": msg},
-	}
-	var unused json.RawMessage
-	return brclientdCall(ctx, "ChatService.PM", params, &unused)
+	return brclientdPostJSON(ctx, "/messages/send", map[string]any{
+		"user":    user,
+		"message": msg,
+	})
 }
 
 // BrclientdInviteResult bundles the two share-forms BR's WriteNewInvite
@@ -249,15 +254,19 @@ type BrclientdInviteResult struct {
 	InviteKey   string
 }
 
-// BrclientdWriteNewInvite creates an OOB invite via ChatService.WriteNewInvite
-// and returns both share-forms.
+// BrclientdWriteNewInvite creates an OOB invite via brclientd's
+// /invites/create status endpoint and returns both share-forms.
 func BrclientdWriteNewInvite(ctx context.Context) (*BrclientdInviteResult, error) {
+	raw, err := brclientdPostJSONRaw(ctx, "/invites/create", struct{}{})
+	if err != nil {
+		return nil, err
+	}
 	var resp struct {
 		InviteBytes string `json:"inviteBytes"`
 		InviteKey   string `json:"inviteKey"`
 	}
-	if err := brclientdCall(ctx, "ChatService.WriteNewInvite", struct{}{}, &resp); err != nil {
-		return nil, err
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("decode invite: %w", err)
 	}
 	return &BrclientdInviteResult{InviteBytes: resp.InviteBytes, InviteKey: resp.InviteKey}, nil
 }
@@ -312,6 +321,23 @@ func BrclientdKXReset(ctx context.Context, uidHex string) error {
 // Wraps brclientd's /contacts/handshake which calls client.Handshake.
 func BrclientdHandshake(ctx context.Context, uidHex string) error {
 	return brclientdPostJSON(ctx, "/contacts/handshake", map[string]string{"uid": uidHex})
+}
+
+// BrclientdBlockContact blocks a contact. Wraps brclientd's /contacts/block
+// which calls client.Block. Destructive: BR notifies the peer and removes
+// the contact (and its message log) locally; irreversible short of a fresh KX.
+func BrclientdBlockContact(ctx context.Context, uidHex string) error {
+	return brclientdPostJSON(ctx, "/contacts/block", map[string]string{"uid": uidHex})
+}
+
+// BrclientdIgnoreContact sets or clears the local ignore flag on a contact.
+// Wraps brclientd's /contacts/ignore which calls client.Ignore. Local-only;
+// nothing is broadcast. The flag surfaces as the contact's `ignored` field.
+func BrclientdIgnoreContact(ctx context.Context, uidHex string, ignore bool) error {
+	return brclientdPostJSON(ctx, "/contacts/ignore", map[string]any{
+		"uid":    uidHex,
+		"ignore": ignore,
+	})
 }
 
 // BrclientdSuggestKX asks `invitee` to KX with `target`. Wraps
@@ -614,6 +640,27 @@ func BrclientdUploadStoreFile(ctx context.Context, relPath, filename, mime strin
 		return nil, fmt.Errorf("brclientd /store/files/upload: HTTP %d: %s", resp.StatusCode, respBody)
 	}
 	return json.RawMessage(respBody), nil
+}
+
+// BrclientdStoreTemplates lists the storefront's *.tmpl files.
+func BrclientdStoreTemplates(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/store/templates", nil)
+}
+
+// BrclientdStoreTemplateFile returns one template's raw content.
+func BrclientdStoreTemplateFile(ctx context.Context, name string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/store/templates/file", map[string]string{"name": name})
+}
+
+// BrclientdSaveStoreTemplate writes (creates or overwrites) a template. body is
+// {name, content}.
+func BrclientdSaveStoreTemplate(ctx context.Context, body any) error {
+	return brclientdPostJSON(ctx, "/store/templates/save", body)
+}
+
+// BrclientdDeleteStoreTemplate removes a template by name.
+func BrclientdDeleteStoreTemplate(ctx context.Context, name string) error {
+	return brclientdPostJSON(ctx, "/store/templates/delete", map[string]string{"name": name})
 }
 
 // BrclientdStoreOrders returns all storefront orders (across customers).
@@ -1007,13 +1054,11 @@ func brclientdGetRaw(ctx context.Context, path string, query map[string]string) 
 // OnTipAttemptProgress on the sender side per attempt; we surface the
 // terminal outcome via the notifications stream and don't wait for it here.
 func BrclientdTipUser(ctx context.Context, user string, dcrAmount float64, maxAttempts int32) error {
-	params := map[string]any{
-		"user":         user,
-		"dcr_amount":   dcrAmount,
-		"max_attempts": maxAttempts,
-	}
-	var unused struct{}
-	return brclientdCall(ctx, "PaymentsService.TipUser", params, &unused)
+	return brclientdPostJSON(ctx, "/tip", map[string]any{
+		"user":        user,
+		"dcrAmount":   dcrAmount,
+		"maxAttempts": maxAttempts,
+	})
 }
 
 // BrclientdAcceptSuggestion accepts an incoming KX suggestion by asking the
@@ -1174,14 +1219,14 @@ func BrclientdPagesLocalDelete(ctx context.Context, body any) error {
 }
 
 // BrclientdAcceptInvite hands a previously-shared OOB invite blob to
-// ChatService.AcceptInvite. inviteBytes is base64-encoded.
+// brclientd's /invites/accept status endpoint. inviteBytes is base64-encoded.
 func BrclientdAcceptInvite(ctx context.Context, inviteBytesB64 string) (json.RawMessage, error) {
-	params := map[string]any{"inviteBytes": inviteBytesB64}
-	var raw json.RawMessage
-	if err := brclientdCall(ctx, "ChatService.AcceptInvite", params, &raw); err != nil {
+	if err := brclientdPostJSON(ctx, "/invites/accept", map[string]any{
+		"inviteBytes": inviteBytesB64,
+	}); err != nil {
 		return nil, err
 	}
-	return raw, nil
+	return json.RawMessage("{}"), nil
 }
 
 // BrclientdHistoryPM reads paginated PM history from brclientd's
@@ -1247,67 +1292,6 @@ func BrclientdStatus(ctx context.Context) (*BrclientdStatusResult, error) {
 		return nil, fmt.Errorf("decode status: %w", err)
 	}
 	return &result, nil
-}
-
-func brclientdCall(ctx context.Context, method string, params, result any) error {
-	cli, err := brclientdClient()
-	if err != nil {
-		return err
-	}
-
-	if BrclientdCfg.Host == "" || BrclientdCfg.Port == "" {
-		return errors.New("brclientd: host/port not configured")
-	}
-	url := fmt.Sprintf("https://%s:%s/index", BrclientdCfg.Host, BrclientdCfg.Port)
-
-	payload, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
-		"id":      "1",
-		"method":  method,
-		"params":  params,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := cli.Do(req)
-	if err != nil {
-		return fmt.Errorf("brclientd %s: %w", method, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return fmt.Errorf("brclientd %s: HTTP %d: %s", method, resp.StatusCode, body)
-	}
-
-	// brclientd's /index endpoint emits the JSON-RPC response followed by a
-	// trailing close-frame ("Forbidden\n"), so we read exactly one JSON
-	// value from the stream instead of buffering the whole body.
-	var rpcResp struct {
-		Result json.RawMessage `json:"result"`
-		Error  *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-	if rpcResp.Error != nil {
-		return fmt.Errorf("brclientd %s: code %d: %s", method, rpcResp.Error.Code, rpcResp.Error.Message)
-	}
-	if result != nil && len(rpcResp.Result) > 0 {
-		if err := json.Unmarshal(rpcResp.Result, result); err != nil {
-			return fmt.Errorf("decode result: %w", err)
-		}
-	}
-	return nil
 }
 
 // brclientdClient returns the cached HTTP client, building it lazily on the

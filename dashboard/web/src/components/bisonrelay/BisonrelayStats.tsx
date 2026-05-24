@@ -2,13 +2,14 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { ComponentType, useCallback, useEffect, useState } from 'react';
+import { ComponentType, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
+  Camera,
   CheckCircle2,
   Coins,
   FileText,
@@ -26,6 +27,7 @@ import {
   TrendingUp,
   Users,
   Wifi,
+  X,
   XCircle,
 } from 'lucide-react';
 import {
@@ -38,12 +40,15 @@ import {
   BisonrelayStatsOverview,
   BisonrelayStatsPayments,
   BisonrelayStatsPosts,
+  getBisonrelayIdentity,
   getBisonrelayStatsContacts,
   getBisonrelayStatsNetwork,
   getBisonrelayStatsOverview,
   getBisonrelayStatsPayments,
   getBisonrelayStatsPosts,
+  setBisonrelayAvatar,
 } from '../../services/bisonrelayApi';
+import { avatarDataUrl } from './bisonrelayAvatar';
 
 type Section = 'overview' | 'payments' | 'network' | 'contacts' | 'content';
 
@@ -403,6 +408,129 @@ const SectionCard = ({
   </div>
 );
 
+// AvatarControl renders the local user's avatar in the identity strip and lets
+// them upload/replace or clear it. The avatar lives on the BR identity (not the
+// stats payload), so it is fetched separately and re-fetched after a change.
+// BR caps the raw image at 200 KiB and broadcasts the update to all contacts.
+const AVATAR_MAX_BYTES = 200 * 1024;
+
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result);
+      const comma = s.indexOf(',');
+      resolve(comma >= 0 ? s.slice(comma + 1) : s);
+    };
+    reader.onerror = () => reject(new Error('could not read file'));
+    reader.readAsDataURL(file);
+  });
+
+const AvatarControl = ({ nick }: { nick: string }) => {
+  const [avatar, setAvatar] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getBisonrelayIdentity()
+      .then((id) => {
+        if (alive) setAvatar(id.avatar || '');
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > AVATAR_MAX_BYTES) {
+      setErr('Image must be 200 KiB or smaller.');
+      return;
+    }
+    setErr(null);
+    setBusy(true);
+    try {
+      const b64 = await fileToBase64(file);
+      await setBisonrelayAvatar(b64);
+      setAvatar(b64);
+    } catch (e2: any) {
+      setErr(e2?.response?.data || e2?.message || 'Could not update avatar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onClear = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      await setBisonrelayAvatar('');
+      setAvatar('');
+    } catch (e2: any) {
+      setErr(e2?.response?.data || e2?.message || 'Could not clear avatar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const url = avatarDataUrl(avatar);
+  return (
+    <div className="relative shrink-0">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        className="hidden"
+        onChange={onPick}
+      />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={busy}
+        aria-label="Change avatar"
+        title="Change avatar (PNG/JPEG/GIF/WebP, max 200 KiB)"
+        className="group relative h-14 w-14 rounded-full overflow-hidden border border-primary/30 bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center"
+      >
+        {url ? (
+          <img src={url} alt="Your avatar" className="h-full w-full object-cover" />
+        ) : (
+          <span className="text-lg font-semibold text-primary">
+            {(nick || '?').slice(0, 2).toUpperCase()}
+          </span>
+        )}
+        <span className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          {busy ? (
+            <Loader2 className="h-4 w-4 text-white animate-spin" />
+          ) : (
+            <Camera className="h-4 w-4 text-white" />
+          )}
+        </span>
+      </button>
+      {url && !busy && (
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Remove avatar"
+          title="Remove avatar"
+          className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center border border-background shadow"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+      {err && (
+        <p className="absolute left-0 top-full mt-1 w-40 text-[10px] text-destructive z-10">
+          {err}
+        </p>
+      )}
+    </div>
+  );
+};
+
 // ---- 1) Overview --------------------------------------------------------
 
 const OverviewView = () => {
@@ -432,11 +560,7 @@ const OverviewView = () => {
     <div className="space-y-4">
       {/* Identity strip */}
       <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 flex items-center gap-4">
-        <div className="h-14 w-14 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 border border-primary/30 flex items-center justify-center shrink-0">
-          <span className="text-lg font-semibold text-primary">
-            {(data.nick || '?').slice(0, 2).toUpperCase()}
-          </span>
-        </div>
+        <AvatarControl nick={data.nick || ''} />
         <div className="flex-1 min-w-0">
           <div className="text-lg font-semibold text-foreground truncate">
             {data.nick || '(unnamed)'}

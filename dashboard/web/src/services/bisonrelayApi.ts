@@ -168,6 +168,21 @@ export const handshakeBisonrelayContact = async (uid: string): Promise<void> => 
   await api.post('/br/contacts/handshake', { uid });
 };
 
+// blockBisonrelayContact blocks a contact. Destructive: BR notifies the peer
+// and the contact (and its message log) is removed locally.
+export const blockBisonrelayContact = async (uid: string): Promise<void> => {
+  await api.post('/br/contacts/block', { uid });
+};
+
+// ignoreBisonrelayContact sets or clears the local ignore flag on a contact.
+// Local-only; nothing is broadcast.
+export const ignoreBisonrelayContact = async (
+  uid: string,
+  ignore: boolean,
+): Promise<void> => {
+  await api.post('/br/contacts/ignore', { uid, ignore });
+};
+
 export const suggestKxBisonrelayContact = async (
   invitee: string,
   target: string,
@@ -253,6 +268,13 @@ export interface BisonrelayIdentity {
 export const getBisonrelayIdentity = async (): Promise<BisonrelayIdentity> => {
   const { data } = await api.get<BisonrelayIdentity>('/br/identity');
   return data;
+};
+
+// setBisonrelayAvatar sets or clears the local user's avatar. avatarB64 is the
+// base64-encoded image bytes (max 200 KiB raw, per BR); pass an empty string to
+// clear. BR broadcasts the change to all contacts.
+export const setBisonrelayAvatar = async (avatarB64: string): Promise<void> => {
+  await api.post('/br/avatar', { avatar: avatarB64 });
 };
 
 export const createBisonrelayPost = async (
@@ -645,6 +667,34 @@ export const uploadBisonrelayStoreFile = async (path: string, file: File): Promi
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return data.path;
+};
+
+export interface BisonrelayStoreTemplate {
+  name: string;
+  size: number;
+  modified: number;
+}
+
+export const getBisonrelayStoreTemplates = async (): Promise<BisonrelayStoreTemplate[]> => {
+  const { data } = await api.get<{ templates: BisonrelayStoreTemplate[] | null }>(
+    '/br/store/templates',
+  );
+  return data.templates ?? [];
+};
+
+export const getBisonrelayStoreTemplateFile = async (name: string): Promise<string> => {
+  const { data } = await api.get<{ name: string; content: string }>('/br/store/templates/file', {
+    params: { name },
+  });
+  return data.content;
+};
+
+export const saveBisonrelayStoreTemplate = async (name: string, content: string): Promise<void> => {
+  await api.post('/br/store/templates/save', { name, content });
+};
+
+export const deleteBisonrelayStoreTemplate = async (name: string): Promise<void> => {
+  await api.post('/br/store/templates/delete', { name });
 };
 
 export interface BisonrelayStoreShipping {
