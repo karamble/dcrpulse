@@ -451,7 +451,9 @@ export type BisonrelayEventType =
   | 'gc-upgraded'
   | 'gc-admins-changed'
   | 'gc-version-warning'
-  | 'gc-unkxd-member';
+  | 'gc-unkxd-member'
+  | 'store-order-placed'
+  | 'store-order-status';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;
@@ -667,11 +669,20 @@ export interface BisonrelayStoreOrder {
   pay_type: string;
   invoice: string;
   shipping?: BisonrelayStoreShipping | null;
+  comments?: { ts: string; fromAdmin: boolean; comment: string }[] | null;
 }
 
 export const getBisonrelayStoreOrders = async (): Promise<BisonrelayStoreOrder[]> => {
   const { data } = await api.get<{ orders: BisonrelayStoreOrder[] | null }>('/br/store/orders');
   return data.orders ?? [];
+};
+
+export const addBisonrelayStoreOrderComment = async (
+  uid: string,
+  id: number,
+  comment: string,
+): Promise<void> => {
+  await api.post('/br/store/orders/comment', { uid, id, comment });
 };
 
 export const setBisonrelayStoreOrderStatus = async (

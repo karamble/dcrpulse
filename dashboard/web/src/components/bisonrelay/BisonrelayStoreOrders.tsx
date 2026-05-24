@@ -2,13 +2,15 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import {
+  addBisonrelayStoreOrderComment,
   BisonrelayStoreOrder,
   getBisonrelayStoreOrders,
   setBisonrelayStoreOrderStatus,
 } from '../../services/bisonrelayApi';
+import { useBisonrelayLive } from './BisonrelayLiveProvider';
 
 const STATUSES = ['placed', 'paid', 'shipped', 'completed', 'canceled'];
 
@@ -34,16 +36,48 @@ export const BisonrelayStoreOrders = () => {
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const { addListener } = useBisonrelayLive();
 
-  const load = () => {
+  const load = useCallback(() => {
     getBisonrelayStoreOrders()
       .then((o) => {
         setOrders(o);
         setErr(null);
       })
       .catch((e: any) => setErr(e?.response?.data || e?.message || 'Could not load orders'));
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Refresh when the store reports a new or changed order (placed/paid events).
+  useEffect(
+    () =>
+      addListener((evt) => {
+        if (evt.type === 'store-order-placed' || evt.type === 'store-order-status') {
+          load();
+        }
+      }),
+    [addListener, load],
+  );
+
+  const sendComment = async (o: BisonrelayStoreOrder) => {
+    const key = `${o.user}/${o.id}`;
+    const text = (draft[key] ?? '').trim();
+    if (!text) return;
+    setBusy(key);
+    setErr(null);
+    try {
+      await addBisonrelayStoreOrderComment(o.user, o.id, text);
+      setDraft((d) => ({ ...d, [key]: '' }));
+      load();
+    } catch (e: any) {
+      setErr(e?.response?.data || e?.message || 'Could not send comment');
+    } finally {
+      setBusy(null);
+    }
   };
-  useEffect(load, []);
 
   const changeStatus = async (o: BisonrelayStoreOrder, status: string) => {
     const key = `${o.user}/${o.id}`;
@@ -151,6 +185,41 @@ export const BisonrelayStoreOrders = () => {
                       </div>
                     )}
                     {o.invoice && <div className="font-mono break-all">Invoice: {o.invoice}</div>}
+
+                    <div className="pt-1 space-y-1">
+                      <div className="text-foreground/80 font-medium">Messages</div>
+                      {(o.comments ?? []).length === 0 ? (
+                        <div className="opacity-70">No messages yet.</div>
+                      ) : (
+                        (o.comments ?? []).map((c, i) => (
+                          <div key={i}>
+                            <span className={c.fromAdmin ? 'text-primary' : 'text-foreground/80'}>
+                              {c.fromAdmin ? 'You' : 'Customer'}
+                            </span>{' '}
+                            <span className="opacity-60">{new Date(c.ts).toLocaleString()}</span>: {c.comment}
+                          </div>
+                        ))
+                      )}
+                      <div className="flex gap-2 pt-1">
+                        <input
+                          value={draft[key] ?? ''}
+                          onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') sendComment(o);
+                          }}
+                          placeholder="Reply to the customer…"
+                          className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                        />
+                        <button
+                          type="button"
+                          disabled={busy === key || !(draft[key] ?? '').trim()}
+                          onClick={() => sendComment(o)}
+                          className="px-3 py-1 rounded-md bg-primary/20 text-primary text-xs font-semibold hover:bg-primary/30 disabled:opacity-50"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </li>

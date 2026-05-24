@@ -233,6 +233,7 @@ func main() {
 	api.HandleFunc("/br/store/products/delete", handlers.BisonrelayStoreProductDeleteHandler).Methods("POST")
 	api.HandleFunc("/br/store/orders", handlers.BisonrelayStoreOrdersHandler).Methods("GET")
 	api.HandleFunc("/br/store/orders/status", handlers.BisonrelayStoreOrderStatusHandler).Methods("POST")
+	api.HandleFunc("/br/store/orders/comment", handlers.BisonrelayStoreOrderCommentHandler).Methods("POST")
 	api.HandleFunc("/br/store/files/upload", handlers.BisonrelayStoreFileUploadHandler).Methods("POST")
 	api.HandleFunc("/br/pages/fetch", handlers.BisonrelayPagesFetchHandler).Methods("POST")
 	api.HandleFunc("/br/pages/local", handlers.BisonrelayPagesLocalListHandler).Methods("GET")

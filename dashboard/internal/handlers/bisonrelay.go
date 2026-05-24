@@ -1234,6 +1234,29 @@ func BisonrelayStoreOrderStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayStoreOrderCommentHandler appends a merchant comment to an order
+// (brclientd DMs the buyer). Body: {uid, id, comment}.
+func BisonrelayStoreOrderCommentHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID     string `json:"uid"`
+		ID      uint64 `json:"id"`
+		Comment string `json:"comment"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" || req.Comment == "" {
+		http.Error(w, "uid and comment are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdAddStoreOrderComment(r.Context(), req.UID, req.ID, req.Comment); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayStoreFileUploadHandler proxies a multipart upload to brclientd's
 // /store/files/upload (a digital-download file stored at the given path under
 // the store dir). Form: path + file.

@@ -631,6 +631,16 @@ func BrclientdSetStoreOrderStatus(ctx context.Context, uid string, id uint64, st
 	})
 }
 
+// BrclientdAddStoreOrderComment appends a merchant comment to an order (and
+// brclientd DMs the buyer).
+func BrclientdAddStoreOrderComment(ctx context.Context, uid string, id uint64, comment string) error {
+	return brclientdPostJSON(ctx, "/store/orders/comment", map[string]any{
+		"uid":     uid,
+		"id":      id,
+		"comment": comment,
+	})
+}
+
 // BrclientdStatsOverview returns the compact summary shown on the Stats
 // landing page (hero counters + top contacts + connection-health).
 func BrclientdStatsOverview(ctx context.Context) (json.RawMessage, error) {
