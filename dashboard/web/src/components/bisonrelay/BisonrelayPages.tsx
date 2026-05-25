@@ -187,7 +187,7 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
   const [pages, setPages] = useState<BisonrelayLocalPage[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [storeEnabled, setStoreEnabled] = useState(false);
+  const [hostMode, setHostMode] = useState<'off' | 'pages' | 'store'>('off');
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -216,12 +216,18 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
 
   return (
     <div className="space-y-4">
-      <BisonrelayStoreModePanel onModeChange={(m) => setStoreEnabled(m.enabled)} />
+      <BisonrelayStoreModePanel onModeChange={(m) => setHostMode(m.mode)} />
 
-      {storeEnabled ? (
+      {hostMode === 'store' ? (
         <BisonrelayStoreManager />
       ) : (
         <>
+      {hostMode === 'off' && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          Hosting is deactivated. These pages are saved on disk but are not served over Bison Relay
+          until you switch hosting to static pages above.
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">My Pages</h2>

@@ -605,10 +605,10 @@ export const getBisonrelayRates = async (): Promise<BisonrelayRates> => {
   return data;
 };
 
-// Resource-hosting mode: a node hosts static pages (enabled=false) or a
-// simplestore (enabled=true) - mutually exclusive, switchable at runtime.
+// Resource-hosting mode: a node serves nothing ("off"), static pages ("pages")
+// or a simplestore ("store") - mutually exclusive, switchable at runtime.
 export interface BisonrelayStoreMode {
-  enabled: boolean;
+  mode: 'off' | 'pages' | 'store';
   pay_type: string; // "ln" | "onchain"
   account: string;
   ship_charge: number;
