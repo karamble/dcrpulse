@@ -342,6 +342,7 @@ func main() {
 
 	// Treasury/Governance routes
 	api.HandleFunc("/treasury/info", handlers.GetTreasuryInfoHandler).Methods("GET")
+	api.HandleFunc("/treasury/balance-history", handlers.GetTreasuryBalanceHistoryHandler).Methods("GET")
 	api.Handle("/treasury/scan-history",
 		middleware.RateLimit("treasury-scan", 60*time.Second, 1)(
 			http.HandlerFunc(handlers.TriggerTSpendScanHandler))).Methods("POST")

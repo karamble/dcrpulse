@@ -249,8 +249,8 @@ export const TreasuryPaymentsCard = () => {
                 <h3 className="font-semibold">Historical Treasury Spends</h3>
                 <span className="text-xs text-muted-foreground">({storedTSpends.length} total)</span>
               </div>
-              <div className="space-y-2">
-                {storedTSpends.slice(0, 10).map((tspend: any) => (
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                {storedTSpends.map((tspend: any) => (
                   <div
                     key={tspend.txHash}
                     className="p-3 rounded-lg bg-muted/5 border border-border/30 hover:bg-muted/10 transition-colors"
@@ -269,11 +269,6 @@ export const TreasuryPaymentsCard = () => {
                     </div>
                   </div>
                 ))}
-                {storedTSpends.length > 10 && (
-                  <div className="text-center text-sm text-muted-foreground pt-2">
-                    Showing 10 of {storedTSpends.length} TSpends
-                  </div>
-                )}
               </div>
             </div>
           )}

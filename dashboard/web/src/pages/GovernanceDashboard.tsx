@@ -4,9 +4,11 @@
 
 import { useState, useEffect } from 'react';
 import { SearchCheck } from 'lucide-react';
-import { TreasuryBalanceCard } from '../components/governance/TreasuryBalanceCard';
+import { TreasuryValueCard } from '../components/governance/TreasuryValueCard';
 import { TreasuryPaymentsCard } from '../components/governance/TreasuryPaymentsCard';
 import { TSpendScanProgress } from '../components/governance/TSpendScanProgress';
+import { TreasuryStats } from '../components/governance/TreasuryStats';
+import { ActiveTreasuryVotes } from '../components/governance/ActiveTreasuryVotes';
 import { 
   triggerTSpendScan, 
   getTSpendScanProgress,
@@ -229,6 +231,10 @@ export const GovernanceDashboard = () => {
 
   return (
     <div className="space-y-6">
+        {/* Statistics, charts + active votes (top) */}
+        <TreasuryStats key={`stats-${refreshTrigger}`} />
+        <ActiveTreasuryVotes />
+
         {/* Historical Scan Section */}
         <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
           <div className="flex items-center justify-between">
@@ -279,7 +285,7 @@ export const GovernanceDashboard = () => {
 
         {/* Treasury Cards */}
         <div key={refreshTrigger} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <TreasuryBalanceCard />
+          <TreasuryValueCard />
           <TreasuryPaymentsCard />
         </div>
       </div>

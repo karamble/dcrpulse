@@ -12,7 +12,15 @@ export interface TSpend {
   currentHeight: number;
   blocksRemaining: number;
   status: 'voting' | 'approved' | 'rejected';
+  yesVotes: number;
+  noVotes: number;
   detectedAt: string;
+}
+
+export interface BalanceSample {
+  height: number;
+  time: number; // block unix time (seconds)
+  balance: number; // treasury balance in DCR
 }
 
 export interface TSpendHistory {
@@ -85,5 +93,14 @@ export async function getTSpendScanResults(): Promise<TSpendHistory[]> {
     throw new Error('Failed to fetch scan results');
   }
   return response.json();
+}
+
+// Get the treasury balance-over-time series (sampled ~monthly, cached server-side)
+export async function getTreasuryBalanceHistory(): Promise<BalanceSample[]> {
+  const response = await fetch(`${API_BASE_URL}/treasury/balance-history`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch treasury balance history');
+  }
+  return (await response.json()) ?? [];
 }
 

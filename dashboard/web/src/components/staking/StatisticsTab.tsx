@@ -199,8 +199,8 @@ export const StatisticsTab = () => {
                 <Line
                   type="monotone"
                   dataKey="cumulative"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2}
+                  stroke="hsl(217 91% 62%)"
+                  strokeWidth={2.5}
                   dot={false}
                 />
               </LineChart>
