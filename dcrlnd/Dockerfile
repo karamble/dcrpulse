@@ -35,6 +35,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Match the UID used by dcrwallet so the shared /app-data/dcrlnd directory
 # has consistent ownership across containers.
 RUN adduser -D -u 1000 dcrpulse
+RUN mkdir -p /app-data/dcrlnd && chown -R 1000:1000 /app-data
 USER 1000
 WORKDIR /app
 
