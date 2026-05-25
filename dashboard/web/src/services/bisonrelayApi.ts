@@ -174,6 +174,13 @@ export const blockBisonrelayContact = async (uid: string): Promise<void> => {
   await api.post('/br/contacts/block', { uid });
 };
 
+// clearBisonrelayMessages permanently deletes the local PM history + inline
+// media for a contact. Irreversible; the contact and the ability to message
+// remain (only your local copy is removed, the peer keeps theirs).
+export const clearBisonrelayMessages = async (uid: string): Promise<void> => {
+  await api.post('/br/messages/clear', { uid });
+};
+
 // ignoreBisonrelayContact sets or clears the local ignore flag on a contact.
 // Local-only; nothing is broadcast.
 export const ignoreBisonrelayContact = async (

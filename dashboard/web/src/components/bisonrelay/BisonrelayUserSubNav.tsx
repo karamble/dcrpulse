@@ -18,6 +18,7 @@ import {
   List,
   Loader2,
   Paperclip,
+  Radiation,
   RotateCw,
   Rss,
   UserPlus,
@@ -30,6 +31,7 @@ import {
   BisonrelayLiveEvent,
   BisonrelayPostListItem,
   blockBisonrelayContact,
+  clearBisonrelayMessages,
   fetchBisonrelayUserPost,
   handshakeBisonrelayContact,
   ignoreBisonrelayContact,
@@ -63,6 +65,7 @@ interface Props {
   onSubscribePosts?: (uid: string, nick: string) => void;
   onUnsubscribePosts?: (uid: string, nick: string) => void;
   onContactsChanged?: () => void;
+  onHistoryCleared?: (uid: string) => void;
 }
 
 interface Row {
@@ -71,6 +74,7 @@ interface Row {
   icon: ComponentType<{ className?: string }>;
   onClick?: () => void;
   comingSoon?: boolean;
+  danger?: boolean;
 }
 
 type ActiveModal =
@@ -86,7 +90,8 @@ type ActiveModal =
   | 'list-posts'
   | 'show-content'
   | 'ignore'
-  | 'block';
+  | 'block'
+  | 'clear-history';
 
 export const BisonrelayUserSubNav = ({
   contact,
@@ -100,6 +105,7 @@ export const BisonrelayUserSubNav = ({
   onSubscribePosts,
   onUnsubscribePosts,
   onContactsChanged,
+  onHistoryCleared,
 }: Props) => {
   const [modal, setModal] = useState<ActiveModal>(null);
   const uid = contact.id?.identity ?? '';
@@ -148,6 +154,13 @@ export const BisonrelayUserSubNav = ({
       label: ignored ? 'Un-ignore User' : 'Ignore User',
       icon: ignored ? Eye : EyeOff,
       onClick: () => setModal('ignore'),
+    },
+    {
+      id: 'clear-history',
+      label: 'Clear Chat History',
+      icon: Radiation,
+      danger: true,
+      onClick: () => setModal('clear-history'),
     },
     { id: 'block', label: 'Block User', icon: Ban, onClick: () => setModal('block') },
   ];
@@ -228,6 +241,20 @@ export const BisonrelayUserSubNav = ({
           onSuccess={() => {
             onClose();
             onContactsChanged?.();
+          }}
+        />
+      )}
+      {modal === 'clear-history' && (
+        <ConfirmActionModal
+          title={`Clear chat history with ${nick}?`}
+          body={`Permanently deletes your local message history and any inline media for ${nick}. This CANNOT be undone. The contact and your ability to message them remain - only your local copy is removed; ${nick} keeps theirs.`}
+          confirmLabel="Delete history"
+          confirmWord="DELETE"
+          onClose={() => setModal(null)}
+          onConfirm={() => clearBisonrelayMessages(uid)}
+          onSuccess={() => {
+            onClose();
+            onHistoryCleared?.(uid);
           }}
         />
       )}
@@ -1033,6 +1060,7 @@ const ConfirmActionModal = ({
   onConfirm,
   onSuccess,
   optimistic,
+  confirmWord,
 }: {
   title: string;
   body: string;
@@ -1046,9 +1074,15 @@ const ConfirmActionModal = ({
   // by posts subscribe/unsubscribe where the BR round-trip can take an
   // unbounded amount of time depending on the remote's reachability.
   optimistic?: boolean;
+  // confirmWord (optional): require the user to type this exact word before the
+  // confirm button enables. Used to gate irreversible/destructive actions.
+  confirmWord?: string;
 }) => {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [typed, setTyped] = useState('');
+  const needsTyped = !!confirmWord;
+  const typedOk = !needsTyped || typed === confirmWord;
 
   const handleConfirm = async () => {
     if (optimistic) {
@@ -1103,6 +1137,24 @@ const ConfirmActionModal = ({
             <span className="break-words">{err}</span>
           </div>
         )}
+        {needsTyped && (
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">
+              Type{' '}
+              <span className="font-mono font-semibold text-foreground">{confirmWord}</span> to
+              confirm
+            </label>
+            <input
+              type="text"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+              className="w-full px-3 py-1.5 rounded-lg bg-background border border-border/50 text-sm font-mono focus:outline-none focus:border-primary/50"
+            />
+          </div>
+        )}
         <div className="flex justify-end gap-2 pt-1">
           <button
             type="button"
@@ -1115,7 +1167,7 @@ const ConfirmActionModal = ({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={submitting}
+            disabled={submitting || !typedOk}
             className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Working…' : confirmLabel}
@@ -1136,7 +1188,9 @@ const ActionRow = ({ row }: { row: Row }) => {
       className={`w-full px-4 py-2 text-left text-sm flex items-center gap-3 transition-colors ${
         disabled
           ? 'text-muted-foreground/60 cursor-not-allowed'
-          : 'text-foreground hover:bg-muted/30'
+          : row.danger
+            ? 'text-destructive hover:bg-destructive/10'
+            : 'text-foreground hover:bg-muted/30'
       }`}
       title={row.comingSoon ? 'Coming soon' : undefined}
     >

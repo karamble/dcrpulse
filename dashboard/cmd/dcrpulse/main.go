@@ -197,6 +197,7 @@ func main() {
 	api.HandleFunc("/br/identity", handlers.BisonrelayIdentityHandler).Methods("GET")
 	api.HandleFunc("/br/avatar", handlers.BisonrelaySetAvatarHandler).Methods("POST")
 	api.HandleFunc("/br/messages", handlers.BisonrelayMessagesHandler).Methods("GET")
+	api.HandleFunc("/br/messages/clear", handlers.BisonrelayClearHistoryHandler).Methods("POST")
 	api.HandleFunc("/br/contacts", handlers.BisonrelayContactsHandler).Methods("GET")
 	api.HandleFunc("/br/contacts/rename", handlers.BisonrelayContactRenameHandler).Methods("POST")
 	api.HandleFunc("/br/contacts/kx-reset", handlers.BisonrelayContactKXResetHandler).Methods("POST")

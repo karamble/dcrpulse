@@ -346,6 +346,21 @@ func BisonrelayContactBlockHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayClearHistoryHandler proxies brclientd's /history/pm/clear. Body:
+// {uid}. Permanently deletes the local PM history + media for the contact;
+// the contact itself remains. Irreversible.
+func BisonrelayClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	if err := rpc.BrclientdClearPMHistory(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayContactIgnoreHandler proxies brclientd's /contacts/ignore. Body:
 // {uid, ignore}. Sets or clears the local ignore flag for the contact.
 func BisonrelayContactIgnoreHandler(w http.ResponseWriter, r *http.Request) {

@@ -1096,6 +1096,13 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             }
             refreshContacts();
           }}
+          onHistoryCleared={(clearedUid) => {
+            // History wiped on disk; if this is the open thread, reload it so
+            // the now-empty conversation is reflected immediately.
+            if (clearedUid && selectedContact?.id?.identity === clearedUid) {
+              loadMessages(subNavContact);
+            }
+          }}
         />
       )}
       {showInviteCreate && <InviteCreateModal onClose={() => setShowInviteCreate(false)} />}

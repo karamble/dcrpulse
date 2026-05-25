@@ -330,6 +330,14 @@ func BrclientdBlockContact(ctx context.Context, uidHex string) error {
 	return brclientdPostJSON(ctx, "/contacts/block", map[string]string{"uid": uidHex})
 }
 
+// BrclientdClearPMHistory permanently deletes the local PM history (and inline
+// media) for a contact. Wraps brclientd's /history/pm/clear, which removes the
+// on-disk message log(s) + embeds for the uid. The contact and ratchet remain;
+// only the local copy is wiped. Irreversible.
+func BrclientdClearPMHistory(ctx context.Context, uidHex string) error {
+	return brclientdPostJSON(ctx, "/history/pm/clear", map[string]string{"uid": uidHex})
+}
+
 // BrclientdIgnoreContact sets or clears the local ignore flag on a contact.
 // Wraps brclientd's /contacts/ignore which calls client.Ignore. Local-only;
 // nothing is broadcast. The flag surfaces as the contact's `ignored` field.
