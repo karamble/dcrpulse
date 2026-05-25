@@ -923,9 +923,35 @@ export const setTSpendPolicy = async (
   await api.post('/wallet/governance/treasury/tspends/set', { hash, policy, passphrase });
 };
 
-export const getProposals = async (): Promise<Proposal[]> => {
-  const response = await api.get<Proposal[]>('/wallet/governance/proposals');
-  return response.data ?? [];
+// ProposalsResponse is the proposals list envelope: the cached list plus the
+// last successful fetch time and when a manual refresh is next allowed (both
+// unix seconds; 0 when never fetched).
+export interface ProposalsResponse {
+  proposals: Proposal[];
+  fetchedAt: number;
+  refreshAvailableAt: number;
+}
+
+// getProposals returns the cached proposals envelope. The backend caches the
+// list indefinitely and auto-fetches once when empty; a cold fetch can take up
+// to ~1 min, so allow more than the default client timeout.
+export const getProposals = async (): Promise<ProposalsResponse> => {
+  const response = await api.get<ProposalsResponse>('/wallet/governance/proposals', {
+    timeout: 65 * 1000,
+  });
+  return response.data;
+};
+
+// refreshProposals forces a backend re-fetch from Politeia. Throws on 429 while
+// the 8h cooldown is active; the error response body carries the envelope so
+// callers can re-sync the countdown.
+export const refreshProposals = async (): Promise<ProposalsResponse> => {
+  const response = await api.post<ProposalsResponse>(
+    '/wallet/governance/proposals/refresh',
+    undefined,
+    { timeout: 65 * 1000 },
+  );
+  return response.data;
 };
 
 export const getProposalDetail = async (token: string): Promise<ProposalDetail> => {

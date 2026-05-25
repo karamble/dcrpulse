@@ -106,3 +106,12 @@ type CastPoliteiaVoteResult struct {
 	Skipped int      `json:"skipped"`
 	Errors  []string `json:"errors,omitempty"`
 }
+
+// ProposalsResponse is the envelope for the proposals list endpoint: the
+// cached list plus the last successful fetch time and when a manual refresh
+// is next allowed (both unix seconds; 0 when never fetched).
+type ProposalsResponse struct {
+	Proposals          []Proposal `json:"proposals"`
+	FetchedAt          int64      `json:"fetchedAt"`
+	RefreshAvailableAt int64      `json:"refreshAvailableAt"`
+}

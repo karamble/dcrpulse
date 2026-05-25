@@ -1,11 +1,11 @@
-// Copyright (c) 2015-2025 The Decred developers
+// Copyright (c) 2015-2026 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, ExternalLink, Filter, Loader2, ShieldOff } from 'lucide-react';
-import { Proposal, getProposals } from '../../services/api';
+import { AlertCircle, ExternalLink, Filter, Loader2, RefreshCw, ShieldOff } from 'lucide-react';
+import { Proposal, getProposals, refreshProposals } from '../../services/api';
 import { VoteResultsBar } from './VoteResultsBar';
 
 const statusBuckets = ['all', 'voting', 'pre-vote', 'finished', 'abandoned'] as const;
@@ -28,19 +28,48 @@ const statusBadge = (voteStatus: string) => {
   }
 };
 
+// formatDuration renders a positive second count as "7h 12m" / "12m" / "<1m".
+const formatDuration = (secs: number) => {
+  const s = Math.max(0, secs);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return '<1m';
+};
+
+// formatAgo renders elapsed seconds as "just now" / "12m ago" / "7h 12m ago".
+const formatAgo = (secs: number) => {
+  const s = Math.max(0, secs);
+  if (s < 60) return 'just now';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m ago`;
+  return `${m}m ago`;
+};
+
 export const ProposalsTab = () => {
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [fetchedAt, setFetchedAt] = useState(0);
+  const [refreshAvailableAt, setRefreshAvailableAt] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(false);
   const [filter, setFilter] = useState<(typeof statusBuckets)[number]>('voting');
+  // now (unix seconds) drives the live countdown / "updated X ago" display.
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const r = await getProposals();
-        if (!cancelled) setProposals(r);
+        if (cancelled) return;
+        setProposals(r.proposals);
+        setFetchedAt(r.fetchedAt);
+        setRefreshAvailableAt(r.refreshAvailableAt);
       } catch (err: any) {
         if (cancelled) return;
         if (err?.response?.status === 503) {
@@ -57,6 +86,42 @@ export const ProposalsTab = () => {
       cancelled = true;
     };
   }, []);
+
+  // Tick the clock once a minute so the countdown and age stay current.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const cooldownRemaining = refreshAvailableAt - now;
+  const canRefresh = !refreshing && cooldownRemaining <= 0;
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const r = await refreshProposals();
+      setProposals(r.proposals);
+      setFetchedAt(r.fetchedAt);
+      setRefreshAvailableAt(r.refreshAvailableAt);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      if (status === 429 && data && typeof data === 'object') {
+        // Cooling down: re-sync timestamps so the countdown matches the server.
+        if (Array.isArray(data.proposals)) setProposals(data.proposals);
+        if (data.fetchedAt) setFetchedAt(data.fetchedAt);
+        if (data.refreshAvailableAt) setRefreshAvailableAt(data.refreshAvailableAt);
+      } else if (status === 503) {
+        setDisabled(true);
+      } else {
+        setRefreshError(typeof data === 'string' ? data : err?.message || 'Refresh failed');
+      }
+    } finally {
+      setRefreshing(false);
+      setNow(Math.floor(Date.now() / 1000));
+    }
+  };
 
   const filtered = useMemo(() => {
     if (filter === 'all') return proposals;
@@ -120,7 +185,37 @@ export const ProposalsTab = () => {
         <span className="text-xs text-muted-foreground">
           {filtered.length} of {proposals.length} proposals
         </span>
+        <div className="ml-auto flex items-center gap-3">
+          {fetchedAt > 0 && (
+            <span className="text-xs text-muted-foreground">updated {formatAgo(now - fetchedAt)}</span>
+          )}
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={!canRefresh}
+            title={
+              canRefresh
+                ? 'Refresh proposals from Politeia'
+                : `Next refresh available in ${formatDuration(cooldownRemaining)}`
+            }
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-border/50 bg-background hover:bg-muted/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing
+              ? 'Refreshing...'
+              : cooldownRemaining > 0
+                ? `Refresh in ${formatDuration(cooldownRemaining)}`
+                : 'Refresh'}
+          </button>
+        </div>
       </div>
+
+      {refreshError && (
+        <div className="text-xs text-destructive flex items-center gap-1">
+          <AlertCircle className="h-3 w-3" />
+          {refreshError}
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50 text-sm text-muted-foreground">

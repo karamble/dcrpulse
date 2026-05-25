@@ -32,6 +32,13 @@ const (
 	politeiaTimeout          = 30 * time.Second
 	politeiaCastTimeout      = 60 * time.Second
 	politeiaSignMessagesChunk = 100
+
+	// ProposalsRefreshCooldown is how long the manual proposals refresh stays
+	// disabled after a successful fetch. ProposalsFetchTimeout caps a full
+	// list fetch (many sequential upstream calls). Exported so handlers can
+	// size their request context and refresh-availability math to match.
+	ProposalsRefreshCooldown = 8 * time.Hour
+	ProposalsFetchTimeout    = 1 * time.Minute
 )
 
 // Markdown renderer + sanitizer for Politeia proposal descriptions.
@@ -78,21 +85,68 @@ type piDetailCacheEntry struct {
 	at     time.Time
 }
 
-// ListProposals returns the union of all current Politeia proposals
-// with their summary tallies. Cached in-process for politeiaCacheTTL.
-// Returns nil + ErrPoliteiaDisabled if the toggle is off.
-func ListProposals(ctx context.Context) ([]types.Proposal, error) {
+// ListProposals returns the union of all current Politeia proposals with
+// their summary tallies, plus the time of the last successful fetch. The
+// list is cached in-process indefinitely; an empty cache (e.g. after a
+// restart) auto-fetches once on first access. Use RefreshProposals to force
+// a re-fetch. Returns ErrPoliteiaDisabled if the toggle is off.
+func ListProposals(ctx context.Context) ([]types.Proposal, time.Time, error) {
 	if !PoliteiaEnabled() {
-		return nil, ErrPoliteiaDisabled
+		return nil, time.Time{}, ErrPoliteiaDisabled
 	}
 
 	piCacheMu.RLock()
-	if time.Since(piCachedAt) < politeiaCacheTTL && piCachedList != nil {
-		cached := piCachedList
+	if piCachedList != nil {
+		cached, at := piCachedList, piCachedAt
 		piCacheMu.RUnlock()
-		return cached, nil
+		return cached, at, nil
 	}
 	piCacheMu.RUnlock()
+
+	out, err := fetchAndCacheProposals(ctx)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	piCacheMu.RLock()
+	at := piCachedAt
+	piCacheMu.RUnlock()
+	return out, at, nil
+}
+
+// RefreshProposals forces a re-fetch of the proposals list, subject to the
+// ProposalsRefreshCooldown measured from the last successful fetch. While
+// cooling down it returns the cached list, the last-fetch time, and
+// ErrProposalsRefreshCoolingDown. On success it returns the fresh list and
+// the new fetch time. A failed fetch does not start the cooldown.
+func RefreshProposals(ctx context.Context) ([]types.Proposal, time.Time, error) {
+	if !PoliteiaEnabled() {
+		return nil, time.Time{}, ErrPoliteiaDisabled
+	}
+
+	piCacheMu.RLock()
+	at, cached := piCachedAt, piCachedList
+	piCacheMu.RUnlock()
+	if !at.IsZero() && time.Since(at) < ProposalsRefreshCooldown {
+		return cached, at, ErrProposalsRefreshCoolingDown
+	}
+
+	out, err := fetchAndCacheProposals(ctx)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	piCacheMu.RLock()
+	newAt := piCachedAt
+	piCacheMu.RUnlock()
+	return out, newAt, nil
+}
+
+// fetchAndCacheProposals fetches the full proposal list from Politeia and
+// stores it in the in-process cache. piCachedList/piCachedAt are written ONLY
+// on success, so a failed fetch leaves the cache (and the refresh cooldown
+// anchor) untouched. Capped at ProposalsFetchTimeout.
+func fetchAndCacheProposals(ctx context.Context) ([]types.Proposal, error) {
+	ctx, cancel := context.WithTimeout(ctx, ProposalsFetchTimeout)
+	defer cancel()
 
 	inv, err := piInventory(ctx)
 	if err != nil {
@@ -411,8 +465,11 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 	}
 
 	// Invalidate the list cache and this proposal's detail cache so the
-	// next view reflects the updated tallies and currentChoice.
+	// next view reflects the updated tallies and currentChoice. The list
+	// cache is now unlimited-TTL, so clear the slice itself (not just the
+	// timestamp) to force a re-fetch on next view.
 	piCacheMu.Lock()
+	piCachedList = nil
 	piCachedAt = time.Time{}
 	delete(piCachedDetails, req.Token)
 	piCacheMu.Unlock()
@@ -425,6 +482,11 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 // ErrPoliteiaDisabled is returned by every public function when the
 // politeia toggle in Settings is off. Handlers translate to 503.
 var ErrPoliteiaDisabled = fmt.Errorf("politeia disabled in settings")
+
+// ErrProposalsRefreshCoolingDown is returned by RefreshProposals when a manual
+// refresh is requested within ProposalsRefreshCooldown of the last successful
+// fetch. Handlers translate to 429.
+var ErrProposalsRefreshCoolingDown = fmt.Errorf("proposals refresh cooling down")
 
 type piInventoryResp struct {
 	Vetted    map[string][]string `json:"vetted"`

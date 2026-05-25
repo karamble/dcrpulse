@@ -143,11 +143,32 @@ func SetTSpendPolicyHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GetProposalsHandler returns the Politeia proposals list (cached 5 min).
+// writeProposalsResponse encodes the proposals envelope (list + last-fetch time
+// + when a manual refresh is next allowed) at the given status.
+func writeProposalsResponse(w http.ResponseWriter, status int, proposals []types.Proposal, fetchedAt time.Time) {
+	if proposals == nil {
+		proposals = []types.Proposal{}
+	}
+	var fetched, refreshAt int64
+	if !fetchedAt.IsZero() {
+		fetched = fetchedAt.Unix()
+		refreshAt = fetchedAt.Add(services.ProposalsRefreshCooldown).Unix()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(types.ProposalsResponse{
+		Proposals:          proposals,
+		FetchedAt:          fetched,
+		RefreshAvailableAt: refreshAt,
+	})
+}
+
+// GetProposalsHandler returns the Politeia proposals list. The list is cached
+// indefinitely and auto-fetched once when empty (e.g. after a restart).
 func GetProposalsHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), services.ProposalsFetchTimeout)
 	defer cancel()
-	proposals, err := services.ListProposals(ctx)
+	proposals, fetchedAt, err := services.ListProposals(ctx)
 	if err != nil {
 		if errors.Is(err, services.ErrPoliteiaDisabled) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -157,8 +178,30 @@ func GetProposalsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(proposals)
+	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt)
+}
+
+// RefreshProposalsHandler forces a Politeia re-fetch, subject to the refresh
+// cooldown. Returns 429 (with the envelope, so the UI can re-sync the
+// countdown) while cooling down, and 503 if Politeia is disabled.
+func RefreshProposalsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), services.ProposalsFetchTimeout)
+	defer cancel()
+	proposals, fetchedAt, err := services.RefreshProposals(ctx)
+	if err != nil {
+		if errors.Is(err, services.ErrPoliteiaDisabled) {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		if errors.Is(err, services.ErrProposalsRefreshCoolingDown) {
+			writeProposalsResponse(w, http.StatusTooManyRequests, proposals, fetchedAt)
+			return
+		}
+		log.Printf("RefreshProposals: %v", err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt)
 }
 
 // GetProposalDetailHandler returns one proposal's full record.
