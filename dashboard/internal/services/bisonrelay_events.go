@@ -81,10 +81,12 @@ func (b *BisonrelayEventBus) broadcast(evt BisonrelayEvent) {
 	}
 }
 
-// StartBisonrelayStreams subscribes to brclientd's chat streams and
-// broadcasts each event into the dashboard event bus, Acking immediately
-// since brclientd's clientdb is the source of truth for chat history.
-// Blocks until ctx is cancelled.
+// StartBisonrelayStreams subscribes to brclientd's KX-completion and
+// download-completion clientrpc streams and broadcasts each event into the
+// dashboard event bus, Acking immediately since brclientd's clientdb is the
+// source of truth. PM and GC messages are not sourced here; they arrive via
+// StartBrclientdNotifs (the in-process /notifications stream). Blocks until
+// ctx is cancelled.
 func StartBisonrelayStreams(ctx context.Context) {
 	ws := rpc.BrclientdWS()
 	go func() {
@@ -92,16 +94,11 @@ func StartBisonrelayStreams(ctx context.Context) {
 			log.Printf("brclientd-ws run exited: %v", err)
 		}
 	}()
-	go runStream(ctx, ws, "ChatService.PMStream", "ChatService.AckReceivedPM", "pm", func(payload json.RawMessage) (any, bool) {
-		var pm struct {
-			SequenceID int64 `json:"sequenceId"`
-		}
-		_ = json.Unmarshal(payload, &pm)
-		if pm.SequenceID == 0 {
-			return nil, false
-		}
-		return map[string]int64{"sequenceId": pm.SequenceID}, true
-	})
+	// PM and GC messages are delivered via brclientd's in-process /notifications
+	// stream ("pm" / "gc-message"), which fires once per newly-received message.
+	// We deliberately do not subscribe to ChatService.PMStream/GCMStream here:
+	// those are replay-log streams that re-stream the whole backlog on every
+	// (re)subscribe, which re-badged already-read conversations on restart.
 	go runStream(ctx, ws, "ChatService.KXStream", "ChatService.AckKXCompleted", "kx", func(payload json.RawMessage) (any, bool) {
 		var kx struct {
 			SequenceID int64 `json:"sequenceId"`
@@ -111,16 +108,6 @@ func StartBisonrelayStreams(ctx context.Context) {
 			return nil, false
 		}
 		return map[string]int64{"sequenceId": kx.SequenceID}, true
-	})
-	go runStream(ctx, ws, "ChatService.GCMStream", "ChatService.AckReceivedGCM", "gcm", func(payload json.RawMessage) (any, bool) {
-		var gcm struct {
-			SequenceID int64 `json:"sequenceId"`
-		}
-		_ = json.Unmarshal(payload, &gcm)
-		if gcm.SequenceID == 0 {
-			return nil, false
-		}
-		return map[string]int64{"sequenceId": gcm.SequenceID}, true
 	})
 	go runStream(ctx, ws, "ChatService.DownloadsCompletedStream", "ChatService.AckDownloadCompleted", "download", func(payload json.RawMessage) (any, bool) {
 		var dl struct {

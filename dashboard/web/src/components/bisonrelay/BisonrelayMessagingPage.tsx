@@ -533,18 +533,26 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         return;
       }
       if (evt.type === 'pm') {
-        const payload = evt.payload ?? {};
-        const senderNick = payload.nick ?? '';
-        const text = payload.msg?.message ?? '';
-        const fromUid = identityFromPayload(payload);
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const fromUid = String(payload.from ?? '');
+        const senderNick = String(payload.fromNick ?? '');
+        const text = String(payload.message ?? '');
         const cur = selectedRef.current;
         if (cur && cur.id?.identity && fromUid === cur.id.identity) {
+          // brclientd timestamps the event on the bus; use it when present,
+          // falling back to client time.
+          let ts = Math.floor(Date.now() / 1000);
+          const evtTs = (evt as { timestamp?: string }).timestamp;
+          if (evtTs) {
+            const parsed = Date.parse(evtTs);
+            if (Number.isFinite(parsed)) ts = Math.floor(parsed / 1000);
+          }
           setMessages((prev) => [
             ...prev,
             {
               message: text,
               from: senderNick,
-              timestamp: Math.floor(Date.now() / 1000),
+              timestamp: ts,
               internal: false,
             },
           ]);

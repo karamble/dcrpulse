@@ -89,7 +89,7 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
             try { fn(evt); } catch { /* ignore */ }
           });
           if (evt.type === 'pm') {
-            const uid = uidFromPayload(evt.payload);
+            const uid = String((evt.payload as Record<string, unknown>)?.from ?? '');
             if (uid && uid !== activeUidRef.current) {
               setUnread((prev) => ({ ...prev, [uid]: (prev[uid] ?? 0) + 1 }));
             }
@@ -143,19 +143,3 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
     </Ctx.Provider>
   );
 };
-
-function uidFromPayload(payload: any): string {
-  if (!payload) return '';
-  const uid = payload.uid;
-  if (typeof uid !== 'string' || !uid) return '';
-  try {
-    const bin = atob(uid);
-    let hex = '';
-    for (let i = 0; i < bin.length; i++) {
-      hex += bin.charCodeAt(i).toString(16).padStart(2, '0');
-    }
-    return hex;
-  } catch {
-    return '';
-  }
-}
