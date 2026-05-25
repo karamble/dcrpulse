@@ -157,7 +157,7 @@ function AppContent() {
           <Route path="/explorer/tx/:txhash" element={<TransactionDetail />} />
           <Route path="/explorer/address/:address" element={<AddressView />} />
           <Route path="/explorer/mempool" element={<MempoolView />} />
-          <Route path="/governance" element={<GovernanceDashboard />} />
+          <Route path="/treasury" element={<GovernanceDashboard />} />
           <Route path="/br" element={<BisonrelayPage />} />
         </Routes>
         <Footer

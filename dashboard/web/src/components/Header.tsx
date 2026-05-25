@@ -14,7 +14,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   const location = useLocation();
   const isWalletPage = location.pathname.startsWith('/wallet');
   const isExplorerPage = location.pathname.startsWith('/explorer');
-  const isGovernancePage = location.pathname.startsWith('/governance');
+  const isTreasuryPage = location.pathname.startsWith('/treasury');
   const isBisonrelayPage = location.pathname.startsWith('/br');
   const isNodePage = location.pathname === '/';
 
@@ -84,9 +84,9 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
         </Link>
 
         <Link
-          to="/governance"
+          to="/treasury"
           className={`px-4 py-3 rounded-lg border transition-all duration-300 flex items-center gap-2 ${
-            isGovernancePage
+            isTreasuryPage
               ? 'bg-primary/20 border-primary/40'
               : 'bg-primary/10 border-primary/20 hover:bg-primary/20'
           }`}
