@@ -67,6 +67,8 @@ RUN --mount=type=bind,from=builder,source=/go/bin,target=/tmp/gobin \
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+RUN mkdir -p /app-data && chown 1000:1000 /app-data
+
 # Switch to UID 1000 for Umbrel compatibility
 USER 1000
 WORKDIR /app
