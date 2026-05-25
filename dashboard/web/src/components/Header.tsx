@@ -4,6 +4,7 @@
 
 import { Link, useLocation } from 'react-router-dom';
 import { Wallet, Compass, Vote, MessageSquare } from 'lucide-react';
+import { useBisonrelayLive } from './bisonrelay/BisonrelayLiveProvider';
 
 interface HeaderProps {
   nodeVersion?: string;
@@ -16,6 +17,18 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   const isGovernancePage = location.pathname.startsWith('/governance');
   const isBisonrelayPage = location.pathname.startsWith('/br');
   const isNodePage = location.pathname === '/';
+
+  // Unread Bison Relay messages, surfaced on the nav button so they are visible
+  // from any tab. PMs show a numeric count; group-chat activity shows a dot.
+  const { totalUnread, totalGCUnread } = useBisonrelayLive();
+  const unreadLabelParts: string[] = [];
+  if (totalUnread > 0) {
+    unreadLabelParts.push(`${totalUnread} unread direct message${totalUnread === 1 ? '' : 's'}`);
+  }
+  if (totalGCUnread > 0) {
+    unreadLabelParts.push('unread group-chat activity');
+  }
+  const unreadLabel = unreadLabelParts.join(', ');
 
   return (
     <div className="flex items-center justify-between mb-8 animate-fade-in">
@@ -86,7 +99,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
 
         <Link
           to="/br"
-          className={`px-4 py-3 rounded-lg border transition-all duration-300 flex items-center gap-2 ${
+          className={`relative px-4 py-3 rounded-lg border transition-all duration-300 flex items-center gap-2 ${
             isBisonrelayPage
               ? 'bg-primary/20 border-primary/40'
               : 'bg-primary/10 border-primary/20 hover:bg-primary/20'
@@ -96,6 +109,24 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
             <MessageSquare className="h-5 w-5 text-white" />
           </div>
           <span className="text-primary font-semibold">Bison Relay</span>
+          {(totalUnread > 0 || totalGCUnread > 0) && (
+            <span
+              className="absolute -top-1 -right-1 flex items-center gap-0.5"
+              aria-label={unreadLabel}
+            >
+              {totalUnread > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold ring-2 ring-background">
+                  {totalUnread > 99 ? '99+' : totalUnread}
+                </span>
+              )}
+              {totalGCUnread > 0 && (
+                <span
+                  className="h-2 w-2 rounded-full bg-primary ring-2 ring-background"
+                  title="Unread group-chat messages"
+                />
+              )}
+            </span>
+          )}
         </Link>
 
         {nodeVersion && (
