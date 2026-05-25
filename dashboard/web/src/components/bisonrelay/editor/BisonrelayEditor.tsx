@@ -579,7 +579,7 @@ const SizeIndicator = ({
       <span className={tone}>{formatBytes(wireBytes)}</span>
       <span className="relative group inline-flex">
         <Info className="h-3.5 w-3.5 text-muted-foreground/60 hover:text-muted-foreground cursor-help" />
-        <span className="pointer-events-none absolute right-0 bottom-full mb-1 w-72 p-2 rounded-md bg-popover border border-border/50 shadow-lg text-xs text-foreground/90 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        <span className="pointer-events-none absolute right-0 bottom-full mb-1 w-72 p-2 rounded-md bg-background border border-border/50 shadow-lg text-xs text-foreground/90 opacity-0 group-hover:opacity-100 transition-opacity z-10">
           BR posts ride over the same wire as chat messages; the cap is{' '}
           {formatBytes(HARD_CAP_BYTES)} per post. Inline embed bytes count
           toward the total. Larger files should be shared separately and

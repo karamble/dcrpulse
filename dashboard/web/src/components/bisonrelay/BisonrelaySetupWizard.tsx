@@ -132,6 +132,10 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
     () => deriveSteps(status, lnStatus, lnChannels),
     [status, lnStatus, lnChannels],
   );
+  const hubPending = useMemo(
+    () => findHubPendingChannel(status, lnChannels),
+    [status, lnChannels],
+  );
 
   if (!disclaimerAccepted) {
     return <BisonrelayDisclaimer onAcknowledge={acceptDisclaimer} />;
@@ -197,7 +201,7 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
           </Link>
         )}
 
-        {currentStep?.id === 'ln-channel' && status?.recommendedPeer && (
+        {currentStep?.id === 'ln-channel' && status?.recommendedPeer && !hubPending && (
           <ChannelGateActions peer={status.recommendedPeer} />
         )}
 
@@ -261,7 +265,7 @@ const ChecklistRow = ({ step }: { step: Step }) => {
 const InfoTooltip = ({ text }: { text: string }) => (
   <span className="relative group inline-flex">
     <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/60 hover:text-muted-foreground cursor-help" />
-    <span className="pointer-events-none absolute left-5 top-0 w-72 p-2 rounded-md bg-popover border border-border/50 shadow-lg text-xs text-foreground/90 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+    <span className="pointer-events-none absolute left-5 top-0 w-72 p-2 rounded-md bg-background border border-border/50 shadow-lg text-xs text-foreground/90 opacity-0 group-hover:opacity-100 transition-opacity z-10">
       {text}
     </span>
   </span>
@@ -377,6 +381,24 @@ const IdentityForm = ({
   </form>
 );
 
+// findHubPendingChannel returns the user-initiated pending-open channel to
+// the recommended BR hub, if one exists. recommendedPeer is
+// "<pubkey>@<host>:<port>"; the pubkey alone is what dcrlnd reports in
+// LightningChannel.remotePubkey, so split on '@'.
+function findHubPendingChannel(
+  status: BisonrelayStatus | null,
+  channels: LightningChannel[] | null,
+): LightningChannel | undefined {
+  const hubPubkey = status?.recommendedPeer?.split('@')[0] ?? '';
+  if (!hubPubkey || !channels) return undefined;
+  return channels.find(
+    (c) =>
+      c.status === 'pending-open' &&
+      c.initiator === true &&
+      c.remotePubkey === hubPubkey,
+  );
+}
+
 function deriveSteps(
   status: BisonrelayStatus | null,
   lnStatus: LightningStatus | null,
@@ -387,18 +409,15 @@ function deriveSteps(
   const peer = status?.recommendedPeer;
   const nick = status?.nick;
 
-  // recommendedPeer is "<pubkey>@<host>:<port>"; the pubkey alone is what
-  // dcrlnd reports in LightningChannel.remotePubkey, so split on '@'.
-  const hubPubkey = peer ? peer.split('@')[0] : '';
-  const hubChannelPendingOutbound =
-    !!hubPubkey &&
-    !!channels &&
-    channels.some(
-      (c) =>
-        c.status === 'pending-open' &&
-        c.initiator === true &&
-        c.remotePubkey === hubPubkey,
-    );
+  const hubPending = findHubPendingChannel(status, channels);
+  const hubChannelPendingOutbound = !!hubPending;
+  // currentConfs/requiredConfs are populated by the backend's
+  // fundingTxConfProgress; requiredConfs is 0 until the wallet observes the
+  // funding tx, so omit the count in that window.
+  const confSuffix =
+    hubPending && hubPending.requiredConfs
+      ? ` (${hubPending.currentConfs ?? 0}/${hubPending.requiredConfs})`
+      : '';
 
   // We treat "no status yet" as everything pending. The first row is
   // pinned to in-progress so the user sees the spinner.
@@ -475,7 +494,9 @@ function deriveSteps(
         : 'done',
       detail:
         stage === 'waiting-for-channel'
-          ? peer
+          ? hubPending
+            ? `Channel to the Bison Relay hub detected, waiting for on-chain confirmations${confSuffix}.`
+            : peer
             ? `Recommended peer: ${peer}`
             : walletErr
           : undefined,

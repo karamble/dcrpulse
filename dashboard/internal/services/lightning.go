@@ -428,12 +428,11 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 			row := pendingChannelRow(p.GetChannel(), types.ChannelStatusPendingOpen, "", 0)
 			// Enrich with funding-tx confirmation progress. dcrwallet
 			// already has the funding tx in its local index (we
-			// broadcast it from the lightning account), so this is a
-			// cheap hash-keyed lookup — no dcrd full-chain lookup
-			// needed. dcrlnd's ConfirmationHeight is the block at
-			// which the channel reaches its required conf count, so
-			// (required - current) = (ConfirmationHeight - bestBlock).
-			row.CurrentConfs, row.RequiredConfs = fundingTxConfProgress(ctx, row.ChannelPoint, p.GetConfirmationHeight())
+			// broadcast it from the lightning account), so reading its
+			// confirmation count is a cheap hash-keyed lookup. The
+			// required count is derived from capacity (dcrlnd never
+			// populates ConfirmationHeight on pending-open channels).
+			row.CurrentConfs, row.RequiredConfs = fundingTxConfProgress(ctx, row.ChannelPoint, row.Capacity, row.RemoteBalance)
 			out.Channels = append(out.Channels, row)
 		}
 		for _, p := range pendResp.GetPendingClosingChannels() {
@@ -706,96 +705,72 @@ func reversedHex(b []byte) string {
 }
 
 // fundingTxConfProgress returns (currentConfs, requiredConfs) for a
-// pending-open channel's funding transaction. Both are zero when the
-// channel is in pre-mempool state (funding tx not yet observed). Uses
-// dcrwallet's GetTransaction RPC because the funding tx was broadcast
-// from the lightning account, so dcrwallet already has it locally
-// indexed — no dcrd full-chain lookup needed.
-//
-// The math: if the funding tx has C confirmations and dcrlnd's
-// ConfirmationHeight (block at which channel transitions to open)
-// equals H, then the funding tx is in block H - N + 1 where N is the
-// required confs. We don't have N directly, but we can recover it
-// from the inverse: required - current = blocks_remaining, and
-// blocks_remaining = ConfirmationHeight - bestBlock. So:
-//
-//	N (required) = currentConfs + (ConfirmationHeight - bestBlock)
-//
-// bestBlock comes from dcrwallet's GetTransactionResponse.BlockHash
-// indirectly via dcrd; simpler still: bestBlock = fundingBlock + C - 1,
-// fundingBlock = ConfirmationHeight - N + 1, so blocksRemaining =
-// ConfirmationHeight - bestBlock = ConfirmationHeight - (fundingBlock
-// + C - 1) = N - C. Therefore N = ConfirmationHeight - bestBlock + C.
-func fundingTxConfProgress(ctx context.Context, channelPoint string, confirmationHeight uint32) (int32, int32) {
-	if rpc.WalletGrpcClient == nil || confirmationHeight == 0 {
-		return 0, 0
+// pending-open channel. requiredConfs is derived from the channel
+// capacity (see requiredConfsForCapacity) because dcrlnd never sets a
+// confirmation height on PendingOpenChannel (rpcserver.go builds it
+// without that field), so the only way to surface "X of Y" progress is
+// to recompute Y the same way dcrlnd does. currentConfs comes from
+// dcrwallet's GetTransaction RPC: the funding tx was broadcast from the
+// lightning account, so dcrwallet has it locally indexed and the lookup
+// is a cheap hash-keyed read with no dcrd full-chain scan. currentConfs
+// is 0 while the funding tx is still in the mempool; it is capped at
+// requiredConfs so the display never shows more confs than needed.
+func fundingTxConfProgress(ctx context.Context, channelPoint string, capacity, pushAmt int64) (int32, int32) {
+	required := requiredConfsForCapacity(capacity, pushAmt)
+	current := int32(0)
+	if rpc.WalletGrpcClient != nil {
+		if txidHex, _, err := splitChannelPoint(channelPoint); err == nil {
+			if hashBytes, err := hexDecodeStrict(txidHex, 32); err == nil {
+				// dcrwallet expects little-endian hash bytes on the wire.
+				revHash := make([]byte, len(hashBytes))
+				for i, v := range hashBytes {
+					revHash[len(hashBytes)-1-i] = v
+				}
+				callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				defer cancel()
+				if resp, err := rpc.WalletGrpcClient.GetTransaction(callCtx, &dcrwpb.GetTransactionRequest{
+					TransactionHash: revHash,
+				}); err == nil {
+					if c := resp.GetConfirmations(); c > 0 {
+						current = c
+					}
+				}
+			}
+		}
 	}
-	txidHex, _, err := splitChannelPoint(channelPoint)
-	if err != nil {
-		return 0, 0
+	if current > required {
+		current = required
 	}
-	hashBytes, err := hexDecodeStrict(txidHex, 32)
-	if err != nil {
-		return 0, 0
-	}
-	// dcrwallet expects little-endian hash bytes on the wire.
-	revHash := make([]byte, len(hashBytes))
-	for i, v := range hashBytes {
-		revHash[len(hashBytes)-1-i] = v
-	}
-	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	resp, err := rpc.WalletGrpcClient.GetTransaction(callCtx, &dcrwpb.GetTransactionRequest{
-		TransactionHash: revHash,
-	})
-	if err != nil {
-		return 0, 0
-	}
-	current := resp.GetConfirmations()
-	if current <= 0 {
-		// Funding tx in mempool — dcrlnd has set ConfirmationHeight
-		// optimistically (tip + N) or not yet (0). Either way we
-		// can't show meaningful progress.
-		return 0, 0
-	}
-	// blocksRemaining = N - current, and we know it equals
-	// ConfirmationHeight - bestBlock. bestBlock = fundingBlock + current - 1.
-	// fundingBlock is implicit; bestBlock = ConfirmationHeight - (N - current).
-	// Easiest: just compute N from current + blocksRemaining where
-	// blocksRemaining derives from dcrlnd's hint:
-	//   N - current = ConfirmationHeight - bestBlock
-	// We don't have bestBlock directly, but the wallet GetTransaction
-	// gives us current; dcrlnd's ConfirmationHeight is the absolute
-	// target. So bestBlock = ConfirmationHeight - (N - current).
-	// To extract N, observe at the moment current == N: bestBlock ==
-	// ConfirmationHeight, i.e. blocksRemaining == 0. Before that,
-	// N = current + (ConfirmationHeight - bestBlock).
-	bestBlock, _ := walletBestBlockHeight(ctx)
-	if bestBlock == 0 {
-		return current, 0
-	}
-	blocksRemaining := int32(confirmationHeight) - bestBlock
-	if blocksRemaining < 0 {
-		blocksRemaining = 0
-	}
-	required := current + blocksRemaining
 	return current, required
 }
 
-// walletBestBlockHeight returns dcrwallet's best block height, used to
-// compute "blocks remaining" for pending-channel UX. Returns 0 on any
-// failure — callers degrade gracefully when this happens.
-func walletBestBlockHeight(ctx context.Context) (int32, int32) {
-	if rpc.WalletGrpcClient == nil {
-		return 0, 0
+// requiredConfsForCapacity mirrors dcrlnd's NumRequiredConfs
+// (server.go:1192): a channel is considered open after a confirmation
+// count that scales linearly from 3 to 6 with channel size, with wumbo
+// channels requiring the max. dcrlnd does not expose this per-channel
+// over RPC, so we recompute it for pending-channel progress UX. pushAmt
+// is the amount pushed to the remote (the remote's opening balance);
+// dcrlnd folds it into the stake. The milli-atom scaling dcrlnd applies
+// cancels in the ratio, so we work in atoms directly.
+func requiredConfsForCapacity(capacity, pushAmt int64) int32 {
+	const (
+		minConf = 3
+		maxConf = 6
+		// MaxDecredFundingAmount = dcrutil.Amount(1<<30) - 1.
+		maxFundingAmount = int64(1)<<30 - 1
+	)
+	if capacity > maxFundingAmount {
+		return maxConf
 	}
-	callCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	resp, err := rpc.WalletGrpcClient.BestBlock(callCtx, &dcrwpb.BestBlockRequest{})
-	if err != nil {
-		return 0, 0
+	stake := capacity + pushAmt
+	conf := int64(maxConf) * stake / maxFundingAmount
+	if conf < minConf {
+		conf = minConf
 	}
-	return int32(resp.GetHeight()), int32(resp.GetHeight())
+	if conf > maxConf {
+		conf = maxConf
+	}
+	return int32(conf)
 }
 
 func splitChannelPoint(s string) (txidHex string, outputIdx uint32, err error) {
