@@ -115,3 +115,12 @@ type ProposalsResponse struct {
 	FetchedAt          int64      `json:"fetchedAt"`
 	RefreshAvailableAt int64      `json:"refreshAvailableAt"`
 }
+
+// ProposalDetailResponse is the envelope for the proposal-detail endpoint: the
+// cached record plus the last successful fetch time and when a manual refresh
+// is next allowed (both unix seconds; 0 when never fetched).
+type ProposalDetailResponse struct {
+	Detail             *ProposalDetail `json:"detail"`
+	FetchedAt          int64           `json:"fetchedAt"`
+	RefreshAvailableAt int64           `json:"refreshAvailableAt"`
+}

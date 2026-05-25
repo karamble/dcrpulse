@@ -221,20 +221,22 @@ func fetchAndCacheProposals(ctx context.Context) ([]types.Proposal, error) {
 	return out, nil
 }
 
-// GetProposalDetail returns one proposal with full description + vote
-// options. Cached in-process for politeiaCacheTTL; cleared on successful
-// cast-vote against the same token.
-func GetProposalDetail(ctx context.Context, token string) (*types.ProposalDetail, error) {
+// GetProposalDetail returns one proposal with full description + vote options,
+// plus the time it was fetched. Cached in-process indefinitely (per token);
+// auto-fetched on first access and cleared on a successful cast-vote against
+// the token. Use RefreshProposalDetail to force a re-fetch.
+func GetProposalDetail(ctx context.Context, token string) (*types.ProposalDetail, time.Time, error) {
 	if !PoliteiaEnabled() {
-		return nil, ErrPoliteiaDisabled
+		return nil, time.Time{}, ErrPoliteiaDisabled
 	}
 	if token == "" {
-		return nil, fmt.Errorf("token required")
+		return nil, time.Time{}, fmt.Errorf("token required")
 	}
 
 	piCacheMu.RLock()
-	if entry, ok := piCachedDetails[token]; ok && time.Since(entry.at) < politeiaCacheTTL {
+	if entry, ok := piCachedDetails[token]; ok {
 		cached := *entry.detail
+		at := entry.at
 		piCacheMu.RUnlock()
 		// Local "you voted X" cache might have changed since the entry
 		// was warmed; refresh that field from the per-wallet cfg.
@@ -243,21 +245,55 @@ func GetProposalDetail(ctx context.Context, token string) (*types.ProposalDetail
 				cached.CurrentChoice = v
 			}
 		}
-		return &cached, nil
+		return &cached, at, nil
 	}
 	piCacheMu.RUnlock()
 
+	return fetchAndCacheProposalDetail(ctx, token)
+}
+
+// RefreshProposalDetail forces a re-fetch of one proposal's detail, subject to
+// the ProposalsRefreshCooldown measured from that token's last successful
+// fetch. While cooling down it returns the cached detail, its fetch time, and
+// ErrProposalsRefreshCoolingDown. A failed fetch does not start the cooldown.
+func RefreshProposalDetail(ctx context.Context, token string) (*types.ProposalDetail, time.Time, error) {
+	if !PoliteiaEnabled() {
+		return nil, time.Time{}, ErrPoliteiaDisabled
+	}
+	if token == "" {
+		return nil, time.Time{}, fmt.Errorf("token required")
+	}
+
+	piCacheMu.RLock()
+	entry, ok := piCachedDetails[token]
+	piCacheMu.RUnlock()
+	if ok && !entry.at.IsZero() && time.Since(entry.at) < ProposalsRefreshCooldown {
+		cached := *entry.detail
+		return &cached, entry.at, ErrProposalsRefreshCoolingDown
+	}
+
+	return fetchAndCacheProposalDetail(ctx, token)
+}
+
+// fetchAndCacheProposalDetail fetches one proposal's full record + summary
+// (+ vote details when voting is active) from Politeia and caches it per token.
+// The cache entry (and thus the refresh cooldown anchor) is written ONLY on
+// success. Capped at ProposalsFetchTimeout.
+func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.ProposalDetail, time.Time, error) {
+	ctx, cancel := context.WithTimeout(ctx, ProposalsFetchTimeout)
+	defer cancel()
+
 	records, err := piRecordsBatch(ctx, []string{token})
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	rec, ok := records[token]
 	if !ok {
-		return nil, fmt.Errorf("record not found")
+		return nil, time.Time{}, fmt.Errorf("record not found")
 	}
 	sum, err := piSummariesBatch(ctx, []string{token})
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	// Only fetch the heavy vote-details endpoint (returns the full
 	// eligible ticket-hash list) for proposals where voting is active.
@@ -301,11 +337,12 @@ func GetProposalDetail(ctx context.Context, token string) (*types.ProposalDetail
 		}
 	}
 
+	at := time.Now()
 	piCacheMu.Lock()
-	piCachedDetails[token] = piDetailCacheEntry{detail: out, at: time.Now()}
+	piCachedDetails[token] = piDetailCacheEntry{detail: out, at: at}
 	piCacheMu.Unlock()
 
-	return out, nil
+	return out, at, nil
 }
 
 // CastPoliteiaVote runs the full sign + cast flow: fetch eligible tickets,

@@ -954,8 +954,35 @@ export const refreshProposals = async (): Promise<ProposalsResponse> => {
   return response.data;
 };
 
-export const getProposalDetail = async (token: string): Promise<ProposalDetail> => {
-  const response = await api.get<ProposalDetail>(`/wallet/governance/proposals/${encodeURIComponent(token)}`);
+// ProposalDetailResponse is the proposal-detail envelope: the cached record
+// plus the last successful fetch time and when a manual refresh is next allowed
+// (both unix seconds; 0 when never fetched).
+export interface ProposalDetailResponse {
+  detail: ProposalDetail;
+  fetchedAt: number;
+  refreshAvailableAt: number;
+}
+
+// getProposalDetail returns the cached detail envelope. Cached indefinitely per
+// token and auto-fetched once; a cold fetch can take a while, so allow more
+// than the default client timeout.
+export const getProposalDetail = async (token: string): Promise<ProposalDetailResponse> => {
+  const response = await api.get<ProposalDetailResponse>(
+    `/wallet/governance/proposals/${encodeURIComponent(token)}`,
+    { timeout: 65 * 1000 },
+  );
+  return response.data;
+};
+
+// refreshProposalDetail forces a backend re-fetch of one proposal. Throws on
+// 429 while the 8h cooldown is active; the error response body carries the
+// envelope so callers can re-sync the countdown.
+export const refreshProposalDetail = async (token: string): Promise<ProposalDetailResponse> => {
+  const response = await api.post<ProposalDetailResponse>(
+    `/wallet/governance/proposals/${encodeURIComponent(token)}/refresh`,
+    undefined,
+    { timeout: 65 * 1000 },
+  );
   return response.data;
 };
 

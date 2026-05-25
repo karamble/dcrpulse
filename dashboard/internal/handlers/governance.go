@@ -204,16 +204,34 @@ func RefreshProposalsHandler(w http.ResponseWriter, r *http.Request) {
 	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt)
 }
 
-// GetProposalDetailHandler returns one proposal's full record.
+// writeProposalDetailResponse encodes the proposal-detail envelope (record +
+// last-fetch time + when a manual refresh is next allowed) at the given status.
+func writeProposalDetailResponse(w http.ResponseWriter, status int, detail *types.ProposalDetail, fetchedAt time.Time) {
+	var fetched, refreshAt int64
+	if !fetchedAt.IsZero() {
+		fetched = fetchedAt.Unix()
+		refreshAt = fetchedAt.Add(services.ProposalsRefreshCooldown).Unix()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(types.ProposalDetailResponse{
+		Detail:             detail,
+		FetchedAt:          fetched,
+		RefreshAvailableAt: refreshAt,
+	})
+}
+
+// GetProposalDetailHandler returns one proposal's full record. Cached
+// indefinitely per token and auto-fetched on first access.
 func GetProposalDetailHandler(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimSpace(mux.Vars(r)["token"])
 	if token == "" {
 		http.Error(w, "token required", http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), services.ProposalsFetchTimeout)
 	defer cancel()
-	detail, err := services.GetProposalDetail(ctx, token)
+	detail, fetchedAt, err := services.GetProposalDetail(ctx, token)
 	if err != nil {
 		if errors.Is(err, services.ErrPoliteiaDisabled) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -223,8 +241,35 @@ func GetProposalDetailHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(detail)
+	writeProposalDetailResponse(w, http.StatusOK, detail, fetchedAt)
+}
+
+// RefreshProposalDetailHandler forces a re-fetch of one proposal's detail,
+// subject to the refresh cooldown. Returns 429 (with the envelope) while
+// cooling down, and 503 if Politeia is disabled.
+func RefreshProposalDetailHandler(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(mux.Vars(r)["token"])
+	if token == "" {
+		http.Error(w, "token required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), services.ProposalsFetchTimeout)
+	defer cancel()
+	detail, fetchedAt, err := services.RefreshProposalDetail(ctx, token)
+	if err != nil {
+		if errors.Is(err, services.ErrPoliteiaDisabled) {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		if errors.Is(err, services.ErrProposalsRefreshCoolingDown) {
+			writeProposalDetailResponse(w, http.StatusTooManyRequests, detail, fetchedAt)
+			return
+		}
+		log.Printf("RefreshProposalDetail(%s): %v", token, err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeProposalDetailResponse(w, http.StatusOK, detail, fetchedAt)
 }
 
 // CastPoliteiaVoteHandler runs the sign + ballot-cast flow.

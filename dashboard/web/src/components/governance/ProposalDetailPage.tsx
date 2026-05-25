@@ -4,34 +4,63 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import {
   CastVoteResult,
   ProposalDetail,
   castPoliteiaVote,
   getProposalDetail,
+  refreshProposalDetail,
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VoteResultsBar } from './VoteResultsBar';
 
 const POLITEIA_BASE = 'https://proposals.decred.org/record';
 
+// formatDuration renders a positive second count as "7h 12m" / "12m" / "<1m".
+const formatDuration = (secs: number) => {
+  const s = Math.max(0, secs);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return '<1m';
+};
+
+// formatAgo renders elapsed seconds as "just now" / "12m ago" / "7h 12m ago".
+const formatAgo = (secs: number) => {
+  const s = Math.max(0, secs);
+  if (s < 60) return 'just now';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m ago`;
+  return `${m}m ago`;
+};
+
 export const ProposalDetailPage = () => {
   const { token } = useParams<{ token: string }>();
   const [detail, setDetail] = useState<ProposalDetail | null>(null);
+  const [fetchedAt, setFetchedAt] = useState(0);
+  const [refreshAvailableAt, setRefreshAvailableAt] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string>('');
   const [modalOpen, setModalOpen] = useState(false);
   const [voteResult, setVoteResult] = useState<CastVoteResult | null>(null);
+  // now (unix seconds) drives the live countdown / "updated X ago" display.
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
   const load = async () => {
     if (!token) return;
     setError(null);
     try {
-      const d = await getProposalDetail(token);
-      setDetail(d);
-      if (d.currentChoice) setSelected(d.currentChoice);
+      const r = await getProposalDetail(token);
+      setDetail(r.detail);
+      setFetchedAt(r.fetchedAt);
+      setRefreshAvailableAt(r.refreshAvailableAt);
+      if (r.detail.currentChoice) setSelected(r.detail.currentChoice);
     } catch (err: any) {
       const body = err?.response?.data;
       setError(typeof body === 'string' ? body : err?.message || 'Failed to load proposal');
@@ -44,6 +73,39 @@ export const ProposalDetailPage = () => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // Tick the clock once a minute so the countdown and age stay current.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const handleRefresh = async () => {
+    if (!token) return;
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const r = await refreshProposalDetail(token);
+      setDetail(r.detail);
+      setFetchedAt(r.fetchedAt);
+      setRefreshAvailableAt(r.refreshAvailableAt);
+      if (r.detail.currentChoice) setSelected(r.detail.currentChoice);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      if (status === 429 && data && typeof data === 'object') {
+        // Cooling down: re-sync from the server so the countdown matches.
+        if (data.detail) setDetail(data.detail);
+        if (data.fetchedAt) setFetchedAt(data.fetchedAt);
+        if (data.refreshAvailableAt) setRefreshAvailableAt(data.refreshAvailableAt);
+      } else {
+        setRefreshError(typeof data === 'string' ? data : err?.message || 'Refresh failed');
+      }
+    } finally {
+      setRefreshing(false);
+      setNow(Math.floor(Date.now() / 1000));
+    }
+  };
 
   const handleSubmit = async (passphrase: string) => {
     if (!token || !selected) return;
@@ -80,10 +142,12 @@ export const ProposalDetailPage = () => {
 
   const isVoting = detail.status === 'voting' && detail.voteOptions.length > 0;
   const canCast = isVoting && detail.eligibleTickets > 0 && selected !== '';
+  const cooldownRemaining = refreshAvailableAt - now;
+  const canRefresh = !refreshing && cooldownRemaining <= 0;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <Link
           to="/wallet/governance/proposals"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -91,7 +155,37 @@ export const ProposalDetailPage = () => {
           <ArrowLeft className="h-4 w-4" />
           Back to proposals
         </Link>
+        <div className="ml-auto flex items-center gap-3">
+          {fetchedAt > 0 && (
+            <span className="text-xs text-muted-foreground">updated {formatAgo(now - fetchedAt)}</span>
+          )}
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={!canRefresh}
+            title={
+              canRefresh
+                ? 'Refresh this proposal from Politeia'
+                : `Next refresh available in ${formatDuration(cooldownRemaining)}`
+            }
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-border/50 bg-background hover:bg-muted/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing
+              ? 'Refreshing...'
+              : cooldownRemaining > 0
+                ? `Refresh in ${formatDuration(cooldownRemaining)}`
+                : 'Refresh'}
+          </button>
+        </div>
       </div>
+
+      {refreshError && (
+        <div className="text-xs text-destructive flex items-center gap-1">
+          <AlertCircle className="h-3 w-3" />
+          {refreshError}
+        </div>
+      )}
 
       <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
         <div className="flex items-start justify-between gap-3">

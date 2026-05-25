@@ -190,6 +190,7 @@ func main() {
 	api.HandleFunc("/wallet/governance/proposals/{token}", handlers.GetProposalDetailHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/proposals/cast-vote", handlers.CastPoliteiaVoteHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/proposals/refresh", handlers.RefreshProposalsHandler).Methods("POST")
+	api.HandleFunc("/wallet/governance/proposals/{token}/refresh", handlers.RefreshProposalDetailHandler).Methods("POST")
 	api.HandleFunc("/br/version", handlers.BisonrelayVersionHandler).Methods("GET")
 	api.HandleFunc("/br/status", handlers.BisonrelayStatusHandler).Methods("GET")
 	api.HandleFunc("/br/setup", handlers.BisonrelaySetupHandler).Methods("POST")
