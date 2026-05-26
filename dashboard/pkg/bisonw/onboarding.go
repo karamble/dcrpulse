@@ -118,6 +118,26 @@ func (c *Client) Wallets(ctx context.Context) (json.RawMessage, error) {
 	return res, err
 }
 
+// HasWallet reports whether a wallet is configured for the given asset ID.
+func (c *Client) HasWallet(ctx context.Context, assetID uint32) (bool, error) {
+	raw, err := c.Wallets(ctx)
+	if err != nil {
+		return false, err
+	}
+	var states []struct {
+		AssetID uint32 `json:"assetID"`
+	}
+	if err := json.Unmarshal(raw, &states); err != nil {
+		return false, err
+	}
+	for _, s := range states {
+		if s.AssetID == assetID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Exchanges returns the raw map of known DEX servers and their markets.
 func (c *Client) Exchanges(ctx context.Context) (json.RawMessage, error) {
 	var res json.RawMessage

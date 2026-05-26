@@ -154,6 +154,7 @@ services:
       - --rpckey=/dex/.dexc/rpc.key
     volumes:
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/dex/.dexc
+      - ${APP_DATA_DIR:-app-data}:/app-data:ro
     restart: unless-stopped
     networks:
       - decred-network

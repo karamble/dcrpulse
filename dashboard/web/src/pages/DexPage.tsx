@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, Lock, TrendingUp } from 'lucide-react';
 import { getDexStatus, lockDex, type DexStatus } from '../services/dcrdexApi';
 import { DexSetupWizard } from '../components/dex/DexSetupWizard';
+import { DexWalletSetup } from '../components/dex/DexWalletSetup';
 
 export const DexPage = () => {
   const [status, setStatus] = useState<DexStatus | null>(null);
@@ -58,6 +59,10 @@ export const DexPage = () => {
 
   if (status.stage === 'needs-init' || status.stage === 'needs-unlock') {
     return <DexSetupWizard mode={status.stage} onReady={refresh} />;
+  }
+
+  if (status.stage === 'needs-wallet') {
+    return <DexWalletSetup onReady={refresh} />;
   }
 
   // stage === 'ready' — full-bleed trading view (placeholder for now).

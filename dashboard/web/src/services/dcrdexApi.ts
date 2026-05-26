@@ -4,7 +4,7 @@
 
 import api from './api';
 
-export type DexStage = 'unavailable' | 'needs-init' | 'needs-unlock' | 'ready';
+export type DexStage = 'unavailable' | 'needs-init' | 'needs-unlock' | 'needs-wallet' | 'ready';
 
 export interface DexStatus {
   reachable: boolean;
@@ -33,4 +33,10 @@ export const unlockDex = async (appPass: string): Promise<void> => {
 
 export const lockDex = async (): Promise<void> => {
   await api.post('/dcrdex/lock');
+};
+
+// createDexWallet configures DCRDEX's Decred wallet against the dashboard's
+// dcrwallet, creating a dedicated `dex` account using the wallet passphrase.
+export const createDexWallet = async (walletPass: string): Promise<void> => {
+  await api.post('/dcrdex/wallet', { walletPass });
 };
