@@ -20,6 +20,7 @@ import { PrivacyPage } from './pages/PrivacyPage';
 import { StakingPage } from './pages/StakingPage';
 import { GovernancePage } from './pages/GovernancePage';
 import { LightningPage } from './pages/LightningPage';
+import { DexPage } from './pages/DexPage';
 import { OverviewTab as LightningOverviewTab } from './components/lightning/OverviewTab';
 import { ChannelsTab } from './components/lightning/channels/ChannelsTab';
 import { ChannelDetailPage } from './components/lightning/channels/ChannelDetailPage';
@@ -104,9 +105,12 @@ function AppContent() {
     fetchVersions();
   }, [location.pathname]);
 
+  // The DEX trading view is full-bleed: skip the centered max-width container
+  // and outer padding so it uses the full viewport width.
+  const dexFullWidth = location.pathname.startsWith('/dex');
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className={`min-h-screen bg-background ${dexFullWidth ? '' : 'p-6'}`}>
+      <div className={dexFullWidth ? 'space-y-6' : 'max-w-7xl mx-auto space-y-6'}>
         <Header nodeVersion={nodeVersion} />
         <Routes>
           <Route path="/" element={<NodeDashboard />} />
@@ -159,6 +163,7 @@ function AppContent() {
           <Route path="/explorer/mempool" element={<MempoolView />} />
           <Route path="/treasury" element={<GovernanceDashboard />} />
           <Route path="/br" element={<BisonrelayPage />} />
+          <Route path="/dex" element={<DexPage />} />
         </Routes>
         <Footer
           dcrdVersion={nodeVersion}

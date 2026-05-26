@@ -7,9 +7,11 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
+	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 )
 
@@ -18,7 +20,9 @@ import (
 // alongside the init/login routes.
 type DcrdexStatus struct {
 	Reachable     bool   `json:"reachable"`
+	Initialized   bool   `json:"initialized"`
 	Unlocked      bool   `json:"unlocked"`
+	Stage         string `json:"stage"` // unavailable | needs-init | needs-unlock | ready
 	BisonwVersion string `json:"bisonwVersion,omitempty"`
 	RPCServerVer  string `json:"rpcServerVersion,omitempty"`
 	Error         string `json:"error,omitempty"`
@@ -29,9 +33,14 @@ type DcrdexStatus struct {
 func GetDcrdexStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	st := DcrdexStatus{Initialized: dcrdexInitialized()}
+	_, st.Unlocked = rpc.DcrdexAppPass()
+
 	client, err := rpc.DcrdexClient()
 	if err != nil {
-		json.NewEncoder(w).Encode(DcrdexStatus{Reachable: false, Error: err.Error()})
+		st.Stage = "unavailable"
+		st.Error = err.Error()
+		json.NewEncoder(w).Encode(st)
 		return
 	}
 
@@ -40,19 +49,49 @@ func GetDcrdexStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	v, err := client.Version(ctx)
 	if err != nil {
-		json.NewEncoder(w).Encode(DcrdexStatus{Reachable: false, Error: err.Error()})
+		st.Stage = "unavailable"
+		st.Error = err.Error()
+		json.NewEncoder(w).Encode(st)
 		return
 	}
 
-	status := DcrdexStatus{Reachable: true}
-	_, status.Unlocked = rpc.DcrdexAppPass()
+	st.Reachable = true
 	if v.Bisonw != nil {
-		status.BisonwVersion = v.Bisonw.VersionString
+		st.BisonwVersion = v.Bisonw.VersionString
 	}
 	if v.RPCServerVersion != nil {
-		status.RPCServerVer = formatSemver(v.RPCServerVersion.Major, v.RPCServerVersion.Minor, v.RPCServerVersion.Patch)
+		st.RPCServerVer = formatSemver(v.RPCServerVersion.Major, v.RPCServerVersion.Minor, v.RPCServerVersion.Patch)
 	}
-	json.NewEncoder(w).Encode(status)
+	switch {
+	case !st.Initialized:
+		st.Stage = "needs-init"
+	case !st.Unlocked:
+		st.Stage = "needs-unlock"
+	default:
+		st.Stage = "ready"
+	}
+	json.NewEncoder(w).Encode(st)
+}
+
+func dcrdexInitialized() bool {
+	cfg, err := config.LoadGlobalCfg()
+	if err != nil {
+		return false
+	}
+	var b bool
+	cfg.Get(config.KeyDcrdexInitialized, &b)
+	return b
+}
+
+func setDcrdexInitialized() error {
+	cfg, err := config.LoadGlobalCfg()
+	if err != nil {
+		return err
+	}
+	if err := cfg.Set(config.KeyDcrdexInitialized, true); err != nil {
+		return err
+	}
+	return cfg.Save()
 }
 
 func formatSemver(major, minor, patch uint32) string {
@@ -104,6 +143,9 @@ func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rpc.SetDcrdexAppPass(req.AppPass)
+	if err := setDcrdexInitialized(); err != nil {
+		log.Printf("dcrdex: persist initialized flag: %v", err)
+	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 

@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Compass, Vote, MessageSquare } from 'lucide-react';
+import { Wallet, Compass, Vote, MessageSquare, ArrowLeftRight } from 'lucide-react';
 import { useBisonrelayLive } from './bisonrelay/BisonrelayLiveProvider';
 
 interface HeaderProps {
@@ -16,6 +16,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   const isExplorerPage = location.pathname.startsWith('/explorer');
   const isTreasuryPage = location.pathname.startsWith('/treasury');
   const isBisonrelayPage = location.pathname.startsWith('/br');
+  const isDexPage = location.pathname.startsWith('/dex');
   const isNodePage = location.pathname === '/';
 
   // Unread Bison Relay messages, surfaced on the nav button so they are visible
@@ -127,6 +128,20 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
               )}
             </span>
           )}
+        </Link>
+
+        <Link
+          to="/dex"
+          className={`px-4 py-3 rounded-lg border transition-all duration-300 flex items-center gap-2 ${
+            isDexPage
+              ? 'bg-primary/20 border-primary/40'
+              : 'bg-primary/10 border-primary/20 hover:bg-primary/20'
+          }`}
+        >
+          <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
+            <ArrowLeftRight className="h-5 w-5 text-white" />
+          </div>
+          <span className="text-primary font-semibold">DEX</span>
         </Link>
 
         {nodeVersion && (

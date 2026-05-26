@@ -27,6 +27,11 @@ const (
 	// Global config keys (live in /dashboard-data/config.json).
 	KeyAllowedExternalRequests = "allowed_external_requests"
 
+	// KeyDcrdexInitialized records that the dcrdex (bisonw) client has been
+	// initialized through the dashboard. Not a secret (the app password is
+	// never stored); it only distinguishes first-time setup from unlock.
+	KeyDcrdexInitialized = "dcrdex_initialized"
+
 	// Per-wallet record of Politeia vote choices we cast through this
 	// dashboard. Map keyed by proposal token, value = "yes"|"no"|"abstain".
 	// Mirrors Decrediton's savePiVote local cache so the UI can show
