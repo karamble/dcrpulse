@@ -70,6 +70,14 @@ type wireMessage struct {
 	Sig     string          `json:"sig"`
 }
 
+// rawParams mirrors rpcserver.RawParams. bisonw's RPC routes take positional
+// string arguments (Args) plus separate password arguments (PWArgs); the server
+// requires this envelope (it is not typed JSON params).
+type rawParams struct {
+	PWArgs []string `json:"PWArgs"`
+	Args   []string `json:"args"`
+}
+
 // responsePayload mirrors msgjson.ResponsePayload (the decoded payload of a
 // response-type message).
 type responsePayload struct {
@@ -126,23 +134,26 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
-// Call invokes an RPC route with params (may be nil) and, if result is non-nil,
-// JSON-unmarshals the successful result payload into it. A non-nil *RPCError is
+// Call invokes an RPC route with the given password arguments and positional
+// string arguments (either may be nil) and, if result is non-nil, JSON-
+// unmarshals the successful result payload into it. A non-nil *RPCError is
 // returned when the server reports an application error.
-func (c *Client) Call(ctx context.Context, route string, params, result any) error {
-	var payload json.RawMessage
-	if params != nil {
-		b, err := json.Marshal(params)
-		if err != nil {
-			return fmt.Errorf("bisonw: marshal params for %q: %w", route, err)
-		}
-		payload = b
+func (c *Client) Call(ctx context.Context, route string, pwArgs, args []string, result any) error {
+	if pwArgs == nil {
+		pwArgs = []string{}
+	}
+	if args == nil {
+		args = []string{}
+	}
+	payload, err := json.Marshal(rawParams{PWArgs: pwArgs, Args: args})
+	if err != nil {
+		return fmt.Errorf("bisonw: marshal params for %q: %w", route, err)
 	}
 	body, err := json.Marshal(wireMessage{
 		Type:    msgTypeRequest,
 		Route:   route,
 		ID:      atomic.AddUint64(&c.nextID, 1),
-		Payload: payload,
+		Payload: json.RawMessage(payload),
 	})
 	if err != nil {
 		return fmt.Errorf("bisonw: marshal request for %q: %w", route, err)

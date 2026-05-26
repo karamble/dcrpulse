@@ -137,7 +137,7 @@ services:
   dcrdex:
     image: ghcr.io/karamble/dcrpulse-dcrdex:${DCRDEX_IMAGE_TAG:-dev}
     build:
-      context: ${DCRDEX_BUILD_CONTEXT:-https://github.com/decred/dcrdex.git#master}
+      context: ${DCRDEX_BUILD_CONTEXT:-https://github.com/decred/dcrdex.git#v1.0.6}
       dockerfile: client/Dockerfile
     container_name: dcrpulse-dcrdex
     hostname: dcrdex

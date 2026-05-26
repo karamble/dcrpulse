@@ -35,7 +35,7 @@ type VersionResult struct {
 // Version returns the bisonw and RPC server versions.
 func (c *Client) Version(ctx context.Context) (*VersionResult, error) {
 	var res VersionResult
-	if err := c.Call(ctx, "version", nil, &res); err != nil {
+	if err := c.Call(ctx, "version", nil, nil, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
