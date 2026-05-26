@@ -7,6 +7,14 @@ import { ArrowDown, ArrowUp } from 'lucide-react';
 import { fmtAmt, fmtPrice } from './dexFormat';
 import type { DexMarket } from '../../services/dcrdexApi';
 import type { MiniOrder, OrderBookState } from './useDexFeed';
+import { DexDepthChart } from './DexDepthChart';
+
+const TABS = [
+  { id: 'book', label: 'Order book' },
+  { id: 'depth', label: 'Depth' },
+  { id: 'trades', label: 'Trades' },
+] as const;
+type BookTab = (typeof TABS)[number]['id'];
 
 interface Props {
   market: DexMarket;
@@ -24,7 +32,7 @@ const withCumulative = (orders: MiniOrder[]) => {
 };
 
 export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
-  const [tab, setTab] = useState<'book' | 'trades'>('book');
+  const [tab, setTab] = useState<BookTab>('book');
 
   const asks = withCumulative(book.sells); // best ask first
   const bids = withCumulative(book.buys); // best bid first
@@ -53,19 +61,21 @@ export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
   return (
     <div className="flex flex-col min-h-0 h-full">
       <div className="flex items-center border-b border-border/50 text-[11px] uppercase tracking-wider">
-        {(['book', 'trades'] as const).map((t) => (
+        {TABS.map((t) => (
           <button
-            key={t}
+            key={t.id}
             type="button"
-            onClick={() => setTab(t)}
+            onClick={() => setTab(t.id)}
             className={`relative px-4 py-2.5 font-medium transition-colors ${
-              tab === t ? 'text-foreground after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:bg-primary' : 'text-muted-foreground hover:text-foreground/80'
+              tab === t.id ? 'text-foreground after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:bg-primary' : 'text-muted-foreground hover:text-foreground/80'
             }`}
           >
-            {t === 'book' ? 'Order book' : 'Trades'}
+            {t.label}
           </button>
         ))}
       </div>
+
+      {tab === 'depth' && <DexDepthChart market={market} book={book} />}
 
       {tab === 'book' ? (
         <div className="flex flex-col min-h-0 flex-1">
@@ -103,7 +113,7 @@ export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
             </div>
           </div>
         </div>
-      ) : (
+      ) : tab === 'trades' ? (
         <div className="flex flex-col min-h-0 flex-1">
           <div className="grid grid-cols-3 px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
             <span>Price ({market.quote.split('.')[0]})</span>
@@ -125,7 +135,7 @@ export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
             ))}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };
