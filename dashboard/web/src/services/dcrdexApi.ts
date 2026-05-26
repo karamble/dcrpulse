@@ -53,6 +53,11 @@ export const getDexExchanges = async (): Promise<Record<string, DexExchange>> =>
   return data || {};
 };
 
+export interface DexMarket {
+  base: string;
+  quote: string;
+}
+
 // DexConfig is the registration view of a DEX server. The backend converts the
 // bond amount to DCR (via dcrutil), so the frontend does no atoms math.
 export interface DexConfig {
@@ -64,10 +69,26 @@ export interface DexConfig {
   bondPerTierAtoms: number;
   bondPerTierDcr: number;
   marketCount: number;
+  markets: DexMarket[];
 }
 
 export const getDexConfig = async (host: string): Promise<DexConfig> => {
   const { data } = await api.get<DexConfig>('/dcrdex/dexconfig', { params: { host } });
+  return data;
+};
+
+// DexWalletInfo is the DCRDEX Decred wallet's funding view (balance in DCR,
+// converted in the backend) used to gate bond posting.
+export interface DexWalletInfo {
+  configured: boolean;
+  availableDcr: number;
+  address: string;
+  synced: boolean;
+  syncProgress: number;
+}
+
+export const getDexWallet = async (): Promise<DexWalletInfo> => {
+  const { data } = await api.get<DexWalletInfo>('/dcrdex/wallet');
   return data;
 };
 

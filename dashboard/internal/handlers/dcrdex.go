@@ -10,6 +10,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"dcrpulse/internal/config"
@@ -266,6 +268,61 @@ func dexEnv(key, def string) string {
 	return def
 }
 
+// DcrdexWalletInfo is the read-only view of DCRDEX's Decred wallet used by the
+// registration screen to show funding status. The balance is converted to DCR
+// in the backend with dcrutil.
+type DcrdexWalletInfo struct {
+	Configured   bool    `json:"configured"`
+	AvailableDcr float64 `json:"availableDcr"`
+	Address      string  `json:"address"`
+	Synced       bool    `json:"synced"`
+	SyncProgress float32 `json:"syncProgress"`
+}
+
+// GetDcrdexWalletHandler returns the DCRDEX Decred wallet's available balance
+// (in DCR) and deposit address, so the user can fund it before posting a bond.
+func GetDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	raw, err := client.Wallets(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var states []struct {
+		AssetID      uint32  `json:"assetID"`
+		Address      string  `json:"address"`
+		Synced       bool    `json:"synced"`
+		SyncProgress float32 `json:"syncProgress"`
+		Balance      struct {
+			Available uint64 `json:"available"`
+		} `json:"balance"`
+	}
+	if err := json.Unmarshal(raw, &states); err != nil {
+		http.Error(w, "decode wallets: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	for _, s := range states {
+		if s.AssetID == bisonw.AssetDCR {
+			json.NewEncoder(w).Encode(DcrdexWalletInfo{
+				Configured:   true,
+				AvailableDcr: dcrutil.Amount(s.Balance.Available).ToCoin(),
+				Address:      s.Address,
+				Synced:       s.Synced,
+				SyncProgress: s.SyncProgress,
+			})
+			return
+		}
+	}
+	json.NewEncoder(w).Encode(DcrdexWalletInfo{Configured: false})
+}
+
 // GetDcrdexExchangesHandler returns the known/registered DEX servers (raw).
 func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -287,15 +344,21 @@ func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
 // DexConfigResponse is the registration-screen view of a DEX server's config.
 // Amounts are converted to DCR in the backend with dcrutil so the frontend does
 // not hardcode the atoms-per-coin ratio.
+type DexMarket struct {
+	Base  string `json:"base"`
+	Quote string `json:"quote"`
+}
+
 type DexConfigResponse struct {
-	Host             string  `json:"host"`
-	ConnectionStatus int     `json:"connectionStatus"`
-	Registered       bool    `json:"registered"`
-	BondExpiryDays   int     `json:"bondExpiryDays"`
-	BondConfs        uint32  `json:"bondConfs"`
-	BondPerTierAtoms uint64  `json:"bondPerTierAtoms"`
-	BondPerTierDcr   float64 `json:"bondPerTierDcr"`
-	MarketCount      int     `json:"marketCount"`
+	Host             string      `json:"host"`
+	ConnectionStatus int         `json:"connectionStatus"`
+	Registered       bool        `json:"registered"`
+	BondExpiryDays   int         `json:"bondExpiryDays"`
+	BondConfs        uint32      `json:"bondConfs"`
+	BondPerTierAtoms uint64      `json:"bondPerTierAtoms"`
+	BondPerTierDcr   float64     `json:"bondPerTierDcr"`
+	MarketCount      int         `json:"marketCount"`
+	Markets          []DexMarket `json:"markets"`
 }
 
 // GetDcrdexConfigHandler fetches a DEX server's public configuration (markets,
@@ -330,13 +393,29 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 			Confs uint32 `json:"confs"`
 			Amt   uint64 `json:"amount"`
 		} `json:"bondAssets"`
-		Markets map[string]json.RawMessage `json:"markets"`
+		Markets map[string]struct {
+			BaseSymbol  string `json:"basesymbol"`
+			QuoteSymbol string `json:"quotesymbol"`
+		} `json:"markets"`
 	}
 	if err := json.Unmarshal(raw, &xc); err != nil {
 		http.Error(w, "decode dex config: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	dcr := xc.BondAssets["dcr"]
+	markets := make([]DexMarket, 0, len(xc.Markets))
+	for _, m := range xc.Markets {
+		markets = append(markets, DexMarket{
+			Base:  strings.ToUpper(m.BaseSymbol),
+			Quote: strings.ToUpper(m.QuoteSymbol),
+		})
+	}
+	sort.Slice(markets, func(i, j int) bool {
+		if markets[i].Base != markets[j].Base {
+			return markets[i].Base < markets[j].Base
+		}
+		return markets[i].Quote < markets[j].Quote
+	})
 	json.NewEncoder(w).Encode(DexConfigResponse{
 		Host:             xc.Host,
 		ConnectionStatus: xc.ConnectionStatus,
@@ -345,7 +424,8 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		BondConfs:        dcr.Confs,
 		BondPerTierAtoms: dcr.Amt,
 		BondPerTierDcr:   dcrutil.Amount(dcr.Amt).ToCoin(),
-		MarketCount:      len(xc.Markets),
+		MarketCount:      len(markets),
+		Markets:          markets,
 	})
 }
 

@@ -147,6 +147,7 @@ func main() {
 	api.HandleFunc("/dcrdex/unlock", handlers.UnlockDcrdexHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/lock", handlers.LockDcrdexHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet", handlers.CreateDcrdexWalletHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/wallet", handlers.GetDcrdexWalletHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/exchanges", handlers.GetDcrdexExchangesHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/dexconfig", handlers.GetDcrdexConfigHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/postbond", handlers.PostDcrdexBondHandler).Methods("POST")
