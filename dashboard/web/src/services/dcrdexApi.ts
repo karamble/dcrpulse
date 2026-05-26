@@ -56,6 +56,8 @@ export const getDexExchanges = async (): Promise<Record<string, DexExchange>> =>
 export interface DexMarket {
   base: string;
   quote: string;
+  baseID: number;
+  quoteID: number;
 }
 
 // DexConfig is the registration view of a DEX server. The backend converts the

@@ -347,8 +347,10 @@ func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
 // Amounts are converted to DCR in the backend with dcrutil so the frontend does
 // not hardcode the atoms-per-coin ratio.
 type DexMarket struct {
-	Base  string `json:"base"`
-	Quote string `json:"quote"`
+	Base    string `json:"base"`
+	Quote   string `json:"quote"`
+	BaseID  uint32 `json:"baseID"`
+	QuoteID uint32 `json:"quoteID"`
 }
 
 type DexConfigResponse struct {
@@ -398,6 +400,8 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		Markets map[string]struct {
 			BaseSymbol  string `json:"basesymbol"`
 			QuoteSymbol string `json:"quotesymbol"`
+			BaseID      uint32 `json:"baseid"`
+			QuoteID     uint32 `json:"quoteid"`
 		} `json:"markets"`
 	}
 	if err := json.Unmarshal(raw, &xc); err != nil {
@@ -408,8 +412,10 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 	markets := make([]DexMarket, 0, len(xc.Markets))
 	for _, m := range xc.Markets {
 		markets = append(markets, DexMarket{
-			Base:  strings.ToUpper(m.BaseSymbol),
-			Quote: strings.ToUpper(m.QuoteSymbol),
+			Base:    strings.ToUpper(m.BaseSymbol),
+			Quote:   strings.ToUpper(m.QuoteSymbol),
+			BaseID:  m.BaseID,
+			QuoteID: m.QuoteID,
 		})
 	}
 	sort.Slice(markets, func(i, j int) bool {

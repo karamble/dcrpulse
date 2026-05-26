@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Lock, TrendingUp } from 'lucide-react';
 import { getDexExchanges, lockDex, type DexExchange } from '../../services/dcrdexApi';
 import { DexRegister } from './DexRegister';
+import { DexMarketView } from './DexMarketView';
 
 // The canonical mainnet DEX server.
 const MAINNET_DEX = 'dex.decred.org:7232';
@@ -57,11 +58,7 @@ export const DexHome = ({ bisonwVersion, onLock }: DexHomeProps) => {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
       ) : registered ? (
-        <div className="px-4">
-          <div className="rounded-xl bg-gradient-card border border-border/50 p-8 text-center text-muted-foreground">
-            Registered and ready. Markets, order book and trading come next.
-          </div>
-        </div>
+        <DexMarketView />
       ) : (
         <DexRegister host={MAINNET_DEX} onRegistered={refresh} />
       )}

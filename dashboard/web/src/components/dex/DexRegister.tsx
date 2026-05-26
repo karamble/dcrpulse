@@ -11,31 +11,12 @@ import {
   type DexConfig,
   type DexWalletInfo,
 } from '../../services/dcrdexApi';
+import { CoinIcon } from './CoinIcon';
 
 interface DexRegisterProps {
   host: string;
   onRegistered: () => void;
 }
-
-// CoinIcon renders an upstream DCRDEX coin logo, falling back to the
-// single-letter placeholder icon when a symbol has no dedicated logo.
-const CoinIcon = ({ symbol, className = '' }: { symbol: string; className?: string }) => {
-  // Token symbols use dot-notation for the chain (e.g. usdt.polygon); the icon
-  // is keyed by the token part before the dot.
-  const s = (symbol || '').toLowerCase().split('.')[0];
-  return (
-    <img
-      src={`/images/dex-coins/${s}.png`}
-      alt={symbol}
-      className={`h-5 w-5 rounded-full ${className}`}
-      onError={(e) => {
-        const img = e.currentTarget;
-        const fallback = `/images/dex-coins/${s[0] || 'a'}.png`;
-        if (!img.src.endsWith(fallback)) img.src = fallback;
-      }}
-    />
-  );
-};
 
 // DexRegister shows a DEX server's markets and bond requirements and lets the
 // user register by posting a fidelity bond. Posting spends real DCR, so it is
