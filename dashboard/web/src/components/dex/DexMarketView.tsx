@@ -13,6 +13,7 @@ import {
 } from '../../services/dcrdexApi';
 import { useDexFeed, type MiniOrder } from './useDexFeed';
 import { CoinIcon } from './CoinIcon';
+import { DexOrderForm } from './DexOrderForm';
 
 const HOST = 'dex.decred.org:7232';
 
@@ -102,7 +103,8 @@ export const DexMarketView = () => {
       </div>
 
       {sel && (
-        <div className="rounded-xl bg-gradient-card border border-border/50 p-4">
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="flex-1 rounded-xl bg-gradient-card border border-border/50 p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold">
               {sel.base}/{sel.quote} order book
@@ -123,6 +125,8 @@ export const DexMarketView = () => {
               <OrderRows orders={book.sells} sell />
             </div>
           </div>
+          </div>
+          <DexOrderForm host={HOST} market={sel} onPlaced={refreshOrders} />
         </div>
       )}
 

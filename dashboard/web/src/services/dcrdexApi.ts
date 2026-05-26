@@ -58,7 +58,28 @@ export interface DexMarket {
   quote: string;
   baseID: number;
   quoteID: number;
+  lotSize: number; // atomic
+  rateStep: number; // atomic message-rate
+  baseConvFactor: number; // base atoms per conventional unit
+  quoteConvFactor: number; // quote atoms per conventional unit
 }
+
+export interface PlaceOrderParams {
+  host: string;
+  base: number;
+  quote: number;
+  isLimit: boolean;
+  sell: boolean;
+  qty: number; // atomic
+  rate: number; // atomic message-rate (0 for market orders)
+  tifNow: boolean;
+}
+
+// placeDexOrder submits an order. qty and rate are atomic; the caller converts
+// from conventional units mirroring bisonw's frontend. Spends real funds.
+export const placeDexOrder = async (p: PlaceOrderParams): Promise<void> => {
+  await api.post('/dcrdex/trade', p);
+};
 
 // DexConfig is the registration view of a DEX server. The backend converts the
 // bond amount to DCR (via dcrutil), so the frontend does no atoms math.

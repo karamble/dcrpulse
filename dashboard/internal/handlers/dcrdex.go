@@ -347,10 +347,14 @@ func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
 // Amounts are converted to DCR in the backend with dcrutil so the frontend does
 // not hardcode the atoms-per-coin ratio.
 type DexMarket struct {
-	Base    string `json:"base"`
-	Quote   string `json:"quote"`
-	BaseID  uint32 `json:"baseID"`
-	QuoteID uint32 `json:"quoteID"`
+	Base            string `json:"base"`
+	Quote           string `json:"quote"`
+	BaseID          uint32 `json:"baseID"`
+	QuoteID         uint32 `json:"quoteID"`
+	LotSize         uint64 `json:"lotSize"`         // atomic
+	RateStep        uint64 `json:"rateStep"`        // atomic message-rate
+	BaseConvFactor  uint64 `json:"baseConvFactor"`  // base atoms per conventional unit
+	QuoteConvFactor uint64 `json:"quoteConvFactor"` // quote atoms per conventional unit
 }
 
 type DexConfigResponse struct {
@@ -402,20 +406,36 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 			QuoteSymbol string `json:"quotesymbol"`
 			BaseID      uint32 `json:"baseid"`
 			QuoteID     uint32 `json:"quoteid"`
+			LotSize     uint64 `json:"lotsize"`
+			RateStep    uint64 `json:"ratestep"`
 		} `json:"markets"`
+		Assets map[string]struct {
+			UnitInfo struct {
+				Conventional struct {
+					ConversionFactor uint64 `json:"conversionFactor"`
+				} `json:"conventional"`
+			} `json:"unitInfo"`
+		} `json:"assets"`
 	}
 	if err := json.Unmarshal(raw, &xc); err != nil {
 		http.Error(w, "decode dex config: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	convFactor := func(assetID uint32) uint64 {
+		return xc.Assets[itoa(assetID)].UnitInfo.Conventional.ConversionFactor
+	}
 	dcr := xc.BondAssets["dcr"]
 	markets := make([]DexMarket, 0, len(xc.Markets))
 	for _, m := range xc.Markets {
 		markets = append(markets, DexMarket{
-			Base:    strings.ToUpper(m.BaseSymbol),
-			Quote:   strings.ToUpper(m.QuoteSymbol),
-			BaseID:  m.BaseID,
-			QuoteID: m.QuoteID,
+			Base:            strings.ToUpper(m.BaseSymbol),
+			Quote:           strings.ToUpper(m.QuoteSymbol),
+			BaseID:          m.BaseID,
+			QuoteID:         m.QuoteID,
+			LotSize:         m.LotSize,
+			RateStep:        m.RateStep,
+			BaseConvFactor:  convFactor(m.BaseID),
+			QuoteConvFactor: convFactor(m.QuoteID),
 		})
 	}
 	sort.Slice(markets, func(i, j int) bool {
