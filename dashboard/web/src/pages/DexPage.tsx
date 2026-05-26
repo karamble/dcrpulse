@@ -8,10 +8,14 @@ import { getDexStatus, type DexStatus } from '../services/dcrdexApi';
 import { DexSetupWizard } from '../components/dex/DexSetupWizard';
 import { DexWalletSetup } from '../components/dex/DexWalletSetup';
 import { DexHome } from '../components/dex/DexHome';
+import { DexMarketView } from '../components/dex/DexMarketView';
 
 export const DexPage = () => {
   const [status, setStatus] = useState<DexStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Dev preview: /dex?preview renders the trading view with sample data,
+  // bypassing onboarding/registration and any DEX-server dependency.
+  const previewMode = new URLSearchParams(window.location.search).has('preview');
 
   const refresh = async () => {
     try {
@@ -23,10 +27,16 @@ export const DexPage = () => {
   };
 
   useEffect(() => {
+    if (previewMode) return;
     refresh();
     const id = window.setInterval(refresh, 10000);
     return () => window.clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewMode]);
+
+  if (previewMode) {
+    return <DexMarketView preview />;
+  }
 
   if (!status && err) {
     return (

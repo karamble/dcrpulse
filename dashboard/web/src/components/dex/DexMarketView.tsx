@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, X } from 'lucide-react';
+import { AlertCircle, FlaskConical, X } from 'lucide-react';
 import {
   getDexConfig,
   getDexMyOrders,
@@ -14,6 +14,7 @@ import {
 import { useDexFeed, type MiniOrder } from './useDexFeed';
 import { CoinIcon } from './CoinIcon';
 import { DexOrderForm } from './DexOrderForm';
+import { mockMarkets, mockBook, mockOrders } from './dexMockData';
 
 const HOST = 'dex.decred.org:7232';
 
@@ -34,15 +35,17 @@ const OrderRows = ({ orders, sell }: { orders: MiniOrder[]; sell: boolean }) => 
 };
 
 // DexMarketView is the live trading view: a market selector and a real-time
-// order book fed by the DCRDEX WebSocket relay. (Runtime testing deferred until
-// the DEX server is reliable.)
-export const DexMarketView = () => {
-  const [markets, setMarkets] = useState<DexMarket[]>([]);
-  const [sel, setSel] = useState<DexMarket | null>(null);
+// order book fed by the DCRDEX WebSocket relay, with an order-entry form and an
+// open-orders panel. In preview mode it renders sample data (no server) so the
+// UI can be developed without a reachable DEX server.
+export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
+  const [markets, setMarkets] = useState<DexMarket[]>(preview ? mockMarkets : []);
+  const [sel, setSel] = useState<DexMarket | null>(preview ? mockMarkets[0] : null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [orders, setOrders] = useState<DexOrder[]>([]);
+  const [liveOrders, setLiveOrders] = useState<DexOrder[]>([]);
 
   useEffect(() => {
+    if (preview) return;
     getDexConfig(HOST)
       .then((c) => {
         setMarkets(c.markets);
@@ -51,21 +54,28 @@ export const DexMarketView = () => {
       .catch((e: any) =>
         setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load markets'),
       );
-  }, []);
+  }, [preview]);
 
   const refreshOrders = () => {
+    if (preview) return;
     getDexMyOrders(HOST)
-      .then(setOrders)
+      .then(setLiveOrders)
       .catch(() => {});
   };
   useEffect(() => {
+    if (preview) return;
     refreshOrders();
     const id = window.setInterval(refreshOrders, 10000);
     return () => window.clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
 
   const market = sel ? { host: HOST, base: sel.baseID, quote: sel.quoteID } : null;
-  const { book, connected, error } = useDexFeed(market);
+  const live = useDexFeed(preview ? null : market);
+  const book = preview ? mockBook() : live.book;
+  const connected = preview ? true : live.connected;
+  const feedErr = preview ? null : live.error;
+  const orders = preview ? mockOrders : liveOrders;
 
   if (loadErr) {
     return (
@@ -80,6 +90,13 @@ export const DexMarketView = () => {
 
   return (
     <div className="px-4 space-y-4">
+      {preview && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-warning/10 border border-warning/30 text-sm text-warning">
+          <FlaskConical className="h-4 w-4 shrink-0" />
+          Preview mode — sample data, not connected to a DEX server. Orders are disabled.
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {markets.map((m) => {
           const active = !!sel && m.baseID === sel.baseID && m.quoteID === sel.quoteID;
@@ -105,28 +122,28 @@ export const DexMarketView = () => {
       {sel && (
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1 rounded-xl bg-gradient-card border border-border/50 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold">
-              {sel.base}/{sel.quote} order book
-            </h3>
-            <span className={`text-xs flex items-center gap-1.5 ${connected ? 'text-success' : 'text-muted-foreground'}`}>
-              <span className={`h-2 w-2 rounded-full ${connected ? 'bg-success' : 'bg-muted-foreground/50'}`} />
-              {connected ? 'live' : 'connecting…'}
-            </span>
-          </div>
-          {error && <div className="text-xs text-warning mb-2">{error}</div>}
-          <div className="flex flex-col sm:flex-row gap-6">
-            <div className="flex-1">
-              <div className="text-xs text-success mb-1 px-2">Bids · price / size</div>
-              <OrderRows orders={book.buys} sell={false} />
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">
+                {sel.base}/{sel.quote} order book
+              </h3>
+              <span className={`text-xs flex items-center gap-1.5 ${connected ? 'text-success' : 'text-muted-foreground'}`}>
+                <span className={`h-2 w-2 rounded-full ${connected ? 'bg-success' : 'bg-muted-foreground/50'}`} />
+                {preview ? 'sample' : connected ? 'live' : 'connecting…'}
+              </span>
             </div>
-            <div className="flex-1">
-              <div className="text-xs text-destructive mb-1 px-2">Asks · price / size</div>
-              <OrderRows orders={book.sells} sell />
+            {feedErr && <div className="text-xs text-warning mb-2">{feedErr}</div>}
+            <div className="flex flex-col sm:flex-row gap-6">
+              <div className="flex-1">
+                <div className="text-xs text-success mb-1 px-2">Bids · price / size</div>
+                <OrderRows orders={book.buys} sell={false} />
+              </div>
+              <div className="flex-1">
+                <div className="text-xs text-destructive mb-1 px-2">Asks · price / size</div>
+                <OrderRows orders={book.sells} sell />
+              </div>
             </div>
           </div>
-          </div>
-          <DexOrderForm host={HOST} market={sel} onPlaced={refreshOrders} />
+          <DexOrderForm host={HOST} market={sel} preview={preview} onPlaced={refreshOrders} />
         </div>
       )}
 
@@ -158,7 +175,7 @@ export const DexMarketView = () => {
                       <td className="py-1.5 pr-3">{o.status}</td>
                       <td className="py-1.5 pr-3">{pct}%</td>
                       <td className="py-1.5">
-                        {o.status === 'booked' && (
+                        {!preview && o.status === 'booked' && (
                           <button
                             type="button"
                             title="Cancel order"

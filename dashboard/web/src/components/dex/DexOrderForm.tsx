@@ -15,10 +15,11 @@ const RateEncodingFactor = 1e8;
 interface DexOrderFormProps {
   host: string;
   market: DexMarket;
+  preview?: boolean;
   onPlaced: () => void;
 }
 
-export const DexOrderForm = ({ host, market, onPlaced }: DexOrderFormProps) => {
+export const DexOrderForm = ({ host, market, preview = false, onPlaced }: DexOrderFormProps) => {
   const [sell, setSell] = useState(false);
   const [isLimit, setIsLimit] = useState(true);
   const [price, setPrice] = useState('');
@@ -42,7 +43,7 @@ export const DexOrderForm = ({ host, market, onPlaced }: DexOrderFormProps) => {
   const msgRate = market.rateStep > 0 ? Math.round(rawMsgRate / market.rateStep) * market.rateStep : rawMsgRate;
   const rateEffective = msgRate / rateConversionFactor;
 
-  const valid = lots >= 1 && (!isLimit || msgRate > 0);
+  const valid = !preview && lots >= 1 && (!isLimit || msgRate > 0);
 
   const submit = async () => {
     setBusy(true);
