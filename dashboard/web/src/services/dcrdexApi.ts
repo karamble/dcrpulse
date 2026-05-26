@@ -40,3 +40,39 @@ export const lockDex = async (): Promise<void> => {
 export const createDexWallet = async (walletPass: string): Promise<void> => {
   await api.post('/dcrdex/wallet', { walletPass });
 };
+
+// DexExchange is the minimal shape of a known DEX server (registered when
+// acctID is set).
+export interface DexExchange {
+  host: string;
+  acctID: string;
+}
+
+export const getDexExchanges = async (): Promise<Record<string, DexExchange>> => {
+  const { data } = await api.get<Record<string, DexExchange>>('/dcrdex/exchanges');
+  return data || {};
+};
+
+// DexConfig is the registration view of a DEX server. The backend converts the
+// bond amount to DCR (via dcrutil), so the frontend does no atoms math.
+export interface DexConfig {
+  host: string;
+  connectionStatus: number;
+  registered: boolean;
+  bondExpiryDays: number;
+  bondConfs: number;
+  bondPerTierAtoms: number;
+  bondPerTierDcr: number;
+  marketCount: number;
+}
+
+export const getDexConfig = async (host: string): Promise<DexConfig> => {
+  const { data } = await api.get<DexConfig>('/dcrdex/dexconfig', { params: { host } });
+  return data;
+};
+
+// postDexBond posts a fidelity bond (in atoms) to register with a DEX server.
+// This spends real funds; only call on explicit user action.
+export const postDexBond = async (host: string, bond: number): Promise<void> => {
+  await api.post('/dcrdex/postbond', { host, bond });
+};

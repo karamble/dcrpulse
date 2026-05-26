@@ -3,10 +3,11 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, Lock, TrendingUp } from 'lucide-react';
-import { getDexStatus, lockDex, type DexStatus } from '../services/dcrdexApi';
+import { AlertCircle } from 'lucide-react';
+import { getDexStatus, type DexStatus } from '../services/dcrdexApi';
 import { DexSetupWizard } from '../components/dex/DexSetupWizard';
 import { DexWalletSetup } from '../components/dex/DexWalletSetup';
+import { DexHome } from '../components/dex/DexHome';
 
 export const DexPage = () => {
   const [status, setStatus] = useState<DexStatus | null>(null);
@@ -65,37 +66,6 @@ export const DexPage = () => {
     return <DexWalletSetup onReady={refresh} />;
   }
 
-  // stage === 'ready' — full-bleed trading view (placeholder for now).
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4 px-4">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-semibold">DCRDEX</h1>
-          {status.bisonwVersion && (
-            <span className="text-xs text-muted-foreground font-mono">
-              bisonw {status.bisonwVersion}
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={async () => {
-            await lockDex();
-            refresh();
-          }}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-background/50 transition-colors"
-        >
-          <Lock className="h-4 w-4" />
-          Lock
-        </button>
-      </div>
-
-      <div className="px-4">
-        <div className="rounded-xl bg-gradient-card border border-border/50 p-8 text-center text-muted-foreground">
-          DCRDEX is unlocked and ready. Markets, order book and trading come next.
-        </div>
-      </div>
-    </div>
-  );
+  // stage === 'ready' — full-bleed unlocked view (registration or trading).
+  return <DexHome bisonwVersion={status.bisonwVersion} onLock={refresh} />;
 };

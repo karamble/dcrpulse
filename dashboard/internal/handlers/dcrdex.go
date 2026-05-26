@@ -16,6 +16,8 @@ import (
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/pkg/bisonw"
+
+	"github.com/decred/dcrd/dcrutil/v4"
 )
 
 // dexAccountName is the dedicated dcrwallet account DCRDEX trades from.
@@ -262,4 +264,126 @@ func dexEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// GetDcrdexExchangesHandler returns the known/registered DEX servers (raw).
+func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	raw, err := client.Exchanges(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Write(raw)
+}
+
+// DexConfigResponse is the registration-screen view of a DEX server's config.
+// Amounts are converted to DCR in the backend with dcrutil so the frontend does
+// not hardcode the atoms-per-coin ratio.
+type DexConfigResponse struct {
+	Host             string  `json:"host"`
+	ConnectionStatus int     `json:"connectionStatus"`
+	Registered       bool    `json:"registered"`
+	BondExpiryDays   int     `json:"bondExpiryDays"`
+	BondConfs        uint32  `json:"bondConfs"`
+	BondPerTierAtoms uint64  `json:"bondPerTierAtoms"`
+	BondPerTierDcr   float64 `json:"bondPerTierDcr"`
+	MarketCount      int     `json:"marketCount"`
+}
+
+// GetDcrdexConfigHandler fetches a DEX server's public configuration (markets,
+// bond requirements) for the host given in the `host` query parameter, with the
+// DCR bond amount converted to coins. Read-only; populates the registration screen.
+func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	host := r.URL.Query().Get("host")
+	if host == "" {
+		http.Error(w, "host is required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	raw, err := client.GetDEXConfig(ctx, host, "")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	var xc struct {
+		Host             string `json:"host"`
+		AcctID           string `json:"acctID"`
+		ConnectionStatus int    `json:"connectionStatus"`
+		BondExpiry       uint64 `json:"bondExpiry"`
+		BondAssets       map[string]struct {
+			Confs uint32 `json:"confs"`
+			Amt   uint64 `json:"amount"`
+		} `json:"bondAssets"`
+		Markets map[string]json.RawMessage `json:"markets"`
+	}
+	if err := json.Unmarshal(raw, &xc); err != nil {
+		http.Error(w, "decode dex config: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	dcr := xc.BondAssets["dcr"]
+	json.NewEncoder(w).Encode(DexConfigResponse{
+		Host:             xc.Host,
+		ConnectionStatus: xc.ConnectionStatus,
+		Registered:       xc.AcctID != "",
+		BondExpiryDays:   int(xc.BondExpiry / 86400),
+		BondConfs:        dcr.Confs,
+		BondPerTierAtoms: dcr.Amt,
+		BondPerTierDcr:   dcrutil.Amount(dcr.Amt).ToCoin(),
+		MarketCount:      len(xc.Markets),
+	})
+}
+
+// PostDcrdexBondHandler posts a fidelity bond to register/maintain a DEX
+// account. This spends real funds on mainnet; the dashboard only calls it on
+// explicit user action.
+func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		Host         string `json:"host"`
+		Bond         uint64 `json:"bond"`
+		MaintainTier *bool  `json:"maintainTier,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" || req.Bond == 0 {
+		http.Error(w, "host and bond are required", http.StatusBadRequest)
+		return
+	}
+	appPass, ok := rpc.DcrdexAppPass()
+	if !ok {
+		http.Error(w, "DCRDEX is locked", http.StatusConflict)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	raw, err := client.PostBond(ctx, bisonw.PostBondParams{
+		AppPass:      appPass,
+		Host:         req.Host,
+		Bond:         req.Bond,
+		MaintainTier: req.MaintainTier,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Write(raw)
 }
