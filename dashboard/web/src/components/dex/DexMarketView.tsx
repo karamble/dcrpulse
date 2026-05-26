@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, FlaskConical } from 'lucide-react';
 import { getDexConfig, getDexMyOrders, cancelDexOrder, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
-import { useDexFeed, type MarketStats } from './useDexFeed';
+import { useDexFeed, statsFromCandles, type MarketStats } from './useDexFeed';
 import { DexStatsBar } from './DexStatsBar';
 import { DexMarketsPanel } from './DexMarketsPanel';
 import { DexChartPanel } from './DexChartPanel';
@@ -54,14 +54,19 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
 
-  const marketRef = sel ? { host: HOST, base: sel.baseID, quote: sel.quoteID } : null;
+  const marketRef = sel
+    ? { host: HOST, base: sel.baseID, quote: sel.quoteID, baseConvFactor: sel.baseConvFactor, quoteConvFactor: sel.quoteConvFactor }
+    : null;
   const live = useDexFeed(preview ? null : marketRef);
 
   const book = preview ? (sel ? mockBook(sel) : EMPTY_BOOK) : live.book;
   const connected = preview ? true : live.connected;
-  const candles = useMemo(() => (preview && sel ? mockCandles(sel) : []), [preview, sel]);
+  const previewCandles = useMemo(() => (preview && sel ? mockCandles(sel) : []), [preview, sel]);
+  const candles = preview ? previewCandles : live.candles;
+  const liveStats = useMemo(() => statsFromCandles(live.candles), [live.candles]);
   const orders = preview ? mockOrders : liveOrders;
-  const statsFor = (m: DexMarket): MarketStats | null => (preview ? mockStats(m) : null);
+  const sameSel = (m: DexMarket) => !!sel && m.baseID === sel.baseID && m.quoteID === sel.quoteID;
+  const statsFor = (m: DexMarket): MarketStats | null => (preview ? mockStats(m) : sameSel(m) ? liveStats : null);
 
   if (loadErr) {
     return (

@@ -23,13 +23,14 @@ export interface Trade {
   stamp: number; // unix ms
 }
 
-// Candle is one OHLCV bar for the price chart.
+// Candle is one OHLCV bar for the price chart, in conventional units.
 export interface Candle {
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
+  startStamp: number; // unix ms
   endStamp: number; // unix ms
 }
 
@@ -55,20 +56,54 @@ export interface DexMarketRef {
   host: string;
   base: number;
   quote: number;
+  baseConvFactor: number;
+  quoteConvFactor: number;
 }
 
 export interface DexFeed {
   book: OrderBookState;
+  candles: Candle[];
   connected: boolean;
   error: string | null;
 }
 
+// statsFromCandles derives a 24h summary from a candle series (the live feed
+// has no separate 24h stats route; bisonw's own markets page does the same when
+// a spot is unavailable).
+export function statsFromCandles(candles: Candle[]): MarketStats | null {
+  if (candles.length === 0) return null;
+  const last = candles[candles.length - 1].close;
+  const dayStart = candles[candles.length - 1].endStamp - 24 * 3600_000;
+  const win = candles.filter((c) => c.endStamp >= dayStart);
+  const w = win.length ? win : candles;
+  const open = w[0].open;
+  const change = last - open;
+  return {
+    last,
+    change,
+    changePct: open ? (change / open) * 100 : 0,
+    high24: Math.max(...w.map((c) => c.high)),
+    low24: Math.min(...w.map((c) => c.low)),
+    volBase: w.reduce((s, c) => s + c.volume, 0),
+    volQuote: w.reduce((s, c) => s + c.volume * c.close, 0),
+  };
+}
+
+// CANDLE_DUR is the bin size requested for the price chart. '1h' is bisonw's
+// default bin and is supported by every market; wiring the chart's timeframe
+// selector to the server's full candleDurs list is a follow-up.
+const CANDLE_DUR = '1h';
+
 // useDexFeed connects to the dashboard's DCRDEX WebSocket relay, subscribes to a
-// market with loadmarket, and maintains a live order book from the book /
-// book_order / unbook_order / update_remaining messages. (Runtime testing is
-// deferred until the DEX server is reliable.)
+// market with loadmarket + loadcandles, and maintains a live order book, recent
+// trades and candle series from the book / book_order / unbook_order /
+// update_remaining / candles / candle_update / epoch_match_summary messages.
+// Match and candle rates arrive as atomic message rates and are converted to
+// conventional units here using the market's conversion factors. (Runtime
+// testing is deferred until the DEX server is reliable.)
 export function useDexFeed(market: DexMarketRef | null): DexFeed {
   const [book, setBook] = useState<OrderBookState>({ buys: [], sells: [], recentMatches: [] });
+  const [candles, setCandles] = useState<Candle[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -76,23 +111,39 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
   useEffect(() => {
     if (!market) return;
     setBook({ buys: [], sells: [], recentMatches: [] });
+    setCandles([]);
     setError(null);
 
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${window.location.host}/api/dcrdex/ws`);
     wsRef.current = ws;
 
+    // rateConv converts an atomic message rate to a conventional price; mirrors
+    // bisonw's OrderUtil.RateEncodingFactor / baseConv * quoteConv.
+    const rateConv = (1e8 / market.baseConvFactor) * market.quoteConvFactor;
+
     let buys: MiniOrder[] = [];
     let sells: MiniOrder[] = [];
     let recentMatches: Trade[] = [];
+    let candleSeries: Candle[] = [];
     const sortBuys = () => buys.sort((a, b) => b.rate - a.rate);
     const sortSells = () => sells.sort((a, b) => a.rate - b.rate);
     const commit = () => setBook({ buys: [...buys], sells: [...sells], recentMatches: [...recentMatches] });
+    // Recent matches (MatchSummary) carry atomic rate/qty, unlike book orders.
     const toTrade = (m: any): Trade => ({
-      rate: Number(m?.rate) || 0,
-      qty: Number(m?.qty) || 0,
+      rate: (Number(m?.rate) || 0) / rateConv,
+      qty: (Number(m?.qty) || 0) / market.baseConvFactor,
       sell: !!m?.sell,
       stamp: Number(m?.stamp) || Date.now(),
+    });
+    const toCandle = (c: any): Candle => ({
+      open: (Number(c?.startRate) || 0) / rateConv,
+      close: (Number(c?.endRate) || 0) / rateConv,
+      high: (Number(c?.highRate) || 0) / rateConv,
+      low: (Number(c?.lowRate) || 0) / rateConv,
+      volume: (Number(c?.matchVolume) || 0) / market.baseConvFactor,
+      startStamp: Number(c?.startStamp) || 0,
+      endStamp: Number(c?.endStamp) || 0,
     });
 
     ws.onopen = () => {
@@ -103,6 +154,15 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
           route: 'loadmarket',
           id: 1,
           payload: { host: market.host, base: market.base, quote: market.quote },
+          sig: '',
+        }),
+      );
+      ws.send(
+        JSON.stringify({
+          type: 1,
+          route: 'loadcandles',
+          id: 2,
+          payload: { host: market.host, base: market.base, quote: market.quote, dur: CANDLE_DUR },
           sig: '',
         }),
       );
@@ -132,10 +192,25 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
           commit();
           break;
         }
-        case 'epoch_match':
-        case 'match_proof': {
-          if (data?.rate !== undefined) {
-            recentMatches = [toTrade(data), ...recentMatches].slice(0, 40);
+        case 'candles': {
+          if (data?.dur && data.dur !== CANDLE_DUR) break;
+          candleSeries = ((data?.candles || []) as any[]).map(toCandle);
+          setCandles([...candleSeries]);
+          break;
+        }
+        case 'candle_update': {
+          if (data?.dur && data.dur !== CANDLE_DUR) break;
+          const c = toCandle(data?.candle);
+          const last = candleSeries[candleSeries.length - 1];
+          if (last && last.startStamp === c.startStamp) candleSeries[candleSeries.length - 1] = c;
+          else candleSeries = [...candleSeries, c];
+          setCandles([...candleSeries]);
+          break;
+        }
+        case 'epoch_match_summary': {
+          const sums = (data?.matchSummaries || []) as any[];
+          if (sums.length) {
+            recentMatches = [...sums.map(toTrade), ...recentMatches].slice(0, 40);
             commit();
           }
           break;
@@ -178,7 +253,7 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
           commit();
           break;
         }
-        // epoch_order, candles and notify are ignored for now.
+        // epoch_order and notifications are ignored for now.
       }
     };
 
@@ -186,7 +261,7 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
       ws.close();
       wsRef.current = null;
     };
-  }, [market?.host, market?.base, market?.quote]);
+  }, [market?.host, market?.base, market?.quote, market?.baseConvFactor, market?.quoteConvFactor]);
 
-  return { book, connected, error };
+  return { book, candles, connected, error };
 }

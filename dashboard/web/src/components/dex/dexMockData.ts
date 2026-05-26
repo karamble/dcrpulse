@@ -97,8 +97,9 @@ export function mockCandles(m: DexMarket, n = 90): Candle[] {
     const close = open + drift + (r() - 0.5) * span * 3;
     const high = Math.max(open, close) + r() * span * 2.5;
     const low = Math.min(open, close) - r() * span * 2.5;
+    const startStamp = stamp;
     stamp += 3600_000;
-    candles.push({ open, high, low, close, volume: r() * 200 + 30, endStamp: stamp });
+    candles.push({ open, high, low, close, volume: r() * 200 + 30, startStamp, endStamp: stamp });
     last = close;
   }
   candles[n - 1].close = mid;

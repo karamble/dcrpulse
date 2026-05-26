@@ -124,8 +124,8 @@ export const DexChartPanel = ({ market, candles }: Props) => {
         {svg ?? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
             <CandlestickChart className="h-8 w-8 opacity-40" />
-            <span className="text-sm">Price chart unavailable</span>
-            <span className="text-xs text-muted-foreground/60">Candle feed not connected</span>
+            <span className="text-sm">No candle data yet</span>
+            <span className="text-xs text-muted-foreground/60">Waiting for the DEX candle feed</span>
           </div>
         )}
       </div>
