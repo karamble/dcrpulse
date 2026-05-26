@@ -35,8 +35,15 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	fmt.Printf("OK bisonw reachable at %s\n  rpcServerVersion=%s\n  dexcVersion=%s\n",
-		cfg.Addr, v.RPCServerVersion, v.BisonwVersion)
+	bw := "unknown"
+	if v.Bisonw != nil {
+		bw = v.Bisonw.VersionString
+	}
+	rpcVer := "unknown"
+	if v.RPCServerVersion != nil {
+		rpcVer = fmt.Sprintf("%d.%d.%d", v.RPCServerVersion.Major, v.RPCServerVersion.Minor, v.RPCServerVersion.Patch)
+	}
+	fmt.Printf("OK bisonw reachable at %s (bisonw %s, rpcserver %s)\n", cfg.Addr, bw, rpcVer)
 }
 
 func env(key, def string) string {

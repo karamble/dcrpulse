@@ -110,6 +110,17 @@ func main() {
 		ClientKeyPath:  getEnv("BRCLIENTD_CLIENT_KEY", services.BrclientdDefaultCertPath("mainnet", "rpc-client.key")),
 	})
 
+	// dcrdex (bisonw) backend-only RPC config. The RPC cert is owned by the
+	// dcrdex container and mounted read-only here; the client is built lazily
+	// because bisonw generates the cert on first run.
+	rpc.InitDcrdexConfig(rpc.DcrdexConfig{
+		Host:     getEnv("DCRDEX_RPC_HOST", "dcrdex"),
+		Port:     getEnv("DCRDEX_RPC_PORT", "5757"),
+		User:     getEnv("DCRDEX_RPC_USER", "dcrdex"),
+		Pass:     getEnv("DCRDEX_RPC_PASS", "dcrdexpass"),
+		CertPath: getEnv("DCRDEX_RPC_CERT", "/app-data/dcrdex/rpc.cert"),
+	})
+
 	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into
 	// the same ring buffer the /wallet/privacy/events WebSocket reads from.
 	services.StartWalletLogTail()
@@ -129,6 +140,9 @@ func main() {
 	// API routes
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20))
+
+	// DCRDEX routes
+	api.HandleFunc("/dcrdex/status", handlers.GetDcrdexStatusHandler).Methods("GET")
 
 	// Node/dcrd routes
 	api.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")

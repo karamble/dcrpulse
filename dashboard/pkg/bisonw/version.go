@@ -4,18 +4,32 @@
 
 package bisonw
 
-import (
-	"context"
-	"encoding/json"
-)
+import "context"
 
-// VersionResult is the result of the "version" route. The fields are kept as
-// raw JSON because the underlying dex.Semver / SemVersion shapes are an upstream
-// detail; callers can decode them as needed. The version route does not require
-// the app to be initialized, so it doubles as a connectivity/health check.
+// Semver is the bisonw RPC server version. Note the JSON keys are capitalized:
+// it is the default marshaling of decred.org/dcrdex/dex.Semver (no struct tags).
+type Semver struct {
+	Major uint32 `json:"Major"`
+	Minor uint32 `json:"Minor"`
+	Patch uint32 `json:"Patch"`
+}
+
+// BisonwVersion is the bisonw application version (the "dexcVersion" field).
+type BisonwVersion struct {
+	VersionString string `json:"versionString"`
+	Major         uint32 `json:"major"`
+	Minor         uint32 `json:"minor"`
+	Patch         uint32 `json:"patch"`
+	Prerelease    string `json:"prerelease,omitempty"`
+	BuildMetadata string `json:"buildMetadata,omitempty"`
+}
+
+// VersionResult is the result of the "version" route. The route does not
+// require the app to be initialized, so it doubles as a connectivity/health
+// check.
 type VersionResult struct {
-	RPCServerVersion json.RawMessage `json:"rpcServerVersion"`
-	BisonwVersion    json.RawMessage `json:"dexcVersion"`
+	RPCServerVersion *Semver        `json:"rpcServerVersion"`
+	Bisonw           *BisonwVersion `json:"dexcVersion"`
 }
 
 // Version returns the bisonw and RPC server versions.

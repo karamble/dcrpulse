@@ -175,6 +175,7 @@ services:
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
       - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd
       - ${BRCLIENTD_DATA_DIR:-brclientd-data}:/app-data/brclientd:ro
+      - ${DCRDEX_DATA_DIR:-dcrdex-data}:/app-data/dcrdex:ro
       - ${DASHBOARD_DATA_DIR:-dashboard-data}:/dashboard-data
     environment:
       - PORT=8080
@@ -200,6 +201,11 @@ services:
       - BRCLIENTD_SERVER_CERT=/app-data/brclientd/data/mainnet/rpc/rpc.cert
       - BRCLIENTD_CLIENT_CERT=/app-data/brclientd/data/mainnet/rpc/rpc-client.cert
       - BRCLIENTD_CLIENT_KEY=/app-data/brclientd/data/mainnet/rpc/rpc-client.key
+      - DCRDEX_RPC_HOST=dcrdex
+      - DCRDEX_RPC_PORT=5757
+      - DCRDEX_RPC_USER=${DCRDEX_RPC_USER:-dcrdex}
+      - DCRDEX_RPC_PASS=${DCRDEX_RPC_PASS:-dcrdexpass}
+      - DCRDEX_RPC_CERT=/app-data/dcrdex/rpc.cert
     depends_on:
       dcrd:
         condition: service_healthy

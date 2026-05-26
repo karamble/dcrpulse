@@ -15,7 +15,7 @@ mkdir -p "${WALLET_DIR}"
 # containers (dcrlnd, brclientd, dashboard) can bind their own data on top
 # of the read-only outer /app-data mount. Required for both fresh installs
 # and upgrades where new containers add nested mounts.
-mkdir -p /app-data/dcrlnd /app-data/brclientd
+mkdir -p /app-data/dcrlnd /app-data/brclientd /app-data/dcrdex
 
 if [ ! -f "${RPC_CERT}" ] || [ ! -f "${RPC_KEY}" ]; then
     echo "Waiting for dcrd to generate certificates..."

@@ -29,6 +29,7 @@ RUN go mod download
 # Copy Go source code
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY pkg/ ./pkg/
 
 # Copy built frontend files from previous stage
 COPY --from=frontend-builder /app/web/dist ./cmd/dcrpulse/web/dist
