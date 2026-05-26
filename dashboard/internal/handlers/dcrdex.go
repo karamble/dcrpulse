@@ -526,3 +526,95 @@ func DcrdexWSHandler(w http.ResponseWriter, r *http.Request) {
 	go pipe(up, front) // browser -> bisonw
 	<-errc
 }
+
+// GetDcrdexMyOrdersHandler returns the user's active and recent orders (raw),
+// optionally filtered to the `host` query parameter.
+func GetDcrdexMyOrdersHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	raw, err := client.MyOrders(ctx, r.URL.Query().Get("host"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Write(raw)
+}
+
+// CancelDcrdexOrderHandler cancels an active order by its hex order ID.
+func CancelDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		OrderID string `json:"orderID"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.OrderID == "" {
+		http.Error(w, "orderID is required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := client.Cancel(ctx, req.OrderID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// PlaceDcrdexOrderHandler places a limit or market order. Qty and Rate are in
+// atomic units. This spends real funds on mainnet; the dashboard calls it only
+// on explicit user action.
+func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		Host    string `json:"host"`
+		IsLimit bool   `json:"isLimit"`
+		Sell    bool   `json:"sell"`
+		Base    uint32 `json:"base"`
+		Quote   uint32 `json:"quote"`
+		Qty     uint64 `json:"qty"`
+		Rate    uint64 `json:"rate"`
+		TifNow  bool   `json:"tifNow"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" || req.Qty == 0 {
+		http.Error(w, "host and qty are required", http.StatusBadRequest)
+		return
+	}
+	appPass, ok := rpc.DcrdexAppPass()
+	if !ok {
+		http.Error(w, "DCRDEX is locked", http.StatusConflict)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	raw, err := client.Trade(ctx, bisonw.TradeParams{
+		AppPass: appPass,
+		Host:    req.Host,
+		IsLimit: req.IsLimit,
+		Sell:    req.Sell,
+		Base:    req.Base,
+		Quote:   req.Quote,
+		Qty:     req.Qty,
+		Rate:    req.Rate,
+		TifNow:  req.TifNow,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Write(raw)
+}

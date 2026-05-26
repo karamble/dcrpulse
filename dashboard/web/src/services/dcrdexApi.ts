@@ -94,6 +94,28 @@ export const getDexWallet = async (): Promise<DexWalletInfo> => {
   return data;
 };
 
+// DexOrder is a user order from the myorders route (amounts are atomic).
+export interface DexOrder {
+  id: string;
+  host: string;
+  marketName: string;
+  type: string;
+  sell: boolean;
+  status: string;
+  quantity: number;
+  filled: number;
+  rate: number;
+}
+
+export const getDexMyOrders = async (host?: string): Promise<DexOrder[]> => {
+  const { data } = await api.get<DexOrder[]>('/dcrdex/myorders', { params: host ? { host } : {} });
+  return data || [];
+};
+
+export const cancelDexOrder = async (orderID: string): Promise<void> => {
+  await api.post('/dcrdex/cancel', { orderID });
+};
+
 // postDexBond posts a fidelity bond (in atoms) to register with a DEX server.
 // This spends real funds; only call on explicit user action.
 export const postDexBond = async (host: string, bond: number): Promise<void> => {

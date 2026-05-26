@@ -3,8 +3,14 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle } from 'lucide-react';
-import { getDexConfig, type DexMarket } from '../../services/dcrdexApi';
+import { AlertCircle, X } from 'lucide-react';
+import {
+  getDexConfig,
+  getDexMyOrders,
+  cancelDexOrder,
+  type DexMarket,
+  type DexOrder,
+} from '../../services/dcrdexApi';
 import { useDexFeed, type MiniOrder } from './useDexFeed';
 import { CoinIcon } from './CoinIcon';
 
@@ -33,6 +39,7 @@ export const DexMarketView = () => {
   const [markets, setMarkets] = useState<DexMarket[]>([]);
   const [sel, setSel] = useState<DexMarket | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [orders, setOrders] = useState<DexOrder[]>([]);
 
   useEffect(() => {
     getDexConfig(HOST)
@@ -43,6 +50,17 @@ export const DexMarketView = () => {
       .catch((e: any) =>
         setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load markets'),
       );
+  }, []);
+
+  const refreshOrders = () => {
+    getDexMyOrders(HOST)
+      .then(setOrders)
+      .catch(() => {});
+  };
+  useEffect(() => {
+    refreshOrders();
+    const id = window.setInterval(refreshOrders, 10000);
+    return () => window.clearInterval(id);
   }, []);
 
   const market = sel ? { host: HOST, base: sel.baseID, quote: sel.quoteID } : null;
@@ -104,6 +122,61 @@ export const DexMarketView = () => {
               <div className="text-xs text-destructive mb-1 px-2">Asks · price / size</div>
               <OrderRows orders={book.sells} sell />
             </div>
+          </div>
+        </div>
+      )}
+
+      {orders.length > 0 && (
+        <div className="rounded-xl bg-gradient-card border border-border/50 p-4">
+          <h3 className="font-semibold mb-3">Your orders</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-muted-foreground text-left">
+                  <th className="py-1 pr-3">Market</th>
+                  <th className="py-1 pr-3">Side</th>
+                  <th className="py-1 pr-3">Type</th>
+                  <th className="py-1 pr-3">Status</th>
+                  <th className="py-1 pr-3">Filled</th>
+                  <th className="py-1" />
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => {
+                  const pct = o.quantity > 0 ? Math.round((o.filled / o.quantity) * 100) : 0;
+                  return (
+                    <tr key={o.id} className="border-t border-border/40">
+                      <td className="py-1.5 pr-3 font-mono">{o.marketName}</td>
+                      <td className={`py-1.5 pr-3 ${o.sell ? 'text-destructive' : 'text-success'}`}>
+                        {o.sell ? 'sell' : 'buy'}
+                      </td>
+                      <td className="py-1.5 pr-3">{o.type}</td>
+                      <td className="py-1.5 pr-3">{o.status}</td>
+                      <td className="py-1.5 pr-3">{pct}%</td>
+                      <td className="py-1.5">
+                        {o.status === 'booked' && (
+                          <button
+                            type="button"
+                            title="Cancel order"
+                            onClick={async () => {
+                              try {
+                                await cancelDexOrder(o.id);
+                                refreshOrders();
+                              } catch {
+                                /* ignore */
+                              }
+                            }}
+                            className="p-1 rounded hover:bg-background/60 text-muted-foreground hover:text-destructive transition-colors"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

@@ -152,6 +152,9 @@ func main() {
 	api.HandleFunc("/dcrdex/dexconfig", handlers.GetDcrdexConfigHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/postbond", handlers.PostDcrdexBondHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/ws", handlers.DcrdexWSHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/myorders", handlers.GetDcrdexMyOrdersHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/cancel", handlers.CancelDcrdexOrderHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/trade", handlers.PlaceDcrdexOrderHandler).Methods("POST")
 
 	// Node/dcrd routes
 	api.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")
