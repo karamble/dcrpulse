@@ -134,6 +134,37 @@ services:
         reservations:
           memory: 128M
 
+  dcrdex:
+    image: ghcr.io/karamble/dcrpulse-dcrdex:${DCRDEX_IMAGE_TAG:-dev}
+    build:
+      context: ${DCRDEX_BUILD_CONTEXT:-https://github.com/decred/dcrdex.git#master}
+      dockerfile: client/Dockerfile
+    container_name: dcrpulse-dcrdex
+    hostname: dcrdex
+    entrypoint:
+      - ./bisonw
+    command:
+      - --appdata=/dex/.dexc
+      - --rpc
+      - --noweb
+      - --rpcaddr=0.0.0.0:5757
+      - --rpcuser=${DCRDEX_RPC_USER:-dcrdex}
+      - --rpcpass=${DCRDEX_RPC_PASS:-dcrdexpass}
+      - --rpccert=/dex/.dexc/rpc.cert
+      - --rpckey=/dex/.dexc/rpc.key
+    volumes:
+      - ${DCRDEX_DATA_DIR:-dcrdex-data}:/dex/.dexc
+    restart: unless-stopped
+    networks:
+      - decred-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+
   dashboard:
     image: ghcr.io/karamble/dcrpulse-dashboard:${DASHBOARD_IMAGE_TAG:-latest}
     build: ./dashboard
@@ -201,4 +232,7 @@ volumes:
     driver: local
   brclientd-data:
     name: ${BRCLIENTD_DATA_DIR:-dcrpulse_brclientd-data}
+    driver: local
+  dcrdex-data:
+    name: ${DCRDEX_DATA_DIR:-dcrpulse_dcrdex-data}
     driver: local
