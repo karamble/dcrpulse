@@ -15,6 +15,8 @@ import {
   Send,
 } from 'lucide-react';
 import { getDashboardData, getWalletStatus } from '../../services/api';
+import { getLightningInfo } from '../../services/lightningApi';
+import { getBisonrelayVersion } from '../../services/bisonrelayApi';
 import packageJson from '../../../package.json';
 
 const DCRPULSE_VERSION = `v${packageJson.version}`;
@@ -59,6 +61,8 @@ const VersionCell = ({ label, value }: VersionCellProps) => (
 export const AboutSection = () => {
   const [walletVersion, setWalletVersion] = useState<string>('');
   const [nodeVersion, setNodeVersion] = useState<string>('');
+  const [lndVersion, setLndVersion] = useState<string>('');
+  const [brclientdVersion, setBrclientdVersion] = useState<string>('');
 
   useEffect(() => {
     getWalletStatus()
@@ -69,6 +73,16 @@ export const AboutSection = () => {
     getDashboardData()
       .then((d) => {
         if (d?.nodeStatus?.version) setNodeVersion(d.nodeStatus.version);
+      })
+      .catch(() => {});
+    getLightningInfo()
+      .then((i: any) => {
+        if (i?.version) setLndVersion(i.version);
+      })
+      .catch(() => {});
+    getBisonrelayVersion()
+      .then((b: any) => {
+        if (b?.appVersion) setBrclientdVersion(b.appVersion);
       })
       .catch(() => {});
   }, []);
@@ -84,6 +98,8 @@ export const AboutSection = () => {
           <VersionCell label="dcrpulse" value={DCRPULSE_VERSION} />
           <VersionCell label="dcrd" value={nodeVersion} />
           <VersionCell label="dcrwallet" value={walletVersion} />
+          <VersionCell label="dcrlnd" value={lndVersion} />
+          <VersionCell label="brclientd" value={brclientdVersion} />
         </div>
       </div>
 
