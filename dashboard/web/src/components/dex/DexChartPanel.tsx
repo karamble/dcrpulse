@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { CandlestickChart } from 'lucide-react';
 import { fmtPrice } from './dexFormat';
 import type { DexMarket } from '../../services/dcrdexApi';
@@ -11,21 +11,21 @@ import type { Candle } from './useDexFeed';
 interface Props {
   market: DexMarket;
   candles: Candle[];
+  durs: string[];
+  dur: string;
+  onDur: (d: string) => void;
 }
 
 const UP = 'hsl(142 76% 40%)';
 const DOWN = 'hsl(0 72% 55%)';
 const GRID = 'hsl(217 32% 17%)';
 const AXIS = 'hsl(215 20% 55%)';
-const TFS = ['1m', '5m', '15m', '1h', '4h', '1D', '1W'];
 
 // DexChartPanel renders a lightweight SVG candlestick + volume chart. No
 // external charting dependency: a single scalable <svg> keeps the trading view
-// fast to paint. Candle data is supplied by the caller (sample data in preview;
-// the live candle feed is not wired yet).
-export const DexChartPanel = ({ market, candles }: Props) => {
-  const [tf, setTf] = useState('1h');
-
+// fast to paint. Candle data and the available bin sizes (the DEX server's
+// candleDurs) are supplied by the caller; selecting one re-requests the feed.
+export const DexChartPanel = ({ market, candles, durs, dur, onDur }: Props) => {
   const svg = useMemo(() => {
     if (candles.length === 0) return null;
     const W = 1000;
@@ -99,13 +99,13 @@ export const DexChartPanel = ({ market, candles }: Props) => {
   return (
     <div className="flex flex-col min-h-0 h-full">
       <div className="flex items-center gap-1 px-3 py-2 border-b border-border/50 text-xs overflow-x-auto">
-        {TFS.map((t) => (
+        {durs.map((t) => (
           <button
             key={t}
             type="button"
-            onClick={() => setTf(t)}
+            onClick={() => onDur(t)}
             className={`px-2 py-1 rounded font-medium transition-colors ${
-              tf === t ? 'bg-muted/40 text-foreground' : 'text-muted-foreground hover:text-foreground/80'
+              dur === t ? 'bg-muted/40 text-foreground' : 'text-muted-foreground hover:text-foreground/80'
             }`}
           >
             {t}

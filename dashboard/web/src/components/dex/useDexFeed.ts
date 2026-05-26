@@ -89,24 +89,24 @@ export function statsFromCandles(candles: Candle[]): MarketStats | null {
   };
 }
 
-// CANDLE_DUR is the bin size requested for the price chart. '1h' is bisonw's
-// default bin and is supported by every market; wiring the chart's timeframe
-// selector to the server's full candleDurs list is a follow-up.
-const CANDLE_DUR = '1h';
-
 // useDexFeed connects to the dashboard's DCRDEX WebSocket relay, subscribes to a
 // market with loadmarket + loadcandles, and maintains a live order book, recent
 // trades and candle series from the book / book_order / unbook_order /
 // update_remaining / candles / candle_update / epoch_match_summary messages.
 // Match and candle rates arrive as atomic message rates and are converted to
-// conventional units here using the market's conversion factors. (Runtime
-// testing is deferred until the DEX server is reliable.)
-export function useDexFeed(market: DexMarketRef | null): DexFeed {
+// conventional units here using the market's conversion factors. dur is the
+// candle bin size; changing it re-requests candles without dropping the order
+// book subscription. (Runtime testing is deferred until the DEX server is
+// reliable.)
+export function useDexFeed(market: DexMarketRef | null, dur = '1h'): DexFeed {
   const [book, setBook] = useState<OrderBookState>({ buys: [], sells: [], recentMatches: [] });
   const [candles, setCandles] = useState<Candle[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const durRef = useRef(dur);
+  durRef.current = dur;
+  const candlesRef = useRef<Candle[]>([]);
 
   useEffect(() => {
     if (!market) return;
@@ -125,7 +125,7 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
     let buys: MiniOrder[] = [];
     let sells: MiniOrder[] = [];
     let recentMatches: Trade[] = [];
-    let candleSeries: Candle[] = [];
+    candlesRef.current = [];
     const sortBuys = () => buys.sort((a, b) => b.rate - a.rate);
     const sortSells = () => sells.sort((a, b) => a.rate - b.rate);
     const commit = () => setBook({ buys: [...buys], sells: [...sells], recentMatches: [...recentMatches] });
@@ -162,7 +162,7 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
           type: 1,
           route: 'loadcandles',
           id: 2,
-          payload: { host: market.host, base: market.base, quote: market.quote, dur: CANDLE_DUR },
+          payload: { host: market.host, base: market.base, quote: market.quote, dur: durRef.current },
           sig: '',
         }),
       );
@@ -193,18 +193,19 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
           break;
         }
         case 'candles': {
-          if (data?.dur && data.dur !== CANDLE_DUR) break;
-          candleSeries = ((data?.candles || []) as any[]).map(toCandle);
-          setCandles([...candleSeries]);
+          if (data?.dur && data.dur !== durRef.current) break;
+          candlesRef.current = ((data?.candles || []) as any[]).map(toCandle);
+          setCandles([...candlesRef.current]);
           break;
         }
         case 'candle_update': {
-          if (data?.dur && data.dur !== CANDLE_DUR) break;
+          if (data?.dur && data.dur !== durRef.current) break;
           const c = toCandle(data?.candle);
-          const last = candleSeries[candleSeries.length - 1];
-          if (last && last.startStamp === c.startStamp) candleSeries[candleSeries.length - 1] = c;
-          else candleSeries = [...candleSeries, c];
-          setCandles([...candleSeries]);
+          const series = candlesRef.current;
+          const last = series[series.length - 1];
+          if (last && last.startStamp === c.startStamp) series[series.length - 1] = c;
+          else candlesRef.current = [...series, c];
+          setCandles([...candlesRef.current]);
           break;
         }
         case 'epoch_match_summary': {
@@ -262,6 +263,26 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
       wsRef.current = null;
     };
   }, [market?.host, market?.base, market?.quote, market?.baseConvFactor, market?.quoteConvFactor]);
+
+  // When only the bin size changes, re-request candles on the live socket
+  // instead of reconnecting (the initial load is handled by the socket's
+  // onopen above).
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!market || !ws || ws.readyState !== WebSocket.OPEN) return;
+    candlesRef.current = [];
+    setCandles([]);
+    ws.send(
+      JSON.stringify({
+        type: 1,
+        route: 'loadcandles',
+        id: 2,
+        payload: { host: market.host, base: market.base, quote: market.quote, dur },
+        sig: '',
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dur]);
 
   return { book, candles, connected, error };
 }

@@ -27,6 +27,8 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const [sel, setSel] = useState<DexMarket | null>(preview ? mockMarkets[0] : null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [liveOrders, setLiveOrders] = useState<DexOrder[]>([]);
+  const [durs, setDurs] = useState<string[]>([]);
+  const [dur, setDur] = useState('1h');
 
   useEffect(() => {
     if (preview) return;
@@ -34,6 +36,10 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
       .then((c) => {
         setMarkets(c.markets);
         setSel((prev) => prev || c.markets[0] || null);
+        if (c.candleDurs?.length) {
+          setDurs(c.candleDurs);
+          setDur((d) => (c.candleDurs.includes(d) ? d : c.candleDurs[0]));
+        }
       })
       .catch((e: any) =>
         setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load markets'),
@@ -57,7 +63,8 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const marketRef = sel
     ? { host: HOST, base: sel.baseID, quote: sel.quoteID, baseConvFactor: sel.baseConvFactor, quoteConvFactor: sel.quoteConvFactor }
     : null;
-  const live = useDexFeed(preview ? null : marketRef);
+  const live = useDexFeed(preview ? null : marketRef, dur);
+  const chartDurs = preview ? ['1h', '24h'] : durs.length ? durs : ['1h'];
 
   const book = preview ? (sel ? mockBook(sel) : EMPTY_BOOK) : live.book;
   const connected = preview ? true : live.connected;
@@ -105,7 +112,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
         </section>
 
         <section className="bg-card min-h-0 min-w-0 h-[320px] lg:h-auto lg:col-start-2 lg:row-start-1">
-          <DexChartPanel market={sel} candles={candles} />
+          <DexChartPanel market={sel} candles={candles} durs={chartDurs} dur={dur} onDur={setDur} />
         </section>
 
         <section className="bg-card min-h-0 min-w-0 h-[420px] lg:h-auto lg:col-start-3 lg:row-start-1">

@@ -93,6 +93,7 @@ export interface DexConfig {
   bondPerTierDcr: number;
   marketCount: number;
   markets: DexMarket[];
+  candleDurs: string[];
 }
 
 export const getDexConfig = async (host: string): Promise<DexConfig> => {

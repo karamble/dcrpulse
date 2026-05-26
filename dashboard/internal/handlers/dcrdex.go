@@ -632,6 +632,7 @@ type DexConfigResponse struct {
 	BondPerTierDcr   float64     `json:"bondPerTierDcr"`
 	MarketCount      int         `json:"marketCount"`
 	Markets          []DexMarket `json:"markets"`
+	CandleDurs       []string    `json:"candleDurs"`
 }
 
 // GetDcrdexConfigHandler fetches a DEX server's public configuration (markets,
@@ -660,8 +661,9 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 	var xc struct {
 		Host             string `json:"host"`
 		AcctID           string `json:"acctID"`
-		ConnectionStatus int    `json:"connectionStatus"`
-		BondExpiry       uint64 `json:"bondExpiry"`
+		ConnectionStatus int      `json:"connectionStatus"`
+		BondExpiry       uint64   `json:"bondExpiry"`
+		BinSizes         []string `json:"binSizes"`
 		BondAssets       map[string]struct {
 			Confs uint32 `json:"confs"`
 			Amt   uint64 `json:"amount"`
@@ -719,6 +721,7 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		BondPerTierDcr:   dcrutil.Amount(dcr.Amt).ToCoin(),
 		MarketCount:      len(markets),
 		Markets:          markets,
+		CandleDurs:       xc.BinSizes,
 	})
 }
 
