@@ -2,42 +2,26 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
-import { AlertCircle, FlaskConical, X } from 'lucide-react';
-import {
-  getDexConfig,
-  getDexMyOrders,
-  cancelDexOrder,
-  type DexMarket,
-  type DexOrder,
-} from '../../services/dcrdexApi';
-import { useDexFeed, type MiniOrder } from './useDexFeed';
-import { CoinIcon } from './CoinIcon';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, FlaskConical } from 'lucide-react';
+import { getDexConfig, getDexMyOrders, cancelDexOrder, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
+import { useDexFeed, type MarketStats } from './useDexFeed';
+import { DexStatsBar } from './DexStatsBar';
+import { DexMarketsPanel } from './DexMarketsPanel';
+import { DexChartPanel } from './DexChartPanel';
+import { DexOrderBook } from './DexOrderBook';
+import { DexOrdersPanel } from './DexOrdersPanel';
 import { DexOrderForm } from './DexOrderForm';
-import { mockMarkets, mockBook, mockOrders } from './dexMockData';
+import { mockMarkets, mockBook, mockStats, mockCandles, mockOrders } from './dexMockData';
 
 const HOST = 'dex.decred.org:7232';
+const EMPTY_BOOK = { buys: [], sells: [], recentMatches: [] };
 
-const OrderRows = ({ orders, sell }: { orders: MiniOrder[]; sell: boolean }) => {
-  if (orders.length === 0) {
-    return <div className="px-2 py-3 text-xs text-muted-foreground">No orders</div>;
-  }
-  return (
-    <div className="text-sm font-mono">
-      {orders.slice(0, 18).map((o) => (
-        <div key={o.token} className="flex justify-between px-2 py-0.5">
-          <span className={sell ? 'text-destructive' : 'text-success'}>{o.rate.toFixed(8)}</span>
-          <span className="text-muted-foreground">{o.qty.toFixed(8)}</span>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// DexMarketView is the live trading view: a market selector and a real-time
-// order book fed by the DCRDEX WebSocket relay, with an order-entry form and an
-// open-orders panel. In preview mode it renders sample data (no server) so the
-// UI can be developed without a reachable DEX server.
+// DexMarketView is the trading terminal: a market stats bar, a markets sidebar,
+// a price chart, a live order book (with depth visualization) and recent
+// trades, an order-entry form, and an open-orders panel. In preview mode it
+// renders sample data (no server) so the UI can be developed without a
+// reachable DEX server; the live candle and 24h-stats feeds are not wired yet.
 export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const [markets, setMarkets] = useState<DexMarket[]>(preview ? mockMarkets : []);
   const [sel, setSel] = useState<DexMarket | null>(preview ? mockMarkets[0] : null);
@@ -70,12 +54,14 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
 
-  const market = sel ? { host: HOST, base: sel.baseID, quote: sel.quoteID } : null;
-  const live = useDexFeed(preview ? null : market);
-  const book = preview ? mockBook() : live.book;
+  const marketRef = sel ? { host: HOST, base: sel.baseID, quote: sel.quoteID } : null;
+  const live = useDexFeed(preview ? null : marketRef);
+
+  const book = preview ? (sel ? mockBook(sel) : EMPTY_BOOK) : live.book;
   const connected = preview ? true : live.connected;
-  const feedErr = preview ? null : live.error;
+  const candles = useMemo(() => (preview && sel ? mockCandles(sel) : []), [preview, sel]);
   const orders = preview ? mockOrders : liveOrders;
+  const statsFor = (m: DexMarket): MarketStats | null => (preview ? mockStats(m) : null);
 
   if (loadErr) {
     return (
@@ -88,119 +74,54 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
     );
   }
 
+  if (!sel) {
+    return (
+      <div className="min-h-[40vh] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
   return (
-    <div className="px-4 space-y-4">
+    <div className="px-3 lg:px-4 space-y-3">
       {preview && (
-        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-warning/10 border border-warning/30 text-sm text-warning">
-          <FlaskConical className="h-4 w-4 shrink-0" />
+        <div className="flex items-center gap-2 p-2 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning">
+          <FlaskConical className="h-3.5 w-3.5 shrink-0" />
           Preview mode — sample data, not connected to a DEX server. Orders are disabled.
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {markets.map((m) => {
-          const active = !!sel && m.baseID === sel.baseID && m.quoteID === sel.quoteID;
-          return (
-            <button
-              key={`${m.baseID}-${m.quoteID}`}
-              type="button"
-              onClick={() => setSel(m)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm transition-colors ${
-                active ? 'bg-primary/20 border-primary/40' : 'bg-muted/10 border-border/50 hover:bg-muted/20'
-              }`}
-            >
-              <span className="flex -space-x-1.5">
-                <CoinIcon symbol={m.base} className="ring-1 ring-card" />
-                <CoinIcon symbol={m.quote} className="ring-1 ring-card" />
-              </span>
-              {m.base}/{m.quote}
-            </button>
-          );
-        })}
-      </div>
+      <DexStatsBar market={sel} stats={statsFor(sel)} connected={connected} preview={preview} />
+      {!preview && live.error && <div className="text-xs text-warning px-1">{live.error}</div>}
 
-      {sel && (
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 rounded-xl bg-gradient-card border border-border/50 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">
-                {sel.base}/{sel.quote} order book
-              </h3>
-              <span className={`text-xs flex items-center gap-1.5 ${connected ? 'text-success' : 'text-muted-foreground'}`}>
-                <span className={`h-2 w-2 rounded-full ${connected ? 'bg-success' : 'bg-muted-foreground/50'}`} />
-                {preview ? 'sample' : connected ? 'live' : 'connecting…'}
-              </span>
-            </div>
-            {feedErr && <div className="text-xs text-warning mb-2">{feedErr}</div>}
-            <div className="flex flex-col sm:flex-row gap-6">
-              <div className="flex-1">
-                <div className="text-xs text-success mb-1 px-2">Bids · price / size</div>
-                <OrderRows orders={book.buys} sell={false} />
-              </div>
-              <div className="flex-1">
-                <div className="text-xs text-destructive mb-1 px-2">Asks · price / size</div>
-                <OrderRows orders={book.sells} sell />
-              </div>
-            </div>
-          </div>
+      <div className="grid grid-cols-1 gap-px rounded-xl overflow-hidden border border-border/60 bg-border/60 lg:grid-cols-[256px_1fr_330px] lg:grid-rows-[minmax(0,1fr)_340px] lg:h-[calc(100vh-14rem)]">
+        <section className="bg-card min-h-0 min-w-0 max-h-[44vh] lg:max-h-none lg:col-start-1 lg:row-start-1 lg:row-span-2">
+          <DexMarketsPanel markets={markets} selected={sel} onSelect={setSel} statsFor={statsFor} />
+        </section>
+
+        <section className="bg-card min-h-0 min-w-0 h-[320px] lg:h-auto lg:col-start-2 lg:row-start-1">
+          <DexChartPanel market={sel} candles={candles} />
+        </section>
+
+        <section className="bg-card min-h-0 min-w-0 h-[420px] lg:h-auto lg:col-start-3 lg:row-start-1">
+          <DexOrderBook market={sel} book={book} />
+        </section>
+
+        <section className="bg-card min-h-0 min-w-0 h-[260px] lg:h-auto lg:col-start-2 lg:row-start-2">
+          <DexOrdersPanel orders={orders} preview={preview} onCancel={async (id) => {
+            try {
+              await cancelDexOrder(id);
+              refreshOrders();
+            } catch {
+              /* ignore */
+            }
+          }} />
+        </section>
+
+        <section className="bg-card min-h-0 min-w-0 lg:col-start-3 lg:row-start-2">
           <DexOrderForm host={HOST} market={sel} preview={preview} onPlaced={refreshOrders} />
-        </div>
-      )}
-
-      {orders.length > 0 && (
-        <div className="rounded-xl bg-gradient-card border border-border/50 p-4">
-          <h3 className="font-semibold mb-3">Your orders</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-muted-foreground text-left">
-                  <th className="py-1 pr-3">Market</th>
-                  <th className="py-1 pr-3">Side</th>
-                  <th className="py-1 pr-3">Type</th>
-                  <th className="py-1 pr-3">Status</th>
-                  <th className="py-1 pr-3">Filled</th>
-                  <th className="py-1" />
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((o) => {
-                  const pct = o.quantity > 0 ? Math.round((o.filled / o.quantity) * 100) : 0;
-                  return (
-                    <tr key={o.id} className="border-t border-border/40">
-                      <td className="py-1.5 pr-3 font-mono">{o.marketName}</td>
-                      <td className={`py-1.5 pr-3 ${o.sell ? 'text-destructive' : 'text-success'}`}>
-                        {o.sell ? 'sell' : 'buy'}
-                      </td>
-                      <td className="py-1.5 pr-3">{o.type}</td>
-                      <td className="py-1.5 pr-3">{o.status}</td>
-                      <td className="py-1.5 pr-3">{pct}%</td>
-                      <td className="py-1.5">
-                        {!preview && o.status === 'booked' && (
-                          <button
-                            type="button"
-                            title="Cancel order"
-                            onClick={async () => {
-                              try {
-                                await cancelDexOrder(o.id);
-                                refreshOrders();
-                              } catch {
-                                /* ignore */
-                              }
-                            }}
-                            className="p-1 rounded hover:bg-background/60 text-muted-foreground hover:text-destructive transition-colors"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+        </section>
+      </div>
     </div>
   );
 };

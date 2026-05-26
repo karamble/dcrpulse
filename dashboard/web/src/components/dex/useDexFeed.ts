@@ -15,9 +15,40 @@ export interface MiniOrder {
   token: string;
 }
 
+// Trade is a recent match shown in the trades panel.
+export interface Trade {
+  rate: number;
+  qty: number;
+  sell: boolean;
+  stamp: number; // unix ms
+}
+
+// Candle is one OHLCV bar for the price chart.
+export interface Candle {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  endStamp: number; // unix ms
+}
+
 export interface OrderBookState {
   buys: MiniOrder[]; // bids, highest rate first
   sells: MiniOrder[]; // asks, lowest rate first
+  recentMatches: Trade[]; // most recent first
+}
+
+// MarketStats is the 24h summary shown in the stats bar and markets list.
+export interface MarketStats {
+  last: number;
+  lastUsd?: number;
+  change: number;
+  changePct: number;
+  high24: number;
+  low24: number;
+  volBase: number;
+  volQuote: number;
 }
 
 export interface DexMarketRef {
@@ -37,14 +68,14 @@ export interface DexFeed {
 // book_order / unbook_order / update_remaining messages. (Runtime testing is
 // deferred until the DEX server is reliable.)
 export function useDexFeed(market: DexMarketRef | null): DexFeed {
-  const [book, setBook] = useState<OrderBookState>({ buys: [], sells: [] });
+  const [book, setBook] = useState<OrderBookState>({ buys: [], sells: [], recentMatches: [] });
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     if (!market) return;
-    setBook({ buys: [], sells: [] });
+    setBook({ buys: [], sells: [], recentMatches: [] });
     setError(null);
 
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -53,9 +84,16 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
 
     let buys: MiniOrder[] = [];
     let sells: MiniOrder[] = [];
+    let recentMatches: Trade[] = [];
     const sortBuys = () => buys.sort((a, b) => b.rate - a.rate);
     const sortSells = () => sells.sort((a, b) => a.rate - b.rate);
-    const commit = () => setBook({ buys: [...buys], sells: [...sells] });
+    const commit = () => setBook({ buys: [...buys], sells: [...sells], recentMatches: [...recentMatches] });
+    const toTrade = (m: any): Trade => ({
+      rate: Number(m?.rate) || 0,
+      qty: Number(m?.qty) || 0,
+      sell: !!m?.sell,
+      stamp: Number(m?.stamp) || Date.now(),
+    });
 
     ws.onopen = () => {
       setConnected(true);
@@ -88,9 +126,18 @@ export function useDexFeed(market: DexMarketRef | null): DexFeed {
         case 'book': {
           buys = (data?.book?.buys || []) as MiniOrder[];
           sells = (data?.book?.sells || []) as MiniOrder[];
+          recentMatches = ((data?.book?.recentMatches || []) as any[]).map(toTrade);
           sortBuys();
           sortSells();
           commit();
+          break;
+        }
+        case 'epoch_match':
+        case 'match_proof': {
+          if (data?.rate !== undefined) {
+            recentMatches = [toTrade(data), ...recentMatches].slice(0, 40);
+            commit();
+          }
           break;
         }
         case 'book_order': {

@@ -26,6 +26,10 @@ export default {
           DEFAULT: 'hsl(142 76% 36%)',
           foreground: 'hsl(210 40% 98%)',
         },
+        destructive: {
+          DEFAULT: 'hsl(0 72% 51%)',
+          foreground: 'hsl(210 40% 98%)',
+        },
         warning: {
           DEFAULT: 'hsl(38 92% 50%)',
           foreground: 'hsl(222 47% 5%)',
