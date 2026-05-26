@@ -108,7 +108,7 @@ export function mockCandles(m: DexMarket, n = 90): Candle[] {
 }
 
 export const mockOrders: DexOrder[] = [
-  { id: 'mockbookedorder', host: 'dex.decred.org:7232', marketName: 'dcr_btc', type: 'limit', sell: false, status: 'booked', quantity: 5e8, filled: 1e8, rate: 52000 },
-  { id: 'mockbookedsell', host: 'dex.decred.org:7232', marketName: 'dcr_btc', type: 'limit', sell: true, status: 'booked', quantity: 1.8e8, filled: 0, rate: 53000 },
-  { id: 'mockexecorder', host: 'dex.decred.org:7232', marketName: 'dcr_btc', type: 'limit', sell: true, status: 'executed', quantity: 2e8, filled: 2e8, rate: 53000 },
+  { id: 'mockbookedorder', host: 'dex.decred.org:7232', marketName: 'dcr_btc', baseID: 42, quoteID: 0, type: 'limit', sell: false, status: 'booked', stamp: 0, submitTime: 0, quantity: 5e8, filled: 1e8, settled: 0, rate: 52000 },
+  { id: 'mockbookedsell', host: 'dex.decred.org:7232', marketName: 'dcr_btc', baseID: 42, quoteID: 0, type: 'limit', sell: true, status: 'booked', stamp: 0, submitTime: 0, quantity: 1.8e8, filled: 0, settled: 0, rate: 53000 },
+  { id: 'mockexecorder', host: 'dex.decred.org:7232', marketName: 'dcr_btc', baseID: 42, quoteID: 0, type: 'limit', sell: true, status: 'executed', stamp: 0, submitTime: 0, quantity: 2e8, filled: 2e8, settled: 2e8, rate: 53000 },
 ];

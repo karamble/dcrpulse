@@ -21,3 +21,18 @@ export const fmtPct = (pct: number): string => `${pct >= 0 ? '+' : ''}${pct.toFi
 
 export const fmtUsd = (v: number): string =>
   v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+
+// RateEncodingFactor mirrors bisonw's OrderUtil.RateEncodingFactor: the DEX
+// message rate is the conventional price scaled by this factor and adjusted by
+// the base/quote conversion factors.
+export const RateEncodingFactor = 1e8;
+
+// convQty converts an atomic base quantity to conventional units.
+export const convQty = (atomic: number, baseConvFactor: number): number =>
+  baseConvFactor > 0 ? atomic / baseConvFactor : 0;
+
+// convRate converts an atomic message-rate to a conventional price.
+export const convRate = (msgRate: number, baseConvFactor: number, quoteConvFactor: number): number => {
+  const f = (RateEncodingFactor / baseConvFactor) * quoteConvFactor;
+  return f > 0 ? msgRate / f : 0;
+};

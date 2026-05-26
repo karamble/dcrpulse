@@ -201,3 +201,10 @@ func (c *Client) PostBond(ctx context.Context, p PostBondParams) (json.RawMessag
 	err := c.Call(ctx, "postbond", []string{p.AppPass}, args, &res)
 	return res, err
 }
+
+// SetBondOptions updates a DEX account's auto-bond maintenance target tier.
+// targetTier 0 disables auto-renewal; a positive value maintains that tier.
+func (c *Client) SetBondOptions(ctx context.Context, host string, targetTier uint64) error {
+	args := []string{host, strconv.FormatUint(targetTier, 10)}
+	return c.Call(ctx, "bondopts", nil, args, nil)
+}

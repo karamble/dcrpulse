@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { Lock, TrendingUp } from 'lucide-react';
 import { getDexExchanges, lockDex, type DexExchange } from '../../services/dcrdexApi';
 import { DexRegister } from './DexRegister';
-import { DexMarketView } from './DexMarketView';
+import { DexShell, type DexTab } from './DexShell';
 
 // The canonical mainnet DEX server.
 const MAINNET_DEX = 'dex.decred.org:7232';
@@ -29,6 +29,14 @@ export const DexHome = ({ bisonwVersion, onLock }: DexHomeProps) => {
   useEffect(refresh, []);
 
   const registered = !!exchanges && Object.values(exchanges).some((x) => x && x.acctID);
+
+  // Dev affordance: /dex?tab=<wallets|orders|account|trade> opens the shell at a
+  // given tab and bypasses the registration gate, so the non-trading tabs can be
+  // reviewed while the DEX server (and thus registration) is unreachable.
+  const tabParam = new URLSearchParams(window.location.search).get('tab');
+  const forcedTab = (['trade', 'wallets', 'orders', 'account'] as const).find((t) => t === tabParam) as
+    | DexTab
+    | undefined;
 
   return (
     <div className="space-y-4">
@@ -57,8 +65,8 @@ export const DexHome = ({ bisonwVersion, onLock }: DexHomeProps) => {
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
-      ) : registered ? (
-        <DexMarketView />
+      ) : registered || forcedTab ? (
+        <DexShell initialTab={forcedTab ?? 'trade'} />
       ) : (
         <DexRegister host={MAINNET_DEX} onRegistered={refresh} />
       )}

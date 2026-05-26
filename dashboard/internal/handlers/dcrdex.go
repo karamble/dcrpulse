@@ -8,13 +8,16 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/dexassets"
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
@@ -343,6 +346,267 @@ func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(raw)
 }
 
+// atomsToConv converts an atomic amount to conventional units using the asset's
+// conversion factor (from the embedded catalog). Decred's atoms-per-coin is used
+// as a fallback for unknown assets.
+func atomsToConv(atoms, convFactor uint64) float64 {
+	if convFactor == 0 {
+		convFactor = uint64(dcrutil.AtomsPerCoin)
+	}
+	return float64(atoms) / float64(convFactor)
+}
+
+// convToAtoms converts a conventional amount to atomic units, rounding to the
+// nearest atom.
+func convToAtoms(amount float64, convFactor uint64) uint64 {
+	if convFactor == 0 {
+		convFactor = uint64(dcrutil.AtomsPerCoin)
+	}
+	return uint64(math.Round(amount * float64(convFactor)))
+}
+
+// DexWalletState is the funding view of a single DCRDEX-managed wallet. Balances
+// are converted to conventional units in the backend.
+type DexWalletState struct {
+	AssetID      uint32  `json:"assetID"`
+	Symbol       string  `json:"symbol"`
+	WalletType   string  `json:"walletType"`
+	Traits       uint64  `json:"traits"`
+	Running      bool    `json:"running"`
+	Open         bool    `json:"open"`
+	Encrypted    bool    `json:"encrypted"`
+	Disabled     bool    `json:"disabled"`
+	Synced       bool    `json:"synced"`
+	SyncProgress float32 `json:"syncProgress"`
+	PeerCount    uint32  `json:"peerCount"`
+	Units        string  `json:"units"`
+	Address      string  `json:"address"`
+	Available    float64 `json:"available"`
+	Locked       float64 `json:"locked"`
+	Immature     float64 `json:"immature"`
+	OrderLocked  float64 `json:"orderLocked"`
+	BondLocked   float64 `json:"bondLocked"`
+}
+
+// GetDcrdexWalletsHandler returns the DCRDEX-managed wallets and their balances
+// (in conventional units), so the Wallets tab can show the funding picture.
+func GetDcrdexWalletsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	raw, err := client.Wallets(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var states []struct {
+		AssetID      uint32  `json:"assetID"`
+		Symbol       string  `json:"symbol"`
+		WalletType   string  `json:"type"`
+		Traits       uint64  `json:"traits"`
+		Running      bool    `json:"running"`
+		Open         bool    `json:"open"`
+		Encrypted    bool    `json:"encrypted"`
+		Disabled     bool    `json:"disabled"`
+		Synced       bool    `json:"synced"`
+		SyncProgress float32 `json:"syncProgress"`
+		PeerCount    uint32  `json:"peerCount"`
+		Units        string  `json:"units"`
+		Address      string  `json:"address"`
+		Balance      *struct {
+			Available   uint64 `json:"available"`
+			Immature    uint64 `json:"immature"`
+			Locked      uint64 `json:"locked"`
+			OrderLocked uint64 `json:"orderlocked"`
+			BondLocked  uint64 `json:"bondlocked"`
+		} `json:"balance"`
+	}
+	if err := json.Unmarshal(raw, &states); err != nil {
+		http.Error(w, "decode wallets: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	out := make([]DexWalletState, 0, len(states))
+	for _, s := range states {
+		ws := DexWalletState{
+			AssetID:      s.AssetID,
+			Symbol:       strings.ToUpper(s.Symbol),
+			WalletType:   s.WalletType,
+			Traits:       s.Traits,
+			Running:      s.Running,
+			Open:         s.Open,
+			Encrypted:    s.Encrypted,
+			Disabled:     s.Disabled,
+			Synced:       s.Synced,
+			SyncProgress: s.SyncProgress,
+			PeerCount:    s.PeerCount,
+			Units:        s.Units,
+			Address:      s.Address,
+		}
+		if s.Balance != nil {
+			cf := dexassets.ConvFactor(s.AssetID)
+			ws.Available = atomsToConv(s.Balance.Available, cf)
+			ws.Locked = atomsToConv(s.Balance.Locked, cf)
+			ws.Immature = atomsToConv(s.Balance.Immature, cf)
+			ws.OrderLocked = atomsToConv(s.Balance.OrderLocked, cf)
+			ws.BondLocked = atomsToConv(s.Balance.BondLocked, cf)
+		}
+		out = append(out, ws)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].AssetID < out[j].AssetID })
+	json.NewEncoder(w).Encode(out)
+}
+
+// DexPendingBond is a bond awaiting confirmations.
+type DexPendingBond struct {
+	Symbol  string `json:"symbol"`
+	AssetID uint32 `json:"assetID"`
+	Confs   uint32 `json:"confs"`
+}
+
+// DexAccount is the per-server account view (tier, reputation, bonds) for the
+// Account tab. Bond amounts are converted to DCR in the backend.
+type DexAccount struct {
+	Host             string           `json:"host"`
+	AcctID           string           `json:"acctID"`
+	Registered       bool             `json:"registered"`
+	ConnectionStatus int              `json:"connectionStatus"`
+	ViewOnly         bool             `json:"viewOnly"`
+	Disabled         bool             `json:"disabled"`
+	TargetTier       uint64           `json:"targetTier"`
+	EffectiveTier    int64            `json:"effectiveTier"`
+	BondedTier       int64            `json:"bondedTier"`
+	Penalties        uint16           `json:"penalties"`
+	Score            int32            `json:"score"`
+	PenaltyThreshold uint32           `json:"penaltyThreshold"`
+	MaxScore         uint32           `json:"maxScore"`
+	BondAssetID      uint32           `json:"bondAssetID"`
+	BondExpiryDays   int              `json:"bondExpiryDays"`
+	BondPerTierAtoms uint64           `json:"bondPerTierAtoms"`
+	BondPerTierDcr   float64          `json:"bondPerTierDcr"`
+	AutoRenew        bool             `json:"autoRenew"`
+	PendingBonds     []DexPendingBond `json:"pendingBonds"`
+}
+
+// GetDcrdexAccountHandler returns the account state (tier, reputation, bonds)
+// for the DEX server given in the `host` query parameter.
+func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	host := r.URL.Query().Get("host")
+	if host == "" {
+		http.Error(w, "host is required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	raw, err := client.Exchanges(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var xcs map[string]struct {
+		Host             string `json:"host"`
+		AcctID           string `json:"acctID"`
+		ConnectionStatus int    `json:"connectionStatus"`
+		ViewOnly         bool   `json:"viewOnly"`
+		Disabled         bool   `json:"disabled"`
+		BondExpiry       uint64 `json:"bondExpiry"`
+		PenaltyThreshold uint32 `json:"penaltyThreshold"`
+		MaxScore         uint32 `json:"maxScore"`
+		BondAssets       map[string]struct {
+			Amt uint64 `json:"amount"`
+		} `json:"bondAssets"`
+		Auth struct {
+			Rep struct {
+				BondedTier int64  `json:"bondedTier"`
+				Penalties  uint16 `json:"penalties"`
+				Score      int32  `json:"score"`
+			} `json:"rep"`
+			BondAssetID   uint32 `json:"bondAssetID"`
+			TargetTier    uint64 `json:"targetTier"`
+			EffectiveTier int64  `json:"effectiveTier"`
+			PendingBonds  []struct {
+				Symbol  string `json:"symbol"`
+				AssetID uint32 `json:"assetID"`
+				Confs   uint32 `json:"confs"`
+			} `json:"pendingBonds"`
+		} `json:"auth"`
+	}
+	if err := json.Unmarshal(raw, &xcs); err != nil {
+		http.Error(w, "decode exchanges: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	xc, ok := xcs[host]
+	if !ok {
+		http.Error(w, "unknown DEX host", http.StatusNotFound)
+		return
+	}
+	pending := make([]DexPendingBond, 0, len(xc.Auth.PendingBonds))
+	for _, b := range xc.Auth.PendingBonds {
+		pending = append(pending, DexPendingBond{Symbol: strings.ToUpper(b.Symbol), AssetID: b.AssetID, Confs: b.Confs})
+	}
+	json.NewEncoder(w).Encode(DexAccount{
+		Host:             host,
+		AcctID:           xc.AcctID,
+		Registered:       xc.AcctID != "",
+		ConnectionStatus: xc.ConnectionStatus,
+		ViewOnly:         xc.ViewOnly,
+		Disabled:         xc.Disabled,
+		TargetTier:       xc.Auth.TargetTier,
+		EffectiveTier:    xc.Auth.EffectiveTier,
+		BondedTier:       xc.Auth.Rep.BondedTier,
+		Penalties:        xc.Auth.Rep.Penalties,
+		Score:            xc.Auth.Rep.Score,
+		PenaltyThreshold: xc.PenaltyThreshold,
+		MaxScore:         xc.MaxScore,
+		BondAssetID:      xc.Auth.BondAssetID,
+		BondExpiryDays:   int(xc.BondExpiry / 86400),
+		BondPerTierAtoms: xc.BondAssets["dcr"].Amt,
+		BondPerTierDcr:   dcrutil.Amount(xc.BondAssets["dcr"].Amt).ToCoin(),
+		AutoRenew:        xc.Auth.TargetTier > 0,
+		PendingBonds:     pending,
+	})
+}
+
+// SetDcrdexBondOptionsHandler updates a DEX account's auto-bond target tier.
+// targetTier 0 disables auto-renewal. Requires the DEX session to be unlocked.
+func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		Host       string `json:"host"`
+		TargetTier uint64 `json:"targetTier"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" {
+		http.Error(w, "host is required", http.StatusBadRequest)
+		return
+	}
+	if _, ok := rpc.DcrdexAppPass(); !ok {
+		http.Error(w, "DCRDEX is locked", http.StatusConflict)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := client.SetBondOptions(ctx, req.Host, req.TargetTier); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
 // DexConfigResponse is the registration-screen view of a DEX server's config.
 // Amounts are converted to DCR in the backend with dcrutil so the frontend does
 // not hardcode the atoms-per-coin ratio.
@@ -637,4 +901,388 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write(raw)
+}
+
+// GetDcrdexAssetsHandler serves the embedded DCRDEX supported-asset catalog
+// (wallet definitions and config-option schemas), which the bisonw RPC does not
+// expose. Used by the frontend to drive the create-wallet forms.
+func GetDcrdexAssetsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(dexassets.Raw())
+}
+
+// CreateDcrdexAssetWalletHandler creates a wallet for an arbitrary asset from a
+// schema-driven config map. The DCR onboarding wallet has its own dedicated
+// handler (CreateDcrdexWalletHandler) that wires the pinned dex account; this
+// generic path serves every other asset. Requires the DEX session unlocked.
+func CreateDcrdexAssetWalletHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AssetID    uint32            `json:"assetID"`
+		WalletType string            `json:"walletType"`
+		Config     map[string]string `json:"config"`
+		WalletPass string            `json:"walletPass"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.WalletType == "" {
+		http.Error(w, "assetID and walletType are required", http.StatusBadRequest)
+		return
+	}
+	appPass, ok := rpc.DcrdexAppPass()
+	if !ok {
+		http.Error(w, "DCRDEX is locked", http.StatusConflict)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+	if err := client.NewWallet(ctx, bisonw.NewWalletParams{
+		AppPass:    appPass,
+		WalletPass: req.WalletPass,
+		AssetID:    req.AssetID,
+		WalletType: req.WalletType,
+		Config:     req.Config,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// DexWalletTx is a wallet transaction with amounts converted to conventional
+// units in the backend.
+type DexWalletTx struct {
+	Type        uint32  `json:"type"`
+	ID          string  `json:"id"`
+	Amount      float64 `json:"amount"`
+	Fees        float64 `json:"fees"`
+	BlockNumber uint64  `json:"blockNumber"`
+	Timestamp   uint64  `json:"timestamp"`
+	Recipient   string  `json:"recipient,omitempty"`
+	TokenID     *uint32 `json:"tokenID,omitempty"`
+}
+
+type rawWalletTx struct {
+	Type        uint32  `json:"type"`
+	ID          string  `json:"id"`
+	Amount      uint64  `json:"amount"`
+	Fees        uint64  `json:"fees"`
+	BlockNumber uint64  `json:"blockNumber"`
+	Timestamp   uint64  `json:"timestamp"`
+	TokenID     *uint32 `json:"tokenID"`
+	Recipient   *string `json:"recipient"`
+}
+
+func convWalletTx(assetID uint32, t rawWalletTx) DexWalletTx {
+	amtFactor := dexassets.ConvFactor(assetID)
+	if t.TokenID != nil {
+		amtFactor = dexassets.ConvFactor(*t.TokenID)
+	}
+	out := DexWalletTx{
+		Type:        t.Type,
+		ID:          t.ID,
+		Amount:      atomsToConv(t.Amount, amtFactor),
+		Fees:        atomsToConv(t.Fees, dexassets.ConvFactor(assetID)),
+		BlockNumber: t.BlockNumber,
+		Timestamp:   t.Timestamp,
+		TokenID:     t.TokenID,
+	}
+	if t.Recipient != nil {
+		out.Recipient = *t.Recipient
+	}
+	return out
+}
+
+// GetDcrdexWalletTxsHandler returns a wallet's transaction history (amounts in
+// conventional units). Query: assetID (required), n, refID, past.
+func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	assetID, err := strconv.ParseUint(r.URL.Query().Get("assetID"), 10, 32)
+	if err != nil {
+		http.Error(w, "assetID is required", http.StatusBadRequest)
+		return
+	}
+	num, _ := strconv.Atoi(r.URL.Query().Get("n"))
+	refID := r.URL.Query().Get("refID")
+	past := r.URL.Query().Get("past") == "true"
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	raw, err := client.TxHistory(ctx, uint32(assetID), num, refID, past)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var txs []rawWalletTx
+	if err := json.Unmarshal(raw, &txs); err != nil {
+		http.Error(w, "decode txs: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	out := make([]DexWalletTx, 0, len(txs))
+	for _, t := range txs {
+		out = append(out, convWalletTx(uint32(assetID), t))
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
+// GetDcrdexWalletTxHandler returns a single wallet transaction. Query: assetID,
+// txID.
+func GetDcrdexWalletTxHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	assetID, err := strconv.ParseUint(r.URL.Query().Get("assetID"), 10, 32)
+	if err != nil {
+		http.Error(w, "assetID is required", http.StatusBadRequest)
+		return
+	}
+	txID := r.URL.Query().Get("txID")
+	if txID == "" {
+		http.Error(w, "txID is required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	raw, err := client.WalletTx(ctx, uint32(assetID), txID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var t rawWalletTx
+	if err := json.Unmarshal(raw, &t); err != nil {
+		http.Error(w, "decode tx: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(convWalletTx(uint32(assetID), t))
+}
+
+// SendDcrdexWalletHandler sends a conventional amount of an asset to an address.
+// The amount is converted to atoms in the backend. Spends real funds; requires
+// the DEX session unlocked.
+func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AssetID uint32  `json:"assetID"`
+		Value   float64 `json:"value"`
+		Address string  `json:"address"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Address == "" || req.Value <= 0 {
+		http.Error(w, "assetID, value and address are required", http.StatusBadRequest)
+		return
+	}
+	appPass, ok := rpc.DcrdexAppPass()
+	if !ok {
+		http.Error(w, "DCRDEX is locked", http.StatusConflict)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
+	coin, err := client.Send(ctx, appPass, req.AssetID, atoms, req.Address)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"coin": coin})
+}
+
+// dexWalletActionAsset decodes a {assetID} body for simple wallet actions.
+func dexWalletActionAsset(r *http.Request) (uint32, error) {
+	var req struct {
+		AssetID uint32 `json:"assetID"`
+		Force   bool   `json:"force"`
+		Disable bool   `json:"disable"`
+		Address string `json:"address"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&req)
+	return req.AssetID, err
+}
+
+// OpenDcrdexWalletHandler unlocks a wallet. Requires the DEX session unlocked.
+func OpenDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AssetID uint32 `json:"assetID"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "assetID is required", http.StatusBadRequest)
+		return
+	}
+	appPass, ok := rpc.DcrdexAppPass()
+	if !ok {
+		http.Error(w, "DCRDEX is locked", http.StatusConflict)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := client.OpenWallet(ctx, appPass, req.AssetID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// CloseDcrdexWalletHandler locks a wallet.
+func CloseDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	assetID, err := dexWalletActionAsset(r)
+	if err != nil {
+		http.Error(w, "assetID is required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := client.CloseWallet(ctx, assetID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// ToggleDcrdexWalletHandler enables or disables a wallet.
+func ToggleDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AssetID uint32 `json:"assetID"`
+		Disable bool   `json:"disable"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "assetID is required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := client.ToggleWalletStatus(ctx, req.AssetID, req.Disable); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// RescanDcrdexWalletHandler triggers a wallet rescan.
+func RescanDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AssetID uint32 `json:"assetID"`
+		Force   bool   `json:"force"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "assetID is required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := client.RescanWallet(ctx, req.AssetID, req.Force); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// GetDcrdexWalletPeersHandler returns a wallet's peers (raw). Query: assetID.
+func GetDcrdexWalletPeersHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	assetID, err := strconv.ParseUint(r.URL.Query().Get("assetID"), 10, 32)
+	if err != nil {
+		http.Error(w, "assetID is required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	raw, err := client.WalletPeers(ctx, uint32(assetID))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Write(raw)
+}
+
+// AddDcrdexWalletPeerHandler adds a persistent peer to a wallet.
+func AddDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AssetID uint32 `json:"assetID"`
+		Address string `json:"address"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Address == "" {
+		http.Error(w, "assetID and address are required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := client.AddWalletPeer(ctx, req.AssetID, req.Address); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// RemoveDcrdexWalletPeerHandler removes a persistent peer from a wallet.
+func RemoveDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AssetID uint32 `json:"assetID"`
+		Address string `json:"address"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Address == "" {
+		http.Error(w, "assetID and address are required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := client.RemoveWalletPeer(ctx, req.AssetID, req.Address); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
