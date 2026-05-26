@@ -15,11 +15,13 @@ import (
 	"time"
 
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/pkg/bisonw"
 
 	"github.com/decred/dcrd/dcrutil/v4"
+	"github.com/gorilla/websocket"
 )
 
 // dexAccountName is the dedicated dcrwallet account DCRDEX trades from.
@@ -466,4 +468,55 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write(raw)
+}
+
+// DcrdexWSHandler is a transparent WebSocket relay between the browser and
+// bisonw's /ws endpoint. The frontend speaks bisonw's msgjson protocol
+// (loadmarket, loadcandles, ...) and receives its order book and notification
+// pushes; the dashboard supplies the pinned TLS + auth to bisonw.
+func DcrdexWSHandler(w http.ResponseWriter, r *http.Request) {
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	tlsConfig, wsURL, basicAuth := client.WSDialInfo()
+
+	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
+	front, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("dcrdex ws upgrade: %v", err)
+		return
+	}
+	defer front.Close()
+
+	dialer := &websocket.Dialer{TLSClientConfig: tlsConfig, HandshakeTimeout: 15 * time.Second}
+	up, resp, err := dialer.Dial(wsURL, http.Header{"Authorization": {basicAuth}})
+	if err != nil {
+		msg := "dcrdex ws: " + err.Error()
+		if resp != nil {
+			msg += " (http " + itoa(uint32(resp.StatusCode)) + ")"
+		}
+		front.WriteJSON(map[string]string{"error": msg})
+		return
+	}
+	defer up.Close()
+
+	errc := make(chan struct{}, 2)
+	pipe := func(dst, src *websocket.Conn) {
+		for {
+			mt, data, err := src.ReadMessage()
+			if err != nil {
+				errc <- struct{}{}
+				return
+			}
+			if err := dst.WriteMessage(mt, data); err != nil {
+				errc <- struct{}{}
+				return
+			}
+		}
+	}
+	go pipe(front, up) // bisonw -> browser
+	go pipe(up, front) // browser -> bisonw
+	<-errc
 }

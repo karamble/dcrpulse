@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -55,10 +56,11 @@ type Config struct {
 
 // Client is a bisonw RPC client. It is safe for concurrent use.
 type Client struct {
-	cfg    Config
-	url    string
-	http   *http.Client
-	nextID uint64
+	cfg       Config
+	url       string
+	http      *http.Client
+	tlsConfig *tls.Config
+	nextID    uint64
 }
 
 // wireMessage mirrors msgjson.Message on the wire.
@@ -123,15 +125,24 @@ func New(cfg Config) (*Client, error) {
 	if serverName == "" {
 		serverName = u.Hostname()
 	}
+	tlsConfig := &tls.Config{RootCAs: pool, ServerName: serverName}
 	return &Client{
-		cfg: cfg,
-		url: "https://" + cfg.Addr,
+		cfg:       cfg,
+		url:       "https://" + cfg.Addr,
+		tlsConfig: tlsConfig,
 		http: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: serverName},
-			},
+			Transport: &http.Transport{TLSClientConfig: tlsConfig},
 		},
 	}, nil
+}
+
+// WSDialInfo returns the parameters for dialing bisonw's /ws endpoint: the
+// pinned TLS config, the wss:// URL, and the HTTP Basic auth header value. The
+// caller supplies its own WebSocket dialer so this package stays free of a
+// WebSocket dependency.
+func (c *Client) WSDialInfo() (tlsConfig *tls.Config, wsURL, basicAuth string) {
+	auth := base64.StdEncoding.EncodeToString([]byte(c.cfg.User + ":" + c.cfg.Pass))
+	return c.tlsConfig, "wss://" + c.cfg.Addr + "/ws", "Basic " + auth
 }
 
 // Call invokes an RPC route with the given password arguments and positional
