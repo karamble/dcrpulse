@@ -6,6 +6,7 @@ require (
 	decred.org/dcrwallet/v5 v5.0.2
 	github.com/decred/dcrd/chaincfg/chainhash v1.0.5
 	github.com/decred/dcrd/chaincfg/v3 v3.3.0
+	github.com/decred/dcrd/dcrutil/v4 v4.0.3
 	github.com/decred/dcrd/rpcclient/v8 v8.1.0
 	github.com/decred/dcrlnd v0.8.2-0.20260504180059-d11b48570880
 	github.com/gorilla/mux v1.8.1
@@ -54,7 +55,6 @@ require (
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.4 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/decred/dcrd/dcrjson/v4 v4.2.0 // indirect
-	github.com/decred/dcrd/dcrutil/v4 v4.0.3 // indirect
 	github.com/decred/dcrd/gcs/v4 v4.1.1 // indirect
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3 // indirect
 	github.com/decred/dcrd/math/uint256 v1.0.2 // indirect
