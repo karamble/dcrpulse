@@ -170,6 +170,8 @@ func main() {
 	api.HandleFunc("/dcrdex/wallet/peers", handlers.GetDcrdexWalletPeersHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/wallet/peers", handlers.AddDcrdexWalletPeerHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/peers", handlers.RemoveDcrdexWalletPeerHandler).Methods("DELETE")
+	api.HandleFunc("/dcrdex/notifications", handlers.GetDcrdexNotificationsHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/rates", handlers.GetDcrdexRatesHandler).Methods("GET")
 
 	// Node/dcrd routes
 	api.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")

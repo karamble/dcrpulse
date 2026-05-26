@@ -4,8 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, Plus } from 'lucide-react';
-import { getDexWallets, getDexAssetCatalog, type DexAsset, type DexWalletState } from '../../services/dcrdexApi';
-import { fmtAmt } from './dexFormat';
+import { getDexWallets, getDexAssetCatalog, getDexRates, type DexAsset, type DexRates, type DexWalletState } from '../../services/dcrdexApi';
+import { fmtAmt, fmtUsd, usdRateFor } from './dexFormat';
 import { CoinIcon } from './CoinIcon';
 import { DexWalletDetail } from './DexWalletDetail';
 import { DexAddWallet } from './DexAddWallet';
@@ -21,6 +21,7 @@ const statusDot = (w: DexWalletState) => {
 export const DexWalletsPanel = () => {
   const [wallets, setWallets] = useState<DexWalletState[] | null>(null);
   const [catalog, setCatalog] = useState<DexAsset[]>([]);
+  const [rates, setRates] = useState<DexRates | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -37,6 +38,7 @@ export const DexWalletsPanel = () => {
 
   useEffect(() => {
     getDexAssetCatalog().then(setCatalog).catch(() => {});
+    getDexRates().then(setRates).catch(() => {});
     refresh();
     const id = window.setInterval(refresh, 8000);
     return () => window.clearInterval(id);
@@ -98,7 +100,12 @@ export const DexWalletsPanel = () => {
                   </span>
                 </span>
               ) : (
-                <span className="block text-xs font-mono tabular-nums text-muted-foreground">{fmtAmt(w.available, 4)}</span>
+                <span className="block text-xs font-mono tabular-nums text-muted-foreground">
+                  {fmtAmt(w.available, 4)}
+                  {usdRateFor(w.symbol, rates) > 0 && (
+                    <span className="text-muted-foreground/60"> &middot; {fmtUsd(w.available * usdRateFor(w.symbol, rates))}</span>
+                  )}
+                </span>
               )}
             </span>
           </button>
@@ -126,7 +133,7 @@ export const DexWalletsPanel = () => {
             }}
           />
         ) : sel ? (
-          <DexWalletDetail wallet={sel} onChanged={refresh} />
+          <DexWalletDetail wallet={sel} rates={rates} onChanged={refresh} />
         ) : (
           <div className="py-12 text-center text-sm text-muted-foreground">No wallets yet. Add one to get started.</div>
         )}

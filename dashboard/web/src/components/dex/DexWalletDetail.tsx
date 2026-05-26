@@ -17,7 +17,8 @@ import {
   type DexWalletState,
   type DexWalletPeer,
 } from '../../services/dcrdexApi';
-import { fmtAmt } from './dexFormat';
+import type { DexRates } from '../../services/dcrdexApi';
+import { fmtAmt, fmtUsd, usdRateFor } from './dexFormat';
 import { CoinIcon } from './CoinIcon';
 import { DexWalletSend } from './DexWalletSend';
 import { DexWalletTxHistory } from './DexWalletTxHistory';
@@ -96,7 +97,15 @@ const WalletPeers = ({ wallet }: { wallet: DexWalletState }) => {
 // DexWalletDetail is the per-wallet view: status, balances, deposit address,
 // send, peers and transaction history. Actions are gated on the wallet traits,
 // mirroring the upstream wallet page.
-export const DexWalletDetail = ({ wallet, onChanged }: { wallet: DexWalletState; onChanged: () => void }) => {
+export const DexWalletDetail = ({
+  wallet,
+  rates,
+  onChanged,
+}: {
+  wallet: DexWalletState;
+  rates: DexRates | null;
+  onChanged: () => void;
+}) => {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -177,6 +186,9 @@ export const DexWalletDetail = ({ wallet, onChanged }: { wallet: DexWalletState;
           <div className="text-xl font-mono tabular-nums">
             {fmtAmt(wallet.available, 8)} <span className="text-sm text-muted-foreground">{wallet.symbol}</span>
           </div>
+          {usdRateFor(wallet.symbol, rates) > 0 && (
+            <div className="text-xs text-muted-foreground">{fmtUsd(wallet.available * usdRateFor(wallet.symbol, rates))}</div>
+          )}
           <div className="space-y-1 pt-1 border-t border-border/40">
             <BalRow label="Locked" value={wallet.locked} symbol={wallet.symbol} />
             <BalRow label="Immature" value={wallet.immature} symbol={wallet.symbol} />

@@ -22,6 +22,14 @@ export const fmtPct = (pct: number): string => `${pct >= 0 ? '+' : ''}${pct.toFi
 export const fmtUsd = (v: number): string =>
   v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 
+// usdRateFor returns the USD price for an asset symbol from a symbol->price map
+// (token symbols like "usdc.eth" resolve by their base symbol). 0 when absent.
+export const usdRateFor = (symbol: string, rates: Record<string, number> | null): number => {
+  if (!rates) return 0;
+  const s = symbol.toLowerCase().split('.')[0];
+  return rates[s] || 0;
+};
+
 // RateEncodingFactor mirrors bisonw's OrderUtil.RateEncodingFactor: the DEX
 // message rate is the conventional price scaled by this factor and adjusted by
 // the base/quote conversion factors.

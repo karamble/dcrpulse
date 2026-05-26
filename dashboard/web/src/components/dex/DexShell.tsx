@@ -8,6 +8,7 @@ import { DexMarketView } from './DexMarketView';
 import { DexWalletsPanel } from './DexWalletsPanel';
 import { DexOrdersHistoryPanel } from './DexOrdersHistoryPanel';
 import { DexAccountPanel } from './DexAccountPanel';
+import { DexNotifications } from './DexNotifications';
 
 // The canonical mainnet DEX server.
 const HOST = 'dex.decred.org:7232';
@@ -29,7 +30,7 @@ export const DexShell = ({ initialTab = 'trade' }: { initialTab?: DexTab }) => {
 
   return (
     <div className="space-y-3">
-      <nav className="flex gap-2 border-b border-border px-4">
+      <nav className="flex items-center gap-2 border-b border-border px-4">
         {tabs.map(({ id, label, Icon }) => {
           const isActive = tab === id;
           return (
@@ -48,6 +49,9 @@ export const DexShell = ({ initialTab = 'trade' }: { initialTab?: DexTab }) => {
             </button>
           );
         })}
+        <div className="ml-auto">
+          <DexNotifications />
+        </div>
       </nav>
 
       {tab === 'trade' && <DexMarketView />}

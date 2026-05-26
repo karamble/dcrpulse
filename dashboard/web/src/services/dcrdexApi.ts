@@ -340,6 +340,34 @@ export const removeDexWalletPeer = async (assetID: number, address: string): Pro
   await api.delete('/dcrdex/wallet/peers', { data: { assetID, address } });
 };
 
+// DexNote is a bisonw notification. severity: 0 data, 1 poke, 2 success,
+// 3 warning, 4 error. stamp is in milliseconds.
+export interface DexNote {
+  type: string;
+  topic: string;
+  subject: string;
+  details: string;
+  severity: number;
+  stamp: number;
+  acked: boolean;
+  id: string;
+}
+
+export const getDexNotifications = async (n = 50): Promise<DexNote[]> => {
+  const { data } = await api.get<DexNote[]>('/dcrdex/notifications', { params: { n } });
+  return data || [];
+};
+
+// DexRates maps an asset symbol (lowercase) to its USD price, sourced from
+// Kraken (with a Bison Relay fallback). Covers the coins those sources list;
+// others are absent.
+export type DexRates = Record<string, number>;
+
+export const getDexRates = async (): Promise<DexRates> => {
+  const { data } = await api.get<DexRates>('/dcrdex/rates');
+  return data || {};
+};
+
 // DexPendingBond is a bond awaiting confirmations.
 export interface DexPendingBond {
   symbol: string;

@@ -22,6 +22,7 @@ import (
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/pkg/bisonw"
+	"dcrpulse/pkg/exchangerate"
 
 	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/gorilla/websocket"
@@ -1285,4 +1286,61 @@ func RemoveDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// GetDcrdexNotificationsHandler returns up to `n` recent bisonw notifications
+// (raw: type, topic, subject, details, severity, stamp, acked, id) for the
+// notifications panel. Defaults to 50.
+func GetDcrdexNotificationsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	n := 50
+	if v, err := strconv.Atoi(r.URL.Query().Get("n")); err == nil && v > 0 {
+		n = v
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	raw, err := client.Notifications(ctx, n)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Write(raw)
+}
+
+// dexRateCache caches Kraken USD rates across requests.
+var dexRateCache = exchangerate.New()
+
+// GetDcrdexRatesHandler returns a map of asset symbol to USD price for the DEX
+// fiat display. Rates come from Kraken (direct USD pair, or BTC pair converted
+// via BTC/USD); if Kraken is unreachable it falls back to Bison Relay's feed
+// for DCR and BTC.
+func GetDcrdexRatesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	rates, err := dexRateCache.USD(ctx)
+	if err != nil || len(rates) == 0 {
+		rates = map[string]float64{}
+		if raw, berr := rpc.BrclientdRates(ctx); berr == nil {
+			var br struct {
+				DcrUsd float64 `json:"dcr_usd"`
+				BtcUsd float64 `json:"btc_usd"`
+			}
+			if json.Unmarshal(raw, &br) == nil {
+				if br.DcrUsd > 0 {
+					rates["dcr"] = br.DcrUsd
+				}
+				if br.BtcUsd > 0 {
+					rates["btc"] = br.BtcUsd
+				}
+			}
+		}
+	}
+	json.NewEncoder(w).Encode(rates)
 }
