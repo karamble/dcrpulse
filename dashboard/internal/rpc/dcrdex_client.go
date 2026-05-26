@@ -64,3 +64,35 @@ func DcrdexClient() (*bisonw.Client, error) {
 	dcrdexClient = c
 	return c, nil
 }
+
+// The bisonw app password is held only in process memory for the unlocked
+// session and is never persisted to disk. It is cleared on lock and lost on
+// dashboard restart, after which the user must unlock again.
+var (
+	dcrdexAppPass    string
+	dcrdexAppPassSet bool
+	dcrdexSessionMu  sync.Mutex
+)
+
+// SetDcrdexAppPass records the app password for the unlocked session.
+func SetDcrdexAppPass(p string) {
+	dcrdexSessionMu.Lock()
+	defer dcrdexSessionMu.Unlock()
+	dcrdexAppPass = p
+	dcrdexAppPassSet = true
+}
+
+// DcrdexAppPass returns the in-memory app password and whether it is set.
+func DcrdexAppPass() (string, bool) {
+	dcrdexSessionMu.Lock()
+	defer dcrdexSessionMu.Unlock()
+	return dcrdexAppPass, dcrdexAppPassSet
+}
+
+// ClearDcrdexAppPass forgets the in-memory app password, locking the session.
+func ClearDcrdexAppPass() {
+	dcrdexSessionMu.Lock()
+	defer dcrdexSessionMu.Unlock()
+	dcrdexAppPass = ""
+	dcrdexAppPassSet = false
+}

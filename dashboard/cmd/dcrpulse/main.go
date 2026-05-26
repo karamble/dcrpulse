@@ -143,6 +143,9 @@ func main() {
 
 	// DCRDEX routes
 	api.HandleFunc("/dcrdex/status", handlers.GetDcrdexStatusHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/init", handlers.InitDcrdexHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/unlock", handlers.UnlockDcrdexHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/lock", handlers.LockDcrdexHandler).Methods("POST")
 
 	// Node/dcrd routes
 	api.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")
