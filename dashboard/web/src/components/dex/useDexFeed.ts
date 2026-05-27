@@ -259,6 +259,11 @@ export function useDexFeed(market: DexMarketRef | null, dur = '1h'): DexFeed {
     };
 
     return () => {
+      // Detach handlers before closing: otherwise the closing old socket's
+      // onclose/onerror fire after the new socket's onopen and clobber the
+      // connected/error state, leaving the indicator stuck on "connecting"
+      // after a market switch.
+      ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
       ws.close();
       wsRef.current = null;
     };
