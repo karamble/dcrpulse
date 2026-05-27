@@ -2,11 +2,13 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CandlestickChart } from 'lucide-react';
-import { dispose, init } from 'klinecharts';
+import { CandleType, dispose, init } from 'klinecharts';
 import type { DexMarket } from '../../services/dcrdexApi';
 import type { Candle } from './useDexFeed';
+import { DexChartToolbar, type DrawTool, type IndicatorMeta } from './DexChartToolbar';
+import { loadChartPrefs, saveChartPrefs, type DexChartType } from './dexChartPrefs';
 
 interface Props {
   market: DexMarket;
@@ -20,6 +22,26 @@ const UP = 'hsl(142 76% 40%)';
 const DOWN = 'hsl(0 72% 55%)';
 const GRID = 'hsl(217 32% 17%)';
 const AXIS = 'hsl(215 20% 55%)';
+
+// Toolbar indicators: MA/EMA/BOLL overlay the price (candle) pane; the rest get
+// their own sub-pane. The pane id is stable per indicator so it can be removed.
+const INDICATORS: readonly IndicatorMeta[] = [
+  { name: 'MA', label: 'MA', pane: 'main' },
+  { name: 'EMA', label: 'EMA', pane: 'main' },
+  { name: 'BOLL', label: 'BOLL', pane: 'main' },
+  { name: 'VOL', label: 'Volume', pane: 'sub' },
+  { name: 'MACD', label: 'MACD', pane: 'sub' },
+  { name: 'RSI', label: 'RSI', pane: 'sub' },
+  { name: 'KDJ', label: 'KDJ', pane: 'sub' },
+];
+const DRAW_TOOLS: readonly DrawTool[] = [
+  { name: 'segment', label: 'Trend line' },
+  { name: 'horizontalStraightLine', label: 'Horizontal line' },
+  { name: 'rayLine', label: 'Ray' },
+  { name: 'fibonacciLine', label: 'Fibonacci' },
+];
+const paneIdFor = (ind: IndicatorMeta) => (ind.pane === 'main' ? 'candle_pane' : `pane_${ind.name.toLowerCase()}`);
+const toCandleType = (t: DexChartType): CandleType => (t === 'area' ? CandleType.Area : CandleType.CandleSolid);
 
 type ChartApi = ReturnType<typeof init>;
 
@@ -37,6 +59,14 @@ export const DexChartPanel = ({ market, candles, durs, dur, onDur }: Props) => {
   const seriesKeyRef = useRef('');
   const firstTsRef = useRef(0);
   const lenRef = useRef(0);
+
+  // Toolbar selection, persisted across reloads.
+  const [chartType, setChartType] = useState<DexChartType>(() => loadChartPrefs().chartType);
+  const [active, setActive] = useState<Set<string>>(() => new Set(loadChartPrefs().indicators));
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const chartTypeRef = useRef(chartType);
+  chartTypeRef.current = chartType;
 
   // Price precision from the market's rate step (in conventional units).
   const rateConv = (1e8 / market.baseConvFactor) * market.quoteConvFactor;
@@ -76,7 +106,12 @@ export const DexChartPanel = ({ market, candles, durs, dur, onDur }: Props) => {
       },
       indicator: { tooltip: { text: { family } }, lastValueMark: { text: { family } } },
     });
-    chart.createIndicator('VOL', false, { id: 'pane_vol' });
+    // Apply the persisted chart type and indicators (default Volume).
+    chart.setStyles({ candle: { type: toCandleType(chartTypeRef.current) } });
+    activeRef.current.forEach((name) => {
+      const ind = INDICATORS.find((i) => i.name === name);
+      if (ind) chart.createIndicator(name, ind.pane === 'main', { id: paneIdFor(ind) });
+    });
     chartRef.current = chart;
     seriesKeyRef.current = '';
     firstTsRef.current = 0;
@@ -132,21 +167,59 @@ export const DexChartPanel = ({ market, candles, durs, dur, onDur }: Props) => {
     lenRef.current = list.length;
   }, [candles, dur, market.baseID, market.quoteID]);
 
+  const applyIndicator = (name: string, on: boolean) => {
+    const chart = chartRef.current;
+    const ind = INDICATORS.find((i) => i.name === name);
+    if (!chart || !ind) return;
+    if (on) chart.createIndicator(name, ind.pane === 'main', { id: paneIdFor(ind) });
+    else chart.removeIndicator(paneIdFor(ind), name);
+  };
+  const toggleIndicator = (name: string) => {
+    setActive((prev) => {
+      const next = new Set(prev);
+      const on = !next.has(name);
+      if (on) next.add(name);
+      else next.delete(name);
+      applyIndicator(name, on);
+      saveChartPrefs({ chartType: chartTypeRef.current, indicators: [...next] });
+      return next;
+    });
+  };
+  const changeChartType = (t: DexChartType) => {
+    setChartType(t);
+    chartRef.current?.setStyles({ candle: { type: toCandleType(t) } });
+    saveChartPrefs({ chartType: t, indicators: [...activeRef.current] });
+  };
+
   return (
     <div className="flex flex-col min-h-0 h-full">
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-border/50 text-xs overflow-x-auto">
-        {durs.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => onDur(t)}
-            className={`px-2 py-1 rounded font-medium transition-colors ${
-              dur === t ? 'bg-muted/40 text-foreground' : 'text-muted-foreground hover:text-foreground/80'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50 text-xs">
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {durs.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => onDur(t)}
+              className={`px-2 py-1 rounded font-medium transition-colors ${
+                dur === t ? 'bg-muted/40 text-foreground' : 'text-muted-foreground hover:text-foreground/80'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto shrink-0">
+          <DexChartToolbar
+            chartType={chartType}
+            onChartType={changeChartType}
+            indicators={INDICATORS}
+            active={active}
+            onToggle={toggleIndicator}
+            drawTools={DRAW_TOOLS}
+            onDraw={(name) => chartRef.current?.createOverlay(name)}
+            onClearDraw={() => chartRef.current?.removeOverlay()}
+          />
+        </div>
       </div>
       <div className="flex-1 min-h-0 relative">
         <div ref={containerRef} className="absolute inset-0" />
