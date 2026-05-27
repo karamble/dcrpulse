@@ -115,7 +115,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
       <DexStatsBar market={sel} stats={statsFor(sel)} connected={connected} preview={preview} />
       {!preview && live.error && <div className="text-xs text-warning px-1">{live.error}</div>}
 
-      <div className="grid grid-cols-1 gap-px rounded-xl overflow-hidden border border-border/60 bg-border/60 lg:grid-cols-[256px_1fr_330px] lg:grid-rows-[minmax(0,1fr)_340px] lg:h-[calc(100vh-14rem)]">
+      <div className="grid grid-cols-1 gap-px rounded-xl overflow-hidden border border-border/60 bg-border/60 lg:grid-cols-[256px_1fr_330px] lg:grid-rows-[minmax(0,1fr)_340px] lg:h-[calc(100vh-11rem)]">
         <section className="bg-card min-h-0 min-w-0 max-h-[44vh] lg:max-h-none lg:col-start-1 lg:row-start-1 lg:row-span-2">
           <DexMarketsPanel markets={markets} selected={sel} onSelect={setSel} statsFor={statsFor} />
         </section>

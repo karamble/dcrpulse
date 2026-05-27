@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useState } from 'react';
-import { CandlestickChart, ListOrdered, Settings, ShieldCheck, Wallet } from 'lucide-react';
+import { CandlestickChart, ListOrdered, Lock, Settings, ShieldCheck, Wallet } from 'lucide-react';
 import { DexMarketView } from './DexMarketView';
 import { DexWalletsPanel } from './DexWalletsPanel';
 import { DexOrdersHistoryPanel } from './DexOrdersHistoryPanel';
@@ -27,7 +27,7 @@ const tabs: { id: DexTab; label: string; Icon: typeof Wallet }[] = [
 // DexShell is the registered-account view. It hosts the DEX sub-pages behind a
 // local-state sub-nav so switching tabs does not unmount the trading grid via
 // the router. The trading terminal lives under the Trade tab.
-export const DexShell = ({ initialTab = 'trade' }: { initialTab?: DexTab }) => {
+export const DexShell = ({ initialTab = 'trade', onLock }: { initialTab?: DexTab; onLock?: () => void }) => {
   const [tab, setTab] = useState<DexTab>(initialTab);
 
   return (
@@ -51,8 +51,19 @@ export const DexShell = ({ initialTab = 'trade' }: { initialTab?: DexTab }) => {
             </button>
           );
         })}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
           <DexNotifications />
+          {onLock && (
+            <button
+              type="button"
+              onClick={onLock}
+              title="Lock"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-muted-foreground rounded-lg hover:text-foreground hover:bg-background/50 transition-colors"
+            >
+              <Lock className="h-4 w-4" />
+              Lock
+            </button>
+          )}
         </div>
       </nav>
 

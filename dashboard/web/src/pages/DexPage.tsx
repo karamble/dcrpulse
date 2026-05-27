@@ -77,5 +77,5 @@ export const DexPage = () => {
   }
 
   // stage === 'ready' — full-bleed unlocked view (registration or trading).
-  return <DexHome bisonwVersion={status.bisonwVersion} onLock={refresh} />;
+  return <DexHome onLock={refresh} />;
 };
