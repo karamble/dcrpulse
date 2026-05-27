@@ -12,24 +12,31 @@ import (
 	"dcrpulse/pkg/bisonw"
 )
 
-// DcrdexConfig holds the connection settings for the backend-only bisonw RPC
-// server (the dcrdex container).
+// DcrdexConfig holds the connection settings for the bisonw container: the RPC
+// server (HTTP calls) and the webserver (the /ws live feed, which carries both
+// the order book and the notification stream).
 type DcrdexConfig struct {
 	Host     string
 	Port     string
 	User     string
 	Pass     string
 	CertPath string
+	// WSPort and WSCertPath address bisonw's webserver, whose /ws endpoint is
+	// the only one that streams the notification feed. Its cert is a separate
+	// file (web.cert) from the RPC cert.
+	WSPort     string
+	WSCertPath string
 }
 
 var (
-	// DcrdexCfg is the resolved config. The client is built lazily because
-	// bisonw generates its RPC TLS cert on first run, so the file may not
-	// exist when the dashboard starts.
+	// DcrdexCfg is the resolved config. The clients are built lazily because
+	// bisonw generates its TLS certs on first run, so the files may not exist
+	// when the dashboard starts.
 	DcrdexCfg DcrdexConfig
 
-	dcrdexClient *bisonw.Client
-	dcrdexMu     sync.Mutex
+	dcrdexClient   *bisonw.Client
+	dcrdexWSClient *bisonw.Client
+	dcrdexMu       sync.Mutex
 )
 
 // InitDcrdexConfig records the bisonw RPC connection settings and resets any
@@ -39,6 +46,7 @@ func InitDcrdexConfig(cfg DcrdexConfig) {
 	defer dcrdexMu.Unlock()
 	DcrdexCfg = cfg
 	dcrdexClient = nil
+	dcrdexWSClient = nil
 }
 
 // DcrdexClient returns the bisonw RPC client, constructing it on first use once
@@ -62,6 +70,34 @@ func DcrdexClient() (*bisonw.Client, error) {
 		return nil, err
 	}
 	dcrdexClient = c
+	return c, nil
+}
+
+// DcrdexWSClient returns a client addressed to bisonw's webserver, whose /ws
+// endpoint streams the order book and the notification feed. It is used only to
+// derive the relay's dial info; the webserver /ws ignores auth, so the RPC
+// credentials are passed only to satisfy the client constructor. Built lazily
+// once web.cert is available.
+func DcrdexWSClient() (*bisonw.Client, error) {
+	dcrdexMu.Lock()
+	defer dcrdexMu.Unlock()
+	if dcrdexWSClient != nil {
+		return dcrdexWSClient, nil
+	}
+	if DcrdexCfg.Host == "" || DcrdexCfg.WSPort == "" {
+		return nil, fmt.Errorf("dcrdex: websocket not configured")
+	}
+	c, err := bisonw.New(bisonw.Config{
+		Addr:       net.JoinHostPort(DcrdexCfg.Host, DcrdexCfg.WSPort),
+		User:       DcrdexCfg.User,
+		Pass:       DcrdexCfg.Pass,
+		CertPath:   DcrdexCfg.WSCertPath,
+		ServerName: DcrdexCfg.Host,
+	})
+	if err != nil {
+		return nil, err
+	}
+	dcrdexWSClient = c
 	return c, nil
 }
 

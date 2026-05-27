@@ -842,15 +842,35 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // DcrdexWSHandler is a transparent WebSocket relay between the browser and
-// bisonw's /ws endpoint. The frontend speaks bisonw's msgjson protocol
-// (loadmarket, loadcandles, ...) and receives its order book and notification
-// pushes; the dashboard supplies the pinned TLS + auth to bisonw.
+// bisonw's RPC server /ws endpoint. The frontend speaks bisonw's msgjson
+// protocol (loadmarket, loadcandles, ...) and receives the order book feed; the
+// dashboard supplies the pinned TLS + auth to bisonw. The RPC server does not
+// stream notifications; those are relayed separately by DcrdexNotifyWSHandler.
 func DcrdexWSHandler(w http.ResponseWriter, r *http.Request) {
 	client, err := rpc.DcrdexClient()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	relayBisonwWS(w, r, client)
+}
+
+// DcrdexNotifyWSHandler relays bisonw's notification feed. The feed is broadcast
+// only over the webserver's /ws endpoint (the RPC server never streams it), so
+// this is the one place the dashboard uses the webserver socket: a bare
+// connection receives the global `notify` push without subscribing to a market.
+func DcrdexNotifyWSHandler(w http.ResponseWriter, r *http.Request) {
+	client, err := rpc.DcrdexWSClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	relayBisonwWS(w, r, client)
+}
+
+// relayBisonwWS upgrades the browser connection and pipes it bidirectionally to
+// the given bisonw client's /ws endpoint, supplying the pinned TLS + auth.
+func relayBisonwWS(w http.ResponseWriter, r *http.Request, client *bisonw.Client) {
 	tlsConfig, wsURL, basicAuth := client.WSDialInfo()
 
 	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}

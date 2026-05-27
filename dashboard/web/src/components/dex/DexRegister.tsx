@@ -12,6 +12,7 @@ import {
   type DexWalletInfo,
 } from '../../services/dcrdexApi';
 import { CoinIcon } from './CoinIcon';
+import { useDexRefreshOnNotes } from './DexLiveProvider';
 
 interface DexRegisterProps {
   host: string;
@@ -39,12 +40,14 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
       );
   }, [host]);
 
+  const refresh = () => getDexWallet().then(setWallet).catch(() => {});
   useEffect(() => {
-    const refresh = () => getDexWallet().then(setWallet).catch(() => {});
     refresh();
-    const id = window.setInterval(refresh, 8000);
+    const id = window.setInterval(refresh, 60000);
     return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useDexRefreshOnNotes(['balance', 'walletstate', 'walletsync'], refresh);
 
   if (loadErr) {
     return (

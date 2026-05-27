@@ -13,6 +13,7 @@ import {
 } from '../../services/dcrdexApi';
 import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
 import { DexOrderDetail } from './DexOrderDetail';
+import { useDexRefreshOnNotes } from './DexLiveProvider';
 
 const marketKey = (baseID: number, quoteID: number) => `${baseID}-${quoteID}`;
 
@@ -47,10 +48,11 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
   };
   useEffect(() => {
     refresh();
-    const id = window.setInterval(refresh, 10000);
+    const id = window.setInterval(refresh, 60000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host]);
+  useDexRefreshOnNotes(['order', 'match'], refresh);
 
   useEffect(() => {
     getDexConfig(host)

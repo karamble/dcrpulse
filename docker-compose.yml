@@ -146,12 +146,13 @@ services:
     command:
       - --appdata=/dex/.dexc
       - --rpc
-      - --noweb
       - --rpcaddr=0.0.0.0:5757
       - --rpcuser=${DCRDEX_RPC_USER:-dcrdex}
       - --rpcpass=${DCRDEX_RPC_PASS:-dcrdexpass}
       - --rpccert=/dex/.dexc/rpc.cert
       - --rpckey=/dex/.dexc/rpc.key
+      - --webaddr=0.0.0.0:5758
+      - --webtls
     volumes:
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/dex/.dexc
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
@@ -207,6 +208,8 @@ services:
       - DCRDEX_RPC_USER=${DCRDEX_RPC_USER:-dcrdex}
       - DCRDEX_RPC_PASS=${DCRDEX_RPC_PASS:-dcrdexpass}
       - DCRDEX_RPC_CERT=/app-data/dcrdex/rpc.cert
+      - DCRDEX_WS_PORT=5758
+      - DCRDEX_WS_CERT=/app-data/dcrdex/web.cert
     depends_on:
       dcrd:
         condition: service_healthy

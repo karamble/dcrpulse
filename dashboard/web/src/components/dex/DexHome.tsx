@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Lock, TrendingUp } from 'lucide-react';
 import { getDexExchanges, lockDex, type DexExchange } from '../../services/dcrdexApi';
+import { DexLiveProvider } from './DexLiveProvider';
 import { DexRegister } from './DexRegister';
 import { DexShell, type DexTab } from './DexShell';
 
@@ -39,6 +40,7 @@ export const DexHome = ({ bisonwVersion, onLock }: DexHomeProps) => {
     | undefined;
 
   return (
+    <DexLiveProvider>
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4 px-4">
         <div className="flex items-center gap-2">
@@ -71,5 +73,6 @@ export const DexHome = ({ bisonwVersion, onLock }: DexHomeProps) => {
         <DexRegister host={MAINNET_DEX} onRegistered={refresh} />
       )}
     </div>
+    </DexLiveProvider>
   );
 };

@@ -114,11 +114,13 @@ func main() {
 	// dcrdex container and mounted read-only here; the client is built lazily
 	// because bisonw generates the cert on first run.
 	rpc.InitDcrdexConfig(rpc.DcrdexConfig{
-		Host:     getEnv("DCRDEX_RPC_HOST", "dcrdex"),
-		Port:     getEnv("DCRDEX_RPC_PORT", "5757"),
-		User:     getEnv("DCRDEX_RPC_USER", "dcrdex"),
-		Pass:     getEnv("DCRDEX_RPC_PASS", "dcrdexpass"),
-		CertPath: getEnv("DCRDEX_RPC_CERT", "/app-data/dcrdex/rpc.cert"),
+		Host:       getEnv("DCRDEX_RPC_HOST", "dcrdex"),
+		Port:       getEnv("DCRDEX_RPC_PORT", "5757"),
+		User:       getEnv("DCRDEX_RPC_USER", "dcrdex"),
+		Pass:       getEnv("DCRDEX_RPC_PASS", "dcrdexpass"),
+		CertPath:   getEnv("DCRDEX_RPC_CERT", "/app-data/dcrdex/rpc.cert"),
+		WSPort:     getEnv("DCRDEX_WS_PORT", "5758"),
+		WSCertPath: getEnv("DCRDEX_WS_CERT", "/app-data/dcrdex/web.cert"),
 	})
 
 	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into
@@ -155,6 +157,7 @@ func main() {
 	api.HandleFunc("/dcrdex/dexconfig", handlers.GetDcrdexConfigHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/postbond", handlers.PostDcrdexBondHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/ws", handlers.DcrdexWSHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/notify", handlers.DcrdexNotifyWSHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/myorders", handlers.GetDcrdexMyOrdersHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/cancel", handlers.CancelDcrdexOrderHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/trade", handlers.PlaceDcrdexOrderHandler).Methods("POST")

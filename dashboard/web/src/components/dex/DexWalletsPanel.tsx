@@ -9,6 +9,7 @@ import { fmtAmt, fmtUsd, usdRateFor } from './dexFormat';
 import { CoinIcon } from './CoinIcon';
 import { DexWalletDetail } from './DexWalletDetail';
 import { DexAddWallet } from './DexAddWallet';
+import { useDexRefreshOnNotes } from './DexLiveProvider';
 
 const statusDot = (w: DexWalletState) => {
   if (w.disabled || !w.running) return 'bg-muted-foreground/40';
@@ -40,10 +41,11 @@ export const DexWalletsPanel = () => {
     getDexAssetCatalog().then(setCatalog).catch(() => {});
     getDexRates().then(setRates).catch(() => {});
     refresh();
-    const id = window.setInterval(refresh, 8000);
+    const id = window.setInterval(refresh, 60000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useDexRefreshOnNotes(['balance', 'walletstate'], refresh);
 
   if (err) {
     return (

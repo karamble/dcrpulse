@@ -6,9 +6,26 @@ import { useEffect, useMemo, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { getDexNotifications, type DexNote } from '../../services/dcrdexApi';
 import { loadNotifPrefs, shouldNotify } from './dexNotifPrefs';
+import { useDexRefreshOnNotes } from './DexLiveProvider';
 
 const SEEN_KEY = 'dexNotesSeen';
 const FIRED_KEY = 'dexNotesFired';
+
+// User-facing note types that warrant refetching the persisted list. High-rate
+// transient notes (spots, fiatrateupdate, epoch, walletsync) are excluded.
+const REFRESH_NOTE_TYPES = [
+  'order',
+  'match',
+  'bondpost',
+  'bondrefund',
+  'conn',
+  'security',
+  'dex_auth',
+  'feepayment',
+  'send',
+  'reputation',
+  'actionrequired',
+];
 
 const sevDot = (s: number) =>
   s >= 4 ? 'bg-destructive' : s === 3 ? 'bg-warning' : s === 2 ? 'bg-success' : 'bg-muted-foreground/50';
@@ -20,12 +37,14 @@ export const DexNotifications = () => {
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState<number>(() => Number(localStorage.getItem(SEEN_KEY) || 0));
 
+  const refresh = () => getDexNotifications(50).then(setNotes).catch(() => {});
   useEffect(() => {
-    const refresh = () => getDexNotifications(50).then(setNotes).catch(() => {});
     refresh();
-    const id = window.setInterval(refresh, 15000);
+    const id = window.setInterval(refresh, 60000);
     return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useDexRefreshOnNotes(REFRESH_NOTE_TYPES, refresh);
 
   // Fire desktop notifications for newly-arrived notes that match the user's
   // enabled categories. The first batch only seeds the cursor (no burst of OS

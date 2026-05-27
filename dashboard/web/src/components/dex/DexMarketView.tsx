@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, FlaskConical } from 'lucide-react';
 import { getDexConfig, getDexMyOrders, cancelDexOrder, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { useDexFeed, statsFromCandles, type MarketStats } from './useDexFeed';
+import { useDexRefreshOnNotes } from './DexLiveProvider';
 import { DexStatsBar } from './DexStatsBar';
 import { DexMarketsPanel } from './DexMarketsPanel';
 import { DexChartPanel } from './DexChartPanel';
@@ -55,10 +56,13 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   useEffect(() => {
     if (preview) return;
     refreshOrders();
-    const id = window.setInterval(refreshOrders, 10000);
+    // Live order/match notifications drive refreshes; the slow interval is only
+    // a backstop in case a note is missed or the notify socket is down.
+    const id = window.setInterval(refreshOrders, 60000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
+  useDexRefreshOnNotes(['order', 'match'], refreshOrders);
 
   const marketRef = sel
     ? { host: HOST, base: sel.baseID, quote: sel.quoteID, baseConvFactor: sel.baseConvFactor, quoteConvFactor: sel.quoteConvFactor }

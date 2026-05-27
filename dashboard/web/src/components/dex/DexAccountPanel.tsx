@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { getDexAccount, postDexBond, setDexBondOptions, type DexAccount } from '../../services/dcrdexApi';
+import { useDexRefreshOnNotes } from './DexLiveProvider';
 
 const Card = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <div className="p-4 rounded-xl bg-gradient-card border border-border/50 space-y-2">
@@ -58,10 +59,11 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
   };
   useEffect(() => {
     refresh();
-    const id = window.setInterval(refresh, 15000);
+    const id = window.setInterval(refresh, 60000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host]);
+  useDexRefreshOnNotes(['bondpost', 'bondrefund', 'reputation'], refresh);
 
   const saveBondOpts = async () => {
     setBusy(true);
