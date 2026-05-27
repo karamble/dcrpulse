@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useRef, useState } from 'react';
+import { convQty, convRate } from './dexFormat';
 
 // MiniOrder mirrors bisonw's order book entry (client/webserver site registry).
 export interface MiniOrder {
@@ -50,6 +51,38 @@ export interface MarketStats {
   low24: number;
   volBase: number;
   volQuote: number;
+}
+
+// MarketSpot mirrors decred.org/dcrdex/dex/msgjson.Spot: a market's current spot
+// price and 24h stats, maintained by bisonw for every market on a connected
+// server and pushed on the `spots` notification. rate/high24/low24 are atomic
+// message-rates; change24 is a fraction (0.05 == +5%).
+export interface MarketSpot {
+  rate: number;
+  change24: number;
+  vol24: number;
+  high24: number;
+  low24: number;
+  bookVolume: number;
+  stamp: number;
+  baseID: number;
+  quoteID: number;
+}
+
+// spotToStats converts a MarketSpot to the MarketStats shape the markets list
+// renders, using the market's conversion factors (same conversion as the candle
+// feed in useDexFeed).
+export function spotToStats(s: MarketSpot, m: { baseConvFactor: number; quoteConvFactor: number }): MarketStats {
+  const last = convRate(s.rate, m.baseConvFactor, m.quoteConvFactor);
+  return {
+    last,
+    change: s.change24 ? last - last / (1 + s.change24) : 0,
+    changePct: s.change24 * 100,
+    high24: convRate(s.high24, m.baseConvFactor, m.quoteConvFactor),
+    low24: convRate(s.low24, m.baseConvFactor, m.quoteConvFactor),
+    volBase: convQty(s.vol24, m.baseConvFactor),
+    volQuote: convQty(s.vol24, m.baseConvFactor) * last,
+  };
 }
 
 export interface DexMarketRef {

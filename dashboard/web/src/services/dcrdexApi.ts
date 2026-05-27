@@ -53,6 +53,18 @@ export const getDexExchanges = async (): Promise<Record<string, DexExchange>> =>
   return data || {};
 };
 
+// DexMarketSpot is a market's last/24h snapshot, present when the client is
+// connected to the server. Atomic values match msgjson.Spot; see MarketSpot.
+export interface DexMarketSpot {
+  rate: number;
+  change24: number;
+  vol24: number;
+  high24: number;
+  low24: number;
+  bookVolume: number;
+  stamp: number;
+}
+
 export interface DexMarket {
   base: string;
   quote: string;
@@ -62,6 +74,7 @@ export interface DexMarket {
   rateStep: number; // atomic message-rate
   baseConvFactor: number; // base atoms per conventional unit
   quoteConvFactor: number; // quote atoms per conventional unit
+  spot?: DexMarketSpot; // last/24h snapshot when connected
 }
 
 export interface PlaceOrderParams {

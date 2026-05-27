@@ -2,13 +2,25 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { ReactNode, createContext, useCallback, useContext, useEffect, useRef } from 'react';
+import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { DexNote } from '../../services/dcrdexApi';
+import type { MarketSpot } from './useDexFeed';
 
 type NoteListener = (note: DexNote) => void;
 
+// SpotsNote is the bisonw `spots` notification: a map of marketID -> spot. The
+// initial subPriceFeed sends the full map; later price_update notes carry one
+// market each, so listeners merge rather than replace.
+type SpotsNote = DexNote & { spots?: Record<string, MarketSpot> };
+
+// spotKey indexes spots by base/quote asset id, matching the markets list's
+// `${baseID}-${quoteID}` row keys (avoids symbol-casing mismatches).
+const spotKey = (s: MarketSpot) => `${s.baseID}-${s.quoteID}`;
+
 interface DexLiveCtx {
   addNoteListener: (fn: NoteListener) => () => void;
+  spots: Record<string, MarketSpot>;
+  seedSpots: (snapshot: Record<string, MarketSpot>) => void;
 }
 
 const Ctx = createContext<DexLiveCtx | null>(null);
@@ -22,6 +34,16 @@ const Ctx = createContext<DexLiveCtx | null>(null);
 // order book uses a separate connection on the RPC server (see useDexFeed).
 export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
   const listenersRef = useRef<Set<NoteListener>>(new Set());
+  // spots is the live last/24h price map for every market, fed by `spots` notes
+  // (and seeded from the config snapshot). Shared so the markets list renders
+  // all rows without subscribing to each market.
+  const [spots, setSpots] = useState<Record<string, MarketSpot>>({});
+
+  const seedSpots = useCallback((snapshot: Record<string, MarketSpot>) => {
+    if (!Object.keys(snapshot).length) return;
+    // Merge so live updates already received are not clobbered by the snapshot.
+    setSpots((prev) => ({ ...snapshot, ...prev }));
+  }, []);
 
   const addNoteListener = useCallback((fn: NoteListener) => {
     listenersRef.current.add(fn);
@@ -51,7 +73,20 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
         if (msg?.route !== 'notify' || !msg.payload) return;
-        const note = msg.payload as DexNote;
+        const note = msg.payload as SpotsNote;
+        if (note.type === 'spots' && note.spots) {
+          const incoming = Object.values(note.spots).filter((s): s is MarketSpot => !!s);
+          if (incoming.length) {
+            setSpots((prev) => {
+              const next = { ...prev };
+              incoming.forEach((s) => {
+                next[spotKey(s)] = s;
+              });
+              return next;
+            });
+          }
+          return;
+        }
         listenersRef.current.forEach((fn) => {
           try {
             fn(note);
@@ -86,8 +121,23 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  return <Ctx.Provider value={{ addNoteListener }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ addNoteListener, spots, seedSpots }}>{children}</Ctx.Provider>;
 };
+
+// useDexSpots returns the live last/24h price map for all markets, keyed by
+// `${baseID}-${quoteID}`. Empty outside the provider (e.g. the preview view).
+export function useDexSpots(): Record<string, MarketSpot> {
+  return useContext(Ctx)?.spots ?? EMPTY_SPOTS;
+}
+
+// useSeedDexSpots returns the callback that seeds the spots map from the config
+// snapshot. A no-op outside the provider.
+export function useSeedDexSpots(): (snapshot: Record<string, MarketSpot>) => void {
+  return useContext(Ctx)?.seedSpots ?? noop;
+}
+
+const EMPTY_SPOTS: Record<string, MarketSpot> = {};
+const noop = () => {};
 
 // useDexRefreshOnNotes calls refresh (debounced) whenever a notification whose
 // type is in `types` arrives on the shared notify socket. Bursts are coalesced

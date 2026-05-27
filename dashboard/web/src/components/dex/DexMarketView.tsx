@@ -5,8 +5,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, FlaskConical } from 'lucide-react';
 import { getDexConfig, getDexMyOrders, cancelDexOrder, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
-import { useDexFeed, statsFromCandles, type MarketStats } from './useDexFeed';
-import { useDexRefreshOnNotes } from './DexLiveProvider';
+import { useDexFeed, statsFromCandles, spotToStats, type MarketStats, type MarketSpot } from './useDexFeed';
+import { useDexRefreshOnNotes, useDexSpots, useSeedDexSpots } from './DexLiveProvider';
 import { DexStatsBar } from './DexStatsBar';
 import { DexMarketsPanel } from './DexMarketsPanel';
 import { DexChartPanel } from './DexChartPanel';
@@ -35,6 +35,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const pickSeq = useRef(0);
   const [pick, setPick] = useState<{ rate: number; qty: number; sell: boolean; seq: number } | null>(null);
   const onPick = (p: { rate: number; qty: number; sell: boolean }) => setPick({ ...p, seq: ++pickSeq.current });
+  const seedSpots = useSeedDexSpots();
 
   useEffect(() => {
     if (preview) return;
@@ -48,11 +49,18 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
           setDurs(c.candleDurs);
           setDur((d) => (c.candleDurs.includes(d) ? d : c.candleDurs[0]));
         }
+        // Seed the shared spots map so the markets list shows last/24h for every
+        // market immediately, before the first live `spots` update arrives.
+        const snap: Record<string, MarketSpot> = {};
+        c.markets.forEach((m) => {
+          if (m.spot) snap[`${m.baseID}-${m.quoteID}`] = { ...m.spot, baseID: m.baseID, quoteID: m.quoteID };
+        });
+        seedSpots(snap);
       })
       .catch((e: any) =>
         setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load markets'),
       );
-  }, [preview]);
+  }, [preview, seedSpots]);
 
   const refreshOrders = () => {
     if (preview) return;
@@ -84,7 +92,16 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const liveStats = useMemo(() => statsFromCandles(live.candles), [live.candles]);
   const orders = preview ? mockOrders : liveOrders;
   const sameSel = (m: DexMarket) => !!sel && m.baseID === sel.baseID && m.quoteID === sel.quoteID;
-  const statsFor = (m: DexMarket): MarketStats | null => (preview ? mockStats(m) : sameSel(m) ? liveStats : null);
+  const spots = useDexSpots();
+  const spotStats = (m: DexMarket): MarketStats | null => {
+    const s = spots[`${m.baseID}-${m.quoteID}`];
+    return s ? spotToStats(s, m) : null;
+  };
+  // Selected market keeps its richer candle-derived stats (live with
+  // candle_update); other rows use the streamed spot feed, falling back to the
+  // spot for the selected market before its candles load.
+  const statsFor = (m: DexMarket): MarketStats | null =>
+    preview ? mockStats(m) : sameSel(m) ? liveStats ?? spotStats(m) : spotStats(m);
 
   if (loadErr) {
     return (

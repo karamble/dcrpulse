@@ -660,14 +660,29 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 // Amounts are converted to DCR in the backend with dcrutil so the frontend does
 // not hardcode the atoms-per-coin ratio.
 type DexMarket struct {
-	Base            string `json:"base"`
-	Quote           string `json:"quote"`
-	BaseID          uint32 `json:"baseID"`
-	QuoteID         uint32 `json:"quoteID"`
-	LotSize         uint64 `json:"lotSize"`         // atomic
-	RateStep        uint64 `json:"rateStep"`        // atomic message-rate
-	BaseConvFactor  uint64 `json:"baseConvFactor"`  // base atoms per conventional unit
-	QuoteConvFactor uint64 `json:"quoteConvFactor"` // quote atoms per conventional unit
+	Base            string   `json:"base"`
+	Quote           string   `json:"quote"`
+	BaseID          uint32   `json:"baseID"`
+	QuoteID         uint32   `json:"quoteID"`
+	LotSize         uint64   `json:"lotSize"`         // atomic
+	RateStep        uint64   `json:"rateStep"`        // atomic message-rate
+	BaseConvFactor  uint64   `json:"baseConvFactor"`  // base atoms per conventional unit
+	QuoteConvFactor uint64   `json:"quoteConvFactor"` // quote atoms per conventional unit
+	Spot            *DexSpot `json:"spot,omitempty"`  // last/24h snapshot, when connected
+}
+
+// DexSpot is a market's current spot price plus 24h stats, mirroring
+// decred.org/dcrdex/dex/msgjson.Spot. Rate/High24/Low24 are atomic message-rates
+// and Change24 is a fraction (0.05 == +5%); the frontend converts to display
+// units with the market's conversion factors.
+type DexSpot struct {
+	Rate       uint64  `json:"rate"`
+	Change24   float64 `json:"change24"`
+	Vol24      uint64  `json:"vol24"`
+	High24     uint64  `json:"high24"`
+	Low24      uint64  `json:"low24"`
+	BookVolume uint64  `json:"bookVolume"`
+	Stamp      uint64  `json:"stamp"`
 }
 
 type DexConfigResponse struct {
@@ -736,12 +751,13 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 			Amt   uint64 `json:"amount"`
 		} `json:"bondAssets"`
 		Markets map[string]struct {
-			BaseSymbol  string `json:"basesymbol"`
-			QuoteSymbol string `json:"quotesymbol"`
-			BaseID      uint32 `json:"baseid"`
-			QuoteID     uint32 `json:"quoteid"`
-			LotSize     uint64 `json:"lotsize"`
-			RateStep    uint64 `json:"ratestep"`
+			BaseSymbol  string   `json:"basesymbol"`
+			QuoteSymbol string   `json:"quotesymbol"`
+			BaseID      uint32   `json:"baseid"`
+			QuoteID     uint32   `json:"quoteid"`
+			LotSize     uint64   `json:"lotsize"`
+			RateStep    uint64   `json:"ratestep"`
+			Spot        *DexSpot `json:"spot"`
 		} `json:"markets"`
 		Assets map[string]struct {
 			UnitInfo struct {
@@ -770,6 +786,7 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 			RateStep:        m.RateStep,
 			BaseConvFactor:  convFactor(m.BaseID),
 			QuoteConvFactor: convFactor(m.QuoteID),
+			Spot:            m.Spot,
 		})
 	}
 	sort.Slice(markets, func(i, j int) bool {

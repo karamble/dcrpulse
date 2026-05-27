@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { CoinIcon } from './CoinIcon';
 import { fmtPct, fmtPrice } from './dexFormat';
@@ -22,6 +22,72 @@ const sameMarket = (a: DexMarket, b: DexMarket | null) =>
 // quoteTab keys group markets by the quote asset's base symbol (USDC.POLYGON ->
 // USDC) so the tab row stays short.
 const quoteKey = (m: DexMarket) => m.quote.toUpperCase().split('.')[0];
+
+// MarketRow renders one market and flashes its Last price on change, mirroring
+// the order book's OrderRow: a keyed overlay remounts to replay the animation
+// (green on an uptick, red on a downtick). The first-populate value does not
+// flash, so seeding the whole list at once does not trigger a flash storm.
+const MarketRow = ({
+  m,
+  st,
+  active,
+  onSelect,
+}: {
+  m: DexMarket;
+  st: MarketStats | null;
+  active: boolean;
+  onSelect: (m: DexMarket) => void;
+}) => {
+  const up = (st?.changePct ?? 0) >= 0;
+  const [nonce, setNonce] = useState(0);
+  const [flashUp, setFlashUp] = useState(true);
+  const prevLast = useRef<number | null>(null);
+
+  useEffect(() => {
+    const cur = st?.last ?? null;
+    const first = prevLast.current === null;
+    if (!first && cur !== null && cur !== prevLast.current) {
+      setFlashUp(cur > (prevLast.current as number));
+      setNonce((n) => n + 1);
+    }
+    prevLast.current = cur;
+  }, [st?.last]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(m)}
+      className={`grid w-full grid-cols-[1.5fr_1fr_0.7fr] items-center px-4 py-2 text-sm text-left border-l-2 transition-colors ${
+        active ? 'bg-muted/20 border-primary' : 'border-transparent hover:bg-muted/10'
+      }`}
+    >
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="flex -space-x-1.5 shrink-0">
+          <CoinIcon symbol={m.base} className="h-4 w-4 ring-1 ring-card" />
+          <CoinIcon symbol={m.quote} className="h-4 w-4 ring-1 ring-card" />
+        </span>
+        <span className="truncate">
+          {m.base}
+          <span className="text-muted-foreground/50">/{m.quote.split('.')[0]}</span>
+        </span>
+      </span>
+      <span className="relative text-right font-mono tabular-nums text-xs">
+        {nonce > 0 && (
+          <span
+            key={nonce}
+            className={`absolute inset-0 pointer-events-none ${flashUp ? 'animate-flash-buy' : 'animate-flash-sell'}`}
+          />
+        )}
+        <span className="relative">{st ? fmtPrice(st.last, m.quote) : '–'}</span>
+      </span>
+      <span
+        className={`text-right font-mono tabular-nums text-xs ${st ? (up ? 'text-success' : 'text-destructive') : 'text-muted-foreground'}`}
+      >
+        {st ? fmtPct(st.changePct) : '–'}
+      </span>
+    </button>
+  );
+};
 
 export const DexMarketsPanel = ({ markets, selected, onSelect, statsFor }: Props) => {
   const [query, setQuery] = useState('');
@@ -78,38 +144,15 @@ export const DexMarketsPanel = ({ markets, selected, onSelect, statsFor }: Props
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {filtered.map((m) => {
-          const st = statsFor(m);
-          const active = sameMarket(m, selected);
-          const up = (st?.changePct ?? 0) >= 0;
-          return (
-            <button
-              key={`${m.baseID}-${m.quoteID}`}
-              type="button"
-              onClick={() => onSelect(m)}
-              className={`grid w-full grid-cols-[1.5fr_1fr_0.7fr] items-center px-4 py-2 text-sm text-left border-l-2 transition-colors ${
-                active ? 'bg-muted/20 border-primary' : 'border-transparent hover:bg-muted/10'
-              }`}
-            >
-              <span className="flex items-center gap-2 min-w-0">
-                <span className="flex -space-x-1.5 shrink-0">
-                  <CoinIcon symbol={m.base} className="h-4 w-4 ring-1 ring-card" />
-                  <CoinIcon symbol={m.quote} className="h-4 w-4 ring-1 ring-card" />
-                </span>
-                <span className="truncate">
-                  {m.base}
-                  <span className="text-muted-foreground/50">/{m.quote.split('.')[0]}</span>
-                </span>
-              </span>
-              <span className="text-right font-mono tabular-nums text-xs">
-                {st ? fmtPrice(st.last, m.quote) : '–'}
-              </span>
-              <span className={`text-right font-mono tabular-nums text-xs ${st ? (up ? 'text-success' : 'text-destructive') : 'text-muted-foreground'}`}>
-                {st ? fmtPct(st.changePct) : '–'}
-              </span>
-            </button>
-          );
-        })}
+        {filtered.map((m) => (
+          <MarketRow
+            key={`${m.baseID}-${m.quoteID}`}
+            m={m}
+            st={statsFor(m)}
+            active={sameMarket(m, selected)}
+            onSelect={onSelect}
+          />
+        ))}
         {filtered.length === 0 && (
           <div className="px-4 py-6 text-xs text-muted-foreground text-center">No markets</div>
         )}
