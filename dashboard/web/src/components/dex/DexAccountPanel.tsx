@@ -3,16 +3,56 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, ShieldCheck } from 'lucide-react';
 import { getDexAccount, postDexBond, setDexBondOptions, type DexAccount } from '../../services/dcrdexApi';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
 
-const Card = ({ title, children }: { title: string; children: React.ReactNode }) => (
+const Card = ({ title, children }: { title: React.ReactNode; children: React.ReactNode }) => (
   <div className="p-4 rounded-xl bg-gradient-card border border-border/50 space-y-2">
-    <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{title}</div>
+    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">{title}</div>
     {children}
   </div>
 );
+
+// TierInfo is an (i) popover explaining how the trading tier maps to limits.
+// bisonw does not expose a per-tier lot figure (the limit is tier x the
+// server's per-market parcel size), so this describes the relationship rather
+// than printing market-specific numbers.
+const TierInfo = () => {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        aria-label="About trading tiers and limits"
+        onClick={() => setOpen((o) => !o)}
+        className="text-muted-foreground/60 hover:text-foreground"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <>
+          <button type="button" aria-hidden className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-5 z-20 w-72 rounded-xl border border-border/60 bg-card p-3 shadow-lg text-[11px] font-normal normal-case leading-relaxed tracking-normal text-muted-foreground">
+            <p className="mb-1 font-medium text-foreground">Trading tier and limits</p>
+            <p>
+              Your tier sets how much you can trade at once. Each tier grants one parcel of capacity per
+              market, and a parcel is a fixed number of lots the server sets for that market.
+            </p>
+            <p className="mt-1.5">
+              So per market you can hold up to <span className="text-foreground">tier x parcel size</span> lots
+              across your active orders and settling matches; a higher tier raises the limit proportionally.
+            </p>
+            <p className="mt-1.5">
+              Tier comes from your posted bonds and is reduced by penalties, so the effective tier can be lower
+              than the bonded tier.
+            </p>
+          </div>
+        </>
+      )}
+    </span>
+  );
+};
 
 const Stat = ({ label, value }: { label: string; value: React.ReactNode }) => (
   <div className="flex items-center justify-between text-sm">
@@ -136,7 +176,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        <Card title="Trading tier">
+        <Card title={<><span>Trading tier</span><TierInfo /></>}>
           <div className="text-2xl font-mono tabular-nums">{acct.effectiveTier}</div>
           <Stat label="Target" value={acct.targetTier} />
           <Stat label="From bonds" value={acct.bondedTier} />
