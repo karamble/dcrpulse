@@ -120,7 +120,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
           <DexMarketsPanel markets={markets} selected={sel} onSelect={setSel} statsFor={statsFor} />
         </section>
 
-        <section className="bg-card min-h-0 min-w-0 h-[320px] lg:h-auto lg:col-start-2 lg:row-start-1">
+        <section className="bg-card min-h-0 min-w-0 h-[60vh] lg:h-auto lg:col-start-2 lg:row-start-1 lg:row-span-2">
           <DexChartPanel market={sel} candles={candles} durs={chartDurs} dur={dur} onDur={setDur} />
         </section>
 
@@ -128,21 +128,21 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
           <DexOrderBook market={sel} book={book} onPick={onPick} />
         </section>
 
-        <section className="bg-card min-h-0 min-w-0 h-[260px] lg:h-auto lg:col-start-2 lg:row-start-2">
-          <DexOrdersPanel orders={orders} preview={preview} onCancel={async (id) => {
-            try {
-              await cancelDexOrder(id);
-              refreshOrders();
-            } catch {
-              /* ignore */
-            }
-          }} />
-        </section>
-
         <section className="bg-card min-h-0 min-w-0 lg:col-start-3 lg:row-start-2">
           <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} onPlaced={refreshOrders} />
         </section>
       </div>
+
+      <section className="h-[280px] rounded-xl overflow-hidden border border-border/60 bg-card">
+        <DexOrdersPanel orders={orders} preview={preview} onCancel={async (id) => {
+          try {
+            await cancelDexOrder(id);
+            refreshOrders();
+          } catch {
+            /* ignore */
+          }
+        }} />
+      </section>
     </div>
   );
 };

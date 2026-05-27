@@ -1,10 +1,10 @@
-// Copyright (c) 2015-2025 The Decred developers
+// Copyright (c) 2015-2026 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useMemo } from 'react';
+import { useEffect, useRef } from 'react';
 import { CandlestickChart } from 'lucide-react';
-import { fmtPrice } from './dexFormat';
+import { dispose, init } from 'klinecharts';
 import type { DexMarket } from '../../services/dcrdexApi';
 import type { Candle } from './useDexFeed';
 
@@ -21,80 +21,116 @@ const DOWN = 'hsl(0 72% 55%)';
 const GRID = 'hsl(217 32% 17%)';
 const AXIS = 'hsl(215 20% 55%)';
 
-// DexChartPanel renders a lightweight SVG candlestick + volume chart. No
-// external charting dependency: a single scalable <svg> keeps the trading view
-// fast to paint. Candle data and the available bin sizes (the DEX server's
-// candleDurs) are supplied by the caller; selecting one re-requests the feed.
+type ChartApi = ReturnType<typeof init>;
+
+// DexChartPanel renders an interactive candlestick + volume chart with
+// KLineCharts (v9): crosshair with a cursor-following O/H/L/C legend, wheel zoom
+// and drag pan, and live last-bar updates from the candle feed. KLineCharts is a
+// self-contained canvas renderer (no network/telemetry); its built-in indicators
+// and drawing tools are available for a future toolbar. Candle data and the
+// available bin sizes (the DEX server's candleDurs) are supplied by the caller;
+// selecting one re-requests the feed.
 export const DexChartPanel = ({ market, candles, durs, dur, onDur }: Props) => {
-  const svg = useMemo(() => {
-    if (candles.length === 0) return null;
-    const W = 1000;
-    const H = 440;
-    const padR = 60;
-    const padT = 10;
-    const padB = 6;
-    const cw = W - padR;
-    const ch = H - padT - padB;
-    const priceH = ch * 0.78;
-    const volTop = padT + ch * 0.84;
-    const volBot = padT + ch;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<ChartApi>(null);
+  // State for deciding full-reload vs last-bar update (see the data effect).
+  const seriesKeyRef = useRef('');
+  const firstTsRef = useRef(0);
+  const lenRef = useRef(0);
 
-    const N = candles.length;
-    const highs = candles.map((c) => c.high);
-    const lows = candles.map((c) => c.low);
-    const pMax = Math.max(...highs);
-    const pMin = Math.min(...lows);
-    const pad = (pMax - pMin) * 0.06 || pMax * 0.01;
-    const hi = pMax + pad;
-    const lo = pMin - pad;
-    const vMax = Math.max(...candles.map((c) => c.volume));
+  // Price precision from the market's rate step (in conventional units).
+  const rateConv = (1e8 / market.baseConvFactor) * market.quoteConvFactor;
+  const stepConv = market.rateStep > 0 ? market.rateStep / rateConv : 0;
+  const pricePrecision = stepConv > 0 ? Math.min(8, Math.max(2, Math.ceil(-Math.log10(stepConv)))) : 8;
 
-    const xStep = cw / N;
-    const bodyW = xStep * 0.6;
-    const yP = (p: number) => padT + (1 - (p - lo) / (hi - lo)) * priceH;
-    const yV = (v: number) => volBot - (v / vMax) * (volBot - volTop);
-
-    const grid: JSX.Element[] = [];
-    for (let i = 0; i <= 4; i++) {
-      const y = padT + (priceH * i) / 4;
-      const lbl = hi - ((hi - lo) * i) / 4;
-      grid.push(<line key={`g${i}`} x1={0} y1={y} x2={cw} y2={y} stroke={GRID} strokeWidth={1} strokeDasharray="2 4" />);
-      grid.push(
-        <text key={`gt${i}`} x={cw + 5} y={y + 3.5} fontSize={11} fontFamily="monospace" fill={AXIS}>
-          {fmtPrice(lbl, market.quote)}
-        </text>,
-      );
-    }
-
-    const bars: JSX.Element[] = [];
-    candles.forEach((c, i) => {
-      const x = i * xStep + xStep / 2;
-      const up = c.close >= c.open;
-      const color = up ? UP : DOWN;
-      const bodyTop = yP(Math.max(c.open, c.close));
-      const bodyH = Math.max(1, Math.abs(yP(c.open) - yP(c.close)));
-      bars.push(<line key={`w${i}`} x1={x} y1={yP(c.high)} x2={x} y2={yP(c.low)} stroke={color} strokeWidth={1} />);
-      bars.push(<rect key={`b${i}`} x={x - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} fill={color} />);
-      bars.push(<rect key={`v${i}`} x={x - bodyW / 2} y={yV(c.volume)} width={bodyW} height={volBot - yV(c.volume)} fill={color} opacity={0.3} />);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const chart = init(el);
+    if (!chart) return;
+    // KLineCharts draws labels on a canvas with its own default font; match the
+    // page font (Inter) by applying the body's resolved family to every text style.
+    const family = getComputedStyle(document.body).fontFamily || 'Inter, system-ui, sans-serif';
+    chart.setStyles({
+      grid: { horizontal: { color: GRID }, vertical: { color: GRID } },
+      candle: {
+        bar: {
+          upColor: UP,
+          downColor: DOWN,
+          noChangeColor: AXIS,
+          upBorderColor: UP,
+          downBorderColor: DOWN,
+          noChangeBorderColor: AXIS,
+          upWickColor: UP,
+          downWickColor: DOWN,
+          noChangeWickColor: AXIS,
+        },
+        priceMark: { high: { textFamily: family }, low: { textFamily: family }, last: { text: { family } } },
+        tooltip: { text: { family } },
+      },
+      xAxis: { axisLine: { color: GRID }, tickLine: { color: GRID }, tickText: { color: AXIS, family } },
+      yAxis: { axisLine: { color: GRID }, tickLine: { color: GRID }, tickText: { color: AXIS, family } },
+      crosshair: {
+        horizontal: { line: { color: AXIS }, text: { family } },
+        vertical: { line: { color: AXIS }, text: { family } },
+      },
+      indicator: { tooltip: { text: { family } }, lastValueMark: { text: { family } } },
     });
+    chart.createIndicator('VOL', false, { id: 'pane_vol' });
+    chartRef.current = chart;
+    seriesKeyRef.current = '';
+    firstTsRef.current = 0;
+    lenRef.current = 0;
 
-    const last = candles[N - 1].close;
-    const lastY = yP(last);
+    // KLineCharts does not auto-resize; drive it from the container size.
+    const ro = new ResizeObserver(() => chart.resize());
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      dispose(el);
+      chartRef.current = null;
+    };
+  }, []);
 
-    return (
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-full">
-        {grid}
-        {bars}
-        <line x1={0} y1={lastY} x2={cw} y2={lastY} stroke={UP} strokeWidth={1} strokeDasharray="3 3" opacity={0.8} />
-        <rect x={cw} y={lastY - 9} width={padR - 2} height={18} fill={UP} rx={2} />
-        <text x={cw + 4} y={lastY + 4} fontSize={11} fontFamily="monospace" fontWeight={600} fill="hsl(222 47% 8%)">
-          {fmtPrice(last, market.quote)}
-        </text>
-      </svg>
-    );
-  }, [candles, market.quote]);
+  useEffect(() => {
+    chartRef.current?.setPriceVolumePrecision(pricePrecision, 2);
+  }, [pricePrecision]);
 
-  const lastCandle = candles[candles.length - 1];
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    // Dedupe by bar time (keep latest) and sort ascending.
+    const byTime = new Map<number, Candle>();
+    for (const c of candles) byTime.set(c.startStamp, c);
+    const list = [...byTime.values()]
+      .sort((a, b) => a.startStamp - b.startStamp)
+      .map((c) => ({ timestamp: c.startStamp, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }));
+
+    // The feed delivers full snapshots (initial load, timeframe/market switch,
+    // reconnect), not just last-bar appends. Replace the dataset for any of
+    // those (key change, different first bar, or a size jump); only a same-series
+    // in-place update or single append goes through updateData, which preserves
+    // the current zoom/pan and never receives an out-of-order bar.
+    const key = `${market.baseID}-${market.quoteID}-${dur}`;
+    const firstTs = list.length ? list[0].timestamp : 0;
+    const fresh =
+      key !== seriesKeyRef.current ||
+      firstTs !== firstTsRef.current ||
+      list.length < lenRef.current ||
+      list.length > lenRef.current + 1;
+
+    if (list.length === 0) {
+      chart.applyNewData([]);
+    } else if (fresh) {
+      chart.applyNewData(list);
+    } else {
+      chart.updateData(list[list.length - 1]);
+    }
+    seriesKeyRef.current = key;
+    firstTsRef.current = firstTs;
+    lenRef.current = list.length;
+  }, [candles, dur, market.baseID, market.quoteID]);
 
   return (
     <div className="flex flex-col min-h-0 h-full">
@@ -111,18 +147,11 @@ export const DexChartPanel = ({ market, candles, durs, dur, onDur }: Props) => {
             {t}
           </button>
         ))}
-        {lastCandle && (
-          <span className="ml-auto flex items-center gap-3 font-mono tabular-nums text-[11px] whitespace-nowrap">
-            <span><span className="text-muted-foreground/60 mr-1">O</span>{fmtPrice(lastCandle.open, market.quote)}</span>
-            <span><span className="text-muted-foreground/60 mr-1">H</span><span className="text-success">{fmtPrice(lastCandle.high, market.quote)}</span></span>
-            <span><span className="text-muted-foreground/60 mr-1">L</span><span className="text-destructive">{fmtPrice(lastCandle.low, market.quote)}</span></span>
-            <span><span className="text-muted-foreground/60 mr-1">C</span>{fmtPrice(lastCandle.close, market.quote)}</span>
-          </span>
-        )}
       </div>
       <div className="flex-1 min-h-0 relative">
-        {svg ?? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+        <div ref={containerRef} className="absolute inset-0" />
+        {candles.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground pointer-events-none">
             <CandlestickChart className="h-8 w-8 opacity-40" />
             <span className="text-sm">No candle data yet</span>
             <span className="text-xs text-muted-foreground/60">Waiting for the DEX candle feed</span>
