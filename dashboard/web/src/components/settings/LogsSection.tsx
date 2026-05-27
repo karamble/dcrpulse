@@ -11,6 +11,7 @@ const components: { value: LogComponent; label: string }[] = [
   { value: 'dcrd', label: 'dcrd' },
   { value: 'dcrlnd', label: 'dcrlnd' },
   { value: 'brclientd', label: 'brclientd' },
+  { value: 'dcrdex', label: 'dcrdex' },
 ];
 
 const lineOptions = [200, 500, 1000, 2000];

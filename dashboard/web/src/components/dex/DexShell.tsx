@@ -3,23 +3,25 @@
 // license that can be found in the LICENSE file.
 
 import { useState } from 'react';
-import { CandlestickChart, ListOrdered, ShieldCheck, Wallet } from 'lucide-react';
+import { CandlestickChart, ListOrdered, Settings, ShieldCheck, Wallet } from 'lucide-react';
 import { DexMarketView } from './DexMarketView';
 import { DexWalletsPanel } from './DexWalletsPanel';
 import { DexOrdersHistoryPanel } from './DexOrdersHistoryPanel';
 import { DexAccountPanel } from './DexAccountPanel';
+import { DexSettingsPanel } from './DexSettingsPanel';
 import { DexNotifications } from './DexNotifications';
 
 // The canonical mainnet DEX server.
 const HOST = 'dex.decred.org:7232';
 
-export type DexTab = 'trade' | 'wallets' | 'orders' | 'account';
+export type DexTab = 'trade' | 'wallets' | 'orders' | 'account' | 'settings';
 
 const tabs: { id: DexTab; label: string; Icon: typeof Wallet }[] = [
   { id: 'trade', label: 'Trade', Icon: CandlestickChart },
   { id: 'wallets', label: 'Wallets', Icon: Wallet },
   { id: 'orders', label: 'Orders', Icon: ListOrdered },
   { id: 'account', label: 'Account', Icon: ShieldCheck },
+  { id: 'settings', label: 'Settings', Icon: Settings },
 ];
 
 // DexShell is the registered-account view. It hosts the DEX sub-pages behind a
@@ -58,6 +60,7 @@ export const DexShell = ({ initialTab = 'trade' }: { initialTab?: DexTab }) => {
       {tab === 'wallets' && <DexWalletsPanel />}
       {tab === 'orders' && <DexOrdersHistoryPanel host={HOST} />}
       {tab === 'account' && <DexAccountPanel host={HOST} />}
+      {tab === 'settings' && <DexSettingsPanel />}
     </div>
   );
 };

@@ -469,6 +469,12 @@ type DexPendingBond struct {
 	Confs   uint32 `json:"confs"`
 }
 
+// DexBondAsset is an asset a DEX accepts for bonds.
+type DexBondAsset struct {
+	Symbol  string `json:"symbol"`
+	AssetID uint32 `json:"assetID"`
+}
+
 // DexAccount is the per-server account view (tier, reputation, bonds) for the
 // Account tab. Bond amounts are converted to DCR in the backend.
 type DexAccount struct {
@@ -485,12 +491,16 @@ type DexAccount struct {
 	Score            int32            `json:"score"`
 	PenaltyThreshold uint32           `json:"penaltyThreshold"`
 	MaxScore         uint32           `json:"maxScore"`
-	BondAssetID      uint32           `json:"bondAssetID"`
-	BondExpiryDays   int              `json:"bondExpiryDays"`
-	BondPerTierAtoms uint64           `json:"bondPerTierAtoms"`
-	BondPerTierDcr   float64          `json:"bondPerTierDcr"`
-	AutoRenew        bool             `json:"autoRenew"`
-	PendingBonds     []DexPendingBond `json:"pendingBonds"`
+	BondAssetID        uint32           `json:"bondAssetID"`
+	BondExpiryDays     int              `json:"bondExpiryDays"`
+	BondPerTierAtoms   uint64           `json:"bondPerTierAtoms"`
+	BondPerTierDcr     float64          `json:"bondPerTierDcr"`
+	MaxBondedDcr       float64          `json:"maxBondedDcr"`
+	PenaltyComps       uint16           `json:"penaltyComps"`
+	BondsPendingRefund int              `json:"bondsPendingRefund"`
+	BondAssets         []DexBondAsset   `json:"bondAssets"`
+	AutoRenew          bool             `json:"autoRenew"`
+	PendingBonds       []DexPendingBond `json:"pendingBonds"`
 }
 
 // GetDcrdexAccountHandler returns the account state (tier, reputation, bonds)
@@ -524,6 +534,7 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		PenaltyThreshold uint32 `json:"penaltyThreshold"`
 		MaxScore         uint32 `json:"maxScore"`
 		BondAssets       map[string]struct {
+			ID  uint32 `json:"id"`
 			Amt uint64 `json:"amount"`
 		} `json:"bondAssets"`
 		Auth struct {
@@ -532,9 +543,12 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 				Penalties  uint16 `json:"penalties"`
 				Score      int32  `json:"score"`
 			} `json:"rep"`
-			BondAssetID   uint32 `json:"bondAssetID"`
-			TargetTier    uint64 `json:"targetTier"`
-			EffectiveTier int64  `json:"effectiveTier"`
+			BondAssetID   uint32     `json:"bondAssetID"`
+			TargetTier    uint64     `json:"targetTier"`
+			EffectiveTier int64      `json:"effectiveTier"`
+			MaxBondedAmt  uint64     `json:"maxBondedAmt"`
+			PenaltyComps  uint16     `json:"penaltyComps"`
+			ExpiredBonds  []struct{} `json:"expiredBonds"`
 			PendingBonds  []struct {
 				Symbol  string `json:"symbol"`
 				AssetID uint32 `json:"assetID"`
@@ -555,36 +569,50 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 	for _, b := range xc.Auth.PendingBonds {
 		pending = append(pending, DexPendingBond{Symbol: strings.ToUpper(b.Symbol), AssetID: b.AssetID, Confs: b.Confs})
 	}
+	bondAssets := make([]DexBondAsset, 0, len(xc.BondAssets))
+	for sym, ba := range xc.BondAssets {
+		bondAssets = append(bondAssets, DexBondAsset{Symbol: strings.ToUpper(sym), AssetID: ba.ID})
+	}
+	sort.Slice(bondAssets, func(i, j int) bool { return bondAssets[i].Symbol < bondAssets[j].Symbol })
 	json.NewEncoder(w).Encode(DexAccount{
-		Host:             host,
-		AcctID:           xc.AcctID,
-		Registered:       xc.AcctID != "",
-		ConnectionStatus: xc.ConnectionStatus,
-		ViewOnly:         xc.ViewOnly,
-		Disabled:         xc.Disabled,
-		TargetTier:       xc.Auth.TargetTier,
-		EffectiveTier:    xc.Auth.EffectiveTier,
-		BondedTier:       xc.Auth.Rep.BondedTier,
-		Penalties:        xc.Auth.Rep.Penalties,
-		Score:            xc.Auth.Rep.Score,
-		PenaltyThreshold: xc.PenaltyThreshold,
-		MaxScore:         xc.MaxScore,
-		BondAssetID:      xc.Auth.BondAssetID,
-		BondExpiryDays:   int(xc.BondExpiry / 86400),
-		BondPerTierAtoms: xc.BondAssets["dcr"].Amt,
-		BondPerTierDcr:   dcrutil.Amount(xc.BondAssets["dcr"].Amt).ToCoin(),
-		AutoRenew:        xc.Auth.TargetTier > 0,
-		PendingBonds:     pending,
+		Host:               host,
+		AcctID:             xc.AcctID,
+		Registered:         xc.AcctID != "",
+		ConnectionStatus:   xc.ConnectionStatus,
+		ViewOnly:           xc.ViewOnly,
+		Disabled:           xc.Disabled,
+		TargetTier:         xc.Auth.TargetTier,
+		EffectiveTier:      xc.Auth.EffectiveTier,
+		BondedTier:         xc.Auth.Rep.BondedTier,
+		Penalties:          xc.Auth.Rep.Penalties,
+		Score:              xc.Auth.Rep.Score,
+		PenaltyThreshold:   xc.PenaltyThreshold,
+		MaxScore:           xc.MaxScore,
+		BondAssetID:        xc.Auth.BondAssetID,
+		BondExpiryDays:     int(xc.BondExpiry / 86400),
+		BondPerTierAtoms:   xc.BondAssets["dcr"].Amt,
+		BondPerTierDcr:     dcrutil.Amount(xc.BondAssets["dcr"].Amt).ToCoin(),
+		MaxBondedDcr:       atomsToConv(xc.Auth.MaxBondedAmt, dexassets.ConvFactor(xc.Auth.BondAssetID)),
+		PenaltyComps:       xc.Auth.PenaltyComps,
+		BondsPendingRefund: len(xc.Auth.ExpiredBonds),
+		BondAssets:         bondAssets,
+		AutoRenew:          xc.Auth.TargetTier > 0,
+		PendingBonds:       pending,
 	})
 }
 
-// SetDcrdexBondOptionsHandler updates a DEX account's auto-bond target tier.
-// targetTier 0 disables auto-renewal. Requires the DEX session to be unlocked.
+// SetDcrdexBondOptionsHandler updates a DEX account's auto-bond options. Any
+// field left nil is unchanged; targetTier 0 disables auto-renewal. maxBondedDcr
+// is conventional and converted to atoms here (0 resets to the server default).
+// Requires the DEX session to be unlocked.
 func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req struct {
-		Host       string `json:"host"`
-		TargetTier uint64 `json:"targetTier"`
+		Host         string   `json:"host"`
+		TargetTier   *int     `json:"targetTier"`
+		MaxBondedDcr *float64 `json:"maxBondedDcr"`
+		BondAssetID  *int     `json:"bondAssetID"`
+		PenaltyComps *int     `json:"penaltyComps"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" {
 		http.Error(w, "host is required", http.StatusBadRequest)
@@ -599,9 +627,29 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+
+	// -1 leaves an option unchanged (see bisonw.SetBondOptions).
+	targetTier, maxBonded, bondAsset, penaltyComps := -1, -1, -1, -1
+	if req.TargetTier != nil {
+		targetTier = *req.TargetTier
+	}
+	if req.BondAssetID != nil {
+		bondAsset = *req.BondAssetID
+	}
+	if req.PenaltyComps != nil {
+		penaltyComps = *req.PenaltyComps
+	}
+	if req.MaxBondedDcr != nil {
+		assetID := bisonw.AssetDCR
+		if bondAsset >= 0 {
+			assetID = uint32(bondAsset)
+		}
+		maxBonded = int(convToAtoms(*req.MaxBondedDcr, dexassets.ConvFactor(assetID)))
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := client.SetBondOptions(ctx, req.Host, req.TargetTier); err != nil {
+	if err := client.SetBondOptions(ctx, req.Host, targetTier, maxBonded, bondAsset, penaltyComps); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -635,6 +683,24 @@ type DexConfigResponse struct {
 	CandleDurs       []string    `json:"candleDurs"`
 }
 
+// dexConfigRaw returns a DEX server's config JSON for host. For a host the
+// client is already connected to (registered/known), it returns the cached
+// entry from exchanges() so NO new DEX-server connection is opened; only an
+// unknown host (the pre-registration preview) triggers a one-shot getdexconfig
+// fetch. This mirrors the reference client, which fetches config once and reuses
+// its single persistent connection.
+func dexConfigRaw(ctx context.Context, client *bisonw.Client, host string) (json.RawMessage, error) {
+	if raw, err := client.Exchanges(ctx); err == nil {
+		var xcs map[string]json.RawMessage
+		if json.Unmarshal(raw, &xcs) == nil {
+			if hostRaw, ok := xcs[host]; ok {
+				return hostRaw, nil
+			}
+		}
+	}
+	return client.GetDEXConfig(ctx, host, "")
+}
+
 // GetDcrdexConfigHandler fetches a DEX server's public configuration (markets,
 // bond requirements) for the host given in the `host` query parameter, with the
 // DCR bond amount converted to coins. Read-only; populates the registration screen.
@@ -652,7 +718,7 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
-	raw, err := client.GetDEXConfig(ctx, host, "")
+	raw, err := dexConfigRaw(ctx, client, host)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -664,6 +730,7 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		ConnectionStatus int      `json:"connectionStatus"`
 		BondExpiry       uint64   `json:"bondExpiry"`
 		BinSizes         []string `json:"binSizes"`
+		CandleDurs       []string `json:"candleDurs"`
 		BondAssets       map[string]struct {
 			Confs uint32 `json:"confs"`
 			Amt   uint64 `json:"amount"`
@@ -711,8 +778,18 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return markets[i].Quote < markets[j].Quote
 	})
+	// getdexconfig reports bin sizes as "binSizes"; the cached exchanges() entry
+	// uses "candleDurs".
+	durs := xc.CandleDurs
+	if len(durs) == 0 {
+		durs = xc.BinSizes
+	}
+	cfgHost := xc.Host
+	if cfgHost == "" {
+		cfgHost = host
+	}
 	json.NewEncoder(w).Encode(DexConfigResponse{
-		Host:             xc.Host,
+		Host:             cfgHost,
 		ConnectionStatus: xc.ConnectionStatus,
 		Registered:       xc.AcctID != "",
 		BondExpiryDays:   int(xc.BondExpiry / 86400),
@@ -721,7 +798,7 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		BondPerTierDcr:   dcrutil.Amount(dcr.Amt).ToCoin(),
 		MarketCount:      len(markets),
 		Markets:          markets,
-		CandleDurs:       xc.BinSizes,
+		CandleDurs:       durs,
 	})
 }
 
@@ -1346,4 +1423,31 @@ func GetDcrdexRatesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	json.NewEncoder(w).Encode(rates)
+}
+
+// ExportDcrdexSeedHandler returns the bisonw application seed for backup. The
+// app password must be re-entered in the request body (not taken from the
+// session) for this sensitive action. The seed is never persisted.
+func ExportDcrdexSeedHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AppPass string `json:"appPass"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.AppPass == "" {
+		http.Error(w, "appPass is required", http.StatusBadRequest)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	seed, err := client.AppSeed(ctx, req.AppPass)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"seed": seed})
 }

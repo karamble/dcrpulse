@@ -28,10 +28,13 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Auto-renew form state, seeded from the account once loaded.
+  // Bond-options form state, seeded from the account once loaded.
   const [seeded, setSeeded] = useState(false);
   const [autoRenew, setAutoRenew] = useState(false);
   const [targetTier, setTargetTier] = useState(1);
+  const [maxBonded, setMaxBonded] = useState('');
+  const [penaltyComps, setPenaltyComps] = useState('');
+  const [bondAssetID, setBondAssetID] = useState(0);
 
   // Post-bond form state.
   const [postTiers, setPostTiers] = useState(1);
@@ -45,6 +48,9 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
         if (!seeded) {
           setAutoRenew(a.autoRenew);
           setTargetTier(a.targetTier > 0 ? a.targetTier : 1);
+          setMaxBonded(a.maxBondedDcr > 0 ? String(a.maxBondedDcr) : '');
+          setPenaltyComps(a.penaltyComps > 0 ? String(a.penaltyComps) : '');
+          setBondAssetID(a.bondAssetID || a.bondAssets[0]?.assetID || 0);
           setSeeded(true);
         }
       })
@@ -61,7 +67,12 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
     setBusy(true);
     setActionErr(null);
     try {
-      await setDexBondOptions(host, autoRenew ? Math.max(1, targetTier) : 0);
+      await setDexBondOptions(host, {
+        targetTier: autoRenew ? Math.max(1, targetTier) : 0,
+        bondAssetID: bondAssetID || undefined,
+        maxBondedDcr: maxBonded.trim() === '' ? undefined : Math.max(0, parseFloat(maxBonded) || 0),
+        penaltyComps: penaltyComps.trim() === '' ? undefined : Math.max(0, parseInt(penaltyComps, 10) || 0),
+      });
       refresh();
     } catch (e: any) {
       setActionErr(e?.response?.data || e?.message || 'Failed to update bond options');
@@ -139,6 +150,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
           <Stat label="Per tier" value={`${acct.bondPerTierDcr.toFixed(2)} DCR`} />
           <Stat label="Expiry" value={`${acct.bondExpiryDays} days`} />
           <Stat label="Pending" value={acct.pendingBonds.length} />
+          <Stat label="Pending refund" value={acct.bondsPendingRefund} />
         </Card>
       </div>
 
@@ -158,12 +170,12 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card title="Auto-renew bonds">
+        <Card title="Bond options">
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} />
-            Maintain trading tier automatically
+            Auto-renew bonds to maintain the trading tier
           </label>
-          <div className="flex items-end gap-2 pt-1">
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <div>
               <div className="text-xs text-muted-foreground mb-1">Target tier</div>
               <input
@@ -172,21 +184,59 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
                 disabled={!autoRenew}
                 value={targetTier}
                 onChange={(e) => setTargetTier(Math.max(1, parseInt(e.target.value || '1', 10)))}
-                className="w-24 px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
               />
             </div>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={saveBondOpts}
-              className="px-4 py-2 border border-border rounded-lg hover:bg-background/50 transition-colors disabled:opacity-50"
-            >
-              Save
-            </button>
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Max bonded (DCR)</div>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="default"
+                value={maxBonded}
+                onChange={(e) => setMaxBonded(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Penalty compensation</div>
+              <input
+                type="number"
+                min={0}
+                placeholder="0"
+                value={penaltyComps}
+                onChange={(e) => setPenaltyComps(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Bond asset</div>
+              <select
+                value={bondAssetID}
+                onChange={(e) => setBondAssetID(parseInt(e.target.value, 10))}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary"
+              >
+                {acct.bondAssets.map((a) => (
+                  <option key={a.assetID} value={a.assetID}>
+                    {a.symbol}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={saveBondOpts}
+            className="w-full px-4 py-2 border border-border rounded-lg hover:bg-background/50 transition-colors disabled:opacity-50"
+          >
+            Save bond options
+          </button>
           <p className="text-xs text-muted-foreground">
-            When on, bonds are re-posted to keep the target tier as they expire. When off, bonds are
-            not renewed and the tier decays as they expire.
+            Auto-renew re-posts bonds to keep the target tier as they expire. Max bonded caps locked
+            bond value (blank leaves it unchanged, 0 resets to the default); penalty compensation auto-
+            tops-up tiers lost to penalties.
           </p>
         </Card>
 

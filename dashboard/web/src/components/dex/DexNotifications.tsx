@@ -5,8 +5,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { getDexNotifications, type DexNote } from '../../services/dcrdexApi';
+import { loadNotifPrefs, shouldNotify } from './dexNotifPrefs';
 
 const SEEN_KEY = 'dexNotesSeen';
+const FIRED_KEY = 'dexNotesFired';
 
 const sevDot = (s: number) =>
   s >= 4 ? 'bg-destructive' : s === 3 ? 'bg-warning' : s === 2 ? 'bg-success' : 'bg-muted-foreground/50';
@@ -24,6 +26,36 @@ export const DexNotifications = () => {
     const id = window.setInterval(refresh, 15000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Fire desktop notifications for newly-arrived notes that match the user's
+  // enabled categories. The first batch only seeds the cursor (no burst of OS
+  // notifications for pre-existing notes).
+  useEffect(() => {
+    if (notes.length === 0) return;
+    const maxStamp = notes.reduce((m, n) => Math.max(m, n.stamp), 0);
+    const stored = localStorage.getItem(FIRED_KEY);
+    if (stored === null) {
+      localStorage.setItem(FIRED_KEY, String(maxStamp));
+      return;
+    }
+    const lastFired = Number(stored);
+    const prefs = loadNotifPrefs();
+    if (prefs.desktop && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      notes
+        .filter((n) => n.stamp > lastFired)
+        .sort((a, b) => a.stamp - b.stamp)
+        .forEach((n) => {
+          if (shouldNotify(prefs, n.type)) {
+            try {
+              new Notification(n.subject || 'DCRDEX', { body: n.details || '' });
+            } catch {
+              /* ignore */
+            }
+          }
+        });
+    }
+    if (maxStamp > lastFired) localStorage.setItem(FIRED_KEY, String(maxStamp));
+  }, [notes]);
 
   const sorted = useMemo(() => [...notes].sort((a, b) => b.stamp - a.stamp), [notes]);
   const unread = useMemo(() => sorted.filter((n) => n.stamp > seen).length, [sorted, seen]);

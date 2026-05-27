@@ -21,6 +21,7 @@ const (
 	LogComponentDcrwallet LogComponent = "dcrwallet"
 	LogComponentDcrlnd    LogComponent = "dcrlnd"
 	LogComponentBrclientd LogComponent = "brclientd"
+	LogComponentDcrdex    LogComponent = "dcrdex"
 )
 
 const (
@@ -40,6 +41,9 @@ func logPath(component LogComponent, network string) (string, error) {
 		return filepath.Join(logsRoot, "dcrlnd", "logs", "decred", network, "lnd.log"), nil
 	case LogComponentBrclientd:
 		return BrclientdLogPath(network), nil
+	case LogComponentDcrdex:
+		// bisonw writes its app log to <appdata>/<network>/logs/dexc.log.
+		return filepath.Join(logsRoot, "dcrdex", network, "logs", "dexc.log"), nil
 	default:
 		return "", fmt.Errorf("unknown log component: %q", component)
 	}

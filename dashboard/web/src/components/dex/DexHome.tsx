@@ -34,7 +34,7 @@ export const DexHome = ({ bisonwVersion, onLock }: DexHomeProps) => {
   // given tab and bypasses the registration gate, so the non-trading tabs can be
   // reviewed while the DEX server (and thus registration) is unreachable.
   const tabParam = new URLSearchParams(window.location.search).get('tab');
-  const forcedTab = (['trade', 'wallets', 'orders', 'account'] as const).find((t) => t === tabParam) as
+  const forcedTab = (['trade', 'wallets', 'orders', 'account', 'settings'] as const).find((t) => t === tabParam) as
     | DexTab
     | undefined;
 

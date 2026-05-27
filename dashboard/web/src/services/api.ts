@@ -767,7 +767,7 @@ export const changePassphrase = async (oldPassphrase: string, newPassphrase: str
   await api.post('/wallet/settings/change-passphrase', { oldPassphrase, newPassphrase });
 };
 
-export type LogComponent = 'dcrd' | 'dcrwallet' | 'dcrlnd' | 'brclientd';
+export type LogComponent = 'dcrd' | 'dcrwallet' | 'dcrlnd' | 'brclientd' | 'dcrdex';
 
 export interface LogTail {
   component: LogComponent;

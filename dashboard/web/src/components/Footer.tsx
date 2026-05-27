@@ -9,10 +9,11 @@ interface FooterProps {
   dcrwalletVersion?: string;
   dcrlndVersion?: string;
   brclientdVersion?: string;
+  bisonwVersion?: string;
   lastUpdate?: string;
 }
 
-export const Footer = ({ dcrdVersion, dcrwalletVersion, dcrlndVersion, brclientdVersion, lastUpdate }: FooterProps) => {
+export const Footer = ({ dcrdVersion, dcrwalletVersion, dcrlndVersion, brclientdVersion, bisonwVersion, lastUpdate }: FooterProps) => {
   const dashboardVersion = packageJson.version;
 
   return (
@@ -81,6 +82,19 @@ export const Footer = ({ dcrdVersion, dcrwalletVersion, dcrlndVersion, brclientd
               className="hover:text-primary transition-colors"
             >
               brclientd {brclientdVersion}
+            </a>
+          </>
+        )}
+        {bisonwVersion && (
+          <>
+            <span className="text-border">•</span>
+            <a
+              href="https://github.com/decred/dcrdex"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-primary transition-colors"
+            >
+              bisonw {bisonwVersion}
             </a>
           </>
         )}

@@ -52,6 +52,7 @@ import { BisonrelayLiveProvider } from './components/bisonrelay/BisonrelayLivePr
 import { getDashboardData, getWalletStatus } from './services/api';
 import { getLightningInfo } from './services/lightningApi';
 import { getBisonrelayVersion } from './services/bisonrelayApi';
+import { getDexStatus } from './services/dcrdexApi';
 
 function AppContent() {
   const location = useLocation();
@@ -59,6 +60,7 @@ function AppContent() {
   const [walletVersion, setWalletVersion] = useState<string>('');
   const [lndVersion, setLndVersion] = useState<string>('');
   const [brclientdVersion, setBrclientdVersion] = useState<string>('');
+  const [bisonwVersion, setBisonwVersion] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<string>('');
 
   // Fetch versions for header and footer
@@ -97,6 +99,13 @@ function AppContent() {
           setBrclientdVersion(br.appVersion || '');
         } catch (brErr) {
           console.debug('brclientd version not available:', brErr);
+        }
+
+        try {
+          const dex = await getDexStatus();
+          setBisonwVersion(dex.bisonwVersion || '');
+        } catch (dexErr) {
+          console.debug('bisonw version not available:', dexErr);
         }
       } catch (err) {
         console.error('Error fetching versions:', err);
@@ -170,6 +179,7 @@ function AppContent() {
           dcrwalletVersion={walletVersion}
           dcrlndVersion={lndVersion}
           brclientdVersion={brclientdVersion}
+          bisonwVersion={bisonwVersion}
           lastUpdate={lastUpdate}
         />
       </div>

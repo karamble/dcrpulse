@@ -359,6 +359,13 @@ export const getDexNotifications = async (n = 50): Promise<DexNote[]> => {
   return data || [];
 };
 
+// exportDexSeed returns the bisonw app seed for backup. Requires re-entering the
+// app password; the seed is never persisted.
+export const exportDexSeed = async (appPass: string): Promise<string> => {
+  const { data } = await api.post<{ seed: string }>('/dcrdex/seed', { appPass });
+  return data.seed;
+};
+
 // DexRates maps an asset symbol (lowercase) to its USD price, sourced from
 // Kraken (with a Bison Relay fallback). Covers the coins those sources list;
 // others are absent.
@@ -396,8 +403,17 @@ export interface DexAccount {
   bondExpiryDays: number;
   bondPerTierAtoms: number;
   bondPerTierDcr: number;
+  maxBondedDcr: number;
+  penaltyComps: number;
+  bondsPendingRefund: number;
+  bondAssets: DexBondAsset[];
   autoRenew: boolean;
   pendingBonds: DexPendingBond[];
+}
+
+export interface DexBondAsset {
+  symbol: string;
+  assetID: number;
 }
 
 export const getDexAccount = async (host: string): Promise<DexAccount> => {
@@ -405,7 +421,16 @@ export const getDexAccount = async (host: string): Promise<DexAccount> => {
   return data;
 };
 
-// setDexBondOptions sets the auto-bond target tier (0 disables auto-renewal).
-export const setDexBondOptions = async (host: string, targetTier: number): Promise<void> => {
-  await api.post('/dcrdex/bondopts', { host, targetTier });
+// DexBondOptions are the auto-bond maintenance options; any omitted field is
+// left unchanged. targetTier 0 disables auto-renewal; maxBondedDcr is
+// conventional (0 resets to the server default).
+export interface DexBondOptions {
+  targetTier?: number;
+  maxBondedDcr?: number;
+  bondAssetID?: number;
+  penaltyComps?: number;
+}
+
+export const setDexBondOptions = async (host: string, opts: DexBondOptions): Promise<void> => {
+  await api.post('/dcrdex/bondopts', { host, ...opts });
 };

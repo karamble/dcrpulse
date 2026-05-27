@@ -202,9 +202,18 @@ func (c *Client) PostBond(ctx context.Context, p PostBondParams) (json.RawMessag
 	return res, err
 }
 
-// SetBondOptions updates a DEX account's auto-bond maintenance target tier.
-// targetTier 0 disables auto-renewal; a positive value maintains that tier.
-func (c *Client) SetBondOptions(ctx context.Context, host string, targetTier uint64) error {
-	args := []string{host, strconv.FormatUint(targetTier, 10)}
+// SetBondOptions updates a DEX account's auto-bond maintenance options. The
+// positional bondopts args are [host, targetTier, maxBonded, bondAsset,
+// penaltyComps]; a negative value leaves that option unchanged (and the server
+// treats penaltyComps 0 as unchanged too). targetTier 0 disables auto-renewal;
+// a positive value maintains that tier.
+func (c *Client) SetBondOptions(ctx context.Context, host string, targetTier, maxBonded, bondAsset, penaltyComps int) error {
+	args := []string{
+		host,
+		strconv.Itoa(targetTier),
+		strconv.Itoa(maxBonded),
+		strconv.Itoa(bondAsset),
+		strconv.Itoa(penaltyComps),
+	}
 	return c.Call(ctx, "bondopts", nil, args, nil)
 }
