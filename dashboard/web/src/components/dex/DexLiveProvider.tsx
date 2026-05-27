@@ -3,7 +3,8 @@
 // license that can be found in the LICENSE file.
 
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import type { DexNote } from '../../services/dcrdexApi';
+import { getMMStatus } from '../../services/dcrdexApi';
+import type { DexNote, MMStatus, MMBotStatus } from '../../services/dcrdexApi';
 import type { MarketSpot } from './useDexFeed';
 
 type NoteListener = (note: DexNote) => void;
@@ -49,12 +50,19 @@ export interface DexBridge {
 // `${baseID}-${quoteID}` row keys (avoids symbol-casing mismatches).
 const spotKey = (s: MarketSpot) => `${s.baseID}-${s.quoteID}`;
 
+// MM_NOTE_TYPES are the market-maker notifications. They carry only the market,
+// so their arrival triggers a debounced refetch of the full market-making status
+// rather than being accumulated directly.
+const MM_NOTE_TYPES = new Set(['runstats', 'runevent', 'epochreport', 'cexproblems']);
+
 interface DexLiveCtx {
   addNoteListener: (fn: NoteListener) => () => void;
   spots: Record<string, MarketSpot>;
   seedSpots: (snapshot: Record<string, MarketSpot>) => void;
   conns: Record<string, DexConn>;
   bridges: Record<string, DexBridge>;
+  mmStatus: MMStatus | null;
+  refreshMMStatus: () => void;
 }
 
 const Ctx = createContext<DexLiveCtx | null>(null);
@@ -77,6 +85,23 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
   // notes (no UI consumes bridges yet, ingested for a future bridge view).
   const [conns, setConns] = useState<Record<string, DexConn>>({});
   const [bridges, setBridges] = useState<Record<string, DexBridge>>({});
+  // mmStatus is the market-making status (bots + CEX state), refetched on MM
+  // notes. Fetched lazily when a MM consumer mounts (refreshMMStatus); the fetch
+  // 409s and is ignored while the DEX is locked.
+  const [mmStatus, setMMStatus] = useState<MMStatus | null>(null);
+  const mmFetching = useRef(false);
+  const refreshMMStatus = useCallback(() => {
+    if (mmFetching.current) return;
+    mmFetching.current = true;
+    getMMStatus()
+      .then((s) => setMMStatus(s))
+      .catch(() => {})
+      .finally(() => {
+        mmFetching.current = false;
+      });
+  }, []);
+  const refreshMMRef = useRef(refreshMMStatus);
+  refreshMMRef.current = refreshMMStatus;
 
   const seedSpots = useCallback((snapshot: Record<string, MarketSpot>) => {
     if (!Object.keys(snapshot).length) return;
@@ -96,6 +121,7 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
     let cancelled = false;
     let retry = 1000;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let mmTimer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       if (cancelled) return;
@@ -155,6 +181,15 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
               stamp: note.stamp ?? Date.now(),
             },
           }));
+        } else if (MM_NOTE_TYPES.has(note.type)) {
+          // Coalesce a burst of MM notes into one status refetch.
+          if (!mmTimer) {
+            mmTimer = setTimeout(() => {
+              mmTimer = null;
+              refreshMMRef.current();
+            }, 500);
+          }
+          return;
         }
         listenersRef.current.forEach((fn) => {
           try {
@@ -182,6 +217,7 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
+      if (mmTimer) clearTimeout(mmTimer);
       try {
         ws?.close();
       } catch {
@@ -191,7 +227,7 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <Ctx.Provider value={{ addNoteListener, spots, seedSpots, conns, bridges }}>
+    <Ctx.Provider value={{ addNoteListener, spots, seedSpots, conns, bridges, mmStatus, refreshMMStatus }}>
       {children}
     </Ctx.Provider>
   );
@@ -214,6 +250,33 @@ export function useSeedDexSpots(): (snapshot: Record<string, MarketSpot>) => voi
 // the REST connectionStatus snapshot). A no-op null outside the provider.
 export function useDexConn(host: string): DexConn | null {
   return useContext(Ctx)?.conns[host] ?? null;
+}
+
+// useMMStatus returns the shared market-making status, triggering an initial
+// fetch on mount. It then refreshes automatically on MM notifications. Null
+// outside the provider or before the first fetch resolves.
+export function useMMStatus(): MMStatus | null {
+  const ctx = useContext(Ctx);
+  useEffect(() => {
+    ctx?.refreshMMStatus();
+  }, [ctx]);
+  return ctx?.mmStatus ?? null;
+}
+
+// useMMRefresh returns the callback that refetches the market-making status,
+// for use after a start/stop/config action. A no-op outside the provider.
+export function useMMRefresh(): () => void {
+  return useContext(Ctx)?.refreshMMStatus ?? noop;
+}
+
+// useMMBotRun returns the live status of the bot configured for the given market,
+// or null. Used by the trade view to show activity for the selected market.
+export function useMMBotRun(host: string, baseID: number, quoteID: number): MMBotStatus | null {
+  const status = useMMStatus();
+  return (
+    status?.bots.find((b) => b.config.host === host && b.config.baseID === baseID && b.config.quoteID === quoteID) ??
+    null
+  );
 }
 
 // useDexBridges returns the live bridge-transaction map keyed by txID. No UI

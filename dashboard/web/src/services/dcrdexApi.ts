@@ -447,3 +447,152 @@ export interface DexBondOptions {
 export const setDexBondOptions = async (host: string, opts: DexBondOptions): Promise<void> => {
   await api.post('/dcrdex/bondopts', { host, ...opts });
 };
+
+// Market-maker (bisonw mm) types. The dashboard proxies bisonw's webserver MM
+// API; these mirror decred.org/dcrdex/client/mm (v1.0.6) for the fields the UI
+// uses. Atomic amounts are keyed by asset ID. v1.0.6 supports Binance/BinanceUS.
+export type MMGapStrategy = 'multiplier' | 'absolute' | 'absolute-plus' | 'percent' | 'percent-plus';
+
+export interface MMOrderPlacement {
+  lots: number;
+  gapFactor: number;
+}
+export interface MMArbPlacement {
+  lots: number;
+  multiplier: number;
+}
+export interface MMBasicConfig {
+  gapStrategy: MMGapStrategy;
+  buyPlacements: MMOrderPlacement[];
+  sellPlacements: MMOrderPlacement[];
+  driftTolerance: number;
+}
+export interface MMSimpleArbConfig {
+  profitTrigger: number;
+  maxActiveArbs: number;
+  numEpochsLeaveOpen: number;
+}
+export interface MMArbConfig {
+  buyPlacements: MMArbPlacement[];
+  sellPlacements: MMArbPlacement[];
+  profit: number;
+  driftTolerance: number;
+  orderPersistence: number;
+}
+export interface MMAllocation {
+  dex: Record<number, number>;
+  cex: Record<number, number>;
+}
+export interface MMBotConfig {
+  host: string;
+  baseID: number;
+  quoteID: number;
+  cexName?: string;
+  lotSize?: number;
+  alloc?: MMAllocation;
+  basicMarketMakingConfig?: MMBasicConfig;
+  simpleArbConfig?: MMSimpleArbConfig;
+  arbMarketMakingConfig?: MMArbConfig;
+}
+export interface MMBotBalance {
+  available: number;
+  locked: number;
+  pending: number;
+  reserved: number;
+}
+export interface MMRunStats {
+  startTime: number;
+  completedMatches: number;
+  tradedUSD: number;
+  profitLoss: { profit: number; profitRatio: number };
+  dexBalances: Record<number, MMBotBalance>;
+  cexBalances: Record<number, MMBotBalance>;
+  pendingDeposits: number;
+  pendingWithdrawals: number;
+  feeGap?: { basisPrice: number; feeGap: number; remoteGap: number; roundTripFees: number };
+}
+export interface MMEpochReport {
+  epochNum: number;
+  buysReport: unknown | null;
+  sellsReport: unknown | null;
+  preOrderProblems: unknown | null;
+}
+export interface MMBotStatus {
+  config: MMBotConfig;
+  running: boolean;
+  runStats: MMRunStats | null;
+  latestEpoch: MMEpochReport | null;
+  cexProblems: unknown | null;
+}
+export interface MMCexStatus {
+  config?: { name: string };
+  connected: boolean;
+  connectErr?: string;
+  // markets is the CEX's supported market list (bisonw libxc.Market), keyed by
+  // the CEX's own market id; used to tell which pairs a CEX can arbitrage.
+  markets?: Record<string, { baseID: number; quoteID: number }>;
+}
+export interface MMStatus {
+  bots: MMBotStatus[];
+  cexes: Record<string, MMCexStatus>;
+}
+// MMStartConfig is bisonw's mm.StartConfig: the market plus optional allocation
+// and auto-rebalance. The config must already be saved via updateMMBotConfig.
+export interface MMStartConfig {
+  host: string;
+  baseID: number;
+  quoteID: number;
+  alloc?: MMAllocation;
+  autoRebalance?: { minBaseTransfer: number; minQuoteTransfer: number; internalOnly?: boolean };
+}
+export interface MMCexConfig {
+  name: string;
+  apiKey: string;
+  apiSecret: string;
+}
+// MMOracleReport summarizes one external exchange's view of the market, as
+// reported by bisonw's price oracles.
+export interface MMOracleReport {
+  host: string;
+  usdVol: number;
+  bestBuy: number;
+  bestSell: number;
+}
+// MMMarketReport is bisonw's mm.MarketReport: the aggregate oracle price, the
+// per-oracle breakdown, and the base/quote fiat rates used for USD conversion.
+export interface MMMarketReport {
+  price: number;
+  oracles: MMOracleReport[] | null;
+  baseFiatRate: number;
+  quoteFiatRate: number;
+}
+
+export const getMMStatus = async (): Promise<MMStatus | null> => {
+  const { data } = await api.get<MMStatus | null>('/dcrdex/mm/status');
+  return data;
+};
+export const getMMMarketReport = async (
+  host: string,
+  baseID: number,
+  quoteID: number,
+): Promise<MMMarketReport | null> => {
+  const { data } = await api.get<MMMarketReport | null>('/dcrdex/mm/marketreport', {
+    params: { host, baseID, quoteID },
+  });
+  return data;
+};
+export const updateMMBotConfig = async (cfg: MMBotConfig): Promise<void> => {
+  await api.post('/dcrdex/mm/config', cfg);
+};
+export const removeMMBotConfig = async (host: string, baseID: number, quoteID: number): Promise<void> => {
+  await api.post('/dcrdex/mm/config/remove', { host, baseID, quoteID });
+};
+export const updateMMCexConfig = async (cfg: MMCexConfig): Promise<void> => {
+  await api.post('/dcrdex/mm/cexconfig', cfg);
+};
+export const startMMBot = async (cfg: MMStartConfig): Promise<void> => {
+  await api.post('/dcrdex/mm/start', cfg);
+};
+export const stopMMBot = async (host: string, baseID: number, quoteID: number): Promise<void> => {
+  await api.post('/dcrdex/mm/stop', { host, baseID, quoteID });
+};

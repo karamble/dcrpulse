@@ -102,6 +102,23 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Addr == "" {
 		return nil, fmt.Errorf("bisonw: Addr is required")
 	}
+	tlsConfig, err := tlsConfigFor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{
+		cfg:       cfg,
+		url:       "https://" + cfg.Addr,
+		tlsConfig: tlsConfig,
+		http: &http.Client{
+			Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		},
+	}, nil
+}
+
+// tlsConfigFor builds a TLS config that trusts cfg's pinned PEM certificate
+// (from Cert or CertPath) and verifies the given (or Addr-derived) server name.
+func tlsConfigFor(cfg Config) (*tls.Config, error) {
 	pem := cfg.Cert
 	if cfg.CertPath != "" {
 		b, err := os.ReadFile(cfg.CertPath)
@@ -111,11 +128,11 @@ func New(cfg Config) (*Client, error) {
 		pem = b
 	}
 	if len(pem) == 0 {
-		return nil, fmt.Errorf("bisonw: RPC TLS cert is required")
+		return nil, fmt.Errorf("bisonw: TLS cert is required")
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pem) {
-		return nil, fmt.Errorf("bisonw: invalid RPC TLS cert")
+		return nil, fmt.Errorf("bisonw: invalid TLS cert")
 	}
 	u, err := url.Parse("https://" + cfg.Addr)
 	if err != nil {
@@ -125,15 +142,7 @@ func New(cfg Config) (*Client, error) {
 	if serverName == "" {
 		serverName = u.Hostname()
 	}
-	tlsConfig := &tls.Config{RootCAs: pool, ServerName: serverName}
-	return &Client{
-		cfg:       cfg,
-		url:       "https://" + cfg.Addr,
-		tlsConfig: tlsConfig,
-		http: &http.Client{
-			Transport: &http.Transport{TLSClientConfig: tlsConfig},
-		},
-	}, nil
+	return &tls.Config{RootCAs: pool, ServerName: serverName}, nil
 }
 
 // WSDialInfo returns the parameters for dialing bisonw's /ws endpoint: the

@@ -3,24 +3,26 @@
 // license that can be found in the LICENSE file.
 
 import { useState } from 'react';
-import { CandlestickChart, ListOrdered, Lock, Settings, ShieldCheck, Wallet } from 'lucide-react';
+import { Bot, CandlestickChart, ListOrdered, Lock, Settings, ShieldCheck, Wallet } from 'lucide-react';
 import { DexMarketView } from './DexMarketView';
 import { DexWalletsPanel } from './DexWalletsPanel';
 import { DexOrdersHistoryPanel } from './DexOrdersHistoryPanel';
 import { DexAccountPanel } from './DexAccountPanel';
 import { DexSettingsPanel } from './DexSettingsPanel';
+import { DexMMPanel } from './DexMMPanel';
 import { DexNotifications } from './DexNotifications';
 
 // The canonical mainnet DEX server.
 const HOST = 'dex.decred.org:7232';
 
-export type DexTab = 'trade' | 'wallets' | 'orders' | 'account' | 'settings';
+export type DexTab = 'trade' | 'wallets' | 'orders' | 'account' | 'mm' | 'settings';
 
 const tabs: { id: DexTab; label: string; Icon: typeof Wallet }[] = [
   { id: 'trade', label: 'Trade', Icon: CandlestickChart },
   { id: 'wallets', label: 'Wallets', Icon: Wallet },
   { id: 'orders', label: 'Orders', Icon: ListOrdered },
   { id: 'account', label: 'Account', Icon: ShieldCheck },
+  { id: 'mm', label: 'Market Maker', Icon: Bot },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
 
@@ -71,6 +73,7 @@ export const DexShell = ({ initialTab = 'trade', onLock }: { initialTab?: DexTab
       {tab === 'wallets' && <DexWalletsPanel />}
       {tab === 'orders' && <DexOrdersHistoryPanel host={HOST} />}
       {tab === 'account' && <DexAccountPanel host={HOST} />}
+      {tab === 'mm' && <DexMMPanel />}
       {tab === 'settings' && <DexSettingsPanel />}
     </div>
   );

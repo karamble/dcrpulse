@@ -34,9 +34,10 @@ var (
 	// when the dashboard starts.
 	DcrdexCfg DcrdexConfig
 
-	dcrdexClient   *bisonw.Client
-	dcrdexWSClient *bisonw.Client
-	dcrdexMu       sync.Mutex
+	dcrdexClient    *bisonw.Client
+	dcrdexWSClient  *bisonw.Client
+	dcrdexWebClient *bisonw.WebClient
+	dcrdexMu        sync.Mutex
 )
 
 // InitDcrdexConfig records the bisonw RPC connection settings and resets any
@@ -47,6 +48,7 @@ func InitDcrdexConfig(cfg DcrdexConfig) {
 	DcrdexCfg = cfg
 	dcrdexClient = nil
 	dcrdexWSClient = nil
+	dcrdexWebClient = nil
 }
 
 // DcrdexClient returns the bisonw RPC client, constructing it on first use once
@@ -98,6 +100,30 @@ func DcrdexWSClient() (*bisonw.Client, error) {
 		return nil, err
 	}
 	dcrdexWSClient = c
+	return c, nil
+}
+
+// DcrdexWebClient returns a client for bisonw's webserver HTTP API (the
+// market-maker routes), built lazily once web.cert is available. It shares the
+// webserver address and pinned cert with the /ws relay client.
+func DcrdexWebClient() (*bisonw.WebClient, error) {
+	dcrdexMu.Lock()
+	defer dcrdexMu.Unlock()
+	if dcrdexWebClient != nil {
+		return dcrdexWebClient, nil
+	}
+	if DcrdexCfg.Host == "" || DcrdexCfg.WSPort == "" {
+		return nil, fmt.Errorf("dcrdex: webserver not configured")
+	}
+	c, err := bisonw.NewWebClient(bisonw.Config{
+		Addr:       net.JoinHostPort(DcrdexCfg.Host, DcrdexCfg.WSPort),
+		CertPath:   DcrdexCfg.WSCertPath,
+		ServerName: DcrdexCfg.Host,
+	})
+	if err != nil {
+		return nil, err
+	}
+	dcrdexWebClient = c
 	return c, nil
 }
 
