@@ -4,8 +4,9 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
-import { placeDexOrder, type DexMarket } from '../../services/dcrdexApi';
+import { getDexWallets, placeDexOrder, type DexMarket, type DexWalletState } from '../../services/dcrdexApi';
 import { fmtPrice } from './dexFormat';
+import { useDexRefreshOnNotes } from './DexLiveProvider';
 
 // RateEncodingFactor mirrors bisonw's OrderUtil.RateEncodingFactor: the DEX
 // message rate is the conventional price scaled by 1e8 and adjusted by the
@@ -31,6 +32,7 @@ export const DexOrderForm = ({ host, market, preview = false, pick, onPlaced }: 
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [wallets, setWallets] = useState<DexWalletState[]>([]);
 
   const lotConventional = market.lotSize / market.baseConvFactor;
   // rateConversionFactor: msgRate = price * (1e8 / baseConv * quoteConv).
@@ -62,6 +64,18 @@ export const DexOrderForm = ({ host, market, preview = false, pick, onPlaced }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pick?.seq]);
 
+  // Keep wallet balances on hand so the form can flag insufficient funds. Skip
+  // in preview (no server, and the form renders outside the live provider).
+  const refreshWallets = () => {
+    if (preview) return;
+    getDexWallets().then(setWallets).catch(() => {});
+  };
+  useEffect(() => {
+    refreshWallets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
+  useDexRefreshOnNotes(['balance', 'walletstate'], refreshWallets);
+
   const qtyFloat = parseFloat(qty || '0');
   const priceFloat = parseFloat(price || '0');
   // Snap quantity down to a whole number of lots.
@@ -74,7 +88,17 @@ export const DexOrderForm = ({ host, market, preview = false, pick, onPlaced }: 
   const rateEffective = msgRate / rateConversionFactor;
   const total = isLimit ? rateEffective * qtyEffective : 0;
 
-  const valid = !preview && lots >= 1 && (!isLimit || msgRate > 0);
+  // A buy locks the quote asset, a sell the base asset. Compare the order's
+  // notional requirement against the funding wallet's available balance (both
+  // conventional units). Market buys have no known rate, so they are not gated
+  // here. Fees/reserves are not modelled; bisonw rejects any fee-edge order.
+  const baseAvail = wallets.find((w) => w.assetID === market.baseID)?.available;
+  const quoteAvail = wallets.find((w) => w.assetID === market.quoteID)?.available;
+  const need = sell ? qtyEffective : isLimit ? total : 0;
+  const have = sell ? baseAvail : quoteAvail;
+  const insufficient = have != null && lots >= 1 && need > 0 && need > have;
+
+  const valid = !preview && lots >= 1 && (!isLimit || msgRate > 0) && !insufficient;
 
   const submit = async () => {
     setBusy(true);
@@ -208,6 +232,8 @@ export const DexOrderForm = ({ host, market, preview = false, pick, onPlaced }: 
             <span className="break-words">{err}</span>
           </div>
         )}
+
+        {insufficient && <p className="text-[11px] text-destructive">Not enough funds available</p>}
 
         <div className="mt-auto pt-2 space-y-2">
           {!confirming ? (
