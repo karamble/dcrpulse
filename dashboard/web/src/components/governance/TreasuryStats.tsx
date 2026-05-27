@@ -84,27 +84,31 @@ const ChartCard = ({
   icon: Icon,
   title,
   caption,
+  action,
   children,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   caption?: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) => (
   <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
     <div className="flex items-center gap-2 mb-4">
       <Icon className="h-5 w-5 text-primary" />
       <h3 className="text-lg font-semibold">{title}</h3>
+      {action && <div className="ml-auto">{action}</div>}
     </div>
     <div className="h-64">{children}</div>
     {caption && <p className="text-xs text-muted-foreground mt-3">{caption}</p>}
   </div>
 );
 
-// Balance at the end of the given calendar year, taken from the nearest sample
-// on or before Dec 31 of that year (0 before the series starts).
-const balanceAtYearEnd = (series: BalanceSample[], year: number): number => {
-  const cutoff = Date.UTC(year + 1, 0, 1) / 1000;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Balance from the nearest sample strictly before the given unix-seconds cutoff
+// (0 before the series starts).
+const balanceAtTime = (series: BalanceSample[], cutoff: number): number => {
   let bal = 0;
   for (const s of series) {
     if (s.time < cutoff) bal = s.balance;
@@ -113,11 +117,18 @@ const balanceAtYearEnd = (series: BalanceSample[], year: number): number => {
   return bal;
 };
 
+// Balance at the end of the given calendar year (nearest sample on or before
+// Dec 31 of that year).
+const balanceAtYearEnd = (series: BalanceSample[], year: number): number =>
+  balanceAtTime(series, Date.UTC(year + 1, 0, 1) / 1000);
+
 export const TreasuryStats = () => {
   const [tspends, setTspends] = useState<TSpendRecord[]>(() => getAllTSpends());
   const [stats, setStats] = useState(() => getTreasuryStats());
   const [balance, setBalance] = useState<number | null>(null);
   const [series, setSeries] = useState<BalanceSample[]>([]);
+  // 'all' shows the per-year flow chart; a year shows that year's monthly view.
+  const [flowYear, setFlowYear] = useState('all');
 
   useEffect(() => {
     const refreshLocal = () => {
@@ -187,6 +198,28 @@ export const TreasuryStats = () => {
       return { year: String(y), inflow, outflow };
     });
   }, [series, perYearData]);
+
+  // Monthly inflow/outflow for the selected year, derived the same way as the
+  // per-year flow (net balance change between month ends, plus that month's
+  // outflow). The current year stops at the current month.
+  const monthlyFlowData = useMemo(() => {
+    if (flowYear === 'all' || series.length === 0) return [];
+    const y = Number(flowYear);
+    const out = new Array(12).fill(0) as number[];
+    for (const t of tspends) {
+      const d = new Date(t.timestamp);
+      if (d.getUTCFullYear() === y) out[d.getUTCMonth()] += t.amount;
+    }
+    const now = new Date();
+    const lastMonth = y === now.getUTCFullYear() ? now.getUTCMonth() : 11;
+    const rows: { month: string; inflow: number; outflow: number }[] = [];
+    for (let m = 0; m <= lastMonth; m++) {
+      const outflow = out[m];
+      const net = balanceAtTime(series, Date.UTC(y, m + 1, 1) / 1000) - balanceAtTime(series, Date.UTC(y, m, 1) / 1000);
+      rows.push({ month: MONTHS[m], inflow: Math.max(0, net + outflow), outflow });
+    }
+    return rows;
+  }, [flowYear, tspends, series]);
 
   return (
     <div className="space-y-6">
@@ -305,17 +338,38 @@ export const TreasuryStats = () => {
           {flowData.length > 0 && (
             <ChartCard
               icon={ArrowDownUp}
-              title="Inflow vs Outflow per Year"
-              caption="Inflow is derived from the net balance change plus outflow (not a separate TAdds scan)."
+              title={flowYear === 'all' ? 'Inflow vs Outflow per Year' : `Inflow vs Outflow ${flowYear}`}
+              caption={
+                flowYear === 'all'
+                  ? 'Inflow is derived from the net balance change plus outflow (not a separate TAdds scan).'
+                  : `Monthly inflow/outflow for ${flowYear}. Inflow is derived from the net balance change (approximate; the treasury balance is sampled about monthly).`
+              }
+              action={
+                <select
+                  value={flowYear}
+                  onChange={(e) => setFlowYear(e.target.value)}
+                  className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
+                >
+                  <option value="all">All time</option>
+                  {perYearData.map((p) => (
+                    <option key={p.year} value={p.year}>
+                      {p.year}
+                    </option>
+                  ))}
+                </select>
+              }
             >
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={flowData} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
+                <BarChart
+                  data={flowYear === 'all' ? flowData : monthlyFlowData}
+                  margin={{ top: 10, right: 20, bottom: 0, left: 0 }}
+                >
                   <defs>
                     {fadeGrad('gIn', C.inflow, 0.95)}
                     {fadeGrad('gOut', C.outflow, 0.95)}
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-                  <XAxis dataKey="year" tick={axisTick} stroke="rgba(148,163,184,0.3)" />
+                  <XAxis dataKey={flowYear === 'all' ? 'year' : 'month'} tick={axisTick} stroke="rgba(148,163,184,0.3)" />
                   <YAxis tick={axisTick} stroke="rgba(148,163,184,0.3)" width={70} />
                   <Tooltip
                     cursor={{ fill: 'rgba(148,163,184,0.08)' }}
