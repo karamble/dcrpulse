@@ -41,7 +41,9 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
     getDexConfig(HOST)
       .then((c) => {
         setMarkets(c.markets);
-        setSel((prev) => prev || c.markets[0] || null);
+        // Default to the DCR/BTC market (asset ids 42/0), falling back to the
+        // first market the server lists.
+        setSel((prev) => prev || c.markets.find((m) => m.baseID === 42 && m.quoteID === 0) || c.markets[0] || null);
         if (c.candleDurs?.length) {
           setDurs(c.candleDurs);
           setDur((d) => (c.candleDurs.includes(d) ? d : c.candleDurs[0]));
