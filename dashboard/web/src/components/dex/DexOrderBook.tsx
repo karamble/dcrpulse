@@ -19,7 +19,7 @@ type BookTab = (typeof TABS)[number]['id'];
 interface Props {
   market: DexMarket;
   book: OrderBookState;
-  onPickPrice?: (rate: number) => void;
+  onPick?: (p: { rate: number; qty: number; sell: boolean }) => void;
 }
 
 const ROWS = 12;
@@ -51,7 +51,7 @@ const OrderRow = ({
   sell: boolean;
   quote: string;
   live: boolean;
-  onPick?: (rate: number) => void;
+  onPick?: (p: { rate: number; qty: number; sell: boolean }) => void;
 }) => {
   const [nonce, setNonce] = useState(0);
   const prevQty = useRef<number | null>(null);
@@ -66,7 +66,7 @@ const OrderRow = ({
   return (
     <button
       type="button"
-      onClick={() => onPick?.(o.rate)}
+      onClick={() => onPick?.({ rate: o.rate, qty: o.qty, sell })}
       className="relative grid w-full grid-cols-3 px-3 py-[3px] font-mono tabular-nums text-[11px] text-left hover:bg-muted/20"
     >
       {nonce > 0 && (
@@ -86,7 +86,7 @@ const OrderRow = ({
   );
 };
 
-export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
+export const DexOrderBook = ({ market, book, onPick }: Props) => {
   const [tab, setTab] = useState<BookTab>('book');
 
   // Track whether the book for the current market has loaded, so the initial
@@ -142,7 +142,7 @@ export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
                 .slice()
                 .reverse()
                 .map((o) => (
-                  <OrderRow key={o.token} o={o} total={o.total} max={maxA} sell quote={market.quote} live={live} onPick={onPickPrice} />
+                  <OrderRow key={o.token} o={o} total={o.total} max={maxA} sell quote={market.quote} live={live} onPick={onPick} />
                 ))}
             </div>
 
@@ -159,7 +159,7 @@ export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
 
             <div className="flex-1 flex flex-col overflow-hidden">
               {bids.map((o) => (
-                <OrderRow key={o.token} o={o} total={o.total} max={maxB} sell={false} quote={market.quote} live={live} onPick={onPickPrice} />
+                <OrderRow key={o.token} o={o} total={o.total} max={maxB} sell={false} quote={market.quote} live={live} onPick={onPick} />
               ))}
             </div>
           </div>

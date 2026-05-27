@@ -2,8 +2,8 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useState } from 'react';
-import { AlertCircle, AlertTriangle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AlertCircle, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { placeDexOrder, type DexMarket } from '../../services/dcrdexApi';
 import { fmtPrice } from './dexFormat';
 
@@ -17,10 +17,13 @@ interface DexOrderFormProps {
   host: string;
   market: DexMarket;
   preview?: boolean;
+  // pick prefills the form from a clicked order book level (price + size) and
+  // takes that level's side; seq lets a repeat click re-apply.
+  pick?: { rate: number; qty: number; sell: boolean; seq: number } | null;
   onPlaced: () => void;
 }
 
-export const DexOrderForm = ({ host, market, preview = false, onPlaced }: DexOrderFormProps) => {
+export const DexOrderForm = ({ host, market, preview = false, pick, onPlaced }: DexOrderFormProps) => {
   const [sell, setSell] = useState(false);
   const [isLimit, setIsLimit] = useState(true);
   const [price, setPrice] = useState('');
@@ -32,6 +35,32 @@ export const DexOrderForm = ({ host, market, preview = false, onPlaced }: DexOrd
   const lotConventional = market.lotSize / market.baseConvFactor;
   // rateConversionFactor: msgRate = price * (1e8 / baseConv * quoteConv).
   const rateConversionFactor = (RateEncodingFactor / market.baseConvFactor) * market.quoteConvFactor;
+  const rateStepConventional = market.rateStep > 0 ? market.rateStep / rateConversionFactor : 0;
+
+  const fmtField = (n: number) => (n > 0 ? String(Number(n.toFixed(8))) : '');
+  // Snap an amount to the nearest whole lot (min 1 lot) and a price to the
+  // nearest rate step (min 1 step), both in conventional units.
+  const snapToLot = (v: number) => {
+    if (market.lotSize <= 0 || !isFinite(v) || v <= 0) return 0;
+    const n = Math.max(1, Math.round((v * market.baseConvFactor) / market.lotSize));
+    return (n * market.lotSize) / market.baseConvFactor;
+  };
+  const snapToStep = (v: number) => {
+    if (market.rateStep <= 0 || !isFinite(v) || v <= 0) return 0;
+    const n = Math.max(1, Math.round((v * rateConversionFactor) / market.rateStep));
+    return (n * market.rateStep) / rateConversionFactor;
+  };
+
+  // Prefill from a clicked order book level: take the level's side (ask -> buy,
+  // bid -> sell), set its price and size, snapped to the market increments.
+  useEffect(() => {
+    if (!pick) return;
+    setIsLimit(true);
+    setSell(!pick.sell);
+    setPrice(fmtField(snapToStep(pick.rate)));
+    setQty(fmtField(snapToLot(pick.qty)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pick?.seq]);
 
   const qtyFloat = parseFloat(qty || '0');
   const priceFloat = parseFloat(price || '0');
@@ -72,17 +101,41 @@ export const DexOrderForm = ({ host, market, preview = false, onPlaced }: DexOrd
     }
   };
 
-  const field = (label: string, value: string, onChange: (v: string) => void, unit: string, readOnly = false) => (
+  // The native number spinner cannot be reliably spaced or repositioned across
+  // browsers (e.g. Firefox ignores the WebKit pseudo-element), so it is hidden
+  // and replaced with custom up/down buttons that step by one lot / rate step
+  // and keep a clear gap from the right-aligned value. Keyboard arrows still
+  // work via the input's step/min.
+  const field = (
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    unit: string,
+    opts: { readOnly?: boolean; step?: number; min?: number; onBlur?: () => void; onStep?: (dir: number) => void } = {},
+  ) => (
     <div>
       <label className="block text-[11px] text-muted-foreground mb-1">{label}</label>
       <div className="flex items-center rounded-lg bg-background border border-border/60 px-3 focus-within:border-primary/60 transition-colors">
         <input
           type="number"
           value={value}
-          readOnly={readOnly}
+          readOnly={opts.readOnly}
+          step={opts.step}
+          min={opts.min}
           onChange={(e) => onChange(e.target.value)}
-          className="flex-1 bg-transparent py-1.5 font-mono tabular-nums text-right outline-none read-only:text-muted-foreground"
+          onBlur={opts.onBlur}
+          className="flex-1 min-w-0 bg-transparent py-1.5 font-mono tabular-nums text-right outline-none read-only:text-muted-foreground [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         />
+        {opts.onStep && (
+          <div className="flex flex-col ml-2 shrink-0 text-muted-foreground">
+            <button type="button" tabIndex={-1} aria-label="Increase" onClick={() => opts.onStep!(1)} className="leading-none hover:text-foreground">
+              <ChevronUp className="h-3 w-3" />
+            </button>
+            <button type="button" tabIndex={-1} aria-label="Decrease" onClick={() => opts.onStep!(-1)} className="leading-none hover:text-foreground">
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </div>
+        )}
         <span className="text-[11px] text-muted-foreground ml-2 w-12 text-right shrink-0">{unit}</span>
       </div>
     </div>
@@ -129,14 +182,25 @@ export const DexOrderForm = ({ host, market, preview = false, onPlaced }: DexOrd
           </button>
         </div>
 
-        {isLimit && field('Price', price, setPrice, market.quote.split('.')[0])}
-        {field('Amount', qty, setQty, market.base)}
+        {isLimit &&
+          field('Price', price, setPrice, market.quote.split('.')[0], {
+            step: rateStepConventional || undefined,
+            min: rateStepConventional || undefined,
+            onBlur: () => price && setPrice(fmtField(snapToStep(priceFloat))),
+            onStep: (d) => setPrice(fmtField(snapToStep(Math.max((priceFloat || 0) + d * rateStepConventional, rateStepConventional)))),
+          })}
+        {field('Amount', qty, setQty, market.base, {
+          step: lotConventional || undefined,
+          min: lotConventional || undefined,
+          onBlur: () => qty && setQty(fmtField(snapToLot(qtyFloat))),
+          onStep: (d) => setQty(fmtField(snapToLot(Math.max((qtyFloat || 0) + d * lotConventional, lotConventional)))),
+        })}
         {qty !== '' && (
           <p className="text-[11px] text-muted-foreground">
             {lots} lot(s) = {qtyEffective} {market.base} · lot size {lotConventional}
           </p>
         )}
-        {isLimit && field('Total', total ? String(Number(total.toFixed(8))) : '', () => {}, market.quote.split('.')[0], true)}
+        {isLimit && field('Total', total ? String(Number(total.toFixed(8))) : '', () => {}, market.quote.split('.')[0], { readOnly: true })}
 
         {err && (
           <div className="p-2.5 rounded-lg bg-destructive/5 border border-destructive/30 text-xs text-destructive flex items-start gap-2">

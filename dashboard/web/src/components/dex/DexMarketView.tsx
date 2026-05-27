@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, FlaskConical } from 'lucide-react';
 import { getDexConfig, getDexMyOrders, cancelDexOrder, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { useDexFeed, statsFromCandles, type MarketStats } from './useDexFeed';
@@ -30,6 +30,11 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const [liveOrders, setLiveOrders] = useState<DexOrder[]>([]);
   const [durs, setDurs] = useState<string[]>([]);
   const [dur, setDur] = useState('1h');
+  // Clicking a book level prefills the order form; seq lets a repeat click on
+  // the same level re-apply.
+  const pickSeq = useRef(0);
+  const [pick, setPick] = useState<{ rate: number; qty: number; sell: boolean; seq: number } | null>(null);
+  const onPick = (p: { rate: number; qty: number; sell: boolean }) => setPick({ ...p, seq: ++pickSeq.current });
 
   useEffect(() => {
     if (preview) return;
@@ -120,7 +125,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
         </section>
 
         <section className="bg-card min-h-0 min-w-0 h-[420px] lg:h-auto lg:col-start-3 lg:row-start-1">
-          <DexOrderBook market={sel} book={book} />
+          <DexOrderBook market={sel} book={book} onPick={onPick} />
         </section>
 
         <section className="bg-card min-h-0 min-w-0 h-[260px] lg:h-auto lg:col-start-2 lg:row-start-2">
@@ -135,7 +140,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
         </section>
 
         <section className="bg-card min-h-0 min-w-0 lg:col-start-3 lg:row-start-2">
-          <DexOrderForm host={HOST} market={sel} preview={preview} onPlaced={refreshOrders} />
+          <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} onPlaced={refreshOrders} />
         </section>
       </div>
     </div>
