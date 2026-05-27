@@ -8,10 +8,42 @@ import type { MarketSpot } from './useDexFeed';
 
 type NoteListener = (note: DexNote) => void;
 
-// SpotsNote is the bisonw `spots` notification: a map of marketID -> spot. The
-// initial subPriceFeed sends the full map; later price_update notes carry one
-// market each, so listeners merge rather than replace.
-type SpotsNote = DexNote & { spots?: Record<string, MarketSpot> };
+// LiveNote is a notify-feed note plus the extra fields the accumulated notes
+// carry beyond the base DexNote (decred.org/dcrdex/client/core/notification.go):
+// spots (SpotPriceNote), host/connectionStatus (ConnEventNote),
+// host/authenticated (DEXAuthNote), and the BridgeNote fields.
+type LiveNote = DexNote & {
+  spots?: Record<string, MarketSpot>;
+  host?: string;
+  connectionStatus?: number;
+  authenticated?: boolean;
+  sourceAssetID?: number;
+  destAssetID?: number;
+  txID?: string;
+  completionTxIDs?: string[];
+  amount?: number;
+  complete?: boolean;
+};
+
+// DexConn is a DEX server's live connection state: connectionStatus (1 ==
+// connected, per comms.ConnectionStatus) and whether the account is
+// authenticated. Fed by `conn` and `dex_auth` notes.
+export interface DexConn {
+  status: number;
+  authed: boolean;
+}
+
+// DexBridge is the live state of a cross-chain bridge transaction, from `bridge`
+// notes. Ingested now for a future bridge view; no UI consumes it yet.
+export interface DexBridge {
+  sourceAssetID: number;
+  destAssetID: number;
+  txID: string;
+  completionTxIDs: string[];
+  amount: number;
+  complete: boolean;
+  stamp: number;
+}
 
 // spotKey indexes spots by base/quote asset id, matching the markets list's
 // `${baseID}-${quoteID}` row keys (avoids symbol-casing mismatches).
@@ -21,6 +53,8 @@ interface DexLiveCtx {
   addNoteListener: (fn: NoteListener) => () => void;
   spots: Record<string, MarketSpot>;
   seedSpots: (snapshot: Record<string, MarketSpot>) => void;
+  conns: Record<string, DexConn>;
+  bridges: Record<string, DexBridge>;
 }
 
 const Ctx = createContext<DexLiveCtx | null>(null);
@@ -38,6 +72,11 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
   // (and seeded from the config snapshot). Shared so the markets list renders
   // all rows without subscribing to each market.
   const [spots, setSpots] = useState<Record<string, MarketSpot>>({});
+  // conns is the live per-host connection/auth state, fed by `conn` and
+  // `dex_auth` notes; bridges is the live per-tx bridge state from `bridge`
+  // notes (no UI consumes bridges yet, ingested for a future bridge view).
+  const [conns, setConns] = useState<Record<string, DexConn>>({});
+  const [bridges, setBridges] = useState<Record<string, DexBridge>>({});
 
   const seedSpots = useCallback((snapshot: Record<string, MarketSpot>) => {
     if (!Object.keys(snapshot).length) return;
@@ -73,7 +112,10 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
         if (msg?.route !== 'notify' || !msg.payload) return;
-        const note = msg.payload as SpotsNote;
+        const note = msg.payload as LiveNote;
+        // spots is high-frequency and has no refresh listeners, so accumulate and
+        // swallow it. conn/dex_auth/bridge update live state but still fall
+        // through to listeners (e.g. the notifications bell refreshes on conn).
         if (note.type === 'spots' && note.spots) {
           const incoming = Object.values(note.spots).filter((s): s is MarketSpot => !!s);
           if (incoming.length) {
@@ -86,6 +128,33 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
             });
           }
           return;
+        }
+        if (note.type === 'conn' && note.host) {
+          const host = note.host;
+          setConns((prev) => ({
+            ...prev,
+            [host]: { status: note.connectionStatus ?? 0, authed: prev[host]?.authed ?? false },
+          }));
+        } else if (note.type === 'dex_auth' && note.host) {
+          const host = note.host;
+          setConns((prev) => ({
+            ...prev,
+            [host]: { status: prev[host]?.status ?? 0, authed: !!note.authenticated },
+          }));
+        } else if (note.type === 'bridge' && note.txID) {
+          const txID = note.txID;
+          setBridges((prev) => ({
+            ...prev,
+            [txID]: {
+              sourceAssetID: note.sourceAssetID ?? 0,
+              destAssetID: note.destAssetID ?? 0,
+              txID,
+              completionTxIDs: note.completionTxIDs ?? [],
+              amount: note.amount ?? 0,
+              complete: !!note.complete,
+              stamp: note.stamp ?? Date.now(),
+            },
+          }));
         }
         listenersRef.current.forEach((fn) => {
           try {
@@ -121,7 +190,11 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  return <Ctx.Provider value={{ addNoteListener, spots, seedSpots }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ addNoteListener, spots, seedSpots, conns, bridges }}>
+      {children}
+    </Ctx.Provider>
+  );
 };
 
 // useDexSpots returns the live last/24h price map for all markets, keyed by
@@ -136,7 +209,21 @@ export function useSeedDexSpots(): (snapshot: Record<string, MarketSpot>) => voi
   return useContext(Ctx)?.seedSpots ?? noop;
 }
 
+// useDexConn returns a DEX server's live connection/auth state (from `conn` and
+// `dex_auth` notes), or null before any note has arrived (callers fall back to
+// the REST connectionStatus snapshot). A no-op null outside the provider.
+export function useDexConn(host: string): DexConn | null {
+  return useContext(Ctx)?.conns[host] ?? null;
+}
+
+// useDexBridges returns the live bridge-transaction map keyed by txID. No UI
+// consumes it yet; ingested for a future bridge view. Empty outside the provider.
+export function useDexBridges(): Record<string, DexBridge> {
+  return useContext(Ctx)?.bridges ?? EMPTY_BRIDGES;
+}
+
 const EMPTY_SPOTS: Record<string, MarketSpot> = {};
+const EMPTY_BRIDGES: Record<string, DexBridge> = {};
 const noop = () => {};
 
 // useDexRefreshOnNotes calls refresh (debounced) whenever a notification whose

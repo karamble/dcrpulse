@@ -45,7 +45,7 @@ export const DexWalletsPanel = () => {
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useDexRefreshOnNotes(['balance', 'walletstate'], refresh);
+  useDexRefreshOnNotes(['balance', 'walletstate', 'walletconfig', 'walletnote', 'createwallet'], refresh);
 
   if (err) {
     return (

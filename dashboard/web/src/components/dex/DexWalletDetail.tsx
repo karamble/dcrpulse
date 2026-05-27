@@ -19,6 +19,7 @@ import {
 } from '../../services/dcrdexApi';
 import type { DexRates } from '../../services/dcrdexApi';
 import { fmtAmt, fmtUsd, usdRateFor } from './dexFormat';
+import { useDexRefreshOnNotes } from './DexLiveProvider';
 import { CoinIcon } from './CoinIcon';
 import { DexWalletSend } from './DexWalletSend';
 import { DexWalletTxHistory } from './DexWalletTxHistory';
@@ -47,6 +48,8 @@ const WalletPeers = ({ wallet }: { wallet: DexWalletState }) => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet.assetID]);
+  // walletconfig notes cover peer connect/disconnect and peer-list changes.
+  useDexRefreshOnNotes(['walletconfig'], refresh);
   return (
     <div className="space-y-2">
       {peers.map((p) => (

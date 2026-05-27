@@ -12,7 +12,7 @@ import {
   type DexWalletInfo,
 } from '../../services/dcrdexApi';
 import { CoinIcon } from './CoinIcon';
-import { useDexRefreshOnNotes } from './DexLiveProvider';
+import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
 
 interface DexRegisterProps {
   host: string;
@@ -48,6 +48,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useDexRefreshOnNotes(['balance', 'walletstate', 'walletsync'], refresh);
+  const conn = useDexConn(host);
 
   if (loadErr) {
     return (
@@ -69,7 +70,9 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
 
   const bondAtoms = cfg.bondPerTierAtoms * tiers;
   const bondDcr = cfg.bondPerTierDcr * tiers;
-  const connected = cfg.connectionStatus === 1;
+  // Prefer the live conn feed (pre-auth, so connection only) over the REST
+  // snapshot when a note has arrived.
+  const connected = conn ? conn.status === 1 : cfg.connectionStatus === 1;
   const funded = !!wallet && wallet.availableDcr >= bondDcr;
 
   const copyAddr = async () => {

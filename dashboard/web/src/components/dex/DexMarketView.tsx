@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, FlaskConical } from 'lucide-react';
 import { getDexConfig, getDexMyOrders, cancelDexOrder, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { useDexFeed, statsFromCandles, spotToStats, type MarketStats, type MarketSpot } from './useDexFeed';
-import { useDexRefreshOnNotes, useDexSpots, useSeedDexSpots } from './DexLiveProvider';
+import { useDexConn, useDexRefreshOnNotes, useDexSpots, useSeedDexSpots } from './DexLiveProvider';
 import { DexStatsBar } from './DexStatsBar';
 import { DexMarketsPanel } from './DexMarketsPanel';
 import { DexChartPanel } from './DexChartPanel';
@@ -86,7 +86,11 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const chartDurs = preview ? ['1h', '24h'] : durs.length ? durs : ['1h'];
 
   const book = preview ? (sel ? mockBook(sel) : EMPTY_BOOK) : live.book;
-  const connected = preview ? true : live.connected;
+  // The connection dot reflects the real DEX server state (connected and
+  // authenticated) from the live conn/dex_auth feed; until the first such note
+  // arrives, fall back to the order-book relay socket's health.
+  const conn = useDexConn(HOST);
+  const connected = preview ? true : conn ? conn.status === 1 && conn.authed : live.connected;
   const previewCandles = useMemo(() => (preview && sel ? mockCandles(sel) : []), [preview, sel]);
   const candles = preview ? previewCandles : live.candles;
   const liveStats = useMemo(() => statsFromCandles(live.candles), [live.candles]);

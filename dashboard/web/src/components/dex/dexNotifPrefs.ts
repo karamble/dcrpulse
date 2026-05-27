@@ -18,7 +18,7 @@ export interface DexNotifPrefs {
 export const CATEGORY_TYPES: Record<NotifCategory, string[]> = {
   orders: ['order', 'match'],
   bonds: ['bondpost', 'bondrefund', 'unknownbond'],
-  wallets: ['walletstate', 'walletsync', 'walletconfig', 'balance', 'send', 'createwallet'],
+  wallets: ['walletstate', 'walletsync', 'walletconfig', 'walletnote', 'balance', 'send', 'createwallet'],
   connection: ['conn', 'dex_auth', 'login'],
   security: ['security', 'actionrequired', 'upgrade'],
 };

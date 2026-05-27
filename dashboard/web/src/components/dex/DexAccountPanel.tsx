@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle, Info, ShieldCheck } from 'lucide-react';
 import { getDexAccount, postDexBond, setDexBondOptions, type DexAccount } from '../../services/dcrdexApi';
-import { useDexRefreshOnNotes } from './DexLiveProvider';
+import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
 
 const Card = ({ title, children }: { title: React.ReactNode; children: React.ReactNode }) => (
   <div className="p-4 rounded-xl bg-gradient-card border border-border/50 space-y-2">
@@ -104,6 +104,9 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host]);
   useDexRefreshOnNotes(['bondpost', 'bondrefund', 'reputation'], refresh);
+  // Prefer the live conn feed over the REST snapshot so the dot tracks
+  // disconnects/reconnects without waiting for the next refresh.
+  const conn = useDexConn(host);
 
   const saveBondOpts = async () => {
     setBusy(true);
@@ -156,7 +159,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
     );
   }
 
-  const connected = acct.connectionStatus === 1;
+  const connected = conn ? conn.status === 1 : acct.connectionStatus === 1;
 
   return (
     <div className="px-3 lg:px-4 space-y-3">

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { getDexWalletTxs, type DexWalletState, type DexWalletTx } from '../../services/dcrdexApi';
 import { fmtAmt } from './dexFormat';
+import { useDexRefreshOnNotes } from './DexLiveProvider';
 
 // Transaction type labels (decred.org/dcrdex/client/asset TransactionType).
 const TX_TYPES: Record<number, string> = {
@@ -61,6 +62,15 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
     setDone(false);
     load('');
   }, [load]);
+
+  // Re-fetch the first page when a wallet event arrives so new transactions
+  // surface live (wallet notes are not asset-scoped here, so this also fires for
+  // other wallets; reloading page 1 is cheap and idempotent).
+  const reload = useCallback(() => {
+    setDone(false);
+    load('');
+  }, [load]);
+  useDexRefreshOnNotes(['walletnote'], reload);
 
   if (err) {
     return <div className="px-1 py-4 text-xs text-muted-foreground">{err}</div>;
