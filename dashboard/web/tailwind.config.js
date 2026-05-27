@@ -58,11 +58,21 @@ export default {
         'spin': {
           'from': { transform: 'rotate(0deg)' },
           'to': { transform: 'rotate(360deg)' }
+        },
+        'flash-buy': {
+          '0%': { backgroundColor: 'hsl(142 76% 36% / 0.5)' },
+          '100%': { backgroundColor: 'hsl(142 76% 36% / 0)' }
+        },
+        'flash-sell': {
+          '0%': { backgroundColor: 'hsl(0 72% 51% / 0.5)' },
+          '100%': { backgroundColor: 'hsl(0 72% 51% / 0)' }
         }
       },
       animation: {
         'fade-in': 'fade-in 0.5s ease-out',
         'spin': 'spin 1s linear infinite',
+        'flash-buy': 'flash-buy 0.7s ease-out',
+        'flash-sell': 'flash-sell 0.7s ease-out',
       },
     },
   },

@@ -1,8 +1,8 @@
-// Copyright (c) 2015-2025 The Decred developers
+// Copyright (c) 2015-2026 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { fmtAmt, fmtPrice } from './dexFormat';
 import type { DexMarket } from '../../services/dcrdexApi';
@@ -31,8 +31,72 @@ const withCumulative = (orders: MiniOrder[]) => {
   return orders.slice(0, ROWS).map((o) => ({ ...o, total: (cum += o.qty) }));
 };
 
+// OrderRow renders one book level. It briefly flashes when the level's size
+// changes or when it first appears after the initial book load (live), so the
+// user notices live updates. It is a stable top-level component so React keeps
+// each row instance across updates (keyed by order token); the flash is
+// re-triggered by remounting a keyed overlay whose animation runs once.
+const OrderRow = ({
+  o,
+  total,
+  max,
+  sell,
+  quote,
+  live,
+  onPick,
+}: {
+  o: MiniOrder;
+  total: number;
+  max: number;
+  sell: boolean;
+  quote: string;
+  live: boolean;
+  onPick?: (rate: number) => void;
+}) => {
+  const [nonce, setNonce] = useState(0);
+  const prevQty = useRef<number | null>(null);
+
+  useEffect(() => {
+    const first = prevQty.current === null;
+    const changed = !first && prevQty.current !== o.qty;
+    prevQty.current = o.qty;
+    if ((first && live) || changed) setNonce((n) => n + 1);
+  }, [o.qty, live]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPick?.(o.rate)}
+      className="relative grid w-full grid-cols-3 px-3 py-[3px] font-mono tabular-nums text-[11px] text-left hover:bg-muted/20"
+    >
+      {nonce > 0 && (
+        <span
+          key={nonce}
+          className={`absolute inset-0 pointer-events-none ${sell ? 'animate-flash-sell' : 'animate-flash-buy'}`}
+        />
+      )}
+      <span
+        className={`absolute inset-y-0 right-0 ${sell ? 'bg-destructive/15' : 'bg-success/15'}`}
+        style={{ width: `${(total / max) * 100}%` }}
+      />
+      <span className={`relative ${sell ? 'text-destructive' : 'text-success'}`}>{fmtPrice(o.rate, quote)}</span>
+      <span className="relative text-right text-muted-foreground">{fmtAmt(o.qty, 2)}</span>
+      <span className="relative text-right text-muted-foreground/70">{fmtAmt(total, 2)}</span>
+    </button>
+  );
+};
+
 export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
   const [tab, setTab] = useState<BookTab>('book');
+
+  // Track whether the book for the current market has loaded, so the initial
+  // snapshot does not flash every row; only changes/additions afterwards do.
+  const marketKey = `${market.baseID}-${market.quoteID}`;
+  const [liveKey, setLiveKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (book.buys.length || book.sells.length) setLiveKey(marketKey);
+  }, [book, marketKey]);
+  const live = liveKey === marketKey;
 
   const asks = withCumulative(book.sells); // best ask first
   const bids = withCumulative(book.buys); // best bid first
@@ -44,19 +108,6 @@ export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
   const mid = bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bestAsk || bestBid;
   const spread = bestAsk && bestBid ? bestAsk - bestBid : 0;
   const spreadPct = mid ? (spread / mid) * 100 : 0;
-
-  const Row = ({ o, total, max, sell }: { o: MiniOrder; total: number; max: number; sell: boolean }) => (
-    <button
-      type="button"
-      onClick={() => onPickPrice?.(o.rate)}
-      className="relative grid w-full grid-cols-3 px-3 py-[3px] font-mono tabular-nums text-[11px] text-left hover:bg-muted/20"
-    >
-      <span className={`absolute inset-y-0 right-0 ${sell ? 'bg-destructive/15' : 'bg-success/15'}`} style={{ width: `${(total / max) * 100}%` }} />
-      <span className={`relative ${sell ? 'text-destructive' : 'text-success'}`}>{fmtPrice(o.rate, market.quote)}</span>
-      <span className="relative text-right text-muted-foreground">{fmtAmt(o.qty, 2)}</span>
-      <span className="relative text-right text-muted-foreground/70">{fmtAmt(total, 2)}</span>
-    </button>
-  );
 
   return (
     <div className="flex flex-col min-h-0 h-full">
@@ -91,7 +142,7 @@ export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
                 .slice()
                 .reverse()
                 .map((o) => (
-                  <Row key={o.token} o={o} total={o.total} max={maxA} sell />
+                  <OrderRow key={o.token} o={o} total={o.total} max={maxA} sell quote={market.quote} live={live} onPick={onPickPrice} />
                 ))}
             </div>
 
@@ -108,7 +159,7 @@ export const DexOrderBook = ({ market, book, onPickPrice }: Props) => {
 
             <div className="flex-1 flex flex-col overflow-hidden">
               {bids.map((o) => (
-                <Row key={o.token} o={o} total={o.total} max={maxB} sell={false} />
+                <OrderRow key={o.token} o={o} total={o.total} max={maxB} sell={false} quote={market.quote} live={live} onPick={onPickPrice} />
               ))}
             </div>
           </div>
