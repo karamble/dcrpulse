@@ -7,7 +7,9 @@ package bisonw
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
+	"time"
 )
 
 // Decred asset constants for wallet configuration.
@@ -31,9 +33,32 @@ func (c *Client) Init(ctx context.Context, appPass, seed string) error {
 
 // Login unlocks the client and connects to registered DEX servers. It returns
 // the raw login result (notifications and per-DEX status).
+//
+// bisonw's RPC server has a fixed 10s WriteTimeout
+// (decred.org/dcrdex/client/rpcserver/rpcserver.go), and the first Login after
+// daemon start can exceed that while opening TLS connections to every known
+// DEX server, which truncates the response and surfaces as
+// `tls: bad record MAC` on the client. The route is server-side idempotent
+// (re-issuing it just re-runs core.Login against now-warm caches), so on a
+// transport-level failure we retry once. Application errors from bisonw
+// (wrong password etc.) are returned as *RPCError and never retried.
 func (c *Client) Login(ctx context.Context, appPass string) (json.RawMessage, error) {
 	var res json.RawMessage
 	err := c.Call(ctx, "login", []string{appPass}, nil, &res)
+	if err == nil {
+		return res, nil
+	}
+	var rpcErr *RPCError
+	if errors.As(err, &rpcErr) || ctx.Err() != nil {
+		return res, err
+	}
+	select {
+	case <-time.After(200 * time.Millisecond):
+	case <-ctx.Done():
+		return res, err
+	}
+	res = nil
+	err = c.Call(ctx, "login", []string{appPass}, nil, &res)
 	return res, err
 }
 
