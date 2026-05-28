@@ -17,6 +17,7 @@ import {
 import { getDashboardData, getWalletStatus } from '../../services/api';
 import { getLightningInfo } from '../../services/lightningApi';
 import { getBisonrelayVersion } from '../../services/bisonrelayApi';
+import { getDexStatus } from '../../services/dcrdexApi';
 import packageJson from '../../../package.json';
 
 const DCRPULSE_VERSION = `v${packageJson.version}`;
@@ -63,6 +64,7 @@ export const AboutSection = () => {
   const [nodeVersion, setNodeVersion] = useState<string>('');
   const [lndVersion, setLndVersion] = useState<string>('');
   const [brclientdVersion, setBrclientdVersion] = useState<string>('');
+  const [bisonwVersion, setBisonwVersion] = useState<string>('');
 
   useEffect(() => {
     getWalletStatus()
@@ -85,6 +87,11 @@ export const AboutSection = () => {
         if (b?.appVersion) setBrclientdVersion(b.appVersion);
       })
       .catch(() => {});
+    getDexStatus()
+      .then((d) => {
+        if (d?.bisonwVersion) setBisonwVersion(d.bisonwVersion);
+      })
+      .catch(() => {});
   }, []);
 
   return (
@@ -100,6 +107,7 @@ export const AboutSection = () => {
           <VersionCell label="dcrwallet" value={walletVersion} />
           <VersionCell label="dcrlnd" value={lndVersion} />
           <VersionCell label="brclientd" value={brclientdVersion} />
+          {bisonwVersion && <VersionCell label="bisonw" value={bisonwVersion} />}
         </div>
       </div>
 
