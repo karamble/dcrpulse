@@ -87,7 +87,6 @@ export const PrivacyPage = () => {
               <MixerConfigCard
                 mixedAccount={status.mixedAccount}
                 changeAccount={status.changeAccount}
-                csppsolverState={status.csppsolverState}
               />
               <SendToUnmixedCard changeAccount={status.changeAccount} />
             </>

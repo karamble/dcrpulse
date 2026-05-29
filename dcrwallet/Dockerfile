@@ -1,16 +1,12 @@
-# Dockerfile for building dcrwallet (+ csppsolver) from source
+# Dockerfile for building dcrwallet from source
 # Based on dcrwallet repository: https://github.com/decred/dcrwallet
 # Pattern follows dcrd setup for consistency
 
-# Build stage — debian-based so we can pull in libflint/libmpfr/libgmp,
-# which csppsolver links against (CGo). Alpine doesn't carry flint in
-# its main repos, so the build stage is debian.
-FROM golang:1.24-bookworm AS builder
+# Build stage
+FROM golang:1.24-alpine AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git openssl ca-certificates \
-    libflint-dev libmpfr-dev libgmp-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Install build dependencies
+RUN apk add --no-cache git openssl
 
 # Set working directory
 WORKDIR /go/src/github.com/decred
@@ -23,10 +19,6 @@ RUN git clone --depth 1 --branch ${DCRWALLET_VERSION} https://github.com/decred/
 WORKDIR /go/src/github.com/decred/dcrwallet
 RUN go install .
 
-# Build csppsolver — required for the local node to actively participate
-# in CoinShuffle++ rather than wait for a peer with a solver. CGo + flint.
-RUN CGO_ENABLED=1 go install decred.org/cspp/v2/cmd/csppsolver@v2.4.0
-
 # Build dcrctl for wallet commands (from dcrctl repo)
 WORKDIR /go/src/github.com/decred
 RUN git clone --depth 1 https://github.com/decred/dcrctl.git || echo "dcrctl clone may have failed"
@@ -38,18 +30,15 @@ RUN if [ -f "go.mod" ]; then go install .; else \
     echo 'echo "dcrctl not available"' >> /go/bin/dcrctl && \
     chmod +x /go/bin/dcrctl; fi
 
-# Runtime stage — debian-slim with just the runtime libs csppsolver needs.
-FROM debian:bookworm-slim
+# Runtime stage
+FROM alpine:latest
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates tzdata curl openssl expect netcat-openbsd \
-    libflint17 libmpfr6 libgmp10 \
-    && rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies (netcat-openbsd provides `nc -z` for the healthcheck)
+RUN apk add --no-cache ca-certificates tzdata curl openssl expect netcat-openbsd
 
 # Copy binaries from builder
 COPY --from=builder /go/bin/dcrwallet /usr/local/bin/
 COPY --from=builder /go/bin/dcrctl /usr/local/bin/
-COPY --from=builder /go/bin/csppsolver /usr/local/bin/
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/

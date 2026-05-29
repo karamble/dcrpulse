@@ -10,43 +10,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"time"
 )
-
-// csppsolverState reflects whether dcrwallet successfully spawned its
-// csppsolver child process at startup. dcrwallet logs a specific WARN at
-// startup when the binary isn't on PATH; presence of that line → missing.
-//
-//	0 = unknown (log file not yet readable)
-//	1 = active   (no warning in startup log content)
-//	-1 = missing (warning was found)
-var csppsolverState atomic.Int32
-
-const csppsolverMissingMarker = "Unable to start csppsolver"
-
-// CsppsolverState returns a human-readable status string.
-func CsppsolverState() string {
-	switch csppsolverState.Load() {
-	case 1:
-		return "active"
-	case -1:
-		return "missing"
-	default:
-		return "unknown"
-	}
-}
-
-// RefreshCsppsolverStateIfUnknown re-runs the startup-banner probe if the
-// state hasn't converged. Cheap and idempotent — once the state is "active"
-// or "missing", subsequent calls no-op. Intended to be called from the
-// PrivacyStatusHandler so the UI converges within one poll cycle if the
-// initial probe ran before dcrwallet finished writing its banner.
-func RefreshCsppsolverStateIfUnknown() {
-	if csppsolverState.Load() == 0 {
-		probeCsppsolverState()
-	}
-}
 
 // dcrwallet writes its log file to ${appdata}/logs/${network}/dcrwallet.log.
 // The dashboard container mounts /app-data read-only and the wallet container
@@ -83,15 +48,11 @@ func tailWalletLog() {
 				time.Sleep(5 * time.Second)
 				continue
 			}
-			// Probe csppsolver status from the historical startup section
-			// of the log before we skip ahead.
-			probeCsppsolverState()
-
 			// Skip historical content on first open — we only want NEW lines.
 			info, _ := f.Stat()
 			lastSize = info.Size()
 			_, _ = f.Seek(0, io.SeekEnd)
-			log.Printf("Tailing dcrwallet log %s (starting at offset %d, csppsolver=%s)", walletLogPath, lastSize, CsppsolverState())
+			log.Printf("Tailing dcrwallet log %s (starting at offset %d)", walletLogPath, lastSize)
 		}
 
 		info, err := f.Stat()
@@ -144,43 +105,7 @@ func tailWalletLog() {
 	}
 }
 
-// probeCsppsolverState scans dcrwallet's log file once for the
-// "Unable to start csppsolver" warning. The log file accumulates entries
-// across multiple dcrwallet process lifetimes, so we look only at the
-// segment after the LAST `[INF] DCRW: Version` line, which is the current
-// process's startup banner.
-func probeCsppsolverState() {
-	data, err := os.ReadFile(walletLogPath)
-	if err != nil {
-		return
-	}
-	s := string(data)
-	idx := strings.LastIndex(s, "[INF] DCRW: Version")
-	if idx < 0 {
-		// No banner yet; the process is still starting up. Stay "unknown".
-		return
-	}
-	currentRun := s[idx:]
-	if strings.Contains(currentRun, csppsolverMissingMarker) {
-		csppsolverState.Store(-1)
-		return
-	}
-	// We've seen the banner and no warning followed it within the captured
-	// region. dcrwallet emits the warning immediately after the banner if
-	// the spawn fails, so its absence within ~512 bytes past the banner
-	// means csppsolver started.
-	if len(currentRun) >= 512 {
-		csppsolverState.Store(1)
-	}
-}
-
 func processWalletLogLine(line string) {
-	// Watch the live stream too in case csppsolver fails at some point
-	// after startup (recompilation, file removal, etc.).
-	if strings.Contains(line, csppsolverMissingMarker) {
-		csppsolverState.Store(-1)
-	}
-
 	if line == "" || !walletLogFilter.MatchString(line) {
 		return
 	}

@@ -314,7 +314,6 @@ export interface PrivacyStatus {
   changeAccount?: number;
   mixerRunning: boolean;
   lastError?: string;
-  csppsolverState: 'active' | 'missing' | 'unknown';
 }
 
 export interface MixerEvent {

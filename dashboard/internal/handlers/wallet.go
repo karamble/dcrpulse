@@ -707,12 +707,11 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type privacyStatusResponse struct {
-	Configured      bool    `json:"configured"`
-	MixedAccount    *uint32 `json:"mixedAccount,omitempty"`
-	ChangeAccount   *uint32 `json:"changeAccount,omitempty"`
-	MixerRunning    bool    `json:"mixerRunning"`
-	LastError       string  `json:"lastError,omitempty"`
-	CsppsolverState string  `json:"csppsolverState"` // "active" | "missing" | "unknown"
+	Configured    bool    `json:"configured"`
+	MixedAccount  *uint32 `json:"mixedAccount,omitempty"`
+	ChangeAccount *uint32 `json:"changeAccount,omitempty"`
+	MixerRunning  bool    `json:"mixerRunning"`
+	LastError     string  `json:"lastError,omitempty"`
 }
 
 func PrivacyStatusHandler(w http.ResponseWriter, r *http.Request) {
@@ -729,12 +728,10 @@ func PrivacyStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	services.RefreshCsppsolverStateIfUnknown()
 	resp := privacyStatusResponse{
-		Configured:      configured,
-		MixerRunning:    services.IsMixerRunning(),
-		LastError:       services.LastMixerError(),
-		CsppsolverState: services.CsppsolverState(),
+		Configured:   configured,
+		MixerRunning: services.IsMixerRunning(),
+		LastError:    services.LastMixerError(),
 	}
 	if configured {
 		m, c := mixed, change

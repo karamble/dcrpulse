@@ -1,19 +1,11 @@
 import { Settings } from 'lucide-react';
-import { PrivacyStatus } from '../../services/api';
 
 interface Props {
   mixedAccount: number;
   changeAccount: number;
-  csppsolverState: PrivacyStatus['csppsolverState'];
 }
 
-const solverLabel: Record<PrivacyStatus['csppsolverState'], { text: string; cls: string }> = {
-  active: { text: 'Local · active', cls: 'text-success' },
-  missing: { text: 'Missing - relying on peer solvers', cls: 'text-warning' },
-  unknown: { text: 'Unknown', cls: 'text-muted-foreground' },
-};
-
-export const MixerConfigCard = ({ mixedAccount, changeAccount, csppsolverState }: Props) => (
+export const MixerConfigCard = ({ mixedAccount, changeAccount }: Props) => (
   <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
     <div className="flex items-center gap-2 mb-3">
       <Settings className="h-4 w-4 text-muted-foreground" />
@@ -35,10 +27,6 @@ export const MixerConfigCard = ({ mixedAccount, changeAccount, csppsolverState }
       <div className="flex justify-between">
         <dt className="text-muted-foreground">Network</dt>
         <dd>Peer-to-peer via dcrd</dd>
-      </div>
-      <div className="flex justify-between">
-        <dt className="text-muted-foreground">Solver</dt>
-        <dd className={solverLabel[csppsolverState].cls}>{solverLabel[csppsolverState].text}</dd>
       </div>
     </dl>
   </div>
