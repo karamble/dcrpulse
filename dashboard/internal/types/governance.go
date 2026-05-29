@@ -83,6 +83,23 @@ type ProposalVoteOption struct {
 	Bit uint32 `json:"bit"`
 }
 
+// ProposalComment is one comment on a Politeia proposal. ParentID is 0 for a
+// top-level comment, otherwise the CommentID of the comment it replies to.
+// Deleted comments have their text removed by Politeia; Reason holds the
+// admin-supplied deletion reason.
+type ProposalComment struct {
+	CommentID   uint32 `json:"commentID"`
+	ParentID    uint32 `json:"parentID"`
+	Username    string `json:"username"`
+	Comment     string `json:"comment"`
+	CommentHTML string `json:"commentHtml"`
+	CreatedAt   int64  `json:"createdAt"`
+	Upvotes     int64  `json:"upvotes"`
+	Downvotes   int64  `json:"downvotes"`
+	Deleted     bool   `json:"deleted"`
+	Reason      string `json:"reason,omitempty"`
+}
+
 // ProposalDetail is the full per-token Politeia record + vote data.
 // EligibleTickets is inherited from the embedded Proposal field.
 type ProposalDetail struct {
@@ -91,6 +108,7 @@ type ProposalDetail struct {
 	DescriptionHTML string               `json:"descriptionHtml"`
 	SubmittedAt     int64                `json:"submittedAt"`
 	VoteOptions     []ProposalVoteOption `json:"voteOptions"`
+	Comments        []ProposalComment    `json:"comments"`
 }
 
 // CastPoliteiaVoteRequest is the body for the cast-vote endpoint.

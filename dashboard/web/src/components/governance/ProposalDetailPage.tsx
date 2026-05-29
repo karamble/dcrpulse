@@ -4,9 +4,20 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Loader2,
+  MessageSquare,
+  RefreshCw,
+} from 'lucide-react';
 import {
   CastVoteResult,
+  ProposalComment,
   ProposalDetail,
   castPoliteiaVote,
   getProposalDetail,
@@ -35,6 +46,86 @@ const formatAgo = (secs: number) => {
   const m = Math.floor((s % 3600) / 60);
   if (h > 0) return `${h}h ${m}m ago`;
   return `${m}m ago`;
+};
+
+type CommentNode = ProposalComment & { replies: CommentNode[] };
+
+// buildCommentTree turns Politeia's flat comment list into a reply tree.
+// A parentID of 0 marks a top-level comment; any other value points at the
+// commentID it replies to. Comments arrive sorted oldest-first from the
+// backend, so children keep that order. Orphans (missing parent) are treated
+// as top-level so nothing is silently dropped.
+const buildCommentTree = (comments: ProposalComment[]): CommentNode[] => {
+  const byId = new Map<number, CommentNode>();
+  comments.forEach((c) => byId.set(c.commentID, { ...c, replies: [] }));
+  const roots: CommentNode[] = [];
+  byId.forEach((node) => {
+    const parent = node.parentID !== 0 ? byId.get(node.parentID) : undefined;
+    if (parent) parent.replies.push(node);
+    else roots.push(node);
+  });
+  return roots;
+};
+
+// CommentThread renders a comment as a bordered card and nests its replies
+// under a connector rail. Indentation is capped past depth 4 so deep chains
+// don't overflow narrow screens; cards still nest logically.
+const CommentThread = ({ node, now, depth }: { node: CommentNode; now: number; depth: number }) => {
+  const score = node.upvotes - node.downvotes;
+  const netColor = score > 0 ? 'text-success' : score < 0 ? 'text-destructive' : 'text-muted-foreground';
+  return (
+    <div>
+      <div className="rounded-lg border border-border/50 bg-muted/10 px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs min-w-0">
+            <span className="font-semibold text-foreground truncate">{node.username || 'unknown'}</span>
+            {node.createdAt > 0 && (
+              <>
+                <span className="text-muted-foreground/50">&middot;</span>
+                <span className="text-muted-foreground shrink-0">{formatAgo(now - node.createdAt)}</span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-xs shrink-0">
+            <span className="inline-flex items-center gap-0.5 text-success">
+              <ChevronUp className="h-3.5 w-3.5" />
+              {node.upvotes}
+            </span>
+            <span className="inline-flex items-center gap-0.5 text-destructive">
+              <ChevronDown className="h-3.5 w-3.5" />
+              {node.downvotes}
+            </span>
+            <span className={`px-1.5 py-0.5 rounded bg-muted/30 font-medium ${netColor}`}>
+              {score > 0 ? `+${score}` : score}
+            </span>
+          </div>
+        </div>
+        <div className="mt-2 pt-2 border-t border-border/30">
+          {node.deleted ? (
+            <p className="text-sm italic text-muted-foreground">
+              Comment removed{node.reason ? `: ${node.reason}` : '.'}
+            </p>
+          ) : node.commentHtml ? (
+            <div
+              className="proposal-body text-sm text-foreground/80 leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: node.commentHtml }}
+            />
+          ) : (
+            <pre className="whitespace-pre-wrap text-sm text-foreground/80 font-sans">
+              {node.comment}
+            </pre>
+          )}
+        </div>
+      </div>
+      {node.replies.length > 0 && (
+        <div className={`mt-3 space-y-3 ${depth < 4 ? 'pl-4 border-l border-border/40' : ''}`}>
+          {node.replies.map((child) => (
+            <CommentThread key={child.commentID} node={child} now={now} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export const ProposalDetailPage = () => {
@@ -321,6 +412,27 @@ export const ProposalDetailPage = () => {
           )}
         </div>
       )}
+
+      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-2">
+        <h3 className="font-semibold flex items-center gap-2">
+          <MessageSquare className="h-4 w-4" />
+          Discussion
+          {detail.comments && detail.comments.length > 0 && (
+            <span className="text-xs font-normal text-muted-foreground">
+              ({detail.comments.length})
+            </span>
+          )}
+        </h3>
+        {detail.comments && detail.comments.length > 0 ? (
+          <div className="space-y-3 pt-1">
+            {buildCommentTree(detail.comments).map((node) => (
+              <CommentThread key={node.commentID} node={node} now={now} depth={0} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No comments on this proposal yet.</p>
+        )}
+      </div>
 
       <PassphraseModal
         isOpen={modalOpen}

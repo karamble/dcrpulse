@@ -322,6 +322,14 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 		DescriptionHTML: renderProposalMarkdown(desc),
 		SubmittedAt:     rec.Timestamp,
 	}
+
+	// Comments are a best-effort enrichment: a failure here must not block
+	// the proposal view, mirroring the vote-details handling above.
+	if cmts, err := piComments(ctx, token); err != nil {
+		log.Printf("politeia comments %s: %v", token, err)
+	} else {
+		out.Comments = commentsFromPi(cmts)
+	}
 	if det != nil {
 		for _, o := range det.Vote.Params.Options {
 			out.VoteOptions = append(out.VoteOptions, types.ProposalVoteOption{
@@ -595,6 +603,22 @@ type piVoteDetailsResp struct {
 	Vote  piVoteSection     `json:"vote"`
 }
 
+type piCommentsResp struct {
+	Comments []piComment `json:"comments"`
+}
+
+type piComment struct {
+	CommentID uint32 `json:"commentid"`
+	ParentID  uint32 `json:"parentid"`
+	Username  string `json:"username"`
+	Comment   string `json:"comment"`
+	CreatedAt int64  `json:"createdat"`
+	Upvotes   int64  `json:"upvotes"`
+	Downvotes int64  `json:"downvotes"`
+	Deleted   bool   `json:"deleted"`
+	Reason    string `json:"reason"`
+}
+
 type piVoteSection struct {
 	Params           piVoteParams `json:"params"`
 	StartBlockHeight int64        `json:"startblockheight"`
@@ -665,6 +689,19 @@ func piVoteDetails(ctx context.Context, token string) (*piVoteDetailsResp, error
 		return nil, err
 	}
 	return &resp, nil
+}
+
+// piComments fetches the full comment thread for a proposal. Politeia returns
+// every comment for the record in a single response (no pagination).
+func piComments(ctx context.Context, token string) ([]piComment, error) {
+	body := struct {
+		Token string `json:"token"`
+	}{Token: token}
+	var resp piCommentsResp
+	if err := piPost(ctx, "/comments/v1/comments", body, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Comments, nil
 }
 
 func piPost(ctx context.Context, path string, body any, out any) error {
@@ -790,6 +827,34 @@ func proposalName(rec piRecord) string {
 		}
 	}
 	return rec.CensorshipRecord.Token
+}
+
+// commentsFromPi maps Politeia comments to the frontend shape, sorted oldest
+// first. Deleted comments keep their reason but have no displayable text;
+// Politeia already blanks the comment body in that case.
+func commentsFromPi(in []piComment) []types.ProposalComment {
+	out := make([]types.ProposalComment, 0, len(in))
+	for _, c := range in {
+		pc := types.ProposalComment{
+			CommentID: c.CommentID,
+			ParentID:  c.ParentID,
+			Username:  c.Username,
+			CreatedAt: c.CreatedAt,
+			Upvotes:   c.Upvotes,
+			Downvotes: c.Downvotes,
+			Deleted:   c.Deleted,
+			Reason:    c.Reason,
+		}
+		if !c.Deleted {
+			pc.Comment = c.Comment
+			pc.CommentHTML = renderProposalMarkdown(c.Comment)
+		}
+		out = append(out, pc)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].CreatedAt < out[j].CreatedAt
+	})
+	return out
 }
 
 func indexMarkdown(rec piRecord) string {

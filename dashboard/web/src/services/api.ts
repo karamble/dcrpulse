@@ -871,11 +871,28 @@ export interface ProposalVoteOption {
   bit: number;
 }
 
+// ProposalComment is one Politeia comment. parentID is 0 for a top-level
+// comment, otherwise the commentID of the comment it replies to. Deleted
+// comments carry no text, only the admin deletion reason.
+export interface ProposalComment {
+  commentID: number;
+  parentID: number;
+  username: string;
+  comment: string;
+  commentHtml?: string;
+  createdAt: number;
+  upvotes: number;
+  downvotes: number;
+  deleted: boolean;
+  reason?: string;
+}
+
 export interface ProposalDetail extends Proposal {
   description: string;
   descriptionHtml?: string;
   submittedAt: number;
   voteOptions: ProposalVoteOption[];
+  comments?: ProposalComment[];
 }
 
 export interface CastVoteResult {
