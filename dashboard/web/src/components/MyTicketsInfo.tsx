@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { Ticket, Clock, CheckCircle, XCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import { getWalletTransactions, WalletTransaction } from '../services/api';
+import { getWalletTransactions, listTickets, WalletTransaction } from '../services/api';
 import { sortByBlockHeight, filterTickets, filterVotes, groupByTxid, filterTicketsByStatus } from '../services/ticketService';
 import { TicketDetailRow } from './TicketDetailRow';
 
@@ -33,6 +33,7 @@ export const MyTicketsInfo = ({
   
   const [isExpanded, setIsExpanded] = useState(false);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [ticketPriceByHash, setTicketPriceByHash] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true); // Start with loading state
   const [error, setError] = useState<string | null>(null);
   const [visibleTicketCount, setVisibleTicketCount] = useState(5);
@@ -42,6 +43,7 @@ export const MyTicketsInfo = ({
   // Always fetch transactions on mount to build stats for xpub wallets
   useEffect(() => {
     fetchTicketTransactions();
+    fetchTicketPrices();
   }, []);
 
   const fetchTicketTransactions = async () => {
@@ -55,6 +57,18 @@ export const MyTicketsInfo = ({
       setError('Failed to load ticket details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // listtransactions reports a ticket's net amount (~0 since the wallet owns the
+  // stake submission output), so source the purchase price from the tickets
+  // endpoint and key it by ticket hash (= the purchase txid). Non-fatal.
+  const fetchTicketPrices = async () => {
+    try {
+      const records = await listTickets();
+      setTicketPriceByHash(new Map(records.map((r) => [r.hash, r.ticketPrice])));
+    } catch (err) {
+      console.error('Error fetching ticket prices:', err);
     }
   };
 
@@ -351,7 +365,11 @@ export const MyTicketsInfo = ({
               
               <div className="space-y-2">
                 {displayedTickets.map((tx, index) => (
-                  <TicketDetailRow key={`${tx.txid}-${index}`} transaction={tx} />
+                  <TicketDetailRow
+                    key={`${tx.txid}-${index}`}
+                    transaction={tx}
+                    ticketPrice={ticketPriceByHash.get(tx.txid)}
+                  />
                 ))}
               </div>
 
