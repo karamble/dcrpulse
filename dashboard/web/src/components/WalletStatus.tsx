@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Link } from 'react-router-dom';
-import { Activity, AlertCircle, Loader2, Lock, ShieldCheck, Ticket, Wallet } from 'lucide-react';
+import { Activity, AlertCircle, Loader2, Lock, ShieldCheck, Ticket, Unlock, Wallet } from 'lucide-react';
 
 interface WalletStatusProps {
   status: 'synced' | 'syncing' | 'no_wallet' | 'disconnected' | 'locked';
@@ -25,7 +25,7 @@ export const WalletStatus = ({
       case 'synced':
         return {
           icon: Activity,
-          label: unlocked ? 'Fully Synced & Unlocked' : 'Fully Synced',
+          label: 'Fully Synced',
           color: 'text-success',
           bgColor: 'bg-success/15',
           borderColor: 'border-success/30',
@@ -109,6 +109,24 @@ export const WalletStatus = ({
               <ShieldCheck className="h-6 w-6 text-success animate-pulse" />
             </Link>
           )}
+          {version &&
+            (unlocked ? (
+              <div
+                title="Private keys are currently unlocked."
+                className="flex items-center gap-2 px-4 py-3 rounded-xl bg-warning/10 border-2 border-warning/20"
+              >
+                <Unlock className="h-5 w-5 text-warning" />
+                <span className="text-warning font-semibold text-sm">Spending unlocked</span>
+              </div>
+            ) : (
+              <div
+                title="Spending requires your wallet passphrase (entered per action)."
+                className="flex items-center gap-2 px-4 py-3 rounded-xl bg-muted/10 border-2 border-border/40"
+              >
+                <Lock className="h-5 w-5 text-muted-foreground" />
+                <span className="text-muted-foreground font-semibold text-sm">Spending locked</span>
+              </div>
+            ))}
           <div className={`px-6 py-3 rounded-xl ${config.bgColor} border-2 ${config.borderColor}`}>
             <span className={`${config.color} font-bold text-lg tracking-wide`}>
               {config.label}
