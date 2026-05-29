@@ -104,8 +104,10 @@ func GetUsedVSPs(ctx context.Context) ([]types.VSPInfo, error) {
 	out := make([]types.VSPInfo, 0, len(m))
 	for _, v := range m {
 		out = append(out, types.VSPInfo{
-			Host:   v.Host,
-			PubKey: v.Pubkey,
+			Host:          v.Host,
+			PubKey:        v.Pubkey,
+			FeePercentage: v.FeePercentage,
+			VspdVersion:   v.VspdVersion,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -132,11 +134,22 @@ func rememberVSPUsed(ctx context.Context, host, pubkey string) {
 		log.Printf("rememberVSPUsed: load wallet cfg: %v", err)
 		return
 	}
-	if err := wc.UpsertUsedVSP(config.VSPMetadata{
+	meta := config.VSPMetadata{
 		Host:     host,
 		Pubkey:   pubkey,
 		LastUsed: time.Now().Unix(),
-	}); err != nil {
+	}
+	// Best-effort enrich with the live fee% + vspd version so the stored entry
+	// matches Decrediton's used_vsps (host + pubkey + fee + version). GetVSPInfo
+	// applies its own probe timeout; a failure just leaves them unset.
+	if info, perr := GetVSPInfo(ctx, host); perr == nil {
+		meta.FeePercentage = info.FeePercentage
+		meta.VspdVersion = info.VspdVersion
+		if meta.Pubkey == "" {
+			meta.Pubkey = info.PubKey
+		}
+	}
+	if err := wc.UpsertUsedVSP(meta); err != nil {
 		log.Printf("rememberVSPUsed: upsert: %v", err)
 		return
 	}

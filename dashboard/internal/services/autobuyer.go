@@ -258,6 +258,11 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphr
 
 	recordAutobuyerEvent("info", "Autobuyer connected; waiting for purchase opportunities")
 
+	// Remember the VSP in the shared used_vsps list (mirrors Decrediton's
+	// updateUsedVSPs on autobuyer start), so it appears in the picker's
+	// registry-disabled fallback like manually-purchased VSPs do.
+	rememberVSPUsed(ctx, settings.VspHost, settings.VspPubkey)
+
 	// Ticket-poller: every autobuyerPollInterval, compare the wallet's ticket
 	// hash set to the previous snapshot and emit "purchased" events for diffs.
 	// RunTicketBuyerResponse is empty in v4, so this is how we surface activity.

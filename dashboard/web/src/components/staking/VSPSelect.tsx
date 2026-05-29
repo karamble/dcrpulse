@@ -87,10 +87,11 @@ export const VSPSelect = ({ network, value, onChange }: Props) => {
     setInput('');
     setOpen(false);
     setProbeError(null);
-    // used_vsps entries only carry host + pubkey, so fee% is 0/undefined.
-    // Probe to fill in the live fee so the purchase form's fee preview is
-    // accurate. Registry entries already have fee%, no extra round trip.
-    if (vsp.feePercentage > 0) {
+    // The registry listing carries a fee% but no pubkey, and used_vsps entries
+    // carry a pubkey but no fee%. Either way the purchase/autobuyer needs both,
+    // so probe the VSP's own /api/v3/vspinfo for the missing piece. Only skip
+    // the round trip when we already have both.
+    if (vsp.pubkey && vsp.feePercentage > 0) {
       onChange(vsp);
       return;
     }

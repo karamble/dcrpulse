@@ -145,10 +145,12 @@ type AutobuyerSettings struct {
 
 // VSPMetadata is one entry inside the used_vsps map.
 type VSPMetadata struct {
-	Host     string `json:"host"`
-	Pubkey   string `json:"pubkey"`
-	Label    string `json:"label,omitempty"`
-	LastUsed int64  `json:"lastUsed,omitempty"`
+	Host          string  `json:"host"`
+	Pubkey        string  `json:"pubkey"`
+	Label         string  `json:"label,omitempty"`
+	FeePercentage float64 `json:"feePercentage,omitempty"`
+	VspdVersion   string  `json:"vspdVersion,omitempty"`
+	LastUsed      int64   `json:"lastUsed,omitempty"`
 }
 
 // AutobuyerSettings returns the autobuyer_settings entry, or nil if absent.
