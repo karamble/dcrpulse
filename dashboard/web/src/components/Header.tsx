@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Compass, Vote, MessageSquare, ArrowLeftRight } from 'lucide-react';
+import { Wallet, Compass, Vote } from 'lucide-react';
 import { useBisonrelayLive } from './bisonrelay/BisonrelayLiveProvider';
 
 interface HeaderProps {
@@ -107,7 +107,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
           }`}
         >
           <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
-            <MessageSquare className="h-5 w-5 text-white" />
+            <img src="/images/bisonrelay.svg" alt="Bison Relay" className="h-6 w-auto" />
           </div>
           <span className="text-primary font-semibold">Bison Relay</span>
           {(totalUnread > 0 || totalGCUnread > 0) && (
@@ -138,8 +138,8 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
               : 'bg-primary/10 border-primary/20 hover:bg-primary/20'
           }`}
         >
-          <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
-            <ArrowLeftRight className="h-5 w-5 text-white" />
+          <div className="h-10 w-auto rounded-lg flex items-center justify-center bg-gradient-primary px-2">
+            <img src="/images/bisonwallet.svg" alt="Bison Wallet" className="h-6 w-auto" />
           </div>
           <span className="text-primary font-semibold">DEX</span>
         </Link>
