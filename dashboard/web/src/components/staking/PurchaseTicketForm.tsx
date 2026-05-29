@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Coins, ExternalLink, Send, Wallet } from 'lucide-react';
+import { Coins, ExternalLink, Send, ShieldCheck, Wallet } from 'lucide-react';
 import {
   AccountInfo,
+  PrivacyStatus,
   StakingInfo,
   VSPInfo,
   getAccounts,
+  getPrivacyStatus,
   getWalletDashboard,
   purchaseTickets,
 } from '../../services/api';
@@ -17,6 +19,7 @@ const formatDcr = (v: number): string => v.toFixed(8);
 export const PurchaseTicketForm = () => {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [staking, setStaking] = useState<StakingInfo | null>(null);
+  const [privacy, setPrivacy] = useState<PrivacyStatus | null>(null);
   const [account, setAccount] = useState<number | null>(null);
   const [vsp, setVsp] = useState<VSPInfo | null>(null);
   const [numTickets, setNumTickets] = useState<number>(1);
@@ -29,15 +32,26 @@ export const PurchaseTicketForm = () => {
     let cancelled = false;
     const load = async () => {
       try {
-        const [accs, dash] = await Promise.all([getAccounts(), getWalletDashboard()]);
+        const [accs, dash, priv] = await Promise.all([
+          getAccounts(),
+          getWalletDashboard(),
+          getPrivacyStatus().catch(() => null),
+        ]);
         if (cancelled) return;
         const usable = accs.filter((a) => a.accountName !== 'imported');
         setAccounts(usable);
-        setAccount((current) => {
-          if (current !== null) return current;
-          const mixed = usable.find((a) => a.accountName === 'mixed');
-          return mixed ? mixed.accountNumber : null;
-        });
+        setPrivacy(priv);
+        // When privacy is configured the purchase is always mixed and the
+        // backend funds it from the mixed account, so lock the source to it.
+        if (priv?.configured && priv.mixedAccount !== undefined) {
+          setAccount(priv.mixedAccount);
+        } else {
+          setAccount((current) => {
+            if (current !== null) return current;
+            const mixed = usable.find((a) => a.accountName === 'mixed');
+            return mixed ? mixed.accountNumber : null;
+          });
+        }
         setStaking(dash.stakingInfo ?? null);
       } catch (err: any) {
         if (cancelled) return;
@@ -69,6 +83,8 @@ export const PurchaseTicketForm = () => {
   const remaining = spendable - totalCost;
   const canAfford = spendable >= totalCost;
 
+  const privacyOn = !!privacy?.configured;
+
   const canSubmit =
     account !== null && vsp !== null && numTickets > 0 && ticketPrice > 0 && canAfford;
 
@@ -76,12 +92,15 @@ export const PurchaseTicketForm = () => {
     if (account === null || vsp === null) return;
     setError(null);
     try {
+      // For mixed purchases the backend overrides the source/change to the
+      // mixed/unmixed accounts; send the unmixed account as change so the
+      // request reflects the same intent.
       const resp = await purchaseTickets({
         account,
         numTickets,
         vspHost: vsp.host,
         vspPubkey: vsp.pubkey,
-        changeAccount: account,
+        changeAccount: privacyOn && privacy?.changeAccount !== undefined ? privacy.changeAccount : account,
         passphrase,
       });
       setSuccess(resp.ticketHashes);
@@ -132,26 +151,44 @@ export const PurchaseTicketForm = () => {
         <h3 className="text-lg font-semibold">Purchase tickets</h3>
       </div>
 
-      <div className="space-y-1">
-        <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-          <Wallet className="h-4 w-4" />
-          Source account
-        </label>
-        <select
-          value={account ?? ''}
-          onChange={(e) => setAccount(e.target.value === '' ? null : Number(e.target.value))}
-          className="w-full px-3 py-2 rounded-lg bg-background border border-border/50 text-sm"
-        >
-          <option value="" disabled>
-            Select account
-          </option>
-          {accounts.map((a) => (
-            <option key={a.accountNumber} value={a.accountNumber}>
-              {a.accountName} ({a.spendableBalance.toFixed(2)} DCR)
+      {privacyOn ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/30 text-sm">
+            <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+            <span>
+              Purchasing <span className="font-semibold">mixed (private)</span> tickets from your
+              mixed account
+              {selectedAccount ? ` (${selectedAccount.spendableBalance.toFixed(2)} DCR available)` : ''}.
+            </span>
+          </div>
+          {privacy?.mixerRunning && (
+            <p className="text-xs text-muted-foreground">
+              The mixer will pause briefly during the purchase and restart afterwards.
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+            <Wallet className="h-4 w-4" />
+            Source account
+          </label>
+          <select
+            value={account ?? ''}
+            onChange={(e) => setAccount(e.target.value === '' ? null : Number(e.target.value))}
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border/50 text-sm"
+          >
+            <option value="" disabled>
+              Select account
             </option>
-          ))}
-        </select>
-      </div>
+            {accounts.map((a) => (
+              <option key={a.accountNumber} value={a.accountNumber}>
+                {a.accountName} ({a.spendableBalance.toFixed(2)} DCR)
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <VSPSelect network={network} value={vsp} onChange={setVsp} />
 

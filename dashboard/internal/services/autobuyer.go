@@ -181,24 +181,43 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphr
 	recordAutobuyerEvent("info", fmt.Sprintf("Autobuyer starting (account=%d vsp=%s balanceToMaintain=%.8f DCR)",
 		settings.Account, settings.VspHost, settings.BalanceToMaintain))
 
+	// When privacy is configured, the autobuyer buys mixed tickets: fund + split
+	// + mix from the "mixed" account, change to the "unmixed" account, mixing on.
+	// Otherwise buy plainly from the configured account. Mirrors Decrediton's
+	// startTicketAutoBuyer branch.
+	sourceAccount := settings.Account
+	mixing, mixed := TicketMixingParams(ctx)
+	if mixed {
+		sourceAccount = mixing.Mixed
+		// The autobuyer mixes inline while it runs, so the standalone continuous
+		// mixer must not run alongside it (both spend the mixed account). Stop it
+		// if running; the user can restart it from the privacy tab after stopping
+		// the autobuyer.
+		if IsMixerRunning() {
+			StopMixer()
+			WaitForMixerStop(5 * time.Second)
+			recordAutobuyerEvent("info", "Stopped the account mixer; the autobuyer mixes tickets while it runs")
+		}
+	}
+
 	// Unlock the source account; lazy-migrate to per-account encryption if
 	// needed (same pattern as services/staking.go::PurchaseTickets).
 	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
 	_, err := rpc.WalletGrpcClient.UnlockAccount(unlockCtx, &pb.UnlockAccountRequest{
 		Passphrase:    passphrase,
-		AccountNumber: settings.Account,
+		AccountNumber: sourceAccount,
 	})
 	unlockCancel()
 	if err != nil {
 		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
-			if mErr := ensureAccountEncrypted(ctx, settings.Account, passphrase); mErr != nil {
+			if mErr := ensureAccountEncrypted(ctx, sourceAccount, passphrase); mErr != nil {
 				setAutobuyerErr(fmt.Sprintf("Migrate account to per-account encryption: %v", mErr))
 				return
 			}
 			unlockCtx2, unlockCancel2 := context.WithTimeout(ctx, 10*time.Second)
 			_, err = rpc.WalletGrpcClient.UnlockAccount(unlockCtx2, &pb.UnlockAccountRequest{
 				Passphrase:    passphrase,
-				AccountNumber: settings.Account,
+				AccountNumber: sourceAccount,
 			})
 			unlockCancel2()
 		}
@@ -210,18 +229,25 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphr
 	defer func() {
 		lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer lockCancel()
-		_, _ = rpc.WalletGrpcClient.LockAccount(lockCtx, &pb.LockAccountRequest{AccountNumber: settings.Account})
+		_, _ = rpc.WalletGrpcClient.LockAccount(lockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount})
 	}()
 
 	balanceAtoms := int64(settings.BalanceToMaintain * 1e8)
 	req := &pb.RunTicketBuyerRequest{
 		Passphrase:        passphrase,
-		Account:           settings.Account,
-		VotingAccount:     settings.Account,
+		Account:           sourceAccount,
+		VotingAccount:     sourceAccount,
 		BalanceToMaintain: balanceAtoms,
 		VspHost:           "https://" + strings.TrimPrefix(strings.TrimPrefix(settings.VspHost, "https://"), "http://"),
 		VspPubkey:         settings.VspPubkey,
 		Limit:             1,
+	}
+	if mixed {
+		req.EnableMixing = true
+		req.MixedAccount = mixing.Mixed
+		req.MixedSplitAccount = mixing.Mixed
+		req.ChangeAccount = mixing.Change
+		req.MixedAccountBranch = privacyMixedAccountBranch
 	}
 
 	stream, err := rpc.TicketBuyerClient.RunTicketBuyer(ctx, req)

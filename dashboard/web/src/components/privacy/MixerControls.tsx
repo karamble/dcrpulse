@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, Play, Square } from 'lucide-react';
-import { startMixer, stopMixer } from '../../services/api';
+import { getAutobuyerStatus, startMixer, stopMixer } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 
 interface Props {
@@ -12,6 +12,24 @@ export const MixerControls = ({ running, onChanged }: Props) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The autobuyer and the mixer both spend the mixed account, so the mixer
+  // can't start while the autobuyer is running. Poll so the block clears once
+  // the autobuyer is stopped.
+  const [autobuyerRunning, setAutobuyerRunning] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const ab = await getAutobuyerStatus().catch(() => null);
+      if (!cancelled) setAutobuyerRunning(!!ab?.running);
+    };
+    check();
+    const id = window.setInterval(check, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
 
   const handleStart = async (passphrase: string) => {
     await startMixer(passphrase);
@@ -48,13 +66,25 @@ export const MixerControls = ({ running, onChanged }: Props) => {
         ) : (
           <button
             onClick={() => setModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all hover:opacity-90"
+            disabled={autobuyerRunning}
+            title={autobuyerRunning ? 'Stop the ticket autobuyer first' : undefined}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Play className="h-4 w-4" />
             Start mixer
           </button>
         )}
       </div>
+
+      {!running && autobuyerRunning && (
+        <div className="flex items-start gap-2 text-xs text-warning">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span>
+            The ticket autobuyer is running. Stop it before starting the mixer; the autobuyer
+            mixes its ticket buys while it runs.
+          </span>
+        </div>
+      )}
 
       <p className="text-xs text-muted-foreground">
         The dashboard container must stay running for mixing to continue. Mix cycles run

@@ -449,6 +449,10 @@ func GetAccountExtendedPubKey(ctx context.Context, accountNumber uint32) (string
 const (
 	PrivacyMixedAccountName  = "mixed"
 	PrivacyChangeAccountName = "unmixed"
+	// privacyMixedAccountBranch is the BIP44 branch the mixer and mixed ticket
+	// purchases use for the mixed account (Decrediton convention; also passed to
+	// StartMixer).
+	privacyMixedAccountBranch = 0
 )
 
 // FindPrivacyAccounts looks up the mixer's mixed and unmixed accounts by name.
@@ -470,6 +474,26 @@ func FindPrivacyAccounts(ctx context.Context) (mixed uint32, change uint32, conf
 		}
 	}
 	return mixed, change, foundMixed && foundChange, nil
+}
+
+// TicketMixing holds the accounts a ticket purchase routes through when privacy
+// is enabled. Mirrors Decrediton: the mixed account is the funding + split +
+// mixed account, the unmixed account receives change.
+type TicketMixing struct {
+	Mixed  uint32
+	Change uint32
+}
+
+// TicketMixingParams reports the mixing accounts to use for a ticket purchase or
+// auto-buy. ok is true only when both privacy accounts ("mixed"/"unmixed") exist,
+// matching Decrediton's "privacy on when a mixed+change account is configured".
+// On any lookup error it returns ok=false so purchasing falls back to plain mode.
+func TicketMixingParams(ctx context.Context) (TicketMixing, bool) {
+	mixed, change, configured, err := FindPrivacyAccounts(ctx)
+	if err != nil || !configured {
+		return TicketMixing{}, false
+	}
+	return TicketMixing{Mixed: mixed, Change: change}, true
 }
 
 // SetupPrivacyAccounts creates whichever of "mixed" / "unmixed" is missing.
@@ -1162,9 +1186,18 @@ func DecodeRawTransaction(ctx context.Context, txBytes []byte) (*pb.DecodedTrans
 	return resp.Transaction, nil
 }
 
+// ErrSpendWhileMixing is returned by SignAndPublishTransaction when a regular
+// send is attempted while the privacy mixer or ticket autobuyer is running. They
+// both spend the wallet's UTXOs, so they must not run at the same time. Mirrors
+// Decrediton, which blocks the Send tab while either is active.
+var ErrSpendWhileMixing = fmt.Errorf("stop the privacy mixer or ticket autobuyer before sending a transaction")
+
 func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsignedTxBytes []byte, passphrase []byte) (string, error) {
 	if rpc.WalletGrpcClient == nil {
 		return "", fmt.Errorf("wallet gRPC client not initialized")
+	}
+	if IsMixerRunning() || IsAutobuyerRunning() {
+		return "", ErrSpendWhileMixing
 	}
 	defer func() {
 		for i := range passphrase {

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -798,6 +799,18 @@ func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mixer already running", http.StatusConflict)
 		return
 	}
+	// The mixer, the autobuyer, and a manual ticket purchase all spend the
+	// mixed account, so the mixer must not start while any of them is active
+	// (the autobuyer mixes its buys inline; a manual purchase pauses and
+	// restarts the mixer itself).
+	if services.IsAutobuyerRunning() {
+		http.Error(w, "stop the ticket autobuyer before starting the mixer", http.StatusConflict)
+		return
+	}
+	if services.IsTicketPurchaseInProgress() {
+		http.Error(w, "a ticket purchase is in progress; try again once it finishes", http.StatusConflict)
+		return
+	}
 
 	var req struct {
 		Passphrase string `json:"passphrase"`
@@ -1066,6 +1079,8 @@ func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
 		switch {
+		case errors.Is(err, services.ErrSpendWhileMixing):
+			http.Error(w, msg, http.StatusConflict)
 		case strings.Contains(lower, "watching only"), strings.Contains(lower, "watchingonly"):
 			http.Error(w, "This account is watch-only — cannot sign", http.StatusBadRequest)
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):

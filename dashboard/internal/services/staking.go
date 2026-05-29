@@ -249,6 +249,20 @@ func GetVSPInfo(ctx context.Context, host string) (*types.VSPInfo, error) {
 	}, nil
 }
 
+var (
+	ticketPurchaseMu     sync.Mutex
+	ticketPurchaseActive bool
+)
+
+// IsTicketPurchaseInProgress reports whether a manual ticket purchase is
+// currently running. A purchase pauses and then restarts the mixer itself, so
+// the mixer must not be started mid-purchase.
+func IsTicketPurchaseInProgress() bool {
+	ticketPurchaseMu.Lock()
+	defer ticketPurchaseMu.Unlock()
+	return ticketPurchaseActive
+}
+
 // PurchaseTickets calls dcrwallet's PurchaseTickets gRPC with the modern VSP
 // fields. Uses lazy per-account-encryption migration on the source account.
 func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
@@ -262,19 +276,58 @@ func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, v
 		return nil, fmt.Errorf("vspHost and vspPubkey are required")
 	}
 
+	ticketPurchaseMu.Lock()
+	ticketPurchaseActive = true
+	ticketPurchaseMu.Unlock()
+	defer func() {
+		ticketPurchaseMu.Lock()
+		ticketPurchaseActive = false
+		ticketPurchaseMu.Unlock()
+	}()
+
+	// When privacy is configured, buy mixed tickets: fund + split + mix from the
+	// "mixed" account, send change to the "unmixed" account, and enable mixing.
+	// The backend is the source of truth here, overriding the caller's account so
+	// a privacy-enabled wallet can never produce a half-mixed ticket. Otherwise
+	// buy plainly with change going back to the source account.
+	sourceAccount := account
+	changeAcct := changeAccount
+	mixing, mixed := TicketMixingParams(ctx)
+	if mixed {
+		sourceAccount = mixing.Mixed
+		changeAcct = mixing.Change
+	}
+
+	// The continuous mixer and a ticket purchase both spend the mixed account,
+	// so they must not run together: pause a running mixer for the purchase and
+	// restart it afterwards. Mirrors Decrediton's purchaseTicketsAttempt.
+	if mixed && IsMixerRunning() {
+		StopMixer()
+		WaitForMixerStop(5 * time.Second)
+		// The caller zeroes the passphrase once this returns, but a restarted
+		// mixer keeps it for its lifetime, so hand it a copy.
+		mixerPass := append([]byte(nil), passphrase...)
+		mixerMixed, mixerChange := mixing.Mixed, mixing.Change
+		defer func() {
+			if err := StartMixer(mixerPass, mixerMixed, privacyMixedAccountBranch, mixerChange); err != nil {
+				log.Printf("restart mixer after ticket purchase: %v", err)
+			}
+		}()
+	}
+
 	// Unlock the source account; migrate to per-account encryption on the fly
 	// if it isn't yet (matches SignAndPublishTransaction's pattern).
 	if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
 		Passphrase:    passphrase,
-		AccountNumber: account,
+		AccountNumber: sourceAccount,
 	}); err != nil {
 		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
-			if mErr := ensureAccountEncrypted(ctx, account, passphrase); mErr != nil {
+			if mErr := ensureAccountEncrypted(ctx, sourceAccount, passphrase); mErr != nil {
 				return nil, fmt.Errorf("migrate account to per-account encryption: %w", mErr)
 			}
 			if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
 				Passphrase:    passphrase,
-				AccountNumber: account,
+				AccountNumber: sourceAccount,
 			}); err != nil {
 				return nil, fmt.Errorf("unlock source account: %w", err)
 			}
@@ -285,17 +338,25 @@ func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, v
 	defer func() {
 		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_, _ = rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: account})
+		_, _ = rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount})
 	}()
 
-	resp, err := rpc.WalletGrpcClient.PurchaseTickets(ctx, &pb.PurchaseTicketsRequest{
+	purchaseReq := &pb.PurchaseTicketsRequest{
 		Passphrase:    passphrase,
-		Account:       account,
+		Account:       sourceAccount,
 		NumTickets:    numTickets,
 		VspHost:       "https://" + strings.TrimPrefix(strings.TrimPrefix(vspHost, "https://"), "http://"),
 		VspPubkey:     vspPubkey,
-		ChangeAccount: changeAccount,
-	})
+		ChangeAccount: changeAcct,
+	}
+	if mixed {
+		purchaseReq.EnableMixing = true
+		purchaseReq.MixedAccount = mixing.Mixed
+		purchaseReq.MixedSplitAccount = mixing.Mixed
+		purchaseReq.MixedAccountBranch = privacyMixedAccountBranch
+	}
+
+	resp, err := rpc.WalletGrpcClient.PurchaseTickets(ctx, purchaseReq)
 	if err != nil {
 		return nil, fmt.Errorf("PurchaseTickets RPC: %w", err)
 	}

@@ -12,6 +12,7 @@ import {
   Play,
   Save,
   ScrollText,
+  ShieldCheck,
   Ticket,
   Wallet,
 } from 'lucide-react';
@@ -20,10 +21,12 @@ import {
   AutobuyerEvent,
   AutobuyerSettings,
   AutobuyerStatus,
+  PrivacyStatus,
   VSPInfo,
   getAccounts,
   getAutobuyerSettings,
   getAutobuyerStatus,
+  getPrivacyStatus,
   getVSPInfo,
   saveAutobuyerSettings,
   startAutobuyer,
@@ -49,6 +52,7 @@ const levelClass = (level: AutobuyerEvent['level']) => {
 export const AutobuyerTab = () => {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [status, setStatus] = useState<AutobuyerStatus | null>(null);
+  const [privacy, setPrivacy] = useState<PrivacyStatus | null>(null);
   const [vsp, setVsp] = useState<VSPInfo | null>(null);
   const [account, setAccount] = useState<number | null>(null);
   const [balance, setBalance] = useState<string>('0');
@@ -73,15 +77,17 @@ export const AutobuyerTab = () => {
     let cancelled = false;
     (async () => {
       try {
-        const [accs, persisted, s] = await Promise.all([
+        const [accs, persisted, s, priv] = await Promise.all([
           getAccounts(),
           getAutobuyerSettings(),
           getAutobuyerStatus(),
+          getPrivacyStatus().catch(() => null),
         ]);
         if (cancelled) return;
         const usable = accs.filter((a) => a.accountName !== 'imported');
         setAccounts(usable);
         setStatus(s);
+        setPrivacy(priv);
         if (persisted) {
           setAccount(persisted.account);
           setBalance(persisted.balanceToMaintain.toString());
@@ -107,6 +113,12 @@ export const AutobuyerTab = () => {
           // No persisted settings: preselect mixed account if it exists.
           const mixed = usable.find((a) => a.accountName === 'mixed');
           if (mixed) setAccount(mixed.accountNumber);
+        }
+        // When privacy is configured the autobuyer always buys mixed tickets
+        // from the mixed account (backend-enforced), so lock the source to it
+        // regardless of any persisted account.
+        if (priv?.configured && priv.mixedAccount !== undefined) {
+          setAccount(priv.mixedAccount);
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -237,27 +249,48 @@ export const AutobuyerTab = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Wallet className="h-4 w-4" />
-              Source account
-            </label>
-            <select
-              value={account ?? ''}
-              onChange={(e) => setAccount(e.target.value === '' ? null : Number(e.target.value))}
-              disabled={running}
-              className="w-full px-3 py-2 rounded-lg bg-background border border-border/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="" disabled>
-                Select account
-              </option>
-              {accounts.map((a) => (
-                <option key={a.accountNumber} value={a.accountNumber}>
-                  {a.accountName} ({a.spendableBalance.toFixed(2)} DCR)
+          {privacy?.configured ? (
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                Source account
+              </label>
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/30 text-sm">
+                <span>
+                  Mixed (private) tickets from your <span className="font-semibold">mixed</span>{' '}
+                  account
+                </span>
+              </div>
+              {privacy.mixerRunning && (
+                <p className="text-xs text-muted-foreground">
+                  Starting the autobuyer stops the standalone mixer; the autobuyer mixes tickets
+                  while it runs.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Wallet className="h-4 w-4" />
+                Source account
+              </label>
+              <select
+                value={account ?? ''}
+                onChange={(e) => setAccount(e.target.value === '' ? null : Number(e.target.value))}
+                disabled={running}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="" disabled>
+                  Select account
                 </option>
-              ))}
-            </select>
-          </div>
+                {accounts.map((a) => (
+                  <option key={a.accountNumber} value={a.accountNumber}>
+                    {a.accountName} ({a.spendableBalance.toFixed(2)} DCR)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className={running ? 'opacity-50 pointer-events-none' : ''}>
             <VSPSelect network="mainnet" value={vsp} onChange={setVsp} />

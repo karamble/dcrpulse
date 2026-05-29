@@ -69,6 +69,19 @@ func IsMixerRunning() bool {
 	return mixerCancel != nil
 }
 
+// WaitForMixerStop blocks until the mixer goroutine has fully stopped (its stop
+// path relocks the change account) or the timeout elapses. Call after StopMixer
+// before an operation that needs exclusive use of the mixed account.
+func WaitForMixerStop(timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for IsMixerRunning() {
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // LastMixerError returns the most recent terminal error from the mixer, or "".
 func LastMixerError() string {
 	mixerMu.Lock()

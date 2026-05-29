@@ -6,7 +6,9 @@ import {
   ConstructTransactionResponse,
   constructTransaction,
   getAccounts,
+  getAutobuyerStatus,
   getNextAddress,
+  getPrivacyStatus,
   validateAddress,
 } from '../../services/api';
 import { nextAddressCache } from '../../services/nextAddressCache';
@@ -57,6 +59,9 @@ export const SendTab = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
   const [topLevelError, setTopLevelError] = useState<string | null>(null);
+  // A regular send conflicts with the running mixer/autobuyer (both spend the
+  // wallet's UTXOs), so block sending while either is active. Mirrors Decrediton.
+  const [spendBlocked, setSpendBlocked] = useState(false);
 
   const addrTimerRef = useRef<number | null>(null);
   const constructTimerRef = useRef<number | null>(null);
@@ -81,6 +86,25 @@ export const SendTab = () => {
     })();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  // Poll mixer/autobuyer state so the send block clears once the user stops them.
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const [priv, ab] = await Promise.all([
+        getPrivacyStatus().catch(() => null),
+        getAutobuyerStatus().catch(() => null),
+      ]);
+      if (cancelled) return;
+      setSpendBlocked(!!priv?.mixerRunning || !!ab?.running);
+    };
+    check();
+    const id = window.setInterval(check, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
     };
   }, []);
 
@@ -479,13 +503,24 @@ export const SendTab = () => {
         </div>
       )}
 
+      {spendBlocked && (
+        <div className="flex items-start gap-2 p-4 rounded-lg bg-warning/10 border border-warning/30 text-sm text-warning">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>
+            Stop the privacy mixer or ticket autobuyer (on the Privacy / Staking tabs) before
+            sending a transaction.
+          </span>
+        </div>
+      )}
+
       <div className="flex justify-end">
         <button
           onClick={() => {
             setTopLevelError(null);
             setModalOpen(true);
           }}
-          disabled={!construct || constructing || sourceAccount === null}
+          disabled={!construct || constructing || sourceAccount === null || spendBlocked}
+          title={spendBlocked ? 'Stop the privacy mixer or ticket autobuyer first' : undefined}
           className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Send className="h-5 w-5" />
