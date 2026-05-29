@@ -1171,6 +1171,18 @@ func ConstructTransaction(ctx context.Context, sourceAccount uint32, recipient s
 			Destination: &pb.ConstructTransactionRequest_OutputDestination{Address: recipient},
 			Amount:      amountAtoms,
 		}}
+		// When spending the mixed account with privacy enabled, route change to
+		// the unmixed account so mixed coins' change never pollutes the mixed
+		// set. Mirrors Decrediton; otherwise dcrwallet defaults change to the
+		// source account, which for a mixed-account send would land back in
+		// mixed. For any other source (or privacy off) we leave it to dcrwallet.
+		if mixing, ok := TicketMixingParams(ctx); ok && sourceAccount == mixing.Mixed {
+			changeAddr, err := GetNextAddress(ctx, mixing.Change)
+			if err != nil {
+				return nil, fmt.Errorf("derive unmixed change address: %w", err)
+			}
+			req.ChangeDestination = &pb.ConstructTransactionRequest_OutputDestination{Address: changeAddr}
+		}
 	}
 	return rpc.WalletGrpcClient.ConstructTransaction(ctx, req)
 }
