@@ -416,6 +416,51 @@ func ensureAccountEncrypted(ctx context.Context, accountNumber uint32, passphras
 	return fmt.Errorf("account %d not found", accountNumber)
 }
 
+// unlockAccountForSpend makes a per-account-encrypted account usable for signing.
+// It first checks whether the account is already unlocked: dcrwallet's
+// UnlockAccount, when called on an already-unlocked account, does a strict
+// passphrase-hash compare against the passphrase that first unlocked it and
+// returns "invalid passphrase" on any mismatch (e.g. the account was unlocked
+// earlier by a mix session). Skipping the redundant unlock avoids that. When the
+// account is locked, it unlocks, lazily migrating to per-account encryption if
+// needed (the default account on a fresh wallet isn't encrypted yet).
+func unlockAccountForSpend(ctx context.Context, accountNumber uint32, passphrase []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+	acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	if err == nil {
+		for _, a := range acctsResp.Accounts {
+			if a.AccountNumber == accountNumber {
+				if a.AccountUnlocked {
+					return nil // already usable; don't re-unlock (avoids the hash compare)
+				}
+				break
+			}
+		}
+	}
+
+	if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
+		Passphrase:    passphrase,
+		AccountNumber: accountNumber,
+	}); err != nil {
+		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
+			if mErr := ensureAccountEncrypted(ctx, accountNumber, passphrase); mErr != nil {
+				return fmt.Errorf("migrate account to per-account encryption: %w", mErr)
+			}
+			if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
+				Passphrase:    passphrase,
+				AccountNumber: accountNumber,
+			}); err != nil {
+				return fmt.Errorf("unlock source account: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("unlock source account: %w", err)
+	}
+	return nil
+}
+
 // RenameAccount renames an existing account. dcrwallet's RenameAccount gRPC
 // does not require the passphrase — the account name is metadata, not key
 // material.
@@ -1217,27 +1262,10 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 		}
 	}()
 
-	// Per-account unlock + sign + auto-relock. If the source account isn't
-	// per-account-encrypted yet (e.g. the default account on a wallet created
-	// before this migration), migrate it on the fly with the user's typed
-	// passphrase, then retry. Matches Decrediton's setAccountsPass behavior.
-	if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
-		Passphrase:    passphrase,
-		AccountNumber: sourceAccount,
-	}); err != nil {
-		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
-			if mErr := ensureAccountEncrypted(ctx, sourceAccount, passphrase); mErr != nil {
-				return "", fmt.Errorf("migrate account to per-account encryption: %w", mErr)
-			}
-			if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
-				Passphrase:    passphrase,
-				AccountNumber: sourceAccount,
-			}); err != nil {
-				return "", err
-			}
-		} else {
-			return "", err
-		}
+	// Make the source account usable for signing (skips if already unlocked,
+	// migrates to per-account encryption if needed), then auto-relock on return.
+	if err := unlockAccountForSpend(ctx, sourceAccount, passphrase); err != nil {
+		return "", err
 	}
 	defer func() {
 		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

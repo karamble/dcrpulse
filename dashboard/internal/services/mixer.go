@@ -210,11 +210,13 @@ func runMixer(ctx context.Context, passphrase []byte, mixedAccount, mixedBranch,
 		_, _ = rpc.WalletGrpcClient.LockAccount(lockCtx, &pb.LockAccountRequest{AccountNumber: changeAccount})
 	}()
 
-	// v5 dropped the CsppServer field. Mixing is implicitly enabled when
-	// the daemon is launched with --mixing and RunAccountMixer is invoked
-	// with a valid mixed/change account pair.
+	// Don't pass the passphrase: dcrwallet's RunAccountMixer would otherwise do a
+	// wallet-wide Unlock, unlocking every account for the mixer's lifetime. We
+	// already unlocked the change account per-account above (relocked on stop),
+	// which is all the mixer needs to sign. Mirrors Decrediton, which unlocks only
+	// the change account and omits the passphrase from this RPC. v5 also dropped
+	// the CsppServer field; mixing is implicit with --mixing + a valid account pair.
 	req := &pb.RunAccountMixerRequest{
-		Passphrase:         passphrase,
 		MixedAccount:       mixedAccount,
 		MixedAccountBranch: mixedBranch,
 		ChangeAccount:      changeAccount,

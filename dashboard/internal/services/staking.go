@@ -328,25 +328,10 @@ func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, v
 		}()
 	}
 
-	// Unlock the source account; migrate to per-account encryption on the fly
-	// if it isn't yet (matches SignAndPublishTransaction's pattern).
-	if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
-		Passphrase:    passphrase,
-		AccountNumber: sourceAccount,
-	}); err != nil {
-		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
-			if mErr := ensureAccountEncrypted(ctx, sourceAccount, passphrase); mErr != nil {
-				return nil, fmt.Errorf("migrate account to per-account encryption: %w", mErr)
-			}
-			if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
-				Passphrase:    passphrase,
-				AccountNumber: sourceAccount,
-			}); err != nil {
-				return nil, fmt.Errorf("unlock source account: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("unlock source account: %w", err)
-		}
+	// Make the source account usable for signing (skips if already unlocked,
+	// migrates to per-account encryption if needed).
+	if err := unlockAccountForSpend(ctx, sourceAccount, passphrase); err != nil {
+		return nil, err
 	}
 	defer func() {
 		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -540,23 +525,8 @@ func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, accoun
 		return fmt.Errorf("vspHost and vspPubkey are required")
 	}
 
-	if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
-		Passphrase:    passphrase,
-		AccountNumber: account,
-	}); err != nil {
-		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
-			if mErr := ensureAccountEncrypted(ctx, account, passphrase); mErr != nil {
-				return fmt.Errorf("migrate account to per-account encryption: %w", mErr)
-			}
-			if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
-				Passphrase:    passphrase,
-				AccountNumber: account,
-			}); err != nil {
-				return fmt.Errorf("unlock account: %w", err)
-			}
-		} else {
-			return fmt.Errorf("unlock account: %w", err)
-		}
+	if err := unlockAccountForSpend(ctx, account, passphrase); err != nil {
+		return err
 	}
 	defer func() {
 		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

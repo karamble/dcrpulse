@@ -200,28 +200,13 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphr
 		}
 	}
 
-	// Unlock the source account; lazy-migrate to per-account encryption if
-	// needed (same pattern as services/staking.go::PurchaseTickets).
+	// Make the source account usable for signing. Skips the unlock if it's
+	// already unlocked (e.g. by a prior mix session) to avoid dcrwallet's
+	// already-unlocked "invalid passphrase" hash check; migrates to per-account
+	// encryption if needed.
 	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err := rpc.WalletGrpcClient.UnlockAccount(unlockCtx, &pb.UnlockAccountRequest{
-		Passphrase:    passphrase,
-		AccountNumber: sourceAccount,
-	})
+	err := unlockAccountForSpend(unlockCtx, sourceAccount, passphrase)
 	unlockCancel()
-	if err != nil {
-		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
-			if mErr := ensureAccountEncrypted(ctx, sourceAccount, passphrase); mErr != nil {
-				setAutobuyerErr(fmt.Sprintf("Migrate account to per-account encryption: %v", mErr))
-				return
-			}
-			unlockCtx2, unlockCancel2 := context.WithTimeout(ctx, 10*time.Second)
-			_, err = rpc.WalletGrpcClient.UnlockAccount(unlockCtx2, &pb.UnlockAccountRequest{
-				Passphrase:    passphrase,
-				AccountNumber: sourceAccount,
-			})
-			unlockCancel2()
-		}
-	}
 	if err != nil {
 		setAutobuyerErr(fmt.Sprintf("Unlock source account failed: %v", err))
 		return
