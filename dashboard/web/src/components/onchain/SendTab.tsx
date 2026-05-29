@@ -66,27 +66,27 @@ export const SendTab = () => {
   const addrTimerRef = useRef<number | null>(null);
   const constructTimerRef = useRef<number | null>(null);
 
+  // loadAccounts refreshes the account list + balances, preserving the user's
+  // current source-account selection (only defaulting to the first account when
+  // none is selected yet). Used on mount and after a send so balances aren't stale.
+  const loadAccounts = async () => {
+    try {
+      const data = await getAccounts();
+      const visible = data
+        .filter((a) => a.accountName !== 'imported')
+        .sort((a, b) => a.accountNumber - b.accountNumber);
+      setAccounts(visible);
+      setAccountsError(null);
+      setSourceAccount((prev) => (prev ?? (visible.length > 0 ? visible[0].accountNumber : null)));
+    } catch (err) {
+      console.error('Failed to load accounts:', err);
+      setAccountsError('Failed to load accounts');
+    }
+  };
+
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await getAccounts();
-        if (cancelled) return;
-        const visible = data
-          .filter((a) => a.accountName !== 'imported')
-          .sort((a, b) => a.accountNumber - b.accountNumber);
-        setAccounts(visible);
-        if (visible.length > 0) setSourceAccount(visible[0].accountNumber);
-      } catch (err) {
-        if (!cancelled) {
-          console.error('Failed to load accounts:', err);
-          setAccountsError('Failed to load accounts');
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    loadAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Poll mixer/autobuyer state so the send block clears once the user stops them.
@@ -263,6 +263,9 @@ export const SendTab = () => {
     setConstruct(null);
     setDestAccount(null);
     setAddrCheck({ state: 'idle' });
+    // Refresh balances in the background so the form is up to date when the
+    // user returns via "Send another".
+    loadAccounts();
   };
 
   const handleWatchOnly = (msg: string) => {
@@ -291,7 +294,10 @@ export const SendTab = () => {
           </Link>
         </div>
         <button
-          onClick={() => setSuccessTxHash(null)}
+          onClick={() => {
+            loadAccounts();
+            setSuccessTxHash(null);
+          }}
           className="px-6 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all"
         >
           Send another
