@@ -44,6 +44,12 @@ export const PrivacyPage = () => {
     return found ? found.totalBalance : 0;
   };
 
+  const spendableFor = (accountNumber: number | undefined): number => {
+    if (accountNumber === undefined) return 0;
+    const found = accounts.find((a) => a.accountNumber === accountNumber);
+    return found ? found.spendableBalance : 0;
+  };
+
   return (
     <div className="space-y-6">
       {status?.configured && (
@@ -69,7 +75,7 @@ export const PrivacyPage = () => {
         <>
           <MixerBalanceCards
             unmixedBalance={balanceFor(status.changeAccount)}
-            mixedBalance={balanceFor(status.mixedAccount)}
+            mixedBalance={spendableFor(status.mixedAccount)}
             running={status.mixerRunning}
           />
 
