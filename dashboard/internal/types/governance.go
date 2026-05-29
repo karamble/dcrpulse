@@ -111,6 +111,18 @@ type ProposalDetail struct {
 	Comments        []ProposalComment    `json:"comments"`
 }
 
+// VoteEligibility is what the vote modal needs when the user opens it: how many
+// of the proposal's eligible tickets the wallet owns, the available vote
+// options, and whether the wallet has already voted (and with what choice).
+// Computed on demand by PrepareProposalVote.
+type VoteEligibility struct {
+	OwnedEligibleCount int                  `json:"ownedEligibleCount"`
+	EligibleTickets    int64                `json:"eligibleTickets"`
+	VoteOptions        []ProposalVoteOption `json:"voteOptions"`
+	AlreadyVoted       bool                 `json:"alreadyVoted"`
+	CurrentChoice      string               `json:"currentChoice"`
+}
+
 // CastPoliteiaVoteRequest is the body for the cast-vote endpoint.
 type CastPoliteiaVoteRequest struct {
 	Token      string `json:"token"`

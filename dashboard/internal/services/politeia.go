@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,12 @@ const (
 	// size their request context and refresh-availability math to match.
 	ProposalsRefreshCooldown = 8 * time.Hour
 	ProposalsFetchTimeout    = 1 * time.Minute
+
+	// preparedVoteTTL bounds how long a PrepareProposalVote result is reused
+	// by a follow-up cast. The eligible-ticket snapshot and committed-ticket
+	// set are stable for the duration of a vote, so this only needs to span a
+	// single open-modal-then-cast interaction.
+	preparedVoteTTL = 15 * time.Minute
 )
 
 // Markdown renderer + sanitizer for Politeia proposal descriptions.
@@ -73,16 +80,28 @@ func PoliteiaEnabled() bool {
 // hammer proposals.decred.org. Cast-vote invalidates everything for the
 // touched token (and the whole list) so tallies update on next view.
 var (
-	piCacheMu        sync.RWMutex
-	piCachedList     []types.Proposal
-	piCachedAt       time.Time
-	piCachedDetails  = map[string]piDetailCacheEntry{}
-	piHTTPClient     = &http.Client{Timeout: politeiaTimeout}
+	piCacheMu       sync.RWMutex
+	piCachedList    []types.Proposal
+	piCachedAt      time.Time
+	piCachedDetails = map[string]piDetailCacheEntry{}
+	piPreparedVotes = map[string]piPreparedVote{}
+	piHTTPClient    = &http.Client{Timeout: politeiaTimeout}
 )
 
 type piDetailCacheEntry struct {
 	detail *types.ProposalDetail
 	at     time.Time
+}
+
+// piPreparedVote caches what PrepareProposalVote computed (the wallet's owned
+// eligible tickets + the vote options) so a subsequent cast can reuse it
+// without re-fetching the eligible-ticket snapshot or re-running
+// CommittedTickets. Keyed by network|wallet|token. A present entry implies the
+// wallet has NOT already voted (PrepareProposalVote stores it only on that path).
+type piPreparedVote struct {
+	ownedTickets []*pb.CommittedTicketsResponse_TicketAddress
+	options      []types.ProposalVoteOption
+	at           time.Time
 }
 
 // ListProposals returns the union of all current Politeia proposals with
@@ -295,21 +314,6 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	// Only fetch the heavy vote-details endpoint (returns the full
-	// eligible ticket-hash list) for proposals where voting is active.
-	// For finished/abandoned/pre-vote proposals the eligible count
-	// from the summary is enough and the ticket snapshot is irrelevant.
-	// Matches Decrediton's behaviour: getProposalVoteDetails only fires
-	// when the proposal is in the voting state.
-	var det *piVoteDetailsResp
-	if s, ok := sum[token]; ok && s.Status == 3 {
-		d, err := piVoteDetails(ctx, token)
-		if err != nil {
-			log.Printf("politeia vote details %s: %v", token, err)
-		} else {
-			det = d
-		}
-	}
 
 	proposal := proposalFromRecordAndSummary(token, rec, sum[token])
 	localVotes := loadLocalPoliteiaVotes(ctx)
@@ -324,26 +328,19 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 	}
 
 	// Comments are a best-effort enrichment: a failure here must not block
-	// the proposal view, mirroring the vote-details handling above.
+	// the proposal view.
 	if cmts, err := piComments(ctx, token); err != nil {
 		log.Printf("politeia comments %s: %v", token, err)
 	} else {
 		out.Comments = commentsFromPi(cmts)
 	}
-	if det != nil {
-		for _, o := range det.Vote.Params.Options {
-			out.VoteOptions = append(out.VoteOptions, types.ProposalVoteOption{
-				ID:  o.ID,
-				Bit: o.Bit,
-			})
-		}
-		// Prefer the more authoritative count from vote details when
-		// available; the proposal summary's eligibleTicketCount may
-		// not include all eligible tickets yet for pre-vote proposals.
-		if n := int64(len(det.Vote.EligibleTickets)); n > 0 {
-			out.EligibleTickets = n
-		}
-	}
+
+	// Vote options come from the already-fetched summary (its per-option
+	// results carry the id + vote bit), so a detail view never needs the
+	// heavy eligible-ticket snapshot from /ticketvote/v1/details. That
+	// snapshot is fetched on demand only when the user opens the vote modal
+	// (see PrepareProposalVote).
+	out.VoteOptions = voteOptionsFromSummary(sum[token])
 
 	at := time.Now()
 	piCacheMu.Lock()
@@ -353,40 +350,93 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 	return out, at, nil
 }
 
-// CastPoliteiaVote runs the full sign + cast flow: fetch eligible tickets,
-// intersect with wallet-owned tickets, sign each message, POST castballot.
-// Returns aggregate counts + per-ticket errors.
-func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, passphrase []byte) (*types.CastPoliteiaVoteResult, error) {
+// PrepareProposalVote computes everything the vote modal needs when the user
+// opens it: how many of the proposal's eligible tickets the wallet owns, the
+// vote options, and whether the wallet has already voted. The heavy work (the
+// eligible-ticket snapshot + CommittedTickets + the recorded-votes
+// reconciliation) runs only here, on explicit user action, never on a normal
+// detail-page view. A locally recorded choice short-circuits all of it.
+func PrepareProposalVote(ctx context.Context, token string) (*types.VoteEligibility, error) {
 	if !PoliteiaEnabled() {
 		return nil, ErrPoliteiaDisabled
 	}
+	if token == "" {
+		return nil, fmt.Errorf("token required")
+	}
+
+	// Options for display come from the already-cached summary/detail, not the
+	// heavy snapshot.
+	out := &types.VoteEligibility{VoteOptions: cachedVoteOptions(token)}
+
+	// Fast-path: a locally recorded choice means this wallet already voted
+	// through dcrpulse. Detect it instantly with no Politeia or gRPC calls.
+	if choice := loadLocalPoliteiaVotes(ctx)[token]; choice != "" {
+		out.AlreadyVoted = true
+		out.CurrentChoice = choice
+		return out, nil
+	}
+
 	if rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("wallet gRPC unavailable")
 	}
 
-	det, err := piVoteDetails(ctx, req.Token)
+	ctx, cancel := context.WithTimeout(ctx, ProposalsFetchTimeout)
+	defer cancel()
+
+	det, err := piVoteDetails(ctx, token)
 	if err != nil {
 		return nil, fmt.Errorf("vote details: %w", err)
 	}
-	var voteBit uint32
-	var found bool
+	options := make([]types.ProposalVoteOption, 0, len(det.Vote.Params.Options))
 	for _, o := range det.Vote.Params.Options {
-		if o.ID == req.VoteOption {
-			voteBit = o.Bit
-			found = true
-			break
-		}
+		options = append(options, types.ProposalVoteOption{ID: o.ID, Bit: o.Bit})
 	}
-	if !found {
-		return nil, fmt.Errorf("vote option %q not allowed for this proposal", req.VoteOption)
+	out.VoteOptions = options
+	out.EligibleTickets = int64(len(det.Vote.EligibleTickets))
+
+	addrs, err := committedFromEligible(ctx, det.Vote.EligibleTickets)
+	if err != nil {
+		return nil, err
+	}
+	out.OwnedEligibleCount = len(addrs)
+	if len(addrs) == 0 {
+		return out, nil
 	}
 
-	// Intersect eligible tickets with wallet-owned ones. Ticket hashes
-	// from Politeia come in big-endian hex; CommittedTickets expects
-	// little-endian bytes.
-	eligible := det.Vote.EligibleTickets
+	// Reconcile against Politeia's recorded (off-chain) votes: if one of the
+	// wallet's owned eligible tickets already appears in the results, the
+	// wallet has voted. Persist the discovered choice so future opens hit the
+	// local fast-path. Mirrors Decrediton getVoteOption (assumes a uniform bit
+	// across the wallet's tickets).
+	if votes, err := piResults(ctx, token); err != nil {
+		log.Printf("politeia results %s: %v", token, err)
+	} else if choice := walletVoteChoice(addrs, votes, options); choice != "" {
+		out.AlreadyVoted = true
+		out.CurrentChoice = choice
+		if err := persistLocalPoliteiaVote(ctx, token, choice); err != nil {
+			log.Printf("persist politeia vote: %v", err)
+		}
+		return out, nil
+	}
+
+	// Cache the owned-ticket set so the follow-up cast reuses it.
+	piCacheMu.Lock()
+	piPreparedVotes[preparedVoteKey(ctx, token)] = piPreparedVote{
+		ownedTickets: addrs,
+		options:      options,
+		at:           time.Now(),
+	}
+	piCacheMu.Unlock()
+
+	return out, nil
+}
+
+// committedFromEligible intersects a Politeia eligible-ticket snapshot (big-
+// endian hex hashes) with the wallet's committed tickets, returning the tickets
+// the wallet owns. CommittedTickets expects little-endian bytes.
+func committedFromEligible(ctx context.Context, eligible []string) ([]*pb.CommittedTicketsResponse_TicketAddress, error) {
 	if len(eligible) == 0 {
-		return &types.CastPoliteiaVoteResult{}, nil
+		return nil, nil
 	}
 	ticketBytes := make([][]byte, 0, len(eligible))
 	for _, t := range eligible {
@@ -400,7 +450,121 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 	if err != nil {
 		return nil, fmt.Errorf("CommittedTickets: %w", err)
 	}
-	addrs := owned.GetTicketAddresses()
+	return owned.GetTicketAddresses(), nil
+}
+
+// walletVoteChoice returns the option id the wallet voted, or "" if none of its
+// owned tickets appear in the recorded votes.
+func walletVoteChoice(owned []*pb.CommittedTicketsResponse_TicketAddress, votes []piCastVote, options []types.ProposalVoteOption) string {
+	if len(owned) == 0 || len(votes) == 0 {
+		return ""
+	}
+	ownedHex := make(map[string]struct{}, len(owned))
+	for _, ta := range owned {
+		ownedHex[hex.EncodeToString(reversed(ta.GetTicket()))] = struct{}{}
+	}
+	for _, v := range votes {
+		if _, ok := ownedHex[v.Ticket]; !ok {
+			continue
+		}
+		bit, err := parseVoteBit(v.VoteBit)
+		if err != nil {
+			continue
+		}
+		for _, o := range options {
+			if uint64(o.Bit) == bit {
+				return o.ID
+			}
+		}
+	}
+	return ""
+}
+
+// parseVoteBit parses a Politeia vote bit, which may be decimal or hex.
+func parseVoteBit(s string) (uint64, error) {
+	if n, err := strconv.ParseUint(s, 10, 32); err == nil {
+		return n, nil
+	}
+	return strconv.ParseUint(s, 16, 32)
+}
+
+// bitForOption returns the vote bit for the option with the given id.
+func bitForOption(options []types.ProposalVoteOption, id string) (uint32, bool) {
+	for _, o := range options {
+		if o.ID == id {
+			return o.Bit, true
+		}
+	}
+	return 0, false
+}
+
+// cachedVoteOptions returns the proposal's vote options from the in-process
+// detail cache, or nil if the detail has not been fetched yet.
+func cachedVoteOptions(token string) []types.ProposalVoteOption {
+	piCacheMu.RLock()
+	defer piCacheMu.RUnlock()
+	if e, ok := piCachedDetails[token]; ok && e.detail != nil {
+		return e.detail.VoteOptions
+	}
+	return nil
+}
+
+// preparedVoteKey scopes a prepared-vote cache entry to the active network +
+// wallet so it can never be reused across wallets.
+func preparedVoteKey(ctx context.Context, token string) string {
+	network, _ := CurrentNetwork(ctx)
+	return network + "|" + CurrentWalletName() + "|" + token
+}
+
+// loadPreparedVote returns a fresh prepared-vote entry for the token, if any.
+func loadPreparedVote(ctx context.Context, token string) (piPreparedVote, bool) {
+	piCacheMu.RLock()
+	pv, ok := piPreparedVotes[preparedVoteKey(ctx, token)]
+	piCacheMu.RUnlock()
+	if !ok || time.Since(pv.at) > preparedVoteTTL {
+		return piPreparedVote{}, false
+	}
+	return pv, true
+}
+
+// CastPoliteiaVote runs the full sign + cast flow: fetch eligible tickets,
+// intersect with wallet-owned tickets, sign each message, POST castballot.
+// Returns aggregate counts + per-ticket errors.
+func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, passphrase []byte) (*types.CastPoliteiaVoteResult, error) {
+	if !PoliteiaEnabled() {
+		return nil, ErrPoliteiaDisabled
+	}
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC unavailable")
+	}
+
+	// Reuse the owned-ticket set + options computed when the user opened the
+	// vote modal (PrepareProposalVote), avoiding a redundant snapshot fetch +
+	// CommittedTickets pass. Fall back to computing them here when no fresh
+	// prepared state exists.
+	var addrs []*pb.CommittedTicketsResponse_TicketAddress
+	var options []types.ProposalVoteOption
+	if pv, ok := loadPreparedVote(ctx, req.Token); ok {
+		addrs = pv.ownedTickets
+		options = pv.options
+	} else {
+		det, err := piVoteDetails(ctx, req.Token)
+		if err != nil {
+			return nil, fmt.Errorf("vote details: %w", err)
+		}
+		for _, o := range det.Vote.Params.Options {
+			options = append(options, types.ProposalVoteOption{ID: o.ID, Bit: o.Bit})
+		}
+		addrs, err = committedFromEligible(ctx, det.Vote.EligibleTickets)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	voteBit, found := bitForOption(options, req.VoteOption)
+	if !found {
+		return nil, fmt.Errorf("vote option %q not allowed for this proposal", req.VoteOption)
+	}
 	if len(addrs) == 0 {
 		return &types.CastPoliteiaVoteResult{}, nil
 	}
@@ -517,6 +681,7 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 	piCachedList = nil
 	piCachedAt = time.Time{}
 	delete(piCachedDetails, req.Token)
+	delete(piPreparedVotes, preparedVoteKey(ctx, req.Token))
 	piCacheMu.Unlock()
 
 	return result, nil
@@ -601,6 +766,16 @@ type piSummariesResp struct {
 type piVoteDetailsResp struct {
 	Auths []json.RawMessage `json:"auths"`
 	Vote  piVoteSection     `json:"vote"`
+}
+
+type piResultsResp struct {
+	Votes []piCastVote `json:"votes"`
+}
+
+type piCastVote struct {
+	Token   string `json:"token"`
+	Ticket  string `json:"ticket"`
+	VoteBit string `json:"votebit"`
 }
 
 type piCommentsResp struct {
@@ -689,6 +864,19 @@ func piVoteDetails(ctx context.Context, token string) (*piVoteDetailsResp, error
 		return nil, err
 	}
 	return &resp, nil
+}
+
+// piResults fetches the votes Politeia has recorded for a proposal. Politeia
+// voting is off-chain, so this is the authoritative record of cast votes.
+func piResults(ctx context.Context, token string) ([]piCastVote, error) {
+	body := struct {
+		Token string `json:"token"`
+	}{Token: token}
+	var resp piResultsResp
+	if err := piPost(ctx, "/ticketvote/v1/results", body, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Votes, nil
 }
 
 // piComments fetches the full comment thread for a proposal. Politeia returns
@@ -792,6 +980,17 @@ func proposalFromRecordAndSummary(token string, rec piRecord, sum piSummary) typ
 		proposal.BlocksLeft = sum.EndBlockHeight - sum.BestBlock
 	}
 	return proposal
+}
+
+// voteOptionsFromSummary derives the proposal's vote options from the summary's
+// per-option results (each carries the option id + vote bit), so the detail view
+// can render them without the heavy eligible-ticket snapshot.
+func voteOptionsFromSummary(sum piSummary) []types.ProposalVoteOption {
+	opts := make([]types.ProposalVoteOption, 0, len(sum.Results))
+	for _, r := range sum.Results {
+		opts = append(opts, types.ProposalVoteOption{ID: r.ID, Bit: r.VoteBit})
+	}
+	return opts
 }
 
 func summaryStatusToBucket(status string) string {

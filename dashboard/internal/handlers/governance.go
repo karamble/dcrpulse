@@ -272,6 +272,32 @@ func RefreshProposalDetailHandler(w http.ResponseWriter, r *http.Request) {
 	writeProposalDetailResponse(w, http.StatusOK, detail, fetchedAt)
 }
 
+// PrepareProposalVoteHandler computes the wallet's vote eligibility for a
+// proposal (owned-ticket count, options, already-voted state) on demand when
+// the user opens the vote modal. This is where the heavy eligible-ticket
+// snapshot work runs, never on a plain detail-page view.
+func PrepareProposalVoteHandler(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(mux.Vars(r)["token"])
+	if token == "" {
+		http.Error(w, "token required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), services.ProposalsFetchTimeout)
+	defer cancel()
+	elig, err := services.PrepareProposalVote(ctx, token)
+	if err != nil {
+		if errors.Is(err, services.ErrPoliteiaDisabled) {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		log.Printf("PrepareProposalVote(%s): %v", token, err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(elig)
+}
+
 // CastPoliteiaVoteHandler runs the sign + ballot-cast flow.
 func CastPoliteiaVoteHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.CastPoliteiaVoteRequest

@@ -14,16 +14,15 @@ import {
   Loader2,
   MessageSquare,
   RefreshCw,
+  Vote,
 } from 'lucide-react';
 import {
-  CastVoteResult,
   ProposalComment,
   ProposalDetail,
-  castPoliteiaVote,
   getProposalDetail,
   refreshProposalDetail,
 } from '../../services/api';
-import { PassphraseModal } from '../wallet/PassphraseModal';
+import { VoteModal } from './VoteModal';
 import { VoteResultsBar } from './VoteResultsBar';
 
 const POLITEIA_BASE = 'https://proposals.decred.org/record';
@@ -137,9 +136,7 @@ export const ProposalDetailPage = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string>('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [voteResult, setVoteResult] = useState<CastVoteResult | null>(null);
+  const [voteModalOpen, setVoteModalOpen] = useState(false);
   // now (unix seconds) drives the live countdown / "updated X ago" display.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
@@ -151,7 +148,6 @@ export const ProposalDetailPage = () => {
       setDetail(r.detail);
       setFetchedAt(r.fetchedAt);
       setRefreshAvailableAt(r.refreshAvailableAt);
-      if (r.detail.currentChoice) setSelected(r.detail.currentChoice);
     } catch (err: any) {
       const body = err?.response?.data;
       setError(typeof body === 'string' ? body : err?.message || 'Failed to load proposal');
@@ -180,7 +176,6 @@ export const ProposalDetailPage = () => {
       setDetail(r.detail);
       setFetchedAt(r.fetchedAt);
       setRefreshAvailableAt(r.refreshAvailableAt);
-      if (r.detail.currentChoice) setSelected(r.detail.currentChoice);
     } catch (err: any) {
       const status = err?.response?.status;
       const data = err?.response?.data;
@@ -195,19 +190,6 @@ export const ProposalDetailPage = () => {
     } finally {
       setRefreshing(false);
       setNow(Math.floor(Date.now() / 1000));
-    }
-  };
-
-  const handleSubmit = async (passphrase: string) => {
-    if (!token || !selected) return;
-    try {
-      const r = await castPoliteiaVote(token, selected, passphrase);
-      setVoteResult(r);
-      setModalOpen(false);
-      await load();
-    } catch (err: any) {
-      const body = err?.response?.data;
-      throw new Error(typeof body === 'string' ? body : err?.message || 'Vote cast failed');
     }
   };
 
@@ -231,8 +213,7 @@ export const ProposalDetailPage = () => {
 
   if (!detail) return null;
 
-  const isVoting = detail.status === 'voting' && detail.voteOptions.length > 0;
-  const canCast = isVoting && detail.eligibleTickets > 0 && selected !== '';
+  const isVoting = detail.status === 'voting';
   const cooldownRemaining = refreshAvailableAt - now;
   const canRefresh = !refreshing && cooldownRemaining <= 0;
 
@@ -353,63 +334,26 @@ export const ProposalDetailPage = () => {
       )}
 
       {isVoting && (
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
           <h3 className="font-semibold">Cast your vote</h3>
           {detail.currentChoice && (
             <div className="flex items-center gap-2 text-sm text-success">
               <CheckCircle2 className="h-4 w-4" />
-              You previously voted "{detail.currentChoice}".
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {detail.voteOptions.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => setSelected(o.id)}
-                className={`p-3 rounded-lg border text-sm font-medium transition-colors ${
-                  selected === o.id
-                    ? 'border-primary/40 bg-primary/10 text-foreground'
-                    : 'border-border/50 bg-muted/10 hover:bg-muted/20'
-                }`}
-              >
-                {o.id}
-              </button>
-            ))}
-          </div>
-          {voteResult && (
-            <div className="text-sm">
-              <div className="text-success">
-                Cast {voteResult.cast} ticket vote{voteResult.cast === 1 ? '' : 's'}.
-              </div>
-              {voteResult.skipped > 0 && (
-                <div className="text-warning">Skipped {voteResult.skipped}.</div>
-              )}
-              {voteResult.errors && voteResult.errors.length > 0 && (
-                <ul className="mt-2 list-disc pl-5 text-xs text-destructive">
-                  {voteResult.errors.slice(0, 5).map((e, i) => (
-                    <li key={i}>{e}</li>
-                  ))}
-                </ul>
-              )}
+              You voted "{detail.currentChoice}".
             </div>
           )}
           <button
             type="button"
-            onClick={() => {
-              setVoteResult(null);
-              setModalOpen(true);
-            }}
-            disabled={!canCast}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setVoteModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all"
           >
-            Cast vote
+            <Vote className="h-4 w-4" />
+            {detail.currentChoice ? 'View vote' : 'Vote'}
           </button>
-          {detail.eligibleTickets === 0 && (
-            <p className="text-xs text-muted-foreground">
-              This proposal has no eligible tickets, so no vote can be cast yet.
-            </p>
-          )}
+          <p className="text-xs text-muted-foreground">
+            Opening this checks how many of your tickets are eligible (it fetches the ticket
+            snapshot from Politeia), so it runs only when you click.
+          </p>
         </div>
       )}
 
@@ -434,15 +378,14 @@ export const ProposalDetailPage = () => {
         )}
       </div>
 
-      <PassphraseModal
-        isOpen={modalOpen}
-        title="Cast Politeia Vote"
-        description={`Sign the vote message for every eligible ticket the wallet owns and submit the ballot to proposals.decred.org. This can take a moment if you have many tickets.`}
-        submitLabel="Sign & cast"
-        busyLabel="Casting..."
-        onSubmit={handleSubmit}
-        onClose={() => setModalOpen(false)}
-      />
+      {token && (
+        <VoteModal
+          isOpen={voteModalOpen}
+          token={token}
+          onClose={() => setVoteModalOpen(false)}
+          onVoted={load}
+        />
+      )}
     </div>
   );
 };

@@ -1003,6 +1003,31 @@ export const refreshProposalDetail = async (token: string): Promise<ProposalDeta
   return response.data;
 };
 
+// VoteEligibility is what the vote modal needs when the user opens it: how many
+// of the proposal's eligible tickets the wallet owns, the vote options, and
+// whether the wallet already voted. Computed on demand (the heavy eligible-
+// ticket snapshot work runs only here, not on a plain detail view).
+export interface VoteEligibility {
+  ownedEligibleCount: number;
+  eligibleTickets: number;
+  voteOptions: ProposalVoteOption[];
+  alreadyVoted: boolean;
+  currentChoice: string;
+}
+
+// getVoteEligibility triggers the on-demand eligibility computation for a
+// proposal. Returns instantly when a local vote record already exists; the
+// heavy path (snapshot + committed-ticket intersection + recorded-vote
+// reconciliation) can take a while, so allow more than the default timeout.
+export const getVoteEligibility = async (token: string): Promise<VoteEligibility> => {
+  const response = await api.post<VoteEligibility>(
+    `/wallet/governance/proposals/${encodeURIComponent(token)}/vote-eligibility`,
+    undefined,
+    { timeout: 65 * 1000 },
+  );
+  return response.data;
+};
+
 export const castPoliteiaVote = async (
   token: string,
   voteOption: string,
