@@ -159,7 +159,10 @@ func StartMixer(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint
 	mixerLastErr = ""
 	mixerMu.Unlock()
 
-	go runMixer(ctx, passphrase, mixedAccount, mixedBranch, changeAccount)
+	// Copy the passphrase: the caller's slice may be zeroed once it returns,
+	// but the mixer goroutine uses the passphrase for the lifetime of the run.
+	pp := append([]byte(nil), passphrase...)
+	go runMixer(ctx, pp, mixedAccount, mixedBranch, changeAccount)
 	return nil
 }
 
@@ -175,6 +178,12 @@ func StopMixer() {
 }
 
 func runMixer(ctx context.Context, passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) {
+	// This goroutine owns its passphrase copy; wipe it when it exits.
+	defer func() {
+		for i := range passphrase {
+			passphrase[i] = 0
+		}
+	}()
 	defer func() {
 		mixerMu.Lock()
 		mixerCancel = nil

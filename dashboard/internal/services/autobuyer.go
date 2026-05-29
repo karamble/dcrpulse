@@ -146,7 +146,11 @@ func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error 
 	// dispatch(updateUsedVSPs(vsp)) in ControlActions.js:519.
 	rememberVSPUsed(ctx, sCopy.VspHost, sCopy.VspPubkey)
 
-	go runAutobuyer(ctx, sCopy, passphrase)
+	// Copy the passphrase: the HTTP handler zeroes its slice when it returns
+	// (right after this call), but the autobuyer goroutine uses the passphrase
+	// later (after StopMixer/WaitForMixerStop), so it must own its own copy.
+	pp := append([]byte(nil), passphrase...)
+	go runAutobuyer(ctx, sCopy, pp)
 	return nil
 }
 
@@ -171,6 +175,12 @@ func AutobuyerStatusSnapshot(ctx context.Context) types.AutobuyerStatus {
 }
 
 func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphrase []byte) {
+	// This goroutine owns its passphrase copy; wipe it when it exits.
+	defer func() {
+		for i := range passphrase {
+			passphrase[i] = 0
+		}
+	}()
 	defer func() {
 		autobuyerMu.Lock()
 		autobuyerCancel = nil
