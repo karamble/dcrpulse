@@ -227,6 +227,29 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphr
 		_, _ = rpc.WalletGrpcClient.LockAccount(lockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount})
 	}()
 
+	// With mixing on, the ticket buyer also runs a per-block account mixer on the
+	// change account (dcrwallet sets MixChange when EnableMixing is set), spending
+	// the unmixed account to mix it into the mixed account. That account is
+	// per-account-encrypted, and the buyer's wallet-wide Unlock does not reach
+	// per-account-encrypted accounts, so it must be unlocked explicitly like the
+	// standalone mixer does. Without this, dcrwallet logs "TKBY: Account mixing
+	// failed: ... account with unique passphrase is locked" every block and the
+	// unmixed balance never mixes.
+	if mixed && mixing.Change != sourceAccount {
+		changeCtx, changeCancel := context.WithTimeout(ctx, 10*time.Second)
+		err := unlockAccountForSpend(changeCtx, mixing.Change, passphrase)
+		changeCancel()
+		if err != nil {
+			setAutobuyerErr(fmt.Sprintf("Unlock change account failed: %v", err))
+			return
+		}
+		defer func() {
+			lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer lockCancel()
+			_, _ = rpc.WalletGrpcClient.LockAccount(lockCtx, &pb.LockAccountRequest{AccountNumber: mixing.Change})
+		}()
+	}
+
 	balanceAtoms := int64(settings.BalanceToMaintain * 1e8)
 	req := &pb.RunTicketBuyerRequest{
 		Passphrase:        passphrase,
