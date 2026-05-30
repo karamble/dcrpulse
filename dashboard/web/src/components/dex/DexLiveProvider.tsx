@@ -13,7 +13,7 @@ type NoteListener = (note: DexNote) => void;
 // carry beyond the base DexNote (decred.org/dcrdex/client/core/notification.go):
 // spots (SpotPriceNote), host/connectionStatus (ConnEventNote),
 // host/authenticated (DEXAuthNote), and the BridgeNote fields.
-type LiveNote = DexNote & {
+export type LiveNote = DexNote & {
   spots?: Record<string, MarketSpot>;
   host?: string;
   connectionStatus?: number;
@@ -24,6 +24,8 @@ type LiveNote = DexNote & {
   completionTxIDs?: string[];
   amount?: number;
   complete?: boolean;
+  // walletstate notes carry the wallet's live state (WalletState).
+  wallet?: { symbol?: string; assetID?: number; running?: boolean; synced?: boolean };
 };
 
 // DexConn is a DEX server's live connection state: connectionStatus (1 ==
@@ -315,5 +317,26 @@ export function useDexRefreshOnNotes(types: string[], refresh: () => void) {
       off();
       if (timer) clearTimeout(timer);
     };
+  }, [ctx, typesKey]);
+}
+
+// useDexOnNotes calls handler with each notify-feed note whose type is in
+// `types` (or every note when `types` is empty). Unlike useDexRefreshOnNotes it
+// passes the note payload through (not debounced), for callers that need to
+// inspect note contents. A no-op outside the provider.
+export function useDexOnNotes(types: string[], handler: (note: LiveNote) => void) {
+  const ctx = useContext(Ctx);
+  const handlerRef = useRef(handler);
+  handlerRef.current = handler;
+  const typesKey = types.join(',');
+
+  useEffect(() => {
+    if (!ctx) return;
+    const want = new Set(typesKey ? typesKey.split(',') : []);
+    const off = ctx.addNoteListener((note) => {
+      if (want.size && !want.has(note.type)) return;
+      handlerRef.current(note);
+    });
+    return off;
   }, [ctx, typesKey]);
 }

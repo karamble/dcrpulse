@@ -2,14 +2,23 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { getDexNotifications, type DexNote } from '../../services/dcrdexApi';
 import { loadNotifPrefs, shouldNotify } from './dexNotifPrefs';
-import { useDexRefreshOnNotes } from './DexLiveProvider';
+import { useDexOnNotes, useDexRefreshOnNotes } from './DexLiveProvider';
 
 const SEEN_KEY = 'dexNotesSeen';
 const FIRED_KEY = 'dexNotesFired';
+
+// Wallet connection failures (e.g. on a stack restart, before dcrwallet has
+// loaded) are persisted error notes, but bisonw emits no persisted note when the
+// wallet later reconnects (the walletstate "connected" note is data-severity and
+// is not saved). So these warnings linger in the bell. We watch the live
+// walletstate feed and, once the dcr wallet is running again, hide the stale
+// warnings and surface a recovery note.
+const WALLET_WARNING_TOPICS = new Set(['WalletConnectionWarning', 'BondWalletNotConnected']);
+const RECONNECT_NOTE_ID = 'dcr-wallet-reconnected';
 
 // User-facing note types that warrant refetching the persisted list. High-rate
 // transient notes (spots, fiatrateupdate, epoch, walletsync) are excluded.
@@ -36,6 +45,10 @@ export const DexNotifications = () => {
   const [notes, setNotes] = useState<DexNote[]>([]);
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState<number>(() => Number(localStorage.getItem(SEEN_KEY) || 0));
+  // Stamp at/below which wallet-connection warnings are treated as resolved, and
+  // a synthesized recovery note to show in their place.
+  const [resolvedBefore, setResolvedBefore] = useState(0);
+  const [reconnectNote, setReconnectNote] = useState<DexNote | null>(null);
 
   const refresh = () => getDexNotifications(50).then(setNotes).catch(() => {});
   useEffect(() => {
@@ -45,6 +58,31 @@ export const DexNotifications = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useDexRefreshOnNotes(REFRESH_NOTE_TYPES, refresh);
+
+  // When the dcr bond wallet reconnects, clear the lingering connection warnings
+  // and show a one-line recovery note (bisonw never persists this transition).
+  const notesRef = useRef<DexNote[]>(notes);
+  notesRef.current = notes;
+  useDexOnNotes(['walletstate'], (note) => {
+    if (note.wallet?.symbol !== 'dcr' || !note.wallet?.running) return;
+    const pending = notesRef.current.filter(
+      (n) => WALLET_WARNING_TOPICS.has(n.topic) && n.stamp > resolvedBefore,
+    );
+    if (pending.length === 0) return;
+    const latest = pending.reduce((m, n) => Math.max(m, n.stamp), 0);
+    const stamp = note.stamp && note.stamp > latest ? note.stamp : latest + 1;
+    setResolvedBefore(latest);
+    setReconnectNote({
+      type: 'walletstate',
+      topic: 'WalletReconnected',
+      subject: 'DCR wallet connected',
+      details: 'The Decred bond wallet reconnected. You can post bonds and trade again.',
+      severity: 2,
+      stamp,
+      acked: true,
+      id: RECONNECT_NOTE_ID,
+    });
+  });
 
   // Fire desktop notifications for newly-arrived notes that match the user's
   // enabled categories. The first batch only seeds the cursor (no burst of OS
@@ -76,7 +114,12 @@ export const DexNotifications = () => {
     if (maxStamp > lastFired) localStorage.setItem(FIRED_KEY, String(maxStamp));
   }, [notes]);
 
-  const sorted = useMemo(() => [...notes].sort((a, b) => b.stamp - a.stamp), [notes]);
+  const sorted = useMemo(() => {
+    const merged = reconnectNote ? [reconnectNote, ...notes] : notes;
+    return merged
+      .filter((n) => !(WALLET_WARNING_TOPICS.has(n.topic) && n.stamp <= resolvedBefore))
+      .sort((a, b) => b.stamp - a.stamp);
+  }, [notes, reconnectNote, resolvedBefore]);
   const unread = useMemo(() => sorted.filter((n) => n.stamp > seen).length, [sorted, seen]);
 
   const toggle = () => {
