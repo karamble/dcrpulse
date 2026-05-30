@@ -7,6 +7,8 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -25,6 +27,8 @@ import (
 	"dcrpulse/pkg/bisonw"
 	"dcrpulse/pkg/exchangerate"
 
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
+	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/gorilla/websocket"
 )
@@ -39,6 +43,7 @@ type DcrdexStatus struct {
 	Reachable     bool   `json:"reachable"`
 	Initialized   bool   `json:"initialized"`
 	Unlocked      bool   `json:"unlocked"`
+	SeedBackedUp  bool   `json:"seedBackedUp"`
 	Stage         string `json:"stage"` // unavailable | needs-init | needs-unlock | ready
 	BisonwVersion string `json:"bisonwVersion,omitempty"`
 	RPCServerVer  string `json:"rpcServerVersion,omitempty"`
@@ -50,7 +55,7 @@ type DcrdexStatus struct {
 func GetDcrdexStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	st := DcrdexStatus{Initialized: dcrdexInitialized()}
+	st := DcrdexStatus{Initialized: dcrdexInitialized(), SeedBackedUp: dcrdexSeedBackedUp()}
 	_, st.Unlocked = rpc.DcrdexAppPass()
 
 	client, err := rpc.DcrdexClient()
@@ -115,6 +120,27 @@ func setDcrdexInitialized() error {
 	return cfg.Save()
 }
 
+func dcrdexSeedBackedUp() bool {
+	cfg, err := config.LoadGlobalCfg()
+	if err != nil {
+		return false
+	}
+	var b bool
+	cfg.Get(config.KeyDcrdexSeedBackedUp, &b)
+	return b
+}
+
+func setDcrdexSeedBackedUp(v bool) error {
+	cfg, err := config.LoadGlobalCfg()
+	if err != nil {
+		return err
+	}
+	if err := cfg.Set(config.KeyDcrdexSeedBackedUp, v); err != nil {
+		return err
+	}
+	return cfg.Save()
+}
+
 func formatSemver(major, minor, patch uint32) string {
 	return itoa(major) + "." + itoa(minor) + "." + itoa(patch)
 }
@@ -166,6 +192,11 @@ func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	rpc.SetDcrdexAppPass(req.AppPass)
 	if err := setDcrdexInitialized(); err != nil {
 		log.Printf("dcrdex: persist initialized flag: %v", err)
+	}
+	// A restored seed is already backed up by definition; a freshly generated one
+	// is not, so the unlock nag prompts the user to back it up.
+	if err := setDcrdexSeedBackedUp(req.Seed != ""); err != nil {
+		log.Printf("dcrdex: persist seed-backed-up flag: %v", err)
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
@@ -365,6 +396,49 @@ func convToAtoms(amount float64, convFactor uint64) uint64 {
 		convFactor = uint64(dcrutil.AtomsPerCoin)
 	}
 	return uint64(math.Round(amount * float64(convFactor)))
+}
+
+// NewDexDepositAddressHandler returns a fresh Decred deposit address for the DEX
+// wallet so the user can avoid reusing the persisted bond-funding address. The
+// new-address route lives only on bisonw's webserver, so this uses the web
+// client; dcrwallet manages the address index and returns its next unused one.
+func NewDexDepositAddressHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	addr, err := client.NewDepositAddress(ctx, appPass, bisonw.AssetDCR)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"address": addr})
+}
+
+// DexAddressUsedHandler reports whether a Decred address has already received
+// funds, used to warn against deposit-address reuse on the Wallets page.
+func DexAddressUsedHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	addr := r.URL.Query().Get("addr")
+	if addr == "" {
+		http.Error(w, "addr is required", http.StatusBadRequest)
+		return
+	}
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	used, err := client.AddressUsed(ctx, appPass, bisonw.AssetDCR, addr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"used": used})
 }
 
 // DexWalletState is the funding view of a single DCRDEX-managed wallet. Balances
@@ -1166,8 +1240,109 @@ func convWalletTx(assetID uint32, t rawWalletTx) DexWalletTx {
 	return out
 }
 
+// dexTxIDs caches the set of txids belonging to the dcrwallet "dex" account, used
+// to scope the DEX Decred wallet history (bisonw's txhistory is wallet-wide and
+// carries no account field). Refreshed on first-page loads and after a short TTL.
+var (
+	dexTxIDMu  sync.Mutex
+	dexTxIDSet map[string]struct{}
+	dexTxIDAt  time.Time
+)
+
+const dexTxIDTTL = 30 * time.Second
+
+// dexAccountTxIDs returns the txids in the dcrwallet "dex" account via
+// listtransactions (account-scoped). fresh forces a recompute (used on first-page
+// loads so new deposits appear); otherwise a cached set is reused across "Load
+// more" pagination.
+func dexAccountTxIDs(ctx context.Context, fresh bool) (map[string]struct{}, error) {
+	dexTxIDMu.Lock()
+	defer dexTxIDMu.Unlock()
+	if !fresh && dexTxIDSet != nil && time.Since(dexTxIDAt) < dexTxIDTTL {
+		return dexTxIDSet, nil
+	}
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	// Resolve the dcrwallet "dex" account number. (listtransactions cannot filter
+	// by account, and its per-entry account tag is unreliable for sends to
+	// non-wallet scripts like fidelity bonds, so use GetTransactions instead.)
+	accts, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	if err != nil {
+		return nil, err
+	}
+	var dexAcct uint32
+	found := false
+	for _, a := range accts.GetAccounts() {
+		if a.GetAccountName() == dexAccountName {
+			dexAcct = a.GetAccountNumber()
+			found = true
+			break
+		}
+	}
+	if !found {
+		set := map[string]struct{}{}
+		dexTxIDSet, dexTxIDAt = set, time.Now()
+		return set, nil
+	}
+
+	// Stream the wallet's transactions (only the wallet's own, across all
+	// accounts) and keep those that credit or spend the dex account. Per-tx
+	// Credits[].Account / Debits[].PreviousAccount reliably attribute bond
+	// posts, swaps and deposits to the dex account.
+	stream, err := rpc.WalletGrpcClient.GetTransactions(ctx, &pb.GetTransactionsRequest{
+		StartingBlockHeight: 0,
+		EndingBlockHeight:   -1,
+	})
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]struct{}{}
+	add := func(details []*pb.TransactionDetails) {
+		for _, t := range details {
+			touches := false
+			for _, c := range t.GetCredits() {
+				if c.GetAccount() == dexAcct {
+					touches = true
+					break
+				}
+			}
+			if !touches {
+				for _, d := range t.GetDebits() {
+					if d.GetPreviousAccount() == dexAcct {
+						touches = true
+						break
+					}
+				}
+			}
+			if !touches {
+				continue
+			}
+			if h, herr := chainhash.NewHash(t.GetHash()); herr == nil {
+				set[h.String()] = struct{}{}
+			}
+		}
+	}
+	for {
+		resp, rerr := stream.Recv()
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return nil, rerr
+		}
+		if mined := resp.GetMinedTransactions(); mined != nil {
+			add(mined.GetTransactions())
+		}
+		add(resp.GetUnminedTransactions())
+	}
+	dexTxIDSet, dexTxIDAt = set, time.Now()
+	return set, nil
+}
+
 // GetDcrdexWalletTxsHandler returns a wallet's transaction history (amounts in
-// conventional units). Query: assetID (required), n, refID, past.
+// conventional units). Query: assetID (required), n, refID, past. For the Decred
+// wallet the history is scoped to the dcrwallet "dex" account.
 func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	assetID, err := strconv.ParseUint(r.URL.Query().Get("assetID"), 10, 32)
@@ -1185,19 +1360,68 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	raw, err := client.TxHistory(ctx, uint32(assetID), num, refID, past)
+
+	if uint32(assetID) != bisonw.AssetDCR {
+		raw, err := client.TxHistory(ctx, uint32(assetID), num, refID, past)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		var txs []rawWalletTx
+		if err := json.Unmarshal(raw, &txs); err != nil {
+			http.Error(w, "decode txs: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		out := make([]DexWalletTx, 0, len(txs))
+		for _, t := range txs {
+			out = append(out, convWalletTx(uint32(assetID), t))
+		}
+		json.NewEncoder(w).Encode(out)
+		return
+	}
+
+	// Decred: keep only txs belonging to the "dex" account. bisonw returns the
+	// whole wallet's history with no account field, so accumulate across bisonw
+	// pages until we have a full page of dex-account txs (the frontend treats a
+	// short page as "no more"). refID == "" means a first-page load/reload.
+	want := num
+	if want <= 0 {
+		want = 25
+	}
+	dexSet, err := dexAccountTxIDs(ctx, refID == "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	var txs []rawWalletTx
-	if err := json.Unmarshal(raw, &txs); err != nil {
-		http.Error(w, "decode txs: "+err.Error(), http.StatusBadGateway)
-		return
+	cursor, cursorPast := refID, past
+	out := make([]DexWalletTx, 0, want)
+	const maxPages = 20
+	for i := 0; i < maxPages && len(out) < want; i++ {
+		raw, err := client.TxHistory(ctx, uint32(assetID), want, cursor, cursorPast)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		var txs []rawWalletTx
+		if err := json.Unmarshal(raw, &txs); err != nil {
+			http.Error(w, "decode txs: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		if len(txs) == 0 {
+			break
+		}
+		for _, t := range txs {
+			if _, ok := dexSet[t.ID]; ok {
+				out = append(out, convWalletTx(uint32(assetID), t))
+			}
+		}
+		if len(txs) < want {
+			break // bisonw history exhausted
+		}
+		cursor, cursorPast = txs[len(txs)-1].ID, true
 	}
-	out := make([]DexWalletTx, 0, len(txs))
-	for _, t := range txs {
-		out = append(out, convWalletTx(uint32(assetID), t))
+	if len(out) > want {
+		out = out[:want]
 	}
 	json.NewEncoder(w).Encode(out)
 }
@@ -1539,4 +1763,16 @@ func ExportDcrdexSeedHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"seed": seed})
+}
+
+// MarkDcrdexSeedBackedUpHandler records that the user has backed up the app seed,
+// clearing the unlock backup reminder. dcrdex keeps no such flag, so it lives in
+// the dashboard config.
+func MarkDcrdexSeedBackedUpHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := setDcrdexSeedBackedUp(true); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }

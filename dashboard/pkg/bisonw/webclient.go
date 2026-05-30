@@ -158,6 +158,33 @@ func (c *WebClient) request(ctx context.Context, method, path string, body, resu
 	return nil
 }
 
+// NewDepositAddress fetches a fresh deposit address for the asset's wallet. This
+// route exists only on the webserver, not the RPC server. The dcrwallet backend
+// returns its next unused external address (the index is managed by dcrwallet).
+func (c *WebClient) NewDepositAddress(ctx context.Context, appPass string, assetID uint32) (string, error) {
+	var res struct {
+		webAck
+		Address string `json:"address"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/depositaddress", appPass, map[string]any{"assetID": assetID}, &res); err != nil {
+		return "", err
+	}
+	return res.Address, nil
+}
+
+// AddressUsed reports whether the asset's wallet has ever received funds at addr,
+// used to warn against deposit-address reuse. Webserver-only route.
+func (c *WebClient) AddressUsed(ctx context.Context, appPass string, assetID uint32, addr string) (bool, error) {
+	var res struct {
+		webAck
+		Used bool `json:"used"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/addressused", appPass, map[string]any{"assetID": assetID, "addr": addr}, &res); err != nil {
+		return false, err
+	}
+	return res.Used, nil
+}
+
 // MMStatus returns the market-making status (bots + CEX state) as the raw
 // `status` object from /api/marketmakingstatus.
 func (c *WebClient) MMStatus(ctx context.Context, appPass string) (json.RawMessage, error) {

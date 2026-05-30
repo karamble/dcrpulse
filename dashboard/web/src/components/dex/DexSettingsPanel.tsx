@@ -2,9 +2,10 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useState } from 'react';
-import { AlertCircle, AlertTriangle, Bell, Check, Copy, KeyRound } from 'lucide-react';
-import { exportDexSeed } from '../../services/dcrdexApi';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, Bell, Check, KeyRound } from 'lucide-react';
+import { getDexStatus } from '../../services/dcrdexApi';
+import { DexSeedBackup } from './DexSeedBackup';
 import {
   CATEGORY_LABELS,
   loadNotifPrefs,
@@ -65,36 +66,14 @@ export const DexSettingsPanel = () => {
 
   const setCategory = (c: NotifCategory, v: boolean) => update({ ...prefs, categories: { ...prefs.categories, [c]: v } });
 
-  // Seed backup state.
-  const [appPass, setAppPass] = useState('');
-  const [seed, setSeed] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [seedErr, setSeedErr] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const revealSeed = async () => {
-    setBusy(true);
-    setSeedErr(null);
-    try {
-      setSeed(await exportDexSeed(appPass));
-      setAppPass('');
-    } catch (e: any) {
-      setSeedErr(e?.response?.data || e?.message || 'Failed to export seed');
-    } finally {
-      setBusy(false);
-    }
+  // Whether the app seed has been backed up (from the dashboard's persisted flag).
+  const [backedUp, setBackedUp] = useState<boolean | null>(null);
+  const refreshBackedUp = () => {
+    getDexStatus()
+      .then((s) => setBackedUp(s.seedBackedUp))
+      .catch(() => {});
   };
-
-  const copySeed = async () => {
-    if (!seed) return;
-    try {
-      await navigator.clipboard.writeText(seed);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* ignore */
-    }
-  };
+  useEffect(refreshBackedUp, []);
 
   return (
     <div className="px-3 lg:px-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -120,79 +99,13 @@ export const DexSettingsPanel = () => {
       </Card>
 
       <Card title="Back up app seed" icon={KeyRound}>
-        {seed ? (
-          <>
-            <div className="p-2.5 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>Anyone with this seed can restore your DCRDEX app and spend its funds. Store it offline; never share it.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <code className="text-xs font-mono break-all flex-1 p-2 rounded bg-background border border-border">{seed}</code>
-              <button type="button" onClick={copySeed} title="Copy" className="p-1.5 rounded-md hover:bg-background/60 shrink-0">
-                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSeed(null)}
-              className="w-full px-4 py-2 border border-border rounded-lg hover:bg-background/50 transition-colors text-sm"
-            >
-              Hide
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-xs text-muted-foreground">Re-enter your DCRDEX app password to reveal the recovery seed.</p>
-            <input
-              type="password"
-              value={appPass}
-              onChange={(e) => setAppPass(e.target.value)}
-              placeholder="App password"
-              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary"
-            />
-            {seedErr && (
-              <div className="p-2.5 rounded-lg bg-destructive/5 border border-destructive/30 text-xs text-destructive flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span className="break-words">{seedErr}</span>
-              </div>
-            )}
-            <button
-              type="button"
-              disabled={busy || !appPass}
-              onClick={revealSeed}
-              className="w-full bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              {busy ? 'Revealing...' : 'Reveal seed'}
-            </button>
-          </>
-        )}
-
-        <div className="p-3 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-          <div className="space-y-1.5">
-            <p className="font-semibold">Why this matters - and how it differs from your wallet seed</p>
-            <p>
-              These 15 words are your DCRDEX account seed. They are separate from your Decred wallet
-              recovery seed, and they protect different things.
-            </p>
-            <ul className="list-disc pl-4 space-y-1">
-              <li>
-                Your DCR funds live in your wallet and are protected by your wallet seed, not this
-                one. This seed secures your DEX account identity and the keys that reclaim your
-                fidelity bond.
-              </li>
-              <li>
-                If you reinstall or lose this app's data, these words let you restore your account
-                and refund your time-locked bond. Without them, the DCR locked in your bond and your
-                account standing can be lost for good.
-              </li>
-              <li>
-                The app password only unlocks day-to-day use; it cannot recover your account. Write
-                these words down and keep them offline.
-              </li>
-            </ul>
+        {backedUp !== null && (
+          <div className={`text-xs flex items-center gap-1.5 ${backedUp ? 'text-success' : 'text-warning'}`}>
+            {backedUp ? <Check className="h-3.5 w-3.5 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
+            {backedUp ? 'Backed up' : 'Not backed up yet'}
           </div>
-        </div>
+        )}
+        <DexSeedBackup onDone={refreshBackedUp} />
       </Card>
     </div>
   );

@@ -18,11 +18,14 @@ export const DexSetupWizard = ({ mode, onReady }: DexSetupWizardProps) => {
   const isInit = mode === 'needs-init';
   const [pass, setPass] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [restore, setRestore] = useState(false);
+  const [seed, setSeed] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const mismatch = isInit && confirm.length > 0 && pass !== confirm;
-  const canSubmit = pass.length > 0 && !busy && (!isInit || pass === confirm);
+  const seedMissing = isInit && restore && seed.trim().length === 0;
+  const canSubmit = pass.length > 0 && !busy && (!isInit || (pass === confirm && !seedMissing));
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +34,7 @@ export const DexSetupWizard = ({ mode, onReady }: DexSetupWizardProps) => {
     setErr(null);
     try {
       if (isInit) {
-        await initDex(pass);
+        await initDex(pass, restore ? seed.trim() : undefined);
       } else {
         await unlockDex(pass);
       }
@@ -92,6 +95,29 @@ export const DexSetupWizard = ({ mode, onReady }: DexSetupWizardProps) => {
               />
               {mismatch && (
                 <p className="text-xs text-destructive mt-1">Passwords do not match.</p>
+              )}
+            </div>
+          )}
+
+          {isInit && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                <input type="checkbox" checked={restore} onChange={(e) => setRestore(e.target.checked)} />
+                <span>Restore from a backup seed</span>
+              </label>
+              {restore ? (
+                <textarea
+                  value={seed}
+                  onChange={(e) => setSeed(e.target.value)}
+                  placeholder="Enter your 15-word DCRDEX recovery seed"
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm font-mono focus:outline-none focus:border-primary"
+                />
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  Creating new generates a fresh DCRDEX identity and seed. You will be prompted to back
+                  it up - the 15 words are the only way to recover your account, bonds and native wallets.
+                </p>
               )}
             </div>
           )}

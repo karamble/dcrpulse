@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { getDexWalletTxs, type DexWalletState, type DexWalletTx } from '../../services/dcrdexApi';
 import { fmtAmt } from './dexFormat';
@@ -70,7 +71,7 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
     setDone(false);
     load('');
   }, [load]);
-  useDexRefreshOnNotes(['walletnote'], reload);
+  useDexRefreshOnNotes(['walletnote', 'balance', 'walletstate'], reload);
 
   if (err) {
     return <div className="px-1 py-4 text-xs text-muted-foreground">{err}</div>;
@@ -93,8 +94,8 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
           <tr className="text-[10px] uppercase tracking-wider text-muted-foreground/60 text-left">
             <th className="font-medium py-2">Type</th>
             <th className="font-medium py-2 text-right">Amount</th>
-            <th className="font-medium py-2 text-right">Fees</th>
-            <th className="font-medium py-2">When</th>
+            <th className="font-medium py-2 text-right pr-6">Fees</th>
+            <th className="font-medium py-2 pl-2">When</th>
             <th className="font-medium py-2">Tx</th>
           </tr>
         </thead>
@@ -112,15 +113,19 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
                   {incoming ? '+' : '-'}
                   {fmtAmt(t.amount, 8)}
                 </td>
-                <td className="py-2 text-right font-mono tabular-nums text-muted-foreground">{fmtAmt(t.fees, 8)}</td>
-                <td className="py-2 text-xs text-muted-foreground">
+                <td className="py-2 text-right font-mono tabular-nums text-muted-foreground pr-6">{fmtAmt(t.fees, 8)}</td>
+                <td className="py-2 text-xs text-muted-foreground pl-2 whitespace-nowrap">
                   {t.timestamp ? new Date(t.timestamp * 1000).toLocaleString() : '-'}
                 </td>
                 <td className="py-2">
-                  <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground" title={t.id}>
+                  <Link
+                    to={`/explorer/tx/${t.id}`}
+                    title={t.id}
+                    className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
+                  >
                     {t.id.slice(0, 8)}...
-                    <ExternalLink className="h-3 w-3 opacity-40" />
-                  </span>
+                    <ExternalLink className="h-3 w-3 opacity-60" />
+                  </Link>
                 </td>
               </tr>
             );

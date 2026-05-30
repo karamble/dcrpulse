@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, Check, Copy, Lock, Unlock, RefreshCw, Power, Plus, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check, Copy, Lock, Unlock, RefreshCw, Power, Plus, X } from 'lucide-react';
 import {
   WalletTrait,
   hasTrait,
@@ -14,6 +14,8 @@ import {
   getDexWalletPeers,
   addDexWalletPeer,
   removeDexWalletPeer,
+  newDexDepositAddress,
+  dexAddressUsed,
   type DexWalletState,
   type DexWalletPeer,
 } from '../../services/dcrdexApi';
@@ -112,6 +114,52 @@ export const DexWalletDetail = ({
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Deposit address is held locally so "Generate new address" can replace it
+  // without re-fetching the whole wallet, and so opening the view does not churn
+  // the address index. Initialised from the wallet's persisted address.
+  const [addr, setAddr] = useState(wallet.address);
+  const [addrUsed, setAddrUsed] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const isDcr = wallet.assetID === 42;
+
+  // Reset the shown address when the selected wallet (or its persisted address)
+  // changes.
+  useEffect(() => {
+    setAddr(wallet.address);
+  }, [wallet.assetID, wallet.address]);
+
+  // Flag deposit-address reuse for the Decred wallet. A freshly generated address
+  // returns used=false, so this clears the warning after "Generate new address".
+  useEffect(() => {
+    if (!isDcr || !addr) {
+      setAddrUsed(false);
+      return;
+    }
+    let cancelled = false;
+    dexAddressUsed(addr)
+      .then((u) => {
+        if (!cancelled) setAddrUsed(u);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isDcr, addr]);
+
+  const generateAddr = async () => {
+    if (generating) return;
+    setGenerating(true);
+    setErr(null);
+    try {
+      const a = await newDexDepositAddress();
+      setAddr(a);
+      setAddrUsed(false);
+    } catch (e: any) {
+      setErr(e?.response?.data || e?.message || 'Failed to generate address');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const act = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -127,9 +175,9 @@ export const DexWalletDetail = ({
   };
 
   const copyAddr = async () => {
-    if (!wallet.address) return;
+    if (!addr) return;
     try {
-      await navigator.clipboard.writeText(wallet.address);
+      await navigator.clipboard.writeText(addr);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -201,12 +249,34 @@ export const DexWalletDetail = ({
         </Card>
 
         <Card title="Deposit address">
-          {wallet.address ? (
-            <div className="flex items-center gap-2">
-              <code className="text-xs font-mono break-all flex-1">{wallet.address}</code>
-              <button type="button" onClick={copyAddr} title="Copy" className="p-1.5 rounded-md hover:bg-background/60 shrink-0">
-                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
-              </button>
+          {addr ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <code className="text-xs font-mono break-all flex-1">{addr}</code>
+                <button type="button" onClick={copyAddr} title="Copy" className="p-1.5 rounded-md hover:bg-background/60 shrink-0">
+                  {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
+                </button>
+              </div>
+              {isDcr && addrUsed && (
+                <div className="p-2.5 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>
+                    This address has already been used. Generate a new one to avoid address reuse,
+                    which harms your privacy.
+                  </span>
+                </div>
+              )}
+              {isDcr && (
+                <button
+                  type="button"
+                  onClick={generateAddr}
+                  disabled={generating}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/20 hover:bg-muted/30 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`h-4 w-4 ${generating ? 'animate-spin' : ''}`} />
+                  {generating ? 'Generating...' : 'Generate new address'}
+                </button>
+              )}
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">No address available.</p>

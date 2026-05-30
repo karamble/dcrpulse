@@ -10,6 +10,7 @@ export interface DexStatus {
   reachable: boolean;
   initialized: boolean;
   unlocked: boolean;
+  seedBackedUp: boolean;
   stage: DexStage;
   bisonwVersion?: string;
   rpcServerVersion?: string;
@@ -220,6 +221,21 @@ export const getDexWallets = async (): Promise<DexWalletState[]> => {
   return data || [];
 };
 
+// newDexDepositAddress fetches a fresh Decred deposit address for the DEX wallet
+// (dcrwallet hands out its next unused address), avoiding deposit-address reuse.
+export const newDexDepositAddress = async (): Promise<string> => {
+  const { data } = await api.post<{ address: string }>('/dcrdex/wallet/new-address');
+  return data.address;
+};
+
+// dexAddressUsed reports whether a Decred address has already received funds.
+export const dexAddressUsed = async (addr: string): Promise<boolean> => {
+  const { data } = await api.get<{ used: boolean }>('/dcrdex/wallet/address-used', {
+    params: { addr },
+  });
+  return !!data.used;
+};
+
 // WalletTrait bits (decred.org/dcrdex/client/asset). Used to gate per-wallet
 // actions, mirroring the upstream wallet UI.
 export const WalletTrait = {
@@ -382,6 +398,12 @@ export const getDexNotifications = async (n = 50): Promise<DexNote[]> => {
 export const exportDexSeed = async (appPass: string): Promise<string> => {
   const { data } = await api.post<{ seed: string }>('/dcrdex/seed', { appPass });
   return data.seed;
+};
+
+// markDexSeedBackedUp records that the user has backed up the app seed, clearing
+// the unlock backup reminder.
+export const markDexSeedBackedUp = async (): Promise<void> => {
+  await api.post('/dcrdex/seed/backed-up');
 };
 
 // DexRates maps an asset symbol (lowercase) to its USD price, sourced from

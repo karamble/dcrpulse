@@ -32,6 +32,12 @@ const (
 	// never stored); it only distinguishes first-time setup from unlock.
 	KeyDcrdexInitialized = "dcrdex_initialized"
 
+	// KeyDcrdexSeedBackedUp records that the user has backed up the dcrdex app
+	// seed (or restored from one). dcrdex itself keeps no such flag; set false on
+	// a fresh init, true on restore or completed backup, so the unlock nag knows
+	// whether to prompt.
+	KeyDcrdexSeedBackedUp = "dcrdex_seed_backed_up"
+
 	// Per-wallet record of Politeia vote choices we cast through this
 	// dashboard. Map keyed by proposal token, value = "yes"|"no"|"abstain".
 	// Mirrors Decrediton's savePiVote local cache so the UI can show
