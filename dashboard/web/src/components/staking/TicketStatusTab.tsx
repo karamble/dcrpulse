@@ -4,9 +4,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, ExternalLink, RefreshCw, Send, ShieldCheck, Wallet } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  ExternalLink,
+  HelpCircle,
+  Loader2,
+  Send,
+  ShieldCheck,
+  Wallet,
+} from 'lucide-react';
 import {
   AccountInfo,
+  SyncFailedVSPTicketsResponse,
   TicketRecord,
   VSPInfo,
   getAccounts,
@@ -53,6 +63,84 @@ const statusBadge = (status: TicketRecord['status']) => {
   );
 };
 
+// StatusLegendTooltip is a pure-hover (i) bubble explaining the ticket fee and
+// lifecycle statuses. Mirrors the InfoTooltip pattern in BisonrelaySetupWizard.
+const StatusLegendTooltip = () => (
+  <span className="relative group inline-flex">
+    <HelpCircle className="h-4 w-4 text-muted-foreground/60 hover:text-muted-foreground cursor-help" />
+    <span className="pointer-events-none absolute left-6 top-0 w-80 p-3 rounded-md bg-background border border-border/50 shadow-lg text-xs text-foreground/90 opacity-0 group-hover:opacity-100 transition-opacity z-20 space-y-2">
+      <span className="block">
+        <span className="font-semibold">Fee status</span> (the goal is Confirmed; a ticket only
+        votes once its fee is confirmed by the VSP):
+      </span>
+      <span className="block space-y-1">
+        <span className="block"><b>Unpaid Fee</b>: fee tx started, not yet paid.</span>
+        <span className="block"><b>Paid Fee</b>: fee paid, waiting for the VSP to confirm it.</span>
+        <span className="block"><b>Confirmed Fee</b>: VSP registered the fee; the ticket will vote.</span>
+        <span className="block"><b>Fee Error</b>: fee payment failed; the ticket will not vote until you Sync to retry.</span>
+        <span className="block"><b>Untracked</b>: ticket not associated with a VSP.</span>
+      </span>
+      <span className="block">
+        <span className="font-semibold">Lifecycle</span>: Live (eligible to vote), Unmined/Immature
+        (maturing), Voted/Missed/Expired/Revoked (spent outcomes).
+      </span>
+    </span>
+  </span>
+);
+
+// SyncResultPanel summarizes a sync run, framed around progress toward the
+// Confirmed fee status (the only state in which the VSP votes the ticket).
+const SyncResultPanel = ({ result }: { result: SyncFailedVSPTicketsResponse }) => {
+  const { before, after, vspHost } = result;
+  const notConfirmed = after.errored + after.unpaid + after.paid;
+
+  let tone = 'border-info/30 bg-info/5 text-info';
+  let verdict = '';
+  if (after.confirmed > before.confirmed) {
+    tone = 'border-success/30 bg-success/5 text-success';
+    const n = after.confirmed - before.confirmed;
+    verdict = `${n} more ticket${n === 1 ? '' : 's'} now Confirmed - the VSP has registered the fee and ${n === 1 ? 'it' : 'they'} will vote.`;
+  } else if (notConfirmed === 0 && after.confirmed > 0) {
+    tone = 'border-success/30 bg-success/5 text-success';
+    verdict = 'All tracked tickets are Confirmed; their fees are registered with the VSP and they will vote.';
+  } else if (after.errored > 0) {
+    tone = 'border-warning/30 bg-warning/5 text-warning';
+    verdict = `${after.errored} ticket${after.errored === 1 ? '' : 's'} still in Fee Error; the fee is not registered and ${after.errored === 1 ? 'it' : 'they'} will not vote yet. The VSP may need more time, re-sync shortly.`;
+  } else if (after.paid > 0 || after.unpaid > 0) {
+    tone = 'border-info/30 bg-info/5 text-info';
+    verdict = `${notConfirmed} ticket${notConfirmed === 1 ? '' : 's'} awaiting fee confirmation; the VSP confirms the fee once its tx gains on-chain confirmations. This completes automatically, or re-sync to re-check now.`;
+  } else {
+    tone = 'border-border/50 bg-muted/5 text-muted-foreground';
+    verdict = 'No VSP tickets to sync.';
+  }
+
+  const rows: Array<{ label: string; b: number; a: number }> = [
+    { label: 'Fee Error', b: before.errored, a: after.errored },
+    { label: 'Unpaid Fee', b: before.unpaid, a: after.unpaid },
+    { label: 'Paid Fee', b: before.paid, a: after.paid },
+    { label: 'Confirmed Fee', b: before.confirmed, a: after.confirmed },
+  ].filter((r) => r.b > 0 || r.a > 0);
+
+  return (
+    <div className={`p-4 rounded-xl border text-sm space-y-2 ${tone}`}>
+      <div className="flex items-center gap-2 font-medium">
+        <CheckCircle2 className="h-4 w-4 shrink-0" />
+        Sync complete for {vspHost}
+      </div>
+      <p>{verdict}</p>
+      {rows.length > 0 && (
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-foreground/80">
+          {rows.map((r) => (
+            <span key={r.label} className="whitespace-nowrap">
+              {r.label}: {r.b} {'->'} {r.a}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const TicketStatusTab = () => {
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +149,8 @@ export const TicketStatusTab = () => {
   const [account, setAccount] = useState<number | null>(null);
   const [vsp, setVsp] = useState<VSPInfo | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncFailedVSPTicketsResponse | null>(null);
 
   const load = async () => {
     try {
@@ -108,22 +197,26 @@ export const TicketStatusTab = () => {
 
   const handleSync = async (passphrase: string) => {
     if (!vsp || account === null) return;
-    setSyncStatus(null);
+    setSyncResult(null);
+    setSyncing(true);
     try {
-      await syncFailedVSPTickets({
+      const result = await syncFailedVSPTickets({
         vspHost: vsp.host,
         vspPubkey: vsp.pubkey,
         account,
         changeAccount: account,
         passphrase,
       });
-      setSyncStatus('Sync requested - refreshing ticket list.');
+      setSyncResult(result);
       setModalOpen(false);
+      // Refresh the ticket list immediately so it reflects the new fee status.
       await load();
     } catch (err: any) {
       const body = err?.response?.data;
       const msg = typeof body === 'string' ? body : err?.message || 'Sync failed';
       throw new Error(msg);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -135,10 +228,12 @@ export const TicketStatusTab = () => {
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Sync Failed VSP Tickets</h3>
+          <StatusLegendTooltip />
         </div>
         <p className="text-sm text-muted-foreground">
-          Retries fee payment for tickets with VSP fee errors. You can also use this to migrate
-          tracked tickets to a different VSP.
+          Retries fee payment for tickets with VSP fee errors and re-checks paid fees against the
+          VSP. A ticket only votes once its fee reaches the Confirmed status. You can also use this
+          to migrate tracked tickets to a different VSP.
         </p>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -165,20 +260,15 @@ export const TicketStatusTab = () => {
           <VSPSelect network="mainnet" value={vsp} onChange={setVsp} />
         </div>
 
-        {syncStatus && (
-          <div className="flex items-center gap-2 text-sm text-success">
-            <RefreshCw className="h-4 w-4" />
-            {syncStatus}
-          </div>
-        )}
+        {syncResult && <SyncResultPanel result={syncResult} />}
 
         <button
           onClick={() => setModalOpen(true)}
-          disabled={!canSync}
+          disabled={!canSync || syncing}
           className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
-          <Send className="h-4 w-4" />
-          Sync Failed VSP Tickets
+          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {syncing ? 'Syncing…' : 'Sync Failed VSP Tickets'}
         </button>
       </div>
 

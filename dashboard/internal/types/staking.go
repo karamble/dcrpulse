@@ -75,6 +75,24 @@ type SyncFailedVSPTicketsRequest struct {
 	Passphrase    string `json:"passphrase"`
 }
 
+// VSPFeeStatusCounts holds wallet-wide ticket counts per VSP fee-processing
+// status, keyed to the same short names as TicketRecord.FeeStatus.
+type VSPFeeStatusCounts struct {
+	Unpaid    int `json:"unpaid"`
+	Paid      int `json:"paid"`
+	Errored   int `json:"errored"`
+	Confirmed int `json:"confirmed"`
+}
+
+// SyncFailedVSPTicketsResponse summarizes a sync run. dcrwallet's
+// SyncVSPFailedTickets RPC returns no data, so the summary is derived from
+// before/after GetVSPTicketsByFeeStatus snapshots.
+type SyncFailedVSPTicketsResponse struct {
+	VspHost string             `json:"vspHost"`
+	Before  VSPFeeStatusCounts `json:"before"`
+	After   VSPFeeStatusCounts `json:"after"`
+}
+
 // AutobuyerSettings is the persistable configuration for the ticket autobuyer.
 // No secret material is stored here; the passphrase is supplied per-start only.
 type AutobuyerSettings struct {

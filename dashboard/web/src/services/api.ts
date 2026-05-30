@@ -688,8 +688,30 @@ export interface SyncFailedVSPTicketsRequest {
   passphrase: string;
 }
 
-export const syncFailedVSPTickets = async (req: SyncFailedVSPTicketsRequest): Promise<void> => {
-  await api.post('/wallet/staking/sync-failed-vsp-tickets', req);
+export interface VSPFeeStatusCounts {
+  unpaid: number;
+  paid: number;
+  errored: number;
+  confirmed: number;
+}
+
+export interface SyncFailedVSPTicketsResponse {
+  vspHost: string;
+  before: VSPFeeStatusCounts;
+  after: VSPFeeStatusCounts;
+}
+
+// The sync runs against the VSP server-side with a 120s context, well past the
+// 25s default client timeout, so allow more time for this one call.
+export const syncFailedVSPTickets = async (
+  req: SyncFailedVSPTicketsRequest,
+): Promise<SyncFailedVSPTicketsResponse> => {
+  const response = await api.post<SyncFailedVSPTicketsResponse>(
+    '/wallet/staking/sync-failed-vsp-tickets',
+    req,
+    { timeout: 125000 },
+  );
+  return response.data;
 };
 
 export interface AutobuyerSettings {

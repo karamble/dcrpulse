@@ -220,10 +220,10 @@ func fetchVSPRegistry(ctx context.Context) ([]types.VSPInfo, error) {
 
 // GetVSPInfo probes a single VSP host's /api/v3/vspinfo for its pubkey + fee.
 func GetVSPInfo(ctx context.Context, host string) (*types.VSPInfo, error) {
+	// VSP communication is https only; force the scheme even if a http:// host
+	// was supplied.
 	host = strings.TrimRight(host, "/")
-	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
-		host = "https://" + host
-	}
+	host = "https://" + strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
 	rctx, cancel := context.WithTimeout(ctx, vspProbeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(rctx, http.MethodGet, host+vspInfoPathV3, nil)
@@ -512,19 +512,39 @@ func fetchFeeStatusMap(ctx context.Context) map[string]string {
 	return out
 }
 
+// countFeeStatuses tallies a fetchFeeStatusMap result into the four VSP
+// fee-processing buckets.
+func countFeeStatuses(m map[string]string) types.VSPFeeStatusCounts {
+	var c types.VSPFeeStatusCounts
+	for _, s := range m {
+		switch s {
+		case "UNPAID":
+			c.Unpaid++
+		case "PAID":
+			c.Paid++
+		case "ERRORED":
+			c.Errored++
+		case "CONFIRMED":
+			c.Confirmed++
+		}
+	}
+	return c
+}
+
 // SyncFailedVSPTickets retries fee payment for tickets with VSP fee errors
 // against the given VSP. Uses the lazy per-account-encryption migration
-// pattern from PurchaseTickets.
-func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, account, changeAccount uint32, passphrase []byte) error {
+// pattern from PurchaseTickets. The SyncVSPFailedTickets RPC returns no data,
+// so progress is reported via before/after fee-status snapshots.
+func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, account, changeAccount uint32, passphrase []byte) (*types.SyncFailedVSPTicketsResponse, error) {
 	if rpc.WalletGrpcClient == nil {
-		return fmt.Errorf("wallet gRPC client not initialized")
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
 	}
 	if vspHost == "" || vspPubkey == "" {
-		return fmt.Errorf("vspHost and vspPubkey are required")
+		return nil, fmt.Errorf("vspHost and vspPubkey are required")
 	}
 
 	if err := unlockAccountForSpend(ctx, account, passphrase); err != nil {
-		return err
+		return nil, err
 	}
 	defer func() {
 		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -532,14 +552,36 @@ func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, accoun
 		_, _ = rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: account})
 	}()
 
+	normHost := "https://" + strings.TrimPrefix(strings.TrimPrefix(vspHost, "https://"), "http://")
+
+	before := countFeeStatuses(fetchFeeStatusMap(ctx))
+
+	// Retry fee payment for errored tickets, then re-check all managed tickets
+	// so paid-but-unconfirmed fees advance to confirmed. Mirrors Decrediton's
+	// syncVSPTickets followed by processManagedTickets.
 	if _, err := rpc.WalletGrpcClient.SyncVSPFailedTickets(ctx, &pb.SyncVSPTicketsRequest{
-		VspHost:       "https://" + strings.TrimPrefix(strings.TrimPrefix(vspHost, "https://"), "http://"),
+		VspHost:       normHost,
 		VspPubkey:     vspPubkey,
 		Account:       account,
 		ChangeAccount: changeAccount,
 	}); err != nil {
-		return fmt.Errorf("SyncVSPFailedTickets RPC: %w", err)
+		return nil, fmt.Errorf("SyncVSPFailedTickets RPC: %w", err)
+	}
+	if _, err := rpc.WalletGrpcClient.ProcessManagedTickets(ctx, &pb.ProcessManagedTicketsRequest{
+		VspHost:       normHost,
+		VspPubkey:     vspPubkey,
+		FeeAccount:    account,
+		ChangeAccount: changeAccount,
+	}); err != nil {
+		return nil, fmt.Errorf("ProcessManagedTickets RPC: %w", err)
 	}
 	rememberVSPUsed(ctx, vspHost, vspPubkey)
-	return nil
+
+	after := countFeeStatuses(fetchFeeStatusMap(ctx))
+
+	return &types.SyncFailedVSPTicketsResponse{
+		VspHost: vspHost,
+		Before:  before,
+		After:   after,
+	}, nil
 }

@@ -310,7 +310,8 @@ func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
-	if err := services.SyncFailedVSPTickets(ctx, req.VspHost, req.VspPubkey, req.Account, req.ChangeAccount, passphrase); err != nil {
+	summary, err := services.SyncFailedVSPTickets(ctx, req.VspHost, req.VspPubkey, req.Account, req.ChangeAccount, passphrase)
+	if err != nil {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
 		switch {
@@ -322,5 +323,6 @@ func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(summary)
 }
