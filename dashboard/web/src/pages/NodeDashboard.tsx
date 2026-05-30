@@ -16,10 +16,21 @@ import { MempoolActivity } from '../components/MempoolActivity';
 import { TicketPoolCard } from '../components/TicketPoolCard';
 import { getDashboardData, DashboardData } from '../services/api';
 
+interface NodeSync {
+  status: string;
+  syncProgress: number;
+  syncPhase: string;
+  syncMessage: string;
+}
+
 export const NodeDashboard = () => {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Live dcrd sync progress, pushed over a WebSocket on each block-connected
+  // notification (smoother than the 30s dashboard poll). Falls back to the
+  // polled dashboard data when no snapshot has arrived.
+  const [nodeSync, setNodeSync] = useState<NodeSync | null>(null);
 
   const fetchData = async () => {
     try {
@@ -45,6 +56,52 @@ export const NodeDashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Push-driven dcrd sync progress via WebSocket (reconnects with backoff).
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let cancelled = false;
+    let retry = 1000;
+    let timer: number | undefined;
+    const connect = () => {
+      if (cancelled) return;
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${window.location.host}/api/node/sync/stream`);
+      ws.onopen = () => {
+        retry = 1000;
+      };
+      ws.onmessage = (e) => {
+        try {
+          const s = JSON.parse(e.data);
+          if (s && typeof s.syncProgress === 'number') setNodeSync(s);
+        } catch {
+          /* ignore non-JSON (ping) frames */
+        }
+      };
+      ws.onclose = () => {
+        if (cancelled) return;
+        timer = window.setTimeout(connect, retry);
+        retry = Math.min(retry * 2, 30000);
+      };
+      ws.onerror = () => {
+        try {
+          ws?.close();
+        } catch {
+          /* ignore */
+        }
+      };
+    };
+    connect();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+      try {
+        ws?.close();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Error Message */}
@@ -64,11 +121,11 @@ export const NodeDashboard = () => {
 
       {/* Node Status */}
       {data && (
-        <NodeStatus 
-          status={data.nodeStatus.status as any} 
-          syncProgress={data.nodeStatus.syncProgress}
+        <NodeStatus
+          status={(nodeSync?.status ?? data.nodeStatus.status) as any}
+          syncProgress={nodeSync?.syncProgress ?? data.nodeStatus.syncProgress}
           version={data.nodeStatus.version}
-          syncMessage={data.nodeStatus.syncMessage}
+          syncMessage={nodeSync?.syncMessage ?? data.nodeStatus.syncMessage}
         />
       )}
 

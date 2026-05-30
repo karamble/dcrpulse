@@ -41,6 +41,13 @@ func main() {
 		if err := rpc.InitDcrdClient(dcrdConfig); err != nil {
 			log.Printf("Warning: Could not connect to dcrd on startup: %v", err)
 			log.Println("RPC connection can be configured via API")
+		} else {
+			// Seed + push dcrd sync progress, refreshed on block-connected
+			// notifications (websocket) instead of a fixed poll interval.
+			services.StartNodeSync(context.Background())
+			if err := rpc.InitDcrdNotifyClient(dcrdConfig, services.TriggerNodeSyncRefresh); err != nil {
+				log.Printf("Warning: dcrd notification client unavailable (progress falls back to timer): %v", err)
+			}
 		}
 	} else {
 		log.Println("No dcrd RPC credentials provided. Use /api/connect endpoint to configure.")
@@ -191,6 +198,7 @@ func main() {
 	api.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")
 	api.HandleFunc("/dashboard", handlers.GetDashboardDataHandler).Methods("GET")
 	api.HandleFunc("/node/status", handlers.GetNodeStatusHandler).Methods("GET")
+	api.HandleFunc("/node/sync/stream", handlers.StreamNodeSyncHandler).Methods("GET")
 	api.HandleFunc("/blockchain/info", handlers.GetBlockchainInfoHandler).Methods("GET")
 	api.HandleFunc("/network/peers", handlers.GetPeersHandler).Methods("GET")
 	api.HandleFunc("/connect", handlers.ConnectRPCHandler).Methods("POST")
