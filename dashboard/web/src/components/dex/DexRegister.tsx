@@ -147,35 +147,61 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
           </div>
         </div>
 
-        {/* Funding */}
+        {/* Step 1: fund the dex account */}
         <div className="rounded-lg bg-muted/10 border border-border/50 p-4 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-semibold shrink-0">
+              1
+            </span>
+            <h3 className="text-sm font-semibold">Fund your DEX account</h3>
+          </div>
+          <p className="text-sm text-foreground/90 flex items-start gap-2">
+            <Info className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+            <span>
+              Send at least {bondDcr.toFixed(2)} DCR (plus a little for network fees) to the deposit
+              address below. Your balance updates automatically once the deposit confirms, and
+              registration unlocks once it covers the bond.
+            </span>
+          </p>
+          {wallet?.address && (
+            <div className="space-y-1">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                Deposit address
+              </span>
+              <div className="flex items-center gap-2">
+                <code className="text-xs font-mono break-all flex-1 text-foreground">{wallet.address}</code>
+                <button
+                  type="button"
+                  onClick={copyAddr}
+                  title="Copy address"
+                  className="p-1.5 rounded-md hover:bg-background/60 transition-colors shrink-0"
+                >
+                  {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-between border-t border-border/40 pt-2">
             <span className="text-xs uppercase tracking-wide text-muted-foreground">
-              dex account balance
+              Current balance
             </span>
             <span className="font-mono font-semibold">
               {wallet ? `${wallet.availableDcr.toFixed(8)} DCR` : '…'}
             </span>
           </div>
-          {wallet?.address && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground shrink-0">Deposit</span>
-              <code className="text-xs font-mono break-all flex-1 text-foreground">{wallet.address}</code>
-              <button
-                type="button"
-                onClick={copyAddr}
-                title="Copy address"
-                className="p-1.5 rounded-md hover:bg-background/60 transition-colors shrink-0"
-              >
-                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
-              </button>
-            </div>
-          )}
           {wallet && !wallet.synced && (
             <div className="text-xs text-warning">
               Wallet syncing… {Math.round(wallet.syncProgress * 100)}%
             </div>
           )}
+        </div>
+
+        {/* Step 2: post the bond */}
+        <div className="flex items-center gap-2">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-semibold shrink-0">
+            2
+          </span>
+          <h3 className="text-sm font-semibold">Post your bond</h3>
         </div>
 
         {/* Bond requirement + tiers */}
@@ -224,13 +250,6 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span className="break-words">{err}</span>
           </div>
-        )}
-
-        {!funded && (
-          <p className="text-xs text-muted-foreground">
-            Fund the deposit address with at least {bondDcr.toFixed(2)} DCR (plus a little for fees)
-            to enable registration.
-          </p>
         )}
 
         {!confirming ? (
