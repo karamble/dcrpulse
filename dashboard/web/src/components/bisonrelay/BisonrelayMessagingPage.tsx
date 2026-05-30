@@ -48,6 +48,7 @@ import {
   isImageMime,
   parseEmbeds,
 } from './embedParser';
+import { linkifyChatText } from './chatLinkify';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
 import { CreateGCModal } from './gc/CreateGCModal';
@@ -1657,7 +1658,7 @@ const MessageBody = ({ body }: { body: string }) => {
           if (!seg.text.trim()) return null;
           return (
             <p key={i} className="whitespace-pre-wrap break-words">
-              {seg.text}
+              {linkifyChatText(seg.text)}
             </p>
           );
         }
