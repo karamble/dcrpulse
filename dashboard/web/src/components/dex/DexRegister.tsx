@@ -240,8 +240,12 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
         <div className="p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm text-warning flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
           <span>
-            Posting a bond spends real DCR from the dex account on mainnet. It is locked until the
-            bond expires, then refundable.
+            Posting a bond spends real DCR from the dex account on mainnet. The bond is what lets you
+            trade without an account fee: it deters spam and fake orders by holding you accountable
+            for the trades you start. Your DCR is time-locked for {cfg.bondExpiryDays} days and is
+            refundable to your wallet after it expires. If you back out of a trade during settlement,
+            you are penalised: your effective trading tier drops and you may have to post additional
+            bond to restore it.
           </span>
         </div>
 
