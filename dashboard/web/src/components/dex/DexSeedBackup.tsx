@@ -14,15 +14,33 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
   const [appPass, setAppPass] = useState('');
   const [seed, setSeed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Verification step: the user re-types a few random words (seed hidden) to
+  // prove they recorded it, mirroring the Decred wallet setup wizard.
+  const [verifying, setVerifying] = useState(false);
+  const [indices, setIndices] = useState<number[]>([]);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+
+  // pickIndices selects `count` distinct word positions over `total`, sorted.
+  const pickIndices = (count: number, total: number): number[] => {
+    const picked: number[] = [];
+    while (picked.length < count && picked.length < total) {
+      const i = Math.floor(Math.random() * total);
+      if (!picked.includes(i)) picked.push(i);
+    }
+    return picked.sort((a, b) => a - b);
+  };
 
   const reveal = async () => {
     setBusy(true);
     setErr(null);
     try {
-      setSeed(await exportDexSeed(appPass));
+      const s = await exportDexSeed(appPass);
+      setSeed(s);
+      setIndices(pickIndices(3, s.split(' ').length));
+      setAnswers({});
+      setVerifying(false);
       setAppPass('');
     } catch (e: any) {
       setErr(e?.response?.data || e?.message || 'Failed to export seed');
@@ -42,7 +60,16 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
     }
   };
 
+  // finish validates the typed words against the seed, then records the backup.
   const finish = async () => {
+    if (!seed) return;
+    const words = seed.split(' ');
+    for (const idx of indices) {
+      if ((answers[idx] || '').toLowerCase().trim() !== words[idx].toLowerCase()) {
+        setErr(`Word #${idx + 1} does not match. Please check your backup.`);
+        return;
+      }
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -100,7 +127,7 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
             {busy ? 'Revealing...' : 'Reveal seed'}
           </button>
         </>
-      ) : (
+      ) : !verifying ? (
         <>
           <div className="flex items-start gap-2">
             <code className="text-xs font-mono break-all flex-1 p-2 rounded bg-background border border-border">
@@ -115,29 +142,67 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
               {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
             </button>
           </div>
-          <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              checked={confirmed}
-              onChange={(e) => setConfirmed(e.target.checked)}
-              className="mt-0.5"
-            />
-            <span>I have securely written down my recovery seed and stored it offline.</span>
-          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setErr(null);
+              setVerifying(true);
+            }}
+            className="w-full bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90"
+          >
+            I've written it down - verify
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Confirm your backup by entering the following words from your seed.
+          </p>
+          <div className="space-y-2">
+            {indices.map((idx) => (
+              <div key={idx} className="space-y-1">
+                <label className="text-xs font-medium">Word #{idx + 1}</label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={answers[idx] || ''}
+                  onChange={(e) => {
+                    setAnswers({ ...answers, [idx]: e.target.value });
+                    if (err) setErr(null);
+                  }}
+                  placeholder={`Enter word #${idx + 1}`}
+                  className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+            ))}
+          </div>
           {err && (
             <div className="p-2.5 rounded-lg bg-destructive/5 border border-destructive/30 text-xs text-destructive flex items-start gap-2">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <span className="break-words">{err}</span>
             </div>
           )}
-          <button
-            type="button"
-            disabled={busy || !confirmed}
-            onClick={finish}
-            className="w-full bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {busy ? 'Saving...' : 'I have backed up my seed'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setErr(null);
+                setVerifying(false);
+              }}
+              className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-background/50 transition-colors text-sm"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={finish}
+              className="flex-1 bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {busy ? 'Saving...' : 'Confirm backup'}
+            </button>
+          </div>
         </>
       )}
     </div>
