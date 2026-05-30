@@ -147,18 +147,8 @@ func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
 		if err == nil && chainInfo.InitialBlockDownload {
-			// dcrd is still syncing - return a user-friendly message
-			syncProgress := float64(0)
-			if chainInfo.SyncHeight > 0 {
-				if chainInfo.Headers > 0 {
-					syncProgress = (float64(chainInfo.Headers) / float64(chainInfo.SyncHeight)) * 100
-				} else if chainInfo.Blocks > 0 {
-					syncProgress = (float64(chainInfo.Blocks) / float64(chainInfo.SyncHeight)) * 100
-				}
-			}
-
-			errorMsg := fmt.Sprintf("Blockchain is syncing (%.1f%% complete). Wallet will be available once sync is complete.", syncProgress)
-			http.Error(w, errorMsg, http.StatusServiceUnavailable)
+			// Wallet RPC cannot serve data until dcrd finishes its IBD.
+			http.Error(w, "The Decred node is still downloading the blockchain. Your wallet will be available once the node finishes syncing.", http.StatusServiceUnavailable)
 			return
 		}
 	}
@@ -188,18 +178,8 @@ func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
 
 		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
 		if err == nil && chainInfo.InitialBlockDownload {
-			// dcrd is still syncing - return a user-friendly message
-			syncProgress := float64(0)
-			if chainInfo.SyncHeight > 0 {
-				if chainInfo.Headers > 0 {
-					syncProgress = (float64(chainInfo.Headers) / float64(chainInfo.SyncHeight)) * 100
-				} else if chainInfo.Blocks > 0 {
-					syncProgress = (float64(chainInfo.Blocks) / float64(chainInfo.SyncHeight)) * 100
-				}
-			}
-
-			errorMsg := fmt.Sprintf("Blockchain is syncing (%.1f%% complete). Wallet will be available once sync is complete.", syncProgress)
-			http.Error(w, errorMsg, http.StatusServiceUnavailable)
+			// Wallet RPC cannot serve data until dcrd finishes its IBD.
+			http.Error(w, "The Decred node is still downloading the blockchain. Your wallet will be available once the node finishes syncing.", http.StatusServiceUnavailable)
 			return
 		}
 	}

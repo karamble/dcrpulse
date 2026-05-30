@@ -69,7 +69,13 @@ export const WalletDashboard = () => {
           setError('Initializing wallet status. This may take a moment.');
         }
       } else if (err.response?.status === 503) {
-        setError('Wallet RPC not connected. Please ensure dcrwallet is running.');
+        // The backend returns a specific 503 body while dcrd is still doing its
+        // initial block download ("Blockchain is syncing (X% complete)...").
+        // Surface it so the user knows the node must finish syncing first; fall
+        // back to the generic message only when the wallet truly isn't up.
+        const body = err?.response?.data;
+        const serverMsg = typeof body === 'string' ? body.trim() : '';
+        setError(serverMsg || 'Wallet RPC not connected. Please ensure dcrwallet is running.');
       } else {
         setError(err.message || 'Failed to fetch wallet data');
       }
