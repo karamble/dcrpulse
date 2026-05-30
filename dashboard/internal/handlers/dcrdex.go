@@ -1776,3 +1776,37 @@ func MarkDcrdexSeedBackedUpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
+
+// DiscoverDcrdexAccountHandler re-discovers the account on a DEX server (used
+// after a seed restore, since a restored client has no record of which servers
+// it registered with) and reports whether it is already paid, i.e. has a live
+// fidelity bond. A successful discover records the account locally, so the UI
+// can then treat the account as registered and skip bond posting.
+func DiscoverDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		Host string `json:"host"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" {
+		http.Error(w, "host is required", http.StatusBadRequest)
+		return
+	}
+	appPass, ok := rpc.DcrdexAppPass()
+	if !ok {
+		http.Error(w, "DCRDEX is locked", http.StatusConflict)
+		return
+	}
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	paid, err := client.DiscoverAccount(ctx, appPass, req.Host, "")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"paid": paid})
+}

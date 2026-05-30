@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle, Check, Copy, Info, ShieldCheck } from 'lucide-react';
 import {
+  discoverDexAccount,
   getDexConfig,
   getDexWallet,
   postDexBond,
@@ -31,13 +32,41 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [discovering, setDiscovering] = useState(true);
 
   useEffect(() => {
-    getDexConfig(host)
-      .then(setCfg)
-      .catch((e: any) =>
-        setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load DEX config'),
-      );
+    let cancelled = false;
+    const loadConfig = () =>
+      getDexConfig(host)
+        .then((c) => {
+          if (!cancelled) setCfg(c);
+        })
+        .catch((e: any) => {
+          if (!cancelled)
+            setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load DEX config');
+        });
+    // After a seed restore the client has no record of this server; discover the
+    // account first. If it already has a live bond, skip straight to trading.
+    setDiscovering(true);
+    discoverDexAccount(host)
+      .then((r) => {
+        if (cancelled) return;
+        if (r.paid) {
+          onRegistered();
+          return;
+        }
+        setDiscovering(false);
+        loadConfig();
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDiscovering(false);
+        loadConfig();
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host]);
 
   const refresh = () => getDexWallet().then(setWallet).catch(() => {});
@@ -57,6 +86,14 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
           <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
           <span className="break-words">Could not reach {host}: {loadErr}</span>
         </div>
+      </div>
+    );
+  }
+  if (discovering) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-3 text-sm text-muted-foreground">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        Checking for an existing registration...
       </div>
     );
   }

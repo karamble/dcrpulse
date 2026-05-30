@@ -110,6 +110,16 @@ export interface DexConfig {
   candleDurs: string[];
 }
 
+// discoverDexAccount re-discovers the account on a DEX server (after a seed
+// restore) and reports whether it already has a live bond (paid). Uses the
+// extended timeout since it opens a DEX-server connection.
+export const discoverDexAccount = async (host: string): Promise<{ paid: boolean }> => {
+  const { data } = await api.post<{ paid: boolean }>('/dcrdex/discover-account', { host }, {
+    timeout: 125000,
+  });
+  return data;
+};
+
 export const getDexConfig = async (host: string): Promise<DexConfig> => {
   // The backend allows up to 2 minutes for an unregistered host's one-shot
   // getdexconfig, past the 25s default client timeout, so extend this call.

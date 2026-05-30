@@ -186,6 +186,7 @@ func main() {
 	api.HandleFunc("/dcrdex/rates", handlers.GetDcrdexRatesHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/seed", handlers.ExportDcrdexSeedHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/seed/backed-up", handlers.MarkDcrdexSeedBackedUpHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/discover-account", handlers.DiscoverDcrdexAccountHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/mm/status", handlers.GetDcrdexMMStatusHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/mm/marketreport", handlers.GetDcrdexMMMarketReportHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/mm/config", handlers.UpdateDcrdexMMBotConfigHandler).Methods("POST")
