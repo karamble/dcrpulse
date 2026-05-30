@@ -110,7 +110,12 @@ export interface DexConfig {
 }
 
 export const getDexConfig = async (host: string): Promise<DexConfig> => {
-  const { data } = await api.get<DexConfig>('/dcrdex/dexconfig', { params: { host } });
+  // The backend allows up to 2 minutes for an unregistered host's one-shot
+  // getdexconfig, past the 25s default client timeout, so extend this call.
+  const { data } = await api.get<DexConfig>('/dcrdex/dexconfig', {
+    params: { host },
+    timeout: 125000,
+  });
   return data;
 };
 

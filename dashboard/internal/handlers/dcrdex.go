@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"dcrpulse/internal/config"
@@ -713,7 +714,55 @@ func dexConfigRaw(ctx context.Context, client *bisonw.Client, host string) (json
 			}
 		}
 	}
-	return client.GetDEXConfig(ctx, host, "")
+	return cachedDEXConfig(ctx, client, host)
+}
+
+// dexCfgEntry caches one host's getdexconfig result and serializes concurrent
+// loads for that host so two registration-screen requests in short order open
+// only one DEX-server connection.
+type dexCfgEntry struct {
+	mu  sync.Mutex
+	raw json.RawMessage
+	err error
+	at  time.Time
+}
+
+var (
+	dexCfgMu    sync.Mutex
+	dexCfgCache = map[string]*dexCfgEntry{}
+)
+
+const (
+	dexCfgTTL    = 5 * time.Minute  // config (markets, bond reqs) is near-static
+	dexCfgErrTTL = 30 * time.Second // brief negative cache so a down/banning server is not hammered
+)
+
+// cachedDEXConfig fetches a host's getdexconfig at most once per host per TTL,
+// coalescing concurrent callers behind a per-host lock so a burst of requests
+// opens only one DEX-server connection.
+func cachedDEXConfig(ctx context.Context, client *bisonw.Client, host string) (json.RawMessage, error) {
+	dexCfgMu.Lock()
+	e := dexCfgCache[host]
+	if e == nil {
+		e = &dexCfgEntry{}
+		dexCfgCache[host] = e
+	}
+	dexCfgMu.Unlock()
+
+	e.mu.Lock() // serialize loads for this host; a second caller blocks then hits the fresh cache
+	defer e.mu.Unlock()
+	if !e.at.IsZero() {
+		age := time.Since(e.at)
+		if e.err == nil && age < dexCfgTTL {
+			return e.raw, nil
+		}
+		if e.err != nil && age < dexCfgErrTTL {
+			return nil, e.err
+		}
+	}
+	raw, err := client.GetDEXConfig(ctx, host, "")
+	e.raw, e.err, e.at = raw, err, time.Now()
+	return raw, err
 }
 
 // GetDcrdexConfigHandler fetches a DEX server's public configuration (markets,
@@ -731,7 +780,10 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	// Allow the DEX server ample time to answer the one-shot getdexconfig
+	// (slow/cold servers can take a while); the result is cached so this long
+	// wait happens at most once per host per TTL.
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	raw, err := dexConfigRaw(ctx, client, host)
 	if err != nil {
