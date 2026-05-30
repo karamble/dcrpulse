@@ -166,6 +166,33 @@ export const DexSettingsPanel = () => {
             </button>
           </>
         )}
+
+        <div className="p-3 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div className="space-y-1.5">
+            <p className="font-semibold">Why this matters - and how it differs from your wallet seed</p>
+            <p>
+              These 15 words are your DCRDEX account seed. They are separate from your Decred wallet
+              recovery seed, and they protect different things.
+            </p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li>
+                Your DCR funds live in your wallet and are protected by your wallet seed, not this
+                one. This seed secures your DEX account identity and the keys that reclaim your
+                fidelity bond.
+              </li>
+              <li>
+                If you reinstall or lose this app's data, these words let you restore your account
+                and refund your time-locked bond. Without them, the DCR locked in your bond and your
+                account standing can be lost for good.
+              </li>
+              <li>
+                The app password only unlocks day-to-day use; it cannot recover your account. Write
+                these words down and keep them offline.
+              </li>
+            </ul>
+          </div>
+        </div>
       </Card>
     </div>
   );
