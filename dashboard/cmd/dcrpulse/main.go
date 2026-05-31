@@ -233,6 +233,7 @@ func main() {
 	api.HandleFunc("/wallet/staking/purchase", handlers.PurchaseTicketsHandler).Methods("POST")
 	api.HandleFunc("/wallet/staking/tickets", handlers.ListTicketsHandler).Methods("GET")
 	api.HandleFunc("/wallet/staking/sync-failed-vsp-tickets", handlers.SyncFailedVSPTicketsHandler).Methods("POST")
+	api.HandleFunc("/wallet/staking/process-unmanaged-vsp-tickets", handlers.ProcessUnmanagedVSPTicketsHandler).Methods("POST")
 	api.HandleFunc("/wallet/staking/autobuyer/status", handlers.AutobuyerStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/staking/autobuyer/settings", handlers.GetAutobuyerSettingsHandler).Methods("GET")
 	api.HandleFunc("/wallet/staking/autobuyer/settings", handlers.SaveAutobuyerSettingsHandler).Methods("POST")

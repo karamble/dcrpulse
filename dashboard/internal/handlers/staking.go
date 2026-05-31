@@ -326,3 +326,46 @@ func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(summary)
 }
+
+// ProcessUnmanagedVSPTicketsHandler re-associates untracked tickets with a VSP.
+func ProcessUnmanagedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.SyncFailedVSPTicketsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Passphrase == "" {
+		http.Error(w, "passphrase required", http.StatusBadRequest)
+		return
+	}
+	if req.VspHost == "" || req.VspPubkey == "" {
+		http.Error(w, "vspHost and vspPubkey required", http.StatusBadRequest)
+		return
+	}
+
+	passphrase := []byte(req.Passphrase)
+	defer func() {
+		for i := range passphrase {
+			passphrase[i] = 0
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	summary, err := services.ProcessUnmanagedVSPTickets(ctx, req.VspHost, req.VspPubkey, req.Account, req.ChangeAccount, passphrase)
+	if err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		default:
+			log.Printf("ProcessUnmanagedVSPTickets failed: %v", err)
+			http.Error(w, msg, http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(summary)
+}

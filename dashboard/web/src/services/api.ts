@@ -714,6 +714,19 @@ export const syncFailedVSPTickets = async (
   return response.data;
 };
 
+// Re-associates untracked tickets with a VSP. Runs server-side with a 120s
+// context, so allow more time than the 25s default like the sync call above.
+export const processUnmanagedVSPTickets = async (
+  req: SyncFailedVSPTicketsRequest,
+): Promise<SyncFailedVSPTicketsResponse> => {
+  const response = await api.post<SyncFailedVSPTicketsResponse>(
+    '/wallet/staking/process-unmanaged-vsp-tickets',
+    req,
+    { timeout: 125000 },
+  );
+  return response.data;
+};
+
 export interface AutobuyerSettings {
   account: number;
   vspHost: string;

@@ -543,14 +543,11 @@ func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, accoun
 		return nil, fmt.Errorf("vspHost and vspPubkey are required")
 	}
 
-	if err := unlockAccountForSpend(ctx, account, passphrase); err != nil {
+	unlockedAccts, err := unlockAllAccountsForSpend(ctx, passphrase)
+	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: account})
-	}()
+	defer relockAccountsAfterVSP(unlockedAccts)
 
 	normHost := "https://" + strings.TrimPrefix(strings.TrimPrefix(vspHost, "https://"), "http://")
 
@@ -574,6 +571,49 @@ func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, accoun
 		ChangeAccount: changeAccount,
 	}); err != nil {
 		return nil, fmt.Errorf("ProcessManagedTickets RPC: %w", err)
+	}
+	rememberVSPUsed(ctx, vspHost, vspPubkey)
+
+	after := countFeeStatuses(fetchFeeStatusMap(ctx))
+
+	return &types.SyncFailedVSPTicketsResponse{
+		VspHost: vspHost,
+		Before:  before,
+		After:   after,
+	}, nil
+}
+
+// ProcessUnmanagedVSPTickets re-associates tickets that the wallet is not yet
+// tracking against a VSP with the given VSP. After a seed restore or wallet
+// import the on-chain tickets are recovered but their local VSP fee records are
+// gone, so they show as untracked; this re-syncs known-paid tickets and pays
+// genuinely-unpaid ones, while tickets the VSP does not recognize are skipped.
+// Mirrors Decrediton's processUnmanagedTickets (one user-selected VSP per run).
+func ProcessUnmanagedVSPTickets(ctx context.Context, vspHost, vspPubkey string, account, changeAccount uint32, passphrase []byte) (*types.SyncFailedVSPTicketsResponse, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	if vspHost == "" || vspPubkey == "" {
+		return nil, fmt.Errorf("vspHost and vspPubkey are required")
+	}
+
+	unlockedAccts, err := unlockAllAccountsForSpend(ctx, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	defer relockAccountsAfterVSP(unlockedAccts)
+
+	normHost := "https://" + strings.TrimPrefix(strings.TrimPrefix(vspHost, "https://"), "http://")
+
+	before := countFeeStatuses(fetchFeeStatusMap(ctx))
+
+	if _, err := rpc.WalletGrpcClient.ProcessUnmanagedTickets(ctx, &pb.ProcessUnmanagedTicketsRequest{
+		VspHost:       normHost,
+		VspPubkey:     vspPubkey,
+		FeeAccount:    account,
+		ChangeAccount: changeAccount,
+	}); err != nil {
+		return nil, fmt.Errorf("ProcessUnmanagedTickets RPC: %w", err)
 	}
 	rememberVSPUsed(ctx, vspHost, vspPubkey)
 

@@ -333,14 +333,19 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 		return []types.AccountInfo{}, nil
 	}
 
-	// getbalance does not return account numbers; resolve them via gRPC Accounts.
+	// getbalance does not return account numbers or per-account encryption
+	// state; resolve them via gRPC Accounts.
 	numbers := map[string]uint32{}
+	encrypted := map[string]bool{}
+	unlocked := map[string]bool{}
 	if rpc.WalletGrpcClient != nil {
 		if acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{}); err != nil {
 			log.Printf("Warning: gRPC Accounts call failed, account numbers will be 0: %v", err)
 		} else {
 			for _, a := range acctsResp.Accounts {
 				numbers[a.AccountName] = a.AccountNumber
+				encrypted[a.AccountName] = a.AccountEncrypted
+				unlocked[a.AccountName] = a.AccountUnlocked
 			}
 		}
 	}
@@ -358,6 +363,8 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 			ImmatureCoinbaseRewards: acct.ImmatureCoinbaseRewards,
 			ImmatureStakeGeneration: acct.ImmatureStakeGeneration,
 			AccountNumber:           numbers[acct.AccountName],
+			AccountEncrypted:        encrypted[acct.AccountName],
+			AccountUnlocked:         unlocked[acct.AccountName],
 		})
 	}
 
@@ -459,6 +466,113 @@ func unlockAccountForSpend(ctx context.Context, accountNumber uint32, passphrase
 		return fmt.Errorf("unlock source account: %w", err)
 	}
 	return nil
+}
+
+// unlockAllAccountsForSpend unlocks every normal (non-imported, non-watch-only)
+// account and returns the account numbers it actually transitioned from locked
+// to unlocked. VSP fee reconciliation signs with each ticket's commitment-
+// address key, which can belong to any account (e.g. tickets bought from the
+// mixed account), so unlocking only the fee account leaves that signing key
+// locked. Pass the returned slice to relockAccountsAfterVSP to re-lock them
+// once processing is done. Mirrors Decrediton's unlockAllAcctAndExecFn.
+func unlockAllAccountsForSpend(ctx context.Context, passphrase []byte) ([]uint32, error) {
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Snapshot current unlock state so we only report (and later re-lock)
+	// accounts we ourselves unlock, leaving any already-unlocked account (e.g.
+	// one a running mixer needs) untouched.
+	alreadyUnlocked := map[uint32]bool{}
+	if resp, aerr := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{}); aerr == nil {
+		for _, a := range resp.Accounts {
+			if a.AccountUnlocked {
+				alreadyUnlocked[a.AccountNumber] = true
+			}
+		}
+	}
+
+	var candidates, succeeded int
+	var newlyUnlocked []uint32
+	for _, a := range accounts {
+		// The imported (2^31-1) and xpub-imported (>=2^31) accounts hold no
+		// per-account passphrase key and cannot be unlocked this way. The dex
+		// account is managed by the DCRDEX backend (bisonw), which may encrypt
+		// it with its own passphrase; it never holds VSP tickets, so skip it.
+		if a.AccountName == "imported" || a.AccountName == "dex" || a.AccountNumber >= 1<<31 {
+			continue
+		}
+		candidates++
+		if alreadyUnlocked[a.AccountNumber] {
+			succeeded++
+			continue
+		}
+		if err := unlockAccountForSpend(ctx, a.AccountNumber, passphrase); err != nil {
+			// An account may carry a divergent per-account passphrase; skip it
+			// rather than abort, so the accounts that do unlock (including each
+			// ticket's commitment account) can still sign for the VSP. A
+			// genuinely wrong passphrase fails every account, handled below.
+			log.Printf("unlockAllAccountsForSpend: skipping account %q (%d): %v", a.AccountName, a.AccountNumber, err)
+			continue
+		}
+		succeeded++
+		newlyUnlocked = append(newlyUnlocked, a.AccountNumber)
+	}
+	if candidates > 0 && succeeded == 0 {
+		return nil, fmt.Errorf("invalid passphrase")
+	}
+	return newlyUnlocked, nil
+}
+
+// vspTicketCommitAccounts returns the set of account numbers that own the
+// commitment addresses of the wallet's currently tracked VSP tickets. The
+// dcrwallet VSP client reconciles those tickets' fees in a background timer
+// and must keep these accounts' signing keys unlocked. Mirrors Decrediton's
+// getVSPTrackedTicketsCommitAccounts.
+func vspTicketCommitAccounts(ctx context.Context) map[uint32]bool {
+	out := map[uint32]bool{}
+	if rpc.WalletGrpcClient == nil {
+		return out
+	}
+	resp, err := rpc.WalletGrpcClient.GetTrackedVSPTickets(ctx, &pb.GetTrackedVSPTicketsRequest{})
+	if err != nil {
+		log.Printf("vspTicketCommitAccounts: GetTrackedVSPTickets: %v", err)
+		return out
+	}
+	for _, v := range resp.GetVsps() {
+		for _, t := range v.GetTickets() {
+			addr := t.GetCommitmentAddress()
+			if addr == "" {
+				continue
+			}
+			va, verr := rpc.WalletGrpcClient.ValidateAddress(ctx, &pb.ValidateAddressRequest{Address: addr})
+			if verr != nil || !va.GetIsMine() {
+				continue
+			}
+			out[va.GetAccountNumber()] = true
+		}
+	}
+	return out
+}
+
+// relockAccountsAfterVSP re-locks the accounts unlockAllAccountsForSpend
+// unlocked, skipping those that own a tracked VSP ticket's commitment address
+// (the VSP client keeps reconciling their fees in the background, which fires
+// after the originating RPC returns). Mirrors Decrediton's relockAccounts /
+// filterUnlockableAccounts.
+func relockAccountsAfterVSP(unlocked []uint32) {
+	if len(unlocked) == 0 || rpc.WalletGrpcClient == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	keep := vspTicketCommitAccounts(ctx)
+	for _, acct := range unlocked {
+		if keep[acct] {
+			continue
+		}
+		_, _ = rpc.WalletGrpcClient.LockAccount(ctx, &pb.LockAccountRequest{AccountNumber: acct})
+	}
 }
 
 // RenameAccount renames an existing account. dcrwallet's RenameAccount gRPC

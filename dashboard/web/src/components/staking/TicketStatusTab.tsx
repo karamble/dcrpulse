@@ -21,6 +21,7 @@ import {
   VSPInfo,
   getAccounts,
   listTickets,
+  processUnmanagedVSPTickets,
   syncFailedVSPTickets,
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
@@ -141,6 +142,38 @@ const SyncResultPanel = ({ result }: { result: SyncFailedVSPTicketsResponse }) =
   );
 };
 
+// UnmanagedResultPanel summarizes a re-tracking run: how many previously
+// untracked tickets are now associated with the VSP and moving toward Confirmed.
+const UnmanagedResultPanel = ({ result }: { result: SyncFailedVSPTicketsResponse }) => {
+  const { before, after, vspHost } = result;
+  const tracked = (n: VSPFeeStatusCounts) => n.unpaid + n.paid + n.errored + n.confirmed;
+  const newlyTracked = Math.max(0, tracked(after) - tracked(before));
+
+  let tone = 'border-info/30 bg-info/5 text-info';
+  let verdict = '';
+  if (newlyTracked > 0) {
+    tone = 'border-success/30 bg-success/5 text-success';
+    verdict = `${newlyTracked} ticket${newlyTracked === 1 ? ' is' : 's are'} now tracked by ${vspHost}; ${newlyTracked === 1 ? 'its' : 'their'} fee will be confirmed by the VSP and ${newlyTracked === 1 ? 'it' : 'they'} will vote.`;
+  } else {
+    tone = 'border-border/50 bg-muted/5 text-muted-foreground';
+    verdict = `No untracked tickets were claimed by ${vspHost}. If you bought them from a different VSP, run this again with that VSP selected.`;
+  }
+
+  return (
+    <div className={`p-4 rounded-xl border text-sm space-y-2 ${tone}`}>
+      <div className="flex items-center gap-2 font-medium">
+        <CheckCircle2 className="h-4 w-4 shrink-0" />
+        Re-tracking complete for {vspHost}
+      </div>
+      <p>{verdict}</p>
+    </div>
+  );
+};
+
+// VSPFeeStatusCounts is the shape returned in the before/after snapshots; kept
+// local to type the panel helper above.
+type VSPFeeStatusCounts = SyncFailedVSPTicketsResponse['before'];
+
 export const TicketStatusTab = () => {
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -151,6 +184,10 @@ export const TicketStatusTab = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncFailedVSPTicketsResponse | null>(null);
+  const [vspU, setVspU] = useState<VSPInfo | null>(null);
+  const [modalOpenU, setModalOpenU] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [processResult, setProcessResult] = useState<SyncFailedVSPTicketsResponse | null>(null);
 
   const load = async () => {
     try {
@@ -220,7 +257,34 @@ export const TicketStatusTab = () => {
     }
   };
 
+  const handleProcessUnmanaged = async (passphrase: string) => {
+    if (!vspU || account === null) return;
+    setProcessResult(null);
+    setProcessing(true);
+    try {
+      const result = await processUnmanagedVSPTickets({
+        vspHost: vspU.host,
+        vspPubkey: vspU.pubkey,
+        account,
+        changeAccount: account,
+        passphrase,
+      });
+      setProcessResult(result);
+      setModalOpenU(false);
+      // Refresh the ticket list immediately so re-tracked tickets leave Untracked.
+      await load();
+    } catch (err: any) {
+      const body = err?.response?.data;
+      const msg = typeof body === 'string' ? body : err?.message || 'Failed to process tickets';
+      throw new Error(msg);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const canSync = vsp !== null && account !== null;
+  const untrackedCount = grouped.NONE.length;
+  const canProcess = vspU !== null && account !== null;
 
   return (
     <div className="space-y-6">
@@ -271,6 +335,58 @@ export const TicketStatusTab = () => {
           {syncing ? 'Syncing…' : 'Sync Failed VSP Tickets'}
         </button>
       </div>
+
+      {untrackedCount > 0 && (
+        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold">Process Unmanaged Tickets</h3>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            You have {untrackedCount} live ticket{untrackedCount === 1 ? '' : 's'} that{' '}
+            {untrackedCount === 1 ? 'is' : 'are'} not associated with a VSP (shown as Untracked
+            below). This typically happens after restoring or importing a wallet: the tickets are
+            recovered but their VSP fee records are not. Select the VSP you bought them from to
+            re-associate them so their fees are confirmed and they keep voting. If you used more
+            than one VSP, run this once per VSP.
+          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Wallet className="h-4 w-4" />
+                Fee account
+              </label>
+              <select
+                value={account ?? ''}
+                onChange={(e) => setAccount(e.target.value === '' ? null : Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border/50 text-sm"
+              >
+                <option value="" disabled>
+                  Select account
+                </option>
+                {accounts.map((a) => (
+                  <option key={a.accountNumber} value={a.accountNumber}>
+                    {a.accountName} ({a.spendableBalance.toFixed(2)} DCR)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <VSPSelect network="mainnet" value={vspU} onChange={setVspU} />
+          </div>
+
+          {processResult && <UnmanagedResultPanel result={processResult} />}
+
+          <button
+            onClick={() => setModalOpenU(true)}
+            disabled={!canProcess || processing}
+            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+          >
+            {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {processing ? 'Processing…' : 'Process Unmanaged Tickets'}
+          </button>
+        </div>
+      )}
 
       {loading && tickets.length === 0 && (
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50 text-sm text-muted-foreground">
@@ -357,6 +473,16 @@ export const TicketStatusTab = () => {
         busyLabel="Syncing…"
         onSubmit={handleSync}
         onClose={() => setModalOpen(false)}
+      />
+
+      <PassphraseModal
+        isOpen={modalOpenU}
+        title="Process Unmanaged Tickets"
+        description="Enter your private passphrase to re-associate your untracked tickets with the VSP."
+        submitLabel="Process"
+        busyLabel="Processing…"
+        onSubmit={handleProcessUnmanaged}
+        onClose={() => setModalOpenU(false)}
       />
     </div>
   );

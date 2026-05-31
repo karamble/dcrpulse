@@ -38,6 +38,8 @@ type AccountInfo struct {
 	ImmatureCoinbaseRewards float64 `json:"immatureCoinbaseRewards"`
 	ImmatureStakeGeneration float64 `json:"immatureStakeGeneration"`
 	AccountNumber           uint32  `json:"accountNumber"`
+	AccountEncrypted        bool    `json:"accountEncrypted"`
+	AccountUnlocked         bool    `json:"accountUnlocked"`
 	// Wallet-wide totals (only populated in primary AccountInfo)
 	CumulativeTotal      float64 `json:"cumulativeTotal,omitempty"`
 	TotalSpendable       float64 `json:"totalSpendable,omitempty"`
