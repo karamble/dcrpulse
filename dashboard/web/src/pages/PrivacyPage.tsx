@@ -44,10 +44,10 @@ export const PrivacyPage = () => {
     return found ? found.totalBalance : 0;
   };
 
-  const spendableFor = (accountNumber: number | undefined): number => {
+  const spendablePlusUnconfirmedFor = (accountNumber: number | undefined): number => {
     if (accountNumber === undefined) return 0;
     const found = accounts.find((a) => a.accountNumber === accountNumber);
-    return found ? found.spendableBalance : 0;
+    return found ? found.spendableBalance + found.unconfirmedBalance : 0;
   };
 
   return (
@@ -75,7 +75,7 @@ export const PrivacyPage = () => {
         <>
           <MixerBalanceCards
             unmixedBalance={balanceFor(status.changeAccount)}
-            mixedBalance={spendableFor(status.mixedAccount)}
+            mixedBalance={spendablePlusUnconfirmedFor(status.mixedAccount)}
             running={status.mixerRunning}
           />
 
