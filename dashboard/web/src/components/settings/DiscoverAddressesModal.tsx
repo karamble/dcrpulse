@@ -8,7 +8,7 @@ import { AlertCircle, Search, X } from 'lucide-react';
 interface DiscoverAddressesModalProps {
   isOpen: boolean;
   defaultGapLimit: number;
-  onSubmit: (passphrase: string, discoverAccounts: boolean, gapLimit: number) => Promise<void>;
+  onSubmit: (passphrase: string, gapLimit: number) => Promise<void>;
   onClose: () => void;
 }
 
@@ -20,7 +20,6 @@ export const DiscoverAddressesModal = ({
 }: DiscoverAddressesModalProps) => {
   const [passphrase, setPassphrase] = useState('');
   const [gapLimit, setGapLimit] = useState<number>(defaultGapLimit);
-  const [discoverAccounts, setDiscoverAccounts] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +27,6 @@ export const DiscoverAddressesModal = ({
     if (!isOpen) {
       setPassphrase('');
       setGapLimit(defaultGapLimit);
-      setDiscoverAccounts(true);
       setError(null);
       setSubmitting(false);
     } else {
@@ -49,7 +47,7 @@ export const DiscoverAddressesModal = ({
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(passphrase, discoverAccounts, gapLimit);
+      await onSubmit(passphrase, gapLimit);
     } catch (err: any) {
       const body = err?.response?.data;
       const msg = typeof body === 'string' ? body : err?.message || 'Discovery failed';
@@ -100,17 +98,6 @@ export const DiscoverAddressesModal = ({
               Default 200. Increase if you restored a wallet that previously used a higher gap.
             </p>
           </div>
-
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={discoverAccounts}
-              onChange={(e) => setDiscoverAccounts(e.target.checked)}
-              disabled={submitting}
-              className="accent-primary"
-            />
-            Also discover new accounts
-          </label>
 
           <div>
             <label className="block text-sm text-muted-foreground mb-1">Wallet passphrase</label>

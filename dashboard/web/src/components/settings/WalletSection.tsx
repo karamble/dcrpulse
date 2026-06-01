@@ -28,8 +28,8 @@ export const WalletSection = () => {
     setFeedback('Private passphrase changed.');
   };
 
-  const handleDiscover = async (passphrase: string, discoverAccounts: boolean, gap: number) => {
-    await discoverAddresses(passphrase, discoverAccounts, gap);
+  const handleDiscover = async (passphrase: string, gap: number) => {
+    await discoverAddresses(passphrase, gap);
     setDiscoverModalOpen(false);
     setGapLimit(gap);
     setFeedback('Address discovery complete.');

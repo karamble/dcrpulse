@@ -264,7 +264,7 @@ func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
-	if err := services.DiscoverUsage(ctx, passphrase, req.DiscoverAccounts, req.GapLimit); err != nil {
+	if err := services.DiscoverUsage(ctx, passphrase, req.GapLimit); err != nil {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
 		switch {

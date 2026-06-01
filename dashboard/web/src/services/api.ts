@@ -817,12 +817,11 @@ export const getLogs = async (component: LogComponent, lines = 500): Promise<Log
 
 export const discoverAddresses = async (
   passphrase: string,
-  discoverAccounts: boolean,
   gapLimit?: number,
 ): Promise<void> => {
   await api.post(
     '/wallet/settings/discover-addresses',
-    { passphrase, discoverAccounts, gapLimit },
+    { passphrase, gapLimit },
     { timeout: 10 * 60 * 1000 },
   );
 };

@@ -1475,10 +1475,14 @@ func ChangePrivatePassphrase(ctx context.Context, oldPass, newPass []byte) error
 	return g.Wait()
 }
 
-// DiscoverUsage unlocks the wallet and runs dcrwallet's DiscoverUsage
-// gRPC to scan the chain for previously-used addresses under gapLimit.
-// Blocks until the scan completes. The wallet is re-locked on return.
-func DiscoverUsage(ctx context.Context, passphrase []byte, discoverAccounts bool, gapLimit uint32) error {
+// DiscoverUsage unlocks the wallet and runs dcrwallet's DiscoverUsage gRPC to
+// scan the chain for previously-used addresses of the existing accounts under
+// gapLimit. Blocks until the scan completes. The wallet is re-locked on return.
+//
+// It requests address discovery only (DiscoverAccounts=false), matching
+// Decrediton's post-setup Discover Address Usage. Account discovery runs only
+// during a restore, before accounts are per-account-encrypted (runDiscoveryRpcSync).
+func DiscoverUsage(ctx context.Context, passphrase []byte, gapLimit uint32) error {
 	if rpc.WalletGrpcClient == nil {
 		return fmt.Errorf("wallet gRPC client not initialized")
 	}
@@ -1498,7 +1502,7 @@ func DiscoverUsage(ctx context.Context, passphrase []byte, discoverAccounts bool
 	}()
 
 	if _, err := rpc.WalletGrpcClient.DiscoverUsage(ctx, &pb.DiscoverUsageRequest{
-		DiscoverAccounts: discoverAccounts,
+		DiscoverAccounts: false,
 		GapLimit:         gapLimit,
 	}); err != nil {
 		return fmt.Errorf("DiscoverUsage RPC: %w", err)
