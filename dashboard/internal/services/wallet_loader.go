@@ -101,19 +101,14 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 		return fmt.Errorf("failed to create wallet: %w", err)
 	}
 
-	// Set the per-account passphrase on the default account (account 0)
-	// equal to the wallet's private passphrase. Matches Decrediton's
-	// post-create setAccountPassphrase call so account 0 is
-	// per-account-encrypted from the start, keeping every account on
-	// the single-passphrase invariant ChangePrivatePassphrase relies on.
-	if rpc.WalletGrpcClient != nil {
-		if _, err := rpc.WalletGrpcClient.SetAccountPassphrase(ctx, &pb.SetAccountPassphraseRequest{
-			AccountNumber:        0,
-			NewAccountPassphrase: []byte(privatePass),
-			WalletPassphrase:     []byte(privatePass),
-		}); err != nil {
-			return fmt.Errorf("set default account passphrase: %w", err)
-		}
+	// Give every existing account the same per-account passphrase (equal to the
+	// wallet's private passphrase) so they all unlock uniformly via UnlockAccount.
+	// Matches Decrediton's setAccountsPass migration. At fresh create only the
+	// default account exists; restored accounts are covered again after discovery
+	// in runDiscoveryRpcSync. Errors are propagated (no silent skip) so the default
+	// account can never be left un-encrypted or diverging.
+	if err := ensureAllAccountsEncrypted(ctx, []byte(privatePass)); err != nil {
+		return fmt.Errorf("set account passphrases: %w", err)
 	}
 
 	log.Println("Wallet created and opened successfully")
@@ -161,9 +156,18 @@ func runDiscoveryRpcSync(privatePass string) {
 		resp, err := stream.Recv()
 		if err != nil {
 			log.Printf("Discovery RPC sync stream ended: %v", err)
-			return
+			break
 		}
 		ApplyRpcSyncNotification(resp)
+	}
+
+	// Discovery has recovered the seed's accounts (mixed/unmixed/lightning/etc.);
+	// give them all the same per-account passphrase as the default account so every
+	// account unlocks uniformly. Best-effort: log on failure, don't block.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := ensureAllAccountsEncrypted(ctx, []byte(privatePass)); err != nil {
+		log.Printf("Discovery RPC sync: set account passphrases: %v", err)
 	}
 }
 

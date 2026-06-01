@@ -423,6 +423,30 @@ func ensureAccountEncrypted(ctx context.Context, accountNumber uint32, passphras
 	return fmt.Errorf("account %d not found", accountNumber)
 }
 
+// ensureAllAccountsEncrypted gives every normal account the same per-account
+// passphrase (equal to the wallet passphrase) in one pass, so all accounts unlock
+// uniformly via UnlockAccount. Mirrors Decrediton's setAccountsPass migration.
+// Run after wallet creation and after a restore's account discovery so the default
+// account never diverges from the accounts recovered or created later. Skips the
+// same accounts unlockAllAccountsForSpend does: imported, dex (bisonw-managed), and
+// xpub-imported (>= 2^31). Each account is delegated to ensureAccountEncrypted,
+// which is a no-op for accounts already per-account-encrypted.
+func ensureAllAccountsEncrypted(ctx context.Context, passphrase []byte) error {
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, a := range accounts {
+		if a.AccountName == "imported" || a.AccountName == "dex" || a.AccountNumber >= 1<<31 {
+			continue
+		}
+		if err := ensureAccountEncrypted(ctx, a.AccountNumber, passphrase); err != nil {
+			return fmt.Errorf("encrypt account %q (%d): %w", a.AccountName, a.AccountNumber, err)
+		}
+	}
+	return nil
+}
+
 // unlockAccountForSpend makes a per-account-encrypted account usable for signing.
 // It first checks whether the account is already unlocked: dcrwallet's
 // UnlockAccount, when called on an already-unlocked account, does a strict
