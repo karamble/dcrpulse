@@ -488,6 +488,19 @@ func superviseRpcSync(ctx context.Context) {
 			return
 		}
 
+		// During a restore, the dedicated account-discovery sync owns
+		// dcrwallet's single RpcSync slot (it carries the private passphrase to
+		// keep the wallet unlocked for discovery). Opening our passphrase-less
+		// sync now would steal that slot, leaving accounts undiscovered and
+		// corrupting per-account keys written during restore. Wait it out.
+		for services.RestoreDiscoveryActive() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
+		}
+
 		if firstStart {
 			log.Println("RPC sync resumed on startup")
 			firstStart = false

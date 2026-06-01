@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"dcrpulse/internal/rpc"
@@ -18,6 +19,30 @@ import (
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
+
+// restoreDiscoveryActive guards dcrwallet's single RpcSync slot during a
+// restore. dcrwallet permits only one syncer at a time. When a wallet is
+// restored from seed, runDiscoveryRpcSync must own that slot so it can run
+// RpcSync with DiscoverAccounts=true AND the private passphrase (which keeps
+// the wallet unlocked for address/account discovery). The boot-time supervisor
+// (superviseRpcSync) starts a passphrase-less RpcSync the instant CreateWallet
+// opens the wallet; without this gate it wins the slot, the discovery sync is
+// rejected ("already synchronizing") so no accounts are discovered, and the
+// supervisor's sync then runs DiscoverActiveAddresses against a wallet that
+// locks - which also corrupts the per-account encryption written during restore.
+// The supervisor waits while this is set; runDiscoveryRpcSync clears it when its
+// discovery stream ends.
+var restoreDiscoveryActive atomic.Bool
+
+// BeginRestoreDiscovery marks a restore account-discovery sync as owning the
+// RpcSync slot. Call before CreateWallet opens the wallet.
+func BeginRestoreDiscovery() { restoreDiscoveryActive.Store(true) }
+
+// EndRestoreDiscovery releases the slot so the sync supervisor can take over.
+func EndRestoreDiscovery() { restoreDiscoveryActive.Store(false) }
+
+// RestoreDiscoveryActive reports whether a restore discovery sync owns the slot.
+func RestoreDiscoveryActive() bool { return restoreDiscoveryActive.Load() }
 
 // CheckWalletExists checks if a wallet database exists
 func CheckWalletExists(ctx context.Context) (*types.WalletExistsResponse, error) {
@@ -90,6 +115,20 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 
 	log.Printf("Creating wallet with seed length: %d bytes", len(seedBytes))
 
+	// Claim dcrwallet's RpcSync slot for the restore discovery BEFORE CreateWallet
+	// opens the wallet (which unblocks the sync supervisor). runDiscoveryRpcSync
+	// releases it when its stream ends; if we never launch it (early error path),
+	// the deferred release below clears the gate so the supervisor isn't stuck.
+	discoveryLaunched := false
+	if discoverAccounts {
+		BeginRestoreDiscovery()
+		defer func() {
+			if !discoveryLaunched {
+				EndRestoreDiscovery()
+			}
+		}()
+	}
+
 	req := &pb.CreateWalletRequest{
 		PublicPassphrase:  []byte(publicPass),
 		PrivatePassphrase: []byte(privatePass),
@@ -101,14 +140,20 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 		return fmt.Errorf("failed to create wallet: %w", err)
 	}
 
-	// Give every existing account the same per-account passphrase (equal to the
-	// wallet's private passphrase) so they all unlock uniformly via UnlockAccount.
-	// Matches Decrediton's setAccountsPass migration. At fresh create only the
-	// default account exists; restored accounts are covered again after discovery
-	// in runDiscoveryRpcSync. Errors are propagated (no silent skip) so the default
-	// account can never be left un-encrypted or diverging.
-	if err := ensureAllAccountsEncrypted(ctx, []byte(privatePass)); err != nil {
-		return fmt.Errorf("set account passphrases: %w", err)
+	// Per-account passphrases are set differently for a fresh wallet vs a restore:
+	//
+	//   - Fresh create (no discovery): only the default account exists, so give it
+	//     its per-account passphrase now.
+	//   - Restore (discoverAccounts): do NOT encrypt any account before discovery.
+	//     dcrwallet's account discovery corrupts the per-account encryption record
+	//     of an account that is already uniquely-encrypted when discovery runs, so
+	//     the default account would end up sealed under unrecoverable bytes. Mirror
+	//     Decrediton, which runs setAccountsPass only AFTER discovery reaches SYNCED;
+	//     runDiscoveryRpcSync does that below once its discovery stream completes.
+	if !discoverAccounts {
+		if err := ensureAllAccountsEncrypted(ctx, []byte(privatePass)); err != nil {
+			return fmt.Errorf("set account passphrases: %w", err)
+		}
 	}
 
 	log.Println("Wallet created and opened successfully")
@@ -118,6 +163,7 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 	// regular supervisor (cmd/dcrpulse/main.go) resumes with default args
 	// once this stream ends.
 	if discoverAccounts {
+		discoveryLaunched = true
 		go runDiscoveryRpcSync(privatePass)
 	}
 
@@ -125,6 +171,8 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 }
 
 func runDiscoveryRpcSync(privatePass string) {
+	// Release the RpcSync slot for the supervisor once this discovery stream ends.
+	defer EndRestoreDiscovery()
 	if rpc.WalletLoaderClient == nil {
 		return
 	}
@@ -146,7 +194,15 @@ func runDiscoveryRpcSync(privatePass string) {
 		DiscoverAccounts:  true,
 		PrivatePassphrase: []byte(privatePass),
 	}
-	stream, err := rpc.WalletLoaderClient.RpcSync(context.Background(), req)
+	// Run discovery on a cancellable context so we can stop the stream once the
+	// initial discovery+sync reaches SYNCED. dcrwallet keeps the wallet unlocked
+	// for the whole lifetime of a DiscoverAccounts RpcSync stream, so leaving it
+	// open forever would both keep the wallet unlocked and prevent the supervisor
+	// from ever taking over. We stop at SYNCED, set per-account passphrases, then
+	// release the slot to the supervisor for ongoing sync.
+	syncCtx, cancelSync := context.WithCancel(context.Background())
+	defer cancelSync()
+	stream, err := rpc.WalletLoaderClient.RpcSync(syncCtx, req)
 	if err != nil {
 		log.Printf("Discovery RPC sync: failed to start: %v", err)
 		return
@@ -159,11 +215,17 @@ func runDiscoveryRpcSync(privatePass string) {
 			break
 		}
 		ApplyRpcSyncNotification(resp)
+		if resp.Synced {
+			log.Println("Discovery RPC sync reached SYNCED; finalizing account passphrases")
+			cancelSync()
+			break
+		}
 	}
 
-	// Discovery has recovered the seed's accounts (mixed/unmixed/lightning/etc.);
-	// give them all the same per-account passphrase as the default account so every
-	// account unlocks uniformly. Best-effort: log on failure, don't block.
+	// Discovery has recovered the seed's accounts. Now (and only now, after
+	// discovery) give every account the same per-account passphrase as the wallet
+	// passphrase so they all unlock uniformly via UnlockAccount. Mirrors
+	// Decrediton's setAccountsPass-on-SYNCED. Best-effort: log on failure.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := ensureAllAccountsEncrypted(ctx, []byte(privatePass)); err != nil {
