@@ -72,7 +72,7 @@ export const NodeDashboard = () => {
       ws.onmessage = (e) => {
         try {
           const s = JSON.parse(e.data);
-          if (s && typeof s.syncProgress === 'number') setNodeSync(s);
+          if (s && typeof s.syncProgress === 'number' && s.status) setNodeSync(s);
         } catch {
           /* ignore non-JSON (ping) frames */
         }

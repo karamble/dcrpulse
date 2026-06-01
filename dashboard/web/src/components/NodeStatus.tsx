@@ -5,7 +5,7 @@
 import { Activity, AlertCircle, Loader2 } from 'lucide-react';
 
 interface NodeStatusProps {
-  status: 'running' | 'syncing' | 'stopped';
+  status: 'running' | 'syncing' | 'stopped' | string;
   syncProgress?: number;
   version?: string;
   syncMessage?: string;
@@ -37,6 +37,14 @@ export const NodeStatus = ({ status, syncProgress = 0, version, syncMessage }: N
           color: 'text-red-500',
           bgColor: 'bg-red-500/10',
           borderColor: 'border-red-500/20',
+        };
+      default:
+        return {
+          icon: Loader2,
+          label: 'Connecting...',
+          color: 'text-warning',
+          bgColor: 'bg-warning/10',
+          borderColor: 'border-warning/20',
         };
     }
   };
