@@ -41,6 +41,7 @@ type DecodeSeedResponse struct {
 
 // CreateWalletRequest contains parameters for wallet creation
 type CreateWalletRequest struct {
+	Name                     string `json:"name"`                     // Optional: target wallet name; empty uses the default wallet
 	PublicPassphrase         string `json:"publicPassphrase"`         // Optional: Encrypts wallet database for viewing
 	ConfirmPublicPassphrase  string `json:"confirmPublicPassphrase"`  // Must equal PublicPassphrase when public is non-empty
 	PrivatePassphrase        string `json:"privatePassphrase"`        // Required: Encrypts private keys for spending

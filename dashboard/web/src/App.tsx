@@ -10,6 +10,7 @@ import { ExternalLinkGuard } from './components/ExternalLinkGuard';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
 import { WalletLayout } from './components/wallet/WalletLayout';
+import { WalletSelection } from './pages/WalletSelection';
 import { OnChainTransactions } from './pages/OnChainTransactions';
 import { SendTab } from './components/onchain/SendTab';
 import { ReceiveTab } from './components/onchain/ReceiveTab';
@@ -125,6 +126,7 @@ function AppContent() {
           <Route path="/" element={<NodeDashboard />} />
           <Route path="/wallet" element={<WalletLayout />}>
             <Route index element={<WalletDashboard />} />
+            <Route path="select" element={<WalletSelection embedded />} />
             <Route path="privacy" element={<PrivacyPage />} />
             <Route path="staking" element={<StakingPage />}>
               <Route index element={<Navigate to="purchase" replace />} />

@@ -4,8 +4,19 @@
 
 import { useState } from 'react';
 import { Copy, Check, AlertCircle, Lock, Key, Shield, CheckCircle, Eye, EyeOff, Sprout, RotateCcw } from 'lucide-react';
-import { generateSeed, createWallet } from '../services/api';
+import { generateSeed, createNamedWallet } from '../services/api';
 import { SeedEntry } from './wallet/SeedEntry';
+
+interface WalletSetupProps {
+  // walletName targets a specific wallet directory when creating an additional
+  // wallet from the wallet list. Omitted on first run, which creates the
+  // default wallet.
+  walletName?: string;
+  // onComplete replaces the default redirect to /wallet (used when embedded in
+  // the wallet-list flow). onCancel, when present, shows a way back to the list.
+  onComplete?: () => void;
+  onCancel?: () => void;
+}
 
 type WizardMode = 'create' | 'restore';
 type WizardStep =
@@ -19,7 +30,7 @@ type WizardStep =
   | 'creating'
   | 'success';
 
-export const WalletSetup = () => {
+export const WalletSetup = ({ walletName, onComplete, onCancel }: WalletSetupProps = {}) => {
   const [step, setStep] = useState<WizardStep>('choose');
   const [mode, setMode] = useState<WizardMode>('create');
   const [seedMnemonic, setSeedMnemonic] = useState('');
@@ -117,7 +128,8 @@ export const WalletSetup = () => {
     try {
       setError(null);
       
-      const response = await createWallet({
+      const response = await createNamedWallet({
+        name: walletName,
         publicPassphrase,
         confirmPublicPassphrase: confirmPublicPass,
         privatePassphrase,
@@ -132,7 +144,11 @@ export const WalletSetup = () => {
         // they land on the sync-progress card even if they navigated
         // away from /wallet before triggering creation.
         setTimeout(() => {
-          window.location.assign('/wallet');
+          if (onComplete) {
+            onComplete();
+          } else {
+            window.location.assign('/wallet');
+          }
         }, 2000);
       } else {
         setError(response.message || 'Failed to create wallet');
@@ -216,6 +232,14 @@ export const WalletSetup = () => {
                   </p>
                 </button>
               </div>
+              {onCancel && (
+                <button
+                  onClick={onCancel}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Back to wallet list
+                </button>
+              )}
             </div>
           )}
 

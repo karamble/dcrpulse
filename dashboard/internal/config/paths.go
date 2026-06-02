@@ -17,9 +17,15 @@ const (
 	// Umbrel it bind-mounts to ${APP_DATA_DIR}/dashboard.
 	AppDataDir = "/dashboard-data"
 
-	// DefaultWalletName is the wallet directory name used while
-	// dcrpulse is single-wallet. Matches Decrediton's literal default.
+	// DefaultWalletName is the directory name of the default wallet. The
+	// default wallet lives at the legacy single-wallet appdata path so
+	// existing watch-only deployments keep working untouched across the
+	// multi-wallet upgrade. Matches Decrediton's literal default.
 	DefaultWalletName = "default-wallet"
+
+	// WalletDataRoot is dcrwallet's appdata mount, shared read-write with
+	// the dashboard. Matches WALLET_DIR in dcrwallet/docker-entrypoint.sh.
+	WalletDataRoot = "/app-data/dcrwallet"
 )
 
 // GlobalCfgPath is the on-disk location of the cross-wallet config.
@@ -42,4 +48,55 @@ func WalletDir(network, walletName string) string {
 // WalletCfgPath is the per-wallet config.json file.
 func WalletCfgPath(network, walletName string) string {
 	return filepath.Join(WalletDir(network, walletName), "config.json")
+}
+
+// LegacyWalletAppdata is dcrwallet's original single-wallet appdata path,
+// where the default wallet's database lives (WalletDataRoot/<network>/wallet.db).
+func LegacyWalletAppdata() string {
+	return WalletDataRoot
+}
+
+// WalletAppdataRoot is the parent directory of every non-default wallet's
+// per-wallet appdata directory.
+func WalletAppdataRoot() string {
+	return filepath.Join(WalletDataRoot, "wallets")
+}
+
+// WalletAppdataDir is one non-default wallet's appdata directory.
+func WalletAppdataDir(walletName string) string {
+	return filepath.Join(WalletAppdataRoot(), walletName)
+}
+
+// ResolveWalletAppdata returns the dcrwallet --appdata path for a wallet.
+// The default wallet maps to the legacy path; every other wallet maps to its
+// directory under WalletAppdataRoot.
+func ResolveWalletAppdata(walletName string) string {
+	if walletName == DefaultWalletName {
+		return LegacyWalletAppdata()
+	}
+	return WalletAppdataDir(walletName)
+}
+
+// WalletDbPath is the wallet.db file dcrwallet creates under an appdata
+// directory for the given network.
+func WalletDbPath(appdata, network string) string {
+	return filepath.Join(appdata, network, "wallet.db")
+}
+
+// WalletControlDir is the directory the dashboard and the dcrwallet entrypoint
+// supervisor use to coordinate which wallet is loaded.
+func WalletControlDir() string {
+	return filepath.Join(WalletDataRoot, "control")
+}
+
+// SelectedWalletPath is the pointer file the dashboard writes to tell the
+// supervisor which wallet to launch.
+func SelectedWalletPath() string {
+	return filepath.Join(WalletControlDir(), "selected.json")
+}
+
+// WalletStatePath is the file the supervisor writes to report the wallet it
+// currently has running.
+func WalletStatePath() string {
+	return filepath.Join(WalletControlDir(), "state.json")
 }

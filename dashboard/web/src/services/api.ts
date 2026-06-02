@@ -529,6 +529,7 @@ export interface GenerateSeedResponse {
 }
 
 export interface CreateWalletRequest {
+  name?: string;                     // Optional: target wallet name; empty uses the default wallet
   publicPassphrase: string;          // Optional: Encrypts wallet database for viewing
   confirmPublicPassphrase: string;   // Must equal publicPassphrase when public is non-empty
   privatePassphrase: string;         // Required: Encrypts private keys for spending
@@ -582,6 +583,56 @@ export const createWallet = async (request: CreateWalletRequest): Promise<Create
 
 export const openWallet = async (request: OpenWalletRequest): Promise<OpenWalletResponse> => {
   const response = await api.post<OpenWalletResponse>('/wallet/open', request);
+  return response.data;
+};
+
+// Multi-wallet API
+
+export interface WalletInfo {
+  name: string;
+  network: string;
+  hasDb: boolean;
+  isDefault: boolean;
+  isWatchOnly: boolean;
+  isPrivacy: boolean;
+  lastAccess?: number;
+  active: boolean;
+}
+
+export interface ListWalletsResponse {
+  wallets: WalletInfo[];
+  active: string;
+}
+
+export const listWallets = async (): Promise<ListWalletsResponse> => {
+  const response = await api.get<ListWalletsResponse>('/wallets');
+  return { wallets: response.data.wallets ?? [], active: response.data.active ?? '' };
+};
+
+// selectWallet relaunches the dcrwallet daemon against the chosen wallet, which
+// can take several seconds; callers should show a switching state.
+export const selectWallet = async (name: string, publicPassphrase = ''): Promise<{ success: boolean; active: string }> => {
+  const response = await api.post<{ success: boolean; active: string }>('/wallets/select', { name, publicPassphrase });
+  return response.data;
+};
+
+export const closeActiveWallet = async (): Promise<{ success: boolean }> => {
+  const response = await api.post<{ success: boolean }>('/wallet/close', {});
+  return response.data;
+};
+
+export const createNamedWallet = async (request: CreateWalletRequest): Promise<CreateWalletResponse> => {
+  const response = await api.post<CreateWalletResponse>('/wallets/create', request);
+  return response.data;
+};
+
+export const renameWallet = async (from: string, to: string): Promise<{ success: boolean }> => {
+  const response = await api.post<{ success: boolean }>('/wallets/rename', { from, to });
+  return response.data;
+};
+
+export const deleteWallet = async (name: string): Promise<{ success: boolean }> => {
+  const response = await api.post<{ success: boolean }>('/wallets/delete', { name });
   return response.data;
 };
 

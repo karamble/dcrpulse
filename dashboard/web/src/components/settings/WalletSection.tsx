@@ -3,8 +3,8 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, KeyRound, Search, Wallet } from 'lucide-react';
-import { changePassphrase, discoverAddresses, getSettings } from '../../services/api';
+import { CheckCircle2, KeyRound, LogOut, Search, Wallet } from 'lucide-react';
+import { changePassphrase, closeActiveWallet, discoverAddresses, getSettings } from '../../services/api';
 import { ChangePassphraseModal } from './ChangePassphraseModal';
 import { DiscoverAddressesModal } from './DiscoverAddressesModal';
 
@@ -12,6 +12,7 @@ export const WalletSection = () => {
   const [gapLimit, setGapLimit] = useState<number>(200);
   const [passModalOpen, setPassModalOpen] = useState(false);
   const [discoverModalOpen, setDiscoverModalOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,6 +34,20 @@ export const WalletSection = () => {
     setDiscoverModalOpen(false);
     setGapLimit(gap);
     setFeedback('Address discovery complete.');
+  };
+
+  const handleCloseWallet = async () => {
+    setClosing(true);
+    setFeedback(null);
+    try {
+      await closeActiveWallet();
+      // Full reload so the layout returns to the wallet list.
+      window.location.assign('/wallet');
+    } catch (err) {
+      console.error('closeActiveWallet failed:', err);
+      setClosing(false);
+      setFeedback('Failed to close wallet.');
+    }
   };
 
   return (
@@ -90,6 +105,26 @@ export const WalletSection = () => {
           className="px-4 py-2 rounded-lg bg-muted/20 hover:bg-muted/30 text-sm font-medium transition-colors whitespace-nowrap"
         >
           Discover…
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between p-4 rounded-lg bg-muted/10 border border-border/50">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <LogOut className="h-4 w-4 text-primary" />
+            <span className="font-medium">Close wallet</span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Close the active wallet and return to the wallet list. Other wallets stay available to
+            open.
+          </p>
+        </div>
+        <button
+          onClick={handleCloseWallet}
+          disabled={closing}
+          className="px-4 py-2 rounded-lg bg-muted/20 hover:bg-muted/30 text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
+        >
+          {closing ? 'Closing…' : 'Close wallet'}
         </button>
       </div>
 

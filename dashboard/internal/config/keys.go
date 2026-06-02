@@ -27,6 +27,12 @@ const (
 	// Global config keys (live in /dashboard-data/config.json).
 	KeyAllowedExternalRequests = "allowed_external_requests"
 
+	// KeySelectedWallet records the active wallet's name across restarts.
+	// Empty or absent means no wallet is selected (the UI shows the wallet
+	// list). dcrwallet serves one wallet per process, so the active wallet is
+	// process-global state, not per-request.
+	KeySelectedWallet = "selected_wallet"
+
 	// KeyDcrdexInitialized records that the dcrdex (bisonw) client has been
 	// initialized through the dashboard. Not a secret (the app password is
 	// never stored); it only distinguishes first-time setup from unlock.

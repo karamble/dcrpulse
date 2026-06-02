@@ -34,7 +34,7 @@ RUN if [ -f "go.mod" ]; then go install .; else \
 FROM alpine:latest
 
 # Install runtime dependencies (netcat-openbsd provides `nc -z` for the healthcheck)
-RUN apk add --no-cache ca-certificates tzdata curl openssl expect netcat-openbsd
+RUN apk add --no-cache ca-certificates tzdata curl openssl expect netcat-openbsd jq
 
 # Copy binaries from builder
 COPY --from=builder /go/bin/dcrwallet /usr/local/bin/
