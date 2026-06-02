@@ -106,7 +106,7 @@ services:
   brclientd:
     image: ghcr.io/karamble/dcrpulse-brclientd:${BRCLIENTD_IMAGE_TAG:-dev}
     build:
-      context: ${BRCLIENTD_BUILD_CONTEXT:-https://github.com/karamble/brclientd.git#v0.1.0}
+      context: ./brclientd
     container_name: dcrpulse-brclientd
     ports:
       - "7677:7677"
@@ -133,8 +133,7 @@ services:
   dcrdex:
     image: ghcr.io/karamble/dcrpulse-dcrdex:${DCRDEX_IMAGE_TAG:-dev}
     build:
-      context: ${DCRDEX_BUILD_CONTEXT:-https://github.com/decred/dcrdex.git#v1.0.6}
-      dockerfile: client/Dockerfile
+      context: ./dcrdex
     container_name: dcrpulse-dcrdex
     hostname: dcrdex
     entrypoint:
