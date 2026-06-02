@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"dcrpulse/internal/config"
 	"dcrpulse/internal/handlers"
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
@@ -99,11 +100,14 @@ func main() {
 	// Best-effort dcrlnd connection. dcrlnd may still be locked or
 	// uninitialised at this point; failures are logged and the
 	// dashboard re-tries on demand via ReinitDcrlndClient.
+	// Dial each downstream service with the ACTIVE wallet's per-wallet cert
+	// paths (the default wallet resolves to the legacy paths).
+	activeWallet := services.CurrentWalletName()
 	dcrlndCfg := rpc.DcrlndConfig{
 		GrpcHost:     getEnv("DCRLND_HOST", "dcrlnd"),
 		GrpcPort:     getEnv("DCRLND_GRPC_PORT", "10009"),
-		TLSCertPath:  getEnv("DCRLND_TLS_CERT", "/app-data/dcrlnd/tls.cert"),
-		MacaroonPath: getEnv("DCRLND_MACAROON", "/app-data/dcrlnd/admin.macaroon"),
+		TLSCertPath:  config.DcrlndTLSCert(activeWallet),
+		MacaroonPath: config.DcrlndMacaroon(activeWallet),
 	}
 	if err := rpc.InitDcrlndClient(dcrlndCfg); err != nil {
 		log.Printf("Warning: dcrlnd init: %v", err)
@@ -129,9 +133,9 @@ func main() {
 		Port:       getEnv("DCRDEX_RPC_PORT", "5757"),
 		User:       getEnv("DCRDEX_RPC_USER", "dcrdex"),
 		Pass:       getEnv("DCRDEX_RPC_PASS", "dcrdexpass"),
-		CertPath:   getEnv("DCRDEX_RPC_CERT", "/app-data/dcrdex/rpc.cert"),
+		CertPath:   config.DcrdexCert(activeWallet),
 		WSPort:     getEnv("DCRDEX_WS_PORT", "5758"),
-		WSCertPath: getEnv("DCRDEX_WS_CERT", "/app-data/dcrdex/web.cert"),
+		WSCertPath: config.DcrdexWSCert(activeWallet),
 	})
 
 	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into

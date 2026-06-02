@@ -143,7 +143,7 @@ func persistSelectedWallet(name string) error {
 }
 
 func writeSelectedPointer(sel selectedWallet) error {
-	if err := os.MkdirAll(config.WalletControlDir(), 0o700); err != nil {
+	if err := os.MkdirAll(config.StackControlDir(), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(sel, "", "  ")

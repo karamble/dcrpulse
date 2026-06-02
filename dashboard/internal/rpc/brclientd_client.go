@@ -54,6 +54,17 @@ func InitBrclientdConfig(cfg BrclientdConfig) {
 	brclientdHTTPClient = nil
 }
 
+// UpdateBrclientdCerts repoints brclientd at a different wallet's identity certs
+// and forces the HTTP client to rebuild on next use. Used on a wallet switch.
+func UpdateBrclientdCerts(serverCertPath, clientCertPath, clientKeyPath string) {
+	brclientdClientMu.Lock()
+	defer brclientdClientMu.Unlock()
+	BrclientdCfg.ServerCertPath = serverCertPath
+	BrclientdCfg.ClientCertPath = clientCertPath
+	BrclientdCfg.ClientKeyPath = clientKeyPath
+	brclientdHTTPClient = nil
+}
+
 // BrclientdVersionResult is the wire shape returned by VersionService.Version.
 type BrclientdVersionResult struct {
 	AppName    string `json:"appName"`

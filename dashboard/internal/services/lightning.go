@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
@@ -37,12 +38,14 @@ const (
 	// channel funding + on-chain LN operations. Mirrors Decrediton's
 	// per-wallet "lightning" account convention.
 	LightningAccountName = "lightning"
-
-	// sentinelPath is the file the dashboard's setup wizard writes to
-	// unblock the dcrlnd container's deferred-start entrypoint. The
-	// path is the same one the dcrlnd entrypoint script polls.
-	sentinelPath = "/app-data/dcrlnd/.account"
 )
+
+// sentinelPath is the per-wallet file the dashboard's setup wizard writes to
+// unblock the dcrlnd supervisor for the active wallet. It lives in that wallet's
+// dcrlnd directory, the same path the dcrlnd supervisor polls.
+func sentinelPath() string {
+	return filepath.Join(config.DcrlndDir(CurrentWalletName()), ".account")
+}
 
 // SetupLightningAccount creates (or looks up) the dedicated "lightning"
 // dcrwallet account, sets a per-account passphrase on it so dcrlnd can
@@ -129,16 +132,16 @@ func ensureLightningAccountPassphrase(ctx context.Context, acctNum uint32, passp
 }
 
 func writeSentinel(account uint32) error {
-	if err := os.MkdirAll(filepath.Dir(sentinelPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(sentinelPath()), 0o755); err != nil {
 		return fmt.Errorf("create dcrlnd state dir: %w", err)
 	}
-	return os.WriteFile(sentinelPath, []byte(strconv.FormatUint(uint64(account), 10)), 0o644)
+	return os.WriteFile(sentinelPath(), []byte(strconv.FormatUint(uint64(account), 10)), 0o644)
 }
 
 // readSentinelAccount returns the dcrwallet account number stored in
 // the sentinel file, or (_, false) if the wizard has not run yet.
 func readSentinelAccount() (uint32, bool) {
-	b, err := os.ReadFile(sentinelPath)
+	b, err := os.ReadFile(sentinelPath())
 	if err != nil {
 		return 0, false
 	}

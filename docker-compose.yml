@@ -110,14 +110,12 @@ services:
     container_name: dcrpulse-brclientd
     ports:
       - "7677:7677"
+    entrypoint: ["/bin/sh", "/supervisor.sh"]
     volumes:
+      - ${APP_DATA_DIR:-app-data}:/app-data:ro
       - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd:ro
       - ${BRCLIENTD_DATA_DIR:-brclientd-data}:/app-data/brclientd
-    command: >
-      --appdata=/app-data/brclientd
-      --dcrlnd.rpchost=dcrlnd:10009
-      --dcrlnd.tlscertpath=/app-data/dcrlnd/tls.cert
-      --dcrlnd.macaroonpath=/app-data/dcrlnd/admin.macaroon
+      - ./brclientd/supervisor.sh:/supervisor.sh:ro
     depends_on:
       dcrlnd:
         condition: service_started
@@ -140,20 +138,15 @@ services:
     container_name: dcrpulse-dcrdex
     hostname: dcrdex
     entrypoint:
-      - ./bisonw
-    command:
-      - --appdata=/dex/.dexc
-      - --rpc
-      - --rpcaddr=0.0.0.0:5757
-      - --rpcuser=${DCRDEX_RPC_USER:-dcrdex}
-      - --rpcpass=${DCRDEX_RPC_PASS:-dcrdexpass}
-      - --rpccert=/dex/.dexc/rpc.cert
-      - --rpckey=/dex/.dexc/rpc.key
-      - --webaddr=0.0.0.0:5758
-      - --webtls
+      - /bin/sh
+      - /supervisor.sh
+    environment:
+      - DCRDEX_RPC_USER=${DCRDEX_RPC_USER:-dcrdex}
+      - DCRDEX_RPC_PASS=${DCRDEX_RPC_PASS:-dcrdexpass}
     volumes:
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/dex/.dexc
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
+      - ./dcrdex/supervisor.sh:/supervisor.sh:ro
     restart: unless-stopped
     networks:
       - decred-network

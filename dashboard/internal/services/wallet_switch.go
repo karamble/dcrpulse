@@ -79,7 +79,27 @@ func SwitchWallet(ctx context.Context, name, publicPass string) error {
 		return err
 	}
 	touchLastAccess(network, name)
+	reconnectStackServices(ctx, name)
 	return nil
+}
+
+// reconnectStackServices repoints the dcrlnd / DEX / Bison Relay clients at the
+// newly active wallet's per-wallet certs and clears secrets carried from the
+// previous profile. The daemons relaunch independently (driven by the shared
+// control pointer); these clients reconnect best-effort and each service's
+// status machine resolves the rest (needs-unlock / needs-setup / syncing).
+func reconnectStackServices(ctx context.Context, name string) {
+	rpc.ReconnectDcrlnd(config.DcrlndTLSCert(name), config.DcrlndMacaroon(name))
+	rpc.UpdateDcrdexCertPaths(config.DcrdexCert(name), config.DcrdexWSCert(name))
+	rpc.ClearDcrdexAppPass()
+	if network, err := CurrentNetwork(ctx); err == nil {
+		base := config.BrclientdDir(name)
+		rpc.UpdateBrclientdCerts(
+			filepath.Join(base, "data", network, "rpc", "rpc.cert"),
+			filepath.Join(base, "data", network, "rpc", "rpc-client.cert"),
+			filepath.Join(base, "data", network, "rpc", "rpc-client.key"),
+		)
+	}
 }
 
 // CloseActiveWallet closes the current wallet and idles the supervisor so the UI
@@ -94,6 +114,8 @@ func CloseActiveWallet(ctx context.Context) error {
 	}
 	cancel()
 
+	// The previous profile's DEX session secret must not leak into the next.
+	rpc.ClearDcrdexAppPass()
 	return ClearActiveWallet()
 }
 

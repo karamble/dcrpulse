@@ -64,7 +64,9 @@ set +e
 
 DEFAULT_WALLET_NAME="default-wallet"
 CONTROL_DIR="${WALLET_DIR}/control"
-SELECTED="${CONTROL_DIR}/selected.json"
+# Shared, dashboard-written selected-wallet pointer read by every service
+# supervisor. State stays per service.
+SELECTED="/app-data/control/selected.json"
 STATE="${CONTROL_DIR}/state.json"
 mkdir -p "${CONTROL_DIR}"
 

@@ -23,9 +23,21 @@ const (
 	// multi-wallet upgrade. Matches Decrediton's literal default.
 	DefaultWalletName = "default-wallet"
 
+	// AppDataRoot is the shared services volume, mounted read-write in the
+	// dashboard. Holds each daemon's data plus the stack control directory.
+	AppDataRoot = "/app-data"
+
 	// WalletDataRoot is dcrwallet's appdata mount, shared read-write with
 	// the dashboard. Matches WALLET_DIR in dcrwallet/docker-entrypoint.sh.
 	WalletDataRoot = "/app-data/dcrwallet"
+
+	// DcrlndDataRoot / BrclientdDataRoot / DcrdexDataRoot are each service's
+	// data root as seen from the dashboard container. The default wallet uses
+	// these legacy paths; named wallets live under <root>/wallets/<name>. (Inside
+	// the dcrdex container the same tree is mounted at /dex/.dexc.)
+	DcrlndDataRoot    = "/app-data/dcrlnd"
+	BrclientdDataRoot = "/app-data/brclientd"
+	DcrdexDataRoot    = "/app-data/dcrdex"
 )
 
 // GlobalCfgPath is the on-disk location of the cross-wallet config.
@@ -83,20 +95,54 @@ func WalletDbPath(appdata, network string) string {
 	return filepath.Join(appdata, network, "wallet.db")
 }
 
-// WalletControlDir is the directory the dashboard and the dcrwallet entrypoint
-// supervisor use to coordinate which wallet is loaded.
-func WalletControlDir() string {
-	return filepath.Join(WalletDataRoot, "control")
+// StackControlDir is the shared control directory every service supervisor
+// reads the selected wallet from. The dashboard writes it (it mounts /app-data
+// read-write); the daemons mount it read-only.
+func StackControlDir() string {
+	return filepath.Join(AppDataRoot, "control")
 }
 
-// SelectedWalletPath is the pointer file the dashboard writes to tell the
-// supervisor which wallet to launch.
+// SelectedWalletPath is the single pointer file the dashboard writes to tell
+// every service supervisor which wallet to run.
 func SelectedWalletPath() string {
-	return filepath.Join(WalletControlDir(), "selected.json")
+	return filepath.Join(StackControlDir(), "selected.json")
 }
 
-// WalletStatePath is the file the supervisor writes to report the wallet it
-// currently has running.
-func WalletStatePath() string {
-	return filepath.Join(WalletControlDir(), "state.json")
+// Per-service state files. Each supervisor writes the wallet it currently has
+// running to a fixed (not per-wallet) path so the dashboard can poll it during a
+// switch. dcrwallet keeps its original control/state.json location.
+func WalletStatePath() string    { return filepath.Join(WalletDataRoot, "control", "state.json") }
+func DcrlndStatePath() string    { return filepath.Join(DcrlndDataRoot, "control-state.json") }
+func BrclientdStatePath() string { return filepath.Join(BrclientdDataRoot, "control-state.json") }
+func DcrdexStatePath() string    { return filepath.Join(DcrdexDataRoot, "control-state.json") }
+
+// ResolveServiceDir returns a service's per-wallet data directory: the legacy
+// root for the default wallet, root/wallets/<name> for any other wallet.
+func ResolveServiceDir(root, walletName string) string {
+	if walletName == DefaultWalletName {
+		return root
+	}
+	return filepath.Join(root, "wallets", walletName)
+}
+
+// Per-wallet service directories and the cert/macaroon files the dashboard dials
+// each daemon with. The certs/macaroons live under the active wallet's dir.
+func DcrlndDir(walletName string) string  { return ResolveServiceDir(DcrlndDataRoot, walletName) }
+func DcrlndTLSCert(walletName string) string {
+	return filepath.Join(DcrlndDir(walletName), "tls.cert")
+}
+func DcrlndMacaroon(walletName string) string {
+	return filepath.Join(DcrlndDir(walletName), "admin.macaroon")
+}
+
+func DcrdexDir(walletName string) string { return ResolveServiceDir(DcrdexDataRoot, walletName) }
+func DcrdexCert(walletName string) string {
+	return filepath.Join(DcrdexDir(walletName), "rpc.cert")
+}
+func DcrdexWSCert(walletName string) string {
+	return filepath.Join(DcrdexDir(walletName), "web.cert")
+}
+
+func BrclientdDir(walletName string) string {
+	return ResolveServiceDir(BrclientdDataRoot, walletName)
 }

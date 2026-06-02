@@ -51,6 +51,18 @@ func InitDcrdexConfig(cfg DcrdexConfig) {
 	dcrdexWebClient = nil
 }
 
+// UpdateDcrdexCertPaths repoints the bisonw clients at a different wallet's DEX
+// certs and forces them to rebuild on next use. Used on a wallet switch.
+func UpdateDcrdexCertPaths(certPath, wsCertPath string) {
+	dcrdexMu.Lock()
+	defer dcrdexMu.Unlock()
+	DcrdexCfg.CertPath = certPath
+	DcrdexCfg.WSCertPath = wsCertPath
+	dcrdexClient = nil
+	dcrdexWSClient = nil
+	dcrdexWebClient = nil
+}
+
 // DcrdexClient returns the bisonw RPC client, constructing it on first use once
 // the RPC cert is available.
 func DcrdexClient() (*bisonw.Client, error) {
