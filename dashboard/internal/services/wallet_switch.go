@@ -158,6 +158,11 @@ func CreateNamedWallet(ctx context.Context, name, publicPass, privatePass, seedH
 		return err
 	}
 	touchLastAccess(network, name)
+	// Repoint the dcrlnd / DEX / Bison Relay clients at the new wallet's
+	// per-wallet certs, exactly as a switch does; without this the clients stay
+	// pinned to the previously active wallet's certs (cert-mismatch on DEX,
+	// wrong node for Lightning).
+	reconnectStackServices(ctx, name)
 	return nil
 }
 
