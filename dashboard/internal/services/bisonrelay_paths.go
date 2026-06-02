@@ -8,15 +8,21 @@ import (
 	"os"
 	"path/filepath"
 
+	"dcrpulse/internal/config"
+
 	"github.com/decred/dcrd/dcrutil/v4"
 )
 
-// BrclientdDataDir returns the dashboard-side view of brclientd's appdata
-// root. Resolution order: $BRCLIENTD_DATA_DIR if set (typical for docker /
-// Umbrel deployments that mount the volume at a known path), otherwise the
-// OS-natural ~/.brclientd/ via dcrutil.AppDataDir (same path brclientd
-// itself uses when run standalone without --appdata).
+// BrclientdDataDir returns the dashboard-side view of the ACTIVE wallet's
+// brclientd appdata. Each wallet has its own Bison Relay identity: the default
+// wallet uses the brclientd root, named wallets use <root>/wallets/<name>.
+// Root resolution: $BRCLIENTD_DATA_DIR if set (typical for docker / Umbrel),
+// otherwise the OS-natural ~/.brclientd/ via dcrutil.AppDataDir.
 func BrclientdDataDir() string {
+	return config.ResolveServiceDir(brclientdDataRoot(), CurrentWalletName())
+}
+
+func brclientdDataRoot() string {
 	if v := os.Getenv("BRCLIENTD_DATA_DIR"); v != "" {
 		return v
 	}

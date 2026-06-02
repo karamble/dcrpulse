@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/rpcclient/v8"
@@ -50,6 +51,10 @@ var (
 
 	// WalletGrpcConn is the gRPC connection (kept for cleanup)
 	WalletGrpcConn *grpc.ClientConn
+
+	// WalletGrpcCfg stores the gRPC connection details so the connection can
+	// be rebuilt after dcrwallet relaunches against a different wallet.
+	WalletGrpcCfg GrpcConfig
 
 	// DcrdConfig stores the dcrd connection details for RpcSync
 	DcrdConfig Config
@@ -160,6 +165,14 @@ func InitWalletClient(config Config) error {
 
 // InitWalletGrpcClient initializes the dcrwallet gRPC client for streaming with mutual TLS
 func InitWalletGrpcClient(config GrpcConfig) error {
+	WalletGrpcCfg = config
+	return dialWalletGrpc(config)
+}
+
+// dialWalletGrpc dials dcrwallet's gRPC server with mutual TLS and (re)assigns
+// every package-level client. Shared by InitWalletGrpcClient and
+// ReconnectWalletGrpc.
+func dialWalletGrpc(config GrpcConfig) error {
 	// Load the certificate as both CA (to verify server) and client cert (to present to server)
 	certPool := x509.NewCertPool()
 	certPEM, err := os.ReadFile(config.GrpcCert)
@@ -211,6 +224,42 @@ func InitWalletGrpcClient(config GrpcConfig) error {
 
 	log.Println("dcrwallet gRPC clients initialized with mutual TLS authentication")
 	return nil
+}
+
+// ReconnectWalletGrpc tears down the existing gRPC connection and re-dials.
+// Required after dcrwallet is relaunched against a different wallet: the prior
+// ClientConn points at a process that has exited, so its streams are dead and
+// the loader client must be re-pointed. Must only be called while the RpcSync
+// supervisor is paused (no concurrent gRPC calls in flight).
+func ReconnectWalletGrpc() error {
+	if WalletGrpcCfg.GrpcCert == "" {
+		return fmt.Errorf("wallet gRPC not configured")
+	}
+	if WalletGrpcConn != nil {
+		WalletGrpcConn.Close()
+	}
+	return dialWalletGrpc(WalletGrpcCfg)
+}
+
+// WaitForWalletDaemon blocks until the dcrwallet daemon answers a WalletExists
+// loader call or ctx expires. Used after a relaunch to confirm the new process
+// is listening before opening the wallet.
+func WaitForWalletDaemon(ctx context.Context) error {
+	for {
+		if WalletLoaderClient != nil {
+			callCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			_, err := WalletLoaderClient.WalletExists(callCtx, &pb.WalletExistsRequest{})
+			cancel()
+			if err == nil {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(1 * time.Second):
+		}
+	}
 }
 
 // CloseGrpcConnection closes the gRPC connection

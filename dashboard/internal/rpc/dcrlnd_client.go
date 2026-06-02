@@ -131,6 +131,30 @@ func ReinitDcrlndClient() error {
 
 var dcrlndReinitMu sync.Mutex
 
+// ReconnectDcrlnd repoints the dcrlnd client at a different wallet's node by
+// updating the cert/macaroon paths and redialing. Best-effort: the target
+// wallet's node may not be up yet (its cert appears once that wallet's
+// Lightning is set up and unlocked), in which case the clients stay nil and the
+// LN status machine reports the right stage.
+func ReconnectDcrlnd(tlsCertPath, macaroonPath string) {
+	dcrlndReinitMu.Lock()
+	defer dcrlndReinitMu.Unlock()
+	if DcrlndGrpcConn != nil {
+		_ = DcrlndGrpcConn.Close()
+		DcrlndGrpcConn = nil
+	}
+	LightningClient = nil
+	WalletUnlockerClient = nil
+	AutopilotClient = nil
+	VersionerClient = nil
+	RouterClient = nil
+	InvoicesClient = nil
+	WatchtowerClient = nil
+	DcrlndCfg.TLSCertPath = tlsCertPath
+	DcrlndCfg.MacaroonPath = macaroonPath
+	_ = InitDcrlndClient(DcrlndCfg)
+}
+
 func loadDcrlndTLSCreds(certPath, _ string) (credentials.TransportCredentials, error) {
 	pem, err := os.ReadFile(certPath)
 	if err != nil {

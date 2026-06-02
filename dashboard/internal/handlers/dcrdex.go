@@ -99,8 +99,19 @@ func GetDcrdexStatusHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(st)
 }
 
+// dexWalletCfg loads the active wallet's per-wallet config. DEX onboarding state
+// is per wallet: each wallet has its own bisonw appdata, app seed, accounts, and
+// bonds, so a freshly-switched wallet resolves to its own init/backup state.
+func dexWalletCfg() (*config.WalletCfg, error) {
+	net, err := services.CurrentNetwork(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return config.LoadWalletCfg(net, services.CurrentWalletName())
+}
+
 func dcrdexInitialized() bool {
-	cfg, err := config.LoadGlobalCfg()
+	cfg, err := dexWalletCfg()
 	if err != nil {
 		return false
 	}
@@ -110,7 +121,7 @@ func dcrdexInitialized() bool {
 }
 
 func setDcrdexInitialized() error {
-	cfg, err := config.LoadGlobalCfg()
+	cfg, err := dexWalletCfg()
 	if err != nil {
 		return err
 	}
@@ -121,7 +132,7 @@ func setDcrdexInitialized() error {
 }
 
 func dcrdexSeedBackedUp() bool {
-	cfg, err := config.LoadGlobalCfg()
+	cfg, err := dexWalletCfg()
 	if err != nil {
 		return false
 	}
@@ -131,7 +142,7 @@ func dcrdexSeedBackedUp() bool {
 }
 
 func setDcrdexSeedBackedUp(v bool) error {
-	cfg, err := config.LoadGlobalCfg()
+	cfg, err := dexWalletCfg()
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"dcrpulse/internal/config"
 	"dcrpulse/internal/handlers"
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
@@ -79,6 +80,10 @@ func main() {
 		GrpcCert: getEnv("DCRWALLET_RPC_CERT", ""),
 	}
 
+	// Restore the active wallet selection (or default to the legacy wallet on
+	// upgraded deployments) before the sync supervisor starts.
+	services.SeedActiveWallet()
+
 	if grpcConfig.GrpcCert != "" {
 		if err := rpc.InitWalletGrpcClient(grpcConfig); err != nil {
 			log.Printf("Warning: Could not connect to dcrwallet gRPC on startup: %v", err)
@@ -95,11 +100,14 @@ func main() {
 	// Best-effort dcrlnd connection. dcrlnd may still be locked or
 	// uninitialised at this point; failures are logged and the
 	// dashboard re-tries on demand via ReinitDcrlndClient.
+	// Dial each downstream service with the ACTIVE wallet's per-wallet cert
+	// paths (the default wallet resolves to the legacy paths).
+	activeWallet := services.CurrentWalletName()
 	dcrlndCfg := rpc.DcrlndConfig{
 		GrpcHost:     getEnv("DCRLND_HOST", "dcrlnd"),
 		GrpcPort:     getEnv("DCRLND_GRPC_PORT", "10009"),
-		TLSCertPath:  getEnv("DCRLND_TLS_CERT", "/app-data/dcrlnd/tls.cert"),
-		MacaroonPath: getEnv("DCRLND_MACAROON", "/app-data/dcrlnd/admin.macaroon"),
+		TLSCertPath:  config.DcrlndTLSCert(activeWallet),
+		MacaroonPath: config.DcrlndMacaroon(activeWallet),
 	}
 	if err := rpc.InitDcrlndClient(dcrlndCfg); err != nil {
 		log.Printf("Warning: dcrlnd init: %v", err)
@@ -125,9 +133,9 @@ func main() {
 		Port:       getEnv("DCRDEX_RPC_PORT", "5757"),
 		User:       getEnv("DCRDEX_RPC_USER", "dcrdex"),
 		Pass:       getEnv("DCRDEX_RPC_PASS", "dcrdexpass"),
-		CertPath:   getEnv("DCRDEX_RPC_CERT", "/app-data/dcrdex/rpc.cert"),
+		CertPath:   config.DcrdexCert(activeWallet),
 		WSPort:     getEnv("DCRDEX_WS_PORT", "5758"),
-		WSCertPath: getEnv("DCRDEX_WS_CERT", "/app-data/dcrdex/web.cert"),
+		WSCertPath: config.DcrdexWSCert(activeWallet),
 	})
 
 	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into
@@ -203,6 +211,21 @@ func main() {
 	api.HandleFunc("/blockchain/info", handlers.GetBlockchainInfoHandler).Methods("GET")
 	api.HandleFunc("/network/peers", handlers.GetPeersHandler).Methods("GET")
 	api.HandleFunc("/connect", handlers.ConnectRPCHandler).Methods("POST")
+
+	// Multi-wallet routes. select/create/delete relaunch the dcrwallet daemon,
+	// so they are rate limited like other daemon-cycling endpoints.
+	api.HandleFunc("/wallets", handlers.ListWalletsHandler).Methods("GET")
+	api.Handle("/wallets/select",
+		middleware.RateLimit("wallet-select", 5*time.Second, 1)(
+			http.HandlerFunc(handlers.SelectWalletHandler))).Methods("POST")
+	api.Handle("/wallets/create",
+		middleware.RateLimit("wallet-create", 5*time.Second, 1)(
+			http.HandlerFunc(handlers.CreateNamedWalletHandler))).Methods("POST")
+	api.HandleFunc("/wallets/rename", handlers.RenameWalletHandler).Methods("POST")
+	api.Handle("/wallets/delete",
+		middleware.RateLimit("wallet-delete", 5*time.Second, 1)(
+			http.HandlerFunc(handlers.DeleteWalletHandler))).Methods("POST")
+	api.HandleFunc("/wallet/close", handlers.CloseWalletHandler).Methods("POST")
 
 	// Wallet routes
 	api.HandleFunc("/wallet/exists", handlers.WalletExistsHandler).Methods("GET")
@@ -482,6 +505,17 @@ func superviseRpcSync(ctx context.Context) {
 			return
 		}
 
+		// While a wallet switch tears the daemon down and brings a different
+		// wallet up, park here so we neither touch the gRPC clients being
+		// reconnected nor race for dcrwallet's single RpcSync slot.
+		for services.SyncPaused() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+			}
+		}
+
 		// Wait for wallet to be loaded (user must open via UI on a fresh
 		// dashboard restart, OR auto-loaded if dcrwallet kept state).
 		if !waitForWalletLoaded(ctx) {
@@ -508,7 +542,12 @@ func superviseRpcSync(ctx context.Context) {
 			log.Println("Reconnecting RPC sync to dcrd")
 		}
 
-		err := services.EnsureRpcSync(ctx)
+		// Run on a per-attempt cancellable context so PauseSync can interrupt
+		// the otherwise-blocking RpcSync stream the moment a switch begins.
+		attemptCtx, cancelAttempt := context.WithCancel(ctx)
+		services.RegisterSyncCancel(cancelAttempt)
+		err := services.EnsureRpcSync(attemptCtx)
+		cancelAttempt()
 		if ctx.Err() != nil {
 			return
 		}
@@ -530,6 +569,15 @@ func superviseRpcSync(ctx context.Context) {
 
 func waitForWalletLoaded(ctx context.Context) bool {
 	for {
+		// Don't touch the gRPC clients while a switch is reconnecting them.
+		if services.SyncPaused() {
+			select {
+			case <-ctx.Done():
+				return false
+			case <-time.After(1 * time.Second):
+			}
+			continue
+		}
 		loadCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		loaded, _ := services.CheckWalletLoaded(loadCtx)
 		cancel()

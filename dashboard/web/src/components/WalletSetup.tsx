@@ -2,10 +2,20 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Copy, Check, AlertCircle, Lock, Key, Shield, CheckCircle, Eye, EyeOff, Sprout, RotateCcw } from 'lucide-react';
-import { generateSeed, createWallet } from '../services/api';
+import { generateSeed, createNamedWallet, listWallets } from '../services/api';
 import { SeedEntry } from './wallet/SeedEntry';
+
+interface WalletSetupProps {
+  // onComplete replaces the default redirect to /wallet (used when embedded in
+  // the wallet-list flow). onCancel, when present, shows a way back to the list.
+  onComplete?: () => void;
+  onCancel?: () => void;
+}
+
+const DEFAULT_WALLET_NAME = 'default-wallet';
+const walletNamePattern = /^[A-Za-z0-9_-]{1,64}$/;
 
 type WizardMode = 'create' | 'restore';
 type WizardStep =
@@ -19,9 +29,17 @@ type WizardStep =
   | 'creating'
   | 'success';
 
-export const WalletSetup = () => {
+export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => {
   const [step, setStep] = useState<WizardStep>('choose');
   const [mode, setMode] = useState<WizardMode>('create');
+  // Wallet naming. The first wallet (no default-wallet yet) is always created as
+  // the default wallet at the legacy appdata path, so no name is requested.
+  // Once a default wallet exists, additional wallets must be given a unique name.
+  const [walletsLoaded, setWalletsLoaded] = useState(false);
+  const [defaultExists, setDefaultExists] = useState(false);
+  const [existingNames, setExistingNames] = useState<string[]>([]);
+  const [name, setName] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
   const [seedMnemonic, setSeedMnemonic] = useState('');
   const [seedHex, setSeedHex] = useState('');
   const [seedHexValid, setSeedHexValid] = useState(false);
@@ -36,6 +54,61 @@ export const WalletSetup = () => {
   const [showPublicPass, setShowPublicPass] = useState(false);
   const [showPrivatePass, setShowPrivatePass] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Determine whether this is the first wallet (forced default) or an additional
+  // named wallet, and collect existing names for uniqueness validation.
+  useEffect(() => {
+    let cancelled = false;
+    listWallets()
+      .then((res) => {
+        if (cancelled) return;
+        setExistingNames(res.wallets.map((w) => w.name));
+        setDefaultExists(res.wallets.some((w) => w.name === DEFAULT_WALLET_NAME));
+        setWalletsLoaded(true);
+      })
+      .catch((err) => {
+        console.debug('listWallets failed in WalletSetup:', err);
+        if (!cancelled) setWalletsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // validateName mirrors the backend ValidateWalletName rules plus a uniqueness
+  // check. Returns an error message, or null when valid. Only meaningful when a
+  // default wallet already exists (otherwise the name is forced).
+  const validateName = (): string | null => {
+    const trimmed = name.trim();
+    if (!walletNamePattern.test(trimmed)) {
+      return 'Use 1-64 letters, numbers, dash or underscore.';
+    }
+    if (trimmed === 'imported') {
+      return '"imported" is a reserved name.';
+    }
+    if (existingNames.includes(trimmed)) {
+      return `A wallet named "${trimmed}" already exists.`;
+    }
+    return null;
+  };
+
+  // proceedFromChoose validates the name (when required) before leaving the
+  // chooser, so duplicate/invalid names fail up front rather than after the
+  // passphrase step.
+  const proceedFromChoose = (next: WizardStep, chosen: WizardMode): boolean => {
+    if (defaultExists) {
+      const err = validateName();
+      if (err) {
+        setNameError(err);
+        return false;
+      }
+    }
+    setNameError(null);
+    setError(null);
+    setMode(chosen);
+    setStep(next);
+    return true;
+  };
 
   // Generate seed when entering generate step
   const handleGenerateSeed = async () => {
@@ -117,7 +190,9 @@ export const WalletSetup = () => {
     try {
       setError(null);
       
-      const response = await createWallet({
+      const targetName = defaultExists ? name.trim() : DEFAULT_WALLET_NAME;
+      const response = await createNamedWallet({
+        name: targetName,
         publicPassphrase,
         confirmPublicPassphrase: confirmPublicPass,
         privatePassphrase,
@@ -132,7 +207,11 @@ export const WalletSetup = () => {
         // they land on the sync-progress card even if they navigated
         // away from /wallet before triggering creation.
         setTimeout(() => {
-          window.location.assign('/wallet');
+          if (onComplete) {
+            onComplete();
+          } else {
+            window.location.assign('/wallet');
+          }
         }, 2000);
       } else {
         setError(response.message || 'Failed to create wallet');
@@ -166,6 +245,14 @@ export const WalletSetup = () => {
     !publicTooShort &&
     (publicPassphrase === '' || (confirmPublicPass !== '' && publicPassphrase === confirmPublicPass));
 
+  if (!walletsLoaded) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-muted/20">
       <div className="w-full max-w-3xl">
@@ -182,13 +269,42 @@ export const WalletSetup = () => {
               <p className="text-lg text-muted-foreground max-w-xl mx-auto">
                 Get started by creating a new Decred wallet, or restore an existing one from its seed phrase.
               </p>
+
+              {defaultExists ? (
+                <div className="max-w-md mx-auto text-left space-y-1">
+                  <label className="text-sm font-medium">Wallet name</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (nameError) setNameError(null);
+                    }}
+                    className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
+                      nameError ? 'border-red-500/50' : 'border-border'
+                    }`}
+                    placeholder="e.g. savings"
+                    autoComplete="off"
+                  />
+                  {nameError ? (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> {nameError}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Letters, numbers, dash or underscore. Must be unique.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  This will be set up as your default wallet.
+                </p>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 <button
-                  onClick={() => {
-                    setMode('create');
-                    setError(null);
-                    setStep('welcome');
-                  }}
+                  onClick={() => proceedFromChoose('welcome', 'create')}
                   className="p-6 rounded-xl border border-border bg-background/50 hover:border-primary/50 hover:bg-background transition-colors text-left space-y-2"
                 >
                   <div className="flex items-center gap-3">
@@ -200,11 +316,7 @@ export const WalletSetup = () => {
                   </p>
                 </button>
                 <button
-                  onClick={() => {
-                    setMode('restore');
-                    setError(null);
-                    setStep('restore-welcome');
-                  }}
+                  onClick={() => proceedFromChoose('restore-welcome', 'restore')}
                   className="p-6 rounded-xl border border-border bg-background/50 hover:border-primary/50 hover:bg-background transition-colors text-left space-y-2"
                 >
                   <div className="flex items-center gap-3">
@@ -216,6 +328,14 @@ export const WalletSetup = () => {
                   </p>
                 </button>
               </div>
+              {onCancel && (
+                <button
+                  onClick={onCancel}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Back to wallet list
+                </button>
+              )}
             </div>
           )}
 

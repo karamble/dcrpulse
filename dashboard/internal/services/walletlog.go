@@ -8,15 +8,24 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"dcrpulse/internal/config"
 )
 
-// dcrwallet writes its log file to ${appdata}/logs/${network}/dcrwallet.log.
-// The dashboard container mounts /app-data read-only and the wallet container
-// uses /app-data/dcrwallet as appdata, so the path is fixed here.
-const walletLogPath = "/app-data/dcrwallet/logs/mainnet/dcrwallet.log"
+// currentWalletLogPath returns the active wallet's dcrwallet log file. dcrwallet
+// writes to ${appdata}/logs/${network}/dcrwallet.log; the appdata follows the
+// selected wallet so the mixer feed tracks wallet switches.
+func currentWalletLogPath() string {
+	name := ActiveWalletName()
+	if name == "" {
+		name = config.DefaultWalletName
+	}
+	return filepath.Join(config.ResolveWalletAppdata(name), "logs", "mainnet", "dcrwallet.log")
+}
 
 // walletLogFilter selects mixer-relevant log entries we want surfaced to the
 // frontend's MixerEventLog. Decrediton tails its wallet log for the same
@@ -38,12 +47,21 @@ func tailWalletLog() {
 	var f *os.File
 	var lastSize int64
 	var partial []byte
+	var openPath string
 
 	for {
+		// Reopen when the active wallet (and thus its log path) changes.
+		if f != nil && openPath != currentWalletLogPath() {
+			_ = f.Close()
+			f = nil
+			partial = nil
+		}
+
 		// Open or reopen the file as needed.
 		if f == nil {
 			var err error
-			f, err = os.Open(walletLogPath)
+			openPath = currentWalletLogPath()
+			f, err = os.Open(openPath)
 			if err != nil {
 				time.Sleep(5 * time.Second)
 				continue
@@ -52,7 +70,7 @@ func tailWalletLog() {
 			info, _ := f.Stat()
 			lastSize = info.Size()
 			_, _ = f.Seek(0, io.SeekEnd)
-			log.Printf("Tailing dcrwallet log %s (starting at offset %d)", walletLogPath, lastSize)
+			log.Printf("Tailing dcrwallet log %s (starting at offset %d)", openPath, lastSize)
 		}
 
 		info, err := f.Stat()
