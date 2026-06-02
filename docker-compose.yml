@@ -106,7 +106,7 @@ services:
   brclientd:
     image: ghcr.io/karamble/dcrpulse-brclientd:${BRCLIENTD_IMAGE_TAG:-dev}
     build:
-      context: ${BRCLIENTD_BUILD_CONTEXT:-https://github.com/karamble/brclientd.git#master}
+      context: ${BRCLIENTD_BUILD_CONTEXT:-https://github.com/karamble/brclientd.git#v0.1.0}
     container_name: dcrpulse-brclientd
     ports:
       - "7677:7677"
