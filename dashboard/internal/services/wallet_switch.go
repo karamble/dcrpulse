@@ -202,11 +202,14 @@ func RenameWallet(ctx context.Context, from, to string) error {
 }
 
 // DeleteWallet backs up a non-active wallet's data, then removes it along with
-// its dashboard config. The default wallet's database directory is removed in
-// place (its appdata root also holds shared control/backup directories).
+// its dashboard config. The default wallet cannot be deleted; it is the
+// fallback wallet and its appdata root holds the shared control/backup dirs.
 func DeleteWallet(ctx context.Context, name string) error {
 	if err := ValidateWalletName(name); err != nil {
 		return err
+	}
+	if name == config.DefaultWalletName {
+		return fmt.Errorf("the default wallet cannot be deleted")
 	}
 	if name == ActiveWalletName() {
 		return fmt.Errorf("close the wallet before deleting it")
@@ -216,13 +219,7 @@ func DeleteWallet(ctx context.Context, name string) error {
 		return err
 	}
 
-	var dataDir string
-	if name == config.DefaultWalletName {
-		// Only the network database directory, never the shared appdata root.
-		dataDir = filepath.Join(config.LegacyWalletAppdata(), network)
-	} else {
-		dataDir = config.WalletAppdataDir(name)
-	}
+	dataDir := config.WalletAppdataDir(name)
 	if !walletDirExists(dataDir) {
 		return fmt.Errorf("wallet %q not found", name)
 	}

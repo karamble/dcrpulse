@@ -186,7 +186,7 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
                         <Pencil className="h-4 w-4" />
                       </button>
                     )}
-                    {!w.active && (
+                    {!w.isDefault && !w.active && (
                       <button
                         onClick={() => setDeleting(w.name)}
                         className="p-2 text-red-500 hover:text-red-400"
