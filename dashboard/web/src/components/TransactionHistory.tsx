@@ -295,7 +295,7 @@ export const TransactionHistory = () => {
               <Shuffle className="h-4 w-4 text-purple-500" />
               <h3 className="text-sm font-semibold text-purple-500">CoinJoin Statistics</h3>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Total CoinJoins</p>
                 <p className="text-base font-semibold">{coinJoinStats.count}</p>
@@ -415,7 +415,7 @@ export const TransactionHistory = () => {
             value={searchText}
             onChange={(e) => { setSearchText(e.target.value); setVisibleCount(5); }}
             placeholder="Search address or txid"
-            className="flex-1 min-w-[180px] px-3 py-1.5 rounded-md text-sm bg-muted/20 border border-border/30 placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
+            className="flex-1 min-w-0 sm:min-w-[180px] px-3 py-1.5 rounded-md text-sm bg-muted/20 border border-border/30 placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
           />
           <input
             type="date"

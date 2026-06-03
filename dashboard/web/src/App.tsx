@@ -121,7 +121,7 @@ function AppContent() {
   // and outer padding so it uses the full viewport width.
   const dexFullWidth = location.pathname.startsWith('/dex');
   return (
-    <div className={`min-h-screen bg-background ${dexFullWidth ? '' : 'p-6'}`}>
+    <div className={`min-h-screen bg-background ${dexFullWidth ? '' : 'p-3 sm:p-6'}`}>
       <div className={dexFullWidth ? 'space-y-3' : 'max-w-7xl mx-auto space-y-6'}>
         <Header nodeVersion={nodeVersion} />
         <Routes>

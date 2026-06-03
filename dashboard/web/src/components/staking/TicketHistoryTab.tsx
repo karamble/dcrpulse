@@ -124,7 +124,7 @@ export const TicketHistoryTab = () => {
             <option value="OLDEST">Oldest</option>
           </select>
         </div>
-        <div className="flex-1 min-w-[200px]">
+        <div className="flex-1 min-w-0 sm:min-w-[200px]">
           <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
             <Search className="h-3 w-3" /> Search hash
           </label>

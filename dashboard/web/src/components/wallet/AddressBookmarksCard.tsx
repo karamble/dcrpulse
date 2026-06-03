@@ -105,7 +105,7 @@ export const AddressBookmarksCard = () => {
   return (
     <>
       <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
           <div className="flex items-center gap-2">
             <BookmarkCheck className="h-5 w-5 text-warning" />
             <h2 className="text-xl font-semibold">Bookmarked Addresses</h2>

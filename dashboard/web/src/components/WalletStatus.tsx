@@ -78,7 +78,7 @@ export const WalletStatus = ({
 
   return (
     <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-4">
           <div className={`p-3 rounded-xl ${config.bgColor} border ${config.borderColor}`}>
             <StatusIcon className={`h-6 w-6 ${config.color} ${status === 'syncing' ? 'animate-spin' : ''}`} />
@@ -90,7 +90,7 @@ export const WalletStatus = ({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {autobuyerRunning && (
             <Link
               to="/wallet/staking/autobuyer"

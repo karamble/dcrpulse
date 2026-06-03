@@ -173,7 +173,7 @@ export const BisonrelayUserSubNav = ({
         aria-hidden
       />
       <aside
-        className="absolute right-0 top-0 bottom-0 w-64 flex flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 z-20 shadow-xl"
+        className="absolute right-0 top-0 bottom-0 w-full max-w-xs flex flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 z-20 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <Header contact={contact} nick={nick} onClose={onClose} />

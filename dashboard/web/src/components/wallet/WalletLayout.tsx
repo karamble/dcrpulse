@@ -6,7 +6,7 @@ import { WalletSetup } from '../WalletSetup';
 import { WalletSelection } from '../../pages/WalletSelection';
 
 const navItemClass = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+  `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors shrink-0 whitespace-nowrap ${
     isActive
       ? 'bg-primary/20 text-primary font-semibold'
       : 'text-foreground hover:bg-muted/20'
@@ -58,15 +58,15 @@ export const WalletLayout = () => {
   }
 
   return (
-    <div className="flex gap-6">
-      <aside className="w-56 shrink-0">
+    <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+      <aside className="md:w-56 shrink-0">
         {activeName && (
           <div className="mb-3 px-3 py-2 rounded-lg bg-muted/20 border border-border/50">
             <div className="text-xs text-muted-foreground">Active wallet</div>
             <div className="font-semibold truncate">{activeName}</div>
           </div>
         )}
-        <nav className="space-y-1">
+        <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-3 px-3 md:mx-0 md:px-0 pb-1 md:pb-0">
           <NavLink to="/wallet" end className={navItemClass}>
             <LayoutDashboard className="h-4 w-4" />
             <span>Overview</span>

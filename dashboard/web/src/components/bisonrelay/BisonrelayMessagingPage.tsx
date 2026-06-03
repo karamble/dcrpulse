@@ -5,6 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
+  ChevronLeft,
   Copy,
   Download,
   EyeOff,
@@ -779,7 +780,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     <div className="flex flex-col">
       <IncomingGCInvitesBanner onAccepted={refreshGCs} />
     <div className="relative flex gap-4 h-[calc(100vh-12rem)] min-h-[480px]">
-      <aside className="w-72 flex flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+      <aside className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-72 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
         <div className="p-3 border-b border-border/50 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Chats</h3>
           <div className="flex gap-1">
@@ -927,11 +928,18 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         </div>
       </aside>
 
-      <section className="flex-1 flex flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+      <section className={`${selected ? 'flex' : 'hidden md:flex'} flex-1 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
         {!selected ? (
           <EmptyThread onCreate={() => setShowInviteCreate(true)} onAccept={() => setShowInviteAccept(true)} />
         ) : (
           <>
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="md:hidden flex items-center gap-1 p-3 border-b border-border/50 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" /> Back to chats
+            </button>
             <header className="p-3 border-b border-border/50">
               {selected.kind === 'contact' ? (
                 <>
