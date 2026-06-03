@@ -168,6 +168,8 @@ export interface AccountInfo {
   immatureCoinbaseRewards: number;
   immatureStakeGeneration: number;
   accountNumber: number;
+  // Reserved accounts (mixed/unmixed/lightning/dex/imported) cannot be renamed.
+  reserved?: boolean;
   // Wallet-wide totals (only on primary AccountInfo)
   cumulativeTotal?: number;
   totalSpendable?: number;

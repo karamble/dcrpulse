@@ -10,6 +10,8 @@ import { DexWalletSetup } from '../components/dex/DexWalletSetup';
 import { DexHome } from '../components/dex/DexHome';
 import { DexMarketView } from '../components/dex/DexMarketView';
 import { DexSeedBackup } from '../components/dex/DexSeedBackup';
+import { useWalletReady } from '../hooks/useWalletReady';
+import { WalletSyncGate } from '../components/common/WalletSyncGate';
 
 export const DexPage = () => {
   const [status, setStatus] = useState<DexStatus | null>(null);
@@ -20,6 +22,7 @@ export const DexPage = () => {
   // Dev preview: /dex?preview renders the trading view with sample data,
   // bypassing onboarding/registration and any DEX-server dependency.
   const previewMode = new URLSearchParams(window.location.search).has('preview');
+  const wallet = useWalletReady();
 
   const refresh = async () => {
     try {
@@ -70,6 +73,12 @@ export const DexPage = () => {
         </div>
       </div>
     );
+  }
+
+  // First-time DCRDEX setup (init the client or create the dex account) is gated
+  // on a synced wallet; unlocking an already-initialized client is not.
+  if ((status.stage === 'needs-init' || status.stage === 'needs-wallet') && !wallet.ready) {
+    return <WalletSyncGate feature="DCRDEX" message={wallet.message} progress={wallet.progress} />;
   }
 
   if (status.stage === 'needs-init' || status.stage === 'needs-unlock') {

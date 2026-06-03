@@ -33,6 +33,10 @@ func LightningStatusHandler(w http.ResponseWriter, r *http.Request) {
 // account, unblocks the dcrlnd container, and runs the first-time
 // InitWallet on dcrlnd. Used once per wallet lifetime.
 func LightningSetupHandler(w http.ResponseWriter, r *http.Request) {
+	if ready, reason := services.WalletReady(r.Context()); !ready {
+		http.Error(w, reason, http.StatusServiceUnavailable)
+		return
+	}
 	var req types.LightningSetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)

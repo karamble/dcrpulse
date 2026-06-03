@@ -40,6 +40,9 @@ type AccountInfo struct {
 	AccountNumber           uint32  `json:"accountNumber"`
 	AccountEncrypted        bool    `json:"accountEncrypted"`
 	AccountUnlocked         bool    `json:"accountUnlocked"`
+	// Reserved marks accounts other daemons bind to by name (mixed/unmixed/
+	// lightning/dex) or the imported bucket; the UI hides their rename action.
+	Reserved bool `json:"reserved"`
 	// Wallet-wide totals (only populated in primary AccountInfo)
 	CumulativeTotal      float64 `json:"cumulativeTotal,omitempty"`
 	TotalSpendable       float64 `json:"totalSpendable,omitempty"`

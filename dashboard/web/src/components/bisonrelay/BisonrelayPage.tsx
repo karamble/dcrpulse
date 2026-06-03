@@ -12,6 +12,8 @@ import { BisonrelayStats } from './BisonrelayStats';
 import { BisonrelayRealtime } from './BisonrelayRealtime';
 import { BisonrelayPages } from './BisonrelayPages';
 import { BisonrelayStatus, getBisonrelayStatus } from '../../services/bisonrelayApi';
+import { useWalletReady } from '../../hooks/useWalletReady';
+import { WalletSyncGate } from '../common/WalletSyncGate';
 
 type TabId = 'chat' | 'feed' | 'files' | 'stats' | 'realtime' | 'pages';
 
@@ -47,6 +49,7 @@ const readHashTab = (): TabId => {
 export const BisonrelayPage = () => {
   const [ready, setReady] = useState<BisonrelayStatus | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>(readHashTab);
+  const wallet = useWalletReady();
 
   useEffect(() => {
     if (!ready) return;
@@ -83,6 +86,9 @@ export const BisonrelayPage = () => {
   }, []);
 
   if (!ready) {
+    if (!wallet.ready) {
+      return <WalletSyncGate feature="Bison Relay" message={wallet.message} progress={wallet.progress} />;
+    }
     return (
       <BisonrelaySetupWizard
         onReady={async () => {

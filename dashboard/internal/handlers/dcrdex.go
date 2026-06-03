@@ -34,7 +34,7 @@ import (
 )
 
 // dexAccountName is the dedicated dcrwallet account DCRDEX trades from.
-const dexAccountName = "dex"
+const dexAccountName = services.DexAccountName
 
 // DcrdexStatus reports reachability and versions of the backend-only bisonw
 // daemon. Richer onboarding state (initialized/logged-in/registered) is added
@@ -180,6 +180,10 @@ type dcrdexAuthRequest struct {
 // in memory for the session. The password is never persisted.
 func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if ready, reason := services.WalletReady(r.Context()); !ready {
+		http.Error(w, reason, http.StatusServiceUnavailable)
+		return
+	}
 	var req dcrdexAuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.AppPass == "" {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
@@ -255,6 +259,10 @@ func LockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 // dcrwalletRPC wallet in bisonw. Requires the DEX session to be unlocked.
 func CreateDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if ready, reason := services.WalletReady(r.Context()); !ready {
+		http.Error(w, reason, http.StatusServiceUnavailable)
+		return
+	}
 	var req struct {
 		WalletPass string `json:"walletPass"`
 	}

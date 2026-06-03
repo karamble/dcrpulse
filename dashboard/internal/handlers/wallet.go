@@ -656,8 +656,8 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "newName must be 50 characters or fewer", http.StatusBadRequest)
 		return
 	}
-	if strings.EqualFold(name, "imported") {
-		http.Error(w, "'imported' is a reserved account name", http.StatusBadRequest)
+	if services.IsReservedAccountName(name) {
+		http.Error(w, fmt.Sprintf("%q is a reserved account name", name), http.StatusBadRequest)
 		return
 	}
 	if req.AccountNumber == importedAccountNumber {
@@ -667,6 +667,17 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
+
+	// Block renaming the special accounts other daemons bind to by name
+	// (mixed/unmixed/lightning/dex); renaming them breaks those bindings.
+	if accts, aerr := services.FetchAllAccounts(ctx); aerr == nil {
+		for _, a := range accts {
+			if a.AccountNumber == req.AccountNumber && services.IsReservedAccountName(a.AccountName) {
+				http.Error(w, "this account is reserved and cannot be renamed", http.StatusBadRequest)
+				return
+			}
+		}
+	}
 
 	if err := services.RenameAccount(ctx, req.AccountNumber, name); err != nil {
 		msg := err.Error()
@@ -724,6 +735,10 @@ func PrivacyStatusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
+	if ready, reason := services.WalletReady(r.Context()); !ready {
+		http.Error(w, reason, http.StatusServiceUnavailable)
+		return
+	}
 	if rpc.WalletGrpcClient == nil {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
 		return

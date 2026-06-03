@@ -365,6 +365,7 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 			AccountNumber:           numbers[acct.AccountName],
 			AccountEncrypted:        encrypted[acct.AccountName],
 			AccountUnlocked:         unlocked[acct.AccountName],
+			Reserved:                IsReservedAccountName(acct.AccountName),
 		})
 	}
 
@@ -637,6 +638,25 @@ const (
 	// StartMixer).
 	privacyMixedAccountBranch = 0
 )
+
+// DexAccountName is the dedicated dcrwallet account DCRDEX trades from. Defined
+// here (and referenced by handlers/dcrdex.go) so the reserved-account check has
+// a single source of truth.
+const DexAccountName = "dex"
+
+// IsReservedAccountName reports whether name is one of the dcrwallet accounts
+// other daemons bind to by name - the privacy mixer's mixed/unmixed accounts,
+// dcrlnd's lightning account, DCRDEX's dex account - or dcrwallet's imported
+// bucket. These must never be renamed: renaming silently breaks the binding
+// (dcrlnd account-ID mismatch, DCRDEX "account not found"). Case-insensitive.
+func IsReservedAccountName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case PrivacyMixedAccountName, PrivacyChangeAccountName, LightningAccountName, DexAccountName, "imported":
+		return true
+	default:
+		return false
+	}
+}
 
 // FindPrivacyAccounts looks up the mixer's mixed and unmixed accounts by name.
 // `configured` is true only when both exist.

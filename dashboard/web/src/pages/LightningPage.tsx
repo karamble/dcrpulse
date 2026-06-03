@@ -7,10 +7,13 @@ import {
 } from '../services/lightningApi';
 import { LightningSetupWizard } from '../components/lightning/setup/LightningSetupWizard';
 import { LightningLayout } from '../components/lightning/LightningLayout';
+import { useWalletReady } from '../hooks/useWalletReady';
+import { WalletSyncGate } from '../components/common/WalletSyncGate';
 
 export const LightningPage = () => {
   const [status, setStatus] = useState<LightningStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const wallet = useWalletReady();
 
   const refresh = async () => {
     try {
@@ -41,7 +44,11 @@ export const LightningPage = () => {
   const stage: LightningStage = status.stage;
 
   if (stage === 'needs-setup') {
-    return <LightningSetupWizard needsSetup onReady={refresh} />;
+    return wallet.ready ? (
+      <LightningSetupWizard needsSetup onReady={refresh} />
+    ) : (
+      <WalletSyncGate feature="Lightning" message={wallet.message} progress={wallet.progress} />
+    );
   }
 
   if (stage === 'needs-unlock') {

@@ -1682,6 +1682,10 @@ func BisonrelayMessagesHandler(w http.ResponseWriter, r *http.Request) {
 // /api/br/status reports stage=needs-identity; outside that window
 // brclientd's port is owned by clientrpc and the call 404s.
 func BisonrelaySetupHandler(w http.ResponseWriter, r *http.Request) {
+	if ready, reason := services.WalletReady(r.Context()); !ready {
+		http.Error(w, reason, http.StatusServiceUnavailable)
+		return
+	}
 	var req struct {
 		Nick string `json:"nick"`
 		Name string `json:"name"`

@@ -18,6 +18,11 @@ const IMPORTED_ACCOUNT_NUMBER = 2147483647;
 export const isImportedAccount = (a: AccountInfo): boolean =>
   a.accountNumber === IMPORTED_ACCOUNT_NUMBER || a.accountName === 'imported';
 
+// Reserved accounts (mixed/unmixed/lightning/dex, plus imported) are bound to
+// by other daemons by name and must not be renamed.
+export const isReservedAccount = (a: AccountInfo): boolean =>
+  a.reserved === true || isImportedAccount(a);
+
 interface Props {
   account: AccountInfo;
   onRename: (account: AccountInfo) => void;
@@ -28,6 +33,7 @@ const formatDcr = (v: number) => v.toFixed(8);
 export const AccountRow = ({ account, onRename }: Props) => {
   const [expanded, setExpanded] = useState(false);
   const isImported = isImportedAccount(account);
+  const isReserved = isReservedAccount(account);
 
   return (
     <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden">
@@ -126,13 +132,24 @@ export const AccountRow = ({ account, onRename }: Props) => {
           <div className="flex items-center gap-2 pt-2 border-t border-border/30">
             <button
               onClick={() => onRename(account)}
-              disabled={isImported}
-              title={isImported ? 'The imported account cannot be renamed' : 'Rename account'}
+              disabled={isReserved}
+              title={
+                isReserved
+                  ? isImported
+                    ? 'The imported account cannot be renamed'
+                    : 'Reserved account - cannot be renamed'
+                  : 'Rename account'
+              }
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/20 hover:bg-muted/30 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Edit2 className="h-3.5 w-3.5" />
               <span>Rename</span>
             </button>
+            {isReserved && !isImported && (
+              <span className="text-xs text-muted-foreground">
+                Reserved account - cannot be renamed
+              </span>
+            )}
             {isImported && (
               <span className="text-xs text-muted-foreground">
                 Imported account - actions disabled

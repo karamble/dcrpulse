@@ -8,12 +8,15 @@ import { MixerControls } from '../components/privacy/MixerControls';
 import { MixerConfigCard } from '../components/privacy/MixerConfigCard';
 import { SendToUnmixedCard } from '../components/privacy/SendToUnmixedCard';
 import { MixerEventLog } from '../components/privacy/MixerEventLog';
+import { useWalletReady } from '../hooks/useWalletReady';
+import { WalletSyncGate } from '../components/common/WalletSyncGate';
 
 export const PrivacyPage = () => {
   const [status, setStatus] = useState<PrivacyStatus | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const wallet = useWalletReady();
 
   const load = useCallback(async () => {
     try {
@@ -70,7 +73,11 @@ export const PrivacyPage = () => {
           Loading privacy status…
         </div>
       ) : !status?.configured ? (
-        <PrivacySetupCard onConfigured={load} />
+        wallet.ready ? (
+          <PrivacySetupCard onConfigured={load} />
+        ) : (
+          <WalletSyncGate feature="Privacy" message={wallet.message} progress={wallet.progress} />
+        )
       ) : (
         <>
           <MixerBalanceCards
