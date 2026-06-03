@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"dcrpulse/internal/config"
 )
 
 // LogComponent identifies which daemon's log to read.
@@ -31,19 +33,24 @@ const (
 
 // logPath resolves the on-disk log file for a component. Each daemon
 // uses its own directory layout — dcrlnd writes under
-// `logs/decred/<network>/lnd.log` while dcrd and dcrwallet use
-// `logs/<network>/<component>.log`.
-func logPath(component LogComponent, network string) (string, error) {
+// `logs/decred/<network>/lnd.log` while dcrwallet uses
+// `logs/<network>/dcrwallet.log`. The per-wallet daemons (dcrwallet,
+// dcrlnd, dcrdex, brclientd) write under the active wallet's appdata dir,
+// so we resolve their roots against `wallet`. dcrd is a single shared full
+// node serving every wallet, so its log stays on the legacy path.
+func logPath(component LogComponent, network, wallet string) (string, error) {
 	switch component {
-	case LogComponentDcrd, LogComponentDcrwallet:
-		return filepath.Join(logsRoot, string(component), "logs", network, string(component)+".log"), nil
+	case LogComponentDcrd:
+		return filepath.Join(logsRoot, "dcrd", "logs", network, "dcrd.log"), nil
+	case LogComponentDcrwallet:
+		return filepath.Join(config.ResolveWalletAppdata(wallet), "logs", network, "dcrwallet.log"), nil
 	case LogComponentDcrlnd:
-		return filepath.Join(logsRoot, "dcrlnd", "logs", "decred", network, "lnd.log"), nil
+		return filepath.Join(config.DcrlndDir(wallet), "logs", "decred", network, "lnd.log"), nil
 	case LogComponentBrclientd:
 		return BrclientdLogPath(network), nil
 	case LogComponentDcrdex:
 		// bisonw writes its app log to <appdata>/<network>/logs/dexc.log.
-		return filepath.Join(logsRoot, "dcrdex", network, "logs", "dexc.log"), nil
+		return filepath.Join(config.DcrdexDir(wallet), network, "logs", "dexc.log"), nil
 	default:
 		return "", fmt.Errorf("unknown log component: %q", component)
 	}
@@ -65,7 +72,7 @@ func TailLog(ctx context.Context, component LogComponent, lines int) ([]string, 
 		network = "mainnet"
 	}
 
-	path, err := logPath(component, network)
+	path, err := logPath(component, network, CurrentWalletName())
 	if err != nil {
 		return nil, err
 	}
