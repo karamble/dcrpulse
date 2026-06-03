@@ -116,6 +116,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [showGCInvite, setShowGCInvite] = useState(false);
   const [showGroupSubNav, setShowGroupSubNav] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const draftInputRef = useRef<HTMLInputElement | null>(null);
   const {
     unread,
     clearUnread,
@@ -246,6 +247,15 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   useEffect(() => {
     selectedGroupRef.current = selectedGroup;
   }, [selectedGroup]);
+
+  // Keep the message input focused so the user can type immediately: when a
+  // conversation is opened or switched, and again after a send completes (the
+  // input is disabled while sending, so refocusing waits for it to re-enable).
+  useEffect(() => {
+    if (selected && !sending) {
+      draftInputRef.current?.focus();
+    }
+  }, [selectedContact?.id?.identity, selectedGroup?.id, sending]);
 
   const handleAcceptSuggestion = useCallback(
     async (target: string, _targetNick: string) => {
@@ -1028,6 +1038,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   <Paperclip className="h-4 w-4" />
                 </button>
                 <input
+                  ref={draftInputRef}
                   type="text"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
