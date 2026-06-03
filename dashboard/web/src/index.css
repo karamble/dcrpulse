@@ -9,8 +9,57 @@
 @tailwind utilities;
 
 @layer base {
+  /* Default theme tokens (the "Pulse" theme), as bare HSL channels so
+     Tailwind's hsl(var(--x) / <alpha-value>) colors and /opacity modifiers
+     resolve correctly. ThemeProvider overwrites these on documentElement at
+     runtime to switch themes; these values are the no-JS fallback / first
+     paint and match the previous hardcoded palette 1:1. */
+  :root {
+    --background: 222 47% 5%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 5%;
+    --secondary: 173 80% 40%;
+    --secondary-foreground: 210 40% 98%;
+    --success: 142 76% 36%;
+    --success-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 5%;
+    --muted: 217 32% 17%;
+    --muted-foreground: 215 20% 65%;
+    --border: 217 32% 17%;
+
+    /* Gradient endpoints (default = derived from primary/secondary and card). */
+    --gradient-primary-from: 217 91% 60%;
+    --gradient-primary-to: 173 80% 40%;
+    --gradient-card-from: 222 47% 8%;
+    --gradient-card-to: 222 47% 10%;
+
+    /* Typography. heading-color themes all headings (defaults to foreground,
+       so it is a no-op until a theme overrides it); weight/size drive the
+       rendered prose headings below. */
+    --heading-color: 210 40% 98%;
+    --heading-weight: 700;
+    --heading-1-size: 1.25rem;
+    --heading-2-size: 1.125rem;
+    --heading-3-size: 1rem;
+
+    --radius: 0.75rem;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Headings follow the theme's heading color by default. This plain element
+     rule (specificity 0,0,1) yields to any intentional text-* color utility
+     on a heading, so it only colors headings that would otherwise inherit. */
+  h1, h2, h3, h4, h5, h6 {
+    color: hsl(var(--heading-color));
   }
 }
 
@@ -18,9 +67,12 @@
   /* Server-rendered Politeia proposal markdown. The HTML is sanitized
      by bluemonday on the backend; this stylesheet adds Tailwind-aware
      spacing/colors to goldmark's plain output. */
-  .proposal-body h1 { @apply text-xl font-bold mt-5 mb-2; }
-  .proposal-body h2 { @apply text-lg font-bold mt-5 mb-2; }
-  .proposal-body h3 { @apply text-base font-bold mt-4 mb-2; }
+  /* Prose headings carry the theme's heading weight + size scale. The token
+     defaults equal the @apply utilities (text-xl/lg/base, font-bold) so this
+     is a visual no-op until a theme changes them. */
+  .proposal-body h1 { @apply text-xl font-bold mt-5 mb-2; font-size: var(--heading-1-size); font-weight: var(--heading-weight); }
+  .proposal-body h2 { @apply text-lg font-bold mt-5 mb-2; font-size: var(--heading-2-size); font-weight: var(--heading-weight); }
+  .proposal-body h3 { @apply text-base font-bold mt-4 mb-2; font-size: var(--heading-3-size); font-weight: var(--heading-weight); }
   .proposal-body h4 { @apply text-sm font-bold mt-3 mb-1; }
   .proposal-body h5,
   .proposal-body h6 { @apply text-sm font-semibold mt-3 mb-1; }
