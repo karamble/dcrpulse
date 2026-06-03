@@ -239,7 +239,7 @@ export const BisonrelayFeed = () => {
   })();
 
   return (
-    <div className="flex gap-4">
+    <div className="flex flex-col md:flex-row gap-4">
       <FeedSidebar active={route.section} />
       <div className="flex-1 min-w-0">{content}</div>
     </div>
@@ -254,8 +254,8 @@ const sidebarItems: { id: Section; label: string; hash: string; icon: typeof Rss
 ];
 
 const FeedSidebar = ({ active }: { active: Section }) => (
-  <aside className="w-44 shrink-0 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-2 self-start">
-    <nav className="flex flex-col gap-1">
+  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-2 md:self-start">
+    <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible">
       {sidebarItems.map((item) => {
         // Treat the post-detail view as belonging to the list section so
         // the "Feed" entry stays highlighted when reading a post.
@@ -266,7 +266,7 @@ const FeedSidebar = ({ active }: { active: Section }) => (
             key={item.id}
             type="button"
             onClick={() => navigateTo(item.hash)}
-            className={`w-full px-3 py-2 rounded-md text-sm flex items-center gap-2 text-left transition-colors ${
+            className={`shrink-0 whitespace-nowrap md:w-full px-3 py-2 rounded-md text-sm flex items-center gap-2 text-left transition-colors ${
               isActive
                 ? 'bg-primary/20 text-primary font-semibold'
                 : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'

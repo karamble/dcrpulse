@@ -928,7 +928,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         </div>
       </aside>
 
-      <section className={`${selected ? 'flex' : 'hidden md:flex'} flex-1 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
+      <section className={`${selected ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
         {!selected ? (
           <EmptyThread onCreate={() => setShowInviteCreate(true)} onAccept={() => setShowInviteAccept(true)} />
         ) : (
@@ -942,14 +942,14 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             </button>
             <header className="p-3 border-b border-border/50">
               {selected.kind === 'contact' ? (
-                <>
-                  <h3 className="text-sm font-semibold">{displayNick(selected.value)}</h3>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold truncate">{displayNick(selected.value)}</h3>
                   {selected.value.id?.identity && (
-                    <p className="text-[10px] text-muted-foreground font-mono break-all mt-0.5">
+                    <p className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
                       {selected.value.id.identity}
                     </p>
                   )}
-                </>
+                </div>
               ) : (
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -964,7 +964,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                         </span>
                       )}
                     </h3>
-                    <p className="text-[10px] text-muted-foreground font-mono break-all mt-0.5">
+                    <p className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
                       {selected.value.id}
                     </p>
                   </div>

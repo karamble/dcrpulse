@@ -165,7 +165,7 @@ export const AddressView = () => {
       <div className="p-6 rounded-lg bg-gradient-to-br from-yellow-500/10 to-orange-500/5 border border-yellow-500/20">
         <div className="flex items-start gap-4">
           <AlertCircle className="h-6 w-6 text-warning flex-shrink-0 mt-1" />
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h3 className="font-semibold mb-2 text-warning">Limited Address Information</h3>
             <p className="text-sm text-muted-foreground mb-4">
               This dashboard provides basic address information but does not store a local database of all transactions with an addressindex. 
@@ -180,7 +180,7 @@ export const AddressView = () => {
                 href={`https://dcrdata.decred.org/address/${address}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-primary hover:underline"
+                className="text-primary hover:underline break-all"
               >
                 dcrdata.decred.org/address/{address}
               </a>

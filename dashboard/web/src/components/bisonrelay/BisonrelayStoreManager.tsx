@@ -14,7 +14,7 @@ type StoreTab = 'products' | 'orders' | 'templates';
 export const BisonrelayStoreManager = () => {
   const [tab, setTab] = useState<StoreTab>('products');
   const tabClass = (active: boolean) =>
-    `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+    `shrink-0 whitespace-nowrap px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
       active ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
     }`;
   const tabs: { id: StoreTab; label: string }[] = [
@@ -24,7 +24,7 @@ export const BisonrelayStoreManager = () => {
   ];
   return (
     <div className="space-y-4">
-      <div className="flex gap-1">
+      <div className="flex gap-1 overflow-x-auto">
         {tabs.map((t) => (
           <button key={t.id} type="button" className={tabClass(tab === t.id)} onClick={() => setTab(t.id)}>
             {t.label}
