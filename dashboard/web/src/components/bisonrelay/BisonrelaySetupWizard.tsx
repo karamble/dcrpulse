@@ -143,6 +143,10 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
 
   const currentStep = steps.find((s) => s.status === 'in-progress');
   const allDone = steps.every((s) => s.status === 'done');
+  // Gate nickname entry on a fully synced Lightning graph: until then BR
+  // cannot route to the relay server, so creating the identity would only
+  // lead to the misleading "insufficient local balance" route error.
+  const graphSynced = lnStatus?.syncedToGraph === true;
 
   return (
     <div className="space-y-4 max-w-2xl">
@@ -180,7 +184,7 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
           ))}
         </ol>
 
-        {currentStep?.id === 'br-identity' && (
+        {currentStep?.id === 'br-identity' && graphSynced && (
           <IdentityForm
             nick={nick}
             fullName={fullName}
@@ -438,33 +442,43 @@ function deriveSteps(
     return order.indexOf(cur) > order.indexOf(target);
   };
 
-  const isGraphSyncing =
-    stage === 'wallet-checking' ||
-    stage === 'disconnected' ||
-    stage === 'connecting' ||
-    (stage === 'starting' && walletErr !== '');
+  // The Lightning network graph must be fully synced before BR can route a
+  // payment to the relay server. dcrlnd reports this via syncedToGraph; treat
+  // anything other than an explicit true as "not synced yet" so a missing or
+  // false flag never reads as ready.
+  const graphSynced = lnStatus?.syncedToGraph === true;
+  const graphReached = !noStatus && isAfter(stage, 'waiting-for-channel');
 
   // BR's CheckLNWalletUsable returns "insufficient local balance" when no
-  // route to the relay server's LN node exists. When the user has just
-  // opened their first channel, the more accurate reason is almost always
-  // (a) the channel-to-hub0 is still confirming on-chain or (b) the LN
-  // graph has not learned about the channel yet. Translate to a friendlier
-  // message when we have positive evidence; otherwise fall back to
-  // walletErr verbatim so we never hide a genuinely surprising error.
-  // Priority: pending-outbound-to-hub0 beats graph-sync, because if the
-  // specific hub channel is still confirming the graph cannot help yet.
+  // route to the relay server's LN node exists yet. Right after the first
+  // channel opens that is almost always because (a) the channel to the hub
+  // is still confirming on-chain or (b) the LN graph has not learned about
+  // it yet. While the graph is still syncing we show that reason and keep
+  // the raw brclientd error behind the toggle; only once the graph is synced
+  // do we surface a remaining walletErr verbatim, so a genuine problem is
+  // never hidden but the misleading route error never leads.
+  const walletCheckFailing =
+    walletErr !== '' &&
+    (stage === 'wallet-checking' ||
+      stage === 'connecting' ||
+      stage === 'disconnected' ||
+      stage === 'starting');
+
   let graphDetail: string | undefined;
   let graphRawDetail: string | undefined;
-  if (isGraphSyncing) {
+  if (graphReached && stage !== 'ready') {
     if (hubChannelPendingOutbound) {
       graphDetail =
         'Your channel to the Bison Relay hub is still confirming on-chain. It needs three confirmations before Lightning can use it.';
       graphRawDetail = walletErr || undefined;
-    } else if (lnStatus?.syncedToGraph === false) {
+    } else if (!graphSynced) {
       graphDetail =
-        'Lightning is still learning about the network graph. This usually takes a few minutes after your first channel opens; no action needed.';
+        'Lightning is still syncing the network graph. Payments to the Bison Relay hub cannot be routed until this finishes; it usually takes a few minutes after your first channel opens. No action needed.' +
+        (stage === 'needs-identity'
+          ? ' You can choose your Bison Relay nickname once it completes.'
+          : '');
       graphRawDetail = walletErr || undefined;
-    } else if (walletErr) {
+    } else if (walletCheckFailing) {
       graphDetail = walletErr;
     }
   }
@@ -506,9 +520,11 @@ function deriveSteps(
       label: 'Lightning network ready',
       description:
         'After a new channel opens, Lightning needs a few minutes to learn about it before payments can be routed. This step waits for that to happen.',
-      status: noStatus || !isAfter(stage, 'waiting-for-channel')
+      status: !graphReached
         ? 'pending'
-        : isGraphSyncing
+        : stage === 'ready'
+        ? 'done'
+        : !graphSynced || walletCheckFailing
         ? 'in-progress'
         : 'done',
       detail: graphDetail,
@@ -523,7 +539,7 @@ function deriveSteps(
         ? 'pending'
         : nick
         ? 'done'
-        : stage === 'needs-identity'
+        : stage === 'needs-identity' && graphSynced
         ? 'in-progress'
         : 'pending',
     },

@@ -20,8 +20,8 @@ type LightningStatus struct {
 	IdentityPubkey  string `json:"identityPubkey,omitempty"`
 	Alias           string `json:"alias,omitempty"`
 	BlockHeight     uint32 `json:"blockHeight,omitempty"`
-	SyncedToChain   bool   `json:"syncedToChain,omitempty"`
-	SyncedToGraph   bool   `json:"syncedToGraph,omitempty"`
+	SyncedToChain   bool   `json:"syncedToChain"`
+	SyncedToGraph   bool   `json:"syncedToGraph"`
 	NumActiveChans  uint32 `json:"numActiveChans,omitempty"`
 	NumPendingChans uint32 `json:"numPendingChans,omitempty"`
 }
