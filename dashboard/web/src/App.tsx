@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { ExternalLinkGuard } from './components/ExternalLinkGuard';
+import { ThemeProvider } from './services/themes/ThemeProvider';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
 import { WalletLayout } from './components/wallet/WalletLayout';
@@ -37,6 +38,7 @@ import { WalletSection } from './components/settings/WalletSection';
 import { PrivacySection } from './components/settings/PrivacySection';
 import { LogsSection } from './components/settings/LogsSection';
 import { AboutSection } from './components/settings/AboutSection';
+import { ThemesSection } from './components/settings/themes/ThemesSection';
 import { PurchaseTab } from './components/staking/PurchaseTab';
 import { AutobuyerTab } from './components/staking/AutobuyerTab';
 import { TicketStatusTab } from './components/staking/TicketStatusTab';
@@ -158,6 +160,7 @@ function AppContent() {
               <Route path="privacy" element={<PrivacySection />} />
               <Route path="logs" element={<LogsSection />} />
               <Route path="about" element={<AboutSection />} />
+              <Route path="themes" element={<ThemesSection />} />
             </Route>
             <Route path="transactions" element={<OnChainTransactions />}>
               <Route index element={<Navigate to="send" replace />} />
@@ -192,11 +195,13 @@ function AppContent() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <BisonrelayLiveProvider>
-        <AppContent />
-      </BisonrelayLiveProvider>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <BisonrelayLiveProvider>
+          <AppContent />
+        </BisonrelayLiveProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }
 

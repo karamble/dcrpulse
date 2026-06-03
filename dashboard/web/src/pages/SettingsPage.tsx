@@ -8,6 +8,7 @@ const tabs = [
   { path: 'wallet', label: 'Wallet' },
   { path: 'privacy', label: 'Privacy & Security' },
   { path: 'logs', label: 'Logs' },
+  { path: 'themes', label: 'Themes' },
   { path: 'about', label: 'About' },
 ];
 

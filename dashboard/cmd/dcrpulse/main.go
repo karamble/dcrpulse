@@ -270,6 +270,8 @@ func main() {
 		middleware.RateLimit("discover-addresses", 30*time.Second, 1)(
 			http.HandlerFunc(handlers.DiscoverAddressesHandler))).Methods("POST")
 	api.HandleFunc("/wallet/settings/logs", handlers.GetLogsHandler).Methods("GET")
+	api.HandleFunc("/themes", handlers.GetThemesHandler).Methods("GET")
+	api.HandleFunc("/themes", handlers.SaveThemesHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/agendas", handlers.GetAgendasHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/agendas/set", handlers.SetAgendaChoiceHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/treasury/keys", handlers.GetTreasuryKeyPoliciesHandler).Methods("GET")

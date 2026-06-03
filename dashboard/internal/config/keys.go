@@ -27,6 +27,12 @@ const (
 	// Global config keys (live in /dashboard-data/config.json).
 	KeyAllowedExternalRequests = "allowed_external_requests"
 
+	// KeyThemeStore holds the active theme selection plus any user-created
+	// themes ({"schema":1,"activeThemeId":...,"customThemes":[...]}). Shipped
+	// themes live in the frontend bundle, so only the active selection and
+	// custom themes are persisted here.
+	KeyThemeStore = "theme_store"
+
 	// KeySelectedWallet records the active wallet's name across restarts.
 	// Empty or absent means no wallet is selected (the UI shows the wallet
 	// list). dcrwallet serves one wallet per process, so the active wallet is

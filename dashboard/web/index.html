@@ -7,6 +7,33 @@
     <meta name="description" content="Modern dashboard for monitoring Decred nodes and wallets" />
   </head>
   <body>
+    <script>
+      // Apply the cached active theme's colors before the app mounts so a
+      // non-default theme does not flash the default first. Colors are the
+      // only FOUC-visible tokens; ThemeProvider applies the rest on mount.
+      // Variable names must stay in sync with src/services/themes/apply.ts.
+      (function () {
+        try {
+          var t = JSON.parse(localStorage.getItem('dcrpulse.theme.active') || 'null');
+          if (!t || !t.colors) return;
+          var c = t.colors;
+          var r = document.documentElement;
+          var m = {
+            '--background': c.background, '--foreground': c.foreground,
+            '--card': c.card, '--card-foreground': c.cardForeground,
+            '--primary': c.primary, '--primary-foreground': c.primaryForeground,
+            '--secondary': c.secondary, '--secondary-foreground': c.secondaryForeground,
+            '--success': c.success, '--success-foreground': c.successForeground,
+            '--destructive': c.destructive, '--destructive-foreground': c.destructiveForeground,
+            '--warning': c.warning, '--warning-foreground': c.warningForeground,
+            '--muted': c.muted, '--muted-foreground': c.mutedForeground,
+            '--border': c.border
+          };
+          for (var k in m) if (m[k]) r.style.setProperty(k, m[k]);
+          if (t.appearance) r.style.colorScheme = t.appearance;
+        } catch (e) {}
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
