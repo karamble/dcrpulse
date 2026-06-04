@@ -20,7 +20,7 @@ import {
   type DexWalletPeer,
 } from '../../services/dcrdexApi';
 import type { DexRates } from '../../services/dcrdexApi';
-import { fmtAmt, fmtUsd, usdRateFor } from './dexFormat';
+import { fmtAmt, fmtAmtParts, fmtUsd, usdRateFor } from './dexFormat';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
 import { CoinIcon } from './CoinIcon';
 import { DexWalletSend } from './DexWalletSend';
@@ -34,7 +34,7 @@ const Card = ({ title, children }: { title: string; children: React.ReactNode })
 );
 
 const BalRow = ({ label, value, symbol }: { label: string; value: number; symbol: string }) => (
-  <div className="flex items-center justify-between text-xs">
+  <div className="flex items-center justify-between text-sm">
     <span className="text-muted-foreground">{label}</span>
     <span className="font-mono tabular-nums">
       {fmtAmt(value, 8)} <span className="text-muted-foreground">{symbol}</span>
@@ -234,11 +234,20 @@ export const DexWalletDetail = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <Card title="Balance">
-          <div className="text-xl font-mono tabular-nums">
-            {fmtAmt(wallet.available, 8)} <span className="text-sm text-muted-foreground">{wallet.symbol}</span>
+          <div className="text-3xl font-semibold font-mono tabular-nums">
+            {(() => {
+              const parts = fmtAmtParts(wallet.available);
+              return (
+                <>
+                  {parts.integer}.{parts.mainDecimals}
+                  <span className="text-lg opacity-60">{parts.extraDecimals}</span>
+                  <span className="text-base text-muted-foreground"> {wallet.symbol}</span>
+                </>
+              );
+            })()}
           </div>
           {usdRateFor(wallet.symbol, rates) > 0 && (
-            <div className="text-xs text-muted-foreground">{fmtUsd(wallet.available * usdRateFor(wallet.symbol, rates))}</div>
+            <div className="text-sm text-muted-foreground">{fmtUsd(wallet.available * usdRateFor(wallet.symbol, rates))}</div>
           )}
           <div className="space-y-1 pt-1 border-t border-border/40">
             <BalRow label="Locked" value={wallet.locked} symbol={wallet.symbol} />
@@ -252,7 +261,7 @@ export const DexWalletDetail = ({
           {addr ? (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <code className="text-xs font-mono break-all flex-1">{addr}</code>
+                <code className="text-sm font-mono break-all flex-1">{addr}</code>
                 <button type="button" onClick={copyAddr} title="Copy" className="p-1.5 rounded-md hover:bg-background/60 shrink-0">
                   {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
                 </button>

@@ -17,6 +17,21 @@ export const fmtPrice = (rate: number, quote: string): string =>
 export const fmtAmt = (qty: number, max = 4): string =>
   qty.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: max });
 
+// fmtAmtParts splits an amount for the big-balance style used on the wallet
+// page: integer + first two decimals render large, the remaining precision
+// renders smaller and faded.
+export const fmtAmtParts = (
+  qty: number,
+  decimals = 8,
+): { integer: string; mainDecimals: string; extraDecimals: string } => {
+  const [integerPart, decimalPart] = qty.toFixed(decimals).split('.');
+  return {
+    integer: parseInt(integerPart, 10).toLocaleString('en-US'),
+    mainDecimals: decimalPart.substring(0, 2),
+    extraDecimals: decimalPart.substring(2),
+  };
+};
+
 export const fmtPct = (pct: number): string => `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
 export const fmtUsd = (v: number): string =>
