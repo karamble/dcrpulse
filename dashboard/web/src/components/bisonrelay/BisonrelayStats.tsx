@@ -12,6 +12,7 @@ import {
   Camera,
   CheckCircle2,
   Coins,
+  Download,
   FileText,
   Heart,
   Hash,
@@ -21,6 +22,7 @@ import {
   MessageSquare,
   Network,
   Radio,
+  RotateCw,
   Server,
   Shield,
   Signal,
@@ -32,6 +34,7 @@ import {
 } from 'lucide-react';
 import {
   BisonrelayAuthoredPostStats,
+  BisonrelayBackupStatus,
   BisonrelayPayStatsBreakdown,
   BisonrelayPayStatsUser,
   BisonrelayQuantile,
@@ -40,12 +43,15 @@ import {
   BisonrelayStatsOverview,
   BisonrelayStatsPayments,
   BisonrelayStatsPosts,
+  getBisonrelayBackupStatus,
   getBisonrelayIdentity,
   getBisonrelayStatsContacts,
   getBisonrelayStatsNetwork,
   getBisonrelayStatsOverview,
   getBisonrelayStatsPayments,
   getBisonrelayStatsPosts,
+  prepareBisonrelayBackup,
+  resetAllBisonrelaySessions,
   setBisonrelayAvatar,
 } from '../../services/bisonrelayApi';
 import { avatarDataUrl } from './bisonrelayAvatar';
@@ -139,13 +145,19 @@ const usePolledStats = <T,>(loader: () => Promise<T>): {
 } => {
   const [data, setData] = useState<T | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const dataRef = useRef<T | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const d = await loader();
+      dataRef.current = d;
       setData(d);
       setErr(null);
     } catch (e: any) {
+      // Keep showing the last data when a refresh fails; brclientd is
+      // expected to be unresponsive while a backup holds the clientdb
+      // lock. Only a failed initial load surfaces the error banner.
+      if (dataRef.current !== null) return;
       const body = e?.response?.data;
       setErr(typeof body === 'string' ? body : e?.message || 'Could not load stats');
     }
@@ -407,6 +419,253 @@ const SectionCard = ({
     {children}
   </div>
 );
+
+// BackupCard drives the full-state backup download. brclientd needs a minute
+// or more to build the tarball before any bytes flow, so the file is prepared
+// server-side in a detached job: the card polls the job status (the job
+// survives navigation), pushes the browser download automatically when the
+// preparation it observed completes, and keeps the prepared file
+// re-downloadable until the next prepare or a dashboard restart.
+const backupBtnCls =
+  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/30 border border-border text-foreground text-xs font-semibold transition-colors hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed';
+
+const BackupCard = () => {
+  const [status, setStatus] = useState<BisonrelayBackupStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const aliveRef = useRef(true);
+  const pollRef = useRef<number | null>(null);
+  const prevStateRef = useRef<string | null>(null);
+  const autoPushedRef = useRef(false);
+
+  const stopPolling = () => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const pushDownload = () => {
+    const a = document.createElement('a');
+    a.href = '/api/br/backup';
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const applyStatus = useCallback((s: BisonrelayBackupStatus) => {
+    if (!aliveRef.current) return;
+    // Push the download only when this mount observed the preparation
+    // complete; returning to an already-ready card must not re-download.
+    if (s.state === 'ready' && prevStateRef.current === 'preparing' && !autoPushedRef.current) {
+      autoPushedRef.current = true;
+      pushDownload();
+    }
+    prevStateRef.current = s.state;
+    setStatus(s);
+    if (s.state !== 'preparing') stopPolling();
+  }, []);
+
+  const startPolling = useCallback(() => {
+    if (pollRef.current !== null) return;
+    pollRef.current = window.setInterval(async () => {
+      try {
+        applyStatus(await getBisonrelayBackupStatus());
+      } catch {
+        // Transient poll errors keep the current state; the next tick retries.
+      }
+    }, 2000);
+  }, [applyStatus]);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    getBisonrelayBackupStatus()
+      .then((s) => {
+        if (!aliveRef.current) return;
+        prevStateRef.current = s.state;
+        setStatus(s);
+        if (s.state === 'preparing') startPolling();
+      })
+      .catch(() => {});
+    return () => {
+      aliveRef.current = false;
+      stopPolling();
+    };
+  }, [startPolling]);
+
+  // Local tick so the user sees the preparation advancing between polls.
+  useEffect(() => {
+    if (status?.state !== 'preparing' || !status.startedAt) {
+      setElapsed(0);
+      return;
+    }
+    const start = status.startedAt * 1000;
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [status?.state, status?.startedAt]);
+
+  const onPrepare = async () => {
+    if (busy) return;
+    setBusy(true);
+    autoPushedRef.current = false;
+    try {
+      applyStatus(await prepareBisonrelayBackup());
+      startPolling();
+    } catch (err: any) {
+      const body = err?.response?.data;
+      applyStatus({
+        state: 'error',
+        error: typeof body === 'string' ? body : err?.message || 'Backup preparation failed',
+      });
+    } finally {
+      if (aliveRef.current) setBusy(false);
+    }
+  };
+
+  const state = status?.state ?? 'idle';
+
+  return (
+    <SectionCard
+      title="Backup"
+      icon={Download}
+      action={
+        state === 'preparing' ? (
+          <button type="button" disabled className={backupBtnCls}>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Preparing... {elapsed}s
+          </button>
+        ) : state === 'ready' ? (
+          <a href="/api/br/backup" download className={backupBtnCls}>
+            <Download className="h-3.5 w-3.5" />
+            Save backup file
+          </a>
+        ) : (
+          <button type="button" onClick={onPrepare} disabled={busy} className={backupBtnCls}>
+            <Download className="h-3.5 w-3.5" />
+            {state === 'error' ? 'Try again' : 'Download backup'}
+          </button>
+        )
+      }
+    >
+      <p className="text-xs text-muted-foreground">
+        Downloads a consistent snapshot of the full Bison Relay state:
+        identity, contacts, message history, posts and shared files. Restore
+        it from the setup wizard on a fresh node. Sessions with contacts you
+        message after taking the backup are re-keyed automatically on
+        restore, so back up regularly to keep restores seamless.
+      </p>
+      {state === 'preparing' && (
+        <div className="flex items-start gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0 mt-0.5" />
+          <span>
+            Preparing the backup on the server - this can take a minute or
+            two depending on the size of your message history and files. You
+            can leave this page; the backup will be available here when it
+            is ready.
+          </span>
+        </div>
+      )}
+      {state === 'ready' && (
+        <div className="flex items-start gap-2 text-xs">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+          <span className="text-muted-foreground">
+            Backup ready ({formatBytes(status?.size || 0)}) - kept here until
+            the next backup or a dashboard restart.{' '}
+            <button
+              type="button"
+              onClick={onPrepare}
+              disabled={busy}
+              className="underline hover:text-foreground"
+            >
+              Prepare a fresh backup
+            </button>
+          </span>
+        </div>
+      )}
+      {state === 'error' && status?.error && (
+        <div className="flex items-start gap-2 text-xs text-destructive">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span className="break-all">{status.error}</span>
+        </div>
+      )}
+    </SectionCard>
+  );
+};
+
+// SessionsCard initiates a KX (ratchet) reset with all contacts. Needed when
+// the local key state diverged from what the network last saw - typically
+// after restoring a backup older than the node's last session. Initiation
+// only: each reset completes in the background whenever that contact comes
+// online; no state is tracked here.
+const SessionsCard = () => {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onResetAll = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    setResult(null);
+    try {
+      const res = await resetAllBisonrelaySessions();
+      setResult(
+        `KX reset initiated with ${res.count} contact${res.count === 1 ? '' : 's'}. ` +
+          'Each reset completes in the background once that contact comes online.',
+      );
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Reset failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      title="Sessions"
+      icon={RotateCw}
+      action={
+        <button
+          type="button"
+          onClick={onResetAll}
+          disabled={busy}
+          className={backupBtnCls}
+        >
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RotateCw className="h-3.5 w-3.5" />
+          )}
+          {busy ? 'Resetting...' : 'Reset all sessions'}
+        </button>
+      }
+    >
+      <p className="text-xs text-muted-foreground">
+        Re-keys the end-to-end encrypted session with contacts that have been
+        quiet for a long time. After restoring a backup this happens
+        automatically; use it manually if messages with some contacts stop
+        flowing in either direction. Individual contacts can be reset from
+        their profile menu instead.
+      </p>
+      {result && (
+        <div className="flex items-start gap-2 text-xs">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+          <span className="text-muted-foreground">{result}</span>
+        </div>
+      )}
+      {err && (
+        <div className="flex items-start gap-2 text-xs text-destructive">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span className="break-all">{err}</span>
+        </div>
+      )}
+    </SectionCard>
+  );
+};
 
 // AvatarControl renders the local user's avatar in the identity strip and lets
 // them upload/replace or clear it. The avatar lives on the BR identity (not the
@@ -686,6 +945,9 @@ const OverviewView = () => {
           </div>
         </SectionCard>
       </div>
+
+      <BackupCard />
+      <SessionsCard />
     </div>
   );
 };

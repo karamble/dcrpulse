@@ -11,6 +11,7 @@ import {
   Circle,
   Copy,
   HelpCircle,
+  Info,
   Loader2,
   XCircle,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import {
   BisonrelayStage,
   BisonrelayStatus,
   getBisonrelayStatus,
+  restoreBisonrelayBackup,
   setupBisonrelay,
 } from '../../services/bisonrelayApi';
 import {
@@ -64,6 +66,10 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
   const [fullName, setFullName] = useState('');
   const [submitErr, setSubmitErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreStaged, setRestoreStaged] = useState(false);
+  const [restoreErr, setRestoreErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!disclaimerAccepted) return;
@@ -128,6 +134,23 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
     }
   };
 
+  const handleRestore = async () => {
+    if (!restoreFile || restoring) return;
+    setRestoring(true);
+    setRestoreErr(null);
+    try {
+      await restoreBisonrelayBackup(restoreFile);
+      // brclientd stages the tarball and restarts to extract it; the
+      // status polling above picks the daemon back up automatically.
+      setRestoreStaged(true);
+    } catch (err: any) {
+      const body = err?.response?.data;
+      setRestoreErr(typeof body === 'string' ? body : err?.message || 'Restore failed');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   const steps = useMemo<Step[]>(
     () => deriveSteps(status, lnStatus, lnChannels),
     [status, lnStatus, lnChannels],
@@ -161,7 +184,7 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
           </p>
         </div>
 
-        {statusErr && (
+        {statusErr && !restoreStaged && (
           <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
             <div className="text-xs text-foreground/80">
@@ -184,16 +207,35 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
           ))}
         </ol>
 
-        {currentStep?.id === 'br-identity' && graphSynced && (
-          <IdentityForm
-            nick={nick}
-            fullName={fullName}
-            submitting={submitting}
-            submitErr={submitErr}
-            onNickChange={setNick}
-            onNameChange={setFullName}
-            onSubmit={handleSubmit}
-          />
+        {currentStep?.id === 'br-identity' && graphSynced && !restoreStaged && (
+          <>
+            <IdentityForm
+              nick={nick}
+              fullName={fullName}
+              submitting={submitting}
+              submitErr={submitErr}
+              onNickChange={setNick}
+              onNameChange={setFullName}
+              onSubmit={handleSubmit}
+            />
+            <RestoreBackupForm
+              file={restoreFile}
+              restoring={restoring}
+              error={restoreErr}
+              onFileChange={setRestoreFile}
+              onRestore={handleRestore}
+            />
+          </>
+        )}
+
+        {restoreStaged && (
+          <div className="rounded-lg bg-muted/20 border border-border/30 p-3 flex items-start gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0 mt-0.5" />
+            <p className="text-xs text-muted-foreground">
+              Backup uploaded. brclientd is restarting with the restored
+              state; the wizard continues automatically once it is back.
+            </p>
+          </div>
         )}
 
         {currentStep?.id === 'ln-unlock' && (
@@ -383,6 +425,80 @@ const IdentityForm = ({
       </button>
     </div>
   </form>
+);
+
+interface RestoreBackupFormProps {
+  file: File | null;
+  restoring: boolean;
+  error: string | null;
+  onFileChange: (f: File | null) => void;
+  onRestore: () => void;
+}
+
+const RestoreBackupForm = ({
+  file,
+  restoring,
+  error,
+  onFileChange,
+  onRestore,
+}: RestoreBackupFormProps) => (
+  <div className="space-y-3 pt-3 border-t border-border/50">
+    <div>
+      <p className="text-sm font-medium">Restore from backup</p>
+      <p className="text-xs text-muted-foreground mt-1">
+        Already have a Bison Relay backup? Upload the .tar.gz to restore
+        your identity, contacts and message history instead of creating a
+        new identity. After the restore the node automatically re-keys the
+        encrypted session with every contact once it reconnects, so
+        messaging resumes even from an older snapshot.
+      </p>
+    </div>
+    <div className="rounded-lg bg-muted/20 border border-border/30 p-3 flex items-start gap-2">
+      <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+      <div className="text-xs text-muted-foreground space-y-1.5">
+        <p>
+          Only the Bison Relay state is restored: identity, contacts,
+          message history, posts and shared files. A Lightning wallet
+          contained in the backup is NOT restored; Bison Relay payments
+          will use this node's Lightning wallet instead.
+        </p>
+        <p>
+          Backups made by other Bison Relay clients (bruig, brclient) do
+          not include chat history - those clients keep their logs outside
+          the backup. Identity and contacts still restore fully.
+        </p>
+        <p>
+          Stop using the client the backup was taken from before
+          restoring. The same identity must never run in two clients at
+          once; doing so corrupts the encrypted sessions with your
+          contacts.
+        </p>
+      </div>
+    </div>
+    <input
+      type="file"
+      accept=".gz,application/gzip"
+      disabled={restoring}
+      onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+      className="block w-full text-xs text-muted-foreground file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-muted/30 file:text-foreground file:text-xs file:cursor-pointer"
+    />
+    {error && (
+      <div className="flex items-start gap-2 text-sm text-destructive">
+        <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+        <span>{error}</span>
+      </div>
+    )}
+    <div className="flex justify-end">
+      <button
+        type="button"
+        disabled={!file || restoring}
+        onClick={onRestore}
+        className="px-4 py-2 rounded-lg bg-muted/30 border border-border text-foreground font-semibold text-sm transition-colors hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {restoring ? 'Uploading…' : 'Restore backup'}
+      </button>
+    </div>
+  </div>
 );
 
 // findHubPendingChannel returns the user-initiated pending-open channel to

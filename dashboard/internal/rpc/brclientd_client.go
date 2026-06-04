@@ -41,7 +41,14 @@ var (
 	BrclientdCfg BrclientdConfig
 
 	brclientdHTTPClient *http.Client
-	brclientdClientMu   sync.Mutex
+	// brclientdStreamHTTPClient has no overall timeout; backup tarballs can
+	// take far longer than 90s to transfer.
+	brclientdStreamHTTPClient *http.Client
+	// brclientdBackupHTTPClient additionally stretches the response-header
+	// deadline: brclientd builds the entire backup tarball before sending
+	// headers, which can exceed the stream client's 60s on multi-GB states.
+	brclientdBackupHTTPClient *http.Client
+	brclientdClientMu         sync.Mutex
 )
 
 // InitBrclientdConfig records the brclientd clientrpc connection settings.
@@ -52,6 +59,8 @@ func InitBrclientdConfig(cfg BrclientdConfig) {
 	defer brclientdClientMu.Unlock()
 	BrclientdCfg = cfg
 	brclientdHTTPClient = nil
+	brclientdStreamHTTPClient = nil
+	brclientdBackupHTTPClient = nil
 }
 
 // UpdateBrclientdCerts repoints brclientd at a different wallet's identity certs
@@ -63,6 +72,8 @@ func UpdateBrclientdCerts(serverCertPath, clientCertPath, clientKeyPath string) 
 	BrclientdCfg.ClientCertPath = clientCertPath
 	BrclientdCfg.ClientKeyPath = clientKeyPath
 	brclientdHTTPClient = nil
+	brclientdStreamHTTPClient = nil
+	brclientdBackupHTTPClient = nil
 }
 
 // BrclientdVersionResult is the wire shape returned by VersionService.Version.
@@ -328,6 +339,15 @@ func BrclientdKXReset(ctx context.Context, uidHex string) error {
 	return brclientdPostJSON(ctx, "/contacts/kx-reset", map[string]string{"uid": uidHex})
 }
 
+// BrclientdResetAllRatchets initiates a ratchet reset with every contact
+// whose last received message is older than ageDays (0 = brclientd's
+// default). Wraps brclientd's /contacts/reset-all; returns its
+// {started, count} JSON. Initiation only - the resets complete in the
+// background whenever each peer comes online.
+func BrclientdResetAllRatchets(ctx context.Context, ageDays int) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/contacts/reset-all", map[string]int{"age_days": ageDays})
+}
+
 // BrclientdHandshake starts a 3-way handshake with the specified contact.
 // Wraps brclientd's /contacts/handshake which calls client.Handshake.
 func BrclientdHandshake(ctx context.Context, uidHex string) error {
@@ -573,6 +593,60 @@ func BrclientdContentFile(ctx context.Context, uidHex, fidHex string) (*http.Res
 		return nil, fmt.Errorf("brclientd /content/file: %w", err)
 	}
 	return resp, nil
+}
+
+// BrclientdBackup opens a streaming GET against brclientd's /backup status
+// endpoint, which serves a full-state tarball produced by BR's client.Backup
+// (consistent snapshot under a clientdb read transaction). The caller owns
+// resp.Body and must close it, and should bound total time via ctx.
+func BrclientdBackup(ctx context.Context) (*http.Response, error) {
+	cli, err := brclientdBackupClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/backup", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /backup: %w", err)
+	}
+	return resp, nil
+}
+
+// BrclientdRestoreBackup streams a backup tarball to brclientd's pre-setup
+// /restore-backup endpoint (same port as /create-identity, served only while
+// the daemon is in the needs-identity stage). On HTTP 204 the daemon stages
+// the tarball and restarts to extract it.
+func BrclientdRestoreBackup(ctx context.Context, body io.Reader) error {
+	cli, err := brclientdStreamClient()
+	if err != nil {
+		return err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.Port == "" {
+		return errors.New("brclientd: host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/restore-backup", BrclientdCfg.Host, BrclientdCfg.Port)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/gzip")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return fmt.Errorf("brclientd /restore-backup: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("brclientd /restore-backup: HTTP %d: %s", resp.StatusCode, respBody)
+	}
+	return nil
 }
 
 // BrclientdRates returns the current exchange rates as {dcr_usd, btc_usd,
@@ -1340,6 +1414,53 @@ func brclientdClient() (*http.Client, error) {
 		Timeout: 90 * time.Second,
 	}
 	return brclientdHTTPClient, nil
+}
+
+// brclientdStreamClient is the variant for transfers whose body can outlast
+// the 90s ceiling of the shared client (backup tarballs). Only the response
+// headers are deadlined; the body streams for as long as it takes.
+func brclientdStreamClient() (*http.Client, error) {
+	brclientdClientMu.Lock()
+	defer brclientdClientMu.Unlock()
+	if brclientdStreamHTTPClient != nil {
+		return brclientdStreamHTTPClient, nil
+	}
+	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
+	if err != nil {
+		log.Printf("brclientd certs not yet available: %v (will retry on next call)", err)
+		return nil, err
+	}
+	brclientdStreamHTTPClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig:       tlsCfg,
+			ResponseHeaderTimeout: 60 * time.Second,
+		},
+	}
+	return brclientdStreamHTTPClient, nil
+}
+
+// brclientdBackupClient is the variant for /backup: brclientd builds the
+// complete tarball before sending response headers, so the header deadline
+// must cover the whole build (up to 5 GiB of state), not just a roundtrip.
+// Callers bound total time through the request context instead.
+func brclientdBackupClient() (*http.Client, error) {
+	brclientdClientMu.Lock()
+	defer brclientdClientMu.Unlock()
+	if brclientdBackupHTTPClient != nil {
+		return brclientdBackupHTTPClient, nil
+	}
+	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
+	if err != nil {
+		log.Printf("brclientd certs not yet available: %v (will retry on next call)", err)
+		return nil, err
+	}
+	brclientdBackupHTTPClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig:       tlsCfg,
+			ResponseHeaderTimeout: 15 * time.Minute,
+		},
+	}
+	return brclientdBackupHTTPClient, nil
 }
 
 // BrclientdWSDialer returns a gorilla-websocket-compatible dialer plus the

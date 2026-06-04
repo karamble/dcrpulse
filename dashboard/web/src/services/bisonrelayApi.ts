@@ -43,6 +43,63 @@ export const setupBisonrelay = async (nick: string, name: string): Promise<void>
   await api.post('/br/setup', { nick, name });
 };
 
+// restoreBisonrelayBackup uploads a full-state backup tarball during the
+// needs-identity setup stage. brclientd stages it and restarts to extract,
+// so callers should resume via status polling after the 204. Sent as
+// multipart: raw bodies are capped at 1 MiB by the backend's body-limit
+// middleware, which exempts multipart so upload handlers set their own cap.
+export const restoreBisonrelayBackup = async (file: File): Promise<void> => {
+  const form = new FormData();
+  form.append('file', file);
+  await api.post('/br/backup/restore', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 600000,
+  });
+};
+
+export type BisonrelayBackupState = 'idle' | 'preparing' | 'ready' | 'error';
+
+export interface BisonrelayBackupStatus {
+  state: BisonrelayBackupState;
+  error?: string;
+  filename?: string;
+  size?: number;
+  startedAt?: number; // unix seconds
+  readyAt?: number; // unix seconds
+}
+
+export const getBisonrelayBackupStatus = async (): Promise<BisonrelayBackupStatus> => {
+  const { data } = await api.get<BisonrelayBackupStatus>('/br/backup/status');
+  return data;
+};
+
+// prepareBisonrelayBackup starts (or joins) the detached server-side backup
+// preparation and returns the slot status immediately; progress is observed
+// via getBisonrelayBackupStatus polling and the file is fetched from
+// /api/br/backup once ready.
+export const prepareBisonrelayBackup = async (): Promise<BisonrelayBackupStatus> => {
+  const { data } = await api.post<BisonrelayBackupStatus>('/br/backup/prepare');
+  return data;
+};
+
+export interface BisonrelayResetAllResult {
+  started: string[];
+  count: number;
+}
+
+// resetAllBisonrelaySessions initiates a KX (ratchet) reset with every
+// contact whose last received message is older than ageDays (0 = backend
+// default). Initiation only: resets complete in the background whenever
+// each peer comes online.
+export const resetAllBisonrelaySessions = async (
+  ageDays = 0,
+): Promise<BisonrelayResetAllResult> => {
+  const { data } = await api.post<BisonrelayResetAllResult>('/br/contacts/reset-all', {
+    age_days: ageDays,
+  });
+  return data;
+};
+
 export interface BisonrelayContact {
   id?: {
     nick?: string;

@@ -8,15 +8,18 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -316,6 +319,27 @@ func BisonrelayContactKXResetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContactResetAllHandler proxies brclientd's /contacts/reset-all,
+// which initiates a ratchet reset with every contact whose last received
+// message is older than age_days (0 = brclientd's default). Passes the
+// {started, count} JSON through so the UI can report how many resets were
+// initiated.
+func BisonrelayContactResetAllHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AgeDays int `json:"age_days"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	raw, err := rpc.BrclientdResetAllRatchets(r.Context(), req.AgeDays)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
 }
 
 // BisonrelayContactHandshakeHandler proxies brclientd's /contacts/handshake.
@@ -1181,6 +1205,230 @@ func BisonrelayContentFileHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	_, _ = io.Copy(w, resp.Body)
+}
+
+// Single-slot prepared-backup state. brclientd builds the entire backup
+// tarball before sending response headers, so the dashboard prepares the
+// download in a detached job and serves it from a local temp file once
+// ready; the browser polls instead of hanging on a silent request.
+var (
+	brBackupMu        sync.Mutex
+	brBackupState     string // "" (idle) | "preparing" | "ready" | "error"
+	brBackupErr       string
+	brBackupPath      string
+	brBackupFilename  string
+	brBackupCType     string
+	brBackupSize      int64
+	brBackupStartedAt time.Time
+	brBackupReadyAt   time.Time
+	// brBackupGen invalidates a prepare superseded by a newer one; only the
+	// goroutine whose generation is still current may publish its result.
+	brBackupGen int64
+)
+
+type brBackupStatus struct {
+	State     string `json:"state"`
+	Error     string `json:"error,omitempty"`
+	Filename  string `json:"filename,omitempty"`
+	Size      int64  `json:"size,omitempty"`
+	StartedAt int64  `json:"startedAt,omitempty"`
+	ReadyAt   int64  `json:"readyAt,omitempty"`
+}
+
+// brBackupStatusLocked snapshots the slot; callers must hold brBackupMu.
+func brBackupStatusLocked() brBackupStatus {
+	st := brBackupStatus{
+		State:    brBackupState,
+		Error:    brBackupErr,
+		Filename: brBackupFilename,
+		Size:     brBackupSize,
+	}
+	if st.State == "" {
+		st.State = "idle"
+	}
+	if !brBackupStartedAt.IsZero() {
+		st.StartedAt = brBackupStartedAt.Unix()
+	}
+	if !brBackupReadyAt.IsZero() {
+		st.ReadyAt = brBackupReadyAt.Unix()
+	}
+	return st
+}
+
+// BisonrelayBackupPrepareHandler starts (or joins) a detached backup
+// preparation job and immediately returns the slot status. The job outlives
+// the request, so the browser may leave the page and poll later.
+func BisonrelayBackupPrepareHandler(w http.ResponseWriter, r *http.Request) {
+	brBackupMu.Lock()
+	if brBackupState != "preparing" {
+		brBackupState = "preparing"
+		brBackupErr = ""
+		brBackupStartedAt = time.Now()
+		brBackupGen++
+		go runBrBackupPrepare(brBackupGen, brBackupPath)
+	}
+	st := brBackupStatusLocked()
+	brBackupMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(st)
+}
+
+// BisonrelayBackupStatusHandler reports the prepared-backup slot so the UI
+// can poll a running preparation and resume after navigation.
+func BisonrelayBackupStatusHandler(w http.ResponseWriter, r *http.Request) {
+	brBackupMu.Lock()
+	st := brBackupStatusLocked()
+	brBackupMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(st)
+}
+
+// runBrBackupPrepare fetches the tarball from brclientd's /backup and spools
+// it to a temp file. Detached from the originating request so navigation
+// does not abort it; the context bounds a stalled stream so the slot cannot
+// stay "preparing" forever.
+func runBrBackupPrepare(gen int64, oldPath string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	// Reap temp files orphaned by a previous dashboard process. The current
+	// ready file is excluded: it stays serveable until the new one lands.
+	if matches, err := filepath.Glob(filepath.Join(os.TempDir(), "br-backup-*.tar.gz")); err == nil {
+		for _, m := range matches {
+			if m != oldPath {
+				_ = os.Remove(m)
+			}
+		}
+	}
+
+	resp, err := rpc.BrclientdBackup(ctx)
+	if err != nil {
+		failBrBackup(gen, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		failBrBackup(gen, fmt.Sprintf("brclientd /backup: HTTP %d: %s",
+			resp.StatusCode, strings.TrimSpace(string(body))))
+		return
+	}
+
+	filename := "bisonrelay-backup.tar.gz"
+	if _, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition")); err == nil {
+		if fn := filepath.Base(params["filename"]); fn != "" && fn != "." {
+			filename = fn
+		}
+	}
+	filename = strings.NewReplacer("\r", "", "\n", "", `"`, "").Replace(filename)
+	ctype := resp.Header.Get("Content-Type")
+	if ctype == "" {
+		ctype = "application/gzip"
+	}
+
+	tmp, err := os.CreateTemp("", "br-backup-*.tar.gz")
+	if err != nil {
+		failBrBackup(gen, "create temp file: "+err.Error())
+		return
+	}
+	n, err := io.Copy(tmp, resp.Body)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	// A short read must not publish a silently truncated backup; any
+	// mismatch with the advertised length is a failure.
+	if err == nil && resp.ContentLength > 0 && n != resp.ContentLength {
+		err = fmt.Errorf("incomplete transfer: got %d of %d bytes", n, resp.ContentLength)
+	}
+	if err != nil {
+		_ = os.Remove(tmp.Name())
+		failBrBackup(gen, "spool backup: "+err.Error())
+		return
+	}
+
+	brBackupMu.Lock()
+	if gen != brBackupGen {
+		brBackupMu.Unlock()
+		_ = os.Remove(tmp.Name())
+		return
+	}
+	brBackupState = "ready"
+	brBackupErr = ""
+	brBackupPath = tmp.Name()
+	brBackupFilename = filename
+	brBackupCType = ctype
+	brBackupSize = n
+	brBackupReadyAt = time.Now()
+	brBackupMu.Unlock()
+	// In-flight readers of the old file keep their open fd; only the
+	// name is unlinked.
+	if oldPath != "" && oldPath != tmp.Name() {
+		_ = os.Remove(oldPath)
+	}
+}
+
+func failBrBackup(gen int64, msg string) {
+	log.Printf("BR backup prepare failed: %s", msg)
+	brBackupMu.Lock()
+	if gen == brBackupGen {
+		brBackupState = "error"
+		brBackupErr = msg
+	}
+	brBackupMu.Unlock()
+}
+
+// BisonrelayBackupHandler serves the prepared backup tarball as an
+// attachment. The file is opened while holding the slot lock so a
+// concurrent re-prepare cannot unlink the name between the ready check and
+// the open; once open, the fd keeps serving even if the file is replaced
+// mid-transfer. ServeContent supplies Content-Length and range support for
+// resumable multi-GB downloads.
+func BisonrelayBackupHandler(w http.ResponseWriter, r *http.Request) {
+	brBackupMu.Lock()
+	if brBackupState != "ready" {
+		brBackupMu.Unlock()
+		http.Error(w, "no backup prepared", http.StatusConflict)
+		return
+	}
+	f, err := os.Open(brBackupPath)
+	filename, ctype, modtime := brBackupFilename, brBackupCType, brBackupReadyAt
+	brBackupMu.Unlock()
+	if err != nil {
+		http.Error(w, "open backup: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	http.ServeContent(w, r, filename, modtime, f)
+}
+
+// BisonrelayRestoreBackupHandler streams an uploaded backup tarball through to
+// brclientd's pre-setup /restore-backup endpoint. Only valid while brclientd
+// is in the needs-identity stage; the daemon stages the tarball and restarts
+// to extract it, so the BR setup wizard resumes via status polling. The
+// upload arrives as multipart (exempt from the router-wide body cap) and its
+// first part is streamed through without buffering; the cap mirrors
+// brclientd's own restore limit.
+func BisonrelayRestoreBackupHandler(w http.ResponseWriter, r *http.Request) {
+	const maxUpload = 5 << 30
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
+	mr, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	part, err := mr.NextPart()
+	if err != nil {
+		http.Error(w, "read multipart: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer part.Close()
+	if err := rpc.BrclientdRestoreBackup(r.Context(), part); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // BisonrelayRatesHandler proxies brclientd's /rates (DCR/USD + BTC/USD, with
