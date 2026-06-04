@@ -17,6 +17,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
+import { useBrNotifPrefs } from './brNotifPrefs';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import {
   BisonrelayEditor,
@@ -299,6 +300,9 @@ const PostsListView = ({
   emptyHint: string;
 }) => {
   const filtered = posts ? (filter ? posts.filter(filter) : posts) : null;
+  // The BR notification switches gate the new-activity dots only; the seen
+  // watermarks keep updating so re-enabling shows the true activity state.
+  const notifPrefs = useBrNotifPrefs();
 
   return (
     <div className="space-y-3">
@@ -323,7 +327,7 @@ const PostsListView = ({
               <FeedRow
                 key={key}
                 post={p}
-                hasActivity={hasNewActivity(p, seen[key])}
+                hasActivity={notifPrefs.feedPosts && hasNewActivity(p, seen[key])}
                 avatarB64={avatars[p.author_id]}
                 onOpen={() => navigateTo(`feed/post/${p.author_id}/${p.id}`)}
               />

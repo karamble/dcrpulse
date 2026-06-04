@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Wallet, Compass, Vote, Menu, X } from 'lucide-react';
 import { useBisonrelayLive } from './bisonrelay/BisonrelayLiveProvider';
+import { useBrNotifPrefs } from './bisonrelay/brNotifPrefs';
 
 interface HeaderProps {
   nodeVersion?: string;
@@ -24,13 +25,18 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
 
   // Unread Bison Relay messages, surfaced on the nav button so they are visible
   // from any tab. PMs show a numeric count; group-chat activity shows a dot.
+  // The BR notification switches gate the indicators only; the provider keeps
+  // counting, so re-enabling a switch shows the true unread state.
   const { totalUnread, totalGCUnread } = useBisonrelayLive();
-  const hasUnread = totalUnread > 0 || totalGCUnread > 0;
+  const notifPrefs = useBrNotifPrefs();
+  const shownUnread = notifPrefs.dms ? totalUnread : 0;
+  const shownGCUnread = notifPrefs.gcMessages ? totalGCUnread : 0;
+  const hasUnread = shownUnread > 0 || shownGCUnread > 0;
   const unreadLabelParts: string[] = [];
-  if (totalUnread > 0) {
-    unreadLabelParts.push(`${totalUnread} unread direct message${totalUnread === 1 ? '' : 's'}`);
+  if (shownUnread > 0) {
+    unreadLabelParts.push(`${shownUnread} unread direct message${shownUnread === 1 ? '' : 's'}`);
   }
-  if (totalGCUnread > 0) {
+  if (shownGCUnread > 0) {
     unreadLabelParts.push('unread group-chat activity');
   }
   const unreadLabel = unreadLabelParts.join(', ');
@@ -64,12 +70,12 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
 
   const brBadge = hasUnread ? (
     <span className="absolute -top-1 -right-1 flex items-center gap-0.5" aria-label={unreadLabel}>
-      {totalUnread > 0 && (
+      {shownUnread > 0 && (
         <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold ring-2 ring-background">
-          {totalUnread > 99 ? '99+' : totalUnread}
+          {shownUnread > 99 ? '99+' : shownUnread}
         </span>
       )}
-      {totalGCUnread > 0 && (
+      {shownGCUnread > 0 && (
         <span
           className="h-2 w-2 rounded-full bg-primary ring-2 ring-background"
           title="Unread group-chat messages"

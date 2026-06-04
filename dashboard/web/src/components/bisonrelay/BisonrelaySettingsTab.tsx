@@ -6,6 +6,7 @@ import { ComponentType, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ALargeSmall,
   AlertCircle,
+  Bell,
   Camera,
   CheckCircle2,
   Download,
@@ -57,12 +58,14 @@ import {
 } from './BisonrelayStats';
 import { avatarDataUrl } from './bisonrelayAvatar';
 import { BR_TEXT_SCALES, BrTextScale, setBrTextScale, useBrTextScale } from './brTextScale';
+import { setBrNotifPrefs, useBrNotifPrefs } from './brNotifPrefs';
 
 // ---- Section routing --------------------------------------------------------
 
 type SettingsSection =
   | 'account'
   | 'appearance'
+  | 'notifications'
   | 'sessions'
   | 'connection'
   | 'filters'
@@ -74,6 +77,7 @@ const readHashSection = (): SettingsSection => {
   if (!h.startsWith('settings')) return 'account';
   const rest = h.slice('settings'.length);
   if (rest === '/appearance') return 'appearance';
+  if (rest === '/notifications') return 'notifications';
   if (rest === '/sessions') return 'sessions';
   if (rest === '/connection') return 'connection';
   if (rest === '/filters') return 'filters';
@@ -315,6 +319,73 @@ const AppearanceCard = () => {
       <p className="text-xs text-muted-foreground">
         The quick brown fox jumps over the lazy dog. 0123456789
       </p>
+    </SectionCard>
+  );
+};
+
+// ---- Notifications ----------------------------------------------------------
+
+// Toggle mirrors the wallet Settings > Privacy & Security switch styling.
+const Toggle = ({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) => (
+  <div className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
+    <div>
+      <span className="font-medium block">{label}</span>
+      <span className="text-sm text-muted-foreground block">{description}</span>
+    </div>
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+        checked
+          ? 'bg-success/20 text-success hover:bg-success/30'
+          : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+      }`}
+    >
+      {checked ? 'On' : 'Off'}
+    </button>
+  </div>
+);
+
+const NotificationsCard = () => {
+  const prefs = useBrNotifPrefs();
+
+  return (
+    <SectionCard title="Notifications" icon={Bell}>
+      <p className="text-xs text-muted-foreground">
+        Controls the in-app notification indicators of the Bison Relay
+        section. Messages keep arriving either way - switching a type off
+        only hides its unread markers. Stored in this browser.
+      </p>
+      <div className="space-y-2">
+        <Toggle
+          label="Direct messages"
+          description="Show unread bubbles for private messages in the chat list and on the navigation badge."
+          checked={prefs.dms}
+          onChange={(v) => setBrNotifPrefs({ ...prefs, dms: v })}
+        />
+        <Toggle
+          label="Group chat messages"
+          description="Show unread bubbles for group chats in the chat list and the navigation dot."
+          checked={prefs.gcMessages}
+          onChange={(v) => setBrNotifPrefs({ ...prefs, gcMessages: v })}
+        />
+        <Toggle
+          label="Feed posts"
+          description="Mark posts with new activity in the feed."
+          checked={prefs.feedPosts}
+          onChange={(v) => setBrNotifPrefs({ ...prefs, feedPosts: v })}
+        />
+      </div>
     </SectionCard>
   );
 };
@@ -1083,6 +1154,7 @@ const sidebarItems: {
 }[] = [
   { id: 'account', label: 'Account', hash: 'settings', icon: User },
   { id: 'appearance', label: 'Appearance', hash: 'settings/appearance', icon: ALargeSmall },
+  { id: 'notifications', label: 'Notifications', hash: 'settings/notifications', icon: Bell },
   { id: 'sessions', label: 'Sessions', hash: 'settings/sessions', icon: RotateCw },
   { id: 'connection', label: 'Connection', hash: 'settings/connection', icon: Wifi },
   { id: 'filters', label: 'Filters', hash: 'settings/filters', icon: Filter },
@@ -1127,6 +1199,7 @@ export const BisonrelaySettingsTab = () => {
 
   const content = (() => {
     if (section === 'appearance') return <AppearanceCard />;
+    if (section === 'notifications') return <NotificationsCard />;
     if (section === 'sessions') {
       return (
         <>

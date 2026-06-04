@@ -39,6 +39,7 @@ import {
   writeBisonrelayInvite,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { useBrNotifPrefs } from './brNotifPrefs';
 import {
   DownloadSegment,
   EmbedSegment,
@@ -127,6 +128,9 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     setActiveGCID,
     addListener,
   } = useBisonrelayLive();
+  // The BR notification switches gate the unread indicators only; counting
+  // continues so re-enabling a switch shows the true unread state.
+  const notifPrefs = useBrNotifPrefs();
 
   useEffect(() => {
     localStorage.setItem('dcrpulse.br.sidebar.contacts-collapsed', contactsCollapsed ? '1' : '0');
@@ -823,7 +827,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 const isSel =
                   selectedContact?.id?.identity && c.id?.identity === selectedContact.id.identity;
                 const uid = c.id?.identity ?? '';
-                const count = uid ? unread[uid] ?? 0 : 0;
+                const count = uid && notifPrefs.dms ? unread[uid] ?? 0 : 0;
                 const ignored = !!c.ignored;
                 return (
                   <div
@@ -891,7 +895,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               {gcs.map((g) => {
                 const label = g.alias || g.name;
                 const isSel = selectedGroup?.id === g.id;
-                const count = gcUnread[g.id] ?? 0;
+                const count = notifPrefs.gcMessages ? gcUnread[g.id] ?? 0 : 0;
                 return (
                   <div
                     key={g.id}
