@@ -78,9 +78,10 @@ func UpdateBrclientdCerts(serverCertPath, clientCertPath, clientKeyPath string) 
 
 // BrclientdVersionResult is the wire shape returned by VersionService.Version.
 type BrclientdVersionResult struct {
-	AppName    string `json:"appName"`
-	AppVersion string `json:"appVersion"`
-	GoRuntime  string `json:"goRuntime"`
+	AppName         string `json:"appName"`
+	AppVersion      string `json:"appVersion"`
+	GoRuntime       string `json:"goRuntime"`
+	BRClientVersion string `json:"brClientVersion,omitempty"`
 }
 
 // BrclientdVersion reads brclientd's /version status endpoint and returns the
@@ -346,6 +347,48 @@ func BrclientdKXReset(ctx context.Context, uidHex string) error {
 // background whenever each peer comes online.
 func BrclientdResetAllRatchets(ctx context.Context, ageDays int) (json.RawMessage, error) {
 	return brclientdPostJSONRaw(ctx, "/contacts/reset-all", map[string]int{"age_days": ageDays})
+}
+
+// BrclientdConnectionState returns brclientd's /connection JSON: requested
+// online intent, effective connection state and the server policy.
+func BrclientdConnectionState(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/connection", nil)
+}
+
+// BrclientdSetConnection flips the daemon's connection intent (GoOnline /
+// RemainOffline). The offline intent does not survive a daemon restart.
+func BrclientdSetConnection(ctx context.Context, online bool) error {
+	return brclientdPostJSON(ctx, "/connection", map[string]bool{"online": online})
+}
+
+// BrclientdListFilters returns the active content filters as brclientd's
+// {filters: [...]} JSON.
+func BrclientdListFilters(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/filters", nil)
+}
+
+// BrclientdUpsertFilter creates or updates a content filter (id 0 creates)
+// and returns the stored filter JSON including the assigned id.
+func BrclientdUpsertFilter(ctx context.Context, body json.RawMessage) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/filters", body)
+}
+
+// BrclientdDeleteFilter removes a content filter by id.
+func BrclientdDeleteFilter(ctx context.Context, id uint64) error {
+	return brclientdPostJSON(ctx, "/filters/delete", map[string]uint64{"id": id})
+}
+
+// BrclientdSubscribeAllPosts subscribes to the posts of every KX'd contact.
+// Synchronous through brclientd's send queue; can take a while on large
+// address books.
+func BrclientdSubscribeAllPosts(ctx context.Context) error {
+	return brclientdPostJSON(ctx, "/posts/subscribe-all", struct{}{})
+}
+
+// BrclientdKXList returns the in-flight key exchanges as brclientd's
+// {kxs: [...]} JSON.
+func BrclientdKXList(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/kx/list", nil)
 }
 
 // BrclientdHandshake starts a 3-way handshake with the specified contact.

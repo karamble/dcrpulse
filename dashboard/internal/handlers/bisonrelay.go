@@ -342,6 +342,112 @@ func BisonrelayContactResetAllHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(raw)
 }
 
+// BisonrelayConnectionHandler proxies brclientd's /connection: GET reports
+// the requested online intent + effective session state + server policy;
+// POST {online} flips the intent. The offline intent is runtime-only and
+// resets to online when the daemon restarts.
+func BisonrelayConnectionHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		raw, err := rpc.BrclientdConnectionState(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	case http.MethodPost:
+		var req struct {
+			Online bool `json:"online"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := rpc.BrclientdSetConnection(r.Context(), req.Online); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// BisonrelayFiltersHandler proxies brclientd's content filters: GET lists,
+// POST upserts (id 0 creates) and returns the stored filter. brclientd 400s
+// (e.g. an invalid regexp) pass through as 400 so the form can show them
+// inline.
+func BisonrelayFiltersHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		raw, err := rpc.BrclientdListFilters(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	case http.MethodPost:
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		raw, err := rpc.BrclientdUpsertFilter(r.Context(), body)
+		if err != nil {
+			status := http.StatusBadGateway
+			if strings.Contains(err.Error(), "HTTP 400") {
+				status = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// BisonrelayFilterDeleteHandler proxies brclientd's /filters/delete.
+func BisonrelayFilterDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID uint64 `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdDeleteFilter(r.Context(), req.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelaySubscribeAllPostsHandler proxies brclientd's
+// /posts/subscribe-all, subscribing to the posts of every KX'd contact.
+func BisonrelaySubscribeAllPostsHandler(w http.ResponseWriter, r *http.Request) {
+	if err := rpc.BrclientdSubscribeAllPosts(r.Context()); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayKXListHandler proxies brclientd's /kx/list diagnostic (in-flight
+// key exchanges, including reset KXs).
+func BisonrelayKXListHandler(w http.ResponseWriter, r *http.Request) {
+	raw, err := rpc.BrclientdKXList(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
+}
+
 // BisonrelayContactHandshakeHandler proxies brclientd's /contacts/handshake.
 // Starts a 3-way handshake with the specified contact.
 func BisonrelayContactHandshakeHandler(w http.ResponseWriter, r *http.Request) {

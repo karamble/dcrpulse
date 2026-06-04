@@ -27,6 +27,7 @@ export interface BisonrelayVersion {
   appName: string;
   appVersion: string;
   goRuntime: string;
+  brClientVersion?: string;
 }
 
 export const getBisonrelayStatus = async (): Promise<BisonrelayStatus> => {
@@ -86,6 +87,77 @@ export interface BisonrelayResetAllResult {
   started: string[];
   count: number;
 }
+
+export interface BisonrelayConnectionState {
+  online: boolean;
+  connected: boolean;
+  stage: string;
+  server_node?: string;
+  connected_at?: string;
+  policy: BisonrelayServerPolicy;
+}
+
+export const getBisonrelayConnection = async (): Promise<BisonrelayConnectionState> => {
+  const { data } = await api.get<BisonrelayConnectionState>('/br/connection');
+  return data;
+};
+
+// setBisonrelayConnection flips the daemon's connection intent. Remaining
+// offline is runtime-only: the daemon comes back online after a restart.
+export const setBisonrelayConnection = async (online: boolean): Promise<void> => {
+  await api.post('/br/connection', { online });
+};
+
+export interface BisonrelayContentFilter {
+  id: number;
+  uid?: string;
+  gc?: string;
+  regexp: string;
+  skip_pms: boolean;
+  skip_gcms: boolean;
+  skip_posts: boolean;
+  skip_post_comments: boolean;
+}
+
+export const getBisonrelayFilters = async (): Promise<BisonrelayContentFilter[]> => {
+  const { data } = await api.get<{ filters?: BisonrelayContentFilter[] }>('/br/filters');
+  return data.filters ?? [];
+};
+
+// upsertBisonrelayFilter creates (id 0) or updates a content filter and
+// returns the stored filter including the assigned id.
+export const upsertBisonrelayFilter = async (
+  f: BisonrelayContentFilter,
+): Promise<BisonrelayContentFilter> => {
+  const { data } = await api.post<BisonrelayContentFilter>('/br/filters', f);
+  return data;
+};
+
+export const deleteBisonrelayFilter = async (id: number): Promise<void> => {
+  await api.post('/br/filters/delete', { id });
+};
+
+// subscribeAllBisonrelayPosts subscribes to the posts of every contact; the
+// call is synchronous through the daemon's send queue and can take a while
+// on large address books.
+export const subscribeAllBisonrelayPosts = async (): Promise<void> => {
+  await api.post('/br/posts/subscribe-all', {}, { timeout: 120000 });
+};
+
+export interface BisonrelayKXAttempt {
+  initial_rv: string;
+  stage: string;
+  is_for_reset: boolean;
+  mediator_id?: string;
+  peer_nick?: string;
+  peer_id?: string;
+  timestamp: number;
+}
+
+export const getBisonrelayKXList = async (): Promise<BisonrelayKXAttempt[]> => {
+  const { data } = await api.get<{ kxs?: BisonrelayKXAttempt[] }>('/br/kx/list');
+  return data.kxs ?? [];
+};
 
 // resetAllBisonrelaySessions initiates a KX (ratchet) reset with every
 // contact whose last received message is older than ageDays (0 = backend
@@ -874,6 +946,7 @@ export interface BisonrelayServerPolicy {
   push_pay_rate_matoms: number;
   push_pay_rate_bytes: number;
   push_pay_rate_min_matoms: number;
+  sub_pay_rate?: number;
   max_push_invoices: number;
   max_msg_size: number;
   expiration_days: number;

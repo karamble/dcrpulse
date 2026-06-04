@@ -111,3 +111,21 @@
   .proposal-body del { @apply line-through text-muted-foreground; }
 }
 
+
+/* Bison Relay text scale: the BR Settings Appearance section sets --br-fs on
+   the BR page root; these scoped overrides scale text only (paddings and
+   layout boxes stay fixed). The two-class selectors (0,2,0) outrank the
+   generated Tailwind utilities; the attribute selectors catch the arbitrary
+   text-[Npx] sizes used in the BR components. */
+.br-text-scale {
+  --br-fs: 1;
+}
+.br-text-scale .text-xs   { font-size: calc(0.75rem * var(--br-fs));  line-height: calc(1rem * var(--br-fs)); }
+.br-text-scale .text-sm   { font-size: calc(0.875rem * var(--br-fs)); line-height: calc(1.25rem * var(--br-fs)); }
+.br-text-scale .text-base { font-size: calc(1rem * var(--br-fs));     line-height: calc(1.5rem * var(--br-fs)); }
+.br-text-scale .text-lg   { font-size: calc(1.125rem * var(--br-fs)); line-height: calc(1.75rem * var(--br-fs)); }
+.br-text-scale .text-xl   { font-size: calc(1.25rem * var(--br-fs));  line-height: calc(1.75rem * var(--br-fs)); }
+.br-text-scale .text-2xl  { font-size: calc(1.5rem * var(--br-fs));   line-height: calc(2rem * var(--br-fs)); }
+.br-text-scale [class*="text-[9px]"]  { font-size: calc(9px * var(--br-fs)); }
+.br-text-scale [class*="text-[10px]"] { font-size: calc(10px * var(--br-fs)); }
+.br-text-scale [class*="text-[11px]"] { font-size: calc(11px * var(--br-fs)); }

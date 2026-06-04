@@ -3,7 +3,15 @@
 // license that can be found in the LICENSE file.
 
 import { ComponentType, useEffect, useState } from 'react';
-import { BarChart3, FileText, FolderOpen, MessageSquare, Phone, Rss } from 'lucide-react';
+import {
+  BarChart3,
+  FileText,
+  FolderOpen,
+  MessageSquare,
+  Phone,
+  Rss,
+  Settings,
+} from 'lucide-react';
 import { BisonrelaySetupWizard } from './BisonrelaySetupWizard';
 import { BisonrelayMessagingPage } from './BisonrelayMessagingPage';
 import { BisonrelayFeed } from './BisonrelayFeed';
@@ -11,11 +19,13 @@ import { BisonrelayFiles } from './BisonrelayFiles';
 import { BisonrelayStats } from './BisonrelayStats';
 import { BisonrelayRealtime } from './BisonrelayRealtime';
 import { BisonrelayPages } from './BisonrelayPages';
+import { BisonrelaySettingsTab } from './BisonrelaySettingsTab';
+import { useBrTextScale } from './brTextScale';
 import { BisonrelayStatus, getBisonrelayStatus } from '../../services/bisonrelayApi';
 import { useWalletReady } from '../../hooks/useWalletReady';
 import { WalletSyncGate } from '../common/WalletSyncGate';
 
-type TabId = 'chat' | 'feed' | 'files' | 'stats' | 'realtime' | 'pages';
+type TabId = 'chat' | 'feed' | 'files' | 'stats' | 'realtime' | 'pages' | 'settings';
 
 interface TabDef {
   id: TabId;
@@ -30,6 +40,7 @@ const tabs: TabDef[] = [
   { id: 'stats', label: 'Stats', icon: BarChart3 },
   { id: 'realtime', label: 'Realtime', icon: Phone },
   { id: 'pages', label: 'Pages', icon: FileText },
+  { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
 // readHashTab returns the active tab based on the URL hash. Feed, Files,
@@ -43,6 +54,7 @@ const readHashTab = (): TabId => {
   if (h.startsWith('stats')) return 'stats';
   if (h.startsWith('realtime')) return 'realtime';
   if (h.startsWith('pages')) return 'pages';
+  if (h.startsWith('settings')) return 'settings';
   return 'chat';
 };
 
@@ -50,6 +62,8 @@ export const BisonrelayPage = () => {
   const [ready, setReady] = useState<BisonrelayStatus | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>(readHashTab);
   const wallet = useWalletReady();
+  const { factor: textScaleFactor } = useBrTextScale();
+  const textScaleStyle = { '--br-fs': textScaleFactor } as React.CSSProperties;
 
   useEffect(() => {
     if (!ready) return;
@@ -90,21 +104,23 @@ export const BisonrelayPage = () => {
       return <WalletSyncGate feature="Bison Relay" message={wallet.message} progress={wallet.progress} />;
     }
     return (
-      <BisonrelaySetupWizard
-        onReady={async () => {
-          try {
-            const s = await getBisonrelayStatus();
-            setReady(s);
-          } catch {
-            /* ignored - wizard keeps rendering */
-          }
-        }}
-      />
+      <div className="br-text-scale" style={textScaleStyle}>
+        <BisonrelaySetupWizard
+          onReady={async () => {
+            try {
+              const s = await getBisonrelayStatus();
+              setReady(s);
+            } catch {
+              /* ignored - wizard keeps rendering */
+            }
+          }}
+        />
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="br-text-scale space-y-4" style={textScaleStyle}>
       <nav className="flex gap-1 border-b border-border overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
@@ -133,6 +149,7 @@ export const BisonrelayPage = () => {
       {activeTab === 'stats' && <BisonrelayStats />}
       {activeTab === 'realtime' && <BisonrelayRealtime />}
       {activeTab === 'pages' && <BisonrelayPages />}
+      {activeTab === 'settings' && <BisonrelaySettingsTab />}
     </div>
   );
 };

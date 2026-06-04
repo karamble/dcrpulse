@@ -9,10 +9,8 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
-  Camera,
   CheckCircle2,
   Coins,
-  Download,
   FileText,
   Heart,
   Hash,
@@ -22,19 +20,16 @@ import {
   MessageSquare,
   Network,
   Radio,
-  RotateCw,
   Server,
   Shield,
   Signal,
   TrendingUp,
   Users,
   Wifi,
-  X,
   XCircle,
 } from 'lucide-react';
 import {
   BisonrelayAuthoredPostStats,
-  BisonrelayBackupStatus,
   BisonrelayPayStatsBreakdown,
   BisonrelayPayStatsUser,
   BisonrelayQuantile,
@@ -43,16 +38,12 @@ import {
   BisonrelayStatsOverview,
   BisonrelayStatsPayments,
   BisonrelayStatsPosts,
-  getBisonrelayBackupStatus,
   getBisonrelayIdentity,
   getBisonrelayStatsContacts,
   getBisonrelayStatsNetwork,
   getBisonrelayStatsOverview,
   getBisonrelayStatsPayments,
   getBisonrelayStatsPosts,
-  prepareBisonrelayBackup,
-  resetAllBisonrelaySessions,
-  setBisonrelayAvatar,
 } from '../../services/bisonrelayApi';
 import { avatarDataUrl } from './bisonrelayAvatar';
 
@@ -79,14 +70,14 @@ const navigateTo = (hash: string): void => {
 // bisonrelay client/clientdb/paystats.go RecordUserPayEvent. brclientd's
 // /stats JSON exposes them as "_matoms" fields. UI shows DCR rounded to a
 // sensible scale; sub-matom precision is meaningless for users.
-const formatDCR = (matoms: number, digits = 4): string => {
+export const formatDCR = (matoms: number, digits = 4): string => {
   const dcr = matoms / 1e11;
   if (!matoms) return '0';
   if (Math.abs(dcr) < 0.0001) return `${matoms} matoms`;
   return dcr.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '');
 };
 
-const formatBytes = (n: number): string => {
+export const formatBytes = (n: number): string => {
   if (!n) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
   let i = 0;
@@ -115,7 +106,7 @@ const formatDuration = (sec: number): string => {
   return `${days}d ${hours}h`;
 };
 
-const relativeTime = (iso?: string): string => {
+export const relativeTime = (iso?: string): string => {
   if (!iso) return '–';
   const t = Date.parse(iso);
   if (!t || Number.isNaN(t) || t < 0) return '–';
@@ -397,7 +388,7 @@ const HeroCard = ({
   );
 };
 
-const SectionCard = ({
+export const SectionCard = ({
   title,
   icon: Icon,
   children,
@@ -420,276 +411,15 @@ const SectionCard = ({
   </div>
 );
 
-// BackupCard drives the full-state backup download. brclientd needs a minute
-// or more to build the tarball before any bytes flow, so the file is prepared
-// server-side in a detached job: the card polls the job status (the job
-// survives navigation), pushes the browser download automatically when the
-// preparation it observed completes, and keeps the prepared file
-// re-downloadable until the next prepare or a dashboard restart.
-const backupBtnCls =
+// backupBtnCls is the small bordered action-button style shared by the BR
+// stats and settings cards.
+export const backupBtnCls =
   'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/30 border border-border text-foreground text-xs font-semibold transition-colors hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed';
 
-const BackupCard = () => {
-  const [status, setStatus] = useState<BisonrelayBackupStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const aliveRef = useRef(true);
-  const pollRef = useRef<number | null>(null);
-  const prevStateRef = useRef<string | null>(null);
-  const autoPushedRef = useRef(false);
-
-  const stopPolling = () => {
-    if (pollRef.current !== null) {
-      window.clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  };
-
-  const pushDownload = () => {
-    const a = document.createElement('a');
-    a.href = '/api/br/backup';
-    a.download = '';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  };
-
-  const applyStatus = useCallback((s: BisonrelayBackupStatus) => {
-    if (!aliveRef.current) return;
-    // Push the download only when this mount observed the preparation
-    // complete; returning to an already-ready card must not re-download.
-    if (s.state === 'ready' && prevStateRef.current === 'preparing' && !autoPushedRef.current) {
-      autoPushedRef.current = true;
-      pushDownload();
-    }
-    prevStateRef.current = s.state;
-    setStatus(s);
-    if (s.state !== 'preparing') stopPolling();
-  }, []);
-
-  const startPolling = useCallback(() => {
-    if (pollRef.current !== null) return;
-    pollRef.current = window.setInterval(async () => {
-      try {
-        applyStatus(await getBisonrelayBackupStatus());
-      } catch {
-        // Transient poll errors keep the current state; the next tick retries.
-      }
-    }, 2000);
-  }, [applyStatus]);
-
-  useEffect(() => {
-    aliveRef.current = true;
-    getBisonrelayBackupStatus()
-      .then((s) => {
-        if (!aliveRef.current) return;
-        prevStateRef.current = s.state;
-        setStatus(s);
-        if (s.state === 'preparing') startPolling();
-      })
-      .catch(() => {});
-    return () => {
-      aliveRef.current = false;
-      stopPolling();
-    };
-  }, [startPolling]);
-
-  // Local tick so the user sees the preparation advancing between polls.
-  useEffect(() => {
-    if (status?.state !== 'preparing' || !status.startedAt) {
-      setElapsed(0);
-      return;
-    }
-    const start = status.startedAt * 1000;
-    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [status?.state, status?.startedAt]);
-
-  const onPrepare = async () => {
-    if (busy) return;
-    setBusy(true);
-    autoPushedRef.current = false;
-    try {
-      applyStatus(await prepareBisonrelayBackup());
-      startPolling();
-    } catch (err: any) {
-      const body = err?.response?.data;
-      applyStatus({
-        state: 'error',
-        error: typeof body === 'string' ? body : err?.message || 'Backup preparation failed',
-      });
-    } finally {
-      if (aliveRef.current) setBusy(false);
-    }
-  };
-
-  const state = status?.state ?? 'idle';
-
-  return (
-    <SectionCard
-      title="Backup"
-      icon={Download}
-      action={
-        state === 'preparing' ? (
-          <button type="button" disabled className={backupBtnCls}>
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Preparing... {elapsed}s
-          </button>
-        ) : state === 'ready' ? (
-          <a href="/api/br/backup" download className={backupBtnCls}>
-            <Download className="h-3.5 w-3.5" />
-            Save backup file
-          </a>
-        ) : (
-          <button type="button" onClick={onPrepare} disabled={busy} className={backupBtnCls}>
-            <Download className="h-3.5 w-3.5" />
-            {state === 'error' ? 'Try again' : 'Download backup'}
-          </button>
-        )
-      }
-    >
-      <p className="text-xs text-muted-foreground">
-        Downloads a consistent snapshot of the full Bison Relay state:
-        identity, contacts, message history, posts and shared files. Restore
-        it from the setup wizard on a fresh node. Sessions with contacts you
-        message after taking the backup are re-keyed automatically on
-        restore, so back up regularly to keep restores seamless.
-      </p>
-      {state === 'preparing' && (
-        <div className="flex items-start gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0 mt-0.5" />
-          <span>
-            Preparing the backup on the server - this can take a minute or
-            two depending on the size of your message history and files. You
-            can leave this page; the backup will be available here when it
-            is ready.
-          </span>
-        </div>
-      )}
-      {state === 'ready' && (
-        <div className="flex items-start gap-2 text-xs">
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
-          <span className="text-muted-foreground">
-            Backup ready ({formatBytes(status?.size || 0)}) - kept here until
-            the next backup or a dashboard restart.{' '}
-            <button
-              type="button"
-              onClick={onPrepare}
-              disabled={busy}
-              className="underline hover:text-foreground"
-            >
-              Prepare a fresh backup
-            </button>
-          </span>
-        </div>
-      )}
-      {state === 'error' && status?.error && (
-        <div className="flex items-start gap-2 text-xs text-destructive">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span className="break-all">{status.error}</span>
-        </div>
-      )}
-    </SectionCard>
-  );
-};
-
-// SessionsCard initiates a KX (ratchet) reset with all contacts. Needed when
-// the local key state diverged from what the network last saw - typically
-// after restoring a backup older than the node's last session. Initiation
-// only: each reset completes in the background whenever that contact comes
-// online; no state is tracked here.
-const SessionsCard = () => {
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  const onResetAll = async () => {
-    if (busy) return;
-    setBusy(true);
-    setErr(null);
-    setResult(null);
-    try {
-      const res = await resetAllBisonrelaySessions();
-      setResult(
-        `KX reset initiated with ${res.count} contact${res.count === 1 ? '' : 's'}. ` +
-          'Each reset completes in the background once that contact comes online.',
-      );
-    } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Reset failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <SectionCard
-      title="Sessions"
-      icon={RotateCw}
-      action={
-        <button
-          type="button"
-          onClick={onResetAll}
-          disabled={busy}
-          className={backupBtnCls}
-        >
-          {busy ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RotateCw className="h-3.5 w-3.5" />
-          )}
-          {busy ? 'Resetting...' : 'Reset all sessions'}
-        </button>
-      }
-    >
-      <p className="text-xs text-muted-foreground">
-        Re-keys the end-to-end encrypted session with contacts that have been
-        quiet for a long time. After restoring a backup this happens
-        automatically; use it manually if messages with some contacts stop
-        flowing in either direction. Individual contacts can be reset from
-        their profile menu instead.
-      </p>
-      {result && (
-        <div className="flex items-start gap-2 text-xs">
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
-          <span className="text-muted-foreground">{result}</span>
-        </div>
-      )}
-      {err && (
-        <div className="flex items-start gap-2 text-xs text-destructive">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span className="break-all">{err}</span>
-        </div>
-      )}
-    </SectionCard>
-  );
-};
-
-// AvatarControl renders the local user's avatar in the identity strip and lets
-// them upload/replace or clear it. The avatar lives on the BR identity (not the
-// stats payload), so it is fetched separately and re-fetched after a change.
-// BR caps the raw image at 200 KiB and broadcasts the update to all contacts.
-const AVATAR_MAX_BYTES = 200 * 1024;
-
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const s = String(reader.result);
-      const comma = s.indexOf(',');
-      resolve(comma >= 0 ? s.slice(comma + 1) : s);
-    };
-    reader.onerror = () => reject(new Error('could not read file'));
-    reader.readAsDataURL(file);
-  });
-
-const AvatarControl = ({ nick }: { nick: string }) => {
+// AvatarDisplay renders the local user's avatar read-only in the identity
+// strip; changing or clearing it lives in the BR Settings tab.
+const AvatarDisplay = ({ nick }: { nick: string }) => {
   const [avatar, setAvatar] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -703,88 +433,15 @@ const AvatarControl = ({ nick }: { nick: string }) => {
     };
   }, []);
 
-  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (file.size > AVATAR_MAX_BYTES) {
-      setErr('Image must be 200 KiB or smaller.');
-      return;
-    }
-    setErr(null);
-    setBusy(true);
-    try {
-      const b64 = await fileToBase64(file);
-      await setBisonrelayAvatar(b64);
-      setAvatar(b64);
-    } catch (e2: any) {
-      setErr(e2?.response?.data || e2?.message || 'Could not update avatar.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onClear = async () => {
-    setErr(null);
-    setBusy(true);
-    try {
-      await setBisonrelayAvatar('');
-      setAvatar('');
-    } catch (e2: any) {
-      setErr(e2?.response?.data || e2?.message || 'Could not clear avatar.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const url = avatarDataUrl(avatar);
   return (
-    <div className="relative shrink-0">
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp"
-        className="hidden"
-        onChange={onPick}
-      />
-      <button
-        type="button"
-        onClick={() => fileRef.current?.click()}
-        disabled={busy}
-        aria-label="Change avatar"
-        title="Change avatar (PNG/JPEG/GIF/WebP, max 200 KiB)"
-        className="group relative h-14 w-14 rounded-full overflow-hidden border border-primary/30 bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center"
-      >
-        {url ? (
-          <img src={url} alt="Your avatar" className="h-full w-full object-cover" />
-        ) : (
-          <span className="text-lg font-semibold text-primary">
-            {(nick || '?').slice(0, 2).toUpperCase()}
-          </span>
-        )}
-        <span className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          {busy ? (
-            <Loader2 className="h-4 w-4 text-white animate-spin" />
-          ) : (
-            <Camera className="h-4 w-4 text-white" />
-          )}
+    <div className="relative shrink-0 h-14 w-14 rounded-full overflow-hidden border border-primary/30 bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center">
+      {url ? (
+        <img src={url} alt="Your avatar" className="h-full w-full object-cover" />
+      ) : (
+        <span className="text-lg font-semibold text-primary">
+          {(nick || '?').slice(0, 2).toUpperCase()}
         </span>
-      </button>
-      {url && !busy && (
-        <button
-          type="button"
-          onClick={onClear}
-          aria-label="Remove avatar"
-          title="Remove avatar"
-          className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center border border-background shadow"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
-      {err && (
-        <p className="absolute left-0 top-full mt-1 w-40 text-[10px] text-destructive z-10">
-          {err}
-        </p>
       )}
     </div>
   );
@@ -819,7 +476,7 @@ const OverviewView = () => {
     <div className="space-y-4">
       {/* Identity strip */}
       <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 flex items-center gap-4">
-        <AvatarControl nick={data.nick || ''} />
+        <AvatarDisplay nick={data.nick || ''} />
         <div className="flex-1 min-w-0">
           <div className="text-lg font-semibold text-foreground truncate">
             {data.nick || '(unnamed)'}
@@ -946,8 +603,6 @@ const OverviewView = () => {
         </SectionCard>
       </div>
 
-      <BackupCard />
-      <SessionsCard />
     </div>
   );
 };
@@ -1238,7 +893,7 @@ const NetworkView = () => {
   );
 };
 
-const PolicyTile = ({
+export const PolicyTile = ({
   label,
   value,
   hint,
