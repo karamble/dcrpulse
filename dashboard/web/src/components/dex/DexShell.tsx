@@ -11,6 +11,7 @@ import { DexAccountPanel } from './DexAccountPanel';
 import { DexSettingsPanel } from './DexSettingsPanel';
 import { DexMMPanel } from './DexMMPanel';
 import { DexNotifications } from './DexNotifications';
+import { DexServerBanner } from './DexServerBanner';
 
 // The canonical mainnet DEX server.
 const HOST = 'dex.decred.org:7232';
@@ -34,6 +35,7 @@ export const DexShell = ({ initialTab = 'trade', onLock }: { initialTab?: DexTab
 
   return (
     <div className="space-y-3">
+      <DexServerBanner host={HOST} />
       <nav className="flex items-center gap-2 border-b border-border px-4">
         <div className="flex items-center gap-2 overflow-x-auto">
           {tabs.map(({ id, label, Icon }) => {

@@ -2,11 +2,12 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, FlaskConical } from 'lucide-react';
-import { getDexConfig, getDexMyOrders, cancelDexOrder, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
+import { getDexConfig, getDexMyOrders, cancelDexOrder, type DexConfig, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { useDexFeed, statsFromCandles, spotToStats, type MarketStats, type MarketSpot } from './useDexFeed';
 import { useDexConn, useDexRefreshOnNotes, useDexSpots, useMMBotRun, useSeedDexSpots } from './DexLiveProvider';
+import { loadDexConfigCache, saveDexConfigCache } from './dexConfigCache';
 import { DexMMActivity } from './DexMMActivity';
 import { DexStatsBar } from './DexStatsBar';
 import { DexMarketsPanel } from './DexMarketsPanel';
@@ -19,33 +20,45 @@ import { mockMarkets, mockBook, mockStats, mockCandles, mockOrders } from './dex
 const HOST = 'dex.decred.org:7232';
 const EMPTY_BOOK = { buys: [], sells: [], recentMatches: [] };
 
+// Default to the DCR/BTC market (asset ids 42/0), falling back to the first
+// market the server lists.
+const defaultMarket = (ms: DexMarket[] | undefined) =>
+  ms?.find((m) => m.baseID === 42 && m.quoteID === 0) || ms?.[0] || null;
+
 // DexMarketView is the trading terminal: a market stats bar, a markets sidebar,
 // a price chart, a live order book (with depth visualization) and recent
 // trades, an order-entry form, and an open-orders panel. In preview mode it
 // renders sample data (no server) so the UI can be developed without a
 // reachable DEX server; the live candle and 24h-stats feeds are not wired yet.
 export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
-  const [markets, setMarkets] = useState<DexMarket[]>(preview ? mockMarkets : []);
-  const [sel, setSel] = useState<DexMarket | null>(preview ? mockMarkets[0] : null);
+  // The last good market list is cached per host so the view renders even
+  // while the DEX server can not be connected; the live fetch refreshes it.
+  const cachedRef = useRef(preview ? null : loadDexConfigCache(HOST));
+  const cached = cachedRef.current;
+  const [markets, setMarkets] = useState<DexMarket[]>(preview ? mockMarkets : cached?.markets ?? []);
+  const [sel, setSel] = useState<DexMarket | null>(preview ? mockMarkets[0] : defaultMarket(cached?.markets));
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [liveOrders, setLiveOrders] = useState<DexOrder[]>([]);
-  const [durs, setDurs] = useState<string[]>([]);
-  const [dur, setDur] = useState('1h');
+  const [durs, setDurs] = useState<string[]>(cached?.candleDurs ?? []);
+  const [dur, setDur] = useState(
+    cached?.candleDurs?.length && !cached.candleDurs.includes('1h') ? cached.candleDurs[0] : '1h',
+  );
   // Clicking a book level prefills the order form; seq lets a repeat click on
   // the same level re-apply.
   const pickSeq = useRef(0);
   const [pick, setPick] = useState<{ rate: number; qty: number; sell: boolean; seq: number } | null>(null);
   const onPick = (p: { rate: number; qty: number; sell: boolean }) => setPick({ ...p, seq: ++pickSeq.current });
   const seedSpots = useSeedDexSpots();
+  const conn = useDexConn(HOST);
+  const marketsRef = useRef(markets);
+  marketsRef.current = markets;
 
-  useEffect(() => {
-    if (preview) return;
+  const fetchConfig = useCallback(() => {
     getDexConfig(HOST)
-      .then((c) => {
+      .then((c: DexConfig) => {
+        if (!c.markets?.length) return;
         setMarkets(c.markets);
-        // Default to the DCR/BTC market (asset ids 42/0), falling back to the
-        // first market the server lists.
-        setSel((prev) => prev || c.markets.find((m) => m.baseID === 42 && m.quoteID === 0) || c.markets[0] || null);
+        setSel((prev) => prev || defaultMarket(c.markets));
         if (c.candleDurs?.length) {
           setDurs(c.candleDurs);
           setDur((d) => (c.candleDurs.includes(d) ? d : c.candleDurs[0]));
@@ -57,11 +70,32 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
           if (m.spot) snap[`${m.baseID}-${m.quoteID}`] = { ...m.spot, baseID: m.baseID, quoteID: m.quoteID };
         });
         seedSpots(snap);
+        saveDexConfigCache(HOST, { markets: c.markets, candleDurs: c.candleDurs ?? [] });
+        setLoadErr(null);
       })
-      .catch((e: any) =>
-        setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load markets'),
-      );
-  }, [preview, seedSpots]);
+      .catch((e: any) => {
+        // With a cached market list on screen the failure is already conveyed
+        // by the server banner; the error screen is for the nothing-to-render
+        // case only.
+        if (marketsRef.current.length) return;
+        setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load markets');
+      });
+  }, [seedSpots]);
+
+  useEffect(() => {
+    if (preview) return;
+    fetchConfig();
+  }, [preview, fetchConfig]);
+
+  // Refetch when the server connection comes back so a view opened while the
+  // server was down picks up the live market list without a reload.
+  const prevConnStatus = useRef<number | null>(null);
+  useEffect(() => {
+    const status = conn?.status ?? null;
+    const prev = prevConnStatus.current;
+    prevConnStatus.current = status;
+    if (!preview && status === 1 && prev !== null && prev !== 1) fetchConfig();
+  }, [conn?.status, preview, fetchConfig]);
 
   const refreshOrders = () => {
     if (preview) return;
@@ -90,7 +124,6 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   // The connection dot reflects the real DEX server state (connected and
   // authenticated) from the live conn/dex_auth feed; until the first such note
   // arrives, fall back to the order-book relay socket's health.
-  const conn = useDexConn(HOST);
   const connected = preview ? true : conn ? conn.status === 1 && conn.authed : live.connected;
   const previewCandles = useMemo(() => (preview && sel ? mockCandles(sel) : []), [preview, sel]);
   const candles = preview ? previewCandles : live.candles;
@@ -120,18 +153,29 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
     setRightTab(botRunning ? 'bot' : 'order');
   }, [botRunning]);
 
-  if (loadErr) {
-    return (
-      <div className="px-4">
-        <div className="p-4 rounded-xl bg-destructive/5 border border-destructive/30 text-sm text-destructive flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-          <span className="break-words">{loadErr}</span>
-        </div>
-      </div>
-    );
-  }
-
   if (!sel) {
+    // No market list at all (nothing cached yet). While the server is not
+    // connected the config fetch cannot succeed, so show a quiet note rather
+    // than an endless spinner; the spinner is for the connected loading case.
+    if (!preview && conn && conn.status !== 1) {
+      return (
+        <div className="min-h-[40vh] flex items-center justify-center px-4">
+          <span className="text-sm text-muted-foreground text-center">
+            Market data loads once the DEX server is connected.
+          </span>
+        </div>
+      );
+    }
+    if (loadErr) {
+      return (
+        <div className="px-4">
+          <div className="p-4 rounded-xl bg-destructive/5 border border-destructive/30 text-sm text-destructive flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{loadErr}</span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-[40vh] flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />

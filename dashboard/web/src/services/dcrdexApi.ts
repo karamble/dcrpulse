@@ -43,10 +43,12 @@ export const createDexWallet = async (walletPass: string): Promise<void> => {
 };
 
 // DexExchange is the minimal shape of a known DEX server (registered when
-// acctID is set).
+// acctID is set). connectionStatus follows comms.ConnectionStatus
+// (0=disconnected, 1=connected, 2=invalid cert).
 export interface DexExchange {
   host: string;
   acctID: string;
+  connectionStatus: number;
 }
 
 export const getDexExchanges = async (): Promise<Record<string, DexExchange>> => {

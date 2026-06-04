@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { getMMStatus } from '../../services/dcrdexApi';
+import { getDexExchanges, getMMStatus } from '../../services/dcrdexApi';
 import type { DexNote, MMStatus, MMBotStatus } from '../../services/dcrdexApi';
 import type { MarketSpot } from './useDexFeed';
 
@@ -115,6 +115,36 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
     listenersRef.current.add(fn);
     return () => {
       listenersRef.current.delete(fn);
+    };
+  }, []);
+
+  // Seed conns from the exchanges snapshot so an already-down server is known
+  // at mount, before any live `conn` note arrives. Only disconnected hosts are
+  // seeded: a seeded entry carries authed=false, and injecting one for a
+  // healthy host would flip consumers that require status===1 && authed (the
+  // stats-bar dot) until the first dex_auth note. Live state wins the merge.
+  useEffect(() => {
+    let cancelled = false;
+    getDexExchanges()
+      .then((xcs) => {
+        if (cancelled) return;
+        // The exchange entries carry no host field over the RPC; the host is
+        // the map key.
+        const seeded: Record<string, DexConn> = {};
+        Object.entries(xcs).forEach(([host, x]) => {
+          if (x && x.connectionStatus !== 1) {
+            seeded[host] = { status: x.connectionStatus, authed: false };
+          }
+        });
+        if (Object.keys(seeded).length) {
+          setConns((prev) => ({ ...seeded, ...prev }));
+        }
+      })
+      .catch(() => {
+        /* best-effort snapshot; live notes still feed conns */
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
