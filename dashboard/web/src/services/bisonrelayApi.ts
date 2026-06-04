@@ -600,6 +600,7 @@ export type BisonrelayEventType =
   | 'rtdt-joined-instant-call'
   | 'gc-message'
   | 'gc-invited'
+  | 'gc-reinvite-blocked'
   | 'gc-joined'
   | 'gc-invite-accepted'
   | 'gc-members-added'
@@ -1124,6 +1125,23 @@ export interface BisonrelayGCInvite {
   accepted: boolean;
 }
 
+// A GC invite brclientd saw arrive but the BR client rejected because a
+// local copy of the GC already exists (stale after a restore). Recovery:
+// leave the local copy, then ask the sender for a fresh invite.
+export interface BlockedGCReinvite {
+  gcid: string;
+  name: string;
+  from: string;
+  fromNick: string;
+  count: number;
+  lastAttempt: string;
+}
+
+export interface BisonrelayGCInvitesList {
+  invites: BisonrelayGCInvite[];
+  blocked_reinvites: BlockedGCReinvite[];
+}
+
 export const listBisonrelayGCs = async (): Promise<BisonrelayGC[]> => {
   const { data } = await api.get<{ gcs: BisonrelayGC[] | null }>('/br/gc');
   return data?.gcs ?? [];
@@ -1134,9 +1152,15 @@ export const createBisonrelayGC = async (name: string): Promise<BisonrelayGC> =>
   return data;
 };
 
-export const listBisonrelayGCInvites = async (): Promise<BisonrelayGCInvite[]> => {
-  const { data } = await api.get<{ invites: BisonrelayGCInvite[] | null }>('/br/gc/invites');
-  return data?.invites ?? [];
+export const listBisonrelayGCInvites = async (): Promise<BisonrelayGCInvitesList> => {
+  const { data } = await api.get<{
+    invites: BisonrelayGCInvite[] | null;
+    blocked_reinvites: BlockedGCReinvite[] | null;
+  }>('/br/gc/invites');
+  return {
+    invites: data?.invites ?? [],
+    blocked_reinvites: data?.blocked_reinvites ?? [],
+  };
 };
 
 export const acceptBisonrelayGCInvite = async (iid: number): Promise<void> => {
