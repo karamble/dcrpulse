@@ -60,6 +60,7 @@ import {
 } from './BisonrelayStats';
 import { avatarDataUrl } from './bisonrelayAvatar';
 import { BR_TEXT_SCALES, BrTextScale, setBrTextScale, useBrTextScale } from './brTextScale';
+import { RequestLiquidityModal } from '../lightning/channels/RequestLiquidityModal';
 import { setBrNotifPrefs, useBrNotifPrefs } from './brNotifPrefs';
 
 // ---- Section routing --------------------------------------------------------
@@ -565,6 +566,8 @@ const ConnectionCard = () => {
   const [srrEnabled, setSrrEnabled] = useState<boolean | null>(null);
   const [srrBusy, setSrrBusy] = useState(false);
   const [srrErr, setSrrErr] = useState<string | null>(null);
+  const [liquidityOpen, setLiquidityOpen] = useState(false);
+  const [liquidityPoint, setLiquidityPoint] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -739,7 +742,33 @@ const ConnectionCard = () => {
           {srrErr && <p className="text-xs text-destructive">{srrErr}</p>}
         </div>
       )}
+      <div className="space-y-1 pt-2 border-t border-border/40">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">
+            Receiving payments needs inbound capacity. Request an inbound
+            Lightning channel from a liquidity provider for a small fee.
+          </span>
+          <button
+            type="button"
+            onClick={() => setLiquidityOpen(true)}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30 transition-colors"
+          >
+            Request Inbound Channel
+          </button>
+        </div>
+        {liquidityPoint && (
+          <p className="text-xs text-success font-mono break-all">
+            Channel requested: {liquidityPoint}
+          </p>
+        )}
+      </div>
       {!srrBusy && err && <p className="text-xs text-destructive">{err}</p>}
+      {liquidityOpen && (
+        <RequestLiquidityModal
+          onClose={() => setLiquidityOpen(false)}
+          onSuccess={(cp) => setLiquidityPoint(cp)}
+        />
+      )}
     </SectionCard>
   );
 };

@@ -426,3 +426,51 @@ type LightningQueryRoutesResponse struct {
 	SuccessProb float64          `json:"successProb"`
 	Routes      []LightningRoute `json:"routes"`
 }
+
+// LiquidityDefaults pre-fills the inbound-channel request wizard with the
+// built-in liquidity provider for the active network. Server and CertPEM
+// are empty when the network has no default (e.g. testnet).
+type LiquidityDefaults struct {
+	Network string `json:"network"`
+	Server  string `json:"server"`
+	CertPEM string `json:"certPem"`
+}
+
+// RequestLiquidityEstimateRequest is the body for
+// /wallet/ln/liquidity/estimate. Server and CertPEM are optional; blank
+// falls back to the network default.
+type RequestLiquidityEstimateRequest struct {
+	ChanSizeAtoms int64  `json:"chanSizeAtoms"`
+	Server        string `json:"server,omitempty"`
+	CertPEM       string `json:"certPem,omitempty"`
+}
+
+// LiquidityEstimateResponse echoes the LP policy plus the estimated fee for
+// the requested channel size.
+type LiquidityEstimateResponse struct {
+	ChanSizeAtoms          int64    `json:"chanSizeAtoms"`
+	EstimatedFeeAtoms      int64    `json:"estimatedFeeAtoms"`
+	MinChanSizeAtoms       int64    `json:"minChanSizeAtoms"`
+	MaxChanSizeAtoms       int64    `json:"maxChanSizeAtoms"`
+	MaxNbChannels          uint32   `json:"maxNbChannels"`
+	MinChanLifetimeSeconds int64    `json:"minChanLifetimeSeconds"`
+	Node                   string   `json:"node"`
+	Addresses              []string `json:"addresses"`
+}
+
+// RequestLiquidityRequest is the body for /wallet/ln/liquidity/request.
+// ApprovedFeeAtoms is the fee the user confirmed; the request aborts if the
+// LP's recomputed fee exceeds it.
+type RequestLiquidityRequest struct {
+	ChanSizeAtoms    int64  `json:"chanSizeAtoms"`
+	ApprovedFeeAtoms int64  `json:"approvedFeeAtoms"`
+	Server           string `json:"server,omitempty"`
+	CertPEM          string `json:"certPem,omitempty"`
+}
+
+// RequestLiquidityResponse is returned once the LP's channel back to this
+// node is seen pending.
+type RequestLiquidityResponse struct {
+	ChannelPoint  string `json:"channelPoint"`
+	CapacityAtoms int64  `json:"capacityAtoms"`
+}

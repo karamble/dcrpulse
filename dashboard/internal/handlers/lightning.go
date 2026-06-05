@@ -735,3 +735,65 @@ func LightningGraphRoutesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
 }
+
+// ---- Liquidity (inbound channel request) -----------------------------------
+
+// LightningLiquidityDefaultsHandler returns the built-in liquidity provider
+// for the active network so the request wizard can pre-fill server + cert.
+func LightningLiquidityDefaultsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	out, err := services.GetLiquidityDefaults(ctx)
+	if err != nil {
+		lightningWriteErr(w, "GetLiquidityDefaults", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// LightningLiquidityEstimateHandler fetches the LP policy and estimated fee
+// for a channel size without paying anything.
+func LightningLiquidityEstimateHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.RequestLiquidityEstimateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.ChanSizeAtoms < 1000 {
+		http.Error(w, "chanSizeAtoms must be at least 1000 (0.00001 DCR)", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	out, err := services.EstimateLiquidityChannel(ctx, &req)
+	if err != nil {
+		lightningWriteErr(w, "EstimateLiquidityChannel", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// LightningLiquidityRequestHandler pays the liquidity provider and returns
+// once its channel back to this node is seen pending.
+func LightningLiquidityRequestHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.RequestLiquidityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.ChanSizeAtoms < 1000 {
+		http.Error(w, "chanSizeAtoms must be at least 1000 (0.00001 DCR)", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+	out, err := services.RequestLiquidityChannel(ctx, &req)
+	if err != nil {
+		lightningWriteErr(w, "RequestLiquidityChannel", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}

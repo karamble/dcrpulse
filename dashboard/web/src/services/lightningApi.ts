@@ -551,3 +551,62 @@ export const queryLnRoutes = async (
   );
   return data;
 };
+
+// ---- Liquidity (inbound channel request) ------------------------------------
+
+export interface LiquidityDefaults {
+  network: string;
+  server: string;
+  certPem: string;
+}
+
+export interface LiquidityEstimate {
+  chanSizeAtoms: number;
+  estimatedFeeAtoms: number;
+  minChanSizeAtoms: number;
+  maxChanSizeAtoms: number;
+  maxNbChannels: number;
+  minChanLifetimeSeconds: number;
+  node: string;
+  addresses: string[];
+}
+
+export interface RequestLiquidityResult {
+  channelPoint: string;
+  capacityAtoms: number;
+}
+
+export const getLiquidityDefaults = async (): Promise<LiquidityDefaults> => {
+  const { data } = await api.get<LiquidityDefaults>('/wallet/ln/liquidity/defaults');
+  return data;
+};
+
+// The estimate and request calls outlive the axios instance's 25s default
+// timeout (LP policy fetch, invoice payment, pending-channel detection), so
+// both pass per-call overrides matching the backend handler deadlines.
+export const estimateLiquidityChannel = async (
+  chanSizeAtoms: number,
+  server?: string,
+  certPem?: string,
+): Promise<LiquidityEstimate> => {
+  const { data } = await api.post<LiquidityEstimate>(
+    '/wallet/ln/liquidity/estimate',
+    { chanSizeAtoms, server, certPem },
+    { timeout: 35000 },
+  );
+  return data;
+};
+
+export const requestLiquidityChannel = async (
+  chanSizeAtoms: number,
+  approvedFeeAtoms: number,
+  server?: string,
+  certPem?: string,
+): Promise<RequestLiquidityResult> => {
+  const { data } = await api.post<RequestLiquidityResult>(
+    '/wallet/ln/liquidity/request',
+    { chanSizeAtoms, approvedFeeAtoms, server, certPem },
+    { timeout: 130000 },
+  );
+  return data;
+};
