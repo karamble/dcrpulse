@@ -403,6 +403,86 @@ func BisonrelayRunningTipsHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// BisonrelayRTDTMessagesHandler returns the chat messages tracked for a
+// live RTDT session.
+func BisonrelayRTDTMessagesHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	raw, err := rpc.BrclientdRTDTMessages(r.Context(), rv)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
+}
+
+// BisonrelayRTDTChatHandler sends a text message into a live RTDT session.
+func BisonrelayRTDTChatHandler(w http.ResponseWriter, r *http.Request) {
+	rv := mux.Vars(r)["rv"]
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Message) == "" {
+		http.Error(w, "message is required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdRTDTChat(r.Context(), rv, req.Message); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayKXSearchesHandler proxies brclientd's outstanding KX searches.
+func BisonrelayKXSearchesHandler(w http.ResponseWriter, r *http.Request) {
+	raw, err := rpc.BrclientdKXSearches(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
+}
+
+// BisonrelayMediateIDsHandler proxies the in-flight mediated introductions:
+// GET lists, POST {mediator, target} cancels one.
+func BisonrelayMediateIDsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		raw, err := rpc.BrclientdMediateIDs(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	case http.MethodPost:
+		var req struct {
+			Mediator string `json:"mediator"`
+			Target   string `json:"target"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Mediator == "" || req.Target == "" {
+			http.Error(w, "mediator and target are required", http.StatusBadRequest)
+			return
+		}
+		if err := rpc.BrclientdCancelMediateID(r.Context(), req.Mediator, req.Target); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 // BisonrelayRecentNotificationsHandler returns brclientd's persisted daemon
 // notes (newest first) for the BR notification bell.
 func BisonrelayRecentNotificationsHandler(w http.ResponseWriter, r *http.Request) {

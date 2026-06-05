@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Coins,
@@ -14,20 +14,24 @@ import {
   Plus,
   Radio,
   RefreshCw,
+  Send,
   UserMinus,
   UserPlus,
   Users,
   Volume2,
 } from 'lucide-react';
 import {
+  BisonrelayLiveEvent,
   RTDTSession,
   RTDTSessionPublisher,
   dissolveRTDTSession,
+  getBisonrelayRTDTMessages,
   joinRTDTSession,
   kickRTDTPeer,
   leaveRTDTSession,
   listRTDTSessions,
   rotateRTDTCookies,
+  sendBisonrelayRTDTChat,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { RealtimeAudioPipeline, supportsWebCodecsAudio } from './realtime/AudioPipeline';
@@ -507,6 +511,7 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
         </div>
 
         {err && <ErrorBanner msg={err} />}
+        <RTDTChatPanel rv={rv} peerLabel={peerLabel} />
         {sendErr && (
           <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2.5 flex items-center justify-between gap-2 text-xs text-amber-300">
             <span className="break-words">RTDT send error: {sendErr}</span>
@@ -828,3 +833,119 @@ const Loading = () => (
     <span>Loading sessions…</span>
   </div>
 );
+
+// RTDTChatPanel is the in-call text chat: history from the daemon's
+// session-lifetime buffer, live append via the rtdt-chat event, plus a send
+// box. Own messages are appended optimistically since the library does not
+// loop them back.
+const RTDTChatPanel = ({
+  rv,
+  peerLabel,
+}: {
+  rv: string;
+  peerLabel: (peerID: number) => string;
+}) => {
+  const [msgs, setMsgs] = useState<{ label: string; message: string; ts: number }[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [chatErr, setChatErr] = useState<string | null>(null);
+  const { addListener } = useBisonrelayLive();
+  const endRef = useRef<HTMLDivElement | null>(null);
+  const peerLabelRef = useRef(peerLabel);
+  peerLabelRef.current = peerLabel;
+
+  useEffect(() => {
+    getBisonrelayRTDTMessages(rv)
+      .then((list) =>
+        setMsgs(
+          list.map((m) => ({
+            label: peerLabelRef.current(m.peer_id),
+            message: m.message,
+            ts: m.timestamp,
+          })),
+        ),
+      )
+      .catch(() => {
+        /* older daemon without the endpoint; panel starts empty */
+      });
+  }, [rv]);
+
+  useEffect(() => {
+    return addListener((evt: BisonrelayLiveEvent) => {
+      if (evt.type !== 'rtdt-chat') return;
+      const p = (evt.payload ?? {}) as Record<string, unknown>;
+      if (p.sessRV !== rv) return;
+      setMsgs((prev) => [
+        ...prev,
+        {
+          label: peerLabelRef.current(Number(p.peerID ?? 0)),
+          message: String(p.message ?? ''),
+          ts: Number(p.ts ?? 0),
+        },
+      ]);
+    });
+  }, [addListener, rv]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [msgs]);
+
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    setChatErr(null);
+    try {
+      await sendBisonrelayRTDTChat(rv, text);
+      setMsgs((prev) => [
+        ...prev,
+        { label: 'you', message: text, ts: Math.floor(Date.now() / 1000) },
+      ]);
+      setDraft('');
+    } catch (err: any) {
+      const body = err?.response?.data;
+      setChatErr(typeof body === 'string' ? body : err?.message || 'Send failed');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg bg-background/40 border border-border/50 p-3 space-y-2">
+      <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Call chat</div>
+      <div className="max-h-40 overflow-y-auto space-y-1">
+        {msgs.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">No messages yet.</p>
+        ) : (
+          msgs.map((m, i) => (
+            <div key={i} className="text-xs break-words">
+              <span className="font-medium text-foreground/90">{m.label}</span>
+              <span className="text-muted-foreground"> {m.message}</span>
+            </div>
+          ))
+        )}
+        <div ref={endRef} />
+      </div>
+      {chatErr && <p className="text-xs text-destructive break-words">{chatErr}</p>}
+      <form onSubmit={send} className="flex items-center gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Message the call…"
+          disabled={sending}
+          className="flex-1 px-3 py-1.5 rounded-lg bg-background border border-border text-foreground text-xs focus:outline-none focus:border-primary disabled:opacity-50"
+        />
+        <button
+          type="submit"
+          disabled={!draft.trim() || sending}
+          className="p-1.5 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 transition-colors disabled:opacity-50"
+          aria-label="Send"
+        >
+          <Send className="h-3.5 w-3.5" />
+        </button>
+      </form>
+    </div>
+  );
+};

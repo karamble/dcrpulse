@@ -108,6 +108,60 @@ export const setBisonrelayConnection = async (online: boolean): Promise<void> =>
   await api.post('/br/connection', { online });
 };
 
+export interface BisonrelayKXSearch {
+  target: string;
+  nick: string;
+}
+
+export interface BisonrelayMediateID {
+  mediator: string;
+  mediator_nick: string;
+  target: string;
+  target_nick: string;
+  date: string;
+  manual: boolean;
+}
+
+export const getBisonrelayKXSearches = async (): Promise<BisonrelayKXSearch[]> => {
+  const { data } = await api.get<{ searches: BisonrelayKXSearch[] | null }>('/br/kx/searches');
+  return data.searches ?? [];
+};
+
+export const getBisonrelayMediateIDs = async (): Promise<BisonrelayMediateID[]> => {
+  const { data } = await api.get<{ mediate_ids: BisonrelayMediateID[] | null }>(
+    '/br/kx/mediateids',
+  );
+  return data.mediate_ids ?? [];
+};
+
+export const cancelBisonrelayMediateID = async (
+  mediator: string,
+  target: string,
+): Promise<void> => {
+  await api.post('/br/kx/mediateids', { mediator, target });
+};
+
+// BisonrelayRTDTChatMessage is one in-call chat line of a live RTDT session
+// (tracked only for the session's lifetime).
+export interface BisonrelayRTDTChatMessage {
+  peer_id: number;
+  message: string;
+  timestamp: number;
+}
+
+export const getBisonrelayRTDTMessages = async (
+  rv: string,
+): Promise<BisonrelayRTDTChatMessage[]> => {
+  const { data } = await api.get<{ messages: BisonrelayRTDTChatMessage[] | null }>(
+    `/br/rtdt/sessions/${encodeURIComponent(rv)}/messages`,
+  );
+  return data.messages ?? [];
+};
+
+export const sendBisonrelayRTDTChat = async (rv: string, message: string): Promise<void> => {
+  await api.post(`/br/rtdt/sessions/${encodeURIComponent(rv)}/chat`, { message });
+};
+
 // BisonrelayNote is one persisted daemon notification (the bell list).
 // Unlike the live event stream these survive the browser being closed.
 export interface BisonrelayNote {

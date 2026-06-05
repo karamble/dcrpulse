@@ -376,6 +376,37 @@ func BrclientdRunningTipAttempts(ctx context.Context) (json.RawMessage, error) {
 	return brclientdGetRaw(ctx, "/payments/tips/running", nil)
 }
 
+// BrclientdRTDTMessages returns the chat messages tracked for a live RTDT
+// session.
+func BrclientdRTDTMessages(ctx context.Context, rv string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/rtdt/sessions/"+rv+"/messages", nil)
+}
+
+// BrclientdRTDTChat sends a text message into a live RTDT session.
+func BrclientdRTDTChat(ctx context.Context, rv, message string) error {
+	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/chat", map[string]string{
+		"message": message,
+	})
+}
+
+// BrclientdKXSearches returns the outstanding KX searches.
+func BrclientdKXSearches(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/kx/searches", nil)
+}
+
+// BrclientdMediateIDs returns the in-flight mediated introduction requests.
+func BrclientdMediateIDs(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/kx/mediateids", nil)
+}
+
+// BrclientdCancelMediateID cancels an in-flight mediated introduction.
+func BrclientdCancelMediateID(ctx context.Context, mediatorHex, targetHex string) error {
+	return brclientdPostJSON(ctx, "/kx/mediateids", map[string]string{
+		"mediator": mediatorHex,
+		"target":   targetHex,
+	})
+}
+
 // BrclientdRecentNotifications returns brclientd's persisted daemon notes
 // (newest first) that power the BR notification bell. Unlike the live
 // /notifications stream these survive the browser being closed.

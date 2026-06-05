@@ -31,7 +31,10 @@ import {
   BisonrelayContentFilter,
   BisonrelayGC,
   BisonrelayKXAttempt,
+  BisonrelayKXSearch,
+  BisonrelayMediateID,
   BisonrelayVersion,
+  cancelBisonrelayMediateID,
   deleteBisonrelayFilter,
   getBisonrelayBackupStatus,
   getBisonrelayConnection,
@@ -39,6 +42,8 @@ import {
   getBisonrelayFilters,
   getBisonrelayIdentity,
   getBisonrelayKXList,
+  getBisonrelayKXSearches,
+  getBisonrelayMediateIDs,
   getBisonrelayReceiveReceipts,
   getBisonrelayVersion,
   listBisonrelayGCs,
@@ -488,6 +493,8 @@ const SessionsCard = () => {
 
 const KXListCard = () => {
   const [kxs, setKxs] = useState<BisonrelayKXAttempt[] | null>(null);
+  const [mediations, setMediations] = useState<BisonrelayMediateID[]>([]);
+  const [searches, setSearches] = useState<BisonrelayKXSearch[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -502,7 +509,22 @@ const KXListCard = () => {
     } finally {
       setBusy(false);
     }
+    // Best-effort: older daemons lack these endpoints.
+    getBisonrelayMediateIDs().then(setMediations).catch(() => {});
+    getBisonrelayKXSearches().then(setSearches).catch(() => {});
   }, []);
+
+  const cancelMediation = async (mediator: string, target: string) => {
+    try {
+      await cancelBisonrelayMediateID(mediator, target);
+      setMediations((prev) =>
+        prev.filter((m) => !(m.mediator === mediator && m.target === target)),
+      );
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Cancel failed');
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -549,6 +571,55 @@ const KXListCard = () => {
               )}
               <span className="ml-auto text-muted-foreground">
                 {relativeTime(new Date(kx.timestamp * 1000).toISOString())}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {mediations.length > 0 && (
+        <div className="space-y-1.5 pt-2 border-t border-border/40">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
+            Mediated introductions
+          </div>
+          {mediations.map((m) => (
+            <div
+              key={`${m.mediator}-${m.target}`}
+              className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/10 border border-border/50 px-3 py-2 text-xs"
+            >
+              <span className="font-medium">{m.target_nick || `${m.target.slice(0, 12)}...`}</span>
+              <span className="text-muted-foreground">
+                via {m.mediator_nick || `${m.mediator.slice(0, 12)}...`}
+              </span>
+              {m.manual && (
+                <span className="px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground">
+                  manual
+                </span>
+              )}
+              <span className="ml-auto text-muted-foreground">{relativeTime(m.date)}</span>
+              <button
+                type="button"
+                onClick={() => cancelMediation(m.mediator, m.target)}
+                className="px-2 py-0.5 rounded text-destructive/90 hover:bg-destructive/10 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {searches.length > 0 && (
+        <div className="space-y-1.5 pt-2 border-t border-border/40">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
+            KX searches
+          </div>
+          {searches.map((s) => (
+            <div
+              key={s.target}
+              className="flex items-center gap-2 rounded-lg bg-muted/10 border border-border/50 px-3 py-2 text-xs"
+            >
+              <span className="font-medium">{s.nick || `${s.target.slice(0, 12)}...`}</span>
+              <span className="text-muted-foreground">
+                searching for this user across the network
               </span>
             </div>
           ))}
