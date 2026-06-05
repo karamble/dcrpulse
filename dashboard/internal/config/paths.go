@@ -127,7 +127,7 @@ func ResolveServiceDir(root, walletName string) string {
 
 // Per-wallet service directories and the cert/macaroon files the dashboard dials
 // each daemon with. The certs/macaroons live under the active wallet's dir.
-func DcrlndDir(walletName string) string  { return ResolveServiceDir(DcrlndDataRoot, walletName) }
+func DcrlndDir(walletName string) string { return ResolveServiceDir(DcrlndDataRoot, walletName) }
 func DcrlndTLSCert(walletName string) string {
 	return filepath.Join(DcrlndDir(walletName), "tls.cert")
 }
@@ -145,4 +145,16 @@ func DcrdexWSCert(walletName string) string {
 
 func BrclientdDir(walletName string) string {
 	return ResolveServiceDir(BrclientdDataRoot, walletName)
+}
+
+// brclientd writes its mTLS certs under <appdata>/data/<network>/rpc/. These
+// resolve the active wallet's cert/key files, mirroring DcrlndTLSCert/DcrdexCert.
+func BrclientdServerCert(walletName, network string) string {
+	return filepath.Join(BrclientdDir(walletName), "data", network, "rpc", "rpc.cert")
+}
+func BrclientdClientCert(walletName, network string) string {
+	return filepath.Join(BrclientdDir(walletName), "data", network, "rpc", "rpc-client.cert")
+}
+func BrclientdClientKey(walletName, network string) string {
+	return filepath.Join(BrclientdDir(walletName), "data", network, "rpc", "rpc-client.key")
 }

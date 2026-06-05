@@ -190,9 +190,6 @@ services:
       - BRCLIENTD_PORT=7676
       - BRCLIENTD_STATUS_PORT=7677
       - BRCLIENTD_DATA_DIR=/app-data/brclientd
-      - BRCLIENTD_SERVER_CERT=/app-data/brclientd/data/mainnet/rpc/rpc.cert
-      - BRCLIENTD_CLIENT_CERT=/app-data/brclientd/data/mainnet/rpc/rpc-client.cert
-      - BRCLIENTD_CLIENT_KEY=/app-data/brclientd/data/mainnet/rpc/rpc-client.key
       - DCRDEX_RPC_HOST=dcrdex
       - DCRDEX_RPC_PORT=5757
       - DCRDEX_RPC_USER=${DCRDEX_RPC_USER:-dcrdex}

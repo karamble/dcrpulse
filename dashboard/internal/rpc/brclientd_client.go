@@ -67,13 +67,16 @@ func InitBrclientdConfig(cfg BrclientdConfig) {
 // and forces the HTTP client to rebuild on next use. Used on a wallet switch.
 func UpdateBrclientdCerts(serverCertPath, clientCertPath, clientKeyPath string) {
 	brclientdClientMu.Lock()
-	defer brclientdClientMu.Unlock()
 	BrclientdCfg.ServerCertPath = serverCertPath
 	BrclientdCfg.ClientCertPath = clientCertPath
 	BrclientdCfg.ClientKeyPath = clientKeyPath
 	brclientdHTTPClient = nil
 	brclientdStreamHTTPClient = nil
 	brclientdBackupHTTPClient = nil
+	brclientdClientMu.Unlock()
+	// Drop the live WS so it redials and rebuilds TLS with the new cert
+	// immediately instead of waiting for its current socket to die.
+	BrclientdWS().Reconnect()
 }
 
 // BrclientdVersionResult is the wire shape returned by VersionService.Version.

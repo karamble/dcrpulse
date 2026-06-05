@@ -92,14 +92,9 @@ func reconnectStackServices(ctx context.Context, name string) {
 	rpc.ReconnectDcrlnd(config.DcrlndTLSCert(name), config.DcrlndMacaroon(name))
 	rpc.UpdateDcrdexCertPaths(config.DcrdexCert(name), config.DcrdexWSCert(name))
 	rpc.ClearDcrdexAppPass()
-	if network, err := CurrentNetwork(ctx); err == nil {
-		base := config.BrclientdDir(name)
-		rpc.UpdateBrclientdCerts(
-			filepath.Join(base, "data", network, "rpc", "rpc.cert"),
-			filepath.Join(base, "data", network, "rpc", "rpc-client.cert"),
-			filepath.Join(base, "data", network, "rpc", "rpc-client.key"),
-		)
-	}
+	server, client, key := BrclientdDaemonCertPaths(ctx)
+	rpc.UpdateBrclientdCerts(server, client, key)
+	ReconnectBrclientdNotifs()
 }
 
 // CloseActiveWallet closes the current wallet and idles the supervisor so the UI

@@ -117,13 +117,14 @@ func main() {
 	// brclientd clientrpc config. The cert pair is owned by brclientd and
 	// mounted read-only into this container; lazy init means the dashboard
 	// starts even before brclientd has provisioned its identity and certs.
+	brServerCert, brClientCert, brClientKey := services.BrclientdDaemonCertPaths(context.Background())
 	rpc.InitBrclientdConfig(rpc.BrclientdConfig{
 		Host:           getEnv("BRCLIENTD_HOST", "brclientd"),
 		Port:           getEnv("BRCLIENTD_PORT", "7676"),
 		StatusPort:     getEnv("BRCLIENTD_STATUS_PORT", "7677"),
-		ServerCertPath: getEnv("BRCLIENTD_SERVER_CERT", services.BrclientdDefaultCertPath("mainnet", "rpc.cert")),
-		ClientCertPath: getEnv("BRCLIENTD_CLIENT_CERT", services.BrclientdDefaultCertPath("mainnet", "rpc-client.cert")),
-		ClientKeyPath:  getEnv("BRCLIENTD_CLIENT_KEY", services.BrclientdDefaultCertPath("mainnet", "rpc-client.key")),
+		ServerCertPath: brServerCert,
+		ClientCertPath: brClientCert,
+		ClientKeyPath:  brClientKey,
 	})
 
 	// dcrdex (bisonw) backend-only RPC config. The RPC cert is owned by the

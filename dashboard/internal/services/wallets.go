@@ -168,6 +168,30 @@ func readWalletState() (walletState, error) {
 	return st, err
 }
 
+// readSelectedPointer reads the shared control pointer the daemon supervisors
+// run from.
+func readSelectedPointer() (selectedWallet, error) {
+	var sel selectedWallet
+	data, err := os.ReadFile(config.SelectedWalletPath())
+	if err != nil {
+		return sel, err
+	}
+	err = json.Unmarshal(data, &sel)
+	return sel, err
+}
+
+// DaemonWalletSelection returns the wallet name and network the daemon
+// supervisors are currently running, read from the same control pointer they
+// read. Falls back to the dashboard's active wallet (and an unset network) when
+// the pointer is missing or unreadable, so the dashboard pins the cert of the
+// wallet the daemons actually serve.
+func DaemonWalletSelection() (name, network string) {
+	if sel, err := readSelectedPointer(); err == nil && sel.Name != "" {
+		return sel.Name, sel.Network
+	}
+	return CurrentWalletName(), ""
+}
+
 // walletDirExists reports whether a directory exists at path.
 func walletDirExists(path string) bool {
 	fi, err := os.Stat(path)

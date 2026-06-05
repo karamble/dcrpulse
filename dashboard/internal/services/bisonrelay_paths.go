@@ -5,6 +5,7 @@
 package services
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 
@@ -46,10 +47,22 @@ func BrclientdLogPath(network string) string {
 	return filepath.Join(BrclientdDataDir(), "logs", network, "brclientd.log")
 }
 
-// BrclientdDefaultCertPath returns the default location for one of
-// brclientd's mTLS cert files when no explicit env override is set.
-// The cert basename is supplied by the caller (rpc.cert / rpc-client.cert /
-// rpc-client.key) since each end of the mTLS handshake needs a different one.
-func BrclientdDefaultCertPath(network, basename string) string {
-	return filepath.Join(BrclientdDataDir(), "data", network, "rpc", basename)
+// BrclientdDaemonCertPaths resolves the mTLS server/client cert and client key
+// for the brclientd instance the daemon supervisors are currently running,
+// reading the same control pointer they read. Used at startup and after a
+// wallet switch so the dashboard pins the active wallet's brclientd cert (each
+// wallet has its own Bison Relay identity and cert). Network comes from the
+// pointer; absent that, a best-effort dcrd lookup, then a mainnet default.
+func BrclientdDaemonCertPaths(ctx context.Context) (server, client, key string) {
+	name, network := DaemonWalletSelection()
+	if network == "" {
+		if n, err := CurrentNetwork(ctx); err == nil && n != "" {
+			network = n
+		} else {
+			network = "mainnet"
+		}
+	}
+	return config.BrclientdServerCert(name, network),
+		config.BrclientdClientCert(name, network),
+		config.BrclientdClientKey(name, network)
 }

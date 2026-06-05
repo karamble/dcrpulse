@@ -41,11 +41,11 @@ type BrclientdWSClient struct {
 }
 
 type subscription struct {
-	method        string
+	method         string
 	suffixedMethod string
-	params        any
-	onEvent       func(json.RawMessage)
-	cancelled     atomic.Bool
+	params         any
+	onEvent        func(json.RawMessage)
+	cancelled      atomic.Bool
 }
 
 type inboundMsg struct {
@@ -61,10 +61,10 @@ type inboundMsg struct {
 }
 
 type outboundMsg struct {
-	JSONRPC string  `json:"jsonrpc"`
-	ID      string  `json:"id"`
-	Method  string  `json:"method"`
-	Params  any     `json:"params,omitempty"`
+	JSONRPC string `json:"jsonrpc"`
+	ID      string `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
 }
 
 var (
@@ -83,6 +83,18 @@ func BrclientdWS() *BrclientdWSClient {
 		}
 	})
 	return wsClient
+}
+
+// Reconnect drops the current connection so Run redials and rebuilds its TLS
+// config from the (updated) BrclientdCfg. Used after a wallet switch repoints
+// the brclientd certs; a no-op when not currently connected.
+func (c *BrclientdWSClient) Reconnect() {
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn != nil {
+		_ = conn.Close()
+	}
 }
 
 // Run dials brclientd and keeps the connection alive with reconnect

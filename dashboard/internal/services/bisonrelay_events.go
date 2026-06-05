@@ -121,6 +121,25 @@ func StartBisonrelayStreams(ctx context.Context) {
 	})
 }
 
+// notifReconnect cancels the in-flight /notifications attempt so the stream
+// redials immediately (e.g. after a wallet switch repoints the brclientd certs).
+var (
+	notifReconnectMu sync.Mutex
+	notifReconnect   context.CancelFunc
+)
+
+// ReconnectBrclientdNotifs drops the current /notifications stream so it redials
+// at once, rebuilding its cert-pinned client. No-op if the stream is not
+// running yet.
+func ReconnectBrclientdNotifs() {
+	notifReconnectMu.Lock()
+	cancel := notifReconnect
+	notifReconnectMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
 // StartBrclientdNotifs subscribes to brclientd's /notifications JSONL
 // stream and rebroadcasts each event to the dashboard event bus, using the
 // same {type, payload} envelope BR's clientrpc streams use. Reconnects on
@@ -135,12 +154,23 @@ func StartBrclientdNotifs(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			err := rpc.BrclientdStreamNotifications(ctx, func(evt rpc.BrclientdNotifEvent) {
+			attemptCtx, cancel := context.WithCancel(ctx)
+			notifReconnectMu.Lock()
+			notifReconnect = cancel
+			notifReconnectMu.Unlock()
+			err := rpc.BrclientdStreamNotifications(attemptCtx, func(evt rpc.BrclientdNotifEvent) {
 				bus.broadcast(BisonrelayEvent{Type: evt.Type, Payload: evt.Payload})
 				backoff = minBackoff
 			})
+			forced := attemptCtx.Err() != nil
+			cancel()
 			if ctx.Err() != nil {
 				return
+			}
+			if forced {
+				// Cert change on a wallet switch: redial now, no error log.
+				backoff = minBackoff
+				continue
 			}
 			if err != nil {
 				log.Printf("brclientd notifications stream: %v (reconnecting in %s)", err, backoff)
