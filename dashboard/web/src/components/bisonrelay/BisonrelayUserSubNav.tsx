@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { ComponentType, useEffect, useState } from 'react';
+import { ComponentType, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Ban,
@@ -39,12 +39,18 @@ import {
   listBisonrelayUserContent,
   listBisonrelayUserPosts,
   renameBisonrelayContact,
+  startBisonrelayContentGet,
   subscribeBisonrelayPosts,
   suggestKxBisonrelayContact,
   tipBisonrelayContact,
   transResetBisonrelayContact,
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
+import {
+  describeLnPaymentFailure,
+  failedLnPaymentHashes,
+  findNewFailedLnPayment,
+} from '../../services/lightningApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 
@@ -609,35 +615,7 @@ const ContentListModal = ({
             </p>
           ) : (
             files.map((f) => (
-              <div
-                key={f.file_id}
-                className="px-3 py-2 rounded-md text-sm flex flex-col gap-0.5"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium text-foreground">
-                    {f.filename || '(unnamed file)'}
-                  </span>
-                  {f.downloaded && (
-                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-success/80">
-                      saved
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] text-muted-foreground flex items-center gap-2">
-                  <span>{formatBytesPretty(f.size)}</span>
-                  {f.directory && (
-                    <>
-                      <span className="opacity-50">·</span>
-                      <span className="font-mono">{f.directory}</span>
-                    </>
-                  )}
-                </div>
-                {f.description && (
-                  <p className="text-[11px] text-muted-foreground/90 mt-0.5 break-words">
-                    {f.description}
-                  </p>
-                )}
-              </div>
+              <ContentFileRow key={f.file_id} uid={uid} nick={nick} file={f} />
             ))
           )}
         </div>
@@ -651,6 +629,196 @@ const ContentListModal = ({
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+// formatContentCost renders an atom amount as a trimmed DCR string. BR
+// shared-file costs are in atoms (1 DCR = 1e8), distinct from the
+// milli-atoms of payment records.
+const formatContentCost = (atoms: number): string =>
+  (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
+
+// ContentFileRow renders one entry of a contact's shared-file list with the
+// listed cost and a download action. The listed cost (from the contact's own
+// reply) is sent as the approved price cap; if the host meanwhile charges
+// more, the daemon rejects with file-download-cost-rejected and the row asks
+// again with the actual price before anything is paid.
+const ContentFileRow = ({
+  uid,
+  nick,
+  file,
+}: {
+  uid: string;
+  nick: string;
+  file: BisonrelayContentItem;
+}) => {
+  const [phase, setPhase] = useState<
+    'idle' | 'confirm' | 'downloading' | 'mismatch' | 'done' | 'error'
+  >(file.downloaded ? 'done' : 'idle');
+  const [err, setErr] = useState<string | null>(null);
+  const [realCost, setRealCost] = useState(0);
+  // Failed-payment hashes snapshotted when the download starts; a NEW failed
+  // payment appearing during the download means our chunk payment could not
+  // complete (e.g. no route) and the BR library parked the download silently.
+  const failedBaseline = useRef<Set<string>>(new Set());
+  const { addListener } = useBisonrelayLive();
+
+  useEffect(() => {
+    if (phase !== 'downloading') return undefined;
+    return addListener((evt: BisonrelayLiveEvent) => {
+      const payload = (evt.payload ?? {}) as Record<string, unknown>;
+      if (payload.uid !== uid || payload.fid !== file.file_id) return;
+      if (evt.type === 'file-download-cost-rejected') {
+        setRealCost(typeof payload.cost_atoms === 'number' ? payload.cost_atoms : 0);
+        setPhase('mismatch');
+      } else if (evt.type === 'file-download-completed') {
+        setPhase('done');
+      }
+    });
+  }, [phase, addListener, uid, file.file_id]);
+
+  useEffect(() => {
+    if (phase !== 'downloading') return undefined;
+    let cancelled = false;
+    let timer: number | undefined;
+    const tick = async () => {
+      try {
+        // A concurrent unrelated payment failing in this window would be
+        // attributed to the download; rare and acceptable for surfacing.
+        const failed = await findNewFailedLnPayment(failedBaseline.current);
+        if (failed && !cancelled) {
+          setErr(`Payment failed: ${describeLnPaymentFailure(failed.failureReason)}`);
+          setPhase('error');
+          return;
+        }
+      } catch {
+        // Transient list error; keep polling.
+      }
+      if (!cancelled) timer = window.setTimeout(tick, 2000);
+    };
+    timer = window.setTimeout(tick, 2000);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [phase]);
+
+  const start = async (maxCostAtoms: number) => {
+    setErr(null);
+    try {
+      failedBaseline.current = await failedLnPaymentHashes();
+    } catch {
+      failedBaseline.current = new Set();
+    }
+    setPhase('downloading');
+    try {
+      await startBisonrelayContentGet(uid, file.file_id, maxCostAtoms);
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not start download');
+      setPhase('error');
+    }
+  };
+
+  const actionBtn = 'px-2.5 py-1 rounded-md bg-primary/20 text-primary text-xs font-semibold hover:bg-primary/30 transition-colors';
+  const cancelBtn = 'px-2.5 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 text-xs';
+
+  return (
+    <div className="px-3 py-2 rounded-md text-sm flex flex-col gap-0.5">
+      <div className="flex items-center gap-2">
+        <span className="truncate font-medium text-foreground">
+          {file.filename || '(unnamed file)'}
+        </span>
+        {phase === 'done' && (
+          <span className="shrink-0 text-[9px] uppercase tracking-wide text-success/80">
+            saved
+          </span>
+        )}
+        {phase === 'idle' && (
+          <button
+            type="button"
+            onClick={() => (file.cost > 0 ? setPhase('confirm') : start(0))}
+            className={`shrink-0 ml-auto ${actionBtn}`}
+          >
+            {file.cost > 0 ? `Download (${formatContentCost(file.cost)} DCR)` : 'Download'}
+          </button>
+        )}
+      </div>
+      <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+        <span>{formatBytesPretty(file.size)}</span>
+        <span className="opacity-50">·</span>
+        <span className={file.cost > 0 ? 'text-primary/80' : undefined}>
+          {file.cost > 0 ? `${formatContentCost(file.cost)} DCR` : 'free'}
+        </span>
+        {file.directory && (
+          <>
+            <span className="opacity-50">·</span>
+            <span className="font-mono">{file.directory}</span>
+          </>
+        )}
+      </div>
+      {file.description && (
+        <p className="text-[11px] text-muted-foreground/90 mt-0.5 break-words">
+          {file.description}
+        </p>
+      )}
+      {phase === 'confirm' && (
+        <div className="mt-1 space-y-1.5">
+          <div className="text-xs">
+            Pay{' '}
+            <span className="font-semibold text-foreground">
+              {formatContentCost(file.cost)} DCR
+            </span>{' '}
+            to download <span className="font-mono">{file.filename}</span>?
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => start(file.cost)} className={actionBtn}>
+              Pay &amp; download
+            </button>
+            <button type="button" onClick={() => setPhase('idle')} className={cancelBtn}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {phase === 'mismatch' && (
+        <div className="mt-1 space-y-1.5">
+          <div className="text-xs">
+            {nick} charges{' '}
+            <span className="font-semibold text-foreground">
+              {formatContentCost(realCost)} DCR
+            </span>{' '}
+            for this file
+            {file.cost > 0
+              ? `, the list said ${formatContentCost(file.cost)} DCR.`
+              : ', the list said it was free.'}{' '}
+            Pay the actual price?
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => start(realCost)} className={actionBtn}>
+              Pay &amp; download
+            </button>
+            <button type="button" onClick={() => setPhase('idle')} className={cancelBtn}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {phase === 'downloading' && (
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+          <span>Downloading...</span>
+        </div>
+      )}
+      {phase === 'error' && (
+        <div className="mt-1 space-y-1.5">
+          <div className="text-xs text-destructive break-words">{err}</div>
+          <button type="button" onClick={() => setPhase('idle')} className={cancelBtn}>
+            Try again
+          </button>
+        </div>
+      )}
     </div>
   );
 };
