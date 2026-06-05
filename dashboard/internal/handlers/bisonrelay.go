@@ -374,6 +374,24 @@ func BisonrelayConnectionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// BisonrelayRecentNotificationsHandler returns brclientd's persisted daemon
+// notes (newest first) for the BR notification bell.
+func BisonrelayRecentNotificationsHandler(w http.ResponseWriter, r *http.Request) {
+	n := 50
+	if v := strings.TrimSpace(r.URL.Query().Get("n")); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			n = parsed
+		}
+	}
+	body, err := rpc.BrclientdRecentNotifications(r.Context(), n)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
 // BisonrelayReceiveReceiptsHandler proxies brclientd's
 // /settings/receivereceipts: GET reports the effective state; POST {enabled}
 // persists it and, on a change, brclientd restarts to apply (the value is

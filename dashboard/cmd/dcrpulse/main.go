@@ -322,6 +322,7 @@ func main() {
 	api.HandleFunc("/br/contacts/reset-all", handlers.BisonrelayContactResetAllHandler).Methods("POST")
 	api.HandleFunc("/br/connection", handlers.BisonrelayConnectionHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/settings/receivereceipts", handlers.BisonrelayReceiveReceiptsHandler).Methods("GET", "POST")
+	api.HandleFunc("/br/notifications/recent", handlers.BisonrelayRecentNotificationsHandler).Methods("GET")
 	api.HandleFunc("/br/filters", handlers.BisonrelayFiltersHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/filters/delete", handlers.BisonrelayFilterDeleteHandler).Methods("POST")
 	api.HandleFunc("/br/posts/subscribe-all", handlers.BisonrelaySubscribeAllPostsHandler).Methods("POST")

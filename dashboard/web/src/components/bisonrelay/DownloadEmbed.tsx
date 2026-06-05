@@ -70,11 +70,23 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [usd, setUsd] = useState<{ amount: number; source: string; updatedAt: string } | null>(null);
   const [realCost, setRealCost] = useState(0);
+  // BR transfers are async and the seller may be offline or unable to issue
+  // the invoice (no protocol error reaches us); hint after 30s of waiting.
+  const [slow, setSlow] = useState(false);
   // Failed-payment hashes snapshotted when the download starts; a NEW failed
   // payment appearing during the download means our chunk payment could not
   // complete (e.g. no route) and the BR library parked the download silently.
   const failedBaseline = useRef<Set<string>>(new Set());
   const { addListener } = useBisonrelayLive();
+
+  useEffect(() => {
+    if (phase !== 'downloading') {
+      setSlow(false);
+      return undefined;
+    }
+    const t = window.setTimeout(() => setSlow(true), 30000);
+    return () => window.clearTimeout(t);
+  }, [phase]);
 
   // For a paid file, look up the USD value of the cost (DCR/USD via BR, with a
   // Kraken fallback) so the price can be shown in both DCR and approximate USD.
@@ -259,8 +271,16 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
           </div>
         </div>
       ) : phase === 'downloading' ? (
-        <div className="text-muted-foreground">
-          Downloading{progress && progress.total ? ` ${progress.done}/${progress.total} chunks` : '…'}
+        <div className="space-y-1">
+          <div className="text-muted-foreground">
+            Downloading{progress && progress.total ? ` ${progress.done}/${progress.total} chunks` : '…'}
+          </div>
+          {slow && (
+            <div className="text-xs text-muted-foreground/80">
+              Still waiting for the seller. They may be offline or unable to
+              issue the payment invoice right now.
+            </div>
+          )}
         </div>
       ) : phase === 'error' ? (
         <div className="space-y-2">

@@ -108,6 +108,25 @@ export const setBisonrelayConnection = async (online: boolean): Promise<void> =>
   await api.post('/br/connection', { online });
 };
 
+// BisonrelayNote is one persisted daemon notification (the bell list).
+// Unlike the live event stream these survive the browser being closed.
+export interface BisonrelayNote {
+  id: number;
+  ts: string;
+  severity: 'info' | 'warn' | 'error' | string;
+  subject: string;
+  detail: string;
+  uid?: string;
+}
+
+export const getBisonrelayNotifications = async (n: number = 50): Promise<BisonrelayNote[]> => {
+  const { data } = await api.get<{ notifications: BisonrelayNote[] | null }>(
+    '/br/notifications/recent',
+    { params: { n } },
+  );
+  return data.notifications ?? [];
+};
+
 export const getBisonrelayReceiveReceipts = async (): Promise<{ enabled: boolean }> => {
   const { data } = await api.get<{ enabled: boolean }>('/br/settings/receivereceipts');
   return data;
@@ -616,6 +635,8 @@ export type BisonrelayEventType =
   | 'file-download-progress'
   | 'file-download-completed'
   | 'file-download-cost-rejected'
+  | 'file-invoice-capacity-low'
+  | 'invoice-gen-failed'
   | 'rtdt-invited'
   | 'rtdt-invite-accepted'
   | 'rtdt-invite-canceled'

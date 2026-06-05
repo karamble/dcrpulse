@@ -658,11 +658,23 @@ const ContentFileRow = ({
   >(file.downloaded ? 'done' : 'idle');
   const [err, setErr] = useState<string | null>(null);
   const [realCost, setRealCost] = useState(0);
+  // BR transfers are async and the seller may be offline or unable to issue
+  // the invoice (no protocol error reaches us); hint after 30s of waiting.
+  const [slow, setSlow] = useState(false);
   // Failed-payment hashes snapshotted when the download starts; a NEW failed
   // payment appearing during the download means our chunk payment could not
   // complete (e.g. no route) and the BR library parked the download silently.
   const failedBaseline = useRef<Set<string>>(new Set());
   const { addListener } = useBisonrelayLive();
+
+  useEffect(() => {
+    if (phase !== 'downloading') {
+      setSlow(false);
+      return undefined;
+    }
+    const t = window.setTimeout(() => setSlow(true), 30000);
+    return () => window.clearTimeout(t);
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== 'downloading') return undefined;
@@ -806,9 +818,17 @@ const ContentFileRow = ({
         </div>
       )}
       {phase === 'downloading' && (
-        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
-          <span>Downloading...</span>
+        <div className="mt-1 space-y-1">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+            <span>Downloading...</span>
+          </div>
+          {slow && (
+            <div className="text-[11px] text-muted-foreground/80">
+              Still waiting for the seller. They may be offline or unable to
+              issue the payment invoice right now.
+            </div>
+          )}
         </div>
       )}
       {phase === 'error' && (

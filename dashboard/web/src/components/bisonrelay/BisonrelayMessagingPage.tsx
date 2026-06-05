@@ -548,6 +548,27 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         }
         return;
       }
+      if (evt.type === 'file-invoice-capacity-low' || evt.type === 'invoice-gen-failed') {
+        // brclientd LogPM'd the same text into the buyer's thread (like
+        // kx-suggested); append it optimistically when that thread is open.
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const uid = String(payload.uid ?? '');
+        const line = String(payload.text ?? '');
+        if (!uid || !line) return;
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity === uid) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              message: line,
+              from: '',
+              timestamp: Math.floor(Date.now() / 1000),
+              internal: true,
+            },
+          ]);
+        }
+        return;
+      }
       if (evt.type === 'pm') {
         const payload = (evt.payload ?? {}) as Record<string, unknown>;
         const fromUid = String(payload.from ?? '');

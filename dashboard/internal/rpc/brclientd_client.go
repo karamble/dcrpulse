@@ -364,6 +364,15 @@ func BrclientdSetConnection(ctx context.Context, online bool) error {
 	return brclientdPostJSON(ctx, "/connection", map[string]bool{"online": online})
 }
 
+// BrclientdRecentNotifications returns brclientd's persisted daemon notes
+// (newest first) that power the BR notification bell. Unlike the live
+// /notifications stream these survive the browser being closed.
+func BrclientdRecentNotifications(ctx context.Context, n int) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/notifications/recent", map[string]string{
+		"n": fmt.Sprintf("%d", n),
+	})
+}
+
 // BrclientdReceiveReceiptsSetting returns brclientd's
 // /settings/receivereceipts JSON: {enabled: bool}, the effective
 // send-receive-receipts state.

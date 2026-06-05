@@ -20,6 +20,7 @@ import { BisonrelayStats } from './BisonrelayStats';
 import { BisonrelayRealtime } from './BisonrelayRealtime';
 import { BisonrelayPages } from './BisonrelayPages';
 import { BisonrelaySettingsTab } from './BisonrelaySettingsTab';
+import { BrNotifications } from './BrNotifications';
 import { useBrTextScale } from './brTextScale';
 import { BisonrelayStatus, getBisonrelayStatus } from '../../services/bisonrelayApi';
 import { useWalletReady } from '../../hooks/useWalletReady';
@@ -141,6 +142,7 @@ export const BisonrelayPage = () => {
             </button>
           );
         })}
+        <BrNotifications />
       </nav>
 
       {activeTab === 'chat' && <BisonrelayMessagingPage ownNick={ready.nick ?? 'unknown'} />}

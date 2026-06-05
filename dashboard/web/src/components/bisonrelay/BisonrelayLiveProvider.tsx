@@ -94,6 +94,14 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
               setUnread((prev) => ({ ...prev, [uid]: (prev[uid] ?? 0) + 1 }));
             }
           }
+          // Daemon system lines logged into a user's thread (blocked sales,
+          // failed invoices) badge that conversation like a PM would.
+          if (evt.type === 'file-invoice-capacity-low' || evt.type === 'invoice-gen-failed') {
+            const uid = String((evt.payload as Record<string, unknown>)?.uid ?? '');
+            if (uid && uid !== activeUidRef.current) {
+              setUnread((prev) => ({ ...prev, [uid]: (prev[uid] ?? 0) + 1 }));
+            }
+          }
           if (evt.type === 'gc-message') {
             const gcid = String((evt.payload as Record<string, unknown>)?.gcid ?? '');
             if (gcid && gcid !== activeGCIDRef.current) {
