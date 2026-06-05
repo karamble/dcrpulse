@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   BisonrelayLiveEvent,
   bisonrelayContentFileUrl,
@@ -10,6 +10,11 @@ import {
   getBisonrelayRates,
   startBisonrelayContentGet,
 } from '../../services/bisonrelayApi';
+import {
+  describeLnPaymentFailure,
+  failedLnPaymentHashes,
+  findNewFailedLnPayment,
+} from '../../services/lightningApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 
 // DownloadEmbedSeg is the subset of a BR embed segment a file-transfer embed
@@ -65,6 +70,10 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [usd, setUsd] = useState<{ amount: number; source: string; updatedAt: string } | null>(null);
   const [realCost, setRealCost] = useState(0);
+  // Failed-payment hashes snapshotted when the download starts; a NEW failed
+  // payment appearing during the download means our chunk payment could not
+  // complete (e.g. no route) and the BR library parked the download silently.
+  const failedBaseline = useRef<Set<string>>(new Set());
   const { addListener } = useBisonrelayLive();
 
   // For a paid file, look up the USD value of the cost (DCR/USD via BR, with a
@@ -113,6 +122,18 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
       } catch {
         // Transient list error; keep polling.
       }
+      try {
+        // A concurrent unrelated payment failing in this window would be
+        // attributed to the download; rare and acceptable for surfacing.
+        const failed = await findNewFailedLnPayment(failedBaseline.current);
+        if (failed && !cancelled) {
+          setErr(`Payment failed: ${describeLnPaymentFailure(failed.failureReason)}`);
+          setPhase('error');
+          return;
+        }
+      } catch {
+        // Transient list error; keep polling.
+      }
       if (!cancelled) timer = window.setTimeout(tick, 2000);
     };
     timer = window.setTimeout(tick, 800);
@@ -138,6 +159,11 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
 
   const start = async (maxCostAtoms: number) => {
     setErr(null);
+    try {
+      failedBaseline.current = await failedLnPaymentHashes();
+    } catch {
+      failedBaseline.current = new Set();
+    }
     setPhase('downloading');
     try {
       await startBisonrelayContentGet(uid, fid, maxCostAtoms);

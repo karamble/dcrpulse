@@ -320,6 +320,40 @@ export const listLnPayments = async (): Promise<{ payments: LightningPayment[] }
   return data;
 };
 
+// dcrlnd records failed payment attempts in its payment DB (with a failure
+// reason such as no-route) but offers no failure event stream, and the BR
+// library only logs chunk-payment errors. Paid-download UIs therefore
+// snapshot the failed-payment hashes before paying and poll for new ones
+// while a download is in flight.
+export const failedLnPaymentHashes = async (): Promise<Set<string>> => {
+  const { payments } = await listLnPayments();
+  return new Set(payments.filter((p) => p.status === 'failed').map((p) => p.paymentHash));
+};
+
+export const findNewFailedLnPayment = async (
+  baseline: Set<string>,
+): Promise<LightningPayment | null> => {
+  const { payments } = await listLnPayments();
+  return payments.find((p) => p.status === 'failed' && !baseline.has(p.paymentHash)) ?? null;
+};
+
+// describeLnPaymentFailure maps dcrlnd's failure reason enum to a short
+// human-readable phrase; unknown values pass through raw.
+export const describeLnPaymentFailure = (reason?: string): string => {
+  switch (reason) {
+    case 'FAILURE_REASON_NO_ROUTE':
+      return 'no route found to pay the recipient';
+    case 'FAILURE_REASON_INSUFFICIENT_BALANCE':
+      return 'insufficient outbound balance';
+    case 'FAILURE_REASON_TIMEOUT':
+      return 'payment attempt timed out';
+    case 'FAILURE_REASON_INCORRECT_PAYMENT_DETAILS':
+      return 'payment rejected by the recipient';
+    default:
+      return reason || 'payment failed';
+  }
+};
+
 // streamLnPayment opens a WebSocket to /wallet/ln/send. The first text
 // frame is the LightningSendPaymentReq; every subsequent server frame is
 // either a LightningPayment snapshot or an {"error":"..."} terminal
