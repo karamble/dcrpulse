@@ -146,6 +146,8 @@ func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
 		"status":             "healthy",
 		"rpcConnected":       rpc.DcrdClient != nil,
 		"walletRPCConnected": rpc.WalletClient != nil,
+		"dcrdTLS":            rpc.DcrdUsesTLS(),
+		"walletTLS":          rpc.WalletUsesTLS(),
 		"time":               time.Now(),
 	}
 	w.Header().Set("Content-Type", "application/json")

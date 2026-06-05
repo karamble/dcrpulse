@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Activity, AlertCircle, Loader2 } from 'lucide-react';
+import { InsecureRpcWarning } from './InsecureRpcWarning';
 
 interface NodeStatusProps {
   status: 'running' | 'syncing' | 'stopped' | string;
@@ -64,10 +65,13 @@ export const NodeStatus = ({ status, syncProgress = 0, version, syncMessage }: N
             <p className="text-sm text-muted-foreground">Decred {version || ''}</p>
           </div>
         </div>
-        <div className={`px-6 py-3 rounded-xl ${status === 'running' ? 'bg-success text-white' : `${config.bgColor} border-2 ${config.borderColor}`}`}>
-          <span className={`${status === 'running' ? 'text-white' : config.color} font-bold text-lg tracking-wide`}>
-            {config.label}
-          </span>
+        <div className="flex items-center gap-3">
+          <InsecureRpcWarning kind="dcrd" />
+          <div className={`px-6 py-3 rounded-xl ${status === 'running' ? 'bg-success text-white' : `${config.bgColor} border-2 ${config.borderColor}`}`}>
+            <span className={`${status === 'running' ? 'text-white' : config.color} font-bold text-lg tracking-wide`}>
+              {config.label}
+            </span>
+          </div>
         </div>
       </div>
       

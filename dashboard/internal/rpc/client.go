@@ -58,6 +58,10 @@ var (
 
 	// DcrdConfig stores the dcrd connection details for RpcSync
 	DcrdConfig Config
+
+	// WalletConfig stores the dcrwallet JSON-RPC connection details, used to
+	// report whether that connection is encrypted.
+	WalletConfig Config
 )
 
 // Config holds the RPC connection configuration
@@ -75,6 +79,14 @@ type GrpcConfig struct {
 	GrpcPort string
 	GrpcCert string
 }
+
+// DcrdUsesTLS reports whether the dcrd JSON-RPC connection is configured with
+// TLS (a cert was provided). When false the connection is plaintext.
+func DcrdUsesTLS() bool { return DcrdConfig.RPCCert != "" }
+
+// WalletUsesTLS reports whether the dcrwallet JSON-RPC connection is configured
+// with TLS (a cert was provided). When false the connection is plaintext.
+func WalletUsesTLS() bool { return WalletConfig.RPCCert != "" }
 
 // InitDcrdClient initializes the dcrd RPC client
 func InitDcrdClient(config Config) error {
@@ -116,12 +128,19 @@ func InitDcrdClient(config Config) error {
 		return fmt.Errorf("failed to connect to dcrd: %v", err)
 	}
 
-	log.Println("Successfully connected to dcrd RPC with TLS")
+	if config.RPCCert == "" {
+		log.Println("WARNING: dcrd RPC connection is NOT using TLS; the RPC username, password, and all traffic are sent in cleartext. Set DCRD_RPC_CERT to enable TLS.")
+	} else {
+		log.Println("Successfully connected to dcrd RPC with TLS")
+	}
 	return nil
 }
 
 // InitWalletClient initializes the dcrwallet RPC client
 func InitWalletClient(config Config) error {
+	// Store config so the TLS status can be reported later.
+	WalletConfig = config
+
 	// Read the TLS certificate if provided
 	var certs []byte
 	var err error
@@ -156,7 +175,10 @@ func InitWalletClient(config Config) error {
 	if err != nil {
 		// Wallet might be locked or not initialized, but connection is OK
 		log.Printf("Wallet RPC connected but getinfo failed (may be locked): %v", err)
-	} else {
+	}
+	if config.RPCCert == "" {
+		log.Println("WARNING: dcrwallet RPC connection is NOT using TLS; the RPC username, password, and all traffic are sent in cleartext. Set DCRWALLET_RPC_CERT to enable TLS.")
+	} else if err == nil {
 		log.Println("Successfully connected to dcrwallet RPC with TLS")
 	}
 

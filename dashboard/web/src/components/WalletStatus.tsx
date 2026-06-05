@@ -4,6 +4,7 @@
 
 import { Link } from 'react-router-dom';
 import { Activity, AlertCircle, Loader2, Lock, ShieldCheck, Ticket, Unlock, Wallet } from 'lucide-react';
+import { InsecureRpcWarning } from './InsecureRpcWarning';
 
 interface WalletStatusProps {
   status: 'synced' | 'syncing' | 'no_wallet' | 'disconnected' | 'locked';
@@ -91,6 +92,7 @@ export const WalletStatus = ({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <InsecureRpcWarning kind="wallet" />
           {autobuyerRunning && (
             <Link
               to="/wallet/staking/autobuyer"

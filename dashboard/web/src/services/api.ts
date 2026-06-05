@@ -127,6 +127,19 @@ export const checkHealth = async (): Promise<any> => {
   return response.data;
 };
 
+export interface HealthStatus {
+  status: string;
+  rpcConnected: boolean;
+  walletRPCConnected: boolean;
+  dcrdTLS: boolean;
+  walletTLS: boolean;
+}
+
+export const getHealth = async (): Promise<HealthStatus> => {
+  const response = await api.get<HealthStatus>('/health');
+  return response.data;
+};
+
 // Wallet Types
 export interface WalletStatus {
   status: string;
