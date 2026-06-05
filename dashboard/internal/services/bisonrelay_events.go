@@ -109,7 +109,7 @@ func StartBisonrelayStreams(ctx context.Context) {
 		}
 		return map[string]int64{"sequenceId": kx.SequenceID}, true
 	})
-	go runStream(ctx, ws, "ChatService.DownloadsCompletedStream", "ChatService.AckDownloadCompleted", "download", func(payload json.RawMessage) (any, bool) {
+	go runStream(ctx, ws, "ContentService.DownloadsCompletedStream", "ContentService.AckDownloadCompleted", "download", func(payload json.RawMessage) (any, bool) {
 		var dl struct {
 			SequenceID int64 `json:"sequenceId"`
 		}
