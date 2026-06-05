@@ -172,6 +172,12 @@ func RenameWallet(ctx context.Context, from, to string) error {
 	if err := ValidateWalletName(to); err != nil {
 		return err
 	}
+	// Validate the source name too: it is used to build the on-disk path that
+	// gets renamed, so an unvalidated value such as "../.." could move a
+	// directory outside the wallets tree.
+	if err := ValidateWalletName(from); err != nil {
+		return err
+	}
 	if from == config.DefaultWalletName {
 		return fmt.Errorf("the default wallet cannot be renamed")
 	}
