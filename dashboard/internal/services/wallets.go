@@ -69,11 +69,20 @@ func setActiveWalletName(name string) {
 	activeWalletMu.Unlock()
 }
 
-// SeedActiveWallet restores the active wallet at startup. It prefers the
-// persisted selection; absent one, it falls back to the default wallet when a
-// legacy wallet database already exists on disk, so upgraded watch-only
-// deployments resolve to their existing wallet without any migration.
+// SeedActiveWallet restores the active wallet at startup. The shared control
+// pointer is the daemon source of truth: the supervisors run whatever wallet it
+// names, so the dashboard adopts that wallet first (and heals a stale persisted
+// selection) to keep the cert it pins for each daemon matched to the wallet
+// actually running. Absent a pointer it prefers the persisted selection, and
+// absent that it falls back to the default wallet when a legacy wallet database
+// already exists on disk, so upgraded watch-only deployments resolve to their
+// existing wallet without any migration.
 func SeedActiveWallet() {
+	if sel, err := readSelectedPointer(); err == nil && sel.Name != "" {
+		setActiveWalletName(sel.Name)
+		reconcileSelectedWallet(sel.Name)
+		return
+	}
 	cfg, err := config.LoadGlobalCfg()
 	if err != nil {
 		log.Printf("Seed active wallet: load global config: %v", err)
@@ -92,6 +101,32 @@ func SeedActiveWallet() {
 		if err := persistSelectedWallet(config.DefaultWalletName); err != nil {
 			log.Printf("Seed active wallet: persist default: %v", err)
 		}
+	}
+}
+
+// reconcileSelectedWallet heals the persisted selection when it disagrees with
+// the control pointer the daemons run from, so the dashboard's remembered wallet
+// stays a trustworthy fallback if the pointer is later removed. Best effort: on
+// any error the next restart simply re-adopts the pointer.
+func reconcileSelectedWallet(name string) {
+	cfg, err := config.LoadGlobalCfg()
+	if err != nil {
+		log.Printf("Seed active wallet: load global config: %v", err)
+		return
+	}
+	var cur string
+	if _, err := cfg.Get(config.KeySelectedWallet, &cur); err != nil {
+		log.Printf("Seed active wallet: read selection: %v", err)
+	}
+	if cur == name {
+		return
+	}
+	if err := cfg.Set(config.KeySelectedWallet, name); err != nil {
+		log.Printf("Seed active wallet: heal selection: %v", err)
+		return
+	}
+	if err := cfg.Save(); err != nil {
+		log.Printf("Seed active wallet: persist healed selection: %v", err)
 	}
 }
 
