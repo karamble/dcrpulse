@@ -240,6 +240,10 @@ export interface BisonrelayMessage {
   pending?: boolean;
   tipKey?: string;
   subKey?: string;
+  // Delivery tick for own session-sent PMs: false once queued (the send
+  // endpoint returned), true once the relay server acked the message
+  // (pm-delivered event). Absent for history-loaded messages.
+  delivered?: boolean;
 }
 
 export interface BisonrelayMessagesResponse {
@@ -519,6 +523,9 @@ export interface BisonrelayPostComment {
   parent?: string;
   timestamp: number;
   identifier?: string;
+  // Unique status id (the PMS hash); receive receipts for the comment are
+  // keyed by it.
+  status_id?: string;
   // Sent to the post author but not yet broadcast back by them.
   unreplicated?: boolean;
   // Client-side fields used while a comment is in flight.
@@ -593,6 +600,19 @@ export const getBisonrelayPostReceiveReceipts = async (
   return data.receipts ?? [];
 };
 
+// getBisonrelayPostCommentReceipts returns the receive receipts for the
+// comments on one of the local user's own posts, keyed by the comment's
+// status_id (see BisonrelayPostComment.status_id).
+export const getBisonrelayPostCommentReceipts = async (
+  pid: string,
+): Promise<Record<string, BisonrelayReceiveReceipt[]>> => {
+  const { data } = await api.get<{ receipts: Record<string, BisonrelayReceiveReceipt[]> | null }>(
+    '/br/posts/comment-receivereceipts',
+    { params: { pid } },
+  );
+  return data.receipts ?? {};
+};
+
 export interface BisonrelayContentItem {
   file_id: string;
   filename: string;
@@ -643,6 +663,8 @@ export type BisonrelayEventType =
   | 'blocked-by-user'
   | 'profile-updated'
   | 'idle-unsubscribing'
+  | 'pm-delivered'
+  | 'receive-receipt'
   | 'rtdt-invited'
   | 'rtdt-invite-accepted'
   | 'rtdt-invite-canceled'

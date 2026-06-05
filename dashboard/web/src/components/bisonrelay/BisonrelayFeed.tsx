@@ -37,6 +37,7 @@ import {
   getBisonrelayContacts,
   getBisonrelayIdentity,
   getBisonrelayPostBody,
+  getBisonrelayPostCommentReceipts,
   getBisonrelayPostComments,
   getBisonrelayPostHearts,
   getBisonrelayPostReceiveReceipts,
@@ -793,6 +794,13 @@ const PostDetailView = ({
 
   useEffect(() => {
     return addListener((evt: BisonrelayLiveEvent) => {
+      if (evt.type === 'receive-receipt') {
+        // A peer acknowledged receiving this post; refresh Seen by live
+        // (receipts do not fire post-status-received).
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        if (payload.domain === 'posts' && payload.id === pid) loadReceipts();
+        return;
+      }
       if (evt.type !== 'post-heart-received' && evt.type !== 'post-status-received') return;
       const payload = (evt.payload ?? {}) as Record<string, unknown>;
       if (payload.author !== uid || payload.pid !== pid) return;
@@ -893,7 +901,7 @@ const PostDetailView = ({
       </article>
       {body && (
         <section className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5">
-          <PostComments authorId={uid} pid={pid} avatars={avatars} />
+          <PostComments authorId={uid} pid={pid} avatars={avatars} isOwnPost={isOwnPost} />
         </section>
       )}
       {isOwnPost && receipts.length > 0 && (
@@ -951,17 +959,33 @@ const PostComments = ({
   authorId,
   pid,
   avatars,
+  isOwnPost,
 }: {
   authorId: string;
   pid: string;
   avatars: Record<string, string>;
+  isOwnPost: boolean;
 }) => {
   const [comments, setComments] = useState<BisonrelayPostComment[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
+  // Receive receipts per comment status_id; only recorded on the post
+  // author's node (it relays the comments), so loaded for own posts only.
+  const [commentReceipts, setCommentReceipts] = useState<
+    Record<string, BisonrelayReceiveReceipt[]>
+  >({});
   const { addListener } = useBisonrelayLive();
+
+  const loadCommentReceipts = useCallback(async () => {
+    if (!isOwnPost) return;
+    try {
+      setCommentReceipts(await getBisonrelayPostCommentReceipts(pid));
+    } catch {
+      /* older brclientd without the endpoint; markers stay hidden */
+    }
+  }, [isOwnPost, pid]);
 
   const reload = useCallback(async () => {
     try {
@@ -976,13 +1000,20 @@ const PostComments = ({
 
   useEffect(() => {
     reload();
+    loadCommentReceipts();
     return addListener((evt: BisonrelayLiveEvent) => {
-      if (evt.type !== 'post-status-received') return;
       const payload = (evt.payload ?? {}) as Record<string, unknown>;
+      if (evt.type === 'receive-receipt') {
+        if (payload.domain === 'postcomments' && payload.id === pid) {
+          loadCommentReceipts();
+        }
+        return;
+      }
+      if (evt.type !== 'post-status-received') return;
       if (payload.author !== authorId || payload.pid !== pid) return;
       reload();
     });
-  }, [addListener, authorId, pid, reload]);
+  }, [addListener, authorId, pid, reload, loadCommentReceipts]);
 
   const tree = useMemo(
     () => buildCommentTree(comments ?? []),
@@ -1080,6 +1111,7 @@ const PostComments = ({
               level={0}
               childrenOf={tree.childrenOf}
               avatars={avatars}
+              seenReceipts={commentReceipts}
               replyTargetId={replyTargetId}
               setReplyTargetId={setReplyTargetId}
               onSubmitReply={submitComment}
@@ -1114,6 +1146,7 @@ const CommentNode = ({
   level,
   childrenOf,
   avatars,
+  seenReceipts,
   replyTargetId,
   setReplyTargetId,
   onSubmitReply,
@@ -1123,11 +1156,13 @@ const CommentNode = ({
   level: number;
   childrenOf: Map<string, BisonrelayPostComment[]>;
   avatars: Record<string, string>;
+  seenReceipts: Record<string, BisonrelayReceiveReceipt[]>;
   replyTargetId: string | null;
   setReplyTargetId: (id: string | null) => void;
   onSubmitReply: (text: string, parent?: string) => Promise<void>;
   submitting: boolean;
 }) => {
+  const seen = (comment.status_id && seenReceipts[comment.status_id]) || [];
   const id = comment.identifier;
   const nick =
     comment.from_nick ||
@@ -1159,6 +1194,14 @@ const CommentNode = ({
             </span>
             {comment.unreplicated && (
               <span className="italic opacity-70">Not yet relayed by the post author</span>
+            )}
+            {seen.length > 0 && (
+              <span
+                className="opacity-70"
+                title={seen.map((r) => r.nick).join(', ')}
+              >
+                seen {seen.length}
+              </span>
             )}
             <button
               type="button"
@@ -1195,6 +1238,7 @@ const CommentNode = ({
               level={level + 1}
               childrenOf={childrenOf}
               avatars={avatars}
+              seenReceipts={seenReceipts}
               replyTargetId={replyTargetId}
               setReplyTargetId={setReplyTargetId}
               onSubmitReply={onSubmitReply}

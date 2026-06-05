@@ -5,6 +5,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
+  Check,
+  CheckCheck,
   ChevronLeft,
   Copy,
   Download,
@@ -580,6 +582,27 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         }
         return;
       }
+      if (evt.type === 'pm-delivered') {
+        // The relay server acked one of our outbound PMs; upgrade the tick
+        // on the first matching queued message in the open thread (FIFO
+        // for identical texts).
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const uid = String(payload.uid ?? '');
+        const text = String(payload.message ?? '');
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity === uid && text) {
+          setMessages((prev) => {
+            const idx = prev.findIndex(
+              (m) => m.delivered === false && !m.internal && m.message === text,
+            );
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], delivered: true };
+            return updated;
+          });
+        }
+        return;
+      }
       if (evt.type === 'pm') {
         const payload = (evt.payload ?? {}) as Record<string, unknown>;
         const fromUid = String(payload.from ?? '');
@@ -737,6 +760,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               from: ownNick,
               timestamp: Math.floor(Date.now() / 1000),
               internal: false,
+              delivered: false,
             },
           ]);
         }
@@ -767,6 +791,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             from: ownNick,
             timestamp: Math.floor(Date.now() / 1000),
             internal: false,
+            delivered: false,
           },
         ]);
       }
@@ -1322,6 +1347,19 @@ const MessageList = ({
               <MessageBody body={m.message} />
               <p className="text-[10px] text-muted-foreground mt-0.5">
                 {m.from} · {new Date(m.timestamp * 1000).toLocaleString()}
+                {own && m.delivered !== undefined && (
+                  m.delivered ? (
+                    <CheckCheck
+                      className="inline h-3 w-3 ml-1 text-primary"
+                      aria-label="Delivered to server"
+                    />
+                  ) : (
+                    <Check
+                      className="inline h-3 w-3 ml-1 opacity-60"
+                      aria-label="Queued"
+                    />
+                  )
+                )}
               </p>
             </div>
           </div>

@@ -733,6 +733,23 @@ func BisonrelayPostReceiveReceiptsHandler(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(body)
 }
 
+// BisonrelayPostCommentReceiptsHandler returns the receive receipts for the
+// comments on one of the local user's own posts, grouped by status id.
+func BisonrelayPostCommentReceiptsHandler(w http.ResponseWriter, r *http.Request) {
+	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
+	if pid == "" {
+		http.Error(w, "pid query param is required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdPostCommentReceipts(r.Context(), pid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
 // BisonrelayPostHeartsHandler returns the current heart count + my-own
 // state for a single post.
 func BisonrelayPostHeartsHandler(w http.ResponseWriter, r *http.Request) {

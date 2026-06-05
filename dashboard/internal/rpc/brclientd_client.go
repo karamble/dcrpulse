@@ -1130,6 +1130,15 @@ func BrclientdPostReceiveReceipts(ctx context.Context, pidHex string) (json.RawM
 	})
 }
 
+// BrclientdPostCommentReceipts returns the receive receipts recorded for
+// the comments on one of the local user's own posts, grouped by the
+// comment's status id. Maps to brclientd's GET /posts/comment-receivereceipts.
+func BrclientdPostCommentReceipts(ctx context.Context, pidHex string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/posts/comment-receivereceipts", map[string]string{
+		"pid": pidHex,
+	})
+}
+
 // BrclientdPostHearts returns the current heart count + whether the local
 // identity hearted this post. Maps to brclientd's GET /posts/hearts.
 func BrclientdPostHearts(ctx context.Context, uidHex, pidHex string) (json.RawMessage, error) {
