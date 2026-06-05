@@ -33,12 +33,14 @@ import {
   BisonrelayPayStatsBreakdown,
   BisonrelayPayStatsUser,
   BisonrelayQuantile,
+  BisonrelayRunningTip,
   BisonrelayStatsContact,
   BisonrelayStatsNetwork,
   BisonrelayStatsOverview,
   BisonrelayStatsPayments,
   BisonrelayStatsPosts,
   getBisonrelayIdentity,
+  getBisonrelayRunningTips,
   getBisonrelayStatsContacts,
   getBisonrelayStatsNetwork,
   getBisonrelayStatsOverview,
@@ -612,6 +614,16 @@ const OverviewView = () => {
 const PaymentsView = () => {
   const { data, err } = usePolledStats(getBisonrelayStatsPayments);
   const [openUid, setOpenUid] = useState<string | null>(null);
+  // Tip attempts the daemon is actively driving (retries can span days);
+  // polled separately from the aggregate stats.
+  const [runningTips, setRunningTips] = useState<BisonrelayRunningTip[]>([]);
+
+  useEffect(() => {
+    const load = () => getBisonrelayRunningTips().then(setRunningTips).catch(() => {});
+    load();
+    const id = window.setInterval(load, 30000);
+    return () => window.clearInterval(id);
+  }, []);
 
   if (err) return <ErrorBanner msg={err} />;
   if (!data) return <Loading what="payment stats" />;
@@ -636,6 +648,32 @@ const PaymentsView = () => {
 
   return (
     <div className="space-y-4">
+      {runningTips.length > 0 && (
+        <SectionCard title="Tips in flight" icon={Coins}>
+          <div className="space-y-1.5">
+            {runningTips.map((t) => (
+              <div
+                key={`${t.uid}-${t.tag}`}
+                className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+              >
+                <span className="font-medium text-foreground/90">{t.nick || t.uid.slice(0, 12)}</span>
+                <span className="tabular-nums">{formatDCR(t.amount_matoms, 8)}</span>
+                <span className="opacity-50">·</span>
+                <span>
+                  {t.next_action.replace(/_/g, ' ')} at{' '}
+                  {new Date(t.next_action_time).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground pt-2">
+            The daemon keeps retrying these tips until they complete or run
+            out of attempts; both sides must be online for an attempt to
+            settle.
+          </p>
+        </SectionCard>
+      )}
+
       {/* Totals + fees donut + latency strip */}
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
         <SectionCard title="All-time totals" icon={Coins}>

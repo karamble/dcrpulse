@@ -450,6 +450,29 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         }
         return;
       }
+      if (evt.type === 'tip-invoice-generated') {
+        // The recipient's invoice arrived; upgrade the pending placeholder
+        // text (the gap to the terminal tip-sent/tip-failed can otherwise
+        // look stalled). Keep pending + tipKey so the terminal event still
+        // replaces the same line.
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const uid = String(payload.uid ?? '');
+        const nick = String(payload.nick ?? '');
+        const cur = selectedRef.current;
+        if (cur && cur.id?.identity === uid) {
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.pending && m.tipKey);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = {
+              ...updated[idx],
+              message: `Invoice received, paying tip to ${nick}...`,
+            };
+            return updated;
+          });
+        }
+        return;
+      }
       if (evt.type === 'tip-received') {
         const payload = (evt.payload ?? {}) as Record<string, string>;
         const sender = payload.sender;

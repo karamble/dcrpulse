@@ -374,6 +374,35 @@ func BisonrelayConnectionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// BisonrelayTipAttemptsHandler returns the tracked tip attempts to one
+// contact.
+func BisonrelayTipAttemptsHandler(w http.ResponseWriter, r *http.Request) {
+	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
+	if uid == "" {
+		http.Error(w, "uid query param is required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdTipAttempts(r.Context(), uid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayRunningTipsHandler returns the tip attempts the daemon is
+// actively driving.
+func BisonrelayRunningTipsHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdRunningTipAttempts(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
 // BisonrelayRecentNotificationsHandler returns brclientd's persisted daemon
 // notes (newest first) for the BR notification bell.
 func BisonrelayRecentNotificationsHandler(w http.ResponseWriter, r *http.Request) {

@@ -364,6 +364,18 @@ func BrclientdSetConnection(ctx context.Context, online bool) error {
 	return brclientdPostJSON(ctx, "/connection", map[string]bool{"online": online})
 }
 
+// BrclientdTipAttempts returns the locally tracked tip attempts to one
+// contact (amounts, retries, invoice/payment timestamps, completion state).
+func BrclientdTipAttempts(ctx context.Context, uidHex string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/payments/tips", map[string]string{"uid": uidHex})
+}
+
+// BrclientdRunningTipAttempts returns the tip attempts the daemon is
+// actively driving, with their next scheduled action.
+func BrclientdRunningTipAttempts(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/payments/tips/running", nil)
+}
+
 // BrclientdRecentNotifications returns brclientd's persisted daemon notes
 // (newest first) that power the BR notification bell. Unlike the live
 // /notifications stream these survive the browser being closed.

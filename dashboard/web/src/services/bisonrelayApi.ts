@@ -635,6 +635,49 @@ export const tipBisonrelayContact = async (
   await api.post('/br/contacts/tip', { uid, dcrAmount, maxAttempts });
 };
 
+// BisonrelayTipAttempt is one tracked tip attempt to a contact. Amounts are
+// in milli-atoms (1 DCR = 1e11).
+export interface BisonrelayTipAttempt {
+  uid: string;
+  tag: number;
+  amount_matoms: number;
+  created: string;
+  attempts: number;
+  max_attempts: number;
+  invoice_requested?: string;
+  payment_attempt?: string;
+  payment_attempt_count: number;
+  payment_attempt_failed?: string;
+  last_invoice_error?: string;
+  completed?: string;
+}
+
+export interface BisonrelayRunningTip {
+  uid: string;
+  nick: string;
+  tag: number;
+  next_action: string;
+  next_action_time: string;
+  amount_matoms: number;
+}
+
+export const getBisonrelayTipAttempts = async (
+  uid: string,
+): Promise<BisonrelayTipAttempt[]> => {
+  const { data } = await api.get<{ attempts: BisonrelayTipAttempt[] | null }>(
+    '/br/payments/tips',
+    { params: { uid } },
+  );
+  return data.attempts ?? [];
+};
+
+export const getBisonrelayRunningTips = async (): Promise<BisonrelayRunningTip[]> => {
+  const { data } = await api.get<{ running: BisonrelayRunningTip[] | null }>(
+    '/br/payments/tips/running',
+  );
+  return data.running ?? [];
+};
+
 export type BisonrelayEventType =
   | 'pm'
   | 'kx'
@@ -665,6 +708,7 @@ export type BisonrelayEventType =
   | 'idle-unsubscribing'
   | 'pm-delivered'
   | 'receive-receipt'
+  | 'tip-invoice-generated'
   | 'rtdt-invited'
   | 'rtdt-invite-accepted'
   | 'rtdt-invite-canceled'

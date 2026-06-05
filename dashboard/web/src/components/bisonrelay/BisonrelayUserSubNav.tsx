@@ -30,9 +30,11 @@ import {
   BisonrelayContentItem,
   BisonrelayLiveEvent,
   BisonrelayPostListItem,
+  BisonrelayTipAttempt,
   blockBisonrelayContact,
   clearBisonrelayMessages,
   fetchBisonrelayUserPost,
+  getBisonrelayTipAttempts,
   handshakeBisonrelayContact,
   ignoreBisonrelayContact,
   kxResetBisonrelayContact,
@@ -1029,6 +1031,17 @@ const PostsListModal = ({
   );
 };
 
+// tipAttemptState derives a short display state from a tracked attempt.
+const tipAttemptState = (a: BisonrelayTipAttempt): string => {
+  if (a.completed) return 'completed';
+  if (a.last_invoice_error) return 'failed';
+  if (a.attempts >= a.max_attempts && a.payment_attempt_failed) return 'failed';
+  return `in flight (attempt ${a.attempts}/${a.max_attempts})`;
+};
+
+const formatTipDcr = (matoms: number): string =>
+  (matoms / 1e11).toFixed(8).replace(/\.?0+$/, '');
+
 const TipModal = ({
   nick,
   uid,
@@ -1044,6 +1057,18 @@ const TipModal = ({
   onSubmit: (dcrAmount: number) => void;
 }) => {
   const [value, setValue] = useState('');
+  const [history, setHistory] = useState<BisonrelayTipAttempt[] | null>(null);
+
+  useEffect(() => {
+    getBisonrelayTipAttempts(uid)
+      .then((atts) => {
+        atts.sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+        setHistory(atts.slice(0, 5));
+      })
+      .catch(() => {
+        /* older brclientd without the endpoint; history stays hidden */
+      });
+  }, [uid]);
 
   const parsed = parseFloat(value);
   const canSubmit = uid !== '' && Number.isFinite(parsed) && parsed > 0;
@@ -1097,6 +1122,38 @@ const TipModal = ({
             className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary"
           />
         </div>
+        {history !== null && history.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
+              Recent tips
+            </div>
+            {history.map((a) => (
+              <div
+                key={`${a.tag}-${a.created}`}
+                className="flex items-center gap-2 text-[11px] text-muted-foreground"
+                title={a.last_invoice_error || undefined}
+              >
+                <span className="font-medium text-foreground/90 tabular-nums">
+                  {formatTipDcr(a.amount_matoms)} DCR
+                </span>
+                <span className="opacity-50">·</span>
+                <span>{new Date(a.created).toLocaleString()}</span>
+                <span className="opacity-50">·</span>
+                <span
+                  className={
+                    tipAttemptState(a) === 'completed'
+                      ? 'text-success/90'
+                      : tipAttemptState(a) === 'failed'
+                        ? 'text-destructive/90'
+                        : undefined
+                  }
+                >
+                  {tipAttemptState(a)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex justify-end gap-2 pt-1">
           <button
             type="button"
