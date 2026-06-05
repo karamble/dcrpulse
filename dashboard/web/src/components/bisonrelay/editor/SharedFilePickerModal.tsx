@@ -38,8 +38,11 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
       });
   }, []);
 
-  const confirm = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Plain action, not a form submit: this modal is rendered inline by the
+  // editor, which can itself sit inside another <form> (the post composer).
+  // A nested <form> submits unpredictably, so we avoid one entirely - the
+  // editor toolbar uses type="button" for the same reason.
+  const confirm = () => {
     if (!picked) return;
     const parsedDcr = parseFloat(priceDcr);
     const dcrAmount = Number.isFinite(parsedDcr) && parsedDcr > 0 ? parsedDcr : 0;
@@ -142,7 +145,7 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
             )}
           </div>
         ) : (
-          <form onSubmit={confirm} className="px-5 pb-5 pt-1 space-y-4">
+          <div className="px-5 pb-5 pt-1 space-y-4">
             <div className="rounded-md bg-muted/20 border border-border/30 p-3 text-xs text-muted-foreground space-y-1">
               <div className="text-foreground font-medium truncate">{picked.filename}</div>
               <div className="font-mono text-[10px] break-all">{picked.fid}</div>
@@ -165,6 +168,12 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
                   inputMode="decimal"
                   value={priceDcr}
                   onChange={(e) => setPriceDcr(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      confirm();
+                    }
+                  }}
                   placeholder="0"
                   className="w-full pl-8 pr-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary"
                 />
@@ -184,13 +193,14 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
                 Pick a different file
               </button>
               <button
-                type="submit"
+                type="button"
+                onClick={confirm}
                 className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all"
               >
                 Insert link
               </button>
             </div>
-          </form>
+          </div>
         )}
       </div>
     </div>
