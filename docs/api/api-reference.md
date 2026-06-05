@@ -277,42 +277,6 @@ GET /api/network/peers
 
 ---
 
-### Connect to RPC
-
-Dynamically connect to a dcrd RPC endpoint. (Note: This is typically configured via environment variables for security.)
-
-```http
-POST /api/connect
-```
-
-**Request Body**:
-```json
-{
-  "host": "localhost",
-  "port": "9109",
-  "username": "your_username",
-  "password": "your_password",
-  "certPath": "/path/to/rpc.cert"
-}
-```
-
-**Response**:
-```json
-{
-  "status": "connected",
-  "message": "Successfully connected to dcrd RPC"
-}
-```
-
-**Status Codes**:
-- `200`: Connected successfully
-- `400`: Invalid request body
-- `500`: Connection failed
-
-**Security Warning**: This endpoint exposes RPC credentials. In production, use environment variables and disable this endpoint.
-
----
-
 ## 💼 Wallet Endpoints
 
 Endpoints for managing and monitoring Decred wallet (`dcrwallet`).
@@ -719,7 +683,6 @@ Status: `500`
 - ⚠️ Add API authentication (JWT, API keys)
 - ⚠️ Restrict CORS to specific origins
 - ⚠️ Implement rate limiting
-- ⚠️ Disable `/api/connect` endpoint
 - ⚠️ Use firewall rules for backend access
 - ⚠️ Monitor and log API usage
 

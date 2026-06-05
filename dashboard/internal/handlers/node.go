@@ -13,7 +13,6 @@ import (
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
-	"dcrpulse/internal/types"
 
 	"github.com/gorilla/websocket"
 )
@@ -139,35 +138,6 @@ func GetPeersHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(peers)
-}
-
-// ConnectRPCHandler handles RPC connection requests
-func ConnectRPCHandler(w http.ResponseWriter, r *http.Request) {
-	var req types.RPCConnectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	config := rpc.Config{
-		RPCHost:     req.Host,
-		RPCPort:     req.Port,
-		RPCUser:     req.Username,
-		RPCPassword: req.Password,
-	}
-
-	err := rpc.InitDcrdClient(config)
-	response := types.RPCConnectionResponse{
-		Success: err == nil,
-		Message: "Connected successfully",
-	}
-
-	if err != nil {
-		response.Message = err.Error()
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
 }
 
 // HealthCheckHandler handles health check requests

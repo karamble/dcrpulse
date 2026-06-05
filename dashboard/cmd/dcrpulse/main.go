@@ -210,7 +210,6 @@ func main() {
 	api.HandleFunc("/node/sync/stream", handlers.StreamNodeSyncHandler).Methods("GET")
 	api.HandleFunc("/blockchain/info", handlers.GetBlockchainInfoHandler).Methods("GET")
 	api.HandleFunc("/network/peers", handlers.GetPeersHandler).Methods("GET")
-	api.HandleFunc("/connect", handlers.ConnectRPCHandler).Methods("POST")
 
 	// Multi-wallet routes. select/create/delete relaunch the dcrwallet daemon,
 	// so they are rate limited like other daemon-cycling endpoints.

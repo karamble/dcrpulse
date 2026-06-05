@@ -101,18 +101,6 @@ export interface DashboardData {
   lastUpdate: string;
 }
 
-export interface RPCConnectionRequest {
-  host: string;
-  port: string;
-  username: string;
-  password: string;
-}
-
-export interface RPCConnectionResponse {
-  success: boolean;
-  message: string;
-}
-
 // API functions
 export const getDashboardData = async (): Promise<DashboardData> => {
   const response = await api.get<DashboardData>('/dashboard');
@@ -131,11 +119,6 @@ export const getBlockchainInfo = async (): Promise<BlockchainInfo> => {
 
 export const getPeers = async (): Promise<Peer[]> => {
   const response = await api.get<Peer[]>('/network/peers');
-  return response.data;
-};
-
-export const connectRPC = async (config: RPCConnectionRequest): Promise<RPCConnectionResponse> => {
-  const response = await api.post<RPCConnectionResponse>('/connect', config);
   return response.data;
 };
 
