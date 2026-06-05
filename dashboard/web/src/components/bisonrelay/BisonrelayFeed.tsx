@@ -184,7 +184,11 @@ export const BisonrelayFeed = () => {
   useEffect(() => {
     reload();
     return addListener((evt: BisonrelayLiveEvent) => {
-      if (evt.type === 'post-received' || evt.type === 'post-status-received') {
+      if (
+        evt.type === 'post-received' ||
+        evt.type === 'post-status-received' ||
+        evt.type === 'profile-updated'
+      ) {
         reload();
       }
     });
@@ -477,6 +481,13 @@ const SubscriptionsView = () => {
     reload();
     return addListener((evt: BisonrelayLiveEvent) => {
       if (evt.type === 'posts-subscribed' || evt.type === 'posts-unsubscribed') {
+        reload();
+      }
+      if (evt.type === 'posts-subscribe-error') {
+        // The change the UI optimistically assumed has failed remotely;
+        // surface the daemon's text and refetch the real state.
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        setErr(String(payload.text ?? 'Subscription change failed'));
         reload();
       }
     });

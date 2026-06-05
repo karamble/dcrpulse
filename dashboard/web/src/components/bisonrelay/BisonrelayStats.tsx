@@ -882,6 +882,37 @@ const NetworkView = () => {
         </SectionCard>
       </div>
 
+      {data.queues && (
+        <SectionCard title="Outbound queues" icon={Radio}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <PolicyTile
+              label="RMQ waiting"
+              value={String(data.queues.rmq_waiting)}
+              hint="messages queued to send"
+            />
+            <PolicyTile
+              label="RMQ sending"
+              value={String(data.queues.rmq_sending)}
+              hint="being paid / sent / acked"
+            />
+            <PolicyTile
+              label="Send queue"
+              value={String(data.queues.sendq_items)}
+              hint={`${data.queues.sendq_dests} destinations`}
+            />
+            <PolicyTile
+              label="RV subscriptions"
+              value={data.queues.rvs_up_to_date ? 'synced' : 'syncing'}
+              hint="with the relay server"
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground pt-2">
+            Sustained queue buildup means messages are not reaching the relay
+            server (connectivity or payment trouble).
+          </p>
+        </SectionCard>
+      )}
+
       <SectionCard title="RMQ round-trip latency" icon={Radio}>
         <QuantileBar quantiles={data.rmq_quantiles ?? []} />
         <p className="text-[10px] text-muted-foreground pt-2">

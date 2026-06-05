@@ -637,6 +637,12 @@ export type BisonrelayEventType =
   | 'file-download-cost-rejected'
   | 'file-invoice-capacity-low'
   | 'invoice-gen-failed'
+  | 'offline-too-long'
+  | 'server-unwelcome'
+  | 'posts-subscribe-error'
+  | 'blocked-by-user'
+  | 'profile-updated'
+  | 'idle-unsubscribing'
   | 'rtdt-invited'
   | 'rtdt-invite-accepted'
   | 'rtdt-invite-canceled'
@@ -1018,6 +1024,14 @@ export interface BisonrelayServerPolicy {
   expiration_days: number;
 }
 
+export interface BisonrelayQueueStats {
+  rmq_waiting: number;
+  rmq_sending: number;
+  sendq_items: number;
+  sendq_dests: number;
+  rvs_up_to_date: boolean;
+}
+
 export interface BisonrelayStatsNetwork {
   server_node?: string;
   recommended_peer?: string;
@@ -1025,6 +1039,7 @@ export interface BisonrelayStatsNetwork {
   stage: string;
   policy: BisonrelayServerPolicy;
   rmq_quantiles: BisonrelayQuantile[];
+  queues?: BisonrelayQueueStats;
 }
 
 export const getBisonrelayStatsNetwork = async (): Promise<BisonrelayStatsNetwork> => {

@@ -15,7 +15,14 @@ const SEEN_KEY = 'brNotesSeen';
 
 // Live event types that correspond to persisted notes and warrant an
 // immediate refetch of the bell list.
-const REFRESH_EVENT_TYPES = new Set(['file-invoice-capacity-low', 'invoice-gen-failed']);
+const REFRESH_EVENT_TYPES = new Set([
+  'file-invoice-capacity-low',
+  'invoice-gen-failed',
+  'offline-too-long',
+  'server-unwelcome',
+  'posts-subscribe-error',
+  'blocked-by-user',
+]);
 
 const sevDot = (s: string) =>
   s === 'error' ? 'bg-destructive' : s === 'warn' ? 'bg-warning' : 'bg-muted-foreground/50';

@@ -383,6 +383,12 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
 
   useEffect(() => {
     return addListener((evt) => {
+      // A contact changed profile fields (avatar/nick) or blocked us;
+      // refetch so the sidebar and avatars reflect it live.
+      if (evt.type === 'profile-updated' || evt.type === 'blocked-by-user') {
+        refreshContacts();
+        return;
+      }
       if (evt.type === 'kx') {
         refreshContacts();
         // BR's client_kx.go:214 calls LogPM(internal=true) with "Completed
@@ -548,8 +554,13 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         }
         return;
       }
-      if (evt.type === 'file-invoice-capacity-low' || evt.type === 'invoice-gen-failed') {
-        // brclientd LogPM'd the same text into the buyer's thread (like
+      if (
+        evt.type === 'file-invoice-capacity-low' ||
+        evt.type === 'invoice-gen-failed' ||
+        evt.type === 'posts-subscribe-error' ||
+        evt.type === 'idle-unsubscribing'
+      ) {
+        // brclientd LogPM'd the same text into the user's thread (like
         // kx-suggested); append it optimistically when that thread is open.
         const payload = (evt.payload ?? {}) as Record<string, unknown>;
         const uid = String(payload.uid ?? '');
