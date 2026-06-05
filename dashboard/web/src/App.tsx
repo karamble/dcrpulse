@@ -52,6 +52,8 @@ import { MempoolView } from './pages/MempoolView';
 import { GovernanceDashboard } from './pages/GovernanceDashboard';
 import { BisonrelayPage } from './components/bisonrelay/BisonrelayPage';
 import { BisonrelayLiveProvider } from './components/bisonrelay/BisonrelayLiveProvider';
+import { AuthGate } from './components/auth/AuthGate';
+import { SecuritySection } from './components/settings/SecuritySection';
 import { getDashboardData, getWalletStatus } from './services/api';
 import { getLightningInfo } from './services/lightningApi';
 import { getBisonrelayVersion } from './services/bisonrelayApi';
@@ -161,6 +163,7 @@ function AppContent() {
               <Route path="logs" element={<LogsSection />} />
               <Route path="about" element={<AboutSection />} />
               <Route path="themes" element={<ThemesSection />} />
+              <Route path="security" element={<SecuritySection />} />
             </Route>
             <Route path="transactions" element={<OnChainTransactions />}>
               <Route index element={<Navigate to="send" replace />} />
@@ -197,9 +200,11 @@ function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
-        <BisonrelayLiveProvider>
-          <AppContent />
-        </BisonrelayLiveProvider>
+        <AuthGate>
+          <BisonrelayLiveProvider>
+            <AppContent />
+          </BisonrelayLiveProvider>
+        </AuthGate>
       </BrowserRouter>
     </ThemeProvider>
   );

@@ -9,6 +9,7 @@ const tabs = [
   { path: 'privacy', label: 'Privacy & Security' },
   { path: 'logs', label: 'Logs' },
   { path: 'themes', label: 'Themes' },
+  { path: 'security', label: 'Security' },
   { path: 'about', label: 'About' },
 ];
 

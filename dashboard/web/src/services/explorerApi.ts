@@ -2,6 +2,8 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+import { authFetch } from './api';
+
 const API_BASE_URL = '/api';
 
 export interface BlockSummary {
@@ -142,7 +144,7 @@ export interface MempoolTransactions {
 // API Functions
 
 export async function searchExplorer(query: string): Promise<SearchResult> {
-  const response = await fetch(`${API_BASE_URL}/explorer/search?q=${encodeURIComponent(query)}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/search?q=${encodeURIComponent(query)}`);
   if (!response.ok) {
     throw new Error('Search failed');
   }
@@ -150,7 +152,7 @@ export async function searchExplorer(query: string): Promise<SearchResult> {
 }
 
 export async function getRecentBlocks(count: number = 10): Promise<BlockSummary[]> {
-  const response = await fetch(`${API_BASE_URL}/explorer/blocks/recent?count=${count}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/blocks/recent?count=${count}`);
   if (!response.ok) {
     throw new Error('Failed to fetch recent blocks');
   }
@@ -158,7 +160,7 @@ export async function getRecentBlocks(count: number = 10): Promise<BlockSummary[
 }
 
 export async function getRecentBlocksPaginated(page: number = 1, pageSize: number = 10): Promise<PaginatedBlocksResponse> {
-  const response = await fetch(`${API_BASE_URL}/explorer/blocks/recent?page=${page}&pageSize=${pageSize}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/blocks/recent?page=${page}&pageSize=${pageSize}`);
   if (!response.ok) {
     throw new Error('Failed to fetch recent blocks');
   }
@@ -166,7 +168,7 @@ export async function getRecentBlocksPaginated(page: number = 1, pageSize: numbe
 }
 
 export async function getBlockByHeight(height: number): Promise<BlockDetail> {
-  const response = await fetch(`${API_BASE_URL}/explorer/blocks/${height}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/blocks/${height}`);
   if (!response.ok) {
     throw new Error('Block not found');
   }
@@ -174,7 +176,7 @@ export async function getBlockByHeight(height: number): Promise<BlockDetail> {
 }
 
 export async function getBlockByHash(hash: string): Promise<BlockDetail> {
-  const response = await fetch(`${API_BASE_URL}/explorer/blocks/hash/${hash}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/blocks/hash/${hash}`);
   if (!response.ok) {
     throw new Error('Block not found');
   }
@@ -182,7 +184,7 @@ export async function getBlockByHash(hash: string): Promise<BlockDetail> {
 }
 
 export async function getTransaction(txhash: string): Promise<TransactionDetail> {
-  const response = await fetch(`${API_BASE_URL}/explorer/transactions/${txhash}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/transactions/${txhash}`);
   if (!response.ok) {
     throw new Error('Transaction not found');
   }
@@ -190,7 +192,7 @@ export async function getTransaction(txhash: string): Promise<TransactionDetail>
 }
 
 export async function getAddressInfo(address: string): Promise<AddressInfo> {
-  const response = await fetch(`${API_BASE_URL}/explorer/address/${address}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/address/${address}`);
   if (!response.ok) {
     throw new Error('Failed to fetch address information');
   }
@@ -198,7 +200,7 @@ export async function getAddressInfo(address: string): Promise<AddressInfo> {
 }
 
 export async function getVoteParsingProgress(txhash: string): Promise<VoteParsingProgress> {
-  const response = await fetch(`${API_BASE_URL}/treasury/votes/${txhash}/progress`);
+  const response = await authFetch(`${API_BASE_URL}/treasury/votes/${txhash}/progress`);
   if (!response.ok) {
     throw new Error('Failed to fetch vote parsing progress');
   }
@@ -206,7 +208,7 @@ export async function getVoteParsingProgress(txhash: string): Promise<VoteParsin
 }
 
 export async function getMempoolTransactions(): Promise<MempoolTransactions> {
-  const response = await fetch(`${API_BASE_URL}/explorer/mempool`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/mempool`);
   if (!response.ok) {
     throw new Error('Failed to fetch mempool transactions');
   }

@@ -9,10 +9,47 @@ const API_BASE_URL = '/api';
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 25000, // 25 seconds to accommodate wallet rescans
+  withCredentials: true, // send the app-password session cookie (same-origin)
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// When the optional app-password gate is enabled and the session is missing or
+// expired, the backend replies 401. The AuthGate registers a handler here so
+// any API call routes a 401 back to the login screen.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
+api.interceptors.response.use(
+  (resp) => resp,
+  (error) => {
+    // Only re-lock on the app-password gate's OWN 401 (tagged with the
+    // X-Dashboard-Auth header), never on a downstream daemon/wallet 401 such as
+    // a wallet's public-passphrase prompt after a wallet switch.
+    if (
+      error?.response?.status === 401 &&
+      error.response.headers?.['x-dashboard-auth'] === 'required' &&
+      onUnauthorized
+    ) {
+      onUnauthorized();
+    }
+    return Promise.reject(error);
+  },
+);
+
+// authFetch wraps native fetch for the two services that bypass this axios
+// instance (explorer, treasury); it routes a 401 to the same login handler so
+// session expiry on those pages also bounces to the login screen.
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, { credentials: 'same-origin', ...init });
+  if (res.status === 401 && res.headers.get('x-dashboard-auth') === 'required' && onUnauthorized) {
+    onUnauthorized();
+  }
+  return res;
+}
 
 export interface NodeStatus {
   status: string;

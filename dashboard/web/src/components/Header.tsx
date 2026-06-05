@@ -4,9 +4,11 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Compass, Vote, Menu, X } from 'lucide-react';
+import { Wallet, Compass, Vote, Menu, X, LogOut } from 'lucide-react';
 import { useBisonrelayLive } from './bisonrelay/BisonrelayLiveProvider';
 import { useBrNotifPrefs } from './bisonrelay/brNotifPrefs';
+import { useAuth } from './auth/AuthGate';
+import { logout } from '../services/auth';
 
 interface HeaderProps {
   nodeVersion?: string;
@@ -15,6 +17,7 @@ interface HeaderProps {
 export const Header = ({ nodeVersion }: HeaderProps) => {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { status: authStatus, refresh: refreshAuth } = useAuth();
 
   const isWalletPage = location.pathname.startsWith('/wallet');
   const isExplorerPage = location.pathname.startsWith('/explorer');
@@ -134,6 +137,36 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
     </div>
   ) : null;
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      await refreshAuth();
+    }
+  };
+  const showLogout = !!authStatus?.enabled && !!authStatus?.authenticated;
+  // Desktop main nav: icon-only with a title tooltip.
+  const logoutIconButton = showLogout ? (
+    <button
+      type="button"
+      onClick={handleLogout}
+      title="Log out"
+      aria-label="Log out"
+      className="p-3 rounded-lg border border-primary/20 bg-primary/10 hover:bg-primary/20 transition-colors"
+    >
+      <LogOut className="h-6 w-6 text-primary" />
+    </button>
+  ) : null;
+  // Mobile drawer: labeled, matching the other drawer items.
+  const logoutDrawerButton = showLogout ? (
+    <button type="button" onClick={handleLogout} className={linkClass(false)}>
+      <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
+        <LogOut className="h-5 w-5 text-white" />
+      </div>
+      <span className="text-primary font-semibold">Log out</span>
+    </button>
+  ) : null;
+
   return (
     <div className="flex items-center justify-between mb-6 sm:mb-8 animate-fade-in">
       <Link to="/" className="shrink-0">
@@ -144,6 +177,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
       <div className="hidden lg:flex items-center gap-4">
         {navLinks}
         {versionBadge}
+        {logoutIconButton}
       </div>
 
       {/* Mobile hamburger */}
@@ -185,6 +219,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
             <nav className="flex flex-col gap-2" onClick={() => setMenuOpen(false)}>
               {navLinks}
             </nav>
+            {logoutDrawerButton && <div className="mt-4">{logoutDrawerButton}</div>}
             {versionBadge && <div className="mt-4">{versionBadge}</div>}
           </div>
         </div>
