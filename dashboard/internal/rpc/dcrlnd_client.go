@@ -165,13 +165,15 @@ func loadDcrlndTLSCreds(certPath, _ string) (credentials.TransportCredentials, e
 		return nil, fmt.Errorf("failed to parse dcrlnd cert at %s", certPath)
 	}
 	// dcrlnd's self-signed cert ships with SANs that vary by container
-	// hostname; we trust it by pinning the CA pool to exactly this one
-	// cert and skipping hostname verification. The pool acts as the
-	// authentication root — only THIS cert can pass verification, so
-	// the dial is still authenticated.
+	// hostname, so Go's default hostname verification cannot be used. We pin
+	// the cert in the pool and authenticate the peer leaf against it via
+	// VerifyPeerCertificate (see tlspin.go). InsecureSkipVerify disables only
+	// Go's built-in chain+hostname check; the callback still runs and is what
+	// authenticates the dial, so the pinned cert remains the trust root.
 	return credentials.NewTLS(&tls.Config{
-		RootCAs:            pool,
-		InsecureSkipVerify: true,
+		RootCAs:               pool,
+		InsecureSkipVerify:    true,
+		VerifyPeerCertificate: pinnedLeafVerifier(pool),
 	}), nil
 }
 

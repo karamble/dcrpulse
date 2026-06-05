@@ -1537,12 +1537,15 @@ func loadBrclientdTLS(cfg BrclientdConfig) (*tls.Config, error) {
 	}
 	// brclientd's server cert SANs are localhost + 127.0.0.1 + the
 	// container's auto-generated hostname. The dashboard dials by service
-	// name (e.g. "brclientd") so we authenticate via the pinned pool and
-	// skip hostname verification, matching the dcrlnd pattern.
+	// name (e.g. "brclientd"), so we authenticate the peer leaf against the
+	// pinned pool via VerifyPeerCertificate (see tlspin.go) and skip only the
+	// hostname check, matching the dcrlnd pattern. InsecureSkipVerify disables
+	// only Go's built-in chain+hostname check; the callback still authenticates.
 	return &tls.Config{
-		RootCAs:            pool,
-		Certificates:       []tls.Certificate{clientCert},
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: true,
+		RootCAs:               pool,
+		Certificates:          []tls.Certificate{clientCert},
+		MinVersion:            tls.VersionTLS12,
+		InsecureSkipVerify:    true,
+		VerifyPeerCertificate: pinnedLeafVerifier(pool),
 	}, nil
 }
