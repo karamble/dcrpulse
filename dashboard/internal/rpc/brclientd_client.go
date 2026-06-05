@@ -1142,6 +1142,16 @@ func BrclientdPostReceiveReceipts(ctx context.Context, pidHex string) (json.RawM
 	})
 }
 
+// BrclientdRelayPost relays a known post to one user (toUidHex set) or to
+// all of the local client's post subscribers (toUidHex empty).
+func BrclientdRelayPost(ctx context.Context, uidHex, pidHex, toUidHex string) error {
+	return brclientdPostJSON(ctx, "/posts/relay", map[string]string{
+		"uid":    uidHex,
+		"pid":    pidHex,
+		"to_uid": toUidHex,
+	})
+}
+
 // BrclientdPostCommentReceipts returns the receive receipts recorded for
 // the comments on one of the local user's own posts, grouped by the
 // comment's status id. Maps to brclientd's GET /posts/comment-receivereceipts.

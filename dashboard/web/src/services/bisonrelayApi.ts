@@ -600,6 +600,16 @@ export const getBisonrelayPostReceiveReceipts = async (
   return data.receipts ?? [];
 };
 
+// relayBisonrelayPost relays a known post to one user (toUid set) or to all
+// of the local client's post subscribers (toUid empty).
+export const relayBisonrelayPost = async (
+  uid: string,
+  pid: string,
+  toUid?: string,
+): Promise<void> => {
+  await api.post('/br/posts/relay', { uid, pid, toUid: toUid ?? '' });
+};
+
 // getBisonrelayPostCommentReceipts returns the receive receipts for the
 // comments on one of the local user's own posts, keyed by the comment's
 // status_id (see BisonrelayPostComment.status_id).
@@ -1150,10 +1160,16 @@ export interface BisonrelayAuthoredPostStats {
   comments: number;
 }
 
+export interface BisonrelayPostSubscriber {
+  uid: string;
+  nick: string;
+}
+
 export interface BisonrelayStatsPosts {
   authored: BisonrelayAuthoredPostStats[];
   subscribers_count: number;
   subscriptions_count: number;
+  subscribers?: BisonrelayPostSubscriber[];
 }
 
 export const getBisonrelayStatsPosts = async (): Promise<BisonrelayStatsPosts> => {

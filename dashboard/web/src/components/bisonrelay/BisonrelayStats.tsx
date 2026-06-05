@@ -1222,6 +1222,25 @@ const ContentView = () => {
         />
       </div>
 
+      {(data.subscribers ?? []).length > 0 && (
+        <SectionCard title="Your subscribers" icon={Inbox}>
+          <div className="flex flex-wrap gap-2">
+            {(data.subscribers ?? []).map((s) => (
+              <span
+                key={s.uid}
+                title={s.uid}
+                className="px-2.5 py-1 rounded-full bg-muted/20 text-xs text-foreground/90"
+              >
+                {s.nick || s.uid.slice(0, 12)}
+              </span>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground pt-2">
+            These contacts receive your new posts and relayed comments.
+          </p>
+        </SectionCard>
+      )}
+
       <SectionCard title="Top posts by engagement" icon={TrendingUp}>
         {ranked.length === 0 ? (
           <p className="text-xs text-muted-foreground italic">

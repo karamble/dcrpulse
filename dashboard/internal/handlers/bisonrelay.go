@@ -762,6 +762,29 @@ func BisonrelayPostReceiveReceiptsHandler(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(body)
 }
 
+// BisonrelayPostRelayHandler relays a post to one user or to all of the
+// local client's post subscribers.
+func BisonrelayPostRelayHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID   string `json:"uid"`
+		PID   string `json:"pid"`
+		ToUID string `json:"toUid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" || req.PID == "" {
+		http.Error(w, "uid and pid are required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdRelayPost(r.Context(), req.UID, req.PID, req.ToUID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayPostCommentReceiptsHandler returns the receive receipts for the
 // comments on one of the local user's own posts, grouped by status id.
 func BisonrelayPostCommentReceiptsHandler(w http.ResponseWriter, r *http.Request) {

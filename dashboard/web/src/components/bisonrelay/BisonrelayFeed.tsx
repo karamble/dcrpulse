@@ -10,6 +10,7 @@ import {
   Edit,
   Heart,
   Loader2,
+  Repeat2,
   Reply,
   Rss,
   Users,
@@ -42,8 +43,10 @@ import {
   getBisonrelayPostHearts,
   getBisonrelayPostReceiveReceipts,
   getBisonrelayPosts,
+  getBisonrelayStatsPosts,
   heartBisonrelayPost,
   postBisonrelayComment,
+  relayBisonrelayPost,
   subscribeBisonrelayPosts,
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
@@ -745,8 +748,38 @@ const PostDetailView = ({
   const [hearted, setHearted] = useState(false);
   const [hearting, setHearting] = useState(false);
   const [receipts, setReceipts] = useState<BisonrelayReceiveReceipt[]>([]);
+  // Relay-to-subscribers flow: confirm shows the live subscriber count
+  // before anything is sent.
+  const [relayState, setRelayState] = useState<'idle' | 'confirm' | 'busy' | 'done'>('idle');
+  const [relayCount, setRelayCount] = useState(0);
+  const [relayErr, setRelayErr] = useState<string | null>(null);
   const isOwnPost = !!ownUid && uid === ownUid;
   const { addListener } = useBisonrelayLive();
+
+  const startRelay = async () => {
+    setRelayErr(null);
+    try {
+      const stats = await getBisonrelayStatsPosts();
+      setRelayCount(stats.subscribers_count);
+      setRelayState('confirm');
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setRelayErr(typeof body === 'string' ? body : e?.message || 'Could not load subscribers');
+    }
+  };
+
+  const confirmRelay = async () => {
+    setRelayState('busy');
+    setRelayErr(null);
+    try {
+      await relayBisonrelayPost(uid, pid);
+      setRelayState('done');
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setRelayErr(typeof body === 'string' ? body : e?.message || 'Relay failed');
+      setRelayState('confirm');
+    }
+  };
 
   const loadBody = useCallback(async () => {
     setLoading(true);
@@ -864,22 +897,78 @@ const PostDetailView = ({
               </>
             )}
           </div>
-          <button
-            type="button"
-            onClick={toggleHeart}
-            disabled={hearting}
-            aria-pressed={hearted}
-            className={`inline-flex items-center gap-1.5 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-              hearted ? 'text-rose-500' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Heart
-              className="h-4 w-4"
-              fill={hearted ? 'currentColor' : 'none'}
-              strokeWidth={hearted ? 0 : 2}
-            />
-            <span className="tabular-nums">{hearts ?? 0}</span>
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={toggleHeart}
+              disabled={hearting}
+              aria-pressed={hearted}
+              className={`inline-flex items-center gap-1.5 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                hearted ? 'text-rose-500' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Heart
+                className="h-4 w-4"
+                fill={hearted ? 'currentColor' : 'none'}
+                strokeWidth={hearted ? 0 : 2}
+              />
+              <span className="tabular-nums">{hearts ?? 0}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => (relayState === 'idle' ? startRelay() : setRelayState('idle'))}
+              disabled={relayState === 'busy'}
+              title="Relay this post to your subscribers"
+              className={`inline-flex items-center gap-1.5 text-xs transition-colors disabled:opacity-50 ${
+                relayState === 'done'
+                  ? 'text-success'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Repeat2 className="h-4 w-4" />
+              <span>{relayState === 'done' ? 'Relayed' : 'Relay'}</span>
+            </button>
+          </div>
+          {relayState === 'confirm' && (
+            <div className="text-xs space-y-1.5">
+              {relayCount > 0 ? (
+                <>
+                  <div>
+                    Relay this post to your{' '}
+                    <span className="font-semibold text-foreground">{relayCount}</span>{' '}
+                    subscriber{relayCount === 1 ? '' : 's'}?
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={confirmRelay}
+                      className="px-3 py-1 rounded-md bg-primary/20 text-primary font-semibold hover:bg-primary/30 transition-colors"
+                    >
+                      Relay
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRelayState('idle')}
+                      className="px-3 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <span className="text-muted-foreground">
+                  You have no post subscribers yet, so there is nobody to relay to.
+                </span>
+              )}
+            </div>
+          )}
+          {relayState === 'busy' && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Relaying...</span>
+            </div>
+          )}
+          {relayErr && <p className="text-xs text-destructive">{relayErr}</p>}
         </div>
       </header>
       <article className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-3">
