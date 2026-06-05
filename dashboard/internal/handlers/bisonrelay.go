@@ -1209,11 +1209,35 @@ func BisonrelayPagesLocalListHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// safeBRPath reports whether a brclientd-bound page/template/store name or path
+// is free of traversal. brclientd owns the real containment; this is a
+// defense-in-depth guard so a crafted "../" never leaves the dashboard. It
+// allows nested relative paths and rejects absolute paths, backslashes, NUL,
+// the empty string, and any ".." segment.
+func safeBRPath(p string) bool {
+	if p == "" || len(p) > 255 {
+		return false
+	}
+	if strings.ContainsRune(p, 0) || strings.ContainsRune(p, '\\') || strings.HasPrefix(p, "/") {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return false
+		}
+	}
+	return true
+}
+
 // BisonrelayPagesLocalFileHandler proxies the raw markdown of one hosted page.
 func BisonrelayPagesLocalFileHandler(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if name == "" {
 		http.Error(w, "name query param is required", http.StatusBadRequest)
+		return
+	}
+	if !safeBRPath(name) {
+		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
 	body, err := rpc.BrclientdPagesLocalFile(r.Context(), name)
@@ -1236,6 +1260,10 @@ func BisonrelayPagesLocalSaveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	if !safeBRPath(strings.TrimSpace(req.Name)) {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
 	if err := rpc.BrclientdPagesLocalSave(r.Context(), req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -1250,6 +1278,10 @@ func BisonrelayPagesLocalDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !safeBRPath(strings.TrimSpace(req.Name)) {
+		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
 	if err := rpc.BrclientdPagesLocalDelete(r.Context(), req); err != nil {
@@ -1677,6 +1709,10 @@ func BisonrelayStoreTemplateFileHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "name query param is required", http.StatusBadRequest)
 		return
 	}
+	if !safeBRPath(name) {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
 	body, err := rpc.BrclientdStoreTemplateFile(r.Context(), name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
@@ -1696,6 +1732,10 @@ func BisonrelayStoreTemplateSaveHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	if !safeBRPath(strings.TrimSpace(req.Name)) {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
 	if err := rpc.BrclientdSaveStoreTemplate(r.Context(), req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -1712,8 +1752,8 @@ func BisonrelayStoreTemplateDeleteHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if req.Name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+	if !safeBRPath(strings.TrimSpace(req.Name)) {
+		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
 	if err := rpc.BrclientdDeleteStoreTemplate(r.Context(), req.Name); err != nil {
@@ -1762,6 +1802,14 @@ func BisonrelayStoreFileUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	if relPath != "" && !safeBRPath(relPath) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	if strings.ContainsRune(header.Filename, '/') || !safeBRPath(header.Filename) {
+		http.Error(w, "invalid file name", http.StatusBadRequest)
+		return
+	}
 	mime := header.Header.Get("Content-Type")
 	body, err := rpc.BrclientdUploadStoreFile(r.Context(), relPath, header.Filename, mime, file)
 	if err != nil {
