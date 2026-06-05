@@ -60,6 +60,7 @@ import {
 } from './BisonrelayStats';
 import { avatarDataUrl } from './bisonrelayAvatar';
 import { BR_TEXT_SCALES, BrTextScale, setBrTextScale, useBrTextScale } from './brTextScale';
+import { ChannelList } from '../lightning/channels/ChannelList';
 import { RequestLiquidityModal } from '../lightning/channels/RequestLiquidityModal';
 import { setBrNotifPrefs, useBrNotifPrefs } from './brNotifPrefs';
 
@@ -1311,7 +1312,13 @@ export const BisonrelaySettingsTab = () => {
         </>
       );
     }
-    if (section === 'connection') return <ConnectionCard />;
+    if (section === 'connection')
+      return (
+        <>
+          <ConnectionCard />
+          <ChannelList />
+        </>
+      );
     if (section === 'filters') return <FiltersCard />;
     if (section === 'backup') return <BackupCard />;
     if (section === 'about') return <AboutCard />;
