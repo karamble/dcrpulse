@@ -32,12 +32,14 @@ import {
   BisonrelayPostBodySegment,
   BisonrelayPostComment,
   BisonrelayPostSummary,
+  BisonrelayReceiveReceipt,
   createBisonrelayPost,
   getBisonrelayContacts,
   getBisonrelayIdentity,
   getBisonrelayPostBody,
   getBisonrelayPostComments,
   getBisonrelayPostHearts,
+  getBisonrelayPostReceiveReceipts,
   getBisonrelayPosts,
   heartBisonrelayPost,
   postBisonrelayComment,
@@ -93,6 +95,21 @@ const relativeTime = (ts: number): string => {
   if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
   if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
   return `${Math.floor(delta / 86400)}d ago`;
+};
+
+// brclientd's /public-identity returns the identity base64-encoded while the
+// posts feed keys authors by hex; convert so own-post checks match.
+const identityB64ToHex = (b64: string): string => {
+  try {
+    const bin = atob(b64);
+    let hex = '';
+    for (let i = 0; i < bin.length; i++) {
+      hex += bin.charCodeAt(i).toString(16).padStart(2, '0');
+    }
+    return hex;
+  } catch {
+    return '';
+  }
 };
 
 // readHashRoute parses the URL hash into a (section, target?) tuple.
@@ -177,7 +194,7 @@ export const BisonrelayFeed = () => {
   useEffect(() => {
     getBisonrelayIdentity()
       .then((id) => {
-        if (id.identity) setOwnUid(id.identity);
+        if (id.identity) setOwnUid(identityB64ToHex(id.identity));
       })
       .catch(() => {
         /* leave ownUid empty; Your Posts view will show an empty list */
@@ -201,6 +218,7 @@ export const BisonrelayFeed = () => {
         <PostDetailView
           uid={route.target.uid}
           pid={route.target.pid}
+          ownUid={ownUid}
           summary={summary}
           avatarB64={avatars[route.target.uid]}
           avatars={avatars}
@@ -692,6 +710,7 @@ const NewPostView = () => {
 const PostDetailView = ({
   uid,
   pid,
+  ownUid,
   summary,
   avatarB64,
   avatars,
@@ -700,6 +719,7 @@ const PostDetailView = ({
 }: {
   uid: string;
   pid: string;
+  ownUid: string;
   summary: BisonrelayPostSummary | undefined;
   avatarB64?: string;
   avatars: Record<string, string>;
@@ -712,6 +732,8 @@ const PostDetailView = ({
   const [hearts, setHearts] = useState<number | null>(null);
   const [hearted, setHearted] = useState(false);
   const [hearting, setHearting] = useState(false);
+  const [receipts, setReceipts] = useState<BisonrelayReceiveReceipt[]>([]);
+  const isOwnPost = !!ownUid && uid === ownUid;
   const { addListener } = useBisonrelayLive();
 
   const loadBody = useCallback(async () => {
@@ -738,23 +760,35 @@ const PostDetailView = ({
     }
   }, [uid, pid]);
 
+  const loadReceipts = useCallback(async () => {
+    if (!isOwnPost) return;
+    try {
+      setReceipts(await getBisonrelayPostReceiveReceipts(pid));
+    } catch {
+      /* older brclientd without the endpoint; keep the section hidden */
+    }
+  }, [isOwnPost, pid]);
+
   useEffect(() => {
     setBody(null);
     setErr(null);
     setHearts(null);
     setHearted(false);
+    setReceipts([]);
     loadBody();
     loadHearts();
-  }, [loadBody, loadHearts]);
+    loadReceipts();
+  }, [loadBody, loadHearts, loadReceipts]);
 
   useEffect(() => {
     return addListener((evt: BisonrelayLiveEvent) => {
-      if (evt.type !== 'post-heart-received') return;
+      if (evt.type !== 'post-heart-received' && evt.type !== 'post-status-received') return;
       const payload = (evt.payload ?? {}) as Record<string, unknown>;
       if (payload.author !== uid || payload.pid !== pid) return;
-      loadHearts();
+      if (evt.type === 'post-heart-received') loadHearts();
+      loadReceipts();
     });
-  }, [addListener, uid, pid, loadHearts]);
+  }, [addListener, uid, pid, loadHearts, loadReceipts]);
 
   const toggleHeart = async () => {
     if (hearting) return;
@@ -849,6 +883,21 @@ const PostDetailView = ({
       {body && (
         <section className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5">
           <PostComments authorId={uid} pid={pid} avatars={avatars} />
+        </section>
+      )}
+      {isOwnPost && receipts.length > 0 && (
+        <section className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-3">
+          <h4 className="text-[11px] uppercase tracking-wide text-muted-foreground">Seen by</h4>
+          <div className="flex flex-wrap gap-2">
+            {receipts.map((r) => (
+              <span
+                key={r.user}
+                title={`${r.nick} - ${new Date(r.server_time).toLocaleString()}`}
+              >
+                <AuthorAvatar uid={r.user} nick={r.nick} avatarB64={avatars[r.user]} size="sm" />
+              </span>
+            ))}
+          </div>
         </section>
       )}
     </div>
@@ -947,6 +996,23 @@ const PostComments = ({
       ]);
       try {
         await postBisonrelayComment(authorId, pid, text, parent);
+        // The send succeeded; reload replaces the optimistic row with the
+        // server's unreplicated entry. If the reload itself failed, stop the
+        // spinner on the surviving optimistic row and flag it instead.
+        await reload();
+        setComments((prev) => {
+          if (!prev) return prev;
+          const idx = prev.findIndex((c) => c.commentKey === commentKey);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = {
+            ...updated[idx],
+            pending: false,
+            unreplicated: true,
+            commentKey: undefined,
+          };
+          return updated;
+        });
       } catch (e: any) {
         const body = e?.response?.data;
         const msg = typeof body === 'string' ? body : e?.message || 'Comment failed';
@@ -967,7 +1033,7 @@ const PostComments = ({
         setSubmitting(false);
       }
     },
-    [authorId, pid],
+    [authorId, pid, reload],
   );
 
   const handleTopLevelSubmit = async (e: React.FormEvent) => {
@@ -1080,6 +1146,9 @@ const CommentNode = ({
             <span className="opacity-70">
               {comment.timestamp ? new Date(comment.timestamp * 1000).toLocaleString() : ''}
             </span>
+            {comment.unreplicated && (
+              <span className="italic opacity-70">Not yet relayed by the post author</span>
+            )}
             <button
               type="button"
               onClick={() => setReplyTargetId(isReplyTarget ? null : id ?? null)}

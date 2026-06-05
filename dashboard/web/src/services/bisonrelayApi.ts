@@ -108,6 +108,18 @@ export const setBisonrelayConnection = async (online: boolean): Promise<void> =>
   await api.post('/br/connection', { online });
 };
 
+export const getBisonrelayReceiveReceipts = async (): Promise<{ enabled: boolean }> => {
+  const { data } = await api.get<{ enabled: boolean }>('/br/settings/receivereceipts');
+  return data;
+};
+
+// setBisonrelayReceiveReceipts persists the setting; a changed value restarts
+// the messaging daemon (the BR client reads it only at startup), so it is
+// briefly unreachable afterwards.
+export const setBisonrelayReceiveReceipts = async (enabled: boolean): Promise<void> => {
+  await api.post('/br/settings/receivereceipts', { enabled });
+};
+
 export interface BisonrelayContentFilter {
   id: number;
   uid?: string;
@@ -488,6 +500,8 @@ export interface BisonrelayPostComment {
   parent?: string;
   timestamp: number;
   identifier?: string;
+  // Sent to the post author but not yet broadcast back by them.
+  unreplicated?: boolean;
   // Client-side fields used while a comment is in flight.
   pending?: boolean;
   commentKey?: string;
@@ -540,6 +554,24 @@ export const heartBisonrelayPost = async (
   heart: boolean,
 ): Promise<void> => {
   await api.post('/br/posts/heart', { uid, pid, heart });
+};
+
+export interface BisonrelayReceiveReceipt {
+  user: string;
+  nick: string;
+  // Unix millisecond timestamps (clientdb.ReceiveReceipt).
+  server_time: number;
+  client_time: number;
+}
+
+export const getBisonrelayPostReceiveReceipts = async (
+  pid: string,
+): Promise<BisonrelayReceiveReceipt[]> => {
+  const { data } = await api.get<{ receipts: BisonrelayReceiveReceipt[] | null }>(
+    '/br/posts/receivereceipts',
+    { params: { pid } },
+  );
+  return data.receipts ?? [];
 };
 
 export interface BisonrelayContentItem {

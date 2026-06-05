@@ -364,6 +364,21 @@ func BrclientdSetConnection(ctx context.Context, online bool) error {
 	return brclientdPostJSON(ctx, "/connection", map[string]bool{"online": online})
 }
 
+// BrclientdReceiveReceiptsSetting returns brclientd's
+// /settings/receivereceipts JSON: {enabled: bool}, the effective
+// send-receive-receipts state.
+func BrclientdReceiveReceiptsSetting(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/settings/receivereceipts", nil)
+}
+
+// BrclientdSetReceiveReceipts persists the send-receive-receipts setting.
+// The BR client reads it only at construction, so a changed value makes
+// brclientd exit for a supervisor relaunch; the daemon is briefly
+// unreachable after this returns.
+func BrclientdSetReceiveReceipts(ctx context.Context, enabled bool) error {
+	return brclientdPostJSON(ctx, "/settings/receivereceipts", map[string]bool{"enabled": enabled})
+}
+
 // BrclientdListFilters returns the active content filters as brclientd's
 // {filters: [...]} JSON.
 func BrclientdListFilters(ctx context.Context) (json.RawMessage, error) {
@@ -1091,6 +1106,15 @@ func BrclientdPostComment(ctx context.Context, uidHex, pidHex, comment, parent s
 		return "", fmt.Errorf("decode response: %w", err)
 	}
 	return out.Identifier, nil
+}
+
+// BrclientdPostReceiveReceipts returns the receive receipts recorded for one
+// of the local user's own posts. Maps to brclientd's GET
+// /posts/receivereceipts; posts authored by others return an empty list.
+func BrclientdPostReceiveReceipts(ctx context.Context, pidHex string) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/posts/receivereceipts", map[string]string{
+		"pid": pidHex,
+	})
 }
 
 // BrclientdPostHearts returns the current heart count + whether the local

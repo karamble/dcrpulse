@@ -39,12 +39,14 @@ import {
   getBisonrelayFilters,
   getBisonrelayIdentity,
   getBisonrelayKXList,
+  getBisonrelayReceiveReceipts,
   getBisonrelayVersion,
   listBisonrelayGCs,
   prepareBisonrelayBackup,
   resetAllBisonrelaySessions,
   setBisonrelayAvatar,
   setBisonrelayConnection,
+  setBisonrelayReceiveReceipts,
   subscribeAllBisonrelayPosts,
   upsertBisonrelayFilter,
 } from '../../services/bisonrelayApi';
@@ -560,6 +562,9 @@ const ConnectionCard = () => {
   const [state, setState] = useState<BisonrelayConnectionState | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [srrEnabled, setSrrEnabled] = useState<boolean | null>(null);
+  const [srrBusy, setSrrBusy] = useState(false);
+  const [srrErr, setSrrErr] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -577,6 +582,25 @@ const ConnectionCard = () => {
     return () => clearInterval(id);
   }, [refresh]);
 
+  useEffect(() => {
+    if (srrEnabled !== null || srrBusy) return;
+    let stop = false;
+    const load = async () => {
+      try {
+        const r = await getBisonrelayReceiveReceipts();
+        if (!stop) setSrrEnabled(r.enabled);
+      } catch {
+        /* endpoint missing or daemon booting; row stays hidden */
+      }
+    };
+    load();
+    const id = setInterval(load, 10000);
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, [srrEnabled, srrBusy]);
+
   const onToggle = async () => {
     if (!state || busy) return;
     setBusy(true);
@@ -588,6 +612,38 @@ const ConnectionCard = () => {
       setErr(typeof body === 'string' ? body : e?.message || 'Could not change connection');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const onToggleSRR = async (next: boolean) => {
+    if (srrEnabled === null || srrBusy) return;
+    setSrrBusy(true);
+    setSrrErr(null);
+    try {
+      await setBisonrelayReceiveReceipts(next);
+      // A changed value restarts the messaging daemon; poll until it answers
+      // again and trust whatever it reports.
+      const deadline = Date.now() + 90000;
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        try {
+          const r = await getBisonrelayReceiveReceipts();
+          setSrrEnabled(r.enabled);
+          break;
+        } catch {
+          if (Date.now() > deadline) {
+            throw new Error('The messaging daemon did not come back in time');
+          }
+        }
+      }
+      // The interval refresh likely failed while the daemon was down and
+      // left a stale error; refetch now that it is back so it clears.
+      await refresh();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setSrrErr(typeof body === 'string' ? body : e?.message || 'Could not change setting');
+    } finally {
+      setSrrBusy(false);
     }
   };
 
@@ -665,7 +721,25 @@ const ConnectionCard = () => {
           />
         </div>
       )}
-      {err && <p className="text-xs text-destructive">{err}</p>}
+      {srrEnabled !== null && (
+        <div className="space-y-1">
+          <Toggle
+            label="Send receive receipts"
+            description="Acknowledge posts and comments you receive back to their authors, so they can see you got them. Changing this restarts the messaging daemon."
+            checked={srrEnabled}
+            onChange={(next) => {
+              if (!srrBusy) onToggleSRR(next);
+            }}
+          />
+          {srrBusy && (
+            <p className="text-xs text-muted-foreground">
+              Restarting messaging daemon, waiting for it to reconnect...
+            </p>
+          )}
+          {srrErr && <p className="text-xs text-destructive">{srrErr}</p>}
+        </div>
+      )}
+      {!srrBusy && err && <p className="text-xs text-destructive">{err}</p>}
     </SectionCard>
   );
 };

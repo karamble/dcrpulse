@@ -374,6 +374,38 @@ func BisonrelayConnectionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// BisonrelayReceiveReceiptsHandler proxies brclientd's
+// /settings/receivereceipts: GET reports the effective state; POST {enabled}
+// persists it and, on a change, brclientd restarts to apply (the value is
+// fixed at BR client construction).
+func BisonrelayReceiveReceiptsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		raw, err := rpc.BrclientdReceiveReceiptsSetting(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	case http.MethodPost:
+		var req struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := rpc.BrclientdSetReceiveReceipts(r.Context(), req.Enabled); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 // BisonrelayFiltersHandler proxies brclientd's content filters: GET lists,
 // POST upserts (id 0 creates) and returns the stored filter. brclientd 400s
 // (e.g. an invalid regexp) pass through as 400 so the form can show them
@@ -664,6 +696,23 @@ func BisonrelayPostCommentHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"identifier": identifier})
+}
+
+// BisonrelayPostReceiveReceiptsHandler returns the receive receipts for one
+// of the local user's own posts.
+func BisonrelayPostReceiveReceiptsHandler(w http.ResponseWriter, r *http.Request) {
+	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
+	if pid == "" {
+		http.Error(w, "pid query param is required", http.StatusBadRequest)
+		return
+	}
+	body, err := rpc.BrclientdPostReceiveReceipts(r.Context(), pid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
 }
 
 // BisonrelayPostHeartsHandler returns the current heart count + my-own
