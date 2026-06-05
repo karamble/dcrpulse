@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"dcrpulse/internal/auth"
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/handlers"
 	"dcrpulse/internal/middleware"
@@ -150,13 +151,31 @@ func main() {
 	services.StartBisonrelayStreams(context.Background())
 	services.StartBrclientdNotifs(context.Background())
 
+	// Load the optional dashboard app-password gate (off unless configured).
+	if err := auth.Init(); err != nil {
+		log.Printf("Warning: could not load app-password config (auth disabled): %v", err)
+	}
+
 	// Setup router
 	r := mux.NewRouter()
 	r.Use(middleware.SecurityHeaders)
 
 	// API routes
 	api := r.PathPrefix("/api").Subrouter()
-	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20))
+	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth)
+
+	// Dashboard app-password (optional). /auth/status + /auth/login are exempt
+	// from RequireAuth so the user can reach the login handshake; every other
+	// /api route is gated once the password is enabled.
+	api.HandleFunc("/auth/status", handlers.AuthStatusHandler).Methods("GET")
+	api.Handle("/auth/login",
+		middleware.RateLimit("auth-login", time.Second, 5)(
+			http.HandlerFunc(handlers.AuthLoginHandler))).Methods("POST")
+	api.HandleFunc("/auth/setup", handlers.AuthSetupHandler).Methods("POST")
+	api.HandleFunc("/auth/skip-setup", handlers.AuthSkipSetupHandler).Methods("POST")
+	api.HandleFunc("/auth/logout", handlers.AuthLogoutHandler).Methods("POST")
+	api.HandleFunc("/auth/change", handlers.AuthChangeHandler).Methods("POST")
+	api.HandleFunc("/auth/disable", handlers.AuthDisableHandler).Methods("POST")
 
 	// DCRDEX routes
 	api.HandleFunc("/dcrdex/status", handlers.GetDcrdexStatusHandler).Methods("GET")

@@ -50,6 +50,16 @@ const (
 	// whether to prompt.
 	KeyDcrdexSeedBackedUp = "dcrdex_seed_backed_up"
 
+	// Dashboard app-password gate (optional, off by default). Lives in the
+	// global config so it protects the whole dashboard regardless of the active
+	// wallet. KeyAuthPasswordHash is a bcrypt hash; KeyAuthSessionSecret is the
+	// HMAC key for signed session cookies; KeyAuthSetupDismissed records that
+	// the user declined the first-run setup prompt.
+	KeyAuthEnabled        = "auth_enabled"
+	KeyAuthPasswordHash   = "auth_password_hash"
+	KeyAuthSessionSecret  = "auth_session_secret"
+	KeyAuthSetupDismissed = "auth_setup_dismissed"
+
 	// Per-wallet record of Politeia vote choices we cast through this
 	// dashboard. Map keyed by proposal token, value = "yes"|"no"|"abstain".
 	// Mirrors Decrediton's savePiVote local cache so the UI can show
