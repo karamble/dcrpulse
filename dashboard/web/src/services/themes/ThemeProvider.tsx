@@ -57,6 +57,31 @@ function newCustomId(): string {
   return `custom-${rnd}`;
 }
 
+// A CSS length the theme is allowed to inject into a custom property
+// (font-size / border-radius); anything else is dropped so a stored theme
+// cannot smuggle arbitrary text into a style declaration.
+const CSS_LENGTH = /^\d+(\.\d+)?(px|rem|em|%)$/;
+function safeCssLength(v: unknown): string | undefined {
+  return typeof v === 'string' && CSS_LENGTH.test(v.trim()) ? v.trim() : undefined;
+}
+
+// Strip any radius / heading size that is not a valid CSS length, without
+// dropping the theme or changing its id (so editor-made themes and the active
+// selection survive). Guards the persist/load path, which skips the stricter
+// import validation below.
+export function sanitizeThemeLengths(theme: Theme): Theme {
+  const out: Theme = { ...theme };
+  if (out.radius !== undefined && !safeCssLength(out.radius)) delete out.radius;
+  if (out.typography) {
+    const typ = { ...out.typography };
+    (['heading1Size', 'heading2Size', 'heading3Size'] as const).forEach((k) => {
+      if (typ[k] !== undefined && !safeCssLength(typ[k])) delete typ[k];
+    });
+    out.typography = typ;
+  }
+  return out;
+}
+
 // Validate + normalize a parsed object into a Theme. Throws on anything that
 // is not a usable theme. Always assigns a fresh custom id and builtin:false,
 // so an import can never overwrite a shipped theme.
@@ -99,11 +124,13 @@ export function normalizeImportedTheme(raw: unknown): Theme {
     if (isHslChannels(t.headingColor)) typ.headingColor = t.headingColor;
     if (typeof t.headingWeight === 'number') typ.headingWeight = t.headingWeight;
     (['heading1Size', 'heading2Size', 'heading3Size'] as const).forEach((k) => {
-      if (typeof t[k] === 'string') typ[k] = t[k] as string;
+      const s = safeCssLength(t[k]);
+      if (s) typ[k] = s;
     });
     if (Object.keys(typ).length) theme.typography = typ;
   }
-  if (typeof o.radius === 'string') theme.radius = o.radius;
+  const radius = safeCssLength(o.radius);
+  if (radius) theme.radius = radius;
   return theme;
 }
 
@@ -143,7 +170,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     getThemeStore()
       .then((store) => {
         if (cancelled) return;
-        setCustoms(Array.isArray(store.customThemes) ? store.customThemes : []);
+        setCustoms(
+          Array.isArray(store.customThemes)
+            ? store.customThemes.map(sanitizeThemeLengths)
+            : [],
+        );
         if (store.activeThemeId) setActiveThemeId(store.activeThemeId);
       })
       .catch(() => {
