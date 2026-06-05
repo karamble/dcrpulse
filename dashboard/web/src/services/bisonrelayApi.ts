@@ -380,6 +380,11 @@ export interface BisonrelayPostBodySegment {
   data_b64?: string;
   size?: number;
   alt?: string;
+  // File-transfer embed (--embed[download=<fid>,cost=,filename=,...]--): the
+  // bytes are fetched over BR's file transfer (paying cost), not inline.
+  download?: string;
+  cost?: number;
+  filename?: string;
 }
 
 export interface BisonrelayPostBody {

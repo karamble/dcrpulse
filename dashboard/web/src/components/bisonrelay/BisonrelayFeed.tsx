@@ -45,6 +45,7 @@ import {
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { DownloadEmbed } from './DownloadEmbed';
 
 type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail';
 
@@ -840,7 +841,7 @@ const PostDetailView = ({
             <span className="break-words">{err}</span>
           </div>
         ) : body && body.segments && body.segments.length > 0 ? (
-          <PostBodySegments segments={body.segments} />
+          <PostBodySegments segments={body.segments} uid={uid} />
         ) : body ? (
           <p className="text-sm text-muted-foreground italic">(Empty post)</p>
         ) : null}
@@ -1175,7 +1176,7 @@ const InlineReplyComposer = ({
   );
 };
 
-const PostBodySegments = ({ segments }: { segments: BisonrelayPostBodySegment[] }) => (
+const PostBodySegments = ({ segments, uid }: { segments: BisonrelayPostBodySegment[]; uid: string }) => (
   <div className="space-y-3">
     {segments.map((seg, i) => {
       if (seg.kind === 'text' && seg.html) {
@@ -1186,6 +1187,9 @@ const PostBodySegments = ({ segments }: { segments: BisonrelayPostBodySegment[] 
             dangerouslySetInnerHTML={{ __html: seg.html }}
           />
         );
+      }
+      if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
+        return <DownloadEmbed key={i} seg={seg} uid={uid} />;
       }
       if (seg.kind === 'embed' && seg.data_b64) {
         const isImage = !!seg.mime && seg.mime.startsWith('image/');
