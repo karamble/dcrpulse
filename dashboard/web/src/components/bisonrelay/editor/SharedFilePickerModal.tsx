@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, ArrowLeft, Coins, Loader2, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2, X } from 'lucide-react';
 import {
   BisonrelaySharedFile,
   getBisonrelaySharedFiles,
@@ -15,16 +15,21 @@ interface Props {
   onSubmit: (embed: EditorEmbed) => void;
 }
 
+// formatShareCost renders an atom amount as a trimmed DCR string. BR
+// shared-file costs are in atoms (1 DCR = 1e8), distinct from the
+// milli-atoms of payment records.
+const formatShareCost = (atoms: number): string =>
+  (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
+
 // SharedFilePickerModal is the second toolbar button in the BR editor.
-// Two-step modal: list our shared files → set DCR price → return the
-// embed-shape the editor splices into the post body. BR's `cost=` is in
-// atoms (1 DCR = 1e8) - distinct from the milli-atoms of payment records -
-// but we collect DCR for UX and convert.
+// Two-step modal: list our shared files -> confirm -> return the embed-shape
+// the editor splices into the post body. The price is read-only: BR invoices
+// downloads from the cost stored on the share (fixed when the file was
+// shared), so the embed always advertises exactly what readers are charged.
 export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
   const [files, setFiles] = useState<BisonrelaySharedFile[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [picked, setPicked] = useState<BisonrelaySharedFile | null>(null);
-  const [priceDcr, setPriceDcr] = useState('');
 
   useEffect(() => {
     getBisonrelaySharedFiles()
@@ -44,16 +49,12 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
   // editor toolbar uses type="button" for the same reason.
   const confirm = () => {
     if (!picked) return;
-    const parsedDcr = parseFloat(priceDcr);
-    const dcrAmount = Number.isFinite(parsedDcr) && parsedDcr > 0 ? parsedDcr : 0;
-    // BR shared-file costs are in atoms; 1 DCR = 1e8 atoms.
-    const atoms = Math.round(dcrAmount * 1e8);
     onSubmit({
       displayName: picked.filename || picked.fid.slice(0, 12),
       download: picked.fid,
       filename: picked.filename,
       size: picked.size,
-      cost: atoms,
+      cost: picked.cost,
     });
     onClose();
   };
@@ -70,11 +71,11 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
         <div className="p-5 pb-3 flex items-start justify-between">
           <div>
             <h3 className="text-base font-semibold">
-              {picked ? 'Set price' : 'Link to shared content'}
+              {picked ? 'Confirm link' : 'Link to shared content'}
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
               {picked
-                ? "Set a price for readers to pay before the file can be downloaded. Leave at zero for a free link."
+                ? 'Readers are charged the cost that was set when the file was shared. To charge for a file, share it with a cost under Files.'
                 : "Pick a file you've already shared. The post will reference it by ID; the bytes don't travel inside the post body."}
             </p>
           </div>
@@ -110,14 +111,7 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
                 <button
                   key={f.fid}
                   type="button"
-                  onClick={() => {
-                    setPicked(f);
-                    // Pre-fill the DCR price if BR already has a non-zero
-                    // cost configured on the share itself.
-                    if (f.cost > 0) {
-                      setPriceDcr(String(f.cost / 1e8));
-                    }
-                  }}
+                  onClick={() => setPicked(f)}
                   className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5 hover:bg-muted/30 transition-colors"
                 >
                   <span className="truncate font-medium text-foreground">
@@ -135,7 +129,7 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
                       <>
                         <span className="opacity-50">·</span>
                         <span className="text-primary/80">
-                          default {(f.cost / 1e8).toFixed(8).replace(/\.?0+$/, '')} DCR
+                          {formatShareCost(f.cost)} DCR
                         </span>
                       </>
                     )}
@@ -150,39 +144,20 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
               <div className="text-foreground font-medium truncate">{picked.filename}</div>
               <div className="font-mono text-[10px] break-all">{picked.fid}</div>
               <div>{formatBytes(picked.size)}</div>
-            </div>
-            <div>
-              <label
-                className="block text-xs text-muted-foreground mb-1"
-                htmlFor="br-share-price"
-              >
-                Price (DCR)
-              </label>
-              <div className="relative">
-                <Coins className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70 pointer-events-none" />
-                <input
-                  id="br-share-price"
-                  type="number"
-                  min="0"
-                  step="any"
-                  inputMode="decimal"
-                  value={priceDcr}
-                  onChange={(e) => setPriceDcr(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      confirm();
-                    }
-                  }}
-                  placeholder="0"
-                  className="w-full pl-8 pr-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary"
-                />
+              <div className="pt-1">
+                Price:{' '}
+                <span className="text-foreground font-medium">
+                  {picked.cost > 0
+                    ? `${formatShareCost(picked.cost)} DCR`
+                    : 'Free download'}
+                </span>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Leave at zero for a free download link. Readers pay over
-                Lightning before BR releases the file content.
-              </p>
             </div>
+            {picked.cost > 0 && (
+              <p className="text-[10px] text-muted-foreground">
+                Readers pay over Lightning before BR releases the file content.
+              </p>
+            )}
             <div className="flex justify-between gap-2 pt-1">
               <button
                 type="button"

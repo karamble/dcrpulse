@@ -621,12 +621,16 @@ func BrclientdCancelDownload(ctx context.Context, fidHex string) error {
 
 // BrclientdContentGet asks brclientd to start downloading a shared file (FID)
 // from a remote user, as advertised by an --embed[download=<fid>,cost=,...]--
-// tag. BR auto-pays any per-chunk cost the uploader set; progress is tracked
-// via BrclientdListDownloads and the file-download-* events.
-func BrclientdContentGet(ctx context.Context, uidHex, fidHex string) error {
-	return brclientdPostJSON(ctx, "/content/get", map[string]string{
-		"uid": uidHex,
-		"fid": fidHex,
+// tag. The daemon pays per-chunk only when the cost stored on the host's
+// share is at most maxCostAtoms (0 = free files only); a higher real cost
+// cancels the download and emits a file-download-cost-rejected event.
+// Progress is tracked via BrclientdListDownloads and the file-download-*
+// events.
+func BrclientdContentGet(ctx context.Context, uidHex, fidHex string, maxCostAtoms uint64) error {
+	return brclientdPostJSON(ctx, "/content/get", map[string]any{
+		"uid":            uidHex,
+		"fid":            fidHex,
+		"max_cost_atoms": maxCostAtoms,
 	})
 }
 

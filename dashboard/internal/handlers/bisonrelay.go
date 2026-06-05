@@ -1341,13 +1341,17 @@ func BisonrelayPagesLocalDeleteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // BisonrelayContentGetHandler initiates a download of a shared file (FID) that
-// a page or post advertised via --embed[download=<fid>,cost=,...]--. BR
-// auto-pays any per-chunk cost; the bytes are served by
-// BisonrelayContentFileHandler once the download completes. Body: {uid, fid}.
+// a page or post advertised via --embed[download=<fid>,cost=,...]--. The
+// daemon pays per-chunk only up to maxCostAtoms (0 = free files only); a
+// higher real share cost cancels the download and emits a
+// file-download-cost-rejected event so the UI can re-confirm with the actual
+// price. The bytes are served by BisonrelayContentFileHandler once the
+// download completes. Body: {uid, fid, maxCostAtoms?}.
 func BisonrelayContentGetHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		UID string `json:"uid"`
-		FID string `json:"fid"`
+		UID          string `json:"uid"`
+		FID          string `json:"fid"`
+		MaxCostAtoms uint64 `json:"maxCostAtoms"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
@@ -1357,7 +1361,7 @@ func BisonrelayContentGetHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uid and fid are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdContentGet(r.Context(), req.UID, req.FID); err != nil {
+	if err := rpc.BrclientdContentGet(r.Context(), req.UID, req.FID, req.MaxCostAtoms); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}

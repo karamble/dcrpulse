@@ -615,6 +615,7 @@ export type BisonrelayEventType =
   | 'post-heart-received'
   | 'file-download-progress'
   | 'file-download-completed'
+  | 'file-download-cost-rejected'
   | 'rtdt-invited'
   | 'rtdt-invite-accepted'
   | 'rtdt-invite-canceled'
@@ -742,11 +743,17 @@ export const cancelBisonrelayDownload = async (fid: string): Promise<void> => {
 };
 
 // startBisonrelayContentGet initiates a download of a shared file (FID) that a
-// page advertised via --embed[download=<fid>,cost=,...]--. BR auto-pays any
-// per-chunk cost; poll getBisonrelayManageDownloads to track completion, then
-// load the bytes from bisonrelayContentFileUrl.
-export const startBisonrelayContentGet = async (uid: string, fid: string): Promise<void> => {
-  await api.post('/br/content/get', { uid, fid });
+// page advertised via --embed[download=<fid>,cost=,...]--. BR pays the
+// per-chunk cost up to maxCostAtoms (0 = free files only; a higher real share
+// cost emits file-download-cost-rejected instead of paying); poll
+// getBisonrelayManageDownloads to track completion, then load the bytes from
+// bisonrelayContentFileUrl.
+export const startBisonrelayContentGet = async (
+  uid: string,
+  fid: string,
+  maxCostAtoms: number = 0,
+): Promise<void> => {
+  await api.post('/br/content/get', { uid, fid, maxCostAtoms });
 };
 
 // bisonrelayContentFileUrl is the same-origin URL the browser loads (as an

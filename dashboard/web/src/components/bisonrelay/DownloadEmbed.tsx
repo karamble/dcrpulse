@@ -4,11 +4,13 @@
 
 import { useEffect, useState } from 'react';
 import {
+  BisonrelayLiveEvent,
   bisonrelayContentFileUrl,
   getBisonrelayManageDownloads,
   getBisonrelayRates,
   startBisonrelayContentGet,
 } from '../../services/bisonrelayApi';
+import { useBisonrelayLive } from './BisonrelayLiveProvider';
 
 // DownloadEmbedSeg is the subset of a BR embed segment a file-transfer embed
 // needs. Both BisonrelayPostBodySegment and BisonrelayPageSegment satisfy it,
@@ -44,19 +46,26 @@ const formatDownloadBytes = (n: number): string => {
 // DownloadEmbed renders a file-transfer embed
 // (--embed[download=<fid>,cost=,filename=,...]--): a file the host shares over
 // BR file transfer, optionally behind a Lightning paywall. Clicking starts the
-// download (the daemon auto-pays); for a paid file we require an explicit
-// confirm first. While in flight we poll the downloads list for progress; on
-// completion the bytes load from the dashboard's /content/file proxy - images
-// render inline, other types as a download link.
+// download; for a paid file we require an explicit confirm first. The embed
+// cost is only what the post advertises - the daemon pays at most the amount
+// the user approved, and when the host's real share cost is higher it rejects
+// with a file-download-cost-rejected event that we turn into a second confirm
+// showing the actual price. While in flight we poll the downloads list for
+// progress; on completion the bytes load from the dashboard's /content/file
+// proxy - images render inline, other types as a download link.
 export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string }) => {
   const fid = seg.download || '';
   const filename = seg.filename || seg.name || 'file';
   const cost = seg.cost || 0;
   const isImage = !!seg.mime && seg.mime.startsWith('image/');
-  const [phase, setPhase] = useState<'idle' | 'confirm' | 'downloading' | 'ready' | 'error'>('idle');
+  const [phase, setPhase] = useState<
+    'idle' | 'confirm' | 'downloading' | 'mismatch' | 'ready' | 'error'
+  >('idle');
   const [err, setErr] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [usd, setUsd] = useState<{ amount: number; source: string; updatedAt: string } | null>(null);
+  const [realCost, setRealCost] = useState(0);
+  const { addListener } = useBisonrelayLive();
 
   // For a paid file, look up the USD value of the cost (DCR/USD via BR, with a
   // Kraken fallback) so the price can be shown in both DCR and approximate USD.
@@ -113,11 +122,25 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
     };
   }, [phase, fid]);
 
-  const start = async () => {
+  // The daemon rejects the download when the host's stored share cost
+  // exceeds what the user approved; switch to a second confirm showing
+  // the real price.
+  useEffect(() => {
+    if (phase !== 'downloading') return undefined;
+    return addListener((evt: BisonrelayLiveEvent) => {
+      if (evt.type !== 'file-download-cost-rejected') return;
+      const payload = (evt.payload ?? {}) as Record<string, unknown>;
+      if (payload.uid !== uid || payload.fid !== fid) return;
+      setRealCost(typeof payload.cost_atoms === 'number' ? payload.cost_atoms : 0);
+      setPhase('mismatch');
+    });
+  }, [phase, addListener, uid, fid]);
+
+  const start = async (maxCostAtoms: number) => {
     setErr(null);
     setPhase('downloading');
     try {
-      await startBisonrelayContentGet(uid, fid);
+      await startBisonrelayContentGet(uid, fid, maxCostAtoms);
     } catch (e: any) {
       const body = e?.response?.data;
       setErr(typeof body === 'string' ? body : e?.message || 'Could not start download');
@@ -165,7 +188,37 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={start}
+              onClick={() => start(cost)}
+              className="px-3 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
+            >
+              Pay &amp; download
+            </button>
+            <button
+              type="button"
+              onClick={() => setPhase('idle')}
+              className="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : phase === 'mismatch' ? (
+        <div className="space-y-2">
+          <div>
+            The sender charges{' '}
+            <span className="font-semibold text-foreground">
+              {formatDcrFromAtoms(realCost)} DCR
+            </span>{' '}
+            for <span className="font-mono">{filename}</span>
+            {cost > 0
+              ? `, the post advertised ${formatDcrFromAtoms(cost)} DCR.`
+              : ', the post advertised it as free.'}{' '}
+            Pay the actual price?
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => start(realCost)}
               className="px-3 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
             >
               Pay &amp; download
@@ -197,7 +250,7 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
       ) : (
         <button
           type="button"
-          onClick={() => (cost > 0 ? setPhase('confirm') : start())}
+          onClick={() => (cost > 0 ? setPhase('confirm') : start(0))}
           title={usdTitle}
           className="px-4 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
         >
