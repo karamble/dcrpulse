@@ -22,6 +22,7 @@ const REFRESH_EVENT_TYPES = new Set([
   'server-unwelcome',
   'posts-subscribe-error',
   'blocked-by-user',
+  'tip-received',
 ]);
 
 const sevDot = (s: string) =>
