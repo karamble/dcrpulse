@@ -7,6 +7,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Atom,
+  Coins,
   Edit,
   Loader2,
   Repeat2,
@@ -48,11 +49,13 @@ import {
   postBisonrelayComment,
   relayBisonrelayPost,
   subscribeBisonrelayPosts,
+  tipBisonrelayContact,
   unsubscribeBisonrelayPosts,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { DownloadEmbed } from './DownloadEmbed';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
+import { TipModal } from './TipModal';
 
 type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail';
 
@@ -710,7 +713,13 @@ const PostDetailView = ({
   const [relayState, setRelayState] = useState<'idle' | 'confirm' | 'busy' | 'done'>('idle');
   const [relayCount, setRelayCount] = useState(0);
   const [relayErr, setRelayErr] = useState<string | null>(null);
+  const [showTip, setShowTip] = useState(false);
+  const [tipStatus, setTipStatus] = useState<{
+    state: 'requesting' | 'paying' | 'sent' | 'failed';
+    line: string;
+  } | null>(null);
   const isOwnPost = !!ownUid && uid === ownUid;
+  const authorNick = summary?.author_nick || uid.slice(0, 12);
   const { addListener } = useBisonrelayLive();
 
   const startRelay = async () => {
@@ -736,6 +745,23 @@ const PostDetailView = ({
       setRelayErr(typeof body === 'string' ? body : e?.message || 'Relay failed');
       setRelayState('confirm');
     }
+  };
+
+  // Fire-and-forget like the chat page's tip flow; the live
+  // tip-invoice-generated / tip-sent / tip-failed events advance the line.
+  const submitTip = (dcrAmount: number) => {
+    setTipStatus({
+      state: 'requesting',
+      line: `Requesting invoice for ${dcrAmount} DCR to tip ${authorNick}...`,
+    });
+    tipBisonrelayContact(uid, dcrAmount).catch((e: any) => {
+      const body = e?.response?.data;
+      const msg = typeof body === 'string' ? body : e?.message || 'Tip failed';
+      setTipStatus({
+        state: 'failed',
+        line: `Tip attempt of ${dcrAmount} DCR failed due to ${msg}. Given up on attempting to tip.`,
+      });
+    });
   };
 
   const loadBody = useCallback(async () => {
@@ -801,6 +827,27 @@ const PostDetailView = ({
     });
   }, [addListener, uid, pid, loadHearts, loadReceipts]);
 
+  // Tip progress mirrors the chat page's handling of the same events.
+  useEffect(() => {
+    return addListener((evt: BisonrelayLiveEvent) => {
+      if (evt.type === 'tip-invoice-generated') {
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        if (String(payload.uid ?? '') !== uid) return;
+        const nick = String(payload.nick ?? '');
+        setTipStatus((prev) =>
+          prev && prev.state === 'requesting'
+            ? { state: 'paying', line: `Invoice received, paying tip to ${nick}...` }
+            : prev,
+        );
+        return;
+      }
+      if (evt.type !== 'tip-sent' && evt.type !== 'tip-failed') return;
+      const payload = (evt.payload ?? {}) as Record<string, string>;
+      if (payload.recipient !== uid || !payload.line) return;
+      setTipStatus({ state: evt.type === 'tip-sent' ? 'sent' : 'failed', line: payload.line });
+    });
+  }, [addListener, uid]);
+
   const toggleHeart = async () => {
     if (hearting) return;
     const next = !hearted;
@@ -827,7 +874,6 @@ const PostDetailView = ({
   }, [summary, onMarkSeen]);
 
   const title = summary?.title || body?.title || '(untitled post)';
-  const authorNick = summary?.author_nick || uid.slice(0, 12);
   const dateStr = summary?.date ? new Date(summary.date * 1000).toLocaleString() : '';
   const waitingForArrival = !summary && (loading || err === null) && body === null;
 
@@ -870,12 +916,23 @@ const PostDetailView = ({
               <Atom className="h-8 w-8" strokeWidth={hearted ? 2.5 : 2} />
               <span className="tabular-nums">{hearts ?? 0}</span>
             </button>
+            {!isOwnPost && (
+              <button
+                type="button"
+                onClick={() => setShowTip(true)}
+                title="Pay a tip over Lightning"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Coins className="h-4 w-4" />
+                <span>Pay tip</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => (relayState === 'idle' ? startRelay() : setRelayState('idle'))}
               disabled={relayState === 'busy'}
               title="Relay this post to your subscribers"
-              className={`inline-flex items-center gap-1.5 text-xs transition-colors disabled:opacity-50 ${
+              className={`ml-auto inline-flex items-center gap-1.5 text-xs transition-colors disabled:opacity-50 ${
                 relayState === 'done'
                   ? 'text-success'
                   : 'text-muted-foreground hover:text-foreground'
@@ -925,6 +982,22 @@ const PostDetailView = ({
             </div>
           )}
           {relayErr && <p className="text-xs text-destructive">{relayErr}</p>}
+          {tipStatus && (
+            <div
+              className={`flex items-center gap-2 text-xs ${
+                tipStatus.state === 'sent'
+                  ? 'text-success'
+                  : tipStatus.state === 'failed'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+              }`}
+            >
+              {(tipStatus.state === 'requesting' || tipStatus.state === 'paying') && (
+                <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+              )}
+              <span className="min-w-0 break-words">{tipStatus.line}</span>
+            </div>
+          )}
         </div>
       </header>
       <article className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-3">
@@ -1005,6 +1078,14 @@ const PostDetailView = ({
             )}
           </div>
         </section>
+      )}
+      {showTip && (
+        <TipModal
+          nick={authorNick}
+          uid={uid}
+          onClose={() => setShowTip(false)}
+          onSubmit={submitTip}
+        />
       )}
     </div>
   );
