@@ -54,6 +54,7 @@ import {
 } from './embedParser';
 import { linkifyChatText } from './chatLinkify';
 import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './editor';
+import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
 import { CreateGCModal } from './gc/CreateGCModal';
@@ -75,12 +76,6 @@ interface ImageViewerOpenFn {
 }
 
 const ImageViewerCtx = createContext<ImageViewerOpenFn | null>(null);
-
-interface ViewerImage {
-  src: string;
-  name: string;
-  mime: string;
-}
 
 // ActiveTarget tags the chat-window subject as either a 1:1 PM contact or
 // an N-peer GC. Most existing code paths only care about the contact case;
@@ -1894,58 +1889,6 @@ const EmbedRenderer = ({ embed }: { embed: EmbedSegment }) => {
     );
   }
   return <NonImageEmbed embed={embed} fileUrl={fileUrl} />;
-};
-
-const ImageViewerModal = ({
-  image,
-  onClose,
-}: {
-  image: ViewerImage;
-  onClose: () => void;
-}) => {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-      onClick={onClose}
-      role="dialog"
-      aria-label={image.name}
-    >
-      <div className="absolute top-3 right-3 flex items-center gap-2">
-        <a
-          href={image.src}
-          download={image.name}
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-background/80 hover:bg-background text-foreground text-xs font-medium"
-          title="Download"
-        >
-          <Download className="h-4 w-4" />
-          <span>Download</span>
-        </a>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1.5 rounded-md bg-background/80 hover:bg-background text-foreground"
-          title="Close"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <img
-        src={image.src}
-        alt={image.name}
-        onClick={(e) => e.stopPropagation()}
-        className="max-h-[92vh] max-w-[92vw] object-contain rounded shadow-2xl"
-      />
-    </div>
-  );
 };
 
 const NonImageEmbed = ({ embed, fileUrl }: { embed: EmbedSegment; fileUrl: string }) => {

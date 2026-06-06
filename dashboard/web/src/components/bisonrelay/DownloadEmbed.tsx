@@ -16,6 +16,7 @@ import {
   findNewFailedLnPayment,
 } from '../../services/lightningApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { ImageViewerModal } from './ImageViewerModal';
 
 // DownloadEmbedSeg is the subset of a BR embed segment a file-transfer embed
 // needs. Both BisonrelayPostBodySegment and BisonrelayPageSegment satisfy it,
@@ -73,6 +74,7 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
   // BR transfers are async and the seller may be offline or unable to issue
   // the invoice (no protocol error reaches us); hint after 30s of waiting.
   const [slow, setSlow] = useState(false);
+  const [showViewer, setShowViewer] = useState(false);
   // Failed-payment hashes snapshotted when the download starts; a NEW failed
   // payment appearing during the download means our chunk payment could not
   // complete (e.g. no route) and the BR library parked the download silently.
@@ -192,18 +194,32 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
     const url = bisonrelayContentFileUrl(fid, uid);
     if (isImage) {
       return (
-        <img
-          src={url}
-          alt={seg.alt || filename}
-          className="rounded-lg border border-border/40 max-w-full h-auto"
-        />
+        <>
+          <button
+            type="button"
+            onClick={() => setShowViewer(true)}
+            className="block p-0 border-0 bg-transparent cursor-zoom-in"
+          >
+            <img
+              src={url}
+              alt={seg.alt || filename}
+              className="rounded-lg border border-border/40 max-w-full h-auto"
+            />
+          </button>
+          {showViewer && (
+            <ImageViewerModal
+              image={{ src: url, name: filename, mime: seg.mime || '' }}
+              onClose={() => setShowViewer(false)}
+            />
+          )}
+        </>
       );
     }
     return (
       <a
         href={url}
         download={filename}
-        className="inline-block text-xs text-primary underline hover:no-underline"
+        className="inline-block max-w-full break-words text-xs text-primary underline hover:no-underline"
       >
         {filename} ({seg.mime || 'binary'})
       </a>
@@ -216,10 +232,10 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
 
   return (
     <div className="rounded-lg border border-border/50 bg-background/40 p-3 text-sm space-y-2">
-      <div className="text-xs text-muted-foreground" title={usdTitle}>{meta}</div>
+      <div className="text-xs text-muted-foreground break-words" title={usdTitle}>{meta}</div>
       {phase === 'confirm' ? (
         <div className="space-y-2">
-          <div>
+          <div className="break-words">
             Pay <span className="font-semibold text-foreground" title={usdTitle}>{costLabel}</span> to
             download <span className="font-mono">{filename}</span>?
           </div>
@@ -242,7 +258,7 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
         </div>
       ) : phase === 'mismatch' ? (
         <div className="space-y-2">
-          <div>
+          <div className="break-words">
             The sender charges{' '}
             <span className="font-semibold text-foreground">
               {formatDcrFromAtoms(realCost)} DCR
@@ -284,7 +300,7 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
         </div>
       ) : phase === 'error' ? (
         <div className="space-y-2">
-          <div className="text-xs text-rose-300">{err}</div>
+          <div className="text-xs text-rose-300 break-words">{err}</div>
           <button
             type="button"
             onClick={() => setPhase('idle')}
@@ -298,7 +314,7 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
           type="button"
           onClick={() => (cost > 0 ? setPhase('confirm') : start(0))}
           title={usdTitle}
-          className="px-4 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
+          className="max-w-full truncate px-4 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
         >
           {cost > 0 ? `Download (${costLabel})` : `Download ${filename}`}
         </button>

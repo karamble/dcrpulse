@@ -52,6 +52,7 @@ import {
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { DownloadEmbed } from './DownloadEmbed';
+import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 
 type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail';
 
@@ -1386,46 +1387,57 @@ const InlineReplyComposer = ({
   );
 };
 
-const PostBodySegments = ({ segments, uid }: { segments: BisonrelayPostBodySegment[]; uid: string }) => (
-  <div className="space-y-3">
-    {segments.map((seg, i) => {
-      if (seg.kind === 'text' && seg.html) {
-        return (
-          <div
-            key={i}
-            className={BR_PROSE_CLASSES}
-            dangerouslySetInnerHTML={{ __html: seg.html }}
-          />
-        );
-      }
-      if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
-        return <DownloadEmbed key={i} seg={seg} uid={uid} />;
-      }
-      if (seg.kind === 'embed' && seg.data_b64) {
-        const isImage = !!seg.mime && seg.mime.startsWith('image/');
-        if (isImage) {
+const PostBodySegments = ({ segments, uid }: { segments: BisonrelayPostBodySegment[]; uid: string }) => {
+  const [viewer, setViewer] = useState<ViewerImage | null>(null);
+  return (
+    <div className="space-y-3">
+      {segments.map((seg, i) => {
+        if (seg.kind === 'text' && seg.html) {
           return (
-            <img
+            <div
               key={i}
-              src={`data:${seg.mime};base64,${seg.data_b64}`}
-              alt={seg.alt || seg.name || ''}
-              className="rounded-lg border border-border/40 max-w-full h-auto"
+              className={BR_PROSE_CLASSES}
+              dangerouslySetInnerHTML={{ __html: seg.html }}
             />
           );
         }
-        const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
-        return (
-          <a
-            key={i}
-            href={href}
-            download={seg.name || 'attachment'}
-            className="inline-block text-xs text-primary underline hover:no-underline"
-          >
-            {seg.name || 'attachment'} ({seg.mime || 'binary'})
-          </a>
-        );
-      }
-      return null;
-    })}
-  </div>
-);
+        if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
+          return <DownloadEmbed key={i} seg={seg} uid={uid} />;
+        }
+        if (seg.kind === 'embed' && seg.data_b64) {
+          const isImage = !!seg.mime && seg.mime.startsWith('image/');
+          if (isImage) {
+            const src = `data:${seg.mime};base64,${seg.data_b64}`;
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setViewer({ src, name: seg.name || seg.filename || 'image', mime: seg.mime || '' })}
+                className="block p-0 border-0 bg-transparent cursor-zoom-in"
+              >
+                <img
+                  src={src}
+                  alt={seg.alt || seg.name || ''}
+                  className="rounded-lg border border-border/40 max-w-full h-auto"
+                />
+              </button>
+            );
+          }
+          const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
+          return (
+            <a
+              key={i}
+              href={href}
+              download={seg.name || 'attachment'}
+              className="inline-block max-w-full break-words text-xs text-primary underline hover:no-underline"
+            >
+              {seg.name || 'attachment'} ({seg.mime || 'binary'})
+            </a>
+          );
+        }
+        return null;
+      })}
+      {viewer && <ImageViewerModal image={viewer} onClose={() => setViewer(null)} />}
+    </div>
+  );
+};

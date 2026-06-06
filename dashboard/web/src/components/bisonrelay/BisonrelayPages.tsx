@@ -31,6 +31,7 @@ import { BisonrelayStoreModePanel } from './BisonrelayStoreMode';
 import { BisonrelayStoreManager } from './BisonrelayStoreManager';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
 import { DownloadEmbed } from './DownloadEmbed';
+import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 
 const navigateTo = (hash: string): void => {
   window.location.hash = hash;
@@ -632,6 +633,7 @@ const PageSegments = ({
     asyncTargetId: string,
   ) => Promise<string | null>;
 }) => {
+  const [viewer, setViewer] = useState<ViewerImage | null>(null);
   // Intercept clicks on br:// and relative links so they navigate in-app
   // rather than reloading the dashboard. Fully-qualified http(s) links keep
   // their default (open in a new tab via the renderer's target=_blank).
@@ -669,13 +671,20 @@ const PageSegments = ({
         if (seg.kind === 'embed' && seg.data_b64) {
           const isImage = !!seg.mime && seg.mime.startsWith('image/');
           if (isImage) {
+            const src = `data:${seg.mime};base64,${seg.data_b64}`;
             return (
-              <img
+              <button
                 key={i}
-                src={`data:${seg.mime};base64,${seg.data_b64}`}
-                alt={seg.alt || seg.name || ''}
-                className="rounded-lg border border-border/40 max-w-full h-auto"
-              />
+                type="button"
+                onClick={() => setViewer({ src, name: seg.name || seg.filename || 'image', mime: seg.mime || '' })}
+                className="block p-0 border-0 bg-transparent cursor-zoom-in"
+              >
+                <img
+                  src={src}
+                  alt={seg.alt || seg.name || ''}
+                  className="rounded-lg border border-border/40 max-w-full h-auto"
+                />
+              </button>
             );
           }
           const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
@@ -684,7 +693,7 @@ const PageSegments = ({
               key={i}
               href={href}
               download={seg.name || 'attachment'}
-              className="inline-block text-xs text-primary underline hover:no-underline"
+              className="inline-block max-w-full break-words text-xs text-primary underline hover:no-underline"
             >
               {seg.name || 'attachment'} ({seg.mime || 'binary'})
             </a>
@@ -695,6 +704,7 @@ const PageSegments = ({
         }
         return null;
       })}
+      {viewer && <ImageViewerModal image={viewer} onClose={() => setViewer(null)} />}
     </div>
   );
 };
