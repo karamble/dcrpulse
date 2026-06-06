@@ -18,7 +18,7 @@ export const LightningLayout = () => (
     </div>
     <aside className="md:w-36 shrink-0 order-1 md:order-2">
       <nav
-        className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-2 px-2 md:mx-0 md:px-0 pb-1 md:pb-0"
+        className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible -mx-2 px-2 md:mx-0 md:px-0 pb-1 md:pb-0"
         aria-label="Lightning navigation"
       >
         <NavLink to="/wallet/lightning" end className={navItemClass}>

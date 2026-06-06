@@ -194,7 +194,7 @@ export const DexChartPanel = ({ market, candles, durs, dur, onDur }: Props) => {
   return (
     <div className="flex flex-col min-h-0 h-full">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50 text-xs">
-        <div className="flex items-center gap-1 overflow-x-auto">
+        <div className="flex items-center gap-1 overflow-x-auto overflow-y-hidden">
           {durs.map((t) => (
             <button
               key={t}

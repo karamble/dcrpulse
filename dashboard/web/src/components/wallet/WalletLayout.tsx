@@ -66,7 +66,7 @@ export const WalletLayout = () => {
             <div className="font-semibold truncate">{activeName}</div>
           </div>
         )}
-        <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-3 px-3 md:mx-0 md:px-0 pb-1 md:pb-0">
+        <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible -mx-3 px-3 md:mx-0 md:px-0 pb-1 md:pb-0">
           <NavLink to="/wallet" end className={navItemClass}>
             <LayoutDashboard className="h-4 w-4" />
             <span>Overview</span>

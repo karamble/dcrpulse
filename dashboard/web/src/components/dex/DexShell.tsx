@@ -37,7 +37,7 @@ export const DexShell = ({ initialTab = 'trade', onLock }: { initialTab?: DexTab
     <div className="space-y-3">
       <DexServerBanner host={HOST} />
       <nav className="flex items-center gap-2 border-b border-border px-4">
-        <div className="flex items-center gap-2 overflow-x-auto">
+        <div className="flex items-center gap-2 overflow-x-auto overflow-y-hidden">
           {tabs.map(({ id, label, Icon }) => {
             const isActive = tab === id;
             return (
@@ -45,7 +45,7 @@ export const DexShell = ({ initialTab = 'trade', onLock }: { initialTab?: DexTab
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={`flex items-center gap-1.5 px-4 py-2 -mb-px border-b-2 whitespace-nowrap shrink-0 text-sm transition-colors ${
+                className={`flex items-center gap-1.5 px-4 py-2 border-b-2 whitespace-nowrap shrink-0 text-sm transition-colors ${
                   isActive
                     ? 'border-primary text-primary font-semibold'
                     : 'border-transparent text-muted-foreground hover:text-foreground'

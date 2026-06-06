@@ -122,7 +122,7 @@ export const DexMarketsPanel = ({ markets, selected, onSelect, statsFor }: Props
         </div>
       </div>
 
-      <div className="flex gap-4 px-4 py-2 border-b border-border/50 text-xs overflow-x-auto">
+      <div className="flex gap-4 px-4 py-2 border-b border-border/50 text-xs overflow-x-auto overflow-y-hidden">
         {tabs.map(([k, n]) => (
           <button
             key={k}

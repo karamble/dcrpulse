@@ -24,7 +24,7 @@ export const BisonrelayStoreManager = () => {
   ];
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 overflow-x-auto">
+      <div className="flex gap-1 overflow-x-auto overflow-y-hidden">
         {tabs.map((t) => (
           <button key={t.id} type="button" className={tabClass(tab === t.id)} onClick={() => setTab(t.id)}>
             {t.label}

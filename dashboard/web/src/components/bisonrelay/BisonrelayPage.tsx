@@ -126,7 +126,7 @@ export const BisonrelayPage = () => {
           positioned dropdown inside an overflow-x-auto container gets
           clipped on mobile (same fix as the DEX bell in DexShell). */}
       <nav className="flex items-center gap-1 border-b border-border -mx-3 px-3 sm:mx-0 sm:px-0">
-        <div className="flex gap-1 overflow-x-auto">
+        <div className="flex gap-1 overflow-x-auto overflow-y-hidden">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             const Icon = tab.icon;
@@ -135,7 +135,7 @@ export const BisonrelayPage = () => {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 -mb-px border-b-2 inline-flex items-center gap-2 whitespace-nowrap shrink-0 text-sm transition-colors ${
+                className={`px-4 py-2 border-b-2 inline-flex items-center gap-2 whitespace-nowrap shrink-0 text-sm transition-colors ${
                   isActive
                     ? 'border-primary text-primary font-semibold'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
