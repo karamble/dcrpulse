@@ -8,6 +8,7 @@
 
 import type { DexMarket, DexOrder } from '../../services/dcrdexApi';
 import type { Candle, MarketStats, MiniOrder, OrderBookState, Trade } from './useDexFeed';
+import { RateEncodingFactor } from './dexFormat';
 
 export const mockMarkets: DexMarket[] = [
   { base: 'DCR', quote: 'BTC', baseID: 42, quoteID: 0, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e8 },
@@ -46,7 +47,7 @@ export function mockBook(m: DexMarket): OrderBookState {
     rate: Number(rate.toFixed(8)),
     qty: Number(qty.toFixed(4)),
     qtyAtomic: Math.round(qty * m.baseConvFactor),
-    msgRate: Math.round(rate * 1e8),
+    msgRate: Math.round(rate * (RateEncodingFactor / m.baseConvFactor) * m.quoteConvFactor),
     epoch: 0,
     sell,
     token: `mock-${sell ? 's' : 'b'}-${i}`,

@@ -258,7 +258,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
       </div>
 
       <section className="h-[280px] rounded-xl overflow-hidden border border-border/60 bg-card">
-        <DexOrdersPanel orders={orders} preview={preview} onCancel={async (id) => {
+        <DexOrdersPanel orders={orders} markets={markets} preview={preview} onCancel={async (id) => {
           try {
             await cancelDexOrder(id);
             refreshOrders();

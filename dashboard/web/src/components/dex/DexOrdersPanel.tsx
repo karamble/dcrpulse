@@ -2,18 +2,21 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { fmtAmt } from './dexFormat';
-import type { DexOrder } from '../../services/dcrdexApi';
+import { convQty, fmtAmt } from './dexFormat';
+import type { DexMarket, DexOrder } from '../../services/dcrdexApi';
 
 interface Props {
   orders: DexOrder[];
+  markets: DexMarket[];
   preview?: boolean;
   onCancel: (id: string) => void;
 }
 
 const isOpen = (o: DexOrder) => o.status === 'booked' || o.status === 'epoch';
+
+const marketKey = (baseID: number, quoteID: number) => `${baseID}-${quoteID}`;
 
 const Pill = ({ children, kind }: { children: string; kind: 'buy' | 'sell' | 'type' }) => {
   const cls =
@@ -25,11 +28,18 @@ const Pill = ({ children, kind }: { children: string; kind: 'buy' | 'sell' | 'ty
   return <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${cls}`}>{children}</span>;
 };
 
-export const DexOrdersPanel = ({ orders, preview, onCancel }: Props) => {
+export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) => {
   const [tab, setTab] = useState<'open' | 'history'>('open');
   const open = orders.filter(isOpen);
   const history = orders.filter((o) => !isOpen(o));
   const rows = tab === 'open' ? open : history;
+  const marketByKey = useMemo(() => {
+    const m: Record<string, DexMarket> = {};
+    markets.forEach((mk) => {
+      m[marketKey(mk.baseID, mk.quoteID)] = mk;
+    });
+    return m;
+  }, [markets]);
 
   return (
     <div className="flex flex-col min-h-0 h-full">
@@ -74,12 +84,13 @@ export const DexOrdersPanel = ({ orders, preview, onCancel }: Props) => {
             <tbody>
               {rows.map((o) => {
                 const pct = o.quantity > 0 ? Math.round((o.filled / o.quantity) * 100) : 0;
+                const baseConv = marketByKey[marketKey(o.baseID, o.quoteID)]?.baseConvFactor || 1e8;
                 return (
                   <tr key={o.id} className="border-t border-border/40 hover:bg-muted/10">
                     <td className="px-4 py-2 font-mono tabular-nums">{o.marketName}</td>
                     <td className="px-2 py-2"><Pill kind={o.sell ? 'sell' : 'buy'}>{o.sell ? 'Sell' : 'Buy'}</Pill></td>
                     <td className="px-2 py-2"><Pill kind="type">{o.type}</Pill></td>
-                    <td className="px-2 py-2 text-right font-mono tabular-nums">{fmtAmt(o.quantity / 1e8, 4)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums">{fmtAmt(convQty(o.quantity, baseConv), 4)}</td>
                     <td className="px-2 py-2 text-right">
                       <span className="inline-flex items-center gap-2 font-mono tabular-nums text-xs text-muted-foreground">
                         <span className="inline-block w-12 h-1 rounded bg-muted/50 overflow-hidden align-middle">
