@@ -8,11 +8,11 @@ import {
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
+  Atom,
   BarChart3,
   CheckCircle2,
   Coins,
   FileText,
-  Heart,
   Hash,
   Inbox,
   Layers,
@@ -1203,10 +1203,10 @@ const ContentView = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <HeroCard icon={FileText} label="Posts authored" value={String(data.authored.length)} />
         <HeroCard
-          icon={Heart}
-          label="Hearts received"
+          icon={Atom}
+          label="Atoms received"
           value={String(totalHearts)}
-          tone="rose"
+          tone="primary"
         />
         <HeroCard
           icon={MessageSquare}
@@ -1278,8 +1278,8 @@ const ContentView = () => {
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="text-[11px] text-rose-400 tabular-nums inline-flex items-center gap-1">
-                      <Heart className="h-3 w-3" />
+                    <div className="text-[11px] text-primary tabular-nums inline-flex items-center gap-1">
+                      <Atom className="h-3 w-3" />
                       {p.hearts}
                     </div>
                     <div className="text-[11px] text-emerald-400 tabular-nums inline-flex items-center gap-1">

@@ -616,6 +616,9 @@ export const postBisonrelayComment = async (
 export interface BisonrelayPostHearts {
   count: number;
   hearted_by_me: boolean;
+  // Users whose latest heart status on the post is "on". Absent on older
+  // brclientd versions.
+  hearts?: { user: string; nick: string }[];
 }
 
 export const getBisonrelayPostHearts = async (

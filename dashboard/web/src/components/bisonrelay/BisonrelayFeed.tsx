@@ -6,9 +6,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
+  Atom,
   ChevronRight,
   Edit,
-  Heart,
   Loader2,
   Repeat2,
   Reply,
@@ -747,6 +747,7 @@ const PostDetailView = ({
   const [hearts, setHearts] = useState<number | null>(null);
   const [hearted, setHearted] = useState(false);
   const [hearting, setHearting] = useState(false);
+  const [heartedBy, setHeartedBy] = useState<{ user: string; nick: string }[]>([]);
   const [receipts, setReceipts] = useState<BisonrelayReceiveReceipt[]>([]);
   // Relay-to-subscribers flow: confirm shows the live subscriber count
   // before anything is sent.
@@ -800,6 +801,7 @@ const PostDetailView = ({
       const h = await getBisonrelayPostHearts(uid, pid);
       setHearts(h.count);
       setHearted(h.hearted_by_me);
+      setHeartedBy(h.hearts ?? []);
     } catch {
       /* leave count hidden on error; heart button still works */
     }
@@ -819,6 +821,7 @@ const PostDetailView = ({
     setErr(null);
     setHearts(null);
     setHearted(false);
+    setHeartedBy([]);
     setReceipts([]);
     loadBody();
     loadHearts();
@@ -903,15 +906,12 @@ const PostDetailView = ({
               onClick={toggleHeart}
               disabled={hearting}
               aria-pressed={hearted}
+              title="Atom this post"
               className={`inline-flex items-center gap-1.5 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                hearted ? 'text-rose-500' : 'text-muted-foreground hover:text-foreground'
+                hearted ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <Heart
-                className="h-4 w-4"
-                fill={hearted ? 'currentColor' : 'none'}
-                strokeWidth={hearted ? 0 : 2}
-              />
+              <Atom className="h-4 w-4" strokeWidth={hearted ? 2.5 : 2} />
               <span className="tabular-nums">{hearts ?? 0}</span>
             </button>
             <button
@@ -993,18 +993,60 @@ const PostDetailView = ({
           <PostComments authorId={uid} pid={pid} avatars={avatars} isOwnPost={isOwnPost} />
         </section>
       )}
-      {isOwnPost && receipts.length > 0 && (
-        <section className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-3">
-          <h4 className="text-[11px] uppercase tracking-wide text-muted-foreground">Seen by</h4>
-          <div className="flex flex-wrap gap-2">
-            {receipts.map((r) => (
-              <span
-                key={r.user}
-                title={`${r.nick} - ${new Date(r.server_time).toLocaleString()}`}
+      {isOwnPost && (receipts.length > 0 || heartedBy.length > 0) && (
+        <section className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5">
+          <div
+            className={`grid grid-cols-1 gap-4 ${
+              receipts.length > 0 && heartedBy.length > 0 ? 'sm:grid-cols-2' : ''
+            }`}
+          >
+            {receipts.length > 0 && (
+              <div className="space-y-3">
+                <h4 className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Seen by
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {receipts.map((r) => (
+                    <span
+                      key={r.user}
+                      title={`${r.nick} - ${new Date(r.server_time).toLocaleString()}`}
+                    >
+                      <AuthorAvatar
+                        uid={r.user}
+                        nick={r.nick}
+                        avatarB64={avatars[r.user]}
+                        size="sm"
+                      />
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {heartedBy.length > 0 && (
+              <div
+                className={`space-y-3 ${receipts.length > 0 ? 'sm:text-right' : ''}`}
               >
-                <AuthorAvatar uid={r.user} nick={r.nick} avatarB64={avatars[r.user]} size="sm" />
-              </span>
-            ))}
+                <h4 className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Atomed by
+                </h4>
+                <div
+                  className={`flex flex-wrap gap-2 ${
+                    receipts.length > 0 ? 'sm:justify-end' : ''
+                  }`}
+                >
+                  {heartedBy.map((h) => (
+                    <span key={h.user} title={h.nick}>
+                      <AuthorAvatar
+                        uid={h.user}
+                        nick={h.nick}
+                        avatarB64={avatars[h.user]}
+                        size="sm"
+                      />
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}
