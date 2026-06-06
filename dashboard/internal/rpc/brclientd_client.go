@@ -712,6 +712,30 @@ func BrclientdContentFile(ctx context.Context, uidHex, fidHex string) (*http.Res
 	return resp, nil
 }
 
+// BrclientdPostEmbedData opens a streaming GET against brclientd's
+// /posts/embed-data for the inline payload of one post embed. The caller
+// owns resp.Body and must close it.
+func BrclientdPostEmbedData(ctx context.Context, uidHex, pidHex string, index int) (*http.Response, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	url := fmt.Sprintf("https://%s:%s/posts/embed-data?uid=%s&pid=%s&index=%d",
+		BrclientdCfg.Host, BrclientdCfg.StatusPort, uidHex, pidHex, index)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /posts/embed-data: %w", err)
+	}
+	return resp, nil
+}
+
 // BrclientdBackup opens a streaming GET against brclientd's /backup status
 // endpoint, which serves a full-state tarball produced by BR's client.Backup
 // (consistent snapshot under a clientdb read transaction). The caller owns

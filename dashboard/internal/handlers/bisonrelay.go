@@ -1565,6 +1565,46 @@ func BisonrelayContentFileHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
+// BisonrelayPostsEmbedDataHandler streams the inline payload of one post
+// embed from brclientd so feed cards can render images without shipping
+// base64 in the feed JSON. Query: uid (author), pid (required), index
+// (optional, default 0). Cache-Control is forwarded because posts are
+// immutable and brclientd marks the bytes long-lived.
+func BisonrelayPostsEmbedDataHandler(w http.ResponseWriter, r *http.Request) {
+	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
+	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
+	if uid == "" || pid == "" {
+		http.Error(w, "uid and pid query params are required", http.StatusBadRequest)
+		return
+	}
+	index := 0
+	if idxStr := strings.TrimSpace(r.URL.Query().Get("index")); idxStr != "" {
+		n, err := strconv.Atoi(idxStr)
+		if err != nil || n < 0 {
+			http.Error(w, "invalid index", http.StatusBadRequest)
+			return
+		}
+		index = n
+	}
+	resp, err := rpc.BrclientdPostEmbedData(r.Context(), uid, pid, index)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		http.Error(w, string(body), resp.StatusCode)
+		return
+	}
+	for _, h := range []string{"Content-Type", "Content-Length", "Cache-Control"} {
+		if v := resp.Header.Get(h); v != "" {
+			w.Header().Set(h, v)
+		}
+	}
+	_, _ = io.Copy(w, resp.Body)
+}
+
 // Single-slot prepared-backup state. brclientd builds the entire backup
 // tarball before sending response headers, so the dashboard prepares the
 // download in a detached job and serves it from a local temp file once

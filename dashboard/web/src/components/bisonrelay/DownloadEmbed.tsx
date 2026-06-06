@@ -33,10 +33,10 @@ export interface DownloadEmbedSeg {
 // formatDcrFromAtoms renders an atom amount as a trimmed DCR string. BR
 // shared-file / embed costs are in atoms (1 DCR = 1e8), distinct from the
 // milli-atoms used for payment and tip records.
-const formatDcrFromAtoms = (atoms: number): string =>
+export const formatDcrFromAtoms = (atoms: number): string =>
   (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
 
-const formatDownloadBytes = (n: number): string => {
+export const formatDownloadBytes = (n: number): string => {
   if (!n) return '';
   const units = ['B', 'KB', 'MB', 'GB'];
   let v = n;

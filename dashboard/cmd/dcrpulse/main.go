@@ -345,6 +345,7 @@ func main() {
 	api.HandleFunc("/br/contacts/fetch-post", handlers.BisonrelayContactFetchPostHandler).Methods("POST")
 	api.HandleFunc("/br/posts", handlers.BisonrelayPostsFeedHandler).Methods("GET")
 	api.HandleFunc("/br/posts/body", handlers.BisonrelayPostBodyHandler).Methods("GET")
+	api.HandleFunc("/br/posts/embed-data", handlers.BisonrelayPostsEmbedDataHandler).Methods("GET")
 	api.HandleFunc("/br/posts/comments", handlers.BisonrelayPostCommentsHandler).Methods("GET")
 	api.HandleFunc("/br/posts/comment", handlers.BisonrelayPostCommentHandler).Methods("POST")
 	api.HandleFunc("/br/posts/hearts", handlers.BisonrelayPostHeartsHandler).Methods("GET")

@@ -451,6 +451,27 @@ export const fetchBisonrelayUserPost = async (uid: string, pid: string): Promise
   await api.post('/br/contacts/fetch-post', { uid, pid });
 };
 
+export interface BisonrelayPostEmbedMeta {
+  index: number;
+  mime: string;
+  alt?: string;
+  filename?: string;
+  size?: number;
+  cost?: number; // atoms (1 DCR = 1e8)
+  // File-transfer FID: bytes are paid for via /br/content/get with explicit
+  // consent, never auto-fetched by the feed.
+  download?: string;
+  has_data: boolean; // inline bytes available via bisonrelayPostEmbedUrl
+}
+
+export interface BisonrelayPostFirstImage {
+  index: number;
+  mime: string;
+  alt?: string;
+  has_data: boolean;
+  is_download: boolean;
+}
+
 export interface BisonrelayPostSummary {
   id: string;
   from: string;
@@ -459,6 +480,22 @@ export interface BisonrelayPostSummary {
   date: number;
   last_status_ts: number;
   title: string;
+  // Enriched feed fields (GET /br/posts); absent on the /br/posts/new reply.
+  description?: string;
+  snippet?: string;
+  has_more?: boolean;
+  relayed?: boolean;
+  relayer_nick?: string;
+  hearts_count?: number;
+  hearted_by_me?: boolean;
+  hearted_by?: { user: string; nick: string }[];
+  comments_count?: number;
+  commenter_count?: number;
+  last_comment_ts?: number;
+  last_comment_nick?: string;
+  receipt_count?: number;
+  embeds?: BisonrelayPostEmbedMeta[];
+  first_image?: BisonrelayPostFirstImage | null;
 }
 
 export interface BisonrelayPostBodySegment {
@@ -922,6 +959,14 @@ export const bisonrelayContentFileUrl = (fid: string, uid?: string): string => {
   const q = new URLSearchParams({ fid });
   if (uid) q.set('uid', uid);
   return `/api/br/content/file?${q.toString()}`;
+};
+
+// bisonrelayPostEmbedUrl is the same-origin URL the browser loads as an <img>
+// src for an inline (data=) post embed. Posts are immutable, so the proxy
+// forwards brclientd's long-lived cache header.
+export const bisonrelayPostEmbedUrl = (uid: string, pid: string, index: number): string => {
+  const q = new URLSearchParams({ uid, pid, index: String(index) });
+  return `/api/br/posts/embed-data?${q.toString()}`;
 };
 
 export interface BisonrelayRates {

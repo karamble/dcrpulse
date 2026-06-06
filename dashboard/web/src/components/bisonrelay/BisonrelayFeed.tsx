@@ -7,7 +7,6 @@ import {
   AlertCircle,
   ArrowLeft,
   Atom,
-  ChevronRight,
   Edit,
   Loader2,
   Repeat2,
@@ -19,7 +18,8 @@ import {
 } from 'lucide-react';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
 import { useBrNotifPrefs } from './brNotifPrefs';
-import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
+import { AuthorAvatar } from './AuthorAvatar';
+import { FeedCard, FeedCardSkeleton } from './FeedCard';
 import {
   BisonrelayEditor,
   EditorEmbedMap,
@@ -88,17 +88,6 @@ const persistSeenMap = (m: Record<string, number>): void => {
   } catch {
     /* ignore */
   }
-};
-
-const relativeTime = (ts: number): string => {
-  if (!ts) return '';
-  const now = Math.floor(Date.now() / 1000);
-  let delta = now - ts;
-  if (delta < 0) delta = 0;
-  if (delta < 60) return 'just now';
-  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
-  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
-  return `${Math.floor(delta / 86400)}d ago`;
 };
 
 // brclientd's /public-identity returns the identity base64-encoded while the
@@ -191,6 +180,7 @@ export const BisonrelayFeed = () => {
       if (
         evt.type === 'post-received' ||
         evt.type === 'post-status-received' ||
+        evt.type === 'post-heart-received' ||
         evt.type === 'profile-updated'
       ) {
         reload();
@@ -243,6 +233,7 @@ export const BisonrelayFeed = () => {
           filter={(p) => !!ownUid && p.author_id === ownUid}
           seen={seen}
           avatars={avatars}
+          ownUid={ownUid}
           emptyTitle="You haven't published any posts yet"
           emptyHint='Use "New Post" in the sidebar to write your first one.'
         />
@@ -260,6 +251,7 @@ export const BisonrelayFeed = () => {
         err={postsErr}
         seen={seen}
         avatars={avatars}
+        ownUid={ownUid}
         emptyTitle="No posts yet"
         emptyHint="Subscribe to a contact's posts from their sub-nav (click their avatar in Chat) and new posts will land here as they publish."
       />
@@ -314,6 +306,7 @@ const PostsListView = ({
   err,
   seen,
   avatars,
+  ownUid,
   filter,
   emptyTitle,
   emptyHint,
@@ -322,6 +315,7 @@ const PostsListView = ({
   err: string | null;
   seen: Record<string, number>;
   avatars: Record<string, string>;
+  ownUid: string;
   filter?: (p: BisonrelayPostSummary) => boolean;
   emptyTitle: string;
   emptyHint: string;
@@ -340,27 +334,27 @@ const PostsListView = ({
         </div>
       )}
       {filtered === null && !err ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Loading posts…</span>
-        </div>
+        <>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <FeedCardSkeleton key={i} />
+          ))}
+        </>
       ) : filtered && filtered.length === 0 ? (
         <EmptyState title={emptyTitle} hint={emptyHint} />
       ) : (
-        <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden divide-y divide-border/30">
-          {filtered?.map((p) => {
-            const key = `${p.author_id}-${p.id}`;
-            return (
-              <FeedRow
-                key={key}
-                post={p}
-                hasActivity={notifPrefs.feedPosts && hasNewActivity(p, seen[key])}
-                avatarB64={avatars[p.author_id]}
-                onOpen={() => navigateTo(`feed/post/${p.author_id}/${p.id}`)}
-              />
-            );
-          })}
-        </div>
+        filtered?.map((p) => {
+          const key = `${p.author_id}-${p.id}`;
+          return (
+            <FeedCard
+              key={key}
+              post={p}
+              hasActivity={notifPrefs.feedPosts && hasNewActivity(p, seen[key])}
+              avatarB64={avatars[p.author_id]}
+              ownUid={ownUid}
+              onOpen={() => navigateTo(`feed/post/${p.author_id}/${p.id}`)}
+            />
+          );
+        })
       )}
     </div>
   );
@@ -377,89 +371,6 @@ const EmptyState = ({ title, hint }: { title: string; hint: string }) => (
     </div>
   </div>
 );
-
-const FeedRow = ({
-  post,
-  hasActivity,
-  avatarB64,
-  onOpen,
-}: {
-  post: BisonrelayPostSummary;
-  hasActivity: boolean;
-  avatarB64?: string;
-  onOpen: () => void;
-}) => {
-  const dateStr = new Date(post.date * 1000).toLocaleString();
-  const nick = post.author_nick || post.author_id.slice(0, 12);
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-muted/20 transition-colors"
-    >
-      <AuthorAvatar uid={post.author_id} nick={nick} avatarB64={avatarB64} size="sm" />
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold text-foreground truncate flex items-center gap-2">
-          {hasActivity && (
-            <span
-              className="inline-block h-2 w-2 rounded-full bg-primary shrink-0"
-              aria-hidden
-              title="New activity since you last opened this post"
-            />
-          )}
-          <span className="truncate">{post.title || '(untitled post)'}</span>
-        </div>
-        <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-          {nick}
-          <span className="mx-1.5 opacity-50">·</span>
-          {dateStr}
-          {hasActivity && post.last_status_ts && (
-            <>
-              <span className="mx-1.5 opacity-50">·</span>
-              <span className="text-primary/80">
-                Last comment {relativeTime(post.last_status_ts)}
-              </span>
-            </>
-          )}
-        </div>
-      </div>
-      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-    </button>
-  );
-};
-
-const AuthorAvatar = ({
-  uid,
-  nick,
-  avatarB64,
-  size,
-}: {
-  uid: string;
-  nick: string;
-  avatarB64?: string;
-  size: 'sm' | 'md';
-}) => {
-  const dim = size === 'sm' ? 'h-7 w-7 text-[11px]' : 'h-10 w-10 text-sm';
-  const dataUrl = avatarDataUrl(avatarB64);
-  if (dataUrl) {
-    return (
-      <img
-        src={dataUrl}
-        alt=""
-        className={`shrink-0 rounded-full object-cover bg-muted/30 ${dim}`}
-      />
-    );
-  }
-  const initial = nick.trim().charAt(0).toUpperCase() || '?';
-  const bg = colorForUid(uid || nick);
-  return (
-    <span
-      className={`shrink-0 rounded-full flex items-center justify-center font-semibold text-white ${bg} ${dim}`}
-    >
-      {initial}
-    </span>
-  );
-};
 
 type SubTab = 'subscribed' | 'unsubscribed';
 
