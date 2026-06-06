@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
@@ -70,6 +70,8 @@ const hasNewActivity = (p: BisonrelayPostSummary, seenTs: number | undefined): b
 };
 
 const FEED_SEEN_STORAGE = 'dcrpulse.br.feed-seen';
+
+const FEED_PAGE_SIZE = 15;
 
 const loadSeenMap = (): Record<string, number> => {
   try {
@@ -236,6 +238,7 @@ export const BisonrelayFeed = () => {
     if (route.section === 'yours') {
       return (
         <PostsListView
+          key="feed-yours"
           posts={posts}
           err={postsErr}
           filter={(p) => !!ownUid && p.author_id === ownUid}
@@ -255,6 +258,7 @@ export const BisonrelayFeed = () => {
     }
     return (
       <PostsListView
+        key="feed-all"
         posts={posts}
         err={postsErr}
         seen={seen}
@@ -332,6 +336,29 @@ const PostsListView = ({
   // The BR notification switches gate the new-activity dots only; the seen
   // watermarks keep updating so re-enabling shows the true activity state.
   const notifPrefs = useBrNotifPrefs();
+  // Window the list so long feeds don't render (and image-fetch) every card
+  // at once; scrolling near the sentinel reveals the next page.
+  const [visibleCount, setVisibleCount] = useState(FEED_PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const hasMore = !!filtered && filtered.length > visibleCount;
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore) return;
+    // visibleCount in the deps re-arms the observer after each page; the
+    // initial observe() callback fires immediately, so a sentinel still in
+    // view keeps paging until it leaves the viewport or the list runs out.
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisibleCount((c) => c + FEED_PAGE_SIZE);
+        }
+      },
+      { rootMargin: '200px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, visibleCount]);
 
   return (
     <div className="space-y-3">
@@ -350,7 +377,7 @@ const PostsListView = ({
       ) : filtered && filtered.length === 0 ? (
         <EmptyState title={emptyTitle} hint={emptyHint} />
       ) : (
-        filtered?.map((p) => {
+        filtered?.slice(0, visibleCount).map((p) => {
           const key = `${p.author_id}-${p.id}`;
           return (
             <FeedCard
@@ -363,6 +390,15 @@ const PostsListView = ({
             />
           );
         })
+      )}
+      {hasMore && (
+        <div
+          ref={sentinelRef}
+          className="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground"
+        >
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Loading more posts…</span>
+        </div>
       )}
     </div>
   );
