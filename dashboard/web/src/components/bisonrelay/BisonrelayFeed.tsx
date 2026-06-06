@@ -154,9 +154,10 @@ export const BisonrelayFeed = () => {
 
   const reload = useCallback(async () => {
     try {
-      const [list, contacts] = await Promise.all([
+      const [list, contacts, identity] = await Promise.all([
         getBisonrelayPosts(),
         getBisonrelayContacts().catch(() => [] as BisonrelayContact[]),
+        getBisonrelayIdentity().catch(() => null),
       ]);
       list.sort((a, b) => activityTs(b) - activityTs(a));
       setPosts(list);
@@ -166,6 +167,13 @@ export const BisonrelayFeed = () => {
         const uid = c.id?.identity;
         const av = c.id?.avatar;
         if (uid && av) map[uid] = av;
+      }
+      // The local user is never in the contacts list, so own posts,
+      // comments and atom/seen rows would always fall back to the initial
+      // circle; merge the identity avatar under the hex uid the feed keys by.
+      if (identity?.identity && identity.avatar) {
+        const hex = identityB64ToHex(identity.identity);
+        if (hex) map[hex] = identity.avatar;
       }
       setAvatars(map);
     } catch (e: any) {
