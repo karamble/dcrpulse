@@ -10,14 +10,14 @@ import {
 } from '../../services/bisonrelayApi';
 
 // tipAttemptState derives a short display state from a tracked attempt.
-const tipAttemptState = (a: BisonrelayTipAttempt): string => {
+export const tipAttemptState = (a: BisonrelayTipAttempt): string => {
   if (a.completed) return 'completed';
   if (a.last_invoice_error) return 'failed';
   if (a.attempts >= a.max_attempts && a.payment_attempt_failed) return 'failed';
   return `in flight (attempt ${a.attempts}/${a.max_attempts})`;
 };
 
-const formatTipDcr = (matoms: number): string =>
+export const formatTipDcr = (matoms: number): string =>
   (matoms / 1e11).toFixed(8).replace(/\.?0+$/, '');
 
 export const TipModal = ({

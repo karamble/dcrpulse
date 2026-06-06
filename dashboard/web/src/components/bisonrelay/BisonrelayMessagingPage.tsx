@@ -142,6 +142,19 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     setViewerImage({ src, name, mime });
   }, []);
 
+  // One-shot #chat/<uid> deep link (e.g. the profile page's Message button):
+  // preselect the contact once the list is loaded, then consume the suffix
+  // so refresh/back does not re-trigger the selection.
+  useEffect(() => {
+    const m = window.location.hash.replace(/^#/, '').match(/^chat\/([0-9a-f]{64})$/i);
+    if (!m || contacts.length === 0) return;
+    const c = contacts.find((x) => x.id?.identity?.toLowerCase() === m[1].toLowerCase());
+    if (c) {
+      setSelected({ kind: 'contact', value: c });
+      window.history.replaceState(null, '', '#chat');
+    }
+  }, [contacts]);
+
   const refreshContacts = useCallback(async () => {
     try {
       const entries = await getBisonrelayContacts();

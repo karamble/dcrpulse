@@ -123,7 +123,7 @@ export const relativeTime = (iso?: string): string => {
 // Treat dates within a day of the epoch as zero. BR serialises uninitialized
 // time.Time as "0001-01-01T00:00:00Z" which Date.parse turns into negatives;
 // guard against that for the freshness checks.
-const isMeaningfulDate = (iso?: string): boolean => {
+export const isMeaningfulDate = (iso?: string): boolean => {
   if (!iso) return false;
   const t = Date.parse(iso);
   return Number.isFinite(t) && t > 86400000;
@@ -167,7 +167,7 @@ const usePolledStats = <T,>(loader: () => Promise<T>): {
 
 // ---- charting primitives (inline SVG, no chart library) ------------------
 
-const MiniBars = ({
+export const MiniBars = ({
   sent,
   received,
 }: {
@@ -355,7 +355,7 @@ const ErrorBanner = ({ msg }: { msg: string }) => (
   </div>
 );
 
-const HeroCard = ({
+export const HeroCard = ({
   icon: Icon,
   label,
   value,
@@ -792,7 +792,7 @@ const PaymentsView = () => {
   );
 };
 
-const PaymentBreakdownDetail = ({
+export const PaymentBreakdownDetail = ({
   breakdowns,
 }: {
   breakdowns: BisonrelayPayStatsBreakdown[];
@@ -984,9 +984,9 @@ export const PolicyTile = ({
 
 // ---- 4) Contacts --------------------------------------------------------
 
-type RatchetHealth = 'green' | 'amber' | 'red' | 'idle';
+export type RatchetHealth = 'green' | 'amber' | 'red' | 'idle';
 
-const ratchetHealth = (c: BisonrelayStatsContact): RatchetHealth => {
+export const ratchetHealth = (c: BisonrelayStatsContact): RatchetHealth => {
   if (!c.ratchet) return 'idle';
   if (!c.ratchet.will_ratchet) return 'red';
   const lastTs =
@@ -1157,7 +1157,7 @@ const RatchetDetail = ({ contact }: { contact: BisonrelayStatsContact }) => {
   );
 };
 
-const Detail = ({
+export const Detail = ({
   label,
   children,
   mono,

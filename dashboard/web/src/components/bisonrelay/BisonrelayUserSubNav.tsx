@@ -21,6 +21,7 @@ import {
   Radiation,
   RotateCw,
   Rss,
+  User,
   UserPlus,
   Users,
   X,
@@ -132,6 +133,15 @@ export const BisonrelayUserSubNav = ({
 
   const subscribed = !!contact.posts_subscribed;
   const rows: Row[] = [
+    {
+      id: 'profile',
+      label: 'View Profile',
+      icon: User,
+      onClick: () => {
+        window.location.hash = `feed/user/${uid}`;
+        onClose();
+      },
+    },
     { id: 'tip', label: 'Pay Tip', icon: Coins, onClick: () => setModal('tip') },
     { id: 'kx-reset', label: 'Request Ratchet Reset', icon: RotateCw, onClick: () => setModal('kx-reset') },
     { id: 'content', label: 'Show Content', icon: Folder, onClick: () => setModal('show-content') },
@@ -531,7 +541,7 @@ const BigAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string
   );
 };
 
-const ContentListModal = ({
+export const ContentListModal = ({
   nick,
   uid,
   onClose,

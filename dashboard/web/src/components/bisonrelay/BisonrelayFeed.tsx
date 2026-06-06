@@ -56,8 +56,9 @@ import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { DownloadEmbed } from './DownloadEmbed';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { TipModal } from './TipModal';
+import { UserProfileView } from './BisonrelayUserProfile';
 
-type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail';
+type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail' | 'user';
 
 interface FeedTarget {
   uid: string;
@@ -131,6 +132,10 @@ const readHashRoute = (): { section: Section; target: FeedTarget | null } => {
     if (parts.length === 2 && parts[0] && parts[1]) {
       return { section: 'detail', target: { uid: parts[0], pid: parts[1] } };
     }
+  }
+  if (rest.startsWith('/user/')) {
+    const u = rest.slice('/user/'.length);
+    if (u) return { section: 'user', target: { uid: u, pid: '' } };
   }
   return { section: 'list', target: null };
 };
@@ -239,6 +244,18 @@ export const BisonrelayFeed = () => {
         />
       );
     }
+    if (route.section === 'user' && route.target) {
+      return (
+        <UserProfileView
+          key={`feed-user-${route.target.uid}`}
+          uid={route.target.uid}
+          ownUid={ownUid}
+          posts={posts}
+          avatars={avatars}
+          onBack={() => navigateTo('feed')}
+        />
+      );
+    }
     if (route.section === 'yours') {
       return (
         <PostsListView
@@ -293,9 +310,11 @@ const FeedSidebar = ({ active }: { active: Section }) => (
   <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-2 md:self-start">
     <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible">
       {sidebarItems.map((item) => {
-        // Treat the post-detail view as belonging to the list section so
-        // the "Feed" entry stays highlighted when reading a post.
-        const isActive = item.id === active || (item.id === 'list' && active === 'detail');
+        // Treat the post-detail and user-profile views as belonging to the
+        // list section so the "Feed" entry stays highlighted inside them.
+        const isActive =
+          item.id === active ||
+          (item.id === 'list' && (active === 'detail' || active === 'user'));
         const Icon = item.icon;
         return (
           <button
@@ -894,7 +913,14 @@ const PostDetailView = ({
         <div className="min-w-0 flex-1 space-y-2">
           <h2 className="text-lg font-semibold text-foreground break-words">{title}</h2>
           <div className="text-xs text-muted-foreground">
-            {authorNick}
+            <button
+              type="button"
+              onClick={() => navigateTo(`feed/user/${uid}`)}
+              title="View profile"
+              className="hover:text-foreground hover:underline transition-colors"
+            >
+              {authorNick}
+            </button>
             {dateStr && (
               <>
                 <span className="mx-1.5 opacity-50">·</span>

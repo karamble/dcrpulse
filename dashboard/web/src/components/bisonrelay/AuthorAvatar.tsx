@@ -13,9 +13,10 @@ export const AuthorAvatar = ({
   uid: string;
   nick: string;
   avatarB64?: string;
-  size: 'sm' | 'md';
+  size: 'sm' | 'md' | 'lg';
 }) => {
-  const dim = size === 'sm' ? 'h-7 w-7 text-[11px]' : 'h-10 w-10 text-sm';
+  const dim =
+    size === 'sm' ? 'h-7 w-7 text-[11px]' : size === 'lg' ? 'h-16 w-16 text-2xl' : 'h-10 w-10 text-sm';
   const dataUrl = avatarDataUrl(avatarB64);
   if (dataUrl) {
     return (
