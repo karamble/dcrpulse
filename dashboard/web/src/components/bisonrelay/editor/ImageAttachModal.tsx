@@ -51,9 +51,7 @@ export const ImageAttachModal = ({
   const [attaching, setAttaching] = useState(false);
   const [alt, setAlt] = useState('');
   const [origUrl] = useState(() => URL.createObjectURL(file));
-  const [choice, setChoice] = useState<Choice>(
-    originalTooLarge && !allowOversized ? 'compressed' : 'original',
-  );
+  const [choice, setChoice] = useState<Choice>('compressed');
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +64,10 @@ export const ImageAttachModal = ({
         setCompressed(r);
       })
       .catch((e: any) => {
-        if (!cancelled) setCompressErr(e?.message || 'unknown error');
+        if (!cancelled) {
+          setCompressErr(e?.message || 'unknown error');
+          setChoice('original');
+        }
       })
       .finally(() => {
         if (!cancelled) setComputing(false);
