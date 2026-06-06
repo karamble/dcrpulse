@@ -53,6 +53,7 @@ import {
   parseEmbeds,
 } from './embedParser';
 import { linkifyChatText } from './chatLinkify';
+import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './editor';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
 import { CreateGCModal } from './gc/CreateGCModal';
@@ -108,6 +109,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [showInviteAccept, setShowInviteAccept] = useState(false);
   const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
   const [attachErr, setAttachErr] = useState<string | null>(null);
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [viewerImage, setViewerImage] = useState<ViewerImage | null>(null);
   const [subNavContact, setSubNavContact] = useState<BisonrelayContact | null>(null);
   const [contactsCollapsed, setContactsCollapsed] = useState(
@@ -837,6 +839,14 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       setAttachErr(`File is ${formatBytes(f.size)}. Maximum is ${formatBytes(MAX_TRANSFER_BYTES)}.`);
       return;
     }
+    // Images go through the preview/compress modal; compression can bring a
+    // too-large photo under the inline cap that would otherwise force file
+    // transfer. SVG and non-images keep the direct path.
+    if (isCompressibleImage(f.type)) {
+      setPendingImage(f);
+      setAttachErr(null);
+      return;
+    }
     const inlineable = isImageMime(f.type) && f.size <= MAX_INLINE_BYTES;
     if (!inlineable) {
       setAttachment({ file: f, mode: 'transfer' });
@@ -859,10 +869,36 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     }
   };
 
+  // The send path reads name/mime from attachment.file, so the compressed
+  // variant is wrapped into a File carrying its JPEG mime; an over-cap pick
+  // keeps today's behavior and falls back to file-transfer mode.
+  const handleImageAttach = (r: ImageAttachResult) => {
+    const file =
+      r.blob instanceof File ? r.blob : new File([r.blob], r.name, { type: r.mime });
+    if (r.size <= MAX_INLINE_BYTES) {
+      setAttachment({ file, mode: 'inline', dataB64: r.dataB64 });
+    } else {
+      setAttachment({ file, mode: 'transfer' });
+    }
+    setAttachErr(null);
+    setPendingImage(null);
+  };
+
   return (
     <ImageViewerCtx.Provider value={openImageViewer}>
     <div className="flex flex-col">
       <IncomingGCInvitesBanner onAccepted={refreshGCs} />
+      {pendingImage && (
+        <ImageAttachModal
+          file={pendingImage}
+          maxInlineBytes={MAX_INLINE_BYTES}
+          allowOversized
+          oversizedHint="Will be sent as a file transfer."
+          showAlt={false}
+          onCancel={() => setPendingImage(null)}
+          onAttach={handleImageAttach}
+        />
+      )}
     <div className="relative flex gap-4 h-[calc(100vh-12rem)] min-h-[480px]">
       <aside className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-72 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
         <div className="p-3 border-b border-border/50 flex items-center justify-between">

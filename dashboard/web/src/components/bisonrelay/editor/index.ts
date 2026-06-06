@@ -16,3 +16,6 @@ export {
 } from './brEmbedBuilder';
 export type { EditorEmbed, EditorEmbedMap } from './brEmbedBuilder';
 export { SharedFilePickerModal } from './SharedFilePickerModal';
+export { ImageAttachModal, isCompressibleImage } from './ImageAttachModal';
+export type { ImageAttachResult } from './ImageAttachModal';
+export { blobToDataB64 } from './imageCompress';

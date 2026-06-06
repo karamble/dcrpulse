@@ -42,6 +42,8 @@ import {
   placeholderFor,
 } from './brEmbedBuilder';
 import { SharedFilePickerModal } from './SharedFilePickerModal';
+import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './ImageAttachModal';
+import { blobToDataB64 } from './imageCompress';
 
 // MAX_INLINE_BYTES is the per-attachment ceiling for inline embeds. Files
 // above this should use the "Link to shared content" flow instead (which
@@ -124,6 +126,7 @@ export const BisonrelayEditor = ({
   const feat = { ...DEFAULT_FEATURES, ...(features ?? {}) };
   const [mode, setMode] = useState<Mode>('write');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -231,11 +234,24 @@ export const BisonrelayEditor = ({
   // -----------------------------------------------------------------
   // Attach (inline file → embed placeholder)
   // -----------------------------------------------------------------
+  const addInlineEmbed = (embed: EditorEmbed) => {
+    const id = newEmbedId(embeds);
+    onEmbedsChange({ ...embeds, [id]: embed });
+    spliceAtCursor(placeholderFor(id));
+  };
+
   const handleFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
+    // Reset before any async work so re-picking the same file re-fires.
     e.target.value = '';
     if (!f) return;
     setErr(null);
+    // Images go through the preview/compress modal, which also makes
+    // over-cap photos attachable via compression instead of rejecting them.
+    if (isCompressibleImage(f.type)) {
+      setPendingImage(f);
+      return;
+    }
     if (f.size > MAX_INLINE_BYTES) {
       setErr(
         `${f.name} is ${formatBytes(f.size)}. Inline attachments must be ${formatBytes(
@@ -245,35 +261,31 @@ export const BisonrelayEditor = ({
       return;
     }
     try {
-      const buf = await f.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      let binStr = '';
-      const chunk = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunk) {
-        binStr += String.fromCharCode.apply(
-          null,
-          bytes.subarray(i, i + chunk) as unknown as number[],
-        );
-      }
-      const dataB64 = btoa(binStr);
-      const id = newEmbedId(embeds);
-      const embed: EditorEmbed = {
+      const dataB64 = await blobToDataB64(f);
+      addInlineEmbed({
         displayName: f.name,
         name: f.name,
         mime: f.type || 'application/octet-stream',
         dataB64,
-      };
-      onEmbedsChange({ ...embeds, [id]: embed });
-      spliceAtCursor(placeholderFor(id));
+      });
     } catch (e: any) {
       setErr(e?.message || 'Could not read file');
     }
   };
 
+  const handleImageAttach = (r: ImageAttachResult) => {
+    addInlineEmbed({
+      displayName: r.displayName,
+      name: r.name,
+      mime: r.mime,
+      dataB64: r.dataB64,
+      alt: r.alt,
+    });
+    setPendingImage(null);
+  };
+
   const handleSharedFilePicked = (embed: EditorEmbed) => {
-    const id = newEmbedId(embeds);
-    onEmbedsChange({ ...embeds, [id]: embed });
-    spliceAtCursor(placeholderFor(id));
+    addInlineEmbed(embed);
   };
 
   const removeEmbed = (id: string) => {
@@ -440,6 +452,14 @@ export const BisonrelayEditor = ({
         <SharedFilePickerModal
           onClose={() => setPickerOpen(false)}
           onSubmit={handleSharedFilePicked}
+        />
+      )}
+      {pendingImage && (
+        <ImageAttachModal
+          file={pendingImage}
+          maxInlineBytes={MAX_INLINE_BYTES}
+          onCancel={() => setPendingImage(null)}
+          onAttach={handleImageAttach}
         />
       )}
 
