@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -56,6 +56,7 @@ import { linkifyChatText } from './chatLinkify';
 import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './editor';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
+import { AuthorAvatar } from './AuthorAvatar';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
 import { CreateGCModal } from './gc/CreateGCModal';
 import { GCInviteModal } from './gc/GCInviteModal';
@@ -389,6 +390,19 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     for (const c of contacts) {
       const id = c.id?.identity;
       if (id) m.set(id, c);
+    }
+    return m;
+  }, [contacts]);
+
+  // Lets MessageList resolve a GC sender's avatar from the nick carried on
+  // each message (GC messages have no uid). Keyed by every name a sender
+  // might appear under so known contacts still match.
+  const contactByNick = useMemo(() => {
+    const m = new Map<string, BisonrelayContact>();
+    for (const c of contacts) {
+      for (const k of [c.nick_alias, c.id?.nick, displayNick(c)]) {
+        if (k && !m.has(k)) m.set(k, c);
+      }
     }
     return m;
   }, [contacts]);
@@ -1139,8 +1153,10 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 <MessageList
                   messages={messages}
                   ownNick={ownNick}
+                  isGroup={selected?.kind === 'group'}
                   mediatorUid={selectedContact?.id?.identity ?? ''}
                   knownContactsByUid={knownContactsByUid}
+                  contactByNick={contactByNick}
                   onAcceptSuggestion={handleAcceptSuggestion}
                 />
               )}
@@ -1311,9 +1327,31 @@ const SUGGESTED_KX_RE = /^Suggested KX to ([0-9a-f]{64}) "(.*)"$/;
 interface MessageListProps {
   messages: BisonrelayMessage[];
   ownNick: string;
+  isGroup: boolean;
   mediatorUid: string;
   knownContactsByUid: Map<string, BisonrelayContact>;
+  contactByNick: Map<string, BisonrelayContact>;
   onAcceptSuggestion: (target: string, targetNick: string) => Promise<void>;
+}
+
+// Day labels for the chat date separators: Today / Yesterday / a full date.
+function startOfDay(ts: number): number {
+  const d = new Date(ts * 1000);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function formatDayLabel(ts: number): string {
+  const today = startOfDay(Math.floor(Date.now() / 1000));
+  const day = startOfDay(ts);
+  const dayMs = 86400000;
+  if (day === today) return 'Today';
+  if (day === today - dayMs) return 'Yesterday';
+  return new Date(ts * 1000).toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 // SidebarSectionHeader is the collapsible header for the Contacts / Groups
@@ -1364,8 +1402,10 @@ const SidebarSectionHeader = ({
 const MessageList = ({
   messages,
   ownNick,
+  isGroup,
   mediatorUid,
   knownContactsByUid,
+  contactByNick,
   onAcceptSuggestion,
 }: MessageListProps) => {
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -1375,6 +1415,16 @@ const MessageList = ({
   return (
     <>
       {messages.map((m, i) => {
+        const prev = i > 0 ? messages[i - 1] : undefined;
+        const showDaySeparator = !prev || startOfDay(prev.timestamp) !== startOfDay(m.timestamp);
+        const daySeparator = showDaySeparator ? (
+          <div className="flex justify-center my-2">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-muted/30 rounded-full px-2 py-0.5">
+              {formatDayLabel(m.timestamp)}
+            </span>
+          </div>
+        ) : null;
+
         // Internal log entries (BR writes "Completed KX", "Subscribed to
         // user's posts!" etc. via LogPM(internal=true)) render as centered
         // protocol notices, not chat bubbles. Mirrors bruig's chat events.
@@ -1384,55 +1434,99 @@ const MessageList = ({
             const targetUid = sugg[1];
             const known = knownContactsByUid.get(targetUid);
             return (
-              <SuggestedKXCard
-                key={i}
-                mediatorUid={mediatorUid}
-                targetUid={targetUid}
-                targetNick={sugg[2]}
-                timestamp={m.timestamp}
-                known={known}
-                onAccept={onAcceptSuggestion}
-              />
+              <Fragment key={i}>
+                {daySeparator}
+                <SuggestedKXCard
+                  mediatorUid={mediatorUid}
+                  targetUid={targetUid}
+                  targetNick={sugg[2]}
+                  timestamp={m.timestamp}
+                  known={known}
+                  onAccept={onAcceptSuggestion}
+                />
+              </Fragment>
             );
           }
           return (
-            <div key={i} className="flex justify-center py-0.5">
-              <p className="text-[11px] italic text-muted-foreground/80 px-3 text-center inline-flex items-center gap-1.5 max-w-full">
-                {m.pending && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
-                <span className="break-words">{m.message}</span>
-                <span className="mx-1 opacity-50">·</span>
-                <span className="opacity-70 shrink-0">{new Date(m.timestamp * 1000).toLocaleString()}</span>
-              </p>
-            </div>
+            <Fragment key={i}>
+              {daySeparator}
+              <div className="flex justify-center py-0.5">
+                <p className="text-[11px] italic text-muted-foreground/80 px-3 text-center inline-flex items-center gap-1.5 max-w-full">
+                  {m.pending && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
+                  <span className="break-words">{m.message}</span>
+                  <span className="mx-1 opacity-50">·</span>
+                  <span className="opacity-70 shrink-0">{new Date(m.timestamp * 1000).toLocaleString()}</span>
+                </p>
+              </div>
+            </Fragment>
           );
         }
         const own = m.from === ownNick;
+        // A run is a streak of consecutive bubbles from the same sender; only
+        // the first carries the avatar + nick so repeats read cleanly.
+        const startOfRun =
+          !prev ||
+          prev.internal ||
+          prev.from !== m.from ||
+          showDaySeparator ||
+          m.timestamp - prev.timestamp > 300;
+        const sender = !own
+          ? isGroup
+            ? contactByNick.get(m.from)
+            : knownContactsByUid.get(mediatorUid)
+          : undefined;
         return (
-          <div key={i} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
+          <Fragment key={i}>
+            {daySeparator}
             <div
-              className={`max-w-[75%] rounded-lg px-3 py-1.5 text-sm ${
-                own ? 'bg-primary/20 text-foreground' : 'bg-muted/30 text-foreground'
+              className={`flex ${own ? 'justify-end' : 'justify-start gap-2 items-end'} ${
+                startOfRun ? 'mt-2' : 'mt-0.5'
               }`}
             >
-              <MessageBody body={m.message} />
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                {m.from} · {new Date(m.timestamp * 1000).toLocaleString()}
-                {own && m.delivered !== undefined && (
-                  m.delivered ? (
-                    <CheckCheck
-                      className="inline h-3 w-3 ml-1 text-primary"
-                      aria-label="Delivered to server"
-                    />
-                  ) : (
-                    <Check
-                      className="inline h-3 w-3 ml-1 opacity-60"
-                      aria-label="Queued"
-                    />
-                  )
+              {!own &&
+                (startOfRun ? (
+                  <AuthorAvatar
+                    size="sm"
+                    uid={sender?.id?.identity ?? ''}
+                    nick={m.from}
+                    avatarB64={sender?.id?.avatar}
+                  />
+                ) : (
+                  <div className="w-7 shrink-0" />
+                ))}
+              <div
+                className={`max-w-[75%] rounded-lg px-3 py-1.5 text-sm ${
+                  own ? 'bg-primary/20 text-foreground' : 'bg-muted/30 text-foreground'
+                }`}
+              >
+                {startOfRun && !own && (
+                  <p className="text-[10px] font-medium text-muted-foreground mb-0.5">{m.from}</p>
                 )}
-              </p>
+                <MessageBody body={m.message} />
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  <span title={new Date(m.timestamp * 1000).toLocaleString()}>
+                    {new Date(m.timestamp * 1000).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  {own && m.delivered !== undefined && (
+                    m.delivered ? (
+                      <CheckCheck
+                        className="inline h-3 w-3 ml-1 text-primary"
+                        aria-label="Delivered to server"
+                      />
+                    ) : (
+                      <Check
+                        className="inline h-3 w-3 ml-1 opacity-60"
+                        aria-label="Queued"
+                      />
+                    )
+                  )}
+                </p>
+              </div>
             </div>
-          </div>
+          </Fragment>
         );
       })}
       <div ref={endRef} />
