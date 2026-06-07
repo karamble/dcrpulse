@@ -11,13 +11,14 @@ interface FooterProps {
   brclientdVersion?: string;
   bisonwVersion?: string;
   lastUpdate?: string;
+  className?: string;
 }
 
-export const Footer = ({ dcrdVersion, dcrwalletVersion, dcrlndVersion, brclientdVersion, bisonwVersion, lastUpdate }: FooterProps) => {
+export const Footer = ({ dcrdVersion, dcrwalletVersion, dcrlndVersion, brclientdVersion, bisonwVersion, lastUpdate, className }: FooterProps) => {
   const dashboardVersion = packageJson.version;
 
   return (
-    <footer className="mt-8">
+    <footer className={`mt-8 ${className ?? ''}`}>
       <div className="flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
         {lastUpdate && (
           <>

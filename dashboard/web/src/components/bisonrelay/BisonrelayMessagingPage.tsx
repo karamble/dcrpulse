@@ -907,7 +907,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           onAttach={handleImageAttach}
         />
       )}
-    <div className="relative flex gap-4 h-[calc(100vh-12rem)] min-h-[480px]">
+    <div className="relative flex gap-4 h-[calc(100dvh-9.5rem)] min-h-[320px] md:h-[calc(100vh-12rem)] md:min-h-[480px]">
       <aside className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-72 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
         <div className="p-3 border-b border-border/50 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Chats</h3>
@@ -1056,70 +1056,73 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         </div>
       </aside>
 
-      <section className={`${selected ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
+      <section className={`${selected ? 'flex max-md:fixed max-md:inset-0 max-md:z-20 max-md:rounded-none max-md:border-0 max-md:bg-background' : 'hidden md:flex'} flex-1 min-w-0 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
         {!selected ? (
           <EmptyThread onCreate={() => setShowInviteCreate(true)} onAccept={() => setShowInviteAccept(true)} />
         ) : (
           <>
-            <button
-              type="button"
-              onClick={() => setSelected(null)}
-              className="md:hidden flex items-center gap-1 p-3 border-b border-border/50 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <ChevronLeft className="h-4 w-4" /> Back to chats
-            </button>
-            <header className="p-3 border-b border-border/50">
-              {selected.kind === 'contact' ? (
-                <div className="min-w-0">
-                  <h3 className="text-sm font-semibold truncate">{displayNick(selected.value)}</h3>
-                  {selected.value.id?.identity && (
-                    <p className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
-                      {selected.value.id.identity}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-start justify-between gap-2">
+            <header className="p-3 border-b border-border/50 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="md:hidden shrink-0 p-1 -ml-1 rounded text-muted-foreground hover:text-foreground"
+                aria-label="Back to chats"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <div className="flex-1 min-w-0">
+                {selected.kind === 'contact' ? (
                   <div className="min-w-0">
-                    <h3 className="text-sm font-semibold flex items-center gap-2 flex-wrap">
-                      <span>{selected.value.alias || selected.value.name}</span>
-                      <span className="text-[10px] text-muted-foreground tabular-nums font-normal">
-                        {selected.value.members.length} members
-                      </span>
-                      {selected.value.local_is_owner && (
-                        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/15 text-primary">
-                          Owner
-                        </span>
-                      )}
-                    </h3>
-                    <p className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
-                      {selected.value.id}
-                    </p>
+                    <h3 className="text-sm font-semibold truncate">{displayNick(selected.value)}</h3>
+                    {selected.value.id?.identity && (
+                      <p className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
+                        {selected.value.id.identity}
+                      </p>
+                    )}
                   </div>
-                  <div className="shrink-0 flex items-center gap-1">
-                    {selected.value.local_is_admin && (
+                ) : (
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+                        <span>{selected.value.alias || selected.value.name}</span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums font-normal">
+                          {selected.value.members.length} members
+                        </span>
+                        {selected.value.local_is_owner && (
+                          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/15 text-primary">
+                            Owner
+                          </span>
+                        )}
+                      </h3>
+                      <p className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
+                        {selected.value.id}
+                      </p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1">
+                      {selected.value.local_is_admin && (
+                        <button
+                          type="button"
+                          onClick={() => setShowGCInvite(true)}
+                          className="px-2.5 py-1 rounded-md text-[11px] border border-border/50 text-foreground hover:bg-muted/30 inline-flex items-center gap-1"
+                          title="Invite a contact"
+                        >
+                          <UserPlus className="h-3 w-3" /> Invite
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => setShowGCInvite(true)}
+                        onClick={() => setShowGroupSubNav(true)}
                         className="px-2.5 py-1 rounded-md text-[11px] border border-border/50 text-foreground hover:bg-muted/30 inline-flex items-center gap-1"
-                        title="Invite a contact"
+                        title="Manage group"
                       >
-                        <UserPlus className="h-3 w-3" /> Invite
+                        Manage
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowGroupSubNav(true)}
-                      className="px-2.5 py-1 rounded-md text-[11px] border border-border/50 text-foreground hover:bg-muted/30 inline-flex items-center gap-1"
-                      title="Manage group"
-                    >
-                      Manage
-                    </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </header>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-2">
               {messagesLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1157,7 +1160,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   <AlertCircle className="h-3 w-3" /> {attachErr}
                 </p>
               )}
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1169,7 +1172,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={sending}
                   title="Attach a file"
-                  className="p-2 rounded-lg bg-muted/20 hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                  className="shrink-0 p-2 rounded-lg bg-muted/20 hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
                 >
                   <Paperclip className="h-4 w-4" />
                 </button>
@@ -1180,15 +1183,15 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   onChange={(e) => setDraft(e.target.value)}
                   placeholder="Type a message…"
                   disabled={sending}
-                  className="flex-1 px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
                 />
                 <button
                   type="submit"
                   disabled={(!draft.trim() && !attachment) || sending}
-                  className="px-3 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                  className="shrink-0 px-3 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
                 >
                   {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  <span>Send</span>
+                  <span className="hidden sm:inline">Send</span>
                 </button>
               </div>
             </form>

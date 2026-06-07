@@ -122,6 +122,9 @@ function AppContent() {
   // The DEX trading view is full-bleed: skip the centered max-width container
   // and outer padding so it uses the full viewport width.
   const dexFullWidth = location.pathname.startsWith('/dex');
+  // On mobile the BR page hides the version footer so the chat can use the
+  // full viewport height.
+  const brPage = location.pathname.startsWith('/br');
   return (
     <div className={`min-h-screen bg-background ${dexFullWidth ? '' : 'p-3 sm:p-6'}`}>
       <div className={dexFullWidth ? 'space-y-3' : 'max-w-7xl mx-auto space-y-6'}>
@@ -183,6 +186,7 @@ function AppContent() {
           <Route path="/dex" element={<DexPage />} />
         </Routes>
         <Footer
+          className={brPage ? 'hidden md:block' : undefined}
           dcrdVersion={nodeVersion}
           dcrwalletVersion={walletVersion}
           dcrlndVersion={lndVersion}
