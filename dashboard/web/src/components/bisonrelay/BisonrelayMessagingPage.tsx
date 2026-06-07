@@ -1157,6 +1157,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   mediatorUid={selectedContact?.id?.identity ?? ''}
                   knownContactsByUid={knownContactsByUid}
                   contactByNick={contactByNick}
+                  onOpenContact={setSubNavContact}
                   onAcceptSuggestion={handleAcceptSuggestion}
                 />
               )}
@@ -1331,6 +1332,7 @@ interface MessageListProps {
   mediatorUid: string;
   knownContactsByUid: Map<string, BisonrelayContact>;
   contactByNick: Map<string, BisonrelayContact>;
+  onOpenContact: (c: BisonrelayContact) => void;
   onAcceptSuggestion: (target: string, targetNick: string) => Promise<void>;
 }
 
@@ -1406,6 +1408,7 @@ const MessageList = ({
   mediatorUid,
   knownContactsByUid,
   contactByNick,
+  onOpenContact,
   onAcceptSuggestion,
 }: MessageListProps) => {
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -1453,7 +1456,7 @@ const MessageList = ({
               <div className="flex justify-center py-0.5">
                 <p className="text-[11px] italic text-muted-foreground/80 px-3 text-center inline-flex items-center gap-1.5 max-w-full">
                   {m.pending && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
-                  <span className="break-words">{m.message}</span>
+                  <span className="min-w-0 break-words">{m.message}</span>
                   <span className="mx-1 opacity-50">·</span>
                   <span className="opacity-70 shrink-0">{new Date(m.timestamp * 1000).toLocaleString()}</span>
                 </p>
@@ -1485,12 +1488,24 @@ const MessageList = ({
             >
               {!own &&
                 (startOfRun ? (
-                  <AuthorAvatar
-                    size="sm"
-                    uid={sender?.id?.identity ?? ''}
-                    nick={m.from}
-                    avatarB64={sender?.id?.avatar}
-                  />
+                  sender ? (
+                    <span
+                      onClick={() => onOpenContact(sender)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`User actions for ${m.from}`}
+                      className="inline-flex shrink-0 rounded-full hover:ring-2 hover:ring-primary/50 transition-shadow cursor-pointer"
+                    >
+                      <AuthorAvatar
+                        size="sm"
+                        uid={sender.id?.identity ?? ''}
+                        nick={m.from}
+                        avatarB64={sender.id?.avatar}
+                      />
+                    </span>
+                  ) : (
+                    <AuthorAvatar size="sm" uid="" nick={m.from} />
+                  )
                 ) : (
                   <div className="w-7 shrink-0" />
                 ))}
