@@ -89,7 +89,8 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
 
   return (
     <div className="space-y-2">
-      <table className="w-full text-sm">
+      <div className="-mx-1 overflow-x-auto px-1">
+      <table className="w-full min-w-[34rem] text-sm">
         <thead>
           <tr className="text-[10px] uppercase tracking-wider text-muted-foreground/60 text-left">
             <th className="font-medium py-2">Type</th>
@@ -132,6 +133,7 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
           })}
         </tbody>
       </table>
+      </div>
       {!done && (
         <button
           type="button"

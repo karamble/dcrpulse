@@ -300,7 +300,7 @@ export const UserProfileView = ({
                 className="inline-flex items-center gap-1.5 max-w-full rounded px-2 py-1.5 bg-muted/20 hover:bg-muted/30 text-[10px] font-mono text-muted-foreground transition-colors"
               >
                 {copied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0" />}
-                <span className="truncate">{uid}</span>
+                <span className="min-w-0 break-all text-left">{uid}</span>
               </button>
               {(isMeaningfulDate(kxSince) || isMeaningfulDate(lastKx)) && (
                 <div className="text-[11px] text-muted-foreground">
