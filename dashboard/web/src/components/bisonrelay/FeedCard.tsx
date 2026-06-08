@@ -110,7 +110,8 @@ export const FeedCard = ({
   const nick = post.author_nick || post.author_id.slice(0, 12);
   const isRelayed = post.relayed ?? (!!post.from && post.from !== post.author_id);
   const relayerNick = post.relayer_nick || (isRelayed ? post.from.slice(0, 12) : '');
-  const fullDate = post.date ? new Date(post.date * 1000).toLocaleString() : '';
+  const publishedTs = post.published || post.date;
+  const fullDate = publishedTs ? new Date(publishedTs * 1000).toLocaleString() : '';
   const title = post.title || '(untitled post)';
 
   // The snippet starts with the same first line the title was derived from;
@@ -157,7 +158,7 @@ export const FeedCard = ({
               )}
             </div>
             <div className="text-[11px] text-muted-foreground" title={fullDate}>
-              {relativeTime(post.date)}
+              {relativeTime(publishedTs)}
             </div>
           </div>
           {hasActivity && (

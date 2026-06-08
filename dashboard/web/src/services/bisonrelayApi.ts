@@ -481,6 +481,8 @@ export interface BisonrelayPostSummary {
   last_status_ts: number;
   title: string;
   // Enriched feed fields (GET /br/posts); absent on the /br/posts/new reply.
+  // Author's true publish time (unix s); date stays the local sort key.
+  published?: number;
   description?: string;
   snippet?: string;
   has_more?: boolean;

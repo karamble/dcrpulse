@@ -893,7 +893,8 @@ const PostDetailView = ({
   }, [summary, onMarkSeen]);
 
   const title = summary?.title || body?.title || '(untitled post)';
-  const dateStr = summary?.date ? new Date(summary.date * 1000).toLocaleString() : '';
+  const publishedTs = summary ? summary.published || summary.date : 0;
+  const dateStr = publishedTs ? new Date(publishedTs * 1000).toLocaleString() : '';
   const waitingForArrival = !summary && (loading || err === null) && body === null;
 
   return (
