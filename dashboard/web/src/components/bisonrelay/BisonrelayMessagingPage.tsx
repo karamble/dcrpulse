@@ -407,6 +407,17 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     return m;
   }, [contacts]);
 
+  // Contacts with an active unread DM bubble float to the top so a freshly
+  // received DM is never hidden below the fold. Array.sort is stable, so the
+  // order within the unread and read groups is otherwise preserved.
+  const sortedContacts = useMemo(() => {
+    const hasUnread = (c: BisonrelayContact) => {
+      const uid = c.id?.identity ?? '';
+      return !!uid && notifPrefs.dms && (unread[uid] ?? 0) > 0;
+    };
+    return [...contacts].sort((a, b) => Number(hasUnread(b)) - Number(hasUnread(a)));
+  }, [contacts, unread, notifPrefs.dms]);
+
   useEffect(() => {
     return addListener((evt) => {
       // A contact changed profile fields (avatar/nick) or blocked us;
@@ -960,7 +971,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   paste a peer's invite to start a key exchange.
                 </p>
               )}
-              {contacts.map((c) => {
+              {sortedContacts.map((c) => {
                 const nick = displayNick(c);
                 const isSel =
                   selectedContact?.id?.identity && c.id?.identity === selectedContact.id.identity;
