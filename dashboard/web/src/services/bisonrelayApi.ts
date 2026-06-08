@@ -613,11 +613,15 @@ export interface BisonrelayPostComment {
   status_from: string;
   from_nick: string;
   comment: string;
+  // For a reply, the parent comment's status_id; absent for a top-level comment.
+  // A reply nests under the comment whose status_id this matches.
   parent?: string;
   timestamp: number;
+  // The post id, shared by every comment on the post. Not a per-comment id, so
+  // it cannot thread replies; use status_id for identity/threading.
   identifier?: string;
-  // Unique status id (the PMS hash); receive receipts for the comment are
-  // keyed by it.
+  // Unique status id (the PMS hash); the comment's true identity. A reply's
+  // `parent` matches it, and receive receipts are keyed by it.
   status_id?: string;
   // Sent to the post author but not yet broadcast back by them.
   unreplicated?: boolean;

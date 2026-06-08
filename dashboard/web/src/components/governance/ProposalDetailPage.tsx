@@ -59,7 +59,10 @@ const buildCommentTree = (comments: ProposalComment[]): CommentNode[] => {
   comments.forEach((c) => byId.set(c.commentID, { ...c, replies: [] }));
   const roots: CommentNode[] = [];
   byId.forEach((node) => {
-    const parent = node.parentID !== 0 ? byId.get(node.parentID) : undefined;
+    const parent =
+      node.parentID !== 0 && node.parentID !== node.commentID
+        ? byId.get(node.parentID)
+        : undefined;
     if (parent) parent.replies.push(node);
     else roots.push(node);
   });

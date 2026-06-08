@@ -1118,24 +1118,37 @@ const PostDetailView = ({
   );
 };
 
+const MAX_COMMENT_DEPTH = 50;
+// Visual nesting cap: replies indent under a left rail up to this depth, after
+// which indent growth eases off so long chains stay on-screen (the rail stays
+// at every depth). This is purely cosmetic and separate from the much deeper
+// render-safety cap above.
+const MAX_VISUAL_DEPTH = 6;
+// Shared empty ancestor set for the root render; CommentNode always clones
+// before adding, so it is never mutated.
+const EMPTY_SEEN: Set<string> = new Set();
+
 type CommentTree = {
   roots: BisonrelayPostComment[];
   childrenOf: Map<string, BisonrelayPostComment[]>;
 };
 
-// Builds a parent/child tree from the flat comment list. Comments whose
-// parent isn't in the set (orphans) are promoted to the root so they're
-// still visible. Pending optimistic comments slot in by their `parent`
-// field too (children) or by absence of one (top-level).
+// Builds a parent/child tree from the flat comment list. Comments are keyed by
+// status_id (the unique per-comment hash); a reply's `parent` holds the parent
+// comment's status_id, so it nests under it. (`identifier` is the post id,
+// shared by every comment on the post, so it cannot thread replies.) Comments
+// whose parent isn't in the set (orphans) are promoted to the root so they're
+// still visible. Pending optimistic comments slot in by their `parent` field
+// too (children) or by absence of one (top-level).
 const buildCommentTree = (list: BisonrelayPostComment[]): CommentTree => {
   const byId = new Map<string, BisonrelayPostComment>();
   for (const c of list) {
-    if (c.identifier) byId.set(c.identifier, c);
+    if (c.status_id) byId.set(c.status_id, c);
   }
   const roots: BisonrelayPostComment[] = [];
   const childrenOf = new Map<string, BisonrelayPostComment[]>();
   for (const c of list) {
-    if (c.parent && byId.has(c.parent)) {
+    if (c.parent && c.parent !== c.status_id && byId.has(c.parent)) {
       const arr = childrenOf.get(c.parent) ?? [];
       arr.push(c);
       childrenOf.set(c.parent, arr);
@@ -1301,10 +1314,11 @@ const PostComments = ({
         <div className="space-y-2">
           {tree.roots.map((c) => (
             <CommentNode
-              key={c.identifier || c.commentKey || `${c.timestamp}-${c.status_from}`}
+              key={c.status_id || c.commentKey || `${c.timestamp}-${c.status_from}`}
               comment={c}
               level={0}
               childrenOf={tree.childrenOf}
+              seenIds={EMPTY_SEEN}
               avatars={avatars}
               seenReceipts={commentReceipts}
               replyTargetId={replyTargetId}
@@ -1340,6 +1354,7 @@ const CommentNode = ({
   comment,
   level,
   childrenOf,
+  seenIds,
   avatars,
   seenReceipts,
   replyTargetId,
@@ -1350,6 +1365,7 @@ const CommentNode = ({
   comment: BisonrelayPostComment;
   level: number;
   childrenOf: Map<string, BisonrelayPostComment[]>;
+  seenIds: Set<string>;
   avatars: Record<string, string>;
   seenReceipts: Record<string, BisonrelayReceiveReceipt[]>;
   replyTargetId: string | null;
@@ -1358,18 +1374,31 @@ const CommentNode = ({
   submitting: boolean;
 }) => {
   const seen = (comment.status_id && seenReceipts[comment.status_id]) || [];
-  const id = comment.identifier;
+  // A comment's identity is its status_id (unique per-comment hash); replies
+  // reference it as their `parent`. (`identifier` is the shared post id.)
+  const id = comment.status_id;
   const nick =
     comment.from_nick ||
     (comment.status_from ? comment.status_from.slice(0, 12) : 'you');
   const isReplyTarget = !!id && replyTargetId === id;
   const canReply = !!id;
   const children = id ? childrenOf.get(id) ?? [] : [];
-  // Beyond level 5 we stop adding visual indent so deep threads don't push
-  // off-screen; nesting semantics are preserved either way.
-  const indentWrap = level < 5
-    ? 'pl-4 ml-2 border-l border-border/40 space-y-2'
-    : 'space-y-2';
+  // Guard the recursive render against cycles in the comment graph (e.g. a
+  // self-referential reply): never descend into a node already on the path from
+  // the root, and cap the depth. Without this such a comment renders forever and
+  // exhausts memory.
+  const childSeen = id ? new Set(seenIds).add(id) : seenIds;
+  const safeChildren =
+    level >= MAX_COMMENT_DEPTH
+      ? []
+      : children.filter((ch) => !(ch.status_id && childSeen.has(ch.status_id)));
+  // Each reply level is inset under a left rail so the parent/child link reads
+  // at a glance; hovering a thread lights up its rail. Indent is small on mobile
+  // and roomier on sm+, and growth eases off past MAX_VISUAL_DEPTH so long
+  // chains stay on-screen, while the rail stays at every depth.
+  const indentWrap =
+    'space-y-2 border-l-2 border-border/40 transition-colors hover:border-primary/40 ' +
+    (level < MAX_VISUAL_DEPTH ? 'pl-2 ml-1 sm:pl-4 sm:ml-2' : 'pl-2 sm:pl-3');
   return (
     <div className="space-y-2">
       <div className="flex items-start gap-2 text-sm">
@@ -1414,7 +1443,7 @@ const CommentNode = ({
           </p>
         </div>
       </div>
-      {(isReplyTarget || children.length > 0) && (
+      {(isReplyTarget || safeChildren.length > 0) && (
         <div className={indentWrap}>
           {isReplyTarget && id && (
             <InlineReplyComposer
@@ -1426,12 +1455,13 @@ const CommentNode = ({
               }}
             />
           )}
-          {children.map((child) => (
+          {safeChildren.map((child) => (
             <CommentNode
-              key={child.identifier || child.commentKey || `${child.timestamp}-${child.status_from}`}
+              key={child.status_id || child.commentKey || `${child.timestamp}-${child.status_from}`}
               comment={child}
               level={level + 1}
               childrenOf={childrenOf}
+              seenIds={childSeen}
               avatars={avatars}
               seenReceipts={seenReceipts}
               replyTargetId={replyTargetId}
