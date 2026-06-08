@@ -1,4 +1,4 @@
-ARG BRCLIENTD_BASE=0.1.0
+ARG BRCLIENTD_BASE=0.1.1
 FROM ghcr.io/karamble/brclientd:${BRCLIENTD_BASE}
 COPY supervisor.sh /supervisor.sh
 ENTRYPOINT ["/bin/sh", "/supervisor.sh"]
