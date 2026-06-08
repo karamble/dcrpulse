@@ -34,6 +34,7 @@ import {
   blockBisonrelayContact,
   clearBisonrelayMessages,
   fetchBisonrelayUserPost,
+  getBisonrelayPosts,
   handshakeBisonrelayContact,
   ignoreBisonrelayContact,
   kxResetBisonrelayContact,
@@ -879,10 +880,13 @@ const PostsListModal = ({
   const [err, setErr] = useState<string | null>(null);
   const [inflight, setInflight] = useState<Set<string>>(new Set());
   const [received, setReceived] = useState<Set<string>>(new Set());
+  // Posts already in our local feed: shown checked and not re-downloadable, so
+  // the user can't re-fetch a post the remote may not re-send (stuck spinner).
+  const [have, setHave] = useState<Set<string>>(new Set());
   const { addListener } = useBisonrelayLive();
 
   const handlePick = async (post: BisonrelayPostListItem) => {
-    if (inflight.has(post.id)) return;
+    if (inflight.has(post.id) || have.has(post.id)) return;
     setErr(null);
     setInflight((prev) => {
       const next = new Set(prev);
@@ -955,6 +959,14 @@ const PostsListModal = ({
     return unsubscribe;
   }, [addListener, uid]);
 
+  // Mark posts already in our local feed as held so they render checked and
+  // can't be clicked to re-download. Best-effort; the list still works without.
+  useEffect(() => {
+    getBisonrelayPosts()
+      .then((all) => setHave(new Set(all.filter((p) => p.author_id === uid).map((p) => p.id))))
+      .catch(() => {});
+  }, [uid]);
+
   return (
     <div
       className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
@@ -969,7 +981,8 @@ const PostsListModal = ({
             <h3 className="text-base font-semibold">Posts by {nick}</h3>
             <p className="text-xs text-muted-foreground mt-1">
               Click a post to queue its download. The checkmark appears once
-              it arrives; open the Feed tab to read it.
+              it arrives; open the Feed tab to read it. Posts you already have
+              are checked and not re-downloadable.
             </p>
           </div>
           <button
@@ -999,13 +1012,13 @@ const PostsListModal = ({
           ) : (
             posts.map((p) => {
               const isInflight = inflight.has(p.id);
-              const isReceived = received.has(p.id);
+              const isReceived = received.has(p.id) || have.has(p.id);
               return (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => handlePick(p)}
-                  disabled={isInflight}
+                  disabled={isInflight || isReceived}
                   className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="flex items-center gap-2">
