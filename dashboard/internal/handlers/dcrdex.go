@@ -1096,8 +1096,14 @@ func GetDcrdexMyOrdersHandler(w http.ResponseWriter, r *http.Request) {
 // bwCoin/bwMatch/bwOrder mirror the core.Order JSON the webserver /api/orders
 // route returns (numeric enums, qty/market field names), for normalizing into
 // the string-shaped myorders JSON the dashboard already consumes.
+type bwConfs struct {
+	Count    int64 `json:"count"`
+	Required int64 `json:"required"`
+}
 type bwCoin struct {
-	StringID string `json:"stringID"`
+	StringID string   `json:"stringID"`
+	AssetID  uint32   `json:"assetID"`
+	Confs    *bwConfs `json:"confs"`
 }
 type bwMatch struct {
 	MatchID       string  `json:"matchID"`
@@ -1308,6 +1314,144 @@ func GetDcrdexOrdersHandler(w http.ResponseWriter, r *http.Request) {
 		out = append(out, normalizeDexHistOrder(o))
 	}
 	json.NewEncoder(w).Encode(out)
+}
+
+// dexFullCoin/dexFullMatch/dexFullOrder mirror the myorders shape but keep each
+// swap coin as an object with its asset and live confirmation counts, which the
+// single-order route provides (for active orders) and the order-detail swap
+// tracker needs.
+type dexFullCoin struct {
+	StringID string   `json:"stringID"`
+	AssetID  uint32   `json:"assetID"`
+	Confs    *bwConfs `json:"confs,omitempty"`
+}
+type dexFullMatch struct {
+	MatchID       string       `json:"matchID"`
+	Status        string       `json:"status"`
+	Revoked       bool         `json:"revoked"`
+	Rate          uint64       `json:"rate"`
+	Qty           uint64       `json:"qty"`
+	Side          string       `json:"side"`
+	FeeRate       uint64       `json:"feeRate"`
+	Swap          *dexFullCoin `json:"swap,omitempty"`
+	CounterSwap   *dexFullCoin `json:"counterSwap,omitempty"`
+	Redeem        *dexFullCoin `json:"redeem,omitempty"`
+	CounterRedeem *dexFullCoin `json:"counterRedeem,omitempty"`
+	Refund        *dexFullCoin `json:"refund,omitempty"`
+	Stamp         uint64       `json:"stamp"`
+	IsCancel      bool         `json:"isCancel"`
+}
+type dexFullOrder struct {
+	Host        string          `json:"host"`
+	MarketName  string          `json:"marketName"`
+	BaseID      uint32          `json:"baseID"`
+	QuoteID     uint32          `json:"quoteID"`
+	ID          string          `json:"id"`
+	Type        string          `json:"type"`
+	Sell        bool            `json:"sell"`
+	Stamp       uint64          `json:"stamp"`
+	SubmitTime  uint64          `json:"submitTime"`
+	Rate        uint64          `json:"rate,omitempty"`
+	Quantity    uint64          `json:"quantity"`
+	Filled      uint64          `json:"filled"`
+	Settled     uint64          `json:"settled"`
+	Status      string          `json:"status"`
+	Cancelling  bool            `json:"cancelling,omitempty"`
+	Canceled    bool            `json:"canceled,omitempty"`
+	TimeInForce string          `json:"tif,omitempty"`
+	Matches     []*dexFullMatch `json:"matches,omitempty"`
+}
+
+func fullCoin(c *bwCoin) *dexFullCoin {
+	if c == nil || c.StringID == "" {
+		return nil
+	}
+	return &dexFullCoin{StringID: c.StringID, AssetID: c.AssetID, Confs: c.Confs}
+}
+
+// normalizeDexFullOrder maps a webserver core.Order into the rich (confs-bearing)
+// shape, mirroring rpcserver parseCoreOrder/parseMatches but preserving each
+// coin's asset and confirmation counts.
+func normalizeDexFullOrder(o *bwOrder) *dexFullOrder {
+	matches := make([]*dexFullMatch, 0, len(o.Matches))
+	var settled uint64
+	for _, m := range o.Matches {
+		if (m.Side == 0 && m.Status >= 3) || (m.Side != 0 && m.Status >= 4) {
+			settled += m.Qty
+		}
+		matches = append(matches, &dexFullMatch{
+			MatchID:       m.MatchID,
+			Status:        dexMatchStatusNames[m.Status],
+			Revoked:       m.Revoked,
+			Rate:          m.Rate,
+			Qty:           m.Qty,
+			Side:          dexMatchSideNames[m.Side],
+			FeeRate:       m.FeeRate,
+			Swap:          fullCoin(m.Swap),
+			CounterSwap:   fullCoin(m.CounterSwap),
+			Redeem:        fullCoin(m.Redeem),
+			CounterRedeem: fullCoin(m.CounterRedeem),
+			Refund:        fullCoin(m.Refund),
+			Stamp:         m.Stamp,
+			IsCancel:      m.IsCancel,
+		})
+	}
+	cancelling := o.Cancelling
+	if o.Status >= 3 {
+		cancelling = false
+	}
+	return &dexFullOrder{
+		Host:        o.Host,
+		MarketName:  o.MarketID,
+		BaseID:      o.BaseID,
+		QuoteID:     o.QuoteID,
+		ID:          o.ID,
+		Type:        dexOrderTypeNames[o.Type],
+		Sell:        o.Sell,
+		Stamp:       o.Stamp,
+		SubmitTime:  o.SubmitTime,
+		Rate:        o.Rate,
+		Quantity:    o.Qty,
+		Filled:      o.Filled,
+		Settled:     settled,
+		Status:      dexOrderStatusNames[o.Status],
+		Cancelling:  cancelling,
+		Canceled:    o.Canceled,
+		TimeInForce: dexTifNames[o.TimeInForce],
+		Matches:     matches,
+	}
+}
+
+// GetDcrdexSingleOrderHandler returns one order with live swap-coin confirmation
+// counts, from the webserver /api/order route (core.Order). The RPC myorders feed
+// and the orders archive omit confs; this is the only source of live confs, used
+// by the order-detail swap tracker.
+func GetDcrdexSingleOrderHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	raw, err := client.Order(ctx, appPass, req.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var o bwOrder
+	if err := json.Unmarshal(raw, &o); err != nil {
+		http.Error(w, "decode order: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(normalizeDexFullOrder(&o))
 }
 
 // CancelDcrdexOrderHandler cancels an active order by its hex order ID.

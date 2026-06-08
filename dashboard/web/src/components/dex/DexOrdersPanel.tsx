@@ -5,7 +5,8 @@
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
-import { isCancellable, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
+import { isCancellable, orderStatusString, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
+import { orderStepIndex, StepBar } from './dexSteps';
 import { DexOrderDetail } from './DexOrderDetail';
 
 interface Props {
@@ -95,7 +96,9 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                 <th className="font-medium px-2 py-2">Type</th>
                 <th className="font-medium px-2 py-2 text-right">Price</th>
                 <th className="font-medium px-2 py-2 text-right">Amount</th>
+                <th className="font-medium px-2 py-2 text-right">Receive</th>
                 <th className="font-medium px-2 py-2 text-right">Filled</th>
+                <th className="font-medium px-2 py-2">Swap</th>
                 <th className="font-medium px-2 py-2">Status</th>
                 <th className="px-2 py-2" />
               </tr>
@@ -106,6 +109,18 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                 const mk = marketByKey[marketKey(o.baseID, o.quoteID)];
                 const baseConv = mk?.baseConvFactor || 1e8;
                 const quoteConv = mk?.quoteConvFactor || 1e8;
+                // What you receive: a buy receives base (the order quantity), a
+                // sell receives quote (quantity * price). Market orders have no
+                // price to size against, so the amount is shown as '-'.
+                const recvSym = o.sell ? (mk?.quote || '').split('.')[0] : mk?.base || '';
+                const recvAmt = o.sell
+                  ? o.rate > 0
+                    ? convQty(o.quantity, baseConv) * convRate(o.rate, baseConv, quoteConv)
+                    : null
+                  : o.type === 'limit'
+                    ? convQty(o.quantity, baseConv)
+                    : null;
+                const stepIdx = orderStepIndex(o.matches);
                 return (
                   <tr
                     key={o.id}
@@ -119,6 +134,9 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                       {o.rate > 0 ? fmtPrice(convRate(o.rate, baseConv, quoteConv), mk?.quote || '') : 'market'}
                     </td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums">{fmtAmt(convQty(o.quantity, baseConv), 4)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                      {recvAmt != null ? `${fmtAmt(recvAmt, 4)} ${recvSym}` : '-'}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       <span className="inline-flex items-center gap-2 font-mono tabular-nums text-xs text-muted-foreground">
                         <span className="inline-block w-12 h-1 rounded bg-muted/50 overflow-hidden align-middle">
@@ -127,7 +145,10 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                         {pct}%
                       </span>
                     </td>
-                    <td className="px-2 py-2 text-xs text-muted-foreground">{o.status}</td>
+                    <td className="px-2 py-2">
+                      {stepIdx != null ? <StepBar idx={stepIdx} className="w-16" /> : <span className="text-muted-foreground/40">-</span>}
+                    </td>
+                    <td className="px-2 py-2 text-xs text-muted-foreground">{orderStatusString(o)}</td>
                     <td className="px-2 py-2 text-right">
                       {!preview && isCancellable(o) && (
                         <button

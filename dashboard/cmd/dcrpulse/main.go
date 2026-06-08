@@ -195,6 +195,7 @@ func main() {
 	api.HandleFunc("/dcrdex/notify", handlers.DcrdexNotifyWSHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/myorders", handlers.GetDcrdexMyOrdersHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/orders", handlers.GetDcrdexOrdersHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/order", handlers.GetDcrdexSingleOrderHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/cancel", handlers.CancelDcrdexOrderHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/trade", handlers.PlaceDcrdexOrderHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/preorder", handlers.PreDcrdexOrderHandler).Methods("POST")

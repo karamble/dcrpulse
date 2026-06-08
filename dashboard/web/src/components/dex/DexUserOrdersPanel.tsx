@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
-import { isCancellable, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
+import { isCancellable, orderStatusString, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { DexOrderDetail } from './DexOrderDetail';
 
 interface Props {
@@ -106,7 +106,7 @@ export const DexUserOrdersPanel = ({ orders, market, preview, onCancel }: Props)
                   <span className="text-muted-foreground/60">{market.base}</span>
                   <span className="text-muted-foreground">@</span>
                   <span className="font-mono tabular-nums">{price}</span>
-                  <span className="ml-auto text-muted-foreground">{o.status}</span>
+                  <span className="ml-auto text-muted-foreground">{orderStatusString(o)}</span>
                   {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                 </button>
                 {open && (

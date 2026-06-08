@@ -7,6 +7,7 @@ import { AlertCircle, ChevronRight } from 'lucide-react';
 import {
   getDexConfig,
   getDexOrders,
+  orderStatusString,
   type DexMarket,
   type DexOrder,
   type DexOrderFilter,
@@ -210,7 +211,7 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
                       {o.rate > 0 ? fmtPrice(convRate(o.rate, baseConv, quoteConv), mk?.quote || '') : 'market'}
                     </td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums text-xs text-muted-foreground">{pct}%</td>
-                    <td className="px-2 py-2 text-xs text-muted-foreground">{o.status}</td>
+                    <td className="px-2 py-2 text-xs text-muted-foreground">{orderStatusString(o)}</td>
                     <td className="px-2 py-2 text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap" title={ts ? new Date(ts).toLocaleString() : ''}>
                       {ts ? new Date(ts).toLocaleDateString() : '-'}
                     </td>

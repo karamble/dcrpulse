@@ -266,6 +266,21 @@ func (c *WebClient) Orders(ctx context.Context, appPass string, filter map[strin
 	return res.Orders, nil
 }
 
+// Order returns a single order by its hex id, including live swap-coin
+// confirmation counts for active orders (the RPC myorders route and the orders
+// archive both omit confs). Webserver-only route (/api/order); the body is the
+// order id encoded as a JSON hex string (dex.Bytes).
+func (c *WebClient) Order(ctx context.Context, appPass, orderID string) (json.RawMessage, error) {
+	var res struct {
+		webAck
+		Order json.RawMessage `json:"order"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/order", appPass, orderID, &res); err != nil {
+		return nil, err
+	}
+	return res.Order, nil
+}
+
 // AddressUsed reports whether the asset's wallet has ever received funds at addr,
 // used to warn against deposit-address reuse. Webserver-only route.
 func (c *WebClient) AddressUsed(ctx context.Context, appPass string, assetID uint32, addr string) (bool, error) {

@@ -251,15 +251,20 @@ export interface DexCoin {
   confs?: { count: number; required: number };
 }
 
-// DexLiveMatch is a `match` note's match object: same swap/redeem fields as the
-// myorders match but as full coins (with confs), and a numeric status/side. Used
-// as a confirmation overlay on top of the myorders match in the order detail.
-export interface DexLiveMatch {
+// DexFullMatch is a match from the single-order route (/dcrdex/order): the same
+// fields as the myorders match, but each swap coin is a DexCoin carrying its
+// asset and live confirmation counts. status/side are normalized to the same
+// strings the myorders match uses.
+export interface DexFullMatch {
   matchID: string;
-  status: number;
-  active?: boolean;
-  revoked?: boolean;
-  side: number; // 0 = maker, 1 = taker
+  status: string;
+  revoked: boolean;
+  rate: number;
+  qty: number;
+  side: string;
+  feeRate: number;
+  stamp: number;
+  isCancel: boolean;
   swap?: DexCoin;
   counterSwap?: DexCoin;
   redeem?: DexCoin;
@@ -291,6 +296,10 @@ export interface DexOrder {
   matches?: DexMatch[];
 }
 
+// DexOrderFull is one order from the single-order route, with rich (confs-bearing)
+// matches. Same scalar fields as DexOrder.
+export type DexOrderFull = Omit<DexOrder, 'matches'> & { matches?: DexFullMatch[] };
+
 export const getDexMyOrders = async (host?: string): Promise<DexOrder[]> => {
   const { data } = await api.get<DexOrder[]>('/dcrdex/myorders', { params: host ? { host } : {} });
   return data || [];
@@ -303,6 +312,36 @@ export const getDexMyOrders = async (host?: string): Promise<DexOrder[]> => {
 // myorders route (type "limit", tif "standing", status "epoch"/"booked").
 export const isCancellable = (o: DexOrder): boolean =>
   o.type === 'limit' && o.tif === 'standing' && (o.status === 'booked' || o.status === 'epoch') && !o.cancelling;
+
+// orderHasActiveMatches reports whether any of an order's matches is still
+// settling (a swap not yet fully confirmed and not refunded). The myorders match
+// has no `active` flag, so this infers it from the match status: a match is done
+// only at MatchConfirmed. Cancel matches don't settle coins, so they're ignored.
+export const orderHasActiveMatches = (o: DexOrder): boolean =>
+  (o.matches || []).some((m) => !m.isCancel && !m.refund && m.status !== 'MatchConfirmed');
+
+// orderStatusString composes the user-facing order status, mirroring bisonw's
+// OrderUtil.statusString. An order that has matched but whose swaps are still
+// confirming reads "Settling" (or "<status>/Settling"); it only reads "Executed"
+// once every match is fully confirmed and the funds are in hand. This is why a
+// freshly matched order must not be shown as "executed" outright.
+export const orderStatusString = (o: DexOrder): string => {
+  const live = orderHasActiveMatches(o);
+  switch (o.status) {
+    case 'epoch':
+      return 'Epoch';
+    case 'booked':
+      return o.cancelling ? 'Canceling' : live ? 'Booked/Settling' : 'Booked';
+    case 'executed':
+      return live ? 'Settling' : o.filled === 0 && o.type !== 'cancel' ? 'No match' : 'Executed';
+    case 'canceled':
+      return live ? 'Canceled/Settling' : 'Canceled';
+    case 'revoked':
+      return live ? 'Revoked/Settling' : 'Revoked';
+    default:
+      return o.status || 'Unknown';
+  }
+};
 
 // DexOrderFilter selects a page of the order history. status is one of
 // epoch/booked/executed/canceled/revoked (omit for all); market restricts to one
@@ -322,6 +361,14 @@ export interface DexOrderFilter {
 export const getDexOrders = async (filter: DexOrderFilter): Promise<DexOrder[]> => {
   const { data } = await api.post<DexOrder[]>('/dcrdex/orders', filter);
   return data || [];
+};
+
+// getDexOrder fetches a single order with live swap-coin confirmation counts
+// (the only source of confs; myorders and the archive omit them). Used by the
+// order-detail swap tracker, refreshed on open and on order/match notes.
+export const getDexOrder = async (id: string): Promise<DexOrderFull> => {
+  const { data } = await api.post<DexOrderFull>('/dcrdex/order', { id });
+  return data;
 };
 
 export const cancelDexOrder = async (orderID: string): Promise<void> => {
