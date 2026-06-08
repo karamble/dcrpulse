@@ -21,7 +21,7 @@ import {
 import { AuthorAvatar } from './AuthorAvatar';
 import { formatDcrFromAtoms, formatDownloadBytes } from './DownloadEmbed';
 
-const relativeTime = (ts: number): string => {
+export const relativeTime = (ts: number): string => {
   if (!ts) return '';
   const now = Math.floor(Date.now() / 1000);
   let delta = now - ts;

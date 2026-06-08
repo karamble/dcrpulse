@@ -7,8 +7,10 @@ import {
   AlertCircle,
   ArrowLeft,
   Atom,
+  Clock,
   Coins,
   Edit,
+  Eye,
   Loader2,
   Repeat2,
   Reply,
@@ -20,7 +22,7 @@ import {
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
 import { useBrNotifPrefs } from './brNotifPrefs';
 import { AuthorAvatar } from './AuthorAvatar';
-import { FeedCard, FeedCardSkeleton } from './FeedCard';
+import { FeedCard, FeedCardSkeleton, relativeTime } from './FeedCard';
 import {
   BisonrelayEditor,
   EditorEmbedMap,
@@ -1409,34 +1411,54 @@ const CommentNode = ({
           size="sm"
         />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-            {comment.pending && <Loader2 className="h-3 w-3 animate-spin" />}
-            <span className="font-medium text-foreground/90">{nick}</span>
-            <span className="opacity-50">·</span>
-            <span className="opacity-70">
-              {comment.timestamp ? new Date(comment.timestamp * 1000).toLocaleString() : ''}
-            </span>
-            {comment.unreplicated && (
-              <span className="italic opacity-70">Not yet relayed by the post author</span>
-            )}
-            {seen.length > 0 && (
-              <span
-                className="opacity-70"
-                title={seen.map((r) => r.nick).join(', ')}
-              >
-                seen {seen.length}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => setReplyTargetId(isReplyTarget ? null : id ?? null)}
-              disabled={!canReply}
-              title={canReply ? undefined : 'Waiting for delivery'}
-              className="inline-flex items-center gap-1 ml-2 text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground min-w-0">
+            {comment.pending && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
+            <span className="font-medium text-foreground/90 truncate min-w-0">{nick}</span>
+            <span className="opacity-50 shrink-0">·</span>
+            {/* Compact relative time (matches the feed cards); full datetime on tap. */}
+            <span
+              className="opacity-70 shrink-0"
+              title={
+                comment.timestamp
+                  ? new Date(comment.timestamp * 1000).toLocaleString()
+                  : undefined
+              }
             >
-              <Reply className="h-3 w-3" />
-              <span>{isReplyTarget ? 'Cancel' : 'Reply'}</span>
-            </button>
+              {comment.timestamp ? relativeTime(comment.timestamp) : ''}
+            </span>
+            {/* Right-pinned actions stay put when the row is tight on mobile. */}
+            <div className="ml-auto flex items-center gap-1.5 shrink-0">
+              {comment.unreplicated && (
+                <span title="Not yet relayed by the post author">
+                  <Clock className="h-3 w-3 opacity-70" />
+                </span>
+              )}
+              {seen.length > 0 && (
+                <span
+                  className="inline-flex items-center gap-0.5 opacity-70"
+                  title={`Seen by ${seen.map((r) => r.nick).join(', ')}`}
+                >
+                  <Eye className="h-3 w-3" />
+                  {seen.length}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setReplyTargetId(isReplyTarget ? null : id ?? null)}
+                disabled={!canReply}
+                title={
+                  canReply
+                    ? isReplyTarget
+                      ? 'Cancel'
+                      : 'Reply'
+                    : 'Waiting for delivery'
+                }
+                className="inline-flex items-center gap-1 p-1 -mr-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Reply className="h-3 w-3" />
+                <span className="hidden sm:inline">{isReplyTarget ? 'Cancel' : 'Reply'}</span>
+              </button>
+            </div>
           </div>
           <p className="text-sm text-foreground/90 break-words whitespace-pre-wrap">
             {comment.comment}
