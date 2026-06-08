@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, FlaskConical } from 'lucide-react';
-import { getDexConfig, getDexMyOrders, type DexConfig, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
+import { getDexConfig, getDexMyOrders, orderHasActiveMatches, type DexConfig, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { useDexFeed, statsFromCandles, spotToStats, type MarketStats, type MarketSpot } from './useDexFeed';
 import { useDexConn, useDexRefreshOnNotes, useDexSpots, useMMBotRun, useSeedDexSpots } from './DexLiveProvider';
 import { loadDexConfigCache, saveDexConfigCache } from './dexConfigCache';
@@ -105,15 +105,17 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
       .then(setLiveOrders)
       .catch(() => {});
   };
+  // Poll fast while any order is still settling so the panels' swap-status bars
+  // and statuses advance on their own; fall back to a slow idle backstop when
+  // nothing is active. Live order/match notes still trigger an immediate refresh.
+  const settling = !preview && liveOrders.some(orderHasActiveMatches);
   useEffect(() => {
     if (preview) return;
     refreshOrders();
-    // Live order/match notifications drive refreshes; the slow interval is only
-    // a backstop in case a note is missed or the notify socket is down.
-    const id = window.setInterval(refreshOrders, 60000);
+    const id = window.setInterval(refreshOrders, settling ? 10000 : 60000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview]);
+  }, [preview, settling]);
   useDexRefreshOnNotes(['order', 'match'], refreshOrders);
 
   // dcrdex-style cancel: a confirmation modal gated on isCancellable, shared by

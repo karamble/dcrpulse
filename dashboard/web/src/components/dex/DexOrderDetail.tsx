@@ -8,6 +8,7 @@ import { ArrowLeft, Check, X } from 'lucide-react';
 import {
   getDexOrder,
   isCancellable,
+  orderHasActiveMatches,
   orderStatusString,
   type DexCoin,
   type DexFullMatch,
@@ -228,6 +229,15 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
     loadFull();
   }, [loadFull]);
   useDexRefreshOnNotes(['order', 'match'], loadFull);
+  // While the order is still settling, poll the single-order route so the swap
+  // steps + confirmation counts advance on their own, even if a match note is
+  // missed or late. Stops once nothing is active.
+  const settling = orderHasActiveMatches(order);
+  useEffect(() => {
+    if (!settling) return;
+    const id = window.setInterval(loadFull, 10000);
+    return () => window.clearInterval(id);
+  }, [settling, loadFull]);
 
   const baseConv = market?.baseConvFactor || 1e8;
   const quoteConv = market?.quoteConvFactor || 1e8;
