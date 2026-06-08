@@ -172,7 +172,7 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
   const graphSynced = lnStatus?.syncedToGraph === true;
 
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="space-y-4 w-full max-w-2xl mx-auto overflow-x-clip">
       <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-5">
         <div>
           <h2 className="text-lg font-semibold">Bison Relay setup</h2>
@@ -209,6 +209,22 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
 
         {currentStep?.id === 'br-identity' && graphSynced && !restoreStaged && (
           <>
+            <div className="rounded-lg bg-muted/20 border border-border/30 p-3 flex items-start gap-2">
+              <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+              <div className="text-xs text-muted-foreground space-y-1.5">
+                <p>
+                  We suggest using a separate wallet for Bison Relay rather than
+                  your main wallet, so your messaging identity and its Lightning
+                  channels stay isolated from your everyday funds.
+                </p>
+                <Link
+                  to="/wallet/select"
+                  className="inline-flex items-center gap-1.5 text-primary hover:underline font-medium"
+                >
+                  Switch wallet <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </div>
             <IdentityForm
               nick={nick}
               fullName={fullName}
@@ -252,11 +268,22 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
         )}
 
         {currentStep?.id === 'ln-graph' && (
-          <p className="text-xs text-muted-foreground">
-            Nothing to do here. dcrlnd is waiting on the channel_update
-            gossip message from the BR hub. This typically clears within
-            a few minutes of the channel becoming active.
-          </p>
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Usually nothing to do here. dcrlnd is waiting on the channel_update
+              gossip message from the BR hub. This typically clears within a few
+              minutes of the channel becoming active.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              If this stays stuck, make sure your Lightning wallet is unlocked.
+            </p>
+            <Link
+              to="/wallet/lightning"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm"
+            >
+              Check Lightning wallet <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         )}
 
         {allDone && status?.stage === 'ready' && (
@@ -311,7 +338,7 @@ const ChecklistRow = ({ step }: { step: Step }) => {
 const InfoTooltip = ({ text }: { text: string }) => (
   <span className="relative group inline-flex">
     <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/60 hover:text-muted-foreground cursor-help" />
-    <span className="pointer-events-none absolute left-5 top-0 w-72 p-2 rounded-md bg-background border border-border/50 shadow-lg text-xs text-foreground/90 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+    <span className="pointer-events-none absolute left-5 top-0 w-64 max-w-[calc(100vw-3rem)] p-2 rounded-md bg-background border border-border/50 shadow-lg text-xs text-foreground/90 opacity-0 group-hover:opacity-100 transition-opacity z-10">
       {text}
     </span>
   </span>
@@ -347,7 +374,7 @@ const ChannelGateActions = ({ peer }: { peer: string }) => {
       </div>
       {copied && <p className="text-xs text-success">Copied!</p>}
       <Link
-        to="/wallet/lightning/channels"
+        to={`/wallet/lightning/channels?peer=${encodeURIComponent(peer)}`}
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm"
       >
         Open channel on Lightning <ArrowRight className="h-4 w-4" />

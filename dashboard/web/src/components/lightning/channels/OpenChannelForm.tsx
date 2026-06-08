@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AlertCircle, ChevronDown, Loader2, Plug } from 'lucide-react';
 import {
   PeerPreset,
@@ -35,11 +36,27 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const presetsRef = useRef<HTMLDivElement>(null);
+  const [searchParams] = useSearchParams();
+  const [highlight, setHighlight] = useState(false);
 
   useEffect(() => {
     getLightningPeerPresets()
       .then((r) => setPresets(r.presets))
       .catch(() => setPresets([]));
+  }, []);
+
+  // Prefill the peer from a deep link (e.g. the BR setup wizard "Open channel"
+  // CTA passes ?peer=<hub uri>); only on mount, never clobbering user edits.
+  useEffect(() => {
+    const peer = searchParams.get('peer');
+    if (peer && isValidPeerURI(peer)) {
+      setPeerUri((cur) => (cur ? cur : peer));
+      // Frame the form so the user lands straight on the action; fades out.
+      setHighlight(true);
+      const t = setTimeout(() => setHighlight(false), 6000);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -87,7 +104,11 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
   };
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+    <div
+      className={`p-6 rounded-xl bg-gradient-card backdrop-blur-sm border space-y-4 transition-colors duration-500 ${
+        highlight ? 'border-primary ring-2 ring-primary/40' : 'border-border/50'
+      }`}
+    >
       <div className="flex items-center gap-2">
         <Plug className="h-5 w-5 text-primary" />
         <h3 className="text-lg font-semibold">Create a channel</h3>
