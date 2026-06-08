@@ -1093,6 +1093,223 @@ func GetDcrdexMyOrdersHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(raw)
 }
 
+// bwCoin/bwMatch/bwOrder mirror the core.Order JSON the webserver /api/orders
+// route returns (numeric enums, qty/market field names), for normalizing into
+// the string-shaped myorders JSON the dashboard already consumes.
+type bwCoin struct {
+	StringID string `json:"stringID"`
+}
+type bwMatch struct {
+	MatchID       string  `json:"matchID"`
+	Status        uint16  `json:"status"`
+	Revoked       bool    `json:"revoked"`
+	Rate          uint64  `json:"rate"`
+	Qty           uint64  `json:"qty"`
+	Side          uint8   `json:"side"`
+	FeeRate       uint64  `json:"feeRate"`
+	Swap          *bwCoin `json:"swap"`
+	CounterSwap   *bwCoin `json:"counterSwap"`
+	Redeem        *bwCoin `json:"redeem"`
+	CounterRedeem *bwCoin `json:"counterRedeem"`
+	Refund        *bwCoin `json:"refund"`
+	Stamp         uint64  `json:"stamp"`
+	IsCancel      bool    `json:"isCancel"`
+}
+type bwOrder struct {
+	Host        string     `json:"host"`
+	MarketID    string     `json:"market"`
+	BaseID      uint32     `json:"baseID"`
+	QuoteID     uint32     `json:"quoteID"`
+	ID          string     `json:"id"`
+	Type        uint8      `json:"type"`
+	Sell        bool       `json:"sell"`
+	Stamp       uint64     `json:"stamp"`
+	SubmitTime  uint64     `json:"submitTime"`
+	Rate        uint64     `json:"rate"`
+	Qty         uint64     `json:"qty"`
+	Filled      uint64     `json:"filled"`
+	Status      uint16     `json:"status"`
+	Cancelling  bool       `json:"cancelling"`
+	Canceled    bool       `json:"canceled"`
+	TimeInForce uint8      `json:"tif"`
+	Matches     []*bwMatch `json:"matches"`
+}
+
+// dexHistMatch/dexHistOrder mirror the bisonw myorders JSON (string enums) the
+// dashboard DexOrder/DexMatch types consume.
+type dexHistMatch struct {
+	MatchID       string `json:"matchID"`
+	Status        string `json:"status"`
+	Revoked       bool   `json:"revoked"`
+	Rate          uint64 `json:"rate"`
+	Qty           uint64 `json:"qty"`
+	Side          string `json:"side"`
+	FeeRate       uint64 `json:"feeRate"`
+	Swap          string `json:"swap,omitempty"`
+	CounterSwap   string `json:"counterSwap,omitempty"`
+	Redeem        string `json:"redeem,omitempty"`
+	CounterRedeem string `json:"counterRedeem,omitempty"`
+	Refund        string `json:"refund,omitempty"`
+	Stamp         uint64 `json:"stamp"`
+	IsCancel      bool   `json:"isCancel"`
+}
+type dexHistOrder struct {
+	Host        string          `json:"host"`
+	MarketName  string          `json:"marketName"`
+	BaseID      uint32          `json:"baseID"`
+	QuoteID     uint32          `json:"quoteID"`
+	ID          string          `json:"id"`
+	Type        string          `json:"type"`
+	Sell        bool            `json:"sell"`
+	Stamp       uint64          `json:"stamp"`
+	SubmitTime  uint64          `json:"submitTime"`
+	Rate        uint64          `json:"rate,omitempty"`
+	Quantity    uint64          `json:"quantity"`
+	Filled      uint64          `json:"filled"`
+	Settled     uint64          `json:"settled"`
+	Status      string          `json:"status"`
+	Cancelling  bool            `json:"cancelling,omitempty"`
+	Canceled    bool            `json:"canceled,omitempty"`
+	TimeInForce string          `json:"tif,omitempty"`
+	Matches     []*dexHistMatch `json:"matches,omitempty"`
+}
+
+// Enum -> string maps mirroring dcrdex's order/match String() methods
+// (dex/order status.go, order.go, match.go), so the normalized history matches
+// the myorders shape exactly.
+var (
+	dexOrderTypeNames   = map[uint8]string{1: "limit", 2: "market", 3: "cancel"}
+	dexOrderStatusNames = map[uint16]string{0: "unknown", 1: "epoch", 2: "booked", 3: "executed", 4: "canceled", 5: "revoked"}
+	dexStatusByName     = map[string]uint16{"unknown": 0, "epoch": 1, "booked": 2, "executed": 3, "canceled": 4, "revoked": 5}
+	dexTifNames         = map[uint8]string{0: "immediate", 1: "standing"}
+	dexMatchStatusNames = map[uint16]string{0: "NewlyMatched", 1: "MakerSwapCast", 2: "TakerSwapCast", 3: "MakerRedeemed", 4: "MatchComplete", 5: "MatchConfirmed"}
+	dexMatchSideNames   = map[uint8]string{0: "Maker", 1: "Taker"}
+)
+
+func bwCoinString(c *bwCoin) string {
+	if c == nil {
+		return ""
+	}
+	return c.StringID
+}
+
+// normalizeDexHistOrder maps a webserver core.Order into the myorders shape,
+// mirroring rpcserver parseCoreOrder/parseMatches (settled = matched value past
+// the redeem step; cancelling cleared once executed).
+func normalizeDexHistOrder(o *bwOrder) *dexHistOrder {
+	matches := make([]*dexHistMatch, 0, len(o.Matches))
+	var settled uint64
+	for _, m := range o.Matches {
+		if (m.Side == 0 && m.Status >= 3) || (m.Side != 0 && m.Status >= 4) {
+			settled += m.Qty
+		}
+		matches = append(matches, &dexHistMatch{
+			MatchID:       m.MatchID,
+			Status:        dexMatchStatusNames[m.Status],
+			Revoked:       m.Revoked,
+			Rate:          m.Rate,
+			Qty:           m.Qty,
+			Side:          dexMatchSideNames[m.Side],
+			FeeRate:       m.FeeRate,
+			Swap:          bwCoinString(m.Swap),
+			CounterSwap:   bwCoinString(m.CounterSwap),
+			Redeem:        bwCoinString(m.Redeem),
+			CounterRedeem: bwCoinString(m.CounterRedeem),
+			Refund:        bwCoinString(m.Refund),
+			Stamp:         m.Stamp,
+			IsCancel:      m.IsCancel,
+		})
+	}
+	cancelling := o.Cancelling
+	if o.Status >= 3 {
+		cancelling = false
+	}
+	return &dexHistOrder{
+		Host:        o.Host,
+		MarketName:  o.MarketID,
+		BaseID:      o.BaseID,
+		QuoteID:     o.QuoteID,
+		ID:          o.ID,
+		Type:        dexOrderTypeNames[o.Type],
+		Sell:        o.Sell,
+		Stamp:       o.Stamp,
+		SubmitTime:  o.SubmitTime,
+		Rate:        o.Rate,
+		Quantity:    o.Qty,
+		Filled:      o.Filled,
+		Settled:     settled,
+		Status:      dexOrderStatusNames[o.Status],
+		Cancelling:  cancelling,
+		Canceled:    o.Canceled,
+		TimeInForce: dexTifNames[o.TimeInForce],
+		Matches:     matches,
+	}
+}
+
+// GetDcrdexOrdersHandler returns the user's full order history, including
+// canceled/executed/revoked orders, from the webserver /api/orders archive route
+// (the RPC myorders route returns only active + recently-tracked orders). It
+// supports a status filter, a market filter, and offset-based pagination, and
+// normalizes the result to the myorders shape the dashboard consumes.
+func GetDcrdexOrdersHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		Host   string `json:"host"`
+		N      int    `json:"n"`
+		Offset string `json:"offset"`
+		Status string `json:"status"`
+		Market *struct {
+			BaseID  uint32 `json:"baseID"`
+			QuoteID uint32 `json:"quoteID"`
+		} `json:"market"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	n := req.N
+	if n <= 0 {
+		n = 50
+	}
+	filter := map[string]any{"n": n}
+	if req.Host != "" {
+		filter["hosts"] = []string{req.Host}
+	}
+	if req.Offset != "" {
+		filter["offset"] = req.Offset
+	}
+	if s, ok := dexStatusByName[req.Status]; ok {
+		filter["statuses"] = []uint16{s}
+	}
+	if req.Market != nil {
+		filter["market"] = map[string]any{"baseID": req.Market.BaseID, "quoteID": req.Market.QuoteID}
+	}
+
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	raw, err := client.Orders(ctx, appPass, filter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var in []*bwOrder
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &in); err != nil {
+			http.Error(w, "decode orders: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+	}
+	out := make([]*dexHistOrder, 0, len(in))
+	for _, o := range in {
+		out = append(out, normalizeDexHistOrder(o))
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
 // CancelDcrdexOrderHandler cancels an active order by its hex order ID.
 func CancelDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

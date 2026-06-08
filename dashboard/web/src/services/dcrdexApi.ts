@@ -304,6 +304,26 @@ export const getDexMyOrders = async (host?: string): Promise<DexOrder[]> => {
 export const isCancellable = (o: DexOrder): boolean =>
   o.type === 'limit' && o.tif === 'standing' && (o.status === 'booked' || o.status === 'epoch') && !o.cancelling;
 
+// DexOrderFilter selects a page of the order history. status is one of
+// epoch/booked/executed/canceled/revoked (omit for all); market restricts to one
+// market; offset is the id of the last order from the previous page.
+export interface DexOrderFilter {
+  host: string;
+  n?: number;
+  offset?: string;
+  status?: string;
+  market?: { baseID: number; quoteID: number };
+}
+
+// getDexOrders returns the full order history - including canceled, executed and
+// revoked orders - from the archive route, normalized to the same DexOrder shape
+// as getDexMyOrders. The RPC myorders route returns only active/recent orders;
+// this reads the full orders database, filterable and paginated.
+export const getDexOrders = async (filter: DexOrderFilter): Promise<DexOrder[]> => {
+  const { data } = await api.post<DexOrder[]>('/dcrdex/orders', filter);
+  return data || [];
+};
+
 export const cancelDexOrder = async (orderID: string): Promise<void> => {
   await api.post('/dcrdex/cancel', { orderID });
 };

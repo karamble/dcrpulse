@@ -250,6 +250,22 @@ func (c *WebClient) MaxSell(ctx context.Context, appPass, host string, baseID, q
 	return res.MaxSell, nil
 }
 
+// Orders returns the user's full order history matching filter (a core.OrderFilter
+// JSON object: n, offset, hosts, assets, statuses, market). Unlike the RPC
+// myorders route (active + recently-tracked only), this webserver route reads the
+// full orders database, so it includes canceled/executed/revoked orders. The raw
+// `orders` array is returned for the caller to normalize.
+func (c *WebClient) Orders(ctx context.Context, appPass string, filter map[string]any) (json.RawMessage, error) {
+	var res struct {
+		webAck
+		Orders json.RawMessage `json:"orders"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/orders", appPass, filter, &res); err != nil {
+		return nil, err
+	}
+	return res.Orders, nil
+}
+
 // AddressUsed reports whether the asset's wallet has ever received funds at addr,
 // used to warn against deposit-address reuse. Webserver-only route.
 func (c *WebClient) AddressUsed(ctx context.Context, appPass string, assetID uint32, addr string) (bool, error) {

@@ -2,18 +2,22 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ChevronRight } from 'lucide-react';
 import {
   getDexConfig,
-  getDexMyOrders,
+  getDexOrders,
   type DexMarket,
   type DexOrder,
+  type DexOrderFilter,
 } from '../../services/dcrdexApi';
 import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
 import { DexOrderDetail } from './DexOrderDetail';
 import { useDexCancel } from './DexCancelOrder';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
+
+const PAGE = 50;
+const STATUS_OPTIONS = ['epoch', 'booked', 'executed', 'canceled', 'revoked'];
 
 const marketKey = (baseID: number, quoteID: number) => `${baseID}-${quoteID}`;
 
@@ -27,32 +31,67 @@ const Pill = ({ children, kind }: { children: string; kind: 'buy' | 'sell' | 'ty
   return <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${cls}`}>{children}</span>;
 };
 
-// DexOrdersHistoryPanel lists the user's orders for a host (active and recently
-// tracked; bisonw v1.0.6 has no full archive route). Orders are filterable by
-// market and status, and a row opens the in-tab detail view.
+// DexOrdersHistoryPanel is the full order history for a host: every order in the
+// archive, including canceled/executed/revoked, from the /dcrdex/orders route
+// (the RPC myorders feed used by the trade-view live panels returns only
+// active/recent orders). Filterable by market and status server-side, paginated
+// with a Load more button, and a row opens the in-tab detail view.
 export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
   const [orders, setOrders] = useState<DexOrder[] | null>(null);
   const [markets, setMarkets] = useState<DexMarket[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const [marketFilter, setMarketFilter] = useState('all');
+  const [marketFilter, setMarketFilter] = useState('all'); // 'all' | `${baseID}-${quoteID}`
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedID, setSelectedID] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const refresh = () => {
-    getDexMyOrders(host)
+  const buildFilter = useCallback(
+    (offset?: string): DexOrderFilter => {
+      const f: DexOrderFilter = { host, n: PAGE };
+      if (offset) f.offset = offset;
+      if (statusFilter !== 'all') f.status = statusFilter;
+      if (marketFilter !== 'all') {
+        const [b, q] = marketFilter.split('-').map(Number);
+        f.market = { baseID: b, quoteID: q };
+      }
+      return f;
+    },
+    [host, statusFilter, marketFilter],
+  );
+
+  // Load (or reload) the first page; resets pagination. Filters drive the
+  // request, so changing them re-queries the whole archive, not just the loaded
+  // rows.
+  const loadFirst = useCallback(() => {
+    getDexOrders(buildFilter())
       .then((o) => {
         setOrders(o);
+        setMore(o.length === PAGE);
         setErr(null);
       })
       .catch((e: any) => setErr(e?.response?.data || e?.message || 'Failed to load orders'));
-  };
+  }, [buildFilter]);
+
   useEffect(() => {
-    refresh();
-    const id = window.setInterval(refresh, 60000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [host]);
-  useDexRefreshOnNotes(['order', 'match'], refresh);
+    setOrders(null);
+    loadFirst();
+  }, [loadFirst]);
+  // New orders/fills land on page 1; reloading it keeps the history fresh
+  // without disturbing already-loaded older pages mid-scroll.
+  useDexRefreshOnNotes(['order', 'match'], loadFirst);
+
+  const loadMore = () => {
+    if (!orders || orders.length === 0 || loadingMore) return;
+    setLoadingMore(true);
+    getDexOrders(buildFilter(orders[orders.length - 1].id))
+      .then((o) => {
+        setOrders((prev) => [...(prev || []), ...o]);
+        setMore(o.length === PAGE);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
+  };
 
   useEffect(() => {
     getDexConfig(host)
@@ -68,19 +107,7 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
     return m;
   }, [markets]);
 
-  const statuses = useMemo(() => Array.from(new Set((orders || []).map((o) => o.status))).sort(), [orders]);
-  const marketNames = useMemo(() => Array.from(new Set((orders || []).map((o) => o.marketName))).sort(), [orders]);
-
-  const rows = useMemo(
-    () =>
-      (orders || [])
-        .filter((o) => marketFilter === 'all' || o.marketName === marketFilter)
-        .filter((o) => statusFilter === 'all' || o.status === statusFilter)
-        .sort((a, b) => (b.submitTime || b.stamp) - (a.submitTime || a.stamp)),
-    [orders, marketFilter, statusFilter],
-  );
-
-  const { requestCancel, modal: cancelModal } = useDexCancel(refresh);
+  const { requestCancel, modal: cancelModal } = useDexCancel(loadFirst);
 
   if (err) {
     return (
@@ -123,25 +150,25 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
       <div className="flex flex-wrap items-center gap-2">
         <select className={selCls} value={marketFilter} onChange={(e) => setMarketFilter(e.target.value)}>
           <option value="all">All markets</option>
-          {marketNames.map((m) => (
-            <option key={m} value={m}>
-              {m}
+          {markets.map((m) => (
+            <option key={marketKey(m.baseID, m.quoteID)} value={marketKey(m.baseID, m.quoteID)}>
+              {m.base}/{m.quote.split('.')[0]}
             </option>
           ))}
         </select>
         <select className={selCls} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
-          {statuses.map((s) => (
+          {STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>
           ))}
         </select>
-        <span className="text-xs text-muted-foreground ml-auto">{rows.length} orders</span>
+        <span className="text-xs text-muted-foreground ml-auto">{orders.length} orders</span>
       </div>
 
       <div className="rounded-xl border border-border/50 overflow-hidden">
-        {rows.length === 0 ? (
+        {orders.length === 0 ? (
           <div className="px-4 py-8 text-sm text-muted-foreground">No orders.</div>
         ) : (
           <table className="w-full text-sm">
@@ -154,15 +181,17 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
                 <th className="font-medium px-2 py-2 text-right">Price</th>
                 <th className="font-medium px-2 py-2 text-right">Filled</th>
                 <th className="font-medium px-2 py-2">Status</th>
+                <th className="font-medium px-2 py-2 hidden md:table-cell">Date</th>
                 <th className="px-2 py-2" />
               </tr>
             </thead>
             <tbody>
-              {rows.map((o) => {
+              {orders.map((o) => {
                 const mk = marketByKey[marketKey(o.baseID, o.quoteID)];
                 const baseConv = mk?.baseConvFactor || 1e8;
                 const quoteConv = mk?.quoteConvFactor || 1e8;
                 const pct = o.quantity > 0 ? Math.round((o.filled / o.quantity) * 100) : 0;
+                const ts = o.submitTime || o.stamp;
                 return (
                   <tr
                     key={o.id}
@@ -182,6 +211,9 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
                     </td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums text-xs text-muted-foreground">{pct}%</td>
                     <td className="px-2 py-2 text-xs text-muted-foreground">{o.status}</td>
+                    <td className="px-2 py-2 text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap" title={ts ? new Date(ts).toLocaleString() : ''}>
+                      {ts ? new Date(ts).toLocaleDateString() : '-'}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       <ChevronRight className="h-4 w-4 text-muted-foreground inline-block" />
                     </td>
@@ -192,6 +224,19 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
           </table>
         )}
       </div>
+
+      {more && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-background/50 transition-colors disabled:opacity-50"
+          >
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
