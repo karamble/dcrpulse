@@ -2,9 +2,11 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+import { Link } from 'react-router-dom';
 import { ArrowLeft, Check, X } from 'lucide-react';
 import { isCancellable, type DexCoin, type DexLiveMatch, type DexMarket, type DexMatch, type DexOrder } from '../../services/dcrdexApi';
 import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
+import { dexCoinExplorer } from './dexExplorers';
 import { useDexLiveMatches } from './DexLiveProvider';
 
 interface Props {
@@ -32,14 +34,18 @@ const takerSwapCoin = (m: DexMatch) => (isMaker(m) ? m.counterSwap : m.swap);
 const makerRedeemCoin = (m: DexMatch) => (isMaker(m) ? m.redeem : m.counterRedeem);
 const takerRedeemCoin = (m: DexMatch) => (isMaker(m) ? m.counterRedeem : m.redeem);
 
-// Which asset each stage settles in. The maker swaps the asset it offers; for
-// our order that depends on whether we sell (offer base) and on our match side.
-// Mirrors bisonw's order.ts asset matrix.
-const stepAssets = (m: DexMatch, sell: boolean, base: string, quote: string) => {
-  const baseFirst = (isMaker(m) && sell) || (!isMaker(m) && !sell);
-  return baseFirst
-    ? { makerSwap: base, takerSwap: quote, makerRedeem: quote, takerRedeem: base }
-    : { makerSwap: quote, takerSwap: base, makerRedeem: base, takerRedeem: quote };
+// Lock times must match bisonw's LockTimeMaker / LockTimeTaker (mainnet): a
+// maker can refund its own swap after 20h, a taker after 8h, if the counterparty
+// never redeems.
+const lockTimeMakerMs = 20 * 60 * 60 * 1000;
+const lockTimeTakerMs = 8 * 60 * 60 * 1000;
+
+// refundCountdown describes when a stuck swap becomes refundable, from the match
+// stamp plus this side's lock time. Mirrors bisonw order.ts.
+const refundCountdown = (stampMs: number, maker: boolean): string => {
+  const after = stampMs + (maker ? lockTimeMakerMs : lockTimeTakerMs);
+  if (Date.now() > after) return 'Refund imminent';
+  return `Refund available after ${new Date(after).toLocaleString()}`;
 };
 
 // Progress index (0..4) from the match status, so the four stages can render a
@@ -62,7 +68,30 @@ const truncCoin = (c: string) => (c.length > 22 ? `${c.slice(0, 12)}…${c.slice
 // on-chain coin id once it is broadcast (otherwise "Pending"). When a live coin
 // is available (from the order/match notes), its formatted id and confirmation
 // progress are shown; otherwise the myorders hex id is shown (presence only).
-const SwapStep = ({ n, label, asset, you, coin, live }: { n: number; label: string; asset: string; you: boolean; coin?: string; live?: DexCoin }) => {
+// DCR coins link to dcrpulse's own explorer; everything else uses an external
+// block explorer.
+const DCR_ASSET_ID = 42;
+
+// CoinID renders a coin id as a link to its block explorer. Decred coins go to
+// the internal /explorer/tx route (same-tab SPA navigation, like the wallet tx
+// history); other assets link out to an external explorer (the global
+// ExternalLinkGuard handles the leaving-site confirm). Unknown assets render as
+// plain mono text.
+const CoinID = ({ assetID, id }: { assetID: number; id: string }) => {
+  const cls = 'font-mono text-[11px] break-all text-primary hover:underline';
+  if (assetID === DCR_ASSET_ID) {
+    return <Link to={`/explorer/tx/${id.split(':')[0]}`} title={id} className={cls}>{truncCoin(id)}</Link>;
+  }
+  const url = dexCoinExplorer(assetID, id);
+  if (!url) return <span className="font-mono text-[11px] break-all" title={id}>{truncCoin(id)}</span>;
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" title={id} className={cls}>
+      {truncCoin(id)}
+    </a>
+  );
+};
+
+const SwapStep = ({ n, label, asset, assetID, you, coin, live }: { n: number; label: string; asset: string; assetID: number; you: boolean; coin?: string; live?: DexCoin }) => {
   const id = live?.stringID || coin;
   const confs = live?.confs;
   const met = confs ? confs.count >= confs.required : !!id;
@@ -81,7 +110,7 @@ const SwapStep = ({ n, label, asset, you, coin, live }: { n: number; label: stri
         </div>
         {id ? (
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-[11px] break-all" title={id}>{truncCoin(id)}</span>
+            <CoinID assetID={live?.assetID ?? assetID} id={id} />
             {confs && (
               <span className={`text-[10px] shrink-0 ${met ? 'text-success' : 'text-warning'}`}>
                 {met ? 'confirmed' : `${confs.count}/${confs.required} confs`}
@@ -99,17 +128,28 @@ const SwapStep = ({ n, label, asset, you, coin, live }: { n: number; label: stri
 // MatchCard renders a single match as the maker/taker swap negotiation: four
 // numbered stages plus an optional refund. Cancel matches carry no swap and are
 // skipped.
-const MatchCard = ({ m, lm, order, baseSym, quoteSym, baseConv, quoteConv }: {
+const MatchCard = ({ m, lm, order, baseSym, quoteSym, baseID, quoteID, baseConv, quoteConv }: {
   m: DexMatch;
   lm?: DexLiveMatch;
   order: DexOrder;
   baseSym: string;
   quoteSym: string;
+  baseID: number;
+  quoteID: number;
   baseConv: number;
   quoteConv: number;
 }) => {
-  const a = stepAssets(m, order.sell, baseSym, quoteSym);
   const youMaker = isMaker(m);
+  // Which asset each stage settles in: the maker swaps the asset it offers, which
+  // for our order depends on whether we sell (offer base) and our match side.
+  // Mirrors bisonw's order.ts asset matrix; computed for both symbol and id.
+  const baseFirst = (youMaker && order.sell) || (!youMaker && !order.sell);
+  const a = baseFirst
+    ? { makerSwap: baseSym, takerSwap: quoteSym, makerRedeem: quoteSym, takerRedeem: baseSym }
+    : { makerSwap: quoteSym, takerSwap: baseSym, makerRedeem: baseSym, takerRedeem: quoteSym };
+  const aid = baseFirst
+    ? { makerSwap: baseID, takerSwap: quoteID, makerRedeem: quoteID, takerRedeem: baseID }
+    : { makerSwap: quoteID, takerSwap: baseID, makerRedeem: baseID, takerRedeem: quoteID };
   const idx = STEP_BY_STATUS[(m.status || '').toLowerCase()] ?? 0;
   const showRefund = !!m.refund || m.revoked;
   // Re-key the live coins (with confs) by role, mirroring the hex helpers above;
@@ -120,6 +160,8 @@ const MatchCard = ({ m, lm, order, baseSym, quoteSym, baseConv, quoteConv }: {
   const lmMakerRedeem = lm ? (lmMaker ? lm.redeem : lm.counterRedeem) : undefined;
   const lmTakerRedeem = lm ? (lmMaker ? lm.counterRedeem : lm.redeem) : undefined;
   const refundId = lm?.refund?.stringID || m.refund;
+  // The refund is your own swap coming back, so it's on the asset you offered.
+  const refundAssetID = lm?.refund?.assetID ?? (order.sell ? baseID : quoteID);
   return (
     <div className="border-t border-border/40 first:border-t-0">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-xs">
@@ -131,19 +173,19 @@ const MatchCard = ({ m, lm, order, baseSym, quoteSym, baseConv, quoteConv }: {
         {m.revoked && <span className="text-destructive">(revoked)</span>}
       </div>
       <div className="pb-1.5">
-        <SwapStep n={1} label="Maker Swap" asset={a.makerSwap} you={youMaker} coin={makerSwapCoin(m)} live={lmMakerSwap} />
-        <SwapStep n={2} label="Taker Swap" asset={a.takerSwap} you={!youMaker} coin={takerSwapCoin(m)} live={lmTakerSwap} />
-        <SwapStep n={3} label="Maker Redemption" asset={a.makerRedeem} you={youMaker} coin={makerRedeemCoin(m)} live={lmMakerRedeem} />
-        <SwapStep n={4} label="Taker Redemption" asset={a.takerRedeem} you={!youMaker} coin={takerRedeemCoin(m)} live={lmTakerRedeem} />
+        <SwapStep n={1} label="Maker Swap" asset={a.makerSwap} assetID={aid.makerSwap} you={youMaker} coin={makerSwapCoin(m)} live={lmMakerSwap} />
+        <SwapStep n={2} label="Taker Swap" asset={a.takerSwap} assetID={aid.takerSwap} you={!youMaker} coin={takerSwapCoin(m)} live={lmTakerSwap} />
+        <SwapStep n={3} label="Maker Redemption" asset={a.makerRedeem} assetID={aid.makerRedeem} you={youMaker} coin={makerRedeemCoin(m)} live={lmMakerRedeem} />
+        <SwapStep n={4} label="Taker Redemption" asset={a.takerRedeem} assetID={aid.takerRedeem} you={!youMaker} coin={takerRedeemCoin(m)} live={lmTakerRedeem} />
         {showRefund && (
           <div className="flex items-start gap-2 px-3 py-1.5">
             <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-destructive/20 text-[9px] text-destructive">!</span>
             <div className="min-w-0 flex-1">
               <div className="text-[11px] text-destructive">Refund ({order.sell ? baseSym : quoteSym}, you)</div>
               {refundId ? (
-                <span className="font-mono text-[11px] break-all" title={refundId}>{truncCoin(refundId)}</span>
+                <CoinID assetID={refundAssetID} id={refundId} />
               ) : (
-                <span className="text-[11px] text-muted-foreground/60">&lt;Pending&gt;</span>
+                <span className="text-[11px] text-muted-foreground/60">{refundCountdown(m.stamp, youMaker)}</span>
               )}
             </div>
           </div>
@@ -240,6 +282,8 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
               order={order}
               baseSym={baseSym}
               quoteSym={quoteSym}
+              baseID={order.baseID}
+              quoteID={order.quoteID}
               baseConv={baseConv}
               quoteConv={quoteConv}
             />
