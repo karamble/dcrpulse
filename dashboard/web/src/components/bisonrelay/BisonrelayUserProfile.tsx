@@ -559,40 +559,53 @@ export const UserProfileView = ({
               </div>
             </SectionCard>
           )}
+
+          {!isOwn && contact && (
+            <SectionCard
+              title="Tip history"
+              icon={Coins}
+              action={
+                <button type="button" onClick={() => setShowTip(true)} className={backupBtnCls}>
+                  <Coins className="h-3.5 w-3.5" />
+                  Pay tip
+                </button>
+              }
+            >
+              {tips.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">No tips sent to {nick} yet.</p>
+              ) : (
+                <div className="space-y-1">
+                  {tips.slice(0, 10).map((a) => (
+                    <div
+                      key={`${a.tag}-${a.created}`}
+                      className="flex items-center gap-2 text-[11px] text-muted-foreground"
+                      title={a.last_invoice_error || undefined}
+                    >
+                      <span className="font-medium text-foreground/90 tabular-nums">
+                        {formatTipDcr(a.amount_matoms)} DCR
+                      </span>
+                      <span className="opacity-50">·</span>
+                      <span>{new Date(a.created).toLocaleString()}</span>
+                      <span className="opacity-50">·</span>
+                      <span
+                        className={
+                          tipAttemptState(a) === 'completed'
+                            ? 'text-success/90'
+                            : tipAttemptState(a) === 'failed'
+                              ? 'text-destructive/90'
+                              : undefined
+                        }
+                      >
+                        {tipAttemptState(a)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          )}
         </div>
       </div>
-
-      {tips.length > 0 && (
-        <SectionCard title="Tip history" icon={Coins}>
-          <div className="space-y-1">
-            {tips.slice(0, 10).map((a) => (
-              <div
-                key={`${a.tag}-${a.created}`}
-                className="flex items-center gap-2 text-[11px] text-muted-foreground"
-                title={a.last_invoice_error || undefined}
-              >
-                <span className="font-medium text-foreground/90 tabular-nums">
-                  {formatTipDcr(a.amount_matoms)} DCR
-                </span>
-                <span className="opacity-50">·</span>
-                <span>{new Date(a.created).toLocaleString()}</span>
-                <span className="opacity-50">·</span>
-                <span
-                  className={
-                    tipAttemptState(a) === 'completed'
-                      ? 'text-success/90'
-                      : tipAttemptState(a) === 'failed'
-                        ? 'text-destructive/90'
-                        : undefined
-                  }
-                >
-                  {tipAttemptState(a)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-      )}
 
       {showTip && (
         <TipModal nick={nick} uid={uid} onClose={() => setShowTip(false)} onSubmit={submitTip} />
