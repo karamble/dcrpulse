@@ -201,6 +201,7 @@ func main() {
 	api.HandleFunc("/dcrdex/wallet/txs", handlers.GetDcrdexWalletTxsHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/wallet/tx", handlers.GetDcrdexWalletTxHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/wallet/send", handlers.SendDcrdexWalletHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/wallet/txfee", handlers.EstimateDcrdexSendFeeHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/open", handlers.OpenDcrdexWalletHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/close", handlers.CloseDcrdexWalletHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/toggle", handlers.ToggleDcrdexWalletHandler).Methods("POST")

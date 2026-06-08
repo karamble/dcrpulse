@@ -316,6 +316,51 @@ export const getDexAssetCatalog = async (): Promise<DexAsset[]> => {
   return data || [];
 };
 
+// DexAssetInfo is the catalog metadata for one wallet's asset, resolved from a
+// base coin or a nested token. account-based / conversionFactor drive the
+// wallet view's send/receive UX (fee handling, display precision).
+export interface DexAssetInfo {
+  symbol: string;
+  isAccountBased: boolean;
+  conversionFactor: number;
+  parentSymbol?: string; // set when the asset is a token on another chain
+}
+
+// dexAssetForId resolves the catalog entry for a wallet's asset id, matching
+// either a base coin or a nested token (tokens are always account-based).
+export const dexAssetForId = (catalog: DexAsset[], assetID: number): DexAssetInfo | null => {
+  for (const a of catalog) {
+    if (a.id === assetID) {
+      return { symbol: a.symbol, isAccountBased: a.isAccountBased, conversionFactor: a.unitInfo.conversionFactor };
+    }
+    for (const t of a.tokens ?? []) {
+      if (t.id === assetID) {
+        return { symbol: t.symbol, isAccountBased: true, conversionFactor: t.unitInfo.conversionFactor, parentSymbol: a.symbol };
+      }
+    }
+  }
+  return null;
+};
+
+export interface DexSendFee {
+  fee: number;
+  feeSymbol: string;
+  validAddress: boolean;
+}
+
+// estimateDexSendFee returns the estimated network fee (in the fee asset's
+// conventional units, with its symbol - the parent chain for a token) and whether
+// the address is valid for the asset. Backed by the bisonw webserver /api/txfee.
+export const estimateDexSendFee = async (
+  assetID: number,
+  value: number,
+  address: string,
+  subtract = false,
+): Promise<DexSendFee> => {
+  const { data } = await api.post<DexSendFee>('/dcrdex/wallet/txfee', { assetID, value, address, subtract });
+  return data;
+};
+
 // createDexAssetWallet creates a wallet for any supported asset from a
 // schema-driven config map. (The DCR onboarding wallet uses createDexWallet.)
 export const createDexAssetWallet = async (

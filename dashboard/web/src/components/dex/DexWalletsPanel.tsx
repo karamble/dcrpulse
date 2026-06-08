@@ -135,7 +135,7 @@ export const DexWalletsPanel = () => {
             }}
           />
         ) : sel ? (
-          <DexWalletDetail wallet={sel} rates={rates} onChanged={refresh} />
+          <DexWalletDetail wallet={sel} rates={rates} catalog={catalog} onChanged={refresh} />
         ) : (
           <div className="py-12 text-center text-sm text-muted-foreground">No wallets yet. Add one to get started.</div>
         )}

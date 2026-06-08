@@ -2,8 +2,9 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
-import { AlertCircle, AlertTriangle, Check, Copy, Lock, Unlock, RefreshCw, Power, Plus, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, AlertTriangle, Check, Copy, Lock, Unlock, RefreshCw, Power, Plus, QrCode, X } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   WalletTrait,
   hasTrait,
@@ -16,8 +17,10 @@ import {
   removeDexWalletPeer,
   newDexDepositAddress,
   dexAddressUsed,
+  dexAssetForId,
   type DexWalletState,
   type DexWalletPeer,
+  type DexAsset,
 } from '../../services/dcrdexApi';
 import type { DexRates } from '../../services/dcrdexApi';
 import { fmtAmt, fmtAmtParts, fmtUsd, usdRateFor } from './dexFormat';
@@ -105,10 +108,12 @@ const WalletPeers = ({ wallet }: { wallet: DexWalletState }) => {
 export const DexWalletDetail = ({
   wallet,
   rates,
+  catalog,
   onChanged,
 }: {
   wallet: DexWalletState;
   rates: DexRates | null;
+  catalog: DexAsset[];
   onChanged: () => void;
 }) => {
   const [copied, setCopied] = useState(false);
@@ -120,13 +125,25 @@ export const DexWalletDetail = ({
   const [addr, setAddr] = useState(wallet.address);
   const [addrUsed, setAddrUsed] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const isDcr = wallet.assetID === 42;
+  const assetInfo = useMemo(() => dexAssetForId(catalog, wallet.assetID), [catalog, wallet.assetID]);
 
   // Reset the shown address when the selected wallet (or its persisted address)
   // changes.
   useEffect(() => {
     setAddr(wallet.address);
   }, [wallet.assetID, wallet.address]);
+
+  // Close the QR modal on Escape.
+  useEffect(() => {
+    if (!showQr) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowQr(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showQr]);
 
   // Flag deposit-address reuse for the Decred wallet. A freshly generated address
   // returns used=false, so this clears the warning after "Generate new address".
@@ -258,10 +275,16 @@ export const DexWalletDetail = ({
         </Card>
 
         <Card title="Deposit address">
+          {assetInfo?.parentSymbol && (
+            <div className="text-[11px] text-muted-foreground">Token on {assetInfo.parentSymbol}</div>
+          )}
           {addr ? (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <code className="text-sm font-mono break-all flex-1">{addr}</code>
+                <button type="button" onClick={() => setShowQr(true)} title="Show QR code" className="p-1.5 rounded-md hover:bg-background/60 shrink-0">
+                  <QrCode className="h-4 w-4 text-muted-foreground" />
+                </button>
                 <button type="button" onClick={copyAddr} title="Copy" className="p-1.5 rounded-md hover:bg-background/60 shrink-0">
                   {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
                 </button>
@@ -292,9 +315,9 @@ export const DexWalletDetail = ({
           )}
         </Card>
 
-        {hasTrait(wallet.traits, WalletTrait.Withdrawer) && (
+        {!wallet.disabled && (
           <Card title="Send">
-            <DexWalletSend wallet={wallet} onSent={onChanged} />
+            <DexWalletSend wallet={wallet} asset={assetInfo} onSent={onChanged} />
           </Card>
         )}
 
@@ -309,6 +332,39 @@ export const DexWalletDetail = ({
         <Card title="Transactions">
           <DexWalletTxHistory wallet={wallet} />
         </Card>
+      )}
+
+      {showQr && addr && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setShowQr(false)}
+        >
+          <div
+            className="bg-gradient-card border border-border/50 rounded-xl p-5 max-w-sm w-full space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CoinIcon symbol={wallet.symbol} />
+                <span className="font-semibold">Receive {wallet.symbol}</span>
+              </div>
+              <button type="button" onClick={() => setShowQr(false)} title="Close" className="p-1.5 rounded-md hover:bg-background/60">
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="flex justify-center">
+              <div className="p-3 bg-white rounded-lg">
+                <QRCodeSVG value={addr} size={200} level="H" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="text-xs font-mono break-all flex-1">{addr}</code>
+              <button type="button" onClick={copyAddr} title="Copy" className="p-1.5 rounded-md hover:bg-background/60 shrink-0">
+                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

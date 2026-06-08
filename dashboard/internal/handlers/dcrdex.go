@@ -1514,6 +1514,48 @@ func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"coin": coin})
 }
 
+// EstimateDcrdexSendFeeHandler estimates the network fee to send from a wallet and
+// validates the address, over the bisonw webserver (the RPC server does not expose
+// fee estimation). The fee is returned in conventional units of the fee asset (the
+// parent chain for a token), with that asset's symbol.
+func EstimateDcrdexSendFeeHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AssetID  uint32  `json:"assetID"`
+		Value    float64 `json:"value"`
+		Address  string  `json:"address"`
+		Subtract bool    `json:"subtract"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Address == "" || req.Value <= 0 {
+		http.Error(w, "assetID, value and address are required", http.StatusBadRequest)
+		return
+	}
+	appPass, ok := rpc.DcrdexAppPass()
+	if !ok {
+		http.Error(w, "DCRDEX is locked", http.StatusConflict)
+		return
+	}
+	client, err := rpc.DcrdexWebClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
+	txFee, validAddr, err := client.EstimateSendTxFee(ctx, appPass, req.AssetID, req.Address, atoms, req.Subtract, false)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	feeAsset := dexassets.FeeAsset(req.AssetID)
+	json.NewEncoder(w).Encode(map[string]any{
+		"fee":          atomsToConv(txFee, dexassets.ConvFactor(feeAsset)),
+		"feeSymbol":    dexassets.Symbol(feeAsset),
+		"validAddress": validAddr,
+	})
+}
+
 // dexWalletActionAsset decodes a {assetID} body for simple wallet actions.
 func dexWalletActionAsset(r *http.Request) (uint32, error) {
 	var req struct {

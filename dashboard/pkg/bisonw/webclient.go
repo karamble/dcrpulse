@@ -172,6 +172,29 @@ func (c *WebClient) NewDepositAddress(ctx context.Context, appPass string, asset
 	return res.Address, nil
 }
 
+// EstimateSendTxFee estimates the network fee to send value (atoms of assetID) to
+// addr and reports whether addr is a valid address for the asset. Webserver-only
+// route (/api/txfee). The returned fee is in the fee asset's atoms (the parent
+// chain coin for a token, otherwise the asset itself).
+func (c *WebClient) EstimateSendTxFee(ctx context.Context, appPass string, assetID uint32, addr string, value uint64, subtract, maxWithdraw bool) (txFee uint64, validAddress bool, err error) {
+	var res struct {
+		webAck
+		TxFee        uint64 `json:"txfee"`
+		ValidAddress bool   `json:"validaddress"`
+	}
+	body := map[string]any{
+		"assetID":     assetID,
+		"addr":        addr,
+		"value":       value,
+		"subtract":    subtract,
+		"maxWithdraw": maxWithdraw,
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/txfee", appPass, body, &res); err != nil {
+		return 0, false, err
+	}
+	return res.TxFee, res.ValidAddress, nil
+}
+
 // AddressUsed reports whether the asset's wallet has ever received funds at addr,
 // used to warn against deposit-address reuse. Webserver-only route.
 func (c *WebClient) AddressUsed(ctx context.Context, appPass string, assetID uint32, addr string) (bool, error) {

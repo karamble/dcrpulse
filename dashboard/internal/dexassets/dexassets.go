@@ -19,35 +19,46 @@ var catalogJSON []byte
 
 type catalogEntry struct {
 	ID       uint32 `json:"id"`
+	Symbol   string `json:"symbol"`
 	UnitInfo struct {
 		ConversionFactor uint64 `json:"conversionFactor"`
 	} `json:"unitInfo"`
 	Tokens []struct {
 		ID       uint32 `json:"id"`
+		Symbol   string `json:"symbol"`
 		UnitInfo struct {
 			ConversionFactor uint64 `json:"conversionFactor"`
 		} `json:"unitInfo"`
 	} `json:"tokens"`
 }
 
-var convFactors = func() map[uint32]uint64 {
-	m := make(map[uint32]uint64)
+var (
+	convFactors = map[uint32]uint64{}
+	symbols     = map[uint32]string{}
+	// feeParent maps a token ID to its parent chain ID; the parent coin pays the
+	// network (gas) fee when sending the token.
+	feeParent = map[uint32]uint32{}
+)
+
+func init() {
 	var entries []catalogEntry
 	if err := json.Unmarshal(catalogJSON, &entries); err != nil {
-		return m
+		return
 	}
 	for _, e := range entries {
 		if e.UnitInfo.ConversionFactor > 0 {
-			m[e.ID] = e.UnitInfo.ConversionFactor
+			convFactors[e.ID] = e.UnitInfo.ConversionFactor
 		}
+		symbols[e.ID] = e.Symbol
 		for _, t := range e.Tokens {
 			if t.UnitInfo.ConversionFactor > 0 {
-				m[t.ID] = t.UnitInfo.ConversionFactor
+				convFactors[t.ID] = t.UnitInfo.ConversionFactor
 			}
+			symbols[t.ID] = t.Symbol
+			feeParent[t.ID] = e.ID
 		}
 	}
-	return m
-}()
+}
 
 // Raw returns the embedded catalog JSON for serving to the frontend.
 func Raw() []byte {
@@ -58,4 +69,18 @@ func Raw() []byte {
 // unit) for an asset or token ID. It returns 0 if the asset is unknown.
 func ConvFactor(assetID uint32) uint64 {
 	return convFactors[assetID]
+}
+
+// FeeAsset returns the asset whose coin pays the network fee to send assetID:
+// the parent chain for a token, otherwise the asset itself.
+func FeeAsset(assetID uint32) uint32 {
+	if p, ok := feeParent[assetID]; ok {
+		return p
+	}
+	return assetID
+}
+
+// Symbol returns the asset or token symbol for an ID (empty if unknown).
+func Symbol(assetID uint32) string {
+	return symbols[assetID]
 }
