@@ -23,6 +23,10 @@ const REFRESH_EVENT_TYPES = new Set([
   'posts-subscribe-error',
   'blocked-by-user',
   'tip-received',
+  'post-heart-received',
+  'post-status-received',
+  'store-order-placed',
+  'store-order-status',
 ]);
 
 const sevDot = (s: string) =>
