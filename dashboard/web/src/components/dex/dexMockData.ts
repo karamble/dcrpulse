@@ -109,7 +109,20 @@ export function mockCandles(m: DexMarket, n = 90): Candle[] {
 }
 
 export const mockOrders: DexOrder[] = [
-  { id: 'mockbookedorder', host: 'dex.decred.org:7232', marketName: 'dcr_btc', baseID: 42, quoteID: 0, type: 'limit', sell: false, status: 'booked', stamp: 0, submitTime: 0, quantity: 5e8, filled: 1e8, settled: 0, rate: 52000 },
+  {
+    id: 'mockbookedorder', host: 'dex.decred.org:7232', marketName: 'dcr_btc', baseID: 42, quoteID: 0, type: 'limit', sell: false, status: 'booked', stamp: 0, submitTime: 0, quantity: 5e8, filled: 1e8, settled: 0, rate: 52000,
+    matches: [
+      // A taker match mid-swap: maker has swapped, we (taker) have swapped, and
+      // we are waiting on the maker's redemption.
+      { matchID: 'mockmatch1', status: 'TakerSwapCast', revoked: false, rate: 52000, qty: 1e8, side: 'Taker', feeRate: 10, stamp: 0, isCancel: false, counterSwap: 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4', swap: 'f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d' },
+    ],
+  },
   { id: 'mockbookedsell', host: 'dex.decred.org:7232', marketName: 'dcr_btc', baseID: 42, quoteID: 0, type: 'limit', sell: true, status: 'booked', stamp: 0, submitTime: 0, quantity: 1.8e8, filled: 0, settled: 0, rate: 53000 },
-  { id: 'mockexecorder', host: 'dex.decred.org:7232', marketName: 'dcr_btc', baseID: 42, quoteID: 0, type: 'limit', sell: true, status: 'executed', stamp: 0, submitTime: 0, quantity: 2e8, filled: 2e8, settled: 2e8, rate: 53000 },
+  {
+    id: 'mockexecorder', host: 'dex.decred.org:7232', marketName: 'dcr_btc', baseID: 42, quoteID: 0, type: 'limit', sell: true, status: 'executed', stamp: 0, submitTime: 0, quantity: 2e8, filled: 2e8, settled: 2e8, rate: 53000,
+    matches: [
+      // A fully settled maker match: all four stages have on-chain coins.
+      { matchID: 'mockmatch2', status: 'MatchConfirmed', revoked: false, rate: 53000, qty: 2e8, side: 'Maker', feeRate: 10, stamp: 0, isCancel: false, swap: '1122334455667788990011223344556677889900', counterSwap: 'aabbccddeeff00112233445566778899aabbccdd', redeem: '99887766554433221100ffeeddccbbaa99887766', counterRedeem: 'ffeeddccbbaa99887766554433221100ffeeddcc' },
+    ],
+  },
 ];

@@ -4,14 +4,15 @@
 
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { convQty, fmtAmt } from './dexFormat';
-import type { DexMarket, DexOrder } from '../../services/dcrdexApi';
+import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
+import { isCancellable, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
+import { DexOrderDetail } from './DexOrderDetail';
 
 interface Props {
   orders: DexOrder[];
   markets: DexMarket[];
   preview?: boolean;
-  onCancel: (id: string) => void;
+  onCancel: (order: DexOrder, market?: DexMarket) => void;
 }
 
 const isOpen = (o: DexOrder) => o.status === 'booked' || o.status === 'epoch';
@@ -30,6 +31,7 @@ const Pill = ({ children, kind }: { children: string; kind: 'buy' | 'sell' | 'ty
 
 export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) => {
   const [tab, setTab] = useState<'open' | 'history'>('open');
+  const [selectedID, setSelectedID] = useState<string | null>(null);
   const open = orders.filter(isOpen);
   const history = orders.filter((o) => !isOpen(o));
   const rows = tab === 'open' ? open : history;
@@ -40,6 +42,22 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
     });
     return m;
   }, [markets]);
+
+  // A clicked row opens the in-panel detail view; it clears if the order is no
+  // longer present (e.g. dropped from the tracked set after a refresh).
+  const selected = selectedID ? orders.find((o) => o.id === selectedID) : null;
+  if (selected) {
+    return (
+      <div className="h-full overflow-auto py-3">
+        <DexOrderDetail
+          order={selected}
+          market={marketByKey[marketKey(selected.baseID, selected.quoteID)]}
+          onBack={() => setSelectedID(null)}
+          onCancel={onCancel}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-0 h-full">
@@ -75,6 +93,7 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                 <th className="font-medium px-4 py-2">Market</th>
                 <th className="font-medium px-2 py-2">Side</th>
                 <th className="font-medium px-2 py-2">Type</th>
+                <th className="font-medium px-2 py-2 text-right">Price</th>
                 <th className="font-medium px-2 py-2 text-right">Amount</th>
                 <th className="font-medium px-2 py-2 text-right">Filled</th>
                 <th className="font-medium px-2 py-2">Status</th>
@@ -84,12 +103,21 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
             <tbody>
               {rows.map((o) => {
                 const pct = o.quantity > 0 ? Math.round((o.filled / o.quantity) * 100) : 0;
-                const baseConv = marketByKey[marketKey(o.baseID, o.quoteID)]?.baseConvFactor || 1e8;
+                const mk = marketByKey[marketKey(o.baseID, o.quoteID)];
+                const baseConv = mk?.baseConvFactor || 1e8;
+                const quoteConv = mk?.quoteConvFactor || 1e8;
                 return (
-                  <tr key={o.id} className="border-t border-border/40 hover:bg-muted/10">
+                  <tr
+                    key={o.id}
+                    onClick={() => setSelectedID(o.id)}
+                    className="border-t border-border/40 hover:bg-muted/10 cursor-pointer"
+                  >
                     <td className="px-4 py-2 font-mono tabular-nums">{o.marketName}</td>
                     <td className="px-2 py-2"><Pill kind={o.sell ? 'sell' : 'buy'}>{o.sell ? 'Sell' : 'Buy'}</Pill></td>
                     <td className="px-2 py-2"><Pill kind="type">{o.type}</Pill></td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                      {o.rate > 0 ? fmtPrice(convRate(o.rate, baseConv, quoteConv), mk?.quote || '') : 'market'}
+                    </td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums">{fmtAmt(convQty(o.quantity, baseConv), 4)}</td>
                     <td className="px-2 py-2 text-right">
                       <span className="inline-flex items-center gap-2 font-mono tabular-nums text-xs text-muted-foreground">
@@ -101,11 +129,14 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                     </td>
                     <td className="px-2 py-2 text-xs text-muted-foreground">{o.status}</td>
                     <td className="px-2 py-2 text-right">
-                      {!preview && isOpen(o) && (
+                      {!preview && isCancellable(o) && (
                         <button
                           type="button"
                           title="Cancel order"
-                          onClick={() => onCancel(o.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCancel(o, mk);
+                          }}
                           className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                         >
                           <X className="h-3.5 w-3.5" />

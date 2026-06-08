@@ -4,7 +4,7 @@
 
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { getDexExchanges, getMMStatus } from '../../services/dcrdexApi';
-import type { DexNote, MMStatus, MMBotStatus } from '../../services/dcrdexApi';
+import type { DexNote, DexLiveMatch, MMStatus, MMBotStatus } from '../../services/dcrdexApi';
 import type { MarketSpot } from './useDexFeed';
 
 type NoteListener = (note: DexNote) => void;
@@ -26,7 +26,18 @@ export type LiveNote = DexNote & {
   complete?: boolean;
   // walletstate notes carry the wallet's live state (WalletState).
   wallet?: { symbol?: string; assetID?: number; running?: boolean; synced?: boolean };
+  // order/match notes carry the full core Order/Match (with on-chain coins +
+  // confirmations), used to enrich the order-detail swap tracker.
+  order?: { id?: string; matches?: DexLiveMatch[] };
+  orderID?: string;
+  match?: DexLiveMatch;
 };
+
+// LiveMatches maps an order id to its matches (keyed by match id), accumulated
+// from order/match notes. The myorders route has no confirmations, so this is
+// the confs overlay for the order-detail swap stages.
+export type LiveMatches = Record<string, Record<string, DexLiveMatch>>;
+const EMPTY_MATCHES: Record<string, DexLiveMatch> = {};
 
 // DexConn is a DEX server's live connection state: connectionStatus (1 ==
 // connected, per comms.ConnectionStatus) and whether the account is
@@ -63,6 +74,7 @@ interface DexLiveCtx {
   seedSpots: (snapshot: Record<string, MarketSpot>) => void;
   conns: Record<string, DexConn>;
   bridges: Record<string, DexBridge>;
+  liveMatches: LiveMatches;
   mmStatus: MMStatus | null;
   refreshMMStatus: () => void;
 }
@@ -87,6 +99,10 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
   // notes (no UI consumes bridges yet, ingested for a future bridge view).
   const [conns, setConns] = useState<Record<string, DexConn>>({});
   const [bridges, setBridges] = useState<Record<string, DexBridge>>({});
+  // liveMatches accumulates the swap coins (with confirmations) from order/match
+  // notes, keyed by order id then match id; the order detail reads it as a confs
+  // overlay over the myorders match.
+  const [liveMatches, setLiveMatches] = useState<LiveMatches>({});
   // mmStatus is the market-making status (bots + CEX state), refetched on MM
   // notes. Fetched lazily when a MM consumer mounts (refreshMMStatus); the fetch
   // 409s and is ignored while the DEX is locked.
@@ -223,6 +239,24 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
           }
           return;
         }
+        // Patch the live-match overlay from order/match notes (these still fall
+        // through to listeners, which refetch the myorders baseline). Mirrors
+        // bisonw's app.notify order/match handling (updateMatch).
+        if (note.type === 'order' && note.order?.id) {
+          const oid = note.order.id;
+          const ms = note.order.matches || [];
+          if (ms.length) {
+            setLiveMatches((prev) => {
+              const cur = { ...(prev[oid] || {}) };
+              ms.forEach((m) => m?.matchID && (cur[m.matchID] = m));
+              return { ...prev, [oid]: cur };
+            });
+          }
+        } else if (note.type === 'match' && note.orderID && note.match?.matchID) {
+          const oid = note.orderID;
+          const m = note.match;
+          setLiveMatches((prev) => ({ ...prev, [oid]: { ...(prev[oid] || {}), [m.matchID]: m } }));
+        }
         listenersRef.current.forEach((fn) => {
           try {
             fn(note);
@@ -259,7 +293,7 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <Ctx.Provider value={{ addNoteListener, spots, seedSpots, conns, bridges, mmStatus, refreshMMStatus }}>
+    <Ctx.Provider value={{ addNoteListener, spots, seedSpots, conns, bridges, liveMatches, mmStatus, refreshMMStatus }}>
       {children}
     </Ctx.Provider>
   );
@@ -282,6 +316,13 @@ export function useSeedDexSpots(): (snapshot: Record<string, MarketSpot>) => voi
 // the REST connectionStatus snapshot). A no-op null outside the provider.
 export function useDexConn(host: string): DexConn | null {
   return useContext(Ctx)?.conns[host] ?? null;
+}
+
+// useDexLiveMatches returns the live match overlay for an order id (match id ->
+// DexLiveMatch with on-chain coins + confirmations), fed by order/match notes.
+// Empty outside the provider or before any note for the order arrives.
+export function useDexLiveMatches(orderID: string): Record<string, DexLiveMatch> {
+  return useContext(Ctx)?.liveMatches[orderID] ?? EMPTY_MATCHES;
 }
 
 // useMMStatus returns the shared market-making status, triggering an initial

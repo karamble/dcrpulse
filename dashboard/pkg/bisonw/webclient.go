@@ -195,6 +195,61 @@ func (c *WebClient) EstimateSendTxFee(ctx context.Context, appPass string, asset
 	return res.TxFee, res.ValidAddress, nil
 }
 
+// PreOrder returns bisonw's pre-order estimate for a prospective order: the swap
+// and redeem network-fee estimates (best/worst case) and the order options
+// available per asset. The args mirror a core.TradeForm. Webserver-only route
+// (/api/preorder); the RPC server has no equivalent. The raw `estimate` object
+// is returned for the caller to forward.
+func (c *WebClient) PreOrder(ctx context.Context, appPass, host string, isLimit, sell bool, baseID, quoteID uint32, qty, rate uint64, tifNow bool, options map[string]string) (json.RawMessage, error) {
+	body := map[string]any{
+		"host":    host,
+		"isLimit": isLimit,
+		"sell":    sell,
+		"base":    baseID,
+		"quote":   quoteID,
+		"qty":     qty,
+		"rate":    rate,
+		"tifnow":  tifNow,
+		"options": options,
+	}
+	var res struct {
+		webAck
+		Estimate json.RawMessage `json:"estimate"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/preorder", appPass, body, &res); err != nil {
+		return nil, err
+	}
+	return res.Estimate, nil
+}
+
+// MaxBuy returns the largest buy order (lots + fee estimate) fundable at rate on
+// the host's base/quote market. Webserver-only route (/api/maxbuy).
+func (c *WebClient) MaxBuy(ctx context.Context, appPass, host string, baseID, quoteID uint32, rate uint64) (json.RawMessage, error) {
+	body := map[string]any{"host": host, "base": baseID, "quote": quoteID, "rate": rate}
+	var res struct {
+		webAck
+		MaxBuy json.RawMessage `json:"maxBuy"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/maxbuy", appPass, body, &res); err != nil {
+		return nil, err
+	}
+	return res.MaxBuy, nil
+}
+
+// MaxSell returns the largest sell order (lots + fee estimate) fundable on the
+// host's base/quote market. Webserver-only route (/api/maxsell).
+func (c *WebClient) MaxSell(ctx context.Context, appPass, host string, baseID, quoteID uint32) (json.RawMessage, error) {
+	body := map[string]any{"host": host, "base": baseID, "quote": quoteID}
+	var res struct {
+		webAck
+		MaxSell json.RawMessage `json:"maxSell"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/maxsell", appPass, body, &res); err != nil {
+		return nil, err
+	}
+	return res.MaxSell, nil
+}
+
 // AddressUsed reports whether the asset's wallet has ever received funds at addr,
 // used to warn against deposit-address reuse. Webserver-only route.
 func (c *WebClient) AddressUsed(ctx context.Context, appPass string, assetID uint32, addr string) (bool, error) {

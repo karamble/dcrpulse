@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, FlaskConical } from 'lucide-react';
-import { getDexConfig, getDexMyOrders, cancelDexOrder, type DexConfig, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
+import { getDexConfig, getDexMyOrders, type DexConfig, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { useDexFeed, statsFromCandles, spotToStats, type MarketStats, type MarketSpot } from './useDexFeed';
 import { useDexConn, useDexRefreshOnNotes, useDexSpots, useMMBotRun, useSeedDexSpots } from './DexLiveProvider';
 import { loadDexConfigCache, saveDexConfigCache } from './dexConfigCache';
@@ -14,7 +14,9 @@ import { DexMarketsPanel } from './DexMarketsPanel';
 import { DexChartPanel } from './DexChartPanel';
 import { DexOrderBook } from './DexOrderBook';
 import { DexOrdersPanel } from './DexOrdersPanel';
+import { DexUserOrdersPanel } from './DexUserOrdersPanel';
 import { DexOrderForm } from './DexOrderForm';
+import { useDexCancel } from './DexCancelOrder';
 import { mockMarkets, mockBook, mockStats, mockCandles, mockOrders } from './dexMockData';
 
 const HOST = 'dex.decred.org:7232';
@@ -114,6 +116,10 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   }, [preview]);
   useDexRefreshOnNotes(['order', 'match'], refreshOrders);
 
+  // dcrdex-style cancel: a confirmation modal gated on isCancellable, shared by
+  // the per-market and all-markets order panels. Refetches orders on success.
+  const { requestCancel, modal: cancelModal } = useDexCancel(refreshOrders);
+
   const marketRef = sel
     ? { host: HOST, base: sel.baseID, quote: sel.quoteID, baseConvFactor: sel.baseConvFactor, quoteConvFactor: sel.quoteConvFactor }
     : null;
@@ -121,6 +127,11 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const chartDurs = preview ? ['1h', '24h'] : durs.length ? durs : ['1h'];
 
   const book = preview ? (sel ? mockBook(sel) : EMPTY_BOOK) : live.book;
+  // Best opposing book levels (conventional price) let the order form estimate a
+  // market order's spend/receive: a market buy lifts the best ask, a market sell
+  // hits the best bid.
+  const bestBid = book.buys[0]?.rate;
+  const bestAsk = book.sells[0]?.rate;
   // The connection dot reflects the real DEX server state (connected and
   // authenticated) from the live conn/dex_auth feed; until the first such note
   // arrives, fall back to the order-book relay socket's health.
@@ -248,25 +259,22 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
               {rightTab === 'bot' ? (
                 <DexMMActivity bot={botRun} compact />
               ) : (
-                <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} onPlaced={refreshOrders} />
+                <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} bestBid={bestBid} bestAsk={bestAsk} onPlaced={refreshOrders} />
               )}
             </div>
           ) : (
-            <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} onPlaced={refreshOrders} />
+            <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} bestBid={bestBid} bestAsk={bestAsk} onPlaced={refreshOrders} />
           )}
         </section>
       </div>
 
+      <DexUserOrdersPanel orders={orders} market={sel} preview={preview} onCancel={requestCancel} />
+
       <section className="h-[280px] rounded-xl overflow-hidden border border-border/60 bg-card">
-        <DexOrdersPanel orders={orders} markets={markets} preview={preview} onCancel={async (id) => {
-          try {
-            await cancelDexOrder(id);
-            refreshOrders();
-          } catch {
-            /* ignore */
-          }
-        }} />
+        <DexOrdersPanel orders={orders} markets={markets} preview={preview} onCancel={requestCancel} />
       </section>
+
+      {cancelModal}
     </div>
   );
 };

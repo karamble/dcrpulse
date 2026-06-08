@@ -86,15 +86,88 @@ export interface PlaceOrderParams {
   quote: number;
   isLimit: boolean;
   sell: boolean;
-  qty: number; // atomic
+  qty: number; // atomic (base atoms; for a market buy this is quote atoms)
   rate: number; // atomic message-rate (0 for market orders)
   tifNow: boolean;
+  // options maps an order-option key (e.g. the split-tx toggle) to its stringy
+  // value, mirroring core.TradeForm.Options. Surfaced from the pre-order result.
+  options?: Record<string, string>;
 }
 
 // placeDexOrder submits an order. qty and rate are atomic; the caller converts
 // from conventional units mirroring bisonw's frontend. Spends real funds.
 export const placeDexOrder = async (p: PlaceOrderParams): Promise<void> => {
   await api.post('/dcrdex/trade', p);
+};
+
+// OrderOption is an available order-time option from the pre-order estimate,
+// mirroring dcrdex's asset.OrderOption (asset/options.go, asset/interface.go).
+// Only boolean options (e.g. the split-tx toggle) are surfaced in the form.
+export interface OrderOption {
+  key: string;
+  displayname: string;
+  description: string;
+  default?: string;
+  quoteAssetOnly?: boolean;
+  boolean?: { reason: string };
+  xyRange?: unknown; // range options are not rendered
+}
+
+// SwapEstimate / RedeemEstimate / OrderEstimate mirror dcrdex's asset + core
+// estimate structs. Fee fields are in the fee asset's atoms (swap: the from
+// asset, redeem: the to asset).
+export interface SwapEstimate {
+  lots: number;
+  value: number;
+  maxFees: number;
+  realisticWorstCase: number;
+  realisticBestCase: number;
+  feeReservesPerLot: number;
+}
+export interface RedeemEstimate {
+  realisticWorstCase: number;
+  realisticBestCase: number;
+}
+export interface OrderEstimate {
+  swap: { estimate: SwapEstimate; options?: OrderOption[] };
+  redeem: { estimate: RedeemEstimate; options?: OrderOption[] };
+}
+// MaxOrderEstimate is the largest fundable order from maxbuy/maxsell.
+export interface MaxOrderEstimate {
+  swap: SwapEstimate;
+  redeem: RedeemEstimate;
+}
+
+// PreOrderForm carries the prospective order to the pre-order estimate. Same
+// fields as a trade; no funds are committed.
+export interface PreOrderForm {
+  host: string;
+  base: number;
+  quote: number;
+  isLimit: boolean;
+  sell: boolean;
+  qty: number;
+  rate: number;
+  tifNow: boolean;
+  options?: Record<string, string>;
+}
+
+// preDexOrder fetches the swap/redeem fee estimate and available options for a
+// prospective order. The backend proxies bisonw's webserver /api/preorder.
+export const preDexOrder = async (form: PreOrderForm): Promise<OrderEstimate> => {
+  const { data } = await api.post<OrderEstimate>('/dcrdex/preorder', form);
+  return data;
+};
+
+// maxDexBuy / maxDexSell return the largest order fundable on the market. The
+// buy side needs a rate (atomic message-rate); the sell side does not.
+export const maxDexBuy = async (host: string, base: number, quote: number, rate: number): Promise<MaxOrderEstimate> => {
+  const { data } = await api.post<MaxOrderEstimate>('/dcrdex/maxbuy', { host, base, quote, rate });
+  return data;
+};
+export const maxDexSell = async (host: string, base: number, quote: number): Promise<MaxOrderEstimate> => {
+  const { data } = await api.post<MaxOrderEstimate>('/dcrdex/maxsell', { host, base, quote });
+  return data;
 };
 
 // DexConfig is the registration view of a DEX server. The backend converts the
@@ -166,6 +239,34 @@ export interface DexMatch {
   refund?: string;
 }
 
+// DexCoin is an on-chain coin as carried by the core `match` notification
+// (decred.org/dcrdex/client/core Coin) - unlike the myorders match, which gives
+// only a hex id string, the note carries the formatted id, asset and live
+// confirmation progress.
+export interface DexCoin {
+  id?: string;
+  stringID: string;
+  assetID: number;
+  symbol?: string;
+  confs?: { count: number; required: number };
+}
+
+// DexLiveMatch is a `match` note's match object: same swap/redeem fields as the
+// myorders match but as full coins (with confs), and a numeric status/side. Used
+// as a confirmation overlay on top of the myorders match in the order detail.
+export interface DexLiveMatch {
+  matchID: string;
+  status: number;
+  active?: boolean;
+  revoked?: boolean;
+  side: number; // 0 = maker, 1 = taker
+  swap?: DexCoin;
+  counterSwap?: DexCoin;
+  redeem?: DexCoin;
+  counterRedeem?: DexCoin;
+  refund?: DexCoin;
+}
+
 // DexOrder is a user order from the myorders route (amounts are atomic; rate is
 // an atomic message-rate). The myorders route returns active and recently
 // tracked orders across all markets, not the full archived history.
@@ -194,6 +295,14 @@ export const getDexMyOrders = async (host?: string): Promise<DexOrder[]> => {
   const { data } = await api.get<DexOrder[]>('/dcrdex/myorders', { params: host ? { host } : {} });
   return data || [];
 };
+
+// isCancellable mirrors bisonw's OrderUtil.isCancellable: only a standing limit
+// order still in the epoch/booked stage (and not already cancelling) can be
+// cancelled. A fully matched/executed order, a market order, or an
+// immediate-or-cancel order is never cancellable. Field strings come from the
+// myorders route (type "limit", tif "standing", status "epoch"/"booked").
+export const isCancellable = (o: DexOrder): boolean =>
+  o.type === 'limit' && o.tif === 'standing' && (o.status === 'booked' || o.status === 'epoch') && !o.cancelling;
 
 export const cancelDexOrder = async (orderID: string): Promise<void> => {
   await api.post('/dcrdex/cancel', { orderID });

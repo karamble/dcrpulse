@@ -7,12 +7,12 @@ import { AlertCircle, ChevronRight } from 'lucide-react';
 import {
   getDexConfig,
   getDexMyOrders,
-  cancelDexOrder,
   type DexMarket,
   type DexOrder,
 } from '../../services/dcrdexApi';
 import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
 import { DexOrderDetail } from './DexOrderDetail';
+import { useDexCancel } from './DexCancelOrder';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
 
 const marketKey = (baseID: number, quoteID: number) => `${baseID}-${quoteID}`;
@@ -80,14 +80,7 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
     [orders, marketFilter, statusFilter],
   );
 
-  const onCancel = async (id: string) => {
-    try {
-      await cancelDexOrder(id);
-      refresh();
-    } catch {
-      /* ignore */
-    }
-  };
+  const { requestCancel, modal: cancelModal } = useDexCancel(refresh);
 
   if (err) {
     return (
@@ -111,12 +104,15 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
   const selected = selectedID ? orders.find((o) => o.id === selectedID) : null;
   if (selected) {
     return (
-      <DexOrderDetail
-        order={selected}
-        market={marketByKey[marketKey(selected.baseID, selected.quoteID)]}
-        onBack={() => setSelectedID(null)}
-        onCancel={onCancel}
-      />
+      <>
+        <DexOrderDetail
+          order={selected}
+          market={marketByKey[marketKey(selected.baseID, selected.quoteID)]}
+          onBack={() => setSelectedID(null)}
+          onCancel={requestCancel}
+        />
+        {cancelModal}
+      </>
     );
   }
 

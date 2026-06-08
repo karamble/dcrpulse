@@ -1123,14 +1123,15 @@ func CancelDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req struct {
-		Host    string `json:"host"`
-		IsLimit bool   `json:"isLimit"`
-		Sell    bool   `json:"sell"`
-		Base    uint32 `json:"base"`
-		Quote   uint32 `json:"quote"`
-		Qty     uint64 `json:"qty"`
-		Rate    uint64 `json:"rate"`
-		TifNow  bool   `json:"tifNow"`
+		Host    string            `json:"host"`
+		IsLimit bool              `json:"isLimit"`
+		Sell    bool              `json:"sell"`
+		Base    uint32            `json:"base"`
+		Quote   uint32            `json:"quote"`
+		Qty     uint64            `json:"qty"`
+		Rate    uint64            `json:"rate"`
+		TifNow  bool              `json:"tifNow"`
+		Options map[string]string `json:"options"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" || req.Qty == 0 {
 		http.Error(w, "host and qty are required", http.StatusBadRequest)
@@ -1148,6 +1149,10 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
+	opts := make(map[string]any, len(req.Options))
+	for k, v := range req.Options {
+		opts[k] = v
+	}
 	raw, err := client.Trade(ctx, bisonw.TradeParams{
 		AppPass: appPass,
 		Host:    req.Host,
@@ -1158,7 +1163,98 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		Qty:     req.Qty,
 		Rate:    req.Rate,
 		TifNow:  req.TifNow,
+		Options: opts,
 	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Write(raw)
+}
+
+// PreDcrdexOrderHandler returns bisonw's pre-order estimate (swap + redeem fee
+// estimates and the per-asset order options) for a prospective order, so the
+// order form can show fees and options before the user commits. Read-only; goes
+// through the webserver, which the RPC server has no equivalent for.
+func PreDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		Host    string            `json:"host"`
+		IsLimit bool              `json:"isLimit"`
+		Sell    bool              `json:"sell"`
+		Base    uint32            `json:"base"`
+		Quote   uint32            `json:"quote"`
+		Qty     uint64            `json:"qty"`
+		Rate    uint64            `json:"rate"`
+		TifNow  bool              `json:"tifNow"`
+		Options map[string]string `json:"options"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" || req.Qty == 0 {
+		http.Error(w, "host and qty are required", http.StatusBadRequest)
+		return
+	}
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	raw, err := client.PreOrder(ctx, appPass, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Write(raw)
+}
+
+// MaxDcrdexBuyHandler returns the largest buy order fundable at the given rate on
+// the market, with fee estimates. Webserver-only route.
+func MaxDcrdexBuyHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		Host  string `json:"host"`
+		Base  uint32 `json:"base"`
+		Quote uint32 `json:"quote"`
+		Rate  uint64 `json:"rate"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" || req.Rate == 0 {
+		http.Error(w, "host and rate are required", http.StatusBadRequest)
+		return
+	}
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	raw, err := client.MaxBuy(ctx, appPass, req.Host, req.Base, req.Quote, req.Rate)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Write(raw)
+}
+
+// MaxDcrdexSellHandler returns the largest sell order fundable on the market,
+// with fee estimates. Webserver-only route.
+func MaxDcrdexSellHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		Host  string `json:"host"`
+		Base  uint32 `json:"base"`
+		Quote uint32 `json:"quote"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" {
+		http.Error(w, "host is required", http.StatusBadRequest)
+		return
+	}
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	raw, err := client.MaxSell(ctx, appPass, req.Host, req.Base, req.Quote)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
