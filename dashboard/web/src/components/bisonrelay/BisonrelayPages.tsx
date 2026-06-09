@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { isImageMime } from './embedParser';
 import {
   ArrowLeft,
   ArrowRight,
@@ -669,7 +670,7 @@ const PageSegments = ({
           return <DownloadEmbed key={i} seg={seg} uid={currentUid} />;
         }
         if (seg.kind === 'embed' && seg.data_b64) {
-          const isImage = !!seg.mime && seg.mime.startsWith('image/');
+          const isImage = isImageMime(seg.mime);
           if (isImage) {
             const src = `data:${seg.mime};base64,${seg.data_b64}`;
             return (

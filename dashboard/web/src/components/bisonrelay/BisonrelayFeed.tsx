@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isImageMime } from './embedParser';
 import {
   AlertCircle,
   ArrowLeft,
@@ -1565,7 +1566,7 @@ const PostBodySegments = ({ segments, uid }: { segments: BisonrelayPostBodySegme
           return <DownloadEmbed key={i} seg={seg} uid={uid} />;
         }
         if (seg.kind === 'embed' && seg.data_b64) {
-          const isImage = !!seg.mime && seg.mime.startsWith('image/');
+          const isImage = isImageMime(seg.mime);
           if (isImage) {
             const src = `data:${seg.mime};base64,${seg.data_b64}`;
             return (

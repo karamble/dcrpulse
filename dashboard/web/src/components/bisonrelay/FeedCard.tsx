@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useState } from 'react';
+import { isImageMime } from './embedParser';
 import {
   Atom,
   Eye,
@@ -76,7 +77,7 @@ const FeedCardMedia = ({
 // (potentially paid) download; that flow stays in the post detail view.
 const PaidEmbedChip = ({ embed }: { embed: BisonrelayPostEmbedMeta }) => {
   const name = embed.filename || embed.alt || 'file';
-  const isImg = !!embed.mime && embed.mime.startsWith('image/');
+  const isImg = isImageMime(embed.mime);
   const meta = [
     embed.size ? formatDownloadBytes(embed.size) : '',
     embed.cost && embed.cost > 0 ? `${formatDcrFromAtoms(embed.cost)} DCR` : 'free',
@@ -123,7 +124,7 @@ export const FeedCard = ({
 
   const img = post.first_image && post.first_image.has_data ? post.first_image : null;
   const imageEmbeds = (post.embeds ?? []).filter(
-    (e) => e.mime && e.mime.startsWith('image/') && e.has_data,
+    (e) => isImageMime(e.mime) && e.has_data,
   );
   const extraImages = img ? Math.max(0, imageEmbeds.length - 1) : 0;
   const paidEmbed = (post.embeds ?? []).find((e) => e.download && !e.has_data);

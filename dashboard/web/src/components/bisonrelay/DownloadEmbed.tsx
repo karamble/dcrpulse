@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useRef, useState } from 'react';
+import { isImageMime } from './embedParser';
 import {
   BisonrelayLiveEvent,
   bisonrelayContentFileUrl,
@@ -63,7 +64,7 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
   const fid = seg.download || '';
   const filename = seg.filename || seg.name || 'file';
   const cost = seg.cost || 0;
-  const isImage = !!seg.mime && seg.mime.startsWith('image/');
+  const isImage = isImageMime(seg.mime);
   const [phase, setPhase] = useState<
     'idle' | 'confirm' | 'downloading' | 'mismatch' | 'ready' | 'error'
   >('idle');

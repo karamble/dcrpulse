@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -218,6 +219,44 @@ func fetchVSPRegistry(ctx context.Context) ([]types.VSPInfo, error) {
 	return out, nil
 }
 
+// disallowedProbeIP reports whether ip is in a range an outbound probe must not
+// reach, so a user-supplied VSP host cannot be used to reach the local host, the
+// docker network, or a cloud metadata service (SSRF).
+func disallowedProbeIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast()
+}
+
+// vspHTTPClient probes VSP hosts. It refuses redirects and refuses to connect to
+// any non-public address, dialing the validated IP directly to avoid a
+// DNS-rebinding window between the check and the connect.
+var vspHTTPClient = &http.Client{
+	Timeout: vspProbeTimeout,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return fmt.Errorf("redirects are not allowed")
+	},
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if disallowedProbeIP(ip.IP) {
+					return nil, fmt.Errorf("refusing to connect to non-public address %s", ip.IP)
+				}
+			}
+			d := &net.Dialer{Timeout: 15 * time.Second}
+			return d.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+		},
+	},
+}
+
 // GetVSPInfo probes a single VSP host's /api/v3/vspinfo for its pubkey + fee.
 func GetVSPInfo(ctx context.Context, host string) (*types.VSPInfo, error) {
 	// VSP communication is https only; force the scheme even if a http:// host
@@ -230,7 +269,7 @@ func GetVSPInfo(ctx context.Context, host string) (*types.VSPInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("vsp info request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := vspHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vsp info: %w", err)
 	}

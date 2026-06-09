@@ -913,7 +913,9 @@ func piPost(ctx context.Context, path string, body any, out any) error {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("politeia %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(b)))
 	}
-	dec := json.NewDecoder(resp.Body)
+	// Cap the decoded response so a compromised or misbehaving Politeia host
+	// cannot exhaust memory with an unbounded body.
+	dec := json.NewDecoder(io.LimitReader(resp.Body, 16<<20))
 	return dec.Decode(out)
 }
 

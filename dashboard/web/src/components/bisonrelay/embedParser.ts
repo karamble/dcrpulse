@@ -175,8 +175,19 @@ export function embedFileUrl(localFilename: string): string {
   return `/api/br/embeds/${contact}/${encodeURIComponent(filename)}`;
 }
 
-export function isImageMime(mime: string): boolean {
-  return /^image\//i.test(mime);
+// ALLOWED_IMAGE_MIMES are the raster image types we render inline. SVG and any
+// other type are intentionally excluded: peer-supplied embeds are rendered via
+// data: URIs in <img>, so limiting to known-safe raster formats avoids
+// SVG-script and MIME-sniffing edge cases.
+const ALLOWED_IMAGE_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]);
+
+export function isImageMime(mime?: string): boolean {
+  return ALLOWED_IMAGE_MIMES.has((mime || '').toLowerCase().trim());
 }
 
 export function formatBytes(n: number): string {
