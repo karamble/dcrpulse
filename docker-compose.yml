@@ -8,7 +8,7 @@ services:
     container_name: dcrpulse-dcrd
     ports:
       - "9108:9108"
-      - "9109:9109"
+      - "127.0.0.1:9109:9109"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data
     environment:
@@ -44,8 +44,8 @@ services:
         DCRWALLET_VERSION: ${DCRWALLET_VERSION:-release-v2.1.5}
     container_name: dcrpulse-dcrwallet
     ports:
-      - "9110:9110"
-      - "9111:9111"
+      - "127.0.0.1:9110:9110"
+      - "127.0.0.1:9111:9111"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data
     environment:
@@ -109,7 +109,7 @@ services:
       context: ./brclientd
     container_name: dcrpulse-brclientd
     ports:
-      - "7677:7677"
+      - "127.0.0.1:7677:7677"
     entrypoint: ["/bin/sh", "/supervisor.sh"]
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
