@@ -32,6 +32,7 @@ import {
   getBisonrelayContacts,
   getBisonrelayDownloads,
   getBisonrelayGCHistory,
+  getBisonrelayIdentity,
   getBisonrelayMessages,
   joinDecredPulse,
   listBisonrelayGCInvites,
@@ -117,6 +118,23 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     () => gcs.some((g) => g.name === DECRED_PULSE_GC || g.alias === DECRED_PULSE_GC),
     [gcs]
   );
+  // Our own identity in hex, to resolve "ourself" in member lists (the local
+  // user is never in our own contacts). Best-effort; consumers fall back to the
+  // raw uid if it is unavailable.
+  const [ownUid, setOwnUid] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    getBisonrelayIdentity()
+      .then((id) => {
+        if (!cancelled && id?.identity) setOwnUid(brIdentityToHex(id.identity));
+      })
+      .catch(() => {
+        /* ignore; sidebar falls back to the raw uid */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -1348,6 +1366,8 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         <GroupSubNav
           gc={selectedGroup}
           contactsByUid={knownContactsByUid}
+          ownUid={ownUid}
+          ownNick={ownNick}
           onClose={() => setShowGroupSubNav(false)}
           onMutated={refreshGCs}
           onPartedOrKilled={() => {
@@ -1785,13 +1805,34 @@ const JoinDecredPulseModal = ({
     <Modal title="Join Decred chat networks" onClose={onClose}>
       {phase === 'intro' && (
         <>
+          <p className="text-sm font-medium">Go public and meet the Decred community.</p>
           <p className="text-sm text-muted-foreground">
-            If you want to go public and join your first chat room run by the
-            Decred community, you can do this now. We will ask the Decred Pulse
-            welcome bot for an invite, exchange keys with it, and add you to the
-            "Decred Pulse" group chat. This step is optional and involves no
-            funds.
+            Join the "Decred Pulse" welcome room to get started:
           </p>
+          <ul className="text-sm text-muted-foreground space-y-1.5">
+            <li className="flex gap-2">
+              <span className="text-primary shrink-0">•</span>
+              <span>
+                <span className="font-medium text-foreground">Instant contacts</span> - everyone
+                already in the room becomes someone you can message.
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-primary shrink-0">•</span>
+              <span>
+                <span className="font-medium text-foreground">More rooms</span> - branch out into
+                other community rooms from there.
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-primary shrink-0">•</span>
+              <span>
+                <span className="font-medium text-foreground">Your first followers</span> - members
+                start seeing your posts automatically, so you have an audience from day one.
+              </span>
+            </li>
+          </ul>
+          <p className="text-xs text-muted-foreground">Optional, private, and free.</p>
           <div className="flex justify-end gap-2">
             <button
               onClick={onClose}
@@ -2055,6 +2096,24 @@ const Modal = ({
     </div>
   </div>
 );
+
+// brIdentityToHex normalizes a BR identity to 64-char hex. /br/identity returns
+// the local identity base64-encoded, whereas GC member uids are hex; contacts
+// are already hex and pass through unchanged.
+function brIdentityToHex(s: string): string {
+  if (/^[0-9a-f]{64}$/i.test(s)) return s;
+  try {
+    const bin = atob(s);
+    if (bin.length !== 32) return s;
+    let hex = '';
+    for (let i = 0; i < bin.length; i++) {
+      hex += bin.charCodeAt(i).toString(16).padStart(2, '0');
+    }
+    return hex;
+  } catch {
+    return s;
+  }
+}
 
 function displayNick(c: BisonrelayContact): string {
   return c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || 'unknown';

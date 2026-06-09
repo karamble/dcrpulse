@@ -42,12 +42,16 @@ import {
 export const GroupSubNav = ({
   gc,
   contactsByUid,
+  ownUid,
+  ownNick,
   onClose,
   onMutated,
   onPartedOrKilled,
 }: {
   gc: BisonrelayGC;
   contactsByUid: Map<string, BisonrelayContact>;
+  ownUid: string;
+  ownNick: string;
   onClose: () => void;
   onMutated: () => void;
   onPartedOrKilled: () => void;
@@ -94,20 +98,20 @@ export const GroupSubNav = ({
   }, [onClose, modal]);
 
   const nickFor = (uid: string): string => {
+    if (ownUid && uid === ownUid) return `${ownNick || 'You'} (you)`;
     const c = contactsByUid.get(uid);
     return c?.nick_alias || c?.id?.nick || uid.slice(0, 12);
   };
 
   const adminSet = new Set([detail.owner, ...(detail.extra_admins ?? [])]);
   const blockedSet = new Set(detail.blocked ?? []);
-  const selfUid = detail.owner; // approximate; only used for "you" label fallback
 
   const memberRows = detail.members.map((uid) => ({
     uid,
     isOwner: uid === detail.owner,
     isAdmin: adminSet.has(uid),
     isBlocked: blockedSet.has(uid),
-    isSelf: detail.local_is_owner && uid === selfUid,
+    isSelf: !!ownUid && uid === ownUid,
   }));
 
   return (
