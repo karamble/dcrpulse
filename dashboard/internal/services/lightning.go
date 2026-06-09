@@ -132,10 +132,10 @@ func ensureLightningAccountPassphrase(ctx context.Context, acctNum uint32, passp
 }
 
 func writeSentinel(account uint32) error {
-	if err := os.MkdirAll(filepath.Dir(sentinelPath()), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(sentinelPath()), 0o700); err != nil {
 		return fmt.Errorf("create dcrlnd state dir: %w", err)
 	}
-	return os.WriteFile(sentinelPath(), []byte(strconv.FormatUint(uint64(account), 10)), 0o644)
+	return os.WriteFile(sentinelPath(), []byte(strconv.FormatUint(uint64(account), 10)), 0o600)
 }
 
 // readSentinelAccount returns the dcrwallet account number stored in
