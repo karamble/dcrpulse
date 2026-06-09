@@ -409,17 +409,19 @@ export const getDexWallets = async (): Promise<DexWalletState[]> => {
   return data || [];
 };
 
-// newDexDepositAddress fetches a fresh Decred deposit address for the DEX wallet
-// (dcrwallet hands out its next unused address), avoiding deposit-address reuse.
-export const newDexDepositAddress = async (): Promise<string> => {
-  const { data } = await api.post<{ address: string }>('/dcrdex/wallet/new-address');
+// newDexDepositAddress fetches a fresh deposit address for an asset's DEX wallet
+// (the asset backend hands out its next unused address), avoiding address reuse.
+export const newDexDepositAddress = async (assetID: number): Promise<string> => {
+  const { data } = await api.post<{ address: string }>('/dcrdex/wallet/new-address', null, {
+    params: { assetID },
+  });
   return data.address;
 };
 
-// dexAddressUsed reports whether a Decred address has already received funds.
-export const dexAddressUsed = async (addr: string): Promise<boolean> => {
+// dexAddressUsed reports whether an address has already received funds.
+export const dexAddressUsed = async (assetID: number, addr: string): Promise<boolean> => {
   const { data } = await api.get<{ used: boolean }>('/dcrdex/wallet/address-used', {
-    params: { addr },
+    params: { assetID, addr },
   });
   return !!data.used;
 };
@@ -428,6 +430,7 @@ export const dexAddressUsed = async (addr: string): Promise<boolean> => {
 // actions, mirroring the upstream wallet UI.
 export const WalletTrait = {
   Rescanner: 1 << 0,
+  NewAddresser: 1 << 1,
   Withdrawer: 1 << 6,
   PeerManager: 1 << 10,
   Historian: 1 << 16,

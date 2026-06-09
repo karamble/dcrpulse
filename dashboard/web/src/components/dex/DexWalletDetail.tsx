@@ -126,7 +126,10 @@ export const DexWalletDetail = ({
   const [addrUsed, setAddrUsed] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showQr, setShowQr] = useState(false);
-  const isDcr = wallet.assetID === 42;
+  // The "Generate new address" flow and reuse warning apply only to wallets that
+  // can hand out fresh addresses (UTXO chains: DCR, BTC, LTC). Account-based EVM
+  // chains reuse one static address and do not set the NewAddresser trait.
+  const canNewAddress = hasTrait(wallet.traits, WalletTrait.NewAddresser);
   const assetInfo = useMemo(() => dexAssetForId(catalog, wallet.assetID), [catalog, wallet.assetID]);
 
   // Reset the shown address when the selected wallet (or its persisted address)
@@ -145,15 +148,15 @@ export const DexWalletDetail = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [showQr]);
 
-  // Flag deposit-address reuse for the Decred wallet. A freshly generated address
-  // returns used=false, so this clears the warning after "Generate new address".
+  // Flag deposit-address reuse. A freshly generated address returns used=false, so
+  // this clears the warning after "Generate new address".
   useEffect(() => {
-    if (!isDcr || !addr) {
+    if (!canNewAddress || !addr) {
       setAddrUsed(false);
       return;
     }
     let cancelled = false;
-    dexAddressUsed(addr)
+    dexAddressUsed(wallet.assetID, addr)
       .then((u) => {
         if (!cancelled) setAddrUsed(u);
       })
@@ -161,14 +164,14 @@ export const DexWalletDetail = ({
     return () => {
       cancelled = true;
     };
-  }, [isDcr, addr]);
+  }, [canNewAddress, wallet.assetID, addr]);
 
   const generateAddr = async () => {
     if (generating) return;
     setGenerating(true);
     setErr(null);
     try {
-      const a = await newDexDepositAddress();
+      const a = await newDexDepositAddress(wallet.assetID);
       setAddr(a);
       setAddrUsed(false);
     } catch (e: any) {
@@ -289,7 +292,7 @@ export const DexWalletDetail = ({
                   {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
                 </button>
               </div>
-              {isDcr && addrUsed && (
+              {canNewAddress && addrUsed && (
                 <div className="p-2.5 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                   <span>
@@ -298,7 +301,7 @@ export const DexWalletDetail = ({
                   </span>
                 </div>
               )}
-              {isDcr && (
+              {canNewAddress && (
                 <button
                   type="button"
                   onClick={generateAddr}

@@ -417,10 +417,26 @@ func convToAtoms(amount float64, convFactor uint64) uint64 {
 	return uint64(math.Round(amount * float64(convFactor)))
 }
 
-// NewDexDepositAddressHandler returns a fresh Decred deposit address for the DEX
-// wallet so the user can avoid reusing the persisted bond-funding address. The
+// dexAssetID parses the assetID query parameter, defaulting to Decred when it is
+// absent. Only assets whose wallet is a NewAddresser (BTC, LTC, DCR) ever supply
+// one; account-based chains reuse a static address and never reach this path.
+func dexAssetID(r *http.Request) uint32 {
+	v := r.URL.Query().Get("assetID")
+	if v == "" {
+		return bisonw.AssetDCR
+	}
+	id, err := strconv.ParseUint(v, 10, 32)
+	if err != nil {
+		return bisonw.AssetDCR
+	}
+	return uint32(id)
+}
+
+// NewDexDepositAddressHandler returns a fresh deposit address for the DEX wallet
+// of the requested asset so the user can avoid reusing the persisted address. The
 // new-address route lives only on bisonw's webserver, so this uses the web
-// client; dcrwallet manages the address index and returns its next unused one.
+// client; the asset backend manages the address index and returns its next unused
+// one.
 func NewDexDepositAddressHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	client, appPass, ok := mmWebClient(w)
@@ -429,7 +445,7 @@ func NewDexDepositAddressHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	addr, err := client.NewDepositAddress(ctx, appPass, bisonw.AssetDCR)
+	addr, err := client.NewDepositAddress(ctx, appPass, dexAssetID(r))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -437,8 +453,8 @@ func NewDexDepositAddressHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"address": addr})
 }
 
-// DexAddressUsedHandler reports whether a Decred address has already received
-// funds, used to warn against deposit-address reuse on the Wallets page.
+// DexAddressUsedHandler reports whether an address has already received funds,
+// used to warn against deposit-address reuse on the Wallets page.
 func DexAddressUsedHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	addr := r.URL.Query().Get("addr")
@@ -452,7 +468,7 @@ func DexAddressUsedHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	used, err := client.AddressUsed(ctx, appPass, bisonw.AssetDCR, addr)
+	used, err := client.AddressUsed(ctx, appPass, dexAssetID(r), addr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
