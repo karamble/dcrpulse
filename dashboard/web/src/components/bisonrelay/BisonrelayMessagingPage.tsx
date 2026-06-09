@@ -17,6 +17,7 @@ import {
   Paperclip,
   Send,
   UserPlus,
+  Users,
   X,
 } from 'lucide-react';
 import {
@@ -25,12 +26,15 @@ import {
   BisonrelayGC,
   BisonrelayMessage,
   BisonrelayPMAttachment,
+  acceptBisonrelayGCInvite,
   acceptBisonrelayInvite,
   acceptBisonrelayKxSuggestion,
   getBisonrelayContacts,
   getBisonrelayDownloads,
   getBisonrelayGCHistory,
   getBisonrelayMessages,
+  joinDecredPulse,
+  listBisonrelayGCInvites,
   listBisonrelayGCs,
   sendBisonrelayFile,
   sendBisonrelayGCMessage,
@@ -65,6 +69,11 @@ import { IncomingGCInvitesBanner } from './gc/IncomingGCInvitesBanner';
 
 const MAX_INLINE_BYTES = 800 * 1024;
 const MAX_TRANSFER_BYTES = 100 * 1024 * 1024;
+
+// DECRED_PULSE_GC is the name of the community welcome group chat the invite
+// bot adds new users to. The "Join Decred chat networks" action is hidden once
+// the user is already a member.
+const DECRED_PULSE_GC = 'Decred Pulse';
 
 interface StagedAttachment {
   file: File;
@@ -103,6 +112,11 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [sending, setSending] = useState(false);
   const [showInviteCreate, setShowInviteCreate] = useState(false);
   const [showInviteAccept, setShowInviteAccept] = useState(false);
+  const [showJoinDecredPulse, setShowJoinDecredPulse] = useState(false);
+  const inDecredPulse = useMemo(
+    () => gcs.some((g) => g.name === DECRED_PULSE_GC || g.alias === DECRED_PULSE_GC),
+    [gcs]
+  );
   const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -951,6 +965,15 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             >
               <MessageSquare className="h-4 w-4" />
             </button>
+            {!inDecredPulse && (
+              <button
+                onClick={() => setShowJoinDecredPulse(true)}
+                className="p-1.5 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors"
+                title="Join Decred chat networks"
+              >
+                <Users className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
@@ -1083,7 +1106,11 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
 
       <section className={`${selected ? 'flex max-md:fixed max-md:inset-0 max-md:z-20 max-md:rounded-none max-md:border-0 max-md:bg-background' : 'hidden md:flex'} flex-1 min-w-0 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
         {!selected ? (
-          <EmptyThread onCreate={() => setShowInviteCreate(true)} onAccept={() => setShowInviteAccept(true)} />
+          <EmptyThread
+            onCreate={() => setShowInviteCreate(true)}
+            onAccept={() => setShowInviteAccept(true)}
+            onJoin={inDecredPulse ? undefined : () => setShowJoinDecredPulse(true)}
+          />
         ) : (
           <>
             <header className="p-3 border-b border-border/50 flex items-center gap-2">
@@ -1282,6 +1309,12 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               loadMessages(subNavContact);
             }
           }}
+        />
+      )}
+      {showJoinDecredPulse && (
+        <JoinDecredPulseModal
+          onClose={() => setShowJoinDecredPulse(false)}
+          onJoined={refreshGCs}
         />
       )}
       {showInviteCreate && <InviteCreateModal onClose={() => setShowInviteCreate(false)} />}
@@ -1637,9 +1670,11 @@ const SuggestedKXCard = ({
 const EmptyThread = ({
   onCreate,
   onAccept,
+  onJoin,
 }: {
   onCreate: () => void;
   onAccept: () => void;
+  onJoin?: () => void;
 }) => (
   <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
     <MessageSquare className="h-10 w-10 text-muted-foreground" />
@@ -1663,8 +1698,142 @@ const EmptyThread = ({
         <MessageSquare className="h-3.5 w-3.5" /> Import invite
       </button>
     </div>
+    {onJoin && (
+      <button
+        onClick={onJoin}
+        className="px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-primary/20 transition-colors"
+      >
+        <Users className="h-3.5 w-3.5" /> Join Decred chat networks
+      </button>
+    )}
   </div>
 );
+
+// JoinDecredPulseModal walks the user through joining the community "Decred
+// Pulse" group chat via the welcome bot: it requests an invite (no funds), then
+// waits for the bot's group-chat invite to arrive and auto-accepts it.
+const JoinDecredPulseModal = ({
+  onClose,
+  onJoined,
+}: {
+  onClose: () => void;
+  onJoined: () => void;
+}) => {
+  type Phase = 'intro' | 'joining' | 'waiting' | 'done' | 'timeout' | 'error';
+  const [phase, setPhase] = useState<Phase>('intro');
+  const [err, setErr] = useState<string | null>(null);
+
+  // Once the invite has been requested, poll for the incoming group-chat invite
+  // and accept it as soon as it arrives.
+  useEffect(() => {
+    if (phase !== 'waiting') return;
+    let cancelled = false;
+    let timer = 0;
+    let attempts = 0;
+    const tick = async () => {
+      attempts++;
+      try {
+        const { invites } = await listBisonrelayGCInvites();
+        const inv = invites.find((i) => i.name === DECRED_PULSE_GC && !i.accepted);
+        if (inv) {
+          await acceptBisonrelayGCInvite(inv.id);
+          if (cancelled) return;
+          onJoined();
+          setPhase('done');
+          timer = window.setTimeout(() => {
+            if (!cancelled) onClose();
+          }, 1500);
+          return;
+        }
+      } catch {
+        // Keep polling; transient errors are expected while KX completes.
+      }
+      if (cancelled) return;
+      if (attempts >= 40) {
+        setPhase('timeout');
+        return;
+      }
+      timer = window.setTimeout(tick, 3000);
+    };
+    timer = window.setTimeout(tick, 3000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [phase, onClose, onJoined]);
+
+  const confirm = async () => {
+    setErr(null);
+    setPhase('joining');
+    try {
+      await joinDecredPulse();
+      setPhase('waiting');
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Request failed');
+      setPhase('error');
+    }
+  };
+
+  return (
+    <Modal title="Join Decred chat networks" onClose={onClose}>
+      {phase === 'intro' && (
+        <>
+          <p className="text-sm text-muted-foreground">
+            If you want to go public and join your first chat room run by the
+            Decred community, you can do this now. We will ask the Decred Pulse
+            welcome bot for an invite, exchange keys with it, and add you to the
+            "Decred Pulse" group chat. This step is optional and involves no
+            funds.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirm}
+              className="px-3 py-1.5 rounded-md bg-gradient-primary text-white text-xs font-semibold inline-flex items-center gap-1.5"
+            >
+              <Users className="h-3.5 w-3.5" /> Join Decred Pulse
+            </button>
+          </div>
+        </>
+      )}
+      {(phase === 'joining' || phase === 'waiting') && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>
+            {phase === 'joining'
+              ? 'Requesting an invite…'
+              : 'Key exchange in progress, waiting to join the group…'}
+          </span>
+        </div>
+      )}
+      {phase === 'done' && (
+        <div className="flex items-center gap-2 text-sm text-success">
+          <Check className="h-4 w-4" />
+          <span>You have joined Decred Pulse.</span>
+        </div>
+      )}
+      {phase === 'timeout' && (
+        <p className="text-sm text-muted-foreground">
+          Your request was sent. The group invite can take a moment to arrive;
+          when it does you can accept it from the invites banner at the top of
+          this page.
+        </p>
+      )}
+      {phase === 'error' && (
+        <div className="flex items-start gap-2 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>{err}</span>
+        </div>
+      )}
+    </Modal>
+  );
+};
 
 const InviteCreateModal = ({ onClose }: { onClose: () => void }) => {
   const [invite, setInvite] = useState<{ invite_bytes: string; invite_key: string } | null>(null);

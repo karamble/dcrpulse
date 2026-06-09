@@ -430,6 +430,7 @@ func main() {
 	api.HandleFunc("/br/pm", handlers.BisonrelayPMHandler).Methods("POST")
 	api.HandleFunc("/br/invites/write", handlers.BisonrelayInviteWriteHandler).Methods("POST")
 	api.HandleFunc("/br/invites/accept", handlers.BisonrelayInviteAcceptHandler).Methods("POST")
+	api.HandleFunc("/br/join-decred-pulse", handlers.JoinDecredPulseHandler).Methods("POST")
 	api.HandleFunc("/br/events", handlers.BisonrelayEventsHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")

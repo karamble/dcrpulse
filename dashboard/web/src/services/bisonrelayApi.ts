@@ -371,6 +371,14 @@ export const acceptBisonrelayInvite = async (invite: string): Promise<void> => {
   await api.post('/br/invites/accept', { invite });
 };
 
+// joinDecredPulse asks the Decred Pulse welcome bot for an invite into the
+// community "Decred Pulse" group chat and redeems it locally, starting key
+// exchange with the bot. The group-chat invite arrives separately once KX
+// completes.
+export const joinDecredPulse = async (): Promise<void> => {
+  await api.post('/br/join-decred-pulse');
+};
+
 export const renameBisonrelayContact = async (
   uid: string,
   newNick: string,

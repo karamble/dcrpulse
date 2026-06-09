@@ -74,7 +74,8 @@ const (
 // "network_status") survive round-trip via the raw-JSON layer; add a
 // constant here when we wire a feature that calls the matching endpoint.
 const (
-	ExternalRequestVSPListing = "stakepool_listing"
-	ExternalRequestPoliteia   = "politeia"
-	ExternalRequestBrseeder   = "brseeder"
+	ExternalRequestVSPListing     = "stakepool_listing"
+	ExternalRequestPoliteia       = "politeia"
+	ExternalRequestBrseeder       = "brseeder"
+	ExternalRequestDecredPulseBot = "decred_pulse_bot"
 )
