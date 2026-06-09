@@ -21,11 +21,12 @@ import (
 )
 
 // The Decred Pulse invite bot (brulse) is an external service that issues a
-// Bison Relay invite into the community "Decred Pulse" group chat. Its base URL
-// is provided via the BRULSE_API_URL environment variable; when unset the
-// feature is unavailable.
+// Bison Relay invite into the community "Decred Pulse" group chat. It defaults
+// to the community-hosted instance; set BRULSE_API_URL to override (for example
+// to a local instance during development or a TLS-fronted endpoint).
 const (
-	decredPulseBotTimeout = 20 * time.Second
+	defaultDecredPulseBotURL = "http://brulse.decredcommunity.org:8080"
+	decredPulseBotTimeout    = 20 * time.Second
 	// powSolveCap bounds the proof-of-work search so a misbehaving or
 	// overly-difficult challenge cannot spin forever.
 	powSolveCap = 1 << 28
@@ -49,10 +50,14 @@ func DecredPulseBotEnabled() bool {
 	return v
 }
 
-// decredPulseBotURL returns the configured brulse base URL with any trailing
-// slash removed, or "" when unset.
+// decredPulseBotURL returns the brulse base URL with any trailing slash
+// removed, honoring the BRULSE_API_URL override and otherwise falling back to
+// the community-hosted instance.
 func decredPulseBotURL() string {
-	return strings.TrimRight(os.Getenv("BRULSE_API_URL"), "/")
+	if v := strings.TrimRight(os.Getenv("BRULSE_API_URL"), "/"); v != "" {
+		return v
+	}
+	return defaultDecredPulseBotURL
 }
 
 type botChallenge struct {
@@ -70,9 +75,6 @@ func RequestDecredPulseInvite(ctx context.Context, pubkeyHex string) (string, er
 		return "", fmt.Errorf("Decred Pulse bot requests are disabled in settings")
 	}
 	base := decredPulseBotURL()
-	if base == "" {
-		return "", fmt.Errorf("invite bot is not configured (BRULSE_API_URL unset)")
-	}
 
 	ctx, cancel := context.WithTimeout(ctx, decredPulseBotTimeout)
 	defer cancel()

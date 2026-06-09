@@ -1733,10 +1733,10 @@ const JoinDecredPulseModal = ({
     const tick = async () => {
       attempts++;
       try {
-        const { invites } = await listBisonrelayGCInvites();
-        const inv = invites.find((i) => i.name === DECRED_PULSE_GC && !i.accepted);
-        if (inv) {
-          await acceptBisonrelayGCInvite(inv.id);
+        // Success is membership in the group chat, regardless of which path
+        // accepted the invite (this modal or the incoming-invites banner).
+        const groups = await listBisonrelayGCs();
+        if (groups.some((g) => g.name === DECRED_PULSE_GC || g.alias === DECRED_PULSE_GC)) {
           if (cancelled) return;
           onJoined();
           setPhase('done');
@@ -1744,6 +1744,12 @@ const JoinDecredPulseModal = ({
             if (!cancelled) onClose();
           }, 1500);
           return;
+        }
+        // Accept the bot's group-chat invite as soon as it arrives.
+        const { invites } = await listBisonrelayGCInvites();
+        const inv = invites.find((i) => i.name === DECRED_PULSE_GC && !i.accepted);
+        if (inv) {
+          await acceptBisonrelayGCInvite(inv.id);
         }
       } catch {
         // Keep polling; transient errors are expected while KX completes.
