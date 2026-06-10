@@ -8,7 +8,7 @@ import { getDexConfig, getDexMyOrders, orderHasActiveMatches, type DexConfig, ty
 import { useDexFeed, statsFromCandles, spotToStats, type MarketStats, type MarketSpot } from './useDexFeed';
 import { useDexConn, useDexRefreshOnNotes, useDexSpots, useMMBotRun, useSeedDexSpots } from './DexLiveProvider';
 import { loadDexConfigCache, saveDexConfigCache } from './dexConfigCache';
-import { DexMMActivity } from './DexMMActivity';
+import { DexMMRunningCard } from './DexMMRunningCard';
 import { DexStatsBar } from './DexStatsBar';
 import { DexMarketsPanel } from './DexMarketsPanel';
 import { DexChartPanel } from './DexChartPanel';
@@ -167,17 +167,13 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const statsFor = (m: DexMarket): MarketStats | null =>
     preview ? mockStats(m) : sameSel(m) ? liveStats ?? spotStats(m) : spotStats(m);
 
-  // When a market-maker bot is running on the selected market, the right-bottom
-  // panel offers a Bot activity tab alongside the order form, defaulting to Bot.
+  // When a market-maker bot is running on the selected market, manual trading is
+  // blocked (mirrors bisonw): the order form is replaced by a running-bot card.
   const botRun = useMMBotRun(HOST, sel?.baseID ?? -1, sel?.quoteID ?? -1);
   const botRunning = !preview && !!botRun?.running;
-  const [rightTab, setRightTab] = useState<'order' | 'bot'>('order');
   // Below lg the four trading panes don't fit side by side; a segmented control
   // shows one at a time. The lg grid is unchanged.
   const [mobilePane, setMobilePane] = useState<'markets' | 'chart' | 'book' | 'trade'>('chart');
-  useEffect(() => {
-    setRightTab(botRunning ? 'bot' : 'order');
-  }, [botRunning]);
 
   if (!sel) {
     // No market list at all (nothing cached yet). While the server is not
@@ -251,37 +247,14 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
             levels show and the Trades tab's match history scrolls inside it
             (rather than stretching the page); the trade card flows below. */}
         <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-[calc(100vh-13rem)] lg:block lg:col-start-3 lg:row-start-1 ${mobilePane === 'book' ? '' : 'hidden'}`}>
-          <DexOrderBook market={sel} book={book} mineTokens={mineTokens} onPick={onPick} />
+          <DexOrderBook market={sel} book={book} mineTokens={mineTokens} onPick={botRunning ? undefined : onPick} />
         </section>
 
         {/* Trade card: under the order book, shown in full (the page scrolls);
             spans the lower rows, leaving room for more cards. */}
         <section className={`bg-card min-h-0 min-w-0 h-[70vh] overflow-y-auto lg:h-auto lg:overflow-visible lg:block lg:col-start-3 lg:row-start-2 lg:row-span-2 ${mobilePane === 'trade' ? '' : 'hidden'}`}>
           {botRunning && botRun ? (
-            <div className="flex flex-col h-full">
-              <div className="flex border-b border-border/50 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setRightTab('order')}
-                  className={`flex-1 py-2 ${rightTab === 'order' ? 'text-foreground border-b-2 border-primary -mb-px' : 'text-muted-foreground'}`}
-                >
-                  Order form
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRightTab('bot')}
-                  className={`flex-1 py-2 flex items-center justify-center gap-1.5 ${rightTab === 'bot' ? 'text-foreground border-b-2 border-primary -mb-px' : 'text-muted-foreground'}`}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-                  Bot
-                </button>
-              </div>
-              {rightTab === 'bot' ? (
-                <DexMMActivity bot={botRun} compact />
-              ) : (
-                <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} bestBid={bestBid} bestAsk={bestAsk} onPlaced={refreshOrders} />
-              )}
-            </div>
+            <DexMMRunningCard bot={botRun} />
           ) : (
             <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} bestBid={bestBid} bestAsk={bestAsk} onPlaced={refreshOrders} />
           )}
