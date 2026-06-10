@@ -21,6 +21,7 @@ import {
 import { useMMRefresh, useMMStatus } from './DexLiveProvider';
 import { CoinIcon } from './CoinIcon';
 import { CexIcon, CEX_DISPLAY, SUPPORTED_CEXES } from './CexIcon';
+import { fmtAmt } from './dexFormat';
 import { DexMMActivity } from './DexMMActivity';
 import { DexMMRunLogs } from './DexMMRunLogs';
 import { DexMMWizard } from './DexMMWizard';
@@ -195,18 +196,38 @@ export const DexMMPanel = () => {
           {SUPPORTED_CEXES.map((c) => {
             const st = cexes[c];
             const configured = !!st?.config;
+            const bals = Object.entries(st?.balances ?? {}).filter(([, b]) => b.available + b.locked > 0);
             return (
-              <div key={c} className="flex items-center gap-2 text-sm">
-                <CexIcon name={c} className="h-5 w-5" />
-                <span>{CEX_DISPLAY[c] || c}</span>
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    st?.connected ? 'bg-success' : configured ? 'bg-warning' : 'bg-muted-foreground/40'
-                  }`}
-                />
-                <span className="text-xs text-muted-foreground">
-                  {st?.connected ? 'connected' : configured ? 'configured' : 'not set'}
-                </span>
+              <div key={c} className="flex flex-col gap-1 min-w-[140px]">
+                <div className="flex items-center gap-2 text-sm">
+                  <CexIcon name={c} className="h-5 w-5" />
+                  <span>{CEX_DISPLAY[c] || c}</span>
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      st?.connected ? 'bg-success' : configured ? 'bg-warning' : 'bg-muted-foreground/40'
+                    }`}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {st?.connected ? 'connected' : configured ? 'configured' : 'not set'}
+                  </span>
+                </div>
+                {st?.connected && bals.length > 0 && (
+                  <div className="space-y-0.5 text-[11px] font-mono tabular-nums pl-7">
+                    {bals.map(([id, b]) => {
+                      const { symbol, convFactor } = assetOf(Number(id));
+                      const conv = (v: number) => fmtAmt(v / (convFactor || 1), 4);
+                      return (
+                        <div key={id} className="flex items-center justify-between gap-2">
+                          <span className="text-muted-foreground">{symbol}</span>
+                          <span>
+                            {conv(b.available)}
+                            {b.locked > 0 && <span className="text-muted-foreground/60"> (+{conv(b.locked)} locked)</span>}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}

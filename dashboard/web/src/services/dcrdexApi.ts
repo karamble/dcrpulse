@@ -953,6 +953,9 @@ export interface MMCexStatus {
   // markets is the CEX's supported market list (bisonw libxc.Market), keyed by
   // the CEX's own market id; used to tell which pairs a CEX can arbitrage.
   markets?: Record<string, { baseID: number; quoteID: number }>;
+  // balances are the CEX's per-asset holdings (bisonw libxc.ExchangeBalance),
+  // keyed by asset id, in atomic units. Populated once the CEX is connected.
+  balances?: Record<number, { available: number; locked: number }>;
 }
 export interface MMStatus {
   bots: MMBotStatus[];
