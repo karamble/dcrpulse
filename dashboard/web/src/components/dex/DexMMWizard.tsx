@@ -157,6 +157,7 @@ export const DexMMWizard = ({
           initial={draft}
           editing={editing}
           report={report}
+          catalog={catalog}
           onChangeMarket={() => setStep('market')}
           onChangeBotType={() => setStep('type')}
           onSave={handleSave}

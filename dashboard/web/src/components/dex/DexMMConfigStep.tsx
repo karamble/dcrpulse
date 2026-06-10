@@ -2,17 +2,26 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Pencil, Plus, X } from 'lucide-react';
-import type { DexMarket, MMBotConfig, MMGapStrategy, MMMarketReport } from '../../services/dcrdexApi';
+import {
+  multiFundingOptsForAsset,
+  type DexAsset,
+  type DexMarket,
+  type MMBotConfig,
+  type MMGapStrategy,
+  type MMMarketReport,
+} from '../../services/dcrdexApi';
 import { CoinIcon } from './CoinIcon';
 import { CexIcon } from './CexIcon';
 import { fmtUsd } from './dexFormat';
 import { DexMMPlacementsChart } from './DexMMPlacementsChart';
 import { DexMMOracleTable } from './DexMMOracleTable';
+import { DexMMWalletOptions } from './DexMMWalletOptions';
 import {
   buildBotConfig,
   defaultQuick,
+  defaultWalletOptions,
   deriveQuickPlacements,
   GAP_STRATEGIES,
   type ConfigDraft,
@@ -83,6 +92,7 @@ export const DexMMConfigStep = ({
   initial,
   editing,
   report,
+  catalog,
   onChangeMarket,
   onChangeBotType,
   onSave,
@@ -94,6 +104,7 @@ export const DexMMConfigStep = ({
   initial: ConfigDraft;
   editing: boolean;
   report: MMMarketReport | null;
+  catalog: DexAsset[];
   onChangeMarket: () => void;
   onChangeBotType: () => void;
   onSave: (cfg: MMBotConfig) => Promise<void>;
@@ -108,6 +119,20 @@ export const DexMMConfigStep = ({
   const [quick, setQuick] = useState<QuickDraft>(defaultQuick);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const baseOpts = useMemo(() => multiFundingOptsForAsset(catalog, market.baseID), [catalog, market.baseID]);
+  const quoteOpts = useMemo(() => multiFundingOptsForAsset(catalog, market.quoteID), [catalog, market.quoteID]);
+
+  // Seed the wallet funding options with their defaults (multisplit on) once the
+  // catalog loads, preserving any values loaded from a saved config.
+  useEffect(() => {
+    if (!baseOpts.length && !quoteOpts.length) return;
+    setDraft((d) => ({
+      ...d,
+      baseWalletOptions: { ...defaultWalletOptions(baseOpts, false), ...d.baseWalletOptions },
+      quoteWalletOptions: { ...defaultWalletOptions(quoteOpts, true), ...d.quoteWalletOptions },
+    }));
+  }, [baseOpts, quoteOpts]);
 
   // applyQuick updates a quick field and recomputes the derived draft so the
   // Advanced tables stay in sync, mirroring v1.0.6 quickConfigUpdated.
@@ -405,6 +430,28 @@ export const DexMMConfigStep = ({
       )}
 
       <DexMMOracleTable market={market} report={report} />
+
+      {(baseOpts.length > 0 || quoteOpts.length > 0) && (
+        <div className="space-y-2">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70">Wallet options</span>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <DexMMWalletOptions
+              assetSymbol={market.base}
+              opts={baseOpts}
+              isQuote={false}
+              value={draft.baseWalletOptions}
+              onChange={(v) => setField('baseWalletOptions', v)}
+            />
+            <DexMMWalletOptions
+              assetSymbol={market.quote}
+              opts={quoteOpts}
+              isQuote
+              value={draft.quoteWalletOptions}
+              onChange={(v) => setField('quoteWalletOptions', v)}
+            />
+          </div>
+        </div>
+      )}
 
       {err && (
         <div className="p-2.5 rounded-lg bg-destructive/5 border border-destructive/30 text-xs text-destructive flex items-start gap-2">

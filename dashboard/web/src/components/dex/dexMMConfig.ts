@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import type { DexMarket, MMBotConfig, MMCexStatus, MMGapStrategy } from '../../services/dcrdexApi';
+import type { DexMarket, DexOrderOption, MMBotConfig, MMCexStatus, MMGapStrategy } from '../../services/dcrdexApi';
 
 // Bot types mirror bisonw v1.0.6: a DEX-only basic market maker, a simple
 // DEX/CEX arbitrageur, and a market maker that hedges fills on a CEX.
@@ -43,6 +43,8 @@ export interface ConfigDraft {
   numEpochs: string;
   buys: PlacementRow[];
   sells: PlacementRow[];
+  baseWalletOptions: Record<string, string>;
+  quoteWalletOptions: Record<string, string>;
 }
 
 // QuickDraft holds the simplified slider values. Percent fields are entered as
@@ -71,7 +73,22 @@ export const defaultDraft = (botType: BotType, cexName?: string): ConfigDraft =>
   numEpochs: '10',
   buys: [{ lots: '1', factor: defaultFactor(botType) }],
   sells: [{ lots: '1', factor: defaultFactor(botType) }],
+  baseWalletOptions: {},
+  quoteWalletOptions: {},
 });
+
+// defaultWalletOptions seeds a wallet's funding options from their defaults,
+// skipping quote-only options on the base asset (mirrors bisonw's
+// defaultWalletOptions). multisplit defaults on, so a fresh bot can fund
+// multi-orders from large UTXOs without manual configuration.
+export const defaultWalletOptions = (opts: DexOrderOption[], isQuote: boolean): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const o of opts) {
+    if (o.quoteAssetOnly && !isQuote) continue;
+    out[o.key] = o.default;
+  }
+  return out;
+};
 
 export const defaultQuick = (): QuickDraft => ({
   levelsPerSide: '1',
@@ -85,6 +102,8 @@ export const defaultQuick = (): QuickDraft => ({
 export const draftFromConfig = (cfg: MMBotConfig): ConfigDraft => {
   const botType = botTypeOf(cfg);
   const d = defaultDraft(botType, cfg.cexName);
+  d.baseWalletOptions = { ...(cfg.baseWalletOptions ?? {}) };
+  d.quoteWalletOptions = { ...(cfg.quoteWalletOptions ?? {}) };
   const basic = cfg.basicMarketMakingConfig;
   const arb = cfg.arbMarketMakingConfig;
   const simple = cfg.simpleArbConfig;
@@ -160,6 +179,8 @@ export const buildBotConfig = (host: string, market: DexMarket, d: ConfigDraft):
       };
     }
   }
+  if (Object.keys(d.baseWalletOptions).length) cfg.baseWalletOptions = d.baseWalletOptions;
+  if (Object.keys(d.quoteWalletOptions).length) cfg.quoteWalletOptions = d.quoteWalletOptions;
   return cfg;
 };
 

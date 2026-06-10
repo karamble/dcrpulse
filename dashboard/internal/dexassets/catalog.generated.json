@@ -67,6 +67,35 @@
             "isDate": false,
             "required": false
           }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
         ]
       },
       {
@@ -167,6 +196,35 @@
             "isDate": false,
             "required": false
           }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
         ]
       },
       {
@@ -266,6 +324,35 @@
             "isDate": false,
             "required": false
           }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
         ]
       }
     ]
@@ -337,6 +424,35 @@
             "isBoolean": true,
             "isDate": false,
             "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
           }
         ]
       },
@@ -448,6 +564,35 @@
             "isDate": false,
             "required": false
           }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
         ]
       },
       {
@@ -556,6 +701,35 @@
             "isBoolean": true,
             "isDate": false,
             "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
           }
         ]
       }
@@ -968,6 +1142,35 @@
             "isDate": false,
             "required": false
           }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
         ]
       },
       {
@@ -1107,6 +1310,35 @@
             "isBoolean": true,
             "isDate": false,
             "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
           }
         ]
       }
@@ -1407,6 +1639,35 @@
             "isDate": false,
             "required": false
           }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
         ]
       },
       {
@@ -1515,6 +1776,35 @@
             "isBoolean": true,
             "isDate": false,
             "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
           }
         ]
       }
@@ -1638,6 +1928,35 @@
             "isBoolean": true,
             "isDate": false,
             "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
           }
         ]
       }

@@ -449,6 +449,29 @@ export interface DexConfigOption {
   isDate: boolean;
   repeatable?: string;
   required: boolean;
+  dependsOn?: string;
+}
+
+// DexXYRange describes a numeric option's range (bisonw asset.XYRange); only the
+// x axis is used here (start.x..end.x in xUnit) to render a slider.
+export interface DexXYRange {
+  start: { label: string; x: number };
+  end: { label: string; x: number };
+  xUnit: string;
+}
+
+// DexOrderOption is a per-order funding option (bisonw asset.OrderOption): a
+// config option plus the quote-only flag and an optional numeric range. Used for
+// the market-maker multi-split funding controls (multisplit/multisplitbuffer).
+export interface DexOrderOption {
+  key: string;
+  displayName: string;
+  description: string;
+  default: string;
+  isBoolean: boolean;
+  quoteAssetOnly?: boolean;
+  dependsOn?: string;
+  xyRange?: DexXYRange;
 }
 
 // DexWalletDefinition is one wallet type available for an asset.
@@ -461,6 +484,7 @@ export interface DexWalletDefinition {
   guideLink?: string;
   noAuth: boolean;
   configOpts: DexConfigOption[];
+  multiFundingOpts?: DexOrderOption[];
 }
 
 export interface DexUnitInfo {
@@ -519,6 +543,23 @@ export const dexAssetForId = (catalog: DexAsset[], assetID: number): DexAssetInf
     }
   }
   return null;
+};
+
+// multiFundingOptsForAsset returns an asset's multi-order funding options (the
+// multisplit/multisplitbuffer controls). They are identical across an asset's
+// wallet types, so the first definition that declares them is used.
+export const multiFundingOptsForAsset = (catalog: DexAsset[], assetID: number): DexOrderOption[] => {
+  const defsOf = (a: DexAsset): DexWalletDefinition[] => {
+    if (a.id === assetID) return a.availableWallets;
+    const t = (a.tokens ?? []).find((tok) => tok.id === assetID);
+    return t ? [t.definition] : [];
+  };
+  for (const a of catalog) {
+    for (const def of defsOf(a)) {
+      if (def.multiFundingOpts && def.multiFundingOpts.length > 0) return def.multiFundingOpts;
+    }
+  }
+  return [];
 };
 
 export interface DexSendFee {
@@ -753,6 +794,10 @@ export interface MMBotConfig {
   cexName?: string;
   lotSize?: number;
   alloc?: MMAllocation;
+  // Per-order funding options for the base/quote wallets (e.g. multisplit), keyed
+  // by option key; bisonw forwards these into each order's funding options.
+  baseWalletOptions?: Record<string, string>;
+  quoteWalletOptions?: Record<string, string>;
   basicMarketMakingConfig?: MMBasicConfig;
   simpleArbConfig?: MMSimpleArbConfig;
   arbMarketMakingConfig?: MMArbConfig;

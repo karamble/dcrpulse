@@ -36,17 +36,44 @@ type configOption struct {
 	IsDate      bool   `json:"isDate"`
 	Repeatable  string `json:"repeatable,omitempty"`
 	Required    bool   `json:"required"`
+	DependsOn   string `json:"dependsOn,omitempty"`
+}
+
+type xyPoint struct {
+	Label string  `json:"label"`
+	X     float64 `json:"x"`
+}
+
+type xyRange struct {
+	Start xyPoint `json:"start"`
+	End   xyPoint `json:"end"`
+	XUnit string  `json:"xUnit"`
+}
+
+// orderOption is the per-order funding option schema (bisonw asset.OrderOption):
+// a config option plus the quote-only flag and an optional numeric range used to
+// render the multi-split funding controls on the market-maker bot config.
+type orderOption struct {
+	Key            string   `json:"key"`
+	DisplayName    string   `json:"displayName"`
+	Description    string   `json:"description"`
+	Default        string   `json:"default"`
+	IsBoolean      bool     `json:"isBoolean"`
+	QuoteAssetOnly bool     `json:"quoteAssetOnly,omitempty"`
+	DependsOn      string   `json:"dependsOn,omitempty"`
+	XYRange        *xyRange `json:"xyRange,omitempty"`
 }
 
 type walletDefinition struct {
-	Type        string         `json:"type"`
-	Tab         string         `json:"tab"`
-	Seeded      bool           `json:"seeded"`
-	Description string         `json:"description"`
-	ConfigPath  string         `json:"configPath,omitempty"`
-	GuideLink   string         `json:"guideLink,omitempty"`
-	NoAuth      bool           `json:"noAuth"`
-	ConfigOpts  []configOption `json:"configOpts"`
+	Type             string         `json:"type"`
+	Tab              string         `json:"tab"`
+	Seeded           bool           `json:"seeded"`
+	Description      string         `json:"description"`
+	ConfigPath       string         `json:"configPath,omitempty"`
+	GuideLink        string         `json:"guideLink,omitempty"`
+	NoAuth           bool           `json:"noAuth"`
+	ConfigOpts       []configOption `json:"configOpts"`
+	MultiFundingOpts []orderOption  `json:"multiFundingOpts,omitempty"`
 }
 
 type unitInfo struct {
@@ -87,7 +114,32 @@ func convOpts(opts []*asset.ConfigOption) []configOption {
 			IsDate:      o.IsDate,
 			Repeatable:  o.Repeatable,
 			Required:    o.Required,
+			DependsOn:   o.DependsOn,
 		})
+	}
+	return out
+}
+
+func convMultiFundingOpts(opts []*asset.OrderOption) []orderOption {
+	out := make([]orderOption, 0, len(opts))
+	for _, o := range opts {
+		oo := orderOption{
+			Key:            o.Key,
+			DisplayName:    o.DisplayName,
+			Description:    o.Description,
+			Default:        o.DefaultValue,
+			IsBoolean:      o.IsBoolean,
+			QuoteAssetOnly: o.QuoteAssetOnly,
+			DependsOn:      o.DependsOn,
+		}
+		if o.XYRange != nil {
+			oo.XYRange = &xyRange{
+				Start: xyPoint{Label: o.XYRange.Start.Label, X: o.XYRange.Start.X},
+				End:   xyPoint{Label: o.XYRange.End.Label, X: o.XYRange.End.X},
+				XUnit: o.XYRange.XUnit,
+			}
+		}
+		out = append(out, oo)
 	}
 	return out
 }
@@ -97,14 +149,15 @@ func convDef(d *asset.WalletDefinition) walletDefinition {
 		return walletDefinition{}
 	}
 	return walletDefinition{
-		Type:        d.Type,
-		Tab:         d.Tab,
-		Seeded:      d.Seeded,
-		Description: d.Description,
-		ConfigPath:  d.DefaultConfigPath,
-		GuideLink:   d.GuideLink,
-		NoAuth:      d.NoAuth,
-		ConfigOpts:  convOpts(d.ConfigOpts),
+		Type:             d.Type,
+		Tab:              d.Tab,
+		Seeded:           d.Seeded,
+		Description:      d.Description,
+		ConfigPath:       d.DefaultConfigPath,
+		GuideLink:        d.GuideLink,
+		NoAuth:           d.NoAuth,
+		ConfigOpts:       convOpts(d.ConfigOpts),
+		MultiFundingOpts: convMultiFundingOpts(d.MultiFundingOpts),
 	}
 }
 
