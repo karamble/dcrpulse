@@ -90,6 +90,48 @@ func GetDcrdexMMMarketReportHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(report)
 }
 
+// GetDcrdexMMRunLogsHandler returns a market-maker run's event log (the bot's
+// DEX/CEX orders, deposits, and withdrawals) plus overview for the run
+// identified by host/baseID/quoteID/startTime. n caps the events returned; the
+// optional refID pages older events (the oldest event id already held).
+func GetDcrdexMMRunLogsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	q := r.URL.Query()
+	host := q.Get("host")
+	baseID, err1 := strconv.ParseUint(q.Get("baseID"), 10, 32)
+	quoteID, err2 := strconv.ParseUint(q.Get("quoteID"), 10, 32)
+	startTime, err3 := strconv.ParseInt(q.Get("startTime"), 10, 64)
+	if host == "" || err1 != nil || err2 != nil || err3 != nil {
+		http.Error(w, "host, baseID, quoteID and startTime are required", http.StatusBadRequest)
+		return
+	}
+	n, err := strconv.ParseUint(q.Get("n"), 10, 64)
+	if err != nil || n == 0 {
+		n = 50
+	}
+	var refID *uint64
+	if s := q.Get("refID"); s != "" {
+		if v, perr := strconv.ParseUint(s, 10, 64); perr == nil {
+			refID = &v
+		}
+	}
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	logs, err := client.RunLogs(ctx, appPass, host, uint32(baseID), uint32(quoteID), startTime, n, refID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if len(logs) == 0 {
+		logs = json.RawMessage("null")
+	}
+	w.Write(logs)
+}
+
 // UpdateDcrdexMMBotConfigHandler persists (and validates) a bot config. The
 // request body is a bisonw mm.BotConfig built by the frontend and forwarded
 // verbatim.

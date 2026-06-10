@@ -116,7 +116,10 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview, settling]);
-  useDexRefreshOnNotes(['order', 'match'], refreshOrders);
+  // A running bot places/cancels orders each epoch (epochreport) and on
+  // start/stop (runstats); those drive the open-orders panels too now that MM
+  // notes reach listeners.
+  useDexRefreshOnNotes(['order', 'match', 'epochreport', 'runstats'], refreshOrders);
 
   // dcrdex-style cancel: a confirmation modal gated on isCancellable, shared by
   // the per-market and all-markets order panels. Refetches orders on success.
@@ -171,6 +174,28 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   // blocked (mirrors bisonw): the order form is replaced by a running-bot card.
   const botRun = useMMBotRun(HOST, sel?.baseID ?? -1, sel?.quoteID ?? -1);
   const botRunning = !preview && !!botRun?.running;
+  // After a bot stops no more MM notes fire while its cancellations settle over
+  // the next epoch(s), so refresh the orders a few times across that window to
+  // drain them promptly (a start, which cancels pre-existing orders, too).
+  const wasBotRunning = useRef(false);
+  useEffect(() => {
+    const was = wasBotRunning.current;
+    wasBotRunning.current = botRunning;
+    if (preview || was === botRunning) return;
+    const timers = [0, 4000, 10000, 20000, 35000, 55000].map((d) => window.setTimeout(refreshOrders, d));
+    return () => timers.forEach((t) => window.clearTimeout(t));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botRunning, preview]);
+  // Resolve an asset id to its ticker and conversion factor for the running-bot
+  // card's problem messages, inventory, and order report.
+  const assetOf = useMemo(() => {
+    const m: Record<number, { symbol: string; convFactor: number }> = {};
+    for (const mk of markets) {
+      m[mk.baseID] = { symbol: mk.base.toUpperCase(), convFactor: mk.baseConvFactor };
+      m[mk.quoteID] = { symbol: mk.quote.toUpperCase(), convFactor: mk.quoteConvFactor };
+    }
+    return (id: number) => m[id] ?? { symbol: `#${id}`, convFactor: 1e8 };
+  }, [markets]);
   // Below lg the four trading panes don't fit side by side; a segmented control
   // shows one at a time. The lg grid is unchanged.
   const [mobilePane, setMobilePane] = useState<'markets' | 'chart' | 'book' | 'trade'>('chart');
@@ -254,7 +279,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
             spans the lower rows, leaving room for more cards. */}
         <section className={`bg-card min-h-0 min-w-0 h-[70vh] overflow-y-auto lg:h-auto lg:overflow-visible lg:block lg:col-start-3 lg:row-start-2 lg:row-span-2 ${mobilePane === 'trade' ? '' : 'hidden'}`}>
           {botRunning && botRun ? (
-            <DexMMRunningCard bot={botRun} />
+            <DexMMRunningCard bot={botRun} market={sel} assetOf={assetOf} />
           ) : (
             <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} bestBid={bestBid} bestAsk={bestAsk} onPlaced={refreshOrders} />
           )}

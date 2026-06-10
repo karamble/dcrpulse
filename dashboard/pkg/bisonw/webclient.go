@@ -352,3 +352,32 @@ func (c *WebClient) MarketReport(ctx context.Context, appPass, host string, base
 	}
 	return res.Report, nil
 }
+
+// RunLogs returns a market-maker run's event log (the bot's DEX/CEX orders,
+// deposits, and withdrawals) plus the run overview, as the raw {overview, logs,
+// updatedLogs} from the webserver-only /api/mmrunlogs route. n caps the number
+// of events; refID pages older events (the id of the oldest event already held).
+func (c *WebClient) RunLogs(ctx context.Context, appPass, host string, baseID, quoteID uint32, startTime int64, n uint64, refID *uint64) (json.RawMessage, error) {
+	body := map[string]any{
+		"startTime": startTime,
+		"market":    map[string]any{"host": host, "baseID": baseID, "quoteID": quoteID},
+		"n":         n,
+	}
+	if refID != nil {
+		body["refID"] = *refID
+	}
+	var res struct {
+		webAck
+		Overview    json.RawMessage `json:"overview"`
+		Logs        json.RawMessage `json:"logs"`
+		UpdatedLogs json.RawMessage `json:"updatedLogs"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/mmrunlogs", appPass, body, &res); err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]json.RawMessage{
+		"overview":    res.Overview,
+		"logs":        res.Logs,
+		"updatedLogs": res.UpdatedLogs,
+	})
+}

@@ -3,10 +3,11 @@
 // license that can be found in the LICENSE file.
 
 import { useState } from 'react';
-import { Bot, Square } from 'lucide-react';
-import { stopMMBot, type MMBotStatus } from '../../services/dcrdexApi';
+import { Bot, ScrollText, Square } from 'lucide-react';
+import { stopMMBot, type DexMarket, type MMBotStatus } from '../../services/dcrdexApi';
 import { useMMRefresh } from './DexLiveProvider';
-import { DexMMActivity } from './DexMMActivity';
+import { DexMMActivity, type AssetInfo } from './DexMMActivity';
+import { DexMMRunLogs } from './DexMMRunLogs';
 
 // DexMMRunningCard is the trade view's right-sidebar card shown in place of the
 // order form when a market-maker bot is running on the selected market. Manual
@@ -14,10 +15,20 @@ import { DexMMActivity } from './DexMMActivity';
 // surfaces the bot's live stats plus a one-click stop. Stopping flips the shared
 // MM status (this refresh and bisonw's runstats notification), which brings the
 // order form back on its own.
-export const DexMMRunningCard = ({ bot }: { bot: MMBotStatus }) => {
+export const DexMMRunningCard = ({
+  bot,
+  market,
+  assetOf,
+}: {
+  bot: MMBotStatus;
+  market?: DexMarket;
+  assetOf?: AssetInfo;
+}) => {
   const refreshMM = useMMRefresh();
   const [stopping, setStopping] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
+  const resolveAsset: AssetInfo = assetOf ?? ((id) => ({ symbol: `#${id}`, convFactor: 1e8 }));
 
   const stop = async () => {
     setStopping(true);
@@ -39,14 +50,23 @@ export const DexMMRunningCard = ({ bot }: { bot: MMBotStatus }) => {
           <Bot className="h-4 w-4 text-primary" />
           Market maker running
         </div>
-        <button
-          type="button"
-          disabled={stopping}
-          onClick={stop}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-border hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-        >
-          <Square className="h-3 w-3" /> {stopping ? 'Stopping...' : 'Stop'}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setShowLogs(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-border hover:bg-muted/10"
+          >
+            <ScrollText className="h-3 w-3" /> Logs
+          </button>
+          <button
+            type="button"
+            disabled={stopping}
+            onClick={stop}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-border hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+          >
+            <Square className="h-3 w-3" /> {stopping ? 'Stopping...' : 'Stop'}
+          </button>
+        </div>
       </div>
 
       <div className="px-3 py-1.5 text-[11px] text-muted-foreground bg-muted/10 border-b border-border/40">
@@ -55,7 +75,11 @@ export const DexMMRunningCard = ({ bot }: { bot: MMBotStatus }) => {
 
       {err && <div className="px-3 py-1.5 text-[11px] text-destructive">{err}</div>}
 
-      <DexMMActivity bot={bot} compact />
+      <DexMMActivity bot={bot} compact market={market} assetOf={assetOf} />
+
+      {showLogs && (
+        <DexMMRunLogs bot={bot} market={market} assetOf={resolveAsset} onClose={() => setShowLogs(false)} />
+      )}
     </div>
   );
 };

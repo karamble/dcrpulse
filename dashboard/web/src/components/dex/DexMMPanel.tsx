@@ -3,8 +3,9 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, Bot, KeyRound, Pencil, Play, Plus, Square, Trash2 } from 'lucide-react';
+import { AlertCircle, Bot, KeyRound, Pencil, Play, Plus, ScrollText, Square, Trash2 } from 'lucide-react';
 import {
+  dexAssetForId,
   getDexAssetCatalog,
   getDexConfig,
   getMMMarketReport,
@@ -21,6 +22,7 @@ import { useMMRefresh, useMMStatus } from './DexLiveProvider';
 import { CoinIcon } from './CoinIcon';
 import { CexIcon, CEX_DISPLAY, SUPPORTED_CEXES } from './CexIcon';
 import { DexMMActivity } from './DexMMActivity';
+import { DexMMRunLogs } from './DexMMRunLogs';
 import { DexMMWizard } from './DexMMWizard';
 import { DexMMFundingDialog } from './DexMMFundingDialog';
 import { DexMMCexConfigForm } from './DexMMCexConfigForm';
@@ -48,8 +50,15 @@ export const DexMMPanel = () => {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [startBot, setStartBot] = useState<MMBotStatus | null>(null);
   const [startBusy, setStartBusy] = useState(false);
+  const [logsBot, setLogsBot] = useState<MMBotStatus | null>(null);
   const [catalog, setCatalog] = useState<DexAsset[]>([]);
   const [startReport, setStartReport] = useState<MMMarketReport | null>(null);
+  const assetOf = (id: number) => {
+    const a = dexAssetForId(catalog, id);
+    return a
+      ? { symbol: a.symbol.toUpperCase(), convFactor: a.conversionFactor }
+      : { symbol: `#${id}`, convFactor: 1e8 };
+  };
 
   useEffect(() => {
     getDexConfig(HOST)
@@ -261,14 +270,23 @@ export const DexMMPanel = () => {
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {b.running ? (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => act(k, () => stopMMBot(b.config.host, b.config.baseID, b.config.quoteID))}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                        >
-                          <Square className="h-3.5 w-3.5" /> Stop
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setLogsBot(b)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border hover:bg-muted/10"
+                          >
+                            <ScrollText className="h-3.5 w-3.5" /> Logs
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => act(k, () => stopMMBot(b.config.host, b.config.baseID, b.config.quoteID))}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                          >
+                            <Square className="h-3.5 w-3.5" /> Stop
+                          </button>
+                        </>
                       ) : (
                         <button
                           type="button"
@@ -311,7 +329,11 @@ export const DexMMPanel = () => {
 
                   {b.running && b.runStats && (
                     <div className="rounded-lg bg-background/40 border border-border/40">
-                      <DexMMActivity bot={b} />
+                      <DexMMActivity
+                        bot={b}
+                        market={markets.find((mk) => mk.baseID === b.config.baseID && mk.quoteID === b.config.quoteID)}
+                        assetOf={assetOf}
+                      />
                     </div>
                   )}
                 </div>
@@ -338,6 +360,15 @@ export const DexMMPanel = () => {
             />
           );
         })()}
+
+      {logsBot && (
+        <DexMMRunLogs
+          bot={logsBot}
+          market={markets.find((mk) => mk.baseID === logsBot.config.baseID && mk.quoteID === logsBot.config.quoteID)}
+          assetOf={assetOf}
+          onClose={() => setLogsBot(null)}
+        />
+      )}
     </div>
   );
 };

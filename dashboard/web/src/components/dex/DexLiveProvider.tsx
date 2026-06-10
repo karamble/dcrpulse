@@ -214,14 +214,15 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
             },
           }));
         } else if (MM_NOTE_TYPES.has(note.type)) {
-          // Coalesce a burst of MM notes into one status refetch.
+          // Coalesce a burst of MM notes into one status refetch, then fall
+          // through so panels can also react to the note itself (the order
+          // panels refresh, the run-logs feed updates).
           if (!mmTimer) {
             mmTimer = setTimeout(() => {
               mmTimer = null;
               refreshMMRef.current();
             }, 500);
           }
-          return;
         }
         listenersRef.current.forEach((fn) => {
           try {

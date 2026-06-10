@@ -774,18 +774,131 @@ export interface MMRunStats {
   pendingWithdrawals: number;
   feeGap?: { basisPrice: number; feeGap: number; remoteGap: number; roundTripFees: number };
 }
+// MMStampedError mirrors bisonw's mm.StampedError.
+export interface MMStampedError {
+  stamp: number;
+  error: string;
+}
+// MMBotProblems mirrors bisonw's mm.BotProblems: the reasons a bot could not
+// place orders in an epoch. The per-asset maps are keyed by asset id.
+export interface MMBotProblems {
+  walletNotSynced?: Record<number, boolean>;
+  noWalletPeers?: Record<number, boolean>;
+  accountSuspended?: boolean;
+  userLimitTooLow?: boolean;
+  noPriceSource?: boolean;
+  oracleFiatMismatch?: boolean;
+  cexOrderbookUnsynced?: boolean;
+  causesSelfMatch?: boolean;
+  unknownError?: string;
+}
+// MMTradePlacement is one placement's per-epoch execution detail (bisonw
+// mm.TradePlacement). Amounts are atomic; balance maps are keyed by asset id.
+export interface MMTradePlacement {
+  rate: number;
+  lots: number;
+  standingLots: number;
+  orderedLots: number;
+  counterTradeRate: number;
+  requiredDex: Record<number, number>;
+  requiredCex: number;
+  usedDex: Record<number, number>;
+  usedCex: number;
+  error: MMBotProblems | null;
+}
+// MMOrderReport is a buy- or sell-side per-epoch placement report (bisonw
+// mm.OrderReport). Balance maps are keyed by asset id; amounts are atomic.
+export interface MMOrderReport {
+  placements: MMTradePlacement[];
+  availableDexBals: Record<number, MMBotBalance>;
+  requiredDexBals: Record<number, number>;
+  usedDexBals: Record<number, number>;
+  remainingDexBals: Record<number, number>;
+  availableCexBal?: MMBotBalance | null;
+  requiredCexBal: number;
+  usedCexBal: number;
+  remainingCexBal: number;
+  error: MMBotProblems | null;
+}
+// MMCEXProblems mirrors bisonw's mm.CEXProblems: the last deposit/withdraw/trade
+// errors (deposit/withdraw keyed by asset id).
+export interface MMCEXProblems {
+  depositErr?: Record<number, MMStampedError>;
+  withdrawErr?: Record<number, MMStampedError>;
+  tradeErr?: MMStampedError | null;
+}
 export interface MMEpochReport {
   epochNum: number;
-  buysReport: unknown | null;
-  sellsReport: unknown | null;
-  preOrderProblems: unknown | null;
+  buysReport: MMOrderReport | null;
+  sellsReport: MMOrderReport | null;
+  preOrderProblems: MMBotProblems | null;
 }
 export interface MMBotStatus {
   config: MMBotConfig;
   running: boolean;
   runStats: MMRunStats | null;
   latestEpoch: MMEpochReport | null;
-  cexProblems: unknown | null;
+  cexProblems: MMCEXProblems | null;
+}
+// MMEventTx is the wallet transaction carried by a run-log event (a subset of
+// bisonw's asset.WalletTransaction).
+export interface MMEventTx {
+  id: string;
+  type?: number;
+  amount: number;
+  fees: number;
+  blockNumber: number;
+  timestamp: number;
+}
+export interface MMDexOrderEvent {
+  id: string;
+  rate: number;
+  qty: number;
+  sell: boolean;
+  transactions?: MMEventTx[];
+}
+export interface MMCexOrderEvent {
+  id: string;
+  rate: number;
+  qty: number;
+  sell: boolean;
+  baseFilled: number;
+  quoteFilled: number;
+}
+export interface MMDepositEvent {
+  assetID: number;
+  cexCredit: number;
+  transaction?: MMEventTx;
+}
+export interface MMWithdrawalEvent {
+  id: string;
+  assetID: number;
+  cexDebit: number;
+  transaction?: MMEventTx;
+}
+// MMMarketMakingEvent is one run-log event (bisonw mm.MarketMakingEvent); only
+// one of the *Event fields is set.
+export interface MMMarketMakingEvent {
+  id: number;
+  timestamp: number;
+  pending: boolean;
+  dexOrderEvent?: MMDexOrderEvent;
+  cexOrderEvent?: MMCexOrderEvent;
+  depositEvent?: MMDepositEvent;
+  withdrawalEvent?: MMWithdrawalEvent;
+}
+// MMRunOverview is a market-maker run summary (bisonw mm.MarketMakingRunOverview);
+// profitLoss matches MMRunStats.profitLoss, endTime is set once the run stops.
+export interface MMRunOverview {
+  endTime?: number | null;
+  profitLoss?: { profit: number; profitRatio: number } | null;
+}
+// MMRunLogs is the /api/mmrunlogs payload: a page of run events (newest first)
+// plus the run overview. updatedLogs carries events whose state changed.
+export interface MMRunLogs {
+  overview: MMRunOverview | null;
+  logs: MMMarketMakingEvent[] | null;
+  updatedLogs: MMMarketMakingEvent[] | null;
 }
 export interface MMCexStatus {
   config?: { name: string };
@@ -857,6 +970,19 @@ export const getMMMarketReport = async (
 ): Promise<MMMarketReport | null> => {
   const { data } = await api.get<MMMarketReport | null>('/dcrdex/mm/marketreport', {
     params: { host, baseID, quoteID },
+  });
+  return data;
+};
+export const getMMRunLogs = async (
+  host: string,
+  baseID: number,
+  quoteID: number,
+  startTime: number,
+  n = 50,
+  refID?: number,
+): Promise<MMRunLogs | null> => {
+  const { data } = await api.get<MMRunLogs | null>('/dcrdex/mm/runlogs', {
+    params: { host, baseID, quoteID, startTime, n, ...(refID !== undefined ? { refID } : {}) },
   });
   return data;
 };
