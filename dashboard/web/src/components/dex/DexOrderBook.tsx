@@ -24,7 +24,11 @@ interface Props {
   onPick?: (p: { rate: number; qty: number; sell: boolean }) => void;
 }
 
-const ROWS = 12;
+// Rows per side are sized to the panel height at runtime (see the ResizeObserver
+// in DexOrderBook); these bound that range so a short panel still shows a few
+// levels and the initial render (before measurement) matches the old fixed depth.
+const DEFAULT_ROWS = 12;
+const MIN_ROWS = 5;
 
 // EMPTY_MINE is a stable empty set so the aggregation memo is not defeated when
 // the caller omits mineTokens.
@@ -44,11 +48,11 @@ interface BookLevel {
 }
 
 // aggregateLevels bins already-sorted orders by message-rate into one level per
-// distinct price (mirroring bisonw's web book), caps to ROWS distinct levels,
+// distinct price (mirroring bisonw's web book), caps to maxRows distinct levels,
 // then annotates the running depth total (in base units) from the best price
 // outward. mine flags a level holding one of the user's active orders, matched
 // by the book token, which is the order id's first 4 bytes.
-const aggregateLevels = (orders: MiniOrder[], mineTokens: Set<string>): BookLevel[] => {
+const aggregateLevels = (orders: MiniOrder[], mineTokens: Set<string>, maxRows: number): BookLevel[] => {
   const levels: BookLevel[] = [];
   let last: BookLevel | undefined;
   for (const o of orders) {
@@ -59,7 +63,7 @@ const aggregateLevels = (orders: MiniOrder[], mineTokens: Set<string>): BookLeve
       if (mineTokens.has(o.token)) last.mine = true;
       continue;
     }
-    if (levels.length >= ROWS) break;
+    if (levels.length >= maxRows) break;
     last = {
       rate: o.rate,
       msgRate: o.msgRate,
@@ -152,6 +156,12 @@ const OrderRow = ({
 
 export const DexOrderBook = ({ market, book, mineTokens, onPick }: Props) => {
   const [tab, setTab] = useState<BookTab>('book');
+  // Levels shown per side, sized to the panel height so a tall screen fills with
+  // real depth instead of leaving empty bands. Starts at the old fixed depth and
+  // is refined once the book pane is measured.
+  const [rowsPerSide, setRowsPerSide] = useState(DEFAULT_ROWS);
+  const bookBodyRef = useRef<HTMLDivElement>(null);
+  const spreadRef = useRef<HTMLDivElement>(null);
 
   // Track whether the book for the current market has loaded, so the initial
   // snapshot does not flash every row; only changes/additions afterwards do.
@@ -166,12 +176,37 @@ export const DexOrderBook = ({ market, book, mineTokens, onPick }: Props) => {
   useSecondTick(tab === 'trades' && book.recentMatches.length > 0);
 
   const mine = mineTokens ?? EMPTY_MINE;
-  const asks = useMemo(() => aggregateLevels(book.sells, mine), [book.sells, mine]); // best ask first
-  const bids = useMemo(() => aggregateLevels(book.buys, mine), [book.buys, mine]); // best bid first
+  const asks = useMemo(() => aggregateLevels(book.sells, mine, rowsPerSide), [book.sells, mine, rowsPerSide]); // best ask first
+  const bids = useMemo(() => aggregateLevels(book.buys, mine, rowsPerSide), [book.buys, mine, rowsPerSide]); // best bid first
   // Defensive newest-first ordering (the feed already prepends new matches).
   const trades = useMemo(() => [...book.recentMatches].sort((a, b) => b.stamp - a.stamp), [book.recentMatches]);
   const maxA = asks.length ? asks[asks.length - 1].total : 1;
   const maxB = bids.length ? bids[bids.length - 1].total : 1;
+
+  // Size rowsPerSide to the book pane: render as many whole rows as fit above and
+  // below the spread bar. Re-measured on resize and once rows first appear (to
+  // read a real row height). The pane height is fixed by the layout and does not
+  // grow with row count, so this never feedback-loops. Only the book tab renders
+  // rows, so it is gated on the tab and on having a measurable row.
+  const hasRows = asks.length > 0 || bids.length > 0;
+  useEffect(() => {
+    if (tab !== 'book') return;
+    const el = bookBodyRef.current;
+    if (!el) return;
+    const recompute = () => {
+      const rowEl = el.querySelector('button') as HTMLElement | null;
+      const rowH = rowEl?.offsetHeight ?? 0;
+      const spreadH = spreadRef.current?.offsetHeight ?? 0;
+      const containerH = el.clientHeight;
+      if (rowH <= 0 || containerH <= 0) return;
+      const fit = Math.floor((containerH - spreadH) / 2 / rowH);
+      setRowsPerSide(Math.max(MIN_ROWS, fit));
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [tab, hasRows]);
 
   const bestAsk = book.sells[0]?.rate ?? 0;
   const bestBid = book.buys[0]?.rate ?? 0;
@@ -206,7 +241,7 @@ export const DexOrderBook = ({ market, book, mineTokens, onPick }: Props) => {
             <span className="text-right">Total</span>
           </div>
 
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div ref={bookBodyRef} className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <div className="flex-1 flex flex-col justify-end overflow-hidden">
               {asks
                 .slice()
@@ -216,7 +251,7 @@ export const DexOrderBook = ({ market, book, mineTokens, onPick }: Props) => {
                 ))}
             </div>
 
-            <div className="flex items-center justify-between px-3 py-1.5 bg-muted/15 border-y border-border/50 text-[12px]">
+            <div ref={spreadRef} className="flex items-center justify-between px-3 py-1.5 bg-muted/15 border-y border-border/50 text-[12px]">
               <span className="font-mono tabular-nums text-sm font-semibold text-success flex items-center gap-1">
                 {spread >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
                 {fmtPrice(mid, market.quote)}
