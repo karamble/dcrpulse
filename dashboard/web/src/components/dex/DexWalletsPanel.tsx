@@ -103,9 +103,9 @@ export const DexWalletsPanel = () => {
                 </span>
               ) : (
                 <span className="block text-xs font-mono tabular-nums text-muted-foreground">
-                  {fmtAmt(w.available, 4)}
+                  {fmtAmt(w.total, 4)}
                   {usdRateFor(w.symbol, rates) > 0 && (
-                    <span className="text-muted-foreground/60"> &middot; {fmtUsd(w.available * usdRateFor(w.symbol, rates))}</span>
+                    <span className="text-muted-foreground/60"> &middot; {fmtUsd(w.total * usdRateFor(w.symbol, rates))}</span>
                   )}
                 </span>
               )}

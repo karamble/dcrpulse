@@ -36,10 +36,10 @@ const Card = ({ title, children }: { title: string; children: React.ReactNode })
   </div>
 );
 
-const BalRow = ({ label, value, symbol }: { label: string; value: number; symbol: string }) => (
+const BalRow = ({ label, value, symbol, emphasis }: { label: string; value: number; symbol: string; emphasis?: boolean }) => (
   <div className="flex items-center justify-between text-sm">
-    <span className="text-muted-foreground">{label}</span>
-    <span className="font-mono tabular-nums">
+    <span className={emphasis ? 'font-medium' : 'text-muted-foreground'}>{label}</span>
+    <span className={`font-mono tabular-nums${emphasis ? ' font-medium' : ''}`}>
       {fmtAmt(value, 8)} <span className="text-muted-foreground">{symbol}</span>
     </span>
   </div>
@@ -266,6 +266,7 @@ export const DexWalletDetail = ({
               );
             })()}
           </div>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">Spendable</div>
           {usdRateFor(wallet.symbol, rates) > 0 && (
             <div className="text-sm text-muted-foreground">{fmtUsd(wallet.available * usdRateFor(wallet.symbol, rates))}</div>
           )}
@@ -274,6 +275,9 @@ export const DexWalletDetail = ({
             <BalRow label="Immature" value={wallet.immature} symbol={wallet.symbol} />
             <BalRow label="In orders" value={wallet.orderLocked} symbol={wallet.symbol} />
             <BalRow label="In bonds" value={wallet.bondLocked} symbol={wallet.symbol} />
+            <div className="pt-1 mt-1 border-t border-border/40">
+              <BalRow label="Total" value={wallet.total} symbol={wallet.symbol} emphasis />
+            </div>
           </div>
         </Card>
 

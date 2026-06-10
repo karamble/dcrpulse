@@ -402,6 +402,7 @@ export interface DexWalletState {
   immature: number;
   orderLocked: number;
   bondLocked: number;
+  total: number;
 }
 
 export const getDexWallets = async (): Promise<DexWalletState[]> => {

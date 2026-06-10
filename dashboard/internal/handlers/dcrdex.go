@@ -497,6 +497,7 @@ type DexWalletState struct {
 	Immature     float64 `json:"immature"`
 	OrderLocked  float64 `json:"orderLocked"`
 	BondLocked   float64 `json:"bondLocked"`
+	Total        float64 `json:"total"`
 }
 
 // GetDcrdexWalletsHandler returns the DCRDEX-managed wallets and their balances
@@ -565,6 +566,10 @@ func GetDcrdexWalletsHandler(w http.ResponseWriter, r *http.Request) {
 			ws.Immature = atomsToConv(s.Balance.Immature, cf)
 			ws.OrderLocked = atomsToConv(s.Balance.OrderLocked, cf)
 			ws.BondLocked = atomsToConv(s.Balance.BondLocked, cf)
+			// Total mirrors bisonw's own definition (client/webserver assets.ts):
+			// available + locked + immature. OrderLocked is already part of Locked,
+			// so it is not added again.
+			ws.Total = atomsToConv(s.Balance.Available+s.Balance.Locked+s.Balance.Immature, cf)
 		}
 		out = append(out, ws)
 	}
