@@ -1732,13 +1732,49 @@ func convWalletTx(assetID uint32, t rawWalletTx) DexWalletTx {
 	return out
 }
 
+// pendingDexTx builds a pending (mempool) wallet transaction for the dcrwallet
+// "dex" account from a gRPC transaction detail, classifying it as a receive or
+// send by the net change to the account. bisonw's txhistory only records
+// external receives once they are mined, so these surface incoming deposits (and
+// outgoing sends) that are still in the mempool.
+func pendingDexTx(assetID uint32, t *pb.TransactionDetails, txid string, credit, debit int64) DexWalletTx {
+	conv := dexassets.ConvFactor(assetID)
+	var typ uint32
+	var amtAtoms, feeAtoms uint64
+	if credit >= debit {
+		typ = 2 // Receive
+		amtAtoms = uint64(credit - debit)
+	} else {
+		typ = 1 // Send
+		fee := t.GetFee()
+		feeAtoms = uint64(fee)
+		spent := debit - credit // amount sent + fee
+		if spent > fee {
+			amtAtoms = uint64(spent - fee)
+		} else {
+			amtAtoms = uint64(spent)
+		}
+	}
+	return DexWalletTx{
+		Type:        typ,
+		ID:          txid,
+		Amount:      atomsToConv(amtAtoms, conv),
+		Fees:        atomsToConv(feeAtoms, conv),
+		BlockNumber: 0,
+		Timestamp:   uint64(t.GetTimestamp()),
+	}
+}
+
 // dexTxIDs caches the set of txids belonging to the dcrwallet "dex" account, used
 // to scope the DEX Decred wallet history (bisonw's txhistory is wallet-wide and
-// carries no account field). Refreshed on first-page loads and after a short TTL.
+// carries no account field), plus the account's current unmined txs so mempool
+// deposits surface before bisonw records them. Refreshed on first-page loads and
+// after a short TTL.
 var (
-	dexTxIDMu  sync.Mutex
-	dexTxIDSet map[string]struct{}
-	dexTxIDAt  time.Time
+	dexTxIDMu     sync.Mutex
+	dexTxIDSet    map[string]struct{}
+	dexUnminedTxs []DexWalletTx
+	dexTxIDAt     time.Time
 )
 
 const dexTxIDTTL = 30 * time.Second
@@ -1747,21 +1783,21 @@ const dexTxIDTTL = 30 * time.Second
 // listtransactions (account-scoped). fresh forces a recompute (used on first-page
 // loads so new deposits appear); otherwise a cached set is reused across "Load
 // more" pagination.
-func dexAccountTxIDs(ctx context.Context, fresh bool) (map[string]struct{}, error) {
+func dexAccountTxIDs(ctx context.Context, fresh bool) (map[string]struct{}, []DexWalletTx, error) {
 	dexTxIDMu.Lock()
 	defer dexTxIDMu.Unlock()
 	if !fresh && dexTxIDSet != nil && time.Since(dexTxIDAt) < dexTxIDTTL {
-		return dexTxIDSet, nil
+		return dexTxIDSet, dexUnminedTxs, nil
 	}
 	if rpc.WalletGrpcClient == nil {
-		return nil, fmt.Errorf("wallet gRPC client not initialized")
+		return nil, nil, fmt.Errorf("wallet gRPC client not initialized")
 	}
 	// Resolve the dcrwallet "dex" account number. (listtransactions cannot filter
 	// by account, and its per-entry account tag is unreliable for sends to
 	// non-wallet scripts like fidelity bonds, so use GetTransactions instead.)
 	accts, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var dexAcct uint32
 	found := false
@@ -1774,44 +1810,51 @@ func dexAccountTxIDs(ctx context.Context, fresh bool) (map[string]struct{}, erro
 	}
 	if !found {
 		set := map[string]struct{}{}
-		dexTxIDSet, dexTxIDAt = set, time.Now()
-		return set, nil
+		dexTxIDSet, dexUnminedTxs, dexTxIDAt = set, nil, time.Now()
+		return set, nil, nil
 	}
 
 	// Stream the wallet's transactions (only the wallet's own, across all
 	// accounts) and keep those that credit or spend the dex account. Per-tx
 	// Credits[].Account / Debits[].PreviousAccount reliably attribute bond
-	// posts, swaps and deposits to the dex account.
+	// posts, swaps and deposits to the dex account; the net of the two also
+	// sizes the unmined txs for the pending rows.
 	stream, err := rpc.WalletGrpcClient.GetTransactions(ctx, &pb.GetTransactionsRequest{
 		StartingBlockHeight: 0,
 		EndingBlockHeight:   -1,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	set := map[string]struct{}{}
-	add := func(details []*pb.TransactionDetails) {
+	var pending []DexWalletTx
+	add := func(details []*pb.TransactionDetails, unmined bool) {
 		for _, t := range details {
+			var credit, debit int64
 			touches := false
 			for _, c := range t.GetCredits() {
 				if c.GetAccount() == dexAcct {
+					credit += c.GetAmount()
 					touches = true
-					break
 				}
 			}
-			if !touches {
-				for _, d := range t.GetDebits() {
-					if d.GetPreviousAccount() == dexAcct {
-						touches = true
-						break
-					}
+			for _, d := range t.GetDebits() {
+				if d.GetPreviousAccount() == dexAcct {
+					debit += d.GetPreviousAmount()
+					touches = true
 				}
 			}
 			if !touches {
 				continue
 			}
-			if h, herr := chainhash.NewHash(t.GetHash()); herr == nil {
-				set[h.String()] = struct{}{}
+			h, herr := chainhash.NewHash(t.GetHash())
+			if herr != nil {
+				continue
+			}
+			txid := h.String()
+			set[txid] = struct{}{}
+			if unmined {
+				pending = append(pending, pendingDexTx(bisonw.AssetDCR, t, txid, credit, debit))
 			}
 		}
 	}
@@ -1821,15 +1864,15 @@ func dexAccountTxIDs(ctx context.Context, fresh bool) (map[string]struct{}, erro
 			break
 		}
 		if rerr != nil {
-			return nil, rerr
+			return nil, nil, rerr
 		}
 		if mined := resp.GetMinedTransactions(); mined != nil {
-			add(mined.GetTransactions())
+			add(mined.GetTransactions(), false)
 		}
-		add(resp.GetUnminedTransactions())
+		add(resp.GetUnminedTransactions(), true)
 	}
-	dexTxIDSet, dexTxIDAt = set, time.Now()
-	return set, nil
+	dexTxIDSet, dexUnminedTxs, dexTxIDAt = set, pending, time.Now()
+	return set, pending, nil
 }
 
 // GetDcrdexWalletTxsHandler returns a wallet's transaction history (amounts in
@@ -1880,7 +1923,7 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	if want <= 0 {
 		want = 25
 	}
-	dexSet, err := dexAccountTxIDs(ctx, refID == "")
+	dexSet, dexPending, err := dexAccountTxIDs(ctx, refID == "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -1911,6 +1954,23 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 			break // bisonw history exhausted
 		}
 		cursor, cursorPast = txs[len(txs)-1].ID, true
+	}
+	// On a first-page load, prepend any unmined dex-account txs that bisonw's
+	// history does not have yet (an incoming deposit still in the mempool) so they
+	// show as pending, newest first.
+	if refID == "" && len(dexPending) > 0 {
+		have := make(map[string]bool, len(out))
+		for _, t := range out {
+			have[t.ID] = true
+		}
+		pend := make([]DexWalletTx, 0, len(dexPending))
+		for _, u := range dexPending {
+			if !have[u.ID] {
+				pend = append(pend, u)
+			}
+		}
+		sort.Slice(pend, func(i, j int) bool { return pend[i].Timestamp > pend[j].Timestamp })
+		out = append(pend, out...)
 	}
 	if len(out) > want {
 		out = out[:want]
