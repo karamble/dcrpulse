@@ -61,6 +61,52 @@ const Stat = ({ label, value }: { label: string; value: React.ReactNode }) => (
   </div>
 );
 
+// ReputationMeter mirrors bisonw's client/webserver account.ts ReputationMeter:
+// a track whose left quarter is the penalty (negative-score) zone and right
+// three-quarters the positive-score zone, with a pointer at the current score
+// and penalty markers per bonded tier. The trading-limit bonus follows bisonw's
+// limitBonus(): 1x at score 0 up to 3x at maxScore (parcelLimitScoreMultiplier).
+const WARN_PCT = 25;
+const ReputationMeter = ({ acct }: { acct: DexAccount }) => {
+  const maxScore = acct.maxScore || 1;
+  const displayTier = Math.max(acct.bondedTier, acct.effectiveTier, 0) || 1;
+  const minScore = displayTier * acct.penaltyThreshold * -1;
+  const score = acct.score;
+  const raw =
+    score >= 0
+      ? WARN_PCT + (score / maxScore) * (100 - WARN_PCT)
+      : WARN_PCT - Math.min(WARN_PCT, minScore !== 0 ? (score / minScore) * WARN_PCT : 0);
+  const pos = Math.max(0, Math.min(100, raw));
+  const markers = displayTier > 1 ? Array.from({ length: displayTier - 1 }, (_, i) => (WARN_PCT / displayTier) * (i + 1)) : [];
+  const bonus = score > 0 ? 1 + (score / maxScore) * 2 : 1;
+  return (
+    <div className="space-y-1.5 pb-0.5">
+      <div className="flex items-baseline justify-between">
+        <span className={`text-lg font-mono tabular-nums ${score > 0 ? 'text-success' : score < 0 ? 'text-destructive' : ''}`}>{score}</span>
+        <span className="text-[11px] text-muted-foreground">limit bonus {bonus.toFixed(1)}x</span>
+      </div>
+      <div className="relative h-5">
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-2 rounded-full overflow-hidden flex">
+          <div className="bg-destructive/25" style={{ width: `${WARN_PCT}%` }} />
+          <div className="bg-success/25 flex-1" />
+        </div>
+        <div className="absolute top-1/2 -translate-y-1/2 h-3.5 w-px bg-border" style={{ left: `${WARN_PCT}%` }} />
+        {markers.map((m, i) => (
+          <div key={i} className="absolute top-1/2 -translate-y-1/2 h-2.5 w-px bg-destructive/50" style={{ left: `${m}%` }} />
+        ))}
+        <div
+          className={`absolute top-0 h-full w-0.5 -translate-x-1/2 ${score >= 0 ? 'bg-success' : 'bg-destructive'}`}
+          style={{ left: `${pos}%` }}
+        />
+      </div>
+      <div className="flex justify-between text-[10px] text-muted-foreground/70 font-mono tabular-nums">
+        <span>{minScore}</span>
+        <span>{maxScore}</span>
+      </div>
+    </div>
+  );
+};
+
 // DexAccountPanel shows the per-server account: connection, tier, reputation and
 // bonds, with controls to set the auto-renew target tier and post more bonds.
 export const DexAccountPanel = ({ host }: { host: string }) => {
@@ -186,7 +232,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
         </Card>
 
         <Card title="Reputation">
-          <Stat label="Score" value={`${acct.score} / ${acct.maxScore}`} />
+          <ReputationMeter acct={acct} />
           <Stat label="Penalties" value={acct.penalties} />
           <Stat label="Penalty threshold" value={acct.penaltyThreshold} />
         </Card>

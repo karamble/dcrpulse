@@ -41,6 +41,34 @@ const txAssetID = (txType: number | undefined, sell: boolean, baseID: number, qu
 
 const shortId = (id: string) => (id.length > 18 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id);
 
+// Event kinds the run-log feed can be filtered by. A bot event is exactly one of
+// a DEX order, a CEX order, a deposit, or a withdrawal; order events split by side.
+type EventKind = 'dexBuy' | 'dexSell' | 'cexBuy' | 'cexSell' | 'deposit' | 'withdrawal';
+const EVENT_KINDS: { k: EventKind; label: string }[] = [
+  { k: 'dexBuy', label: 'DEX Buy' },
+  { k: 'dexSell', label: 'DEX Sell' },
+  { k: 'cexBuy', label: 'CEX Buy' },
+  { k: 'cexSell', label: 'CEX Sell' },
+  { k: 'deposit', label: 'Deposit' },
+  { k: 'withdrawal', label: 'Withdrawal' },
+];
+const kindOf = (ev: MMMarketMakingEvent): EventKind | null => {
+  if (ev.dexOrderEvent) return ev.dexOrderEvent.sell ? 'dexSell' : 'dexBuy';
+  if (ev.cexOrderEvent) return ev.cexOrderEvent.sell ? 'cexSell' : 'cexBuy';
+  if (ev.depositEvent) return 'deposit';
+  if (ev.withdrawalEvent) return 'withdrawal';
+  return null;
+};
+
+// fmtDuration renders an HH:MM:SS span between two stamps that may be in seconds
+// or milliseconds (bisonw reports seconds).
+const fmtDuration = (start: number, end: number): string => {
+  const norm = (t: number) => (t > 1e12 ? t / 1000 : t);
+  const s = Math.max(0, Math.floor(norm(end) - norm(start)));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+};
+
 // TxLink links a transaction id to its block explorer: Decred to dcrpulse's own
 // /explorer/tx route, other assets to their external explorer.
 const TxLink = ({ assetID, id }: { assetID: number | null; id: string }) => {
@@ -228,6 +256,32 @@ export const DexMMRunLogs = ({
   const sorted = useMemo(() => Object.values(eventsById).sort((a, b) => b.id - a.id), [eventsById]);
   const oldestId = sorted.length ? sorted[sorted.length - 1].id : undefined;
 
+  // Client-side event-type filter (mirrors bisonw mmlogs). Empty set = show all.
+  // Counts and filtering run over the events loaded so far, not the whole run.
+  const [active, setActive] = useState<Set<EventKind>>(new Set());
+  const counts = useMemo(() => {
+    const c = {} as Record<EventKind, number>;
+    for (const ev of sorted) {
+      const k = kindOf(ev);
+      if (k) c[k] = (c[k] || 0) + 1;
+    }
+    return c;
+  }, [sorted]);
+  const visible = useMemo(
+    () => (active.size === 0 ? sorted : sorted.filter((ev) => { const k = kindOf(ev); return k !== null && active.has(k); })),
+    [sorted, active],
+  );
+  const toggleKind = (k: EventKind) =>
+    setActive((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+
+  const profit = overview?.profitLoss?.profit ?? bot.runStats?.profitLoss.profit ?? 0;
+  const profitRatio = overview?.profitLoss?.profitRatio ?? bot.runStats?.profitLoss.profitRatio ?? 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
@@ -244,23 +298,58 @@ export const DexMMRunLogs = ({
               </span>
             )}
           </h3>
-          <div className="flex items-center gap-3">
-            {overview?.profitLoss && (
-              <span
-                className={`text-xs font-mono tabular-nums ${
-                  overview.profitLoss.profit >= 0 ? 'text-success' : 'text-destructive'
-                }`}
-              >
-                {fmtUsd(overview.profitLoss.profit)}
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-muted/20 text-muted-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="px-4 py-3 border-b border-border/50 space-y-2">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Profit / loss</span>
+              <span className={`text-xs font-mono tabular-nums ${profit >= 0 ? 'text-success' : 'text-destructive'}`}>
+                {fmtUsd(profit)} <span className="text-muted-foreground">{(profitRatio * 100).toFixed(2)}%</span>
               </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Duration</span>
+              <span className="text-xs font-mono tabular-nums">
+                {startTime ? fmtDuration(startTime, overview?.endTime || (bot.running ? Date.now() / 1000 : sorted[0]?.timestamp || Date.now() / 1000)) : '-'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Status</span>
+              <span className={`text-xs ${bot.running ? 'text-success' : 'text-muted-foreground'}`}>{bot.running ? 'Running' : 'Stopped'}</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {EVENT_KINDS.map(({ k, label }) => {
+              const n = counts[k] || 0;
+              const on = active.has(k);
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  disabled={n === 0 && !on}
+                  onClick={() => toggleKind(k)}
+                  className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors disabled:opacity-40 disabled:hover:bg-transparent ${
+                    on ? 'bg-primary/15 border-primary/40 text-primary' : 'border-border/60 text-muted-foreground hover:bg-muted/10'
+                  }`}
+                >
+                  {label}
+                  {n > 0 && <span className="ml-1 opacity-70">{n}</span>}
+                </button>
+              );
+            })}
+            {active.size > 0 && (
+              <button type="button" onClick={() => setActive(new Set())} className="px-2 py-0.5 rounded-full text-[10px] text-muted-foreground hover:text-foreground">
+                Clear
+              </button>
             )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1 rounded-lg hover:bg-muted/20 text-muted-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
           </div>
         </div>
 
@@ -269,7 +358,10 @@ export const DexMMRunLogs = ({
           {sorted.length === 0 && !loading && !err && (
             <div className="py-8 text-center text-xs text-muted-foreground">No events yet.</div>
           )}
-          {sorted.map((ev) => (
+          {sorted.length > 0 && visible.length === 0 && (
+            <div className="py-8 text-center text-xs text-muted-foreground">No events match the filter.</div>
+          )}
+          {visible.map((ev) => (
             <LogRow key={ev.id} ev={ev} market={market} assetOf={assetOf} />
           ))}
           {loading && (

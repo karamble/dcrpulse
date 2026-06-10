@@ -37,6 +37,18 @@ export const fmtPct = (pct: number): string => `${pct >= 0 ? '+' : ''}${pct.toFi
 export const fmtUsd = (v: number): string =>
   v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 
+// fmtAge renders a compact relative age (s/m/h/d) from a unix-ms timestamp.
+export const fmtAge = (ms: number): string => {
+  if (!ms) return '-';
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+};
+
 // usdRateFor returns the USD price for an asset symbol from a symbol->price map
 // (token symbols like "usdc.eth" resolve by their base symbol). 0 when absent.
 export const usdRateFor = (symbol: string, rates: Record<string, number> | null): number => {

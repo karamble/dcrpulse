@@ -4,10 +4,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
-import { fmtAmt, fmtPrice } from './dexFormat';
+import { fmtAge, fmtAmt, fmtPrice } from './dexFormat';
 import type { DexMarket } from '../../services/dcrdexApi';
 import type { MiniOrder, OrderBookState } from './useDexFeed';
 import { DexDepthChart } from './DexDepthChart';
+import { useSecondTick } from './useSecondTick';
 
 const TABS = [
   { id: 'book', label: 'Order book' },
@@ -161,9 +162,14 @@ export const DexOrderBook = ({ market, book, mineTokens, onPick }: Props) => {
   }, [book, marketKey]);
   const live = liveKey === marketKey;
 
+  // Advance the trades tab's relative ages once a second while it is open.
+  useSecondTick(tab === 'trades' && book.recentMatches.length > 0);
+
   const mine = mineTokens ?? EMPTY_MINE;
   const asks = useMemo(() => aggregateLevels(book.sells, mine), [book.sells, mine]); // best ask first
   const bids = useMemo(() => aggregateLevels(book.buys, mine), [book.buys, mine]); // best bid first
+  // Defensive newest-first ordering (the feed already prepends new matches).
+  const trades = useMemo(() => [...book.recentMatches].sort((a, b) => b.stamp - a.stamp), [book.recentMatches]);
   const maxA = asks.length ? asks[asks.length - 1].total : 1;
   const maxB = bids.length ? bids[bids.length - 1].total : 1;
 
@@ -233,18 +239,21 @@ export const DexOrderBook = ({ market, book, mineTokens, onPick }: Props) => {
           <div className="grid grid-cols-3 px-3 py-1.5 text-[11px] uppercase tracking-wider text-muted-foreground/60">
             <span>Price ({market.quote.split('.')[0]})</span>
             <span className="text-right">Size ({market.base})</span>
-            <span className="text-right">Time</span>
+            <span className="text-right">Age</span>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {book.recentMatches.length === 0 && (
+            {trades.length === 0 && (
               <div className="px-3 py-4 text-xs text-muted-foreground">No recent trades</div>
             )}
-            {book.recentMatches.map((t, i) => (
+            {trades.map((t, i) => (
               <div key={i} className="grid grid-cols-3 px-3 py-[3px] font-mono tabular-nums text-[12px]">
                 <span className={t.sell ? 'text-destructive' : 'text-success'}>{fmtPrice(t.rate, market.quote)}</span>
                 <span className="text-right text-muted-foreground">{fmtAmt(t.qty, 2)}</span>
-                <span className="text-right text-muted-foreground/70">
-                  {new Date(t.stamp).toLocaleTimeString('en-US', { hour12: false })}
+                <span
+                  className="text-right text-muted-foreground/70"
+                  title={new Date(t.stamp).toLocaleString()}
+                >
+                  {fmtAge(t.stamp)}
                 </span>
               </div>
             ))}

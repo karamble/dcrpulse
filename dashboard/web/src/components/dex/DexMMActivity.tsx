@@ -2,12 +2,14 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, TrendingDown, TrendingUp } from 'lucide-react';
 import type { DexMarket, MMBotStatus, MMOrderReport } from '../../services/dcrdexApi';
 import { fmtAmt, fmtUsd } from './dexFormat';
 import { botProblemMessages, cexProblemMessages, placedCount } from './dexMMProblems';
 import { DexMMOrderReport } from './DexMMOrderReport';
+import { DexMMPlacementsChart } from './DexMMPlacementsChart';
+import { draftFromConfig } from './dexMMConfig';
 
 // AssetInfo resolves an asset id to a display ticker and its atoms-per-unit
 // conversion factor.
@@ -89,6 +91,10 @@ export const DexMMActivity = ({
     const id = window.setInterval(() => tick((n) => n + 1), 1000);
     return () => window.clearInterval(id);
   }, [bot.running, stats]);
+
+  // The bot's configured placement layout, previewed the same way the wizard
+  // does. Memoized so the per-second timer tick doesn't rebuild the chart.
+  const placements = useMemo(() => draftFromConfig(bot.config), [bot.config]);
 
   if (!bot.running || !stats) {
     return (
@@ -187,6 +193,20 @@ export const DexMMActivity = ({
               onClick={epoch?.sellsReport ? () => setReportModal({ report: epoch.sellsReport!, side: 'Sell' }) : undefined}
             />
           )}
+        </div>
+      )}
+
+      {market && (placements.buys.length > 0 || placements.sells.length > 0) && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Placements</div>
+          <DexMMPlacementsChart
+            market={market}
+            botType={placements.botType}
+            gapStrategy={placements.gapStrategy}
+            buys={placements.buys}
+            sells={placements.sells}
+            report={null}
+          />
         </div>
       )}
 

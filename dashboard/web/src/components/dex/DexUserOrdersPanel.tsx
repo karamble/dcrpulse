@@ -4,9 +4,10 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
+import { convQty, convRate, fmtAge, fmtAmt, fmtPrice } from './dexFormat';
 import { isCancellable, orderStatusString, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { DexOrderDetail } from './DexOrderDetail';
+import { useSecondTick } from './useSecondTick';
 
 interface Props {
   orders: DexOrder[];
@@ -16,18 +17,6 @@ interface Props {
 }
 
 const isOpen = (o: DexOrder) => o.status === 'booked' || o.status === 'epoch';
-
-// fmtAge renders a compact relative age from a unix-ms submit time.
-const fmtAge = (ms: number): string => {
-  if (!ms) return '-';
-  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-};
 
 const Datum = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div className="flex justify-between gap-2">
@@ -44,6 +33,8 @@ const Datum = ({ label, children }: { label: string; children: React.ReactNode }
 export const DexUserOrdersPanel = ({ orders, market, preview, onCancel }: Props) => {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedID, setSelectedID] = useState<string | null>(null);
+  // Advance the expanded rows' "Age" once a second without a data refetch.
+  useSecondTick(expanded.size > 0);
 
   const baseConv = market.baseConvFactor || 1e8;
   const quoteConv = market.quoteConvFactor || 1e8;
