@@ -110,6 +110,14 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
 
   const { requestCancel, modal: cancelModal } = useDexCancel(loadFirst);
 
+  // Canceled orders are hidden under "All statuses"; they only show when the
+  // status filter is explicitly set to "canceled". Pagination still reads from
+  // the raw loaded array, so this only affects what is rendered.
+  const visibleOrders = useMemo(
+    () => (statusFilter === 'canceled' ? orders || [] : (orders || []).filter((o) => o.status !== 'canceled')),
+    [orders, statusFilter],
+  );
+
   if (err) {
     return (
       <div className="px-3 lg:px-4">
@@ -165,11 +173,11 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
             </option>
           ))}
         </select>
-        <span className="text-xs text-muted-foreground ml-auto">{orders.length} orders</span>
+        <span className="text-xs text-muted-foreground ml-auto">{visibleOrders.length} orders</span>
       </div>
 
       <div className="rounded-xl border border-border/50 overflow-hidden">
-        {orders.length === 0 ? (
+        {visibleOrders.length === 0 ? (
           <div className="px-4 py-8 text-sm text-muted-foreground">No orders.</div>
         ) : (
           <table className="w-full text-sm">
@@ -187,7 +195,7 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
               </tr>
             </thead>
             <tbody>
-              {orders.map((o) => {
+              {visibleOrders.map((o) => {
                 const mk = marketByKey[marketKey(o.baseID, o.quoteID)];
                 const baseConv = mk?.baseConvFactor || 1e8;
                 const quoteConv = mk?.quoteConvFactor || 1e8;
