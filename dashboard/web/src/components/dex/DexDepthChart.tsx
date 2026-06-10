@@ -40,7 +40,13 @@ export const DexDepthChart = ({ market, book }: { market: DexMarket; book: Order
     const padB = 20;
     const cw = W - padR;
     const chh = H - padT - padB;
-    const X = (r: number) => ((r - xMin) / (xMax - xMin)) * cw;
+    // Split the width at the mid so the two sides always meet in the centre:
+    // bids map to the left half [xMin, mid], asks to the right half [mid, xMax].
+    // A single [xMin, xMax] scale pushes the mid off-centre whenever one side
+    // spans a wider price range than the other (squashing the narrower side).
+    const half = cw / 2;
+    const X = (r: number) =>
+      r <= mid ? ((r - xMin) / (mid - xMin || 1)) * half : half + ((r - mid) / (xMax - mid || 1)) * half;
     const Y = (c: number) => padT + (1 - c / yMax) * chh;
     const baseline = padT + chh;
 

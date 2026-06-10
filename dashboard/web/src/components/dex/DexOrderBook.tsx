@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { fmtAmt, fmtPrice } from './dexFormat';
 import type { DexMarket } from '../../services/dcrdexApi';
@@ -19,34 +19,78 @@ type BookTab = (typeof TABS)[number]['id'];
 interface Props {
   market: DexMarket;
   book: OrderBookState;
+  mineTokens?: Set<string>;
   onPick?: (p: { rate: number; qty: number; sell: boolean }) => void;
 }
 
 const ROWS = 12;
 
-// withCumulative annotates each level with the running depth total (in base
-// units) accumulated from the best price outward.
-const withCumulative = (orders: MiniOrder[]) => {
+// EMPTY_MINE is a stable empty set so the aggregation memo is not defeated when
+// the caller omits mineTokens.
+const EMPTY_MINE = new Set<string>();
+
+// BookLevel is one aggregated price level: all orders resting at a single
+// message-rate, summed, with the running depth total and a flag for whether one
+// of the user's own orders sits at this price.
+interface BookLevel {
+  rate: number;
+  msgRate: number;
+  qty: number;
+  qtyAtomic: number;
+  count: number;
+  total: number;
+  mine: boolean;
+}
+
+// aggregateLevels bins already-sorted orders by message-rate into one level per
+// distinct price (mirroring bisonw's web book), caps to ROWS distinct levels,
+// then annotates the running depth total (in base units) from the best price
+// outward. mine flags a level holding one of the user's active orders, matched
+// by the book token, which is the order id's first 4 bytes.
+const aggregateLevels = (orders: MiniOrder[], mineTokens: Set<string>): BookLevel[] => {
+  const levels: BookLevel[] = [];
+  let last: BookLevel | undefined;
+  for (const o of orders) {
+    if (last && last.msgRate === o.msgRate) {
+      last.qty += o.qty;
+      last.qtyAtomic += o.qtyAtomic;
+      last.count += 1;
+      if (mineTokens.has(o.token)) last.mine = true;
+      continue;
+    }
+    if (levels.length >= ROWS) break;
+    last = {
+      rate: o.rate,
+      msgRate: o.msgRate,
+      qty: o.qty,
+      qtyAtomic: o.qtyAtomic,
+      count: 1,
+      total: 0,
+      mine: mineTokens.has(o.token),
+    };
+    levels.push(last);
+  }
   let cum = 0;
-  return orders.slice(0, ROWS).map((o) => ({ ...o, total: (cum += o.qty) }));
+  for (const lv of levels) lv.total = cum += lv.qty;
+  return levels;
 };
 
-// OrderRow renders one book level. It briefly flashes when the level's size
-// changes or when it first appears after the initial book load (live), so the
-// user notices live updates. It is a stable top-level component so React keeps
-// each row instance across updates (keyed by order token); the flash is
-// re-triggered by remounting a keyed overlay whose animation runs once.
+// OrderRow renders one aggregated book level. It briefly flashes when the
+// level's summed size changes or when it first appears after the initial book
+// load (live), so the user notices live updates. It is a stable top-level
+// component so React keeps each row instance across updates (keyed by price
+// level); the flash is re-triggered by remounting a keyed overlay whose
+// animation runs once. A subtle count badge marks prices with more than one
+// order, and a middle dot marks a price where the user has an order.
 const OrderRow = ({
   o,
-  total,
   max,
   sell,
   quote,
   live,
   onPick,
 }: {
-  o: MiniOrder;
-  total: number;
+  o: BookLevel;
   max: number;
   sell: boolean;
   quote: string;
@@ -67,7 +111,7 @@ const OrderRow = ({
     <button
       type="button"
       onClick={() => onPick?.({ rate: o.rate, qty: o.qty, sell })}
-      className="relative grid w-full grid-cols-3 px-3 py-[3px] font-mono tabular-nums text-[11px] text-left hover:bg-muted/20"
+      className="relative grid w-full grid-cols-3 px-3 py-[3px] font-mono tabular-nums text-[12px] text-left hover:bg-muted/20"
     >
       {nonce > 0 && (
         <span
@@ -77,16 +121,35 @@ const OrderRow = ({
       )}
       <span
         className={`absolute inset-y-0 right-0 ${sell ? 'bg-destructive/15' : 'bg-success/15'}`}
-        style={{ width: `${(total / max) * 100}%` }}
+        style={{ width: `${(o.total / max) * 100}%` }}
       />
-      <span className={`relative ${sell ? 'text-destructive' : 'text-success'}`}>{fmtPrice(o.rate, quote)}</span>
-      <span className="relative text-right text-muted-foreground">{fmtAmt(o.qty, 2)}</span>
-      <span className="relative text-right text-muted-foreground/70">{fmtAmt(total, 2)}</span>
+      <span className={`relative flex items-center gap-1 ${sell ? 'text-destructive' : 'text-success'}`}>
+        <span
+          className={`w-1.5 text-center ${o.mine ? 'text-foreground' : 'text-transparent'}`}
+          title={o.mine ? 'you have an order at this price' : undefined}
+          aria-hidden={!o.mine}
+        >
+          ·
+        </span>
+        {fmtPrice(o.rate, quote)}
+      </span>
+      <span className="relative flex items-center justify-end gap-1 text-muted-foreground">
+        {o.count > 1 && (
+          <span
+            className="font-mono text-[9px] leading-none bg-muted/40 px-1 py-0.5 rounded-full text-muted-foreground/80"
+            title={`quantity is comprised of ${o.count} orders`}
+          >
+            {o.count}
+          </span>
+        )}
+        {fmtAmt(o.qty, 2)}
+      </span>
+      <span className="relative text-right text-muted-foreground/70">{fmtAmt(o.total, 2)}</span>
     </button>
   );
 };
 
-export const DexOrderBook = ({ market, book, onPick }: Props) => {
+export const DexOrderBook = ({ market, book, mineTokens, onPick }: Props) => {
   const [tab, setTab] = useState<BookTab>('book');
 
   // Track whether the book for the current market has loaded, so the initial
@@ -98,8 +161,9 @@ export const DexOrderBook = ({ market, book, onPick }: Props) => {
   }, [book, marketKey]);
   const live = liveKey === marketKey;
 
-  const asks = withCumulative(book.sells); // best ask first
-  const bids = withCumulative(book.buys); // best bid first
+  const mine = mineTokens ?? EMPTY_MINE;
+  const asks = useMemo(() => aggregateLevels(book.sells, mine), [book.sells, mine]); // best ask first
+  const bids = useMemo(() => aggregateLevels(book.buys, mine), [book.buys, mine]); // best bid first
   const maxA = asks.length ? asks[asks.length - 1].total : 1;
   const maxB = bids.length ? bids[bids.length - 1].total : 1;
 
@@ -130,7 +194,7 @@ export const DexOrderBook = ({ market, book, onPick }: Props) => {
 
       {tab === 'book' ? (
         <div className="flex flex-col min-h-0 flex-1">
-          <div className="grid grid-cols-3 px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+          <div className="grid grid-cols-3 px-3 py-1.5 text-[11px] uppercase tracking-wider text-muted-foreground/60">
             <span>Price ({market.quote.split('.')[0]})</span>
             <span className="text-right">Size ({market.base})</span>
             <span className="text-right">Total</span>
@@ -142,11 +206,11 @@ export const DexOrderBook = ({ market, book, onPick }: Props) => {
                 .slice()
                 .reverse()
                 .map((o) => (
-                  <OrderRow key={o.token} o={o} total={o.total} max={maxA} sell quote={market.quote} live={live} onPick={onPick} />
+                  <OrderRow key={o.msgRate} o={o} max={maxA} sell quote={market.quote} live={live} onPick={onPick} />
                 ))}
             </div>
 
-            <div className="flex items-center justify-between px-3 py-1.5 bg-muted/15 border-y border-border/50 text-[11px]">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-muted/15 border-y border-border/50 text-[12px]">
               <span className="font-mono tabular-nums text-sm font-semibold text-success flex items-center gap-1">
                 {spread >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
                 {fmtPrice(mid, market.quote)}
@@ -159,14 +223,14 @@ export const DexOrderBook = ({ market, book, onPick }: Props) => {
 
             <div className="flex-1 flex flex-col overflow-hidden">
               {bids.map((o) => (
-                <OrderRow key={o.token} o={o} total={o.total} max={maxB} sell={false} quote={market.quote} live={live} onPick={onPick} />
+                <OrderRow key={o.msgRate} o={o} max={maxB} sell={false} quote={market.quote} live={live} onPick={onPick} />
               ))}
             </div>
           </div>
         </div>
       ) : tab === 'trades' ? (
         <div className="flex flex-col min-h-0 flex-1">
-          <div className="grid grid-cols-3 px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+          <div className="grid grid-cols-3 px-3 py-1.5 text-[11px] uppercase tracking-wider text-muted-foreground/60">
             <span>Price ({market.quote.split('.')[0]})</span>
             <span className="text-right">Size ({market.base})</span>
             <span className="text-right">Time</span>
@@ -176,7 +240,7 @@ export const DexOrderBook = ({ market, book, onPick }: Props) => {
               <div className="px-3 py-4 text-xs text-muted-foreground">No recent trades</div>
             )}
             {book.recentMatches.map((t, i) => (
-              <div key={i} className="grid grid-cols-3 px-3 py-[3px] font-mono tabular-nums text-[11px]">
+              <div key={i} className="grid grid-cols-3 px-3 py-[3px] font-mono tabular-nums text-[12px]">
                 <span className={t.sell ? 'text-destructive' : 'text-success'}>{fmtPrice(t.rate, market.quote)}</span>
                 <span className="text-right text-muted-foreground">{fmtAmt(t.qty, 2)}</span>
                 <span className="text-right text-muted-foreground/70">

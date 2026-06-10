@@ -58,7 +58,7 @@ export const DexUserOrdersPanel = ({ orders, market, preview, onCancel }: Props)
   const selected = selectedID ? orders.find((o) => o.id === selectedID) : null;
   if (selected) {
     return (
-      <div className="rounded-xl border border-border/60 bg-card overflow-hidden py-3">
+      <div className="py-3">
         <DexOrderDetail order={selected} market={market} onBack={() => setSelectedID(null)} onCancel={onCancel} />
       </div>
     );
@@ -73,7 +73,7 @@ export const DexUserOrdersPanel = ({ orders, market, preview, onCancel }: Props)
     });
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
+    <div className="overflow-hidden">
       <div className="px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground/60 border-b border-border/40 flex items-center gap-2">
         Your Orders
         <span className="text-muted-foreground/50 normal-case tracking-normal">

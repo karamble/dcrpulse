@@ -142,6 +142,19 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const candles = preview ? previewCandles : live.candles;
   const liveStats = useMemo(() => statsFromCandles(live.candles), [live.candles]);
   const orders = preview ? mockOrders : liveOrders;
+  // 8-hex token prefixes (a book token is the order id's first 4 bytes) of the
+  // user's own active orders on the selected market, so the order book can mark
+  // the price levels where the user has an order.
+  const mineTokens = useMemo(() => {
+    const s = new Set<string>();
+    if (!sel) return s;
+    for (const o of orders) {
+      if (o.baseID !== sel.baseID || o.quoteID !== sel.quoteID) continue;
+      if (o.status !== 'booked' && o.status !== 'epoch') continue;
+      s.add(o.id.slice(0, 8));
+    }
+    return s;
+  }, [orders, sel]);
   const sameSel = (m: DexMarket) => !!sel && m.baseID === sel.baseID && m.quoteID === sel.quoteID;
   const spots = useDexSpots();
   const spotStats = (m: DexMarket): MarketStats | null => {
@@ -225,20 +238,25 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-px rounded-xl overflow-hidden border border-border/60 bg-border/60 lg:grid-cols-[256px_1fr_330px] lg:grid-rows-[minmax(0,1fr)_340px] lg:h-[calc(100vh-11rem)]">
-        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-auto lg:max-h-none lg:block lg:col-start-1 lg:row-start-1 lg:row-span-2 ${mobilePane === 'markets' ? '' : 'hidden'}`}>
+      <div className="grid grid-cols-1 gap-px rounded-xl overflow-hidden border border-border/60 bg-border/60 lg:grid-cols-[256px_1fr_340px]">
+        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-auto lg:block lg:col-start-1 lg:row-start-1 ${mobilePane === 'markets' ? '' : 'hidden'}`}>
           <DexMarketsPanel markets={markets} selected={sel} onSelect={setSel} statsFor={statsFor} />
         </section>
 
-        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-auto lg:block lg:col-start-2 lg:row-start-1 lg:row-span-2 ${mobilePane === 'chart' ? '' : 'hidden'}`}>
+        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-auto lg:block lg:col-start-2 lg:row-start-1 ${mobilePane === 'chart' ? '' : 'hidden'}`}>
           <DexChartPanel market={sel} candles={candles} durs={chartDurs} dur={dur} onDur={setDur} />
         </section>
 
-        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-auto lg:block lg:col-start-3 lg:row-start-1 ${mobilePane === 'book' ? '' : 'hidden'}`}>
-          <DexOrderBook market={sel} book={book} onPick={onPick} />
+        {/* Right sidebar order book: a fixed near-fold height so plenty of
+            levels show and the Trades tab's match history scrolls inside it
+            (rather than stretching the page); the trade card flows below. */}
+        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-[calc(100vh-13rem)] lg:block lg:col-start-3 lg:row-start-1 ${mobilePane === 'book' ? '' : 'hidden'}`}>
+          <DexOrderBook market={sel} book={book} mineTokens={mineTokens} onPick={onPick} />
         </section>
 
-        <section className={`bg-card min-h-0 min-w-0 h-[70vh] overflow-y-auto lg:h-auto lg:block lg:col-start-3 lg:row-start-2 ${mobilePane === 'trade' ? '' : 'hidden'}`}>
+        {/* Trade card: under the order book, shown in full (the page scrolls);
+            spans the lower rows, leaving room for more cards. */}
+        <section className={`bg-card min-h-0 min-w-0 h-[70vh] overflow-y-auto lg:h-auto lg:overflow-visible lg:block lg:col-start-3 lg:row-start-2 lg:row-span-2 ${mobilePane === 'trade' ? '' : 'hidden'}`}>
           {botRunning && botRun ? (
             <div className="flex flex-col h-full">
               <div className="flex border-b border-border/50 text-xs">
@@ -268,13 +286,15 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
             <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} bestBid={bestBid} bestAsk={bestAsk} onPlaced={refreshOrders} />
           )}
         </section>
+
+        <section className="bg-card min-h-0 min-w-0 overflow-auto lg:col-start-1 lg:col-span-2 lg:row-start-2">
+          <DexUserOrdersPanel orders={orders} market={sel} preview={preview} onCancel={requestCancel} />
+        </section>
+
+        <section className="bg-card min-h-0 min-w-0 overflow-hidden h-[340px] lg:h-[340px] lg:col-start-1 lg:col-span-2 lg:row-start-3">
+          <DexOrdersPanel orders={orders} markets={markets} preview={preview} onCancel={requestCancel} />
+        </section>
       </div>
-
-      <DexUserOrdersPanel orders={orders} market={sel} preview={preview} onCancel={requestCancel} />
-
-      <section className="h-[280px] rounded-xl overflow-hidden border border-border/60 bg-card">
-        <DexOrdersPanel orders={orders} markets={markets} preview={preview} onCancel={requestCancel} />
-      </section>
 
       {cancelModal}
     </div>
