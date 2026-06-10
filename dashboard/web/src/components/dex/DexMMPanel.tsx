@@ -5,13 +5,17 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Bot, KeyRound, Pencil, Play, Plus, Square, Trash2 } from 'lucide-react';
 import {
+  getDexAssetCatalog,
   getDexConfig,
+  getMMMarketReport,
   removeMMBotConfig,
   startMMBot,
   stopMMBot,
+  type DexAsset,
   type DexMarket,
   type MMAllocation,
   type MMBotStatus,
+  type MMMarketReport,
 } from '../../services/dcrdexApi';
 import { useMMRefresh, useMMStatus } from './DexLiveProvider';
 import { CoinIcon } from './CoinIcon';
@@ -44,6 +48,8 @@ export const DexMMPanel = () => {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [startBot, setStartBot] = useState<MMBotStatus | null>(null);
   const [startBusy, setStartBusy] = useState(false);
+  const [catalog, setCatalog] = useState<DexAsset[]>([]);
+  const [startReport, setStartReport] = useState<MMMarketReport | null>(null);
 
   useEffect(() => {
     getDexConfig(HOST)
@@ -51,6 +57,30 @@ export const DexMMPanel = () => {
       .catch(() => {})
       .finally(() => setMarketsLoaded(true));
   }, []);
+
+  // Asset catalog (fee asset ids + factors) feeds the funding dialog's suggested
+  // allocation; the market report supplies its per-lot fees.
+  useEffect(() => {
+    getDexAssetCatalog()
+      .then(setCatalog)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!startBot) {
+      setStartReport(null);
+      return;
+    }
+    let live = true;
+    getMMMarketReport(startBot.config.host, startBot.config.baseID, startBot.config.quoteID)
+      .then((r) => {
+        if (live) setStartReport(r);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [startBot]);
 
   const bots = status?.bots ?? [];
   const cexes = status?.cexes ?? {};
@@ -69,12 +99,21 @@ export const DexMMPanel = () => {
     }
   };
 
-  const confirmStart = async (alloc: MMAllocation) => {
+  const confirmStart = async (
+    alloc: MMAllocation,
+    autoRebalance?: { minBaseTransfer: number; minQuoteTransfer: number },
+  ) => {
     if (!startBot) return;
     setStartBusy(true);
     setErr(null);
     try {
-      await startMMBot({ host: startBot.config.host, baseID: startBot.config.baseID, quoteID: startBot.config.quoteID, alloc });
+      await startMMBot({
+        host: startBot.config.host,
+        baseID: startBot.config.baseID,
+        quoteID: startBot.config.quoteID,
+        alloc,
+        autoRebalance,
+      });
       refresh();
       setStartBot(null);
     } catch (e: any) {
@@ -289,6 +328,9 @@ export const DexMMPanel = () => {
           return (
             <DexMMFundingDialog
               market={m}
+              config={startBot.config}
+              report={startReport}
+              catalog={catalog}
               needsCex={needsCex(botTypeOf(startBot.config))}
               busy={startBusy}
               onConfirm={confirmStart}

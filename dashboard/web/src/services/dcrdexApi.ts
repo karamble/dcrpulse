@@ -821,13 +821,29 @@ export interface MMOracleReport {
   bestBuy: number;
   bestSell: number;
 }
+// MMLotFees mirrors bisonw's mm.LotFees: per-lot swap/redeem/refund fees in the
+// fee asset's atomic units.
+export interface MMLotFees {
+  swap: number;
+  redeem: number;
+  refund: number;
+}
+// MMLotFeeRange mirrors bisonw's mm.LotFeeRange: the estimated and worst-case
+// per-lot fees, used to size a bot's funding reserves.
+export interface MMLotFeeRange {
+  max: MMLotFees;
+  estimated: MMLotFees;
+}
 // MMMarketReport is bisonw's mm.MarketReport: the aggregate oracle price, the
-// per-oracle breakdown, and the base/quote fiat rates used for USD conversion.
+// per-oracle breakdown, the base/quote fiat rates used for USD conversion, and
+// the per-lot fee ranges (consumed by the funding allocation math).
 export interface MMMarketReport {
   price: number;
   oracles: MMOracleReport[] | null;
   baseFiatRate: number;
   quoteFiatRate: number;
+  baseFees?: MMLotFeeRange;
+  quoteFees?: MMLotFeeRange;
 }
 
 export const getMMStatus = async (): Promise<MMStatus | null> => {

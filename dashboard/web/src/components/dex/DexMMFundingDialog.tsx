@@ -2,35 +2,49 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Wallet, X } from 'lucide-react';
-import { getDexWallets, type DexMarket, type DexWalletState, type MMAllocation } from '../../services/dcrdexApi';
+import {
+  getDexWallets,
+  type DexAsset,
+  type DexMarket,
+  type DexWalletState,
+  type MMAllocation,
+  type MMBotConfig,
+  type MMMarketReport,
+} from '../../services/dcrdexApi';
 import { CoinIcon } from './CoinIcon';
 import { fmtAmt } from './dexFormat';
 import { toAtoms } from './dexMMConfig';
+import { suggestedAllocation, TRANSFER_FACTOR } from './dexMMAlloc';
 
 // DexMMFundingDialog collects the allocation for starting a bot. Per v1.0.6,
 // allocation is supplied at start time (mm.StartConfig), not stored in the bot
-// config. Amounts are conventional and converted to atoms; available DEX
-// balances are shown for guidance.
+// config. It pre-fills bisonw's suggested allocation (book inventory + order
+// reserves + booking/swap fees + slippage, sized to the bot's placements) for
+// each asset, including a token's fee asset, and flags amounts that exceed the
+// available DEX balance. Amounts stay editable and are sent as atoms.
 export const DexMMFundingDialog = ({
   market,
+  config,
+  report,
+  catalog,
   needsCex,
   busy,
   onConfirm,
   onCancel,
 }: {
   market: DexMarket;
+  config: MMBotConfig;
+  report: MMMarketReport | null;
+  catalog: DexAsset[];
   needsCex: boolean;
   busy: boolean;
-  onConfirm: (alloc: MMAllocation) => void;
+  onConfirm: (alloc: MMAllocation, autoRebalance?: { minBaseTransfer: number; minQuoteTransfer: number }) => void;
   onCancel: () => void;
 }) => {
   const [wallets, setWallets] = useState<DexWalletState[]>([]);
-  const [dexBase, setDexBase] = useState('0');
-  const [dexQuote, setDexQuote] = useState('0');
-  const [cexBase, setCexBase] = useState('0');
-  const [cexQuote, setCexQuote] = useState('0');
+  const [amts, setAmts] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,47 +53,109 @@ export const DexMMFundingDialog = ({
       .catch(() => {});
   }, []);
 
-  const avail = (assetID: number, conv: number): string | null => {
+  const suggested = useMemo(
+    () => suggestedAllocation(config, market, report, catalog),
+    [config, market, report, catalog],
+  );
+
+  // metaFor resolves an asset's symbol + conversion factor, preferring the
+  // suggestion's catalog data and falling back to the market's base/quote.
+  const metaFor = (id: number): { symbol: string; convFactor: number } =>
+    suggested?.assets[id] ??
+    (id === market.baseID
+      ? { symbol: market.base, convFactor: market.baseConvFactor }
+      : id === market.quoteID
+        ? { symbol: market.quote, convFactor: market.quoteConvFactor }
+        : { symbol: String(id), convFactor: 1 });
+
+  const dexIDs = suggested ? Object.keys(suggested.dex).map(Number) : [market.baseID, market.quoteID];
+  const cexIDs = needsCex
+    ? suggested && Object.keys(suggested.cex).length
+      ? Object.keys(suggested.cex).map(Number)
+      : [market.baseID, market.quoteID]
+    : [];
+
+  // Pre-fill each field with the suggested conventional amount once the
+  // suggestion (which needs the market report's fees) is available.
+  useEffect(() => {
+    if (!suggested) return;
+    const init: Record<string, string> = {};
+    const set = (venue: string, src: Record<number, number>, id: number) => {
+      const atoms = src[id] ?? 0;
+      const conv = metaFor(id).convFactor || 1;
+      init[`${venue}:${id}`] = atoms > 0 ? String(Number((atoms / conv).toFixed(8))) : '0';
+    };
+    Object.keys(suggested.dex).forEach((id) => set('dex', suggested.dex, Number(id)));
+    Object.keys(suggested.cex).forEach((id) => set('cex', suggested.cex, Number(id)));
+    setAmts(init);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggested]);
+
+  // DexWalletState.available is already in conventional units (the backend
+  // converts it), the same as every other wallet view.
+  const availConv = (assetID: number): number | null => {
     const w = wallets.find((wl) => wl.assetID === assetID);
-    if (!w || conv <= 0) return null;
-    return fmtAmt(w.available / conv, 4);
+    return w ? w.available : null;
   };
 
   const confirm = () => {
     const alloc: MMAllocation = { dex: {}, cex: {} };
-    const db = toAtoms(market.baseConvFactor, dexBase);
-    const dq = toAtoms(market.quoteConvFactor, dexQuote);
-    if (db > 0) alloc.dex[market.baseID] = db;
-    if (dq > 0) alloc.dex[market.quoteID] = dq;
-    if (needsCex) {
-      const cb = toAtoms(market.baseConvFactor, cexBase);
-      const cq = toAtoms(market.quoteConvFactor, cexQuote);
-      if (cb > 0) alloc.cex[market.baseID] = cb;
-      if (cq > 0) alloc.cex[market.quoteID] = cq;
-    }
+    const fill = (venue: string, ids: number[], target: Record<number, number>) => {
+      ids.forEach((id) => {
+        const atoms = toAtoms(metaFor(id).convFactor, amts[`${venue}:${id}`] ?? '0');
+        if (atoms > 0) target[id] = atoms;
+      });
+    };
+    fill('dex', dexIDs, alloc.dex);
+    if (needsCex) fill('cex', cexIDs, alloc.cex);
     if (Object.keys(alloc.dex).length === 0 && Object.keys(alloc.cex).length === 0) {
       setErr('Allocate funds on at least one side before starting.');
       return;
     }
-    onConfirm(alloc);
+    // For CEX bots, enable auto-rebalance with a minimum transfer sized off a
+    // lot so the bot keeps inventory balanced without churning on dust.
+    const autoRebalance =
+      needsCex && suggested
+        ? {
+            minBaseTransfer: Math.round(TRANSFER_FACTOR * market.lotSize),
+            minQuoteTransfer: Math.round(TRANSFER_FACTOR * suggested.quoteLot),
+          }
+        : undefined;
+    onConfirm(alloc, autoRebalance);
   };
 
   const inputCls =
-    'w-full px-2.5 py-1.5 rounded-lg bg-background border border-border text-sm font-mono focus:outline-none focus:border-primary';
+    'w-full px-2.5 py-1.5 rounded-lg bg-background border text-sm font-mono focus:outline-none focus:border-primary';
 
-  const allocField = (label: string, assetID: number, conv: number, value: string, set: (v: string) => void) => {
-    const a = avail(assetID, conv);
+  const field = (venue: string, id: number) => {
+    const meta = metaFor(id);
+    const key = `${venue}:${id}`;
+    const value = amts[key] ?? '0';
+    const av = venue === 'dex' ? availConv(id) : null;
+    const over = av !== null && (Number(value) || 0) > av;
     return (
-      <label className="flex flex-col gap-1">
+      <label key={key} className="flex flex-col gap-1">
         <span className="flex items-center justify-between text-[11px] uppercase tracking-wider text-muted-foreground/70">
-          <span>{label}</span>
-          {a !== null && (
-            <button type="button" onClick={() => set(a.replace(/,/g, ''))} className="text-primary hover:underline normal-case">
-              max {a}
+          <span className="flex items-center gap-1.5 normal-case">
+            <CoinIcon symbol={meta.symbol} className="h-3.5 w-3.5" />
+            {meta.symbol}
+          </span>
+          {av !== null && (
+            <button
+              type="button"
+              onClick={() => setAmts((a) => ({ ...a, [key]: fmtAmt(av, 8).replace(/,/g, '') }))}
+              className="text-primary hover:underline normal-case"
+            >
+              max {fmtAmt(av, 4)}
             </button>
           )}
         </span>
-        <input value={value} onChange={(e) => set(e.target.value)} className={inputCls} />
+        <input
+          value={value}
+          onChange={(e) => setAmts((a) => ({ ...a, [key]: e.target.value }))}
+          className={`${inputCls} ${over ? 'border-destructive' : 'border-border'}`}
+        />
+        {over && <span className="text-[10px] text-destructive">Exceeds available balance</span>}
       </label>
     );
   };
@@ -98,24 +174,18 @@ export const DexMMFundingDialog = ({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Set how much to reserve for this bot. Starting places orders and trades real funds.
+          {suggested
+            ? 'Suggested amounts cover the bot’s orders, reserves and fees. Adjust if needed. Starting trades real funds.'
+            : 'Set how much to reserve for this bot. Starting places orders and trades real funds.'}
         </p>
 
         <div className="space-y-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
-            <CoinIcon symbol={market.base} className="h-4 w-4" /> DEX allocation
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {allocField(market.base, market.baseID, market.baseConvFactor, dexBase, setDexBase)}
-            {allocField(market.quote, market.quoteID, market.quoteConvFactor, dexQuote, setDexQuote)}
-          </div>
-          {needsCex && (
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground/70">DEX allocation</div>
+          <div className="grid grid-cols-2 gap-3">{dexIDs.map((id) => field('dex', id))}</div>
+          {needsCex && cexIDs.length > 0 && (
             <>
               <div className="text-[11px] uppercase tracking-wider text-muted-foreground/70">CEX allocation</div>
-              <div className="grid grid-cols-2 gap-3">
-                {allocField(market.base, market.baseID, market.baseConvFactor, cexBase, setCexBase)}
-                {allocField(market.quote, market.quoteID, market.quoteConvFactor, cexQuote, setCexQuote)}
-              </div>
+              <div className="grid grid-cols-2 gap-3">{cexIDs.map((id) => field('cex', id))}</div>
             </>
           )}
         </div>

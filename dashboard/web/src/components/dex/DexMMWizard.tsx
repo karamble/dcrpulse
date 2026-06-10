@@ -4,9 +4,11 @@
 
 import { useEffect, useState } from 'react';
 import {
+  getDexAssetCatalog,
   getMMMarketReport,
   startMMBot,
   updateMMBotConfig,
+  type DexAsset,
   type DexMarket,
   type MMAllocation,
   type MMBotConfig,
@@ -57,6 +59,7 @@ export const DexMMWizard = ({
     editBot ? draftFromConfig(editBot.config) : defaultDraft('basicmm'),
   );
   const [report, setReport] = useState<MMMarketReport | null>(null);
+  const [catalog, setCatalog] = useState<DexAsset[]>([]);
   const [fundingCfg, setFundingCfg] = useState<MMBotConfig | null>(null);
   const [startBusy, setStartBusy] = useState(false);
 
@@ -75,6 +78,14 @@ export const DexMMWizard = ({
       live = false;
     };
   }, [host, market]);
+
+  // The asset catalog (fee asset ids + conversion factors) feeds the funding
+  // dialog's bisonw-parity allocation suggestion.
+  useEffect(() => {
+    getDexAssetCatalog()
+      .then(setCatalog)
+      .catch(() => {});
+  }, []);
 
   const handleMarketSelect = (m: DexMarket) => {
     setMarket(m);
@@ -103,11 +114,14 @@ export const DexMMWizard = ({
     setFundingCfg(cfg);
   };
 
-  const handleFundingConfirm = async (alloc: MMAllocation) => {
+  const handleFundingConfirm = async (
+    alloc: MMAllocation,
+    autoRebalance?: { minBaseTransfer: number; minQuoteTransfer: number },
+  ) => {
     if (!fundingCfg) return;
     setStartBusy(true);
     try {
-      await startMMBot({ host, baseID: fundingCfg.baseID, quoteID: fundingCfg.quoteID, alloc });
+      await startMMBot({ host, baseID: fundingCfg.baseID, quoteID: fundingCfg.quoteID, alloc, autoRebalance });
       refresh();
       onDone();
     } catch {
@@ -152,6 +166,9 @@ export const DexMMWizard = ({
         {fundingCfg && (
           <DexMMFundingDialog
             market={market}
+            config={fundingCfg}
+            report={report}
+            catalog={catalog}
             needsCex={needsCex(botType)}
             busy={startBusy}
             onConfirm={handleFundingConfirm}
