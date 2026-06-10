@@ -244,10 +244,17 @@ func UnlockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 // password.
 func LockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	// Only forget the in-memory app password if bisonw actually locked. Logout
+	// refuses (and locks nothing) while any order is still active, so clearing
+	// the password regardless would leave the daemon - wallets, dex account and
+	// any running bot - unlocked behind a "locked" dashboard.
 	if client, err := rpc.DcrdexClient(); err == nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
-		client.Logout(ctx)
+		if err := client.Logout(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 	}
 	rpc.ClearDcrdexAppPass()
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})

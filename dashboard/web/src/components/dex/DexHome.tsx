@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { getDexExchanges, lockDex, type DexExchange } from '../../services/dcrdexApi';
+import { getDexExchanges, type DexExchange } from '../../services/dcrdexApi';
 import { DexLiveProvider } from './DexLiveProvider';
 import { DexRegister } from './DexRegister';
 import { DexShell, type DexTab } from './DexShell';
@@ -38,11 +38,6 @@ export const DexHome = ({ onLock }: DexHomeProps) => {
     | DexTab
     | undefined;
 
-  const lock = async () => {
-    await lockDex();
-    onLock();
-  };
-
   return (
     <DexLiveProvider>
       {exchanges === null ? (
@@ -50,7 +45,7 @@ export const DexHome = ({ onLock }: DexHomeProps) => {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
       ) : registered || forcedTab ? (
-        <DexShell initialTab={forcedTab ?? 'trade'} onLock={lock} />
+        <DexShell initialTab={forcedTab ?? 'trade'} onLocked={onLock} />
       ) : (
         <DexRegister host={MAINNET_DEX} onRegistered={refresh} />
       )}
