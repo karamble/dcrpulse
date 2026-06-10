@@ -307,6 +307,19 @@ func (c *WebClient) MMStatus(ctx context.Context, appPass string) (json.RawMessa
 	return res.Status, nil
 }
 
+// ArchivedRuns returns the market-maker run history as the raw `runs` array
+// from /api/archivedmmruns (each entry is {startTime, market, profit}).
+func (c *WebClient) ArchivedRuns(ctx context.Context, appPass string) (json.RawMessage, error) {
+	var res struct {
+		webAck
+		Runs json.RawMessage `json:"runs"`
+	}
+	if err := c.call(ctx, http.MethodGet, "/api/archivedmmruns", appPass, nil, &res); err != nil {
+		return nil, err
+	}
+	return res.Runs, nil
+}
+
 // UpdateBotConfig persists (and validates) a bot config. cfg is a full
 // mm.BotConfig JSON object built by the caller.
 func (c *WebClient) UpdateBotConfig(ctx context.Context, appPass string, cfg json.RawMessage) error {

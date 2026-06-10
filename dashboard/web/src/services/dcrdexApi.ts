@@ -1035,6 +1035,19 @@ export const getMMRunLogs = async (
   });
   return data;
 };
+// MMArchivedRun is one past market-maker run (bisonw mm.MarketMakingRun): when
+// it started and the market it ran on. profit is optional - bisonw v1.0.6 does
+// not include it in the archived-runs list (the realized P/L is available in the
+// run's log overview), so treat it as absent unless present.
+export interface MMArchivedRun {
+  startTime: number;
+  market: { host: string; baseID: number; quoteID: number };
+  profit?: number;
+}
+export const getMMArchivedRuns = async (): Promise<MMArchivedRun[]> => {
+  const { data } = await api.get<MMArchivedRun[] | null>('/dcrdex/mm/archivedruns');
+  return data ?? [];
+};
 export const updateMMBotConfig = async (cfg: MMBotConfig): Promise<void> => {
   await api.post('/dcrdex/mm/config', cfg);
 };

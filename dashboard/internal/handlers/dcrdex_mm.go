@@ -132,6 +132,27 @@ func GetDcrdexMMRunLogsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(logs)
 }
 
+// GetDcrdexMMArchivedRunsHandler returns the market-maker run history: past runs
+// (start time, market, profit), newest first, for the run-history view.
+func GetDcrdexMMArchivedRunsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	runs, err := client.ArchivedRuns(ctx, appPass)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if len(runs) == 0 {
+		runs = json.RawMessage("[]")
+	}
+	w.Write(runs)
+}
+
 // UpdateDcrdexMMBotConfigHandler persists (and validates) a bot config. The
 // request body is a bisonw mm.BotConfig built by the frontend and forwarded
 // verbatim.

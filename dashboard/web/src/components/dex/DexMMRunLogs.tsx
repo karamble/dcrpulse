@@ -8,7 +8,6 @@ import { Loader2, ScrollText, X } from 'lucide-react';
 import {
   getMMRunLogs,
   type DexMarket,
-  type MMBotStatus,
   type MMMarketMakingEvent,
   type MMRunOverview,
 } from '../../services/dcrdexApi';
@@ -58,6 +57,18 @@ const kindOf = (ev: MMMarketMakingEvent): EventKind | null => {
   if (ev.depositEvent) return 'deposit';
   if (ev.withdrawalEvent) return 'withdrawal';
   return null;
+};
+
+// hadActivity reports whether an order event actually traded. The run log
+// records every order a market maker places, and a bot re-quotes each epoch, so
+// the bulk are placed-then-canceled orders that never matched. There is no
+// explicit cancel status, so "traded" is inferred: a DEX order with at least one
+// settlement transaction, or a CEX order with any fill. Deposits/withdrawals
+// always count as activity.
+const hadActivity = (ev: MMMarketMakingEvent): boolean => {
+  if (ev.dexOrderEvent) return (ev.dexOrderEvent.transactions?.length ?? 0) > 0;
+  if (ev.cexOrderEvent) return ev.cexOrderEvent.baseFilled > 0 || ev.cexOrderEvent.quoteFilled > 0;
+  return true;
 };
 
 // fmtDuration renders an HH:MM:SS span between two stamps that may be in seconds
@@ -194,22 +205,32 @@ const LogRow = ({ ev, market, assetOf }: { ev: MMMarketMakingEvent; market?: Dex
   );
 };
 
-// DexMMRunLogs is a modal feed of a running bot's event log: its DEX/CEX orders,
-// deposits, and withdrawals (with explorer links), newest first. It pages older
-// events on demand and refreshes live on each runevent notification.
+// DexMMRunLogs is a modal feed of a market-maker run's event log: its DEX/CEX
+// orders, deposits, and withdrawals (with explorer links), newest first. It
+// pages older events on demand and refreshes live on each runevent
+// notification. It is identified by a run (host/market/startTime) so it serves
+// both the currently running bot and an archived past run.
 export const DexMMRunLogs = ({
-  bot,
+  host,
+  baseID,
+  quoteID,
+  startTime,
+  running = false,
+  profitFallback,
   market,
   assetOf,
   onClose,
 }: {
-  bot: MMBotStatus;
+  host: string;
+  baseID: number;
+  quoteID: number;
+  startTime: number;
+  running?: boolean;
+  profitFallback?: number;
   market?: DexMarket;
   assetOf: AssetInfo;
   onClose: () => void;
 }) => {
-  const { host, baseID, quoteID } = bot.config;
-  const startTime = bot.runStats?.startTime ?? 0;
   const [eventsById, setEventsById] = useState<Record<number, MMMarketMakingEvent>>({});
   const [overview, setOverview] = useState<MMRunOverview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -259,6 +280,8 @@ export const DexMMRunLogs = ({
   // Client-side event-type filter (mirrors bisonw mmlogs). Empty set = show all.
   // Counts and filtering run over the events loaded so far, not the whole run.
   const [active, setActive] = useState<Set<EventKind>>(new Set());
+  // Hide placed-then-canceled (unfilled) orders by default - they flood the log.
+  const [hideUnfilled, setHideUnfilled] = useState(true);
   const counts = useMemo(() => {
     const c = {} as Record<EventKind, number>;
     for (const ev of sorted) {
@@ -267,9 +290,16 @@ export const DexMMRunLogs = ({
     }
     return c;
   }, [sorted]);
+  const hiddenUnfilled = useMemo(() => (hideUnfilled ? sorted.filter((ev) => !hadActivity(ev)).length : 0), [sorted, hideUnfilled]);
   const visible = useMemo(
-    () => (active.size === 0 ? sorted : sorted.filter((ev) => { const k = kindOf(ev); return k !== null && active.has(k); })),
-    [sorted, active],
+    () =>
+      sorted.filter((ev) => {
+        if (hideUnfilled && !hadActivity(ev)) return false;
+        if (active.size === 0) return true;
+        const k = kindOf(ev);
+        return k !== null && active.has(k);
+      }),
+    [sorted, active, hideUnfilled],
   );
   const toggleKind = (k: EventKind) =>
     setActive((prev) => {
@@ -279,8 +309,8 @@ export const DexMMRunLogs = ({
       return next;
     });
 
-  const profit = overview?.profitLoss?.profit ?? bot.runStats?.profitLoss.profit ?? 0;
-  const profitRatio = overview?.profitLoss?.profitRatio ?? bot.runStats?.profitLoss.profitRatio ?? 0;
+  const profit = overview?.profitLoss?.profit ?? profitFallback ?? 0;
+  const profitRatio = overview?.profitLoss?.profitRatio ?? 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -318,12 +348,12 @@ export const DexMMRunLogs = ({
             <div className="flex flex-col gap-0.5">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Duration</span>
               <span className="text-xs font-mono tabular-nums">
-                {startTime ? fmtDuration(startTime, overview?.endTime || (bot.running ? Date.now() / 1000 : sorted[0]?.timestamp || Date.now() / 1000)) : '-'}
+                {startTime ? fmtDuration(startTime, overview?.endTime || (running ? Date.now() / 1000 : sorted[0]?.timestamp || Date.now() / 1000)) : '-'}
               </span>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Status</span>
-              <span className={`text-xs ${bot.running ? 'text-success' : 'text-muted-foreground'}`}>{bot.running ? 'Running' : 'Stopped'}</span>
+              <span className={`text-xs ${running ? 'text-success' : 'text-muted-foreground'}`}>{running ? 'Running' : 'Stopped'}</span>
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -351,6 +381,11 @@ export const DexMMRunLogs = ({
               </button>
             )}
           </div>
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none">
+            <input type="checkbox" checked={hideUnfilled} onChange={(e) => setHideUnfilled(e.target.checked)} className="accent-primary" />
+            Hide unfilled (canceled) orders
+            {hideUnfilled && hiddenUnfilled > 0 && <span className="text-muted-foreground/50">{hiddenUnfilled} hidden</span>}
+          </label>
         </div>
 
         <div className="overflow-y-auto px-4 grow">

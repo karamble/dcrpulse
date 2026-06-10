@@ -78,7 +78,17 @@ export const DexMMRunningCard = ({
       <DexMMActivity bot={bot} compact market={market} assetOf={assetOf} />
 
       {showLogs && (
-        <DexMMRunLogs bot={bot} market={market} assetOf={resolveAsset} onClose={() => setShowLogs(false)} />
+        <DexMMRunLogs
+          host={bot.config.host}
+          baseID={bot.config.baseID}
+          quoteID={bot.config.quoteID}
+          startTime={bot.runStats?.startTime ?? 0}
+          running={bot.running}
+          profitFallback={bot.runStats?.profitLoss.profit}
+          market={market}
+          assetOf={resolveAsset}
+          onClose={() => setShowLogs(false)}
+        />
       )}
     </div>
   );

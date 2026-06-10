@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, Bot, KeyRound, Pencil, Play, Plus, ScrollText, Square, Trash2 } from 'lucide-react';
+import { AlertCircle, Bot, History, KeyRound, Pencil, Play, Plus, ScrollText, Square, Trash2 } from 'lucide-react';
 import {
   dexAssetForId,
   getDexAssetCatalog,
@@ -24,6 +24,7 @@ import { CexIcon, CEX_DISPLAY, SUPPORTED_CEXES } from './CexIcon';
 import { fmtAmt } from './dexFormat';
 import { DexMMActivity } from './DexMMActivity';
 import { DexMMRunLogs } from './DexMMRunLogs';
+import { DexMMArchives } from './DexMMArchives';
 import { DexMMWizard } from './DexMMWizard';
 import { DexMMFundingDialog } from './DexMMFundingDialog';
 import { DexMMCexConfigForm } from './DexMMCexConfigForm';
@@ -34,7 +35,7 @@ const HOST = 'dex.decred.org:7232';
 const botKind = (b: MMBotStatus): string =>
   b.config.simpleArbConfig ? 'Simple arb' : b.config.arbMarketMakingConfig ? 'Arb market maker' : 'Basic market maker';
 
-type View = 'list' | 'new' | 'edit' | 'cex';
+type View = 'list' | 'new' | 'edit' | 'cex' | 'archives';
 
 // DexMMPanel is the Market Maker tab: a CEX-credentials section, the list of
 // configured bots with start/stop/edit/delete, and the bot config form. Bot and
@@ -146,6 +147,10 @@ export const DexMMPanel = () => {
     );
   }
 
+  if (view === 'archives') {
+    return <DexMMArchives markets={markets} assetOf={assetOf} onBack={() => setView('list')} />;
+  }
+
   if (view === 'new' || view === 'edit') {
     return (
       <div className="px-3 lg:px-4">
@@ -245,15 +250,25 @@ export const DexMMPanel = () => {
             <Bot className="h-4 w-4 text-primary" />
             Bots
           </h3>
-          <button
-            type="button"
-            onClick={() => setView('new')}
-            disabled={!markets.length}
-            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4" />
-            New bot
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setView('archives')}
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-border hover:bg-muted/10"
+            >
+              <History className="h-4 w-4" />
+              Run history
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('new')}
+              disabled={!markets.length}
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              New bot
+            </button>
+          </div>
         </div>
 
         {bots.length === 0 ? (
@@ -384,7 +399,12 @@ export const DexMMPanel = () => {
 
       {logsBot && (
         <DexMMRunLogs
-          bot={logsBot}
+          host={logsBot.config.host}
+          baseID={logsBot.config.baseID}
+          quoteID={logsBot.config.quoteID}
+          startTime={logsBot.runStats?.startTime ?? 0}
+          running={logsBot.running}
+          profitFallback={logsBot.runStats?.profitLoss.profit}
           market={markets.find((mk) => mk.baseID === logsBot.config.baseID && mk.quoteID === logsBot.config.quoteID)}
           assetOf={assetOf}
           onClose={() => setLogsBot(null)}

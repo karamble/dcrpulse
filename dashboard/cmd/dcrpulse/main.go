@@ -224,6 +224,7 @@ func main() {
 	api.HandleFunc("/dcrdex/mm/status", handlers.GetDcrdexMMStatusHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/mm/marketreport", handlers.GetDcrdexMMMarketReportHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/mm/runlogs", handlers.GetDcrdexMMRunLogsHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/mm/archivedruns", handlers.GetDcrdexMMArchivedRunsHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/mm/config", handlers.UpdateDcrdexMMBotConfigHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/mm/config/remove", handlers.RemoveDcrdexMMBotConfigHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/mm/cexconfig", handlers.UpdateDcrdexMMCexConfigHandler).Methods("POST")
