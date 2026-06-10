@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { AlertCircle, X } from 'lucide-react';
 import { cancelDexOrder, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { convQty, fmtAmt } from './dexFormat';
@@ -90,10 +90,12 @@ export function useDexCancel(onDone?: () => void) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const requestCancel = (order: DexOrder, market?: DexMarket) => {
+  // Stable identity so it can be passed to memoized order panels without
+  // defeating their React.memo (only setErr/setPending, which are stable).
+  const requestCancel = useCallback((order: DexOrder, market?: DexMarket) => {
     setErr(null);
     setPending({ order, market });
-  };
+  }, []);
   const dismiss = () => {
     if (busy) return;
     setPending(null);

@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, FlaskConical } from 'lucide-react';
 import { getDexConfig, getDexMyOrders, orderHasActiveMatches, type DexConfig, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { useDexFeed, statsFromCandles, spotToStats, type MarketStats, type MarketSpot } from './useDexFeed';
@@ -10,17 +10,28 @@ import { useDexConn, useDexRefreshOnNotes, useDexSpots, useMMBotRun, useSeedDexS
 import { loadDexConfigCache, saveDexConfigCache } from './dexConfigCache';
 import { DexMMRunningCard } from './DexMMRunningCard';
 import { DexStatsBar } from './DexStatsBar';
-import { DexMarketsPanel } from './DexMarketsPanel';
-import { DexChartPanel } from './DexChartPanel';
+import { DexMarketsPanel as DexMarketsPanelBase } from './DexMarketsPanel';
+import { DexChartPanel as DexChartPanelBase } from './DexChartPanel';
 import { DexOrderBook } from './DexOrderBook';
-import { DexOrdersPanel } from './DexOrdersPanel';
-import { DexUserOrdersPanel } from './DexUserOrdersPanel';
-import { DexOrderForm } from './DexOrderForm';
+import { DexOrdersPanel as DexOrdersPanelBase } from './DexOrdersPanel';
+import { DexUserOrdersPanel as DexUserOrdersPanelBase } from './DexUserOrdersPanel';
+import { DexOrderForm as DexOrderFormBase } from './DexOrderForm';
 import { useDexCancel } from './DexCancelOrder';
 import { mockMarkets, mockBook, mockStats, mockCandles, mockOrders } from './dexMockData';
 
 const HOST = 'dex.decred.org:7232';
 const EMPTY_BOOK = { buys: [], sells: [], recentMatches: [] };
+
+// Memoized at the consumer: DexMarketView re-renders on every coalesced book
+// frame, but these panels' props are stable across book ticks (candles, orders,
+// markets, and the now-stable callbacks), so React.memo skips reconciling them.
+// DexOrderBook is intentionally left unmemoized - it is the panel that should
+// update with the book.
+const DexMarketsPanel = memo(DexMarketsPanelBase);
+const DexChartPanel = memo(DexChartPanelBase);
+const DexOrdersPanel = memo(DexOrdersPanelBase);
+const DexUserOrdersPanel = memo(DexUserOrdersPanelBase);
+const DexOrderForm = memo(DexOrderFormBase);
 
 // Default to the DCR/BTC market (asset ids 42/0), falling back to the first
 // market the server lists.
@@ -99,12 +110,12 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
     if (!preview && status === 1 && prev !== null && prev !== 1) fetchConfig();
   }, [conn?.status, preview, fetchConfig]);
 
-  const refreshOrders = () => {
+  const refreshOrders = useCallback(() => {
     if (preview) return;
     getDexMyOrders(HOST)
       .then(setLiveOrders)
       .catch(() => {});
-  };
+  }, [preview]);
   // Poll fast while any order is still settling so the panels' swap-status bars
   // and statuses advance on their own; fall back to a slow idle backstop when
   // nothing is active. Live order/match notes still trigger an immediate refresh.
@@ -129,7 +140,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
     ? { host: HOST, base: sel.baseID, quote: sel.quoteID, baseConvFactor: sel.baseConvFactor, quoteConvFactor: sel.quoteConvFactor }
     : null;
   const live = useDexFeed(preview ? null : marketRef, dur);
-  const chartDurs = preview ? ['1h', '24h'] : durs.length ? durs : ['1h'];
+  const chartDurs = useMemo(() => (preview ? ['1h', '24h'] : durs.length ? durs : ['1h']), [preview, durs]);
 
   const book = preview ? (sel ? mockBook(sel) : EMPTY_BOOK) : live.book;
   // Best opposing book levels (conventional price) let the order form estimate a
@@ -158,17 +169,22 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
     }
     return s;
   }, [orders, sel]);
-  const sameSel = (m: DexMarket) => !!sel && m.baseID === sel.baseID && m.quoteID === sel.quoteID;
   const spots = useDexSpots();
-  const spotStats = (m: DexMarket): MarketStats | null => {
-    const s = spots[`${m.baseID}-${m.quoteID}`];
-    return s ? spotToStats(s, m) : null;
-  };
   // Selected market keeps its richer candle-derived stats (live with
   // candle_update); other rows use the streamed spot feed, falling back to the
-  // spot for the selected market before its candles load.
-  const statsFor = (m: DexMarket): MarketStats | null =>
-    preview ? mockStats(m) : sameSel(m) ? liveStats ?? spotStats(m) : spotStats(m);
+  // spot for the selected market before its candles load. Memoized so an
+  // order-book tick (which changes neither spots nor liveStats) does not
+  // re-render the memoized markets list.
+  const statsFor = useCallback(
+    (m: DexMarket): MarketStats | null => {
+      if (preview) return mockStats(m);
+      const s = spots[`${m.baseID}-${m.quoteID}`];
+      const spot = s ? spotToStats(s, m) : null;
+      const isSel = !!sel && m.baseID === sel.baseID && m.quoteID === sel.quoteID;
+      return isSel ? liveStats ?? spot : spot;
+    },
+    [preview, sel, spots, liveStats],
+  );
 
   // When a market-maker bot is running on the selected market, manual trading is
   // blocked (mirrors bisonw): the order form is replaced by a running-bot card.

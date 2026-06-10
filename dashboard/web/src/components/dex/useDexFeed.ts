@@ -161,7 +161,36 @@ export function useDexFeed(market: DexMarketRef | null, dur = '1h'): DexFeed {
     candlesRef.current = [];
     const sortBuys = () => buys.sort((a, b) => b.rate - a.rate);
     const sortSells = () => sells.sort((a, b) => a.rate - b.rate);
-    const commit = () => setBook({ buys: [...buys], sells: [...sells], recentMatches: [...recentMatches] });
+    // Coalesce the order-book and candle messages into one React commit per
+    // animation frame. On a busy market the socket fires many updates per second;
+    // flushing each one re-renders the whole trading grid. Batching to a frame
+    // bounds rendering to the display refresh, and requestAnimationFrame pauses
+    // while the tab is backgrounded, so a hidden dashboard does no render work.
+    let bookDirty = false;
+    let candlesDirty = false;
+    let raf = 0;
+    const flush = () => {
+      raf = 0;
+      if (bookDirty) {
+        bookDirty = false;
+        setBook({ buys: [...buys], sells: [...sells], recentMatches: [...recentMatches] });
+      }
+      if (candlesDirty) {
+        candlesDirty = false;
+        setCandles([...candlesRef.current]);
+      }
+    };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(flush);
+    };
+    const commit = () => {
+      bookDirty = true;
+      schedule();
+    };
+    const commitCandles = () => {
+      candlesDirty = true;
+      schedule();
+    };
     // Recent matches (MatchSummary) carry atomic rate/qty, unlike book orders.
     const toTrade = (m: any): Trade => ({
       rate: (Number(m?.rate) || 0) / rateConv,
@@ -228,7 +257,7 @@ export function useDexFeed(market: DexMarketRef | null, dur = '1h'): DexFeed {
         case 'candles': {
           if (data?.dur && data.dur !== durRef.current) break;
           candlesRef.current = ((data?.candles || []) as any[]).map(toCandle);
-          setCandles([...candlesRef.current]);
+          commitCandles();
           break;
         }
         case 'candle_update': {
@@ -238,7 +267,7 @@ export function useDexFeed(market: DexMarketRef | null, dur = '1h'): DexFeed {
           const last = series[series.length - 1];
           if (last && last.startStamp === c.startStamp) series[series.length - 1] = c;
           else candlesRef.current = [...series, c];
-          setCandles([...candlesRef.current]);
+          commitCandles();
           break;
         }
         case 'epoch_match_summary': {
@@ -299,6 +328,7 @@ export function useDexFeed(market: DexMarketRef | null, dur = '1h'): DexFeed {
       ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
       ws.close();
       wsRef.current = null;
+      if (raf) cancelAnimationFrame(raf);
     };
   }, [market?.host, market?.base, market?.quote, market?.baseConvFactor, market?.quoteConvFactor]);
 
