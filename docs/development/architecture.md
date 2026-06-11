@@ -622,7 +622,7 @@ export const importXpub = async (xpub: string, gapLimit: number) => {
 **dcrd build**:
 ```dockerfile
 # Stage 1: Build from source
-FROM golang:1.21-alpine AS builder
+FROM golang:1.26-alpine AS builder
 RUN git clone --depth 1 --branch ${DCRD_VERSION} https://github.com/decred/dcrd.git
 WORKDIR /go/src/github.com/decred/dcrd
 RUN go install .

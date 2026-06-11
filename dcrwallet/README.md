@@ -12,7 +12,7 @@ The dcrwallet service is set up to run as a **watch-only wallet**, meaning it ca
 
 ## Architecture
 
-- **Base Image**: `golang:1.21-alpine` (builder) → `alpine:latest` (runtime)
+- **Base Image**: `golang:1.26-alpine` (builder) → `alpine:latest` (runtime)
 - **User**: Non-root `dcrwallet` user
 - **Data Directory**: `/home/dcrwallet/.dcrwallet`
 - **RPC Certificates**: Shared from dcrd via volume mount (read-only)

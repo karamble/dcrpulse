@@ -8,7 +8,7 @@ RUN git clone --depth 1 --branch ${BISONW_VERSION} https://github.com/decred/dcr
 WORKDIR /root/dex/client/webserver/site
 RUN npm clean-install && npm run build
 
-FROM golang:1.25-alpine AS gobuilder
+FROM golang:1.26-alpine AS gobuilder
 COPY --from=nodebuilder /root/dex /root/dex
 WORKDIR /root/dex/client/cmd/bisonw
 RUN CGO_ENABLED=0 GOOS=linux go build

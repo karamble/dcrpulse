@@ -5,7 +5,7 @@
 # upstream's own Dockerfile (decred/dcrlnd:Dockerfile) sets GODEBUG=netdns=cgo
 # and uses alpine-sdk to get gcc available.
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 ENV GODEBUG=netdns=cgo
 

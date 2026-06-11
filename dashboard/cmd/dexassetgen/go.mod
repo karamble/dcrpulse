@@ -1,6 +1,6 @@
 module dexassetgen
 
-go 1.24.0
+go 1.26.0
 
 require decred.org/dcrdex v1.0.6
 
