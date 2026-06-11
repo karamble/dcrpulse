@@ -541,7 +541,17 @@ func main() {
 	log.Println("Explorer endpoints: /api/explorer/search, /api/explorer/blocks/*, /api/explorer/transactions/*")
 	log.Println("Treasury endpoints: /api/treasury/info, /api/treasury/scan-history, /api/treasury/scan-progress")
 	log.Println("Frontend: Embedded static files served at /")
-	log.Fatal(http.ListenAndServe(address, r))
+	// ReadHeaderTimeout bounds the header-read phase to defeat Slowloris. Read
+	// and Write timeouts are intentionally left unset so long-lived streams
+	// (WebSocket rescan/events, SSE progress) and large BR file uploads are not
+	// cut off mid-transfer.
+	srv := &http.Server{
+		Addr:              address,
+		Handler:           r,
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 func getEnv(key, defaultValue string) string {
