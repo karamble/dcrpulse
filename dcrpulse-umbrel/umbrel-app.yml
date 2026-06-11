@@ -1,37 +1,41 @@
 manifestVersion: 1
 id: dcrpulse
 name: Decred Pulse
-tagline: Full Decred node with watch-only wallet and database-free block explorer
+tagline: Full Decred node and wallet with Lightning, DCRDEX, Bison Relay, and a block explorer
 category: crypto
-version: "1.0.3"
+version: "2.0.0-rc1"
 port: 8735
 icon: ""
 description: |-
-  Decred Pulse is a comprehensive dashboard for running a full Decred node.
-  
+  Decred Pulse is a comprehensive self-hosted dashboard for the full Decred stack.
+
   It includes:
 
   - Full dcrd blockchain node with transaction indexing
 
-  - dcrwallet with watch-only wallet support
+  - dcrwallet with full wallet support and multi-wallet management
 
-  - Block explorer with mempool and tspends monitoring
+  - Staking (ticket purchase, VSP) and the privacy mixer
 
-  - Watch-Only Wallet management with xpub import support
-  
-  Perfect for Decred node and wallet monitoring, exploring the blockchain, or monitoring Decred network activity.
-  
+  - Lightning Network (dcrlnd): channels and payments
+
+  - DCRDEX: decentralized exchange trading and market making
+
+  - Bison Relay: encrypted messaging, posts, and tipping
+
+  - Block explorer with mempool and treasury monitoring
+
+  Perfect for running, using, and monitoring a complete Decred node and wallet.
+
   Features:
 
-  - Full Decred node
+  - Full Decred node and wallet (multi-wallet)
 
-  - Wallet support
+  - Lightning, DCRDEX, and Bison Relay
 
-  - Modern block explorer
+  - Staking and privacy mixer
 
-  - Mempool monitoring
-
-  - Watch-only wallet with xpub import
+  - Modern block explorer with mempool monitoring
 
 developer: Decred
 website: https://decred.org
@@ -40,9 +44,15 @@ repo: https://github.com/karamble/dcrpulse
 support: https://github.com/karamble/dcrpulse/issues
 gallery: []
 dependencies: []
-releaseNotes: ""
+releaseNotes: |-
+  v2.0.0 upgrades Decred Pulse from a watch-only node and block explorer to the full Decred stack.
+
+  Your existing node and wallet data are preserved and adopted automatically - no resync and no re-import. Your watch-only wallet becomes a full wallet.
+
+  New in this release: full wallet with multi-wallet management, staking, the privacy mixer, Lightning, DCRDEX, and Bison Relay. These features are idle until you set each one up, so your node and wallet keep working exactly as before until then.
+
+  After updating, the wallet starts locked - unlock it in the dashboard to resume balances and transactions. Resource use increases with the new services.
 path: ""
 defaultUsername: ""
 defaultPassword: ""
 submission: https://github.com/getumbrel/umbrel-apps/pull/4121
-
