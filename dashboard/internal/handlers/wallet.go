@@ -262,10 +262,11 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 
 		// Step 1: Import xpub
-		params := []json.RawMessage{
-			json.RawMessage(fmt.Sprintf(`"%s"`, accountName)),
-			json.RawMessage(fmt.Sprintf(`"%s"`, req.Xpub)),
-		}
+		// Encode params with json.Marshal so a quote or backslash in the account
+		// name or xpub cannot break the JSON-RPC request.
+		acctParam, _ := json.Marshal(accountName)
+		xpubParam, _ := json.Marshal(req.Xpub)
+		params := []json.RawMessage{acctParam, xpubParam}
 
 		log.Printf("Step 1/3: Importing xpub for account '%s'", accountName)
 		result, err := rpc.WalletClient.RawRequest(ctx, "importxpub", params)
