@@ -2050,6 +2050,8 @@ func BisonrelayStoreOrderCommentHandler(w http.ResponseWriter, r *http.Request) 
 // /store/files/upload (a digital-download file stored at the given path under
 // the store dir). Form: path + file.
 func BisonrelayStoreFileUploadHandler(w http.ResponseWriter, r *http.Request) {
+	const maxUpload = 200 << 20
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
 		return
