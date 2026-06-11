@@ -1,6 +1,6 @@
 ARG BISONW_VERSION=v1.0.6
 
-FROM node:20-alpine AS nodebuilder
+FROM --platform=$BUILDPLATFORM node:20-alpine AS nodebuilder
 ARG BISONW_VERSION
 RUN apk add --no-cache git
 WORKDIR /root

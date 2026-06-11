@@ -5,7 +5,7 @@ services:
       APP_PORT: 8735
 
   dcrd:
-    image: ghcr.io/karamble/dcrpulse-dcrd:2.0.0-rc1
+    image: ghcr.io/karamble/dcrpulse-dcrd:2.0.0-rc2
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 5m
@@ -31,7 +31,7 @@ services:
       start_period: 120s
 
   dcrwallet:
-    image: ghcr.io/karamble/dcrpulse-dcrwallet:2.0.0-rc1
+    image: ghcr.io/karamble/dcrpulse-dcrwallet:2.0.0-rc2
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -57,7 +57,7 @@ services:
       start_period: 120s
 
   dcrlnd:
-    image: ghcr.io/karamble/dcrpulse-dcrlnd:2.0.0-rc1
+    image: ghcr.io/karamble/dcrpulse-dcrlnd:2.0.0-rc2
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -79,7 +79,7 @@ services:
       start_period: 300s
 
   brclientd:
-    image: ghcr.io/karamble/dcrpulse-brclientd:2.0.0-rc1
+    image: ghcr.io/karamble/dcrpulse-brclientd:2.0.0-rc2
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -92,7 +92,7 @@ services:
         condition: service_started
 
   dcrdex:
-    image: ghcr.io/karamble/dcrpulse-dcrdex:2.0.0-rc1
+    image: ghcr.io/karamble/dcrpulse-dcrdex:2.0.0-rc2
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -104,7 +104,7 @@ services:
       - ${APP_DATA_DIR}/data:/app-data:ro
 
   dashboard:
-    image: ghcr.io/karamble/dcrpulse-dashboard:2.0.0-rc1
+    image: ghcr.io/karamble/dcrpulse-dashboard:2.0.0-rc2
     user: "1000:1000"
     restart: on-failure
     volumes:

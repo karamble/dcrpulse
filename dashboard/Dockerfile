@@ -1,5 +1,5 @@
 # Stage 1: Build frontend with Node.js
-FROM node:18-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:18-alpine AS frontend-builder
 
 WORKDIR /app/web
 
