@@ -75,13 +75,13 @@ jobs:
             type=ref,event=pr
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=2.1.3,enable=${{ matrix.component.name == 'dcrd' && github.ref_type == 'tag' }}
+            type=raw,value=2.1.5,enable=${{ matrix.component.name == 'dcrd' && github.ref_type == 'tag' }}
             type=raw,value=2.1,enable=${{ matrix.component.name == 'dcrd' && github.ref_type == 'tag' }}
-            type=raw,value=2.1.3,enable=${{ matrix.component.name == 'dcrwallet' && github.ref_type == 'tag' }}
+            type=raw,value=2.1.5,enable=${{ matrix.component.name == 'dcrwallet' && github.ref_type == 'tag' }}
             type=raw,value=2.1,enable=${{ matrix.component.name == 'dcrwallet' && github.ref_type == 'tag' }}
-            type=semver,pattern={{version}},enable=${{ matrix.component.name == 'dashboard' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ matrix.component.name == 'dashboard' }}
-            type=semver,pattern={{major}},enable=${{ matrix.component.name == 'dashboard' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
       
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -94,8 +94,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            ${{ matrix.component.name == 'dcrd' && 'DCRD_VERSION=release-v2.1.3' || '' }}
-            ${{ matrix.component.name == 'dcrwallet' && 'DCRWALLET_VERSION=release-v2.1.3' || '' }}
+            ${{ matrix.component.name == 'dcrd' && 'DCRD_VERSION=release-v2.1.5' || '' }}
+            ${{ matrix.component.name == 'dcrwallet' && 'DCRWALLET_VERSION=release-v2.1.5' || '' }}
             ${{ matrix.component.name == 'dcrlnd' && 'DCRLND_VERSION=master' || '' }}
             ${{ matrix.component.name == 'dcrdex' && 'BISONW_VERSION=v1.0.6' || '' }}
             ${{ matrix.component.name == 'brclientd' && 'BRCLIENTD_BASE=0.1.1' || '' }}
