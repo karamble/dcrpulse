@@ -107,33 +107,25 @@ export const BlockDetail = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center py-20">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            <p className="mt-4 text-muted-foreground">Loading block...</p>
-          </div>
-        </div>
+      <div className="text-center py-20">
+        <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <p className="mt-4 text-muted-foreground">Loading block...</p>
       </div>
     );
   }
 
   if (error || !block) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center py-20">
-            <Box className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Block Not Found</h2>
-            <p className="text-muted-foreground mb-6">{error}</p>
-            <button
-              onClick={() => navigate('/explorer')}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              Back to Explorer
-            </button>
-          </div>
-        </div>
+      <div className="text-center py-20">
+        <Box className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
+        <h2 className="text-2xl font-bold mb-2">Block Not Found</h2>
+        <p className="text-muted-foreground mb-6">{error}</p>
+        <button
+          onClick={() => navigate('/explorer')}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+        >
+          Back to Explorer
+        </button>
       </div>
     );
   }
@@ -141,8 +133,7 @@ export const BlockDetail = () => {
   const txGroups = groupTransactionsByType();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -529,7 +520,6 @@ export const BlockDetail = () => {
           </div>
         )}
       </div>
-    </div>
   );
 };
 

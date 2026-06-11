@@ -16,7 +16,7 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2: Build Go backend
-FROM golang:1.24-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 
 WORKDIR /app
 
@@ -29,6 +29,7 @@ RUN go mod download
 # Copy Go source code
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY pkg/ ./pkg/
 
 # Copy built frontend files from previous stage
 COPY --from=frontend-builder /app/web/dist ./cmd/dcrpulse/web/dist
@@ -46,6 +47,17 @@ WORKDIR /app
 # Copy the binary from go-builder
 COPY --from=go-builder /app/dcrpulse .
 RUN chown 1000:1000 /app/dcrpulse
+
+# Create the writable config dir owned by the runtime UID so a fresh named
+# volume gets the right ownership when first mounted.
+RUN mkdir -p /dashboard-data && chown 1000:1000 /dashboard-data
+
+# Pre-create /app-data/dcrlnd + /app-data/brclientd as mountpoints. The
+# dashboard binds /app-data read-only and these two subdirs on top; docker
+# needs the inner mount targets to exist before the outer mount makes
+# /app-data read-only, otherwise container start fails with "read-only
+# file system". When adding a new nested mount, add its dir here too.
+RUN mkdir -p /app-data/dcrlnd /app-data/brclientd && chown -R 1000:1000 /app-data
 
 # Switch to UID 1000 for Umbrel compatibility
 USER 1000

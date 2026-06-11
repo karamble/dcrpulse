@@ -10,11 +10,12 @@ import { AccountsList } from '../components/AccountsList';
 import { ImportXpubModal } from '../components/ImportXpubModal';
 import { SyncProgressBar } from '../components/SyncProgressBar';
 import { TicketPoolInfo } from '../components/TicketPoolInfo';
+import { BlockSubsidyInfo } from '../components/BlockSubsidyInfo';
 import { MyTicketsInfo } from '../components/MyTicketsInfo';
-import { TransactionHistory } from '../components/TransactionHistory';
+import { RecentTransactions } from '../components/RecentTransactions';
 import { AddressBookmarksCard } from '../components/wallet/AddressBookmarksCard';
 import { WalletSetup } from '../components/WalletSetup';
-import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet } from '../services/api';
+import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet, getPrivacyStatus, getAutobuyerStatus } from '../services/api';
 
 export const WalletDashboard = () => {
   const [walletExists, setWalletExists] = useState<boolean | null>(null);
@@ -29,6 +30,28 @@ export const WalletDashboard = () => {
   const [publicPassphrase, setPublicPassphrase] = useState('');
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
   const [isOpeningWallet, setIsOpeningWallet] = useState(false);
+  const [mixerRunning, setMixerRunning] = useState(false);
+  const [autobuyerRunning, setAutobuyerRunning] = useState(false);
+
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const s = await getPrivacyStatus();
+        setMixerRunning(s.mixerRunning);
+      } catch {
+        setMixerRunning(false);
+      }
+      try {
+        const a = await getAutobuyerStatus();
+        setAutobuyerRunning(a.running);
+      } catch {
+        setAutobuyerRunning(false);
+      }
+    };
+    poll();
+    const id = window.setInterval(poll, 10000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -46,7 +69,13 @@ export const WalletDashboard = () => {
           setError('Initializing wallet status. This may take a moment.');
         }
       } else if (err.response?.status === 503) {
-        setError('Wallet RPC not connected. Please ensure dcrwallet is running.');
+        // The backend returns a specific 503 body while dcrd is still doing its
+        // initial block download ("Blockchain is syncing (X% complete)...").
+        // Surface it so the user knows the node must finish syncing first; fall
+        // back to the generic message only when the wallet truly isn't up.
+        const body = err?.response?.data;
+        const serverMsg = typeof body === 'string' ? body.trim() : '';
+        setError(serverMsg || 'Wallet RPC not connected. Please ensure dcrwallet is running.');
       } else {
         setError(err.message || 'Failed to fetch wallet data');
       }
@@ -150,7 +179,7 @@ export const WalletDashboard = () => {
     initialize();
   }, []);
 
-  // Auto-refresh balances every 10 seconds. Unconditional — sync state
+  // Auto-refresh balances every 10 seconds. Unconditional - sync state
   // belongs to the WebSocket, not polling, so polling doesn't need to pause
   // during rescan.
   useEffect(() => {
@@ -253,7 +282,7 @@ export const WalletDashboard = () => {
         <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2 animate-fade-in">
           <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
           <span className="text-sm text-red-400">
-            Disconnected from dcrd — wallet won't see new blocks. Auto-reconnecting…
+            Disconnected from dcrd - wallet won't see new blocks. Auto-reconnecting…
           </span>
         </div>
       )}
@@ -320,6 +349,8 @@ export const WalletDashboard = () => {
           status={data.walletStatus.status as any}
           version={data.walletStatus.version}
           unlocked={data.walletStatus.unlocked}
+          mixerRunning={mixerRunning}
+          autobuyerRunning={autobuyerRunning}
         />
       )}
 
@@ -350,12 +381,12 @@ export const WalletDashboard = () => {
             </div>
           )}
 
-          {/* Row 2: Transaction History | My Tickets */}
+          {/* Row 2: Recent Transactions | My Tickets */}
           {data && data.walletStatus.status !== 'no_wallet' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
-              {/* Transaction History */}
+              {/* Recent Transactions */}
               {!loading && !showSyncProgress && !isPreparingRescan && (
-                <TransactionHistory />
+                <RecentTransactions />
               )}
 
               {/* My Tickets Info */}
@@ -373,7 +404,7 @@ export const WalletDashboard = () => {
             </div>
           )}
 
-          {/* Row 3: Ticket Pool & Difficulty | Address Bookmarks */}
+          {/* Row 3: Ticket Pool & Difficulty | Block Subsidy */}
           {data && data.walletStatus.status !== 'no_wallet' && data.stakingInfo && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
               {/* Ticket Pool & Difficulty Info */}
@@ -386,7 +417,22 @@ export const WalletDashboard = () => {
                 allMempoolTix={data.stakingInfo.allMempoolTix}
               />
 
-              {/* Address Bookmarks */}
+              {/* Block Subsidy */}
+              <BlockSubsidyInfo
+                blockSubsidyHeight={data.stakingInfo.blockSubsidyHeight}
+                blockSubsidyTotal={data.stakingInfo.blockSubsidyTotal}
+                blockSubsidyPos={data.stakingInfo.blockSubsidyPos}
+                blockSubsidyPow={data.stakingInfo.blockSubsidyPow}
+                blockSubsidyTreasury={data.stakingInfo.blockSubsidyTreasury}
+                blocksUntilSubsidyReduction={data.stakingInfo.blocksUntilSubsidyReduction}
+                subsidyReductionInterval={data.stakingInfo.subsidyReductionInterval}
+              />
+            </div>
+          )}
+
+          {/* Row 4: Address Bookmarks */}
+          {data && data.walletStatus.status !== 'no_wallet' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
               <AddressBookmarksCard />
             </div>
           )}

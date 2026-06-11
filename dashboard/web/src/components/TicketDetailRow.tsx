@@ -15,9 +15,10 @@ import {
 
 interface TicketDetailRowProps {
   transaction: WalletTransaction;
+  ticketPrice?: number;
 }
 
-export const TicketDetailRow = ({ transaction }: TicketDetailRowProps) => {
+export const TicketDetailRow = ({ transaction, ticketPrice }: TicketDetailRowProps) => {
   const status = getTicketStatus(transaction);
   const statusColor = getTicketStatusColor(transaction);
   const isVote = transaction.txType === 'vote';
@@ -108,7 +109,7 @@ export const TicketDetailRow = ({ transaction }: TicketDetailRowProps) => {
       {isTicket && (
         <div className="ml-4 text-right flex flex-col items-end">
           <div className={`text-lg font-semibold ${statusColor}`}>
-            {Math.abs(transaction.amount).toFixed(2)} DCR
+            {(ticketPrice ?? Math.abs(transaction.amount)).toFixed(2)} DCR
           </div>
           {ticketMaturity.isImmature && ticketMaturity.blocksUntilMature > 0 && (
             <div className="mt-1 w-32">

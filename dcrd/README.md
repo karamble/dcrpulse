@@ -16,7 +16,7 @@ This Dockerfile is based on the official dcrd repository:
 
 The multi-stage Dockerfile:
 
-1. **Build Stage** (golang:1.21-alpine):
+1. **Build Stage** (golang:1.26-alpine):
    - Clones the official dcrd repository
    - Builds `dcrd` (the node daemon)
    - Builds `dcrctl` (the control utility)

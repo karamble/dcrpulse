@@ -15,6 +15,9 @@ export const TransactionHistory = () => {
   const [visibleCount, setVisibleCount] = useState(5);
   const [isExpanded, setIsExpanded] = useState(false);
   const [filterCategory, setFilterCategory] = useState<'all' | 'send' | 'receive' | 'coinjoin' | 'ticket' | 'vote'>('all');
+  const [searchText, setSearchText] = useState('');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
   const [hasMoreToFetch, setHasMoreToFetch] = useState(true);
   const loadMoreCount = 10;
   const lazyLoadBatchSize = 50;
@@ -164,17 +167,33 @@ export const TransactionHistory = () => {
 
   const coinJoinStats = getCoinJoinStats();
   
-  // Filter transactions based on selected category
+  const getTxTimestampMs = (tx: WalletTransaction): number => {
+    return tx.blockTime ? tx.blockTime * 1000 : new Date(tx.time).getTime();
+  };
+
+  const dateStartMs = dateStart ? new Date(dateStart).getTime() : null;
+  const dateEndMs = dateEnd ? new Date(dateEnd).getTime() + 86400000 - 1 : null;
+  const searchLower = searchText.trim().toLowerCase();
+
   const filteredTransactions = transactions.filter(tx => {
-    if (filterCategory === 'all') return true;
-    // Send: only regular sends + VSP fees (exclude ticket purchases)
-    if (filterCategory === 'send') {
-      return (tx.category === 'send' && tx.txType === 'regular') || tx.category === 'vspfee';
+    if (filterCategory !== 'all') {
+      if (filterCategory === 'send') {
+        if (!((tx.category === 'send' && tx.txType === 'regular') || tx.category === 'vspfee')) return false;
+      } else if (filterCategory === 'receive' && tx.category !== 'receive') return false;
+      else if (filterCategory === 'coinjoin' && tx.category !== 'coinjoin') return false;
+      else if (filterCategory === 'ticket' && tx.txType !== 'ticket') return false;
+      else if (filterCategory === 'vote' && tx.txType !== 'vote') return false;
     }
-    if (filterCategory === 'receive') return tx.category === 'receive';
-    if (filterCategory === 'coinjoin') return tx.category === 'coinjoin';
-    if (filterCategory === 'ticket') return tx.txType === 'ticket';
-    if (filterCategory === 'vote') return tx.txType === 'vote';
+    if (dateStartMs !== null || dateEndMs !== null) {
+      const ts = getTxTimestampMs(tx);
+      if (dateStartMs !== null && ts < dateStartMs) return false;
+      if (dateEndMs !== null && ts > dateEndMs) return false;
+    }
+    if (searchLower) {
+      const txidMatch = tx.txid.toLowerCase().includes(searchLower);
+      const addrMatch = tx.address ? tx.address.toLowerCase().includes(searchLower) : false;
+      if (!txidMatch && !addrMatch) return false;
+    }
     return true;
   });
 
@@ -276,7 +295,7 @@ export const TransactionHistory = () => {
               <Shuffle className="h-4 w-4 text-purple-500" />
               <h3 className="text-sm font-semibold text-purple-500">CoinJoin Statistics</h3>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Total CoinJoins</p>
                 <p className="text-base font-semibold">{coinJoinStats.count}</p>
@@ -388,6 +407,38 @@ export const TransactionHistory = () => {
           >
             Votes
           </button>
+        </div>
+
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <input
+            type="text"
+            value={searchText}
+            onChange={(e) => { setSearchText(e.target.value); setVisibleCount(5); }}
+            placeholder="Search address or txid"
+            className="flex-1 min-w-0 sm:min-w-[180px] px-3 py-1.5 rounded-md text-sm bg-muted/20 border border-border/30 placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
+          />
+          <input
+            type="date"
+            value={dateStart}
+            onChange={(e) => { setDateStart(e.target.value); setVisibleCount(5); }}
+            className="px-3 py-1.5 rounded-md text-sm bg-muted/20 border border-border/30 text-muted-foreground focus:outline-none focus:border-primary/50"
+            aria-label="Start date"
+          />
+          <input
+            type="date"
+            value={dateEnd}
+            onChange={(e) => { setDateEnd(e.target.value); setVisibleCount(5); }}
+            className="px-3 py-1.5 rounded-md text-sm bg-muted/20 border border-border/30 text-muted-foreground focus:outline-none focus:border-primary/50"
+            aria-label="End date"
+          />
+          {(searchText || dateStart || dateEnd) && (
+            <button
+              onClick={() => { setSearchText(''); setDateStart(''); setDateEnd(''); setVisibleCount(5); }}
+              className="px-3 py-1.5 rounded-md text-sm font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30 transition-colors"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
         <div className="flex items-center justify-between mb-3">

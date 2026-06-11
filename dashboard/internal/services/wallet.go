@@ -6,14 +6,20 @@ package services
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
+	"github.com/decred/dcrd/chaincfg/chainhash"
+	"golang.org/x/sync/errgroup"
 )
 
 func FetchWalletStatus() (*types.WalletStatus, error) {
@@ -315,7 +321,6 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 		Total                   float64 `json:"total"`
 		Unconfirmed             float64 `json:"unconfirmed"`
 		VotingAuthority         float64 `json:"votingauthority"`
-		AccountNumber           uint32  `json:"accountnumber"`
 	}
 	type BalanceResponse struct {
 		Balances  []AccountBalance `json:"balances"`
@@ -326,6 +331,23 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 	if err := json.Unmarshal(result, &balanceResp); err != nil {
 		log.Printf("Warning: Failed to unmarshal accounts: %v", err)
 		return []types.AccountInfo{}, nil
+	}
+
+	// getbalance does not return account numbers or per-account encryption
+	// state; resolve them via gRPC Accounts.
+	numbers := map[string]uint32{}
+	encrypted := map[string]bool{}
+	unlocked := map[string]bool{}
+	if rpc.WalletGrpcClient != nil {
+		if acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{}); err != nil {
+			log.Printf("Warning: gRPC Accounts call failed, account numbers will be 0: %v", err)
+		} else {
+			for _, a := range acctsResp.Accounts {
+				numbers[a.AccountName] = a.AccountNumber
+				encrypted[a.AccountName] = a.AccountEncrypted
+				unlocked[a.AccountName] = a.AccountUnlocked
+			}
+		}
 	}
 
 	accounts := make([]types.AccountInfo, 0, len(balanceResp.Balances))
@@ -340,11 +362,378 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 			VotingAuthority:         acct.VotingAuthority,
 			ImmatureCoinbaseRewards: acct.ImmatureCoinbaseRewards,
 			ImmatureStakeGeneration: acct.ImmatureStakeGeneration,
-			AccountNumber:           0, // Account numbers not reliably available from RPC
+			AccountNumber:           numbers[acct.AccountName],
+			AccountEncrypted:        encrypted[acct.AccountName],
+			AccountUnlocked:         unlocked[acct.AccountName],
+			Reserved:                IsReservedAccountName(acct.AccountName),
 		})
 	}
 
 	return accounts, nil
+}
+
+// CreateAccount creates a new BIP44 account via gRPC NextAccount and then
+// per-account-encrypts it with the same passphrase so signing can go through
+// UnlockAccount. Returns the new account number.
+func CreateAccount(ctx context.Context, accountName string, passphrase []byte) (uint32, error) {
+	if rpc.WalletGrpcClient == nil {
+		return 0, fmt.Errorf("wallet gRPC unavailable")
+	}
+	resp, err := rpc.WalletGrpcClient.NextAccount(ctx, &pb.NextAccountRequest{
+		Passphrase:  passphrase,
+		AccountName: accountName,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if _, err := rpc.WalletGrpcClient.SetAccountPassphrase(ctx, &pb.SetAccountPassphraseRequest{
+		AccountNumber:        resp.AccountNumber,
+		NewAccountPassphrase: passphrase,
+		WalletPassphrase:     passphrase,
+	}); err != nil {
+		return 0, fmt.Errorf("account created but failed to set per-account passphrase: %w", err)
+	}
+	return resp.AccountNumber, nil
+}
+
+// ensureAccountEncrypted lazily migrates an account to per-account encryption
+// if it isn't already (e.g. the default account on a freshly-created wallet).
+// Mirrors Decrediton's one-time setAccountsPass migration. Safe to call on
+// accounts that are already per-account-encrypted — it's a no-op then.
+func ensureAccountEncrypted(ctx context.Context, accountNumber uint32, passphrase []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC unavailable")
+	}
+	acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	if err != nil {
+		return err
+	}
+	for _, a := range acctsResp.Accounts {
+		if a.AccountNumber == accountNumber {
+			if a.AccountEncrypted {
+				return nil
+			}
+			_, err := rpc.WalletGrpcClient.SetAccountPassphrase(ctx, &pb.SetAccountPassphraseRequest{
+				AccountNumber:        accountNumber,
+				NewAccountPassphrase: passphrase,
+				WalletPassphrase:     passphrase,
+			})
+			return err
+		}
+	}
+	return fmt.Errorf("account %d not found", accountNumber)
+}
+
+// ensureAllAccountsEncrypted gives every normal account the same per-account
+// passphrase (equal to the wallet passphrase) in one pass, so all accounts unlock
+// uniformly via UnlockAccount. Mirrors Decrediton's setAccountsPass migration.
+// Run after wallet creation and after a restore's account discovery so the default
+// account never diverges from the accounts recovered or created later. Skips the
+// same accounts unlockAllAccountsForSpend does: imported, dex (bisonw-managed), and
+// xpub-imported (>= 2^31). Each account is delegated to ensureAccountEncrypted,
+// which is a no-op for accounts already per-account-encrypted.
+func ensureAllAccountsEncrypted(ctx context.Context, passphrase []byte) error {
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, a := range accounts {
+		if a.AccountName == "imported" || a.AccountName == "dex" || a.AccountNumber >= 1<<31 {
+			continue
+		}
+		if err := ensureAccountEncrypted(ctx, a.AccountNumber, passphrase); err != nil {
+			return fmt.Errorf("encrypt account %q (%d): %w", a.AccountName, a.AccountNumber, err)
+		}
+	}
+	return nil
+}
+
+// unlockAccountForSpend makes a per-account-encrypted account usable for signing.
+// It first checks whether the account is already unlocked: dcrwallet's
+// UnlockAccount, when called on an already-unlocked account, does a strict
+// passphrase-hash compare against the passphrase that first unlocked it and
+// returns "invalid passphrase" on any mismatch (e.g. the account was unlocked
+// earlier by a mix session). Skipping the redundant unlock avoids that. When the
+// account is locked, it unlocks, lazily migrating to per-account encryption if
+// needed (the default account on a fresh wallet isn't encrypted yet).
+func unlockAccountForSpend(ctx context.Context, accountNumber uint32, passphrase []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+	acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	if err == nil {
+		for _, a := range acctsResp.Accounts {
+			if a.AccountNumber == accountNumber {
+				if a.AccountUnlocked {
+					return nil // already usable; don't re-unlock (avoids the hash compare)
+				}
+				break
+			}
+		}
+	}
+
+	if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
+		Passphrase:    passphrase,
+		AccountNumber: accountNumber,
+	}); err != nil {
+		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
+			if mErr := ensureAccountEncrypted(ctx, accountNumber, passphrase); mErr != nil {
+				return fmt.Errorf("migrate account to per-account encryption: %w", mErr)
+			}
+			if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
+				Passphrase:    passphrase,
+				AccountNumber: accountNumber,
+			}); err != nil {
+				return fmt.Errorf("unlock source account: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("unlock source account: %w", err)
+	}
+	return nil
+}
+
+// unlockAllAccountsForSpend unlocks every normal (non-imported, non-watch-only)
+// account and returns the account numbers it actually transitioned from locked
+// to unlocked. VSP fee reconciliation signs with each ticket's commitment-
+// address key, which can belong to any account (e.g. tickets bought from the
+// mixed account), so unlocking only the fee account leaves that signing key
+// locked. Pass the returned slice to relockAccountsAfterVSP to re-lock them
+// once processing is done. Mirrors Decrediton's unlockAllAcctAndExecFn.
+func unlockAllAccountsForSpend(ctx context.Context, passphrase []byte) ([]uint32, error) {
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Snapshot current unlock state so we only report (and later re-lock)
+	// accounts we ourselves unlock, leaving any already-unlocked account (e.g.
+	// one a running mixer needs) untouched.
+	alreadyUnlocked := map[uint32]bool{}
+	if resp, aerr := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{}); aerr == nil {
+		for _, a := range resp.Accounts {
+			if a.AccountUnlocked {
+				alreadyUnlocked[a.AccountNumber] = true
+			}
+		}
+	}
+
+	var candidates, succeeded int
+	var newlyUnlocked []uint32
+	for _, a := range accounts {
+		// The imported (2^31-1) and xpub-imported (>=2^31) accounts hold no
+		// per-account passphrase key and cannot be unlocked this way. The dex
+		// account is managed by the DCRDEX backend (bisonw), which may encrypt
+		// it with its own passphrase; it never holds VSP tickets, so skip it.
+		if a.AccountName == "imported" || a.AccountName == "dex" || a.AccountNumber >= 1<<31 {
+			continue
+		}
+		candidates++
+		if alreadyUnlocked[a.AccountNumber] {
+			succeeded++
+			continue
+		}
+		if err := unlockAccountForSpend(ctx, a.AccountNumber, passphrase); err != nil {
+			// An account may carry a divergent per-account passphrase; skip it
+			// rather than abort, so the accounts that do unlock (including each
+			// ticket's commitment account) can still sign for the VSP. A
+			// genuinely wrong passphrase fails every account, handled below.
+			log.Printf("unlockAllAccountsForSpend: skipping account %q (%d): %v", a.AccountName, a.AccountNumber, err)
+			continue
+		}
+		succeeded++
+		newlyUnlocked = append(newlyUnlocked, a.AccountNumber)
+	}
+	if candidates > 0 && succeeded == 0 {
+		return nil, fmt.Errorf("invalid passphrase")
+	}
+	return newlyUnlocked, nil
+}
+
+// vspTicketCommitAccounts returns the set of account numbers that own the
+// commitment addresses of the wallet's currently tracked VSP tickets. The
+// dcrwallet VSP client reconciles those tickets' fees in a background timer
+// and must keep these accounts' signing keys unlocked. Mirrors Decrediton's
+// getVSPTrackedTicketsCommitAccounts.
+func vspTicketCommitAccounts(ctx context.Context) map[uint32]bool {
+	out := map[uint32]bool{}
+	if rpc.WalletGrpcClient == nil {
+		return out
+	}
+	resp, err := rpc.WalletGrpcClient.GetTrackedVSPTickets(ctx, &pb.GetTrackedVSPTicketsRequest{})
+	if err != nil {
+		log.Printf("vspTicketCommitAccounts: GetTrackedVSPTickets: %v", err)
+		return out
+	}
+	for _, v := range resp.GetVsps() {
+		for _, t := range v.GetTickets() {
+			addr := t.GetCommitmentAddress()
+			if addr == "" {
+				continue
+			}
+			va, verr := rpc.WalletGrpcClient.ValidateAddress(ctx, &pb.ValidateAddressRequest{Address: addr})
+			if verr != nil || !va.GetIsMine() {
+				continue
+			}
+			out[va.GetAccountNumber()] = true
+		}
+	}
+	return out
+}
+
+// relockAccountsAfterVSP re-locks the accounts unlockAllAccountsForSpend
+// unlocked, skipping those that own a tracked VSP ticket's commitment address
+// (the VSP client keeps reconciling their fees in the background, which fires
+// after the originating RPC returns). Mirrors Decrediton's relockAccounts /
+// filterUnlockableAccounts.
+func relockAccountsAfterVSP(unlocked []uint32) {
+	if len(unlocked) == 0 || rpc.WalletGrpcClient == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	keep := vspTicketCommitAccounts(ctx)
+	for _, acct := range unlocked {
+		if keep[acct] {
+			continue
+		}
+		_, _ = rpc.WalletGrpcClient.LockAccount(ctx, &pb.LockAccountRequest{AccountNumber: acct})
+	}
+}
+
+// RenameAccount renames an existing account. dcrwallet's RenameAccount gRPC
+// does not require the passphrase — the account name is metadata, not key
+// material.
+func RenameAccount(ctx context.Context, accountNumber uint32, newName string) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC unavailable")
+	}
+	_, err := rpc.WalletGrpcClient.RenameAccount(ctx, &pb.RenameAccountRequest{
+		AccountNumber: accountNumber,
+		NewName:       newName,
+	})
+	return err
+}
+
+// GetAccountExtendedPubKey returns the BIP32 extended public key for the given
+// account. Used for watch-only export. No passphrase needed — it's a public key.
+func GetAccountExtendedPubKey(ctx context.Context, accountNumber uint32) (string, error) {
+	if rpc.WalletGrpcClient == nil {
+		return "", fmt.Errorf("wallet gRPC unavailable")
+	}
+	resp, err := rpc.WalletGrpcClient.GetAccountExtendedPubKey(ctx, &pb.GetAccountExtendedPubKeyRequest{
+		AccountNumber: accountNumber,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.AccExtendedPubKey, nil
+}
+
+// Names of the two accounts the mixer uses; Decrediton convention.
+const (
+	PrivacyMixedAccountName  = "mixed"
+	PrivacyChangeAccountName = "unmixed"
+	// privacyMixedAccountBranch is the BIP44 branch the mixer and mixed ticket
+	// purchases use for the mixed account (Decrediton convention; also passed to
+	// StartMixer).
+	privacyMixedAccountBranch = 0
+)
+
+// DexAccountName is the dedicated dcrwallet account DCRDEX trades from. Defined
+// here (and referenced by handlers/dcrdex.go) so the reserved-account check has
+// a single source of truth.
+const DexAccountName = "dex"
+
+// IsReservedAccountName reports whether name is one of the dcrwallet accounts
+// other daemons bind to by name - the privacy mixer's mixed/unmixed accounts,
+// dcrlnd's lightning account, DCRDEX's dex account - or dcrwallet's imported
+// bucket. These must never be renamed: renaming silently breaks the binding
+// (dcrlnd account-ID mismatch, DCRDEX "account not found"). Case-insensitive.
+func IsReservedAccountName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case PrivacyMixedAccountName, PrivacyChangeAccountName, LightningAccountName, DexAccountName, "imported":
+		return true
+	default:
+		return false
+	}
+}
+
+// FindPrivacyAccounts looks up the mixer's mixed and unmixed accounts by name.
+// `configured` is true only when both exist.
+func FindPrivacyAccounts(ctx context.Context) (mixed uint32, change uint32, configured bool, err error) {
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	var foundMixed, foundChange bool
+	for _, a := range accounts {
+		switch a.AccountName {
+		case PrivacyMixedAccountName:
+			mixed = a.AccountNumber
+			foundMixed = true
+		case PrivacyChangeAccountName:
+			change = a.AccountNumber
+			foundChange = true
+		}
+	}
+	return mixed, change, foundMixed && foundChange, nil
+}
+
+// TicketMixing holds the accounts a ticket purchase routes through when privacy
+// is enabled. Mirrors Decrediton: the mixed account is the funding + split +
+// mixed account, the unmixed account receives change.
+type TicketMixing struct {
+	Mixed  uint32
+	Change uint32
+}
+
+// TicketMixingParams reports the mixing accounts to use for a ticket purchase or
+// auto-buy. ok is true only when both privacy accounts ("mixed"/"unmixed") exist,
+// matching Decrediton's "privacy on when a mixed+change account is configured".
+// On any lookup error it returns ok=false so purchasing falls back to plain mode.
+func TicketMixingParams(ctx context.Context) (TicketMixing, bool) {
+	mixed, change, configured, err := FindPrivacyAccounts(ctx)
+	if err != nil || !configured {
+		return TicketMixing{}, false
+	}
+	return TicketMixing{Mixed: mixed, Change: change}, true
+}
+
+// SetupPrivacyAccounts creates whichever of "mixed" / "unmixed" is missing.
+// Idempotent — if both exist, returns their numbers without touching anything.
+func SetupPrivacyAccounts(ctx context.Context, passphrase []byte) (mixed uint32, change uint32, err error) {
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	var haveMixed, haveChange bool
+	for _, a := range accounts {
+		switch a.AccountName {
+		case PrivacyMixedAccountName:
+			mixed = a.AccountNumber
+			haveMixed = true
+		case PrivacyChangeAccountName:
+			change = a.AccountNumber
+			haveChange = true
+		}
+	}
+
+	if !haveMixed {
+		n, cerr := CreateAccount(ctx, PrivacyMixedAccountName, passphrase)
+		if cerr != nil {
+			return 0, 0, fmt.Errorf("create %q: %w", PrivacyMixedAccountName, cerr)
+		}
+		mixed = n
+	}
+	if !haveChange {
+		n, cerr := CreateAccount(ctx, PrivacyChangeAccountName, passphrase)
+		if cerr != nil {
+			return 0, 0, fmt.Errorf("create %q: %w", PrivacyChangeAccountName, cerr)
+		}
+		change = n
+	}
+
+	return mixed, change, nil
 }
 
 // Old FetchTransactions functions removed - replaced by ListTransactions
@@ -470,6 +859,44 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 		if err := json.Unmarshal(difficultyResult, &difficulty); err == nil {
 			stakingInfo.CurrentDifficulty = difficulty.Current
 			stakingInfo.NextDifficulty = difficulty.Next
+		}
+	}
+
+	// Fetch dcrd getblocksubsidy for the next block (current PoS reward).
+	// chaincfg.MainNetParams SubsidyReductionInterval is 6144.
+	const subsidyReductionInterval int64 = 6144
+	stakingInfo.SubsidyReductionInterval = subsidyReductionInterval
+	if rpc.DcrdClient != nil {
+		chainHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
+		if err != nil {
+			log.Printf("Warning: Failed to get chain height for block subsidy: %v", err)
+		} else {
+			nextHeight := chainHeight + 1
+			subsidyResult, err := rpc.DcrdClient.RawRequest(ctx, "getblocksubsidy", []json.RawMessage{
+				json.RawMessage(fmt.Sprintf("%d", nextHeight)),
+				json.RawMessage("5"),
+			})
+			if err != nil {
+				log.Printf("Warning: Failed to get block subsidy: %v", err)
+			} else {
+				type SubsidyResponse struct {
+					Developer int64 `json:"developer"`
+					PoS       int64 `json:"pos"`
+					PoW       int64 `json:"pow"`
+					Total     int64 `json:"total"`
+				}
+				var subsidy SubsidyResponse
+				if err := json.Unmarshal(subsidyResult, &subsidy); err != nil {
+					log.Printf("Warning: Failed to unmarshal block subsidy: %v", err)
+				} else {
+					stakingInfo.BlockSubsidyHeight = nextHeight
+					stakingInfo.BlockSubsidyTotal = float64(subsidy.Total) / 1e8
+					stakingInfo.BlockSubsidyPoS = float64(subsidy.PoS) / 1e8
+					stakingInfo.BlockSubsidyPoW = float64(subsidy.PoW) / 1e8
+					stakingInfo.BlockSubsidyTreasury = float64(subsidy.Developer) / 1e8
+					stakingInfo.BlocksUntilSubsidyReduction = subsidyReductionInterval - (chainHeight % subsidyReductionInterval)
+				}
+			}
 		}
 	}
 
@@ -906,4 +1333,199 @@ func isVSPFeeTransaction(tx types.Transaction, allTransactions []types.Transacti
 	}
 
 	return false, ""
+}
+
+func GetNextAddress(ctx context.Context, account uint32) (string, error) {
+	if rpc.WalletGrpcClient == nil {
+		return "", fmt.Errorf("wallet gRPC client not initialized")
+	}
+	resp, err := rpc.WalletGrpcClient.NextAddress(ctx, &pb.NextAddressRequest{
+		Account:   account,
+		Kind:      pb.NextAddressRequest_BIP0044_EXTERNAL,
+		GapPolicy: pb.NextAddressRequest_GAP_POLICY_WRAP,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Address, nil
+}
+
+func ValidateAddress(ctx context.Context, address string) (*pb.ValidateAddressResponse, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	return rpc.WalletGrpcClient.ValidateAddress(ctx, &pb.ValidateAddressRequest{Address: address})
+}
+
+func ConstructTransaction(ctx context.Context, sourceAccount uint32, recipient string, amountAtoms int64, sendAll bool) (*pb.ConstructTransactionResponse, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	req := &pb.ConstructTransactionRequest{
+		SourceAccount:         sourceAccount,
+		RequiredConfirmations: 1,
+	}
+	if sendAll {
+		req.OutputSelectionAlgorithm = pb.ConstructTransactionRequest_ALL
+		req.ChangeDestination = &pb.ConstructTransactionRequest_OutputDestination{Address: recipient}
+	} else {
+		req.OutputSelectionAlgorithm = pb.ConstructTransactionRequest_UNSPECIFIED
+		req.NonChangeOutputs = []*pb.ConstructTransactionRequest_Output{{
+			Destination: &pb.ConstructTransactionRequest_OutputDestination{Address: recipient},
+			Amount:      amountAtoms,
+		}}
+		// When spending the mixed account with privacy enabled, route change to
+		// the unmixed account so mixed coins' change never pollutes the mixed
+		// set. Mirrors Decrediton; otherwise dcrwallet defaults change to the
+		// source account, which for a mixed-account send would land back in
+		// mixed. For any other source (or privacy off) we leave it to dcrwallet.
+		if mixing, ok := TicketMixingParams(ctx); ok && sourceAccount == mixing.Mixed {
+			changeAddr, err := GetNextAddress(ctx, mixing.Change)
+			if err != nil {
+				return nil, fmt.Errorf("derive unmixed change address: %w", err)
+			}
+			req.ChangeDestination = &pb.ConstructTransactionRequest_OutputDestination{Address: changeAddr}
+		}
+	}
+	return rpc.WalletGrpcClient.ConstructTransaction(ctx, req)
+}
+
+func DecodeRawTransaction(ctx context.Context, txBytes []byte) (*pb.DecodedTransaction, error) {
+	if rpc.DecodeMessageClient == nil {
+		return nil, fmt.Errorf("decode message gRPC client not initialized")
+	}
+	resp, err := rpc.DecodeMessageClient.DecodeRawTransaction(ctx, &pb.DecodeRawTransactionRequest{SerializedTransaction: txBytes})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Transaction, nil
+}
+
+// ErrSpendWhileMixing is returned by SignAndPublishTransaction when a regular
+// send is attempted while the privacy mixer or ticket autobuyer is running. They
+// both spend the wallet's UTXOs, so they must not run at the same time. Mirrors
+// Decrediton, which blocks the Send tab while either is active.
+var ErrSpendWhileMixing = fmt.Errorf("stop the privacy mixer or ticket autobuyer before sending a transaction")
+
+func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsignedTxBytes []byte, passphrase []byte) (string, error) {
+	if rpc.WalletGrpcClient == nil {
+		return "", fmt.Errorf("wallet gRPC client not initialized")
+	}
+	if IsMixerRunning() || IsAutobuyerRunning() {
+		return "", ErrSpendWhileMixing
+	}
+	defer func() {
+		for i := range passphrase {
+			passphrase[i] = 0
+		}
+	}()
+
+	// Make the source account usable for signing (skips if already unlocked,
+	// migrates to per-account encryption if needed), then auto-relock on return.
+	if err := unlockAccountForSpend(ctx, sourceAccount, passphrase); err != nil {
+		return "", err
+	}
+	defer func() {
+		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount})
+	}()
+
+	signResp, err := rpc.WalletGrpcClient.SignTransaction(ctx, &pb.SignTransactionRequest{
+		SerializedTransaction: unsignedTxBytes,
+	})
+	if err != nil {
+		return "", err
+	}
+	pubResp, err := rpc.WalletGrpcClient.PublishTransaction(ctx, &pb.PublishTransactionRequest{
+		SignedTransaction: signResp.Transaction,
+	})
+	if err != nil {
+		return "", err
+	}
+	hash, err := chainhash.NewHash(pubResp.TransactionHash)
+	if err != nil {
+		return hex.EncodeToString(pubResp.TransactionHash), nil
+	}
+	return hash.String(), nil
+}
+
+// ChangePrivatePassphrase rotates the wallet's private (signing)
+// passphrase and every account's per-account passphrase. Mirrors
+// Decrediton's app/actions/ControlActions.js:187-232: wallet-wide
+// rotation first, then a parallel fan-out of SetAccountPassphrase over
+// every account with accountNumber < 2^31 - 1, always passing the old
+// passphrase as AccountPassphrase. Every account is expected to be
+// per-account-encrypted already (set at creation by CreateAccount).
+// The caller is expected to zero both byte slices after this returns.
+func ChangePrivatePassphrase(ctx context.Context, oldPass, newPass []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+
+	if _, err := rpc.WalletGrpcClient.ChangePassphrase(ctx, &pb.ChangePassphraseRequest{
+		Key:           pb.ChangePassphraseRequest_PRIVATE,
+		OldPassphrase: oldPass,
+		NewPassphrase: newPass,
+	}); err != nil {
+		return err
+	}
+
+	acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	if err != nil {
+		return fmt.Errorf("list accounts: %w", err)
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+	for _, a := range acctsResp.GetAccounts() {
+		a := a
+		// Skip imported (2^31 - 1) and xpub-imported (>= 2^31) accounts.
+		if a.GetAccountNumber() >= 2147483647 {
+			continue
+		}
+		g.Go(func() error {
+			_, perr := rpc.WalletGrpcClient.SetAccountPassphrase(gctx, &pb.SetAccountPassphraseRequest{
+				AccountNumber:        a.GetAccountNumber(),
+				AccountPassphrase:    oldPass,
+				NewAccountPassphrase: newPass,
+			})
+			return perr
+		})
+	}
+	return g.Wait()
+}
+
+// DiscoverUsage unlocks the wallet and runs dcrwallet's DiscoverUsage gRPC to
+// scan the chain for previously-used addresses of the existing accounts under
+// gapLimit. Blocks until the scan completes. The wallet is re-locked on return.
+//
+// It requests address discovery only (DiscoverAccounts=false), matching
+// Decrediton's post-setup Discover Address Usage. Account discovery runs only
+// during a restore, before accounts are per-account-encrypted (runDiscoveryRpcSync).
+func DiscoverUsage(ctx context.Context, passphrase []byte, gapLimit uint32) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+
+	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
+	_, err := rpc.WalletGrpcClient.UnlockWallet(unlockCtx, &pb.UnlockWalletRequest{
+		Passphrase: passphrase,
+	})
+	unlockCancel()
+	if err != nil {
+		return fmt.Errorf("unlock wallet: %w", err)
+	}
+	defer func() {
+		lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer lockCancel()
+		_, _ = rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{})
+	}()
+
+	if _, err := rpc.WalletGrpcClient.DiscoverUsage(ctx, &pb.DiscoverUsageRequest{
+		DiscoverAccounts: false,
+		GapLimit:         gapLimit,
+	}); err != nil {
+		return fmt.Errorf("DiscoverUsage RPC: %w", err)
+	}
+	return nil
 }

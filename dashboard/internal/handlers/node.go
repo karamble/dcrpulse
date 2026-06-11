@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"time"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
-	"dcrpulse/internal/types"
+
+	"github.com/gorilla/websocket"
 )
 
 // GetDashboardDataHandler handles requests for complete dashboard data
@@ -51,6 +53,57 @@ func GetNodeStatusHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
+// StreamNodeSyncHandler streams dcrd sync-progress snapshots over a WebSocket,
+// pushed on each block-connected notification instead of the 30s poll. Mirrors
+// the wallet's StreamRescanProgressHandler.
+func StreamNodeSyncHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade node-sync WebSocket: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	if err := conn.WriteJSON(services.GetNodeSyncSnapshot()); err != nil {
+		return
+	}
+
+	ch, unsubscribe := services.SubscribeNodeSyncEvents()
+	defer unsubscribe()
+
+	notify := make(chan struct{})
+	go func() {
+		defer close(notify)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	keepAlive := time.NewTicker(15 * time.Second)
+	defer keepAlive.Stop()
+
+	for {
+		select {
+		case snap, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(snap); err != nil {
+				return
+			}
+		case <-keepAlive.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		case <-notify:
+			return
+		}
+	}
+}
+
 // GetBlockchainInfoHandler handles requests for blockchain information
 func GetBlockchainInfoHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.DcrdClient == nil {
@@ -87,41 +140,14 @@ func GetPeersHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(peers)
 }
 
-// ConnectRPCHandler handles RPC connection requests
-func ConnectRPCHandler(w http.ResponseWriter, r *http.Request) {
-	var req types.RPCConnectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	config := rpc.Config{
-		RPCHost:     req.Host,
-		RPCPort:     req.Port,
-		RPCUser:     req.Username,
-		RPCPassword: req.Password,
-	}
-
-	err := rpc.InitDcrdClient(config)
-	response := types.RPCConnectionResponse{
-		Success: err == nil,
-		Message: "Connected successfully",
-	}
-
-	if err != nil {
-		response.Message = err.Error()
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
 // HealthCheckHandler handles health check requests
 func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	status := map[string]interface{}{
 		"status":             "healthy",
 		"rpcConnected":       rpc.DcrdClient != nil,
 		"walletRPCConnected": rpc.WalletClient != nil,
+		"dcrdTLS":            rpc.DcrdUsesTLS(),
+		"walletTLS":          rpc.WalletUsesTLS(),
 		"time":               time.Now(),
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -38,6 +38,11 @@ type AccountInfo struct {
 	ImmatureCoinbaseRewards float64 `json:"immatureCoinbaseRewards"`
 	ImmatureStakeGeneration float64 `json:"immatureStakeGeneration"`
 	AccountNumber           uint32  `json:"accountNumber"`
+	AccountEncrypted        bool    `json:"accountEncrypted"`
+	AccountUnlocked         bool    `json:"accountUnlocked"`
+	// Reserved marks accounts other daemons bind to by name (mixed/unmixed/
+	// lightning/dex) or the imported bucket; the UI hides their rename action.
+	Reserved bool `json:"reserved"`
 	// Wallet-wide totals (only populated in primary AccountInfo)
 	CumulativeTotal      float64 `json:"cumulativeTotal,omitempty"`
 	TotalSpendable       float64 `json:"totalSpendable,omitempty"`
@@ -90,6 +95,42 @@ type ImportXpubResponse struct {
 	AccountNum uint32 `json:"accountNum,omitempty"`
 }
 
+type NextAddressResponse struct {
+	Address       string `json:"address"`
+	AccountNumber uint32 `json:"accountNumber"`
+}
+
+type ValidateAddressResponse struct {
+	IsValid       bool   `json:"isValid"`
+	IsMine        bool   `json:"isMine"`
+	AccountNumber uint32 `json:"accountNumber"`
+}
+
+type ConstructTransactionRequest struct {
+	SourceAccount uint32 `json:"sourceAccount"`
+	Address       string `json:"address"`
+	AmountAtoms   int64  `json:"amountAtoms"`
+	SendAll       bool   `json:"sendAll"`
+}
+
+type ConstructTransactionResponse struct {
+	UnsignedTxHex       string `json:"unsignedTxHex"`
+	InputsTotalAtoms    int64  `json:"inputsTotalAtoms"`
+	OutputsTotalAtoms   int64  `json:"outputsTotalAtoms"`
+	FeeAtoms            int64  `json:"feeAtoms"`
+	EstimatedSignedSize uint32 `json:"estimatedSignedSize"`
+}
+
+type SignPublishTransactionRequest struct {
+	SourceAccount uint32 `json:"sourceAccount"`
+	UnsignedTxHex string `json:"unsignedTxHex"`
+	Passphrase    string `json:"passphrase"`
+}
+
+type SignPublishTransactionResponse struct {
+	TxHash string `json:"txHash"`
+}
+
 type RescanRequest struct {
 	BeginHeight int32 `json:"beginHeight"`
 }
@@ -128,4 +169,12 @@ type WalletStakingInfo struct {
 	// From getstakedifficulty
 	CurrentDifficulty float64 `json:"currentDifficulty"`
 	NextDifficulty    float64 `json:"nextDifficulty"`
+	// From dcrd getblocksubsidy at current height + 1, voters=5
+	BlockSubsidyHeight          int64   `json:"blockSubsidyHeight"`
+	BlockSubsidyTotal           float64 `json:"blockSubsidyTotal"`
+	BlockSubsidyPoS             float64 `json:"blockSubsidyPos"`
+	BlockSubsidyPoW             float64 `json:"blockSubsidyPow"`
+	BlockSubsidyTreasury        float64 `json:"blockSubsidyTreasury"`
+	BlocksUntilSubsidyReduction int64   `json:"blocksUntilSubsidyReduction"`
+	SubsidyReductionInterval    int64   `json:"subsidyReductionInterval"`
 }

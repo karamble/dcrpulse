@@ -90,7 +90,18 @@ export const AccountInfo = ({
             <TrendingUp className="h-4 w-4 text-success" />
             <span className="text-sm font-medium">Total Spendable</span>
           </div>
-          <span className="font-semibold text-success">{formatDCR2Decimals(totalSpendable || spendableBalance)} DCR</span>
+          <span className="font-semibold text-success">
+            {(() => {
+              const parts = formatDCRWithDecimals(totalSpendable || spendableBalance);
+              return (
+                <>
+                  {parts.integer}.{parts.mainDecimals}
+                  <span className="opacity-60">{parts.extraDecimals}</span>
+                  {' '}DCR
+                </>
+              );
+            })()}
+          </span>
         </div>
 
         {(totalLockedByTickets || lockedByTickets) > 0 && (

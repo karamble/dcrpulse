@@ -3,7 +3,7 @@
 # Pattern follows dcrd setup for consistency
 
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git openssl
@@ -12,7 +12,7 @@ RUN apk add --no-cache git openssl
 WORKDIR /go/src/github.com/decred
 
 # Clone the dcrwallet repository
-ARG DCRWALLET_VERSION=release-v2.1.3
+ARG DCRWALLET_VERSION=release-v2.1.5
 RUN git clone --depth 1 --branch ${DCRWALLET_VERSION} https://github.com/decred/dcrwallet.git
 
 # Build dcrwallet
@@ -33,8 +33,8 @@ RUN if [ -f "go.mod" ]; then go install .; else \
 # Runtime stage
 FROM alpine:latest
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata curl openssl expect
+# Install runtime dependencies (netcat-openbsd provides `nc -z` for the healthcheck)
+RUN apk add --no-cache ca-certificates tzdata curl openssl expect netcat-openbsd jq
 
 # Copy binaries from builder
 COPY --from=builder /go/bin/dcrwallet /usr/local/bin/
@@ -59,4 +59,3 @@ EXPOSE 9110 9111 19110 19111
 
 # Use entrypoint script
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-

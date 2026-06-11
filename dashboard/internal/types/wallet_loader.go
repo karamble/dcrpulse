@@ -15,9 +15,11 @@ type WalletLoadedResponse struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// GenerateSeedRequest contains parameters for seed generation
+// GenerateSeedRequest contains parameters for seed generation.
+// SeedLength is in BYTES (not words). Zero or unset -> dcrwallet's
+// recommended 32 bytes -> 33-word mnemonic (Decred standard).
 type GenerateSeedRequest struct {
-	SeedLength uint32 `json:"seedLength,omitempty"` // Optional byte count; 0/unset lets dcrwallet pick 32 bytes (33-word mnemonic).
+	SeedLength uint32 `json:"seedLength,omitempty"`
 }
 
 // GenerateSeedResponse contains the generated seed in multiple formats
@@ -26,11 +28,26 @@ type GenerateSeedResponse struct {
 	SeedHex      string `json:"seedHex"`      // Hex-encoded seed
 }
 
+// DecodeSeedRequest carries a user-supplied seed for validation.
+// UserInput accepts either a 33-word mnemonic OR a hex string.
+type DecodeSeedRequest struct {
+	UserInput string `json:"userInput"`
+}
+
+// DecodeSeedResponse carries the decoded hex seed.
+type DecodeSeedResponse struct {
+	SeedHex string `json:"seedHex"`
+}
+
 // CreateWalletRequest contains parameters for wallet creation
 type CreateWalletRequest struct {
-	PublicPassphrase  string `json:"publicPassphrase"`  // Optional: Encrypts wallet database for viewing
-	PrivatePassphrase string `json:"privatePassphrase"` // Required: Encrypts private keys for spending
-	SeedHex           string `json:"seedHex"`           // Required: Hex-encoded seed
+	Name                     string `json:"name"`                     // Optional: target wallet name; empty uses the default wallet
+	PublicPassphrase         string `json:"publicPassphrase"`         // Optional: Encrypts wallet database for viewing
+	ConfirmPublicPassphrase  string `json:"confirmPublicPassphrase"`  // Must equal PublicPassphrase when public is non-empty
+	PrivatePassphrase        string `json:"privatePassphrase"`        // Required: Encrypts private keys for spending
+	ConfirmPrivatePassphrase string `json:"confirmPrivatePassphrase"` // Must equal PrivatePassphrase
+	SeedHex                  string `json:"seedHex"`                  // Required: Hex-encoded seed
+	DiscoverAccounts         bool   `json:"discoverAccounts"`         // True when restoring from an existing seed; enables post-create chain rescan
 }
 
 // CreateWalletResponse indicates wallet creation success

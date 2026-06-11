@@ -186,7 +186,7 @@ func FetchBlockByHash(ctx context.Context, hash string) (*types.BlockDetail, err
 	// Get full block with verbose transactions
 	// getblock takes: blockhash, verbose (bool), verbosetx (bool)
 	result, err := rpc.DcrdClient.RawRequest(ctx, "getblock", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, hash)),
+		jsonStr(hash),
 		json.RawMessage(`true`), // verbose = true (returns JSON instead of hex)
 	})
 	if err != nil {
@@ -291,7 +291,7 @@ func FetchBlockByHash(ctx context.Context, hash string) (*types.BlockDetail, err
 func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDetail, error) {
 	// Get raw transaction
 	result, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
+		jsonStr(txHash),
 		json.RawMessage(`1`), // verbose
 	})
 	if err != nil {
@@ -842,6 +842,13 @@ func categorizeTransactionTyped(vin []struct {
 	return "regular"
 }
 
+// jsonStr encodes s as a JSON string parameter for a dcrd/dcrwallet RawRequest,
+// so a quote or backslash in user-supplied input cannot break the request.
+func jsonStr(s string) json.RawMessage {
+	b, _ := json.Marshal(s)
+	return b
+}
+
 // FetchAddressInfo gets limited information about an address
 // Note: This uses only basic RPC methods available without --addrindex
 func FetchAddressInfo(ctx context.Context, address string) (*types.AddressInfo, error) {
@@ -859,7 +866,7 @@ func FetchAddressInfo(ctx context.Context, address string) (*types.AddressInfo, 
 
 	// 1. Validate address format
 	validateResult, err := rpc.DcrdClient.RawRequest(ctx, "validateaddress", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, address)),
+		jsonStr(address),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate address: %w", err)
@@ -880,7 +887,7 @@ func FetchAddressInfo(ctx context.Context, address string) (*types.AddressInfo, 
 
 	// 2. Check if address exists on blockchain
 	existsResult, err := rpc.DcrdClient.RawRequest(ctx, "existsaddress", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, address)),
+		jsonStr(address),
 	})
 	if err != nil {
 		log.Printf("Warning: Failed to check address existence: %v", err)
@@ -893,7 +900,7 @@ func FetchAddressInfo(ctx context.Context, address string) (*types.AddressInfo, 
 
 	// 3. Get tickets owned by this address
 	ticketsResult, err := rpc.DcrdClient.RawRequest(ctx, "ticketsforaddress", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, address)),
+		jsonStr(address),
 	})
 	if err != nil {
 		log.Printf("Warning: Failed to get tickets for address: %v", err)

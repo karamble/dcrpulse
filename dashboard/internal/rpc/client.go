@@ -13,8 +13,9 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
-	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/rpcclient/v8"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -36,11 +37,31 @@ var (
 	// SeedServiceClient is the gRPC client for seed generation
 	SeedServiceClient pb.SeedServiceClient
 
+	// DecodeMessageClient is the gRPC client for decoding raw transactions
+	DecodeMessageClient pb.DecodeMessageServiceClient
+
+	// AccountMixerClient is the gRPC client for running the P2P CoinJoin mixer
+	AccountMixerClient pb.AccountMixerServiceClient
+
+	// TicketBuyerClient is the gRPC client for the ticket autobuyer (v2)
+	TicketBuyerClient pb.TicketBuyerServiceClient
+
+	// VotingClient is the gRPC client for agenda voting
+	VotingClient pb.VotingServiceClient
+
 	// WalletGrpcConn is the gRPC connection (kept for cleanup)
 	WalletGrpcConn *grpc.ClientConn
 
+	// WalletGrpcCfg stores the gRPC connection details so the connection can
+	// be rebuilt after dcrwallet relaunches against a different wallet.
+	WalletGrpcCfg GrpcConfig
+
 	// DcrdConfig stores the dcrd connection details for RpcSync
 	DcrdConfig Config
+
+	// WalletConfig stores the dcrwallet JSON-RPC connection details, used to
+	// report whether that connection is encrypted.
+	WalletConfig Config
 )
 
 // Config holds the RPC connection configuration
@@ -58,6 +79,14 @@ type GrpcConfig struct {
 	GrpcPort string
 	GrpcCert string
 }
+
+// DcrdUsesTLS reports whether the dcrd JSON-RPC connection is configured with
+// TLS (a cert was provided). When false the connection is plaintext.
+func DcrdUsesTLS() bool { return DcrdConfig.RPCCert != "" }
+
+// WalletUsesTLS reports whether the dcrwallet JSON-RPC connection is configured
+// with TLS (a cert was provided). When false the connection is plaintext.
+func WalletUsesTLS() bool { return WalletConfig.RPCCert != "" }
 
 // InitDcrdClient initializes the dcrd RPC client
 func InitDcrdClient(config Config) error {
@@ -99,12 +128,19 @@ func InitDcrdClient(config Config) error {
 		return fmt.Errorf("failed to connect to dcrd: %v", err)
 	}
 
-	log.Println("Successfully connected to dcrd RPC with TLS")
+	if config.RPCCert == "" {
+		log.Println("WARNING: dcrd RPC connection is NOT using TLS; the RPC username, password, and all traffic are sent in cleartext. Set DCRD_RPC_CERT to enable TLS.")
+	} else {
+		log.Println("Successfully connected to dcrd RPC with TLS")
+	}
 	return nil
 }
 
 // InitWalletClient initializes the dcrwallet RPC client
 func InitWalletClient(config Config) error {
+	// Store config so the TLS status can be reported later.
+	WalletConfig = config
+
 	// Read the TLS certificate if provided
 	var certs []byte
 	var err error
@@ -139,7 +175,10 @@ func InitWalletClient(config Config) error {
 	if err != nil {
 		// Wallet might be locked or not initialized, but connection is OK
 		log.Printf("Wallet RPC connected but getinfo failed (may be locked): %v", err)
-	} else {
+	}
+	if config.RPCCert == "" {
+		log.Println("WARNING: dcrwallet RPC connection is NOT using TLS; the RPC username, password, and all traffic are sent in cleartext. Set DCRWALLET_RPC_CERT to enable TLS.")
+	} else if err == nil {
 		log.Println("Successfully connected to dcrwallet RPC with TLS")
 	}
 
@@ -148,6 +187,14 @@ func InitWalletClient(config Config) error {
 
 // InitWalletGrpcClient initializes the dcrwallet gRPC client for streaming with mutual TLS
 func InitWalletGrpcClient(config GrpcConfig) error {
+	WalletGrpcCfg = config
+	return dialWalletGrpc(config)
+}
+
+// dialWalletGrpc dials dcrwallet's gRPC server with mutual TLS and (re)assigns
+// every package-level client. Shared by InitWalletGrpcClient and
+// ReconnectWalletGrpc.
+func dialWalletGrpc(config GrpcConfig) error {
 	// Load the certificate as both CA (to verify server) and client cert (to present to server)
 	certPool := x509.NewCertPool()
 	certPEM, err := os.ReadFile(config.GrpcCert)
@@ -192,9 +239,49 @@ func InitWalletGrpcClient(config GrpcConfig) error {
 	WalletGrpcClient = pb.NewWalletServiceClient(conn)
 	WalletLoaderClient = pb.NewWalletLoaderServiceClient(conn)
 	SeedServiceClient = pb.NewSeedServiceClient(conn)
+	DecodeMessageClient = pb.NewDecodeMessageServiceClient(conn)
+	AccountMixerClient = pb.NewAccountMixerServiceClient(conn)
+	TicketBuyerClient = pb.NewTicketBuyerServiceClient(conn)
+	VotingClient = pb.NewVotingServiceClient(conn)
 
 	log.Println("dcrwallet gRPC clients initialized with mutual TLS authentication")
 	return nil
+}
+
+// ReconnectWalletGrpc tears down the existing gRPC connection and re-dials.
+// Required after dcrwallet is relaunched against a different wallet: the prior
+// ClientConn points at a process that has exited, so its streams are dead and
+// the loader client must be re-pointed. Must only be called while the RpcSync
+// supervisor is paused (no concurrent gRPC calls in flight).
+func ReconnectWalletGrpc() error {
+	if WalletGrpcCfg.GrpcCert == "" {
+		return fmt.Errorf("wallet gRPC not configured")
+	}
+	if WalletGrpcConn != nil {
+		WalletGrpcConn.Close()
+	}
+	return dialWalletGrpc(WalletGrpcCfg)
+}
+
+// WaitForWalletDaemon blocks until the dcrwallet daemon answers a WalletExists
+// loader call or ctx expires. Used after a relaunch to confirm the new process
+// is listening before opening the wallet.
+func WaitForWalletDaemon(ctx context.Context) error {
+	for {
+		if WalletLoaderClient != nil {
+			callCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			_, err := WalletLoaderClient.WalletExists(callCtx, &pb.WalletExistsRequest{})
+			cancel()
+			if err == nil {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(1 * time.Second):
+		}
+	}
 }
 
 // CloseGrpcConnection closes the gRPC connection

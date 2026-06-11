@@ -1,10 +1,131 @@
+@import '@fontsource/inter/300.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  /* Default theme tokens (the "Pulse" theme), as bare HSL channels so
+     Tailwind's hsl(var(--x) / <alpha-value>) colors and /opacity modifiers
+     resolve correctly. ThemeProvider overwrites these on documentElement at
+     runtime to switch themes; these values are the no-JS fallback / first
+     paint and match the previous hardcoded palette 1:1. */
+  :root {
+    --background: 222 47% 5%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 5%;
+    --secondary: 173 80% 40%;
+    --secondary-foreground: 210 40% 98%;
+    --success: 142 76% 36%;
+    --success-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 5%;
+    --muted: 217 32% 17%;
+    --muted-foreground: 215 20% 65%;
+    --border: 217 32% 17%;
+
+    /* Gradient endpoints (default = derived from primary/secondary and card). */
+    --gradient-primary-from: 217 91% 60%;
+    --gradient-primary-to: 173 80% 40%;
+    --gradient-card-from: 222 47% 8%;
+    --gradient-card-to: 222 47% 10%;
+
+    /* Typography. heading-color themes all headings (defaults to foreground,
+       so it is a no-op until a theme overrides it); weight/size drive the
+       rendered prose headings below. */
+    --heading-color: 210 40% 98%;
+    --heading-weight: 700;
+    --heading-1-size: 1.25rem;
+    --heading-2-size: 1.125rem;
+    --heading-3-size: 1rem;
+
+    --radius: 0.75rem;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
+
+  /* Headings follow the theme's heading color by default. This plain element
+     rule (specificity 0,0,1) yields to any intentional text-* color utility
+     on a heading, so it only colors headings that would otherwise inherit. */
+  h1, h2, h3, h4, h5, h6 {
+    color: hsl(var(--heading-color));
+  }
 }
 
+@layer components {
+  /* Server-rendered Politeia proposal markdown. The HTML is sanitized
+     by bluemonday on the backend; this stylesheet adds Tailwind-aware
+     spacing/colors to goldmark's plain output. */
+  /* Prose headings carry the theme's heading weight + size scale. The token
+     defaults equal the @apply utilities (text-xl/lg/base, font-bold) so this
+     is a visual no-op until a theme changes them. */
+  .proposal-body h1 { @apply text-xl font-bold mt-5 mb-2; font-size: var(--heading-1-size); font-weight: var(--heading-weight); }
+  .proposal-body h2 { @apply text-lg font-bold mt-5 mb-2; font-size: var(--heading-2-size); font-weight: var(--heading-weight); }
+  .proposal-body h3 { @apply text-base font-bold mt-4 mb-2; font-size: var(--heading-3-size); font-weight: var(--heading-weight); }
+  .proposal-body h4 { @apply text-sm font-bold mt-3 mb-1; }
+  .proposal-body h5,
+  .proposal-body h6 { @apply text-sm font-semibold mt-3 mb-1; }
+  .proposal-body p { @apply my-3; }
+  .proposal-body a { @apply text-primary underline-offset-2 hover:underline; }
+  .proposal-body ul { @apply list-disc pl-6 my-3 space-y-1; }
+  .proposal-body ol { @apply list-decimal pl-6 my-3 space-y-1; }
+  .proposal-body li { @apply leading-relaxed; }
+  .proposal-body blockquote {
+    @apply border-l-2 border-border/60 pl-4 my-3 text-muted-foreground italic;
+  }
+  .proposal-body code {
+    @apply font-mono text-xs bg-muted/20 px-1.5 py-0.5 rounded;
+  }
+  .proposal-body pre {
+    @apply font-mono text-xs bg-muted/20 p-3 rounded-lg my-3 overflow-x-auto;
+  }
+  .proposal-body pre code {
+    @apply bg-transparent p-0;
+  }
+  .proposal-body hr {
+    @apply my-4 border-border/40;
+  }
+  .proposal-body table {
+    @apply my-3 w-full border-collapse text-xs;
+  }
+  .proposal-body th,
+  .proposal-body td {
+    @apply border border-border/50 px-2 py-1 text-left;
+  }
+  .proposal-body th {
+    @apply bg-muted/15 font-semibold;
+  }
+  .proposal-body strong { @apply font-semibold text-foreground; }
+  .proposal-body em { @apply italic; }
+  .proposal-body del { @apply line-through text-muted-foreground; }
+}
+
+
+/* Bison Relay text scale: the BR Settings Appearance section sets --br-fs on
+   the BR page root; these scoped overrides scale text only (paddings and
+   layout boxes stay fixed). The two-class selectors (0,2,0) outrank the
+   generated Tailwind utilities; the attribute selectors catch the arbitrary
+   text-[Npx] sizes used in the BR components. */
+.br-text-scale {
+  --br-fs: 1;
+}
+.br-text-scale .text-xs   { font-size: calc(0.75rem * var(--br-fs));  line-height: calc(1rem * var(--br-fs)); }
+.br-text-scale .text-sm   { font-size: calc(0.875rem * var(--br-fs)); line-height: calc(1.25rem * var(--br-fs)); }
+.br-text-scale .text-base { font-size: calc(1rem * var(--br-fs));     line-height: calc(1.5rem * var(--br-fs)); }
+.br-text-scale .text-lg   { font-size: calc(1.125rem * var(--br-fs)); line-height: calc(1.75rem * var(--br-fs)); }
+.br-text-scale .text-xl   { font-size: calc(1.25rem * var(--br-fs));  line-height: calc(1.75rem * var(--br-fs)); }
+.br-text-scale .text-2xl  { font-size: calc(1.5rem * var(--br-fs));   line-height: calc(2rem * var(--br-fs)); }
+.br-text-scale [class*="text-[9px]"]  { font-size: calc(9px * var(--br-fs)); }
+.br-text-scale [class*="text-[10px]"] { font-size: calc(10px * var(--br-fs)); }
+.br-text-scale [class*="text-[11px]"] { font-size: calc(11px * var(--br-fs)); }

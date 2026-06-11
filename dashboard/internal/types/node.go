@@ -93,16 +93,3 @@ type MempoolInfo struct {
 	RegularTxs     int     `json:"regularTxs"`  // Regular transactions (non-CoinJoin)
 	CoinJoinTxs    int     `json:"coinJoinTxs"` // CoinJoin/StakeShuffle transactions
 }
-
-// RPC connection types
-type RPCConnectionRequest struct {
-	Host     string `json:"host"`
-	Port     string `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type RPCConnectionResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-}

@@ -1,0 +1,2086 @@
+[
+  {
+    "id": 0,
+    "symbol": "btc",
+    "name": "Bitcoin",
+    "isAccountBased": false,
+    "unitInfo": {
+      "atomicUnit": "Sats",
+      "conventionalUnit": "BTC",
+      "conversionFactor": 100000000
+    },
+    "availableWallets": [
+      {
+        "type": "SPV",
+        "tab": "Native",
+        "seeded": true,
+        "description": "Use the built-in SPV wallet",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for sending or withdrawing funds and fee payment when estimatesmartfee is not available. Units: BTC/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: BTC/kB",
+            "default": "0.014",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "false",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "apifeefallback",
+            "displayName": "External fee rate estimates",
+            "description": "Allow fee rate estimation from a block explorer API. This is useful as a fallback for SPV wallets and RPC wallets that have recently been started.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      },
+      {
+        "type": "bitcoindRPC",
+        "tab": "External",
+        "seeded": false,
+        "description": "Connect to bitcoind",
+        "configPath": "/home/user/.bitcoin/bitcoin.conf",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "walletname",
+            "displayName": "Wallet Name",
+            "description": "The wallet name",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Bitcoin's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Bitcoin's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "\u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e (default 'localhost')",
+            "default": "127.0.0.1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Port for RPC connections (if not set in rpcbind)",
+            "default": "8332",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for sending or withdrawing funds and fee payment when estimatesmartfee is not available. Units: BTC/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: BTC/kB",
+            "default": "0.014",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "false",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      },
+      {
+        "type": "electrumRPC",
+        "tab": "Electrum (external)",
+        "seeded": false,
+        "description": "Use an external Electrum Wallet",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Electrum's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Electrum's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Electrum's 'rpcport' (if not set with rpcbind)",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "Electrum's 'rpchost' \u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e",
+            "default": "127.0.0.1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "walletname",
+            "displayName": "Wallet File",
+            "description": "Full path to the wallet file (empty is default_wallet)",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for sending or withdrawing funds and fee payment when estimatesmartfee is not available. Units: BTC/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: BTC/kB",
+            "default": "0.014",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "false",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "symbol": "ltc",
+    "name": "Litecoin",
+    "isAccountBased": false,
+    "unitInfo": {
+      "atomicUnit": "litoshi",
+      "conventionalUnit": "LTC",
+      "conversionFactor": 100000000
+    },
+    "availableWallets": [
+      {
+        "type": "SPV",
+        "tab": "Native",
+        "seeded": true,
+        "description": "Use the built-in SPV wallet",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for sending or withdrawing funds and fee payment when estimatesmartfee is not available. Units: LTC/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: LTC/kB",
+            "default": "0.014",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "false",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "apifeefallback",
+            "displayName": "External fee rate estimates",
+            "description": "Allow fee rate estimation from a block explorer API. This is useful as a fallback for SPV wallets and RPC wallets that have recently been started.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      },
+      {
+        "type": "litecoindRPC",
+        "tab": "Litecoin Core (external)",
+        "seeded": false,
+        "description": "Connect to litecoind",
+        "configPath": "/home/user/.litecoin/litecoin.conf",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "walletname",
+            "displayName": "Wallet Name",
+            "description": "The wallet name",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Litecoin's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Litecoin's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "\u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e (default 'localhost')",
+            "default": "127.0.0.1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Port for RPC connections (if not set in rpcbind)",
+            "default": "9332",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for sending or withdrawing funds and fee payment when estimatesmartfee is not available. Units: LTC/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: LTC/kB",
+            "default": "0.014",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "false",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "apifeefallback",
+            "displayName": "External fee rate estimates",
+            "description": "Allow fee rate estimation from a block explorer API. This is useful as a fallback for SPV wallets and RPC wallets that have recently been started.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      },
+      {
+        "type": "electrumRPC",
+        "tab": "Electrum-LTC (external)",
+        "seeded": false,
+        "description": "Use an external Electrum-LTC Wallet",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Electrum's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Electrum's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Electrum's 'rpcport' (if not set with rpcbind)",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "Electrum's 'rpchost' \u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e",
+            "default": "127.0.0.1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "walletname",
+            "displayName": "Wallet File",
+            "description": "Full path to the wallet file (empty is default_wallet)",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for sending or withdrawing funds and fee payment when estimatesmartfee is not available. Units: LTC/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: LTC/kB",
+            "default": "0.014",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "false",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "apifeefallback",
+            "displayName": "External fee rate estimates",
+            "description": "Allow fee rate estimation from a block explorer API. This is useful as a fallback for SPV wallets and RPC wallets that have recently been started.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "symbol": "doge",
+    "name": "Dogecoin",
+    "isAccountBased": false,
+    "unitInfo": {
+      "atomicUnit": "Sats",
+      "conventionalUnit": "DOGE",
+      "conversionFactor": 100000000
+    },
+    "availableWallets": [
+      {
+        "type": "dogecoindRPC",
+        "tab": "External",
+        "seeded": false,
+        "description": "Connect to dogecoind",
+        "configPath": "/home/user/.dogecoin/dogecoin.conf",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Dogecoin's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Dogecoin's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "\u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e (default 'localhost')",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Port for RPC connections (if not set in Address)",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "Dogecoin's 'fallbackfee' rate. Units: DOGE/kB",
+            "default": "0.04",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: BTC/kB",
+            "default": "0.5",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-split funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid. Used only for standing-type orders, e.g. limit orders without immediate time-in-force.",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "apifeefallback",
+            "displayName": "External fee rate estimates",
+            "description": "Allow fee rate estimation from a block explorer API. This is useful as a fallback for SPV wallets and RPC wallets that have recently been started.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "symbol": "dash",
+    "name": "Dash",
+    "isAccountBased": false,
+    "unitInfo": {
+      "atomicUnit": "Sats",
+      "conventionalUnit": "DASH",
+      "conversionFactor": 100000000
+    },
+    "availableWallets": [
+      {
+        "type": "dashdRPC",
+        "tab": "Dash Core (external)",
+        "seeded": false,
+        "description": "Connect to dashd",
+        "configPath": "/home/user/.dash/dash.conf",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "walletname",
+            "displayName": "Wallet Name",
+            "description": "The wallet name",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Dash's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Dash's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "\u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e (default 'localhost')",
+            "default": "127.0.0.1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Port for RPC connections (if not set in rpcbind)",
+            "default": "9998",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "Dash's 'fallbackfee' rate. Units: DASH/kB",
+            "default": "0.00001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: DASH/kB",
+            "default": "0.0002",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-split funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid. Used only for standing-type orders, e.g. limit orders without immediate time-in-force.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 20,
+    "symbol": "dgb",
+    "name": "DigiByte",
+    "isAccountBased": false,
+    "unitInfo": {
+      "atomicUnit": "digiSatoshi",
+      "conventionalUnit": "DGB",
+      "conversionFactor": 100000000
+    },
+    "availableWallets": [
+      {
+        "type": "digibytedRPC",
+        "tab": "External",
+        "seeded": false,
+        "description": "Connect to digibyted",
+        "configPath": "/home/user/.digibyte/digibyte.conf",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "walletname",
+            "displayName": "Wallet Name",
+            "description": "The wallet name",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "DigiByte's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "DigiByte's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "\u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e (default 'localhost')",
+            "default": "127.0.0.1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Port for RPC connections (if not set in rpcbind)",
+            "default": "14022",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "DigiByte's 'fallbackfee' rate. Units: DGB/kB",
+            "default": "0.002",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: BTC/kB",
+            "default": "0.05",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-split funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid. Used only for standing-type orders, e.g. limit orders without immediate time-in-force.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 42,
+    "symbol": "dcr",
+    "name": "Decred",
+    "isAccountBased": false,
+    "unitInfo": {
+      "atomicUnit": "atoms",
+      "conventionalUnit": "DCR",
+      "conversionFactor": 100000000
+    },
+    "availableWallets": [
+      {
+        "type": "SPV",
+        "tab": "Native",
+        "seeded": true,
+        "description": "Use the built-in SPV wallet",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for fee payment and withdrawals when estimatesmartfee is not available. Units: DCR/kB",
+            "default": "0.0002",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: DCR/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to get a confirmation. Used to set the transaction's fee rate. (default: 1 block)",
+            "default": "1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "gaplimit",
+            "displayName": "Address Gap Limit",
+            "description": "The gap limit for used address discovery",
+            "default": "20",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "apifeefallback",
+            "displayName": "External fee rate estimates",
+            "description": "Allow fee rate estimation from a block explorer API. This is useful as a fallback for SPV wallets and RPC wallets that have recently been started.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      },
+      {
+        "type": "dcrwalletRPC",
+        "tab": "External",
+        "seeded": false,
+        "description": "Connect to dcrwallet",
+        "configPath": "/home/user/.dcrwallet/dcrwallet.conf",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "account",
+            "displayName": "Account Name",
+            "description": "Primary dcrwallet account name for trading. If automatic mixing of trading funds is desired, this should be the wallet's mixed account and the other accounts should be set too. See wallet documentation for mixing wallet setup instructions.",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "unmixedaccount",
+            "displayName": "Change Account Name",
+            "description": "dcrwallet change account name. This and the 'Temporary Trading Account' should only be set if mixing is enabled on the wallet. If set, deposit addresses will be from this account and will be mixed before being available to trade.",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "tradingaccount",
+            "displayName": "Temporary Trading Account",
+            "description": "dcrwallet account to temporarily store split tx outputs or change from chained swaps in multi-lot orders. This should only be set if 'Change Account Name' is set.",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "username",
+            "displayName": "RPC Username",
+            "description": "dcrwallet's 'username' setting for JSON-RPC",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "password",
+            "displayName": "RPC Password",
+            "description": "dcrwallet's 'password' setting for JSON-RPC",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpclisten",
+            "displayName": "RPC Address",
+            "description": "dcrwallet's address (host or host:port) (default port: 9110)",
+            "default": "127.0.0.1:9110",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpccert",
+            "displayName": "TLS Certificate",
+            "description": "Path to the dcrwallet TLS certificate file",
+            "default": "/home/user/.dcrwallet/rpc.cert",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for fee payment and withdrawals when estimatesmartfee is not available. Units: DCR/kB",
+            "default": "0.0002",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: DCR/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to get a confirmation. Used to set the transaction's fee rate. (default: 1 block)",
+            "default": "1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "gaplimit",
+            "displayName": "Address Gap Limit",
+            "description": "The gap limit for used address discovery",
+            "default": "20",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "apifeefallback",
+            "displayName": "External fee rate estimates",
+            "description": "Allow fee rate estimation from a block explorer API. This is useful as a fallback for SPV wallets and RPC wallets that have recently been started.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 60,
+    "symbol": "eth",
+    "name": "Ethereum",
+    "isAccountBased": true,
+    "unitInfo": {
+      "atomicUnit": "gwei",
+      "conventionalUnit": "ETH",
+      "conversionFactor": 1000000000
+    },
+    "availableWallets": [
+      {
+        "type": "rpc",
+        "tab": "RPC",
+        "seeded": true,
+        "description": "Infrastructure providers (e.g. Infura) or local nodes",
+        "guideLink": "https://github.com/decred/dcrdex/blob/master/docs/wiki/Ethereum.md",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "providers",
+            "displayName": "RPC Provider",
+            "description": "Specify one or more RPC providers. For infrastructure providers, prefer using wss address. Only url-based authentication is supported. For a local node, use the filepath to an IPC file.",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "repeatable": " ",
+            "required": false
+          },
+          {
+            "key": "gasfeelimit",
+            "displayName": "Gas Fee Limit",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If gasfeelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: gwei / gas",
+            "default": "200",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          }
+        ]
+      }
+    ],
+    "tokens": [
+      {
+        "id": 60001,
+        "symbol": "usdc.eth",
+        "name": "USDC",
+        "parentID": 60,
+        "unitInfo": {
+          "atomicUnit": "µUSD",
+          "conventionalUnit": "USDC",
+          "conversionFactor": 1000000
+        },
+        "definition": {
+          "type": "token",
+          "tab": "Ethereum token",
+          "seeded": false,
+          "description": "The USDC Ethereum ERC20 token.",
+          "noAuth": false,
+          "configOpts": []
+        }
+      },
+      {
+        "id": 60002,
+        "symbol": "usdt.eth",
+        "name": "Tether",
+        "parentID": 60,
+        "unitInfo": {
+          "atomicUnit": "microUSD",
+          "conventionalUnit": "USDT",
+          "conversionFactor": 1000000
+        },
+        "definition": {
+          "type": "token",
+          "tab": "Ethereum token",
+          "seeded": false,
+          "description": "The USDT Ethereum ERC20 token.",
+          "noAuth": false,
+          "configOpts": []
+        }
+      },
+      {
+        "id": 60003,
+        "symbol": "matic.eth",
+        "name": "MATIC",
+        "parentID": 60,
+        "unitInfo": {
+          "atomicUnit": "gwei",
+          "conventionalUnit": "MATIC",
+          "conversionFactor": 1000000000
+        },
+        "definition": {
+          "type": "token",
+          "tab": "Ethereum token",
+          "seeded": false,
+          "description": "The MATIC Ethereum ERC20 token.",
+          "noAuth": false,
+          "configOpts": []
+        }
+      }
+    ]
+  },
+  {
+    "id": 133,
+    "symbol": "zec",
+    "name": "Zcash",
+    "isAccountBased": false,
+    "unitInfo": {
+      "atomicUnit": "zats",
+      "conventionalUnit": "ZEC",
+      "conversionFactor": 100000000
+    },
+    "availableWallets": [
+      {
+        "type": "zcashdRPC",
+        "tab": "External",
+        "seeded": false,
+        "description": "Connect to zcashd",
+        "configPath": "/home/user/.zcash/zcash.conf",
+        "noAuth": true,
+        "configOpts": [
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Zcash's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Zcash's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "\u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e (default 'localhost')",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Port for RPC connections (if not set in Address)",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "Zcash's 'fallbackfee' rate. Units: ZEC/kB",
+            "default": "0.0001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: BTC/kB",
+            "default": "0.01",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-split funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid. Used only for standing-type orders, e.g. limit orders without immediate time-in-force.",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 136,
+    "symbol": "firo",
+    "name": "Firo",
+    "isAccountBased": false,
+    "unitInfo": {
+      "atomicUnit": "Sats",
+      "conventionalUnit": "FIRO",
+      "conversionFactor": 100000000
+    },
+    "availableWallets": [
+      {
+        "type": "firodRPC",
+        "tab": "Firo Core (external)",
+        "seeded": false,
+        "description": "Connect to firod",
+        "configPath": "/home/user/.firo/firo.conf",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "walletname",
+            "displayName": "Wallet Name",
+            "description": "The wallet name",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Firo's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Firo's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "\u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e (default 'localhost')",
+            "default": "127.0.0.1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Port for RPC connections (if not set in rpcbind)",
+            "default": "8888",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "Firo's 'fallbackfee' rate. Units: FIRO/kB",
+            "default": "0.00001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: FIRO/kB",
+            "default": "0.0002",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-split funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid. Used only for standing-type orders, e.g. limit orders without immediate time-in-force.",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      },
+      {
+        "type": "electrumRPC",
+        "tab": "Electrum-Firo (external)",
+        "seeded": false,
+        "description": "Use an external Electrum-Firo Wallet",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Electrum's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Electrum's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Electrum's 'rpcport' (if not set with rpcbind)",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "Electrum's 'rpchost' \u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e",
+            "default": "127.0.0.1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "walletname",
+            "displayName": "Wallet File",
+            "description": "Full path to the wallet file (empty is default_wallet)",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for sending or withdrawing funds and fee payment when estimatesmartfee is not available. Units: FIRO/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: FIRO/kB",
+            "default": "0.014",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "false",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "apifeefallback",
+            "displayName": "External fee rate estimates",
+            "description": "Allow fee rate estimation from a block explorer API. This is useful as a fallback for SPV wallets and RPC wallets that have recently been started.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 145,
+    "symbol": "bch",
+    "name": "Bitcoin Cash",
+    "isAccountBased": false,
+    "unitInfo": {
+      "atomicUnit": "Sats",
+      "conventionalUnit": "BCH",
+      "conversionFactor": 100000000
+    },
+    "availableWallets": [
+      {
+        "type": "bitcoindRPC",
+        "tab": "External",
+        "seeded": false,
+        "description": "Connect to bitcoind",
+        "configPath": "/home/user/.bitcoin/bitcoin.conf",
+        "noAuth": false,
+        "configOpts": [
+          {
+            "key": "walletname",
+            "displayName": "Wallet Name",
+            "description": "The wallet name",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcuser",
+            "displayName": "JSON-RPC Username",
+            "description": "Bitcoin Cash's 'rpcuser' setting",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcpassword",
+            "displayName": "JSON-RPC Password",
+            "description": "Bitcoin Cash's 'rpcpassword' setting",
+            "default": "",
+            "noEcho": true,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcbind",
+            "displayName": "JSON-RPC Address",
+            "description": "\u003caddr\u003e or \u003caddr\u003e:\u003cport\u003e (default 'localhost')",
+            "default": "127.0.0.1",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "rpcport",
+            "displayName": "JSON-RPC Port",
+            "description": "Port for RPC connections (if not set in rpcbind)",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "fallbackfee",
+            "displayName": "Fallback fee rate",
+            "description": "The fee rate to use for sending or withdrawing funds and fee payment when estimatesmartfee is not available. Units: BCH/kB",
+            "default": "0.001",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "feeratelimit",
+            "displayName": "Highest acceptable fee rate",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If feeratelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: BCH/kB",
+            "default": "0.014",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "redeemconftarget",
+            "displayName": "Redeem confirmation target",
+            "description": "The target number of blocks for the redeem transaction to be mined. Used to set the transaction's fee rate. (default: 2 blocks)",
+            "default": "2",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "txsplit",
+            "displayName": "Pre-size funding inputs",
+            "description": "When placing an order, create a \"split\" transaction to fund the order without locking more of the wallet balance than necessary. Otherwise, excess funds may be reserved to fund the order until the first swap contract is broadcast during match settlement, or the order is canceled. This an extra transaction for which network mining fees are paid.",
+            "default": "false",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          },
+          {
+            "key": "apifeefallback",
+            "displayName": "External fee rate estimates",
+            "description": "Allow fee rate estimation from a block explorer API. This is useful as a fallback for SPV wallets and RPC wallets that have recently been started.",
+            "default": "true",
+            "noEcho": false,
+            "isBoolean": true,
+            "isDate": false,
+            "required": false
+          }
+        ],
+        "multiFundingOpts": [
+          {
+            "key": "multisplit",
+            "displayName": "Allow multi split",
+            "description": "Allow split funding transactions that pre-size outputs to prevent excessive overlock.",
+            "default": "true",
+            "isBoolean": true
+          },
+          {
+            "key": "multisplitbuffer",
+            "displayName": "Multi split buffer",
+            "description": "Add an integer percent buffer to split output amounts to facilitate output reuse. This is only required for quote assets.",
+            "default": "5",
+            "isBoolean": false,
+            "quoteAssetOnly": true,
+            "dependsOn": "multisplit",
+            "xyRange": {
+              "start": {
+                "label": "0%",
+                "x": 0
+              },
+              "end": {
+                "label": "100%",
+                "x": 100
+              },
+              "xUnit": "%"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 966,
+    "symbol": "polygon",
+    "name": "Polygon",
+    "isAccountBased": true,
+    "unitInfo": {
+      "atomicUnit": "gwei",
+      "conventionalUnit": "POL",
+      "conversionFactor": 1000000000
+    },
+    "availableWallets": [
+      {
+        "type": "rpc",
+        "tab": "External",
+        "seeded": true,
+        "description": "Infrastructure providers (e.g. Infura) or local nodes",
+        "noAuth": true,
+        "configOpts": [
+          {
+            "key": "providers",
+            "displayName": "RPC Provider",
+            "description": "Specify one or more RPC providers. For infrastructure providers, prefer using wss address. Only url-based authentication is supported. For a local node, use the filepath to an IPC file.",
+            "default": "",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "repeatable": " ",
+            "required": false
+          },
+          {
+            "key": "gasfeelimit",
+            "displayName": "Gas Fee Limit",
+            "description": "This is the highest network fee rate you are willing to pay on swap transactions. If gasfeelimit is lower than a market's maxfeerate, you will not be able to trade on that market with this wallet.  Units: gwei / gas",
+            "default": "1000",
+            "noEcho": false,
+            "isBoolean": false,
+            "isDate": false,
+            "required": false
+          }
+        ]
+      }
+    ],
+    "tokens": [
+      {
+        "id": 966001,
+        "symbol": "usdc.polygon",
+        "name": "USDC",
+        "parentID": 966,
+        "unitInfo": {
+          "atomicUnit": "µUSD",
+          "conventionalUnit": "USDC",
+          "conversionFactor": 1000000
+        },
+        "definition": {
+          "type": "token",
+          "tab": "Polygon token",
+          "seeded": false,
+          "description": "The USDC Ethereum ERC20 token.",
+          "noAuth": false,
+          "configOpts": []
+        }
+      },
+      {
+        "id": 966002,
+        "symbol": "weth.polygon",
+        "name": "Wrapped Ether",
+        "parentID": 966,
+        "unitInfo": {
+          "atomicUnit": "gwei",
+          "conventionalUnit": "WETH",
+          "conversionFactor": 1000000000
+        },
+        "definition": {
+          "type": "token",
+          "tab": "Polygon token",
+          "seeded": false,
+          "description": "Wrapped ETH.",
+          "noAuth": false,
+          "configOpts": []
+        }
+      },
+      {
+        "id": 966003,
+        "symbol": "wbtc.polygon",
+        "name": "Wrapped Bitcoin",
+        "parentID": 966,
+        "unitInfo": {
+          "atomicUnit": "Sats",
+          "conventionalUnit": "WBTC",
+          "conversionFactor": 100000000
+        },
+        "definition": {
+          "type": "token",
+          "tab": "Polygon token",
+          "seeded": false,
+          "description": "Wrapped BTC.",
+          "noAuth": false,
+          "configOpts": []
+        }
+      },
+      {
+        "id": 966004,
+        "symbol": "usdt.polygon",
+        "name": "Tether",
+        "parentID": 966,
+        "unitInfo": {
+          "atomicUnit": "microUSD",
+          "conventionalUnit": "USDT",
+          "conversionFactor": 1000000
+        },
+        "definition": {
+          "type": "token",
+          "tab": "Polygon token",
+          "seeded": false,
+          "description": "The USDT Ethereum ERC20 token.",
+          "noAuth": false,
+          "configOpts": []
+        }
+      }
+    ]
+  }
+]

@@ -26,7 +26,16 @@ type TSpend struct {
 	CurrentHeight   int64     `json:"currentHeight"`   // Current blockchain height
 	BlocksRemaining int64     `json:"blocksRemaining"` // Blocks until expiry
 	Status          string    `json:"status"`          // "voting", "approved", "rejected"
+	YesVotes        int64     `json:"yesVotes"`        // Yes votes so far (from gettreasuryspendvotes)
+	NoVotes         int64     `json:"noVotes"`         // No votes so far
 	DetectedAt      time.Time `json:"detectedAt"`
+}
+
+// BalanceSample is one point in the treasury balance-over-time series.
+type BalanceSample struct {
+	Height  int64   `json:"height"`
+	Time    int64   `json:"time"`    // block unix time
+	Balance float64 `json:"balance"` // treasury balance in DCR at that block
 }
 
 // TSpendHistory represents a historical approved treasury spend

@@ -6,20 +6,24 @@ package handlers
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 
-	pb "decred.org/dcrwallet/v4/rpc/walletrpc"
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 
 	"github.com/gorilla/websocket"
 )
@@ -143,18 +147,8 @@ func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
 		if err == nil && chainInfo.InitialBlockDownload {
-			// dcrd is still syncing - return a user-friendly message
-			syncProgress := float64(0)
-			if chainInfo.SyncHeight > 0 {
-				if chainInfo.Headers > 0 {
-					syncProgress = (float64(chainInfo.Headers) / float64(chainInfo.SyncHeight)) * 100
-				} else if chainInfo.Blocks > 0 {
-					syncProgress = (float64(chainInfo.Blocks) / float64(chainInfo.SyncHeight)) * 100
-				}
-			}
-
-			errorMsg := fmt.Sprintf("Blockchain is syncing (%.1f%% complete). Wallet will be available once sync is complete.", syncProgress)
-			http.Error(w, errorMsg, http.StatusServiceUnavailable)
+			// Wallet RPC cannot serve data until dcrd finishes its IBD.
+			http.Error(w, "The Decred node is still downloading the blockchain. Your wallet will be available once the node finishes syncing.", http.StatusServiceUnavailable)
 			return
 		}
 	}
@@ -184,18 +178,8 @@ func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
 
 		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
 		if err == nil && chainInfo.InitialBlockDownload {
-			// dcrd is still syncing - return a user-friendly message
-			syncProgress := float64(0)
-			if chainInfo.SyncHeight > 0 {
-				if chainInfo.Headers > 0 {
-					syncProgress = (float64(chainInfo.Headers) / float64(chainInfo.SyncHeight)) * 100
-				} else if chainInfo.Blocks > 0 {
-					syncProgress = (float64(chainInfo.Blocks) / float64(chainInfo.SyncHeight)) * 100
-				}
-			}
-
-			errorMsg := fmt.Sprintf("Blockchain is syncing (%.1f%% complete). Wallet will be available once sync is complete.", syncProgress)
-			http.Error(w, errorMsg, http.StatusServiceUnavailable)
+			// Wallet RPC cannot serve data until dcrd finishes its IBD.
+			http.Error(w, "The Decred node is still downloading the blockchain. Your wallet will be available once the node finishes syncing.", http.StatusServiceUnavailable)
 			return
 		}
 	}
@@ -278,10 +262,11 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 
 		// Step 1: Import xpub
-		params := []json.RawMessage{
-			json.RawMessage(fmt.Sprintf(`"%s"`, accountName)),
-			json.RawMessage(fmt.Sprintf(`"%s"`, req.Xpub)),
-		}
+		// Encode params with json.Marshal so a quote or backslash in the account
+		// name or xpub cannot break the JSON-RPC request.
+		acctParam, _ := json.Marshal(accountName)
+		xpubParam, _ := json.Marshal(req.Xpub)
+		params := []json.RawMessage{acctParam, xpubParam}
 
 		log.Printf("Step 1/3: Importing xpub for account '%s'", accountName)
 		result, err := rpc.WalletClient.RawRequest(ctx, "importxpub", params)
@@ -415,7 +400,7 @@ func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 func StreamRescanProgressHandler(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
+		CheckOrigin: middleware.SameOriginWS,
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -570,4 +555,564 @@ func phaseProgress(snap services.SyncSnapshot) (int64, int64) {
 	default:
 		return 0, chainTip
 	}
+}
+
+func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	accounts, err := services.FetchAllAccounts(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(accounts)
+}
+
+// importedAccountNumber is dcrwallet's reserved bucket for unencrypted
+// private-key imports. It cannot be renamed and is never returned by
+// NextAccount.
+const importedAccountNumber uint32 = 2147483647
+
+func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		AccountName string `json:"accountName"`
+		Passphrase  string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.AccountName)
+	if name == "" {
+		http.Error(w, "accountName required", http.StatusBadRequest)
+		return
+	}
+	if len(name) > 50 {
+		http.Error(w, "accountName must be 50 characters or fewer", http.StatusBadRequest)
+		return
+	}
+	if strings.EqualFold(name, "imported") {
+		http.Error(w, "'imported' is a reserved account name", http.StatusBadRequest)
+		return
+	}
+	if req.Passphrase == "" {
+		http.Error(w, "passphrase required", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	num, err := services.CreateAccount(ctx, name, passphrase)
+	if err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		case strings.Contains(lower, "already"):
+			http.Error(w, "An account with that name already exists", http.StatusConflict)
+		default:
+			log.Printf("CreateAccount failed: %v", err)
+			http.Error(w, "create account failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]uint32{"accountNumber": num})
+}
+
+func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		AccountNumber uint32 `json:"accountNumber"`
+		NewName       string `json:"newName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.NewName)
+	if name == "" {
+		http.Error(w, "newName required", http.StatusBadRequest)
+		return
+	}
+	if len(name) > 50 {
+		http.Error(w, "newName must be 50 characters or fewer", http.StatusBadRequest)
+		return
+	}
+	if services.IsReservedAccountName(name) {
+		http.Error(w, fmt.Sprintf("%q is a reserved account name", name), http.StatusBadRequest)
+		return
+	}
+	if req.AccountNumber == importedAccountNumber {
+		http.Error(w, "the imported account cannot be renamed", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	// Block renaming the special accounts other daemons bind to by name
+	// (mixed/unmixed/lightning/dex); renaming them breaks those bindings.
+	if accts, aerr := services.FetchAllAccounts(ctx); aerr == nil {
+		for _, a := range accts {
+			if a.AccountNumber == req.AccountNumber && services.IsReservedAccountName(a.AccountName) {
+				http.Error(w, "this account is reserved and cannot be renamed", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	if err := services.RenameAccount(ctx, req.AccountNumber, name); err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "already"):
+			http.Error(w, "An account with that name already exists", http.StatusConflict)
+		case strings.Contains(lower, "not found"):
+			http.Error(w, "account not found", http.StatusNotFound)
+		default:
+			log.Printf("RenameAccount failed: %v", err)
+			http.Error(w, "rename failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte("{}"))
+}
+
+type privacyStatusResponse struct {
+	Configured    bool    `json:"configured"`
+	MixedAccount  *uint32 `json:"mixedAccount,omitempty"`
+	ChangeAccount *uint32 `json:"changeAccount,omitempty"`
+	MixerRunning  bool    `json:"mixerRunning"`
+	LastError     string  `json:"lastError,omitempty"`
+}
+
+func PrivacyStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	mixed, change, configured, err := services.FindPrivacyAccounts(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := privacyStatusResponse{
+		Configured:   configured,
+		MixerRunning: services.IsMixerRunning(),
+		LastError:    services.LastMixerError(),
+	}
+	if configured {
+		m, c := mixed, change
+		resp.MixedAccount = &m
+		resp.ChangeAccount = &c
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
+	if ready, reason := services.WalletReady(r.Context()); !ready {
+		http.Error(w, reason, http.StatusServiceUnavailable)
+		return
+	}
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Passphrase == "" {
+		http.Error(w, "passphrase required", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	mixed, change, err := services.SetupPrivacyAccounts(ctx, passphrase)
+	if err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		default:
+			log.Printf("PrivacySetup failed: %v", err)
+			http.Error(w, "privacy setup failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]uint32{
+		"mixedAccount":  mixed,
+		"changeAccount": change,
+	})
+}
+
+func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.AccountMixerClient == nil {
+		http.Error(w, "mixer gRPC client not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	if services.IsMixerRunning() {
+		http.Error(w, "mixer already running", http.StatusConflict)
+		return
+	}
+	// The mixer, the autobuyer, and a manual ticket purchase all spend the
+	// mixed account, so the mixer must not start while any of them is active
+	// (the autobuyer mixes its buys inline; a manual purchase pauses and
+	// restarts the mixer itself).
+	if services.IsAutobuyerRunning() {
+		http.Error(w, "stop the ticket autobuyer before starting the mixer", http.StatusConflict)
+		return
+	}
+	if services.IsTicketPurchaseInProgress() {
+		http.Error(w, "a ticket purchase is in progress; try again once it finishes", http.StatusConflict)
+		return
+	}
+
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Passphrase == "" {
+		http.Error(w, "passphrase required", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	mixed, change, configured, err := services.FindPrivacyAccounts(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !configured {
+		http.Error(w, "privacy not configured — run setup first", http.StatusBadRequest)
+		return
+	}
+
+	if err := services.StartMixer(passphrase, mixed, 0, change); err != nil {
+		log.Printf("StartMixer failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte("{}"))
+}
+
+func PrivacyStopHandler(w http.ResponseWriter, r *http.Request) {
+	services.StopMixer()
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte("{}"))
+}
+
+// MixerDebugHandler reads or toggles MIXC + TKBY debug logging on dcrwallet.
+func MixerDebugHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"enabled": services.MixerDebugEnabled()})
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := services.SetMixerDebug(ctx, req.Enabled); err != nil {
+		log.Printf("SetMixerDebug failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
+}
+
+func StreamMixerEventsHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: middleware.SameOriginWS,
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade mixer-events WebSocket: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	for _, ev := range services.LastMixerEvents(200) {
+		if err := conn.WriteJSON(ev); err != nil {
+			return
+		}
+	}
+
+	ch, unsubscribe := services.SubscribeMixerEvents()
+	defer unsubscribe()
+
+	notify := make(chan struct{})
+	go func() {
+		defer close(notify)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(ev); err != nil {
+				return
+			}
+		case <-notify:
+			return
+		}
+	}
+}
+
+func GetAccountExtendedPubKeyHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	accountStr := r.URL.Query().Get("accountNumber")
+	if accountStr == "" {
+		http.Error(w, "accountNumber required", http.StatusBadRequest)
+		return
+	}
+	accountU64, err := strconv.ParseUint(accountStr, 10, 32)
+	if err != nil {
+		http.Error(w, "invalid accountNumber", http.StatusBadRequest)
+		return
+	}
+	accountNum := uint32(accountU64)
+	if accountNum == importedAccountNumber {
+		http.Error(w, "the imported account has no extended pubkey", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	xpub, err := services.GetAccountExtendedPubKey(ctx, accountNum)
+	if err != nil {
+		log.Printf("GetAccountExtendedPubKey failed: %v", err)
+		http.Error(w, "failed to fetch extended pubkey", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"xpub": xpub})
+}
+
+func ValidateAddressHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	address := r.URL.Query().Get("address")
+	if address == "" {
+		http.Error(w, "address required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	resp, err := services.ValidateAddress(ctx, address)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("validate failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.ValidateAddressResponse{
+		IsValid:       resp.IsValid,
+		IsMine:        resp.IsMine,
+		AccountNumber: resp.AccountNumber,
+	})
+}
+
+func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil || rpc.DecodeMessageClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	var req types.ConstructTransactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Address == "" {
+		http.Error(w, "address required", http.StatusBadRequest)
+		return
+	}
+	if !req.SendAll && req.AmountAtoms <= 0 {
+		http.Error(w, "amount must be positive", http.StatusBadRequest)
+		return
+	}
+	if req.AmountAtoms > 2_100_000_000_000_000 {
+		http.Error(w, "amount exceeds total supply", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if vResp, err := services.ValidateAddress(ctx, req.Address); err != nil || !vResp.IsValid {
+		http.Error(w, "address has invalid format", http.StatusBadRequest)
+		return
+	}
+
+	cResp, err := services.ConstructTransaction(ctx, req.SourceAccount, req.Address, req.AmountAtoms, req.SendAll)
+	if err != nil {
+		log.Printf("ConstructTransaction failed: %v", err)
+		http.Error(w, fmt.Sprintf("construct failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	decoded, err := services.DecodeRawTransaction(ctx, cResp.UnsignedTransaction)
+	if err != nil {
+		log.Printf("DecodeRawTransaction failed: %v", err)
+		http.Error(w, fmt.Sprintf("decode failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	var inputs, outputs int64
+	for _, in := range decoded.Inputs {
+		inputs += in.AmountIn
+	}
+	for _, out := range decoded.Outputs {
+		outputs += out.Value
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.ConstructTransactionResponse{
+		UnsignedTxHex:       hex.EncodeToString(cResp.UnsignedTransaction),
+		InputsTotalAtoms:    inputs,
+		OutputsTotalAtoms:   outputs,
+		FeeAtoms:            inputs - outputs,
+		EstimatedSignedSize: cResp.EstimatedSignedSize,
+	})
+}
+
+func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req types.SignPublishTransactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.UnsignedTxHex == "" || req.Passphrase == "" {
+		http.Error(w, "unsignedTxHex and passphrase required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Passphrase) > 1024 {
+		http.Error(w, "passphrase too long", http.StatusBadRequest)
+		return
+	}
+	txBytes, err := hex.DecodeString(req.UnsignedTxHex)
+	if err != nil {
+		http.Error(w, "invalid unsigned tx hex", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	txHash, err := services.SignAndPublishTransaction(ctx, req.SourceAccount, txBytes, passphrase)
+	if err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case errors.Is(err, services.ErrSpendWhileMixing):
+			http.Error(w, msg, http.StatusConflict)
+		case strings.Contains(lower, "watching only"), strings.Contains(lower, "watchingonly"):
+			http.Error(w, "This account is watch-only — cannot sign", http.StatusBadRequest)
+		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		default:
+			log.Printf("SignAndPublishTransaction failed: %v", err)
+			http.Error(w, "sign/publish failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.SignPublishTransactionResponse{TxHash: txHash})
+}
+
+func NextAddressHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletClient == nil || rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	accountStr := r.URL.Query().Get("account")
+	if accountStr == "" {
+		accountStr = "0"
+	}
+	accountU64, err := strconv.ParseUint(accountStr, 10, 32)
+	if err != nil {
+		http.Error(w, "invalid account", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	addr, err := services.GetNextAddress(ctx, uint32(accountU64))
+	if err != nil {
+		log.Printf("NextAddress RPC failed: %v", err)
+		http.Error(w, fmt.Sprintf("failed to derive address: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(types.NextAddressResponse{
+		Address:       addr,
+		AccountNumber: uint32(accountU64),
+	})
 }

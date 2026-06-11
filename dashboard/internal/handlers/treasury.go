@@ -32,6 +32,23 @@ func GetTreasuryInfoHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(info)
 }
 
+// GetTreasuryBalanceHistoryHandler returns the treasury balance-over-time
+// series (sampled at ~monthly cadence, cached in-process).
+func GetTreasuryBalanceHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	series, err := services.TreasuryBalanceHistory(ctx)
+	if err != nil {
+		log.Printf("Error fetching treasury balance history: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(series)
+}
+
 // TriggerTSpendScanHandler triggers a historical blockchain scan for TSpends
 func TriggerTSpendScanHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse request body to get startHeight (optional)

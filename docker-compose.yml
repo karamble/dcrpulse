@@ -4,11 +4,11 @@ services:
     build:
       context: ./dcrd
       args:
-        DCRD_VERSION: ${DCRD_VERSION:-release-v2.1.3}
+        DCRD_VERSION: ${DCRD_VERSION:-release-v2.1.5}
     container_name: dcrpulse-dcrd
     ports:
       - "9108:9108"
-      - "9109:9109"
+      - "127.0.0.1:9109:9109"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data
     environment:
@@ -41,11 +41,11 @@ services:
     build:
       context: ./dcrwallet
       args:
-        DCRWALLET_VERSION: ${DCRWALLET_VERSION:-release-v2.1.3}
+        DCRWALLET_VERSION: ${DCRWALLET_VERSION:-release-v2.1.5}
     container_name: dcrpulse-dcrwallet
     ports:
-      - "9110:9110"
-      - "9111:9111"
+      - "127.0.0.1:9110:9110"
+      - "127.0.0.1:9111:9111"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data
     environment:
@@ -55,8 +55,6 @@ services:
       - DCRD_RPC_PASS=${DCRD_RPC_PASS:-decredpass}
       - DCRD_RPC_HOST=dcrd
       - DCRWALLET_GAP_LIMIT=${DCRWALLET_GAP_LIMIT:-400}
-    command: >
-      --gaplimit=${DCRWALLET_GAP_LIMIT:-400}
     depends_on:
       dcrd:
         condition: service_healthy
@@ -64,11 +62,11 @@ services:
     networks:
       - decred-network
     healthcheck:
-      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9110 && nc -z 127.0.0.1 9111 || exit 1"]
+      test: ["CMD", "sh", "-c", "S=/app-data/dcrwallet/control/state.json; [ -f \"$$S\" ] && [ $$(( $$(date +%s) - $$(stat -c %Y \"$$S\") )) -lt 60 ]"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -77,6 +75,88 @@ services:
         reservations:
           memory: 1G
 
+  dcrlnd:
+    image: ghcr.io/karamble/dcrpulse-dcrlnd:${DCRLND_IMAGE_TAG:-latest}
+    build:
+      context: ./dcrlnd
+      args:
+        DCRLND_VERSION: ${DCRLND_VERSION:-master}
+    container_name: dcrpulse-dcrlnd
+    volumes:
+      - ${APP_DATA_DIR:-app-data}:/app-data:ro
+      - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd
+    environment:
+      - DCRWALLET_HOST=dcrwallet
+      - DCRWALLET_GRPC_PORT=9111
+      - LN_TESTNET=${LN_TESTNET:-false}
+    depends_on:
+      dcrwallet:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - decred-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+        reservations:
+          memory: 256M
+
+  brclientd:
+    image: ghcr.io/karamble/dcrpulse-brclientd:${BRCLIENTD_IMAGE_TAG:-dev}
+    build:
+      context: ./brclientd
+    container_name: dcrpulse-brclientd
+    ports:
+      - "127.0.0.1:7677:7677"
+    entrypoint: ["/bin/sh", "/supervisor.sh"]
+    volumes:
+      - ${APP_DATA_DIR:-app-data}:/app-data:ro
+      - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd:ro
+      - ${BRCLIENTD_DATA_DIR:-brclientd-data}:/app-data/brclientd
+      - ./brclientd/supervisor.sh:/supervisor.sh:ro
+    depends_on:
+      dcrlnd:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - decred-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+
+  dcrdex:
+    image: ghcr.io/karamble/dcrpulse-dcrdex:${DCRDEX_IMAGE_TAG:-dev}
+    build:
+      context: ./dcrdex
+    container_name: dcrpulse-dcrdex
+    hostname: dcrdex
+    entrypoint:
+      - /bin/sh
+      - /supervisor.sh
+    environment:
+      - DCRDEX_RPC_USER=${DCRDEX_RPC_USER:-dcrdex}
+      - DCRDEX_RPC_PASS=${DCRDEX_RPC_PASS:-dcrdexpass}
+    volumes:
+      - ${DCRDEX_DATA_DIR:-dcrdex-data}:/dex/.dexc
+      - ${APP_DATA_DIR:-app-data}:/app-data:ro
+      - ./dcrdex/supervisor.sh:/supervisor.sh:ro
+    restart: unless-stopped
+    networks:
+      - decred-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+
   dashboard:
     image: ghcr.io/karamble/dcrpulse-dashboard:${DASHBOARD_IMAGE_TAG:-latest}
     build: ./dashboard
@@ -84,7 +164,11 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ${APP_DATA_DIR:-app-data}:/app-data:ro
+      - ${APP_DATA_DIR:-app-data}:/app-data
+      - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd
+      - ${BRCLIENTD_DATA_DIR:-brclientd-data}:/app-data/brclientd:ro
+      - ${DCRDEX_DATA_DIR:-dcrdex-data}:/app-data/dcrdex:ro
+      - ${DASHBOARD_DATA_DIR:-dashboard-data}:/dashboard-data
     environment:
       - PORT=8080
       - DCRD_RPC_HOST=dcrd
@@ -98,6 +182,21 @@ services:
       - DCRWALLET_RPC_USER=${DCRWALLET_RPC_USER:-dcrwallet}
       - DCRWALLET_RPC_PASS=${DCRWALLET_RPC_PASS:-dcrwalletpass}
       - DCRWALLET_RPC_CERT=/app-data/dcrd/rpc.cert
+      - DCRLND_HOST=dcrlnd
+      - DCRLND_GRPC_PORT=10009
+      - DCRLND_TLS_CERT=/app-data/dcrlnd/tls.cert
+      - DCRLND_MACAROON=/app-data/dcrlnd/admin.macaroon
+      - BRCLIENTD_HOST=brclientd
+      - BRCLIENTD_PORT=7676
+      - BRCLIENTD_STATUS_PORT=7677
+      - BRCLIENTD_DATA_DIR=/app-data/brclientd
+      - DCRDEX_RPC_HOST=dcrdex
+      - DCRDEX_RPC_PORT=5757
+      - DCRDEX_RPC_USER=${DCRDEX_RPC_USER:-dcrdex}
+      - DCRDEX_RPC_PASS=${DCRDEX_RPC_PASS:-dcrdexpass}
+      - DCRDEX_RPC_CERT=/app-data/dcrdex/rpc.cert
+      - DCRDEX_WS_PORT=5758
+      - DCRDEX_WS_CERT=/app-data/dcrdex/web.cert
     depends_on:
       dcrd:
         condition: service_healthy
@@ -121,4 +220,16 @@ networks:
 volumes:
   app-data:
     name: ${APP_DATA_DIR:-dcrpulse_app-data}
+    driver: local
+  dashboard-data:
+    name: ${DASHBOARD_DATA_DIR:-dcrpulse_dashboard-data}
+    driver: local
+  dcrlnd-data:
+    name: ${DCRLND_DATA_DIR:-dcrpulse_dcrlnd-data}
+    driver: local
+  brclientd-data:
+    name: ${BRCLIENTD_DATA_DIR:-dcrpulse_brclientd-data}
+    driver: local
+  dcrdex-data:
+    name: ${DCRDEX_DATA_DIR:-dcrpulse_dcrdex-data}
     driver: local

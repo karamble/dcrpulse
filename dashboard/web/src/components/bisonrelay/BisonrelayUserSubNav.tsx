@@ -1,0 +1,1329 @@
+// Copyright (c) 2015-2026 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+import { ComponentType, useEffect, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  Ban,
+  Check,
+  Coins,
+  Copy,
+  Edit2,
+  Eye,
+  EyeOff,
+  FileText,
+  Folder,
+  Handshake,
+  List,
+  Loader2,
+  Paperclip,
+  Radiation,
+  RotateCw,
+  Rss,
+  User,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
+import {
+  BisonrelayContact,
+  BisonrelayContentItem,
+  BisonrelayLiveEvent,
+  BisonrelayPostListItem,
+  blockBisonrelayContact,
+  clearBisonrelayMessages,
+  fetchBisonrelayUserPost,
+  getBisonrelayPosts,
+  handshakeBisonrelayContact,
+  ignoreBisonrelayContact,
+  kxResetBisonrelayContact,
+  listBisonrelayUserContent,
+  listBisonrelayUserPosts,
+  renameBisonrelayContact,
+  startBisonrelayContentGet,
+  subscribeBisonrelayPosts,
+  suggestKxBisonrelayContact,
+  tipBisonrelayContact,
+  transResetBisonrelayContact,
+  unsubscribeBisonrelayPosts,
+} from '../../services/bisonrelayApi';
+import {
+  describeLnPaymentFailure,
+  failedLnPaymentHashes,
+  findNewFailedLnPayment,
+} from '../../services/lightningApi';
+import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
+import { TipModal } from './TipModal';
+
+// Layout + action ordering mirrors bruig's chat_side_menu / user_context_menu
+// (companyzero/bisonrelay, ISC). "User Profile" is collapsed into the header
+// card so we render eleven rows; only the first row (Send File) is live in
+// P0, the rest are disabled placeholders that later phases unlock.
+
+interface Props {
+  contact: BisonrelayContact;
+  nick: string;
+  contacts: BisonrelayContact[];
+  displayNick: (c: BisonrelayContact) => string;
+  onClose: () => void;
+  onSendFile: () => void;
+  onRenamed?: (newNick: string) => void;
+  onTip?: (uid: string, nick: string, dcrAmount: number) => void;
+  onSubscribePosts?: (uid: string, nick: string) => void;
+  onUnsubscribePosts?: (uid: string, nick: string) => void;
+  onContactsChanged?: () => void;
+  onHistoryCleared?: (uid: string) => void;
+}
+
+interface Row {
+  id: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  onClick?: () => void;
+  comingSoon?: boolean;
+  danger?: boolean;
+}
+
+type ActiveModal =
+  | null
+  | 'rename'
+  | 'kx-reset'
+  | 'handshake'
+  | 'suggest-kx'
+  | 'trans-reset'
+  | 'tip'
+  | 'subscribe-posts'
+  | 'unsubscribe-posts'
+  | 'list-posts'
+  | 'show-content'
+  | 'ignore'
+  | 'block'
+  | 'clear-history';
+
+export const BisonrelayUserSubNav = ({
+  contact,
+  nick,
+  contacts,
+  displayNick,
+  onClose,
+  onSendFile,
+  onRenamed,
+  onTip,
+  onSubscribePosts,
+  onUnsubscribePosts,
+  onContactsChanged,
+  onHistoryCleared,
+}: Props) => {
+  const [modal, setModal] = useState<ActiveModal>(null);
+  const uid = contact.id?.identity ?? '';
+  const ignored = !!contact.ignored;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Esc closes the active modal first if any; otherwise the sub-nav.
+      if (e.key === 'Escape') {
+        if (modal) setModal(null);
+        else onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, modal]);
+
+  const subscribed = !!contact.posts_subscribed;
+  const rows: Row[] = [
+    {
+      id: 'profile',
+      label: 'View Profile',
+      icon: User,
+      onClick: () => {
+        window.location.hash = `feed/user/${uid}`;
+        onClose();
+      },
+    },
+    { id: 'tip', label: 'Pay Tip', icon: Coins, onClick: () => setModal('tip') },
+    { id: 'kx-reset', label: 'Request Ratchet Reset', icon: RotateCw, onClick: () => setModal('kx-reset') },
+    { id: 'content', label: 'Show Content', icon: Folder, onClick: () => setModal('show-content') },
+    {
+      id: 'posts-toggle',
+      label: subscribed ? 'Unsubscribe from Posts' : 'Subscribe to Posts',
+      icon: Rss,
+      onClick: () => setModal(subscribed ? 'unsubscribe-posts' : 'subscribe-posts'),
+    },
+    { id: 'list-posts', label: 'List Posts', icon: List, onClick: () => setModal('list-posts') },
+    { id: 'send-file', label: 'Send File', icon: Paperclip, onClick: onSendFile },
+    {
+      id: 'pages',
+      label: 'View Pages',
+      icon: FileText,
+      onClick: () => {
+        window.location.hash = `pages/visit/${uid}/index.md`;
+        onClose();
+      },
+    },
+    { id: 'rename', label: 'Rename User', icon: Edit2, onClick: () => setModal('rename') },
+    { id: 'suggest-kx', label: 'Suggest User to KX', icon: UserPlus, onClick: () => setModal('suggest-kx') },
+    { id: 'trans-reset', label: 'Issue Transitive Reset', icon: Users, onClick: () => setModal('trans-reset') },
+    { id: 'handshake', label: 'Perform Handshake', icon: Handshake, onClick: () => setModal('handshake') },
+    {
+      id: 'ignore',
+      label: ignored ? 'Un-ignore User' : 'Ignore User',
+      icon: ignored ? Eye : EyeOff,
+      onClick: () => setModal('ignore'),
+    },
+    {
+      id: 'clear-history',
+      label: 'Clear Chat History',
+      icon: Radiation,
+      danger: true,
+      onClick: () => setModal('clear-history'),
+    },
+    { id: 'block', label: 'Block User', icon: Ban, onClick: () => setModal('block') },
+  ];
+
+  return (
+    <>
+      <div
+        className="absolute inset-0 bg-black/20 backdrop-blur-[1px] z-10 rounded-xl"
+        onClick={onClose}
+        aria-hidden
+      />
+      <aside
+        className="absolute right-0 top-0 bottom-0 w-full max-w-xs flex flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 z-20 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Header contact={contact} nick={nick} onClose={onClose} />
+        <div className="flex-1 overflow-y-auto py-1">
+          {rows.map((r) => (
+            <ActionRow key={r.id} row={r} />
+          ))}
+        </div>
+      </aside>
+      {modal === 'rename' && (
+        <RenameModal
+          contact={contact}
+          currentNick={nick}
+          onClose={() => setModal(null)}
+          onSuccess={(newNick) => {
+            setModal(null);
+            onRenamed?.(newNick);
+          }}
+        />
+      )}
+      {modal === 'kx-reset' && (
+        <ConfirmActionModal
+          title={`Request ratchet reset with ${nick}?`}
+          body="Both sides derive new ratchet keys. Use this when messages stop arriving in either direction; the user is not notified out-of-band."
+          confirmLabel="Reset ratchet"
+          onClose={() => setModal(null)}
+          onConfirm={() => kxResetBisonrelayContact(uid)}
+          onSuccess={onClose}
+        />
+      )}
+      {modal === 'handshake' && (
+        <ConfirmActionModal
+          title={`Send handshake to ${nick}?`}
+          body="Starts a 3-way handshake. When the SYNACK comes back you know the connection is fully operational."
+          confirmLabel="Send handshake"
+          onClose={() => setModal(null)}
+          onConfirm={() => handshakeBisonrelayContact(uid)}
+          onSuccess={onClose}
+        />
+      )}
+      {modal === 'ignore' && (
+        <ConfirmActionModal
+          title={ignored ? `Un-ignore ${nick}?` : `Ignore ${nick}?`}
+          body={
+            ignored
+              ? `Their messages and posts will show up again. This is a local-only setting; ${nick} is not notified.`
+              : `Their messages and posts will be hidden locally. The contact stays KX'd and nothing is sent to ${nick}; reversible at any time.`
+          }
+          confirmLabel={ignored ? 'Un-ignore' : 'Ignore'}
+          onClose={() => setModal(null)}
+          onConfirm={() => ignoreBisonrelayContact(uid, !ignored)}
+          onSuccess={() => {
+            onClose();
+            onContactsChanged?.();
+          }}
+        />
+      )}
+      {modal === 'block' && (
+        <ConfirmActionModal
+          title={`Block ${nick}?`}
+          body={`This notifies ${nick} that you blocked them and removes the contact and your message history locally. It cannot be undone without a fresh invite/KX.`}
+          confirmLabel="Block user"
+          onClose={() => setModal(null)}
+          onConfirm={() => blockBisonrelayContact(uid)}
+          onSuccess={() => {
+            onClose();
+            onContactsChanged?.();
+          }}
+        />
+      )}
+      {modal === 'clear-history' && (
+        <ConfirmActionModal
+          title={`Clear chat history with ${nick}?`}
+          body={`Permanently deletes your local message history and any inline media for ${nick}. This CANNOT be undone. The contact and your ability to message them remain - only your local copy is removed; ${nick} keeps theirs.`}
+          confirmLabel="Delete history"
+          confirmWord="DELETE"
+          onClose={() => setModal(null)}
+          onConfirm={() => clearBisonrelayMessages(uid)}
+          onSuccess={() => {
+            onClose();
+            onHistoryCleared?.(uid);
+          }}
+        />
+      )}
+      {modal === 'suggest-kx' && (
+        <ContactPickerModal
+          title={`Suggest a user for ${nick} to KX with`}
+          body={`Picks a contact and asks ${nick} to KX with them. The remote contact gets a message; they decide whether to follow up.`}
+          contacts={contacts}
+          excludeUid={uid}
+          displayNick={displayNick}
+          onClose={() => setModal(null)}
+          onPick={(picked) =>
+            suggestKxBisonrelayContact(uid, picked.id?.identity ?? '')
+          }
+          onSuccess={onClose}
+        />
+      )}
+      {modal === 'trans-reset' && (
+        <ContactPickerModal
+          title={`Reset ratchet with ${nick} via a mediator`}
+          body={`Picks a common contact and asks them to forward a ratchet-reset request to ${nick}. Use this when a direct reset is not landing.`}
+          contacts={contacts}
+          excludeUid={uid}
+          displayNick={displayNick}
+          onClose={() => setModal(null)}
+          onPick={(picked) =>
+            transResetBisonrelayContact(picked.id?.identity ?? '', uid)
+          }
+          onSuccess={onClose}
+        />
+      )}
+      {modal === 'subscribe-posts' && (
+        <ConfirmActionModal
+          title={`Subscribe to ${nick}'s posts?`}
+          body={`Asks ${nick} to send their existing and future posts. The subscription becomes active once their client replies, which may take a while if they're offline.`}
+          confirmLabel="Subscribe"
+          onClose={() => setModal(null)}
+          onConfirm={() => {
+            if (onSubscribePosts) onSubscribePosts(uid, nick);
+            else subscribeBisonrelayPosts(uid);
+          }}
+          onSuccess={onClose}
+          optimistic
+        />
+      )}
+      {modal === 'unsubscribe-posts' && (
+        <ConfirmActionModal
+          title={`Unsubscribe from ${nick}'s posts?`}
+          body={`Tells ${nick}'s client to stop sending you their posts. Existing posts in your history stay.`}
+          confirmLabel="Unsubscribe"
+          onClose={() => setModal(null)}
+          onConfirm={() => {
+            if (onUnsubscribePosts) onUnsubscribePosts(uid, nick);
+            else unsubscribeBisonrelayPosts(uid);
+          }}
+          onSuccess={onClose}
+          optimistic
+        />
+      )}
+      {modal === 'list-posts' && (
+        <PostsListModal
+          nick={nick}
+          uid={uid}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === 'show-content' && (
+        <ContentListModal
+          nick={nick}
+          uid={uid}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === 'tip' && (
+        <TipModal
+          nick={nick}
+          uid={uid}
+          onClose={() => setModal(null)}
+          onSubmit={(dcr) => {
+            if (onTip) onTip(uid, nick, dcr);
+            else tipBisonrelayContact(uid, dcr);
+            onClose();
+          }}
+        />
+      )}
+    </>
+  );
+};
+
+const RenameModal = ({
+  contact,
+  currentNick,
+  onClose,
+  onSuccess,
+}: {
+  contact: BisonrelayContact;
+  currentNick: string;
+  onClose: () => void;
+  onSuccess: (newNick: string) => void;
+}) => {
+  const [value, setValue] = useState(currentNick);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const uid = contact.id?.identity ?? '';
+  const trimmed = value.trim();
+  const canSubmit = !submitting && trimmed.length > 0 && trimmed !== currentNick && uid !== '';
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await renameBisonrelayContact(uid, trimmed);
+      onSuccess(trimmed);
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Rename failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSubmit}
+        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="text-base font-semibold">Rename {currentNick}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Sets a local alias for this contact. The remote user is not notified
+          and their own nick is unchanged.
+        </p>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1" htmlFor="br-rename-input">
+            New nick
+          </label>
+          <input
+            id="br-rename-input"
+            type="text"
+            autoFocus
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={submitting}
+            maxLength={64}
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+          />
+        </div>
+        {err && (
+          <div className="flex items-start gap-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{err}</span>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Renaming…' : 'Rename'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+const Header = ({
+  contact,
+  nick,
+  onClose,
+}: {
+  contact: BisonrelayContact;
+  nick: string;
+  onClose: () => void;
+}) => {
+  const [copied, setCopied] = useState(false);
+  const identity = contact.id?.identity ?? '';
+
+  const onCopy = async () => {
+    if (!identity) return;
+    try {
+      await navigator.clipboard.writeText(identity);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore clipboard errors */
+    }
+  };
+
+  return (
+    <div className="relative p-4 pb-3 border-b border-border/50">
+      <button
+        onClick={onClose}
+        className="absolute right-2 top-2 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+        title="Close"
+        aria-label="Close"
+      >
+        <X className="h-4 w-4" />
+      </button>
+      <div className="flex flex-col items-center text-center gap-2 mt-1">
+        <BigAvatar contact={contact} nick={nick} />
+        <p className="text-sm font-semibold truncate w-full px-4">{nick}</p>
+      </div>
+      {identity && (
+        <button
+          onClick={onCopy}
+          className="mt-2 w-full text-[10px] font-mono text-muted-foreground hover:text-foreground bg-muted/20 hover:bg-muted/30 rounded px-2 py-1.5 text-left flex items-start gap-1.5 transition-colors"
+          title="Copy identity"
+        >
+          {copied ? (
+            <Check className="h-3 w-3 mt-0.5 shrink-0 text-success" />
+          ) : (
+            <Copy className="h-3 w-3 mt-0.5 shrink-0" />
+          )}
+          <span className="flex-1 break-all">{identity}</span>
+        </button>
+      )}
+    </div>
+  );
+};
+
+const BigAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: string }) => {
+  const dataUrl = avatarDataUrl(contact.id?.avatar);
+  const initial = nick.trim().charAt(0).toUpperCase() || '?';
+  const bgClass = colorForUid(contact.id?.identity ?? nick);
+  if (dataUrl) {
+    return (
+      <img
+        src={dataUrl}
+        alt=""
+        className="h-16 w-16 rounded-full object-cover bg-muted/30"
+      />
+    );
+  }
+  return (
+    <span
+      className={`h-16 w-16 rounded-full flex items-center justify-center text-2xl font-semibold text-white ${bgClass}`}
+    >
+      {initial}
+    </span>
+  );
+};
+
+export const ContentListModal = ({
+  nick,
+  uid,
+  onClose,
+}: {
+  nick: string;
+  uid: string;
+  onClose: () => void;
+}) => {
+  const [files, setFiles] = useState<BisonrelayContentItem[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const { addListener } = useBisonrelayLive();
+
+  useEffect(() => {
+    const unsubscribe = addListener((evt: BisonrelayLiveEvent) => {
+      if (evt.type !== 'content-list-received') return;
+      const payload = (evt.payload ?? {}) as Record<string, unknown>;
+      if (payload.uid !== uid) return;
+      if (typeof payload.error === 'string') {
+        setErr(payload.error);
+        return;
+      }
+      const raw = (payload.files ?? []) as Array<Record<string, unknown>>;
+      const list: BisonrelayContentItem[] = raw.map((f) => ({
+        file_id: String(f.file_id ?? ''),
+        filename: String(f.filename ?? ''),
+        size: Number(f.size ?? 0),
+        directory: String(f.directory ?? ''),
+        description: String(f.description ?? ''),
+        cost: Number(f.cost ?? 0),
+        downloaded: !!f.downloaded,
+      }));
+      list.sort((a, b) => a.filename.localeCompare(b.filename));
+      setFiles(list);
+    });
+    listBisonrelayUserContent(uid).catch((e: any) => {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not request content list');
+    });
+    return unsubscribe;
+  }, [addListener, uid]);
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
+      >
+        <div className="p-5 pb-3 flex items-start justify-between">
+          <div>
+            <h3 className="text-base font-semibold">Content shared by {nick}</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Asks {nick} for their list of shared files. If they're offline
+              the reply arrives whenever they come back online.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[160px]">
+          {err ? (
+            <div className="flex items-start gap-2 text-sm text-destructive px-3 py-4">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span className="break-words">{err}</span>
+            </div>
+          ) : files === null ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4">
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              <span>Waiting for {nick}'s reply…</span>
+            </div>
+          ) : files.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+              {nick} has no shared content.
+            </p>
+          ) : (
+            files.map((f) => (
+              <ContentFileRow key={f.file_id} uid={uid} nick={nick} file={f} />
+            ))
+          )}
+        </div>
+        <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// formatContentCost renders an atom amount as a trimmed DCR string. BR
+// shared-file costs are in atoms (1 DCR = 1e8), distinct from the
+// milli-atoms of payment records.
+const formatContentCost = (atoms: number): string =>
+  (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
+
+// ContentFileRow renders one entry of a contact's shared-file list with the
+// listed cost and a download action. The listed cost (from the contact's own
+// reply) is sent as the approved price cap; if the host meanwhile charges
+// more, the daemon rejects with file-download-cost-rejected and the row asks
+// again with the actual price before anything is paid.
+const ContentFileRow = ({
+  uid,
+  nick,
+  file,
+}: {
+  uid: string;
+  nick: string;
+  file: BisonrelayContentItem;
+}) => {
+  const [phase, setPhase] = useState<
+    'idle' | 'confirm' | 'downloading' | 'mismatch' | 'done' | 'error'
+  >(file.downloaded ? 'done' : 'idle');
+  const [err, setErr] = useState<string | null>(null);
+  const [realCost, setRealCost] = useState(0);
+  // BR transfers are async and the seller may be offline or unable to issue
+  // the invoice (no protocol error reaches us); hint after 30s of waiting.
+  const [slow, setSlow] = useState(false);
+  // Failed-payment hashes snapshotted when the download starts; a NEW failed
+  // payment appearing during the download means our chunk payment could not
+  // complete (e.g. no route) and the BR library parked the download silently.
+  const failedBaseline = useRef<Set<string>>(new Set());
+  const { addListener } = useBisonrelayLive();
+
+  useEffect(() => {
+    if (phase !== 'downloading') {
+      setSlow(false);
+      return undefined;
+    }
+    const t = window.setTimeout(() => setSlow(true), 30000);
+    return () => window.clearTimeout(t);
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== 'downloading') return undefined;
+    return addListener((evt: BisonrelayLiveEvent) => {
+      const payload = (evt.payload ?? {}) as Record<string, unknown>;
+      if (payload.uid !== uid || payload.fid !== file.file_id) return;
+      if (evt.type === 'file-download-cost-rejected') {
+        setRealCost(typeof payload.cost_atoms === 'number' ? payload.cost_atoms : 0);
+        setPhase('mismatch');
+      } else if (evt.type === 'file-download-completed') {
+        setPhase('done');
+      }
+    });
+  }, [phase, addListener, uid, file.file_id]);
+
+  useEffect(() => {
+    if (phase !== 'downloading') return undefined;
+    let cancelled = false;
+    let timer: number | undefined;
+    const tick = async () => {
+      try {
+        // A concurrent unrelated payment failing in this window would be
+        // attributed to the download; rare and acceptable for surfacing.
+        const failed = await findNewFailedLnPayment(failedBaseline.current);
+        if (failed && !cancelled) {
+          setErr(`Payment failed: ${describeLnPaymentFailure(failed.failureReason)}`);
+          setPhase('error');
+          return;
+        }
+      } catch {
+        // Transient list error; keep polling.
+      }
+      if (!cancelled) timer = window.setTimeout(tick, 2000);
+    };
+    timer = window.setTimeout(tick, 2000);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [phase]);
+
+  const start = async (maxCostAtoms: number) => {
+    setErr(null);
+    try {
+      failedBaseline.current = await failedLnPaymentHashes();
+    } catch {
+      failedBaseline.current = new Set();
+    }
+    setPhase('downloading');
+    try {
+      await startBisonrelayContentGet(uid, file.file_id, maxCostAtoms);
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not start download');
+      setPhase('error');
+    }
+  };
+
+  const actionBtn = 'px-2.5 py-1 rounded-md bg-primary/20 text-primary text-xs font-semibold hover:bg-primary/30 transition-colors';
+  const cancelBtn = 'px-2.5 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 text-xs';
+
+  return (
+    <div className="px-3 py-2 rounded-md text-sm flex flex-col gap-0.5">
+      <div className="flex items-center gap-2">
+        <span className="truncate font-medium text-foreground">
+          {file.filename || '(unnamed file)'}
+        </span>
+        {phase === 'done' && (
+          <span className="shrink-0 text-[9px] uppercase tracking-wide text-success/80">
+            saved
+          </span>
+        )}
+        {phase === 'idle' && (
+          <button
+            type="button"
+            onClick={() => (file.cost > 0 ? setPhase('confirm') : start(0))}
+            className={`shrink-0 ml-auto ${actionBtn}`}
+          >
+            {file.cost > 0 ? `Download (${formatContentCost(file.cost)} DCR)` : 'Download'}
+          </button>
+        )}
+      </div>
+      <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+        <span>{formatBytesPretty(file.size)}</span>
+        <span className="opacity-50">·</span>
+        <span className={file.cost > 0 ? 'text-primary/80' : undefined}>
+          {file.cost > 0 ? `${formatContentCost(file.cost)} DCR` : 'free'}
+        </span>
+        {file.directory && (
+          <>
+            <span className="opacity-50">·</span>
+            <span className="font-mono">{file.directory}</span>
+          </>
+        )}
+      </div>
+      {file.description && (
+        <p className="text-[11px] text-muted-foreground/90 mt-0.5 break-words">
+          {file.description}
+        </p>
+      )}
+      {phase === 'confirm' && (
+        <div className="mt-1 space-y-1.5">
+          <div className="text-xs">
+            Pay{' '}
+            <span className="font-semibold text-foreground">
+              {formatContentCost(file.cost)} DCR
+            </span>{' '}
+            to download <span className="font-mono">{file.filename}</span>?
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => start(file.cost)} className={actionBtn}>
+              Pay &amp; download
+            </button>
+            <button type="button" onClick={() => setPhase('idle')} className={cancelBtn}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {phase === 'mismatch' && (
+        <div className="mt-1 space-y-1.5">
+          <div className="text-xs">
+            {nick} charges{' '}
+            <span className="font-semibold text-foreground">
+              {formatContentCost(realCost)} DCR
+            </span>{' '}
+            for this file
+            {file.cost > 0
+              ? `, the list said ${formatContentCost(file.cost)} DCR.`
+              : ', the list said it was free.'}{' '}
+            Pay the actual price?
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => start(realCost)} className={actionBtn}>
+              Pay &amp; download
+            </button>
+            <button type="button" onClick={() => setPhase('idle')} className={cancelBtn}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {phase === 'downloading' && (
+        <div className="mt-1 space-y-1">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+            <span>Downloading...</span>
+          </div>
+          {slow && (
+            <div className="text-[11px] text-muted-foreground/80">
+              Still waiting for the seller. They may be offline or unable to
+              issue the payment invoice right now.
+            </div>
+          )}
+        </div>
+      )}
+      {phase === 'error' && (
+        <div className="mt-1 space-y-1.5">
+          <div className="text-xs text-destructive break-words">{err}</div>
+          <button type="button" onClick={() => setPhase('idle')} className={cancelBtn}>
+            Try again
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+function formatBytesPretty(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+const PostsListModal = ({
+  nick,
+  uid,
+  onClose,
+}: {
+  nick: string;
+  uid: string;
+  onClose: () => void;
+}) => {
+  const [posts, setPosts] = useState<BisonrelayPostListItem[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [inflight, setInflight] = useState<Set<string>>(new Set());
+  const [received, setReceived] = useState<Set<string>>(new Set());
+  // Posts already in our local feed: shown checked and not re-downloadable, so
+  // the user can't re-fetch a post the remote may not re-send (stuck spinner).
+  const [have, setHave] = useState<Set<string>>(new Set());
+  const { addListener } = useBisonrelayLive();
+
+  const handlePick = async (post: BisonrelayPostListItem) => {
+    if (inflight.has(post.id) || have.has(post.id)) return;
+    setErr(null);
+    setInflight((prev) => {
+      const next = new Set(prev);
+      next.add(post.id);
+      return next;
+    });
+    setReceived((prev) => {
+      if (!prev.has(post.id)) return prev;
+      const next = new Set(prev);
+      next.delete(post.id);
+      return next;
+    });
+    try {
+      await fetchBisonrelayUserPost(uid, post.id);
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not request post');
+      setInflight((prev) => {
+        if (!prev.has(post.id)) return prev;
+        const next = new Set(prev);
+        next.delete(post.id);
+        return next;
+      });
+    }
+  };
+
+  // Subscribe to live events BEFORE kicking off the request so we
+  // don't miss a fast reply. Unsubscribe on unmount.
+  useEffect(() => {
+    const unsubscribe = addListener((evt: BisonrelayLiveEvent) => {
+      if (evt.type === 'posts-list-received') {
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        if (payload.uid !== uid) return;
+        const raw = (payload.posts ?? []) as Array<Record<string, unknown>>;
+        const list: BisonrelayPostListItem[] = raw.map((p) => ({
+          id: String(p.id ?? ''),
+          title: String(p.title ?? ''),
+          timestamp: Number(p.timestamp ?? 0),
+        }));
+        // Newest first
+        list.sort((a, b) => b.timestamp - a.timestamp);
+        setPosts(list);
+        return;
+      }
+      if (evt.type === 'post-received') {
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const from = String(payload.from ?? '');
+        const author = String(payload.author_id ?? '');
+        if (from !== uid && author !== uid) return;
+        const pid = String(payload.id ?? '');
+        if (!pid) return;
+        setInflight((prev) => {
+          if (!prev.has(pid)) return prev;
+          const next = new Set(prev);
+          next.delete(pid);
+          return next;
+        });
+        setReceived((prev) => {
+          if (prev.has(pid)) return prev;
+          const next = new Set(prev);
+          next.add(pid);
+          return next;
+        });
+      }
+    });
+    listBisonrelayUserPosts(uid).catch((e: any) => {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not request post list');
+    });
+    return unsubscribe;
+  }, [addListener, uid]);
+
+  // Mark posts already in our local feed as held so they render checked and
+  // can't be clicked to re-download. Best-effort; the list still works without.
+  useEffect(() => {
+    getBisonrelayPosts()
+      .then((all) => setHave(new Set(all.filter((p) => p.author_id === uid).map((p) => p.id))))
+      .catch(() => {});
+  }, [uid]);
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
+      >
+        <div className="p-5 pb-3 flex items-start justify-between">
+          <div>
+            <h3 className="text-base font-semibold">Posts by {nick}</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Click a post to queue its download. The checkmark appears once
+              it arrives; open the Feed tab to read it. Posts you already have
+              are checked and not re-downloadable.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[160px]">
+          {err ? (
+            <div className="flex items-start gap-2 text-sm text-destructive px-3 py-4">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span className="break-words">{err}</span>
+            </div>
+          ) : posts === null ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4">
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              <span>Waiting for {nick}'s reply…</span>
+            </div>
+          ) : posts.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+              {nick} hasn't published any posts yet.
+            </p>
+          ) : (
+            posts.map((p) => {
+              const isInflight = inflight.has(p.id);
+              const isReceived = received.has(p.id) || have.has(p.id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handlePick(p)}
+                  disabled={isInflight || isReceived}
+                  className="w-full text-left px-3 py-2 rounded-md text-sm flex flex-col gap-0.5 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="truncate font-medium text-foreground">
+                      {p.title || '(untitled)'}
+                    </span>
+                    {isInflight ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                    ) : isReceived ? (
+                      <Check className="h-3 w-3 text-emerald-400" />
+                    ) : null}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(p.timestamp * 1000).toLocaleString()}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+        <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ContactPickerModal = ({
+  title,
+  body,
+  contacts,
+  excludeUid,
+  displayNick,
+  onClose,
+  onPick,
+  onSuccess,
+}: {
+  title: string;
+  body: string;
+  contacts: BisonrelayContact[];
+  excludeUid: string;
+  displayNick: (c: BisonrelayContact) => string;
+  onClose: () => void;
+  onPick: (c: BisonrelayContact) => Promise<void>;
+  onSuccess?: () => void;
+}) => {
+  const [query, setQuery] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const q = query.trim().toLowerCase();
+  const filtered = contacts.filter((c) => {
+    if (c.id?.identity === excludeUid) return false;
+    if (!q) return true;
+    return displayNick(c).toLowerCase().includes(q);
+  });
+
+  const handlePick = async (c: BisonrelayContact) => {
+    if (submitting) return;
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await onPick(c);
+      onClose();
+      onSuccess?.();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl flex flex-col max-h-[80vh]"
+      >
+        <div className="p-5 pb-3 space-y-3">
+          <div className="flex items-start justify-between">
+            <h3 className="text-base font-semibold pr-4">{title}</h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">{body}</p>
+          <input
+            type="text"
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search contacts…"
+            disabled={submitting}
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50"
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[120px]">
+          {filtered.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+              {contacts.length <= 1
+                ? 'You need at least one other contact to use this action.'
+                : 'No contacts match your search.'}
+            </p>
+          ) : (
+            filtered.map((c) => {
+              const n = displayNick(c);
+              return (
+                <button
+                  key={c.id?.identity ?? n}
+                  onClick={() => handlePick(c)}
+                  disabled={submitting}
+                  className="w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="truncate">{n}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
+        {err && (
+          <div className="flex items-start gap-2 text-sm text-destructive px-5 pb-3">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{err}</span>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 px-5 pb-5 pt-1 border-t border-border/30">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ConfirmActionModal = ({
+  title,
+  body,
+  confirmLabel,
+  onClose,
+  onConfirm,
+  onSuccess,
+  optimistic,
+  confirmWord,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  onClose: () => void;
+  onConfirm: () => Promise<void> | void;
+  onSuccess?: () => void;
+  // optimistic=true: don't await onConfirm and skip the modal-local error
+  // state. The caller is responsible for showing in-flight + outcome
+  // feedback elsewhere (e.g. as a placeholder message in the chat). Used
+  // by posts subscribe/unsubscribe where the BR round-trip can take an
+  // unbounded amount of time depending on the remote's reachability.
+  optimistic?: boolean;
+  // confirmWord (optional): require the user to type this exact word before the
+  // confirm button enables. Used to gate irreversible/destructive actions.
+  confirmWord?: string;
+}) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [typed, setTyped] = useState('');
+  const needsTyped = !!confirmWord;
+  const typedOk = !needsTyped || typed === confirmWord;
+
+  const handleConfirm = async () => {
+    if (optimistic) {
+      try {
+        onConfirm();
+      } catch {
+        // Optimistic callers handle errors via the placeholder; swallow
+        // anything thrown synchronously here so the modal still closes.
+      }
+      onClose();
+      onSuccess?.();
+      return;
+    }
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await onConfirm();
+      onClose();
+      onSuccess?.();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="text-base font-semibold pr-4">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">{body}</p>
+        {err && (
+          <div className="flex items-start gap-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{err}</span>
+          </div>
+        )}
+        {needsTyped && (
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">
+              Type{' '}
+              <span className="font-mono font-semibold text-foreground">{confirmWord}</span> to
+              confirm
+            </label>
+            <input
+              type="text"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+              className="w-full px-3 py-1.5 rounded-lg bg-background border border-border/50 text-sm font-mono focus:outline-none focus:border-primary/50"
+            />
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting || !typedOk}
+            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ActionRow = ({ row }: { row: Row }) => {
+  const Icon = row.icon;
+  const disabled = !!row.comingSoon || !row.onClick;
+  return (
+    <button
+      onClick={row.onClick}
+      disabled={disabled}
+      className={`w-full px-4 py-2 text-left text-sm flex items-center gap-3 transition-colors ${
+        disabled
+          ? 'text-muted-foreground/60 cursor-not-allowed'
+          : row.danger
+            ? 'text-destructive hover:bg-destructive/10'
+            : 'text-foreground hover:bg-muted/30'
+      }`}
+      title={row.comingSoon ? 'Coming soon' : undefined}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="flex-1 truncate">{row.label}</span>
+      {row.comingSoon && (
+        <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground/70">
+          soon
+        </span>
+      )}
+    </button>
+  );
+};

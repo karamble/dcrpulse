@@ -2,7 +2,7 @@
 # Based on official dcrd repository: https://github.com/decred/dcrd/tree/master/contrib/docker
 
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git openssl
@@ -11,7 +11,7 @@ RUN apk add --no-cache git openssl
 WORKDIR /go/src/github.com/decred
 
 # Clone the dcrd repository
-ARG DCRD_VERSION=release-v2.1.3
+ARG DCRD_VERSION=release-v2.1.5
 RUN git clone --depth 1 --branch ${DCRD_VERSION} https://github.com/decred/dcrd.git
 
 # Build dcrd

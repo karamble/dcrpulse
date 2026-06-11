@@ -20,6 +20,13 @@ import (
 // Constants for treasury
 const (
 	TreasuryActivationHeight = 552448 // Block where treasury was first activated (May 2021)
+
+	// TreasuryVoteInterval is mainnet's TVI. Per DCP-0006 a TSpend may only be
+	// mined in a block whose height is a non-zero multiple of the TVI (dcrd
+	// standalone.IsTreasuryVoteInterval / ErrNotTVI), so only these blocks can
+	// contain a TSpend and the historical scan can stride by it. Mainnet-
+	// specific, like TreasuryActivationHeight.
+	TreasuryVoteInterval = 288
 )
 
 // Global scan state
@@ -131,7 +138,131 @@ func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 		}
 	}
 
+	// Attach yes/no vote tallies cheaply: gettreasuryspendvotes returns the
+	// running counts for the given tspend hashes in a single RPC call (no
+	// per-block vote scan needed). Best-effort; tspends are still returned if
+	// this fails.
+	if len(tspends) > 0 {
+		hashes := make([]string, len(tspends))
+		for i := range tspends {
+			hashes[i] = tspends[i].TxHash
+		}
+		if hb, err := json.Marshal(hashes); err == nil {
+			res, err := rpc.DcrdClient.RawRequest(ctx, "gettreasuryspendvotes", []json.RawMessage{
+				json.RawMessage("null"),
+				json.RawMessage(hb),
+			})
+			if err != nil {
+				log.Printf("Warning: gettreasuryspendvotes: %v", err)
+			} else {
+				var vr struct {
+					Votes []struct {
+						Hash     string `json:"hash"`
+						YesVotes int64  `json:"yesvotes"`
+						NoVotes  int64  `json:"novotes"`
+					} `json:"votes"`
+				}
+				if json.Unmarshal(res, &vr) == nil {
+					tally := make(map[string][2]int64, len(vr.Votes))
+					for _, v := range vr.Votes {
+						tally[v.Hash] = [2]int64{v.YesVotes, v.NoVotes}
+					}
+					for i := range tspends {
+						if t, ok := tally[tspends[i].TxHash]; ok {
+							tspends[i].YesVotes = t[0]
+							tspends[i].NoVotes = t[1]
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return tspends, nil
+}
+
+// Treasury balance-over-time series, sampled at a coarse cadence and cached.
+var (
+	balanceHistMu   sync.RWMutex
+	balanceHistData []types.BalanceSample
+	balanceHistAt   time.Time
+)
+
+const (
+	balanceHistTTL      = 1 * time.Hour
+	balanceSampleStride = 8640 // ~30 days of blocks (5 min/block)
+)
+
+// TreasuryBalanceHistory returns the treasury balance sampled from activation
+// to tip at ~monthly cadence (plus the tip). Cheap: ~1 + 2/sample RPC calls
+// (~120 total). Cached in-process for balanceHistTTL.
+func TreasuryBalanceHistory(ctx context.Context) ([]types.BalanceSample, error) {
+	if rpc.DcrdClient == nil {
+		return nil, fmt.Errorf("dcrd client not available")
+	}
+
+	balanceHistMu.RLock()
+	if balanceHistData != nil && time.Since(balanceHistAt) < balanceHistTTL {
+		cached := balanceHistData
+		balanceHistMu.RUnlock()
+		return cached, nil
+	}
+	balanceHistMu.RUnlock()
+
+	tip, err := rpc.DcrdClient.GetBlockCount(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get block count: %w", err)
+	}
+
+	var out []types.BalanceSample
+	for h := int64(TreasuryActivationHeight); h <= tip; h += balanceSampleStride {
+		s, err := balanceSampleAt(ctx, h)
+		if err != nil {
+			log.Printf("Warning: treasury balance sample at %d: %v", h, err)
+			continue
+		}
+		out = append(out, *s)
+	}
+	// Always include the current tip as the final point.
+	if len(out) == 0 || out[len(out)-1].Height != tip {
+		if s, err := balanceSampleAt(ctx, tip); err == nil {
+			out = append(out, *s)
+		}
+	}
+
+	balanceHistMu.Lock()
+	balanceHistData = out
+	balanceHistAt = time.Now()
+	balanceHistMu.Unlock()
+	return out, nil
+}
+
+// balanceSampleAt returns the treasury balance + block time at one height.
+func balanceSampleAt(ctx context.Context, h int64) (*types.BalanceSample, error) {
+	hash, err := rpc.DcrdClient.GetBlockHash(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	bal, err := rpc.DcrdClient.GetTreasuryBalance(ctx, hash, false)
+	if err != nil {
+		return nil, err
+	}
+	hres, err := rpc.DcrdClient.RawRequest(ctx, "getblockheader", []json.RawMessage{
+		json.RawMessage(fmt.Sprintf(`"%s"`, hash.String())),
+		json.RawMessage("true"),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var hdr struct {
+		Time int64 `json:"time"`
+	}
+	_ = json.Unmarshal(hres, &hdr)
+	return &types.BalanceSample{
+		Height:  h,
+		Time:    hdr.Time,
+		Balance: float64(bal.Balance) / 1e8,
+	}, nil
 }
 
 // getTransaction retrieves transaction details
@@ -320,9 +451,21 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 	totalScanHeight = currentHeight
 	scanMutex.Unlock()
 
-	log.Printf("Starting historical TSpend scan from block %d to %d", startHeight, currentHeight)
+	// TSpends may only be mined in blocks on a treasury-vote-interval (TVI)
+	// boundary (height % TVI == 0), so stride by the TVI and skip the ~99.7%
+	// of blocks that cannot contain one. Align the start up to the first TVI
+	// boundary at/after startHeight.
+	firstTVI := startHeight
+	if firstTVI < 1 {
+		firstTVI = 1
+	}
+	if rem := firstTVI % TreasuryVoteInterval; rem != 0 {
+		firstTVI += TreasuryVoteInterval - rem
+	}
 
-	for h := startHeight; h <= currentHeight; h++ {
+	log.Printf("Starting historical TSpend scan from block %d to %d (TVI stride %d)", firstTVI, currentHeight, TreasuryVoteInterval)
+
+	for h := firstTVI; h <= currentHeight; h += TreasuryVoteInterval {
 		// Update progress
 		scanMutex.Lock()
 		currentScanHeight = h
@@ -334,34 +477,31 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 			continue
 		}
 
+		// verbose=true + verbosetx=true returns every tx's full vin/vout inline
+		// (rawtx/rawstx), so no per-transaction getrawtransaction call is needed.
 		blockResult, err := rpc.DcrdClient.RawRequest(ctx, "getblock", []json.RawMessage{
 			json.RawMessage(fmt.Sprintf(`"%s"`, blockHash.String())),
 			json.RawMessage("true"),
-			json.RawMessage("false"),
+			json.RawMessage("true"),
 		})
 		if err != nil {
 			continue
 		}
 
 		var block struct {
-			Hash   string   `json:"hash"`
-			Height int64    `json:"height"`
-			Time   int64    `json:"time"`
-			Tx     []string `json:"tx"`
-			STx    []string `json:"stx"`
+			Hash   string                   `json:"hash"`
+			Height int64                    `json:"height"`
+			Time   int64                    `json:"time"`
+			RawTx  []map[string]interface{} `json:"rawtx"`
+			RawSTx []map[string]interface{} `json:"rawstx"`
 		}
 
 		if err := json.Unmarshal(blockResult, &block); err != nil {
 			continue
 		}
 
-		allTxs := append(block.Tx, block.STx...)
-		for _, txHash := range allTxs {
-			tx, err := getTransaction(ctx, txHash)
-			if err != nil {
-				continue
-			}
-
+		allTxs := append(block.RawTx, block.RawSTx...)
+		for _, tx := range allTxs {
 			if isTreasurySpend(tx) {
 				history := extractTSpendHistory(tx, block.Height, block.Hash, block.Time)
 				if history != nil {

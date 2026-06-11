@@ -58,14 +58,39 @@ services:
       retries: 3
       start_period: 10s
 
+  dcrlnd:
+    image: ghcr.io/karamble/dcrpulse-dcrlnd:1.0.3
+    user: "1000:1000"
+    restart: on-failure
+    stop_grace_period: 1m
+    volumes:
+      - ${APP_DATA_DIR}/data:/app-data:ro
+      - ${APP_DATA_DIR}/dcrlnd:/app-data/dcrlnd
+    environment:
+      DCRWALLET_HOST: dcrwallet
+      DCRWALLET_GRPC_PORT: 9111
+      LN_TESTNET: "false"
+    depends_on:
+      dcrwallet:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 10009 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
   dashboard:
     image: ghcr.io/karamble/dcrpulse-dashboard:1.0.3@sha256:d6d991150e570b3c473873f350a122f2cfc3ffd43e50b87e15821777c28d70dc
     user: "1000:1000"
     restart: on-failure
     volumes:
       - ${APP_DATA_DIR}/data:/app-data:ro
+      - ${APP_DATA_DIR}/dcrlnd:/app-data/dcrlnd
+      - ${APP_DATA_DIR}/dashboard:/dashboard-data
     environment:
       PORT: 8735
+      TRUSTED_PROXY: "true"
       DCRD_RPC_HOST: dcrd
       DCRD_RPC_PORT: 9109
       DCRD_RPC_USER: ${APP_SEED}
@@ -77,6 +102,10 @@ services:
       DCRWALLET_RPC_USER: ${APP_SEED}
       DCRWALLET_RPC_PASS: ${APP_SEED}
       DCRWALLET_RPC_CERT: /app-data/dcrd/rpc.cert
+      DCRLND_HOST: dcrlnd
+      DCRLND_GRPC_PORT: 10009
+      DCRLND_TLS_CERT: /app-data/dcrlnd/tls.cert
+      DCRLND_MACAROON: /app-data/dcrlnd/admin.macaroon
     depends_on:
       dcrd:
         condition: service_healthy

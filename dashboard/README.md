@@ -148,7 +148,6 @@ docker-compose up dashboard
 - `GET /api/node/status` - Node status
 - `GET /api/blockchain/info` - Blockchain information
 - `GET /api/network/peers` - Network peers
-- `POST /api/connect` - Configure RPC connection
 
 ### Wallet Endpoints
 - `GET /api/wallet/status` - Wallet status

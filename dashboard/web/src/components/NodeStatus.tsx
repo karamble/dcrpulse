@@ -3,9 +3,10 @@
 // license that can be found in the LICENSE file.
 
 import { Activity, AlertCircle, Loader2 } from 'lucide-react';
+import { InsecureRpcWarning } from './InsecureRpcWarning';
 
 interface NodeStatusProps {
-  status: 'running' | 'syncing' | 'stopped';
+  status: 'running' | 'syncing' | 'stopped' | string;
   syncProgress?: number;
   version?: string;
   syncMessage?: string;
@@ -19,8 +20,8 @@ export const NodeStatus = ({ status, syncProgress = 0, version, syncMessage }: N
           icon: Activity,
           label: 'Fully Synced',
           color: 'text-success',
-          bgColor: 'bg-success/10',
-          borderColor: 'border-success/20',
+          bgColor: 'bg-success/15',
+          borderColor: 'border-success/30',
         };
       case 'syncing':
         return {
@@ -37,6 +38,14 @@ export const NodeStatus = ({ status, syncProgress = 0, version, syncMessage }: N
           color: 'text-red-500',
           bgColor: 'bg-red-500/10',
           borderColor: 'border-red-500/20',
+        };
+      default:
+        return {
+          icon: Loader2,
+          label: 'Connecting...',
+          color: 'text-warning',
+          bgColor: 'bg-warning/10',
+          borderColor: 'border-warning/20',
         };
     }
   };
@@ -56,10 +65,13 @@ export const NodeStatus = ({ status, syncProgress = 0, version, syncMessage }: N
             <p className="text-sm text-muted-foreground">Decred {version || ''}</p>
           </div>
         </div>
-        <div className={`px-6 py-3 rounded-xl ${status === 'running' ? 'bg-success text-white' : `${config.bgColor} border-2 ${config.borderColor}`}`}>
-          <span className={`${status === 'running' ? 'text-white' : config.color} font-bold text-lg tracking-wide`}>
-            {config.label}
-          </span>
+        <div className="flex items-center gap-3">
+          <InsecureRpcWarning kind="dcrd" />
+          <div className={`px-6 py-3 rounded-xl ${config.bgColor} border-2 ${config.borderColor}`}>
+            <span className={`${config.color} font-bold text-lg tracking-wide`}>
+              {config.label}
+            </span>
+          </div>
         </div>
       </div>
       

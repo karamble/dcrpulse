@@ -2,16 +2,47 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useState } from 'react';
-import { Copy, Check, AlertCircle, Lock, Key, Shield, CheckCircle, Eye, EyeOff } from 'lucide-react';
-import { generateSeed, createWallet } from '../services/api';
+import { useEffect, useState } from 'react';
+import { Copy, Check, AlertCircle, Lock, Key, Shield, CheckCircle, Eye, EyeOff, Sprout, RotateCcw } from 'lucide-react';
+import { generateSeed, createNamedWallet, listWallets } from '../services/api';
+import { SeedEntry } from './wallet/SeedEntry';
 
-type WizardStep = 'welcome' | 'generate' | 'passphrases' | 'confirm' | 'creating' | 'success';
+interface WalletSetupProps {
+  // onComplete replaces the default redirect to /wallet (used when embedded in
+  // the wallet-list flow). onCancel, when present, shows a way back to the list.
+  onComplete?: () => void;
+  onCancel?: () => void;
+}
 
-export const WalletSetup = () => {
-  const [step, setStep] = useState<WizardStep>('welcome');
+const DEFAULT_WALLET_NAME = 'default-wallet';
+const walletNamePattern = /^[A-Za-z0-9_-]{1,64}$/;
+
+type WizardMode = 'create' | 'restore';
+type WizardStep =
+  | 'choose'
+  | 'welcome'
+  | 'generate'
+  | 'restore-welcome'
+  | 'restore-seed'
+  | 'passphrases'
+  | 'confirm'
+  | 'creating'
+  | 'success';
+
+export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => {
+  const [step, setStep] = useState<WizardStep>('choose');
+  const [mode, setMode] = useState<WizardMode>('create');
+  // Wallet naming. The first wallet (no default-wallet yet) is always created as
+  // the default wallet at the legacy appdata path, so no name is requested.
+  // Once a default wallet exists, additional wallets must be given a unique name.
+  const [walletsLoaded, setWalletsLoaded] = useState(false);
+  const [defaultExists, setDefaultExists] = useState(false);
+  const [existingNames, setExistingNames] = useState<string[]>([]);
+  const [name, setName] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
   const [seedMnemonic, setSeedMnemonic] = useState('');
   const [seedHex, setSeedHex] = useState('');
+  const [seedHexValid, setSeedHexValid] = useState(false);
   const [publicPassphrase, setPublicPassphrase] = useState('');
   const [privatePassphrase, setPrivatePassphrase] = useState('');
   const [confirmPublicPass, setConfirmPublicPass] = useState('');
@@ -23,6 +54,61 @@ export const WalletSetup = () => {
   const [showPublicPass, setShowPublicPass] = useState(false);
   const [showPrivatePass, setShowPrivatePass] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Determine whether this is the first wallet (forced default) or an additional
+  // named wallet, and collect existing names for uniqueness validation.
+  useEffect(() => {
+    let cancelled = false;
+    listWallets()
+      .then((res) => {
+        if (cancelled) return;
+        setExistingNames(res.wallets.map((w) => w.name));
+        setDefaultExists(res.wallets.some((w) => w.name === DEFAULT_WALLET_NAME));
+        setWalletsLoaded(true);
+      })
+      .catch((err) => {
+        console.debug('listWallets failed in WalletSetup:', err);
+        if (!cancelled) setWalletsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // validateName mirrors the backend ValidateWalletName rules plus a uniqueness
+  // check. Returns an error message, or null when valid. Only meaningful when a
+  // default wallet already exists (otherwise the name is forced).
+  const validateName = (): string | null => {
+    const trimmed = name.trim();
+    if (!walletNamePattern.test(trimmed)) {
+      return 'Use 1-64 letters, numbers, dash or underscore.';
+    }
+    if (trimmed === 'imported') {
+      return '"imported" is a reserved name.';
+    }
+    if (existingNames.includes(trimmed)) {
+      return `A wallet named "${trimmed}" already exists.`;
+    }
+    return null;
+  };
+
+  // proceedFromChoose validates the name (when required) before leaving the
+  // chooser, so duplicate/invalid names fail up front rather than after the
+  // passphrase step.
+  const proceedFromChoose = (next: WizardStep, chosen: WizardMode): boolean => {
+    if (defaultExists) {
+      const err = validateName();
+      if (err) {
+        setNameError(err);
+        return false;
+      }
+    }
+    setNameError(null);
+    setError(null);
+    setMode(chosen);
+    setStep(next);
+    return true;
+  };
 
   // Generate seed when entering generate step
   const handleGenerateSeed = async () => {
@@ -64,14 +150,22 @@ export const WalletSetup = () => {
   };
 
   const validatePassphrases = (): boolean => {
-    // Public passphrase is optional
-    if (publicPassphrase && publicPassphrase !== confirmPublicPass) {
-      setError('Public passphrases do not match');
-      return false;
+    if (publicPassphrase) {
+      if (publicPassphrase.length < 8) {
+        setError('Public passphrase must be at least 8 characters');
+        return false;
+      }
+      if (publicPassphrase !== confirmPublicPass) {
+        setError('Public passphrases do not match');
+        return false;
+      }
     }
-    // Private passphrase is mandatory
     if (!privatePassphrase) {
       setError('Private passphrase is required');
+      return false;
+    }
+    if (privatePassphrase.length < 8) {
+      setError('Private passphrase must be at least 8 characters');
       return false;
     }
     if (privatePassphrase !== confirmPrivatePass) {
@@ -96,25 +190,36 @@ export const WalletSetup = () => {
     try {
       setError(null);
       
-      const response = await createWallet({
+      const targetName = defaultExists ? name.trim() : DEFAULT_WALLET_NAME;
+      const response = await createNamedWallet({
+        name: targetName,
         publicPassphrase,
+        confirmPublicPassphrase: confirmPublicPass,
         privatePassphrase,
+        confirmPrivatePassphrase: confirmPrivatePass,
         seedHex,
+        discoverAccounts: mode === 'restore',
       });
 
       if (response.success) {
         setStep('success');
-        // Reload page after 2 seconds to load wallet dashboard
+        // Send the user to the Overview after a brief success screen so
+        // they land on the sync-progress card even if they navigated
+        // away from /wallet before triggering creation.
         setTimeout(() => {
-          window.location.reload();
+          if (onComplete) {
+            onComplete();
+          } else {
+            window.location.assign('/wallet');
+          }
         }, 2000);
       } else {
         setError(response.message || 'Failed to create wallet');
-        setStep('confirm'); // Go back to confirm step on error
+        setStep(mode === 'restore' ? 'passphrases' : 'confirm');
       }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to create wallet. Please try again.');
-      setStep('confirm'); // Go back to confirm step on error
+      setStep(mode === 'restore' ? 'passphrases' : 'confirm');
       console.error(err);
     }
   };
@@ -123,10 +228,213 @@ export const WalletSetup = () => {
   const publicStrength = getPassphraseStrength(publicPassphrase);
   const privateStrength = getPassphraseStrength(privatePassphrase);
 
+  // Live passphrase-match indicators. Empty confirm field = no indicator.
+  const publicMatch = publicPassphrase.length > 0 && confirmPublicPass.length > 0
+    ? publicPassphrase === confirmPublicPass
+    : null;
+  const privateMatch = privatePassphrase.length > 0 && confirmPrivatePass.length > 0
+    ? privatePassphrase === confirmPrivatePass
+    : null;
+  const publicTooShort = publicPassphrase !== '' && publicPassphrase.length < 8;
+  const privateTooShort = privatePassphrase !== '' && privatePassphrase.length < 8;
+  const canSubmitPassphrases =
+    privatePassphrase !== '' &&
+    confirmPrivatePass !== '' &&
+    !privateTooShort &&
+    privatePassphrase === confirmPrivatePass &&
+    !publicTooShort &&
+    (publicPassphrase === '' || (confirmPublicPass !== '' && publicPassphrase === confirmPublicPass));
+
+  if (!walletsLoaded) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-muted/20">
       <div className="w-full max-w-3xl">
         <div className="bg-gradient-card backdrop-blur-sm border border-border/50 rounded-xl shadow-xl p-8 animate-fade-in">
+          {/* Chooser Step */}
+          {step === 'choose' && (
+            <div className="text-center space-y-6">
+              <div className="flex justify-center">
+                <div className="p-4 rounded-full bg-primary/10 border border-primary/20">
+                  <Shield className="h-12 w-12 text-primary" />
+                </div>
+              </div>
+              <h1 className="text-3xl font-bold">Welcome to DCRPulse</h1>
+              <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+                Get started by creating a new Decred wallet, or restore an existing one from its seed phrase.
+              </p>
+
+              {defaultExists ? (
+                <div className="max-w-md mx-auto text-left space-y-1">
+                  <label className="text-sm font-medium">Wallet name</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (nameError) setNameError(null);
+                    }}
+                    className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
+                      nameError ? 'border-red-500/50' : 'border-border'
+                    }`}
+                    placeholder="e.g. savings"
+                    autoComplete="off"
+                  />
+                  {nameError ? (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> {nameError}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Letters, numbers, dash or underscore. Must be unique.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  This will be set up as your default wallet.
+                </p>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <button
+                  onClick={() => proceedFromChoose('welcome', 'create')}
+                  className="p-6 rounded-xl border border-border bg-background/50 hover:border-primary/50 hover:bg-background transition-colors text-left space-y-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <Sprout className="h-6 w-6 text-primary" />
+                    <h3 className="text-lg font-semibold">Create new wallet</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Generate a fresh seed phrase, set passphrases, and start with an empty wallet.
+                  </p>
+                </button>
+                <button
+                  onClick={() => proceedFromChoose('restore-welcome', 'restore')}
+                  className="p-6 rounded-xl border border-border bg-background/50 hover:border-primary/50 hover:bg-background transition-colors text-left space-y-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <RotateCcw className="h-6 w-6 text-primary" />
+                    <h3 className="text-lg font-semibold">Restore from seed</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Recover an existing wallet by entering its 33-word seed phrase or raw hex.
+                  </p>
+                </button>
+              </div>
+              {onCancel && (
+                <button
+                  onClick={onCancel}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Back to wallet list
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Restore Welcome Step */}
+          {step === 'restore-welcome' && (
+            <div className="text-center space-y-6">
+              <div className="flex justify-center">
+                <div className="p-4 rounded-full bg-primary/10 border border-primary/20">
+                  <RotateCcw className="h-12 w-12 text-primary" />
+                </div>
+              </div>
+              <h1 className="text-3xl font-bold">Restore your wallet</h1>
+              <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+                Enter the seed phrase from your existing Decred wallet. The dashboard will rescan the blockchain to rebuild your address history.
+              </p>
+
+              <div className="bg-warning/10 border border-warning/20 rounded-lg p-4 text-left space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-warning flex-shrink-0 mt-0.5" />
+                  <div className="space-y-2 text-sm">
+                    <p className="font-semibold text-warning">What to expect</p>
+                    <ul className="space-y-1 text-muted-foreground">
+                      <li>• Decred seeds are 33 words. Or paste the raw hex (32 bytes) if you have that instead.</li>
+                      <li>• After restore, dcrwallet rescans the chain from genesis - this can take a while.</li>
+                      <li>• Keep the dashboard running during the rescan.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('choose');
+                  }}
+                  className="flex-1 py-3 border border-border rounded-lg hover:bg-background/50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('restore-seed');
+                  }}
+                  className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Restore Seed Entry Step */}
+          {step === 'restore-seed' && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+                  <Key className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold">Enter your seed</h2>
+                  <p className="text-sm text-muted-foreground">Words or hex - paste supported.</p>
+                </div>
+              </div>
+
+              <SeedEntry
+                onValidSeedHex={(hex) => {
+                  setSeedHex(hex);
+                  setSeedHexValid(true);
+                }}
+                onInvalid={() => setSeedHexValid(false)}
+              />
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setSeedHexValid(false);
+                    setStep('restore-welcome');
+                  }}
+                  className="flex-1 py-3 border border-border rounded-lg hover:bg-background/50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('passphrases');
+                  }}
+                  disabled={!seedHexValid}
+                  className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Welcome Step */}
           {step === 'welcome' && (
             <div className="text-center space-y-6">
@@ -156,12 +464,23 @@ export const WalletSetup = () => {
                 </div>
               </div>
 
-              <button
-                onClick={handleGenerateSeed}
-                className="px-8 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold text-lg"
-              >
-                Create New Wallet
-              </button>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('choose');
+                  }}
+                  className="px-6 py-3 border border-border rounded-lg hover:bg-background/50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleGenerateSeed}
+                  className="px-8 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold text-lg"
+                >
+                  Create New Wallet
+                </button>
+              </div>
             </div>
           )}
 
@@ -299,28 +618,45 @@ export const WalletSetup = () => {
                       <p className="text-xs text-muted-foreground">Strength: {publicStrength.strength}</p>
                     </div>
                   )}
-                  {publicPassphrase && (
-                    <input
-                      type={showPublicPass ? 'text' : 'password'}
-                      value={confirmPublicPass}
-                      onChange={(e) => setConfirmPublicPass(e.target.value)}
-                      className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                      placeholder="Confirm public passphrase"
-                    />
+                  {publicTooShort && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Must be at least 8 characters.
+                    </p>
+                  )}
+                  <input
+                    type={showPublicPass ? 'text' : 'password'}
+                    minLength={8}
+                    value={confirmPublicPass}
+                    onChange={(e) => setConfirmPublicPass(e.target.value)}
+                    className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
+                      publicMatch === false ? 'border-red-500/50' : publicMatch === true ? 'border-green-500/50' : 'border-border'
+                    }`}
+                    placeholder="Confirm public passphrase"
+                  />
+                  {publicMatch === true && (
+                    <p className="text-xs text-green-500 flex items-center gap-1">
+                      <Check className="h-3 w-3" /> Public passphrases match
+                    </p>
+                  )}
+                  {publicMatch === false && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Public passphrases do not match
+                    </p>
                   )}
                 </div>
 
                 {/* Private Passphrase */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Private Passphrase <span className="text-red-500">*</span></label>
-                  <p className="text-xs text-muted-foreground">Required: Encrypts private keys for sending/signing transactions</p>
+                  <p className="text-xs text-muted-foreground">Required: Encrypts private keys for sending/signing transactions. Minimum 8 characters.</p>
                   <div className="relative">
                     <input
                       type={showPrivatePass ? 'text' : 'password'}
+                      minLength={8}
                       value={privatePassphrase}
                       onChange={(e) => setPrivatePassphrase(e.target.value)}
                       className="w-full px-4 py-2 pr-10 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                      placeholder="Enter private passphrase"
+                      placeholder="Enter private passphrase (min 8 chars)"
                     />
                     <button
                       onClick={() => setShowPrivatePass(!showPrivatePass)}
@@ -337,19 +673,37 @@ export const WalletSetup = () => {
                       <p className="text-xs text-muted-foreground">Strength: {privateStrength.strength}</p>
                     </div>
                   )}
+                  {privateTooShort && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Must be at least 8 characters.
+                    </p>
+                  )}
                   <input
                     type={showPrivatePass ? 'text' : 'password'}
+                    minLength={8}
                     value={confirmPrivatePass}
                     onChange={(e) => setConfirmPrivatePass(e.target.value)}
-                    className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
+                      privateMatch === false ? 'border-red-500/50' : privateMatch === true ? 'border-green-500/50' : 'border-border'
+                    }`}
                     placeholder="Confirm private passphrase"
                   />
+                  {privateMatch === true && (
+                    <p className="text-xs text-green-500 flex items-center gap-1">
+                      <Check className="h-3 w-3" /> Private passphrases match
+                    </p>
+                  )}
+                  {privateMatch === false && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Private passphrases do not match
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="flex gap-4">
                 <button
-                  onClick={() => setStep('generate')}
+                  onClick={() => setStep(mode === 'restore' ? 'restore-seed' : 'generate')}
                   className="flex-1 py-3 border border-border rounded-lg hover:bg-background/50 transition-colors"
                 >
                   Back
@@ -358,12 +712,18 @@ export const WalletSetup = () => {
                   onClick={() => {
                     if (validatePassphrases()) {
                       setError(null);
-                      setStep('confirm');
+                      if (mode === 'restore') {
+                        setStep('creating');
+                        handleCreateWallet();
+                      } else {
+                        setStep('confirm');
+                      }
                     }
                   }}
-                  className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold"
+                  disabled={!canSubmitPassphrases}
+                  className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Continue
+                  {mode === 'restore' ? 'Restore Wallet' : 'Continue'}
                 </button>
               </div>
             </div>
