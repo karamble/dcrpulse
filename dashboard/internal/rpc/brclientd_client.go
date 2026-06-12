@@ -482,6 +482,13 @@ func BrclientdClearPMHistory(ctx context.Context, uidHex string) error {
 	return brclientdPostJSON(ctx, "/history/pm/clear", map[string]string{"uid": uidHex})
 }
 
+// BrclientdClearPayStats removes the recorded payment stats for a contact.
+// Wraps brclientd's /stats/payments/clear (client.ClearPayStats); the contact
+// drops out of the payment stats listing until new payments are recorded.
+func BrclientdClearPayStats(ctx context.Context, uidHex string) error {
+	return brclientdPostJSON(ctx, "/stats/payments/clear", map[string]string{"uid": uidHex})
+}
+
 // BrclientdIgnoreContact sets or clears the local ignore flag on a contact.
 // Wraps brclientd's /contacts/ignore which calls client.Ignore. Local-only;
 // nothing is broadcast. The flag surfaces as the contact's `ignored` field.

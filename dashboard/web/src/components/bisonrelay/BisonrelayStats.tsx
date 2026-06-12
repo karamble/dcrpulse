@@ -24,6 +24,7 @@ import {
   Server,
   Shield,
   Signal,
+  Trash2,
   TrendingUp,
   Users,
   Wifi,
@@ -40,6 +41,7 @@ import {
   BisonrelayStatsOverview,
   BisonrelayStatsPayments,
   BisonrelayStatsPosts,
+  clearBisonrelayPayStats,
   getBisonrelayIdentity,
   getBisonrelayRunningTips,
   getBisonrelayStatsContacts,
@@ -49,6 +51,7 @@ import {
   getBisonrelayStatsPosts,
 } from '../../services/bisonrelayApi';
 import { avatarDataUrl } from './bisonrelayAvatar';
+import { ConfirmActionModal } from './BisonrelayUserSubNav';
 
 type Section = 'overview' | 'payments' | 'network' | 'contacts' | 'content';
 
@@ -613,8 +616,9 @@ const OverviewView = () => {
 // ---- 2) Payments --------------------------------------------------------
 
 const PaymentsView = () => {
-  const { data, err } = usePolledStats(getBisonrelayStatsPayments);
+  const { data, err, refresh } = usePolledStats(getBisonrelayStatsPayments);
   const [openUid, setOpenUid] = useState<string | null>(null);
+  const [clearUid, setClearUid] = useState<string | null>(null);
   // Tip attempts the daemon is actively driving (retries can span days);
   // polled separately from the aggregate stats.
   const [runningTips, setRunningTips] = useState<BisonrelayRunningTip[]>([]);
@@ -745,27 +749,39 @@ const PaymentsView = () => {
         ) : (
           <div className="space-y-1.5">
             {sortedUsers.map((u) => (
-              <button
+              <div
                 key={u.uid}
-                type="button"
-                onClick={() => setOpenUid(openUid === u.uid ? null : u.uid)}
-                className={`w-full grid grid-cols-[1fr_auto] gap-3 items-center px-3 py-2 rounded-lg text-left transition-colors ${
+                className={`w-full grid grid-cols-[1fr_auto] items-center rounded-lg transition-colors ${
                   openUid === u.uid ? 'bg-primary/10' : 'hover:bg-muted/20'
                 }`}
               >
-                <div className="min-w-0">
-                  <div className="text-sm font-medium truncate">
-                    {u.nick || u.uid.slice(0, 12)}
+                <button
+                  type="button"
+                  onClick={() => setOpenUid(openUid === u.uid ? null : u.uid)}
+                  className="min-w-0 grid grid-cols-[1fr_auto] gap-3 items-center px-3 py-2 text-left"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {u.nick || u.uid.slice(0, 12)}
+                    </div>
+                    <div className="mt-1">
+                      <MiniBars sent={u.sent_matoms} received={u.received_matoms} />
+                    </div>
                   </div>
-                  <div className="mt-1">
-                    <MiniBars sent={u.sent_matoms} received={u.received_matoms} />
+                  <div className="text-right text-[11px] tabular-nums shrink-0">
+                    <div className="text-rose-400">{formatDCR(u.sent_matoms)}</div>
+                    <div className="text-emerald-400">{formatDCR(u.received_matoms)}</div>
                   </div>
-                </div>
-                <div className="text-right text-[11px] tabular-nums shrink-0">
-                  <div className="text-rose-400">{formatDCR(u.sent_matoms)}</div>
-                  <div className="text-emerald-400">{formatDCR(u.received_matoms)}</div>
-                </div>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClearUid(u.uid)}
+                  title="Reset payment stats"
+                  className="mr-2 px-2 py-1 rounded text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -788,6 +804,22 @@ const PaymentsView = () => {
         >
           <PaymentBreakdownDetail breakdowns={openUser.breakdowns ?? []} />
         </SectionCard>
+      )}
+
+      {clearUid && (
+        <ConfirmActionModal
+          title={`Reset payment stats for ${
+            data.users.find((u) => u.uid === clearUid)?.nick || clearUid.slice(0, 12)
+          }?`}
+          body="Permanently clears the recorded sent, received, and fee totals plus the per-event breakdown for this contact. Funds, chat history, and the contact itself are not affected. The contact disappears from this list until new payments are recorded."
+          confirmLabel="Reset stats"
+          onClose={() => setClearUid(null)}
+          onConfirm={() => clearBisonrelayPayStats(clearUid)}
+          onSuccess={() => {
+            if (openUid === clearUid) setOpenUid(null);
+            void refresh();
+          }}
+        />
       )}
     </div>
   );

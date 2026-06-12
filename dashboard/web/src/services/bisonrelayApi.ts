@@ -1206,6 +1206,10 @@ export const getBisonrelayStatsPayments = async (): Promise<BisonrelayStatsPayme
   return data;
 };
 
+export const clearBisonrelayPayStats = async (uid: string): Promise<void> => {
+  await api.post('/br/stats/payments/clear', { uid });
+};
+
 export interface BisonrelayServerPolicy {
   push_pay_rate_matoms: number;
   push_pay_rate_bytes: number;

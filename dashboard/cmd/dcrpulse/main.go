@@ -399,6 +399,7 @@ func main() {
 	api.HandleFunc("/br/pages/local/delete", handlers.BisonrelayPagesLocalDeleteHandler).Methods("POST")
 	api.HandleFunc("/br/stats/overview", handlers.BisonrelayStatsOverviewHandler).Methods("GET")
 	api.HandleFunc("/br/stats/payments", handlers.BisonrelayStatsPaymentsHandler).Methods("GET")
+	api.HandleFunc("/br/stats/payments/clear", handlers.BisonrelayClearPayStatsHandler).Methods("POST")
 	api.HandleFunc("/br/stats/network", handlers.BisonrelayStatsNetworkHandler).Methods("GET")
 	api.HandleFunc("/br/stats/contacts", handlers.BisonrelayStatsContactsHandler).Methods("GET")
 	api.HandleFunc("/br/stats/posts", handlers.BisonrelayStatsPostsHandler).Methods("GET")

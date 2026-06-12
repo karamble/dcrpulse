@@ -1176,7 +1176,7 @@ const ContactPickerModal = ({
   );
 };
 
-const ConfirmActionModal = ({
+export const ConfirmActionModal = ({
   title,
   body,
   confirmLabel,

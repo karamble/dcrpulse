@@ -650,6 +650,21 @@ func BisonrelayClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayClearPayStatsHandler proxies brclientd's /stats/payments/clear.
+// Body: {uid}. Permanently clears the recorded payment totals and breakdowns
+// for the contact; funds, history, and the contact itself are untouched.
+func BisonrelayClearPayStatsHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	if err := rpc.BrclientdClearPayStats(r.Context(), uid); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayContactIgnoreHandler proxies brclientd's /contacts/ignore. Body:
 // {uid, ignore}. Sets or clears the local ignore flag for the contact.
 func BisonrelayContactIgnoreHandler(w http.ResponseWriter, r *http.Request) {
