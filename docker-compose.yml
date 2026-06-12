@@ -11,7 +11,7 @@ services:
       - "127.0.0.1:9109:9109"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data
-      - ${TOR_DATA_DIR:-tor-data}:/tor-data:ro
+      - ${TOR_DATA_DIR:-tor-data}:/app-data/tor:ro
     environment:
       - DCRD_EXTRA_ARGS=${DCRD_EXTRA_ARGS:---txindex}
       - TOR_PROXY_IP=tor
@@ -181,7 +181,7 @@ services:
       - ${BRCLIENTD_DATA_DIR:-brclientd-data}:/app-data/brclientd:ro
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/app-data/dcrdex:ro
       - ${DASHBOARD_DATA_DIR:-dashboard-data}:/dashboard-data
-      - ${TOR_DATA_DIR:-tor-data}:/tor-data:ro
+      - ${TOR_DATA_DIR:-tor-data}:/app-data/tor:ro
     environment:
       - PORT=8080
       - TOR_PROXY_IP=tor

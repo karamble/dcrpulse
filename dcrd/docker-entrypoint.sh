@@ -46,6 +46,7 @@ fi
 set +e
 
 TOR_POINTER="/app-data/control/tor.json"
+STATE="/app-data/dcrd/control-state.json"
 CHILD_PID=""
 RUNNING_TOR_REV="__none__"
 
@@ -61,8 +62,8 @@ build_tor_args() {
     [ -n "${TOR_PROXY_IP}" ] && [ -n "${TOR_PROXY_PORT}" ] || return
     TOR_ARGS="--proxy=${TOR_PROXY_IP}:${TOR_PROXY_PORT}"
     [ "$(tor_field isolation true)" = "true" ] && TOR_ARGS="${TOR_ARGS} --torisolation"
-    if [ "$(tor_field dcrdOnion false)" = "true" ] && [ -f /tor-data/dcrd-hs/hostname ]; then
-        host=$(cat /tor-data/dcrd-hs/hostname 2>/dev/null)
+    if [ "$(tor_field dcrdOnion false)" = "true" ] && [ -f /app-data/tor/dcrd-hs/hostname ]; then
+        host=$(cat /app-data/tor/dcrd-hs/hostname 2>/dev/null)
         [ -n "${host}" ] && TOR_ARGS="${TOR_ARGS} --externalip=${host}:9108"
     fi
 }
@@ -95,6 +96,16 @@ start_dcrd() {
     CHILD_PID=$!
 }
 
+write_state() {
+    pid="${CHILD_PID:-0}"
+    tor_on=false
+    [ -n "${CHILD_PID}" ] && [ "$(tor_field enabled false)" = "true" ] && tor_on=true
+    cat > "${STATE}.tmp" <<EOF
+{"pid":${pid:-0},"tor":${tor_on},"torRev":"${RUNNING_TOR_REV}"}
+EOF
+    mv "${STATE}.tmp" "${STATE}"
+}
+
 shutdown() {
     stop_child
     exit 0
@@ -119,5 +130,6 @@ while true; do
         RUNNING_TOR_REV="${TOR_REV}"
     fi
 
+    write_state
     sleep 2
 done
