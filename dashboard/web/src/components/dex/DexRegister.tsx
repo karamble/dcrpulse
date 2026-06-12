@@ -13,6 +13,7 @@ import {
   type DexWalletInfo,
 } from '../../services/dcrdexApi';
 import { CoinIcon } from './CoinIcon';
+import { DexServerBanner } from './DexServerBanner';
 import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
 
 interface DexRegisterProps {
@@ -33,6 +34,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(true);
+  const [discoverRun, setDiscoverRun] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +69,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [host]);
+  }, [host, discoverRun]);
 
   const refresh = () => getDexWallet().then(setWallet).catch(() => {});
   useEffect(() => {
@@ -79,9 +81,20 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
   useDexRefreshOnNotes(['balance', 'walletstate', 'walletsync'], refresh);
   const conn = useDexConn(host);
 
+  // When the server connection comes back while the page is stuck on a failed
+  // load, re-run the registration discovery so it resolves without a reload.
+  const serverConnected = conn?.status === 1;
+  useEffect(() => {
+    if (!serverConnected || discovering || cfg) return;
+    setLoadErr(null);
+    setDiscoverRun((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverConnected]);
+
   if (loadErr) {
     return (
-      <div className="flex justify-center p-6">
+      <div className="flex flex-col items-center gap-3 p-6">
+        <DexServerBanner host={host} />
         <div className="w-full max-w-2xl p-4 rounded-xl bg-destructive/5 border border-destructive/30 text-sm text-destructive flex items-start gap-2">
           <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
           <span className="break-words">Could not reach {host}: {loadErr}</span>
@@ -93,7 +106,13 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3 text-sm text-muted-foreground">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-        Checking for an existing registration...
+        Checking for an existing registration on {host}...
+        <DexServerBanner host={host} />
+        {conn && conn.status !== 1 && (
+          <span className="text-xs">
+            The check continues automatically once the server connection is restored.
+          </span>
+        )}
       </div>
     );
   }
