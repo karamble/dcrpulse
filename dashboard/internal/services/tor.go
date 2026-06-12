@@ -109,6 +109,7 @@ func TorDaemonStates() []types.TorDaemonState {
 		{"dcrwallet", config.WalletStatePath()},
 		{"dcrlnd", config.DcrlndStatePath()},
 		{"dcrdex", config.DcrdexStatePath()},
+		{"brclientd", config.BrclientdStatePath()},
 	}
 	out := make([]types.TorDaemonState, 0, len(srcs))
 	for _, s := range srcs {
