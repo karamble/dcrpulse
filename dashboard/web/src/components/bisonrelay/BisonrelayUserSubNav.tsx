@@ -15,6 +15,7 @@ import {
   EyeOff,
   FileText,
   Folder,
+  FolderCog,
   Handshake,
   List,
   Loader2,
@@ -56,6 +57,7 @@ import {
 } from '../../services/lightningApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
+import { ContactGroupModal } from './BisonrelayContactGroupModals';
 import { TipModal } from './TipModal';
 
 // Layout + action ordering mirrors bruig's chat_side_menu / user_context_menu
@@ -101,7 +103,8 @@ type ActiveModal =
   | 'show-content'
   | 'ignore'
   | 'block'
-  | 'clear-history';
+  | 'clear-history'
+  | 'contact-group';
 
 export const BisonrelayUserSubNav = ({
   contact,
@@ -165,6 +168,7 @@ export const BisonrelayUserSubNav = ({
       },
     },
     { id: 'rename', label: 'Rename User', icon: Edit2, onClick: () => setModal('rename') },
+    { id: 'contact-group', label: 'Contact Group', icon: FolderCog, onClick: () => setModal('contact-group') },
     { id: 'suggest-kx', label: 'Suggest User to KX', icon: UserPlus, onClick: () => setModal('suggest-kx') },
     { id: 'trans-reset', label: 'Issue Transitive Reset', icon: Users, onClick: () => setModal('trans-reset') },
     { id: 'handshake', label: 'Perform Handshake', icon: Handshake, onClick: () => setModal('handshake') },
@@ -212,6 +216,9 @@ export const BisonrelayUserSubNav = ({
             onRenamed?.(newNick);
           }}
         />
+      )}
+      {modal === 'contact-group' && (
+        <ContactGroupModal uid={uid} nick={nick} onClose={() => setModal(null)} />
       )}
       {modal === 'kx-reset' && (
         <ConfirmActionModal

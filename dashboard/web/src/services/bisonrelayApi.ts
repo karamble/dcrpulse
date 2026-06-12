@@ -268,6 +268,7 @@ export interface BisonrelayContact {
   first_created?: string;
   last_completed_kx?: string;
   last_read_msg_time?: string;
+  last_dec_time?: string;
   ignored?: boolean;
   posts_subscribed?: boolean;
 }
@@ -279,6 +280,58 @@ export interface BisonrelayContactsResponse {
 export const getBisonrelayContacts = async (): Promise<BisonrelayContact[]> => {
   const { data } = await api.get<BisonrelayContactsResponse>('/br/contacts');
   return data.entries ?? [];
+};
+
+// Contact groups: assignments are keyed by the contact's zkidentity hex
+// string (never by nick). 'archived' is the reserved builtin group.
+export const ARCHIVED_GROUP_ID = 'archived';
+
+export interface BisonrelayContactGroup {
+  id: string;
+  name: string;
+}
+
+export interface BisonrelayContactGroupAssignment {
+  group: string;
+  pinned?: boolean;
+  auto?: boolean;
+  since?: string;
+}
+
+export interface BisonrelayContactGroups {
+  auto_archive_days?: number;
+  groups: BisonrelayContactGroup[] | null;
+  contacts: Record<string, BisonrelayContactGroupAssignment>;
+}
+
+export const getBisonrelayContactGroups = async (): Promise<BisonrelayContactGroups> => {
+  const { data } = await api.get<BisonrelayContactGroups>('/br/contacts/groups');
+  return data;
+};
+
+export const createBisonrelayContactGroup = async (name: string): Promise<BisonrelayContactGroup> => {
+  const { data } = await api.post<BisonrelayContactGroup>('/br/contacts/groups', { action: 'create', name });
+  return data;
+};
+
+export const renameBisonrelayContactGroup = async (id: string, name: string): Promise<void> => {
+  await api.post('/br/contacts/groups', { action: 'rename', id, name });
+};
+
+export const deleteBisonrelayContactGroup = async (id: string): Promise<void> => {
+  await api.post('/br/contacts/groups', { action: 'delete', id });
+};
+
+export const assignBisonrelayContactGroup = async (
+  uid: string,
+  group: string,
+  pinned: boolean,
+): Promise<void> => {
+  await api.post('/br/contacts/groups/assign', { uid, group, pinned });
+};
+
+export const setBisonrelayContactGroupSettings = async (autoArchiveDays: number): Promise<void> => {
+  await api.post('/br/contacts/groups/settings', { auto_archive_days: autoArchiveDays });
 };
 
 export interface BisonrelayMessage {
@@ -826,6 +879,7 @@ export type BisonrelayEventType =
   | 'idle-unsubscribing'
   | 'pm-delivered'
   | 'receive-receipt'
+  | 'contact-groups-changed'
   | 'tip-invoice-generated'
   | 'rtdt-invited'
   | 'rtdt-invite-accepted'

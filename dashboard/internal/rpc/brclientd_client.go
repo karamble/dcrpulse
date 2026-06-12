@@ -489,6 +489,37 @@ func BrclientdClearPayStats(ctx context.Context, uidHex string) error {
 	return brclientdPostJSON(ctx, "/stats/payments/clear", map[string]string{"uid": uidHex})
 }
 
+// BrclientdContactGroups returns the contact group layout: groups list,
+// uid-keyed assignments, and the auto-archive threshold.
+func BrclientdContactGroups(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/contacts/groups", nil)
+}
+
+// BrclientdContactGroupCreate creates a named contact group and returns it.
+func BrclientdContactGroupCreate(ctx context.Context, name string) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/contacts/groups",
+		map[string]string{"action": "create", "name": name})
+}
+
+// BrclientdContactGroupAction renames or deletes a contact group.
+func BrclientdContactGroupAction(ctx context.Context, action, id, name string) error {
+	return brclientdPostJSON(ctx, "/contacts/groups",
+		map[string]string{"action": action, "id": id, "name": name})
+}
+
+// BrclientdContactGroupAssign moves a contact into a group ("" returns it to
+// the regular list).
+func BrclientdContactGroupAssign(ctx context.Context, uidHex, group string, pinned bool) error {
+	return brclientdPostJSON(ctx, "/contacts/groups/assign",
+		map[string]any{"uid": uidHex, "group": group, "pinned": pinned})
+}
+
+// BrclientdContactGroupSettings sets the auto-archive threshold in days.
+func BrclientdContactGroupSettings(ctx context.Context, days int) error {
+	return brclientdPostJSON(ctx, "/contacts/groups/settings",
+		map[string]int{"auto_archive_days": days})
+}
+
 // BrclientdIgnoreContact sets or clears the local ignore flag on a contact.
 // Wraps brclientd's /contacts/ignore which calls client.Ignore. Local-only;
 // nothing is broadcast. The flag surfaces as the contact's `ignored` field.

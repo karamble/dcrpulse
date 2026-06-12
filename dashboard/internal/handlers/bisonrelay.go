@@ -650,6 +650,86 @@ func BisonrelayClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayContactGroupsHandler proxies brclientd's /contacts/groups. GET
+// returns the group layout (uid-keyed assignments); POST runs an action:
+// {action: "create"|"rename"|"delete", id?, name?}.
+func BisonrelayContactGroupsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		raw, err := rpc.BrclientdContactGroups(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+		return
+	}
+	var req struct {
+		Action string `json:"action"`
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Action == "create" {
+		raw, err := rpc.BrclientdContactGroupCreate(r.Context(), req.Name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+		return
+	}
+	if err := rpc.BrclientdContactGroupAction(r.Context(), req.Action, req.ID, req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContactGroupAssignHandler proxies brclientd's
+// /contacts/groups/assign. Body: {uid, group, pinned}.
+func BisonrelayContactGroupAssignHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UID    string `json:"uid"`
+		Group  string `json:"group"`
+		Pinned bool   `json:"pinned"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.UID == "" {
+		http.Error(w, "uid is required", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdContactGroupAssign(r.Context(), req.UID, req.Group, req.Pinned); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayContactGroupSettingsHandler proxies brclientd's
+// /contacts/groups/settings. Body: {auto_archive_days}.
+func BisonrelayContactGroupSettingsHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AutoArchiveDays int `json:"auto_archive_days"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdContactGroupSettings(r.Context(), req.AutoArchiveDays); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayClearPayStatsHandler proxies brclientd's /stats/payments/clear.
 // Body: {uid}. Permanently clears the recorded payment totals and breakdowns
 // for the contact; funds, history, and the contact itself are untouched.

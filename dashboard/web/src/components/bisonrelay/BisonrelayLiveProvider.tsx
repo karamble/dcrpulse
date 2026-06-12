@@ -3,7 +3,12 @@
 // license that can be found in the LICENSE file.
 
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { BisonrelayLiveEvent } from '../../services/bisonrelayApi';
+import {
+  ARCHIVED_GROUP_ID,
+  BisonrelayContactGroups,
+  BisonrelayLiveEvent,
+  getBisonrelayContactGroups,
+} from '../../services/bisonrelayApi';
 
 type Listener = (evt: BisonrelayLiveEvent) => void;
 
@@ -17,6 +22,8 @@ interface BisonrelayLiveCtx {
   clearGCUnread: (gcid: string) => void;
   setActiveGCID: (gcid: string) => void;
   addListener: (fn: Listener) => () => void;
+  contactGroups: BisonrelayContactGroups | null;
+  refreshContactGroups: () => void;
 }
 
 const Ctx = createContext<BisonrelayLiveCtx | null>(null);
@@ -30,9 +37,30 @@ export const useBisonrelayLive = (): BisonrelayLiveCtx => {
 export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) => {
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [gcUnread, setGCUnread] = useState<Record<string, number>>({});
+  const [contactGroups, setContactGroups] = useState<BisonrelayContactGroups | null>(null);
   const listenersRef = useRef<Set<Listener>>(new Set());
   const activeUidRef = useRef<string>('');
   const activeGCIDRef = useRef<string>('');
+  // Archived contacts (by uid) whose DMs must not badge; a ref so the
+  // long-lived websocket handler sees the current set.
+  const archivedRef = useRef<Set<string>>(new Set());
+
+  const refreshContactGroups = useCallback(() => {
+    getBisonrelayContactGroups()
+      .then((g) => {
+        setContactGroups(g);
+        const next = new Set<string>();
+        Object.entries(g.contacts ?? {}).forEach(([uid, a]) => {
+          if (a.group === ARCHIVED_GROUP_ID) next.add(uid);
+        });
+        archivedRef.current = next;
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshContactGroups();
+  }, [refreshContactGroups]);
 
   const addListener = useCallback((fn: Listener) => {
     listenersRef.current.add(fn);
@@ -90,7 +118,7 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
           });
           if (evt.type === 'pm') {
             const uid = String((evt.payload as Record<string, unknown>)?.from ?? '');
-            if (uid && uid !== activeUidRef.current) {
+            if (uid && uid !== activeUidRef.current && !archivedRef.current.has(uid)) {
               setUnread((prev) => ({ ...prev, [uid]: (prev[uid] ?? 0) + 1 }));
             }
           }
@@ -104,9 +132,12 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
             evt.type === 'idle-unsubscribing'
           ) {
             const uid = String((evt.payload as Record<string, unknown>)?.uid ?? '');
-            if (uid && uid !== activeUidRef.current) {
+            if (uid && uid !== activeUidRef.current && !archivedRef.current.has(uid)) {
               setUnread((prev) => ({ ...prev, [uid]: (prev[uid] ?? 0) + 1 }));
             }
+          }
+          if (evt.type === 'contact-groups-changed') {
+            refreshContactGroups();
           }
           if (evt.type === 'gc-message') {
             const gcid = String((evt.payload as Record<string, unknown>)?.gcid ?? '');
@@ -151,6 +182,8 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
         clearGCUnread,
         setActiveGCID,
         addListener,
+        contactGroups,
+        refreshContactGroups,
       }}
     >
       {children}

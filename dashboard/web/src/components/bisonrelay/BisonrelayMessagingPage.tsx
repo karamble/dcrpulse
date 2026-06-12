@@ -13,6 +13,7 @@ import {
   Download,
   EyeOff,
   FileText,
+  FolderCog,
   Loader2,
   MessageSquare,
   Paperclip,
@@ -22,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  ARCHIVED_GROUP_ID,
   BisonrelayContact,
   BisonrelayDownloadEntry,
   BisonrelayGC,
@@ -47,6 +49,7 @@ import {
   writeBisonrelayInvite,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { GroupManagementModal } from './BisonrelayContactGroupModals';
 import { useBrNotifPrefs } from './brNotifPrefs';
 import {
   DownloadSegment,
@@ -150,6 +153,16 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [showCreateGC, setShowCreateGC] = useState(false);
   const [showGCInvite, setShowGCInvite] = useState(false);
   const [showGroupSubNav, setShowGroupSubNav] = useState(false);
+  const [showGroupMgmt, setShowGroupMgmt] = useState(false);
+  const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem('dcrpulse.br.sidebar.sections-collapsed');
+      if (raw) return JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+    return { [ARCHIVED_GROUP_ID]: true };
+  });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const draftInputRef = useRef<HTMLInputElement | null>(null);
   const {
@@ -160,6 +173,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     clearGCUnread,
     setActiveGCID,
     addListener,
+    contactGroups,
   } = useBisonrelayLive();
   // The BR notification switches gate the unread indicators only; counting
   // continues so re-enabling a switch shows the true unread state.
@@ -171,6 +185,12 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   useEffect(() => {
     localStorage.setItem('dcrpulse.br.sidebar.groups-collapsed', groupsCollapsed ? '1' : '0');
   }, [groupsCollapsed]);
+  useEffect(() => {
+    localStorage.setItem(
+      'dcrpulse.br.sidebar.sections-collapsed',
+      JSON.stringify(sectionCollapsed),
+    );
+  }, [sectionCollapsed]);
 
   const openImageViewer = useCallback<ImageViewerOpenFn>((src, name, mime) => {
     setViewerImage({ src, name, mime });
@@ -440,16 +460,107 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     return m;
   }, [contacts]);
 
-  // Contacts with an active unread DM bubble float to the top so a freshly
-  // received DM is never hidden below the fold. Array.sort is stable, so the
-  // order within the unread and read groups is otherwise preserved.
+  // Unread DMs first, then alphabetical by display nick. The addressbook
+  // itself arrives unordered (the BR library iterates a Go map).
   const sortedContacts = useMemo(() => {
     const hasUnread = (c: BisonrelayContact) => {
       const uid = c.id?.identity ?? '';
       return !!uid && notifPrefs.dms && (unread[uid] ?? 0) > 0;
     };
-    return [...contacts].sort((a, b) => Number(hasUnread(b)) - Number(hasUnread(a)));
+    return [...contacts].sort((a, b) => {
+      const unreadDiff = Number(hasUnread(b)) - Number(hasUnread(a));
+      if (unreadDiff !== 0) return unreadDiff;
+      return displayNick(a).toLowerCase().localeCompare(displayNick(b).toLowerCase());
+    });
   }, [contacts, unread, notifPrefs.dms]);
+
+  // Partition the contact list into sidebar sections by group assignment
+  // (uid-keyed). Assignments pointing at deleted groups fall back to the
+  // regular list.
+  const sectionedContacts = useMemo(() => {
+    const assignments = contactGroups?.contacts ?? {};
+    const customGroups = contactGroups?.groups ?? [];
+    const known = new Set(customGroups.map((g) => g.id));
+    const regular: BisonrelayContact[] = [];
+    const archived: BisonrelayContact[] = [];
+    const byGroup: Record<string, BisonrelayContact[]> = {};
+    for (const c of sortedContacts) {
+      const uid = c.id?.identity ?? '';
+      const a = uid ? assignments[uid] : undefined;
+      if (!a || (a.group !== ARCHIVED_GROUP_ID && !known.has(a.group))) {
+        regular.push(c);
+      } else if (a.group === ARCHIVED_GROUP_ID) {
+        archived.push(c);
+      } else {
+        (byGroup[a.group] ??= []).push(c);
+      }
+    }
+    return { regular, archived, byGroup, customGroups };
+  }, [sortedContacts, contactGroups]);
+
+  const sumUnread = (list: BisonrelayContact[]) =>
+    notifPrefs.dms
+      ? list.reduce((acc, c) => acc + (unread[c.id?.identity ?? ''] ?? 0), 0)
+      : 0;
+
+  const renderContactRow = (c: BisonrelayContact, dimmed = false) => {
+    const nick = displayNick(c);
+    const isSel =
+      selectedContact?.id?.identity && c.id?.identity === selectedContact.id.identity;
+    const uid = c.id?.identity ?? '';
+    const count = uid && notifPrefs.dms ? unread[uid] ?? 0 : 0;
+    const ignored = !!c.ignored;
+    const heard = heardAge(c.last_dec_time);
+    return (
+      <div
+        key={uid || nick}
+        onClick={() => setSelected({ kind: 'contact', value: c })}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            setSelected({ kind: 'contact', value: c });
+          }
+        }}
+        className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 cursor-pointer ${
+          isSel ? 'bg-primary/20 text-foreground' : 'hover:bg-muted/30 text-muted-foreground'
+        } ${ignored || dimmed ? 'opacity-50' : ''}`}
+      >
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            setSubNavContact(c);
+          }}
+          role="button"
+          tabIndex={0}
+          aria-label={`User actions for ${nick}`}
+          className="inline-flex shrink-0 rounded-full hover:ring-2 hover:ring-primary/50 transition-shadow cursor-pointer"
+        >
+          <ContactAvatar contact={c} nick={nick} />
+        </span>
+        <span className="truncate flex-1">{nick}</span>
+        {heard && (
+          <span
+            className="shrink-0 text-[10px] text-muted-foreground tabular-nums"
+            title="Last message received"
+          >
+            {heard}
+          </span>
+        )}
+        {ignored && (
+          <EyeOff
+            className="shrink-0 h-3.5 w-3.5 text-muted-foreground"
+            aria-label="Ignored"
+          />
+        )}
+        {count > 0 && (
+          <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
+            {count > 99 ? '99+' : count}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   useEffect(() => {
     return addListener((evt) => {
@@ -965,6 +1076,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           onAttach={handleImageAttach}
         />
       )}
+    {showGroupMgmt && <GroupManagementModal onClose={() => setShowGroupMgmt(false)} />}
     <div className="relative flex gap-4 h-[calc(100dvh-9.5rem)] min-h-[320px] md:h-[calc(100vh-12rem)] md:min-h-[480px]">
       <aside className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-72 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
         <div className="p-3 border-b border-border/50 flex items-center justify-between">
@@ -984,6 +1096,13 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             >
               <MessageSquare className="h-4 w-4" />
             </button>
+            <button
+              onClick={() => setShowGroupMgmt(true)}
+              className="p-1.5 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors"
+              title="Manage contact groups"
+            >
+              <FolderCog className="h-4 w-4" />
+            </button>
             {!inDecredPulse && (
               <button
                 onClick={() => setShowJoinDecredPulse(true)}
@@ -998,9 +1117,10 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         <div className="flex-1 overflow-y-auto p-2">
           <SidebarSectionHeader
             label="Contacts"
-            count={contacts.length}
+            count={sectionedContacts.regular.length}
             collapsed={contactsCollapsed}
             onToggle={() => setContactsCollapsed((v) => !v)}
+            unread={sumUnread(sectionedContacts.regular)}
           />
           {!contactsCollapsed && (
             <div className="space-y-1 mb-2">
@@ -1013,56 +1133,52 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   paste a peer's invite to start a key exchange.
                 </p>
               )}
-              {sortedContacts.map((c) => {
-                const nick = displayNick(c);
-                const isSel =
-                  selectedContact?.id?.identity && c.id?.identity === selectedContact.id.identity;
-                const uid = c.id?.identity ?? '';
-                const count = uid && notifPrefs.dms ? unread[uid] ?? 0 : 0;
-                const ignored = !!c.ignored;
-                return (
-                  <div
-                    key={uid || nick}
-                    onClick={() => setSelected({ kind: 'contact', value: c })}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        setSelected({ kind: 'contact', value: c });
-                      }
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex items-center gap-2 cursor-pointer ${
-                      isSel ? 'bg-primary/20 text-foreground' : 'hover:bg-muted/30 text-muted-foreground'
-                    } ${ignored ? 'opacity-50' : ''}`}
-                  >
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSubNavContact(c);
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`User actions for ${nick}`}
-                      className="inline-flex shrink-0 rounded-full hover:ring-2 hover:ring-primary/50 transition-shadow cursor-pointer"
-                    >
-                      <ContactAvatar contact={c} nick={nick} />
-                    </span>
-                    <span className="truncate flex-1">{nick}</span>
-                    {ignored && (
-                      <EyeOff
-                        className="shrink-0 h-3.5 w-3.5 text-muted-foreground"
-                        aria-label="Ignored"
-                      />
-                    )}
-                    {count > 0 && (
-                      <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
-                        {count > 99 ? '99+' : count}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+              {sectionedContacts.regular.map((c) => renderContactRow(c))}
             </div>
+          )}
+
+          {sectionedContacts.customGroups.map((g) => {
+            const members = sectionedContacts.byGroup[g.id] ?? [];
+            return (
+              <Fragment key={g.id}>
+                <SidebarSectionHeader
+                  label={g.name}
+                  count={members.length}
+                  collapsed={!!sectionCollapsed[g.id]}
+                  onToggle={() =>
+                    setSectionCollapsed((prev) => ({ ...prev, [g.id]: !prev[g.id] }))
+                  }
+                  unread={sumUnread(members)}
+                />
+                {!sectionCollapsed[g.id] && (
+                  <div className="space-y-1 mb-2">
+                    {members.map((c) => renderContactRow(c))}
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+
+          {sectionedContacts.archived.length > 0 && (
+            <>
+              <SidebarSectionHeader
+                label="Archived"
+                count={sectionedContacts.archived.length}
+                collapsed={!!sectionCollapsed[ARCHIVED_GROUP_ID]}
+                onToggle={() =>
+                  setSectionCollapsed((prev) => ({
+                    ...prev,
+                    [ARCHIVED_GROUP_ID]: !prev[ARCHIVED_GROUP_ID],
+                  }))
+                }
+                unread={sumUnread(sectionedContacts.archived)}
+              />
+              {!sectionCollapsed[ARCHIVED_GROUP_ID] && (
+                <div className="space-y-1 mb-2">
+                  {sectionedContacts.archived.map((c) => renderContactRow(c, true))}
+                </div>
+              )}
+            </>
           )}
 
           <SidebarSectionHeader
@@ -1072,6 +1188,11 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             onToggle={() => setGroupsCollapsed((v) => !v)}
             actionLabel="Create group"
             onAction={() => setShowCreateGC(true)}
+            unread={
+              notifPrefs.gcMessages
+                ? gcs.reduce((acc, g) => acc + (gcUnread[g.id] ?? 0), 0)
+                : 0
+            }
           />
           {!groupsCollapsed && (
             <div className="space-y-1">
@@ -1429,6 +1550,7 @@ const SidebarSectionHeader = ({
   onToggle,
   actionLabel,
   onAction,
+  unread = 0,
 }: {
   label: string;
   count: number;
@@ -1436,6 +1558,7 @@ const SidebarSectionHeader = ({
   onToggle: () => void;
   actionLabel?: string;
   onAction?: () => void;
+  unread?: number;
 }) => (
   <div className="w-full px-2 py-1.5 mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
     <button
@@ -1446,7 +1569,14 @@ const SidebarSectionHeader = ({
       <span className="inline-flex items-center justify-center w-3">
         {collapsed ? '▸' : '▾'}
       </span>
-      <span className="flex-1">{label}</span>
+      <span className={`flex-1 ${unread > 0 ? 'text-foreground font-semibold' : ''}`}>
+        {label}
+      </span>
+      {unread > 0 && (
+        <span className="inline-flex items-center justify-center min-w-[1.1rem] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-semibold normal-case">
+          {unread > 99 ? '99+' : unread}
+        </span>
+      )}
       <span className="tabular-nums">{count}</span>
     </button>
     {onAction && (
@@ -2118,6 +2248,19 @@ function displayNick(c: BisonrelayContact): string {
 
 function nickOrUid(c: BisonrelayContact): string {
   return c.nick_alias || c.id?.nick || c.id?.identity || '';
+}
+
+// heardAge renders a compact age ("3h", "2d") for when the contact was last
+// heard from (last decrypted message); null when never heard.
+function heardAge(iso?: string): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!t || Number.isNaN(t) || t <= 0) return null;
+  const delta = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (delta < 60) return 'now';
+  if (delta < 3600) return `${Math.floor(delta / 60)}m`;
+  if (delta < 86400) return `${Math.floor(delta / 3600)}h`;
+  return `${Math.floor(delta / 86400)}d`;
 }
 
 function identityFromPayload(payload: any): string {
