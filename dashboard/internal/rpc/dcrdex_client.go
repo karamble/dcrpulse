@@ -102,11 +102,10 @@ func DcrdexWSClient() (*bisonw.Client, error) {
 		return nil, fmt.Errorf("dcrdex: websocket not configured")
 	}
 	c, err := bisonw.New(bisonw.Config{
-		Addr:       net.JoinHostPort(DcrdexCfg.Host, DcrdexCfg.WSPort),
-		User:       DcrdexCfg.User,
-		Pass:       DcrdexCfg.Pass,
-		CertPath:   DcrdexCfg.WSCertPath,
-		ServerName: DcrdexCfg.Host,
+		Addr:     net.JoinHostPort(DcrdexCfg.Host, DcrdexCfg.WSPort),
+		User:     DcrdexCfg.User,
+		Pass:     DcrdexCfg.Pass,
+		CertPath: DcrdexCfg.WSCertPath,
 	})
 	if err != nil {
 		return nil, err
@@ -128,9 +127,8 @@ func DcrdexWebClient() (*bisonw.WebClient, error) {
 		return nil, fmt.Errorf("dcrdex: webserver not configured")
 	}
 	c, err := bisonw.NewWebClient(bisonw.Config{
-		Addr:       net.JoinHostPort(DcrdexCfg.Host, DcrdexCfg.WSPort),
-		CertPath:   DcrdexCfg.WSCertPath,
-		ServerName: DcrdexCfg.Host,
+		Addr:     net.JoinHostPort(DcrdexCfg.Host, DcrdexCfg.WSPort),
+		CertPath: DcrdexCfg.WSCertPath,
 	})
 	if err != nil {
 		return nil, err

@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"sync/atomic"
 )
@@ -47,11 +46,6 @@ type Config struct {
 	// precedence and is read from disk.
 	Cert     []byte
 	CertPath string
-	// ServerName overrides the TLS server name used to verify the RPC
-	// certificate. If empty, the host portion of Addr is used. bisonw's
-	// auto-generated cert lists its os.Hostname (e.g. the docker service name)
-	// plus its interface IPs, so this normally matches Addr's host.
-	ServerName string
 }
 
 // Client is a bisonw RPC client. It is safe for concurrent use.
@@ -116,8 +110,9 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
-// tlsConfigFor builds a TLS config that trusts cfg's pinned PEM certificate
-// (from Cert or CertPath) and verifies the given (or Addr-derived) server name.
+// tlsConfigFor builds a TLS config that authenticates the bisonw RPC server by
+// pinning cfg's PEM certificate (from Cert or CertPath), ignoring the cert
+// hostname/SANs (see pinnedLeafVerify).
 func tlsConfigFor(cfg Config) (*tls.Config, error) {
 	pem := cfg.Cert
 	if cfg.CertPath != "" {
@@ -134,15 +129,48 @@ func tlsConfigFor(cfg Config) (*tls.Config, error) {
 	if !pool.AppendCertsFromPEM(pem) {
 		return nil, fmt.Errorf("bisonw: invalid TLS cert")
 	}
-	u, err := url.Parse("https://" + cfg.Addr)
-	if err != nil {
-		return nil, fmt.Errorf("bisonw: bad Addr %q: %w", cfg.Addr, err)
+	// bisonw ships a self-signed RPC cert whose SANs are its os.Hostname (the
+	// container hostname, not the docker service name we dial) plus
+	// localhost/interface IPs, so Go's default hostname verification fails.
+	// Pin the exact cert and skip the hostname check, matching how the dashboard
+	// authenticates dcrlnd and brclientd (see internal/rpc/tlspin.go).
+	return &tls.Config{
+		RootCAs:               pool,
+		InsecureSkipVerify:    true,
+		VerifyPeerCertificate: pinnedLeafVerify(pool),
+	}, nil
+}
+
+// pinnedLeafVerify returns a VerifyPeerCertificate callback that authenticates
+// the peer against the pinned pool without checking the certificate
+// hostname/SANs. The tls.Config sets InsecureSkipVerify, which only disables
+// Go's built-in chain+hostname check; this callback is what actually
+// authenticates the connection.
+func pinnedLeafVerify(pool *x509.CertPool) func([][]byte, [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		if len(rawCerts) == 0 {
+			return fmt.Errorf("bisonw: peer presented no certificate")
+		}
+		leaf, err := x509.ParseCertificate(rawCerts[0])
+		if err != nil {
+			return fmt.Errorf("bisonw: parse peer certificate: %w", err)
+		}
+		opts := x509.VerifyOptions{Roots: pool}
+		for _, der := range rawCerts[1:] {
+			ic, err := x509.ParseCertificate(der)
+			if err != nil {
+				return fmt.Errorf("bisonw: parse peer intermediate: %w", err)
+			}
+			if opts.Intermediates == nil {
+				opts.Intermediates = x509.NewCertPool()
+			}
+			opts.Intermediates.AddCert(ic)
+		}
+		if _, err := leaf.Verify(opts); err != nil {
+			return fmt.Errorf("bisonw: peer certificate not trusted by pinned pool: %w", err)
+		}
+		return nil
 	}
-	serverName := cfg.ServerName
-	if serverName == "" {
-		serverName = u.Hostname()
-	}
-	return &tls.Config{RootCAs: pool, ServerName: serverName}, nil
 }
 
 // WSDialInfo returns the parameters for dialing bisonw's /ws endpoint: the

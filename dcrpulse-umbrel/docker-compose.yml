@@ -105,6 +105,7 @@ services:
 
   dcrdex:
     image: ghcr.io/karamble/dcrpulse-dcrdex:2.0.0-rc2
+    hostname: dcrdex
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
