@@ -38,6 +38,14 @@ const (
 	DcrlndDataRoot    = "/app-data/dcrlnd"
 	BrclientdDataRoot = "/app-data/brclientd"
 	DcrdexDataRoot    = "/app-data/dcrdex"
+
+	// DcrdDataRoot is dcrd's appdata mount, shared read-write with the dashboard.
+	DcrdDataRoot = "/app-data/dcrd"
+
+	// TorDataDir is where the Tor sidecar's data volume is mounted read-only in
+	// dcrd and the dashboard so they can read the dcrd onion hostname and the
+	// control auth cookie. Nested under /app-data like the other service volumes.
+	TorDataDir = "/app-data/tor"
 )
 
 // GlobalCfgPath is the on-disk location of the cross-wallet config.
@@ -108,6 +116,13 @@ func SelectedWalletPath() string {
 	return filepath.Join(StackControlDir(), "selected.json")
 }
 
+// TorPointerPath is the shared Tor toggle pointer the dashboard writes. Every
+// service supervisor watches it and relaunches its daemon with or without the
+// proxy flags when the rev changes.
+func TorPointerPath() string {
+	return filepath.Join(StackControlDir(), "tor.json")
+}
+
 // Per-service state files. Each supervisor writes the wallet it currently has
 // running to a fixed (not per-wallet) path so the dashboard can poll it during a
 // switch. dcrwallet keeps its original control/state.json location.
@@ -115,6 +130,7 @@ func WalletStatePath() string    { return filepath.Join(WalletDataRoot, "control
 func DcrlndStatePath() string    { return filepath.Join(DcrlndDataRoot, "control-state.json") }
 func BrclientdStatePath() string { return filepath.Join(BrclientdDataRoot, "control-state.json") }
 func DcrdexStatePath() string    { return filepath.Join(DcrdexDataRoot, "control-state.json") }
+func DcrdStatePath() string      { return filepath.Join(DcrdDataRoot, "control-state.json") }
 
 // ResolveServiceDir returns a service's per-wallet data directory: the legacy
 // root for the default wallet, root/wallets/<name> for any other wallet.

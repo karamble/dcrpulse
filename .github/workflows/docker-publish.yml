@@ -46,6 +46,9 @@ jobs:
           - name: brclientd
             context: ./brclientd
             platforms: linux/amd64,linux/arm64
+          - name: tor
+            context: ./tor
+            platforms: linux/amd64,linux/arm64
     
     steps:
       - name: Checkout repository
@@ -98,4 +101,4 @@ jobs:
             ${{ matrix.component.name == 'dcrwallet' && 'DCRWALLET_VERSION=release-v2.1.5' || '' }}
             ${{ matrix.component.name == 'dcrlnd' && 'DCRLND_VERSION=master' || '' }}
             ${{ matrix.component.name == 'dcrdex' && 'BISONW_VERSION=v1.0.6' || '' }}
-            ${{ matrix.component.name == 'brclientd' && 'BRCLIENTD_BASE=0.2.0' || '' }}
+            ${{ matrix.component.name == 'brclientd' && 'BRCLIENTD_BASE=0.2.1' || '' }}

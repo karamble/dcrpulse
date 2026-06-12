@@ -20,6 +20,27 @@ WALLET_KEY="${WALLET_KEY:-${WALLET_CERT%.cert}.key}"
 
 CHILD_PID=""
 RUNNING_DIR="__none__"
+RUNNING_TOR_REV="__none__"
+
+# Tor is toggled at runtime via the shared pointer the dashboard writes; the
+# proxy endpoint comes from env. These flags route dcrlnd's outbound Lightning
+# peer traffic through Tor. The dcrwallet gRPC chain backend is a separate local
+# connection and stays direct. Parsed with sed (matches the rest of this file).
+TOR_POINTER="/app-data/control/tor.json"
+
+tor_field() {
+    [ -f "${TOR_POINTER}" ] || { echo "$2"; return; }
+    v=$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([A-Za-z0-9]*\).*/\1/p" "${TOR_POINTER}" | head -1)
+    [ -n "${v}" ] && echo "${v}" || echo "$2"
+}
+
+build_tor_args() {
+    TOR_ARGS=""
+    [ "$(tor_field enabled false)" = "true" ] || return
+    [ -n "${TOR_PROXY_IP}" ] && [ -n "${TOR_PROXY_PORT}" ] || return
+    TOR_ARGS="--tor.active --tor.socks=${TOR_PROXY_IP}:${TOR_PROXY_PORT}"
+    [ "$(tor_field isolation true)" = "true" ] && TOR_ARGS="${TOR_ARGS} --tor.streamisolation"
+}
 
 read_selected() {
     if [ ! -f "${SELECTED}" ]; then
@@ -55,8 +76,10 @@ stop_child() {
 
 write_state() {
     pid="${CHILD_PID:-0}"
+    tor_on=false
+    [ -n "${CHILD_PID}" ] && [ "$(tor_field enabled false)" = "true" ] && tor_on=true
     cat > "${STATE}.tmp" <<EOF
-{"running":"$1","appdata":"$2","pid":${pid:-0}}
+{"running":"$1","appdata":"$2","pid":${pid:-0},"tor":${tor_on},"torRev":"${RUNNING_TOR_REV}"}
 EOF
     mv "${STATE}.tmp" "${STATE}"
 }
@@ -67,6 +90,7 @@ launch() {
     mkdir -p "${dir}/logs" "${dir}/data"
     NETWORK_ARGS=""
     [ "${LN_TESTNET}" = "true" ] && NETWORK_ARGS="--testnet"
+    build_tor_args
     # shellcheck disable=SC2086
     dcrlnd \
         --nolisten \
@@ -87,7 +111,7 @@ launch() {
         --tlsextradomain="${DCRLND_TLS_EXTRA_DOMAIN:-dcrlnd}" \
         --wtclient.active \
         --wtclient.sweep-fee-rate=10000000 \
-        ${NETWORK_ARGS} &
+        ${NETWORK_ARGS} ${TOR_ARGS} &
     CHILD_PID=$!
 }
 
@@ -140,15 +164,17 @@ while true; do
         continue
     fi
 
-    if [ "${DIR}" != "${RUNNING_DIR}" ] || [ -z "${CHILD_PID}" ]; then
+    TOR_REV=$(tor_field rev 0)
+    if [ "${DIR}" != "${RUNNING_DIR}" ] || [ "${TOR_REV}" != "${RUNNING_TOR_REV}" ] || [ -z "${CHILD_PID}" ]; then
         if [ -n "${CHILD_PID}" ]; then
-            echo "Switching dcrlnd to wallet '${NAME}'"
+            echo "Restarting dcrlnd for wallet '${NAME}' (tor rev ${TOR_REV})"
             stop_child
         fi
         LN_ACCOUNT=$(cat "${ACCOUNT_FILE}")
         echo "Starting dcrlnd for wallet '${NAME}' (dir ${DIR}, account ${LN_ACCOUNT})"
         launch "${DIR}" "${LN_ACCOUNT}"
         RUNNING_DIR="${DIR}"
+        RUNNING_TOR_REV="${TOR_REV}"
     fi
 
     write_state "${NAME}" "${DIR}"

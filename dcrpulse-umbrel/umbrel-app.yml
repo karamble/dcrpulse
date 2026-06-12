@@ -3,7 +3,7 @@ id: dcrpulse
 name: Decred Pulse
 tagline: Full Decred node and wallet with Lightning, DCRDEX, Bison Relay, and a block explorer
 category: crypto
-version: "2.0.0-rc3"
+version: "2.0.0-rc4"
 port: 8735
 icon: ""
 description: |-
@@ -49,7 +49,7 @@ releaseNotes: |-
 
   Your existing node and wallet data are preserved and adopted automatically - no resync and no re-import. Your watch-only wallet becomes a full wallet.
 
-  New in this release: full wallet with multi-wallet management, staking, the privacy mixer, Lightning, DCRDEX, and Bison Relay. These features are idle until you set each one up, so your node and wallet keep working exactly as before until then.
+  New in this release: full wallet with multi-wallet management, staking, the privacy mixer, Lightning, DCRDEX, Bison Relay, and an optional Tor proxy that routes the whole stack through Tor. These features are idle until you set each one up, so your node and wallet keep working exactly as before until then.
 
   After updating, the wallet starts locked - unlock it in the dashboard to resume balances and transactions. Resource use increases with the new services.
 path: ""

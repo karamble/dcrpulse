@@ -8,23 +8,24 @@ services:
     image: alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
     user: "0:0"
     restart: "no"
-    command: ["sh", "-c", "mkdir -p /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex && chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex"]
+    command: ["sh", "-c", "mkdir -p /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor && chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor"]
     volumes:
       - ${APP_DATA_DIR}:/host
 
   dcrd:
-    image: ghcr.io/karamble/dcrpulse-dcrd:2.0.0-rc2
+    image: ghcr.io/karamble/dcrpulse-dcrd:latest
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 5m
     volumes:
       - ${APP_DATA_DIR}/data:/app-data
+      - ${APP_DATA_DIR}/tor:/app-data/tor:ro
     environment:
       DCRD_RPC_USER: ${APP_SEED}
       DCRD_RPC_PASS: ${APP_SEED}
       DCRD_EXTRA_ARGS: --txindex
-      TOR_PROXY_IP: ${TOR_PROXY_IP}
-      TOR_PROXY_PORT: ${TOR_PROXY_PORT}
+      TOR_PROXY_IP: tor
+      TOR_PROXY_PORT: 9050
     command: >
       --rpcuser=${APP_SEED}
       --rpcpass=${APP_SEED}
@@ -37,9 +38,12 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+    depends_on:
+      init:
+        condition: service_completed_successfully
 
   dcrwallet:
-    image: ghcr.io/karamble/dcrpulse-dcrwallet:2.0.0-rc2
+    image: ghcr.io/karamble/dcrpulse-dcrwallet:latest
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -52,8 +56,8 @@ services:
       DCRD_RPC_PASS: ${APP_SEED}
       DCRD_RPC_HOST: dcrd
       DCRWALLET_GAP_LIMIT: 400
-      TOR_PROXY_IP: ${TOR_PROXY_IP}
-      TOR_PROXY_PORT: ${TOR_PROXY_PORT}
+      TOR_PROXY_IP: tor
+      TOR_PROXY_PORT: 9050
     depends_on:
       dcrd:
         condition: service_healthy
@@ -65,7 +69,7 @@ services:
       start_period: 120s
 
   dcrlnd:
-    image: ghcr.io/karamble/dcrpulse-dcrlnd:2.0.0-rc2
+    image: ghcr.io/karamble/dcrpulse-dcrlnd:latest
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -76,6 +80,8 @@ services:
       DCRWALLET_HOST: dcrwallet
       DCRWALLET_GRPC_PORT: 9111
       LN_TESTNET: "false"
+      TOR_PROXY_IP: tor
+      TOR_PROXY_PORT: 9050
     depends_on:
       init:
         condition: service_completed_successfully
@@ -89,10 +95,13 @@ services:
       start_period: 300s
 
   brclientd:
-    image: ghcr.io/karamble/dcrpulse-brclientd:2.0.0-rc2
+    image: ghcr.io/karamble/dcrpulse-brclientd:latest
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
+    environment:
+      TOR_PROXY_IP: tor
+      TOR_PROXY_PORT: 9050
     volumes:
       - ${APP_DATA_DIR}/data:/app-data:ro
       - ${APP_DATA_DIR}/dcrlnd:/app-data/dcrlnd:ro
@@ -104,7 +113,7 @@ services:
         condition: service_started
 
   dcrdex:
-    image: ghcr.io/karamble/dcrpulse-dcrdex:2.0.0-rc2
+    image: ghcr.io/karamble/dcrpulse-dcrdex:latest
     hostname: dcrdex
     user: "1000:1000"
     restart: on-failure
@@ -112,6 +121,8 @@ services:
     environment:
       DCRDEX_RPC_USER: ${APP_SEED}
       DCRDEX_RPC_PASS: ${APP_SEED}
+      TOR_PROXY_IP: tor
+      TOR_PROXY_PORT: 9050
     volumes:
       - ${APP_DATA_DIR}/dcrdex:/dex/.dexc
       - ${APP_DATA_DIR}/data:/app-data:ro
@@ -120,7 +131,7 @@ services:
         condition: service_completed_successfully
 
   dashboard:
-    image: ghcr.io/karamble/dcrpulse-dashboard:2.0.0-rc2
+    image: ghcr.io/karamble/dcrpulse-dashboard:latest
     user: "1000:1000"
     restart: on-failure
     volumes:
@@ -129,8 +140,12 @@ services:
       - ${APP_DATA_DIR}/brclientd:/app-data/brclientd:ro
       - ${APP_DATA_DIR}/dcrdex:/app-data/dcrdex:ro
       - ${APP_DATA_DIR}/dashboard:/dashboard-data
+      - ${APP_DATA_DIR}/tor:/app-data/tor:ro
     environment:
       PORT: 8735
+      TOR_PROXY_IP: tor
+      TOR_PROXY_PORT: 9050
+      TOR_CONTROL_PORT: 9051
       TRUSTED_PROXY: "true"
       DCRD_RPC_HOST: dcrd
       DCRD_RPC_PORT: 9109
@@ -165,3 +180,17 @@ services:
         condition: service_healthy
       dcrwallet:
         condition: service_healthy
+
+  tor:
+    image: ghcr.io/karamble/dcrpulse-tor:latest
+    user: "1000:1000"
+    restart: on-failure
+    environment:
+      HOME: /tmp
+    volumes:
+      - ${APP_DATA_DIR}/tor:/data
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      dcrd:
+        condition: service_started

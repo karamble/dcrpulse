@@ -21,6 +21,26 @@ RPC_PASS="${DCRDEX_RPC_PASS:-dcrdexpass}"
 
 CHILD_PID=""
 RUNNING_DIR="__none__"
+RUNNING_TOR_REV="__none__"
+
+# Tor is toggled at runtime via the shared pointer the dashboard writes; the
+# proxy endpoint comes from env. bisonw routes its DEX server connections
+# through the SOCKS proxy. Parsed with sed (matches the rest of this file).
+TOR_POINTER="/app-data/control/tor.json"
+
+tor_field() {
+    [ -f "${TOR_POINTER}" ] || { echo "$2"; return; }
+    v=$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([A-Za-z0-9]*\).*/\1/p" "${TOR_POINTER}" | head -1)
+    [ -n "${v}" ] && echo "${v}" || echo "$2"
+}
+
+build_tor_args() {
+    TOR_ARGS=""
+    [ "$(tor_field enabled false)" = "true" ] || return
+    [ -n "${TOR_PROXY_IP}" ] && [ -n "${TOR_PROXY_PORT}" ] || return
+    TOR_ARGS="--torproxy=${TOR_PROXY_IP}:${TOR_PROXY_PORT}"
+    [ "$(tor_field isolation true)" = "true" ] && TOR_ARGS="${TOR_ARGS} --torisolation"
+}
 
 read_selected() {
     if [ ! -f "${SELECTED}" ]; then
@@ -56,8 +76,10 @@ stop_child() {
 
 write_state() {
     pid="${CHILD_PID:-0}"
+    tor_on=false
+    [ -n "${CHILD_PID}" ] && [ "$(tor_field enabled false)" = "true" ] && tor_on=true
     cat > "${STATE}.tmp" <<EOF
-{"running":"$1","appdata":"$2","pid":${pid:-0}}
+{"running":"$1","appdata":"$2","pid":${pid:-0},"tor":${tor_on},"torRev":"${RUNNING_TOR_REV}"}
 EOF
     mv "${STATE}.tmp" "${STATE}"
 }
@@ -65,6 +87,8 @@ EOF
 launch() {
     appdata="$1"
     mkdir -p "${appdata}"
+    build_tor_args
+    # shellcheck disable=SC2086
     ./bisonw \
         --appdata="${appdata}" \
         --rpc \
@@ -74,7 +98,7 @@ launch() {
         --rpccert="${appdata}/rpc.cert" \
         --rpckey="${appdata}/rpc.key" \
         --webaddr=0.0.0.0:5758 \
-        --webtls &
+        --webtls ${TOR_ARGS} &
     CHILD_PID=$!
 }
 
@@ -103,14 +127,16 @@ while true; do
         RUNNING_DIR="__none__"
     fi
 
-    if [ "${APPDATA}" != "${RUNNING_DIR}" ] || [ -z "${CHILD_PID}" ]; then
+    TOR_REV=$(tor_field rev 0)
+    if [ "${APPDATA}" != "${RUNNING_DIR}" ] || [ "${TOR_REV}" != "${RUNNING_TOR_REV}" ] || [ -z "${CHILD_PID}" ]; then
         if [ -n "${CHILD_PID}" ]; then
-            echo "Switching bisonw to wallet '${NAME}'"
+            echo "Restarting bisonw for wallet '${NAME}' (tor rev ${TOR_REV})"
             stop_child
         fi
         echo "Starting bisonw for wallet '${NAME}' (appdata ${APPDATA})"
         launch "${APPDATA}"
         RUNNING_DIR="${APPDATA}"
+        RUNNING_TOR_REV="${TOR_REV}"
     fi
 
     write_state "${NAME}" "${APPDATA}"

@@ -7,6 +7,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 const tabs = [
   { path: 'wallet', label: 'Wallet' },
   { path: 'privacy', label: 'Privacy & Security' },
+  { path: 'tor', label: 'Tor' },
   { path: 'logs', label: 'Logs' },
   { path: 'themes', label: 'Themes' },
   { path: 'security', label: 'Security' },
