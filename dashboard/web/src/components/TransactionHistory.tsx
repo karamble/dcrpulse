@@ -460,7 +460,7 @@ export const TransactionHistory = () => {
               </div>
               
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
                   <span className="font-medium">{getCategoryLabel(tx.category, tx.txType, tx.isMixed || false)}</span>
                   {tx.account && (
                     <span className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">
@@ -478,7 +478,7 @@ export const TransactionHistory = () => {
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
                   <code className="font-mono text-xs">{truncateTxid(tx.txid)}</code>
                   <span>•</span>
                   <span>{formatDate(tx)}</span>
@@ -492,7 +492,7 @@ export const TransactionHistory = () => {
               </div>
             </div>
 
-            <div className="text-right ml-4">
+            <div className="text-right ml-4 flex-shrink-0">
               <div className={`text-lg font-semibold ${getCategoryColor(tx.category, tx.txType)}`}>
                 {formatAmount(tx.amount)}
               </div>
