@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
-import { Shield, AlertCircle, CheckCircle2, RefreshCw, Loader2 } from 'lucide-react';
+import { Shield, AlertCircle, CheckCircle2, RefreshCw, Loader2, Info } from 'lucide-react';
 import {
   TorSettings,
   TorStatus,
@@ -223,6 +223,14 @@ export const TorSection = () => {
             }}
             className="w-20 px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-right disabled:opacity-50"
           />
+        </div>
+        <div className="flex items-start gap-2 text-sm text-muted-foreground">
+          <Info className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            Changing any setting here relaunches every daemon. The wallet, Lightning, and the
+            DEX will lock and need their passphrases entered again, and any running DEX bots
+            stop.
+          </span>
         </div>
       </div>
 
