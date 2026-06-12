@@ -103,7 +103,7 @@ export const SearchBar = () => {
             setError('');
           }}
           placeholder={getPlaceholder()}
-          className="w-full px-4 py-3 pl-12 pr-4 text-lg rounded-lg bg-background border border-border focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+          className="w-full px-4 py-3 pl-12 pr-28 text-lg rounded-lg bg-background border border-border focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
           disabled={loading}
         />
         <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
