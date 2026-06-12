@@ -65,9 +65,9 @@ type Cache struct {
 	data map[string]float64
 }
 
-// New returns a Cache with a 60s TTL.
-func New() *Cache {
-	return &Cache{http: &http.Client{Timeout: 15 * time.Second}, ttl: 60 * time.Second}
+// New returns a Cache with a 60s TTL. A nil rt uses the default transport.
+func New(rt http.RoundTripper) *Cache {
+	return &Cache{http: &http.Client{Timeout: 15 * time.Second, Transport: rt}, ttl: 60 * time.Second}
 }
 
 // USD returns a map of asset symbol to USD price, cached for the TTL. It uses

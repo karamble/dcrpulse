@@ -166,7 +166,7 @@ func fetchVSPRegistry(ctx context.Context) ([]types.VSPInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("vsp registry request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := externalHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vsp registry: %w", err)
 	}
@@ -237,10 +237,23 @@ var vspHTTPClient = &http.Client{
 	},
 	Transport: &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
+		// The dial path below depends on the live Tor toggle; without
+		// keep-alives no pooled connection can outlive a flip.
+		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
+			}
+			// Over Tor the hostname goes to the proxy unresolved: a local
+			// lookup would leak DNS, and the connection originates at the
+			// exit, away from any address the rebind guard protects. A
+			// literal non-public IP is still refused.
+			if ReadTorSettings().Enabled {
+				if ip := net.ParseIP(host); ip != nil && disallowedProbeIP(ip) {
+					return nil, fmt.Errorf("refusing to connect to non-public address %s", ip)
+				}
+				return dialTorSOCKS(ctx, network, addr)
 			}
 			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 			if err != nil {

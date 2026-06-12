@@ -128,7 +128,7 @@ func fetchBrseeder(ctx context.Context) ([]types.PeerPreset, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := externalHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -2312,7 +2312,7 @@ func GetDcrdexNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // dexRateCache caches Kraken USD rates across requests.
-var dexRateCache = exchangerate.New()
+var dexRateCache = exchangerate.New(services.ExternalTransport())
 
 // GetDcrdexRatesHandler returns a map of asset symbol to USD price for the DEX
 // fiat display. Rates come from Kraken (direct USD pair, or BTC pair converted

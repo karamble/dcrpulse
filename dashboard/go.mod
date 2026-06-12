@@ -10,6 +10,7 @@ require (
 	github.com/decred/dcrd/rpcclient/v8 v8.1.0
 	github.com/decred/dcrlnd v0.8.2-0.20260504180059-d11b48570880
 	github.com/decred/dcrlnlpd v0.0.0-20240916120255-786dc5d52075
+	github.com/decred/go-socks v1.1.0
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.1
 	github.com/microcosm-cc/bluemonday v1.0.27
@@ -66,7 +67,6 @@ require (
 	github.com/decred/dcrd/txscript/v4 v4.1.2 // indirect
 	github.com/decred/dcrd/wire v1.7.2 // indirect
 	github.com/decred/dcrtest/dcrdtest v1.0.1-0.20251125155744-84fc45da4d58 // indirect
-	github.com/decred/go-socks v1.1.0 // indirect
 	github.com/decred/lightning-onion/v4 v4.0.2-0.20251215192853-9ddf49d1f20d // indirect
 	github.com/decred/slog v1.2.0 // indirect
 	github.com/decred/vspd/client/v4 v4.0.2 // indirect

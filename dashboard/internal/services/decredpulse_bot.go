@@ -101,7 +101,7 @@ func fetchBotChallenge(ctx context.Context, base string) (*botChallenge, error) 
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := externalHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func requestBotInvite(ctx context.Context, base, pubkeyHex, nonce, solution stri
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := externalHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}

@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -124,6 +125,16 @@ func TorDaemonStates() []types.TorDaemonState {
 		}
 		out = append(out, ds)
 	}
+	// The dashboard's own external calls (rate oracle, Politeia, VSP, BR
+	// seeder, invite bot) switch per request, so its entry tracks the
+	// toggle directly instead of a supervisor state file.
+	s := ReadTorSettings()
+	out = append(out, types.TorDaemonState{
+		Name:    "dashboard",
+		Running: true,
+		Tor:     s.Enabled,
+		TorRev:  strconv.Itoa(s.Rev),
+	})
 	return out
 }
 

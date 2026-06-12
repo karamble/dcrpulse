@@ -69,6 +69,7 @@ const daemonLabels: Record<string, string> = {
   dcrlnd: 'Lightning (dcrlnd)',
   dcrdex: 'Dex (bisonw)',
   brclientd: 'Bison Relay (brclientd)',
+  dashboard: 'Dashboard',
 };
 
 export const TorSection = () => {

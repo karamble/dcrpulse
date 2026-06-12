@@ -85,7 +85,7 @@ var (
 	piCachedAt      time.Time
 	piCachedDetails = map[string]piDetailCacheEntry{}
 	piPreparedVotes = map[string]piPreparedVote{}
-	piHTTPClient    = &http.Client{Timeout: politeiaTimeout}
+	piHTTPClient    = &http.Client{Timeout: politeiaTimeout, Transport: ExternalTransport()}
 )
 
 type piDetailCacheEntry struct {
