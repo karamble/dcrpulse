@@ -62,7 +62,7 @@ import {
 const healthMeta: Record<RatchetHealth, { label: string; cls: string }> = {
   green: { label: 'Active', cls: 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' },
   amber: { label: 'Idle', cls: 'border-amber-500/40 text-amber-400 bg-amber-500/10' },
-  red: { label: 'Broken', cls: 'border-rose-500/40 text-rose-400 bg-rose-500/10' },
+  red: { label: 'Awaiting peer', cls: 'border-rose-500/40 text-rose-400 bg-rose-500/10' },
   idle: { label: 'Offline', cls: 'border-border text-muted-foreground bg-muted/10' },
 };
 

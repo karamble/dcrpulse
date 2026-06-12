@@ -1038,7 +1038,7 @@ const ContactsView = () => {
         />
         <HeroCard
           icon={XCircle}
-          label="Broken"
+          label="Awaiting peer"
           value={String(sorted.filter((c) => ratchetHealth(c) === 'red').length)}
           tone="rose"
         />
@@ -1060,7 +1060,7 @@ const ContactsView = () => {
               const label = {
                 green: 'Active',
                 amber: 'Idle',
-                red: 'Broken',
+                red: 'Awaiting peer',
                 idle: 'Offline',
               }[health];
               return (
@@ -1078,21 +1078,32 @@ const ContactsView = () => {
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-0.5">
                       KX since {relativeTime(c.first_created)}
-                      {c.ratchet?.last_dec_time && (
-                        <>
-                          <span className="mx-1.5 opacity-50">·</span>
-                          Last activity {relativeTime(c.ratchet.last_dec_time)}
-                        </>
-                      )}
                     </div>
                   </div>
-                  <span className="text-[10px] text-muted-foreground font-mono tabular-nums">
-                    {c.ratchet?.nb_saved_keys ?? 0} keys
+                  <span className="text-[10px] text-muted-foreground font-mono tabular-nums text-right whitespace-nowrap">
+                    {c.ratchet && isMeaningfulDate(c.ratchet.last_enc_time) && (
+                      <span className="block">sent {relativeTime(c.ratchet.last_enc_time)}</span>
+                    )}
+                    {c.ratchet && isMeaningfulDate(c.ratchet.last_dec_time) && (
+                      <span className="block">heard {relativeTime(c.ratchet.last_dec_time)}</span>
+                    )}
+                    {(c.ratchet?.nb_saved_keys ?? 0) > 0 && (
+                      <span className="block text-amber-400">
+                        {c.ratchet?.nb_saved_keys} saved keys
+                      </span>
+                    )}
                   </span>
-                  <span
-                    className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${tone}`}
-                  >
-                    {label}
+                  <span className="flex items-center gap-1.5">
+                    {c.ignored && (
+                      <span className="inline-flex items-center text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border bg-muted/30 text-muted-foreground border-border/50">
+                        Ignored
+                      </span>
+                    )}
+                    <span
+                      className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${tone}`}
+                    >
+                      {label}
+                    </span>
                   </span>
                 </button>
               );
