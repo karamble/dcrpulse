@@ -4,6 +4,14 @@ services:
       APP_HOST: dcrpulse_dashboard_1
       APP_PORT: 8735
 
+  init:
+    image: alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
+    user: "0:0"
+    restart: "no"
+    command: ["sh", "-c", "mkdir -p /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex && chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex"]
+    volumes:
+      - ${APP_DATA_DIR}:/host
+
   dcrd:
     image: ghcr.io/karamble/dcrpulse-dcrd:2.0.0-rc2
     user: "1000:1000"
@@ -69,6 +77,8 @@ services:
       DCRWALLET_GRPC_PORT: 9111
       LN_TESTNET: "false"
     depends_on:
+      init:
+        condition: service_completed_successfully
       dcrwallet:
         condition: service_healthy
     healthcheck:
@@ -88,6 +98,8 @@ services:
       - ${APP_DATA_DIR}/dcrlnd:/app-data/dcrlnd:ro
       - ${APP_DATA_DIR}/brclientd:/app-data/brclientd
     depends_on:
+      init:
+        condition: service_completed_successfully
       dcrlnd:
         condition: service_started
 
@@ -102,6 +114,9 @@ services:
     volumes:
       - ${APP_DATA_DIR}/dcrdex:/dex/.dexc
       - ${APP_DATA_DIR}/data:/app-data:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
 
   dashboard:
     image: ghcr.io/karamble/dcrpulse-dashboard:2.0.0-rc2
@@ -143,6 +158,8 @@ services:
       DCRDEX_WS_PORT: 5758
       DCRDEX_WS_CERT: /app-data/dcrdex/web.cert
     depends_on:
+      init:
+        condition: service_completed_successfully
       dcrd:
         condition: service_healthy
       dcrwallet:

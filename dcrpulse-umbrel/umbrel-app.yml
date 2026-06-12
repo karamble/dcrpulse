@@ -3,7 +3,7 @@ id: dcrpulse
 name: Decred Pulse
 tagline: Full Decred node and wallet with Lightning, DCRDEX, Bison Relay, and a block explorer
 category: crypto
-version: "2.0.0-rc2"
+version: "2.0.0-rc3"
 port: 8735
 icon: ""
 description: |-
