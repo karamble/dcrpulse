@@ -55,6 +55,7 @@ import { BisonrelayPage } from './components/bisonrelay/BisonrelayPage';
 import { BisonrelayLiveProvider } from './components/bisonrelay/BisonrelayLiveProvider';
 import { AuthGate } from './components/auth/AuthGate';
 import { SecuritySection } from './components/settings/SecuritySection';
+import { TorSection } from './components/settings/TorSection';
 import { getDashboardData, getWalletStatus } from './services/api';
 import { getLightningInfo } from './services/lightningApi';
 import { getBisonrelayVersion } from './services/bisonrelayApi';
@@ -168,6 +169,7 @@ function AppContent() {
               <Route path="about" element={<AboutSection />} />
               <Route path="themes" element={<ThemesSection />} />
               <Route path="security" element={<SecuritySection />} />
+              <Route path="tor" element={<TorSection />} />
             </Route>
             <Route path="transactions" element={<OnChainTransactions />}>
               <Route index element={<Navigate to="send" replace />} />
