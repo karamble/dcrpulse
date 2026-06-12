@@ -40,12 +40,28 @@ echo "  RPC: 0.0.0.0:9110"
 echo "  gRPC: 0.0.0.0:9111"
 echo "  dcrd: ${DCRD_RPC_HOST:-dcrd}:9109"
 
-# Check for Tor proxy configuration
-TOR_ARGS=""
-if [ -n "$TOR_PROXY_IP" ] && [ -n "$TOR_PROXY_PORT" ]; then
-    TOR_ARGS="--proxy=${TOR_PROXY_IP}:${TOR_PROXY_PORT} --torisolation --nodcrdproxy"
-    echo "✓ Using Tor proxy at ${TOR_PROXY_IP}:${TOR_PROXY_PORT} with stream isolation (dcrd connections excluded)"
-fi
+# Tor is toggled at runtime via the shared pointer the dashboard writes: the
+# proxy endpoint comes from env, the on/off decision from the pointer (absent
+# pointer means disabled). dcrd stays on a direct connection (--nodcrdproxy);
+# only the wallet's own outbound traffic is proxied. Parsed with sed so a false
+# boolean reads correctly (jq's // would coalesce a false value to the default).
+TOR_POINTER="/app-data/control/tor.json"
+
+tor_field() {
+    [ -f "${TOR_POINTER}" ] || { echo "$2"; return; }
+    v=$(sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([A-Za-z0-9]*\).*/\1/p" "${TOR_POINTER}" | head -1)
+    [ -n "${v}" ] && echo "${v}" || echo "$2"
+}
+
+build_tor_args() {
+    TOR_ARGS=""
+    [ "$(tor_field enabled false)" = "true" ] || return
+    [ -n "${TOR_PROXY_IP}" ] && [ -n "${TOR_PROXY_PORT}" ] || return
+    TOR_ARGS="--proxy=${TOR_PROXY_IP}:${TOR_PROXY_PORT} --nodcrdproxy"
+    if [ "$(tor_field isolation true)" = "true" ]; then
+        TOR_ARGS="${TOR_ARGS} --torisolation --circuitlimit=$(tor_field circuitLimit 32)"
+    fi
+}
 
 echo ""
 echo "Wallet creation available via web interface"
@@ -73,10 +89,12 @@ mkdir -p "${CONTROL_DIR}"
 CHILD_PID=""
 RUNNING_NAME=""
 RUNNING_APPDATA=""
+RUNNING_TOR_REV="__none__"
 
 start_wallet() {
     appdata="$1"
     mkdir -p "${appdata}"
+    build_tor_args
     # shellcheck disable=SC2086
     dcrwallet \
         --appdata="${appdata}" \
@@ -116,8 +134,10 @@ stop_wallet() {
 
 write_state() {
     pid="${CHILD_PID:-0}"
+    tor_on=false
+    [ -n "${CHILD_PID}" ] && [ "$(tor_field enabled false)" = "true" ] && tor_on=true
     cat > "${STATE}.tmp" <<EOF
-{"running":"${RUNNING_NAME}","appdata":"${RUNNING_APPDATA}","pid":${pid:-0},"epoch":${1:-0}}
+{"running":"${RUNNING_NAME}","appdata":"${RUNNING_APPDATA}","pid":${pid:-0},"epoch":${1:-0},"tor":${tor_on},"torRev":"${RUNNING_TOR_REV}"}
 EOF
     mv "${STATE}.tmp" "${STATE}"
 }
@@ -159,15 +179,17 @@ while true; do
         RUNNING_APPDATA=""
     fi
 
-    if [ "${DESIRED_APPDATA}" != "${RUNNING_APPDATA}" ] || [ -z "${CHILD_PID}" ]; then
+    TOR_REV=$(tor_field rev 0)
+    if [ "${DESIRED_APPDATA}" != "${RUNNING_APPDATA}" ] || [ "${TOR_REV}" != "${RUNNING_TOR_REV}" ] || [ -z "${CHILD_PID}" ]; then
         if [ -n "${CHILD_PID}" ]; then
-            echo "Switching wallet: '${RUNNING_NAME}' -> '${DESIRED_NAME}'"
+            echo "Restarting dcrwallet ('${RUNNING_NAME}' -> '${DESIRED_NAME}', tor rev ${TOR_REV})"
             stop_wallet
         fi
         echo "Starting dcrwallet for wallet '${DESIRED_NAME}' (appdata ${DESIRED_APPDATA})"
         start_wallet "${DESIRED_APPDATA}"
         RUNNING_NAME="${DESIRED_NAME}"
         RUNNING_APPDATA="${DESIRED_APPDATA}"
+        RUNNING_TOR_REV="${TOR_REV}"
     fi
 
     write_state "${EPOCH}"

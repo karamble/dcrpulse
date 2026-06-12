@@ -1,0 +1,12 @@
+# Copyright (c) 2015-2026 The Decred developers
+# Use of this source code is governed by an ISC
+# license that can be found in the LICENSE file.
+
+SocksPort 0.0.0.0:9050
+ControlPort 0.0.0.0:9051
+CookieAuthentication 1
+CookieAuthFile /data/control_auth_cookie
+CookieAuthFileGroupReadable 1
+DataDirectory /data
+HiddenServiceDir /data/dcrd-hs
+HiddenServicePort 9108 dcrd:9108

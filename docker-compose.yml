@@ -11,8 +11,11 @@ services:
       - "127.0.0.1:9109:9109"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data
+      - ${TOR_DATA_DIR:-tor-data}:/tor-data:ro
     environment:
       - DCRD_EXTRA_ARGS=${DCRD_EXTRA_ARGS:---txindex}
+      - TOR_PROXY_IP=tor
+      - TOR_PROXY_PORT=9050
     command: >
       --rpcuser=${DCRD_RPC_USER:-decred}
       --rpcpass=${DCRD_RPC_PASS:-decredpass}
@@ -55,6 +58,8 @@ services:
       - DCRD_RPC_PASS=${DCRD_RPC_PASS:-decredpass}
       - DCRD_RPC_HOST=dcrd
       - DCRWALLET_GAP_LIMIT=${DCRWALLET_GAP_LIMIT:-400}
+      - TOR_PROXY_IP=tor
+      - TOR_PROXY_PORT=9050
     depends_on:
       dcrd:
         condition: service_healthy
@@ -89,6 +94,8 @@ services:
       - DCRWALLET_HOST=dcrwallet
       - DCRWALLET_GRPC_PORT=9111
       - LN_TESTNET=${LN_TESTNET:-false}
+      - TOR_PROXY_IP=tor
+      - TOR_PROXY_PORT=9050
     depends_on:
       dcrwallet:
         condition: service_healthy
@@ -111,6 +118,9 @@ services:
     ports:
       - "127.0.0.1:7677:7677"
     entrypoint: ["/bin/sh", "/supervisor.sh"]
+    environment:
+      - TOR_PROXY_IP=tor
+      - TOR_PROXY_PORT=9050
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
       - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd:ro
@@ -142,6 +152,8 @@ services:
     environment:
       - DCRDEX_RPC_USER=${DCRDEX_RPC_USER:-dcrdex}
       - DCRDEX_RPC_PASS=${DCRDEX_RPC_PASS:-dcrdexpass}
+      - TOR_PROXY_IP=tor
+      - TOR_PROXY_PORT=9050
     volumes:
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/dex/.dexc
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
@@ -169,8 +181,12 @@ services:
       - ${BRCLIENTD_DATA_DIR:-brclientd-data}:/app-data/brclientd:ro
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/app-data/dcrdex:ro
       - ${DASHBOARD_DATA_DIR:-dashboard-data}:/dashboard-data
+      - ${TOR_DATA_DIR:-tor-data}:/tor-data:ro
     environment:
       - PORT=8080
+      - TOR_PROXY_IP=tor
+      - TOR_PROXY_PORT=9050
+      - TOR_CONTROL_PORT=9051
       - DCRD_RPC_HOST=dcrd
       - DCRD_RPC_PORT=9109
       - DCRD_RPC_USER=${DCRD_RPC_USER:-decred}
@@ -213,6 +229,23 @@ services:
         reservations:
           memory: 256M
 
+  tor:
+    image: ghcr.io/karamble/dcrpulse-tor:${TOR_IMAGE_TAG:-latest}
+    build:
+      context: ./tor
+    container_name: dcrpulse-tor
+    user: "1000:1000"
+    environment:
+      - HOME=/tmp
+    volumes:
+      - ${TOR_DATA_DIR:-tor-data}:/data
+    restart: unless-stopped
+    depends_on:
+      dcrd:
+        condition: service_started
+    networks:
+      - decred-network
+
 networks:
   decred-network:
     driver: bridge
@@ -232,4 +265,7 @@ volumes:
     driver: local
   dcrdex-data:
     name: ${DCRDEX_DATA_DIR:-dcrpulse_dcrdex-data}
+    driver: local
+  tor-data:
+    name: ${TOR_DATA_DIR:-dcrpulse_tor-data}
     driver: local
