@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { fmtAge, fmtAmt, fmtPrice } from './dexFormat';
 import type { DexMarket } from '../../services/dcrdexApi';
@@ -286,7 +287,7 @@ export const DexOrderBook = ({ market, book, mineTokens, onPick }: Props) => {
                 <span className="text-right text-muted-foreground">{fmtAmt(t.qty, 2)}</span>
                 <span
                   className="text-right text-muted-foreground/70"
-                  title={new Date(t.stamp).toLocaleString()}
+                  title={toYMDTime(new Date(t.stamp))}
                 >
                   {fmtAge(t.stamp)}
                 </span>

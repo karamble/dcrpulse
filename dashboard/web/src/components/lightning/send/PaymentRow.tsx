@@ -1,4 +1,5 @@
 import { ArrowUpRight, CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { toYMDTime } from '../../../utils/date';
 import type { LightningPayment } from '../../../services/lightningApi';
 import { StatusPill, StatusTone } from '../StatusPill';
 
@@ -9,9 +10,7 @@ const truncHash = (s: string) => (s.length <= 18 ? s : `${s.slice(0, 10)}…${s.
 const fmtDate = (sec: number) => {
   if (!sec) return '-';
   const d = new Date(sec * 1000);
-  const date = d.toLocaleDateString();
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return `${date} ${time}`;
+  return toYMDTime(d);
 };
 
 const paymentPill = (status: LightningPayment['status']): { label: string; tone: StatusTone; icon: JSX.Element } => {

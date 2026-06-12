@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { Bell } from 'lucide-react';
 import { getDexNotifications, type DexNote } from '../../services/dcrdexApi';
 import { loadNotifPrefs, shouldNotify } from './dexNotifPrefs';
@@ -165,7 +166,7 @@ export const DexNotifications = () => {
                   </div>
                   {n.details && <p className="text-[11px] text-muted-foreground mt-0.5 break-words">{n.details}</p>}
                   <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                    {n.stamp ? new Date(n.stamp).toLocaleString() : ''}
+                    {n.stamp ? toYMDTime(new Date(n.stamp)) : ''}
                   </p>
                 </div>
               ))

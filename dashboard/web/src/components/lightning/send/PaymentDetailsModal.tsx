@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toYMDTime } from '../../../utils/date';
 import { CheckCircle2, Copy, X } from 'lucide-react';
 import type { LightningPayment } from '../../../services/lightningApi';
 
@@ -8,7 +9,7 @@ const trunc = (s: string, head = 12, tail = 8) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
 const fmtDate = (sec: number) => {
   if (!sec) return '-';
-  return new Date(sec * 1000).toLocaleString();
+  return toYMDTime(new Date(sec * 1000));
 };
 
 interface Props {

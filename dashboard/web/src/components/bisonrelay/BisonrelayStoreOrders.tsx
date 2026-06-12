@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import {
   addBisonrelayStoreOrderComment,
@@ -149,7 +150,7 @@ export const BisonrelayStoreOrders = () => {
                       </span>
                     </div>
                     <div className="text-[11px] text-muted-foreground font-mono truncate">
-                      {o.user.slice(0, 12)}… · {o.pay_type} · {new Date(o.placed_ts).toLocaleString()}
+                      {o.user.slice(0, 12)}… · {o.pay_type} · {toYMDTime(new Date(o.placed_ts))}
                     </div>
                   </div>
                   <select
@@ -196,7 +197,7 @@ export const BisonrelayStoreOrders = () => {
                             <span className={c.fromAdmin ? 'text-primary' : 'text-foreground/80'}>
                               {c.fromAdmin ? 'You' : 'Customer'}
                             </span>{' '}
-                            <span className="opacity-60">{new Date(c.ts).toLocaleString()}</span>: {c.comment}
+                            <span className="opacity-60">{toYMDTime(new Date(c.ts))}</span>: {c.comment}
                           </div>
                         ))
                       )}

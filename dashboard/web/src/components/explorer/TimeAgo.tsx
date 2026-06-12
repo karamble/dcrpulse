@@ -2,6 +2,8 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+import { toYMDTime } from '../../utils/date';
+
 interface TimeAgoProps {
   timestamp: string;
   showFull?: boolean;
@@ -20,15 +22,7 @@ export const TimeAgo = ({ timestamp, showFull = false }: TimeAgoProps) => {
 
   const formatFull = (ts: string) => {
     const date = new Date(ts);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      timeZoneName: 'short'
-    });
+    return toYMDTime(date);
   };
 
   if (showFull) {

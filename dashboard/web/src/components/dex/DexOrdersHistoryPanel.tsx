@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toYMD, toYMDTime } from '../../utils/date';
 import { AlertCircle, ChevronRight } from 'lucide-react';
 import {
   getDexConfig,
@@ -220,8 +221,8 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
                     </td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums text-xs text-muted-foreground">{pct}%</td>
                     <td className="px-2 py-2 text-xs text-muted-foreground">{orderStatusString(o)}</td>
-                    <td className="px-2 py-2 text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap" title={ts ? new Date(ts).toLocaleString() : ''}>
-                      {ts ? new Date(ts).toLocaleDateString() : '-'}
+                    <td className="px-2 py-2 text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap" title={ts ? toYMDTime(new Date(ts)) : ''}>
+                      {ts ? toYMD(new Date(ts)) : '-'}
                     </td>
                     <td className="px-2 py-2 text-right">
                       <ChevronRight className="h-4 w-4 text-muted-foreground inline-block" />

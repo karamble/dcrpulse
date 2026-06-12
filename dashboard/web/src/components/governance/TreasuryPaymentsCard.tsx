@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useState, useEffect } from 'react';
+import { toYMD } from '../../utils/date';
 import { 
   CheckCircle2,
   Coins,
@@ -149,7 +150,7 @@ export const TreasuryPaymentsCard = () => {
     }
 
     // Show date
-    return date.toLocaleDateString();
+    return toYMD(date);
   };
 
   const { mainPart, decimalPart } = formatAmount(localStats.totalSpent);

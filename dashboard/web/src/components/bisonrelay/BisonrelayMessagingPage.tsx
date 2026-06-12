@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { toYMD, toYMDTime } from '../../utils/date';
 import {
   AlertCircle,
   Check,
@@ -1413,11 +1414,7 @@ function formatDayLabel(ts: number): string {
   const dayMs = 86400000;
   if (day === today) return 'Today';
   if (day === today - dayMs) return 'Yesterday';
-  return new Date(ts * 1000).toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-  });
+  return toYMD(ts * 1000);
 }
 
 // SidebarSectionHeader is the collapsible header for the Contacts / Groups
@@ -1522,7 +1519,7 @@ const MessageList = ({
                   {m.pending && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
                   <span className="min-w-0 break-words">{m.message}</span>
                   <span className="mx-1 opacity-50">·</span>
-                  <span className="opacity-70 shrink-0">{new Date(m.timestamp * 1000).toLocaleString()}</span>
+                  <span className="opacity-70 shrink-0">{toYMDTime(new Date(m.timestamp * 1000))}</span>
                 </p>
               </div>
             </Fragment>
@@ -1583,7 +1580,7 @@ const MessageList = ({
                 )}
                 <MessageBody body={m.message} />
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  <span title={new Date(m.timestamp * 1000).toLocaleString()}>
+                  <span title={toYMDTime(new Date(m.timestamp * 1000))}>
                     {new Date(m.timestamp * 1000).toLocaleTimeString([], {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -1659,7 +1656,7 @@ const SuggestedKXCard = ({
           Suggested KX with{' '}
           <span className="font-mono text-foreground/90">{displayName}</span>
           <span className="mx-1.5 opacity-50">·</span>
-          <span className="opacity-70">{new Date(timestamp * 1000).toLocaleString()}</span>
+          <span className="opacity-70">{toYMDTime(new Date(timestamp * 1000))}</span>
         </p>
         {known ? (
           <p className="text-muted-foreground">

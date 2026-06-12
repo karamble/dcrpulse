@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { isImageMime } from './embedParser';
 import {
   AlertCircle,
@@ -897,7 +898,7 @@ const PostDetailView = ({
 
   const title = summary?.title || body?.title || '(untitled post)';
   const publishedTs = summary ? summary.published || summary.date : 0;
-  const dateStr = publishedTs ? new Date(publishedTs * 1000).toLocaleString() : '';
+  const dateStr = publishedTs ? toYMDTime(new Date(publishedTs * 1000)) : '';
   const waitingForArrival = !summary && (loading || err === null) && body === null;
 
   return (
@@ -1068,7 +1069,7 @@ const PostDetailView = ({
                   {receipts.map((r) => (
                     <span
                       key={r.user}
-                      title={`${r.nick} - ${new Date(r.server_time).toLocaleString()}`}
+                      title={`${r.nick} - ${toYMDTime(new Date(r.server_time))}`}
                     >
                       <AuthorAvatar
                         uid={r.user}
@@ -1421,7 +1422,7 @@ const CommentNode = ({
               className="opacity-70 shrink-0"
               title={
                 comment.timestamp
-                  ? new Date(comment.timestamp * 1000).toLocaleString()
+                  ? toYMDTime(new Date(comment.timestamp * 1000))
                   : undefined
               }
             >

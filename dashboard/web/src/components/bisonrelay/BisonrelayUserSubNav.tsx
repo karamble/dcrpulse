@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { ComponentType, useEffect, useRef, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import {
   AlertCircle,
   Ban,
@@ -1032,7 +1033,7 @@ const PostsListModal = ({
                     ) : null}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
-                    {new Date(p.timestamp * 1000).toLocaleString()}
+                    {toYMDTime(new Date(p.timestamp * 1000))}
                   </span>
                 </button>
               );

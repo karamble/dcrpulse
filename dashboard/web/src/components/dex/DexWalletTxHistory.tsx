@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { getDexWalletTxs, type DexWalletState, type DexWalletTx } from '../../services/dcrdexApi';
@@ -116,7 +117,7 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
                 </td>
                 <td className="py-2 text-right font-mono tabular-nums text-muted-foreground pr-6">{fmtAmt(t.fees, 8)}</td>
                 <td className="py-2 text-xs text-muted-foreground pl-2 whitespace-nowrap">
-                  {t.timestamp ? new Date(t.timestamp * 1000).toLocaleString() : '-'}
+                  {t.timestamp ? toYMDTime(new Date(t.timestamp * 1000)) : '-'}
                 </td>
                 <td className="py-2">
                   <Link

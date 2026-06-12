@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toYMDTime } from '../../../utils/date';
 import { AlertCircle, CheckCircle2, Copy, Inbox, Loader2, Search } from 'lucide-react';
 import {
   LightningInvoice,
@@ -228,7 +229,7 @@ export const ReceiveTab = () => {
               <div className="text-xs text-muted-foreground">Status: {active.status}</div>
               <div className="text-xs text-muted-foreground">
                 {active.status === 'settled' && active.settleDate
-                  ? `Settled ${new Date(active.settleDate * 1000).toLocaleString()}`
+                  ? `Settled ${toYMDTime(new Date(active.settleDate * 1000))}`
                   : fmtExpiry(active.creationDate + active.expiry, now).text}
               </div>
               <div className="text-xs text-muted-foreground font-mono">

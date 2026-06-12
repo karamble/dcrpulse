@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { isImageMime } from './embedParser';
 import {
   Atom,
@@ -112,7 +113,7 @@ export const FeedCard = ({
   const isRelayed = post.relayed ?? (!!post.from && post.from !== post.author_id);
   const relayerNick = post.relayer_nick || (isRelayed ? post.from.slice(0, 12) : '');
   const publishedTs = post.published || post.date;
-  const fullDate = publishedTs ? new Date(publishedTs * 1000).toLocaleString() : '';
+  const fullDate = publishedTs ? toYMDTime(new Date(publishedTs * 1000)) : '';
   const title = post.title || '(untitled post)';
 
   // The snippet starts with the same first line the title was derived from;

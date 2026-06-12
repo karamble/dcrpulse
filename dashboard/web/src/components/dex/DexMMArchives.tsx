@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { AlertCircle, ChevronLeft, ChevronRight, History } from 'lucide-react';
 import { getMMArchivedRuns, type DexMarket, type MMArchivedRun } from '../../services/dcrdexApi';
 import { fmtUsd } from './dexFormat';
@@ -95,7 +96,7 @@ export const DexMMArchives = ({
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/10 transition-colors text-left"
             >
               <span className="font-mono tabular-nums">{pairLabel(r)}</span>
-              <span className="text-xs text-muted-foreground">{new Date((r.startTime || 0) * 1000).toLocaleString()}</span>
+              <span className="text-xs text-muted-foreground">{toYMDTime(new Date((r.startTime || 0) * 1000))}</span>
               {typeof r.profit === 'number' ? (
                 <span className={`ml-auto font-mono tabular-nums ${r.profit >= 0 ? 'text-success' : 'text-destructive'}`}>{fmtUsd(r.profit)}</span>
               ) : (

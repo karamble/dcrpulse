@@ -3,8 +3,9 @@
 // license that can be found in the LICENSE file.
 
 import type { MMBotProblems, MMCEXProblems, MMOrderReport, MMStampedError } from '../../services/dcrdexApi';
+import { toYMDTime } from '../../utils/date';
 
-const fmtTime = (stamp: number): string => new Date(stamp * 1000).toLocaleString();
+const fmtTime = (stamp: number): string => toYMDTime(new Date(stamp * 1000));
 
 // botProblemMessages turns a bot's pre-order problems into human-readable lines
 // (mirrors bisonw's botProblemMessages), explaining why a bot could not place

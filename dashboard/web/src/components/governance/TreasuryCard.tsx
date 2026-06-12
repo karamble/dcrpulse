@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
+import { toYMD } from '../../utils/date';
 import { 
   Landmark, 
   ArrowDownToLine, 
@@ -137,7 +138,7 @@ export const TreasuryCard = () => {
         return `${hours}h ago`;
       }
       if (days < 30) return `${days}d ago`;
-      return date.toLocaleDateString();
+      return toYMD(date);
     } catch {
       return timestamp;
     }

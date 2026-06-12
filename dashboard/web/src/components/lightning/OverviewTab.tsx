@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { Link } from 'react-router-dom';
 import {
   AlertCircle,
@@ -186,7 +187,7 @@ export const OverviewTab = () => {
                   {e.memo && <div className="text-xs text-muted-foreground truncate">{e.memo}</div>}
                 </div>
                 <div className="text-xs text-muted-foreground shrink-0">
-                  {new Date(e.timestamp * 1000).toLocaleString()}
+                  {toYMDTime(new Date(e.timestamp * 1000))}
                 </div>
                 <div className="text-sm font-mono shrink-0">{fmtDcr(e.amount)}</div>
               </li>

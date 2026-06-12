@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Check, X } from 'lucide-react';
 import {
@@ -82,7 +83,7 @@ const lockTimeTakerMs = 8 * 60 * 60 * 1000;
 const refundCountdown = (stampMs: number, maker: boolean): string => {
   const after = stampMs + (maker ? lockTimeMakerMs : lockTimeTakerMs);
   if (Date.now() > after) return 'Refund imminent';
-  return `Refund available after ${new Date(after).toLocaleString()}`;
+  return `Refund available after ${toYMDTime(new Date(after))}`;
 };
 
 // Insert spaces into bisonw's CamelCase match status (e.g. "TakerSwapCast").
@@ -295,7 +296,7 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Field label="Quantity">{fmtAmt(qty, 8)} {baseSym}</Field>
           {order.rate > 0 && <Field label="Price">{fmtPrice(price, quoteSym)} {quoteSym}</Field>}
-          <Field label="Submitted">{order.submitTime ? new Date(order.submitTime).toLocaleString() : '-'}</Field>
+          <Field label="Submitted">{order.submitTime ? toYMDTime(new Date(order.submitTime)) : '-'}</Field>
           <Field label="Order ID">{order.id}</Field>
         </div>
 

@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { Link } from 'react-router-dom';
 import { Loader2, ScrollText, X } from 'lucide-react';
 import {
@@ -107,7 +108,7 @@ const TxLink = ({ assetID, id }: { assetID: number | null; id: string }) => {
 };
 
 const LogRow = ({ ev, market, assetOf }: { ev: MMMarketMakingEvent; market?: DexMarket; assetOf: AssetInfo }) => {
-  const time = new Date(ev.timestamp * 1000).toLocaleString();
+  const time = toYMDTime(new Date(ev.timestamp * 1000));
   const price = (rate: number) =>
     market ? fmtPrice(convRate(rate, market.baseConvFactor, market.quoteConvFactor), market.quote) : String(rate);
   const baseQty = (qty: number) => (market ? fmtAmt(convQty(qty, market.baseConvFactor), 6) : String(qty));

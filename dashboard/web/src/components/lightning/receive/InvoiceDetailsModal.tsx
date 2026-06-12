@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toYMDTime } from '../../../utils/date';
 import { CheckCircle2, Copy, X } from 'lucide-react';
 import type { LightningInvoice } from '../../../services/lightningApi';
 import { cancelLnInvoice } from '../../../services/lightningApi';
@@ -7,11 +8,11 @@ const atomsPerDcr = 1e8;
 const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
 const trunc = (s: string, head = 12, tail = 8) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
-const fmtDate = (sec: number) => (!sec ? '-' : new Date(sec * 1000).toLocaleString());
+const fmtDate = (sec: number) => (!sec ? '-' : toYMDTime(new Date(sec * 1000)));
 
 const fmtExpiry = (creation: number, expiry: number): string => {
   if (!creation || !expiry) return '-';
-  return new Date((creation + expiry) * 1000).toLocaleString();
+  return toYMDTime(new Date((creation + expiry) * 1000));
 };
 
 interface Props {

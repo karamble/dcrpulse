@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { toYMDTime } from './utils/date';
 import { useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -76,7 +77,7 @@ function AppContent() {
         const dashboardData = await getDashboardData();
         setNodeVersion(dashboardData.nodeStatus?.version || '');
         if (dashboardData.lastUpdate) {
-          setLastUpdate(new Date(dashboardData.lastUpdate).toLocaleString());
+          setLastUpdate(toYMDTime(new Date(dashboardData.lastUpdate)));
         }
         
         // Fetch wallet version

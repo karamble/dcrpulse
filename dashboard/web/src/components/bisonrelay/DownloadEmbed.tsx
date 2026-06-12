@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useRef, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { isImageMime } from './embedParser';
 import {
   BisonrelayLiveEvent,
@@ -116,7 +117,7 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
     : '';
   const costLabel = `${formatDcrFromAtoms(cost)} DCR${usdSuffix}`;
   const usdTitle = usd
-    ? `USD via ${usd.source || 'unknown'}${usd.updatedAt ? `, updated ${new Date(usd.updatedAt).toLocaleString()}` : ''}`
+    ? `USD via ${usd.source || 'unknown'}${usd.updatedAt ? `, updated ${toYMDTime(new Date(usd.updatedAt))}` : ''}`
     : undefined;
 
   useEffect(() => {

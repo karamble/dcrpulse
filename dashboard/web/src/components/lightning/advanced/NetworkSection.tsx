@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toYMDTime } from '../../../utils/date';
 import { AlertCircle, Loader2, Search } from 'lucide-react';
 import {
   LightningNodeInfo,
@@ -11,7 +12,7 @@ const atomsPerDcr = 1e8;
 const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
 const trunc = (s: string, head = 10, tail = 6) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
-const fmtDate = (sec: number) => (!sec ? '-' : new Date(sec * 1000).toLocaleString());
+const fmtDate = (sec: number) => (!sec ? '-' : toYMDTime(new Date(sec * 1000)));
 
 const isPubkey = (s: string) => /^[0-9a-fA-F]{66}$/.test(s);
 

@@ -1,4 +1,5 @@
 import { ArrowDownLeft, CheckCircle2, Clock, Loader2, XCircle } from 'lucide-react';
+import { toYMDTime } from '../../../utils/date';
 import type { LightningInvoice, LightningInvoiceStatus } from '../../../services/lightningApi';
 import { StatusPill, StatusTone } from '../StatusPill';
 
@@ -9,7 +10,7 @@ const truncHash = (s: string) => (s.length <= 18 ? s : `${s.slice(0, 10)}…${s.
 const fmtDate = (sec: number) => {
   if (!sec) return '-';
   const d = new Date(sec * 1000);
-  return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  return toYMDTime(d);
 };
 
 const invoicePill = (status: LightningInvoiceStatus): { label: string; tone: StatusTone; icon: JSX.Element } => {

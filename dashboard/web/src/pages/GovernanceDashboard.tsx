@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useState, useEffect } from 'react';
+import { toYMDTime } from '../utils/date';
 import { SearchCheck } from 'lucide-react';
 import { TreasuryValueCard } from '../components/governance/TreasuryValueCard';
 import { TreasuryPaymentsCard } from '../components/governance/TreasuryPaymentsCard';
@@ -223,7 +224,7 @@ export const GovernanceDashboard = () => {
 
   const formatDate = (dateString: string) => {
     try {
-      return new Date(dateString).toLocaleString();
+      return toYMDTime(new Date(dateString));
     } catch {
       return dateString;
     }

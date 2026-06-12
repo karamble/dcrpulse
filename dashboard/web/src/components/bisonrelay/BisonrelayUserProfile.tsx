@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import {
   ArrowDownRight,
   ArrowLeft,
@@ -585,7 +586,7 @@ export const UserProfileView = ({
                         {formatTipDcr(a.amount_matoms)} DCR
                       </span>
                       <span className="opacity-50">·</span>
-                      <span>{new Date(a.created).toLocaleString()}</span>
+                      <span>{toYMDTime(new Date(a.created))}</span>
                       <span className="opacity-50">·</span>
                       <span
                         className={

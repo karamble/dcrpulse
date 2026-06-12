@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { Bell } from 'lucide-react';
 import {
   BisonrelayLiveEvent,
@@ -108,7 +109,7 @@ export const BrNotifications = () => {
                   <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${sevDot(n.severity)}`} />
                   <span className="text-xs font-medium text-foreground truncate">{n.subject}</span>
                   <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-                    {new Date(n.ts).toLocaleString()}
+                    {toYMDTime(new Date(n.ts))}
                   </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-1 break-words">{n.detail}</p>

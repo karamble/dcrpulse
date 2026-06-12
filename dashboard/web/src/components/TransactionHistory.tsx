@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
+import { toYMD } from '../utils/date';
 import { Link } from 'react-router-dom';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
 import { ArrowDownCircle, ArrowUpCircle, Ticket, Check, X, Coins, Clock, ChevronDown, ChevronUp, Shuffle, BadgeDollarSign } from 'lucide-react';
@@ -134,11 +135,7 @@ export const TransactionHistory = () => {
     if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
     if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
 
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-    });
+    return toYMD(date);
   };
 
   const truncateTxid = (txid: string) => {

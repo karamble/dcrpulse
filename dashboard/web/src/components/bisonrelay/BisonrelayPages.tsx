@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import { isImageMime } from './embedParser';
 import {
   ArrowLeft,
@@ -264,7 +265,7 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
               <div className="flex-1 min-w-0">
                 <div className="font-mono text-sm truncate">{p.name}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  {p.size} bytes · {new Date(p.modified * 1000).toLocaleString()}
+                  {p.size} bytes · {toYMDTime(new Date(p.modified * 1000))}
                 </div>
               </div>
               {ownId && (

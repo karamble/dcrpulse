@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { ComponentType, useCallback, useEffect, useRef, useState } from 'react';
+import { toYMDTime } from '../../utils/date';
 import {
   Activity,
   AlertCircle,
@@ -661,7 +662,7 @@ const PaymentsView = () => {
                 <span className="opacity-50">·</span>
                 <span>
                   {t.next_action.replace(/_/g, ' ')} at{' '}
-                  {new Date(t.next_action_time).toLocaleString()}
+                  {toYMDTime(new Date(t.next_action_time))}
                 </span>
               </div>
             ))}
