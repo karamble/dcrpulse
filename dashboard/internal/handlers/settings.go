@@ -145,6 +145,19 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Decred Pulse bot URL must start with http:// or https://", http.StatusBadRequest)
 			return
 		}
+		botEnabled := true
+		if v, ok := allowed[config.ExternalRequestDecredPulseBot]; ok {
+			botEnabled = v
+		}
+		if botURL != "" && botEnabled {
+			probeCtx, probeCancel := context.WithTimeout(r.Context(), 15*time.Second)
+			err := services.CheckDecredPulseBotHealth(probeCtx, botURL)
+			probeCancel()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+		}
 		if err := gc.Set(config.KeyDecredPulseBotURL, botURL); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -114,7 +114,7 @@ export const PrivacySection = () => {
     try {
       await saveSettings({ global: { externalRequests: external, decredPulseBotUrl: v } });
       setBotUrl(v === '' ? defaultBotUrl : v);
-      setFeedback({ kind: 'info', text: 'Preferences saved.' });
+      setFeedback({ kind: 'info', text: v === '' ? 'Reset to default.' : 'Saved - bot reachable.' });
     } catch (err: any) {
       const body = err?.response?.data;
       setFeedback({
@@ -222,7 +222,7 @@ export const PrivacySection = () => {
               disabled={externalBusy}
               className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 disabled:cursor-wait"
             >
-              Save
+              {externalBusy ? 'Saving...' : 'Save'}
             </button>
           </div>
         </div>

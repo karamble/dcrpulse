@@ -30,6 +30,9 @@ const (
 	// set.
 	DefaultDecredPulseBotURL = "https://brulse.decredcommunity.org"
 	decredPulseBotTimeout    = 20 * time.Second
+	// decredPulseBotHealthTimeout bounds the /healthz reachability probe run
+	// when an operator saves a new bot URL; generous enough for a Tor circuit.
+	decredPulseBotHealthTimeout = 15 * time.Second
 	// powSolveCap bounds the proof-of-work search so a misbehaving or
 	// overly-difficult challenge cannot spin forever.
 	powSolveCap = 1 << 28
@@ -126,6 +129,44 @@ func fetchBotChallenge(ctx context.Context, base string) (*botChallenge, error) 
 		return nil, fmt.Errorf("decode challenge: %w", err)
 	}
 	return &ch, nil
+}
+
+// botHealth is the shape of the brulse /healthz response.
+type botHealth struct {
+	Status string `json:"status"`
+}
+
+// CheckDecredPulseBotHealth probes the bot's /healthz endpoint over the same
+// (optionally Tor-routed) client used for invite requests, returning nil only
+// when it answers HTTP 200 with {"status":"ok"}. A non-nil error explains why
+// the URL is not a usable Decred Pulse bot and is safe to surface to the user.
+func CheckDecredPulseBotHealth(ctx context.Context, baseURL string) error {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return fmt.Errorf("no bot URL provided")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, decredPulseBotHealthTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := externalHTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("could not reach a Decred Pulse bot at %s: %v", base, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("could not reach a Decred Pulse bot at %s: HTTP %d: %s", base, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var h botHealth
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<10)).Decode(&h); err != nil || h.Status != "ok" {
+		return fmt.Errorf("unexpected response from %s (not a Decred Pulse bot)", base)
+	}
+	return nil
 }
 
 func requestBotInvite(ctx context.Context, base, pubkeyHex, nonce, solution string) (string, error) {
