@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { Box, ArrowRightLeft } from 'lucide-react';
+import { Box, ArrowRightLeft, FileClock } from 'lucide-react';
 import { SearchBar } from '../components/explorer/SearchBar';
 import { Pagination } from '../components/explorer/Pagination';
 import { getRecentBlocksPaginated, BlockSummary } from '../services/explorerApi';
@@ -74,6 +74,20 @@ export const ExplorerLanding = () => {
         {/* Search Bar */}
         <div className="flex justify-center">
           <SearchBar />
+        </div>
+
+        {/* Verify Timestamp tool */}
+        <div
+          onClick={() => navigate('/explorer/verify-timestamp')}
+          className="flex items-center gap-3 p-4 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 hover:bg-muted/5 cursor-pointer transition-colors"
+        >
+          <FileClock className="h-5 w-5 text-primary shrink-0" />
+          <div className="min-w-0">
+            <div className="font-semibold">Verify Timestamp</div>
+            <div className="text-sm text-muted-foreground">
+              Check a file or digest against dcrtime and confirm its anchor on the Decred chain.
+            </div>
+          </div>
         </div>
 
         {/* Recent Blocks */}

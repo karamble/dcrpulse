@@ -19,6 +19,8 @@ import { ReceiveTab } from './components/onchain/ReceiveTab';
 import { HistoryTab } from './components/onchain/HistoryTab';
 import { ExportTab } from './components/onchain/ExportTab';
 import { AccountsPage } from './pages/AccountsPage';
+import { TimestampPage } from './pages/TimestampPage';
+import { VerifyTimestampPage } from './pages/VerifyTimestampPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { StakingPage } from './pages/StakingPage';
 import { GovernancePage } from './pages/GovernancePage';
@@ -161,6 +163,7 @@ function AppContent() {
               <Route path="advanced" element={<LightningAdvancedTab />} />
             </Route>
             <Route path="accounts" element={<AccountsPage />} />
+            <Route path="timestamp" element={<TimestampPage />} />
             <Route path="settings" element={<SettingsPage />}>
               <Route index element={<Navigate to="wallet" replace />} />
               <Route path="wallet" element={<WalletSection />} />
@@ -184,6 +187,7 @@ function AppContent() {
           <Route path="/explorer/tx/:txhash" element={<TransactionDetail />} />
           <Route path="/explorer/address/:address" element={<AddressView />} />
           <Route path="/explorer/mempool" element={<MempoolView />} />
+          <Route path="/explorer/verify-timestamp" element={<VerifyTimestampPage />} />
           <Route path="/treasury" element={<GovernanceDashboard />} />
           <Route path="/br" element={<BisonrelayPage />} />
           <Route path="/dex" element={<DexPage />} />

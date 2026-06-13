@@ -60,6 +60,13 @@ func WalletsDir(network string) string {
 	return filepath.Join(AppDataDir, "wallets", network)
 }
 
+// TimestampArchivePath is the dcrtime proof archive. It is global (not
+// per-wallet): proofs are about files, not wallet keys, so they must survive
+// wallet switches.
+func TimestampArchivePath() string {
+	return filepath.Join(AppDataDir, "timestamps.json")
+}
+
 // WalletDir is one wallet's directory.
 func WalletDir(network, walletName string) string {
 	return filepath.Join(WalletsDir(network), walletName)

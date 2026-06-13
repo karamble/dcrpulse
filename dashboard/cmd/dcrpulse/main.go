@@ -23,6 +23,7 @@ import (
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/timestamp"
 )
 
 //go:embed web/dist
@@ -151,6 +152,10 @@ func main() {
 	// Persistent WS subscriptions to brclientd for chat / KX / GC events.
 	services.StartBisonrelayStreams(context.Background())
 	services.StartBrclientdNotifs(context.Background())
+
+	// Background poller that advances dcrtime timestamp records to "anchored" as
+	// the public dcrtime server commits their digests to the chain.
+	timestamp.StartWorker(context.Background())
 
 	// Load the optional dashboard app-password gate (off unless configured).
 	if err := auth.Init(); err != nil {
@@ -301,6 +306,18 @@ func main() {
 	api.HandleFunc("/wallet/settings/logs", handlers.GetLogsHandler).Methods("GET")
 	api.HandleFunc("/themes", handlers.GetThemesHandler).Methods("GET")
 	api.HandleFunc("/themes", handlers.SaveThemesHandler).Methods("POST")
+	api.HandleFunc("/timestamp/records", handlers.ListTimestampsHandler).Methods("GET")
+	api.HandleFunc("/timestamp/records", handlers.CreateTimestampHandler).Methods("POST")
+	api.HandleFunc("/timestamp/records/{digest}", handlers.GetTimestampHandler).Methods("GET")
+	api.HandleFunc("/timestamp/records/{digest}", handlers.UpdateTimestampHandler).Methods("PATCH")
+	api.HandleFunc("/timestamp/records/{digest}", handlers.DeleteTimestampHandler).Methods("DELETE")
+	api.HandleFunc("/timestamp/records/{digest}/retry", handlers.RetryTimestampHandler).Methods("POST")
+	api.HandleFunc("/timestamp/records/{digest}/proof", handlers.TimestampProofHandler).Methods("GET")
+	api.HandleFunc("/timestamp/verify", handlers.VerifyTimestampHandler).Methods("POST")
+	api.HandleFunc("/timestamp/validate", handlers.ValidateTimestampHandler).Methods("POST")
+	api.HandleFunc("/timestamp/refresh", handlers.RefreshTimestampsHandler).Methods("POST")
+	api.HandleFunc("/timestamp/status", handlers.TimestampStatusHandler).Methods("GET")
+	api.HandleFunc("/timestamp/export", handlers.ExportTimestampsHandler).Methods("GET")
 	api.HandleFunc("/tor", handlers.GetTorHandler).Methods("GET")
 	api.HandleFunc("/tor", handlers.SetTorHandler).Methods("POST")
 	api.HandleFunc("/tor/status", handlers.GetTorStatusHandler).Methods("GET")
@@ -528,6 +545,14 @@ func main() {
 			if path != "/" {
 				filePath := strings.TrimPrefix(path, "/")
 				if _, err := distFS.Open(filePath); err == nil {
+					// The dcrtime file-hashing Web Worker is the only place
+					// WebAssembly runs; grant it (and nothing else) the
+					// wasm-unsafe-eval CSP token. The strict document CSP set by
+					// SecurityHeaders is left untouched for every other asset.
+					if strings.Contains(filePath, "dcrtime-hash-worker") {
+						w.Header().Set("Content-Security-Policy",
+							"default-src 'none'; script-src 'self' 'wasm-unsafe-eval'")
+					}
 					http.FileServer(http.FS(distFS)).ServeHTTP(w, req)
 					return
 				}
