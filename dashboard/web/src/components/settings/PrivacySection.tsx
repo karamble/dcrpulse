@@ -18,6 +18,8 @@ const defaultExternal: ExternalRequestSettings = {
   brseeder: true,
 };
 
+const defaultBotUrl = 'https://brulse.decredcommunity.org';
+
 interface ToggleProps {
   label: string;
   description: string;
@@ -49,6 +51,7 @@ const Toggle = ({ label, description, checked, disabled, onChange }: ToggleProps
 
 export const PrivacySection = () => {
   const [external, setExternal] = useState<ExternalRequestSettings>(defaultExternal);
+  const [botUrl, setBotUrl] = useState(defaultBotUrl);
   const [mixerDebug, setMixerDebugState] = useState(false);
   const [debugBusy, setDebugBusy] = useState(false);
   const [externalBusy, setExternalBusy] = useState(false);
@@ -58,6 +61,7 @@ export const PrivacySection = () => {
     getSettings()
       .then((s) => {
         if (s.global?.externalRequests) setExternal(s.global.externalRequests);
+        if (s.global?.decredPulseBotUrl) setBotUrl(s.global.decredPulseBotUrl);
       })
       .catch(() => {});
     getMixerDebug()
@@ -85,7 +89,31 @@ export const PrivacySection = () => {
     setExternalBusy(true);
     setFeedback(null);
     try {
-      await saveSettings({ global: { externalRequests: next } });
+      await saveSettings({ global: { externalRequests: next, decredPulseBotUrl: botUrl.trim() } });
+      setFeedback({ kind: 'info', text: 'Preferences saved.' });
+    } catch (err: any) {
+      const body = err?.response?.data;
+      setFeedback({
+        kind: 'error',
+        text: typeof body === 'string' ? body : err?.message || 'Failed to save preferences',
+      });
+    } finally {
+      setExternalBusy(false);
+    }
+  };
+
+  const saveBotUrl = async () => {
+    if (externalBusy) return;
+    const v = botUrl.trim();
+    if (v !== '' && !/^https?:\/\//i.test(v)) {
+      setFeedback({ kind: 'error', text: 'Bot URL must start with http:// or https://' });
+      return;
+    }
+    setExternalBusy(true);
+    setFeedback(null);
+    try {
+      await saveSettings({ global: { externalRequests: external, decredPulseBotUrl: v } });
+      setBotUrl(v === '' ? defaultBotUrl : v);
       setFeedback({ kind: 'info', text: 'Preferences saved.' });
     } catch (err: any) {
       const body = err?.response?.data;
@@ -171,6 +199,33 @@ export const PrivacySection = () => {
           These preferences are persisted now; enforcement at each call site will be wired in a
           follow-up.
         </p>
+        <div className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
+          <div className="min-w-0">
+            <span className="font-medium block">Decred Pulse bot URL</span>
+            <span className="text-sm text-muted-foreground block">
+              Endpoint for the &quot;Join Decred chat networks&quot; invite bot. Leave as the
+              default unless you run your own brulse instance.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="url"
+              value={botUrl}
+              onChange={(e) => setBotUrl(e.target.value)}
+              placeholder={defaultBotUrl}
+              disabled={externalBusy}
+              className="w-56 px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={saveBotUrl}
+              disabled={externalBusy}
+              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 disabled:cursor-wait"
+            >
+              Save
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

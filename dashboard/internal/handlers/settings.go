@@ -35,6 +35,7 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			Politeia:   true,
 			Brseeder:   true,
 		},
+		DecredPulseBotURL: services.DefaultDecredPulseBotURL,
 	}
 
 	if network != "" {
@@ -62,6 +63,10 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			if v, ok := allowed[config.ExternalRequestBrseeder]; ok {
 				globalOut.ExternalRequests.Brseeder = v
 			}
+		}
+		var botURL string
+		if ok, _ := gc.Get(config.KeyDecredPulseBotURL, &botURL); ok && strings.TrimSpace(botURL) != "" {
+			globalOut.DecredPulseBotURL = strings.TrimRight(strings.TrimSpace(botURL), "/")
 		}
 	}
 
@@ -132,6 +137,15 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		allowed[config.ExternalRequestPoliteia] = req.Global.ExternalRequests.Politeia
 		allowed[config.ExternalRequestBrseeder] = req.Global.ExternalRequests.Brseeder
 		if err := gc.SetAllowedExternalRequests(allowed); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		botURL := strings.TrimRight(strings.TrimSpace(req.Global.DecredPulseBotURL), "/")
+		if botURL != "" && !strings.HasPrefix(botURL, "http://") && !strings.HasPrefix(botURL, "https://") {
+			http.Error(w, "Decred Pulse bot URL must start with http:// or https://", http.StatusBadRequest)
+			return
+		}
+		if err := gc.Set(config.KeyDecredPulseBotURL, botURL); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

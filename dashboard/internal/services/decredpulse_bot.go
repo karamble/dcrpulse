@@ -22,10 +22,13 @@ import (
 
 // The Decred Pulse invite bot (brulse) is an external service that issues a
 // Bison Relay invite into the community "Decred Pulse" group chat. It defaults
-// to the community-hosted instance; set BRULSE_API_URL to override (for example
-// to a local instance during development or a TLS-fronted endpoint).
+// to the TLS-fronted community instance; set BRULSE_API_URL to override (for
+// example to a local plaintext instance during development).
 const (
-	defaultDecredPulseBotURL = "http://brulse.decredcommunity.org:8080"
+	// DefaultDecredPulseBotURL is the fallback brulse base URL used when neither
+	// the BRULSE_API_URL env var nor the decred_pulse_bot_url config setting is
+	// set.
+	DefaultDecredPulseBotURL = "https://brulse.decredcommunity.org"
 	decredPulseBotTimeout    = 20 * time.Second
 	// powSolveCap bounds the proof-of-work search so a misbehaving or
 	// overly-difficult challenge cannot spin forever.
@@ -50,14 +53,22 @@ func DecredPulseBotEnabled() bool {
 	return v
 }
 
-// decredPulseBotURL returns the brulse base URL with any trailing slash
-// removed, honoring the BRULSE_API_URL override and otherwise falling back to
-// the community-hosted instance.
+// decredPulseBotURL returns the brulse base URL with any trailing slash removed.
+// Precedence: the BRULSE_API_URL env override, then the decred_pulse_bot_url
+// global config setting, then the community-hosted https default.
 func decredPulseBotURL() string {
 	if v := strings.TrimRight(os.Getenv("BRULSE_API_URL"), "/"); v != "" {
 		return v
 	}
-	return defaultDecredPulseBotURL
+	if gc, err := config.LoadGlobalCfg(); err == nil {
+		var u string
+		if ok, _ := gc.Get(config.KeyDecredPulseBotURL, &u); ok {
+			if u = strings.TrimRight(strings.TrimSpace(u), "/"); u != "" {
+				return u
+			}
+		}
+	}
+	return DefaultDecredPulseBotURL
 }
 
 type botChallenge struct {

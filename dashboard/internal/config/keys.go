@@ -27,6 +27,10 @@ const (
 	// Global config keys (live in /dashboard-data/config.json).
 	KeyAllowedExternalRequests = "allowed_external_requests"
 
+	// KeyDecredPulseBotURL is the operator-set base URL of the Decred Pulse
+	// invite bot (brulse). Empty or absent falls back to the https default.
+	KeyDecredPulseBotURL = "decred_pulse_bot_url"
+
 	// KeyThemeStore holds the active theme selection plus any user-created
 	// themes ({"schema":1,"activeThemeId":...,"customThemes":[...]}). Shipped
 	// themes live in the frontend bundle, so only the active selection and

@@ -867,6 +867,7 @@ export interface ExternalRequestSettings {
 
 export interface GlobalSettings {
   externalRequests: ExternalRequestSettings;
+  decredPulseBotUrl?: string;
 }
 
 export interface SettingsEnvelope {
