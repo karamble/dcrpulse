@@ -13,6 +13,18 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // The dcrtime file-hashing worker is emitted with a distinctive, matchable
+  // name so the Go static server can scope the wasm-unsafe-eval CSP to just
+  // that one asset (the only place WebAssembly runs).
+  worker: {
+    format: 'es',
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/dcrtime-hash-worker-[hash].js',
+        chunkFileNames: 'assets/dcrtime-hash-worker-[hash].js',
+      },
+    },
+  },
   server: {
     port: 3000,
     proxy: {

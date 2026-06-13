@@ -78,4 +78,5 @@ const (
 	ExternalRequestPoliteia       = "politeia"
 	ExternalRequestBrseeder       = "brseeder"
 	ExternalRequestDecredPulseBot = "decred_pulse_bot"
+	ExternalRequestDcrtime        = "dcrtime"
 )
