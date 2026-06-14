@@ -474,6 +474,21 @@ func BrclientdBlockContact(ctx context.Context, uidHex string) error {
 	return brclientdPostJSON(ctx, "/contacts/block", map[string]string{"uid": uidHex})
 }
 
+// BrclientdBlockedContacts returns the locally blocked users (uid + block time)
+// read from brclientd's /contacts/blocked. Forwarded as-is to the dashboard.
+func BrclientdBlockedContacts(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/contacts/blocked", nil)
+}
+
+// BrclientdUnblockContact removes a uid from the BR block list. Wraps
+// brclientd's /contacts/unblock, which rewrites blockedusers.json and restarts
+// the daemon so the change takes effect. Returns brclientd's response body
+// ({"restarting":true}). Only clears this side; reconnecting still needs the
+// peer to unblock and a fresh KX.
+func BrclientdUnblockContact(ctx context.Context, uidHex string) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/contacts/unblock", map[string]string{"uid": uidHex})
+}
+
 // BrclientdClearPMHistory permanently deletes the local PM history (and inline
 // media) for a contact. Wraps brclientd's /history/pm/clear, which removes the
 // on-disk message log(s) + embeds for the uid. The contact and ratchet remain;

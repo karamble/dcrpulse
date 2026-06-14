@@ -635,6 +635,36 @@ func BisonrelayContactBlockHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayBlockedContactsHandler proxies brclientd's /contacts/blocked. GET
+// returns the locally blocked users ({blocked: [{uid, blockedAt}]}).
+func BisonrelayBlockedContactsHandler(w http.ResponseWriter, r *http.Request) {
+	raw, err := rpc.BrclientdBlockedContacts(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
+}
+
+// BisonrelayContactUnblockHandler proxies brclientd's /contacts/unblock. Body:
+// {uid}. Removes the uid from the block list and restarts brclientd so the
+// change takes effect; returns brclientd's body ({restarting: true}). Only
+// clears this side: reconnecting still needs the peer to unblock and a fresh KX.
+func BisonrelayContactUnblockHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := decodeBisonrelayUIDBody(w, r)
+	if !ok {
+		return
+	}
+	raw, err := rpc.BrclientdUnblockContact(r.Context(), uid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
+}
+
 // BisonrelayClearHistoryHandler proxies brclientd's /history/pm/clear. Body:
 // {uid}. Permanently deletes the local PM history + media for the contact;
 // the contact itself remains. Irreversible.

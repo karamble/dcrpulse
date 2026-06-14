@@ -453,6 +453,30 @@ export const blockBisonrelayContact = async (uid: string): Promise<void> => {
   await api.post('/br/contacts/block', { uid });
 };
 
+// BisonrelayBlockedContact is a locally blocked user. The address book entry is
+// deleted on block, so only the uid and block time are known (no nick).
+export interface BisonrelayBlockedContact {
+  uid: string;
+  blockedAt: string;
+}
+
+// listBisonrelayBlockedContacts returns the locally blocked users, newest first.
+export const listBisonrelayBlockedContacts = async (): Promise<
+  BisonrelayBlockedContact[]
+> => {
+  const { data } = await api.get<{ blocked: BisonrelayBlockedContact[] }>(
+    '/br/contacts/blocked',
+  );
+  return data.blocked ?? [];
+};
+
+// unblockBisonrelayContact removes a uid from the block list. This restarts
+// Bison Relay so the change takes effect, and only clears this side: the peer
+// must also unblock and a fresh key exchange is needed to reconnect.
+export const unblockBisonrelayContact = async (uid: string): Promise<void> => {
+  await api.post('/br/contacts/unblock', { uid });
+};
+
 // clearBisonrelayMessages permanently deletes the local PM history + inline
 // media for a contact. Irreversible; the contact and the ability to message
 // remain (only your local copy is removed, the peer keeps theirs).

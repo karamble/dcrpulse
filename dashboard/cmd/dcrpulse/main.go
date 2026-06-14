@@ -367,6 +367,8 @@ func main() {
 	api.HandleFunc("/br/kx/searches", handlers.BisonrelayKXSearchesHandler).Methods("GET")
 	api.HandleFunc("/br/kx/mediateids", handlers.BisonrelayMediateIDsHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/contacts/block", handlers.BisonrelayContactBlockHandler).Methods("POST")
+	api.HandleFunc("/br/contacts/blocked", handlers.BisonrelayBlockedContactsHandler).Methods("GET")
+	api.HandleFunc("/br/contacts/unblock", handlers.BisonrelayContactUnblockHandler).Methods("POST")
 	api.HandleFunc("/br/contacts/ignore", handlers.BisonrelayContactIgnoreHandler).Methods("POST")
 	api.HandleFunc("/br/contacts/handshake", handlers.BisonrelayContactHandshakeHandler).Methods("POST")
 	api.HandleFunc("/br/contacts/suggest-kx", handlers.BisonrelayContactSuggestKXHandler).Methods("POST")

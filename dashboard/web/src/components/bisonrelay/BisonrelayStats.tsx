@@ -10,6 +10,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Atom,
+  Ban,
   BarChart3,
   CheckCircle2,
   Coins,
@@ -41,7 +42,10 @@ import {
   BisonrelayStatsOverview,
   BisonrelayStatsPayments,
   BisonrelayStatsPosts,
+  BisonrelayBlockedContact,
   clearBisonrelayPayStats,
+  listBisonrelayBlockedContacts,
+  unblockBisonrelayContact,
   getBisonrelayIdentity,
   getBisonrelayRunningTips,
   getBisonrelayStatsContacts,
@@ -1032,6 +1036,101 @@ export const ratchetHealth = (c: BisonrelayStatsContact): RatchetHealth => {
   return 'green';
 };
 
+// BlockedContactsCard lists locally blocked users and lets the user unblock
+// one. Blocked users have no address book entry (deleted on block), so only the
+// uid and block time are shown. Unblocking restarts brclientd so the BR DB
+// reopens and picks up the change; it only clears this side.
+const BlockedContactsCard = () => {
+  const [blocked, setBlocked] = useState<BisonrelayBlockedContact[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [confirmUid, setConfirmUid] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setBlocked(await listBisonrelayBlockedContacts());
+      setErr(null);
+    } catch (e: any) {
+      setErr(e?.message || 'Could not load blocked contacts');
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return (
+    <SectionCard title="Blocked contacts" icon={Ban}>
+      {reconnecting && (
+        <p className="text-[11px] text-amber-400 mb-2 flex items-center gap-1.5">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Bison Relay is reconnecting after the unblock...
+        </p>
+      )}
+      {err ? (
+        <p className="text-xs text-rose-400 italic">{err}</p>
+      ) : !blocked ? (
+        <p className="text-xs text-muted-foreground italic">Loading...</p>
+      ) : blocked.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic">No blocked contacts.</p>
+      ) : (
+        <>
+          <p className="text-[11px] text-muted-foreground mb-2">
+            Unblocking clears your block list so you can accept a new invite from
+            them. It briefly reconnects Bison Relay, only affects your side, and a
+            fresh key exchange is still required to reconnect.
+          </p>
+          <div className="divide-y divide-border/30">
+            {blocked.map((b) => (
+              <div
+                key={b.uid}
+                className="grid grid-cols-[1fr_auto] gap-3 items-center px-2 py-2.5"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-mono truncate" title={b.uid}>
+                    {b.uid.slice(0, 16)}...
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    Blocked {relativeTime(b.blockedAt)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmUid(b.uid)}
+                  className="text-xs px-2.5 py-1 rounded-md border border-border/50 hover:bg-muted/20 transition-colors"
+                >
+                  Unblock
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {confirmUid && (
+        <ConfirmActionModal
+          title="Unblock contact"
+          body={`Unblock ${confirmUid.slice(0, 16)}...? This briefly reconnects Bison Relay so the change takes effect. It only clears your block list - the other person must also unblock you, and a new invite + key exchange is required to reconnect.`}
+          confirmLabel="Unblock"
+          onClose={() => setConfirmUid(null)}
+          onConfirm={() => unblockBisonrelayContact(confirmUid)}
+          onSuccess={() => {
+            const uid = confirmUid;
+            // The daemon restarts on unblock, so drop the row now and refetch
+            // once BR is back up (the GET fails until then).
+            setBlocked((prev) => (prev ? prev.filter((x) => x.uid !== uid) : prev));
+            setReconnecting(true);
+            window.setTimeout(() => {
+              setReconnecting(false);
+              refresh();
+            }, 8000);
+          }}
+        />
+      )}
+    </SectionCard>
+  );
+};
+
 const ContactsView = () => {
   const { data, err } = usePolledStats(getBisonrelayStatsContacts);
   const [openUid, setOpenUid] = useState<string | null>(null);
@@ -1143,6 +1242,8 @@ const ContactsView = () => {
           </div>
         )}
       </SectionCard>
+
+      <BlockedContactsCard />
 
       {openContact && (
         <SectionCard
