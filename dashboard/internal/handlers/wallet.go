@@ -246,11 +246,33 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set default account name if not provided
-	accountName := req.AccountName
+	// Validate the account name. An xpub import creates its own new watch-only
+	// account, so it must never reuse a reserved system account (imported/mixed/
+	// unmixed/lightning/dex) or an existing account name.
+	accountName := strings.TrimSpace(req.AccountName)
 	if accountName == "" {
-		accountName = "imported"
+		http.Error(w, "accountName required", http.StatusBadRequest)
+		return
 	}
+	if len(accountName) > 50 {
+		http.Error(w, "accountName must be 50 characters or fewer", http.StatusBadRequest)
+		return
+	}
+	if services.IsReservedAccountName(accountName) {
+		http.Error(w, fmt.Sprintf("%q is a reserved account name", accountName), http.StatusBadRequest)
+		return
+	}
+	checkCtx, checkCancel := context.WithTimeout(r.Context(), 5*time.Second)
+	if accts, aerr := services.FetchAllAccounts(checkCtx); aerr == nil {
+		for _, a := range accts {
+			if strings.EqualFold(a.AccountName, accountName) {
+				checkCancel()
+				http.Error(w, "An account with that name already exists", http.StatusConflict)
+				return
+			}
+		}
+	}
+	checkCancel()
 
 	// Import the xpub asynchronously
 	// We run it in a goroutine and return immediately so the frontend doesn't timeout

@@ -2,9 +2,13 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
-import { importXpub } from '../services/api';
+import { importXpub, getAccounts } from '../services/api';
+
+// Reserved system accounts that other daemons / dcrwallet bind to by name and
+// must never be reused for an imported xpub. Mirrors services.IsReservedAccountName.
+const RESERVED_ACCOUNT_NAMES = ['mixed', 'unmixed', 'lightning', 'dex', 'imported'];
 
 interface ImportXpubModalProps {
   isOpen: boolean;
@@ -14,12 +18,34 @@ interface ImportXpubModalProps {
 
 export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalProps) => {
   const [xpub, setXpub] = useState('');
-  const [accountName, setAccountName] = useState('imported');
+  const [accountName, setAccountName] = useState('');
+  const [existingNames, setExistingNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
+  // Load existing account names when the modal opens so the new account name can
+  // be checked for collisions client-side (the backend is the authoritative check).
+  useEffect(() => {
+    if (!isOpen) return;
+    getAccounts()
+      .then((accts) => setExistingNames(accts.map((a) => a.accountName)))
+      .catch(() => setExistingNames([]));
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  const trimmedName = accountName.trim();
+  const nameError =
+    trimmedName.length === 0
+      ? null
+      : trimmedName.length > 50
+        ? 'Account name must be 50 characters or fewer'
+        : RESERVED_ACCOUNT_NAMES.includes(trimmedName.toLowerCase())
+          ? `'${trimmedName}' is a reserved account name`
+          : existingNames.some((n) => n.toLowerCase() === trimmedName.toLowerCase())
+            ? `An account named '${trimmedName}' already exists`
+            : null;
 
   const validateXpub = (value: string): boolean => {
     // Decred mainnet xpubs start with "dpub"
@@ -43,8 +69,13 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
       return;
     }
 
-    if (!accountName.trim()) {
+    if (!trimmedName) {
       setError('Please enter an account name');
+      return;
+    }
+
+    if (nameError) {
+      setError(nameError);
       return;
     }
 
@@ -52,8 +83,8 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
 
     try {
       // Always rescan when importing xpub to find historical transactions
-      const result = await importXpub(xpub.trim(), accountName.trim(), true);
-      
+      const result = await importXpub(xpub.trim(), trimmedName, true);
+
       if (result.success) {
         setSuccess(true);
         // Immediately trigger preparing state in parent
@@ -67,7 +98,9 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
       }
     } catch (err: any) {
       console.error('Error importing xpub:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to import xpub');
+      const body = err?.response?.data;
+      const msg = typeof body === 'string' ? body : body?.message || err?.message || 'Failed to import xpub';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -76,7 +109,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
   const handleClose = () => {
     if (!loading) {
       setXpub('');
-      setAccountName('imported');
+      setAccountName('');
       setError('');
       setSuccess(false);
       onClose();
@@ -170,15 +203,20 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
             <input
               id="accountName"
               type="text"
+              maxLength={50}
               value={accountName}
               onChange={(e) => setAccountName(e.target.value)}
               disabled={loading || success}
-              placeholder="imported"
+              placeholder="e.g. savings-xpub"
               className="w-full px-4 py-3 rounded-lg bg-muted/5 border border-border/50 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-50"
             />
-            <p className="text-xs text-muted-foreground mt-1">
-              A friendly name for this account
-            </p>
+            {nameError ? (
+              <p className="text-xs text-destructive mt-1">{nameError}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-1">
+                A friendly name for this account
+              </p>
+            )}
           </div>
 
           {/* Info about automatic rescan */}
@@ -209,7 +247,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
             </button>
             <button
               type="submit"
-              disabled={loading || success}
+              disabled={loading || success || trimmedName.length === 0 || !!nameError}
               className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all disabled:opacity-50 flex items-center gap-2"
             >
               {loading ? (
