@@ -1,4 +1,4 @@
-.PHONY: help start stop restart logs logs-dcrd logs-dashboard build push push-dcrd push-dcrwallet push-dashboard login clean clean-dcrd clean-dcrwallet clean-build status shell-dcrd shell-dashboard backup backup-wallet backup-certs restore restore-wallet
+.PHONY: help start stop restart restart-dcrd restart-dcrwallet restart-dcrlnd restart-brclientd restart-dcrdex restart-dashboard restart-tor logs logs-dcrd logs-dcrwallet logs-dcrlnd logs-brclientd logs-dcrdex logs-dashboard logs-tor build deploy deploy-dashboard push push-dcrd push-dcrwallet push-dcrlnd push-brclientd push-dcrdex push-dashboard push-tor login clean clean-dcrd clean-dcrwallet clean-build status shell-dcrd shell-dcrwallet shell-dcrlnd shell-brclientd shell-dcrdex shell-dashboard backup backup-wallet backup-certs restore restore-wallet
 
 # Force bash shell for bash-specific syntax (needed for clean target)
 SHELL := /bin/bash
@@ -12,6 +12,8 @@ endif
 # Default RPC credentials (override with env vars)
 DCRD_RPC_USER ?= decred
 DCRD_RPC_PASS ?= decredpass
+DCRWALLET_RPC_USER ?= dcrwallet
+DCRWALLET_RPC_PASS ?= dcrwalletpass
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -21,10 +23,17 @@ help: ## Show this help message
 
 init-volumes: ## Initialize volume directories with correct permissions
 	@echo "Initializing volume directories..."
-	@docker volume create dcrpulse_app-data >/dev/null 2>&1 || true
+	@for v in app-data dcrlnd-data brclientd-data dcrdex-data tor-data dashboard-data; do \
+		docker volume create dcrpulse_$$v >/dev/null 2>&1 || true; \
+	done
 	@docker run --rm \
-		-v dcrpulse_app-data:/app-data \
-		alpine sh -c "mkdir -p /app-data/dcrd /app-data/dcrwallet && chown -R 1000:1000 /app-data"
+		-v dcrpulse_app-data:/v/app-data \
+		-v dcrpulse_dcrlnd-data:/v/dcrlnd-data \
+		-v dcrpulse_brclientd-data:/v/brclientd-data \
+		-v dcrpulse_dcrdex-data:/v/dcrdex-data \
+		-v dcrpulse_tor-data:/v/tor-data \
+		-v dcrpulse_dashboard-data:/v/dashboard-data \
+		alpine sh -c "mkdir -p /v/app-data/dcrd /v/app-data/dcrwallet && chown -R 1000:1000 /v"
 	@echo "✓ Volumes initialized"
 
 start: init-volumes ## Start all services (dcrd + dcrwallet + dashboard)
@@ -41,6 +50,27 @@ restart: ## Restart all services
 	@echo "Restarting all services..."
 	docker compose restart
 
+restart-dcrd: ## Restart only dcrd
+	docker compose restart dcrd
+
+restart-dcrwallet: ## Restart only dcrwallet
+	docker compose restart dcrwallet
+
+restart-dcrlnd: ## Restart only dcrlnd
+	docker compose restart dcrlnd
+
+restart-brclientd: ## Restart only brclientd
+	docker compose restart brclientd
+
+restart-dcrdex: ## Restart only dcrdex
+	docker compose restart dcrdex
+
+restart-dashboard: ## Restart only dashboard
+	docker compose restart dashboard
+
+restart-tor: ## Restart only tor
+	docker compose restart tor
+
 logs: ## View logs from all services
 	docker compose logs -f
 
@@ -50,9 +80,29 @@ logs-dcrd: ## View dcrd logs
 logs-dashboard: ## View dashboard logs
 	docker compose logs -f dashboard
 
+logs-dcrlnd: ## View dcrlnd logs
+	docker compose logs -f dcrlnd
+
+logs-brclientd: ## View brclientd logs
+	docker compose logs -f brclientd
+
+logs-dcrdex: ## View dcrdex logs
+	docker compose logs -f dcrdex
+
+logs-tor: ## View tor logs
+	docker compose logs -f tor
+
 build: ## Build/rebuild all images
 	@echo "Building images..."
 	docker compose build --no-cache
+
+deploy: ## Rebuild + recreate ONE service without touching deps (usage: make deploy SVC=dashboard)
+	@if [ -z "$(SVC)" ]; then echo "Usage: make deploy SVC=<service>"; exit 1; fi
+	docker compose build $(SVC)
+	docker compose up -d --no-deps $(SVC)
+
+deploy-dashboard: ## Rebuild + recreate only the dashboard (no daemon restart / no wallet relock)
+	@$(MAKE) deploy SVC=dashboard
 
 login: ## Login to GitHub Container Registry (ghcr.io)
 	@echo "=== GitHub Container Registry Authentication ==="
@@ -87,6 +137,22 @@ push-dcrwallet: ## Push only dcrwallet image
 push-dashboard: ## Push only dashboard image
 	@echo "Pushing dashboard image..."
 	docker compose push dashboard
+
+push-dcrlnd: ## Push only dcrlnd image
+	@echo "Pushing dcrlnd image..."
+	docker compose push dcrlnd
+
+push-brclientd: ## Push only brclientd image
+	@echo "Pushing brclientd image..."
+	docker compose push brclientd
+
+push-dcrdex: ## Push only dcrdex image
+	@echo "Pushing dcrdex image..."
+	docker compose push dcrdex
+
+push-tor: ## Push only tor image
+	@echo "Pushing tor image..."
+	docker compose push tor
 
 status: ## Show status of all services
 	@echo "=== Service Status ==="
@@ -153,6 +219,15 @@ shell-dcrd: ## Open shell in dcrd container
 
 shell-dashboard: ## Open shell in dashboard container
 	docker exec -it dcrpulse-dashboard /bin/sh
+
+shell-dcrlnd: ## Open shell in dcrlnd container
+	docker exec -it dcrpulse-dcrlnd /bin/sh
+
+shell-brclientd: ## Open shell in brclientd container
+	docker exec -it dcrpulse-brclientd /bin/sh
+
+shell-dcrdex: ## Open shell in dcrdex container
+	docker exec -it dcrpulse-dcrdex /bin/sh
 
 dcrctl: ## Run dcrctl command for dcrd (usage: make dcrctl CMD="getblockcount")
 	@docker exec dcrpulse-dcrd dcrctl \
@@ -306,8 +381,8 @@ shell-dcrwallet: ## Open shell in dcrwallet container
 wallet-info: ## Get wallet info
 	@docker exec dcrpulse-dcrwallet dcrctl \
 		--wallet \
-		--rpcuser=$(DCRWALLET_RPC_USER:-dcrwallet) \
-		--rpcpass=$(DCRWALLET_RPC_PASS:-dcrwalletpass) \
+		--rpcuser=$(DCRWALLET_RPC_USER) \
+		--rpcpass=$(DCRWALLET_RPC_PASS) \
 		--rpcserver=127.0.0.1:9110 \
 		--rpccert=/app-data/certs/rpc.cert \
 		walletinfo 2>/dev/null || echo "dcrwallet not ready yet..."
@@ -315,8 +390,8 @@ wallet-info: ## Get wallet info
 wallet-balance: ## Get wallet balance
 	@docker exec dcrpulse-dcrwallet dcrctl \
 		--wallet \
-		--rpcuser=$(DCRWALLET_RPC_USER:-dcrwallet) \
-		--rpcpass=$(DCRWALLET_RPC_PASS:-dcrwalletpass) \
+		--rpcuser=$(DCRWALLET_RPC_USER) \
+		--rpcpass=$(DCRWALLET_RPC_PASS) \
 		--rpcserver=127.0.0.1:9110 \
 		--rpccert=/app-data/certs/rpc.cert \
 		getbalance 2>/dev/null || echo "dcrwallet not ready yet..."
