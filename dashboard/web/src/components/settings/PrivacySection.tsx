@@ -199,7 +199,7 @@ export const PrivacySection = () => {
           These preferences are persisted now; enforcement at each call site will be wired in a
           follow-up.
         </p>
-        <div className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
           <div className="min-w-0">
             <span className="font-medium block">Decred Pulse bot URL</span>
             <span className="text-sm text-muted-foreground block">
@@ -207,14 +207,14 @@ export const PrivacySection = () => {
               default unless you run your own brulse instance.
             </span>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
             <input
               type="url"
               value={botUrl}
               onChange={(e) => setBotUrl(e.target.value)}
               placeholder={defaultBotUrl}
               disabled={externalBusy}
-              className="w-56 px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm disabled:opacity-50"
+              className="flex-1 sm:flex-none w-full sm:w-56 min-w-0 px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm disabled:opacity-50"
             />
             <button
               type="button"
