@@ -110,7 +110,21 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   // selectedContact?.* working without churn.
   const selectedContact = selected?.kind === 'contact' ? selected.value : null;
   const selectedGroup = selected?.kind === 'group' ? selected.value : null;
+  // Derived from the live GC list (not the captured selection) so it flips the
+  // moment refreshGCs reflects a removal: the open GC is read-only once we are
+  // no longer a member.
+  const selectedGroupRemoved =
+    !!selectedGroup && gcs.some((g) => g.id === selectedGroup.id && g.local_is_member === false);
   const [messages, setMessages] = useState<BisonrelayMessage[]>([]);
+  // Set when we are removed from / the dissolution of the GC we are actively
+  // viewing arrives: the thread blanks out with a prominent notice.
+  const [kickNotice, setKickNotice] = useState<{
+    gcid: string;
+    kind: 'kicked' | 'dissolved';
+    name: string;
+    reason?: string;
+    by?: string;
+  } | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesErr, setMessagesErr] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -318,6 +332,19 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   useEffect(() => {
     selectedGroupRef.current = selectedGroup;
   }, [selectedGroup]);
+
+  // Current contacts, readable from the once-registered live-event listener so
+  // observed GC member-change lines can resolve a uid to a nick.
+  const contactsRef = useRef<BisonrelayContact[]>([]);
+  useEffect(() => {
+    contactsRef.current = contacts;
+  }, [contacts]);
+
+  // The removal notice is scoped to its group: clear it once the user navigates
+  // to a different conversation.
+  useEffect(() => {
+    if (kickNotice && selectedGroup?.id !== kickNotice.gcid) setKickNotice(null);
+  }, [selectedGroup?.id, kickNotice]);
 
   // Keep the message input focused so the user can type immediately: when a
   // conversation is opened or switched, and again after a send completes (the
@@ -882,8 +909,10 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         }
         return;
       }
-      // GC structural state events that should refresh the sidebar so
-      // group names, member counts, and admin flags stay current.
+      // GC structural state events: refresh the sidebar so names, member
+      // counts and admin/membership flags stay current, and surface a system
+      // message in the open thread (own removal / dissolve prominently, and
+      // observed member changes as lighter lines).
       if (
         evt.type === 'gc-joined' ||
         evt.type === 'gc-killed' ||
@@ -894,14 +923,64 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         evt.type === 'gc-upgraded'
       ) {
         refreshGCs();
-        // If the currently-open GC was killed or we got kicked, bounce
-        // back to the empty thread; the BR side has already torn it down
-        // for us locally.
         const payload = (evt.payload ?? {}) as Record<string, unknown>;
         const gcid = String(payload.gcid ?? '');
         const cur = selectedGroupRef.current;
-        if (cur && cur.id === gcid && evt.type === 'gc-killed') {
-          setSelected(null);
+        const isOpen = !!cur && cur.id === gcid;
+        const nickFor = (uid: string) => {
+          const c = contactsRef.current.find(
+            (x) => x.id?.identity?.toLowerCase() === uid.toLowerCase()
+          );
+          return c?.nick_alias || c?.id?.nick || `${uid.slice(0, 8)}…`;
+        };
+        const sys = (text: string) =>
+          setMessages((prev) => [
+            ...prev,
+            { message: text, from: '', timestamp: Math.floor(Date.now() / 1000), internal: true },
+          ]);
+        const uidList = (v: unknown) => (Array.isArray(v) ? (v as unknown[]).map(String) : []);
+
+        if (evt.type === 'gc-parted') {
+          // Own removal while actively viewing the group blanks the thread out
+          // with a prominent notice (sending would now error); observed parts
+          // are just a system line.
+          if (payload.self) {
+            if (isOpen) {
+              setKickNotice({
+                gcid,
+                kind: 'kicked',
+                name: String(payload.gcName ?? ''),
+                reason: String(payload.reason ?? ''),
+              });
+            }
+          } else if (isOpen) {
+            sys(
+              `${nickFor(String(payload.uid ?? ''))} ${payload.kicked ? 'was removed from' : 'left'} the group`
+            );
+          }
+        } else if (evt.type === 'gc-killed') {
+          // The GC is torn down locally - blank the open thread with the notice.
+          if (isOpen) {
+            setKickNotice({
+              gcid,
+              kind: 'dissolved',
+              name: String(payload.gcName ?? ''),
+              by: String(payload.byNick ?? ''),
+              reason: String(payload.reason ?? ''),
+            });
+          }
+        } else if (evt.type === 'gc-members-added') {
+          if (isOpen) uidList(payload.added).forEach((u) => sys(`${nickFor(u)} joined the group`));
+        } else if (evt.type === 'gc-members-removed') {
+          // self removal is announced via gc-parted; only show others here.
+          if (isOpen && !payload.self) {
+            uidList(payload.removed).forEach((u) => sys(`${nickFor(u)} was removed from the group`));
+          }
+        } else if (evt.type === 'gc-admins-changed') {
+          if (isOpen) {
+            uidList(payload.added).forEach((u) => sys(`${nickFor(u)} is now an admin`));
+            uidList(payload.removed).forEach((u) => sys(`${nickFor(u)} is no longer an admin`));
+          }
         }
       }
     });
@@ -1226,7 +1305,14 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                     <span className="inline-flex shrink-0 h-7 w-7 rounded-full bg-muted/40 items-center justify-center text-[10px] font-semibold uppercase">
                       {label.slice(0, 2)}
                     </span>
-                    <span className="truncate flex-1">{label}</span>
+                    <span
+                      className={`truncate flex-1 ${
+                        g.local_is_member === false ? 'line-through opacity-60' : ''
+                      }`}
+                      title={g.local_is_member === false ? 'You were removed from this group' : undefined}
+                    >
+                      {label}
+                    </span>
                     {count > 0 ? (
                       <span className="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
                         {count > 99 ? '99+' : count}
@@ -1244,7 +1330,33 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         </div>
       </aside>
 
-      <section className={`${selected ? 'flex max-md:fixed max-md:inset-0 max-md:z-20 max-md:rounded-none max-md:border-0 max-md:bg-background' : 'hidden md:flex'} flex-1 min-w-0 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
+      <section className={`${selected ? 'flex max-md:fixed max-md:inset-0 max-md:z-20 max-md:rounded-none max-md:border-0 max-md:bg-background' : 'hidden md:flex'} relative flex-1 min-w-0 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
+        {kickNotice && selectedGroup?.id === kickNotice.gcid && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-xl bg-background/95 backdrop-blur-sm p-6 text-center">
+            <div className="h-16 w-16 rounded-full bg-rose-500/15 border border-rose-500/40 flex items-center justify-center">
+              <AlertCircle className="h-8 w-8 text-rose-400" />
+            </div>
+            <h3 className="text-xl font-bold">
+              {kickNotice.kind === 'dissolved' ? 'Group dissolved' : 'You were removed'}
+            </h3>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              {kickNotice.kind === 'dissolved'
+                ? `"${kickNotice.name || 'This group'}" was dissolved${kickNotice.by ? ` by ${kickNotice.by}` : ''}.`
+                : `You were removed from "${kickNotice.name || 'this group'}".`}
+              {kickNotice.reason ? ` Reason: ${kickNotice.reason}` : ''}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setKickNotice(null);
+                setSelected(null);
+              }}
+              className="px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold"
+            >
+              Close
+            </button>
+          </div>
+        )}
         {!selected ? (
           <EmptyThread
             onCreate={() => setShowInviteCreate(true)}
@@ -1340,6 +1452,11 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 />
               )}
             </div>
+            {selectedGroupRemoved ? (
+              <div className="p-3 border-t border-border/50 text-center text-xs italic text-muted-foreground">
+                You're no longer a member of this group.
+              </div>
+            ) : (
             <form onSubmit={handleSend} className="p-3 border-t border-border/50 flex flex-col gap-2">
               {attachment && (
                 <AttachmentPreview
@@ -1390,6 +1507,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 </button>
               </div>
             </form>
+            )}
           </>
         )}
       </section>

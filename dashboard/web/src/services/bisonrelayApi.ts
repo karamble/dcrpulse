@@ -1448,6 +1448,8 @@ export interface BisonrelayGC {
   blocked?: string[];
   local_is_owner: boolean;
   local_is_admin: boolean;
+  // false once we have been removed from the GC (the entry lingers locally).
+  local_is_member?: boolean;
 }
 
 export interface BisonrelayGCInvite {

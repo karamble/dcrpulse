@@ -28,6 +28,11 @@ const REFRESH_EVENT_TYPES = new Set([
   'post-status-received',
   'store-order-placed',
   'store-order-status',
+  // Group-chat removal / dissolve persist a bell note in brclientd; refetch
+  // the recent list as soon as the live event arrives.
+  'gc-parted',
+  'gc-killed',
+  'gc-members-removed',
 ]);
 
 const sevDot = (s: string) =>

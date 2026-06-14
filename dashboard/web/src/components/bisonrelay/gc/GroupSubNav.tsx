@@ -327,14 +327,15 @@ export const GroupSubNav = ({
         />
       )}
       {modal?.kind === 'kill' && (
-        <ConfirmModal
+        <PromptModal
           title="Dissolve group?"
-          body="All members are removed. The group is destroyed for everyone, not just you. This cannot be undone."
+          body="All members are removed. The group is destroyed for everyone, not just you. Optionally include a reason (shared with all members). This cannot be undone."
+          placeholder="Reason (optional)"
           confirmLabel="Dissolve"
           tone="rose"
           onClose={() => setModal(null)}
-          onConfirm={async () => {
-            await killBisonrelayGC(detail.id);
+          onConfirm={async (reason) => {
+            await killBisonrelayGC(detail.id, reason.trim());
             onPartedOrKilled();
           }}
         />
@@ -353,14 +354,15 @@ export const GroupSubNav = ({
         />
       )}
       {modal?.kind === 'kick' && (
-        <ConfirmModal
+        <PromptModal
           title={`Kick ${modal.nick}?`}
-          body="They are removed from the group. Other members are notified. They can be re-invited later."
+          body="They are removed from the group. Other members are notified. Optionally include a reason (shared with the removed member). They can be re-invited later."
+          placeholder="Reason (optional)"
           confirmLabel="Kick"
           tone="rose"
           onClose={() => setModal(null)}
-          onConfirm={async () => {
-            await kickFromBisonrelayGC(detail.id, modal.uid);
+          onConfirm={async (reason) => {
+            await kickFromBisonrelayGC(detail.id, modal.uid, reason.trim());
             onMutated();
           }}
         />
@@ -471,6 +473,7 @@ const PromptModal = ({
   initial,
   placeholder,
   confirmLabel,
+  tone = 'primary',
   onClose,
   onConfirm,
 }: {
@@ -479,6 +482,7 @@ const PromptModal = ({
   initial?: string;
   placeholder?: string;
   confirmLabel: string;
+  tone?: 'primary' | 'rose';
   onClose: () => void;
   onConfirm: (val: string) => Promise<void>;
 }) => {
@@ -543,7 +547,11 @@ const PromptModal = ({
             <button
               type="submit"
               disabled={busy}
-              className="px-3 py-1.5 rounded-md text-xs bg-gradient-primary text-white font-semibold inline-flex items-center gap-1.5 disabled:opacity-50"
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-50 ${
+                tone === 'rose'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                  : 'bg-gradient-primary text-white'
+              }`}
             >
               {busy && <Loader2 className="h-3 w-3 animate-spin" />}
               {confirmLabel}
