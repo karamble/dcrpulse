@@ -2,6 +2,8 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,15 +14,39 @@ import (
 	"golang.org/x/time/rate"
 )
 
-const csp = "default-src 'self'; " +
-	"script-src 'self'; " +
-	"style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data: blob:; " +
-	"font-src 'self'; " +
-	"connect-src 'self' ws: wss:; " +
-	"frame-ancestors 'self'; " +
-	"base-uri 'self'; " +
-	"form-action 'self'"
+// buildCSP assembles the document Content-Security-Policy. Any sha256 hashes in
+// scriptHashes are added to script-src so intentionally-shipped inline scripts
+// (e.g. the pre-mount theme loader in index.html) are allowed without weakening
+// the policy with 'unsafe-inline'.
+func buildCSP(scriptHashes []string) string {
+	scriptSrc := "script-src 'self'"
+	for _, h := range scriptHashes {
+		scriptSrc += " '" + h + "'"
+	}
+	return "default-src 'self'; " +
+		scriptSrc + "; " +
+		"style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data: blob:; " +
+		"font-src 'self'; " +
+		"connect-src 'self' ws: wss:; " +
+		"frame-ancestors 'self'; " +
+		"base-uri 'self'; " +
+		"form-action 'self'"
+}
+
+var csp = buildCSP(nil)
+
+// InlineScriptHash returns the CSP script-src token for an inline script body.
+func InlineScriptHash(body []byte) string {
+	sum := sha256.Sum256(body)
+	return "sha256-" + base64.StdEncoding.EncodeToString(sum[:])
+}
+
+// ConfigureInlineScriptHashes rebuilds the document CSP to allow the given
+// inline script hashes. Call once at startup before serving requests.
+func ConfigureInlineScriptHashes(hashes ...string) {
+	csp = buildCSP(hashes)
+}
 
 // trustProxyHeaders reports whether X-Forwarded-Host should be honored when
 // resolving the request's external host. Set TRUSTED_PROXY=true in compose

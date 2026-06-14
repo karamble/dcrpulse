@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,10 @@ import (
 
 //go:embed web/dist
 var embeddedFiles embed.FS
+
+// inlineScriptRe matches bare inline <script> blocks in index.html. The app
+// bundle is loaded via <script type="module" src=...> and is not matched.
+var inlineScriptRe = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
 
 func main() {
 	// Load dcrd configuration from environment variables
@@ -531,6 +536,20 @@ func main() {
 		log.Printf("Warning: Could not load embedded frontend files: %v", err)
 		log.Println("Frontend will not be available. This is expected in development mode.")
 	} else {
+		// Allow the inline scripts shipped in index.html (the pre-mount theme
+		// loader) under the strict script-src 'self' CSP by hashing them at
+		// startup. Recomputing from the embedded HTML means edits to the inline
+		// script never require updating the CSP by hand.
+		if html, rerr := fs.ReadFile(distFS, "index.html"); rerr == nil {
+			var hashes []string
+			for _, m := range inlineScriptRe.FindAllSubmatch(html, -1) {
+				hashes = append(hashes, middleware.InlineScriptHash(m[1]))
+			}
+			middleware.ConfigureInlineScriptHashes(hashes...)
+		} else {
+			log.Printf("Warning: Could not hash inline frontend scripts for CSP: %v", rerr)
+		}
+
 		// Serve static files with SPA fallback
 		r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			path := req.URL.Path
