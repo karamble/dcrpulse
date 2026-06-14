@@ -37,6 +37,10 @@ export const NodeDashboard = () => {
       const dashboardData = await getDashboardData();
       setData(dashboardData);
       setError(null);
+      // The 30s poll is authoritative for recovery: if it reports the node is no
+      // longer syncing, drop any stale live sync frame so a missed/transient
+      // WebSocket update cannot keep the progress bar pinned at 100% until a reload.
+      if (dashboardData.nodeStatus.status !== 'syncing') setNodeSync(null);
     } catch (err: any) {
       console.error('Error fetching dashboard data:', err);
       if (err.response?.status === 503) {
@@ -68,6 +72,10 @@ export const NodeDashboard = () => {
       ws = new WebSocket(`${proto}://${window.location.host}/api/node/sync/stream`);
       ws.onopen = () => {
         retry = 1000;
+        // Re-pull the authoritative status on every (re)connect so a stream that
+        // reconnected after a restart reconciles immediately instead of waiting
+        // for the next 30s poll.
+        fetchData();
       };
       ws.onmessage = (e) => {
         try {
