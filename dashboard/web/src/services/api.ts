@@ -759,6 +759,7 @@ export interface TicketRecord {
   spenderHeight: number;
   spenderTime: number;
   reward: number;
+  blocksUntilMature: number;
 }
 
 export const listTickets = async (): Promise<TicketRecord[]> => {

@@ -34,6 +34,12 @@ export const MyTicketsInfo = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [ticketPriceByHash, setTicketPriceByHash] = useState<Map<string, number>>(new Map());
+  // Keyed by the vote tx hash (= a ticket's spenderHash): the voted ticket's
+  // price and subsidy, so a vote row can show real amounts instead of a
+  // misleading "spendable" claim.
+  const [voteInfoByHash, setVoteInfoByHash] = useState<Map<string, { ticketPrice: number; reward: number }>>(
+    new Map()
+  );
   const [loading, setLoading] = useState(true); // Start with loading state
   const [error, setError] = useState<string | null>(null);
   const [visibleTicketCount, setVisibleTicketCount] = useState(5);
@@ -67,6 +73,13 @@ export const MyTicketsInfo = ({
     try {
       const records = await listTickets();
       setTicketPriceByHash(new Map(records.map((r) => [r.hash, r.ticketPrice])));
+      setVoteInfoByHash(
+        new Map(
+          records
+            .filter((r) => r.status === 'VOTED' && r.spenderHash)
+            .map((r) => [r.spenderHash, { ticketPrice: r.ticketPrice, reward: r.reward }])
+        )
+      );
     } catch (err) {
       console.error('Error fetching ticket prices:', err);
     }
@@ -364,13 +377,17 @@ export const MyTicketsInfo = ({
               </div>
               
               <div className="space-y-2">
-                {displayedTickets.map((tx, index) => (
-                  <TicketDetailRow
-                    key={`${tx.txid}-${index}`}
-                    transaction={tx}
-                    ticketPrice={ticketPriceByHash.get(tx.txid)}
-                  />
-                ))}
+                {displayedTickets.map((tx, index) => {
+                  const vi = voteInfoByHash.get(tx.txid);
+                  return (
+                    <TicketDetailRow
+                      key={`${tx.txid}-${index}`}
+                      transaction={tx}
+                      ticketPrice={vi ? vi.ticketPrice : ticketPriceByHash.get(tx.txid)}
+                      reward={vi?.reward}
+                    />
+                  );
+                })}
               </div>
 
               {hasMoreTickets && (

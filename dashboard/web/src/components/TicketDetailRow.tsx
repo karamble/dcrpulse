@@ -8,7 +8,6 @@ import { WalletTransaction } from '../services/api';
 import { 
   getTicketStatus, 
   getTicketStatusColor, 
-  formatMaturityCountdown,
   calculateMaturityProgress,
   calculateTicketMaturity
 } from '../services/ticketService';
@@ -16,9 +15,11 @@ import {
 interface TicketDetailRowProps {
   transaction: WalletTransaction;
   ticketPrice?: number;
+  // Vote subsidy (DCR) for vote rows, from the tickets endpoint keyed by vote hash.
+  reward?: number;
 }
 
-export const TicketDetailRow = ({ transaction, ticketPrice }: TicketDetailRowProps) => {
+export const TicketDetailRow = ({ transaction, ticketPrice, reward }: TicketDetailRowProps) => {
   const status = getTicketStatus(transaction);
   const statusColor = getTicketStatusColor(transaction);
   const isVote = transaction.txType === 'vote';
@@ -83,25 +84,34 @@ export const TicketDetailRow = ({ transaction, ticketPrice }: TicketDetailRowPro
         </div>
       </div>
 
-      {/* Maturity Info for Votes */}
+      {/* Amount + reward for Votes. The vote returns the ticket price plus the
+          subsidy to the wallet; show those rather than a spendable claim, since
+          a freshly voted ticket's funds are still maturing. */}
       {isVote && (
         <div className="ml-4 text-right flex flex-col items-end">
-          <div className={`text-sm font-medium ${transaction.isTicketMature ? 'text-success' : 'text-warning'}`}>
-            {formatMaturityCountdown(transaction.blocksUntilSpendable)}
-          </div>
-          {!transaction.isTicketMature && transaction.blocksUntilSpendable !== undefined && (
-            <div className="mt-1 w-32">
-              <div className="h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-warning transition-all duration-300"
-                  style={{ width: `${maturityProgress}%` }}
-                />
-              </div>
-              <div className="text-xs text-muted-foreground mt-1 text-right">
-                {Math.round(maturityProgress)}% mature
-              </div>
+          {ticketPrice !== undefined && (
+            <div className={`text-lg font-semibold ${statusColor}`}>
+              {ticketPrice.toFixed(2)} DCR
             </div>
           )}
+          {reward !== undefined && reward > 0 && (
+            <div className="text-xs text-success">+{reward.toFixed(4)} DCR reward</div>
+          )}
+          {!transaction.isTicketMature &&
+            transaction.blocksUntilSpendable !== undefined &&
+            transaction.blocksUntilSpendable > 0 && (
+              <div className="mt-1 w-32">
+                <div className="h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-warning transition-all duration-300"
+                    style={{ width: `${maturityProgress}%` }}
+                  />
+                </div>
+                <div className="text-xs text-muted-foreground mt-1 text-right">
+                  {transaction.blocksUntilSpendable} blocks until spendable
+                </div>
+              </div>
+            )}
         </div>
       )}
 

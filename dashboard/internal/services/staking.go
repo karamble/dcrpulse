@@ -22,8 +22,9 @@ import (
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
-	"github.com/decred/dcrd/chaincfg/chainhash"
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
+	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/chaincfg/v3"
 )
 
 const (
@@ -464,7 +465,46 @@ func ListTickets(ctx context.Context) ([]types.TicketRecord, error) {
 			records[i].FeeStatus = fs
 		}
 	}
+
+	// Annotate immature tickets with the blocks remaining until they mature into
+	// the live pool, using the active network's ticket-maturity parameter.
+	if ticketMaturity := currentTicketMaturity(ctx); ticketMaturity > 0 && rpc.DcrdClient != nil {
+		if bestHeight, herr := rpc.DcrdClient.GetBlockCount(ctx); herr == nil && bestHeight > 0 {
+			for i := range records {
+				if records[i].Status != "IMMATURE" || records[i].BlockHeight <= 0 {
+					continue
+				}
+				remaining := ticketMaturity - (int32(bestHeight) - records[i].BlockHeight)
+				if remaining < 0 {
+					remaining = 0
+				}
+				records[i].BlocksUntilMature = remaining
+			}
+		}
+	}
 	return records, nil
+}
+
+// currentTicketMaturity returns the active network's ticket maturity (the
+// blocks a ticket must age before it becomes live), or 0 if the network can't
+// be resolved so callers can skip the annotation.
+func currentTicketMaturity(ctx context.Context) int32 {
+	network, err := CurrentNetwork(ctx)
+	if err != nil {
+		return 0
+	}
+	var params *chaincfg.Params
+	switch network {
+	case "mainnet":
+		params = chaincfg.MainNetParams()
+	case "testnet":
+		params = chaincfg.TestNet3Params()
+	case "simnet":
+		params = chaincfg.SimNetParams()
+	default:
+		return 0
+	}
+	return int32(params.TicketMaturity)
 }
 
 // ticketStatusNames maps the dcrwallet enum to the canonical short names we

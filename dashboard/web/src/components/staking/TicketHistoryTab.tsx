@@ -7,7 +7,15 @@ import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowDownUp, ExternalLink, Filter, History, Search } from 'lucide-react';
 import { TicketRecord, TicketLifecycleStatus, listTickets } from '../../services/api';
 
-const TERMINAL_STATES: TicketLifecycleStatus[] = ['VOTED', 'MISSED', 'EXPIRED', 'REVOKED'];
+const ALL_STATES: TicketLifecycleStatus[] = [
+  'UNMINED',
+  'IMMATURE',
+  'LIVE',
+  'VOTED',
+  'MISSED',
+  'EXPIRED',
+  'REVOKED',
+];
 
 const truncateHash = (h: string) => (h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-8)}` : h);
 const formatDcr = (v: number) => v.toFixed(8);
@@ -34,6 +42,43 @@ const statusBadge = (status: TicketLifecycleStatus) => {
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[status]}`}>{status}</span>
   );
+};
+
+// renderActivity shows what is happening to the ticket now: a maturity/pool hint
+// for active tickets, or the vote/revoke spender link + age once it has resolved.
+const renderActivity = (t: TicketRecord) => {
+  switch (t.status) {
+    case 'IMMATURE':
+      return (
+        <span className="text-warning whitespace-nowrap">
+          {t.blocksUntilMature > 0 ? `${t.blocksUntilMature} blocks to live` : 'maturing'}
+        </span>
+      );
+    case 'LIVE':
+      return <span className="text-success whitespace-nowrap">in pool</span>;
+    case 'UNMINED':
+      return <span className="text-muted-foreground whitespace-nowrap">pending</span>;
+    case 'VOTED':
+    case 'MISSED':
+    case 'EXPIRED':
+    case 'REVOKED':
+      return t.spenderHash ? (
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+          <Link
+            to={`/explorer/tx/${t.spenderHash}`}
+            className="text-primary hover:underline inline-flex items-center gap-1 font-mono"
+          >
+            {truncateHash(t.spenderHash)}
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+          {t.spenderTime > 0 && <span className="text-muted-foreground">· {formatAge(t.spenderTime)}</span>}
+        </span>
+      ) : (
+        <span className="text-muted-foreground">-</span>
+      );
+    default:
+      return <span className="text-muted-foreground">-</span>;
+  }
 };
 
 const BATCH = 50;
@@ -68,17 +113,12 @@ export const TicketHistoryTab = () => {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tickets
-      .filter((t) => TERMINAL_STATES.includes(t.status))
       .filter((t) => (statusFilter === 'ALL' ? true : t.status === statusFilter))
       .filter((t) => {
         if (!q) return true;
         return t.hash.toLowerCase().includes(q) || t.spenderHash.toLowerCase().includes(q);
       })
-      .sort((a, b) => {
-        const ah = a.spenderHeight || a.blockHeight;
-        const bh = b.spenderHeight || b.blockHeight;
-        return sort === 'NEWEST' ? bh - ah : ah - bh;
-      });
+      .sort((a, b) => (sort === 'NEWEST' ? b.blockHeight - a.blockHeight : a.blockHeight - b.blockHeight));
   }, [tickets, statusFilter, sort, query]);
 
   const visible = filtered.slice(0, shown);
@@ -104,7 +144,7 @@ export const TicketHistoryTab = () => {
             className="px-3 py-2 rounded-lg bg-background border border-border/50 text-sm"
           >
             <option value="ALL">All</option>
-            {TERMINAL_STATES.map((s) => (
+            {ALL_STATES.map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
@@ -166,10 +206,10 @@ export const TicketHistoryTab = () => {
               <tr className="text-left text-muted-foreground border-b border-border/30">
                 <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3">Ticket</th>
-                <th className="py-2 pr-3">Vote / Revoke</th>
                 <th className="py-2 pr-3 text-right">Price</th>
                 <th className="py-2 pr-3 text-right">Reward</th>
-                <th className="py-2 pr-3">Resolved</th>
+                <th className="py-2 pr-3">Activity</th>
+                <th className="py-2 pr-3">Purchased</th>
               </tr>
             </thead>
             <tbody>
@@ -185,19 +225,6 @@ export const TicketHistoryTab = () => {
                       <ExternalLink className="h-3 w-3" />
                     </Link>
                   </td>
-                  <td className="py-2 pr-3 font-mono">
-                    {t.spenderHash ? (
-                      <Link
-                        to={`/explorer/tx/${t.spenderHash}`}
-                        className="text-primary hover:underline inline-flex items-center gap-1"
-                      >
-                        {truncateHash(t.spenderHash)}
-                        <ExternalLink className="h-3 w-3" />
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </td>
                   <td className="py-2 pr-3 text-right font-mono whitespace-nowrap">
                     {formatDcr(t.ticketPrice)} DCR
                   </td>
@@ -208,13 +235,14 @@ export const TicketHistoryTab = () => {
                       <span className="text-muted-foreground">-</span>
                     )}
                   </td>
+                  <td className="py-2 pr-3 font-mono">{renderActivity(t)}</td>
                   <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">
-                    {t.spenderHeight > 0 ? (
+                    {t.blockHeight > 0 ? (
                       <>
-                        {t.spenderHeight.toLocaleString()} · {formatAge(t.spenderTime)}
+                        {t.blockHeight.toLocaleString()} · {formatAge(t.blockTime)}
                       </>
                     ) : (
-                      '-'
+                      'unmined'
                     )}
                   </td>
                 </tr>

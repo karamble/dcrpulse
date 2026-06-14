@@ -9,19 +9,19 @@ import "time"
 // VSPInfo describes one Voting Service Provider entry returned by the
 // public registry at api.decred.org or by a single VSP's /api/v3/vspinfo.
 type VSPInfo struct {
-	Host             string  `json:"host"`
-	PubKey           string  `json:"pubkey"`
-	Network          string  `json:"network"`
-	APIVersions      []int   `json:"apiVersions,omitempty"`
-	FeePercentage    float64 `json:"feePercentage"`
-	VspdVersion      string  `json:"vspdVersion,omitempty"`
-	BlockHeight      uint32  `json:"blockHeight,omitempty"`
+	Host              string  `json:"host"`
+	PubKey            string  `json:"pubkey"`
+	Network           string  `json:"network"`
+	APIVersions       []int   `json:"apiVersions,omitempty"`
+	FeePercentage     float64 `json:"feePercentage"`
+	VspdVersion       string  `json:"vspdVersion,omitempty"`
+	BlockHeight       uint32  `json:"blockHeight,omitempty"`
 	NetworkProportion float64 `json:"networkProportion,omitempty"`
-	Voting           uint32  `json:"voting,omitempty"`
-	Voted            uint32  `json:"voted,omitempty"`
-	Expired          uint32  `json:"expired,omitempty"`
-	Missed           uint32  `json:"missed,omitempty"`
-	Outdated         bool    `json:"outdated,omitempty"`
+	Voting            uint32  `json:"voting,omitempty"`
+	Voted             uint32  `json:"voted,omitempty"`
+	Expired           uint32  `json:"expired,omitempty"`
+	Missed            uint32  `json:"missed,omitempty"`
+	Outdated          bool    `json:"outdated,omitempty"`
 }
 
 // ListVSPsResponse is the envelope returned by GET /api/wallet/staking/vsps.
@@ -64,6 +64,9 @@ type TicketRecord struct {
 	SpenderHeight int32   `json:"spenderHeight"`
 	SpenderTime   int64   `json:"spenderTime"`
 	Reward        float64 `json:"reward"`
+	// BlocksUntilMature is the blocks an IMMATURE ticket still needs before it
+	// becomes live; 0 for any other status.
+	BlocksUntilMature int32 `json:"blocksUntilMature"`
 }
 
 // SyncFailedVSPTicketsRequest is the body posted to /api/wallet/staking/sync-failed-vsp-tickets.
