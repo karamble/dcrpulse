@@ -20,6 +20,9 @@ interface BisonrelayLiveCtx {
   gcUnread: Record<string, number>;
   totalGCUnread: number;
   clearGCUnread: (gcid: string) => void;
+  // Drop unread for any GC not in liveGcids - reconciles entries orphaned when a
+  // GC we were kicked from / that was dissolved disappears from the list.
+  pruneGCUnread: (liveGcids: string[]) => void;
   setActiveGCID: (gcid: string) => void;
   addListener: (fn: Listener) => () => void;
   contactGroups: BisonrelayContactGroups | null;
@@ -93,6 +96,17 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
     });
   }, []);
 
+  const pruneGCUnread = useCallback((liveGcids: string[]) => {
+    const live = new Set(liveGcids);
+    setGCUnread((prev) => {
+      const keys = Object.keys(prev);
+      if (keys.every((k) => live.has(k))) return prev;
+      const next: Record<string, number> = {};
+      for (const k of keys) if (live.has(k)) next[k] = prev[k];
+      return next;
+    });
+  }, []);
+
   const setActiveGCID = useCallback((gcid: string) => {
     activeGCIDRef.current = gcid;
   }, []);
@@ -145,6 +159,14 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
               setGCUnread((prev) => ({ ...prev, [gcid]: (prev[gcid] ?? 0) + 1 }));
             }
           }
+          // A GC we were removed from / that was dissolved leaves no sidebar row
+          // to open and clear, so release its unread (and the nav dot) here.
+          if (evt.type === 'gc-killed') {
+            clearGCUnread(String((evt.payload as Record<string, unknown>)?.gcid ?? ''));
+          } else if (evt.type === 'gc-parted' || evt.type === 'gc-members-removed') {
+            const p = (evt.payload ?? {}) as Record<string, unknown>;
+            if (p.self === true) clearGCUnread(String(p.gcid ?? ''));
+          }
         } catch {
           /* ignore */
         }
@@ -180,6 +202,7 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
         gcUnread,
         totalGCUnread,
         clearGCUnread,
+        pruneGCUnread,
         setActiveGCID,
         addListener,
         contactGroups,

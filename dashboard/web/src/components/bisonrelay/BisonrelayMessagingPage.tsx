@@ -185,6 +185,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     setActiveUid,
     gcUnread,
     clearGCUnread,
+    pruneGCUnread,
     setActiveGCID,
     addListener,
     contactGroups,
@@ -238,10 +239,13 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       const entries = await listBisonrelayGCs();
       setGCs(entries);
       setGCsErr(null);
+      // Drop unread for GCs no longer in the list (e.g. kicked/dissolved) so the
+      // nav dot can't get stuck on a group with no sidebar row to open.
+      pruneGCUnread(entries.map((g) => g.id));
     } catch (err: any) {
       setGCsErr(err?.message || 'Could not load groups');
     }
-  }, []);
+  }, [pruneGCUnread]);
 
   useEffect(() => {
     refreshContacts();
