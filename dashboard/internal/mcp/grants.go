@@ -32,6 +32,7 @@ var (
 	errVotingNotAllowed    = errors.New("the spend grant does not allow governance voting: ask the user to enable it")
 	errLightningNotAllowed = errors.New("the spend grant does not allow Lightning payments: ask the user to enable it")
 	errDexNotAllowed       = errors.New("the spend grant does not allow DEX trading: ask the user to enable it")
+	errBRWriteNotAllowed   = errors.New("the grant does not allow Bison Relay write actions: ask the user to enable it")
 )
 
 // spendGrant is one agent's in-memory spend capability. Wallet sends and ticket
@@ -49,6 +50,7 @@ type spendGrant struct {
 	allowVoting    bool
 	allowLightning bool
 	allowDex       bool
+	allowBRWrite   bool // Bison Relay write actions (create products, etc.)
 
 	spentAtoms  int64 // spent in the current rolling window (wallet + Lightning)
 	windowStart time.Time
@@ -65,6 +67,7 @@ type GrantSpec struct {
 	AllowVoting    bool
 	AllowLightning bool
 	AllowDex       bool
+	AllowBRWrite   bool
 }
 
 // GrantInfo is the dashboard-facing view of a grant. It never includes the
@@ -80,6 +83,7 @@ type GrantInfo struct {
 	AllowVoting    bool      `json:"allowVoting"`
 	AllowLightning bool      `json:"allowLightning"`
 	AllowDex       bool      `json:"allowDex"`
+	AllowBRWrite   bool      `json:"allowBrWrite"`
 }
 
 type grantStore struct {
@@ -117,6 +121,7 @@ func (s *grantStore) set(agentID string, spec GrantSpec, now time.Time) {
 		allowVoting:    spec.AllowVoting,
 		allowLightning: spec.AllowLightning,
 		allowDex:       spec.AllowDex,
+		allowBRWrite:   spec.AllowBRWrite,
 		windowStart:    now,
 	}
 }
@@ -153,6 +158,7 @@ func (s *grantStore) info(agentID string) (GrantInfo, bool) {
 		AllowVoting:    g.allowVoting,
 		AllowLightning: g.allowLightning,
 		AllowDex:       g.allowDex,
+		AllowBRWrite:   g.allowBRWrite,
 	}, true
 }
 
@@ -273,6 +279,21 @@ func (s *grantStore) authorizeDex(agentID string, now time.Time) error {
 	}
 	if !g.allowDex {
 		return errDexNotAllowed
+	}
+	return nil
+}
+
+// authorizeBRWrite checks the grant allows Bison Relay write actions (managing
+// the storefront, and later messaging/posting). No funds, no passphrase.
+func (s *grantStore) authorizeBRWrite(agentID string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, err := s.currentLocked(agentID, now)
+	if err != nil {
+		return err
+	}
+	if !g.allowBRWrite {
+		return errBRWriteNotAllowed
 	}
 	return nil
 }

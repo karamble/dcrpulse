@@ -25,6 +25,7 @@ type spendCapability struct {
 	AllowVoting       bool     `json:"allowVoting"`
 	AllowLightning    bool     `json:"allowLightning"`
 	AllowDex          bool     `json:"allowDex"`
+	AllowBRWrite      bool     `json:"allowBrWrite"`
 	Note              string   `json:"note,omitempty"`
 }
 
@@ -71,6 +72,7 @@ var capabilityTools = []toolDef{
 				AllowVoting:    info.AllowVoting,
 				AllowLightning: info.AllowLightning,
 				AllowDex:       info.AllowDex,
+				AllowBRWrite:   info.AllowBRWrite,
 			}
 			if info.DailyAtoms > 0 {
 				rem := info.DailyAtoms - spent

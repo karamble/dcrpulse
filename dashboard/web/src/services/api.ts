@@ -1530,6 +1530,7 @@ export interface MCPGrant {
   allowVoting: boolean;
   allowLightning: boolean;
   allowDex: boolean;
+  allowBrWrite: boolean;
 }
 
 // MCPAuditEntry records one agent spend attempt for display.
@@ -1566,6 +1567,7 @@ export interface MCPGrantRequest {
   allowVoting: boolean;
   allowLightning: boolean;
   allowDex: boolean;
+  allowBrWrite: boolean;
 }
 
 export const getMCPSettings = async (): Promise<MCPSettings> => {

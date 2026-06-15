@@ -51,6 +51,7 @@ type grantView struct {
 	AllowVoting       bool     `json:"allowVoting"`
 	AllowLightning    bool     `json:"allowLightning"`
 	AllowDex          bool     `json:"allowDex"`
+	AllowBRWrite      bool     `json:"allowBrWrite"`
 }
 
 func toGrantView(info mcp.GrantInfo) grantView {
@@ -67,6 +68,7 @@ func toGrantView(info mcp.GrantInfo) grantView {
 		AllowVoting:    info.AllowVoting,
 		AllowLightning: info.AllowLightning,
 		AllowDex:       info.AllowDex,
+		AllowBRWrite:   info.AllowBRWrite,
 	}
 	if info.DailyAtoms > 0 {
 		rem := info.DailyAtoms - spent
@@ -229,6 +231,7 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 		AllowVoting    bool     `json:"allowVoting"`
 		AllowLightning bool     `json:"allowLightning"`
 		AllowDex       bool     `json:"allowDex"`
+		AllowBRWrite   bool     `json:"allowBrWrite"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -238,12 +241,9 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 	req.Passphrase = ""
 	defer wipe(pass)
 
-	if len(req.Accounts) == 0 {
-		http.Error(w, "select at least one account", http.StatusBadRequest)
-		return
-	}
-	if len(pass) == 0 {
-		http.Error(w, "wallet passphrase is required", http.StatusBadRequest)
+	// A grant must enable at least one capability.
+	if len(req.Accounts) == 0 && !req.AllowVoting && !req.AllowLightning && !req.AllowDex && !req.AllowBRWrite {
+		http.Error(w, "grant must cover at least one account or enable an action", http.StatusBadRequest)
 		return
 	}
 	if req.PerTxDCR < 0 || req.DailyDCR < 0 {
@@ -261,12 +261,21 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the passphrase before holding it in memory, so a typo is caught now.
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	if err := services.VerifyWalletPassphrase(ctx, pass); err != nil {
-		http.Error(w, "wallet passphrase verification failed", http.StatusBadRequest)
-		return
+	// The passphrase is needed only for capabilities that sign with it: spending
+	// from accounts, or governance voting. Flag-only grants (Lightning, DEX,
+	// Bison Relay write) move no wallet funds and need no passphrase.
+	if len(req.Accounts) > 0 || req.AllowVoting {
+		if len(pass) == 0 {
+			http.Error(w, "wallet passphrase is required for spend or voting access", http.StatusBadRequest)
+			return
+		}
+		// Verify before holding it in memory, so a typo is caught now.
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		if err := services.VerifyWalletPassphrase(ctx, pass); err != nil {
+			http.Error(w, "wallet passphrase verification failed", http.StatusBadRequest)
+			return
+		}
 	}
 
 	allow := make([]string, 0, len(req.Allowlist))
@@ -290,6 +299,7 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 		AllowVoting:    req.AllowVoting,
 		AllowLightning: req.AllowLightning,
 		AllowDex:       req.AllowDex,
+		AllowBRWrite:   req.AllowBRWrite,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }

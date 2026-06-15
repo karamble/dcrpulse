@@ -6,9 +6,24 @@ package mcp
 
 import (
 	"context"
+	"time"
 
 	"dcrpulse/internal/rpc"
 )
+
+type brSaveProductInput struct {
+	SKU         string   `json:"sku" jsonschema:"unique product SKU"`
+	Title       string   `json:"title" jsonschema:"product title"`
+	Description string   `json:"description,omitempty" jsonschema:"product description"`
+	Price       float64  `json:"price" jsonschema:"price in DCR"`
+	Tags        []string `json:"tags,omitempty" jsonschema:"optional tags"`
+	Shipping    bool     `json:"shipping,omitempty" jsonschema:"true if the product must be shipped"`
+	Disabled    bool     `json:"disabled,omitempty" jsonschema:"true to hide the product from the store"`
+}
+
+type brDeleteProductInput struct {
+	SKU string `json:"sku" jsonschema:"SKU of the product to delete"`
+}
 
 type brNotificationsInput struct {
 	Count int `json:"count,omitempty" jsonschema:"max notifications to return (default 50)"`
@@ -120,4 +135,45 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_rates",
 		"Get the latest DCR/USD and BTC/USD exchange rates known to brclientd.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdRates(ctx) }),
+	agentTool("bisonrelay", "br_store_save_product",
+		"Create or update a product in the Bison Relay storefront. Requires a grant with Bison Relay write enabled. Price is in DCR.",
+		func(ctx context.Context, a *agent, in brSaveProductInput) (any, error) {
+			if err := grants.authorizeBRWrite(a.id, time.Now()); err != nil {
+				recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "denied", err.Error())
+				return nil, err
+			}
+			tags := in.Tags
+			if tags == nil {
+				tags = []string{}
+			}
+			body := map[string]any{
+				"sku":         in.SKU,
+				"title":       in.Title,
+				"description": in.Description,
+				"price":       in.Price,
+				"tags":        tags,
+				"shipping":    in.Shipping,
+				"disabled":    in.Disabled,
+			}
+			if err := rpc.BrclientdSaveStoreProduct(ctx, body); err != nil {
+				recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "ok", in.Title)
+			return map[string]any{"sku": in.SKU, "title": in.Title, "ok": true}, nil
+		}),
+	agentTool("bisonrelay", "br_store_delete_product",
+		"Delete a product from the Bison Relay storefront by SKU. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brDeleteProductInput) (any, error) {
+			if err := grants.authorizeBRWrite(a.id, time.Now()); err != nil {
+				recordSpend(a, "br_store_delete_product", 0, 0, in.SKU, "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdDeleteStoreProduct(ctx, in.SKU); err != nil {
+				recordSpend(a, "br_store_delete_product", 0, 0, in.SKU, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_store_delete_product", 0, 0, in.SKU, "ok", "")
+			return map[string]any{"sku": in.SKU, "ok": true}, nil
+		}),
 }

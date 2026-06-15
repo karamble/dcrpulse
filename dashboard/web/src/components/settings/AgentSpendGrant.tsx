@@ -35,6 +35,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
   const [allowVoting, setAllowVoting] = useState(grant?.allowVoting ?? false);
   const [allowLightning, setAllowLightning] = useState(grant?.allowLightning ?? false);
   const [allowDex, setAllowDex] = useState(grant?.allowDex ?? false);
+  const [allowBrWrite, setAllowBrWrite] = useState(grant?.allowBrWrite ?? false);
 
   const openForm = () => {
     setSelected(new Set(grant?.accounts ?? []));
@@ -46,6 +47,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
     setAllowVoting(grant?.allowVoting ?? false);
     setAllowLightning(grant?.allowLightning ?? false);
     setAllowDex(grant?.allowDex ?? false);
+    setAllowBrWrite(grant?.allowBrWrite ?? false);
     setError(null);
     setEditing(true);
   };
@@ -60,12 +62,14 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
   };
 
   const submit = async () => {
-    if (selected.size === 0) {
-      setError('Select at least one account.');
+    const anyAction = allowVoting || allowLightning || allowDex || allowBrWrite;
+    if (selected.size === 0 && !anyAction) {
+      setError('Select an account to spend from, or enable at least one action.');
       return;
     }
-    if (!passphrase) {
-      setError('Enter the wallet passphrase.');
+    // The passphrase is only needed for spend (accounts) or voting.
+    if ((selected.size > 0 || allowVoting) && !passphrase) {
+      setError('Enter the wallet passphrase (required for spend or voting access).');
       return;
     }
     setBusy(true);
@@ -84,6 +88,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
         allowVoting,
         allowLightning,
         allowDex,
+        allowBrWrite,
       });
       setPassphrase('');
       setEditing(false);
@@ -179,6 +184,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
               grant.allowVoting && 'voting',
               grant.allowLightning && 'Lightning',
               grant.allowDex && 'DEX',
+              grant.allowBrWrite && 'BR write',
             ]
               .filter(Boolean)
               .join(', ') || 'wallet send + staking only'}
@@ -266,6 +272,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
                 { label: 'Governance voting', on: allowVoting, set: setAllowVoting },
                 { label: 'Lightning pay', on: allowLightning, set: setAllowLightning },
                 { label: 'DEX trading', on: allowDex, set: setAllowDex },
+                { label: 'Bison Relay write', on: allowBrWrite, set: setAllowBrWrite },
               ].map((c) => (
                 <button
                   key={c.label}
