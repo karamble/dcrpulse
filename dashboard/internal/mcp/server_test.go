@@ -45,12 +45,13 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) map[string]bool {
 func TestNodeOnlyAgentSeesOnlyNodeTools(t *testing.T) {
 	a := &agent{id: "n", name: "node-only", domains: map[string]bool{"node": true}}
 	names := toolNames(t, connectTo(t, a))
-	for _, want := range []string{"node_status", "node_dashboard", "node_blockchain_info"} {
+	// capabilities is always available so any agent can introspect itself.
+	for _, want := range []string{"node_status", "node_dashboard", "node_blockchain_info", "capabilities"} {
 		if !names[want] {
 			t.Errorf("node-only agent missing expected tool %q", want)
 		}
 	}
-	for _, deny := range []string{"wallet_dashboard", "wallet_accounts", "staking_tickets"} {
+	for _, deny := range []string{"wallet_dashboard", "wallet_accounts", "staking_tickets", "wallet_send"} {
 		if names[deny] {
 			t.Errorf("node-only agent must NOT expose %q", deny)
 		}
@@ -60,7 +61,7 @@ func TestNodeOnlyAgentSeesOnlyNodeTools(t *testing.T) {
 func TestGrantedAgentSeesMoreTools(t *testing.T) {
 	a := &agent{id: "g", name: "granted", domains: map[string]bool{"node": true, "wallet": true, "staking": true}}
 	names := toolNames(t, connectTo(t, a))
-	for _, want := range []string{"node_status", "wallet_dashboard", "wallet_accounts", "staking_tickets"} {
+	for _, want := range []string{"node_status", "wallet_dashboard", "wallet_accounts", "staking_tickets", "wallet_send"} {
 		if !names[want] {
 			t.Errorf("granted agent missing expected tool %q", want)
 		}

@@ -53,6 +53,7 @@ func RevokeAgent(id string) (bool, error) {
 	if !reg.remove(id) {
 		return false, nil
 	}
+	grants.revoke(id) // zero any in-memory spend passphrase for this agent
 	return true, saveAgents()
 }
 
@@ -268,7 +269,7 @@ func buildServer(a *agent) *mcp.Server {
 	}, nil)
 	for _, t := range toolCatalog {
 		if a.allows(t.domain) {
-			t.register(s)
+			t.register(s, a)
 		}
 	}
 	return s
@@ -293,20 +294,33 @@ func ok(v any, err error) (*mcp.CallToolResult, toolResult, error) {
 }
 
 // toolDef tags each tool with its capability domain so the per-agent server can
-// register only the tools that agent is permitted to use.
+// register only the tools that agent is permitted to use. register receives the
+// agent so identity-aware tools (capability introspection, spend) can close over
+// it; each agent has its own server, so the binding is per-agent.
 type toolDef struct {
 	domain   string
-	register func(*mcp.Server)
+	register func(*mcp.Server, *agent)
 }
 
 // readTool builds a read-only tool: a thin adapter that calls fn and wraps its
 // (value, error) result for MCP. In is the tool's argument type (emptyInput for
 // tools that take no parameters); its exported fields become the input schema.
 func readTool[In any](domain, name, description string, fn func(context.Context, In) (any, error)) toolDef {
-	return toolDef{domain, func(s *mcp.Server) {
+	return toolDef{domain, func(s *mcp.Server, _ *agent) {
 		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description},
 			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, toolResult, error) {
 				return ok(fn(ctx, in))
+			})
+	}}
+}
+
+// agentTool builds a tool whose handler also receives the calling agent's
+// identity, for capability introspection and grant-gated spend tools.
+func agentTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
+	return toolDef{domain, func(s *mcp.Server, a *agent) {
+		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description},
+			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, toolResult, error) {
+				return ok(fn(ctx, a, in))
 			})
 	}}
 }
@@ -332,6 +346,7 @@ func catalogDomains() []string {
 // on a user spend grant) are added in later phases.
 var toolCatalog = func() []toolDef {
 	var all []toolDef
+	all = append(all, capabilityTools...)
 	all = append(all, nodeTools...)
 	all = append(all, walletTools...)
 	all = append(all, stakingTools...)
