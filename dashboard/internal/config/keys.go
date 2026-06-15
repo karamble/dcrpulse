@@ -71,6 +71,12 @@ const (
 	KeyAuthSessionSecret  = "auth_session_secret"
 	KeyAuthSetupDismissed = "auth_setup_dismissed"
 
+	// KeyMCPAgents persists the MCP agent roster: named bearer-token identities
+	// (token SHA-256 hash only, never the plaintext) plus the capability domains
+	// the user has granted each one. Lives in the global config so it is shared
+	// across wallets, like the dashboard auth gate.
+	KeyMCPAgents = "mcp_agents"
+
 	// Per-wallet record of Politeia vote choices we cast through this
 	// dashboard. Map keyed by proposal token, value = "yes"|"no"|"abstain".
 	// Mirrors Decrediton's savePiVote local cache so the UI can show

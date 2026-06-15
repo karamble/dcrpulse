@@ -387,6 +387,10 @@ func main() {
 	api.HandleFunc("/alerts/settings", handlers.GetAlertsSettingsHandler).Methods("GET")
 	api.HandleFunc("/alerts/settings", handlers.SaveAlertsSettingsHandler).Methods("POST")
 	api.HandleFunc("/alerts/{id}/read", handlers.MarkAlertReadHandler).Methods("POST")
+	api.HandleFunc("/settings/mcp", handlers.MCPSettingsHandler).Methods("GET")
+	api.HandleFunc("/settings/mcp/tokens", handlers.CreateMCPTokenHandler).Methods("POST")
+	api.HandleFunc("/settings/mcp/tokens/{id}", handlers.RevokeMCPTokenHandler).Methods("DELETE")
+	api.HandleFunc("/settings/mcp/agents/{id}/domains", handlers.SetMCPAgentDomainsHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records", handlers.ListTimestampsHandler).Methods("GET")
 	api.HandleFunc("/timestamp/records", handlers.CreateTimestampHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records/{digest}", handlers.GetTimestampHandler).Methods("GET")
@@ -744,6 +748,11 @@ func main() {
 	// Optional MCP server (disabled unless MCP_ENABLE=true): exposes dcrpulse
 	// capabilities to AI agents over streamable HTTP on a separate listener,
 	// reusing the in-process daemon clients. Bound to 127.0.0.1 by default.
+	// Load the saved agent roster first so the Settings -> Agents panel can
+	// manage tokens even while the listener is disabled.
+	if err := mcp.LoadPersisted(); err != nil {
+		log.Printf("MCP: load saved agents: %v", err)
+	}
 	mcp.Start(mcp.ConfigFromEnv())
 
 	// The host check wraps the router rather than joining r.Use: mux only runs

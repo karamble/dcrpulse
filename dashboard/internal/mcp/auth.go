@@ -12,9 +12,13 @@ package mcp
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -27,14 +31,24 @@ const defaultDomain = "node"
 // domains the user has granted it. Tokens are high-entropy, so a fast SHA-256
 // (not bcrypt) is sufficient and keeps per-request auth cheap.
 type agent struct {
-	id      string
-	name    string
-	hash    [32]byte
-	domains map[string]bool // granted domains; defaults to {node}
+	id        string
+	name      string
+	hash      [32]byte
+	domains   map[string]bool // granted domains; defaults to {node}
+	createdAt time.Time
 }
 
 func (a *agent) allows(domain string) bool {
 	return a != nil && a.domains[domain]
+}
+
+// AgentInfo is the dashboard-facing view of an agent identity. It never
+// includes the token (only its hash is stored, and not exposed here).
+type AgentInfo struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Domains   []string  `json:"domains"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // Session is a recently-active agent connection, surfaced to the dashboard so the
@@ -63,33 +77,124 @@ func newRegistry() *registry {
 // addToken registers a named bearer token, storing only its hash. New agents
 // start with only the default ("node") domain.
 func (r *registry) addToken(id, name, token string) {
+	r.addAgentRecord(id, name, sha256.Sum256([]byte(token)), []string{defaultDomain}, time.Now())
+}
+
+// addAgentRecord installs an agent from an already-hashed token. Used by the
+// persistence layer to restore the roster on startup and by addToken/create.
+// The node domain is always implied.
+func (r *registry) addAgentRecord(id, name string, hash [32]byte, domains []string, createdAt time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.agents[id] = &agent{
-		id:      id,
-		name:    name,
-		hash:    sha256.Sum256([]byte(token)),
-		domains: map[string]bool{defaultDomain: true},
+		id:        id,
+		name:      name,
+		hash:      hash,
+		domains:   domainSet(domains),
+		createdAt: createdAt,
 	}
 }
 
+// create mints a new agent: a random id and a high-entropy bearer token. Only
+// the token's hash is retained; the plaintext is returned once for the user to
+// copy and is never recoverable afterward.
+func (r *registry) create(name string) (id, token string, err error) {
+	id, err = randomHex(8)
+	if err != nil {
+		return "", "", err
+	}
+	raw, err := randomToken()
+	if err != nil {
+		return "", "", err
+	}
+	r.addAgentRecord(id, name, sha256.Sum256([]byte(raw)), []string{defaultDomain}, time.Now())
+	return id, raw, nil
+}
+
+// remove deletes an agent and any live session, and drops its cached scoped
+// server. Returns false if no such agent existed.
+func (r *registry) remove(id string) bool {
+	r.mu.Lock()
+	_, ok := r.agents[id]
+	delete(r.agents, id)
+	delete(r.sessions, id)
+	onChange := r.onChange
+	r.mu.Unlock()
+	if ok && onChange != nil {
+		onChange(id)
+	}
+	return ok
+}
+
+// list returns the agent roster (without tokens), newest first.
+func (r *registry) list() []AgentInfo {
+	r.mu.Lock()
+	out := make([]AgentInfo, 0, len(r.agents))
+	for _, a := range r.agents {
+		out = append(out, AgentInfo{
+			ID:        a.id,
+			Name:      a.name,
+			Domains:   sortedDomains(a.domains),
+			CreatedAt: a.createdAt,
+		})
+	}
+	r.mu.Unlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out
+}
+
+// domainSet builds the granted-domain set, always including the node default.
+func domainSet(domains []string) map[string]bool {
+	m := map[string]bool{defaultDomain: true}
+	for _, d := range domains {
+		if d != "" {
+			m[d] = true
+		}
+	}
+	return m
+}
+
+// sortedDomains returns the granted domains in stable alphabetical order.
+func sortedDomains(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for d := range m {
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// randomToken returns a URL-safe, high-entropy bearer token (256 bits).
+func randomToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "mcp_" + base64.RawURLEncoding.EncodeToString(b), nil
+}
+
 // setDomains replaces an agent's granted domains (node always implied). Triggers
-// rebuild of that agent's scoped MCP server.
-func (r *registry) setDomains(id string, domains []string) {
+// rebuild of that agent's scoped MCP server. Returns false if no such agent.
+func (r *registry) setDomains(id string, domains []string) bool {
 	r.mu.Lock()
 	a := r.agents[id]
 	if a != nil {
-		m := map[string]bool{defaultDomain: true}
-		for _, d := range domains {
-			m[d] = true
-		}
-		a.domains = m
+		a.domains = domainSet(domains)
 	}
 	onChange := r.onChange
 	r.mu.Unlock()
 	if a != nil && onChange != nil {
 		onChange(id)
 	}
+	return a != nil
 }
 
 // verify resolves a bearer token to its agent identity in constant time.

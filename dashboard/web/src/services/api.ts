@@ -1497,5 +1497,55 @@ export const saveAlertsSettings = async (settings: AlertsSettings): Promise<void
   await api.post('/alerts/settings', settings);
 };
 
+// MCP (Model Context Protocol) agent access. The dashboard can expose its
+// capabilities to AI agents over a separate streamable-HTTP listener. Agents
+// authenticate with a named bearer token and start limited to the read-only
+// "node" domain; the user grants further capability domains per agent here.
+export interface MCPAgent {
+  id: string;
+  name: string;
+  domains: string[];
+  createdAt: string;
+}
+
+export interface MCPSession {
+  agentId: string;
+  name: string;
+  firstSeen: string;
+  lastSeen: string;
+  remote: string;
+}
+
+export interface MCPSettings {
+  enabled: boolean;
+  bind: string;
+  port: string;
+  domains: string[];
+  agents: MCPAgent[];
+  sessions: MCPSession[];
+}
+
+export const getMCPSettings = async (): Promise<MCPSettings> => {
+  const response = await api.get<MCPSettings>('/settings/mcp');
+  return response.data;
+};
+
+// createMCPToken mints a new agent identity. The returned token is shown to the
+// user exactly once; only its hash is stored server-side.
+export const createMCPToken = async (
+  name: string,
+): Promise<{ id: string; name: string; token: string }> => {
+  const response = await api.post('/settings/mcp/tokens', { name });
+  return response.data;
+};
+
+export const revokeMCPToken = async (id: string): Promise<void> => {
+  await api.delete(`/settings/mcp/tokens/${encodeURIComponent(id)}`);
+};
+
+export const setMCPAgentDomains = async (id: string, domains: string[]): Promise<void> => {
+  await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/domains`, { domains });
+};
+
 export default api;
 

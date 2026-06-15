@@ -25,6 +25,74 @@ func TestRegistryVerify(t *testing.T) {
 	}
 }
 
+func TestCreateListRevokeAgent(t *testing.T) {
+	r := newRegistry()
+	id, token, err := r.create("trading-bot")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// The freshly minted token must authenticate to the new identity.
+	a, ok := r.verify(token)
+	if !ok || a.id != id {
+		t.Fatalf("created token did not verify to its agent")
+	}
+	// New agents start node-only.
+	if !a.allows("node") || a.allows("wallet") {
+		t.Fatalf("new agent should be node-only, got domains %v", sortedDomains(a.domains))
+	}
+	list := r.list()
+	if len(list) != 1 || list[0].ID != id || list[0].Name != "trading-bot" {
+		t.Fatalf("list did not return the created agent: %+v", list)
+	}
+	if list[0].CreatedAt.IsZero() {
+		t.Fatal("created agent missing CreatedAt")
+	}
+	// Revoke removes it; the token stops working and a second revoke is a no-op.
+	if !r.remove(id) {
+		t.Fatal("remove of existing agent returned false")
+	}
+	if _, ok := r.verify(token); ok {
+		t.Fatal("revoked token still verifies")
+	}
+	if r.remove(id) {
+		t.Fatal("remove of missing agent returned true")
+	}
+}
+
+func TestSetDomainsAlwaysKeepsNode(t *testing.T) {
+	r := newRegistry()
+	id, token, err := r.create("bot")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if !r.setDomains(id, []string{"wallet", "staking"}) {
+		t.Fatal("setDomains on existing agent returned false")
+	}
+	a, _ := r.verify(token)
+	if !a.allows("node") || !a.allows("wallet") || !a.allows("staking") {
+		t.Fatalf("granted domains missing: %v", sortedDomains(a.domains))
+	}
+	// Replacing the grant set always re-implies node.
+	if !r.setDomains(id, []string{"wallet"}) || !a.allows("node") {
+		t.Fatal("node domain must always remain implied")
+	}
+	if r.setDomains("nope", []string{"wallet"}) {
+		t.Fatal("setDomains on missing agent returned true")
+	}
+}
+
+func TestCatalogDomains(t *testing.T) {
+	got := map[string]bool{}
+	for _, d := range catalogDomains() {
+		got[d] = true
+	}
+	for _, want := range []string{"node", "wallet", "staking"} {
+		if !got[want] {
+			t.Errorf("catalog domains missing %q (got %v)", want, catalogDomains())
+		}
+	}
+}
+
 func TestAuthMiddleware(t *testing.T) {
 	r := newRegistry()
 	r.addToken("a1", "agent-one", "tok")

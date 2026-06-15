@@ -33,8 +33,48 @@ var reg = func() *registry {
 // New agents are limited to the default "node" domain until the user grants more.
 func AddToken(id, name, token string) { reg.addToken(id, name, token) }
 
-// SetAgentDomains replaces the capability domains granted to an agent.
-func SetAgentDomains(id string, domains []string) { reg.setDomains(id, domains) }
+// CreateAgent mints a new named agent identity and returns its bearer token.
+// The token is shown to the user only once; only its hash is retained.
+func CreateAgent(name string) (id, token string, err error) {
+	id, token, err = reg.create(name)
+	if err != nil {
+		return "", "", err
+	}
+	if err := saveAgents(); err != nil {
+		reg.remove(id)
+		return "", "", err
+	}
+	return id, token, nil
+}
+
+// RevokeAgent deletes an agent identity and persists the change. Returns false
+// if no such agent existed.
+func RevokeAgent(id string) (bool, error) {
+	if !reg.remove(id) {
+		return false, nil
+	}
+	return true, saveAgents()
+}
+
+// SetAgentDomains replaces (and persists) the capability domains granted to an
+// agent. Returns false if no such agent existed.
+func SetAgentDomains(id string, domains []string) (bool, error) {
+	if !reg.setDomains(id, domains) {
+		return false, nil
+	}
+	return true, saveAgents()
+}
+
+// ListAgents returns the agent roster (without tokens) for the dashboard UI.
+func ListAgents() []AgentInfo { return reg.list() }
+
+// Domains returns the capability domains that currently have tools, in a stable
+// order, so the dashboard can render per-agent access toggles.
+func Domains() []string { return catalogDomains() }
+
+// LoadPersisted restores the saved agent roster into the registry. Safe to call
+// even when MCP is disabled, so the Settings UI can manage tokens beforehand.
+func LoadPersisted() error { return loadAgents() }
 
 // ActiveSessions returns the currently-connected agents, for the dashboard UI.
 func ActiveSessions() []Session { return reg.activeSessions(time.Now()) }
@@ -160,6 +200,20 @@ func ok(v any, err error) (*mcp.CallToolResult, toolResult, error) {
 type toolDef struct {
 	domain   string
 	register func(*mcp.Server)
+}
+
+// catalogDomains returns the distinct capability domains in the catalog, in
+// first-seen order, so the UI only offers domains that actually have tools.
+func catalogDomains() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range toolCatalog {
+		if !seen[t.domain] {
+			seen[t.domain] = true
+			out = append(out, t.domain)
+		}
+	}
+	return out
 }
 
 // toolCatalog is the master list of MCP tools. Each is a thin adapter over the

@@ -85,6 +85,7 @@ const AboutSection = lazyRoute(() => import('./components/settings/AboutSection'
 const ThemesSection = lazyRoute(() => import('./components/settings/themes/ThemesSection'), (m) => m.ThemesSection);
 const SecuritySection = lazyRoute(() => import('./components/settings/SecuritySection'), (m) => m.SecuritySection);
 const TorSection = lazyRoute(() => import('./components/settings/TorSection'), (m) => m.TorSection);
+const AgentsSection = lazyRoute(() => import('./components/settings/AgentsSection'), (m) => m.AgentsSection);
 const OnChainTransactions = lazyRoute(() => import('./pages/OnChainTransactions'), (m) => m.OnChainTransactions);
 const OnChainTransactionsIndex = lazyRoute(() => import('./pages/OnChainTransactions'), (m) => m.OnChainTransactionsIndex);
 const SendTab = lazyRoute(() => import('./components/onchain/SendTab'), (m) => m.SendTab);
@@ -214,6 +215,7 @@ function AppContent() {
                 <Route path="security" element={<SecuritySection />} />
                 <Route path="tor" element={<TorSection />} />
                 <Route path="alerts" element={<AlertsSection />} />
+                <Route path="agents" element={<AgentsSection />} />
               </Route>
               <Route path="transactions" element={<OnChainTransactions />}>
                 <Route index element={<OnChainTransactionsIndex />} />
