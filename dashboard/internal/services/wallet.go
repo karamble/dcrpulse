@@ -1828,3 +1828,23 @@ func DiscoverUsage(ctx context.Context, passphrase []byte, gapLimit uint32) erro
 	}
 	return nil
 }
+
+// VerifyWalletPassphrase checks that passphrase is the wallet's private
+// passphrase by attempting an unlock, then re-locks. Used to validate a spend
+// grant before the passphrase is held in memory on the agent's behalf.
+func VerifyWalletPassphrase(ctx context.Context, passphrase []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+	unlockCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := rpc.WalletGrpcClient.UnlockWallet(unlockCtx, &pb.UnlockWalletRequest{
+		Passphrase: passphrase,
+	}); err != nil {
+		return err
+	}
+	lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer lockCancel()
+	_, _ = rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{})
+	return nil
+}

@@ -69,6 +69,9 @@ func SetAgentDomains(id string, domains []string) (bool, error) {
 // ListAgents returns the agent roster (without tokens) for the dashboard UI.
 func ListAgents() []AgentInfo { return reg.list() }
 
+// HasAgent reports whether an agent identity exists.
+func HasAgent(id string) bool { return reg.has(id) }
+
 // Domains returns the capability domains that currently have tools, in a stable
 // order, so the dashboard can render per-agent access toggles.
 func Domains() []string { return catalogDomains() }

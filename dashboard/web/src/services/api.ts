@@ -1516,6 +1516,18 @@ export interface MCPSession {
   remote: string;
 }
 
+// MCPGrant is an agent's account-scoped spend capability (DCR amounts; the
+// wallet passphrase is held server-side and never returned).
+export interface MCPGrant {
+  accounts: number[];
+  perTxDcr: number;
+  dailyDcr: number;
+  spentTodayDcr: number;
+  remainingTodayDcr: number;
+  allowlist: string[];
+  expiry?: string;
+}
+
 export interface MCPSettings {
   enabled: boolean;
   bind: string;
@@ -1523,6 +1535,16 @@ export interface MCPSettings {
   domains: string[];
   agents: MCPAgent[];
   sessions: MCPSession[];
+  grants: Record<string, MCPGrant>;
+}
+
+export interface MCPGrantRequest {
+  accounts: number[];
+  perTxDcr: number;
+  dailyDcr: number;
+  allowlist: string[];
+  expiryHours: number;
+  passphrase: string;
 }
 
 export const getMCPSettings = async (): Promise<MCPSettings> => {
@@ -1553,6 +1575,16 @@ export const revokeMCPToken = async (id: string): Promise<void> => {
 
 export const setMCPAgentDomains = async (id: string, domains: string[]): Promise<void> => {
   await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/domains`, { domains });
+};
+
+// setMCPGrant authorizes an agent to spend: the passphrase is verified and held
+// server-side, never returned. Scoped to accounts with per-tx and daily caps.
+export const setMCPGrant = async (id: string, req: MCPGrantRequest): Promise<void> => {
+  await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/grant`, req);
+};
+
+export const revokeMCPGrant = async (id: string): Promise<void> => {
+  await api.delete(`/settings/mcp/agents/${encodeURIComponent(id)}/grant`);
 };
 
 export default api;

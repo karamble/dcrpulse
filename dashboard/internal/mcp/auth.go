@@ -126,6 +126,14 @@ func (r *registry) remove(id string) bool {
 	return ok
 }
 
+// has reports whether an agent with this id exists.
+func (r *registry) has(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.agents[id]
+	return ok
+}
+
 // list returns the agent roster (without tokens), newest first.
 func (r *registry) list() []AgentInfo {
 	r.mu.Lock()

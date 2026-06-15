@@ -16,12 +16,15 @@ import {
 import {
   MCPSettings,
   MCPAgent,
+  AccountInfo,
   getMCPSettings,
   setMCPEnabled,
   createMCPToken,
   revokeMCPToken,
   setMCPAgentDomains,
+  getAccounts,
 } from '../../services/api';
+import { AgentSpendGrant } from './AgentSpendGrant';
 
 // Friendly labels for the capability domains. Unknown keys fall back to the raw
 // domain name, so newly added tool domains still render without a code change.
@@ -65,6 +68,7 @@ export const AgentsSection = () => {
   const [created, setCreated] = useState<{ id: string; name: string; token: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -76,6 +80,9 @@ export const AgentsSection = () => {
 
   useEffect(() => {
     refresh();
+    getAccounts()
+      .then(setAccounts)
+      .catch(() => {});
     const id = window.setInterval(refresh, 5000);
     return () => clearInterval(id);
   }, [refresh]);
@@ -393,6 +400,13 @@ export const AgentsSection = () => {
                       })}
                     </div>
                   </div>
+
+                  <AgentSpendGrant
+                    agentId={a.id}
+                    grant={settings.grants?.[a.id]}
+                    accounts={accounts}
+                    onChanged={refresh}
+                  />
                 </div>
               );
             })}
