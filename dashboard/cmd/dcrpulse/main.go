@@ -24,6 +24,7 @@ import (
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/handlers"
 	dcrlog "dcrpulse/internal/log"
+	"dcrpulse/internal/mcp"
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/msig"
 	"dcrpulse/internal/rpc"
@@ -740,6 +741,11 @@ func main() {
 	// and Write timeouts are intentionally left unset so long-lived streams
 	// (WebSocket rescan/events, SSE progress) and large BR file uploads are not
 	// cut off mid-transfer.
+	// Optional MCP server (disabled unless MCP_ENABLE=true): exposes dcrpulse
+	// capabilities to AI agents over streamable HTTP on a separate listener,
+	// reusing the in-process daemon clients. Bound to 127.0.0.1 by default.
+	mcp.Start(mcp.ConfigFromEnv())
+
 	// The host check wraps the router rather than joining r.Use: mux only runs
 	// root middleware on a matched route, and a dev build without the embedded
 	// frontend has no catch-all to match.
