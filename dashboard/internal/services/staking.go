@@ -329,9 +329,204 @@ func IsTicketPurchaseInProgress() bool {
 	return ticketPurchaseActive
 }
 
-// PurchaseTickets calls dcrwallet's PurchaseTickets gRPC with the modern VSP
-// fields. Uses lazy per-account-encryption migration on the source account.
+// tryBeginTicketPurchase marks a purchase active and returns true, or returns
+// false if one is already running. Pair a true return with endTicketPurchase.
+// This is the single-flight guard shared by the synchronous (plain) path and
+// the background worker (privacy) path so neither can race the other, the
+// mixer, or the autobuyer.
+func tryBeginTicketPurchase() bool {
+	ticketPurchaseMu.Lock()
+	defer ticketPurchaseMu.Unlock()
+	if ticketPurchaseActive {
+		return false
+	}
+	ticketPurchaseActive = true
+	return true
+}
+
+func endTicketPurchase() {
+	ticketPurchaseMu.Lock()
+	ticketPurchaseActive = false
+	ticketPurchaseMu.Unlock()
+}
+
+const purchaseEventBufferSize = 200
+
+var (
+	purchaseEventsMu sync.Mutex
+	purchaseEvents   []types.PurchaseEvent
+
+	purchaseSubsMu      sync.Mutex
+	purchaseSubscribers []chan types.PurchaseEvent
+
+	purchaseResultMu    sync.Mutex
+	purchaseLastErr     string
+	purchaseLastHashes  []string
+	purchaseLastSplitTx string
+)
+
+// setPurchaseResult records the most recent terminal outcome of the background
+// purchase worker so a reloaded page can read it via PurchaseStatusSnapshot.
+func setPurchaseResult(hashes []string, splitTx, errMsg string) {
+	purchaseResultMu.Lock()
+	purchaseLastHashes = append([]string(nil), hashes...)
+	purchaseLastSplitTx = splitTx
+	purchaseLastErr = errMsg
+	purchaseResultMu.Unlock()
+}
+
+// PurchaseStatusSnapshot reports whether a manual purchase is running plus the
+// last terminal result. Mirrors AutobuyerStatusSnapshot.
+func PurchaseStatusSnapshot() types.PurchaseStatus {
+	purchaseResultMu.Lock()
+	defer purchaseResultMu.Unlock()
+	return types.PurchaseStatus{
+		InProgress:   IsTicketPurchaseInProgress(),
+		LastError:    purchaseLastErr,
+		TicketHashes: append([]string(nil), purchaseLastHashes...),
+		SplitTxHash:  purchaseLastSplitTx,
+	}
+}
+
+// LastPurchaseEvents returns up to n most-recent purchase events, oldest first.
+// A reconnecting WebSocket replays these, so a page reload during a long mixed
+// purchase still receives the terminal "done"/"error" event.
+func LastPurchaseEvents(n int) []types.PurchaseEvent {
+	purchaseEventsMu.Lock()
+	defer purchaseEventsMu.Unlock()
+	if n <= 0 || n > len(purchaseEvents) {
+		n = len(purchaseEvents)
+	}
+	out := make([]types.PurchaseEvent, n)
+	copy(out, purchaseEvents[len(purchaseEvents)-n:])
+	return out
+}
+
+// SubscribePurchaseEvents returns a channel receiving every future purchase
+// event plus a cleanup func to call when the subscriber detaches.
+func SubscribePurchaseEvents() (<-chan types.PurchaseEvent, func()) {
+	ch := make(chan types.PurchaseEvent, 32)
+	purchaseSubsMu.Lock()
+	purchaseSubscribers = append(purchaseSubscribers, ch)
+	purchaseSubsMu.Unlock()
+	return ch, func() {
+		purchaseSubsMu.Lock()
+		defer purchaseSubsMu.Unlock()
+		for i, sub := range purchaseSubscribers {
+			if sub == ch {
+				purchaseSubscribers = append(purchaseSubscribers[:i], purchaseSubscribers[i+1:]...)
+				close(ch)
+				return
+			}
+		}
+	}
+}
+
+func emitPurchaseEvent(ev types.PurchaseEvent) {
+	if ev.Timestamp.IsZero() {
+		ev.Timestamp = time.Now().UTC()
+	}
+	purchaseEventsMu.Lock()
+	purchaseEvents = append(purchaseEvents, ev)
+	if len(purchaseEvents) > purchaseEventBufferSize {
+		purchaseEvents = purchaseEvents[len(purchaseEvents)-purchaseEventBufferSize:]
+	}
+	purchaseEventsMu.Unlock()
+
+	purchaseSubsMu.Lock()
+	for _, sub := range purchaseSubscribers {
+		select {
+		case sub <- ev:
+		default:
+		}
+	}
+	purchaseSubsMu.Unlock()
+}
+
+func recordPurchaseEvent(level, msg string) {
+	emitPurchaseEvent(types.PurchaseEvent{Level: level, Message: msg, Kind: "progress"})
+}
+
+// StartPurchaseWorker dispatches a privacy/mixed ticket purchase to a background
+// goroutine and returns immediately. The purchase pauses the mixer, CSPP-mixes
+// the split transaction (which only forms every ~10 minutes) and buys the
+// ticket, so it cannot fit in a single HTTP round-trip. Progress and the
+// terminal result/error are emitted as purchase events and streamed to the
+// frontend over the purchase-events WebSocket. The passphrase is copied because
+// the goroutine outlives the request and the caller zeroes its own slice.
+func StartPurchaseWorker(account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+	if numTickets == 0 {
+		return fmt.Errorf("numTickets must be > 0")
+	}
+	if vspHost == "" || vspPubkey == "" {
+		return fmt.Errorf("vspHost and vspPubkey are required")
+	}
+	if !tryBeginTicketPurchase() {
+		return fmt.Errorf("a ticket purchase is already in progress")
+	}
+
+	passCopy := append([]byte(nil), passphrase...)
+	setPurchaseResult(nil, "", "") // clear any prior result while this one runs
+	recordPurchaseEvent("info", fmt.Sprintf(
+		"Purchasing %d mixed ticket(s). Funds are CSPP-mixed before the ticket is bought, which can take up to ~10 minutes.",
+		numTickets))
+
+	go func() {
+		defer endTicketPurchase()
+		defer func() {
+			for i := range passCopy {
+				passCopy[i] = 0
+			}
+		}()
+
+		// Detached context: the request context is cancelled once the 202 is
+		// written, so the worker owns its own. No deadline is set: PurchaseTickets
+		// with mixing pairs the CoinShuffle++ split only on epoch boundaries (10
+		// min on mainnet) plus a 20-60s trickle delay per ticket, so any fixed
+		// budget can be exceeded. dcrwallet drives the timing; the autobuyer's
+		// RunTicketBuyer stream runs deadline-free for the same reason.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		resp, err := purchaseTicketsCore(ctx, account, numTickets, vspHost, vspPubkey, changeAccount, passCopy)
+		if err != nil {
+			setPurchaseResult(nil, "", err.Error())
+			emitPurchaseEvent(types.PurchaseEvent{Level: "error", Kind: "error", Message: "Purchase failed: " + err.Error()})
+			return
+		}
+		setPurchaseResult(resp.TicketHashes, resp.SplitTxHash, "")
+		msg := "Tickets purchased"
+		if len(resp.TicketHashes) > 0 {
+			msg = "Tickets purchased: " + strings.Join(resp.TicketHashes, ", ")
+		}
+		emitPurchaseEvent(types.PurchaseEvent{
+			Level:        "info",
+			Kind:         "done",
+			Message:      msg,
+			TicketHashes: resp.TicketHashes,
+			SplitTxHash:  resp.SplitTxHash,
+		})
+	}()
+	return nil
+}
+
+// PurchaseTickets runs a ticket purchase synchronously under the single-flight
+// guard. Used for plain (non-privacy) purchases, which complete quickly.
 func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
+	if !tryBeginTicketPurchase() {
+		return nil, fmt.Errorf("a ticket purchase is already in progress")
+	}
+	defer endTicketPurchase()
+	return purchaseTicketsCore(ctx, account, numTickets, vspHost, vspPubkey, changeAccount, passphrase)
+}
+
+// purchaseTicketsCore calls dcrwallet's PurchaseTickets gRPC with the modern VSP
+// fields. Uses lazy per-account-encryption migration on the source account. The
+// caller owns the single-flight guard (see tryBeginTicketPurchase).
+func purchaseTicketsCore(ctx context.Context, account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
 	if rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("wallet gRPC client not initialized")
 	}
@@ -341,15 +536,6 @@ func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, v
 	if vspHost == "" || vspPubkey == "" {
 		return nil, fmt.Errorf("vspHost and vspPubkey are required")
 	}
-
-	ticketPurchaseMu.Lock()
-	ticketPurchaseActive = true
-	ticketPurchaseMu.Unlock()
-	defer func() {
-		ticketPurchaseMu.Lock()
-		ticketPurchaseActive = false
-		ticketPurchaseMu.Unlock()
-	}()
 
 	// When privacy is configured, buy mixed tickets: fund + split + mix from the
 	// "mixed" account, send change to the "unmixed" account, and enable mixing.

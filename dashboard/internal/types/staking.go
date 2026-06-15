@@ -45,9 +45,41 @@ type PurchaseTicketsRequest struct {
 	Passphrase    string `json:"passphrase"`
 }
 
-// PurchaseTicketsResponse is returned from /api/wallet/staking/purchase.
+// PurchaseTicketsResponse is returned from /api/wallet/staking/purchase for a
+// plain (non-privacy) purchase, which completes synchronously.
 type PurchaseTicketsResponse struct {
 	TicketHashes []string `json:"ticketHashes"`
+	SplitTxHash  string   `json:"splitTxHash,omitempty"`
+}
+
+// PurchaseTicketsAsyncResponse is returned with HTTP 202 when a privacy/mixed
+// purchase is dispatched to the background worker. The funds must be CSPP-mixed
+// before the ticket is bought, which can take up to ~10 minutes, so the result
+// arrives over the /wallet/staking/purchase/events WebSocket instead of the
+// HTTP response.
+type PurchaseTicketsAsyncResponse struct {
+	Async bool `json:"async"`
+}
+
+// PurchaseEvent is a structured progress line emitted by the manual ticket
+// purchase worker. Kind is "progress" for intermediate steps, "done" for a
+// successful terminal event (with TicketHashes set), or "error" for a failure.
+type PurchaseEvent struct {
+	Timestamp    time.Time `json:"timestamp"`
+	Level        string    `json:"level"`
+	Message      string    `json:"message"`
+	Kind         string    `json:"kind"`
+	TicketHashes []string  `json:"ticketHashes,omitempty"`
+	SplitTxHash  string    `json:"splitTxHash,omitempty"`
+}
+
+// PurchaseStatus is what /api/wallet/staking/purchase/status returns. It lets a
+// reloaded page tell whether a background (mixed) purchase is still running and
+// read the most recent terminal result, mirroring the autobuyer status model.
+type PurchaseStatus struct {
+	InProgress   bool     `json:"inProgress"`
+	LastError    string   `json:"lastError"`
+	TicketHashes []string `json:"ticketHashes,omitempty"`
 	SplitTxHash  string   `json:"splitTxHash,omitempty"`
 }
 

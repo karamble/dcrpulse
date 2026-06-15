@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Coins, ExternalLink, Send, ShieldCheck, Wallet } from 'lucide-react';
+import { Coins, ExternalLink, Loader2, Send, ShieldCheck, Wallet } from 'lucide-react';
 import {
   AccountInfo,
   PrivacyStatus,
+  PurchaseEvent,
   StakingInfo,
   VSPInfo,
   getAccounts,
   getPrivacyStatus,
+  getPurchaseStatus,
   getWalletDashboard,
+  isAsyncPurchase,
   purchaseTickets,
+  subscribePurchaseEvents,
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VSPSelect } from './VSPSelect';
@@ -26,6 +30,13 @@ export const PurchaseTicketForm = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string[] | null>(null);
+  // A privacy/mixed purchase runs in the background (it must CSPP-mix first,
+  // which can take up to ~10 min). inProgress drives the progress panel and
+  // events holds the streamed log. inProgressRef lets the WS callback read the
+  // current value and ignore replayed events from past purchases.
+  const [inProgress, setInProgress] = useState(false);
+  const [events, setEvents] = useState<PurchaseEvent[]>([]);
+  const inProgressRef = useRef(false);
   const network: 'mainnet' | 'testnet' = 'mainnet';
 
   useEffect(() => {
@@ -66,6 +77,53 @@ export const PurchaseTicketForm = () => {
     };
   }, []);
 
+  // Bootstrap in-progress state on mount so a page reload during a long mixed
+  // purchase re-attaches to it (status is the source of truth, like the
+  // autobuyer). A completed past purchase reports inProgress=false, so its old
+  // result is not shown as if it were fresh.
+  useEffect(() => {
+    let cancelled = false;
+    getPurchaseStatus()
+      .then((st) => {
+        if (cancelled) return;
+        if (st.inProgress) {
+          inProgressRef.current = true;
+          setInProgress(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Stream purchase progress/result events. The log is always appended; the
+  // terminal done/error transitions are applied only while a purchase we know
+  // about is active (inProgressRef), so replayed events from a prior purchase
+  // never trigger a false success/error.
+  useEffect(() => {
+    return subscribePurchaseEvents(
+      (ev) => {
+        setEvents((prev) => {
+          const next = [...prev, ev];
+          if (next.length > 50) next.splice(0, next.length - 50);
+          return next;
+        });
+        if (!inProgressRef.current) return;
+        if (ev.kind === 'done') {
+          inProgressRef.current = false;
+          setInProgress(false);
+          setSuccess(ev.ticketHashes ?? []);
+        } else if (ev.kind === 'error') {
+          inProgressRef.current = false;
+          setInProgress(false);
+          setError(ev.message);
+        }
+      },
+      (err) => console.error('Purchase events WebSocket error:', err),
+    );
+  }, []);
+
   const ticketPrice = staking?.currentDifficulty ?? 0;
   const stakeCost = ticketPrice * numTickets;
   // VSP fee is a % of the expected stake reward per vote, not of the stake.
@@ -103,14 +161,51 @@ export const PurchaseTicketForm = () => {
         changeAccount: privacyOn && privacy?.changeAccount !== undefined ? privacy.changeAccount : account,
         passphrase,
       });
-      setSuccess(resp.ticketHashes);
       setModalOpen(false);
+      if (isAsyncPurchase(resp)) {
+        // Mixed purchase: the backend accepted it and runs it in the
+        // background. Switch to the progress panel; the WS delivers the result.
+        setEvents([]);
+        inProgressRef.current = true;
+        setInProgress(true);
+        return;
+      }
+      setSuccess(resp.ticketHashes);
     } catch (err: any) {
       const body = err?.response?.data;
       const msg = typeof body === 'string' ? body : err?.message || 'Purchase failed';
       throw new Error(msg);
     }
   };
+
+  if (inProgress) {
+    return (
+      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-primary/30 space-y-3 animate-fade-in">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-5 w-5 text-primary animate-spin shrink-0" />
+          <h3 className="text-lg font-semibold">Purchasing mixed tickets...</h3>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Your funds are CoinShuffle++ mixed before the ticket is bought, which can take up to
+          ~10 minutes. You can leave this page; the purchase keeps running in the background.
+        </p>
+        <div className="rounded-lg bg-background/50 border border-border/30 p-3 max-h-48 overflow-y-auto space-y-1 font-mono text-xs">
+          {events.length === 0 ? (
+            <p className="text-muted-foreground">Waiting for progress...</p>
+          ) : (
+            events.map((ev, i) => (
+              <div
+                key={i}
+                className={ev.level === 'error' ? 'text-destructive' : 'text-muted-foreground'}
+              >
+                {ev.message}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (success) {
     return (

@@ -730,9 +730,75 @@ export const getVSPInfo = async (host: string): Promise<VSPInfo> => {
   return response.data;
 };
 
-export const purchaseTickets = async (req: PurchaseTicketsRequest): Promise<PurchaseTicketsResponse> => {
-  const response = await api.post<PurchaseTicketsResponse>('/wallet/staking/purchase', req);
+// A privacy/mixed purchase is dispatched to a background worker and answered
+// with HTTP 202 { async: true }; the result then arrives over the
+// purchase-events WebSocket. A plain purchase completes synchronously and
+// returns its ticket hashes directly.
+export type PurchaseTicketsResult = PurchaseTicketsResponse | { async: true };
+
+export const isAsyncPurchase = (r: PurchaseTicketsResult): r is { async: true } =>
+  (r as { async?: boolean }).async === true;
+
+export const purchaseTickets = async (
+  req: PurchaseTicketsRequest,
+): Promise<PurchaseTicketsResult> => {
+  const response = await api.post<PurchaseTicketsResponse | { async?: boolean }>(
+    '/wallet/staking/purchase',
+    req,
+  );
+  if (response.status === 202 || (response.data as { async?: boolean })?.async) {
+    return { async: true };
+  }
+  return response.data as PurchaseTicketsResponse;
+};
+
+export interface PurchaseEvent {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  kind: 'progress' | 'done' | 'error';
+  ticketHashes?: string[];
+  splitTxHash?: string;
+}
+
+export interface PurchaseStatus {
+  inProgress: boolean;
+  lastError: string;
+  ticketHashes?: string[];
+  splitTxHash?: string;
+}
+
+export const getPurchaseStatus = async (): Promise<PurchaseStatus> => {
+  const response = await api.get<PurchaseStatus>('/wallet/staking/purchase/status');
   return response.data;
+};
+
+// Streams progress/result events for a background (mixed) ticket purchase.
+// Mirrors subscribeAutobuyerEvents.
+export const subscribePurchaseEvents = (
+  onEvent: (e: PurchaseEvent) => void,
+  onError?: (e: Error) => void,
+  onClose?: () => void,
+): (() => void) => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/api/wallet/staking/purchase/events`;
+  const ws = new WebSocket(wsUrl);
+
+  ws.onmessage = (event) => {
+    try {
+      onEvent(JSON.parse(event.data) as PurchaseEvent);
+    } catch (err) {
+      onError?.(new Error('Failed to parse purchase event'));
+    }
+  };
+  ws.onerror = () => onError?.(new Error('Purchase events WebSocket error'));
+  ws.onclose = () => onClose?.();
+
+  return () => {
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
+  };
 };
 
 export type TicketLifecycleStatus =

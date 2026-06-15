@@ -1058,22 +1058,39 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				fee = -netAmount
 			}
 
+			// Vote maturity: a vote's returned stake + reward matures over 256
+			// blocks before it is spendable. A vote spans multiple listtransactions
+			// entries, so it lands here rather than the single-entry branches below;
+			// compute maturity here too or the row is stuck at "Voted (Maturing)".
+			var isTicketMature bool = false
+			var blocksUntilSpendable int64 = 0
+			if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
+				blocksPassed := currentHeight - blockHeight
+				if blocksPassed >= 256 {
+					isTicketMature = true
+				} else {
+					blocksUntilSpendable = 256 - blocksPassed
+				}
+			}
+
 			tx := types.Transaction{
-				TxID:          rpcTx.TxID,
-				Amount:        netAmount,
-				Fee:           fee,
-				Confirmations: rpcTx.Confirmations,
-				BlockHash:     rpcTx.BlockHash,
-				BlockTime:     rpcTx.BlockTime,
-				Time:          time.Unix(rpcTx.Time, 0),
-				Category:      category,
-				TxType:        rpcTx.TxType,
-				Address:       "",
-				Account:       accountName,
-				Vout:          0,
-				Generated:     false,
-				IsMixed:       isMixed,
-				BlockHeight:   blockHeight,
+				TxID:                 rpcTx.TxID,
+				Amount:               netAmount,
+				Fee:                  fee,
+				Confirmations:        rpcTx.Confirmations,
+				BlockHash:            rpcTx.BlockHash,
+				BlockTime:            rpcTx.BlockTime,
+				Time:                 time.Unix(rpcTx.Time, 0),
+				Category:             category,
+				TxType:               rpcTx.TxType,
+				Address:              "",
+				Account:              accountName,
+				Vout:                 0,
+				Generated:            false,
+				IsMixed:              isMixed,
+				BlockHeight:          blockHeight,
+				IsTicketMature:       isTicketMature,
+				BlocksUntilSpendable: blocksUntilSpendable,
 			}
 			transactions = append(transactions, tx)
 			processed[rpcTx.TxID] = true

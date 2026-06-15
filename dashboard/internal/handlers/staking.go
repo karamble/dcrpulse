@@ -99,7 +99,29 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	// A privacy/mixed purchase must CSPP-mix the split transaction before the
+	// ticket can be bought, which only happens every ~10 minutes, far longer
+	// than an HTTP round-trip. Dispatch it to the background worker, return 202
+	// immediately, and stream progress + the result over the purchase-events
+	// WebSocket. Plain (non-privacy) purchases finish in seconds and stay
+	// synchronous.
+	if _, mixed := services.TicketMixingParams(r.Context()); mixed {
+		if err := services.StartPurchaseWorker(req.Account, req.NumTickets, req.VspHost, req.VspPubkey, req.ChangeAccount, passphrase); err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "already in progress") {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			log.Printf("StartPurchaseWorker failed: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(types.PurchaseTicketsAsyncResponse{Async: true})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 
 	resp, err := services.PurchaseTickets(ctx, req.Account, req.NumTickets, req.VspHost, req.VspPubkey, req.ChangeAccount, passphrase)
@@ -107,6 +129,8 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
 		switch {
+		case strings.Contains(lower, "already in progress"):
+			http.Error(w, msg, http.StatusConflict)
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		case strings.Contains(lower, "insufficient"):
@@ -119,6 +143,60 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// PurchaseStatusHandler reports whether a background (mixed) purchase is running
+// plus the most recent terminal result, so a reloaded page can re-attach.
+func PurchaseStatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(services.PurchaseStatusSnapshot())
+}
+
+// StreamPurchaseEventsHandler upgrades to WebSocket and streams manual ticket
+// purchase progress/result events. Mirrors StreamAutobuyerEventsHandler.
+func StreamPurchaseEventsHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: middleware.SameOriginWS,
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade purchase-events WebSocket: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	for _, ev := range services.LastPurchaseEvents(200) {
+		if err := conn.WriteJSON(ev); err != nil {
+			return
+		}
+	}
+
+	ch, unsubscribe := services.SubscribePurchaseEvents()
+	defer unsubscribe()
+
+	notify := make(chan struct{})
+	go func() {
+		defer close(notify)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(ev); err != nil {
+				return
+			}
+		case <-notify:
+			return
+		}
+	}
 }
 
 // ListTicketsHandler returns every wallet ticket with status + VSP fee state.
