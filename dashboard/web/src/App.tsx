@@ -130,9 +130,17 @@ function AppContent() {
   // full viewport height.
   const brPage = location.pathname.startsWith('/br');
   return (
-    <div className={`min-h-screen bg-background ${dexFullWidth ? '' : 'p-3 sm:p-6'}`}>
-      <div className={dexFullWidth ? 'space-y-3' : 'max-w-7xl mx-auto space-y-6'}>
+    <div className="min-h-screen bg-background">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-6">
         <Header nodeVersion={nodeVersion} />
+      </div>
+      <div
+        className={
+          dexFullWidth
+            ? 'pt-3 space-y-3'
+            : 'max-w-7xl mx-auto px-3 sm:px-6 pt-6 pb-3 sm:pb-6 space-y-6'
+        }
+      >
         <Routes>
           <Route path="/" element={<NodeDashboard />} />
           <Route path="/wallet" element={<WalletLayout />}>
