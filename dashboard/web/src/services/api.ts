@@ -1506,6 +1506,7 @@ export interface MCPAgent {
   name: string;
   domains: string[];
   createdAt: string;
+  blocked: boolean;
 }
 
 export interface MCPSession {
@@ -1605,6 +1606,11 @@ export const setMCPGrant = async (id: string, req: MCPGrantRequest): Promise<voi
 
 export const revokeMCPGrant = async (id: string): Promise<void> => {
   await api.delete(`/settings/mcp/agents/${encodeURIComponent(id)}/grant`);
+};
+
+// unblockMCPAgent clears a tripwire block so the agent's token works again.
+export const unblockMCPAgent = async (id: string): Promise<void> => {
+  await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/unblock`);
 };
 
 export default api;

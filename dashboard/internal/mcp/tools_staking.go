@@ -66,7 +66,11 @@ var stakingTools = []toolDef{
 			// Ticket purchases have no recipient address; the allowlist is skipped.
 			pass, err := grants.authorize(a.id, in.Account, totalAtoms, "", time.Now())
 			if err != nil {
-				recordSpend(a, "staking_purchase", in.Account, costDCR, in.VSPHost, "denied", err.Error())
+				if tripwire(a.id, err) {
+					recordSpend(a, "staking_purchase", in.Account, costDCR, in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")
+				} else {
+					recordSpend(a, "staking_purchase", in.Account, costDCR, in.VSPHost, "denied", err.Error())
+				}
 				return nil, err
 			}
 			defer zero(pass)

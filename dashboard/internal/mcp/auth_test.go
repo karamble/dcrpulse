@@ -25,6 +25,37 @@ func TestRegistryVerify(t *testing.T) {
 	}
 }
 
+func TestBlockedAgentRejectedByAuth(t *testing.T) {
+	r := newRegistry()
+	r.addToken("a1", "agent", "tok")
+	h := r.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	send := func() int {
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
+		req.Header.Set("Authorization", "Bearer tok")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := send(); code != http.StatusOK {
+		t.Fatalf("pre-block: want 200, got %d", code)
+	}
+	r.block("a1")
+	if code := send(); code != http.StatusForbidden {
+		t.Fatalf("blocked token: want 403, got %d", code)
+	}
+	if got := len(r.activeSessions(time.Now())); got != 0 {
+		t.Fatalf("blocked agent should have no live session, got %d", got)
+	}
+	if !r.unblock("a1") {
+		t.Fatal("unblock of existing agent should return true")
+	}
+	if code := send(); code != http.StatusOK {
+		t.Fatalf("after unblock: want 200, got %d", code)
+	}
+}
+
 func TestCreateListRevokeAgent(t *testing.T) {
 	r := newRegistry()
 	id, token, err := r.create("trading-bot")

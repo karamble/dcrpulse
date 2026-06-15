@@ -23,6 +23,7 @@ type persistedAgent struct {
 	TokenHash string    `json:"tokenHash"`
 	Domains   []string  `json:"domains"`
 	CreatedAt time.Time `json:"createdAt"`
+	Blocked   bool      `json:"blocked,omitempty"`
 }
 
 // snapshot captures the current roster for persistence, excluding the ephemeral
@@ -41,6 +42,7 @@ func (r *registry) snapshot() []persistedAgent {
 			TokenHash: hex.EncodeToString(a.hash[:]),
 			Domains:   sortedDomains(a.domains),
 			CreatedAt: a.createdAt,
+			Blocked:   a.blocked,
 		})
 	}
 	return out
@@ -65,7 +67,7 @@ func loadAgents() error {
 		}
 		var hash [32]byte
 		copy(hash[:], raw)
-		reg.addAgentRecord(rec.ID, rec.Name, hash, rec.Domains, rec.CreatedAt)
+		reg.addAgentRecord(rec.ID, rec.Name, hash, rec.Domains, rec.CreatedAt, rec.Blocked)
 	}
 	return nil
 }

@@ -72,6 +72,16 @@ func ListAgents() []AgentInfo { return reg.list() }
 // HasAgent reports whether an agent identity exists.
 func HasAgent(id string) bool { return reg.has(id) }
 
+// UnblockAgent clears an agent's tripwire block and persists the change. The
+// agent must still be re-granted spend access separately. Returns false if no
+// such agent existed.
+func UnblockAgent(id string) (bool, error) {
+	if !reg.unblock(id) {
+		return false, nil
+	}
+	return true, saveAgents()
+}
+
 // Domains returns the capability domains that currently have tools, in a stable
 // order, so the dashboard can render per-agent access toggles.
 func Domains() []string { return catalogDomains() }

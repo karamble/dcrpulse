@@ -394,6 +394,7 @@ func main() {
 	api.HandleFunc("/settings/mcp/agents/{id}/domains", handlers.SetMCPAgentDomainsHandler).Methods("POST")
 	api.HandleFunc("/settings/mcp/agents/{id}/grant", handlers.SetMCPGrantHandler).Methods("POST")
 	api.HandleFunc("/settings/mcp/agents/{id}/grant", handlers.RevokeMCPGrantHandler).Methods("DELETE")
+	api.HandleFunc("/settings/mcp/agents/{id}/unblock", handlers.UnblockMCPAgentHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records", handlers.ListTimestampsHandler).Methods("GET")
 	api.HandleFunc("/timestamp/records", handlers.CreateTimestampHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records/{digest}", handlers.GetTimestampHandler).Methods("GET")

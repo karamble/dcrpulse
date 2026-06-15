@@ -22,6 +22,7 @@ import {
   createMCPToken,
   revokeMCPToken,
   setMCPAgentDomains,
+  unblockMCPAgent,
   getAccounts,
 } from '../../services/api';
 import { AgentSpendGrant } from './AgentSpendGrant';
@@ -133,6 +134,19 @@ export const AgentsSection = () => {
       await refresh();
     } catch {
       setFeedback({ kind: 'error', text: 'Failed to revoke the agent.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unblock = async (a: MCPAgent) => {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await unblockMCPAgent(a.id);
+      await refresh();
+    } catch {
+      setFeedback({ kind: 'error', text: 'Failed to unblock the agent.' });
     } finally {
       setBusy(false);
     }
@@ -319,23 +333,36 @@ export const AgentsSection = () => {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate">{a.name}</span>
-                        <span
-                          className={`inline-flex items-center gap-1.5 text-xs ${
-                            connected ? 'text-success' : 'text-muted-foreground'
-                          }`}
-                        >
+                        {a.blocked ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-destructive">
+                            <span className="h-2 w-2 rounded-full bg-destructive" />
+                            Blocked
+                          </span>
+                        ) : (
                           <span
-                            className={`h-2 w-2 rounded-full ${
-                              connected ? 'bg-success' : 'bg-muted-foreground/40'
+                            className={`inline-flex items-center gap-1.5 text-xs ${
+                              connected ? 'text-success' : 'text-muted-foreground'
                             }`}
-                          />
-                          {connected ? 'Connected' : 'Idle'}
-                        </span>
+                          >
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                connected ? 'bg-success' : 'bg-muted-foreground/40'
+                              }`}
+                            />
+                            {connected ? 'Connected' : 'Idle'}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
                         <span className="font-mono">{a.id}</span>
                         {fmtDate(a.createdAt) && <span> · created {fmtDate(a.createdAt)}</span>}
                       </div>
+                      {a.blocked && (
+                        <div className="text-xs text-destructive mt-1">
+                          Token blocked after a spend-limit violation. Unblock to restore it, then
+                          re-grant spend access.
+                        </div>
+                      )}
                     </div>
                     {confirmRevoke === a.id ? (
                       <div className="flex items-center gap-2 shrink-0">
@@ -357,15 +384,27 @@ export const AgentsSection = () => {
                         </button>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmRevoke(a.id)}
-                        disabled={busy}
-                        title="Revoke this agent"
-                        className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-destructive/20 hover:text-destructive disabled:opacity-50"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Revoke
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {a.blocked && (
+                          <button
+                            type="button"
+                            onClick={() => unblock(a)}
+                            disabled={busy}
+                            className="rounded-lg bg-success/20 px-3 py-1.5 text-xs font-medium text-success hover:bg-success/30 disabled:opacity-50"
+                          >
+                            Unblock
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRevoke(a.id)}
+                          disabled={busy}
+                          title="Revoke this agent"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-destructive/20 hover:text-destructive disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Revoke
+                        </button>
+                      </div>
                     )}
                   </div>
 

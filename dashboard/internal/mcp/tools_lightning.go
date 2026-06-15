@@ -71,7 +71,11 @@ var lightningTools = []toolDef{
 			}
 			amtDCR := dcrutil.Amount(amtAtoms).ToCoin()
 			if err := grants.authorizeLightning(a.id, amtAtoms, time.Now()); err != nil {
-				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "denied", err.Error())
+				if tripwire(a.id, err) {
+					recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "blocked", "spend-limit violation: grant revoked and token blocked")
+				} else {
+					recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "denied", err.Error())
+				}
 				return nil, err
 			}
 			req := &types.LightningSendPaymentRequest{PayReq: in.PayReq}
@@ -138,7 +142,11 @@ var lightningTools = []toolDef{
 			}
 			localAtoms := int64(local)
 			if err := grants.authorizeLightning(a.id, localAtoms, time.Now()); err != nil {
-				recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "denied", err.Error())
+				if tripwire(a.id, err) {
+					recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "blocked", "spend-limit violation: grant revoked and token blocked")
+				} else {
+					recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "denied", err.Error())
+				}
 				return nil, err
 			}
 			req := &types.OpenChannelRequest{PeerURI: in.PeerURI, LocalAtoms: localAtoms, Private: in.Private}

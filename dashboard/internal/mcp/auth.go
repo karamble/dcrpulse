@@ -36,6 +36,7 @@ type agent struct {
 	hash      [32]byte
 	domains   map[string]bool // granted domains; defaults to {node}
 	createdAt time.Time
+	blocked   bool // tripwire: set when the agent attempts to exceed its grant
 }
 
 func (a *agent) allows(domain string) bool {
@@ -49,6 +50,7 @@ type AgentInfo struct {
 	Name      string    `json:"name"`
 	Domains   []string  `json:"domains"`
 	CreatedAt time.Time `json:"createdAt"`
+	Blocked   bool      `json:"blocked"`
 }
 
 // Session is a recently-active agent connection, surfaced to the dashboard so the
@@ -77,13 +79,13 @@ func newRegistry() *registry {
 // addToken registers a named bearer token, storing only its hash. New agents
 // start with only the default ("node") domain.
 func (r *registry) addToken(id, name, token string) {
-	r.addAgentRecord(id, name, sha256.Sum256([]byte(token)), []string{defaultDomain}, time.Now())
+	r.addAgentRecord(id, name, sha256.Sum256([]byte(token)), []string{defaultDomain}, time.Now(), false)
 }
 
 // addAgentRecord installs an agent from an already-hashed token. Used by the
-// persistence layer to restore the roster on startup and by addToken/create.
-// The node domain is always implied.
-func (r *registry) addAgentRecord(id, name string, hash [32]byte, domains []string, createdAt time.Time) {
+// persistence layer to restore the roster on startup (including a persisted
+// blocked state) and by addToken/create. The node domain is always implied.
+func (r *registry) addAgentRecord(id, name string, hash [32]byte, domains []string, createdAt time.Time, blocked bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.agents[id] = &agent{
@@ -92,6 +94,7 @@ func (r *registry) addAgentRecord(id, name string, hash [32]byte, domains []stri
 		hash:      hash,
 		domains:   domainSet(domains),
 		createdAt: createdAt,
+		blocked:   blocked,
 	}
 }
 
@@ -107,7 +110,7 @@ func (r *registry) create(name string) (id, token string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	r.addAgentRecord(id, name, sha256.Sum256([]byte(raw)), []string{defaultDomain}, time.Now())
+	r.addAgentRecord(id, name, sha256.Sum256([]byte(raw)), []string{defaultDomain}, time.Now(), false)
 	return id, raw, nil
 }
 
@@ -134,6 +137,33 @@ func (r *registry) has(id string) bool {
 	return ok
 }
 
+// block marks an agent's token as blocked (tripwire), drops its live session,
+// and invalidates its cached server. A blocked token is rejected at auth.
+func (r *registry) block(id string) {
+	r.mu.Lock()
+	a := r.agents[id]
+	if a != nil {
+		a.blocked = true
+	}
+	delete(r.sessions, id)
+	onChange := r.onChange
+	r.mu.Unlock()
+	if a != nil && onChange != nil {
+		onChange(id)
+	}
+}
+
+// unblock clears an agent's blocked state. Returns false if no such agent.
+func (r *registry) unblock(id string) bool {
+	r.mu.Lock()
+	a := r.agents[id]
+	if a != nil {
+		a.blocked = false
+	}
+	r.mu.Unlock()
+	return a != nil
+}
+
 // list returns the agent roster (without tokens), newest first.
 func (r *registry) list() []AgentInfo {
 	r.mu.Lock()
@@ -144,6 +174,7 @@ func (r *registry) list() []AgentInfo {
 			Name:      a.name,
 			Domains:   sortedDomains(a.domains),
 			CreatedAt: a.createdAt,
+			Blocked:   a.blocked,
 		})
 	}
 	r.mu.Unlock()
@@ -273,6 +304,10 @@ func (r *registry) authMiddleware(next http.Handler) http.Handler {
 		if !ok {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if a.blocked {
+			http.Error(w, "agent blocked: a spend-limit violation revoked this token; the user must unblock it in the dashboard", http.StatusForbidden)
 			return
 		}
 		r.touch(a, req.RemoteAddr, time.Now())

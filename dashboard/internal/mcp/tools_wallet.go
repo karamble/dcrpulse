@@ -80,7 +80,11 @@ var walletTools = []toolDef{
 			// private copy of the passphrase. Denials are returned to the agent.
 			pass, err := grants.authorize(a.id, in.Account, atoms, in.Address, time.Now())
 			if err != nil {
-				recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "denied", err.Error())
+				if tripwire(a.id, err) {
+					recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "blocked", "spend-limit violation: grant revoked and token blocked")
+				} else {
+					recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "denied", err.Error())
+				}
 				return nil, err
 			}
 			unsigned, err := services.ConstructTransaction(ctx, in.Account, in.Address, atoms, false)

@@ -301,6 +301,22 @@ func RevokeMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// UnblockMCPAgentHandler clears an agent's tripwire block so its token works
+// again. The agent must still be re-granted spend access separately.
+func UnblockMCPAgentHandler(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(mux.Vars(r)["id"])
+	ok, err := mcp.UnblockAgent(id)
+	if err != nil {
+		http.Error(w, "failed to unblock agent", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "agent not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func wipe(b []byte) {
 	for i := range b {
 		b[i] = 0
