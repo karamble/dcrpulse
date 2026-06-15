@@ -6,6 +6,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -28,20 +29,43 @@ type mcpSettingsResponse struct {
 	Sessions []mcp.Session   `json:"sessions"`
 }
 
-// MCPSettingsHandler returns the MCP listener configuration plus the agent
-// roster and live sessions.
+// MCPSettingsHandler returns the live MCP listener state plus the agent roster
+// and live sessions.
 func MCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
-	cfg := mcp.ConfigFromEnv()
+	running, bind, port := mcp.Status()
 	resp := mcpSettingsResponse{
-		Enabled:  cfg.Enable,
-		Bind:     cfg.Bind,
-		Port:     cfg.Port,
+		Enabled:  running,
+		Bind:     bind,
+		Port:     port,
 		Domains:  mcp.Domains(),
 		Agents:   mcp.ListAgents(),
 		Sessions: mcp.ActiveSessions(),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// SetMCPEnabledHandler starts or stops the MCP listener and persists the new
+// on/off state. It returns the resulting live status.
+func SetMCPEnabledHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := mcp.SetEnabled(req.Enabled); err != nil {
+		http.Error(w, fmt.Sprintf("failed to update MCP server: %v", err), http.StatusInternalServerError)
+		return
+	}
+	running, bind, port := mcp.Status()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		Enabled bool   `json:"enabled"`
+		Bind    string `json:"bind"`
+		Port    string `json:"port"`
+	}{Enabled: running, Bind: bind, Port: port})
 }
 
 // CreateMCPTokenHandler mints a new named agent token. The plaintext token is

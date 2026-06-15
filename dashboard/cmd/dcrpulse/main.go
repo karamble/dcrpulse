@@ -388,6 +388,7 @@ func main() {
 	api.HandleFunc("/alerts/settings", handlers.SaveAlertsSettingsHandler).Methods("POST")
 	api.HandleFunc("/alerts/{id}/read", handlers.MarkAlertReadHandler).Methods("POST")
 	api.HandleFunc("/settings/mcp", handlers.MCPSettingsHandler).Methods("GET")
+	api.HandleFunc("/settings/mcp/enable", handlers.SetMCPEnabledHandler).Methods("POST")
 	api.HandleFunc("/settings/mcp/tokens", handlers.CreateMCPTokenHandler).Methods("POST")
 	api.HandleFunc("/settings/mcp/tokens/{id}", handlers.RevokeMCPTokenHandler).Methods("DELETE")
 	api.HandleFunc("/settings/mcp/agents/{id}/domains", handlers.SetMCPAgentDomainsHandler).Methods("POST")

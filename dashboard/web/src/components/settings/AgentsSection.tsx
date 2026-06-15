@@ -17,6 +17,7 @@ import {
   MCPSettings,
   MCPAgent,
   getMCPSettings,
+  setMCPEnabled,
   createMCPToken,
   revokeMCPToken,
   setMCPAgentDomains,
@@ -78,6 +79,24 @@ export const AgentsSection = () => {
     const id = window.setInterval(refresh, 5000);
     return () => clearInterval(id);
   }, [refresh]);
+
+  const toggleEnabled = async (next: boolean) => {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await setMCPEnabled(next);
+      await refresh();
+    } catch {
+      setFeedback({
+        kind: 'error',
+        text: next
+          ? 'Failed to start the MCP server (is the port already in use?).'
+          : 'Failed to stop the MCP server.',
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const create = async () => {
     const name = newName.trim();
@@ -161,33 +180,37 @@ export const AgentsSection = () => {
           status. Grant additional capabilities per agent below.
         </p>
 
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <span
-            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 font-medium ${
-              settings.enabled
-                ? 'bg-success/20 text-success'
-                : 'bg-muted/20 text-muted-foreground'
-            }`}
-          >
-            {settings.enabled ? 'Server running' : 'Server disabled'}
-          </span>
-          {settings.enabled && (
-            <span className="font-mono text-muted-foreground">
-              {settings.bind}:{settings.port}
-            </span>
-          )}
-        </div>
-
-        {!settings.enabled && (
-          <div className="flex items-start gap-2 text-sm text-muted-foreground">
-            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>
-              The MCP listener is off. Start the dashboard with{' '}
-              <code className="font-mono text-foreground">MCP_ENABLE=true</code> to accept agent
-              connections. You can still create and configure tokens here beforehand.
+        <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
+          <div>
+            <span className="font-medium block">MCP server</span>
+            <span className="text-sm text-muted-foreground block">
+              {settings.enabled
+                ? `Accepting agent connections on ${settings.bind}:${settings.port}`
+                : `Off. When on, it listens on ${settings.bind}:${settings.port}.`}
             </span>
           </div>
-        )}
+          <button
+            type="button"
+            onClick={() => toggleEnabled(!settings.enabled)}
+            disabled={busy}
+            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              settings.enabled
+                ? 'bg-success/20 text-success hover:bg-success/30'
+                : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+            } disabled:opacity-50 disabled:cursor-wait`}
+          >
+            {settings.enabled ? 'On' : 'Off'}
+          </button>
+        </div>
+
+        <div className="flex items-start gap-2 text-sm text-muted-foreground">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            The server binds to {settings.bind} (local only by default). Expose it beyond this
+            machine only behind an authenticated, TLS-terminating reverse proxy. Each agent still
+            needs its own token and starts limited to node status.
+          </span>
+        </div>
       </div>
 
       {feedback && (

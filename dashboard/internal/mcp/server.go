@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"dcrpulse/internal/config"
 )
 
 const serverVersion = "0.1.0"
@@ -77,7 +79,9 @@ func LoadPersisted() error { return loadAgents() }
 // ActiveSessions returns the currently-connected agents, for the dashboard UI.
 func ActiveSessions() []Session { return reg.activeSessions(time.Now()) }
 
-// Config controls the MCP listener. The server is disabled unless Enable is set.
+// Config holds the listener address and the first-run enable default. Once the
+// user toggles MCP in the dashboard the persisted setting wins; Enable only
+// seeds the very first run from the MCP_ENABLE env var.
 type Config struct {
 	Enable bool
 	Bind   string
@@ -100,40 +104,135 @@ func envOr(key, def string) string {
 	return def
 }
 
-// Start launches the MCP streamable-HTTP server in the background when enabled.
-// It reuses the dashboard's in-process daemon clients via the services layer.
+// Listener runtime state. The server can be started and stopped at runtime from
+// the dashboard, so the live *http.Server is held here behind srvMu.
+var (
+	srvMu   sync.Mutex
+	httpSrv *http.Server // non-nil while the listener is running
+	runBind = "127.0.0.1"
+	runPort = "8090"
+)
+
+// Start records the listener address, registers the optional bootstrap token,
+// and brings the server up if it should be enabled. The enabled state is the
+// persisted dashboard toggle when present, otherwise the env default.
 func Start(cfg Config) {
-	if !cfg.Enable {
-		return
-	}
-	// Bootstrap token from the environment for local testing. Persistent,
-	// Settings-managed per-agent tokens are added in a later phase.
+	srvMu.Lock()
+	runBind, runPort = cfg.Bind, cfg.Port
+	srvMu.Unlock()
+
+	// Bootstrap token from the environment for headless/dev use. Registered
+	// regardless of the enabled state so a later toggle-on can accept it.
 	if t := os.Getenv("MCP_TOKEN"); t != "" {
 		AddToken("env", "env-token", t)
 	}
 
-	// One MCP server per agent, scoped to that agent's granted domains. getServer
-	// resolves the agent (placed in context by authMiddleware) and returns its
-	// scoped server (built lazily, rebuilt when grants change).
-	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+	enabled := cfg.Enable
+	if v, ok := persistedEnabled(); ok {
+		enabled = v
+	}
+	if !enabled {
+		return
+	}
+	srvMu.Lock()
+	defer srvMu.Unlock()
+	if err := startListenerLocked(); err != nil {
+		log.Printf("MCP server start: %v", err)
+	}
+}
+
+// SetEnabled starts or stops the MCP listener at runtime and persists the new
+// state. Enabling binds the port synchronously so a bind failure (e.g. the port
+// is already in use) is reported to the caller; disabling drains in the
+// background so the UI is not blocked by long-lived streams.
+func SetEnabled(enabled bool) error {
+	srvMu.Lock()
+	if enabled {
+		if httpSrv == nil {
+			if err := startListenerLocked(); err != nil {
+				srvMu.Unlock()
+				return err
+			}
+		}
+	} else if httpSrv != nil {
+		srv := httpSrv
+		httpSrv = nil
+		go shutdownServer(srv)
+	}
+	srvMu.Unlock()
+	return persistEnabled(enabled)
+}
+
+// Status reports whether the listener is currently running and where it binds.
+func Status() (running bool, bind, port string) {
+	srvMu.Lock()
+	defer srvMu.Unlock()
+	return httpSrv != nil, runBind, runPort
+}
+
+// startListenerLocked binds the port and serves in the background. The caller
+// holds srvMu and has checked that httpSrv is nil.
+func startListenerLocked() error {
+	ln, err := net.Listen("tcp", net.JoinHostPort(runBind, runPort))
+	if err != nil {
+		return err
+	}
+	httpSrv = &http.Server{
+		Handler:           reg.authMiddleware(buildHandler()),
+		ReadHeaderTimeout: 15 * time.Second,
+	}
+	go func(s *http.Server) {
+		log.Printf("MCP server listening on http://%s (streamable HTTP, bearer-auth, default domain=%q)", ln.Addr(), defaultDomain)
+		if err := s.Serve(ln); err != nil && err != http.ErrServerClosed {
+			log.Printf("MCP server error: %v", err)
+		}
+	}(httpSrv)
+	return nil
+}
+
+func shutdownServer(s *http.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = s.Shutdown(ctx)
+	log.Printf("MCP server stopped")
+}
+
+// buildHandler builds the streamable-HTTP handler. The getServer callback
+// resolves the agent (placed in context by authMiddleware) and returns its
+// scoped server (built lazily, rebuilt when grants change).
+func buildHandler() http.Handler {
+	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		if a, ok := agentFromContext(r.Context()); ok {
 			return scopedServerFor(a)
 		}
 		return mcp.NewServer(&mcp.Implementation{Name: "dcrpulse", Version: serverVersion}, nil)
 	}, nil)
+}
 
-	addr := net.JoinHostPort(cfg.Bind, cfg.Port)
-	httpSrv := &http.Server{
-		Addr:              addr,
-		Handler:           reg.authMiddleware(handler),
-		ReadHeaderTimeout: 15 * time.Second,
+// persistEnabled / persistedEnabled store the on/off toggle in the global config
+// so it survives restarts and overrides the env default.
+func persistEnabled(enabled bool) error {
+	gc, err := config.LoadGlobalCfg()
+	if err != nil {
+		return err
 	}
-	go func() {
-		log.Printf("MCP server listening on http://%s (streamable HTTP, bearer-auth, default domain=%q)", addr, defaultDomain)
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("MCP server error: %v", err)
-		}
-	}()
+	if err := gc.Set(config.KeyMCPEnabled, enabled); err != nil {
+		return err
+	}
+	return gc.Save()
+}
+
+func persistedEnabled() (val bool, ok bool) {
+	gc, err := config.LoadGlobalCfg()
+	if err != nil {
+		return false, false
+	}
+	var v bool
+	found, err := gc.Get(config.KeyMCPEnabled, &v)
+	if err != nil || !found {
+		return false, false
+	}
+	return v, true
 }
 
 // per-agent scoped server cache (keyed by agent id), invalidated on grant change.

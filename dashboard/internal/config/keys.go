@@ -77,6 +77,11 @@ const (
 	// across wallets, like the dashboard auth gate.
 	KeyMCPAgents = "mcp_agents"
 
+	// KeyMCPEnabled is the persisted on/off state of the MCP listener, toggled
+	// from Settings -> AI Agents. When set it overrides the MCP_ENABLE env var,
+	// which only seeds the first run.
+	KeyMCPEnabled = "mcp_enabled"
+
 	// Per-wallet record of Politeia vote choices we cast through this
 	// dashboard. Map keyed by proposal token, value = "yes"|"no"|"abstain".
 	// Mirrors Decrediton's savePiVote local cache so the UI can show

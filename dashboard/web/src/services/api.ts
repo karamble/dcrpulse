@@ -1530,6 +1530,14 @@ export const getMCPSettings = async (): Promise<MCPSettings> => {
   return response.data;
 };
 
+// setMCPEnabled starts or stops the MCP listener and returns its new live state.
+export const setMCPEnabled = async (
+  enabled: boolean,
+): Promise<{ enabled: boolean; bind: string; port: string }> => {
+  const response = await api.post('/settings/mcp/enable', { enabled });
+  return response.data;
+};
+
 // createMCPToken mints a new agent identity. The returned token is shown to the
 // user exactly once; only its hash is stored server-side.
 export const createMCPToken = async (
