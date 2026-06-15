@@ -11,11 +11,11 @@ import (
 )
 
 type dexOrdersInput struct {
-	Host string `json:"host"` // optional DEX host filter; empty returns all
+	Host string `json:"host,omitempty" jsonschema:"optional DEX host filter; empty returns all"`
 }
 
 type dexNotificationsInput struct {
-	Count int `json:"count"` // max notifications; defaults to 50 when <= 0
+	Count int `json:"count,omitempty" jsonschema:"max notifications to return (default 50)"`
 }
 
 // dexTools are the read-only "dex" domain tools. They use the bisonw RPC client

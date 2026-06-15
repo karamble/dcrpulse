@@ -11,28 +11,28 @@ import (
 )
 
 type brNotificationsInput struct {
-	Count int `json:"count"` // max notifications; defaults to 50 when <= 0
+	Count int `json:"count,omitempty" jsonschema:"max notifications to return (default 50)"`
 }
 
 type brPostInput struct {
-	UID string `json:"uid"` // author identity, hex
-	PID string `json:"pid"` // post id, hex
+	UID string `json:"uid" jsonschema:"author identity, hex"`
+	PID string `json:"pid" jsonschema:"post id, hex"`
 }
 
 type brPmHistoryInput struct {
-	UID      string `json:"uid"` // peer identity, hex
-	Page     int    `json:"page"`
-	PageSize int    `json:"pageSize"` // defaults to 50 when <= 0
+	UID      string `json:"uid" jsonschema:"peer identity, hex"`
+	Page     int    `json:"page,omitempty" jsonschema:"page number, 0-based"`
+	PageSize int    `json:"pageSize,omitempty" jsonschema:"messages per page (default 50)"`
 }
 
 type brGCInput struct {
-	GCID string `json:"gcid"` // group chat id, hex
+	GCID string `json:"gcid" jsonschema:"group chat id, hex"`
 }
 
 type brGCHistoryInput struct {
-	GCID     string `json:"gcid"`
-	Page     int    `json:"page"`
-	PageSize int    `json:"pageSize"` // defaults to 50 when <= 0
+	GCID     string `json:"gcid" jsonschema:"group chat id, hex"`
+	Page     int    `json:"page,omitempty" jsonschema:"page number, 0-based"`
+	PageSize int    `json:"pageSize,omitempty" jsonschema:"messages per page (default 50)"`
 }
 
 func brPageSize(n int) int {

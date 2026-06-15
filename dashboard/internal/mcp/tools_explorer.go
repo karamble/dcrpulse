@@ -11,19 +11,19 @@ import (
 )
 
 type explorerAddressInput struct {
-	Address string `json:"address"`
+	Address string `json:"address" jsonschema:"Decred address to look up"`
 }
 
 type explorerTxInput struct {
-	TxHash string `json:"txHash"`
+	TxHash string `json:"txHash" jsonschema:"transaction hash to look up"`
 }
 
 type explorerHeightInput struct {
-	Height int64 `json:"height"`
+	Height int64 `json:"height" jsonschema:"block height to look up"`
 }
 
 type explorerHashInput struct {
-	Hash string `json:"hash"`
+	Hash string `json:"hash" jsonschema:"block hash to look up"`
 }
 
 // explorerTools are the read-only "explorer" domain tools: parameterized

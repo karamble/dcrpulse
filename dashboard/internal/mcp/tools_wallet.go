@@ -10,10 +10,11 @@ import (
 	"dcrpulse/internal/services"
 )
 
-// txListInput parameterizes wallet_transactions.
+// txListInput parameterizes wallet_transactions. Both fields are optional
+// (omitempty), so the schema does not require them.
 type txListInput struct {
-	Count int `json:"count"` // page size; defaults to 20 when <= 0
-	From  int `json:"from"`  // offset into the transaction list
+	Count int `json:"count,omitempty" jsonschema:"max transactions to return (default 20)"`
+	From  int `json:"from,omitempty" jsonschema:"offset into the transaction list"`
 }
 
 // walletTools are the read-only "wallet" domain tools. They report on the
