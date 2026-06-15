@@ -2,10 +2,15 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Ticket, Clock, CheckCircle, XCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import { getWalletTransactions, listTickets, WalletTransaction } from '../services/api';
-import { sortByBlockHeight, filterTickets, filterVotes, groupByTxid, filterTicketsByStatus } from '../services/ticketService';
+import {
+  getWalletTransactions,
+  listTickets,
+  TicketLifecycleStatus,
+  TicketRecord,
+} from '../services/api';
+import { VoteMaturity } from '../services/ticketService';
 import { TicketDetailRow } from './TicketDetailRow';
 
 interface MyTicketsInfoProps {
@@ -18,7 +23,9 @@ interface MyTicketsInfoProps {
   totalSubsidy: number;
 }
 
-export const MyTicketsInfo = ({ 
+type TicketFilter = 'all' | 'live' | 'immature' | 'voted';
+
+export const MyTicketsInfo = ({
   ownMempoolTix,
   immature,
   unspent,
@@ -30,96 +37,89 @@ export const MyTicketsInfo = ({
   // Props from getstakeinfo (may be 0 for xpub wallets)
   const total = ownMempoolTix + immature + unspent;
   const hasTicketsFromRPC = total > 0 || voted > 0 || revoked > 0;
-  
+
   const [isExpanded, setIsExpanded] = useState(false);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [ticketPriceByHash, setTicketPriceByHash] = useState<Map<string, number>>(new Map());
-  // Keyed by the vote tx hash (= a ticket's spenderHash): the voted ticket's
-  // price and subsidy, so a vote row can show real amounts instead of a
-  // misleading "spendable" claim.
-  const [voteInfoByHash, setVoteInfoByHash] = useState<Map<string, { ticketPrice: number; reward: number }>>(
-    new Map()
-  );
+  // Authoritative ticket list from GetTickets (one record per ticket, with the
+  // real lifecycle status). This is the source of truth for the detail list, so
+  // a voted ticket is never shown as "Live".
+  const [tickets, setTickets] = useState<TicketRecord[]>([]);
+  // A voted ticket's returned-funds maturity, keyed by the vote (spender) tx
+  // hash, sourced from listtransactions. Lets a VOTED row still show
+  // "Maturing"/"Spendable".
+  const [voteMaturityByHash, setVoteMaturityByHash] = useState<Map<string, VoteMaturity>>(new Map());
   const [loading, setLoading] = useState(true); // Start with loading state
   const [error, setError] = useState<string | null>(null);
   const [visibleTicketCount, setVisibleTicketCount] = useState(5);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'live' | 'voted' | 'purchased'>('all');
+  const [filterStatus, setFilterStatus] = useState<TicketFilter>('all');
   const loadMoreCount = 10;
 
-  // Always fetch transactions on mount to build stats for xpub wallets
   useEffect(() => {
-    fetchTicketTransactions();
-    fetchTicketPrices();
+    fetchTickets();
   }, []);
 
-  const fetchTicketTransactions = async () => {
+  // The ticket list comes from GetTickets (authoritative status); the vote
+  // maturity overlay comes from listtransactions. The latter is best-effort.
+  const fetchTickets = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getWalletTransactions(200); // Fetch more transactions for tickets
-      setTransactions(data.transactions);
+      const [records, txData] = await Promise.all([
+        listTickets(),
+        getWalletTransactions(200).catch(() => null),
+      ]);
+      setTickets(records);
+      if (txData) {
+        const m = new Map<string, VoteMaturity>();
+        for (const t of txData.transactions) {
+          if (t.txType === 'vote') {
+            m.set(t.txid, {
+              isTicketMature: t.isTicketMature,
+              blocksUntilSpendable: t.blocksUntilSpendable,
+            });
+          }
+        }
+        setVoteMaturityByHash(m);
+      }
     } catch (err) {
-      console.error('Error fetching ticket transactions:', err);
+      console.error('Error fetching tickets:', err);
       setError('Failed to load ticket details');
     } finally {
       setLoading(false);
     }
   };
 
-  // listtransactions reports a ticket's net amount (~0 since the wallet owns the
-  // stake submission output), so source the purchase price from the tickets
-  // endpoint and key it by ticket hash (= the purchase txid). Non-fatal.
-  const fetchTicketPrices = async () => {
-    try {
-      const records = await listTickets();
-      setTicketPriceByHash(new Map(records.map((r) => [r.hash, r.ticketPrice])));
-      setVoteInfoByHash(
-        new Map(
-          records
-            .filter((r) => r.status === 'VOTED' && r.spenderHash)
-            .map((r) => [r.spenderHash, { ticketPrice: r.ticketPrice, reward: r.reward }])
-        )
-      );
-    } catch (err) {
-      console.error('Error fetching ticket prices:', err);
-    }
-  };
+  const countByStatus = (status: TicketLifecycleStatus) =>
+    tickets.filter((t) => t.status === status).length;
+  const liveCount = countByStatus('LIVE');
+  const immatureCount = countByStatus('IMMATURE');
+  const votedCount = countByStatus('VOTED');
 
-  const tickets = filterTickets(transactions);
-  const votes = filterVotes(transactions);
-  const revocations = transactions.filter(tx => tx.txType === 'revocation');
-  
-  // Group by txid to avoid duplicates from multiple outputs (stakesubmission, sstxcommitment, stakechange)
-  const uniqueTickets = groupByTxid(tickets);
-  const uniqueVotes = groupByTxid(votes);
-  const uniqueRevocations = groupByTxid(revocations);
-  
-  const allTicketsUnfiltered = sortByBlockHeight([...uniqueTickets, ...uniqueVotes, ...uniqueRevocations]);
-  
-  // Apply status filter
-  const allTickets = filterTicketsByStatus(allTicketsUnfiltered, filterStatus);
-  
-  // Calculate stats from transactions (for xpub wallets where getstakeinfo doesn't work)
-  // Use unique counts to avoid counting multiple outputs from same transaction
-  const ticketCount = uniqueTickets.length;
-  const voteCount = uniqueVotes.length;
-  const revocationCount = uniqueRevocations.length;
-  const hasTicketsFromTransactions = ticketCount > 0 || voteCount > 0 || revocationCount > 0;
-  
-  // Use RPC stats if available, otherwise use transaction-based stats
+  // Newest first; one row per ticket.
+  const sortedTickets = useMemo(
+    () => [...tickets].sort((a, b) => (b.blockHeight || 0) - (a.blockHeight || 0)),
+    [tickets],
+  );
+
+  const filteredTickets = useMemo(() => {
+    if (filterStatus === 'all') return sortedTickets;
+    const want: TicketLifecycleStatus =
+      filterStatus === 'live' ? 'LIVE' : filterStatus === 'immature' ? 'IMMATURE' : 'VOTED';
+    return sortedTickets.filter((t) => t.status === want);
+  }, [sortedTickets, filterStatus]);
+
+  const hasTicketsFromTransactions = tickets.length > 0;
   const hasTickets = hasTicketsFromRPC || hasTicketsFromTransactions;
-  
-  // Pagination for ticket details
-  const displayedTickets = allTickets.slice(0, visibleTicketCount);
-  const hasMoreTickets = allTickets.length > visibleTicketCount;
-  const remainingTicketsCount = allTickets.length - visibleTicketCount;
-  
+
+  const displayedTickets = filteredTickets.slice(0, visibleTicketCount);
+  const hasMoreTickets = filteredTickets.length > visibleTicketCount;
+  const remainingTicketsCount = filteredTickets.length - visibleTicketCount;
+
   const toggleExpanded = () => {
     setIsExpanded(!isExpanded);
   };
 
-  // Show loading state while fetching initial transactions
-  if (loading && transactions.length === 0) {
+  // Show loading state while fetching initial tickets
+  if (loading && tickets.length === 0) {
     return (
       <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
         <div className="flex items-center gap-3 mb-4">
@@ -156,7 +156,7 @@ export const MyTicketsInfo = ({
           <p className="text-muted-foreground">No tickets found</p>
           <p className="text-sm text-muted-foreground/70 mt-1">Connect to an external wallet via RPC to see stats</p>
           <p className="text-xs text-muted-foreground/60 mt-3 max-w-md mx-auto">
-            Tickets cannot be detected on watch-only wallets with imported x-pub keys. 
+            Tickets cannot be detected on watch-only wallets with imported x-pub keys.
             A full wallet is required to track staking activity.
           </p>
         </div>
@@ -164,14 +164,14 @@ export const MyTicketsInfo = ({
     );
   }
 
-  // Determine which stats to display
-  // For xpub wallets, use transaction-based counts; for full wallets, use RPC stats
+  // Determine which stats to display. For xpub wallets getstakeinfo is empty, so
+  // fall back to counts derived from the authoritative ticket list.
   const displayTickets = hasTicketsFromRPC ? ownMempoolTix : 0;
-  const displayImmature = hasTicketsFromRPC ? immature : 0;
-  const displayLive = hasTicketsFromRPC ? unspent : ticketCount;
-  const displayVoted = hasTicketsFromRPC ? voted : voteCount;
-  const displayRevoked = hasTicketsFromRPC ? revoked : revocationCount;
-  const displayExpired = hasTicketsFromRPC ? unspentExpired : 0;
+  const displayImmature = hasTicketsFromRPC ? immature : immatureCount;
+  const displayLive = hasTicketsFromRPC ? unspent : liveCount;
+  const displayVoted = hasTicketsFromRPC ? voted : votedCount;
+  const displayRevoked = hasTicketsFromRPC ? revoked : countByStatus('REVOKED');
+  const displayExpired = hasTicketsFromRPC ? unspentExpired : countByStatus('EXPIRED');
 
   return (
     <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
@@ -182,7 +182,7 @@ export const MyTicketsInfo = ({
         <div className="flex-1">
           <h3 className="text-lg font-semibold">My Tickets</h3>
           <p className="text-sm text-muted-foreground">
-            {hasTicketsFromRPC ? 'Your staking tickets' : 'From transaction history'}
+            {hasTicketsFromRPC ? 'Your staking tickets' : 'From ticket history'}
           </p>
         </div>
       </div>
@@ -212,19 +212,15 @@ export const MyTicketsInfo = ({
           </div>
         )}
 
-        {/* Purchased Tickets / Live */}
+        {/* Live */}
         {displayLive > 0 && (
           <div className="p-4 rounded-lg bg-success/10 border border-success/20">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-muted-foreground font-medium">
-                {hasTicketsFromRPC ? 'Live' : 'Purchased'}
-              </span>
+              <span className="text-xs text-muted-foreground font-medium">Live</span>
               <Ticket className="h-4 w-4 text-success" />
             </div>
             <div className="text-2xl font-bold text-success">{displayLive}</div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {hasTicketsFromRPC ? 'Active' : 'Tickets'}
-            </div>
+            <div className="text-xs text-muted-foreground mt-1">Active</div>
           </div>
         )}
 
@@ -304,7 +300,7 @@ export const MyTicketsInfo = ({
           <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
             Ticket History
           </h4>
-          
+
           {loading && (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -318,13 +314,13 @@ export const MyTicketsInfo = ({
             </div>
           )}
 
-          {!loading && !error && allTickets.length === 0 && (
+          {!loading && !error && tickets.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
               <p>No ticket transactions found</p>
             </div>
           )}
 
-          {!loading && !error && allTicketsUnfiltered.length > 0 && (
+          {!loading && !error && tickets.length > 0 && (
             <>
               {/* Filter Buttons */}
               <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -336,17 +332,7 @@ export const MyTicketsInfo = ({
                       : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
                   }`}
                 >
-                  All ({allTicketsUnfiltered.length})
-                </button>
-                <button
-                  onClick={() => { setFilterStatus('purchased'); setVisibleTicketCount(5); }}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === 'purchased'
-                      ? 'bg-primary text-white'
-                      : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-                  }`}
-                >
-                  Purchased ({uniqueTickets.length})
+                  All ({tickets.length})
                 </button>
                 <button
                   onClick={() => { setFilterStatus('live'); setVisibleTicketCount(5); }}
@@ -356,7 +342,17 @@ export const MyTicketsInfo = ({
                       : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
                   }`}
                 >
-                  Live ({uniqueTickets.filter(t => t.confirmations >= 256).length})
+                  Live ({liveCount})
+                </button>
+                <button
+                  onClick={() => { setFilterStatus('immature'); setVisibleTicketCount(5); }}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    filterStatus === 'immature'
+                      ? 'bg-primary text-white'
+                      : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+                  }`}
+                >
+                  Immature ({immatureCount})
                 </button>
                 <button
                   onClick={() => { setFilterStatus('voted'); setVisibleTicketCount(5); }}
@@ -366,28 +362,28 @@ export const MyTicketsInfo = ({
                       : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
                   }`}
                 >
-                  Voted ({uniqueVotes.length})
+                  Voted ({votedCount})
                 </button>
               </div>
 
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm text-muted-foreground">
-                  Showing {displayedTickets.length} of {allTickets.length} tickets
+                  Showing {displayedTickets.length} of {filteredTickets.length} tickets
                 </span>
               </div>
-              
+
               <div className="space-y-2">
-                {displayedTickets.map((tx, index) => {
-                  const vi = voteInfoByHash.get(tx.txid);
-                  return (
-                    <TicketDetailRow
-                      key={`${tx.txid}-${index}`}
-                      transaction={tx}
-                      ticketPrice={vi ? vi.ticketPrice : ticketPriceByHash.get(tx.txid)}
-                      reward={vi?.reward}
-                    />
-                  );
-                })}
+                {displayedTickets.map((t) => (
+                  <TicketDetailRow
+                    key={t.hash}
+                    ticket={t}
+                    voteMaturity={
+                      t.status === 'VOTED' && t.spenderHash
+                        ? voteMaturityByHash.get(t.spenderHash)
+                        : undefined
+                    }
+                  />
+                ))}
               </div>
 
               {hasMoreTickets && (
@@ -407,4 +403,3 @@ export const MyTicketsInfo = ({
     </div>
   );
 };
-

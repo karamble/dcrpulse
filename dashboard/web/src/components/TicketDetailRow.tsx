@@ -4,148 +4,107 @@
 
 import { Link } from 'react-router-dom';
 import { Ticket, Check, Clock, AlertCircle } from 'lucide-react';
-import { WalletTransaction } from '../services/api';
-import { 
-  getTicketStatus, 
-  getTicketStatusColor, 
+import { TicketRecord } from '../services/api';
+import {
+  VoteMaturity,
   calculateMaturityProgress,
-  calculateTicketMaturity
+  ticketRecordStatusLabel,
+  ticketStatusBadgeClass,
 } from '../services/ticketService';
 
 interface TicketDetailRowProps {
-  transaction: WalletTransaction;
-  ticketPrice?: number;
-  // Vote subsidy (DCR) for vote rows, from the tickets endpoint keyed by vote hash.
-  reward?: number;
+  ticket: TicketRecord;
+  // Vote-reward maturity for a VOTED ticket, keyed off its spender (vote) tx.
+  voteMaturity?: VoteMaturity;
 }
 
-export const TicketDetailRow = ({ transaction, ticketPrice, reward }: TicketDetailRowProps) => {
-  const status = getTicketStatus(transaction);
-  const statusColor = getTicketStatusColor(transaction);
-  const isVote = transaction.txType === 'vote';
-  const isTicket = transaction.txType === 'ticket';
-  const isRevocation = transaction.txType === 'revocation';
-  
-  // Calculate maturity for ticket purchases
-  const ticketMaturity = calculateTicketMaturity(transaction);
-  
-  const truncateTxid = (txid: string) => {
-    return `${txid.substring(0, 8)}...${txid.substring(txid.length - 8)}`;
-  };
+export const TicketDetailRow = ({ ticket, voteMaturity }: TicketDetailRowProps) => {
+  const label = ticketRecordStatusLabel(ticket.status, voteMaturity);
+  const badgeClass = ticketStatusBadgeClass(ticket.status);
+
+  const truncateHash = (hash: string) =>
+    hash.length > 16 ? `${hash.substring(0, 8)}...${hash.substring(hash.length - 8)}` : hash;
+
+  // A voted ticket whose returned funds are still maturing.
+  const voteMaturing =
+    ticket.status === 'VOTED' &&
+    voteMaturity?.isTicketMature === false &&
+    voteMaturity.blocksUntilSpendable !== undefined &&
+    voteMaturity.blocksUntilSpendable > 0;
 
   const getStatusIcon = () => {
-    if (isVote && transaction.isTicketMature) {
-      return <Check className="h-4 w-4 text-success" />;
+    switch (ticket.status) {
+      case 'VOTED':
+        return voteMaturing ? (
+          <Clock className="h-4 w-4 text-warning" />
+        ) : (
+          <Check className="h-4 w-4 text-success" />
+        );
+      case 'LIVE':
+        return <Ticket className="h-4 w-4 text-success" />;
+      case 'IMMATURE':
+      case 'UNMINED':
+        return <Clock className="h-4 w-4 text-info" />;
+      case 'MISSED':
+      case 'EXPIRED':
+      case 'REVOKED':
+        return <AlertCircle className="h-4 w-4 text-destructive" />;
+      default:
+        return <Ticket className="h-4 w-4 text-primary" />;
     }
-    if (isVote && !transaction.isTicketMature) {
-      return <Clock className="h-4 w-4 text-warning" />;
-    }
-    if (isTicket && ticketMaturity.isImmature) {
-      return <Clock className="h-4 w-4 text-info" />;
-    }
-    if (isRevocation) {
-      return <AlertCircle className="h-4 w-4 text-destructive" />;
-    }
-    return <Ticket className="h-4 w-4 text-primary" />;
   };
-
-  const maturityProgress = calculateMaturityProgress(transaction.blocksUntilSpendable);
 
   return (
     <Link
-      to={`/explorer/tx/${transaction.txid}`}
+      to={`/explorer/tx/${ticket.hash}`}
       className="flex items-center justify-between p-4 rounded-lg bg-background/50 hover:bg-background transition-colors border border-border/30 hover:border-primary/30 cursor-pointer"
     >
       <div className="flex items-center gap-4 flex-1 min-w-0">
         {/* Status Icon */}
-        <div className="flex-shrink-0">
-          {getStatusIcon()}
-        </div>
-        
-        {/* Transaction Details */}
+        <div className="flex-shrink-0">{getStatusIcon()}</div>
+
+        {/* Ticket Details */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className={`font-medium ${statusColor}`}>{status}</span>
-            {transaction.confirmations === 0 && (
-              <span className="text-xs px-2 py-0.5 rounded bg-warning/10 text-warning">
-                Pending
-              </span>
-            )}
+            <span className={`px-2 py-0.5 rounded text-xs font-medium ${badgeClass}`}>{label}</span>
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <code className="font-mono text-xs">{truncateTxid(transaction.txid)}</code>
-            {transaction.blockHeight && (
+            <code className="font-mono text-xs">{truncateHash(ticket.hash)}</code>
+            {ticket.blockHeight > 0 && (
               <>
                 <span>•</span>
-                <span>Block {transaction.blockHeight.toLocaleString()}</span>
+                <span>Block {ticket.blockHeight.toLocaleString()}</span>
               </>
             )}
           </div>
         </div>
       </div>
 
-      {/* Amount + reward for Votes. The vote returns the ticket price plus the
-          subsidy to the wallet; show those rather than a spendable claim, since
-          a freshly voted ticket's funds are still maturing. */}
-      {isVote && (
-        <div className="ml-4 text-right flex flex-col items-end">
-          {ticketPrice !== undefined && (
-            <div className={`text-lg font-semibold ${statusColor}`}>
-              {ticketPrice.toFixed(2)} DCR
-            </div>
-          )}
-          {reward !== undefined && reward > 0 && (
-            <div className="text-xs text-success">+{reward.toFixed(4)} DCR reward</div>
-          )}
-          {!transaction.isTicketMature &&
-            transaction.blocksUntilSpendable !== undefined &&
-            transaction.blocksUntilSpendable > 0 && (
-              <div className="mt-1 w-32">
-                <div className="h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-warning transition-all duration-300"
-                    style={{ width: `${maturityProgress}%` }}
-                  />
-                </div>
-                <div className="text-xs text-muted-foreground mt-1 text-right">
-                  {transaction.blocksUntilSpendable} blocks until spendable
-                </div>
-              </div>
-            )}
-        </div>
-      )}
-
-      {/* Amount and Maturity for Tickets */}
-      {isTicket && (
-        <div className="ml-4 text-right flex flex-col items-end">
-          <div className={`text-lg font-semibold ${statusColor}`}>
-            {(ticketPrice ?? Math.abs(transaction.amount)).toFixed(2)} DCR
+      {/* Amount + maturity */}
+      <div className="ml-4 text-right flex flex-col items-end">
+        <div className="text-lg font-semibold">{ticket.ticketPrice.toFixed(2)} DCR</div>
+        {ticket.status === 'VOTED' && ticket.reward > 0 && (
+          <div className="text-xs text-success">+{ticket.reward.toFixed(4)} DCR reward</div>
+        )}
+        {ticket.status === 'IMMATURE' && ticket.blocksUntilMature > 0 && (
+          <div className="text-xs text-muted-foreground mt-1">
+            {ticket.blocksUntilMature} blocks to live
           </div>
-          {ticketMaturity.isImmature && ticketMaturity.blocksUntilMature > 0 && (
-            <div className="mt-1 w-32">
-              <div className="h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-blue-500 transition-all duration-300"
-                  style={{ width: `${ticketMaturity.progress}%` }}
-                />
-              </div>
-              <div className="text-xs text-muted-foreground mt-1 text-right">
-                {ticketMaturity.blocksUntilMature} blocks to live
-              </div>
+        )}
+        {voteMaturing && (
+          <div className="mt-1 w-32">
+            <div className="h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-warning transition-all duration-300"
+                style={{ width: `${calculateMaturityProgress(voteMaturity?.blocksUntilSpendable)}%` }}
+              />
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Amount for Revocations */}
-      {isRevocation && (
-        <div className="text-right ml-4">
-          <div className={`text-lg font-semibold ${statusColor}`}>
-            {Math.abs(transaction.amount).toFixed(2)} DCR
+            <div className="text-xs text-muted-foreground mt-1 text-right">
+              {voteMaturity?.blocksUntilSpendable} blocks until spendable
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </Link>
   );
 };
-

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowDownUp, ExternalLink, Filter, History, Search } from 'lucide-react';
 import { TicketRecord, TicketLifecycleStatus, listTickets } from '../../services/api';
+import { ticketStatusBadgeClass } from '../../services/ticketService';
 
 const ALL_STATES: TicketLifecycleStatus[] = [
   'UNMINED',
@@ -28,21 +29,11 @@ const formatAge = (unixSec: number) => {
   return `${Math.floor(seconds / 86400)}d ago`;
 };
 
-const statusBadge = (status: TicketLifecycleStatus) => {
-  const styles: Record<TicketLifecycleStatus, string> = {
-    UNMINED: 'bg-muted/20 text-muted-foreground',
-    IMMATURE: 'bg-warning/10 text-warning',
-    LIVE: 'bg-success/10 text-success',
-    VOTED: 'bg-success/10 text-success',
-    MISSED: 'bg-destructive/10 text-destructive',
-    EXPIRED: 'bg-destructive/10 text-destructive',
-    REVOKED: 'bg-destructive/10 text-destructive',
-    UNKNOWN: 'bg-muted/20 text-muted-foreground',
-  };
-  return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[status]}`}>{status}</span>
-  );
-};
+const statusBadge = (status: TicketLifecycleStatus) => (
+  <span className={`px-2 py-0.5 rounded text-xs font-medium ${ticketStatusBadgeClass(status)}`}>
+    {status}
+  </span>
+);
 
 // renderActivity shows what is happening to the ticket now: a maturity/pool hint
 // for active tickets, or the vote/revoke spender link + age once it has resolved.
