@@ -66,20 +66,24 @@ var walletTools = []toolDef{
 			// private copy of the passphrase. Denials are returned to the agent.
 			pass, err := grants.authorize(a.id, in.Account, atoms, in.Address, time.Now())
 			if err != nil {
+				recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "denied", err.Error())
 				return nil, err
 			}
 			unsigned, err := services.ConstructTransaction(ctx, in.Account, in.Address, atoms, false)
 			if err != nil {
 				grants.refund(a.id, atoms)
 				zero(pass)
+				recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "error", err.Error())
 				return nil, err
 			}
 			// SignAndPublishTransaction zeroes pass after use.
 			txid, err := services.SignAndPublishTransaction(ctx, in.Account, unsigned.UnsignedTransaction, pass)
 			if err != nil {
 				grants.refund(a.id, atoms)
+				recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "error", err.Error())
 				return nil, err
 			}
+			recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "ok", txid)
 			return map[string]any{
 				"txid":      txid,
 				"account":   in.Account,

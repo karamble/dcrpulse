@@ -413,6 +413,53 @@ export const AgentsSection = () => {
           </div>
         )}
       </div>
+
+      {/* Recent agent spends (audit) */}
+      {(settings.audit?.length ?? 0) > 0 && (
+        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
+          <h3 className="text-lg font-semibold">Recent agent spends</h3>
+          <div className="space-y-1.5">
+            {settings.audit.map((e, i) => (
+              <div
+                key={`${e.time}-${i}`}
+                className="flex items-start justify-between gap-3 p-2 rounded-lg bg-muted/10 border border-border/50 text-xs"
+              >
+                <div className="min-w-0">
+                  <div>
+                    <span className="font-medium">{e.agent}</span>
+                    <span className="text-muted-foreground"> · {e.tool}</span>
+                    {e.amountDcr > 0 && (
+                      <span className="text-muted-foreground">
+                        {' · '}
+                        {e.amountDcr.toLocaleString(undefined, { maximumFractionDigits: 8 })} DCR
+                      </span>
+                    )}
+                  </div>
+                  {e.detail && (
+                    <div className="font-mono text-muted-foreground truncate">{e.detail}</div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    className={`rounded px-2 py-0.5 font-medium ${
+                      e.result === 'ok'
+                        ? 'bg-success/20 text-success'
+                        : e.result === 'denied'
+                          ? 'bg-warning/20 text-warning'
+                          : 'bg-destructive/20 text-destructive'
+                    }`}
+                  >
+                    {e.result}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {new Date(e.time).toLocaleTimeString()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

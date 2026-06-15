@@ -1528,6 +1528,19 @@ export interface MCPGrant {
   expiry?: string;
 }
 
+// MCPAuditEntry records one agent spend attempt for display.
+export interface MCPAuditEntry {
+  time: string;
+  agentId: string;
+  agent: string;
+  tool: string;
+  account: number;
+  amountDcr: number;
+  target?: string;
+  result: string; // ok | denied | error
+  detail?: string;
+}
+
 export interface MCPSettings {
   enabled: boolean;
   bind: string;
@@ -1536,6 +1549,7 @@ export interface MCPSettings {
   agents: MCPAgent[];
   sessions: MCPSession[];
   grants: Record<string, MCPGrant>;
+  audit: MCPAuditEntry[];
 }
 
 export interface MCPGrantRequest {

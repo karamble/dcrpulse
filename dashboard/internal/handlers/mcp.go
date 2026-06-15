@@ -36,6 +36,7 @@ type mcpSettingsResponse struct {
 	Agents   []mcp.AgentInfo      `json:"agents"`
 	Sessions []mcp.Session        `json:"sessions"`
 	Grants   map[string]grantView `json:"grants"`
+	Audit    []mcp.AuditEntry     `json:"audit"`
 }
 
 // grantView is the dashboard-facing spend grant (DCR amounts, no passphrase).
@@ -93,6 +94,7 @@ func MCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		Agents:   agents,
 		Sessions: mcp.ActiveSessions(),
 		Grants:   gmap,
+		Audit:    mcp.AuditLog(50),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

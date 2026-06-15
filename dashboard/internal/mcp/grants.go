@@ -158,7 +158,9 @@ func (s *grantStore) authorize(agentID string, account uint32, amountAtoms int64
 	if g.perTxAtoms > 0 && amountAtoms > g.perTxAtoms {
 		return nil, errPerTxExceeded
 	}
-	if len(g.allowlist) > 0 && !g.allowlist[toAddr] {
+	// The allowlist constrains address sends only; non-send spends (e.g. ticket
+	// purchases) pass an empty address and are not allowlist-checked.
+	if toAddr != "" && len(g.allowlist) > 0 && !g.allowlist[toAddr] {
 		return nil, errAddrNotAllowed
 	}
 	if now.Sub(g.windowStart) >= grantWindow {
