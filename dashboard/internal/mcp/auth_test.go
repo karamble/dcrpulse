@@ -86,7 +86,10 @@ func TestCatalogDomains(t *testing.T) {
 	for _, d := range catalogDomains() {
 		got[d] = true
 	}
-	for _, want := range []string{"node", "wallet", "staking"} {
+	for _, want := range []string{
+		"node", "wallet", "staking", "governance", "treasury", "lightning",
+		"privacy", "explorer", "timestamp", "tor", "dex", "bisonrelay",
+	} {
 		if !got[want] {
 			t.Errorf("catalog domains missing %q (got %v)", want, catalogDomains())
 		}

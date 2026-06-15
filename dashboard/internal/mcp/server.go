@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"dcrpulse/internal/services"
 )
 
 const serverVersion = "0.1.0"
@@ -202,6 +200,18 @@ type toolDef struct {
 	register func(*mcp.Server)
 }
 
+// readTool builds a read-only tool: a thin adapter that calls fn and wraps its
+// (value, error) result for MCP. In is the tool's argument type (emptyInput for
+// tools that take no parameters); its exported fields become the input schema.
+func readTool[In any](domain, name, description string, fn func(context.Context, In) (any, error)) toolDef {
+	return toolDef{domain, func(s *mcp.Server) {
+		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description},
+			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, toolResult, error) {
+				return ok(fn(ctx, in))
+			})
+	}}
+}
+
 // catalogDomains returns the distinct capability domains in the catalog, in
 // first-seen order, so the UI only offers domains that actually have tools.
 func catalogDomains() []string {
@@ -216,56 +226,24 @@ func catalogDomains() []string {
 	return out
 }
 
-// toolCatalog is the master list of MCP tools. Each is a thin adapter over the
-// same services.* function the HTTP handlers use. Spend/state-changing tools
-// (gated on a user spend grant) are added in later phases.
-var toolCatalog = []toolDef{
-	{"node", func(s *mcp.Server) {
-		mcp.AddTool(s, &mcp.Tool{
-			Name:        "node_status",
-			Description: "Get the dcrd node sync status: synced state, block height, peer count, and version.",
-		}, func(_ context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, toolResult, error) {
-			return ok(services.FetchNodeStatus())
-		})
-	}},
-	{"node", func(s *mcp.Server) {
-		mcp.AddTool(s, &mcp.Tool{
-			Name:        "node_dashboard",
-			Description: "Get the node dashboard summary: chain, circulating supply, staking and treasury overview.",
-		}, func(_ context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, toolResult, error) {
-			return ok(services.FetchDashboardData())
-		})
-	}},
-	{"node", func(s *mcp.Server) {
-		mcp.AddTool(s, &mcp.Tool{
-			Name:        "node_blockchain_info",
-			Description: "Get detailed blockchain info from dcrd (best block, difficulty, chainwork, etc.).",
-		}, func(_ context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, toolResult, error) {
-			return ok(services.FetchBlockchainInfo())
-		})
-	}},
-	{"wallet", func(s *mcp.Server) {
-		mcp.AddTool(s, &mcp.Tool{
-			Name:        "wallet_dashboard",
-			Description: "Get the active wallet overview: balances and wallet status.",
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, toolResult, error) {
-			return ok(services.FetchWalletDashboardDataWithContext(ctx))
-		})
-	}},
-	{"wallet", func(s *mcp.Server) {
-		mcp.AddTool(s, &mcp.Tool{
-			Name:        "wallet_accounts",
-			Description: "List the accounts in the active wallet with their balances.",
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, toolResult, error) {
-			return ok(services.FetchAllAccounts(ctx))
-		})
-	}},
-	{"staking", func(s *mcp.Server) {
-		mcp.AddTool(s, &mcp.Tool{
-			Name:        "staking_tickets",
-			Description: "List the active wallet's staking tickets with their lifecycle status (live, voted, etc.).",
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, toolResult, error) {
-			return ok(services.ListTickets(ctx))
-		})
-	}},
-}
+// toolCatalog is the master list of MCP tools, assembled from the per-domain
+// tool files (tools_<domain>.go). Each tool is a thin adapter over the same
+// services.* / rpc.* function the HTTP handlers use. Order here sets the order
+// of the capability toggles in the dashboard. Spend/state-changing tools (gated
+// on a user spend grant) are added in later phases.
+var toolCatalog = func() []toolDef {
+	var all []toolDef
+	all = append(all, nodeTools...)
+	all = append(all, walletTools...)
+	all = append(all, stakingTools...)
+	all = append(all, governanceTools...)
+	all = append(all, treasuryTools...)
+	all = append(all, lightningTools...)
+	all = append(all, privacyTools...)
+	all = append(all, explorerTools...)
+	all = append(all, timestampTools...)
+	all = append(all, torTools...)
+	all = append(all, dexTools...)
+	all = append(all, bisonrelayTools...)
+	return all
+}()

@@ -66,3 +66,18 @@ func TestGrantedAgentSeesMoreTools(t *testing.T) {
 		}
 	}
 }
+
+// TestFullCatalogRegistersUniquely grants every domain and confirms the server
+// exposes exactly one tool per catalog entry. A duplicate tool name would make
+// the count mismatch (or panic during registration), so this guards against it.
+func TestFullCatalogRegistersUniquely(t *testing.T) {
+	domains := map[string]bool{}
+	for _, d := range catalogDomains() {
+		domains[d] = true
+	}
+	a := &agent{id: "all", name: "all-domains", domains: domains}
+	names := toolNames(t, connectTo(t, a))
+	if len(names) != len(toolCatalog) {
+		t.Fatalf("expected %d unique tools, server exposed %d (duplicate tool name?)", len(toolCatalog), len(names))
+	}
+}

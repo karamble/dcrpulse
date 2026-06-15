@@ -36,6 +36,7 @@ const domainLabels: Record<string, string> = {
   treasury: 'Treasury',
   explorer: 'Explorer',
   timestamp: 'Timestamps',
+  tor: 'Tor',
 };
 
 const domainLabel = (d: string) => domainLabels[d] || d;
