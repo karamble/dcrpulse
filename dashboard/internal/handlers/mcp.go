@@ -48,6 +48,9 @@ type grantView struct {
 	RemainingTodayDCR float64  `json:"remainingTodayDcr"`
 	Allowlist         []string `json:"allowlist"`
 	Expiry            string   `json:"expiry,omitempty"`
+	AllowVoting       bool     `json:"allowVoting"`
+	AllowLightning    bool     `json:"allowLightning"`
+	AllowDex          bool     `json:"allowDex"`
 }
 
 func toGrantView(info mcp.GrantInfo) grantView {
@@ -56,11 +59,14 @@ func toGrantView(info mcp.GrantInfo) grantView {
 		spent = 0
 	}
 	gv := grantView{
-		Accounts:      info.Accounts,
-		PerTxDCR:      dcrutil.Amount(info.PerTxAtoms).ToCoin(),
-		DailyDCR:      dcrutil.Amount(info.DailyAtoms).ToCoin(),
-		SpentTodayDCR: dcrutil.Amount(spent).ToCoin(),
-		Allowlist:     info.Allowlist,
+		Accounts:       info.Accounts,
+		PerTxDCR:       dcrutil.Amount(info.PerTxAtoms).ToCoin(),
+		DailyDCR:       dcrutil.Amount(info.DailyAtoms).ToCoin(),
+		SpentTodayDCR:  dcrutil.Amount(spent).ToCoin(),
+		Allowlist:      info.Allowlist,
+		AllowVoting:    info.AllowVoting,
+		AllowLightning: info.AllowLightning,
+		AllowDex:       info.AllowDex,
 	}
 	if info.DailyAtoms > 0 {
 		rem := info.DailyAtoms - spent
@@ -214,12 +220,15 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Accounts    []uint32 `json:"accounts"`
-		PerTxDCR    float64  `json:"perTxDcr"`
-		DailyDCR    float64  `json:"dailyDcr"`
-		Allowlist   []string `json:"allowlist"`
-		ExpiryHours float64  `json:"expiryHours"`
-		Passphrase  string   `json:"passphrase"`
+		Accounts       []uint32 `json:"accounts"`
+		PerTxDCR       float64  `json:"perTxDcr"`
+		DailyDCR       float64  `json:"dailyDcr"`
+		Allowlist      []string `json:"allowlist"`
+		ExpiryHours    float64  `json:"expiryHours"`
+		Passphrase     string   `json:"passphrase"`
+		AllowVoting    bool     `json:"allowVoting"`
+		AllowLightning bool     `json:"allowLightning"`
+		AllowDex       bool     `json:"allowDex"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -272,12 +281,15 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mcp.SetSpendGrant(id, mcp.GrantSpec{
-		Accounts:   req.Accounts,
-		PerTxAtoms: int64(perTx),
-		DailyAtoms: int64(daily),
-		Allowlist:  allow,
-		Expiry:     expiry,
-		Passphrase: pass, // copied by the store; our slice is wiped on return
+		Accounts:       req.Accounts,
+		PerTxAtoms:     int64(perTx),
+		DailyAtoms:     int64(daily),
+		Allowlist:      allow,
+		Expiry:         expiry,
+		Passphrase:     pass, // copied by the store; our slice is wiped on return
+		AllowVoting:    req.AllowVoting,
+		AllowLightning: req.AllowLightning,
+		AllowDex:       req.AllowDex,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }

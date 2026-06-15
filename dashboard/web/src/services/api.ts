@@ -1526,6 +1526,9 @@ export interface MCPGrant {
   remainingTodayDcr: number;
   allowlist: string[];
   expiry?: string;
+  allowVoting: boolean;
+  allowLightning: boolean;
+  allowDex: boolean;
 }
 
 // MCPAuditEntry records one agent spend attempt for display.
@@ -1559,6 +1562,9 @@ export interface MCPGrantRequest {
   allowlist: string[];
   expiryHours: number;
   passphrase: string;
+  allowVoting: boolean;
+  allowLightning: boolean;
+  allowDex: boolean;
 }
 
 export const getMCPSettings = async (): Promise<MCPSettings> => {

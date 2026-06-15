@@ -126,3 +126,49 @@ func TestGrantNoGrantDenied(t *testing.T) {
 		t.Fatalf("want no-grant, got %v", err)
 	}
 }
+
+func TestGrantVotingRequiresFlag(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	s.set("a", GrantSpec{Accounts: []uint32{0}, Passphrase: []byte("secret")}, now)
+	if _, err := s.authorizeVoting("a", now); err != errVotingNotAllowed {
+		t.Fatalf("voting without flag: want errVotingNotAllowed, got %v", err)
+	}
+	s.set("a", GrantSpec{Accounts: []uint32{0}, Passphrase: []byte("secret"), AllowVoting: true}, now)
+	pass, err := s.authorizeVoting("a", now)
+	if err != nil || string(pass) != "secret" {
+		t.Fatalf("voting with flag: want passphrase copy, got %q err=%v", pass, err)
+	}
+}
+
+func TestGrantLightningRequiresFlagAndCap(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	s.set("a", GrantSpec{DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
+	if err := s.authorizeLightning("a", dcrAtoms, now); err != errLightningNotAllowed {
+		t.Fatalf("LN without flag: want errLightningNotAllowed, got %v", err)
+	}
+	s.set("a", GrantSpec{DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p"), AllowLightning: true}, now)
+	if err := s.authorizeLightning("a", 4*dcrAtoms, now); err != nil {
+		t.Fatalf("LN within cap: want ok, got %v", err)
+	}
+	if err := s.authorizeLightning("a", 2*dcrAtoms, now); err != errDailyExceeded {
+		t.Fatalf("LN over shared daily cap: want errDailyExceeded, got %v", err)
+	}
+	if err := s.authorizeLightningAction("a", now); err != nil {
+		t.Fatalf("LN non-spend action with flag: want ok, got %v", err)
+	}
+}
+
+func TestGrantDexRequiresFlag(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	s.set("a", GrantSpec{Passphrase: []byte("p")}, now)
+	if err := s.authorizeDex("a", now); err != errDexNotAllowed {
+		t.Fatalf("DEX without flag: want errDexNotAllowed, got %v", err)
+	}
+	s.set("a", GrantSpec{Passphrase: []byte("p"), AllowDex: true}, now)
+	if err := s.authorizeDex("a", now); err != nil {
+		t.Fatalf("DEX with flag: want ok, got %v", err)
+	}
+}

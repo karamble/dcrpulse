@@ -22,6 +22,9 @@ type spendCapability struct {
 	RemainingTodayDCR float64  `json:"remainingTodayDcr,omitempty"`
 	Allowlist         []string `json:"allowlist,omitempty"`
 	Expiry            string   `json:"expiry,omitempty"`
+	AllowVoting       bool     `json:"allowVoting"`
+	AllowLightning    bool     `json:"allowLightning"`
+	AllowDex          bool     `json:"allowDex"`
 	Note              string   `json:"note,omitempty"`
 }
 
@@ -59,12 +62,15 @@ var capabilityTools = []toolDef{
 				spent = 0 // the rolling daily window has elapsed
 			}
 			sc := spendCapability{
-				Granted:       true,
-				Accounts:      info.Accounts,
-				PerTxDCR:      dcr(info.PerTxAtoms),
-				DailyDCR:      dcr(info.DailyAtoms),
-				SpentTodayDCR: dcr(spent),
-				Allowlist:     info.Allowlist,
+				Granted:        true,
+				Accounts:       info.Accounts,
+				PerTxDCR:       dcr(info.PerTxAtoms),
+				DailyDCR:       dcr(info.DailyAtoms),
+				SpentTodayDCR:  dcr(spent),
+				Allowlist:      info.Allowlist,
+				AllowVoting:    info.AllowVoting,
+				AllowLightning: info.AllowLightning,
+				AllowDex:       info.AllowDex,
 			}
 			if info.DailyAtoms > 0 {
 				rem := info.DailyAtoms - spent

@@ -32,6 +32,9 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
   const [allowlist, setAllowlist] = useState((grant?.allowlist ?? []).join('\n'));
   const [expiryHours, setExpiryHours] = useState('');
   const [passphrase, setPassphrase] = useState('');
+  const [allowVoting, setAllowVoting] = useState(grant?.allowVoting ?? false);
+  const [allowLightning, setAllowLightning] = useState(grant?.allowLightning ?? false);
+  const [allowDex, setAllowDex] = useState(grant?.allowDex ?? false);
 
   const openForm = () => {
     setSelected(new Set(grant?.accounts ?? []));
@@ -40,6 +43,9 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
     setAllowlist((grant?.allowlist ?? []).join('\n'));
     setExpiryHours('');
     setPassphrase('');
+    setAllowVoting(grant?.allowVoting ?? false);
+    setAllowLightning(grant?.allowLightning ?? false);
+    setAllowDex(grant?.allowDex ?? false);
     setError(null);
     setEditing(true);
   };
@@ -75,6 +81,9 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
           .filter(Boolean),
         expiryHours: parseFloat(expiryHours) || 0,
         passphrase,
+        allowVoting,
+        allowLightning,
+        allowDex,
       });
       setPassphrase('');
       setEditing(false);
@@ -164,6 +173,16 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
               </span>
             )}
           </div>
+          <div className="text-muted-foreground">Actions</div>
+          <div>
+            {[
+              grant.allowVoting && 'voting',
+              grant.allowLightning && 'Lightning',
+              grant.allowDex && 'DEX',
+            ]
+              .filter(Boolean)
+              .join(', ') || 'wallet send + staking only'}
+          </div>
           {grant.allowlist.length > 0 && (
             <>
               <div className="text-muted-foreground">Allowlist</div>
@@ -236,6 +255,32 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
                 className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
               />
             </label>
+          </div>
+
+          <div>
+            <div className="text-xs text-muted-foreground mb-1">
+              Additional actions (no DCR amount; Lightning payments use the daily cap)
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: 'Governance voting', on: allowVoting, set: setAllowVoting },
+                { label: 'Lightning pay', on: allowLightning, set: setAllowLightning },
+                { label: 'DEX trading', on: allowDex, set: setAllowDex },
+              ].map((c) => (
+                <button
+                  key={c.label}
+                  type="button"
+                  onClick={() => c.set(!c.on)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                    c.on
+                      ? 'bg-success/20 text-success hover:bg-success/30'
+                      : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <label className="block text-xs text-muted-foreground">
