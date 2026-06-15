@@ -4,6 +4,7 @@ import { AlertCircle, Check, ExternalLink, Send, X } from 'lucide-react';
 import {
   AccountInfo,
   ConstructTransactionResponse,
+  PrivacyStatus,
   constructTransaction,
   getAccounts,
   getAutobuyerStatus,
@@ -62,6 +63,9 @@ export const SendTab = () => {
   // A regular send conflicts with the running mixer/autobuyer (both spend the
   // wallet's UTXOs), so block sending while either is active. Mirrors Decrediton.
   const [spendBlocked, setSpendBlocked] = useState(false);
+  // Privacy config drives the source-account filter: when mixing is set up the
+  // unmixed (change) account is receive-only and must not be spent from.
+  const [privacy, setPrivacy] = useState<PrivacyStatus | null>(null);
 
   const addrTimerRef = useRef<number | null>(null);
   const constructTimerRef = useRef<number | null>(null);
@@ -98,6 +102,7 @@ export const SendTab = () => {
         getAutobuyerStatus().catch(() => null),
       ]);
       if (cancelled) return;
+      setPrivacy(priv);
       setSpendBlocked(!!priv?.mixerRunning || !!ab?.running);
     };
     check();
@@ -107,6 +112,29 @@ export const SendTab = () => {
       window.clearInterval(id);
     };
   }, []);
+
+  // When privacy is configured the unmixed (change) account is receive-only:
+  // spending it directly would defeat mixing, so drop it from the source list.
+  // It stays available as a destination (internal mode) so it can still receive.
+  const sourceAccounts = useMemo(() => {
+    if (privacy?.configured && privacy.changeAccount !== undefined) {
+      return accounts.filter((a) => a.accountNumber !== privacy.changeAccount);
+    }
+    return accounts;
+  }, [accounts, privacy]);
+
+  // Keep the selection valid: pick the first allowed account when none is set,
+  // and move off the unmixed account if it became disallowed (privacy was just
+  // enabled, or it was the default before the privacy status loaded).
+  useEffect(() => {
+    if (sourceAccount !== null && sourceAccounts.some((a) => a.accountNumber === sourceAccount)) {
+      return;
+    }
+    const next = sourceAccounts.length > 0 ? sourceAccounts[0].accountNumber : null;
+    setSourceAccount(next);
+    setConstruct(null);
+    setConstructError(null);
+  }, [sourceAccounts, sourceAccount]);
 
   const amountError = sendAll ? null : validateAmount(amount);
   const amountAtoms = sendAll ? 0 : Math.round(parseFloat(amount || '0') * 1e8);
@@ -337,12 +365,20 @@ export const SendTab = () => {
                 onChange={handleAccountChange}
                 className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary"
               >
-                {accounts.map((a) => (
+                {sourceAccounts.map((a) => (
                   <option key={a.accountNumber} value={a.accountNumber}>
                     {a.accountName} ({a.spendableBalance.toFixed(4)} DCR spendable)
                   </option>
                 ))}
               </select>
+              {privacy?.configured &&
+                privacy.mixedAccount !== undefined &&
+                sourceAccount === privacy.mixedAccount && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Change from a mixed-account send returns to the unmixed account to be
+                    re-mixed, so the full input is moved out of the mixed account.
+                  </p>
+                )}
             </div>
 
             <div>
