@@ -28,6 +28,11 @@ type sendInput struct {
 	AmountDCR float64 `json:"amountDcr" jsonschema:"amount to send, in DCR"`
 }
 
+// newAddressInput parameterizes wallet_new_address.
+type newAddressInput struct {
+	Account uint32 `json:"account" jsonschema:"wallet account number to derive the address from"`
+}
+
 // walletTools are the read-only "wallet" domain tools. They report on the
 // active wallet only; spend tools (gated on a user grant) come in a later phase.
 var walletTools = []toolDef{
@@ -43,8 +48,17 @@ var walletTools = []toolDef{
 		"Get the active wallet's status (loaded, locked/unlocked, sync state).",
 		func(_ context.Context, _ emptyInput) (any, error) { return services.FetchWalletStatus() }),
 	readTool("wallet", "wallet_addresses",
-		"List the active wallet's receiving addresses.",
+		"List the active wallet's receiving addresses that have received funds.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.FetchAddressesWithContext(ctx) }),
+	readTool("wallet", "wallet_new_address",
+		"Generate a fresh receiving address for a wallet account. Not a spend (no passphrase needed); use it to get a destination address.",
+		func(ctx context.Context, in newAddressInput) (any, error) {
+			addr, err := services.GetNextAddress(ctx, in.Account)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"account": in.Account, "address": addr}, nil
+		}),
 	readTool("wallet", "wallet_transactions",
 		"List recent wallet transactions. Optional count (default 20) and from (offset).",
 		func(ctx context.Context, in txListInput) (any, error) {
