@@ -40,6 +40,7 @@
   " https://127.0.0.1:" ~ values.consts.dcrd_rpc_port ~ " || exit 1"
 ]) %}
 {% do dcrd.healthcheck.set_start_period(120) %}
+{% do dcrd.set_grace_period(300) %}
 {% do dcrd.add_storage(values.consts.app_data_dir, values.storage.data) %}
 {% do dcrd.add_storage(values.consts.tor_mount_dir, tor_ro) %}
 {% do dcrd.add_port(values.network.p2p_port, {"container_port": values.consts.dcrd_p2p_port}) %}
@@ -62,6 +63,7 @@
   " && nc -z 127.0.0.1 " ~ values.consts.dcrwallet_grpc_port ~ " || exit 1"
 ]) %}
 {% do dcrwallet.healthcheck.set_start_period(120) %}
+{% do dcrwallet.set_grace_period(60) %}
 {% do dcrwallet.add_storage(values.consts.app_data_dir, values.storage.data) %}
 {% do dcrwallet.depends.add_dependency(values.consts.dcrd_container_name, "service_healthy") %}
 
@@ -75,7 +77,9 @@
 {% do dcrlnd.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
 {% do dcrlnd.healthcheck.set_test("netcat", {"port": values.consts.dcrlnd_grpc_port}) %}
 {% do dcrlnd.healthcheck.set_start_period(300) %}
-{% do dcrlnd.add_storage(values.consts.app_data_dir, data_ro) %}
+{% do dcrlnd.set_grace_period(60) %}
+{# /app-data mounted read-write so docker can create the nested /app-data/dcrlnd mountpoint #}
+{% do dcrlnd.add_storage(values.consts.app_data_dir, values.storage.data) %}
 {% do dcrlnd.add_storage(values.consts.dcrlnd_dir, values.storage.dcrlnd) %}
 {% do dcrlnd.depends.add_dependency(values.consts.dcrwallet_container_name, "service_healthy") %}
 {% do perms.add_or_skip_action("dcrlnd", values.storage.dcrlnd, perms_config) %}
@@ -84,9 +88,11 @@
 {% set brclientd = tpl.add_container(values.consts.brclientd_container_name, "brclientd_image") %}
 {% do brclientd.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
 {% do brclientd.healthcheck.disable() %}
+{% do brclientd.set_grace_period(60) %}
 {% do brclientd.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
 {% do brclientd.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
-{% do brclientd.add_storage(values.consts.app_data_dir, data_ro) %}
+{# /app-data mounted read-write so docker can create the nested mountpoints below #}
+{% do brclientd.add_storage(values.consts.app_data_dir, values.storage.data) %}
 {% do brclientd.add_storage(values.consts.dcrlnd_dir, dcrlnd_ro) %}
 {% do brclientd.add_storage(values.consts.brclientd_dir, values.storage.brclientd) %}
 {% do brclientd.depends.add_dependency(values.consts.dcrlnd_container_name, "service_started") %}
@@ -96,6 +102,7 @@
 {% set dcrdex = tpl.add_container(values.consts.dcrdex_container_name, "dcrdex_image") %}
 {% do dcrdex.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
 {% do dcrdex.healthcheck.disable() %}
+{% do dcrdex.set_grace_period(60) %}
 {% do dcrdex.environment.add_env("DCRDEX_RPC_USER", values.decred.rpc_user) %}
 {% do dcrdex.environment.add_env("DCRDEX_RPC_PASS", values.decred.rpc_password) %}
 {% do dcrdex.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
