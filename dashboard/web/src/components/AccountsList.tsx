@@ -29,7 +29,7 @@ export const AccountsList = ({ accounts }: AccountsListProps) => {
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
           {accounts.map((account) => (
             <div
               key={account.accountName}

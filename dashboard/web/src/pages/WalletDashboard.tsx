@@ -358,7 +358,7 @@ export const WalletDashboard = () => {
       {!showSyncProgress && !isPreparingRescan && (
         <>
 
-          {/* Row 1: Account Balance | Accounts */}
+          {/* Row 1: Account Balance | Recent Transactions */}
           {data && data.walletStatus.status !== 'no_wallet' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
               {/* Account Info */}
@@ -374,39 +374,27 @@ export const WalletDashboard = () => {
                 totalLockedByTickets={data.accountInfo.totalLockedByTickets}
               />
 
-              {/* Accounts List */}
-              {data.accounts && (
-                <AccountsList accounts={data.accounts} />
-              )}
-            </div>
-          )}
-
-          {/* Row 2: Recent Transactions | My Tickets */}
-          {data && data.walletStatus.status !== 'no_wallet' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
               {/* Recent Transactions */}
               {!loading && !showSyncProgress && !isPreparingRescan && (
                 <RecentTransactions />
               )}
-
-              {/* My Tickets Info */}
-              {data.stakingInfo && (
-                <MyTicketsInfo
-                  ownMempoolTix={data.stakingInfo.ownMempoolTix}
-                  immature={data.stakingInfo.immature}
-                  unspent={data.stakingInfo.unspent}
-                  voted={data.stakingInfo.voted}
-                  revoked={data.stakingInfo.revoked}
-                  unspentExpired={data.stakingInfo.unspentExpired}
-                  totalSubsidy={data.stakingInfo.totalSubsidy}
-                />
-              )}
             </div>
           )}
 
-          {/* Row 3: Ticket Pool & Difficulty | Block Subsidy */}
+          {/* Row 2: My Tickets | Ticket Pool & Difficulty */}
           {data && data.walletStatus.status !== 'no_wallet' && data.stakingInfo && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+              {/* My Tickets Info */}
+              <MyTicketsInfo
+                ownMempoolTix={data.stakingInfo.ownMempoolTix}
+                immature={data.stakingInfo.immature}
+                unspent={data.stakingInfo.unspent}
+                voted={data.stakingInfo.voted}
+                revoked={data.stakingInfo.revoked}
+                unspentExpired={data.stakingInfo.unspentExpired}
+                totalSubsidy={data.stakingInfo.totalSubsidy}
+              />
+
               {/* Ticket Pool & Difficulty Info */}
               <TicketPoolInfo
                 poolSize={data.stakingInfo.poolSize}
@@ -416,17 +404,29 @@ export const WalletDashboard = () => {
                 estimatedExpected={data.stakingInfo.estimatedExpected}
                 allMempoolTix={data.stakingInfo.allMempoolTix}
               />
+            </div>
+          )}
 
+          {/* Row 3: Block Subsidy | Accounts */}
+          {data && data.walletStatus.status !== 'no_wallet' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
               {/* Block Subsidy */}
-              <BlockSubsidyInfo
-                blockSubsidyHeight={data.stakingInfo.blockSubsidyHeight}
-                blockSubsidyTotal={data.stakingInfo.blockSubsidyTotal}
-                blockSubsidyPos={data.stakingInfo.blockSubsidyPos}
-                blockSubsidyPow={data.stakingInfo.blockSubsidyPow}
-                blockSubsidyTreasury={data.stakingInfo.blockSubsidyTreasury}
-                blocksUntilSubsidyReduction={data.stakingInfo.blocksUntilSubsidyReduction}
-                subsidyReductionInterval={data.stakingInfo.subsidyReductionInterval}
-              />
+              {data.stakingInfo && (
+                <BlockSubsidyInfo
+                  blockSubsidyHeight={data.stakingInfo.blockSubsidyHeight}
+                  blockSubsidyTotal={data.stakingInfo.blockSubsidyTotal}
+                  blockSubsidyPos={data.stakingInfo.blockSubsidyPos}
+                  blockSubsidyPow={data.stakingInfo.blockSubsidyPow}
+                  blockSubsidyTreasury={data.stakingInfo.blockSubsidyTreasury}
+                  blocksUntilSubsidyReduction={data.stakingInfo.blocksUntilSubsidyReduction}
+                  subsidyReductionInterval={data.stakingInfo.subsidyReductionInterval}
+                />
+              )}
+
+              {/* Accounts List */}
+              {data.accounts && (
+                <AccountsList accounts={data.accounts} />
+              )}
             </div>
           )}
 
