@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Loader2,
   KeyRound,
+  Eye,
 } from 'lucide-react';
 import {
   MCPSettings,
@@ -26,25 +27,7 @@ import {
   getAccounts,
 } from '../../services/api';
 import { AgentSpendGrant } from './AgentSpendGrant';
-
-// Friendly labels for the capability domains. Unknown keys fall back to the raw
-// domain name, so newly added tool domains still render without a code change.
-const domainLabels: Record<string, string> = {
-  node: 'Node & blockchain',
-  wallet: 'Wallet',
-  staking: 'Staking',
-  governance: 'Governance',
-  privacy: 'Privacy',
-  lightning: 'Lightning',
-  dex: 'DCRDEX',
-  bisonrelay: 'Bison Relay',
-  treasury: 'Treasury',
-  explorer: 'Explorer',
-  timestamp: 'Timestamps',
-  tor: 'Tor',
-};
-
-const domainLabel = (d: string) => domainLabels[d] || d;
+import { ConfigSection, domainLabel } from './ConfigSection';
 
 const fmtDate = (iso: string) => {
   const t = Date.parse(iso);
@@ -408,10 +391,12 @@ export const AgentsSection = () => {
                     )}
                   </div>
 
-                  <div>
-                    <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
-                      Capabilities
-                    </div>
+                  <ConfigSection
+                    icon={Eye}
+                    tone="muted"
+                    title="Capabilities - read access"
+                    description="What the agent can see across the dashboard. Read-only - no funds move and nothing changes. The node domain is always on."
+                  >
                     <div className="flex flex-wrap gap-2">
                       <span
                         className="inline-flex items-center rounded-lg bg-success/20 px-3 py-1.5 text-xs font-medium text-success"
@@ -438,7 +423,7 @@ export const AgentsSection = () => {
                         );
                       })}
                     </div>
-                  </div>
+                  </ConfigSection>
 
                   <AgentSpendGrant
                     agentId={a.id}

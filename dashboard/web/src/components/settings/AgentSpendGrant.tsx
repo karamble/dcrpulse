@@ -3,7 +3,17 @@
 // license that can be found in the LICENSE file.
 
 import { useState } from 'react';
-import { ShieldCheck, AlertTriangle, Loader2 } from 'lucide-react';
+import {
+  ShieldCheck,
+  AlertTriangle,
+  Loader2,
+  Zap,
+  Wallet,
+  Gauge,
+  KeyRound,
+  Clock,
+  Coins,
+} from 'lucide-react';
 import {
   AccountInfo,
   MCPGrant,
@@ -11,6 +21,7 @@ import {
   setMCPGrant,
   revokeMCPGrant,
 } from '../../services/api';
+import { ConfigSection, domainLabels, domainLabel } from './ConfigSection';
 
 interface Props {
   agentId: string;
@@ -45,6 +56,22 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
   const selectedNeedsFund = Array.from(scopeKeys).some((k) => byKey(k)?.fund);
   const selectedNeedsPass = Array.from(scopeKeys).some((k) => byKey(k)?.needsPass);
 
+  // Progressive reveal: limits matter once funds can move; the passphrase matters
+  // once something signs. Mirrors the submit-time validation exactly.
+  const needsLimits = selected.size > 0 || selectedNeedsFund;
+  const needsAuth = selected.size > 0 || selectedNeedsPass;
+
+  // Scopes grouped by their capability domain, in the canonical domain order.
+  const scopeGroups = (() => {
+    const groups = Object.keys(domainLabels)
+      .map((d) => ({ domain: d, items: scopes.filter((s) => s.domain === d) }))
+      .filter((g) => g.items.length > 0);
+    const known = new Set(Object.keys(domainLabels));
+    const extra = scopes.filter((s) => !known.has(s.domain));
+    if (extra.length) groups.push({ domain: 'other', items: extra });
+    return groups;
+  })();
+
   const openForm = () => {
     setSelected(new Set(grant?.accounts ?? []));
     setPerTx(grant ? String(grant.perTxDcr) : '');
@@ -77,19 +104,19 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
 
   const submit = async () => {
     if (selected.size === 0 && scopeKeys.size === 0) {
-      setError('Select an account to spend from, or enable at least one action.');
+      setError('Select an account to spend from, or enable at least one action scope.');
       return;
     }
     // Fund-moving grants need explicit positive caps. Caps are literal limits
     // (0 permits nothing); there is no unlimited.
-    if (selected.size > 0 || selectedNeedsFund) {
+    if (needsLimits) {
       if (!(parseFloat(perTx) > 0) || !(parseFloat(daily) > 0)) {
         setError('Enter a per-transaction and daily cap (greater than 0).');
         return;
       }
     }
     // The passphrase is only needed for spend (accounts) or signing scopes.
-    if ((selected.size > 0 || selectedNeedsPass) && !passphrase) {
+    if (needsAuth && !passphrase) {
       setError('Enter the wallet passphrase (required for spend, voting, or staking access).');
       return;
     }
@@ -136,12 +163,45 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
     return a ? `${a.accountName} (#${n})` : `account #${n}`;
   };
 
+  // One scope chip: toggle button plus small badges for fund / signs / risk.
+  const scopeChip = (s: MCPWriteScope) => {
+    const on = scopeKeys.has(s.key);
+    const base = s.risk
+      ? on
+        ? 'bg-warning/25 text-warning hover:bg-warning/35'
+        : 'bg-warning/10 text-warning/80 hover:bg-warning/20'
+      : on
+        ? 'bg-success/20 text-success hover:bg-success/30'
+        : 'bg-muted/20 text-muted-foreground hover:bg-muted/30';
+    const hint = [
+      s.fund && 'spends DCR (uses the limits below)',
+      s.needsPass && 'signs with your wallet passphrase',
+      s.risk && 'high-risk; grant sparingly',
+    ]
+      .filter(Boolean)
+      .join('; ');
+    return (
+      <button
+        key={s.key}
+        type="button"
+        onClick={() => toggleScope(s.key)}
+        title={hint ? `${s.label} - ${hint}` : s.label}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${base}`}
+      >
+        {s.label}
+        {s.fund && <Coins className="h-3 w-3" />}
+        {s.needsPass && <KeyRound className="h-3 w-3" />}
+        {s.risk && <AlertTriangle className="h-3 w-3" />}
+      </button>
+    );
+  };
+
   return (
     <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <ShieldCheck className={`h-4 w-4 ${grant ? 'text-success' : 'text-muted-foreground'}`} />
-          Spend access
+          Spend &amp; action grant
         </div>
         {!editing && (
           <div className="flex items-center gap-2">
@@ -168,66 +228,119 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 text-xs text-destructive">
-          <AlertTriangle className="h-3.5 w-3.5" /> {error}
+        <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/40 p-2 text-xs text-destructive">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {error}
         </div>
       )}
 
       {!editing && !grant && (
         <p className="text-xs text-muted-foreground">
           No spend access. This agent can read but cannot move funds or take write actions until you
-          grant an account-scoped allowance and/or action scopes.
+          grant action scopes and/or account access.
         </p>
       )}
 
       {!editing && grant && (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-          <div className="text-muted-foreground">Accounts</div>
-          <div>{grant.accounts.map(accountLabel).join(', ') || '-'}</div>
-          <div className="text-muted-foreground">Per transaction</div>
-          <div>{fmtDcr(grant.perTxDcr)}</div>
-          <div className="text-muted-foreground">Daily</div>
+        <div className="space-y-3">
           <div>
-            {fmtDcr(grant.dailyDcr)}
-            {grant.dailyDcr > 0 && (
-              <span className="text-muted-foreground">
-                {' '}
-                ({fmtDcr(grant.spentTodayDcr)} spent, {fmtDcr(grant.remainingTodayDcr)} left)
-              </span>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-foreground mb-1.5">
+              <Zap className="h-3.5 w-3.5 text-primary" /> Action scopes
+            </div>
+            {grant.writeScopes?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {grant.writeScopes.map((k) => (
+                  <span
+                    key={k}
+                    className="rounded-md bg-muted/20 px-2 py-0.5 text-xs text-foreground"
+                  >
+                    {scopeLabel(k)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground">none</span>
             )}
           </div>
-          <div className="text-muted-foreground">Actions</div>
-          <div>
-            {(grant.writeScopes ?? []).map(scopeLabel).join(', ') || 'wallet send + staking only'}
+
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Wallet className="h-3.5 w-3.5" /> Accounts
+            </div>
+            <div>{grant.accounts.map(accountLabel).join(', ') || '-'}</div>
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Gauge className="h-3.5 w-3.5" /> Per transaction
+            </div>
+            <div>{fmtDcr(grant.perTxDcr)}</div>
+            <div className="text-muted-foreground pl-5">Daily</div>
+            <div>
+              {fmtDcr(grant.dailyDcr)}
+              {grant.dailyDcr > 0 && (
+                <span className="text-muted-foreground">
+                  {' '}
+                  ({fmtDcr(grant.spentTodayDcr)} spent, {fmtDcr(grant.remainingTodayDcr)} left)
+                </span>
+              )}
+            </div>
+            {grant.allowlist.length > 0 && (
+              <>
+                <div className="text-muted-foreground pl-5">Allowlist</div>
+                <div>{grant.allowlist.length} address(es)</div>
+              </>
+            )}
+            {grant.expiry && (
+              <>
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Clock className="h-3.5 w-3.5" /> Expires
+                </div>
+                <div>{new Date(grant.expiry).toLocaleString()}</div>
+              </>
+            )}
           </div>
-          {grant.allowlist.length > 0 && (
-            <>
-              <div className="text-muted-foreground">Allowlist</div>
-              <div>{grant.allowlist.length} address(es)</div>
-            </>
-          )}
-          {grant.expiry && (
-            <>
-              <div className="text-muted-foreground">Expires</div>
-              <div>{new Date(grant.expiry).toLocaleString()}</div>
-            </>
-          )}
         </div>
       )}
 
       {editing && (
         <div className="space-y-3">
-          <div className="flex items-start gap-2 rounded-lg bg-warning/10 border border-warning/40 p-2 text-xs text-warning">
-            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>
-              The dashboard verifies and then holds this passphrase in memory to spend on the
-              agent's behalf, only within the limits below. The agent never sees it. Revoke any
-              time; the passphrase is wiped on revoke and on restart.
-            </span>
-          </div>
+          <ConfigSection
+            icon={Zap}
+            tone="primary"
+            title="Action scopes"
+            description={
+              <>
+                What the agent may do; each scope unlocks a group of write actions. A scope also
+                needs its matching read-access domain above.
+                <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                  <span className="inline-flex items-center gap-1">
+                    <Coins className="h-3 w-3" /> spends DCR
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <KeyRound className="h-3 w-3" /> signs with passphrase
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" /> high-risk
+                  </span>
+                </span>
+              </>
+            }
+          >
+            <div className="space-y-2">
+              {scopeGroups.map((g) => (
+                <div key={g.domain} className="flex items-start gap-2">
+                  <span className="w-24 shrink-0 pt-1.5 text-xs text-muted-foreground">
+                    {domainLabel(g.domain)}
+                  </span>
+                  <div className="flex flex-wrap gap-2">{g.items.map(scopeChip)}</div>
+                </div>
+              ))}
+            </div>
+          </ConfigSection>
 
-          <div>
-            <div className="text-xs text-muted-foreground mb-1">Accounts the agent may spend from</div>
+          <ConfigSection
+            icon={Wallet}
+            tone="success"
+            title="Account access"
+            description="Wallet accounts the agent may spend DCR from - this enables send and ticket purchase from these accounts. Watch-only and imported accounts are excluded."
+          >
             <div className="flex flex-wrap gap-2">
               {spendableAccounts(accounts).map((a) => {
                 const on = selected.has(a.accountNumber);
@@ -247,96 +360,99 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
                 );
               })}
             </div>
-          </div>
+          </ConfigSection>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs text-muted-foreground">
-              Per-transaction cap (DCR)
-              <input
-                type="number"
-                min={0}
-                step="any"
-                value={perTx}
-                onChange={(e) => setPerTx(e.target.value)}
-                className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
-              />
-            </label>
-            <label className="text-xs text-muted-foreground">
-              Daily cap (DCR)
-              <input
-                type="number"
-                min={0}
-                step="any"
-                value={daily}
-                onChange={(e) => setDaily(e.target.value)}
-                className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
-              />
-            </label>
-          </div>
+          {needsLimits && (
+            <ConfigSection
+              icon={Gauge}
+              tone="warning"
+              title="Spending limits"
+              description="Hard caps on the DCR this agent can move - absolute, there is no unlimited. Shared across wallet, staking, Lightning and DEX spends; both are required."
+            >
+              <div className="grid grid-cols-2 gap-3 animate-fade-in">
+                <label className="text-xs text-muted-foreground">
+                  Per-transaction cap (DCR)
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={perTx}
+                    onChange={(e) => setPerTx(e.target.value)}
+                    className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
+                  />
+                </label>
+                <label className="text-xs text-muted-foreground">
+                  Daily cap (DCR)
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={daily}
+                    onChange={(e) => setDaily(e.target.value)}
+                    className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
+                  />
+                </label>
+              </div>
+              {grant && grant.dailyDcr > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {fmtDcr(grant.spentTodayDcr)} spent today, {fmtDcr(grant.remainingTodayDcr)}{' '}
+                  remaining on the current grant.
+                </p>
+              )}
+              <label className="block text-xs text-muted-foreground">
+                Restrict to recipient addresses (optional; blank = any)
+                <textarea
+                  value={allowlist}
+                  onChange={(e) => setAllowlist(e.target.value)}
+                  rows={2}
+                  placeholder="One address per line"
+                  className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-xs font-mono text-foreground"
+                />
+              </label>
+            </ConfigSection>
+          )}
 
-          <div>
-            <div className="text-xs text-muted-foreground mb-1">
-              Action scopes (fund scopes use the caps above; risk scopes are high blast-radius)
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {scopes.map((s) => {
-                const on = scopeKeys.has(s.key);
-                const base = s.risk
-                  ? on
-                    ? 'bg-warning/25 text-warning hover:bg-warning/35'
-                    : 'bg-warning/10 text-warning/80 hover:bg-warning/20'
-                  : on
-                    ? 'bg-success/20 text-success hover:bg-success/30'
-                    : 'bg-muted/20 text-muted-foreground hover:bg-muted/30';
-                return (
-                  <button
-                    key={s.key}
-                    type="button"
-                    title={`${s.domain}${s.fund ? ' - spends DCR (caps apply)' : ''}${s.needsPass ? ' - signs with passphrase' : ''}${s.risk ? ' - high blast-radius' : ''}`}
-                    onClick={() => toggleScope(s.key)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${base}`}
-                  >
-                    {s.label}
-                    {s.fund && ' *'}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {needsAuth && (
+            <ConfigSection
+              icon={KeyRound}
+              tone="primary"
+              title="Authorization"
+              description="Confirm with your wallet passphrase. The dashboard verifies it once and holds it in memory to spend on the agent's behalf within these limits - the agent never sees it, and it is wiped on revoke and on restart."
+            >
+              <div className="grid grid-cols-2 gap-3 animate-fade-in">
+                <label className="text-xs text-muted-foreground">
+                  Wallet passphrase
+                  <input
+                    type="password"
+                    value={passphrase}
+                    onChange={(e) => setPassphrase(e.target.value)}
+                    autoComplete="off"
+                    className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
+                  />
+                </label>
+                <label className="text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> Auto-revoke after (hours, 0 = never)
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={expiryHours}
+                    onChange={(e) => setExpiryHours(e.target.value)}
+                    className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
+                  />
+                </label>
+              </div>
+            </ConfigSection>
+          )}
 
-          <label className="block text-xs text-muted-foreground">
-            Recipient allowlist (optional, one address per line; empty = any)
-            <textarea
-              value={allowlist}
-              onChange={(e) => setAllowlist(e.target.value)}
-              rows={2}
-              className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-xs font-mono text-foreground"
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs text-muted-foreground">
-              Expires in (hours, 0 = never)
-              <input
-                type="number"
-                min={0}
-                step="any"
-                value={expiryHours}
-                onChange={(e) => setExpiryHours(e.target.value)}
-                className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
-              />
-            </label>
-            <label className="text-xs text-muted-foreground">
-              Wallet passphrase
-              <input
-                type="password"
-                value={passphrase}
-                onChange={(e) => setPassphrase(e.target.value)}
-                autoComplete="off"
-                className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
-              />
-            </label>
-          </div>
+          {scopeKeys.size > 0 && !needsLimits && !needsAuth && (
+            <p className="text-xs text-muted-foreground">
+              The selected scopes move no funds and need no passphrase, so no spending limit or
+              authorization is required.
+            </p>
+          )}
 
           <div className="flex items-center gap-2">
             <button
