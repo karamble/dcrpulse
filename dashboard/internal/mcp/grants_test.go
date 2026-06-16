@@ -137,48 +137,69 @@ func TestGrantNoGrantDenied(t *testing.T) {
 	}
 }
 
-func TestGrantVotingRequiresFlag(t *testing.T) {
+func TestGrantVotingRequiresScope(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{Accounts: []uint32{0}, Passphrase: []byte("secret")}, now)
-	if _, err := s.authorizeVoting("a", now); err != errVotingNotAllowed {
-		t.Fatalf("voting without flag: want errVotingNotAllowed, got %v", err)
+	if _, err := s.authorizeActionPass("a", scopeGovernance, now); err == nil {
+		t.Fatal("voting without scope: want denial, got nil")
 	}
-	s.set("a", GrantSpec{Accounts: []uint32{0}, Passphrase: []byte("secret"), AllowVoting: true}, now)
-	pass, err := s.authorizeVoting("a", now)
+	s.set("a", GrantSpec{Accounts: []uint32{0}, Passphrase: []byte("secret"), WriteScopes: []string{scopeGovernance}}, now)
+	pass, err := s.authorizeActionPass("a", scopeGovernance, now)
 	if err != nil || string(pass) != "secret" {
-		t.Fatalf("voting with flag: want passphrase copy, got %q err=%v", pass, err)
+		t.Fatalf("voting with scope: want passphrase copy, got %q err=%v", pass, err)
 	}
 }
 
-func TestGrantLightningRequiresFlagAndCap(t *testing.T) {
+func TestGrantLightningRequiresScopeAndCap(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
-	if err := s.authorizeLightning("a", dcrAtoms, now); err != errLightningNotAllowed {
-		t.Fatalf("LN without flag: want errLightningNotAllowed, got %v", err)
+	if err := s.authorizeLightning("a", dcrAtoms, now); err == nil {
+		t.Fatal("LN without scope: want denial, got nil")
 	}
-	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p"), AllowLightning: true}, now)
+	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p"), WriteScopes: []string{scopeLightning}}, now)
 	if err := s.authorizeLightning("a", 4*dcrAtoms, now); err != nil {
 		t.Fatalf("LN within cap: want ok, got %v", err)
 	}
 	if err := s.authorizeLightning("a", 2*dcrAtoms, now); err != errDailyExceeded {
 		t.Fatalf("LN over shared daily cap: want errDailyExceeded, got %v", err)
 	}
-	if err := s.authorizeLightningAction("a", now); err != nil {
-		t.Fatalf("LN non-spend action with flag: want ok, got %v", err)
+	if err := s.authorizeAction("a", scopeLightning, now); err != nil {
+		t.Fatalf("LN non-spend action with scope: want ok, got %v", err)
 	}
 }
 
-func TestGrantDexRequiresFlag(t *testing.T) {
+func TestGrantDexRequiresScope(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{Passphrase: []byte("p")}, now)
-	if err := s.authorizeDex("a", now); err != errDexNotAllowed {
-		t.Fatalf("DEX without flag: want errDexNotAllowed, got %v", err)
+	if err := s.authorizeAction("a", scopeDex, now); err == nil {
+		t.Fatal("DEX without scope: want denial, got nil")
 	}
-	s.set("a", GrantSpec{Passphrase: []byte("p"), AllowDex: true}, now)
-	if err := s.authorizeDex("a", now); err != nil {
-		t.Fatalf("DEX with flag: want ok, got %v", err)
+	s.set("a", GrantSpec{Passphrase: []byte("p"), WriteScopes: []string{scopeDex}}, now)
+	if err := s.authorizeAction("a", scopeDex, now); err != nil {
+		t.Fatalf("DEX with scope: want ok, got %v", err)
+	}
+}
+
+func TestGrantSpendScopedCapAndScope(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, WriteScopes: []string{scopeDexSpend}}, now)
+	if err := s.authorizeSpendScoped("a", scopeDexSpend, 6*dcrAtoms, now); err != errPerTxExceeded {
+		t.Fatalf("over per-tx: want errPerTxExceeded, got %v", err)
+	}
+	if err := s.authorizeSpendScoped("a", scopeDexSpend, 4*dcrAtoms, now); err != nil {
+		t.Fatalf("DCR move within cap: want ok, got %v", err)
+	}
+	// A non-DCR move (amount 0) is scope-gated only, not cap-reserved.
+	if err := s.authorizeSpendScoped("a", scopeDexSpend, 0, now); err != nil {
+		t.Fatalf("non-DCR scoped move: want ok, got %v", err)
+	}
+	// Without the scope, denied even for a non-DCR move.
+	s.set("a", GrantSpec{PerTxAtoms: dcrAtoms, DailyAtoms: dcrAtoms, WriteScopes: []string{scopeDex}}, now)
+	if err := s.authorizeSpendScoped("a", scopeDexSpend, 0, now); err == nil {
+		t.Fatal("dex.spend without scope: want denial, got nil")
 	}
 }

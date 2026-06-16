@@ -23,10 +23,7 @@ type spendCapability struct {
 	RemainingTodayDCR float64  `json:"remainingTodayDcr"`
 	Allowlist         []string `json:"allowlist,omitempty"`
 	Expiry            string   `json:"expiry,omitempty"`
-	AllowVoting       bool     `json:"allowVoting"`
-	AllowLightning    bool     `json:"allowLightning"`
-	AllowDex          bool     `json:"allowDex"`
-	AllowBRWrite      bool     `json:"allowBrWrite"`
+	WriteScopes       []string `json:"writeScopes"`
 	Note              string   `json:"note,omitempty"`
 }
 
@@ -49,7 +46,7 @@ var capabilityTools = []toolDef{
 			rep := capabilityReport{
 				Agent:   a.name,
 				Domains: sortedDomains(a.domains),
-				Note:    "Tools outside your granted domains are not visible. Spending requires a user-granted, account-scoped spend grant; you never receive the wallet passphrase.",
+				Note:    "Tools outside your granted domains are not visible. A write/spend tool also needs the matching write scope in your grant (see spend.writeScopes); fund moves are additionally bounded by per-tx/daily DCR caps and you never receive the wallet passphrase.",
 			}
 			info, ok := grants.info(a.id)
 			if !ok {
@@ -64,16 +61,13 @@ var capabilityTools = []toolDef{
 				spent = 0 // the rolling daily window has elapsed
 			}
 			sc := spendCapability{
-				Granted:        true,
-				Accounts:       info.Accounts,
-				PerTxDCR:       dcr(info.PerTxAtoms),
-				DailyDCR:       dcr(info.DailyAtoms),
-				SpentTodayDCR:  dcr(spent),
-				Allowlist:      info.Allowlist,
-				AllowVoting:    info.AllowVoting,
-				AllowLightning: info.AllowLightning,
-				AllowDex:       info.AllowDex,
-				AllowBRWrite:   info.AllowBRWrite,
+				Granted:       true,
+				Accounts:      info.Accounts,
+				PerTxDCR:      dcr(info.PerTxAtoms),
+				DailyDCR:      dcr(info.DailyAtoms),
+				SpentTodayDCR: dcr(spent),
+				Allowlist:     info.Allowlist,
+				WriteScopes:   info.WriteScopes,
 			}
 			rem := info.DailyAtoms - spent
 			if rem < 0 {

@@ -6,6 +6,8 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"dcrpulse/internal/services"
 )
@@ -36,5 +38,43 @@ var privacyTools = []toolDef{
 				MixedAccount:  mixed,
 				ChangeAccount: change,
 			}, nil
+		}),
+	agentTool("privacy", "privacy_mixer_start",
+		"Start the CoinShuffle++ mixer for the active wallet. Requires a spend grant with mixer control enabled; signs with the held wallet passphrase. Privacy must already be configured. Fails if the mixer, autobuyer, or a ticket purchase is already active.",
+		func(ctx context.Context, a *agent, _ emptyInput) (any, error) {
+			pass, err := grants.authorizeActionPass(a.id, scopePrivacy, time.Now())
+			if err != nil {
+				recordSpend(a, "privacy_mixer_start", 0, 0, "mixer", "denied", err.Error())
+				return nil, err
+			}
+			defer zero(pass)
+			mixed, change, configured, err := services.FindPrivacyAccounts(ctx)
+			if err != nil {
+				recordSpend(a, "privacy_mixer_start", 0, 0, "mixer", "error", err.Error())
+				return nil, err
+			}
+			if !configured {
+				err := fmt.Errorf("privacy not configured: run setup first")
+				recordSpend(a, "privacy_mixer_start", 0, 0, "mixer", "error", err.Error())
+				return nil, err
+			}
+			// Mixed branch is the external branch (0), matching the wallet handler.
+			if err := services.StartMixer(pass, mixed, 0, change); err != nil {
+				recordSpend(a, "privacy_mixer_start", 0, 0, "mixer", "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "privacy_mixer_start", 0, 0, "mixer", "ok", "")
+			return map[string]any{"ok": true}, nil
+		}),
+	agentTool("privacy", "privacy_mixer_stop",
+		"Stop the CoinShuffle++ mixer for the active wallet. Requires a spend grant with mixer control enabled.",
+		func(ctx context.Context, a *agent, _ emptyInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopePrivacy, time.Now()); err != nil {
+				recordSpend(a, "privacy_mixer_stop", 0, 0, "mixer", "denied", err.Error())
+				return nil, err
+			}
+			services.StopMixer()
+			recordSpend(a, "privacy_mixer_stop", 0, 0, "mixer", "ok", "")
+			return map[string]any{"ok": true}, nil
 		}),
 }

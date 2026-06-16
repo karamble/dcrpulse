@@ -4,12 +4,19 @@
 
 import { useState } from 'react';
 import { ShieldCheck, AlertTriangle, Loader2 } from 'lucide-react';
-import { AccountInfo, MCPGrant, setMCPGrant, revokeMCPGrant } from '../../services/api';
+import {
+  AccountInfo,
+  MCPGrant,
+  MCPWriteScope,
+  setMCPGrant,
+  revokeMCPGrant,
+} from '../../services/api';
 
 interface Props {
   agentId: string;
   grant?: MCPGrant;
   accounts: AccountInfo[];
+  scopes: MCPWriteScope[];
   onChanged: () => void;
 }
 
@@ -20,7 +27,7 @@ const fmtDcr = (n: number) => `${n.toLocaleString(undefined, { maximumFractionDi
 const spendableAccounts = (accounts: AccountInfo[]) =>
   accounts.filter((a) => a.accountNumber < 2147483647);
 
-export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) => {
+export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }: Props) => {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,10 +38,12 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
   const [allowlist, setAllowlist] = useState((grant?.allowlist ?? []).join('\n'));
   const [expiryHours, setExpiryHours] = useState('');
   const [passphrase, setPassphrase] = useState('');
-  const [allowVoting, setAllowVoting] = useState(grant?.allowVoting ?? false);
-  const [allowLightning, setAllowLightning] = useState(grant?.allowLightning ?? false);
-  const [allowDex, setAllowDex] = useState(grant?.allowDex ?? false);
-  const [allowBrWrite, setAllowBrWrite] = useState(grant?.allowBrWrite ?? false);
+  const [scopeKeys, setScopeKeys] = useState<Set<string>>(new Set(grant?.writeScopes ?? []));
+
+  const byKey = (k: string) => scopes.find((s) => s.key === k);
+  const scopeLabel = (k: string) => byKey(k)?.label ?? k;
+  const selectedNeedsFund = Array.from(scopeKeys).some((k) => byKey(k)?.fund);
+  const selectedNeedsPass = Array.from(scopeKeys).some((k) => byKey(k)?.needsPass);
 
   const openForm = () => {
     setSelected(new Set(grant?.accounts ?? []));
@@ -43,10 +52,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
     setAllowlist((grant?.allowlist ?? []).join('\n'));
     setExpiryHours('');
     setPassphrase('');
-    setAllowVoting(grant?.allowVoting ?? false);
-    setAllowLightning(grant?.allowLightning ?? false);
-    setAllowDex(grant?.allowDex ?? false);
-    setAllowBrWrite(grant?.allowBrWrite ?? false);
+    setScopeKeys(new Set(grant?.writeScopes ?? []));
     setError(null);
     setEditing(true);
   };
@@ -60,23 +66,31 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
     });
   };
 
+  const toggleScope = (k: string) => {
+    setScopeKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
+
   const submit = async () => {
-    const anyAction = allowVoting || allowLightning || allowDex || allowBrWrite;
-    if (selected.size === 0 && !anyAction) {
+    if (selected.size === 0 && scopeKeys.size === 0) {
       setError('Select an account to spend from, or enable at least one action.');
       return;
     }
     // Fund-moving grants need explicit positive caps. Caps are literal limits
     // (0 permits nothing); there is no unlimited.
-    if (selected.size > 0 || allowLightning) {
+    if (selected.size > 0 || selectedNeedsFund) {
       if (!(parseFloat(perTx) > 0) || !(parseFloat(daily) > 0)) {
         setError('Enter a per-transaction and daily cap (greater than 0).');
         return;
       }
     }
-    // The passphrase is only needed for spend (accounts) or voting.
-    if ((selected.size > 0 || allowVoting) && !passphrase) {
-      setError('Enter the wallet passphrase (required for spend or voting access).');
+    // The passphrase is only needed for spend (accounts) or signing scopes.
+    if ((selected.size > 0 || selectedNeedsPass) && !passphrase) {
+      setError('Enter the wallet passphrase (required for spend, voting, or staking access).');
       return;
     }
     setBusy(true);
@@ -92,10 +106,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
           .filter(Boolean),
         expiryHours: parseFloat(expiryHours) || 0,
         passphrase,
-        allowVoting,
-        allowLightning,
-        allowDex,
-        allowBrWrite,
+        writeScopes: Array.from(scopeKeys),
       });
       setPassphrase('');
       setEditing(false);
@@ -164,8 +175,8 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
 
       {!editing && !grant && (
         <p className="text-xs text-muted-foreground">
-          No spend access. This agent can read but cannot move funds until you grant an
-          account-scoped allowance.
+          No spend access. This agent can read but cannot move funds or take write actions until you
+          grant an account-scoped allowance and/or action scopes.
         </p>
       )}
 
@@ -187,14 +198,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
           </div>
           <div className="text-muted-foreground">Actions</div>
           <div>
-            {[
-              grant.allowVoting && 'voting',
-              grant.allowLightning && 'Lightning',
-              grant.allowDex && 'DEX',
-              grant.allowBrWrite && 'BR write',
-            ]
-              .filter(Boolean)
-              .join(', ') || 'wallet send + staking only'}
+            {(grant.writeScopes ?? []).map(scopeLabel).join(', ') || 'wallet send + staking only'}
           </div>
           {grant.allowlist.length > 0 && (
             <>
@@ -272,28 +276,31 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
 
           <div>
             <div className="text-xs text-muted-foreground mb-1">
-              Additional actions (no DCR amount; Lightning payments use the daily cap)
+              Action scopes (fund scopes use the caps above; risk scopes are high blast-radius)
             </div>
             <div className="flex flex-wrap gap-2">
-              {[
-                { label: 'Governance voting', on: allowVoting, set: setAllowVoting },
-                { label: 'Lightning pay', on: allowLightning, set: setAllowLightning },
-                { label: 'DEX trading', on: allowDex, set: setAllowDex },
-                { label: 'Bison Relay write', on: allowBrWrite, set: setAllowBrWrite },
-              ].map((c) => (
-                <button
-                  key={c.label}
-                  type="button"
-                  onClick={() => c.set(!c.on)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                    c.on
-                      ? 'bg-success/20 text-success hover:bg-success/30'
-                      : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-                  }`}
-                >
-                  {c.label}
-                </button>
-              ))}
+              {scopes.map((s) => {
+                const on = scopeKeys.has(s.key);
+                const base = s.risk
+                  ? on
+                    ? 'bg-warning/25 text-warning hover:bg-warning/35'
+                    : 'bg-warning/10 text-warning/80 hover:bg-warning/20'
+                  : on
+                    ? 'bg-success/20 text-success hover:bg-success/30'
+                    : 'bg-muted/20 text-muted-foreground hover:bg-muted/30';
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    title={`${s.domain}${s.fund ? ' - spends DCR (caps apply)' : ''}${s.needsPass ? ' - signs with passphrase' : ''}${s.risk ? ' - high blast-radius' : ''}`}
+                    onClick={() => toggleScope(s.key)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${base}`}
+                  >
+                    {s.label}
+                    {s.fund && ' *'}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

@@ -26,6 +26,18 @@ type explorerHashInput struct {
 	Hash string `json:"hash" jsonschema:"block hash to look up"`
 }
 
+// explorerRecentBlocksInput parameterizes explorer_recent_blocks. Both fields
+// are optional (omitempty); defaults match the HTTP handler.
+type explorerRecentBlocksInput struct {
+	Page     int `json:"page,omitempty" jsonschema:"page number, 1-based (default 1)"`
+	PageSize int `json:"pageSize,omitempty" jsonschema:"blocks per page (default 10, max 100)"`
+}
+
+// explorerSearchInput parameterizes explorer_search.
+type explorerSearchInput struct {
+	Query string `json:"query" jsonschema:"search query: block height, block hash, transaction hash, or address"`
+}
+
 // explorerTools are the read-only "explorer" domain tools: parameterized
 // lookups against the chain via dcrd.
 var explorerTools = []toolDef{
@@ -48,5 +60,31 @@ var explorerTools = []toolDef{
 		"Look up a block by its hash. Requires 'hash'.",
 		func(ctx context.Context, in explorerHashInput) (any, error) {
 			return services.FetchBlockByHash(ctx, in.Hash)
+		}),
+	readTool("explorer", "explorer_recent_blocks",
+		"List recent blocks, newest first, with pagination. Optional page (default 1) and pageSize (default 10, max 100).",
+		func(ctx context.Context, in explorerRecentBlocksInput) (any, error) {
+			page := in.Page
+			if page <= 0 {
+				page = 1
+			}
+			pageSize := in.PageSize
+			if pageSize <= 0 {
+				pageSize = 10
+			}
+			if pageSize > 100 {
+				pageSize = 100
+			}
+			return services.FetchRecentBlocksPaginated(ctx, page, pageSize)
+		}),
+	readTool("explorer", "explorer_mempool",
+		"List the current mempool transactions awaiting confirmation.",
+		func(ctx context.Context, _ emptyInput) (any, error) {
+			return services.FetchMempoolTransactions(ctx)
+		}),
+	readTool("explorer", "explorer_search",
+		"Universal chain search: resolves a block height, block hash, transaction hash, or address to its details. Requires 'query'.",
+		func(ctx context.Context, in explorerSearchInput) (any, error) {
+			return services.UniversalSearch(ctx, in.Query)
 		}),
 }

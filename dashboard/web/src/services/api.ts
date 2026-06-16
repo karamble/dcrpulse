@@ -1527,10 +1527,18 @@ export interface MCPGrant {
   remainingTodayDcr: number;
   allowlist: string[];
   expiry?: string;
-  allowVoting: boolean;
-  allowLightning: boolean;
-  allowDex: boolean;
-  allowBrWrite: boolean;
+  writeScopes: string[];
+}
+
+// MCPWriteScope is one grantable write/action capability, from the server's
+// scope catalog. The grant editor renders these as a checklist.
+export interface MCPWriteScope {
+  key: string;
+  label: string;
+  domain: string;
+  needsPass: boolean; // signs with the held wallet passphrase
+  fund: boolean; // draws on the DCR spend budget (per-tx/daily caps)
+  risk: boolean; // high blast-radius; shown with a warning
 }
 
 // MCPAuditEntry records one agent spend attempt for display.
@@ -1551,6 +1559,7 @@ export interface MCPSettings {
   bind: string;
   port: string;
   domains: string[];
+  writeScopes: MCPWriteScope[];
   agents: MCPAgent[];
   sessions: MCPSession[];
   grants: Record<string, MCPGrant>;
@@ -1564,10 +1573,7 @@ export interface MCPGrantRequest {
   allowlist: string[];
   expiryHours: number;
   passphrase: string;
-  allowVoting: boolean;
-  allowLightning: boolean;
-  allowDex: boolean;
-  allowBrWrite: boolean;
+  writeScopes: string[];
 }
 
 export const getMCPSettings = async (): Promise<MCPSettings> => {

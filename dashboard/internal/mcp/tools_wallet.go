@@ -33,6 +33,11 @@ type newAddressInput struct {
 	Account uint32 `json:"account" jsonschema:"wallet account number to derive the address from"`
 }
 
+// walletValidateInput parameterizes wallet_validate_address.
+type walletValidateInput struct {
+	Address string `json:"address" jsonschema:"Decred address to validate and check ownership of"`
+}
+
 // walletTools are the read-only "wallet" domain tools. They report on the
 // active wallet only; spend tools (gated on a user grant) come in a later phase.
 var walletTools = []toolDef{
@@ -68,6 +73,14 @@ var walletTools = []toolDef{
 			}
 			return services.ListTransactions(ctx, count, in.From)
 		}),
+	readTool("wallet", "wallet_validate_address",
+		"Validate a Decred address and report whether it belongs to the active wallet (and which account). Requires 'address'.",
+		func(ctx context.Context, in walletValidateInput) (any, error) {
+			return services.ValidateAddress(ctx, in.Address)
+		}),
+	readTool("wallet", "wallet_sync_progress",
+		"Get the active wallet's sync progress: phase, peer count, header/rescan progress.",
+		func(_ context.Context, _ emptyInput) (any, error) { return services.GetSyncSnapshot(), nil }),
 	agentTool("wallet", "wallet_send",
 		"Send DCR on-chain from a wallet account. Requires a user-granted spend grant covering the account and amount; the agent never supplies a passphrase. Amount is in DCR. Returns the transaction id.",
 		func(ctx context.Context, a *agent, in sendInput) (any, error) {

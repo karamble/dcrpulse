@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -16,74 +17,73 @@ import (
 // once in the dashboard; it is held here in memory only (never persisted, never
 // sent to the agent) and used on the agent's behalf, bounded by account scope
 // and amount caps. Grants are gone on restart by design.
+//
+// Authorization has two axes: a DCR spend budget (account scope + per-tx/daily
+// caps + tripwire) for fund-moving tools, and a set of write scopes (see
+// scopes.go) for non-fund write/action tools. The two combine: a fund move in a
+// non-default channel (Lightning, dex.spend) requires both the scope and budget.
 
 const grantWindow = 24 * time.Hour
 
 // Denials an agent may see. They are deliberately actionable ("ask the user...")
 // since the agent cannot self-serve a grant.
 var (
-	errNoGrant             = errors.New("no spend grant: ask the user to grant this agent spend access in the dashboard")
-	errGrantExpired        = errors.New("spend grant has expired: ask the user to renew it")
-	errAccountNotGranted   = errors.New("this account is not covered by the agent's spend grant")
-	errBadAmount           = errors.New("amount must be positive")
-	errPerTxExceeded       = errors.New("amount exceeds the per-transaction cap of the spend grant")
-	errAddrNotAllowed      = errors.New("recipient address is not on the spend grant's allowlist")
-	errDailyExceeded       = errors.New("amount would exceed the spend grant's daily cap")
-	errVotingNotAllowed    = errors.New("the spend grant does not allow governance voting: ask the user to enable it")
-	errLightningNotAllowed = errors.New("the spend grant does not allow Lightning payments: ask the user to enable it")
-	errDexNotAllowed       = errors.New("the spend grant does not allow DEX trading: ask the user to enable it")
-	errBRWriteNotAllowed   = errors.New("the grant does not allow Bison Relay write actions: ask the user to enable it")
+	errNoGrant           = errors.New("no spend grant: ask the user to grant this agent spend access in the dashboard")
+	errGrantExpired      = errors.New("spend grant has expired: ask the user to renew it")
+	errAccountNotGranted = errors.New("this account is not covered by the agent's spend grant")
+	errBadAmount         = errors.New("amount must be positive")
+	errPerTxExceeded     = errors.New("amount exceeds the per-transaction cap of the spend grant")
+	errAddrNotAllowed    = errors.New("recipient address is not on the spend grant's allowlist")
+	errDailyExceeded     = errors.New("amount would exceed the spend grant's daily cap")
 )
+
+// scopeDenied is the denial returned when a grant exists but does not include
+// the write scope a tool requires.
+func scopeDenied(scope string) error {
+	return fmt.Errorf("the spend grant does not allow %q actions: ask the user to enable it", scope)
+}
 
 // spendGrant is one agent's in-memory spend capability. Wallet sends and ticket
 // purchases use the held passphrase within account scope and DCR caps. The
-// allow* flags enable other fund-moving/signing actions that have their own
-// funding or auth: voting signs with the held passphrase; Lightning spends from
-// dcrlnd (counted against the daily cap); DEX trades via the unlocked DEX.
+// writeScopes set enables other fund-moving/signing/write actions that have
+// their own funding or auth: voting/staking sign with the held passphrase;
+// Lightning spends from dcrlnd (counted against the daily cap); DEX trades via
+// the unlocked DEX; Bison Relay writes move no funds.
 type spendGrant struct {
-	accounts       map[uint32]bool // wallet account numbers the agent may spend from
-	perTxAtoms     int64           // literal per-transaction limit (0 permits nothing)
-	dailyAtoms     int64           // literal daily limit (0 permits nothing)
-	allowlist      map[string]bool // empty = any recipient allowed
-	expiry         time.Time       // zero = never expires
-	passphrase     []byte          // in memory only; zeroed on revoke/expiry
-	allowVoting    bool
-	allowLightning bool
-	allowDex       bool
-	allowBRWrite   bool // Bison Relay write actions (create products, etc.)
+	accounts    map[uint32]bool // wallet account numbers the agent may spend from
+	perTxAtoms  int64           // literal per-transaction limit (0 permits nothing)
+	dailyAtoms  int64           // literal daily limit (0 permits nothing)
+	allowlist   map[string]bool // empty = any recipient allowed
+	expiry      time.Time       // zero = never expires
+	passphrase  []byte          // in memory only; zeroed on revoke/expiry
+	writeScopes map[string]bool // granted write/action scopes (see scopes.go)
 
-	spentAtoms  int64 // spent in the current rolling window (wallet + Lightning)
+	spentAtoms  int64 // spent in the current rolling window (all DCR fund moves)
 	windowStart time.Time
 }
 
 // GrantSpec is the user-provided definition of a spend grant.
 type GrantSpec struct {
-	Accounts       []uint32
-	PerTxAtoms     int64
-	DailyAtoms     int64
-	Allowlist      []string
-	Expiry         time.Time
-	Passphrase     []byte
-	AllowVoting    bool
-	AllowLightning bool
-	AllowDex       bool
-	AllowBRWrite   bool
+	Accounts    []uint32
+	PerTxAtoms  int64
+	DailyAtoms  int64
+	Allowlist   []string
+	Expiry      time.Time
+	Passphrase  []byte
+	WriteScopes []string
 }
 
 // GrantInfo is the dashboard-facing view of a grant. It never includes the
 // passphrase. Amounts are atoms; the API layer converts to DCR for display.
 type GrantInfo struct {
-	Accounts       []uint32  `json:"accounts"`
-	PerTxAtoms     int64     `json:"perTxAtoms"`
-	DailyAtoms     int64     `json:"dailyAtoms"`
-	Allowlist      []string  `json:"allowlist"`
-	Expiry         time.Time `json:"expiry,omitempty"`
-	SpentAtoms     int64     `json:"spentAtoms"`
-	WindowStart    time.Time `json:"windowStart"`
-	AllowVoting    bool      `json:"allowVoting"`
-	AllowLightning bool      `json:"allowLightning"`
-	AllowDex       bool      `json:"allowDex"`
-	AllowBRWrite   bool      `json:"allowBrWrite"`
+	Accounts    []uint32  `json:"accounts"`
+	PerTxAtoms  int64     `json:"perTxAtoms"`
+	DailyAtoms  int64     `json:"dailyAtoms"`
+	Allowlist   []string  `json:"allowlist"`
+	Expiry      time.Time `json:"expiry,omitempty"`
+	SpentAtoms  int64     `json:"spentAtoms"`
+	WindowStart time.Time `json:"windowStart"`
+	WriteScopes []string  `json:"writeScopes"`
 }
 
 type grantStore struct {
@@ -111,18 +111,21 @@ func (s *grantStore) set(agentID string, spec GrantSpec, now time.Time) {
 			allow[a] = true
 		}
 	}
+	scopes := make(map[string]bool, len(spec.WriteScopes))
+	for _, sc := range spec.WriteScopes {
+		if sc != "" {
+			scopes[sc] = true
+		}
+	}
 	s.byAgent[agentID] = &spendGrant{
-		accounts:       accounts,
-		perTxAtoms:     spec.PerTxAtoms,
-		dailyAtoms:     spec.DailyAtoms,
-		allowlist:      allow,
-		expiry:         spec.Expiry,
-		passphrase:     append([]byte(nil), spec.Passphrase...),
-		allowVoting:    spec.AllowVoting,
-		allowLightning: spec.AllowLightning,
-		allowDex:       spec.AllowDex,
-		allowBRWrite:   spec.AllowBRWrite,
-		windowStart:    now,
+		accounts:    accounts,
+		perTxAtoms:  spec.PerTxAtoms,
+		dailyAtoms:  spec.DailyAtoms,
+		allowlist:   allow,
+		expiry:      spec.Expiry,
+		passphrase:  append([]byte(nil), spec.Passphrase...),
+		writeScopes: scopes,
+		windowStart: now,
 	}
 }
 
@@ -148,17 +151,14 @@ func (s *grantStore) info(agentID string) (GrantInfo, bool) {
 		return GrantInfo{}, false
 	}
 	return GrantInfo{
-		Accounts:       sortedUint32(g.accounts),
-		PerTxAtoms:     g.perTxAtoms,
-		DailyAtoms:     g.dailyAtoms,
-		Allowlist:      sortedStrings(g.allowlist),
-		Expiry:         g.expiry,
-		SpentAtoms:     g.spentAtoms,
-		WindowStart:    g.windowStart,
-		AllowVoting:    g.allowVoting,
-		AllowLightning: g.allowLightning,
-		AllowDex:       g.allowDex,
-		AllowBRWrite:   g.allowBRWrite,
+		Accounts:    sortedUint32(g.accounts),
+		PerTxAtoms:  g.perTxAtoms,
+		DailyAtoms:  g.dailyAtoms,
+		Allowlist:   sortedStrings(g.allowlist),
+		Expiry:      g.expiry,
+		SpentAtoms:  g.spentAtoms,
+		WindowStart: g.windowStart,
+		WriteScopes: sortedStrings(g.writeScopes),
 	}, true
 }
 
@@ -223,23 +223,39 @@ func (s *grantStore) authorize(agentID string, account uint32, amountAtoms int64
 	return append([]byte(nil), g.passphrase...), nil
 }
 
-// authorizeVoting checks the grant allows governance voting and returns a copy
-// of the passphrase for signing. Voting is not amount-capped.
-func (s *grantStore) authorizeVoting(agentID string, now time.Time) ([]byte, error) {
+// authorizeAction checks the grant includes the given write scope, for a
+// non-fund, non-signing write (no amount, no passphrase).
+func (s *grantStore) authorizeAction(agentID, scope string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, err := s.currentLocked(agentID, now)
+	if err != nil {
+		return err
+	}
+	if !g.writeScopes[scope] {
+		return scopeDenied(scope)
+	}
+	return nil
+}
+
+// authorizeActionPass is authorizeAction for writes that sign with the held
+// passphrase (governance voting, staking VSP-fee recovery). It returns a copy
+// of the passphrase. Not amount-capped.
+func (s *grantStore) authorizeActionPass(agentID, scope string, now time.Time) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
 		return nil, err
 	}
-	if !g.allowVoting {
-		return nil, errVotingNotAllowed
+	if !g.writeScopes[scope] {
+		return nil, scopeDenied(scope)
 	}
 	return append([]byte(nil), g.passphrase...), nil
 }
 
-// authorizeLightning checks the grant allows Lightning and reserves amountAtoms
-// against the (shared) daily cap. No passphrase is returned: dcrlnd is unlocked
+// authorizeLightning checks the lightning scope and reserves amountAtoms against
+// the (shared) daily cap. No passphrase is returned: dcrlnd is unlocked
 // separately. Call refund if the payment then fails.
 func (s *grantStore) authorizeLightning(agentID string, amountAtoms int64, now time.Time) error {
 	s.mu.Lock()
@@ -248,54 +264,29 @@ func (s *grantStore) authorizeLightning(agentID string, amountAtoms int64, now t
 	if err != nil {
 		return err
 	}
-	if !g.allowLightning {
-		return errLightningNotAllowed
+	if !g.writeScopes[scopeLightning] {
+		return scopeDenied(scopeLightning)
 	}
 	return g.reserveLocked(amountAtoms, now)
 }
 
-// authorizeLightningAction checks the grant allows Lightning for a non-spend
-// action (e.g. creating an invoice to receive). No amount, no passphrase.
-func (s *grantStore) authorizeLightningAction(agentID string, now time.Time) error {
+// authorizeSpendScoped checks the given fund scope and, when amountAtoms>0
+// (DCR-denominated), reserves it against the shared daily cap. Non-DCR moves
+// (other DEX assets) pass 0 and are scope-gated only - the DCR cap cannot bound
+// a non-DCR amount. Used by dex.spend tools. No wallet passphrase (the DEX is
+// unlocked separately). Call refund if a reserved spend then fails.
+func (s *grantStore) authorizeSpendScoped(agentID, scope string, amountAtoms int64, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
 		return err
 	}
-	if !g.allowLightning {
-		return errLightningNotAllowed
+	if !g.writeScopes[scope] {
+		return scopeDenied(scope)
 	}
-	return nil
-}
-
-// authorizeDex checks the grant allows DEX trading. Orders are placed via the
-// separately-unlocked DEX, so no wallet passphrase is involved and there is no
-// DCR cap (order value is base/quote at a rate).
-func (s *grantStore) authorizeDex(agentID string, now time.Time) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	g, err := s.currentLocked(agentID, now)
-	if err != nil {
-		return err
-	}
-	if !g.allowDex {
-		return errDexNotAllowed
-	}
-	return nil
-}
-
-// authorizeBRWrite checks the grant allows Bison Relay write actions (managing
-// the storefront, and later messaging/posting). No funds, no passphrase.
-func (s *grantStore) authorizeBRWrite(agentID string, now time.Time) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	g, err := s.currentLocked(agentID, now)
-	if err != nil {
-		return err
-	}
-	if !g.allowBRWrite {
-		return errBRWriteNotAllowed
+	if amountAtoms > 0 {
+		return g.reserveLocked(amountAtoms, now)
 	}
 	return nil
 }

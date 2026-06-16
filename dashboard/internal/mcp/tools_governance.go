@@ -32,6 +32,11 @@ type tspendPolicyInput struct {
 	Policy string `json:"policy" jsonschema:"policy: yes, no, or abstain"`
 }
 
+// proposalTokenInput parameterizes proposal-by-token reads.
+type proposalTokenInput struct {
+	Token string `json:"token" jsonschema:"Politeia proposal token"`
+}
+
 // governanceTools are the governance domain tools: read agendas/policies/
 // proposals, plus voting writes gated on a grant with voting enabled.
 var governanceTools = []toolDef{
@@ -50,10 +55,33 @@ var governanceTools = []toolDef{
 			proposals, _, err := services.ListProposals(ctx)
 			return proposals, err
 		}),
+	readTool("governance", "governance_proposal_detail",
+		"Get one Politeia proposal's full record (cached, auto-fetched on first access).",
+		func(ctx context.Context, in proposalTokenInput) (any, error) {
+			detail, _, err := services.GetProposalDetail(ctx, in.Token)
+			return detail, err
+		}),
+	readTool("governance", "governance_proposal_vote_eligibility",
+		"Compute this wallet's vote eligibility for a proposal (owned-ticket count, options, already-voted state).",
+		func(ctx context.Context, in proposalTokenInput) (any, error) {
+			return services.PrepareProposalVote(ctx, in.Token)
+		}),
+	readTool("governance", "governance_refresh_proposals",
+		"Force a Politeia re-fetch of the proposals list, subject to the refresh cooldown.",
+		func(ctx context.Context, _ emptyInput) (any, error) {
+			proposals, _, err := services.RefreshProposals(ctx)
+			return proposals, err
+		}),
+	readTool("governance", "governance_refresh_proposal_detail",
+		"Force a re-fetch of one proposal's detail, subject to the refresh cooldown.",
+		func(ctx context.Context, in proposalTokenInput) (any, error) {
+			detail, _, err := services.RefreshProposalDetail(ctx, in.Token)
+			return detail, err
+		}),
 	agentTool("governance", "governance_set_vote_choice",
 		"Set this wallet's vote choice for a consensus agenda. Requires a spend grant with voting enabled; signs with the held passphrase.",
 		func(ctx context.Context, a *agent, in setVoteChoiceInput) (any, error) {
-			pass, err := grants.authorizeVoting(a.id, time.Now())
+			pass, err := grants.authorizeActionPass(a.id, scopeGovernance, time.Now())
 			if err != nil {
 				recordSpend(a, "governance_set_vote_choice", 0, 0, in.AgendaID, "denied", err.Error())
 				return nil, err
@@ -69,7 +97,7 @@ var governanceTools = []toolDef{
 	agentTool("governance", "governance_cast_proposal_vote",
 		"Cast this wallet's vote on a Politeia proposal. Requires a spend grant with voting enabled.",
 		func(ctx context.Context, a *agent, in castVoteInput) (any, error) {
-			pass, err := grants.authorizeVoting(a.id, time.Now())
+			pass, err := grants.authorizeActionPass(a.id, scopeGovernance, time.Now())
 			if err != nil {
 				recordSpend(a, "governance_cast_proposal_vote", 0, 0, in.Token, "denied", err.Error())
 				return nil, err
@@ -86,7 +114,7 @@ var governanceTools = []toolDef{
 	agentTool("governance", "governance_set_treasury_policy",
 		"Set this wallet's treasury key (Pi key) voting policy. Requires a spend grant with voting enabled.",
 		func(ctx context.Context, a *agent, in treasuryPolicyInput) (any, error) {
-			pass, err := grants.authorizeVoting(a.id, time.Now())
+			pass, err := grants.authorizeActionPass(a.id, scopeGovernance, time.Now())
 			if err != nil {
 				recordSpend(a, "governance_set_treasury_policy", 0, 0, in.Key, "denied", err.Error())
 				return nil, err
@@ -102,7 +130,7 @@ var governanceTools = []toolDef{
 	agentTool("governance", "governance_set_tspend_policy",
 		"Set this wallet's voting policy for a specific treasury spend (TSpend). Requires a spend grant with voting enabled.",
 		func(ctx context.Context, a *agent, in tspendPolicyInput) (any, error) {
-			pass, err := grants.authorizeVoting(a.id, time.Now())
+			pass, err := grants.authorizeActionPass(a.id, scopeGovernance, time.Now())
 			if err != nil {
 				recordSpend(a, "governance_set_tspend_policy", 0, 0, in.Hash, "denied", err.Error())
 				return nil, err

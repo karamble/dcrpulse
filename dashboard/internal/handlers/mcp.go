@@ -32,11 +32,12 @@ type mcpSettingsResponse struct {
 	Enabled  bool                 `json:"enabled"`
 	Bind     string               `json:"bind"`
 	Port     string               `json:"port"`
-	Domains  []string             `json:"domains"`
-	Agents   []mcp.AgentInfo      `json:"agents"`
-	Sessions []mcp.Session        `json:"sessions"`
-	Grants   map[string]grantView `json:"grants"`
-	Audit    []mcp.AuditEntry     `json:"audit"`
+	Domains     []string             `json:"domains"`
+	WriteScopes []mcp.WriteScope     `json:"writeScopes"`
+	Agents      []mcp.AgentInfo      `json:"agents"`
+	Sessions    []mcp.Session        `json:"sessions"`
+	Grants      map[string]grantView `json:"grants"`
+	Audit       []mcp.AuditEntry     `json:"audit"`
 }
 
 // grantView is the dashboard-facing spend grant (DCR amounts, no passphrase).
@@ -48,10 +49,7 @@ type grantView struct {
 	RemainingTodayDCR float64  `json:"remainingTodayDcr"`
 	Allowlist         []string `json:"allowlist"`
 	Expiry            string   `json:"expiry,omitempty"`
-	AllowVoting       bool     `json:"allowVoting"`
-	AllowLightning    bool     `json:"allowLightning"`
-	AllowDex          bool     `json:"allowDex"`
-	AllowBRWrite      bool     `json:"allowBrWrite"`
+	WriteScopes       []string `json:"writeScopes"`
 }
 
 func toGrantView(info mcp.GrantInfo) grantView {
@@ -65,10 +63,7 @@ func toGrantView(info mcp.GrantInfo) grantView {
 		DailyDCR:       dcrutil.Amount(info.DailyAtoms).ToCoin(),
 		SpentTodayDCR:  dcrutil.Amount(spent).ToCoin(),
 		Allowlist:      info.Allowlist,
-		AllowVoting:    info.AllowVoting,
-		AllowLightning: info.AllowLightning,
-		AllowDex:       info.AllowDex,
-		AllowBRWrite:   info.AllowBRWrite,
+		WriteScopes:    info.WriteScopes,
 	}
 	rem := info.DailyAtoms - spent
 	if rem < 0 {
@@ -94,13 +89,14 @@ func MCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := mcpSettingsResponse{
 		Enabled:  running,
-		Bind:     bind,
-		Port:     port,
-		Domains:  mcp.Domains(),
-		Agents:   agents,
-		Sessions: mcp.ActiveSessions(),
-		Grants:   gmap,
-		Audit:    mcp.AuditLog(50),
+		Bind:        bind,
+		Port:        port,
+		Domains:     mcp.Domains(),
+		WriteScopes: mcp.WriteScopes(),
+		Agents:      agents,
+		Sessions:    mcp.ActiveSessions(),
+		Grants:      gmap,
+		Audit:       mcp.AuditLog(50),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -226,10 +222,7 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 		Allowlist      []string `json:"allowlist"`
 		ExpiryHours    float64  `json:"expiryHours"`
 		Passphrase     string   `json:"passphrase"`
-		AllowVoting    bool     `json:"allowVoting"`
-		AllowLightning bool     `json:"allowLightning"`
-		AllowDex       bool     `json:"allowDex"`
-		AllowBRWrite   bool     `json:"allowBrWrite"`
+		WriteScopes    []string `json:"writeScopes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -239,8 +232,12 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 	req.Passphrase = ""
 	defer wipe(pass)
 
+	// Drop unknown scopes; learn whether any retained scope signs with the
+	// passphrase (needsPass) or draws on the DCR spend budget (needsFund).
+	scopes, needsPass, needsFund := mcp.FilterScopes(req.WriteScopes)
+
 	// A grant must enable at least one capability.
-	if len(req.Accounts) == 0 && !req.AllowVoting && !req.AllowLightning && !req.AllowDex && !req.AllowBRWrite {
+	if len(req.Accounts) == 0 && len(scopes) == 0 {
 		http.Error(w, "grant must cover at least one account or enable an action", http.StatusBadRequest)
 		return
 	}
@@ -250,7 +247,7 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// Fund-moving grants require explicit positive caps. Caps are literal limits
 	// (0 permits nothing); there is no unlimited.
-	if len(req.Accounts) > 0 || req.AllowLightning {
+	if len(req.Accounts) > 0 || needsFund {
 		if req.PerTxDCR <= 0 || req.DailyDCR <= 0 {
 			http.Error(w, "set a per-transaction and daily cap (greater than 0)", http.StatusBadRequest)
 			return
@@ -268,9 +265,10 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The passphrase is needed only for capabilities that sign with it: spending
-	// from accounts, or governance voting. Flag-only grants (Lightning, DEX,
-	// Bison Relay write) move no wallet funds and need no passphrase.
-	if len(req.Accounts) > 0 || req.AllowVoting {
+	// from accounts, or a scope flagged NeedsPass (governance voting, staking).
+	// Other scopes (Lightning, DEX, Bison Relay write, timestamp, tor, mixer)
+	// move no wallet funds via the passphrase and need none.
+	if len(req.Accounts) > 0 || needsPass {
 		if len(pass) == 0 {
 			http.Error(w, "wallet passphrase is required for spend or voting access", http.StatusBadRequest)
 			return
@@ -302,10 +300,7 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 		Allowlist:      allow,
 		Expiry:         expiry,
 		Passphrase:     pass, // copied by the store; our slice is wiped on return
-		AllowVoting:    req.AllowVoting,
-		AllowLightning: req.AllowLightning,
-		AllowDex:       req.AllowDex,
-		AllowBRWrite:   req.AllowBRWrite,
+		WriteScopes:    scopes,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }

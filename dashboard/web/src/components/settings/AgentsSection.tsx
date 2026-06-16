@@ -444,6 +444,7 @@ export const AgentsSection = () => {
                     agentId={a.id}
                     grant={settings.grants?.[a.id]}
                     accounts={accounts}
+                    scopes={settings.writeScopes ?? []}
                     onChanged={refresh}
                   />
                 </div>

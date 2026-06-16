@@ -234,10 +234,7 @@ type capReport struct {
 		RemainingTodayDcr float64  `json:"remainingTodayDcr"`
 		Allowlist         []string `json:"allowlist"`
 		Expiry            string   `json:"expiry"`
-		AllowVoting       bool     `json:"allowVoting"`
-		AllowLightning    bool     `json:"allowLightning"`
-		AllowDex          bool     `json:"allowDex"`
-		AllowBrWrite      bool     `json:"allowBrWrite"`
+		WriteScopes       []string `json:"writeScopes"`
 		Note              string   `json:"note"`
 	} `json:"spend"`
 	Note string `json:"note"`
@@ -267,9 +264,8 @@ func printCap(c capReport) {
 	fmt.Printf("  spend:   %s  accounts=%v perTx=%.8f daily=%.8f spentToday=%.8f remaining=%.8f\n",
 		green("granted"), c.Spend.Accounts, c.Spend.PerTxDcr, c.Spend.DailyDcr,
 		c.Spend.SpentTodayDcr, c.Spend.RemainingTodayDcr)
-	fmt.Printf("           voting=%v lightning=%v dex=%v brWrite=%v allowlist=%v expiry=%s\n",
-		c.Spend.AllowVoting, c.Spend.AllowLightning, c.Spend.AllowDex, c.Spend.AllowBrWrite,
-		c.Spend.Allowlist, orNone(c.Spend.Expiry))
+	fmt.Printf("           scopes=%s allowlist=%v expiry=%s\n",
+		orNoneList(c.Spend.WriteScopes), c.Spend.Allowlist, orNone(c.Spend.Expiry))
 }
 
 func printExposed(tools []*mcp.Tool) {
@@ -419,7 +415,7 @@ func floatArg(args map[string]any, key string) (float64, bool) {
 
 func subsystemDown(msg string) bool {
 	m := strings.ToLower(msg)
-	for _, s := range []string{"not connected", "not running", "unavailable", "not enabled", "disabled", "no wallet", "not configured", "connection refused", "not initialized"} {
+	for _, s := range []string{"not connected", "not running", "unavailable", "not enabled", "disabled", "no wallet", "not configured", "connection refused", "not initialized", "is locked", "cooling down", "locked; ask"} {
 		if strings.Contains(m, s) {
 			return true
 		}
@@ -450,6 +446,13 @@ func orNone(s string) string {
 		return "(none)"
 	}
 	return s
+}
+
+func orNoneList(ss []string) string {
+	if len(ss) == 0 {
+		return "(none)"
+	}
+	return strings.Join(ss, ",")
 }
 
 func promptLine(label string) string {
