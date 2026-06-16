@@ -20,6 +20,9 @@ type discovered struct {
 	postID      string
 	vspHost     string
 	vspPubkey   string
+	propToken   string // Politeia proposal token (governance_proposals)
+	dexHost     string // a configured DEX server host (dex_exchanges)
+	tsDigest    string // a sha256 hex digest of a timestamp record (timestamp_records)
 }
 
 type toolKind int
@@ -96,6 +99,13 @@ var catalog = []spec{
 	rdArgs("wallet", "wallet_transactions", func(*discovered) (map[string]any, bool) {
 		return map[string]any{"count": 5}, true
 	}),
+	rd("wallet", "wallet_sync_progress"),
+	rdArgs("wallet", "wallet_validate_address", func(d *discovered) (map[string]any, bool) {
+		if d.address == "" {
+			return nil, false
+		}
+		return map[string]any{"address": d.address}, true
+	}),
 
 	// staking
 	rd("staking", "staking_tickets"),
@@ -103,16 +113,53 @@ var catalog = []spec{
 	rd("staking", "staking_vsps"),
 	rd("staking", "staking_used_vsps"),
 	rd("staking", "staking_autobuyer_settings"),
+	rd("staking", "staking_purchase_status"),
+	rd("staking", "staking_autobuyer_status"),
+	rdArgs("staking", "staking_vsp_info", func(d *discovered) (map[string]any, bool) {
+		if d.vspHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.vspHost}, true
+	}),
 
 	// governance
 	rd("governance", "governance_agendas"),
 	rd("governance", "governance_treasury_policies"),
 	rd("governance", "governance_tspend_policies"),
 	rd("governance", "governance_proposals"),
+	rd("governance", "governance_refresh_proposals"),
+	// governance consumers (need a proposal token from governance_proposals)
+	rdArgs("governance", "governance_proposal_detail", func(d *discovered) (map[string]any, bool) {
+		if d.propToken == "" {
+			return nil, false
+		}
+		return map[string]any{"token": d.propToken}, true
+	}),
+	rdArgs("governance", "governance_proposal_vote_eligibility", func(d *discovered) (map[string]any, bool) {
+		if d.propToken == "" {
+			return nil, false
+		}
+		return map[string]any{"token": d.propToken}, true
+	}),
+	rdArgs("governance", "governance_refresh_proposal_detail", func(d *discovered) (map[string]any, bool) {
+		if d.propToken == "" {
+			return nil, false
+		}
+		return map[string]any{"token": d.propToken}, true
+	}),
 
 	// treasury
 	rd("treasury", "treasury_info"),
 	rd("treasury", "treasury_mempool_tspends"),
+	rd("treasury", "treasury_balance_history"),
+	rd("treasury", "treasury_scan_progress"),
+	rd("treasury", "treasury_scan_results"),
+	rdArgs("treasury", "treasury_vote_progress", func(d *discovered) (map[string]any, bool) {
+		if d.txid == "" {
+			return nil, false
+		}
+		return map[string]any{"txHash": d.txid}, true
+	}),
 
 	// lightning
 	rd("lightning", "lightning_info"),
@@ -121,6 +168,29 @@ var catalog = []spec{
 	rd("lightning", "lightning_activity"),
 	rd("lightning", "lightning_payments"),
 	rd("lightning", "lightning_invoices"),
+	rd("lightning", "ln_peer_presets"),
+	rd("lightning", "ln_liquidity_defaults"),
+	rd("lightning", "ln_autopilot_status"),
+	rd("lightning", "ln_network"),
+	rd("lightning", "ln_watchtowers"),
+	rdArgs("lightning", "ln_graph_search", func(*discovered) (map[string]any, bool) {
+		return map[string]any{}, true
+	}),
+	rdArgs("lightning", "ln_liquidity_estimate", func(*discovered) (map[string]any, bool) {
+		return map[string]any{"chanSizeDcr": 0.01}, true
+	}),
+	rdArgs("lightning", "ln_decode_invoice", func(*discovered) (map[string]any, bool) {
+		if optInvoice == "" {
+			return nil, false
+		}
+		return map[string]any{"payReq": optInvoice}, true
+	}),
+	rdArgs("lightning", "ln_graph_node", func(*discovered) (map[string]any, bool) {
+		return nil, false
+	}),
+	rdArgs("lightning", "ln_graph_routes", func(*discovered) (map[string]any, bool) {
+		return nil, false
+	}),
 
 	// privacy
 	rd("privacy", "privacy_status"),
@@ -151,21 +221,120 @@ var catalog = []spec{
 		}
 		return map[string]any{"hash": d.blockHash}, true
 	}),
+	rdArgs("explorer", "explorer_recent_blocks", func(*discovered) (map[string]any, bool) {
+		return map[string]any{"page": 1, "pageSize": 5}, true
+	}),
+	rd("explorer", "explorer_mempool"),
+	rdArgs("explorer", "explorer_search", func(d *discovered) (map[string]any, bool) {
+		if d.address == "" {
+			return nil, false
+		}
+		return map[string]any{"query": d.address}, true
+	}),
 
 	// timestamp
 	rd("timestamp", "timestamp_records"),
+	rd("timestamp", "timestamp_status"),
+	rd("timestamp", "timestamp_export"),
+	// timestamp consumers (need a digest from timestamp_records)
+	rdArgs("timestamp", "timestamp_verify", func(d *discovered) (map[string]any, bool) {
+		if d.tsDigest == "" {
+			return nil, false
+		}
+		return map[string]any{"digest": d.tsDigest}, true
+	}),
+	rdArgs("timestamp", "timestamp_validate", func(d *discovered) (map[string]any, bool) {
+		if d.tsDigest == "" {
+			return nil, false
+		}
+		return map[string]any{"digest": d.tsDigest}, true
+	}),
+	rdArgs("timestamp", "timestamp_proof", func(d *discovered) (map[string]any, bool) {
+		if d.tsDigest == "" {
+			return nil, false
+		}
+		return map[string]any{"digest": d.tsDigest}, true
+	}),
 
 	// tor
 	rd("tor", "tor_status"),
 	rd("tor", "tor_control"),
 	rd("tor", "tor_settings"),
 
-	// dex
+	// dex (dex_exchanges produces the host that host-consumers reuse)
 	rd("dex", "dex_version"),
 	rd("dex", "dex_exchanges"),
 	rd("dex", "dex_wallets"),
 	rd("dex", "dex_orders"),
 	rd("dex", "dex_notifications"),
+	rd("dex", "dex_assets"),
+	rd("dex", "dex_rates"),
+	rd("dex", "dex_orders_history"),
+	rd("dex", "dex_mm_status"),
+	rd("dex", "dex_mm_archived_runs"),
+	rdArgs("dex", "dex_wallet", func(*discovered) (map[string]any, bool) {
+		return map[string]any{"assetId": 42}, true
+	}),
+	rdArgs("dex", "dex_wallet_txs", func(*discovered) (map[string]any, bool) {
+		return map[string]any{"assetId": 42}, true
+	}),
+	rdArgs("dex", "dex_deposit_address", func(*discovered) (map[string]any, bool) {
+		return map[string]any{"assetId": 42}, true
+	}),
+	rdArgs("dex", "dex_config", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost}, true
+	}),
+	rdArgs("dex", "dex_account", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost}, true
+	}),
+	rdArgs("dex", "dex_preorder", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost, "base": 42, "quote": 0, "sell": false, "isLimit": true, "qty": 1, "rate": 1}, true
+	}),
+	rdArgs("dex", "dex_max_buy", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost, "base": 42, "quote": 0, "rate": 1}, true
+	}),
+	rdArgs("dex", "dex_max_sell", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost, "base": 42, "quote": 0}, true
+	}),
+	rdArgs("dex", "dex_mm_market_report", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost, "baseId": 42, "quoteId": 0}, true
+	}),
+	rdArgs("dex", "dex_mm_run_logs", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost, "baseId": 42, "quoteId": 0, "startTime": 0}, true
+	}),
+	rdArgs("dex", "dex_order", func(*discovered) (map[string]any, bool) {
+		return nil, false
+	}),
+	rdArgs("dex", "dex_wallet_tx", func(*discovered) (map[string]any, bool) {
+		return nil, false
+	}),
+	rdArgs("dex", "dex_address_used", func(*discovered) (map[string]any, bool) {
+		return nil, false
+	}),
+	rdArgs("dex", "dex_estimate_send_fee", func(*discovered) (map[string]any, bool) {
+		return nil, false
+	}),
 
 	// bisonrelay read producers
 	rd("bisonrelay", "br_status"),
@@ -280,6 +449,220 @@ var catalog = []spec{
 	sp("bisonrelay", "br_unshare_file", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
 		return map[string]any{"fid": phHex}
 	}),
+
+	// staking writes (gated)
+	sp("staking", "staking_autobuyer_save_settings", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"account": 0, "vspHost": "https://vsp.example.org", "vspPubkey": phHex, "balanceToMaintain": 0.001}
+	}),
+	sp("staking", "staking_autobuyer_stop", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{}
+	}),
+	sp("staking", "staking_sync_failed_vsp_tickets", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"account": 0, "vspHost": "https://vsp.example.org", "vspPubkey": phHex}
+	}),
+	sp("staking", "staking_process_unmanaged_vsp_tickets", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"account": 0, "vspHost": "https://vsp.example.org", "vspPubkey": phHex}
+	}),
+
+	// privacy writes (gated)
+	sp("privacy", "privacy_mixer_start", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{}
+	}),
+	sp("privacy", "privacy_mixer_stop", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{}
+	}),
+
+	// tor writes (gated)
+	sp("tor", "tor_set_settings", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"enabled": false, "isolation": false, "dcrdOnion": false, "circuitLimit": 8}
+	}),
+	sp("tor", "tor_new_identity", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{}
+	}),
+
+	// timestamp writes (gated; grant is checked before any digest validation)
+	sp("timestamp", "timestamp_create", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"digest": phHex, "filename": "mcptest"}
+	}),
+	sp("timestamp", "timestamp_retry", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"digest": phHex}
+	}),
+	sp("timestamp", "timestamp_delete", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"digest": phHex}
+	}),
+	sp("timestamp", "timestamp_update", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"digest": phHex, "title": "mcptest"}
+	}),
+	sp("timestamp", "timestamp_refresh", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{}
+	}),
+
+	// lightning writes (gated; some validate args before the grant check)
+	sp("lightning", "ln_close_channel", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"channelPoint": phHex + ":0"}
+	}),
+	sp("lightning", "ln_cancel_invoice", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"paymentHash": phHex}
+	}),
+	sp("lightning", "ln_watchtower_add", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"pubKey": phHex, "address": "127.0.0.1:9911"}
+	}),
+	sp("lightning", "ln_watchtower_remove", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"pubKey": phHex}
+	}),
+	sp("lightning", "ln_autopilot_set", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"active": false}
+	}),
+	sp("lightning", "ln_liquidity_request", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"chanSizeDcr": 0.01, "approvedFeeDcr": 0.001}
+	}),
+
+	// dex writes (gated; dex_send/dex_post_bond validate amount before the grant check)
+	sp("dex", "dex_set_bond_options", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"host": "dex.decred.org:7232"}
+	}),
+	sp("dex", "dex_wallet_open", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"assetId": 42}
+	}),
+	sp("dex", "dex_wallet_close", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"assetId": 42}
+	}),
+	sp("dex", "dex_wallet_toggle", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"assetId": 42, "disable": false}
+	}),
+	sp("dex", "dex_wallet_rescan", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"assetId": 42}
+	}),
+	sp("dex", "dex_add_peer", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"assetId": 42, "address": "127.0.0.1:9108"}
+	}),
+	sp("dex", "dex_remove_peer", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"assetId": 42, "address": "127.0.0.1:9108"}
+	}),
+	sp("dex", "dex_discover_account", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"host": "dex.decred.org:7232"}
+	}),
+	sp("dex", "dex_mm_update_config", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"config": "{}"}
+	}),
+	sp("dex", "dex_mm_remove_config", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"host": "dex.decred.org:7232", "baseId": 42, "quoteId": 0}
+	}),
+	sp("dex", "dex_mm_update_cex_config", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"config": "{}"}
+	}),
+	sp("dex", "dex_mm_stop", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"host": "dex.decred.org:7232", "baseId": 42, "quoteId": 0}
+	}),
+	sp("dex", "dex_send", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"assetId": 42, "value": 0.001, "address": phAddr}
+	}),
+	sp("dex", "dex_post_bond", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"host": "dex.decred.org:7232", "bond": 1}
+	}),
+
+	// bisonrelay writes (scopeBR)
+	sp("bisonrelay", "br_post_create", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"post": "mcptest"}
+	}),
+	sp("bisonrelay", "br_post_comment", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "pid": phHex, "comment": "mcptest"}
+	}),
+	sp("bisonrelay", "br_post_heart", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "pid": phHex, "heart": true}
+	}),
+	sp("bisonrelay", "br_post_relay", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "pid": phHex}
+	}),
+	sp("bisonrelay", "br_page_save", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"name": "mcptest", "content": "mcptest"}
+	}),
+	sp("bisonrelay", "br_page_delete", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"name": "mcptest"}
+	}),
+	sp("bisonrelay", "br_file_send", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "filename": "mcptest", "dataB64": "eA=="}
+	}),
+	sp("bisonrelay", "br_file_add", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"filename": "mcptest", "dataB64": "eA=="}
+	}),
+	sp("bisonrelay", "br_store_order_status", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "id": 1, "status": "shipped"}
+	}),
+	sp("bisonrelay", "br_store_order_comment", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "id": 1, "comment": "mcptest"}
+	}),
+	sp("bisonrelay", "br_store_file_upload", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"filename": "mcptest", "dataB64": "eA=="}
+	}),
+	sp("bisonrelay", "br_store_template_save", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"name": "mcptest", "content": "mcptest"}
+	}),
+	sp("bisonrelay", "br_store_template_delete", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"name": "mcptest"}
+	}),
+	sp("bisonrelay", "br_gc_create", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"name": "mcptest"}
+	}),
+	sp("bisonrelay", "br_gc_invite", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"gcid": phHex, "uid": phHex}
+	}),
+	sp("bisonrelay", "br_gc_invites_accept", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"iid": 1}
+	}),
+	sp("bisonrelay", "br_gc_part", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"gcid": phHex}
+	}),
+	sp("bisonrelay", "br_rtdt_create", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"description": "mcptest"}
+	}),
+	sp("bisonrelay", "br_rtdt_create_instant", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"uids": []string{phHex}}
+	}),
+	sp("bisonrelay", "br_rtdt_invite", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"rv": phHex, "uids": []string{phHex}}
+	}),
+	sp("bisonrelay", "br_rtdt_accept", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"rv": phHex, "inviter": phHex}
+	}),
+	sp("bisonrelay", "br_rtdt_join", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"rv": phHex}
+	}),
+	sp("bisonrelay", "br_rtdt_leave", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"rv": phHex}
+	}),
+	sp("bisonrelay", "br_rtdt_dissolve", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"rv": phHex}
+	}),
+	sp("bisonrelay", "br_rtdt_chat", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"rv": phHex, "message": "mcptest"}
+	}),
+
+	// bisonrelay group-admin writes (scopeBRAdmin)
+	sp("bisonrelay", "br_gc_kick", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"gcid": phHex, "uid": phHex}
+	}),
+	sp("bisonrelay", "br_gc_kill", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"gcid": phHex}
+	}),
+	sp("bisonrelay", "br_gc_block", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"gcid": phHex, "uid": phHex}
+	}),
+	sp("bisonrelay", "br_gc_unblock", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"gcid": phHex, "uid": phHex}
+	}),
+	sp("bisonrelay", "br_gc_admins", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"gcid": phHex, "extraAdmins": []string{phHex}}
+	}),
+	sp("bisonrelay", "br_gc_owner", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"gcid": phHex, "newOwner": phHex}
+	}),
+	sp("bisonrelay", "br_rtdt_kick", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"rv": phHex, "peerId": 1}
+	}),
+	sp("bisonrelay", "br_rtdt_remove", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"rv": phHex, "uid": phHex}
+	}),
 }
 
 // absorb harvests live identifiers from a successful read result into d, scoped
@@ -326,5 +709,32 @@ func absorb(d *discovered, name string, data any) {
 		if d.postID == "" {
 			d.postID = findString(data, isHex64, "id", "pid", "postid", "hash")
 		}
+	case "governance_proposals":
+		if d.propToken == "" {
+			d.propToken = findString(data, isHex64, "token", "censorshiprecord", "censorshipRecord")
+		}
+	case "dex_exchanges":
+		if d.dexHost == "" {
+			d.dexHost = findString(data, isHostPort, "host", "url")
+		}
+	case "timestamp_records":
+		if d.tsDigest == "" {
+			d.tsDigest = findString(data, isHex64, "digest")
+		}
 	}
+}
+
+// isHostPort matches a "host:port" DEX server address (a dotted host followed by
+// a numeric port), used to harvest a live DEX host from dex_exchanges.
+func isHostPort(s string) bool {
+	i := strings.LastIndexByte(s, ':')
+	if i <= 0 || i == len(s)-1 || !strings.Contains(s[:i], ".") {
+		return false
+	}
+	for _, r := range s[i+1:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
