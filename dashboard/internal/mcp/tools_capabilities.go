@@ -12,14 +12,15 @@ import (
 )
 
 // spendCapability is the agent-facing view of its spend grant (no passphrase).
-// Amounts are DCR; an absent cap means unlimited for that dimension.
+// Amounts are DCR. Caps are literal hard limits: there is no unlimited, and a
+// 0 cap permits nothing.
 type spendCapability struct {
 	Granted           bool     `json:"granted"`
 	Accounts          []uint32 `json:"accounts,omitempty"`
-	PerTxDCR          float64  `json:"perTxDcr,omitempty"`
-	DailyDCR          float64  `json:"dailyDcr,omitempty"`
+	PerTxDCR          float64  `json:"perTxDcr"`
+	DailyDCR          float64  `json:"dailyDcr"`
 	SpentTodayDCR     float64  `json:"spentTodayDcr"`
-	RemainingTodayDCR float64  `json:"remainingTodayDcr,omitempty"`
+	RemainingTodayDCR float64  `json:"remainingTodayDcr"`
 	Allowlist         []string `json:"allowlist,omitempty"`
 	Expiry            string   `json:"expiry,omitempty"`
 	AllowVoting       bool     `json:"allowVoting"`
@@ -74,13 +75,11 @@ var capabilityTools = []toolDef{
 				AllowDex:       info.AllowDex,
 				AllowBRWrite:   info.AllowBRWrite,
 			}
-			if info.DailyAtoms > 0 {
-				rem := info.DailyAtoms - spent
-				if rem < 0 {
-					rem = 0
-				}
-				sc.RemainingTodayDCR = dcr(rem)
+			rem := info.DailyAtoms - spent
+			if rem < 0 {
+				rem = 0
 			}
+			sc.RemainingTodayDCR = dcr(rem)
 			if !info.Expiry.IsZero() {
 				sc.Expiry = info.Expiry.Format(time.RFC3339)
 			}

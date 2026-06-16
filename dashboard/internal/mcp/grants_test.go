@@ -47,7 +47,7 @@ func TestGrantAuthorizeScopeAndCaps(t *testing.T) {
 func TestGrantDailyWindowResets(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
-	s.set("a", GrantSpec{Accounts: []uint32{0}, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
+	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
 	if _, err := s.authorize("a", 0, 5*dcrAtoms, "addr", now); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestGrantDailyWindowResets(t *testing.T) {
 func TestGrantRefund(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
-	s.set("a", GrantSpec{Accounts: []uint32{0}, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
+	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
 	if _, err := s.authorize("a", 0, 5*dcrAtoms, "addr", now); err != nil {
 		t.Fatal(err)
 	}
@@ -76,12 +76,22 @@ func TestGrantRefund(t *testing.T) {
 func TestGrantAllowlist(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
-	s.set("a", GrantSpec{Accounts: []uint32{0}, Allowlist: []string{"Dsgood"}, Passphrase: []byte("p")}, now)
+	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: dcrAtoms, DailyAtoms: dcrAtoms, Allowlist: []string{"Dsgood"}, Passphrase: []byte("p")}, now)
 	if _, err := s.authorize("a", 0, 1, "Dsbad", now); err != errAddrNotAllowed {
 		t.Fatalf("want addr not allowed, got %v", err)
 	}
 	if _, err := s.authorize("a", 0, 1, "Dsgood", now); err != nil {
 		t.Fatalf("allowlisted addr: want ok, got %v", err)
+	}
+}
+
+func TestGrantZeroCapDeniesSpend(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	// A 0 cap is a literal limit (no unlimited): nothing is spendable.
+	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 0, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
+	if _, err := s.authorize("a", 0, 1, "addr", now); err != errPerTxExceeded {
+		t.Fatalf("0 per-tx cap must deny any spend, got %v", err)
 	}
 }
 
@@ -144,11 +154,11 @@ func TestGrantVotingRequiresFlag(t *testing.T) {
 func TestGrantLightningRequiresFlagAndCap(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
-	s.set("a", GrantSpec{DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
+	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p")}, now)
 	if err := s.authorizeLightning("a", dcrAtoms, now); err != errLightningNotAllowed {
 		t.Fatalf("LN without flag: want errLightningNotAllowed, got %v", err)
 	}
-	s.set("a", GrantSpec{DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p"), AllowLightning: true}, now)
+	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("p"), AllowLightning: true}, now)
 	if err := s.authorizeLightning("a", 4*dcrAtoms, now); err != nil {
 		t.Fatalf("LN within cap: want ok, got %v", err)
 	}

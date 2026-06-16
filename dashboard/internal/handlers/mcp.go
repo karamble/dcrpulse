@@ -70,13 +70,11 @@ func toGrantView(info mcp.GrantInfo) grantView {
 		AllowDex:       info.AllowDex,
 		AllowBRWrite:   info.AllowBRWrite,
 	}
-	if info.DailyAtoms > 0 {
-		rem := info.DailyAtoms - spent
-		if rem < 0 {
-			rem = 0
-		}
-		gv.RemainingTodayDCR = dcrutil.Amount(rem).ToCoin()
+	rem := info.DailyAtoms - spent
+	if rem < 0 {
+		rem = 0
 	}
+	gv.RemainingTodayDCR = dcrutil.Amount(rem).ToCoin()
 	if !info.Expiry.IsZero() {
 		gv.Expiry = info.Expiry.Format(time.RFC3339)
 	}
@@ -249,6 +247,14 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 	if req.PerTxDCR < 0 || req.DailyDCR < 0 {
 		http.Error(w, "caps must not be negative", http.StatusBadRequest)
 		return
+	}
+	// Fund-moving grants require explicit positive caps. Caps are literal limits
+	// (0 permits nothing); there is no unlimited.
+	if len(req.Accounts) > 0 || req.AllowLightning {
+		if req.PerTxDCR <= 0 || req.DailyDCR <= 0 {
+			http.Error(w, "set a per-transaction and daily cap (greater than 0)", http.StatusBadRequest)
+			return
+		}
 	}
 	perTx, err := dcrutil.NewAmount(req.PerTxDCR)
 	if err != nil {

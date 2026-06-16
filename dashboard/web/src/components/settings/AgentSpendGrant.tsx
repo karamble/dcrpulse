@@ -14,7 +14,6 @@ interface Props {
 }
 
 const fmtDcr = (n: number) => `${n.toLocaleString(undefined, { maximumFractionDigits: 8 })} DCR`;
-const cap = (n: number) => (n > 0 ? fmtDcr(n) : 'no limit');
 
 // Spendable accounts only: exclude watch-only xpub accounts and the imported
 // private-key bucket (account number 2^31-1).
@@ -66,6 +65,14 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
     if (selected.size === 0 && !anyAction) {
       setError('Select an account to spend from, or enable at least one action.');
       return;
+    }
+    // Fund-moving grants need explicit positive caps. Caps are literal limits
+    // (0 permits nothing); there is no unlimited.
+    if (selected.size > 0 || allowLightning) {
+      if (!(parseFloat(perTx) > 0) || !(parseFloat(daily) > 0)) {
+        setError('Enter a per-transaction and daily cap (greater than 0).');
+        return;
+      }
     }
     // The passphrase is only needed for spend (accounts) or voting.
     if ((selected.size > 0 || allowVoting) && !passphrase) {
@@ -167,10 +174,10 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
           <div className="text-muted-foreground">Accounts</div>
           <div>{grant.accounts.map(accountLabel).join(', ') || '-'}</div>
           <div className="text-muted-foreground">Per transaction</div>
-          <div>{cap(grant.perTxDcr)}</div>
+          <div>{fmtDcr(grant.perTxDcr)}</div>
           <div className="text-muted-foreground">Daily</div>
           <div>
-            {cap(grant.dailyDcr)}
+            {fmtDcr(grant.dailyDcr)}
             {grant.dailyDcr > 0 && (
               <span className="text-muted-foreground">
                 {' '}
@@ -240,7 +247,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
 
           <div className="grid grid-cols-2 gap-3">
             <label className="text-xs text-muted-foreground">
-              Per-transaction cap (DCR, 0 = none)
+              Per-transaction cap (DCR)
               <input
                 type="number"
                 min={0}
@@ -251,7 +258,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, onChanged }: Props) 
               />
             </label>
             <label className="text-xs text-muted-foreground">
-              Daily cap (DCR, 0 = none)
+              Daily cap (DCR)
               <input
                 type="number"
                 min={0}

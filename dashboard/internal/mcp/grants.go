@@ -42,8 +42,8 @@ var (
 // dcrlnd (counted against the daily cap); DEX trades via the unlocked DEX.
 type spendGrant struct {
 	accounts       map[uint32]bool // wallet account numbers the agent may spend from
-	perTxAtoms     int64           // 0 = no per-transaction cap
-	dailyAtoms     int64           // 0 = no daily cap
+	perTxAtoms     int64           // literal per-transaction limit (0 permits nothing)
+	dailyAtoms     int64           // literal daily limit (0 permits nothing)
 	allowlist      map[string]bool // empty = any recipient allowed
 	expiry         time.Time       // zero = never expires
 	passphrase     []byte          // in memory only; zeroed on revoke/expiry
@@ -183,14 +183,16 @@ func (g *spendGrant) reserveLocked(amountAtoms int64, now time.Time) error {
 	if amountAtoms <= 0 {
 		return errBadAmount
 	}
-	if g.perTxAtoms > 0 && amountAtoms > g.perTxAtoms {
+	// Caps are literal hard limits: a 0 cap permits nothing. There is no
+	// "unlimited" - to allow spending, the user sets a positive cap.
+	if amountAtoms > g.perTxAtoms {
 		return errPerTxExceeded
 	}
 	if now.Sub(g.windowStart) >= grantWindow {
 		g.spentAtoms = 0
 		g.windowStart = now
 	}
-	if g.dailyAtoms > 0 && g.spentAtoms+amountAtoms > g.dailyAtoms {
+	if g.spentAtoms+amountAtoms > g.dailyAtoms {
 		return errDailyExceeded
 	}
 	g.spentAtoms += amountAtoms
