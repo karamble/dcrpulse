@@ -6,23 +6,48 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"time"
+
+	"github.com/decred/dcrd/dcrutil/v4"
 
 	"dcrpulse/internal/rpc"
 )
 
 type brSaveProductInput struct {
-	SKU         string   `json:"sku" jsonschema:"unique product SKU"`
-	Title       string   `json:"title" jsonschema:"product title"`
-	Description string   `json:"description,omitempty" jsonschema:"product description"`
-	Price       float64  `json:"price" jsonschema:"price in DCR"`
-	Tags        []string `json:"tags,omitempty" jsonschema:"optional tags"`
-	Shipping    bool     `json:"shipping,omitempty" jsonschema:"true if the product must be shipped"`
-	Disabled    bool     `json:"disabled,omitempty" jsonschema:"true to hide the product from the store"`
+	SKU          string   `json:"sku" jsonschema:"unique product SKU"`
+	Title        string   `json:"title" jsonschema:"product title"`
+	Description  string   `json:"description,omitempty" jsonschema:"product description"`
+	Price        float64  `json:"price" jsonschema:"price in DCR"`
+	Tags         []string `json:"tags,omitempty" jsonschema:"optional tags"`
+	Shipping     bool     `json:"shipping,omitempty" jsonschema:"true if the product must be shipped"`
+	Disabled     bool     `json:"disabled,omitempty" jsonschema:"true to hide the product from the store"`
+	SendFilename string   `json:"sendfilename,omitempty" jsonschema:"relative path of a file already uploaded to the store (via the dashboard), delivered to the buyer on purchase"`
 }
 
 type brDeleteProductInput struct {
 	SKU string `json:"sku" jsonschema:"SKU of the product to delete"`
+}
+
+type brSendMessageInput struct {
+	UID     string `json:"uid" jsonschema:"contact identity (nick, alias, or hex UID)"`
+	Message string `json:"message" jsonschema:"message text to send"`
+}
+
+type brSendGCMessageInput struct {
+	GCID    string `json:"gcid" jsonschema:"group chat id, hex"`
+	Message string `json:"message" jsonschema:"message text to send"`
+}
+
+type brTipInput struct {
+	UID         string  `json:"uid" jsonschema:"contact hex UID to tip"`
+	AmountDCR   float64 `json:"amountDcr" jsonschema:"tip amount in DCR (paid over Lightning)"`
+	MaxAttempts int32   `json:"maxAttempts,omitempty" jsonschema:"max payment attempts; defaults to 1"`
+}
+
+type brUnshareInput struct {
+	FID       string `json:"fid" jsonschema:"shared file id (hex) to revoke"`
+	TargetUID string `json:"targetUid,omitempty" jsonschema:"empty revokes the global share; a hex UID revokes a per-user share"`
 }
 
 type brNotificationsInput struct {
@@ -147,13 +172,14 @@ var bisonrelayTools = []toolDef{
 				tags = []string{}
 			}
 			body := map[string]any{
-				"sku":         in.SKU,
-				"title":       in.Title,
-				"description": in.Description,
-				"price":       in.Price,
-				"tags":        tags,
-				"shipping":    in.Shipping,
-				"disabled":    in.Disabled,
+				"sku":          in.SKU,
+				"title":        in.Title,
+				"description":  in.Description,
+				"price":        in.Price,
+				"tags":         tags,
+				"shipping":     in.Shipping,
+				"disabled":     in.Disabled,
+				"sendfilename": in.SendFilename,
 			}
 			if err := rpc.BrclientdSaveStoreProduct(ctx, body); err != nil {
 				recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "error", err.Error())
@@ -175,5 +201,75 @@ var bisonrelayTools = []toolDef{
 			}
 			recordSpend(a, "br_store_delete_product", 0, 0, in.SKU, "ok", "")
 			return map[string]any{"sku": in.SKU, "ok": true}, nil
+		}),
+	agentTool("bisonrelay", "br_send_message",
+		"Send a private message to a Bison Relay contact (text only). Requires a grant with Bison Relay write enabled. To deliver a Lightning invoice, generate it with ln_add_invoice and send the bolt11 string as the message.",
+		func(ctx context.Context, a *agent, in brSendMessageInput) (any, error) {
+			if err := grants.authorizeBRWrite(a.id, time.Now()); err != nil {
+				recordSpend(a, "br_send_message", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdSendPM(ctx, in.UID, in.Message); err != nil {
+				recordSpend(a, "br_send_message", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_send_message", 0, 0, in.UID, "ok", "")
+			return map[string]any{"uid": in.UID, "sent": true}, nil
+		}),
+	agentTool("bisonrelay", "br_send_groupchat_message",
+		"Post a message to a Bison Relay group chat. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brSendGCMessageInput) (any, error) {
+			if err := grants.authorizeBRWrite(a.id, time.Now()); err != nil {
+				recordSpend(a, "br_send_groupchat_message", 0, 0, in.GCID, "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdGCMessage(ctx, in.GCID, in.Message, 0); err != nil {
+				recordSpend(a, "br_send_groupchat_message", 0, 0, in.GCID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_send_groupchat_message", 0, 0, in.GCID, "ok", "")
+			return map[string]any{"gcid": in.GCID, "sent": true}, nil
+		}),
+	agentTool("bisonrelay", "br_tip_user",
+		"Tip a Bison Relay contact over Lightning. Spends DCR: requires a grant with Lightning enabled, and the amount counts against the per-transaction and daily caps. dcrlnd must be unlocked.",
+		func(ctx context.Context, a *agent, in brTipInput) (any, error) {
+			amt, err := dcrutil.NewAmount(in.AmountDCR)
+			if err != nil {
+				return nil, fmt.Errorf("invalid amount: %w", err)
+			}
+			atoms := int64(amt)
+			if err := grants.authorizeLightning(a.id, atoms, time.Now()); err != nil {
+				if tripwire(a.id, err) {
+					recordSpend(a, "br_tip_user", 0, in.AmountDCR, in.UID, "blocked", "spend-limit violation: grant revoked and token blocked")
+				} else {
+					recordSpend(a, "br_tip_user", 0, in.AmountDCR, in.UID, "denied", err.Error())
+				}
+				return nil, err
+			}
+			attempts := in.MaxAttempts
+			if attempts <= 0 {
+				attempts = 1
+			}
+			if err := rpc.BrclientdTipUser(ctx, in.UID, in.AmountDCR, attempts); err != nil {
+				grants.refund(a.id, atoms)
+				recordSpend(a, "br_tip_user", 0, in.AmountDCR, in.UID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_tip_user", 0, in.AmountDCR, in.UID, "ok", "tip initiated")
+			return map[string]any{"uid": in.UID, "amountDcr": in.AmountDCR, "initiated": true}, nil
+		}),
+	agentTool("bisonrelay", "br_unshare_file",
+		"Revoke a shared file on Bison Relay by file id. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brUnshareInput) (any, error) {
+			if err := grants.authorizeBRWrite(a.id, time.Now()); err != nil {
+				recordSpend(a, "br_unshare_file", 0, 0, in.FID, "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdUnshareFile(ctx, in.FID, in.TargetUID); err != nil {
+				recordSpend(a, "br_unshare_file", 0, 0, in.FID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_unshare_file", 0, 0, in.FID, "ok", "")
+			return map[string]any{"fid": in.FID, "unshared": true}, nil
 		}),
 }
