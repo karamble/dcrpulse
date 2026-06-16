@@ -82,6 +82,19 @@ func UnblockAgent(id string) (bool, error) {
 	return true, saveAgents()
 }
 
+// FreezeAllAgents is the kill-switch: it revokes every spend grant (zeroing the
+// held passphrases) and blocks every agent token at once, persisting the blocked
+// state. Agents are restored one at a time via UnblockAgent plus a fresh spend
+// grant. Returns the error from persisting the blocked state.
+func FreezeAllAgents() error {
+	grants.revokeAll()
+	reg.blockAllAgents()
+	return saveAgents()
+}
+
+// ExportAuditLog returns the full persisted spend-audit trail as JSON.
+func ExportAuditLog() ([]byte, error) { return exportAudit() }
+
 // Domains returns the capability domains that currently have tools, in a stable
 // order, so the dashboard can render per-agent access toggles.
 func Domains() []string { return catalogDomains() }
@@ -134,6 +147,9 @@ func Start(cfg Config) {
 	srvMu.Lock()
 	runBind, runPort = cfg.Bind, cfg.Port
 	srvMu.Unlock()
+
+	// Open the persisted spend-audit log so the trail survives restarts.
+	initAuditStore()
 
 	// Bootstrap token from the environment for headless/dev use. Registered
 	// regardless of the enabled state so a later toggle-on can accept it.
@@ -309,29 +325,54 @@ func ok(v any, err error) (*mcp.CallToolResult, toolResult, error) {
 // toolDef tags each tool with its capability domain so the per-agent server can
 // register only the tools that agent is permitted to use. register receives the
 // agent so identity-aware tools (capability introspection, spend) can close over
-// it; each agent has its own server, so the binding is per-agent.
+// it; each agent has its own server, so the binding is per-agent. readOnly marks
+// pure reads (vs grant-gated writes) so the MCP annotations and the gating test
+// can distinguish them.
 type toolDef struct {
 	domain   string
+	readOnly bool
 	register func(*mcp.Server, *agent)
 }
+
+func boolPtr(b bool) *bool { return &b }
+
+// MCP tool hints so clients can tell a read from a destructive (fund/state-
+// changing) call and warn before executing one. The pointers are never mutated,
+// so the shared values are safe to attach to every tool.
+var (
+	readAnnotations  = &mcp.ToolAnnotations{ReadOnlyHint: true}
+	writeAnnotations = &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(true)}
+)
 
 // readTool builds a read-only tool: a thin adapter that calls fn and wraps its
 // (value, error) result for MCP. In is the tool's argument type (emptyInput for
 // tools that take no parameters); its exported fields become the input schema.
 func readTool[In any](domain, name, description string, fn func(context.Context, In) (any, error)) toolDef {
-	return toolDef{domain, func(s *mcp.Server, _ *agent) {
-		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description},
+	return toolDef{domain: domain, readOnly: true, register: func(s *mcp.Server, _ *agent) {
+		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: readAnnotations},
 			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, toolResult, error) {
 				return ok(fn(ctx, in))
 			})
 	}}
 }
 
-// agentTool builds a tool whose handler also receives the calling agent's
-// identity, for capability introspection and grant-gated spend tools.
+// agentTool builds a grant-gated write tool whose handler also receives the
+// calling agent's identity.
 func agentTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
-	return toolDef{domain, func(s *mcp.Server, a *agent) {
-		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description},
+	return toolDef{domain: domain, readOnly: false, register: func(s *mcp.Server, a *agent) {
+		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: writeAnnotations},
+			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, toolResult, error) {
+				return ok(fn(ctx, a, in))
+			})
+	}}
+}
+
+// agentReadTool is an agent-aware but read-only tool (introspection like
+// capabilities): it receives the agent yet moves nothing, so it carries the
+// read-only hint and is exempt from the spend-gating test.
+func agentReadTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
+	return toolDef{domain: domain, readOnly: true, register: func(s *mcp.Server, a *agent) {
+		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: readAnnotations},
 			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, toolResult, error) {
 				return ok(fn(ctx, a, in))
 			})

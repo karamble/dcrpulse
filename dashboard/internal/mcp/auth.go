@@ -153,6 +153,25 @@ func (r *registry) block(id string) {
 	}
 }
 
+// blockAllAgents blocks every agent and drops all live sessions, invalidating
+// each agent's cached scoped server. Used by the freeze-all kill-switch.
+func (r *registry) blockAllAgents() {
+	r.mu.Lock()
+	ids := make([]string, 0, len(r.agents))
+	for id, a := range r.agents {
+		a.blocked = true
+		ids = append(ids, id)
+	}
+	r.sessions = map[string]*Session{}
+	onChange := r.onChange
+	r.mu.Unlock()
+	if onChange != nil {
+		for _, id := range ids {
+			onChange(id)
+		}
+	}
+}
+
 // unblock clears an agent's blocked state. Returns false if no such agent.
 func (r *registry) unblock(id string) bool {
 	r.mu.Lock()

@@ -1621,5 +1621,25 @@ export const unblockMCPAgent = async (id: string): Promise<void> => {
   await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/unblock`);
 };
 
+// freezeAllMCPAgents is the kill-switch: it revokes every spend grant and blocks
+// every agent token at once. Agents are restored individually via unblock + a
+// fresh grant.
+export const freezeAllMCPAgents = async (): Promise<void> => {
+  await api.post('/settings/mcp/freeze-all');
+};
+
+// exportMCPAudit downloads the full persisted spend-audit trail as a JSON file.
+export const exportMCPAudit = async (): Promise<void> => {
+  const response = await api.get('/settings/mcp/audit/export', { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data as Blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'dcrpulse-mcp-audit.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
 export default api;
 

@@ -328,6 +328,29 @@ func UnblockMCPAgentHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// FreezeAllMCPAgentsHandler is the kill-switch: it revokes every spend grant and
+// blocks every agent token at once. Agents are restored individually via unblock
+// plus a fresh grant.
+func FreezeAllMCPAgentsHandler(w http.ResponseWriter, r *http.Request) {
+	if err := mcp.FreezeAllAgents(); err != nil {
+		http.Error(w, "failed to freeze agents", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ExportMCPAuditHandler downloads the full persisted spend-audit trail as JSON.
+func ExportMCPAuditHandler(w http.ResponseWriter, r *http.Request) {
+	data, err := mcp.ExportAuditLog()
+	if err != nil {
+		http.Error(w, "failed to export audit log", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="dcrpulse-mcp-audit.json"`)
+	_, _ = w.Write(data)
+}
+
 func wipe(b []byte) {
 	for i := range b {
 		b[i] = 0

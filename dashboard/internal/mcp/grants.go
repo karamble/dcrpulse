@@ -143,6 +143,17 @@ func (s *grantStore) revoke(agentID string) bool {
 	return true
 }
 
+// revokeAll clears every agent's grant, zeroing all held passphrases. Used by
+// the freeze-all kill-switch.
+func (s *grantStore) revokeAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, g := range s.byAgent {
+		zero(g.passphrase)
+		delete(s.byAgent, id)
+	}
+}
+
 func (s *grantStore) info(agentID string) (GrantInfo, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -221,6 +232,38 @@ func (s *grantStore) authorize(agentID string, account uint32, amountAtoms int64
 		return nil, err
 	}
 	return append([]byte(nil), g.passphrase...), nil
+}
+
+// precheckAccount verifies a grant exists and covers the account, without
+// reserving any amount. It lets account-spend tools reject early - before doing
+// work like querying the chain for a ticket price - when there is no grant.
+func (s *grantStore) precheckAccount(agentID string, account uint32, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, err := s.currentLocked(agentID, now)
+	if err != nil {
+		return err
+	}
+	if !g.accounts[account] {
+		return errAccountNotGranted
+	}
+	return nil
+}
+
+// precheckScope verifies a grant exists and includes the scope, without
+// reserving. It lets amount-derived spends (e.g. ln_pay) reject before doing
+// work like decoding an invoice when access is not granted.
+func (s *grantStore) precheckScope(agentID, scope string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, err := s.currentLocked(agentID, now)
+	if err != nil {
+		return err
+	}
+	if !g.writeScopes[scope] {
+		return scopeDenied(scope)
+	}
+	return nil
 }
 
 // authorizeAction checks the grant includes the given write scope, for a

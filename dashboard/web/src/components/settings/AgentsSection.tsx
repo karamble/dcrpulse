@@ -13,6 +13,8 @@ import {
   Loader2,
   KeyRound,
   Eye,
+  Snowflake,
+  Download,
 } from 'lucide-react';
 import {
   MCPSettings,
@@ -24,6 +26,8 @@ import {
   revokeMCPToken,
   setMCPAgentDomains,
   unblockMCPAgent,
+  freezeAllMCPAgents,
+  exportMCPAudit,
   getAccounts,
 } from '../../services/api';
 import { AgentSpendGrant } from './AgentSpendGrant';
@@ -52,6 +56,7 @@ export const AgentsSection = () => {
   const [created, setCreated] = useState<{ id: string; name: string; token: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const [confirmFreeze, setConfirmFreeze] = useState(false);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
 
   const refresh = useCallback(async () => {
@@ -135,6 +140,30 @@ export const AgentsSection = () => {
     }
   };
 
+  const freezeAll = async () => {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await freezeAllMCPAgents();
+      setConfirmFreeze(false);
+      await refresh();
+      setFeedback({ kind: 'info', text: 'All agents frozen: spend grants revoked and tokens blocked.' });
+    } catch {
+      setFeedback({ kind: 'error', text: 'Failed to freeze agents.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportAudit = async () => {
+    setFeedback(null);
+    try {
+      await exportMCPAudit();
+    } catch {
+      setFeedback({ kind: 'error', text: 'Failed to export the audit log.' });
+    }
+  };
+
   const toggleDomain = async (a: MCPAgent, domain: string, on: boolean) => {
     if (domain === 'node') return; // node is always granted
     const set = new Set(a.domains.filter((d) => d !== 'node'));
@@ -206,6 +235,48 @@ export const AgentsSection = () => {
             {settings.enabled ? 'On' : 'Off'}
           </button>
         </div>
+
+        {settings.agents.length > 0 && (
+          <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
+            <div className="min-w-0">
+              <span className="font-medium block">Freeze all agents</span>
+              <span className="text-sm text-muted-foreground block">
+                Emergency stop: revoke every spend grant and block every token at once. Unblock and
+                re-grant agents individually afterwards.
+              </span>
+            </div>
+            {confirmFreeze ? (
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={freezeAll}
+                  disabled={busy}
+                  className="rounded-lg bg-destructive/20 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/30 disabled:opacity-50"
+                >
+                  Confirm freeze
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmFreeze(false)}
+                  disabled={busy}
+                  className="rounded-lg bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/30 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmFreeze(true)}
+                disabled={busy}
+                title="Revoke all grants and block all tokens"
+                className="inline-flex items-center gap-1.5 shrink-0 rounded-lg bg-warning/20 px-3 py-1.5 text-xs font-medium text-warning hover:bg-destructive/20 hover:text-destructive disabled:opacity-50"
+              >
+                <Snowflake className="h-3.5 w-3.5" /> Freeze all
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="flex items-start gap-2 text-sm text-muted-foreground">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -440,9 +511,24 @@ export const AgentsSection = () => {
       </div>
 
       {/* Recent agent spends (audit) */}
-      {(settings.audit?.length ?? 0) > 0 && (
+      {(settings.agents.length > 0 || (settings.audit?.length ?? 0) > 0) && (
         <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
-          <h3 className="text-lg font-semibold">Recent agent spends</h3>
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-lg font-semibold">Recent agent spends</h3>
+            <button
+              type="button"
+              onClick={exportAudit}
+              title="Download the full persisted audit trail"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary/20 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/30"
+            >
+              <Download className="h-3.5 w-3.5" /> Export
+            </button>
+          </div>
+          {(settings.audit?.length ?? 0) === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No spends in the live feed. Export downloads the full persisted history.
+            </p>
+          ) : (
           <div className="space-y-1.5">
             {settings.audit.map((e, i) => (
               <div
@@ -483,6 +569,7 @@ export const AgentsSection = () => {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
     </div>

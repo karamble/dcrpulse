@@ -109,6 +109,12 @@ var lightningTools = []toolDef{
 	agentTool("lightning", "ln_pay",
 		"Pay a Lightning (bolt11) invoice. Requires a spend grant with Lightning enabled; the amount counts against the grant's daily cap. dcrlnd must be unlocked.",
 		func(ctx context.Context, a *agent, in lnPayInput) (any, error) {
+			// Reject before decoding the invoice when Lightning is not granted,
+			// so an ungranted call does no work.
+			if err := grants.precheckScope(a.id, scopeLightning, time.Now()); err != nil {
+				recordSpend(a, "ln_pay", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
 			dec, err := services.DecodeLightningInvoice(ctx, in.PayReq)
 			if err != nil {
 				return nil, fmt.Errorf("decode invoice: %w", err)

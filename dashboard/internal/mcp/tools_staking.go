@@ -85,6 +85,12 @@ var stakingTools = []toolDef{
 			if in.VSPHost == "" || in.VSPPubkey == "" {
 				return nil, fmt.Errorf("vspHost and vspPubkey are required (see staking_vsps)")
 			}
+			// Reject before pricing the ticket when the agent has no grant for
+			// this account, so an ungranted call does no chain work.
+			if err := grants.precheckAccount(a.id, in.Account, time.Now()); err != nil {
+				recordSpend(a, "staking_purchase", in.Account, 0, in.VSPHost, "denied", err.Error())
+				return nil, err
+			}
 			info, err := services.FetchStakingInfo()
 			if err != nil {
 				return nil, fmt.Errorf("ticket price unavailable: %w", err)

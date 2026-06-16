@@ -40,7 +40,7 @@ func dcr(atoms int64) float64 { return dcrutil.Amount(atoms).ToCoin() }
 // capabilityTools is always registered (node domain is always granted) so every
 // agent can introspect its own permissions and remaining spend allowance.
 var capabilityTools = []toolDef{
-	agentTool("node", "capabilities",
+	agentReadTool("node", "capabilities",
 		"Report what this agent may do: its granted capability domains and current spend grant (account scope, caps, remaining daily allowance). Call this to discover your own permissions before attempting actions.",
 		func(_ context.Context, a *agent, _ emptyInput) (any, error) {
 			rep := capabilityReport{

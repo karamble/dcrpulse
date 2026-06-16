@@ -33,7 +33,9 @@ type auditLog struct {
 func (l *auditLog) record(e AuditEntry) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	e.Time = time.Now()
+	if e.Time.IsZero() {
+		e.Time = time.Now()
+	}
 	l.entries = append(l.entries, e)
 	if len(l.entries) > auditMax {
 		l.entries = l.entries[len(l.entries)-auditMax:]
@@ -59,9 +61,11 @@ var audit = &auditLog{}
 // AuditLog returns the most recent spend attempts (newest first) for the UI.
 func AuditLog(n int) []AuditEntry { return audit.recent(n) }
 
-// recordSpend logs a spend attempt by an agent.
+// recordSpend logs a spend attempt by an agent: into the in-memory ring (live UI
+// feed) and, best-effort, into the persisted append-only trail.
 func recordSpend(a *agent, tool string, account uint32, amountDCR float64, target, result, detail string) {
-	audit.record(AuditEntry{
+	e := AuditEntry{
+		Time:      time.Now(),
 		AgentID:   a.id,
 		Agent:     a.name,
 		Tool:      tool,
@@ -70,5 +74,7 @@ func recordSpend(a *agent, tool string, account uint32, amountDCR float64, targe
 		Target:    target,
 		Result:    result,
 		Detail:    detail,
-	})
+	}
+	audit.record(e)
+	persistAudit(e)
 }
