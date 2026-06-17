@@ -7,7 +7,7 @@ services:
         DCRD_VERSION: ${DCRD_VERSION:-release-v2.1.5}
     container_name: dcrpulse-dcrd
     ports:
-      - "9108:9108"
+      - "${DCRD_P2P_HOST_BIND:-0.0.0.0}:9108:9108"
       - "127.0.0.1:9109:9109"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data

@@ -267,10 +267,11 @@ export const TorSection = () => {
           </div>
         )}
 
-        {settings.dcrdOnion && status?.onionAddress && (
+        {status?.onionAddress && (
           <div className="p-3 rounded-lg bg-muted/10 border border-border/50">
             <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-              dcrd onion address
+              dcrd onion address{' '}
+              {settings.dcrdOnion ? '(active)' : '(available - enable the toggle above to advertise it)'}
             </div>
             <div className="font-mono text-sm break-all">{status.onionAddress}</div>
           </div>

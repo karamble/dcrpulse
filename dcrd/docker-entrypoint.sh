@@ -64,7 +64,10 @@ build_tor_args() {
     [ "$(tor_field isolation true)" = "true" ] && TOR_ARGS="${TOR_ARGS} --torisolation"
     if [ "$(tor_field dcrdOnion false)" = "true" ] && [ -f /app-data/tor/dcrd-hs/hostname ]; then
         host=$(cat /app-data/tor/dcrd-hs/hostname 2>/dev/null)
-        [ -n "${host}" ] && TOR_ARGS="${TOR_ARGS} --externalip=${host}:9108"
+        # --proxy alone makes dcrd set DisableListen, so also pass --listen to
+        # actually accept inbound on the advertised onion. 0.0.0.0 so the tor
+        # container can reach it over the Docker network (dcrd:9108).
+        [ -n "${host}" ] && TOR_ARGS="${TOR_ARGS} --externalip=${host}:9108 --listen=0.0.0.0:9108"
     fi
 }
 
