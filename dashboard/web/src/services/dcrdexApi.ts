@@ -12,6 +12,7 @@ export interface DexStatus {
   unlocked: boolean;
   seedBackedUp: boolean;
   stage: DexStage;
+  message?: string;
   bisonwVersion?: string;
   rpcServerVersion?: string;
   error?: string;

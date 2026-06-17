@@ -66,9 +66,10 @@ export const DexPage = () => {
       <div className="min-h-[60vh] flex items-center justify-center p-6">
         <div className="w-full max-w-md p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3 text-center">
           <AlertCircle className="h-6 w-6 text-warning mx-auto" />
-          <h2 className="text-lg font-semibold">DCRDEX is unavailable</h2>
+          <h2 className="text-lg font-semibold">DCRDEX is starting</h2>
           <p className="text-sm text-muted-foreground break-words">
-            The DCRDEX backend is not reachable yet. {status.error}
+            {status.message ||
+              'The DCRDEX backend is not reachable yet. This page will recover automatically once it is ready.'}
           </p>
         </div>
       </div>

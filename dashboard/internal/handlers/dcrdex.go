@@ -48,6 +48,9 @@ type DcrdexStatus struct {
 	BisonwVersion string `json:"bisonwVersion,omitempty"`
 	RPCServerVer  string `json:"rpcServerVersion,omitempty"`
 	Error         string `json:"error,omitempty"`
+	// Message is a friendly explanation for the "unavailable" stage (daemon
+	// down or still starting); the UI shows it instead of the raw Error.
+	Message string `json:"message,omitempty"`
 }
 
 // GetDcrdexStatusHandler reports whether the bisonw RPC server is reachable and
@@ -62,6 +65,9 @@ func GetDcrdexStatusHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		st.Stage = "unavailable"
 		st.Error = err.Error()
+		hctx, hcancel := context.WithTimeout(r.Context(), 2*time.Second)
+		st.Message = services.DaemonStartupHint(hctx, services.LogComponentDcrdex).Message
+		hcancel()
 		json.NewEncoder(w).Encode(st)
 		return
 	}
@@ -73,6 +79,7 @@ func GetDcrdexStatusHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		st.Stage = "unavailable"
 		st.Error = err.Error()
+		st.Message = services.DaemonStartupHint(ctx, services.LogComponentDcrdex).Message
 		json.NewEncoder(w).Encode(st)
 		return
 	}
@@ -197,11 +204,11 @@ func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.Init(ctx, req.AppPass, req.Seed); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	if _, err := client.Login(ctx, req.AppPass); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	rpc.SetDcrdexAppPass(req.AppPass)
@@ -233,7 +240,7 @@ func UnlockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if _, err := client.Login(ctx, req.AppPass); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	rpc.SetDcrdexAppPass(req.AppPass)
@@ -303,7 +310,7 @@ func CreateDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		RPCCert:   dexEnv("DCRDEX_DCRWALLET_CERT", "/app-data/dcrd/rpc.cert"),
 	}
 	if err := client.NewDCRWallet(ctx, appPass, req.WalletPass, cfg); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -356,7 +363,7 @@ func GetDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.Wallets(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	var states []struct {
@@ -399,7 +406,7 @@ func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.Exchanges(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	w.Write(raw)
@@ -454,7 +461,7 @@ func NewDexDepositAddressHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	addr, err := client.NewDepositAddress(ctx, appPass, dexAssetID(r))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"address": addr})
@@ -477,7 +484,7 @@ func DexAddressUsedHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	used, err := client.AddressUsed(ctx, appPass, dexAssetID(r), addr)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"used": used})
@@ -520,7 +527,7 @@ func GetDcrdexWalletsHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.Wallets(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	var states []struct {
@@ -600,19 +607,19 @@ type DexBondAsset struct {
 // DexAccount is the per-server account view (tier, reputation, bonds) for the
 // Account tab. Bond amounts are converted to DCR in the backend.
 type DexAccount struct {
-	Host             string           `json:"host"`
-	AcctID           string           `json:"acctID"`
-	Registered       bool             `json:"registered"`
-	ConnectionStatus int              `json:"connectionStatus"`
-	ViewOnly         bool             `json:"viewOnly"`
-	Disabled         bool             `json:"disabled"`
-	TargetTier       uint64           `json:"targetTier"`
-	EffectiveTier    int64            `json:"effectiveTier"`
-	BondedTier       int64            `json:"bondedTier"`
-	Penalties        uint16           `json:"penalties"`
-	Score            int32            `json:"score"`
-	PenaltyThreshold uint32           `json:"penaltyThreshold"`
-	MaxScore         uint32           `json:"maxScore"`
+	Host               string           `json:"host"`
+	AcctID             string           `json:"acctID"`
+	Registered         bool             `json:"registered"`
+	ConnectionStatus   int              `json:"connectionStatus"`
+	ViewOnly           bool             `json:"viewOnly"`
+	Disabled           bool             `json:"disabled"`
+	TargetTier         uint64           `json:"targetTier"`
+	EffectiveTier      int64            `json:"effectiveTier"`
+	BondedTier         int64            `json:"bondedTier"`
+	Penalties          uint16           `json:"penalties"`
+	Score              int32            `json:"score"`
+	PenaltyThreshold   uint32           `json:"penaltyThreshold"`
+	MaxScore           uint32           `json:"maxScore"`
 	BondAssetID        uint32           `json:"bondAssetID"`
 	BondExpiryDays     int              `json:"bondExpiryDays"`
 	BondPerTierAtoms   uint64           `json:"bondPerTierAtoms"`
@@ -643,7 +650,7 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.Exchanges(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	var xcs map[string]struct {
@@ -772,7 +779,7 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.SetBondOptions(ctx, req.Host, targetTier, maxBonded, bondAsset, penaltyComps); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -908,13 +915,13 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := dexConfigRaw(ctx, client, host)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 
 	var xc struct {
-		Host             string `json:"host"`
-		AcctID           string `json:"acctID"`
+		Host             string   `json:"host"`
+		AcctID           string   `json:"acctID"`
 		ConnectionStatus int      `json:"connectionStatus"`
 		BondExpiry       uint64   `json:"bondExpiry"`
 		BinSizes         []string `json:"binSizes"`
@@ -1025,7 +1032,7 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 		MaintainTier: req.MaintainTier,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	w.Write(raw)
@@ -1115,7 +1122,7 @@ func GetDcrdexMyOrdersHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.MyOrders(ctx, r.URL.Query().Get("host"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	w.Write(raw)
@@ -1327,7 +1334,7 @@ func GetDcrdexOrdersHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.Orders(ctx, appPass, filter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	var in []*bwOrder
@@ -1471,7 +1478,7 @@ func GetDcrdexSingleOrderHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.Order(ctx, appPass, req.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	var o bwOrder
@@ -1500,7 +1507,7 @@ func CancelDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.Cancel(ctx, req.OrderID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -1555,7 +1562,7 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		Options: opts,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	w.Write(raw)
@@ -1590,7 +1597,7 @@ func PreDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.PreOrder(ctx, appPass, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	w.Write(raw)
@@ -1618,7 +1625,7 @@ func MaxDcrdexBuyHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.MaxBuy(ctx, appPass, req.Host, req.Base, req.Quote, req.Rate)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	w.Write(raw)
@@ -1645,7 +1652,7 @@ func MaxDcrdexSellHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.MaxSell(ctx, appPass, req.Host, req.Base, req.Quote)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	w.Write(raw)
@@ -1694,7 +1701,7 @@ func CreateDcrdexAssetWalletHandler(w http.ResponseWriter, r *http.Request) {
 		WalletType: req.WalletType,
 		Config:     req.Config,
 	}); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -1911,7 +1918,7 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	if uint32(assetID) != bisonw.AssetDCR {
 		raw, err := client.TxHistory(ctx, uint32(assetID), num, refID, past)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			dexWriteErr(w, err)
 			return
 		}
 		var txs []rawWalletTx
@@ -1937,7 +1944,7 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	dexSet, dexPending, err := dexAccountTxIDs(ctx, refID == "")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	cursor, cursorPast := refID, past
@@ -1946,7 +1953,7 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	for i := 0; i < maxPages && len(out) < want; i++ {
 		raw, err := client.TxHistory(ctx, uint32(assetID), want, cursor, cursorPast)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			dexWriteErr(w, err)
 			return
 		}
 		var txs []rawWalletTx
@@ -2013,7 +2020,7 @@ func GetDcrdexWalletTxHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.WalletTx(ctx, uint32(assetID), txID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	var t rawWalletTx
@@ -2053,7 +2060,7 @@ func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
 	coin, err := client.Send(ctx, appPass, req.AssetID, atoms, req.Address)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"coin": coin})
@@ -2090,7 +2097,7 @@ func EstimateDcrdexSendFeeHandler(w http.ResponseWriter, r *http.Request) {
 	atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
 	txFee, validAddr, err := client.EstimateSendTxFee(ctx, appPass, req.AssetID, req.Address, atoms, req.Subtract, false)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	feeAsset := dexassets.FeeAsset(req.AssetID)
@@ -2136,7 +2143,7 @@ func OpenDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.OpenWallet(ctx, appPass, req.AssetID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -2158,7 +2165,7 @@ func CloseDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.CloseWallet(ctx, assetID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -2183,7 +2190,7 @@ func ToggleDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.ToggleWalletStatus(ctx, req.AssetID, req.Disable); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -2208,7 +2215,7 @@ func RescanDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.RescanWallet(ctx, req.AssetID, req.Force); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -2231,7 +2238,7 @@ func GetDcrdexWalletPeersHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.WalletPeers(ctx, uint32(assetID))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	w.Write(raw)
@@ -2256,7 +2263,7 @@ func AddDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.AddWalletPeer(ctx, req.AssetID, req.Address); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -2281,7 +2288,7 @@ func RemoveDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.RemoveWalletPeer(ctx, req.AssetID, req.Address); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -2305,7 +2312,7 @@ func GetDcrdexNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := client.Notifications(ctx, n)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	w.Write(raw)
@@ -2365,7 +2372,7 @@ func ExportDcrdexSeedHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	seed, err := client.AppSeed(ctx, req.AppPass)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"seed": seed})
@@ -2411,7 +2418,7 @@ func DiscoverDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	paid, err := client.DiscoverAccount(ctx, appPass, req.Host, "")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"paid": paid})

@@ -146,6 +146,10 @@ func DaemonStartupHint(ctx context.Context, component LogComponent) DaemonStartu
 		noun = "wallet"
 	case LogComponentDcrlnd:
 		noun = "Lightning node"
+	case LogComponentDcrdex:
+		noun = "DEX"
+	case LogComponentBrclientd:
+		noun = "Bison Relay"
 	}
 	starting := DaemonStartupState{
 		State:   "starting",

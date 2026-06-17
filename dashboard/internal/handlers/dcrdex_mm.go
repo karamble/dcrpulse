@@ -50,7 +50,7 @@ func GetDcrdexMMStatusHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	status, err := client.MMStatus(ctx, appPass)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	if len(status) == 0 {
@@ -81,7 +81,7 @@ func GetDcrdexMMMarketReportHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	report, err := client.MarketReport(ctx, appPass, host, uint32(baseID), uint32(quoteID))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	if len(report) == 0 {
@@ -123,7 +123,7 @@ func GetDcrdexMMRunLogsHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	logs, err := client.RunLogs(ctx, appPass, host, uint32(baseID), uint32(quoteID), startTime, n, refID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	if len(logs) == 0 {
@@ -144,7 +144,7 @@ func GetDcrdexMMArchivedRunsHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	runs, err := client.ArchivedRuns(ctx, appPass)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	if len(runs) == 0 {
@@ -170,7 +170,7 @@ func UpdateDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.UpdateBotConfig(ctx, appPass, body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -195,7 +195,7 @@ func RemoveDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.RemoveBotConfig(ctx, appPass, req.Host, req.BaseID, req.QuoteID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -217,7 +217,7 @@ func UpdateDcrdexMMCexConfigHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.UpdateCEXConfig(ctx, appPass, body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -240,7 +240,7 @@ func StartDcrdexMMBotHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	if err := client.StartBot(ctx, appPass, body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -265,7 +265,7 @@ func StopDcrdexMMBotHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := client.StopBot(ctx, appPass, req.Host, req.BaseID, req.QuoteID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})

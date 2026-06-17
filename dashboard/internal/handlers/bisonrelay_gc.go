@@ -20,7 +20,7 @@ import (
 func BisonrelayGCListHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := rpc.BrclientdGCList(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -42,7 +42,7 @@ func BisonrelayGCCreateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := rpc.BrclientdGCCreate(r.Context(), req.Name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -53,7 +53,7 @@ func BisonrelayGCCreateHandler(w http.ResponseWriter, r *http.Request) {
 func BisonrelayGCInvitesListHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := rpc.BrclientdGCInvitesList(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -74,7 +74,7 @@ func BisonrelayGCInvitesAcceptHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdGCInvitesAccept(r.Context(), req.IID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -85,7 +85,7 @@ func BisonrelayGCDetailHandler(w http.ResponseWriter, r *http.Request) {
 	gcid := mux.Vars(r)["gcid"]
 	body, err := rpc.BrclientdGCDetail(r.Context(), gcid)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -103,7 +103,7 @@ func BisonrelayGCInviteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdGCInvite(r.Context(), gcid, req.UID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -155,7 +155,7 @@ func BisonrelayGCMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := rpc.BrclientdGCMessage(r.Context(), gcid, body, req.Mode); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -169,7 +169,7 @@ func BisonrelayGCHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
 	body, err := rpc.BrclientdGCHistory(r.Context(), gcid, page, pageSize)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -184,7 +184,7 @@ func BisonrelayGCPartHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	if err := rpc.BrclientdGCPart(r.Context(), gcid, req.Reason); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -198,7 +198,7 @@ func BisonrelayGCKillHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	if err := rpc.BrclientdGCKill(r.Context(), gcid, req.Reason); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -216,7 +216,7 @@ func BisonrelayGCKickHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdGCKick(r.Context(), gcid, req.UID, req.Reason); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -233,7 +233,7 @@ func BisonrelayGCBlockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdGCBlock(r.Context(), gcid, req.UID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -250,7 +250,7 @@ func BisonrelayGCUnblockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdGCUnblock(r.Context(), gcid, req.UID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -268,7 +268,7 @@ func BisonrelayGCAdminsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdGCModifyAdmins(r.Context(), gcid, req.ExtraAdmins, req.Reason); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -286,7 +286,7 @@ func BisonrelayGCOwnerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdGCModifyOwner(r.Context(), gcid, req.NewOwner, req.Reason); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -303,7 +303,7 @@ func BisonrelayGCUpgradeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdGCUpgrade(r.Context(), gcid, req.NewVersion); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -320,7 +320,7 @@ func BisonrelayGCAliasHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rpc.BrclientdGCAlias(r.Context(), gcid, req.Alias); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -334,7 +334,7 @@ func BisonrelayGCResendListHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	if err := rpc.BrclientdGCResendList(r.Context(), gcid, req.UID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		brWriteErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

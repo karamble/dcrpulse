@@ -32,3 +32,28 @@ func respondDaemonError(w http.ResponseWriter, r *http.Request, component servic
 	}
 	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
+
+// respondUpstreamError writes the HTTP response for a failed call to an upstream
+// daemon the dashboard proxies over HTTP/gRPC (bisonw, brclientd). A connectivity
+// failure (daemon down or still starting) becomes a friendly 503 with a
+// log-derived message; any other (app-level) error stays a 502 with the raw text,
+// matching prior behavior and keeping it debuggable.
+func respondUpstreamError(w http.ResponseWriter, component services.LogComponent, err error) {
+	if services.IsDaemonUnreachable(err) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		http.Error(w, services.DaemonStartupHint(ctx, component).Message, http.StatusServiceUnavailable)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusBadGateway)
+}
+
+// dexWriteErr and brWriteErr are component-bound shortcuts for respondUpstreamError
+// so the many bisonw / brclientd handler call sites need no extra import.
+func dexWriteErr(w http.ResponseWriter, err error) {
+	respondUpstreamError(w, services.LogComponentDcrdex, err)
+}
+
+func brWriteErr(w http.ResponseWriter, err error) {
+	respondUpstreamError(w, services.LogComponentBrclientd, err)
+}
