@@ -146,7 +146,14 @@ func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
 		defer checkCancel()
 
 		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
-		if err == nil && chainInfo.InitialBlockDownload {
+		if err != nil {
+			// dcrd is unreachable (down, starting, or running a database
+			// upgrade). Surface that rather than a confusing wallet error.
+			if services.IsDaemonUnreachable(err) {
+				respondDaemonError(w, r, services.LogComponentDcrd, err)
+				return
+			}
+		} else if chainInfo.InitialBlockDownload {
 			// Wallet RPC cannot serve data until dcrd finishes its IBD.
 			http.Error(w, "The Decred node is still downloading the blockchain. Your wallet will be available once the node finishes syncing.", http.StatusServiceUnavailable)
 			return
@@ -156,7 +163,7 @@ func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
 	status, err := services.FetchWalletStatus()
 	if err != nil {
 		log.Printf("Error fetching wallet status: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		respondDaemonError(w, r, services.LogComponentDcrwallet, err)
 		return
 	}
 
@@ -177,7 +184,14 @@ func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
 		defer checkCancel()
 
 		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
-		if err == nil && chainInfo.InitialBlockDownload {
+		if err != nil {
+			// dcrd is unreachable (down, starting, or running a database
+			// upgrade). Surface that rather than a confusing wallet error.
+			if services.IsDaemonUnreachable(err) {
+				respondDaemonError(w, r, services.LogComponentDcrd, err)
+				return
+			}
+		} else if chainInfo.InitialBlockDownload {
 			// Wallet RPC cannot serve data until dcrd finishes its IBD.
 			http.Error(w, "The Decred node is still downloading the blockchain. Your wallet will be available once the node finishes syncing.", http.StatusServiceUnavailable)
 			return
@@ -211,7 +225,7 @@ func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(res.data)
 				return
 			}
-			http.Error(w, res.err.Error(), http.StatusInternalServerError)
+			respondDaemonError(w, r, services.LogComponentDcrwallet, res.err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

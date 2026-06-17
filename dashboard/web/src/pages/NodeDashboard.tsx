@@ -44,7 +44,8 @@ export const NodeDashboard = () => {
     } catch (err: any) {
       console.error('Error fetching dashboard data:', err);
       if (err.response?.status === 503) {
-        setError('RPC client not connected. Please configure the connection below.');
+        const serverMsg = typeof err.response.data === 'string' ? err.response.data.trim() : '';
+        setError(serverMsg || 'RPC client not connected. Please configure the connection below.');
       } else {
         setError(err.message || 'Failed to fetch data');
       }

@@ -26,11 +26,17 @@ services:
     networks:
       - decred-network
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -k -u ${DCRD_RPC_USER:-decred}:${DCRD_RPC_PASS:-decredpass} -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"1.0\",\"method\":\"getinfo\",\"params\":[],\"id\":1}' https://127.0.0.1:9109 || exit 1"]
+      # Healthy when the RPC answers, OR when the node is busy running a one-time
+      # database upgrade/reindex at startup (RPC is not up yet during that, but the
+      # node is working, not broken). The upgrade markers are read from dcrd's own
+      # log. This lets the stack come up during an upgrade so the dashboard can show
+      # "database upgrade in progress" instead of depends_on aborting it.
+      test: ["CMD", "sh", "-c", "curl -k -u ${DCRD_RPC_USER:-decred}:${DCRD_RPC_PASS:-decredpass} -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"1.0\",\"method\":\"getinfo\",\"params\":[],\"id\":1}' https://127.0.0.1:9109 >/dev/null 2>&1 && exit 0; tail -n 80 /app-data/dcrd/logs/*/dcrd.log 2>/dev/null | grep -qiE 'upgrading database|upgrading utxo|upgrading spend journal|migrating database|migrating utxo|migrating versioning|reindexing|creating and storing gcs filters' && exit 0; exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 120s
+      start_interval: 10s
     deploy:
       resources:
         limits:
