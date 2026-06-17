@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toYMD, toYMDTime } from '../../utils/date';
 import {
   AlertCircle,
@@ -100,6 +100,10 @@ type ActiveTarget =
   | { kind: 'contact'; value: BisonrelayContact }
   | { kind: 'group'; value: BisonrelayGC };
 
+// Max pixel height the auto-growing message composer reaches before it scrolls
+// internally. Keep in sync with the textarea's max-h-[9rem] class (9rem = 144px).
+const COMPOSER_MAX_PX = 144;
+
 export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
   const [contactsErr, setContactsErr] = useState<string | null>(null);
@@ -178,7 +182,16 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     return { [ARCHIVED_GROUP_ID]: true };
   });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const draftInputRef = useRef<HTMLInputElement | null>(null);
+  const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Grow the composer to fit its content up to COMPOSER_MAX_PX, then let it
+  // scroll. Re-runs when the draft changes (typing, paste, and the reset to ''
+  // after a send) and when the active chat changes (the textarea may remount).
+  useLayoutEffect(() => {
+    const el = draftInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_PX)}px`;
+  }, [draft, selected]);
   const {
     unread,
     clearUnread,
@@ -1476,7 +1489,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   <AlertCircle className="h-3 w-3" /> {attachErr}
                 </p>
               )}
-              <div className="flex items-center gap-2">
+              <div className="flex items-end gap-2">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1492,14 +1505,20 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 >
                   <Paperclip className="h-4 w-4" />
                 </button>
-                <input
+                <textarea
                   ref={draftInputRef}
-                  type="text"
+                  rows={1}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
                   placeholder="Type a message…"
                   disabled={sending}
-                  className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-background border border-border text-foreground leading-normal resize-none overflow-y-auto max-h-[9rem] focus:outline-none focus:border-primary disabled:opacity-50"
                 />
                 <button
                   type="submit"
