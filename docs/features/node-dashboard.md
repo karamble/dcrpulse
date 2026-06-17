@@ -2,48 +2,49 @@
 
 The **Node Dashboard** provides comprehensive real-time monitoring of your Decred node (`dcrd`), including blockchain status, network health, peer connections, mempool activity, and supply statistics.
 
-## 📊 Overview
+## Overview
 
 The Node Dashboard is the default view when you open Decred Pulse. It displays critical node metrics at a glance and updates automatically every 30 seconds.
 
-**Access**: Open `http://localhost:3000` or click the **"Node Dashboard"** button in the header.
+**Access**: Open `http://localhost:8080` or click the **"Node"** button in the header. The header nav links are Node, Wallet, Explorer, Treasury, Bison Relay, and DEX.
 
 ---
 
-## 🎯 Dashboard Components
+## Dashboard Components
 
 ### 1. Node Status Card
 
-Displays the current sync status and version information of your `dcrd` node.
+Displays the current sync status and version information of your `dcrd` node. The card header reads "Node Status" with a "Decred <version>" subtitle and a status badge.
 
 #### Status Indicators
 
-**Connected** ✅
-- Node is running and responding
+**Fully Synced**
+- Node is running, responding, and caught up to the chain tip
 - RPC connection established
 - Ready for use
 
-**Syncing** 🔄
-- Initial blockchain download in progress
+**Syncing**
+- Initial blockchain download or catch-up in progress
 - Shows sync progress percentage
-- Displays current sync phase
+- Displays the current sync message
 
-**Error** ❌
-- RPC connection failed
+**Stopped**
 - Node not responding
 - Configuration issue
+
+**Connecting...**
+- Default/unknown state shown before the first status is known
 
 #### Sync Progress
 
 During initial sync:
 ```
-┌────────────────────────────────────────────┐
-│  🔄 Syncing Blockchain                     │
-│  ━━━━━━━━━━━━━━━━░░░░░░░░  68%            │
-│                                            │
-│  Downloading blocks: 1,016,234 / 1,016,401│
-│  ~2 hours remaining                        │
-└────────────────────────────────────────────┘
++--------------------------------------------+
+|  Syncing Blockchain                  68%   |
+|  [================........]                |
+|                                            |
+|  Processing blocks: 1,016,234 / 1,016,401  |
++--------------------------------------------+
 ```
 
 **Sync Phases**:
@@ -58,108 +59,51 @@ During initial sync:
 #### Version Information
 
 Displays:
-- **dcrd version**: e.g., "2.0.6"
-- **Protocol version**: Network protocol version
-- **Build info**: Compilation details
+- **dcrd version**: e.g., "2.0.6", shown as the card subtitle ("Decred 2.0.6")
+
+The same version also appears in the "Version" badge in the header.
 
 ---
 
-### 2. Blockchain Information Card
+### 2. Recent Blocks Card
 
-Core blockchain metrics and current state.
+Lists the most recently mined blocks (newest first). It is titled "Recent Blocks" with a "Latest mined blocks" subtitle.
 
-#### Block Height
-**Current Block**: Latest block number
-```
-Block Height: 1,016,401
-```
+Each row shows:
+- **Block height**: e.g., "Block #1,016,401"
+- **Block hash**: First 16 characters, shown in monospace
+- **Time ago**: How long since the block was mined (for example "2m ago")
 
-**What it means**:
-- Total blocks in the chain
-- Increases every ~5 minutes
-- Must match network consensus
+Each row links to that block's page in the built-in [Explorer](explorer.md) (`/explorer/block/<height>`).
 
-**Health Check**: Compare with [dcrdata.org](https://dcrdata.org)
+**Health Check**: Compare the latest height with a public explorer such as [dcrdata.org](https://dcrdata.org).
 
 ---
 
-#### Block Hash
-**Best Block Hash**: Hash of the current tip
-```
-Block Hash: 000000000000000000abc123...
-```
+### 3. Network Metrics Grids
 
-**What it means**:
-- Unique identifier for latest block
-- Changes with each new block
-- Used for verification
+The page shows two rows of metric cards.
 
-**Usage**: Verify your node is on the correct chain
+**First row** (four cards):
+- **Circulating Supply** - total DCR mined and distributed, with a "DCR of 21 million" subtitle (max supply 21,000,000 DCR)
+- **Network Peers** - count of connected peer nodes
+- **Block Height** - latest block number
+- **Network Hashrate** - estimated total network proof-of-work power
 
----
-
-#### Difficulty
-**Mining Difficulty**: Current PoW difficulty
-```
-Difficulty: 223,847,291.45
-```
-
-**What it means**:
-- How hard it is to mine a block
-- Adjusts every 12 hours (144 blocks)
-- Higher = more network hashrate
-
-**Impact**: Indicates network security level
-
----
-
-#### Chain Size
-**Blockchain Size**: Disk space used
-```
-Chain Size: 8.45 GB
-```
-
-**What it means**:
-- Total blockchain data size
-- Grows over time
-- Includes blocks and indexes
-
-**Planning**: Ensure adequate disk space
-- Current: ~10 GB
-- Growth: ~2-3 GB per year
-
----
-
-#### Average Block Time
-**Block Time**: Average time between blocks
-```
-Block Time: 4m 52s
-```
-
-**Target**: 5 minutes per block
-
-**What it means**:
-- Network timing health
-- Should be close to 5 minutes
-- Variance is normal
-
-**Concern if**: Consistently > 10 minutes (network issue)
-
----
-
-### 3. Network Metrics Grid
-
-Four key network statistics displayed as metric cards.
+**Second row**:
+- **Treasury Balance** - Decred DAO treasury balance ("Self-funded from block reward")
+- **Supply Staked** - total DCR locked in tickets, with a "% of supply" indicator
+- **Ticket Pool** - a wider card covering the live ticket pool (see below)
 
 #### Circulating Supply
 **Total DCR in circulation**
 ```
-┌─────────────────────────┐
-│ 💰 Circulating Supply   │
-│                         │
-│    15,234,567.89 DCR    │
-│    of 21 million        │
-└─────────────────────────┘
++-------------------------+
+|  Circulating Supply     |
+|                         |
+|    15,234,567.89 DCR    |
+|    DCR of 21 million    |
++-------------------------+
 ```
 
 **What it is**: Total DCR mined and distributed
@@ -173,24 +117,24 @@ Four key network statistics displayed as metric cards.
 
 ---
 
-#### Staked Supply
+#### Supply Staked
 **DCR locked in tickets**
 ```
-┌─────────────────────────┐
-│ 🔒 Staked Supply        │
-│                         │
-│    6,123,456.78 DCR     │
-│    40.2% of supply      │
-└─────────────────────────┘
++-------------------------+
+|  Supply Staked          |
+|                         |
+|    6,123,456.78 DCR     |
+|    40.2% of supply      |
++-------------------------+
 ```
 
 **What it is**: Total DCR in active tickets
 
 **Calculation**:
 ```
-Staked = Pool Size × Ticket Price
-       = 40,960 × ~293 DCR
-       ≈ 12,001,280 DCR
+Staked = Pool Size x Ticket Price
+       = 40,960 x ~293 DCR
+       ~ 12,001,280 DCR
 ```
 
 **Percentage**:
@@ -200,15 +144,15 @@ Staked = Pool Size × Ticket Price
 
 ---
 
-#### Treasury Size
+#### Treasury Balance
 **Decred Treasury Balance**
 ```
-┌─────────────────────────┐
-│ 🏦 Treasury Size        │
-│                         │
-│    890,123.45 DCR       │
-│    Self-funded          │
-└─────────────────────────┘
++-------------------------+
+|  Treasury Balance       |
+|                         |
+|    890,123.45 DCR       |
+|    Self-funded          |
++-------------------------+
 ```
 
 **What it is**: Decred DAO treasury
@@ -219,84 +163,76 @@ Staked = Pool Size × Ticket Price
 - Contractor payments
 - Community projects
 
-**Funding**: 10% of block reward
+**Funding**: A share of each block reward
 
 **Governance**: Stakeholders vote on spending
 
 ---
 
-#### Exchange Rate
-**Current DCR Price**
+#### Network Hashrate
+**Estimated network proof-of-work power**
 ```
-┌─────────────────────────┐
-│ 💵 Exchange Rate        │
-│                         │
-│    $32.45 USD           │
-│    ↑ 2.3% (24h)         │
-└─────────────────────────┘
++-------------------------+
+|  Network Hashrate       |
+|                         |
+|    Total network power  |
++-------------------------+
 ```
 
-**What it is**: Current DCR/USD price
+**What it is**: Estimated total hashing power securing the chain
 
-**Source**: External price API
+**Significance**: Higher = more proof-of-work security
 
-**Note**: May be delayed or unavailable
+---
+
+#### Ticket Pool
+**Live ticket pool summary** (wider card)
+
+Shows the current pool size with an "At Target / Above Target / Below Target" badge (target 40,960), the current ticket price, the expected next price (with an up/down arrow), and the time until the next price adjustment.
 
 ---
 
 ### 4. Network Peers Card
 
-Lists all connected peer nodes with detailed statistics.
+Lists the connected peer nodes. The card header reads "Connected Peers" with a "<count> Active" badge and an "Active network connections" subtitle. It scrolls when there are many peers.
 
 #### Peer Information
 
 Each peer displays:
 
-**Address** 🌐
-- IP address and port
-- Geographic location (if known)
-- Connection type (inbound/outbound)
+**Address**
+- IP address and port, or ".onion" address for a Tor peer
+- Tor peers show a purple onion icon; inbound Tor peers read "Inbound via Tor (<address>)"
 
-**Version** 🔢
-- Peer's dcrd version
-- Protocol compatibility
-- User agent string
+**Version**
+- Peer's dcrd version, shown as "dcrd <version>"
 
-**Latency** ⚡
-- Round-trip time (RTT)
-- Measured in milliseconds
-- Lower = better connection
+**Ping**
+- Round-trip latency
 
-**Connected Time** ⏱️
-- Duration of connection
-- Format: "2h 34m" or "5d 12h"
-- Longer = more stable
+**Up**
+- How long the connection has been open (for example "2h 34m" or "5d 12h")
 
-**Traffic** 📊
-- Data sent/received
-- Upload/download ratio
-- Total bytes transferred
+**Traffic**
+- Data sent/received over the connection
 
-**Sync Node** 🎯
-- Primary sync peer indicator
-- Used for block download
-- Changes based on performance
+**Sync Node**
+- The current sync peer is marked with a star icon and a "SYNC" badge
 
 #### Example Peer List
 
 ```
-┌──────────────────────────────────────────────────┐
-│ 🌐 Connected Peers (12)                          │
-├──────────────────────────────────────────────────┤
-│ 192.0.2.1:9108                        🎯 Sync    │
-│ dcrd:2.0.6 │ 45ms │ 2h 34m │ ↑ 1.2 MB ↓ 45.6 MB │
-│                                                  │
-│ 198.51.100.42:9108                               │
-│ dcrd:2.0.5 │ 89ms │ 5d 12h │ ↑ 5.6 MB ↓ 120 MB  │
-│                                                  │
-│ 203.0.113.15:9108                                │
-│ dcrd:2.0.6 │ 67ms │ 1h 08m │ ↑ 0.8 MB ↓ 12.3 MB │
-└──────────────────────────────────────────────────┘
++--------------------------------------------------+
+|  Connected Peers                  12 Active      |
++--------------------------------------------------+
+| * 192.0.2.1:9108                          SYNC   |
+|   dcrd 2.0.6                                      |
+|   Ping: 45ms   Up: 2h 34m   Traffic: 45.6 MB     |
+|                                                  |
+|   198.51.100.42:9108                             |
+|   dcrd 2.0.5                                      |
+|   Ping: 89ms   Up: 5d 12h   Traffic: 120 MB      |
++--------------------------------------------------+
 ```
 
 #### Peer Count
@@ -345,7 +281,7 @@ Pool Size: 41,095 tickets
 Locked DCR: 12,012,456.00 DCR
 ```
 
-- Calculation: Pool Size × Ticket Price
+- Calculation: Pool Size x Ticket Price
 - Represents total staking commitment
 - Typically 40-60% of supply
 
@@ -365,10 +301,12 @@ Participation Rate: 52.3%
 
 Real-time mempool transaction statistics.
 
-#### Transaction Count
-**Pending Transactions**
+The card header reads "Mempool Activity" with a "Current pending transactions" subtitle and a "Details" link to the mempool view (`/explorer/mempool`).
+
+#### Pending Transactions
+**Total unconfirmed transactions**
 ```
-Size: 18 transactions
+Pending Transactions: 18
 ```
 
 **What it is**: Unconfirmed transactions
@@ -383,63 +321,60 @@ Size: 18 transactions
 #### Mempool Size
 **Data Size**
 ```
-Bytes: 16,160 bytes
+Mempool Size: 16.16 KB
 ```
 
-**What it is**: Total mempool data
+**What it is**: Total mempool data (auto-formatted as B, KB, or MB)
 
 **Usage**: Indicates transaction volume
 
 #### Transaction Breakdown
 
-**Regular Transactions** 💸
-- Standard DCR transfers
-- P2PKH, P2SH transactions
-- Most common type
+When there is activity, transactions are grouped into two sections. Only non-zero categories are shown.
 
-**Ticket Purchases** 🎫
-- Stake submission outputs
-- Calculate from stake difficulty
-- Entering ticket pool
+**Staking Activity**
+- **Tickets**: Stake submissions entering the ticket pool
+- **Votes**: SSGen transactions (tickets that have voted)
+- **Revocations**: SSRtx transactions (expired/missed ticket recovery)
 
-**Votes** ✅
-- SSGen transactions
-- Tickets that have voted
-- Block validation
-
-**Revocations** ❌
-- SSRtx transactions
-- Expired ticket recovery
-- Funds being returned
+**Regular Transactions**
+- **Regular**: Standard DCR transfers
+- **CoinJoin**: Mixed (CoinJoin) transactions
 
 #### Example Display
 
 ```
-┌────────────────────────────────────┐
-│ 📊 Mempool Activity                │
-├────────────────────────────────────┤
-│ Total: 18 transactions (16.2 KB)  │
-│                                    │
-│ 💸 Regular:      15                │
-│ 🎫 Tickets:      15                │
-│ ✅ Votes:        5                 │
-│ ❌ Revocations:  0                 │
-└────────────────────────────────────┘
++------------------------------------+
+|  Mempool Activity        Details   |
++------------------------------------+
+| Pending Transactions: 18           |
+| Mempool Size: 16.16 KB             |
+|                                    |
+| Staking Activity                   |
+|   Tickets: 15   Votes: 5           |
+|                                    |
+| Regular Transactions               |
+|   Regular: 15   CoinJoin: 2        |
++------------------------------------+
 ```
 
 ---
 
-## 🔄 Auto-Refresh
+## Auto-Refresh
 
 Dashboard automatically refreshes every **30 seconds**.
 
 ### Refresh Behavior
 
 **Automatic**:
-- Fetches new data every 30s
+- Fetches new data every 30s from `/api/dashboard`
 - Updates all components
 - Preserves scroll position
 - No page reload
+
+**Live sync progress**:
+- While the node is syncing, the status bar also updates in real time over a WebSocket (`/api/node/sync/stream`), which is smoother than the 30s poll
+- The 30s poll remains authoritative: once it reports the node is no longer syncing, the live frame is dropped
 
 **Manual**:
 - Refresh browser (F5)
@@ -457,8 +392,9 @@ To change the 30-second interval:
 
 **Frontend Configuration**:
 ```typescript
-// frontend/src/pages/NodeDashboard.tsx
+// dashboard/web/src/pages/NodeDashboard.tsx
 useEffect(() => {
+  fetchData();
   const interval = setInterval(fetchData, 30000); // Change to desired ms
   return () => clearInterval(interval);
 }, []);
@@ -471,72 +407,73 @@ useEffect(() => {
 
 ---
 
-## 🎨 Dashboard Layout
+## Dashboard Layout
 
 ### Desktop Layout
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Header: Node Dashboard | Wallet Dashboard      │
-├─────────────────────────────────────────────────┤
-│  Node Status Card (full width)                  │
-├───────────┬───────────┬───────────┬─────────────┤
-│ Circ.     │ Staked    │ Treasury  │ Exchange    │
-│ Supply    │ Supply    │ Size      │ Rate        │
-├───────────┴───────────┴───────────┴─────────────┤
-│  Blockchain Information Card                    │
-├─────────────────────────┬───────────────────────┤
-│  Network Peers          │  Staking Statistics   │
-│  (Scrollable list)      │  (Network-wide)       │
-├─────────────────────────┴───────────────────────┤
-│  Mempool Activity Card                          │
-├─────────────────────────────────────────────────┤
-│  Last updated: 2025-10-06 12:34:56             │
-└─────────────────────────────────────────────────┘
++-------------------------------------------------+
+|  Header: Node | Wallet | Explorer | Treasury    |
+|          Bison Relay | DEX | Version            |
++-------------------------------------------------+
+|  Node Status Card (full width)                  |
++-----------+-----------+-----------+-------------+
+| Circ.     | Network   | Block     | Network     |
+| Supply    | Peers     | Height    | Hashrate    |
++-----------+-----------+-----------+-------------+
+| Treasury  | Supply    | Ticket Pool             |
+| Balance   | Staked    | (wide card)             |
++-----------+-----------+-------------------------+
+|  Recent Blocks          |  Staking Statistics   |
++-------------------------+-----------------------+
+|  Mempool Activity       |  Network Peers        |
+|                         |  (scrollable list)    |
++-------------------------+-----------------------+
 ```
 
 ### Mobile Layout
 
 Stacks vertically:
 1. Node Status
-2. Metric Cards (2 columns)
-3. Blockchain Info
-4. Network Peers
-5. Staking Stats
+2. Metric cards (1-2 columns)
+3. Treasury Balance / Supply Staked / Ticket Pool
+4. Recent Blocks
+5. Staking Statistics
 6. Mempool Activity
+7. Network Peers
 
 ---
 
-## 🔍 Monitoring Best Practices
+## Monitoring Best Practices
 
 ### Daily Checks
 
-✅ **Node Status**: Ensure "Connected" and synced  
-✅ **Block Height**: Compare with network  
-✅ **Peer Count**: 8+ peers connected  
-✅ **Sync Progress**: 100% if not initial sync
+ **Node Status**: Ensure "Fully Synced"
+ **Block Height**: Compare with network
+ **Peer Count**: 8+ peers connected
+ **Sync Progress**: 100% if not initial sync
 
 ### Weekly Checks
 
-✅ **Disk Space**: Sufficient for growth (~10 GB current)  
-✅ **Peer Latency**: Reasonable ping times (< 500ms)  
-✅ **Mempool Size**: Not consistently full  
-✅ **Version**: Check for dcrd updates
+ **Disk Space**: Sufficient for growth (mainnet chain is ~30 GB and rising)
+ **Peer Latency**: Reasonable ping times (< 500ms)
+ **Mempool Size**: Not consistently full
+ **Version**: Check for dcrd updates
 
 ### Monthly Checks
 
-✅ **Performance**: Response times acceptable  
-✅ **Bandwidth**: Within expected limits  
-✅ **Logs**: Review for errors or warnings  
-✅ **Backups**: Verify blockchain data backups
+ **Performance**: Response times acceptable
+ **Bandwidth**: Within expected limits
+ **Logs**: Review for errors or warnings
+ **Backups**: Verify blockchain data backups
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### Dashboard Shows "RPC Not Connected"
+### Dashboard Shows "RPC client not connected"
 
-**Problem**: Cannot connect to dcrd node
+**Problem**: Cannot connect to dcrd node (the dashboard shows a red error banner, for example "RPC client not connected. Please configure the connection below.")
 
 **Solutions**:
 
@@ -560,12 +497,12 @@ Stacks vertically:
 4. **Review logs**:
    ```bash
    docker compose logs dcrd
-   docker compose logs backend
+   docker compose logs dashboard
    ```
 
 5. **Restart services**:
    ```bash
-   docker compose restart dcrd backend
+   docker compose restart dcrd dashboard
    ```
 
 ---
@@ -634,7 +571,7 @@ Stacks vertically:
 
 5. **Check Docker network**:
    ```bash
-   docker network inspect decred-pulse_decred-network
+   docker network inspect dcrpulse_decred-network
    ```
 
 ---
@@ -658,13 +595,15 @@ Stacks vertically:
    docker compose restart dcrd
    ```
 
-4. **Reindex blockchain** (last resort):
+4. **Re-sync the chain** (last resort):
    ```bash
-   docker compose down dcrd
-   docker volume rm dcrd-data
+   docker compose stop dcrd
+   # dcrd chain data lives under the shared app-data volume at /app-data/dcrd.
+   # Removing it forces a full re-sync; it does not touch wallet data.
+   docker run --rm -v dcrpulse_app-data:/data alpine sh -c 'rm -rf /data/dcrd'
    docker compose up -d dcrd
    ```
-   ⚠️ **Warning**: Requires full re-sync
+ **Warning**: Requires a full re-sync (several hours)
 
 ---
 
@@ -684,7 +623,7 @@ Stacks vertically:
 
 3. **Review memory usage**:
    ```bash
-   docker stats decred-pulse-dcrd
+   docker stats dcrpulse-dcrd
    ```
 
 4. **Check for dcrd errors**:
@@ -694,11 +633,11 @@ Stacks vertically:
 
 ---
 
-## 📊 Understanding Metrics
+## Understanding Metrics
 
 ### Circulating Supply
 
-**Formula**: 
+**Formula**:
 ```
 Circulating Supply = Total Mined - Treasury - Unmined
 ```
@@ -713,7 +652,7 @@ Circulating Supply = Total Mined - Treasury - Unmined
 
 **Formula**:
 ```
-Staked % = (Pool Size × Ticket Price) / Circulating Supply × 100
+Staked % = (Pool Size x Ticket Price) / Circulating Supply x 100
 ```
 
 **Healthy Range**: 45-60%
@@ -726,7 +665,7 @@ Staked % = (Pool Size × Ticket Price) / Circulating Supply × 100
 
 **Formula**:
 ```
-Hashrate = (Difficulty × 2^32) / Block Time
+Hashrate = (Difficulty x 2^32) / Block Time
 ```
 
 **Units**: TH/s (terahashes per second)
@@ -735,27 +674,27 @@ Hashrate = (Difficulty × 2^32) / Block Time
 
 ---
 
-## 🔐 Security Indicators
+## Security Indicators
 
 ### Healthy Node Signs
 
-✅ **Synced**: 100% sync progress  
-✅ **Connected**: 8+ peers  
-✅ **Updated**: Latest dcrd version  
-✅ **Stable**: Uptime > 24 hours  
-✅ **Responsive**: Low latency peers
+ **Synced**: 100% sync progress
+ **Connected**: 8+ peers
+ **Updated**: Latest dcrd version
+ **Stable**: Uptime > 24 hours
+ **Responsive**: Low latency peers
 
 ### Warning Signs
 
-⚠️ **Stuck Sync**: Progress not moving  
-⚠️ **No Peers**: Isolated from network  
-⚠️ **High Latency**: Slow peer connections  
-⚠️ **Old Version**: Outdated dcrd  
-⚠️ **Fork Risk**: Different block hash than network
+ **Stuck Sync**: Progress not moving
+ **No Peers**: Isolated from network
+ **High Latency**: Slow peer connections
+ **Old Version**: Outdated dcrd
+ **Fork Risk**: Different block hash than network
 
 ---
 
-## 🚀 Performance Optimization
+## Performance Optimization
 
 ### Faster Sync
 
@@ -773,27 +712,27 @@ Hashrate = (Difficulty × 2^32) / Block Time
 
 ---
 
-## 📚 Related Documentation
+## Related Documentation
 
-- **[Quick Start](../quickstart.md)** - Initial setup
-- **[Docker Setup](../docker-setup.md)** - Docker configuration
+- **[Quick Start](../getting-started/installation.md)** - Initial setup
+- **[Docker Setup](../getting-started/installation.md)** - Docker configuration
 - **[Staking Guide](staking-guide.md)** - Staking information
 - **[API Reference](../api/api-reference.md)** - API endpoints
 - **[Troubleshooting](../guides/troubleshooting.md)** - Common issues
 
 ---
 
-## ✅ Node Health Checklist
+## Node Health Checklist
 
 ### Pre-Flight Check
 - [ ] Docker/dcrd installed
 - [ ] RPC credentials configured
 - [ ] Firewall allows port 9108
-- [ ] Sufficient disk space (15+ GB)
-- [ ] Backend started successfully
+- [ ] Sufficient disk space (80+ GB recommended)
+- [ ] Dashboard container started successfully
 
 ### Running Status
-- [ ] Node status shows "Connected"
+- [ ] Node status shows "Fully Synced"
 - [ ] Sync progress at 100%
 - [ ] Peer count: 8+
 - [ ] Block height matches network
@@ -808,5 +747,5 @@ Hashrate = (Difficulty × 2^32) / Block Time
 
 ---
 
-**Questions?** Check the [FAQ](../reference/faq.md) or [Troubleshooting Guide](../guides/troubleshooting.md)
+**Questions?** Check the [FAQ](../guides/troubleshooting.md) or [Troubleshooting Guide](../guides/troubleshooting.md)
 

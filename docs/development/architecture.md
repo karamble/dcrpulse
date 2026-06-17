@@ -2,81 +2,94 @@
 
 Technical overview of Decred Pulse architecture, component design, data flow, and integration patterns.
 
-## 📐 High-Level Architecture
+## High-Level Architecture
+
+The React frontend is built to static files and embedded into the Go binary, so a
+single "dashboard" service serves both the user interface and the JSON API on one
+port (8080). It talks to a set of Decred daemons over their respective RPC
+interfaces, all on a private Docker bridge network. An optional Tor proxy routes
+outbound daemon traffic when enabled.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                          User's Browser                          │
-│                     (React SPA - Port 3000)                      │
+│                          (React SPA)                             │
 └──────────────────────┬───────────────────────────────────────────┘
-                       │ HTTP/JSON (REST API)
+                       │ HTTP/JSON + WebSocket (same origin)
                        │
 ┌──────────────────────▼───────────────────────────────────────────┐
-│                      Go Backend API                              │
-│                       (Port 8080)                                │
+│                  dashboard (Go, Port 8080)                       │
+│        Serves embedded React UI  +  /api JSON endpoints          │
 │  ┌──────────────┬──────────────┬──────────────┬───────────────┐ │
-│  │   Handlers   │   Services   │    Types     │   RPC Client  │ │
+│  │   Handlers   │   Services   │     RPC      │  Middleware   │ │
 │  └──────────────┴──────────────┴──────────────┴───────────────┘ │
-└──────────────────────┬──────────────────────┬────────────────────┘
-                       │ JSON-RPC              │ JSON-RPC
-                       │                       │
-          ┌────────────▼────────────┐  ┌──────▼───────────┐
-          │     dcrd Node           │  │   dcrwallet      │
-          │   (Port 9108/9109)      │  │   (Port 9110)    │
-          │ ┌─────────────────────┐ │  │ ┌──────────────┐ │
-          │ │  Blockchain Data    │ │  │ │ Wallet DB    │ │
-          │ │   (~10 GB Docker    │ │  │ │              │ │
-          │ │      Volume)        │ │  │ └──────────────┘ │
-          │ └─────────────────────┘ │  └──────────────────┘
-          │                         │
-          │  P2P Network (Port 9108)│
-          └────────────┬────────────┘
-                       │
-                       │ Decred P2P Protocol
-                       │
-          ┌────────────▼────────────┐
-          │   Decred Network        │
-          │   (Global P2P)          │
-          └─────────────────────────┘
+└───┬──────────┬──────────┬──────────┬──────────┬──────────────────┘
+    │ JSON-RPC │ JSON-RPC │  gRPC    │  RPC     │  RPC
+    │  + gRPC  │          │          │          │
+┌───▼────┐ ┌───▼──────┐ ┌─▼──────┐ ┌─▼────────┐ ┌─▼──────────┐
+│  dcrd  │ │dcrwallet │ │ dcrlnd │ │brclientd │ │  dcrdex    │
+│ 9108/  │ │ 9110 RPC │ │ 10009  │ │7676 RPC  │ │ (bisonw)   │
+│ 9109   │ │ 9111 grpc│ │ gRPC   │ │7677 stat │ │ 5757/5758  │
+└───┬────┘ └──────────┘ └────────┘ └──────────┘ └────────────┘
+    │
+    │ Decred P2P Protocol (Port 9108)
+    │
+┌───▼─────────────────────┐        ┌─────────────────────────┐
+│   Decred Network        │        │   tor (SOCKS 9050,      │
+│   (Global P2P)          │        │   control 9051)         │
+└─────────────────────────┘        └─────────────────────────┘
 ```
+
+All daemons depend, directly or indirectly, on dcrd being healthy. dcrwallet
+backs dcrlnd and dcrdex; brclientd builds on dcrlnd. The dashboard reaches every
+daemon by its service name on the bridge network.
 
 ---
 
-## 🎯 Component Overview
+## Component Overview
 
 ### Frontend (React + TypeScript)
 
-**Purpose**: User interface for monitoring and managing Decred node and wallet
+**Purpose**: User interface for monitoring and managing a Decred node, wallet,
+Lightning, Bison Relay, and DCRDEX
 
 **Technology Stack**:
 - **Framework**: React 18
 - **Language**: TypeScript
 - **Build Tool**: Vite
-- **Styling**: Tailwind CSS
-- **HTTP Client**: Axios
+- **Styling**: Tailwind CSS (CSS-variable theming)
+- **HTTP Client**: Axios (plus native fetch for some streams)
 - **Icons**: Lucide React
 - **Routing**: React Router DOM
 
-**Architecture Pattern**: Component-based with service layer
+**Architecture Pattern**: Component-based with a service layer
 
-**Location**: `/frontend/`
+**Location**: `dashboard/web/src/`
+
+**Build output**: `dashboard/web/dist/`. This directory is copied into the Go
+build (`dashboard/cmd/dcrpulse/web/dist`) and embedded into the binary via
+`go:embed`. There is no separate frontend container and no separate frontend
+port in production - the Go binary serves the built SPA.
 
 ---
 
 ### Backend (Go API)
 
-**Purpose**: Bridge between frontend and Decred RPC services
+**Purpose**: Bridge between the frontend and the Decred RPC services; also serves
+the embedded frontend
 
 **Technology Stack**:
-- **Language**: Go 1.21+
+- **Language**: Go 1.26
 - **Router**: Gorilla Mux
-- **RPC Client**: dcrd rpcclient v8
-- **CORS**: rs/cors
+- **RPC Client**: dcrd rpcclient v8 (plus dcrwallet gRPC and dcrlnd gRPC)
+- **WebSockets**: Gorilla WebSocket
 - **Concurrency**: Goroutines and channels
 
-**Architecture Pattern**: Layered architecture (Handlers → Services → RPC)
+**Architecture Pattern**: Layered architecture (Handlers -> Services -> RPC)
 
-**Location**: `/backend/`
+**Location**: `dashboard/internal/` (handlers, services, rpc, config, middleware,
+auth, types, utils, timestamp, dexassets) and `dashboard/cmd/dcrpulse/main.go`
+for the entry point. Shared helper packages live under `dashboard/pkg/`.
 
 ---
 
@@ -89,11 +102,11 @@ Technical overview of Decred Pulse architecture, component design, data flow, an
 - P2P networking
 - Block validation
 - Transaction relay
-- RPC interface
+- RPC interface (consumed by the dashboard, dcrwallet, and tooling)
 
 **Built From**: Official dcrd source (GitHub)
 
-**Version**: Configurable (default: master, recommended: release tags)
+**Version**: Pinned via the `DCRD_VERSION` build arg (default: `release-v2.1.5`)
 
 ---
 
@@ -110,9 +123,64 @@ Technical overview of Decred Pulse architecture, component design, data flow, an
 
 **Built From**: Official dcrwallet source (GitHub)
 
+**Interfaces**: JSON-RPC (9110) and gRPC (9111, used for streaming sync/rescan)
+
 ---
 
-## 🔄 Data Flow
+### dcrlnd (Lightning)
+
+**Purpose**: Decred Lightning Network daemon
+
+**Functionality**:
+- Lightning channels (open/close, balances)
+- Payments and invoices
+- Channel and graph queries
+
+**Interface**: gRPC (10009), backed by dcrwallet's gRPC. Powers the Lightning
+section of the dashboard.
+
+---
+
+### brclientd (Bison Relay)
+
+**Purpose**: Headless Bison Relay client daemon
+
+**Functionality**:
+- Encrypted messaging, group chats, and posts over the relay
+- File transfers, paid content, pages/storefront
+- Realtime voice/text (RTDT) session control
+
+**Interfaces**: clientrpc (7676) and a status server (7677). The dashboard
+prefers the status-server REST endpoints; brclientd builds on dcrlnd for LN
+payments.
+
+---
+
+### dcrdex / bisonw (DEX)
+
+**Purpose**: Decred DEX client (bisonw) run backend-only (no built-in web UI)
+
+**Functionality**:
+- Order placement and trade lifecycle
+- Multi-asset wallets
+- Market-maker bot management
+
+**Interfaces**: RPC (5757) and a WebSocket feed (5758). The dashboard renders a
+native full-width DEX experience against these.
+
+---
+
+### tor (Proxy)
+
+**Purpose**: Optional Tor proxy for outbound daemon traffic and onion services
+
+**Interfaces**: SOCKS proxy (9050) and control port (9051). Toggled at runtime;
+when enabled, daemons route through it via the `TOR_PROXY_IP`/`TOR_PROXY_PORT`
+environment variables.
+
+---
+
+## Data Flow
 
 ### Node Dashboard Data Flow
 
@@ -123,7 +191,7 @@ Technical overview of Decred Pulse architecture, component design, data flow, an
        │ 1. GET /api/dashboard
        │
 ┌──────▼──────────────────────────────────────┐
-│            Backend API                      │
+│            dashboard (backend)              │
 │                                             │
 │  2. GetDashboardDataHandler                 │
 │         │                                   │
@@ -156,6 +224,10 @@ Technical overview of Decred Pulse architecture, component design, data flow, an
 └─────────────┘
 ```
 
+Node sync progress is additionally pushed over a WebSocket
+(`/api/node/sync/stream`) and refreshed on dcrd block-connected notifications
+rather than a fixed poll interval.
+
 ---
 
 ### Wallet Dashboard Data Flow
@@ -167,7 +239,7 @@ Technical overview of Decred Pulse architecture, component design, data flow, an
        │ 1. GET /api/wallet/dashboard
        │
 ┌──────▼──────────────────────────────────────┐
-│            Backend API                      │
+│            dashboard (backend)              │
 │                                             │
 │  2. GetWalletDashboardHandler              │
 │         │                                   │
@@ -211,7 +283,7 @@ Technical overview of Decred Pulse architecture, component design, data flow, an
        │    Body: {xpub, gapLimit}
        │
 ┌──────▼──────────────────────────────────────┐
-│            Backend API                      │
+│            dashboard (backend)              │
 │                                             │
 │  2. ImportXpubHandler                       │
 │         │                                   │
@@ -240,7 +312,7 @@ Technical overview of Decred Pulse architecture, component design, data flow, an
        │ (Every 2s)
        │
 ┌──────▼──────────────────────────────────────┐
-│            Backend API                      │
+│            dashboard (backend)              │
 │                                             │
 │  9. GetSyncProgressHandler                  │
 │         │                                   │
@@ -272,23 +344,26 @@ Technical overview of Decred Pulse architecture, component design, data flow, an
 └─────────────┘
 ```
 
+A real-time gRPC-backed stream is also available
+(`/api/wallet/grpc/stream-rescan`) for live rescan progress.
+
 ---
 
-## 📦 Backend Layer Architecture
+## Backend Layer Architecture
 
-### Layer 1: Handlers (`backend/handlers/`)
+### Layer 1: Handlers (`dashboard/internal/handlers/`)
 
 **Responsibility**: HTTP request handling and response formatting
 
-**Files**:
-- `node.go` - Node/dcrd endpoints
-- `wallet.go` - Wallet/dcrwallet endpoints
+**Files**: One file per feature area, for example `node.go`, `wallet.go`,
+`lightning.go`, `bisonrelay*.go`, `dcrdex*.go`, `explorer.go`, `treasury.go`,
+`auth.go`, `tor.go`, `timestamp.go`.
 
 **Functions**:
 - Parse HTTP requests
 - Validate input
 - Call service layer
-- Format JSON responses
+- Format JSON responses (or upgrade to WebSocket/SSE for streams)
 - Handle errors
 
 **Example**:
@@ -300,7 +375,7 @@ func GetDashboardDataHandler(w http.ResponseWriter, r *http.Request) {
         http.Error(w, err.Error(), http.StatusInternalServerError)
         return
     }
-    
+
     // Return JSON
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(data)
@@ -309,19 +384,19 @@ func GetDashboardDataHandler(w http.ResponseWriter, r *http.Request) {
 
 ---
 
-### Layer 2: Services (`backend/services/`)
+### Layer 2: Services (`dashboard/internal/services/`)
 
 **Responsibility**: Business logic and RPC orchestration
 
-**Files**:
-- `node.go` - Node data fetching and processing
-- `wallet.go` - Wallet data fetching and processing
+**Files**: Feature-oriented files (node, wallet, staking, governance, lightning,
+bisonrelay, dcrdex, treasury, explorer, and the wallet sync supervisor among
+others).
 
 **Functions**:
-- Make RPC calls
-- Process/transform data
+- Make RPC/gRPC calls
+- Process/transform data (atoms-to-DCR conversion happens here, not the frontend)
 - Aggregate multiple RPC responses
-- Handle concurrency
+- Handle concurrency and long-lived streams
 - Error handling
 
 **Example**:
@@ -329,15 +404,15 @@ func GetDashboardDataHandler(w http.ResponseWriter, r *http.Request) {
 func FetchDashboardData() (*types.DashboardData, error) {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
-    
+
     // Concurrent RPC calls
     results := make(chan result, 5)
-    
+
     go fetchNodeStatus(ctx, results)
     go fetchBlockchainInfo(ctx, results)
     go fetchPeers(ctx, results)
     // ... more goroutines
-    
+
     // Aggregate results
     return aggregateResults(results), nil
 }
@@ -345,13 +420,13 @@ func FetchDashboardData() (*types.DashboardData, error) {
 
 ---
 
-### Layer 3: Types (`backend/types/`)
+### Layer 3: Types (`dashboard/internal/types/`)
 
 **Responsibility**: Data structure definitions
 
-**Files**:
-- `node.go` - Node-related types
-- `wallet.go` - Wallet-related types
+**Files**: `node.go`, `wallet.go`, `staking.go`, `governance.go`, `lightning.go`,
+`explorer.go`, `treasury.go`, `settings.go`, `themes.go`, `tor.go`,
+`wallet_loader.go`.
 
 **Structures**:
 ```go
@@ -369,17 +444,19 @@ type DashboardData struct {
 
 ---
 
-### Layer 4: RPC Client (`backend/rpc/`)
+### Layer 4: RPC Clients (`dashboard/internal/rpc/`)
 
-**Responsibility**: RPC connection management
+**Responsibility**: RPC/gRPC connection management for every daemon
 
-**File**: `client.go`
+**Files**: `client.go` (dcrd + dcrwallet), `dcrd_notify.go` (dcrd notification
+websocket), `dcrlnd_client.go`, `brclientd_client.go`, `brclientd_ws.go`,
+`dcrdex_client.go`, and `tlspin.go` (certificate pinning).
 
 **Functions**:
-- Initialize RPC connections
-- Maintain connection state
-- Handle reconnection
-- Provide RPC client instances
+- Initialize RPC/gRPC connections (lazily for daemons that generate certs on
+  first run)
+- Maintain connection state and reconnect
+- Provide client instances to the service layer
 
 **Global Variables**:
 ```go
@@ -389,57 +466,80 @@ var (
 )
 ```
 
----
-
-### Layer 5: Utilities (`backend/utils/`)
-
-**Responsibility**: Helper functions
-
-**File**: `formatters.go`
-
-**Functions**:
-- Format DCR amounts
-- Format byte sizes
-- Format time durations
-- Parse configuration
+Clients are initialized in `main.go` from environment variables, and re-dialed on
+demand (for example after a wallet switch or once a locked daemon is unlocked).
 
 ---
 
-## 🎨 Frontend Architecture
+### Layer 5: Config, Middleware, Auth, Utilities
+
+**`dashboard/internal/config/`** - per-wallet and global configuration, data
+paths, and the active-wallet pointer.
+
+**`dashboard/internal/middleware/`** (`security.go`) - `SecurityHeaders` (CSP and
+hardening headers), `RequireSameOrigin`, `LimitJSONBody`, and `RateLimit`.
+
+**`dashboard/internal/auth/`** (`auth.go`) - the optional app-password gate and
+its `RequireAuth` middleware (off by default; pass-through when disabled).
+
+**`dashboard/internal/utils/`** (`formatters.go`) - formatting helpers (DCR
+amounts, byte sizes, durations).
+
+**`dashboard/internal/timestamp/`** - dcrtime timestamp worker. **`dexassets/`** -
+generated DEX asset catalog. **`dashboard/pkg/`** - shared helpers (`bisonw`,
+`exchangerate`).
+
+---
+
+## Frontend Architecture
 
 ### Component Structure
 
+The frontend is a single-page app routed by React Router. Top-level pages live in
+`dashboard/web/src/pages/`, reusable and feature components in
+`dashboard/web/src/components/` (grouped by area: `wallet/`, `lightning/`,
+`staking/`, `governance/`, `bisonrelay/`, `onchain/`, `settings/`, `auth/`), and
+API integration in `dashboard/web/src/services/`.
+
 ```
 src/
-├── App.tsx                   # Main app component, routing
+├── App.tsx                   # Routes + layout shell
 ├── main.tsx                  # Entry point
 │
-├── components/               # Reusable UI components
-│   ├── NodeStatus.tsx       # Node sync status card
-│   ├── MetricCard.tsx       # Generic metric display
-│   ├── BlockchainInfo.tsx   # Blockchain data card
-│   ├── PeersList.tsx        # Peer connections list
-│   ├── StakingStats.tsx     # Staking statistics
-│   ├── MempoolActivity.tsx  # Mempool transaction breakdown
-│   ├── AccountInfo.tsx      # Wallet account summary
-│   ├── AccountsList.tsx     # Detailed accounts list
-│   ├── TransactionHistory.tsx # Wallet transactions
-│   ├── TicketPoolInfo.tsx   # Network ticket pool
-│   ├── MyTicketsInfo.tsx    # Personal tickets
-│   ├── ImportXpubModal.tsx  # Xpub import dialog
-│   ├── Header.tsx           # App header/navigation
-│   ├── WalletStatus.tsx     # Wallet connection status
-│   └── RPCConnection.tsx    # RPC connection form
+├── pages/                    # Page-level components, e.g.
+│   ├── NodeDashboard.tsx    # Node monitoring (route: /)
+│   ├── WalletDashboard.tsx  # Wallet hub (route: /wallet)
+│   ├── AccountsPage.tsx     # Accounts
+│   ├── StakingPage.tsx      # Staking (sub-tabs)
+│   ├── GovernancePage.tsx   # Consensus/Treasury/Proposals
+│   ├── LightningPage.tsx    # Lightning (sub-tabs)
+│   ├── PrivacyPage.tsx      # Mixer / privacy
+│   ├── TimestampPage.tsx    # dcrtime timestamping
+│   ├── ExplorerLanding.tsx  # Block explorer
+│   ├── GovernanceDashboard.tsx # Treasury (route: /treasury)
+│   ├── DexPage.tsx          # DCRDEX (route: /dex)
+│   └── SettingsPage.tsx     # Settings (sub-tabs)
 │
-├── pages/                    # Page-level components
-│   ├── NodeDashboard.tsx    # Node monitoring page
-│   └── WalletDashboard.tsx  # Wallet management page
+├── components/               # Reusable + feature UI
+│   ├── Header.tsx           # App header/navigation
+│   ├── Footer.tsx           # Daemon version footer
+│   ├── wallet/ lightning/ staking/ governance/
+│   ├── bisonrelay/          # Bison Relay (route: /br)
+│   ├── onchain/ settings/ auth/
+│   └── ...
 │
 ├── services/                 # API integration layer
-│   └── api.ts               # Axios client, API functions
+│   ├── api.ts               # Axios client, core API functions
+│   ├── lightningApi.ts dcrdexApi.ts bisonrelayApi.ts ...
+│   └── themes/              # CSS-variable theming
 │
 └── index.css                 # Global styles (Tailwind)
 ```
+
+Top-level routes (see `App.tsx`): `/` (Node), `/wallet` and its nested sections
+(dashboard, accounts, staking, governance, lightning, privacy, timestamp,
+transactions, settings, select), `/explorer/*`, `/treasury`, `/br` (Bison Relay),
+and `/dex` (DCRDEX).
 
 ---
 
@@ -447,9 +547,10 @@ src/
 
 **Pattern**: Component-level state with React hooks
 
-**No global state library**: Keep it simple, use props and local state
+**No global state library**: Keep it simple, use props and local/context state
 
-**Data fetching**: `useEffect` + `useState` pattern
+**Data fetching**: `useEffect` + `useState` pattern, with WebSocket/SSE
+subscriptions for live data (sync progress, chat, mixer, DEX feeds)
 
 **Example**:
 ```typescript
@@ -468,7 +569,7 @@ useEffect(() => {
       setLoading(false);
     }
   };
-  
+
   fetchData();
   const interval = setInterval(fetchData, 30000); // Auto-refresh
   return () => clearInterval(interval);
@@ -479,17 +580,20 @@ useEffect(() => {
 
 ### API Service Layer
 
-**File**: `frontend/src/services/api.ts`
+**File**: `dashboard/web/src/services/api.ts`
 
 **Purpose**: Centralized API communication
 
-**Pattern**: Axios instance with typed responses
+**Pattern**: Axios instance with typed responses. The base URL is the relative
+path `/api` (same origin as the served SPA), and requests send credentials so the
+optional app-password session cookie is included.
 
 **Example**:
 ```typescript
 const api = axios.create({
-  baseURL: 'http://localhost:8080/api',
-  timeout: 10000,
+  baseURL: '/api',
+  timeout: 25000,
+  withCredentials: true, // send the app-password session cookie (same-origin)
 });
 
 export const getDashboardData = async (): Promise<DashboardData> => {
@@ -506,59 +610,72 @@ export const importXpub = async (xpub: string, gapLimit: number) => {
 };
 ```
 
+During local development the Vite dev server (port 3000) proxies `/api` to the Go
+backend on `localhost:8080`, so the frontend still uses the same relative path.
+
 ---
 
-## 🔌 Communication Protocols
+## Communication Protocols
 
-### Frontend ↔ Backend
+### Frontend <-> Backend
 
-**Protocol**: HTTP/REST
+**Protocol**: HTTP/REST and WebSocket (live streams)
 
 **Format**: JSON
 
-**Method**: Axios HTTP requests
+**Method**: Axios / native fetch; Gorilla WebSocket for streams
 
-**Endpoints**: `/api/*`
+**Endpoints**: `/api/*`, served from the same origin as the SPA
 
-**Authentication**: None (localhost only)
+**Authentication**: Optional app-password gate (`RequireAuth`). Disabled by
+default; when enabled, a signed HttpOnly session cookie protects every `/api`
+route except the login handshake.
 
-**CORS**: Enabled for local development
+**Origin protection**: `RequireSameOrigin` rejects cross-origin state-changing
+requests; WebSocket upgrades use the same host check.
 
 ---
 
-### Backend ↔ dcrd
+### Backend <-> dcrd
 
-**Protocol**: JSON-RPC over HTTP/HTTPS
+**Protocol**: JSON-RPC over HTTPS (plus a notification WebSocket)
 
-**Format**: JSON-RPC 2.0
-
-**Port**: 9109 (RPC)
+**Port**: 9109 (RPC); 9108 is dcrd's P2P port
 
 **Authentication**: Username + Password (RPC credentials)
 
-**TLS**: Self-signed certificate
+**TLS**: Self-signed certificate (shared via the app-data volume)
 
-**Client**: `github.com/decred/dcrd/rpcclient`
+**Client**: `github.com/decred/dcrd/rpcclient/v8`
 
 ---
 
-### Backend ↔ dcrwallet
+### Backend <-> dcrwallet
 
-**Protocol**: JSON-RPC over HTTP/HTTPS
-
-**Format**: JSON-RPC 2.0
-
-**Port**: 9110 (Wallet RPC)
+**Protocol**: JSON-RPC over HTTPS (9110) and gRPC (9111, for streaming)
 
 **Authentication**: Username + Password (separate credentials)
 
 **TLS**: Self-signed certificate
 
-**Client**: `github.com/decred/dcrd/rpcclient` (wallet mode)
+**Client**: `github.com/decred/dcrd/rpcclient/v8` (wallet mode) and a gRPC client
 
 ---
 
-### dcrd ↔ Decred Network
+### Backend <-> dcrlnd / brclientd / dcrdex
+
+**dcrlnd**: gRPC on 10009, authenticated with TLS cert + macaroon.
+
+**brclientd**: clientrpc (7676) and status server (7677) over mutually
+authenticated TLS; the dashboard prefers the status-server REST endpoints.
+
+**dcrdex (bisonw)**: RPC on 5757 and a WebSocket feed on 5758, both over TLS with
+credentials. Certificates are generated by each daemon on first run and pinned by
+the dashboard (`rpc/tlspin.go`).
+
+---
+
+### dcrd <-> Decred Network
 
 **Protocol**: Decred P2P wire protocol
 
@@ -570,56 +687,83 @@ export const importXpub = async (xpub: string, gapLimit: number) => {
 
 ---
 
-## 🐳 Docker Architecture
+## Docker Architecture
 
 ### Container Orchestration
 
 **Tool**: Docker Compose
 
-**Network**: Bridge network (`decred-pulse_decred-network`)
+**Network**: Bridge network (`decred-network`)
 
-**Volumes**: 
-- `dcrd-data` - Persistent blockchain (~10 GB)
-- `dcrwallet-data` - Wallet database
-- `certs` - Shared RPC certificates
+**Services**: `dcrd`, `dcrwallet`, `dcrlnd`, `brclientd`, `dcrdex`, `tor`, and
+`dashboard`. The dashboard is the only service that publishes a user-facing port
+(8080) and serves both the UI and the API.
+
+**Volumes** (named, host-pathable via env):
+- `app-data` - shared daemon data (dcrd chain, dcrwallet, dcrd rpc cert), mounted
+  read-write by the daemons that own it and read-only where appropriate
+- `dcrlnd-data` - dcrlnd state
+- `brclientd-data` - Bison Relay state
+- `dcrdex-data` - DEX (bisonw) state
+- `dashboard-data` - dashboard config (themes, auth, settings)
+- `tor-data` - Tor state and onion keys
+
+dcrd's blockchain is the largest consumer of disk (the mainnet chain is about 30 GB and growing).
 
 ---
 
 ### Container Dependencies
 
 ```
-┌─────────────┐
-│   frontend  │ (No dependencies, but needs backend)
-└─────────────┘
+                ┌──────────────┐
+                │     tor      │ (depends_on: dcrd started)
+                └──────────────┘
 
-┌─────────────┐
-│   backend   │ (Depends on: dcrd, dcrwallet health)
-└──────┬──────┘
-       │
-   ┌───▼────┐
-   │  dcrd  │ (Independent, but backend waits for health)
-   └────────┘
+┌──────────────┐
+│     dcrd     │ (root of the dependency tree; healthcheck-gated)
+└──────┬───────┘
+       │ service_healthy
+   ┌───▼────────┐
+   │ dcrwallet  │ (depends_on: dcrd healthy)
+   └───┬────────┘
+       │ service_healthy
+   ┌───▼────────┐
+   │  dcrlnd    │ (depends_on: dcrwallet healthy)
+   └───┬────────┘
+       │ service_started
+   ┌───▼────────┐
+   │ brclientd  │ (depends_on: dcrlnd started)
+   └────────────┘
 
-   ┌─────────────┐
-   │  dcrwallet  │ (Depends on: dcrd)
-   └─────────────┘
+┌──────────────┐
+│   dcrdex     │ (no compose dependency; waits on wallet at runtime)
+└──────────────┘
+
+┌──────────────┐
+│  dashboard   │ (depends_on: dcrd healthy AND dcrwallet healthy)
+└──────────────┘
 ```
 
 **Health Checks**:
-- dcrd: RPC `getblockcount` response
-- dcrwallet: RPC `walletinfo` response
-- backend: HTTP `/api/health` response
-- frontend: Nginx response
+- dcrd: RPC `getinfo` answers, OR the log shows a one-time database
+  upgrade/reindex in progress (so the stack can come up during an upgrade)
+- dcrwallet: a freshly written control state file (supervisor heartbeat)
+- dashboard, dcrlnd, brclientd, dcrdex, tor: no compose-level healthcheck; the
+  dashboard exposes `/api/health` for external probes
 
 ---
 
 ### Build Process
 
-**Multi-stage builds**:
-1. **Builder stage**: Compile from source
-2. **Runtime stage**: Minimal image with binary
+**Dashboard build (multi-stage)**:
+1. **Frontend stage** (`node:18-alpine`): `npm install` then `npm run build` to
+   produce `web/dist`
+2. **Go stage** (`golang:1.26-alpine`): copy `web/dist` into
+   `cmd/dcrpulse/web/dist`, then `go build` so the SPA is embedded in the binary
+3. **Runtime stage** (`alpine:latest`): copy the single static binary; it serves
+   both UI and API
 
-**dcrd build**:
+**Daemon builds** (dcrd shown; dcrwallet/dcrlnd analogous):
 ```dockerfile
 # Stage 1: Build from source
 FROM golang:1.26-alpine AS builder
@@ -635,50 +779,68 @@ COPY --from=builder /go/bin/dcrd /usr/local/bin/
 
 ---
 
-## 🔒 Security Architecture
+## Security Architecture
 
 ### Credential Management
 
 **RPC Credentials**:
-- Stored in `.env` file (not committed)
-- Passed as environment variables to containers
-- Never exposed to frontend
-- Self-signed TLS certificates
+- Supplied via the `.env` file (not committed) and environment variables
+- Passed to containers; never exposed to the frontend
+- Daemons use self-signed TLS certificates shared through the app-data volume
 
 **Certificate Handling**:
-- Generated on first run
-- Stored in Docker volume
-- Shared between dcrd, dcrwallet, backend
-- Backend skips verification (local only)
+- Generated on first run by each daemon
+- Stored in Docker volumes and mounted (read-only where the dashboard only reads)
+- The dashboard pins daemon certificates (`rpc/tlspin.go`) rather than skipping
+  verification
+
+---
+
+### Application Gate
+
+**Optional app password**: A single-password gate (`internal/auth`) can be
+enabled to protect the whole API and UI behind a signed, HttpOnly session cookie.
+It is off by default and fails open if its config cannot load, so a broken config
+never locks the user out.
+
+**Request hardening** (`internal/middleware`):
+- `SecurityHeaders` sets a strict Content-Security-Policy plus
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and
+  `Permissions-Policy`
+- `RequireSameOrigin` blocks cross-origin state-changing requests
+- `LimitJSONBody` caps request body sizes
+- `RateLimit` throttles sensitive endpoints (login, wallet switch, rescans,
+  treasury scans)
 
 ---
 
 ### Network Isolation
 
 **Docker Network**:
-- Private bridge network
-- Containers communicate internally
-- Only necessary ports exposed to host
+- Private bridge network; containers communicate by service name
+- Only the dashboard's port is published to the host by default
 
 **Port Exposure**:
-- 3000: Frontend (public)
-- 8080: Backend API (public)
-- 9108: dcrd P2P (public, for peers)
-- 9109: dcrd RPC (localhost only via Docker)
-- 9110: dcrwallet RPC (localhost only via Docker)
+- 8080: dashboard UI + API (published to host)
+- 9108: dcrd P2P (published; bind address configurable, for peers)
+- 9109: dcrd RPC (bound to 127.0.0.1 on the host)
+- 9110 / 9111: dcrwallet RPC / gRPC (bound to 127.0.0.1 on the host)
+- 7677: brclientd status (bound to 127.0.0.1 on the host)
+- Other daemon ports (dcrlnd 10009, brclientd 7676, dcrdex 5757/5758) stay
+  internal to the bridge network
 
 ---
 
 ### Frontend Security
 
-**No sensitive data in frontend**:
-- RPC credentials never sent to browser
-- All RPC calls proxied through backend
-- CORS restricted in production
+**No sensitive data in the frontend**:
+- RPC credentials never reach the browser
+- All daemon RPC calls are proxied through the backend
+- A strict CSP and same-origin checks constrain what the SPA can do
 
 ---
 
-## ⚡ Performance Considerations
+## Performance Considerations
 
 ### Backend Optimization
 
@@ -716,50 +878,47 @@ if err := g.Wait(); err != nil {
 }
 ```
 
-**Timeouts**:
-- RPC calls: 10 seconds
-- HTTP handlers: 30 seconds
-- Wallet operations: 60 seconds
+**Streaming over polling**: Sync progress, rescans, chat, mixer events, and DEX
+feeds are pushed over WebSocket/SSE so the UI updates without tight polling.
+
+**Server timeouts**: `ReadHeaderTimeout` (15s) bounds header reads to defeat
+Slowloris; read/write timeouts are intentionally left unset so long-lived streams
+and large uploads are not cut off. `IdleTimeout` is 120s.
 
 ---
 
 ### Frontend Optimization
 
-**Code Splitting**: Vite handles automatically
+**Code Splitting**: Vite handles route/asset splitting
 
-**Lazy Loading**: Components loaded on demand
+**Lazy Loading**: Heavy components loaded on demand
 
-**Memoization**: React.memo for expensive renders
+**Memoization**: `React.memo` for expensive renders
 
 **Debouncing**: For search/input fields
-
-**Caching**: Axios response caching (if needed)
 
 ---
 
 ### Database Optimization
 
 **dcrd**:
-- LevelDB for blockchain storage
 - Configurable cache (`dbcache`)
-- Transaction indexing optional
+- Transaction indexing optional (default build enables `--txindex`)
 
 **dcrwallet**:
-- BoltDB for wallet storage
-- Address caching
+- Address gap-limit configuration
 - Transaction indexing
 
 ---
 
-## 📊 Monitoring & Observability
+## Monitoring & Observability
 
 ### Logging
 
-**Backend**: Structured logging with Go's `log` package
+**dashboard**: Standard library logging to stdout (captured by Docker)
 
-**dcrd**: Configurable log levels (info, debug, trace)
-
-**dcrwallet**: Separate wallet logs
+**Daemons**: dcrd/dcrwallet/dcrlnd/brclientd/dcrdex write their own logs into
+their data directories; some are surfaced in the UI (wallet logs, mixer events)
 
 **Frontend**: Browser console + network inspector
 
@@ -767,13 +926,13 @@ if err := g.Wait(); err != nil {
 
 ### Health Checks
 
-**Backend**: `/api/health` endpoint
+**dashboard**: `/api/health` endpoint
 
-**dcrd**: RPC `getinfo` call
+**dcrd**: RPC `getinfo` (also used by the compose healthcheck)
 
-**dcrwallet**: RPC `walletinfo` call
+**dcrwallet**: supervisor state-file heartbeat (compose healthcheck)
 
-**Docker**: Built-in health check commands
+**Docker**: Built-in healthcheck commands where defined
 
 ---
 
@@ -793,17 +952,19 @@ if err := g.Wait(); err != nil {
 
 ---
 
-## 🚀 Deployment Architecture
+## Deployment Architecture
 
 ### Development
 
 ```
 Local Machine
-├── Frontend: http://localhost:5173 (Vite dev server)
-├── Backend: http://localhost:8080 (Go binary)
-├── dcrd: Docker container
-└── dcrwallet: Docker container
+├── Frontend: http://localhost:3000 (Vite dev server, proxies /api -> :8080)
+├── dashboard backend: http://localhost:8080 (Go binary)
+├── dcrd, dcrwallet, dcrlnd, brclientd, dcrdex, tor: Docker containers
 ```
+
+In this mode the frontend runs from the Vite dev server for fast iteration; the
+Go binary still serves the embedded build when run on its own.
 
 ---
 
@@ -811,13 +972,16 @@ Local Machine
 
 ```
 Host Machine
-├── dcrd: Docker container
-├── dcrwallet: Docker container
-├── backend: Docker container
-└── frontend: Docker container (Nginx)
+├── dcrd       (Docker container)
+├── dcrwallet  (Docker container)
+├── dcrlnd     (Docker container)
+├── brclientd  (Docker container)
+├── dcrdex     (Docker container)
+├── tor        (Docker container)
+└── dashboard  (Docker container, serves UI + API)
 ```
 
-**Access**: `http://localhost:3000`
+**Access**: `http://localhost:8080`
 
 ---
 
@@ -825,62 +989,55 @@ Host Machine
 
 ```
 Server
-├── Nginx (Reverse Proxy + SSL)
-│   ├── Frontend static files
-│   └── Proxy to Backend API
-├── Backend (Systemd service)
-├── dcrd (Systemd service)
-└── dcrwallet (Systemd service)
+├── Reverse proxy (TLS termination)
+│   └── Proxy to the dashboard service
+├── dashboard (UI + API)
+└── dcrd / dcrwallet / dcrlnd / brclientd / dcrdex / tor
 ```
 
 **Access**: `https://your-domain.com`
 
+When behind a reverse proxy, set `TRUSTED_PROXY=true` so the same-origin checks
+honor `X-Forwarded-Host`.
+
 ---
 
-## 📚 Technology Choices
+## Technology Choices
 
 ### Why Go for Backend?
 
-- ✅ Native dcrd RPC client library
-- ✅ Excellent concurrency (goroutines)
-- ✅ Fast compilation and execution
-- ✅ Strong typing
-- ✅ Low memory footprint
+- Native dcrd RPC client library
+- Excellent concurrency (goroutines)
+- Fast compilation and execution
+- Strong typing
+- Low memory footprint
+- A single static binary that can embed the frontend
 
 ### Why React for Frontend?
 
-- ✅ Component-based architecture
-- ✅ Large ecosystem
-- ✅ TypeScript support
-- ✅ Fast development
-- ✅ Virtual DOM performance
+- Component-based architecture
+- Large ecosystem
+- TypeScript support
+- Fast development
+- Virtual DOM performance
 
 ### Why Docker Compose?
 
-- ✅ Simple orchestration
-- ✅ Reproducible environments
-- ✅ Easy dependency management
-- ✅ Cross-platform compatibility
-- ✅ Development/production parity
+- Simple orchestration
+- Reproducible environments
+- Easy dependency management
+- Cross-platform compatibility
+- Development/production parity
 
 ### Why Tailwind CSS?
 
-- ✅ Utility-first approach
-- ✅ Rapid prototyping
-- ✅ Consistent design system
-- ✅ Small bundle size (purged)
-- ✅ Great documentation
+- Utility-first approach
+- Rapid prototyping
+- Consistent design system (CSS-variable theming for the Themes feature)
+- Small bundle size (purged)
 
 ---
 
-## 📚 Related Documentation
+## Related Documentation
 
-- **[Development Setup](development-setup.md)** - Local development guide
-- **[Backend Guide](backend-guide.md)** - Backend development
-- **[Frontend Guide](frontend-guide.md)** - Frontend development
 - **[API Reference](../api/api-reference.md)** - API documentation
-
----
-
-**Questions?** Check the [Development Setup](development-setup.md) or ask in the [Decred Community](https://decred.org/community/)
-

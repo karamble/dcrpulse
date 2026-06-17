@@ -2,7 +2,7 @@
 
 Complete reference for Makefile commands and Docker Compose operations for managing Decred Pulse.
 
-## 📚 Table of Contents
+## Table of Contents
 
 - [Makefile Commands](#makefile-commands)
 - [Docker Compose Commands](#docker-compose-commands)
@@ -11,7 +11,7 @@ Complete reference for Makefile commands and Docker Compose operations for manag
 
 ---
 
-## 🔨 Makefile Commands
+## Makefile Commands
 
 The `Makefile` provides convenient shortcuts for common operations. All commands are run from the project root directory.
 
@@ -45,7 +45,7 @@ make setup
 ---
 
 #### `make start`
-Start all services (dcrd, dcrwallet, backend, frontend).
+Start all services (dcrd, dcrwallet, dcrlnd, brclientd, dcrdex, tor, dashboard).
 
 ```bash
 make start
@@ -55,7 +55,7 @@ make start
 - Starts all Docker containers
 - Builds images if needed
 - Creates networks and volumes
-- Dashboard available at http://localhost:3000
+- Dashboard available at http://localhost:8080
 
 **Note**: First run takes 5-10 minutes to build dcrd from source
 
@@ -228,10 +228,9 @@ make status
 ```
 === Service Status ===
 NAME                      STATUS      PORTS
-decred-pulse-dcrd         Up          9108-9109
-decred-pulse-dcrwallet    Up          9110
-decred-pulse-backend      Up          8080
-decred-pulse-frontend     Up          3000
+dcrpulse-dcrd         Up          9108-9109
+dcrpulse-dcrwallet    Up          9110
+dcrpulse-dashboard      Up          8080
 
 === dcrd Info ===
 {
@@ -307,7 +306,7 @@ make shell-dcrd
 ---
 
 #### `make shell-backend`
-Open shell in backend container.
+Open shell in the dashboard container.
 
 ```bash
 make shell-backend
@@ -444,7 +443,7 @@ View wallet seed from logs (first-time setup only).
 make wallet-seed
 ```
 
-**⚠️ Security Warning**:
+** Security Warning**:
 - Only works immediately after wallet creation
 - Seed shown in creation logs
 - **Store seed securely offline!**
@@ -461,7 +460,7 @@ word1 word2 word3 ... word33
 
 Hex: abc123...
 
-⚠️  IMPORTANT: Store this seed in a safe place!
+  IMPORTANT: Store this seed in a safe place!
 ============================================
 ```
 
@@ -487,7 +486,7 @@ Creating backup of dcrd data...
 Backup created in backups/dcrd-backup-20251006-123456.tar.gz
 ```
 
-**Backup size**: ~8-10 GB compressed
+**Backup size**: ~30 GB (blockchain data compresses very little)
 
 ---
 
@@ -543,7 +542,7 @@ make restore BACKUP=backups/dcrd-backup-20251006-123456.tar.gz
 - Restores blockchain data from specified backup
 - Restarts services
 
-**⚠️ Warning**: Overwrites existing blockchain data
+** Warning**: Overwrites existing blockchain data
 
 ---
 
@@ -559,7 +558,7 @@ make restore-wallet BACKUP=backups/dcrwallet-backup-20251006-123456.tar.gz
 - Restores wallet data from specified backup
 - Restarts dcrwallet
 
-**⚠️ Warning**: Overwrites existing wallet data
+** Warning**: Overwrites existing wallet data
 
 ---
 
@@ -576,7 +575,7 @@ make clean
 - All networks
 - **ALL DATA PERMANENTLY!**
 
-**⚠️ Confirmation required**: Prompts for `[y/N]`
+** Confirmation required**: Prompts for `[y/N]`
 
 **Use case**: Complete reset, start from scratch
 
@@ -597,7 +596,7 @@ make clean-dcrd
 - Wallet data
 - Backend configuration
 
-**⚠️ Confirmation required**: Prompts for `[y/N]`
+** Confirmation required**: Prompts for `[y/N]`
 
 **Result**: Requires full blockchain re-sync
 
@@ -614,9 +613,9 @@ make clean-dcrwallet
 - Wallet database
 - **Funds are LOST if seed not backed up!**
 
-**⚠️ CRITICAL**: Backup seed before using!
+** CRITICAL**: Backup seed before using!
 
-**⚠️ Confirmation required**: Prompts for `[y/N]`
+** Confirmation required**: Prompts for `[y/N]`
 
 ---
 
@@ -722,7 +721,7 @@ make install-frontend
 
 ---
 
-## 🐳 Docker Compose Commands
+## Docker Compose Commands
 
 Direct Docker Compose commands for more control.
 
@@ -753,7 +752,7 @@ docker compose stop dcrd
 docker compose restart
 
 # Specific service
-docker compose restart backend
+docker compose restart dashboard
 ```
 
 #### View Status
@@ -812,25 +811,25 @@ docker compose build dcrd
 
 #### List Volumes
 ```bash
-docker volume ls | grep decred-pulse
+docker volume ls | grep dcrpulse
 ```
 
 **Output**:
 ```
-decred-pulse_dcrd-data
-decred-pulse_dcrwallet-data
-decred-pulse_certs
+dcrpulse_dcrd-data
+dcrpulse_dcrwallet-data
+dcrpulse_certs
 ```
 
 #### Inspect Volume
 ```bash
-docker volume inspect decred-pulse_dcrd-data
+docker volume inspect dcrpulse_dcrd-data
 ```
 
 #### Remove Volumes
 ```bash
 # Specific volume
-docker volume rm decred-pulse_dcrd-data
+docker volume rm dcrpulse_dcrd-data
 
 # All unused volumes
 docker volume prune
@@ -850,7 +849,7 @@ docker network ls | grep decred
 
 #### Inspect Network
 ```bash
-docker network inspect decred-pulse_decred-network
+docker network inspect dcrpulse_decred-network
 ```
 
 ---
@@ -860,24 +859,24 @@ docker network inspect decred-pulse_decred-network
 #### Execute Command in Container
 ```bash
 # dcrd
-docker exec decred-pulse-dcrd dcrctl --help
+docker exec dcrpulse-dcrd dcrctl --help
 
 # dcrwallet
-docker exec decred-pulse-dcrwallet dcrctl --wallet --help
+docker exec dcrpulse-dcrwallet dcrctl --wallet --help
 
 # backend
-docker exec decred-pulse-backend ls -la
+docker exec dcrpulse-dashboard ls -la
 ```
 
 #### Interactive Shell
 ```bash
-docker exec -it decred-pulse-dcrd /bin/sh
-docker exec -it decred-pulse-backend /bin/sh
+docker exec -it dcrpulse-dcrd /bin/sh
+docker exec -it dcrpulse-dashboard /bin/sh
 ```
 
 #### View Container Details
 ```bash
-docker inspect decred-pulse-dcrd
+docker inspect dcrpulse-dcrd
 ```
 
 #### View Container Resources
@@ -886,12 +885,12 @@ docker inspect decred-pulse-dcrd
 docker stats
 
 # Specific container
-docker stats decred-pulse-dcrd
+docker stats dcrpulse-dcrd
 ```
 
 ---
 
-## 🔧 Direct dcrctl Commands
+## Direct dcrctl Commands
 
 Run `dcrctl` commands directly in containers.
 
@@ -899,7 +898,7 @@ Run `dcrctl` commands directly in containers.
 
 **Format**:
 ```bash
-docker exec decred-pulse-dcrd dcrctl \
+docker exec dcrpulse-dcrd dcrctl \
   --rpcuser=your_user \
   --rpcpass=your_pass \
   --rpcserver=127.0.0.1:9109 \
@@ -950,7 +949,7 @@ getinfo
 
 **Format**:
 ```bash
-docker exec decred-pulse-dcrwallet dcrctl \
+docker exec dcrpulse-dcrwallet dcrctl \
   --wallet \
   --rpcuser=your_user \
   --rpcpass=your_pass \
@@ -999,7 +998,7 @@ walletpassphrase <passphrase> <timeout>
 
 ---
 
-## 📋 Quick Reference
+## Quick Reference
 
 ### Daily Operations
 
@@ -1054,7 +1053,7 @@ make start
 
 # Check connectivity
 curl http://localhost:8080/api/health
-curl http://localhost:3000
+curl http://localhost:8080
 ```
 
 ### Updates
@@ -1087,7 +1086,7 @@ make clean-dcrd    # Node data only
 
 ---
 
-## 💡 Tips & Best Practices
+## Tips & Best Practices
 
 ### Use Aliases
 
@@ -1095,11 +1094,11 @@ Add to your `~/.bashrc` or `~/.zshrc`:
 
 ```bash
 # Decred Pulse shortcuts
-alias dp-start='cd ~/decred-pulse && make start'
-alias dp-stop='cd ~/decred-pulse && make stop'
-alias dp-logs='cd ~/decred-pulse && make logs'
-alias dp-status='cd ~/decred-pulse && make status'
-alias dp-dcrd='cd ~/decred-pulse && make logs-dcrd'
+alias dp-start='cd ~/dcrpulse && make start'
+alias dp-stop='cd ~/dcrpulse && make stop'
+alias dp-logs='cd ~/dcrpulse && make logs'
+alias dp-status='cd ~/dcrpulse && make status'
+alias dp-dcrd='cd ~/dcrpulse && make logs-dcrd'
 ```
 
 ### Tab Completion
@@ -1149,14 +1148,14 @@ docker system prune -a
 
 ---
 
-## 📚 Related Documentation
+## Related Documentation
 
-- **[Quick Start](../quickstart.md)** - Getting started guide
-- **[Docker Setup](../docker-setup.md)** - Complete Docker documentation
+- **[Quick Start](../getting-started/installation.md)** - Getting started guide
+- **[Docker Setup](../getting-started/installation.md)** - Complete Docker documentation
 - **[Troubleshooting](../guides/troubleshooting.md)** - Common issues and solutions
 - **[Configuration](../setup/configuration.md)** - Configuration options
 
 ---
 
-**Need Help?** Check the [FAQ](faq.md) or [Troubleshooting Guide](../guides/troubleshooting.md)
+**Need Help?** Check the [FAQ](../guides/troubleshooting.md) or [Troubleshooting Guide](../guides/troubleshooting.md)
 

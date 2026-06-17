@@ -2,7 +2,7 @@
 
 Complete troubleshooting guide for Decred Pulse. This guide covers common issues with node operations, wallet management, Docker deployment, and general connectivity problems.
 
-## 📋 Quick Diagnostic Steps
+## Quick Diagnostic Steps
 
 When something goes wrong, follow these steps:
 
@@ -17,8 +17,8 @@ When something goes wrong, follow these steps:
    ```
 
 3. **Check connectivity**:
-   - Frontend: `http://localhost:3000`
-   - Backend: `http://localhost:8080/api/health`
+   - Dashboard UI: `http://localhost:8080`
+   - API health: `http://localhost:8080/api/health`
 
 4. **Verify credentials** in `.env` file
 
@@ -26,7 +26,7 @@ When something goes wrong, follow these steps:
 
 ---
 
-## 🔧 Node Issues
+## Node Issues
 
 ### Node Status Shows "RPC Not Connected"
 
@@ -52,7 +52,7 @@ docker compose up -d dcrd
 cat .env | grep DCRD_RPC
 
 # Verify dcrd is using these credentials
-docker exec decred-pulse-dcrd ps aux | grep dcrd
+docker exec dcrpulse-dcrd ps aux | grep dcrd
 ```
 
 **Common mistake**: Mismatched username/password
@@ -66,17 +66,17 @@ nano .env
 DCRD_RPC_USER=your_username
 DCRD_RPC_PASS=your_password
 
-# Restart backend
-docker compose restart backend
+# Restart dashboard
+docker compose restart dashboard
 ```
 
 #### 3. Verify RPC Port
 ```bash
 # Check port 9109 is listening
-docker exec decred-pulse-dcrd netstat -tulpn | grep 9109
+docker exec dcrpulse-dcrd netstat -tulpn | grep 9109
 
 # Should show:
-# tcp    0    0 127.0.0.1:9109    0.0.0.0:*    LISTEN
+# tcp    0    0 0.0.0.0:9109    0.0.0.0:*    LISTEN
 ```
 
 #### 4. Check dcrd Logs
@@ -89,20 +89,20 @@ docker compose logs -f dcrd | tail -50
 # - Any error messages
 ```
 
-#### 5. Check Backend Logs
+#### 5. Check Dashboard Logs
 ```bash
-docker compose logs -f backend | tail -50
+docker compose logs -f dashboard | tail -50
 
 # Look for:
-# - "Starting Decred Dashboard API server"
+# - "Starting dcrpulse Dashboard server"
 # - Connection errors
 # - RPC initialization messages
 ```
 
 #### 6. Restart Services
 ```bash
-# Restart dcrd and backend
-docker compose restart dcrd backend
+# Restart dcrd and the dashboard
+docker compose restart dcrd dashboard
 
 # Wait 30 seconds, then check status
 docker compose ps
@@ -111,11 +111,12 @@ docker compose ps
 #### 7. Check Certificate
 ```bash
 # Verify RPC certificate exists
-docker exec decred-pulse-dcrd ls -la /certs/rpc.cert
+docker exec dcrpulse-dcrd ls -la /app-data/dcrd/rpc.cert
 
-# If missing, regenerate:
-docker compose down dcrd
-docker volume rm decred-pulse_certs
+# If missing, regenerate (dcrd's entrypoint recreates rpc.cert/rpc.key on
+# startup when they are absent, leaving the chain data intact):
+docker compose stop dcrd
+docker exec dcrpulse-dcrwallet rm -f /app-data/dcrd/rpc.cert /app-data/dcrd/rpc.key
 docker compose up -d dcrd
 ```
 
@@ -133,11 +134,11 @@ docker compose up -d dcrd
 #### 1. Check Peer Connections
 ```bash
 # View connected peers
-docker exec decred-pulse-dcrd dcrctl \
+docker exec dcrpulse-dcrd dcrctl \
   --rpcuser=decred \
   --rpcpass=your_password \
   --rpcserver=127.0.0.1:9109 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   getpeerinfo | grep -c '"addr"'
 
 # Should show 5+ peers
@@ -149,7 +150,7 @@ docker exec decred-pulse-dcrd dcrctl \
 docker compose logs dcrd | grep -i "peer\|connect"
 
 # Ensure port 9108 is exposed
-docker port decred-pulse-dcrd
+docker port dcrpulse-dcrd
 ```
 
 #### 2. Verify Disk Space
@@ -157,7 +158,7 @@ docker port decred-pulse-dcrd
 # Check available space
 df -h
 
-# Should have 15+ GB free for mainnet
+# Should have 50+ GB free for mainnet
 ```
 
 **If low on space**:
@@ -172,10 +173,10 @@ sudo apt clean  # Ubuntu/Debian
 #### 3. Check System Resources
 ```bash
 # Check resource usage
-docker stats decred-pulse-dcrd
+docker stats dcrpulse-dcrd
 
 # CPU should be < 100%
-# Memory should be < 2GB
+# Memory should be under ~2GB (dcrd; ~0.8GB typical)
 ```
 
 **If high usage**:
@@ -262,7 +263,7 @@ docker compose restart dcrd
 #### 3. Check Listen Address
 ```bash
 # View dcrd process
-docker exec decred-pulse-dcrd ps aux | grep dcrd
+docker exec dcrpulse-dcrd ps aux | grep dcrd
 
 # dcrd listens on default port 9108 for P2P connections
 ```
@@ -270,7 +271,7 @@ docker exec decred-pulse-dcrd ps aux | grep dcrd
 #### 4. Verify Network Mode
 ```bash
 # Check Docker network
-docker network inspect decred-pulse_decred-network
+docker network inspect dcrpulse_decred-network
 
 # dcrd should be connected
 ```
@@ -301,22 +302,22 @@ telnet YOUR_IP 9108
 curl -s https://dcrdata.org/api/block/best/height
 
 # Compare with your node
-docker exec decred-pulse-dcrd dcrctl \
+docker exec dcrpulse-dcrd dcrctl \
   --rpcuser=decred \
   --rpcpass=your_password \
   --rpcserver=127.0.0.1:9109 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   getblockcount
 ```
 
 #### 2. Check for Forks
 ```bash
 # Get your best block hash
-docker exec decred-pulse-dcrd dcrctl \
+docker exec dcrpulse-dcrd dcrctl \
   --rpcuser=decred \
   --rpcpass=your_password \
   --rpcserver=127.0.0.1:9109 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   getbestblockhash
 
 # Compare with dcrdata.org/block/best
@@ -346,19 +347,21 @@ docker compose logs -f dcrd
 #### 5. Reindex (Last Resort)
 ```bash
 # WARNING: Requires full re-sync (4-8 hours)
+# WARNING: The chain, wallet, and RPC certs all share the dcrpulse_app-data
+# volume, so removing it wipes wallet data too. Back up first.
 
 # Stop and remove data
-docker compose down dcrd
-docker volume rm decred-pulse_dcrd-data
+docker compose down
+docker volume rm dcrpulse_app-data
 
 # Start fresh
-docker compose up -d dcrd
+docker compose up -d
 docker compose logs -f dcrd
 ```
 
 ---
 
-## 💼 Wallet Issues
+## Wallet Issues
 
 ### Wallet Not Connecting
 
@@ -382,8 +385,9 @@ docker compose up -d dcrwallet
 # View credentials
 cat .env | grep DCRWALLET
 
-# Check dcrwallet config
-docker exec decred-pulse-dcrwallet cat /home/dcrwallet/.dcrwallet/dcrwallet.conf | grep rpc
+# Check the credentials dcrwallet was launched with (passed as flags,
+# not a config file)
+docker exec dcrpulse-dcrwallet ps aux | grep dcrwallet
 ```
 
 #### 3. Check Wallet Logs
@@ -400,12 +404,12 @@ docker compose logs -f dcrwallet | tail -50
 #### 4. Verify Wallet is Unlocked
 ```bash
 # Check wallet status
-docker exec decred-pulse-dcrwallet dcrctl \
+docker exec dcrpulse-dcrwallet dcrctl \
   --wallet \
-  --rpcuser=decred \
-  --rpcpass=your_password \
+  --rpcuser=dcrwallet \
+  --rpcpass=your_wallet_password \
   --rpcserver=127.0.0.1:9110 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   walletinfo | grep unlocked
 
 # Should show: "unlocked": true
@@ -414,18 +418,18 @@ docker exec decred-pulse-dcrwallet dcrctl \
 **If locked**:
 ```bash
 # Unlock wallet
-docker exec -it decred-pulse-dcrwallet dcrctl \
+docker exec -it dcrpulse-dcrwallet dcrctl \
   --wallet \
-  --rpcuser=decred \
-  --rpcpass=your_password \
+  --rpcuser=dcrwallet \
+  --rpcpass=your_wallet_password \
   --rpcserver=127.0.0.1:9110 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   walletpassphrase "your_wallet_passphrase" 0
 ```
 
 #### 5. Restart Wallet
 ```bash
-docker compose restart dcrwallet backend
+docker compose restart dcrwallet dashboard
 
 # Wait 30 seconds
 docker compose ps
@@ -462,9 +466,9 @@ echo "your_xpub" | wc -c
 curl http://localhost:8080/api/wallet/status
 ```
 
-#### 4. Review Backend Logs
+#### 4. Review Dashboard Logs
 ```bash
-docker compose logs -f backend | grep -i "xpub\|import"
+docker compose logs -f dashboard | grep -i "xpub\|import"
 
 # Look for detailed error messages
 ```
@@ -472,12 +476,12 @@ docker compose logs -f backend | grep -i "xpub\|import"
 #### 5. Try Manual Import
 ```bash
 # Import via dcrctl
-docker exec -it decred-pulse-dcrwallet dcrctl \
+docker exec -it dcrpulse-dcrwallet dcrctl \
   --wallet \
-  --rpcuser=decred \
-  --rpcpass=your_password \
+  --rpcuser=dcrwallet \
+  --rpcpass=your_wallet_password \
   --rpcserver=127.0.0.1:9110 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   importxpub "account-name" "xpub-key"
 ```
 
@@ -513,8 +517,8 @@ docker compose ps dcrwallet
 
 #### 3. Check for Stale Detection
 ```bash
-# Backend logs
-docker compose logs backend | grep -i "stale\|rescan"
+# Dashboard logs
+docker compose logs dashboard | grep -i "stale\|rescan"
 
 # If "stale" detected, rescan may have completed
 ```
@@ -529,12 +533,12 @@ docker compose restart dcrwallet
 #### 5. Manual Rescan
 ```bash
 # Trigger rescan via dcrctl
-docker exec decred-pulse-dcrwallet dcrctl \
+docker exec dcrpulse-dcrwallet dcrctl \
   --wallet \
-  --rpcuser=decred \
-  --rpcpass=your_password \
+  --rpcuser=dcrwallet \
+  --rpcpass=your_wallet_password \
   --rpcserver=127.0.0.1:9110 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   rescan
 ```
 
@@ -560,10 +564,10 @@ curl http://localhost:8080/api/node/status | jq '.syncProgress'
 #### 1. Increase Gap Limit
 ```bash
 # Current gap limit may be too low
-# Try doubling it: 200 → 400 → 800
+# Try doubling it: 200 -> 400 -> 800
 
 # Re-import xpub with higher gap limit
-# Dashboard → Import Xpub → Enter 500
+# Dashboard -> Import Xpub -> Enter 500
 ```
 
 #### 2. Verify Correct Account
@@ -580,12 +584,12 @@ dcrctl --wallet getmasterpubkey unmixed
 #### 3. Check Address Derivation
 ```bash
 # List addresses in imported account
-docker exec decred-pulse-dcrwallet dcrctl \
+docker exec dcrpulse-dcrwallet dcrctl \
   --wallet \
-  --rpcuser=decred \
-  --rpcpass=your_password \
+  --rpcuser=dcrwallet \
+  --rpcpass=your_wallet_password \
   --rpcserver=127.0.0.1:9110 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   listaddresses
 
 # Compare with source wallet addresses
@@ -652,16 +656,16 @@ curl http://localhost:8080/api/wallet/status | jq '.synced'
 # Check confirmation count
 ```
 
-#### 5. Review Backend Logs
+#### 5. Review Dashboard Logs
 ```bash
-docker compose logs -f backend | grep -i "wallet\|balance"
+docker compose logs -f dashboard | grep -i "wallet\|balance"
 
 # Look for errors fetching wallet data
 ```
 
-#### 6. Restart Backend
+#### 6. Restart Dashboard
 ```bash
-docker compose restart backend
+docker compose restart dashboard
 
 # Wait 30 seconds
 # Refresh dashboard
@@ -669,7 +673,7 @@ docker compose restart backend
 
 ---
 
-## 🐳 Docker Issues
+## Docker Issues
 
 ### Container Won't Start
 
@@ -694,14 +698,13 @@ docker compose logs <service-name>
 # Examples:
 docker compose logs dcrd
 docker compose logs dcrwallet
-docker compose logs backend
-docker compose logs frontend
+docker compose logs dashboard
 ```
 
 #### 3. Check Port Conflicts
 ```bash
 # See if ports are already in use
-sudo netstat -tulpn | grep -E "3000|8080|9108|9109|9110"
+sudo netstat -tulpn | grep -E "8080|9108|9109|9110"
 
 # Kill conflicting processes or change ports in docker-compose.yml
 ```
@@ -747,20 +750,20 @@ docker compose up -d
 #### 1. Check Health Check Logs
 ```bash
 # View health check results
-docker inspect decred-pulse-dcrd | grep -A 10 Health
+docker inspect dcrpulse-dcrd | grep -A 10 Health
 
 # Or for other containers:
-docker inspect decred-pulse-dcrwallet | grep -A 10 Health
+docker inspect dcrpulse-dcrwallet | grep -A 10 Health
 ```
 
 #### 2. Manually Test Health Check
 ```bash
 # dcrd health check (from inside container)
-docker exec decred-pulse-dcrd dcrctl \
+docker exec dcrpulse-dcrd dcrctl \
   --rpcuser=decred \
   --rpcpass=your_password \
   --rpcserver=127.0.0.1:9109 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   getblockcount
 
 # Should return a number
@@ -809,35 +812,25 @@ docker compose ps
 
 #### 1. Identify Process Using Port
 ```bash
-# Find process on port 3000 (frontend)
-sudo lsof -i :3000
-
-# Or port 8080 (backend)
+# Find process on port 8080 (dashboard)
 sudo lsof -i :8080
 
 # Or netstat
-sudo netstat -tulpn | grep 3000
+sudo netstat -tulpn | grep 8080
 ```
 
 #### 2. Kill Conflicting Process
 ```bash
 # Kill by PID
 sudo kill <PID>
-
-# Or killall
-sudo killall -9 node  # For Node.js apps
 ```
 
 #### 3. Change Port in docker-compose.yml
 ```yaml
 services:
-  frontend:
+  dashboard:
     ports:
-      - "3001:80"  # Changed from 3000 to 3001
-
-  backend:
-    ports:
-      - "8081:8080"  # Changed from 8080 to 8081
+      - "8081:8080"  # Changed host port from 8080 to 8081
 ```
 
 #### 4. Stop All Docker Containers
@@ -898,7 +891,7 @@ docker system prune -a --volumes
 docker ps -qa | xargs -I {} docker inspect --format='{{.Name}} {{.LogPath}}' {} | xargs -I {} ls -lh {}
 
 # Clear logs
-truncate -s 0 $(docker inspect --format='{{.LogPath}}' decred-pulse-dcrd)
+truncate -s 0 $(docker inspect --format='{{.LogPath}}' dcrpulse-dcrd)
 ```
 
 #### 4. Move Docker Data Directory
@@ -924,14 +917,15 @@ sudo systemctl start docker
 make backup
 
 # Remove and re-sync (last resort)
+# Note: chain, wallet, and certs share the dcrpulse_app-data volume.
 docker compose down
-docker volume rm decred-pulse_dcrd-data
+docker volume rm dcrpulse_app-data
 docker compose up -d
 ```
 
 ---
 
-## 🌐 Frontend Issues
+## Dashboard UI Issues
 
 ### Dashboard Not Loading
 
@@ -942,16 +936,19 @@ docker compose up -d
 
 **Solutions**:
 
-#### 1. Check Frontend Container
+#### 1. Check Dashboard Container
 ```bash
-docker compose ps frontend
+docker compose ps dashboard
 
 # Should show "Up" status
 ```
 
-#### 2. Test Frontend URL
+The dashboard service serves both the React UI and the API from one Go
+process; there is no separate frontend container.
+
+#### 2. Test the Dashboard URL
 ```bash
-curl http://localhost:3000
+curl http://localhost:8080
 
 # Should return HTML
 ```
@@ -961,32 +958,23 @@ curl http://localhost:3000
 - Check Console tab for errors
 - Check Network tab for failed requests
 
-#### 4. Verify Backend Connection
+#### 4. Verify the API Responds
 ```bash
-# Test backend
+# Test the API
 curl http://localhost:8080/api/health
 
-# Should return: {"status":"healthy"}
+# Should return JSON that includes "status":"healthy"
 ```
 
-#### 5. Check CORS Settings
-```bash
-# Backend logs
-docker compose logs backend | grep -i "cors\|origin"
-
-# CORS should allow frontend origin
-```
-
-#### 6. Clear Browser Cache
+#### 5. Clear Browser Cache
 - Hard refresh: Ctrl+Shift+R
 - Clear cache and cookies
 - Try incognito mode
 
-#### 7. Rebuild Frontend
+#### 6. Rebuild the Dashboard
 ```bash
-docker compose down frontend
-docker compose build --no-cache frontend
-docker compose up -d frontend
+docker compose build --no-cache dashboard
+docker compose up -d dashboard
 ```
 
 ---
@@ -1000,13 +988,10 @@ docker compose up -d frontend
 
 **Solutions**:
 
-#### 1. Verify Backend URL
+#### 1. Verify the API Base URL
 ```bash
-# Check frontend API configuration
-# Should point to correct backend URL
-
-# For Docker: http://localhost:8080/api
-# For production: Update VITE_API_URL
+# The embedded UI calls the API on the same origin it was served from.
+# In a default deployment that is http://localhost:8080/api
 ```
 
 #### 2. Test API Directly
@@ -1028,25 +1013,19 @@ curl http://localhost:8080/api/dashboard
 - Check failed requests
 - View request/response details
 
-#### 4. Check Backend Logs
+#### 4. Check Dashboard Logs
 ```bash
-docker compose logs -f backend | grep -E "GET|POST|ERROR"
+docker compose logs -f dashboard | grep -E "GET|POST|ERROR"
 ```
 
-#### 5. Verify CORS
+#### 5. Restart the Dashboard
 ```bash
-# Backend should allow frontend origin
-docker compose logs backend | grep -i cors
-```
-
-#### 6. Restart Backend
-```bash
-docker compose restart backend frontend
+docker compose restart dashboard
 ```
 
 ---
 
-## 🔐 Authentication Issues
+## Authentication Issues
 
 ### RPC Authentication Failed
 
@@ -1063,10 +1042,10 @@ docker compose restart backend frontend
 cat .env | grep RPC
 
 # Check dcrd command-line args
-docker exec decred-pulse-dcrd ps aux | grep dcrd
+docker exec dcrpulse-dcrd ps aux | grep dcrd
 
-# Check dcrwallet.conf
-docker exec decred-pulse-dcrwallet cat /home/dcrwallet/.dcrwallet/dcrwallet.conf | grep rpc
+# Check dcrwallet command-line args (credentials are passed as flags)
+docker exec dcrpulse-dcrwallet ps aux | grep dcrwallet
 
 # All should match!
 ```
@@ -1108,12 +1087,12 @@ openssl rand -base64 32
 nano .env
 
 # Restart services
-docker compose restart dcrd dcrwallet backend
+docker compose restart dcrd dcrwallet dashboard
 ```
 
 ---
 
-## 🚀 Performance Issues
+## Performance Issues
 
 ### Slow Dashboard Loading
 
@@ -1137,7 +1116,7 @@ docker stats
 
 #### 2. Check Network Latency
 ```bash
-# Test backend response time
+# Test dashboard API response time
 time curl http://localhost:8080/api/health
 
 # Should be < 100ms
@@ -1146,11 +1125,11 @@ time curl http://localhost:8080/api/health
 #### 3. Check RPC Response Time
 ```bash
 # Test dcrd RPC
-time docker exec decred-pulse-dcrd dcrctl \
+time docker exec dcrpulse-dcrd dcrctl \
   --rpcuser=decred \
   --rpcpass=your_password \
   --rpcserver=127.0.0.1:9109 \
-  --rpccert=/certs/rpc.cert \
+  --rpccert=/app-data/dcrd/rpc.cert \
   getblockcount
 
 # Should be < 500ms
@@ -1158,19 +1137,19 @@ time docker exec decred-pulse-dcrd dcrctl \
 
 #### 4. Reduce Polling Frequency
 ```bash
-# Edit frontend polling interval
-# frontend/src/pages/NodeDashboard.tsx
+# Edit the UI polling interval, then rebuild the dashboard
+# dashboard/web/src/pages/NodeDashboard.tsx
 # Change: setInterval(fetchData, 30000) to 60000 (60s)
 ```
 
 #### 5. Optimize Docker
 ```bash
 # Allocate more resources to Docker
-# Docker Desktop → Settings → Resources
+# Docker Desktop -> Settings -> Resources
 # Increase:
 # - CPUs: 2+
 # - Memory: 4GB+
-# - Disk: 20GB+
+# - Disk: 50GB+
 ```
 
 #### 6. Use Faster Disk
@@ -1217,10 +1196,8 @@ services:
     mem_limit: 2g
   dcrwallet:
     mem_limit: 1g
-  backend:
+  dashboard:
     mem_limit: 512m
-  frontend:
-    mem_limit: 256m
 ```
 
 #### 4. Optimize Node Configuration
@@ -1241,7 +1218,7 @@ docker compose restart dcrd
 
 ---
 
-## 📝 Logging Issues
+## Logging Issues
 
 ### Logs Not Showing
 
@@ -1271,10 +1248,10 @@ docker compose logs --tail=50 dcrd
 #### 3. Check Log Files Directly
 ```bash
 # Enter container
-docker exec -it decred-pulse-dcrd sh
+docker exec -it dcrpulse-dcrd sh
 
 # View log file
-cat /home/dcrd/.dcrd/logs/mainnet/dcrd.log
+cat /app-data/dcrd/logs/mainnet/dcrd.log
 
 # Exit
 exit
@@ -1283,7 +1260,7 @@ exit
 #### 4. Check Docker Logging Driver
 ```bash
 # Check Docker config
-docker inspect decred-pulse-dcrd | grep LogConfig -A 5
+docker inspect dcrpulse-dcrd | grep LogConfig -A 5
 
 # Should show json-file driver
 ```
@@ -1320,7 +1297,7 @@ docker ps -qa | xargs -I {} sh -c 'echo -n "{}: "; docker inspect --format="{{.L
 #### 2. Truncate Logs
 ```bash
 # Clear specific container logs
-truncate -s 0 $(docker inspect --format='{{.LogPath}}' decred-pulse-dcrd)
+truncate -s 0 $(docker inspect --format='{{.LogPath}}' dcrpulse-dcrd)
 ```
 
 #### 3. Configure Log Rotation
@@ -1360,7 +1337,7 @@ sudo nano /etc/logrotate.d/docker-containers
 
 ---
 
-## 🆘 Emergency Recovery
+## Emergency Recovery
 
 ### Complete System Reset
 
@@ -1374,12 +1351,16 @@ make backup  # If Makefile available
 docker compose down
 
 # 3. Remove all volumes (WARNING: DELETES DATA!)
-docker volume rm decred-pulse_dcrd-data
-docker volume rm decred-pulse_dcrwallet-data
-docker volume rm decred-pulse_certs
+# app-data holds the dcrd chain, dcrwallet data, and RPC certs.
+docker volume rm dcrpulse_app-data
+docker volume rm dcrpulse_dashboard-data
+docker volume rm dcrpulse_dcrlnd-data
+docker volume rm dcrpulse_brclientd-data
+docker volume rm dcrpulse_dcrdex-data
+docker volume rm dcrpulse_tor-data
 
 # 4. Remove all images
-docker rmi $(docker images -q 'decred-pulse*')
+docker rmi $(docker images -q 'dcrpulse*')
 
 # 5. Clean Docker
 docker system prune -a --volumes
@@ -1399,13 +1380,13 @@ docker compose logs -f
 
 ---
 
-## 📚 Getting More Help
+## Getting More Help
 
 ### Still Stuck?
 
 1. **Check documentation**:
-   - [Quick Start](../quickstart.md)
-   - [Docker Setup](../docker-setup.md)
+   - [Quick Start](../getting-started/installation.md)
+   - [Docker Setup](../getting-started/installation.md)
    - [Wallet Operations](wallet-operations.md)
    - [Node Dashboard](../features/node-dashboard.md)
    - [Wallet Dashboard](../features/wallet-dashboard.md)
@@ -1413,7 +1394,7 @@ docker compose logs -f
 2. **Review logs carefully**:
    ```bash
    # Save logs for review
-   docker compose logs > decred-pulse-logs.txt
+   docker compose logs > dcrpulse-logs.txt
    ```
 
 3. **Search existing issues**:
@@ -1464,5 +1445,5 @@ dcrd container unhealthy after startup
 
 ---
 
-**Questions?** Check the [FAQ](../reference/faq.md) or ask in the [Decred Community](https://decred.org/community/)
+**Questions?** Review the [Installation guide](../getting-started/installation.md) or ask in the [Decred Community](https://decred.org/community/)
 

@@ -2,7 +2,7 @@
 
 Complete guide to managing your Decred wallet through the Decred Pulse dashboard, including importing xpub keys, rescanning the blockchain, and monitoring sync progress.
 
-## 📖 Overview
+## Overview
 
 Wallet operations allow you to:
 - Import extended public keys (xpub) for watch-only monitoring
@@ -12,17 +12,17 @@ Wallet operations allow you to:
 
 ---
 
-## 🔑 Import Extended Public Key (Xpub)
+## Import Extended Public Key (Xpub)
 
 Import an **xpub key** to monitor wallet addresses without private key access. This creates a **watch-only wallet** that can view balances and transactions but cannot spend funds.
 
 ### What is an Xpub Key?
 
 An **Extended Public Key (xpub)** is a master public key that can derive all public addresses for a wallet account. It's safe to share for monitoring purposes because:
-- ✅ Can generate all receiving addresses
-- ✅ Can view all transactions
-- ✅ Cannot spend funds
-- ✅ Cannot access private keys
+- Can generate all receiving addresses
+- Can view all transactions
+- Cannot spend funds
+- Cannot access private keys
 
 **Use cases**:
 - Monitor cold storage wallets
@@ -53,10 +53,10 @@ dpubZF6ScrXjYgjGdVL2FzAWMYpRbWbUk7VJT9JZjNGjqB9p5KMkJyKhGv8xv8riFP8...
 ```
 
 **Security Notes**:
-- ⚠️ Xpub reveals all addresses and transactions
-- ⚠️ Can compromise privacy if shared carelessly
-- ✅ Cannot spend funds (safe for viewing)
-- ✅ Store securely but less critical than private keys
+- Xpub reveals all addresses and transactions
+- Can compromise privacy if shared carelessly
+- Cannot spend funds (safe for viewing)
+- Store securely but less critical than private keys
 
 ---
 
@@ -70,47 +70,41 @@ In the Wallet Dashboard:
 
 #### 3. Enter Xpub Information
 
-**Xpub Key** (required)
+**Extended Public Key (xpub)** (required)
 - Paste your extended public key
-- Starts with `dpub` for Decred
+- Starts with `dpub` for Decred mainnet (or `tpub` for testnet)
 - Long alphanumeric string
 
-**Gap Limit** (required)
-- Default: `200`
-- Range: `20` - `1000`
-- Recommended: `200` for most users
+**Account Name** (required)
+- A friendly name for the new watch-only account
+- 50 characters or fewer
+- Cannot be a reserved name (`mixed`, `unmixed`, `lightning`, `dex`, `imported`)
+- Cannot match an account that already exists
 
-**What is Gap Limit?**
-- Number of consecutive unused addresses to monitor
-- Higher = discovers funds at higher address indices
-- Lower = faster scanning, may miss funds
-
-**When to adjust**:
-- Low balance found: Increase to `500` or `1000`
-- Missing transactions: Increase gap limit
-- Slow scanning: Decrease to `100`
-- Normal use: Keep at `200`
+The import modal does not ask for a gap limit. The address gap limit is a
+wallet-wide setting applied by the `dcrwallet` daemon (see
+[Gap Limit Explained](#gap-limit-explained) below); it is not chosen per import.
 
 ---
 
 #### 4. Import Process
 
-After clicking **"Import"**:
+After clicking **"Import Xpub"**:
 
 1. **Validation** (instant)
-   - Xpub format checked
-   - Gap limit validated
+   - Xpub format checked (must start with `dpub` or `tpub`)
+   - Account name checked (length, reserved names, collisions)
 
 2. **Import** (~1-2 seconds)
-   - Xpub registered with wallet
-   - Account created
+   - Xpub registered with the wallet (`importxpub`)
+   - New watch-only account created
+   - Address usage discovered (`discoverusage`)
 
 3. **Blockchain Rescan** (automatic)
-   - Starts automatically
+   - Starts automatically from block 0
    - Progress bar appears
    - Duration: 5-30 minutes depending on:
      - Blockchain height
-     - Gap limit
      - Transaction count
      - System performance
 
@@ -124,32 +118,32 @@ After clicking **"Import"**:
 ### Import Modal Reference
 
 ```
-┌─────────────────────────────────────────────┐
-│  Import Extended Public Key                 │
-├─────────────────────────────────────────────┤
-│                                             │
-│  Extended Public Key (xpub)                 │
-│  ┌─────────────────────────────────────┐  │
-│  │ dpubZF6ScrX...                      │  │
-│  └─────────────────────────────────────┘  │
-│                                             │
-│  Gap Limit                                  │
-│  ┌─────────────────────────────────────┐  │
-│  │ 200                                 │  │
-│  └─────────────────────────────────────┘  │
-│                                             │
-│  The gap limit determines how many          │
-│  consecutive unused addresses to monitor.   │
-│  Higher values find more transactions but   │
-│  take longer to scan. Recommended: 200      │
-│                                             │
-│         [ Cancel ]    [ Import ]            │
-└─────────────────────────────────────────────┘
++---------------------------------------------+
+|  Import Extended Public Key                 |
++---------------------------------------------+
+|                                             |
+|  Extended Public Key (xpub) *               |
+|  +-------------------------------------+    |
+|  | dpubZF6ScrX...                      |    |
+|  +-------------------------------------+    |
+|                                             |
+|  Account Name *                             |
+|  +-------------------------------------+    |
+|  | savings-xpub                        |    |
+|  +-------------------------------------+    |
+|                                             |
+|  Note: after import, the wallet rescans     |
+|  the blockchain from block 0 to find all    |
+|  historical transactions. This typically    |
+|  takes 5-30 minutes.                        |
+|                                             |
+|         [ Cancel ]    [ Import Xpub ]       |
++---------------------------------------------+
 ```
 
 ---
 
-## 🔄 Wallet Rescan
+## Wallet Rescan
 
 **Rescan** re-examines the blockchain to discover transactions and update balances. This is necessary when:
 - Addresses were used while wallet was offline
@@ -159,13 +153,13 @@ After clicking **"Import"**:
 
 ### When to Rescan
 
-✅ **After importing xpub** (automatic)
-✅ **Increased gap limit** (manual)
-✅ **Missing transactions** (manual)
-✅ **Incorrect balance** (manual)
-✅ **Wallet restored from seed** (automatic in dcrwallet)
+ **After importing xpub** (automatic)
+ **Increased gap limit** (manual)
+ **Missing transactions** (manual)
+ **Incorrect balance** (manual)
+ **Wallet restored from seed** (automatic in dcrwallet)
 
-⚠️ **Not needed for**:
+ **Not needed for**:
 - Regular operation
 - New transactions (auto-detected)
 - Wallet already synced
@@ -189,7 +183,7 @@ After clicking **"Import"**:
 
 **Method 2: CLI** (Advanced)
 ```bash
-dcrctl --wallet rescan
+dcrctl --wallet rescanwallet
 ```
 
 **Method 3: RPC Endpoint**
@@ -216,13 +210,13 @@ curl -X POST http://localhost:8080/api/wallet/rescan \
 
 **What you see**:
 ```
-┌────────────────────────────────────────────┐
-│  Scanning Blockchain                       │
-│  ━━━━━━━━━━━━━━━━━━░░░░░░░░  68%          │
-│                                            │
-│  Block 1,016,234 / 1,016,401              │
-│  Finding your transactions...              │
-└────────────────────────────────────────────┘
++--------------------------------------------+
+|  Scanning Blockchain                       |
+|  [==================--------]  68%         |
+|                                            |
+|  Block 1,016,234 / 1,016,401               |
+|  Finding your transactions...              |
++--------------------------------------------+
 ```
 
 **Duration**:
@@ -239,7 +233,7 @@ curl -X POST http://localhost:8080/api/wallet/rescan \
 
 ---
 
-## 📊 Sync Progress Monitoring
+## Sync Progress Monitoring
 
 Real-time progress tracking during wallet rescan operations.
 
@@ -251,10 +245,10 @@ Real-time progress tracking during wallet rescan operations.
 - **Block Count**: Current / Total
 - **Status Message**: Operation description
 
-#### Smart Polling
-- **Frequency**: Every 2 seconds during active sync
-- **Log Parsing**: Reads `dcrwallet.log` for progress
-- **Stale Detection**: Stops if logs older than 2 minutes
+#### Live Updates
+- **Source**: gRPC rescan stream pushed over a WebSocket
+- **Granularity**: Updates as each block range is scanned
+- **Fallback**: A log-based stream covers daemon-driven rescans
 - **Auto-Hide**: Disappears at 99% completion
 
 #### Dashboard Behavior
@@ -277,7 +271,7 @@ Action: Wait for completion
 **What happens**:
 - Progress bar visible
 - Dashboard cards hidden
-- Backend polls logs every 2s
+- Dashboard streams gRPC rescan progress over a WebSocket
 - Frontend displays real-time updates
 
 ---
@@ -320,54 +314,42 @@ Action: Dashboard refreshes
 
 ### Progress Tracking Technical Details
 
-#### Backend: Log Parsing
-**Location**: `/backend/handlers/wallet.go`
+The dashboard runs a user-initiated rescan over gRPC and streams progress to the
+browser over a WebSocket. A separate log-based stream covers rescans that the
+`dcrwallet` daemon starts on its own (for example, after a restore).
+
+#### Dashboard: rescan stream
+
+**Location**: `dashboard/internal/handlers/wallet.go`
 
 **Process**:
-1. Opens `dcrwallet.log`
-2. Reads last 500 lines
-3. Searches for rescan messages:
-   ```
-   Rescanning blockchain for address...
-   ```
-4. Extracts progress data
-5. Checks timestamp (< 2 minutes = active)
-6. Returns JSON response
+1. Starts the gRPC `Rescan` stream from a begin height (block 0 on xpub import).
+2. Receives `RescanResponse` updates carrying the block height scanned through.
+3. Fans out each update to subscribed WebSocket clients.
+4. Marks the rescan finished when the stream completes.
 
-**Response Example**:
-```json
-{
-  "isRescanning": true,
-  "progress": 68.5,
-  "currentBlock": 1016234,
-  "totalBlocks": 1016401,
-  "message": "Rescanning blockchain..."
-}
-```
+WebSocket endpoints:
+- `/api/wallet/grpc/stream-rescan` - gRPC rescan progress (block height).
+- `/api/wallet/stream-rescan-progress` - log-based progress for daemon-driven rescans.
 
-#### Frontend: Progress Display
-**Location**: `/frontend/src/pages/WalletDashboard.tsx`
+#### Dashboard frontend: progress display
 
-**Process**:
-1. Checks sync status on load
-2. If active: Shows progress, hides cards
-3. Polls every 2 seconds
-4. Updates progress bar
-5. On completion: Hides progress, shows cards
-6. Fetches fresh data
+The wallet view subscribes to the rescan WebSocket, hides the dashboard cards
+while a rescan is active, shows the progress bar, and re-fetches data from
+`/api/wallet/dashboard` once the rescan finishes.
 
 ---
 
-## 🎯 Best Practices
+## Best Practices
 
 ### Import Xpub
-✅ **Do**:
+ **Do**:
 - Use gap limit of 400 for normal wallets
 - Increase to 500-1000 if funds missing
 - Wait for full rescan before using
 - Keep xpub secure (privacy concern)
 
-⚠️ **Don't**:
+ **Don't**:
 - Share xpub publicly (reveals all addresses)
 - Set gap limit too low (may miss transactions)
 - Navigate away during import
@@ -376,13 +358,13 @@ Action: Dashboard refreshes
 ---
 
 ### Wallet Rescan
-✅ **Do**:
+ **Do**:
 - Wait for blockchain sync completion first
 - Use appropriate gap limit
 - Monitor progress through dashboard
 - Let rescan complete fully
 
-⚠️ **Don't**:
+ **Don't**:
 - Rescan unnecessarily (wastes time)
 - Stop rescan midway
 - Rescan while blockchain syncing
@@ -395,14 +377,18 @@ Action: Dashboard refreshes
 | Scenario | Recommended Gap Limit | Reasoning |
 |----------|----------------------|-----------|
 | New wallet | 20-50 | Few addresses used |
-| Normal use | 200 | Default, handles most cases |
-| Active wallet | 200-500 | Many transactions |
+| Normal use | 400 | Default, handles most cases |
+| Active wallet | 400-500 | Many transactions |
 | Missing funds | 500-1000 | High address indices |
 | Legacy wallet | 1000+ | Very old or heavily used |
 
+The gap limit is set on the `dcrwallet` daemon through the `DCRWALLET_GAP_LIMIT`
+environment variable. The compose default is `400`; `env.example` ships `100`.
+Change it in your `.env` and restart the wallet container to apply a new value.
+
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Xpub Import Failed
 
@@ -417,11 +403,12 @@ Action: Dashboard refreshes
 2. **Wallet not connected**:
    - Check RPC connection
    - Verify wallet is running
-   - Check backend logs
+   - Check dashboard logs
 
-3. **Gap limit out of range**:
-   - Use value between 20-1000
-   - Default 400 is recommended
+3. **Account name rejected**:
+   - Must be 50 characters or fewer
+   - Cannot be a reserved name (`mixed`, `unmixed`, `lightning`, `dex`, `imported`)
+   - Cannot match an account that already exists
 
 ---
 
@@ -493,12 +480,12 @@ Action: Dashboard refreshes
 
 3. **Check wallet status**:
    ```bash
-   docker compose logs backend | grep -i wallet
+   docker compose logs dashboard | grep -i wallet
    ```
 
-4. **Restart backend**:
+4. **Restart the dashboard**:
    ```bash
-   docker compose restart backend
+   docker compose restart dashboard
    ```
 
 ---
@@ -556,7 +543,7 @@ Action: Dashboard refreshes
 
 ---
 
-## 📊 Gap Limit Explained
+## Gap Limit Explained
 
 ### What is a Gap Limit?
 
@@ -566,26 +553,26 @@ Action: Dashboard refreshes
 
 **Example**:
 ```
-Address 0: Used ✅
-Address 1: Used ✅
+Address 0: Used
+Address 1: Used
 Address 2: Unused
 Address 3: Unused
-Address 4: Used ✅
+Address 4: Used
 Address 5: Unused
 ...
-Address 201: Unused
+Address 401: Unused
 
-Gap Limit = 200
+Gap Limit = 400
 ```
 
-**With gap limit 200**:
-- Monitors up to address 201
+**With gap limit 400**:
+- Monitors up to 400 consecutive unused addresses
 - Finds address 4 (used)
-- Finds any usage up to address 204
+- Keeps scanning as long as gaps stay under 400
 
 **With gap limit 3**:
-- Stops at address 5
-- Misses address 4 (gap of 3)
+- Stops after 3 consecutive unused addresses
+- Could miss a used address beyond that gap
 - Incomplete balance
 
 ---
@@ -601,31 +588,31 @@ Gap Limit = 200
 **Scan time impact**:
 ```
 Gap Limit 20:   ~2 minutes
-Gap Limit 200:  ~10 minutes
+Gap Limit 400:  ~10 minutes
 Gap Limit 500:  ~25 minutes
 Gap Limit 1000: ~50 minutes
 ```
 
 ---
 
-## 🔐 Security Considerations
+## Security Considerations
 
 ### Xpub Safety
 
 **What xpub reveals**:
-- ✅ All public addresses
-- ✅ All transactions
-- ✅ Complete balance history
+- All public addresses
+- All transactions
+- Complete balance history
 
 **What xpub cannot**:
-- ❌ Spend funds
-- ❌ Access private keys
-- ❌ Sign transactions
+- Spend funds
+- Access private keys
+- Sign transactions
 
 **Privacy impact**:
-- ⚠️ Links all addresses together
-- ⚠️ Reveals transaction patterns
-- ⚠️ Shows complete financial history
+- Links all addresses together
+- Reveals transaction patterns
+- Shows complete financial history
 
 **Best practices**:
 - Share xpub only with trusted parties
@@ -638,24 +625,24 @@ Gap Limit 1000: ~50 minutes
 ### Watch-Only Wallet Limitations
 
 **Can do**:
-- ✅ View balances
-- ✅ Monitor transactions
-- ✅ Generate receiving addresses
-- ✅ Track transaction history
+- View balances
+- Monitor transactions
+- Generate receiving addresses
+- Track transaction history
 
 **Cannot do**:
-- ❌ Send transactions
-- ❌ Purchase tickets
-- ❌ Sign messages
-- ❌ Access private keys
-- ❌ Vote with tickets
-- ❌ Revoke tickets
+- Send transactions
+- Purchase tickets
+- Sign messages
+- Access private keys
+- Vote with tickets
+- Revoke tickets
 
 **Use case**: Safe monitoring without spending risk.
 
 ---
 
-## 🚀 Advanced Usage
+## Advanced Usage
 
 ### Multiple Account Monitoring
 
@@ -699,27 +686,28 @@ curl http://localhost:8080/api/wallet/dashboard
 }
 ```
 
-See [API Reference](../api/wallet-endpoints.md) for details.
+See [API Reference](../api/api-reference.md) for details.
 
 ---
 
-## 📚 Related Documentation
+## Related Documentation
 
 - **[Wallet Dashboard](../features/wallet-dashboard.md)** - Dashboard overview
-- **[Wallet Setup](../wallet-setup.md)** - Initial configuration
+- **[Configuration](../setup/configuration.md)** - Initial configuration
 - **[Staking Guide](../features/staking-guide.md)** - Staking information
-- **[API Reference](../api/wallet-endpoints.md)** - API documentation
+- **[API Reference](../api/api-reference.md)** - API documentation
 - **[Troubleshooting](troubleshooting.md)** - Common issues
 
 ---
 
-## ✅ Operations Checklist
+## Operations Checklist
 
 ### Before Importing Xpub
 - [ ] Wallet RPC connected
 - [ ] Blockchain fully synced
 - [ ] Xpub key copied correctly
-- [ ] Gap limit decided (400 recommended)
+- [ ] Account name chosen (not reserved, not already in use)
+- [ ] Gap limit set on the wallet daemon if the default is too low (400 default)
 - [ ] Time allocated (10-30 minutes)
 
 ### During Import
@@ -742,5 +730,5 @@ See [API Reference](../api/wallet-endpoints.md) for details.
 
 ---
 
-**Need Help?** Check the [FAQ](../reference/faq.md) or [Troubleshooting Guide](troubleshooting.md)
+**Need Help?** Check the [FAQ](../guides/troubleshooting.md) or [Troubleshooting Guide](troubleshooting.md)
 

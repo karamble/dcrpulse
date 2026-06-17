@@ -2,15 +2,34 @@
 
 The **Wallet Dashboard** provides comprehensive monitoring and management of your Decred wallet, including account balances, transaction history, staking information, and ticket management.
 
-## 📊 Overview
+## Overview
 
 The Wallet Dashboard displays real-time information about your wallet's financial status and staking activities. It's designed to work with both full wallets (via RPC) and watch-only wallets (via imported xpub keys).
 
-**Access**: Click the **"Wallet"** button in the header navigation.
+**Access**: Open `http://localhost:8080` and click the **"Wallet"** button in the header navigation.
+
+> Decred Pulse runs as a single `dashboard` service on port `8080`; it serves both the API and the bundled web interface from the same address.
+
+### The Wallet area is a multi-section hub
+
+The Wallet area is organized as a hub with a left-hand sidebar. The **Overview** page (this document) is the landing view; the other sections each have their own dedicated guide:
+
+- **Overview** - balances, recent transactions, ticket summary, accounts (this page)
+- **On-Chain Transactions** - send, receive, full transaction history, export
+- **Privacy** - see [Privacy Mixer](privacy-mixer.md)
+- **Staking** - see [Staking Guide](staking-guide.md)
+- **Governance** - see [Governance](governance.md)
+- **Lightning** - see [Lightning](lightning.md)
+- **Accounts** - account management
+- **Timestamp** - see [Timestamp](timestamp.md)
+- **Settings** - wallet, privacy, logs, themes, security, and Tor settings
+- **Switch Wallet** - see [Multiple Wallets](multi-wallet.md)
+
+The rest of this page describes the **Overview** landing view.
 
 ---
 
-## 🎯 Dashboard Components
+## Dashboard Components
 
 ### 1. Account Balance Card
 
@@ -18,69 +37,96 @@ Displays wallet-wide balance information:
 
 #### Cumulative Total
 - **Total balance** across all accounts
-- Displayed with **2 decimal places**
-- Additional decimal places shown in smaller font
+- Large display showing the first **2 decimal places** at full size, with the remaining decimals in a smaller font
 
 #### Total Spendable
 - **Available balance** for transactions
 - Excludes locked and immature funds
 - Can be used for sending or ticket purchases
 
-#### Total Locked by Tickets
-- **Funds locked** in active tickets
-- Automatically unlocked when tickets vote or expire
-- Not spendable until tickets are spent
+#### Conditional rows
+The following rows appear only when the corresponding balance is non-zero:
+
+- **Locked by Tickets** - funds locked in active tickets; automatically unlocked when tickets vote or expire
+- **Immature** - mining and stake rewards awaiting maturity
+- **Unconfirmed** - amounts from transactions still awaiting confirmation
+
+A **Watch-Only Mode** note is shown at the bottom of the card, explaining that the wallet can monitor balances and transactions but cannot spend funds.
 
 **Visual Features:**
 - Large, prominent balance display
 - Color-coded for quick scanning
-- Real-time updates every 30 seconds
+- Real-time updates every 10 seconds
 
 ---
 
-### 2. Transaction History Card
+### 2. Recent Transactions Card
 
-View your wallet's transaction activity:
+The Overview shows a compact **Recent Transactions** card:
 
 #### Features
-- **Initial Display**: Shows last 10 transactions
-- **Progressive Loading**: Click "Load 50 More" to see additional transactions
-- **Clickable Transactions**: Click any transaction to view details in block explorer
+- **Latest Activity**: Shows the **5 most recent** transactions
+- **View All**: A "View all" link opens the full transaction history under **On-Chain Transactions** (`/wallet/transactions/history`)
+- **Clickable Transactions**: Click any transaction to open it in the built-in Decred Pulse explorer (`/explorer/tx/<txid>`)
 
 #### Transaction Information
-Each transaction shows:
-- **Type Icon**: Visual indicator (send, receive, ticket, vote, revocation, coinbase)
-- **Category**: Send, receive, ticket, vote, revocation, immature, generate
-- **Amount**: Transaction value in DCR
-- **Confirmations**: Number of confirmations (or "Pending")
-- **Time**: Relative time (e.g., "2 hours ago") or formatted date
-- **Address**: Relevant address (truncated)
-- **Transaction ID**: Truncated txid with copy functionality
+Each row shows:
+- **Type Icon**: Visual indicator (send, receive, ticket, vote, revocation, CoinJoin, VSP fee, mined)
+- **Label**: Sent, Received, Ticket Purchase, Vote, Revocation, CoinJoin, VSP Fee, Mined
+- **Amount**: Signed transaction value in DCR
+- **Time**: Relative time (e.g., "2h ago") or formatted date
 
 #### Transaction Types
 
 **Regular Transactions:**
-- 🔽 **Receive** - Green arrow down
-- 🔼 **Send** - Red arrow up
+- **Received** - Green arrow down
+- **Sent** - Red arrow up
+
+**Privacy:**
+- **CoinJoin** - Purple shuffle icon (mixed transaction)
+- **VSP Fee** - Orange badge icon (voting service provider fee)
 
 **Staking Transactions:**
-- 🎫 **Ticket** - Yellow ticket icon (ticket purchase)
-- ✅ **Vote** - Green checkmark (ticket voted)
-- ❌ **Revocation** - Red X (ticket revoked)
+- **Ticket Purchase** - Yellow ticket icon
+- **Vote** - Green checkmark (ticket voted)
+- **Revocation** - Red X (ticket revoked)
 
 **Mining/Generation:**
-- 💰 **Coinbase** - Gold coins icon (mined block)
-- ⏱️ **Immature** - Clock icon (immature rewards)
+- **Mined** - Coins icon (generated/coinbase)
+
+> The full transaction history (with filters by category, address/txid search, date range, a CoinJoin statistics card, and progressive "Load More" loading) lives under **On-Chain Transactions > History**. See the section below.
+
+---
+
+### 2a. Full Transaction History (On-Chain Transactions > History)
+
+The dedicated history view is reached from the **On-Chain Transactions** sidebar item (or the "View all" link on the Overview).
+
+#### Features
+- **Initial fetch**: Loads up to **200** transactions
+- **Show Details**: Expand to reveal the filterable list
+- **Filters**: All, Send, Receive, CoinJoin, Tickets, Votes
+- **Search**: Filter by address or txid; filter by start/end date
+- **Progressive Loading**: "Load More" reveals more from the loaded set, then fetches additional batches of **50** from the server
+- **CoinJoin Statistics**: A summary card shows count, min/max/avg CoinJoin fees
+
+#### Transaction Information
+Each row shows:
+- **Type Icon** and **Label** (same set as above, plus Immature)
+- **Account** badge (the wallet account the transaction belongs to)
+- **Amount**: Signed value in DCR, with the network **Fee** below when applicable
+- **Truncated txid**, relative time, and truncated address
+- Clicking a row opens it in the built-in explorer
 
 #### Status Badges
-- **Pending**: Red badge for 0 confirmations
-- **X confirmations**: Gray badge showing confirmation count
+- **Pending**: Warning-colored badge for 0 confirmations
+- **N conf**: Muted badge while a transaction has 1 to 5 confirmations (no badge once it reaches 6+)
 
 ---
 
 ### 3. Accounts Card
 
-Lists all wallet accounts with detailed balance breakdown:
+Lists all wallet accounts with a detailed balance breakdown. A "Manage accounts" link opens the full **Accounts** section.
 
 #### Account Information
 For each account, displays:
@@ -89,29 +135,25 @@ For each account, displays:
 
 #### Granular Balance Details
 
-Each account shows **six balance types**:
+Each account always shows its **Spendable** balance, plus any of the following that are non-zero:
 
-**Spendable** 💎
+**Spendable**
 - Funds available for immediate use
 - Can send or purchase tickets
 
-**Locked by Tickets** 🎫
+**Locked by Tickets**
 - Funds locked in active tickets
 - Released when ticket votes/expires
 
-**Immature Coinbase** ⛏️
-- Mining rewards awaiting maturity
+**Immature**
+- Mining and stake-generation rewards awaiting maturity
 - Requires 256 confirmations
 
-**Immature Stake Generation** 🎲
-- Staking rewards awaiting maturity
-- Requires 256 confirmations
-
-**Unconfirmed** ⏳
+**Unconfirmed**
 - Transactions pending confirmation
 - Not yet spendable
 
-**Voting Authority** 🗳️
+**Voting Authority**
 - Funds in tickets you have voting rights for
 - May not own the ticket
 
@@ -119,83 +161,83 @@ Each account shows **six balance types**:
 - All balances shown with **2 decimal places**
 - Icons for quick visual identification
 - Compact, space-efficient layout
-- Only non-zero balances displayed
+- Only non-zero balances displayed (Spendable is always shown)
 
 ---
 
-### 4. Ticket Pool Info Card
+### 4. Ticket Pool & Difficulty Card
 
 Global Decred network ticket pool information:
 
 #### Current Network Statistics
 
-**Pool Size** 🎫
+**Pool Size**
 - Total number of live tickets in the pool
 - Target: ~40,960 tickets
 
-**Current Difficulty** 💎
+**Mempool Tickets**
+- Pending ticket purchases across the network
+- Awaiting confirmation
+
+**Current Price**
 - **Current ticket price** in DCR
-- Price you'll pay for next ticket purchase
+- Price you'll pay for the next ticket purchase
 
-**Next Difficulty** 🔄
-- Estimated ticket price for next window
-- Adjusts every 144 blocks
+**Expected Next**
+- Estimated ticket price for the next window, with the change vs. the current price
+- The ticket price adjusts every 144 blocks
 
-**Estimated Difficulty Range** 📊
+**Expected Price Range**
 - **Min**: Minimum estimated price
 - **Expected**: Most likely price
 - **Max**: Maximum estimated price
-
-**Mempool Tickets** ⏳
-- Pending ticket purchases across the network
-- Awaiting confirmation
 
 ---
 
 ### 5. My Tickets Card
 
-Your personal ticket statistics:
+Your personal ticket statistics. Each count below is shown only when it is non-zero, and you can expand the card ("Show Details") to browse a filterable per-ticket list (All / Live / Immature / Voted):
 
 #### Your Ticket Counts
 
-**Mempool** ⏳
+**Mempool**
 - Your tickets waiting for confirmation
 - Not yet active in pool
 
-**Immature** 🐣
+**Immature**
 - Recently purchased tickets
 - Require 256 confirmations (~21 hours)
 
-**Live** ✅
+**Live**
 - Active tickets in the pool
 - Eligible to vote
 
-**Voted** 🗳️
+**Voted**
 - Tickets that have voted
 - Earned voting rewards
 
-**Revoked** ❌
-- Expired tickets that were revoked
+**Revoked**
+- Expired/missed tickets that were revoked
 - Funds returned (minus fee)
 
-**Expired** ⌛
+**Expired**
 - Tickets that expired without voting
 - Can be revoked to recover funds
 
-**Total Subsidy** 💰
-- Total voting rewards earned
+**Total Staking Rewards**
+- Total voting rewards earned (shown when greater than zero)
 - Accumulated from all votes
 
 #### Watch-Only Wallet Disclaimer
 
-When no tickets are shown:
+When no tickets are detected, the card shows:
 ```
-🎫 No tickets found
+No tickets found
 
 Connect to an external wallet via RPC to see stats
 
-Note: Tickets cannot be detected on watch-only wallets 
-with imported xpub keys
+Tickets cannot be detected on watch-only wallets with imported x-pub keys.
+A full wallet is required to track staking activity.
 ```
 
 **Why?** Watch-only wallets (xpub imports) cannot access ticket information because:
@@ -203,104 +245,133 @@ with imported xpub keys
 - Xpub only provides address monitoring
 - Connect via RPC for full ticket tracking
 
+> The Overview shows only a summary. For ticket purchasing, the autobuyer, VSP setup, and detailed status, see the [Staking Guide](staking-guide.md).
+
 ---
 
-## 🔄 Sync Progress Tracking
+### 6. Block Subsidy Card
+
+Shows the current Proof-of-Stake reward per block, derived from `dcrd`:
+
+- **Total Block Subsidy**: The full per-block reward
+- **Per Vote**: PoS reward per ticket vote
+- **PoS Share / PoW / Treasury**: How the subsidy splits across stakers, miners, and the treasury
+
+It also reflects how many blocks remain until the next subsidy reduction.
+
+---
+
+### 7. Address Bookmarks Card
+
+A local list of saved Decred addresses with friendly labels:
+
+- Add, edit, and remove bookmarks (stored in your browser)
+- Copy an address to the clipboard
+- Import and export bookmarks as JSON
+- Shows the first 5 by default, with an option to reveal all
+
+These bookmarks are also used by the built-in explorer when viewing addresses.
+
+---
+
+## Sync Progress Tracking
 
 When performing wallet operations (rescan, xpub import), a **sync progress bar** appears:
 
 ### Features
-- **Real-time Progress**: Shows percentage complete
-- **Log Parsing**: Monitors `dcrwallet.log` for progress
-- **Smart Polling**: Polls every 2 seconds during sync
-- **Auto-Hide**: Disappears at 99% completion
-- **Stale Detection**: Stops polling if logs become stale
+- **Real-time Progress**: Shows percentage complete, scan height, and chain height
+- **Event-Driven**: Driven by a WebSocket stream from the wallet (roughly once per second), not by polling
+- **Preparing State**: An immediate "Preparing Rescan..." state shows while addresses are discovered, before the scan height is known
+- **Auto-Hide**: The bar appears while the wallet is behind the chain and disappears as soon as it is synced
 
 ### During Sync
 - Dashboard cards are hidden
-- Only sync progress bar visible
-- Regular polling paused to prevent timeouts
-- Background RPC calls suspended
+- Only the sync progress bar (or the preparing state) is visible
+- This avoids flooding the wallet RPC with balance/account queries while it scans
 
 ### After Sync Completion
 - Progress bar automatically hides
 - Dashboard cards reappear
-- Normal polling resumes (30-second intervals)
-- Data refreshed immediately
+- Balances refresh on the normal interval (every 10 seconds)
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Auto-Refresh
-Dashboard refreshes every **30 seconds** automatically.
+The Overview refreshes balances and account data every **10 seconds** automatically. Sync status is delivered separately over a WebSocket stream.
 
-To adjust refresh interval, modify:
+To adjust the refresh interval, modify:
 ```typescript
-// frontend/src/pages/WalletDashboard.tsx
+// dashboard/web/src/pages/WalletDashboard.tsx
 useEffect(() => {
-  const interval = setInterval(fetchData, 30000); // Change 30000 to desired ms
+  const interval = setInterval(fetchData, 10000); // Change 10000 to desired ms
   return () => clearInterval(interval);
 }, []);
 ```
 
 ### Transaction Display Limits
-By default:
-- Initial display: **10 transactions**
-- Load more: **50 transactions** per click
-- Backend fetches: **100 transactions** total
+The full transaction history (On-Chain Transactions > History) uses these defaults:
+- Initial display: **5 transactions** (the Overview "Recent Transactions" card shows the latest 5)
+- Initial fetch: **200 transactions**
+- "Load More": reveals **10** more from the loaded set, then fetches additional batches of **50** from the server
 
 To adjust:
 ```typescript
-// frontend/src/components/TransactionHistory.tsx
-const [visibleCount, setVisibleCount] = useState(10);  // Initial display
-const loadMoreCount = 50;  // Load more increment
+// dashboard/web/src/components/TransactionHistory.tsx
+const [visibleCount, setVisibleCount] = useState(5);  // Initial display
+const loadMoreCount = 10;       // Reveal increment (already-loaded)
+const lazyLoadBatchSize = 50;   // Server fetch batch size
 
-// Backend: modify count parameter
-const data = await getWalletTransactions(100);  // Total to fetch
+// Initial server fetch
+const data = await getWalletTransactions(200);  // Total to fetch
 ```
 
 ---
 
-## 🔗 Related Documentation
+## Related Documentation
 
-- **[Wallet Setup](../wallet-setup.md)** - Initial wallet configuration
-- **[Wallet Operations](../guides/wallet-operations.md)** - Import xpub, rescan, sync
+- **[Wallet Operations](../guides/wallet-operations.md)** - Initial setup, import xpub, rescan, sync
 - **[Staking Guide](staking-guide.md)** - Complete staking information
-- **[Transaction History](transaction-history.md)** - Transaction management details
-- **[API Reference](../api/wallet-endpoints.md)** - Wallet API endpoints
+- **[Governance](governance.md)** - Consensus, treasury, and proposal voting
+- **[Lightning](lightning.md)** - Lightning Network channels and payments
+- **[Privacy Mixer](privacy-mixer.md)** - CoinJoin mixing
+- **[Multiple Wallets](multi-wallet.md)** - Managing several wallets
+- **[Timestamp](timestamp.md)** - File timestamping with dcrtime
+- **[Backup & Restore](../guides/backup-restore.md)** - Protect your funds
+- **[API Reference](../api/api-reference.md)** - Wallet API endpoints
 
 ---
 
-## 💡 Tips & Best Practices
+## Tips & Best Practices
 
 ### For Best Performance
-1. ✅ Wait for full blockchain sync before rescanning
-2. ✅ Use appropriate gap limit (400 recommended)
-3. ✅ Don't navigate away during wallet rescan
-4. ✅ Monitor sync progress through dashboard
+1. Wait for full blockchain sync before rescanning
+2. Use appropriate gap limit (400 recommended)
+3. Don't navigate away during wallet rescan
+4. Monitor sync progress through dashboard
 
 ### For Accurate Balance Display
-1. ✅ Allow time for confirmations to mature
-2. ✅ Check "immature" balances for pending rewards
-3. ✅ Remember locked balance requires ticket voting/expiry
-4. ✅ Refresh dashboard if balances seem outdated
+1. Allow time for confirmations to mature
+2. Check "immature" balances for pending rewards
+3. Remember locked balance requires ticket voting/expiry
+4. Refresh dashboard if balances seem outdated
 
 ### For Watch-Only Wallets
-1. ✅ Import xpub for address monitoring
-2. ✅ Use appropriate gap limit (200+)
-3. ⚠️ Ticket info requires full RPC connection
-4. ⚠️ Cannot send transactions (watch-only)
+1. Import xpub for address monitoring
+2. Use appropriate gap limit (200+)
+3. Ticket info requires full RPC connection
+4. Cannot send transactions (watch-only)
 
 ### For Transaction History
-1. ✅ Click transactions to view blockchain details
-2. ✅ Use "Load More" for older transactions
-3. ✅ Check confirmations before considering final
-4. ✅ Reference txid for support/tracking
+1. Click transactions to view blockchain details
+2. Use "Load More" for older transactions
+3. Check confirmations before considering final
+4. Reference txid for support/tracking
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Balances Not Updating
 **Problem**: Dashboard shows outdated balances
@@ -308,7 +379,7 @@ const data = await getWalletTransactions(100);  // Total to fetch
 **Solutions:**
 1. Check wallet is synced: Verify sync status in header
 2. Wait for confirmations: Check transaction confirmations
-3. Refresh manually: Click refresh button
+3. Wait for the next refresh: Balances reload automatically every 10 seconds (or reload the page)
 4. Check RPC connection: Verify wallet connectivity
 
 ### No Transactions Showing
@@ -345,11 +416,11 @@ const data = await getWalletTransactions(100);  // Total to fetch
 1. Refresh page: Force browser refresh (Ctrl+Shift+R)
 2. Check for errors: Open browser console (F12)
 3. Verify completion: Check logs for 100% progress
-4. Manual refresh: Click refresh button in dashboard
+4. Reload the dashboard to re-fetch wallet data
 
 ---
 
-## 📊 Understanding Balance Types
+## Understanding Balance Types
 
 ### Cumulative Total
 **What it is**: Sum of all balances across all accounts
@@ -458,11 +529,11 @@ const data = await getWalletTransactions(100);  // Total to fetch
 
 ---
 
-## 🔐 Security Considerations
+## Security Considerations
 
 ### RPC Credentials
-- Stored in backend only
-- Never exposed to frontend
+- Stored server side only
+- Never sent to the browser
 - Use strong passwords
 - Rotate regularly
 
@@ -480,16 +551,15 @@ const data = await getWalletTransactions(100);  // Total to fetch
 
 ---
 
-## 📈 Next Steps
+## Next Steps
 
 After setting up your wallet dashboard:
 
-1. **[Import Xpub](../guides/wallet-operations.md#import-xpub)** - Add watch-only addresses
+1. **[Import Xpub](../guides/wallet-operations.md)** - Add watch-only addresses
 2. **[Start Staking](staking-guide.md)** - Purchase tickets and earn rewards
-3. **[Monitor Transactions](transaction-history.md)** - Track your wallet activity
-4. **[Backup Wallet](../guides/backup-restore.md)** - Protect your funds
+3. **[Backup Wallet](../guides/backup-restore.md)** - Protect your funds
 
 ---
 
-**Questions?** Check the [FAQ](../reference/faq.md) or [Troubleshooting Guide](../guides/troubleshooting.md)
+**Questions?** Check the [Troubleshooting Guide](../guides/troubleshooting.md).
 

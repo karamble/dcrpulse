@@ -1,214 +1,177 @@
 # Decred Pulse Documentation
 
-Welcome to the **Decred Pulse** documentation! This guide will help you set up, configure, and use your Decred node and wallet dashboard.
+Welcome to the Decred Pulse documentation. These guides cover installing, configuring, and using your self-hosted Decred node, wallet, and service stack dashboard.
 
-## 📖 Documentation Index
+## Documentation Index
 
-### 🚀 Getting Started
+### Getting Started
 
-Start here if you're new to Decred Pulse:
+Start here if you are new to Decred Pulse:
 
-- **[Installation Guide](getting-started/installation.md)** - Detailed installation instructions
+- **[Installation Guide](getting-started/installation.md)** - Install the stack with Docker Compose
 - **[First Steps](getting-started/first-steps.md)** - What to do after installation
-- **Quick Start** - Get up and running in 3 minutes *(see Installation Guide)*
 
-### ⚙️ Setup & Configuration
+### Setup and Configuration
 
-Detailed setup guides for different components:
+- **[Configuration Guide](setup/configuration.md)** - Environment variables and per-daemon settings
 
-- **[Configuration Guide](setup/configuration.md)** - Environment variables and config files
-- **Docker Setup** - Complete Docker Compose guide *(see Installation Guide)*
-- **Building from Source** - Build dcrd and dcrwallet from source *(see Installation Guide)*
-- **Wallet Setup** - Configure and connect your wallet *(see Wallet Operations)*
+### Features
 
-### 🎯 Features
+The dashboard is organized into these areas:
 
-Learn about the dashboard features:
+- **[Node Dashboard](features/node-dashboard.md)** - Monitor your dcrd node: sync, peers, mempool
+- **[Wallet Dashboard](features/wallet-dashboard.md)** - Accounts, balances, and transactions
+- **[Multiple Wallets](features/multi-wallet.md)** - Create, switch, and manage several wallets
+- **[Staking Guide](features/staking-guide.md)** - Tickets, the autobuyer, and pool statistics
+- **[Governance](features/governance.md)** - Consensus voting, Politeia proposals, and the treasury
+- **[Lightning Network](features/lightning.md)** - dcrlnd channels and off-chain payments
+- **[DEX (DCRDEX)](features/dex.md)** - Decentralized trading via bisonw
+- **[Bison Relay](features/bison-relay.md)** - Encrypted messaging, posts, pages, and storefront
+- **[Privacy and the Mixer](features/privacy-mixer.md)** - Account-based CoinShuffle++ mixing
+- **[Timestamping (dcrtime)](features/timestamp.md)** - Anchor file hashes to the chain
+- **[Block Explorer](features/explorer.md)** - Browse blocks, transactions, and addresses
+- **[Settings](features/settings.md)** - Tor, themes, the app-password gate, logs, and about
 
-- **[Node Dashboard](features/node-dashboard.md)** - Monitor your Decred node
-- **[Wallet Dashboard](features/wallet-dashboard.md)** - Manage accounts, balances, and transactions
-- **[Staking Guide](features/staking-guide.md)** - Ticket purchasing and staking information
-- **Transaction History** - View and manage transactions *(see Wallet Dashboard)*
-- **Block Explorer** - Mini block explorer features *(future)*
+### User Guides
 
-### 📚 User Guides
+- **[Wallet Operations](guides/wallet-operations.md)** - Import xpub, rescan, sync monitoring
+- **[Backup and Restore](guides/backup-restore.md)** - Protect wallet, Lightning, and node data
+- **[Troubleshooting](guides/troubleshooting.md)** - Common issues and fixes
 
-Step-by-step guides for common tasks:
+### API
 
-- **[Wallet Operations](guides/wallet-operations.md)** - Import xpub, rescan, sync progress
-- **[Backup & Restore](guides/backup-restore.md)** - Backup blockchain and wallet data
-- **[Troubleshooting](guides/troubleshooting.md)** - Common issues and solutions
-- **[Monitoring Setup](deployment/monitoring-setup.md)** - Production monitoring (see Deployment section)
+- **[API Reference](api/api-reference.md)** - REST endpoints grouped by feature
 
-### 🔌 API Documentation
+### Development
 
-API reference for developers:
+- **[Architecture](development/architecture.md)** - System design, daemons, and data flow
 
-- **[API Reference](api/api-reference.md)** - Complete API endpoint documentation
-- **Node Endpoints** - Node-specific API endpoints *(see API Reference)*
-- **Wallet Endpoints** - Wallet-specific API endpoints *(see API Reference)*
+### Deployment
 
-### 💻 Development
+- **[Production Deployment](deployment/production.md)** - Reverse proxy, TLS, backups
+- **[Security Best Practices](deployment/security.md)** - Hardening guidance
+- **[Performance Tuning](deployment/performance.md)** - Optimize the stack
+- **[Monitoring Setup](deployment/monitoring-setup.md)** - Metrics and alerting
 
-Contributing and development guides:
-
-- **[Architecture](development/architecture.md)** - System design and architecture
-- **Development Setup** - Local development environment *(planned)*
-- **Backend Guide** - Backend development *(planned)*
-- **Frontend Guide** - Frontend development *(planned)*
-- **Contributing** - How to contribute *(planned)*
-
-### 🚀 Deployment
-
-Production deployment guides:
-
-- **[Production Deployment](deployment/production.md)** - Deploy to production
-- **[Security Best Practices](deployment/security.md)** - Security guidelines
-- **[Performance Tuning](deployment/performance.md)** - Optimize performance
-- **[Monitoring Setup](deployment/monitoring-setup.md)** - Production monitoring
-
-### 📋 Reference
-
-Quick reference materials:
+### Reference
 
 - **[CLI Commands](reference/cli-commands.md)** - Makefile and Docker Compose commands
-- **Environment Variables** - All environment variables *(see Configuration Guide)*
 
 ---
 
-## 🎯 Quick Navigation by Role
+## Quick Navigation by Role
 
-### I'm a Node Operator
-1. [Installation Guide](getting-started/installation.md) → Install and setup
-2. [Node Dashboard](features/node-dashboard.md) → Monitor your node
-3. [First Steps](getting-started/first-steps.md) → Initial setup
-4. [Backup & Restore](guides/backup-restore.md) → Data protection
+### I'm a node operator
+1. [Installation Guide](getting-started/installation.md)
+2. [Node Dashboard](features/node-dashboard.md)
+3. [Backup and Restore](guides/backup-restore.md)
 
-### I'm Managing a Wallet
-1. [Installation Guide](getting-started/installation.md) → Setup wallet
-2. [Wallet Dashboard](features/wallet-dashboard.md) → View balances
-3. [Wallet Operations](guides/wallet-operations.md) → Import xpub, rescan
+### I'm managing a wallet
+1. [Wallet Dashboard](features/wallet-dashboard.md)
+2. [Wallet Operations](guides/wallet-operations.md)
+3. [Multiple Wallets](features/multi-wallet.md)
 
-### I'm Staking Tickets
-1. [Staking Guide](features/staking-guide.md) → Learn about staking
-2. [Wallet Dashboard](features/wallet-dashboard.md) → View your tickets
-3. [Wallet Operations](guides/wallet-operations.md) → Manage tickets
+### I'm staking
+1. [Staking Guide](features/staking-guide.md)
+2. [Governance](features/governance.md)
 
-### I'm a Developer
-1. [Architecture](development/architecture.md) → Understand the system
-2. [API Reference](api/api-reference.md) → Use the API
-3. [Configuration Guide](setup/configuration.md) → Configure the app
+### I'm using Lightning
+1. [Lightning Network](features/lightning.md)
+2. [Wallet Dashboard](features/wallet-dashboard.md)
 
-### I'm Deploying to Production
-1. [Production Deployment](deployment/production.md) → Deploy guide
-2. [Security](deployment/security.md) → Secure your deployment
-3. [Monitoring Setup](deployment/monitoring-setup.md) → Production monitoring
+### I'm trading on the DEX
+1. [DEX (DCRDEX)](features/dex.md)
+
+### I'm using Bison Relay
+1. [Bison Relay](features/bison-relay.md)
+
+### I'm a developer
+1. [Architecture](development/architecture.md)
+2. [API Reference](api/api-reference.md)
+3. [Configuration Guide](setup/configuration.md)
+
+### I'm deploying to production
+1. [Production Deployment](deployment/production.md)
+2. [Security Best Practices](deployment/security.md)
+3. [Monitoring Setup](deployment/monitoring-setup.md)
 
 ---
 
-## 📦 What is Decred Pulse?
+## What is Decred Pulse?
 
-**Decred Pulse** is a modern, full-stack dashboard for monitoring Decred nodes and wallets in real-time. It provides:
+Decred Pulse is a modern, self-hosted dashboard for running and monitoring a Decred node, wallet, and the wider Decred service stack in real time. All data comes from your own daemons over RPC; no third-party services are required.
 
 ### Key Features
 
-✅ **Node Monitoring**
-- Real-time node status and sync progress
-- Blockchain information (height, difficulty, size)
-- Network statistics (peers, hashrate)
-- Mempool activity
-
-✅ **Wallet Management**
-- Account balances (spendable, locked, immature)
-- Transaction history with progressive loading
-- Watch-only wallet support (xpub import)
-- Wallet rescan with progress tracking
-
-✅ **Staking Information**
-- Ticket pool statistics
-- Your tickets (immature, live, voted, revoked)
-- Stake difficulty and price
-- Mempool ticket activity
-
-✅ **Modern UI**
-- Beautiful dark theme with gradients
-- Real-time auto-refresh
-- Responsive design
-- Smooth animations
+- Node monitoring: sync progress, blockchain info, peers, and mempool.
+- Wallet management: multiple wallets, account balances, transaction history, watch-only (xpub) import, and rescans.
+- Staking: ticket purchasing, the autobuyer, VSP support, and pool statistics.
+- Governance: consensus agenda voting, Politeia proposals, and treasury TSpend voting.
+- Lightning: dcrlnd channels, payments, and invoices.
+- DEX: decentralized trading through DCRDEX (bisonw).
+- Bison Relay: encrypted messaging, group chats, posts, pages, and a storefront.
+- Privacy: the account-based CoinShuffle++ mixer.
+- Timestamping: anchoring file hashes to the chain with dcrtime.
+- Block explorer: browse blocks, transactions, and addresses from your own node.
+- Tor support, custom themes, and an optional app-password gate.
 
 ### Architecture
 
+A single dashboard container serves the embedded React UI and the REST API on port 8080, and talks to each daemon over RPC or gRPC:
+
 ```
-┌─────────────┐      REST API      ┌─────────────┐      RPC      ┌─────────┐
-│   React     │ ◄────────────────► │  Go Backend │ ◄───────────► │  dcrd   │
-│  Frontend   │     JSON/HTTP      │     API     │   JSON-RPC    │  Node   │
-└─────────────┘                    └─────────────┘               └─────────┘
-                                           │
-                                           │ RPC
-                                           ▼
-                                    ┌─────────────┐
-                                    │ dcrwallet   │
-                                    │   (RPC)     │
-                                    └─────────────┘
+Browser
+  | HTTP / REST (port 8080)
+  v
+dashboard  (Go backend + embedded React UI)
+  |
+  | RPC / gRPC
+  +-- dcrd        full node
+  +-- dcrwallet   wallet
+  +-- dcrlnd      Lightning
+  +-- brclientd   Bison Relay
+  +-- dcrdex      DEX (bisonw)
+  +-- tor         proxy
 ```
 
 ### Technology Stack
 
-**Frontend:**
-- React 18 + TypeScript
-- Vite (build tool)
-- Tailwind CSS
-- Axios (HTTP client)
-- Lucide React (icons)
+Frontend:
+- React 18 and TypeScript
+- Vite and Tailwind CSS
+- Built and embedded into the Go binary and served by the dashboard (there is no separate web server)
 
-**Backend:**
-- Go 1.21+
-- Gorilla Mux (router)
-- dcrd rpcclient
-- CORS middleware
+Backend:
+- Go with the Gorilla Mux router
+- RPC and gRPC clients for dcrd and dcrwallet, gRPC to dcrlnd, and HTTP/RPC to brclientd and bisonw
+- Same-origin protection on the API and an optional app-password gate
 
-**Infrastructure:**
-- Docker + Docker Compose
-- Nginx (frontend serving)
-- dcrd (full node)
-- dcrwallet (wallet RPC)
+Infrastructure:
+- Docker and Docker Compose
+- Daemons: dcrd, dcrwallet, dcrlnd, brclientd, dcrdex (bisonw), and tor
 
 ---
 
-## 🆘 Getting Help
+## Getting Help
 
-### Documentation
-- Browse the [documentation index](#-documentation-index) above
-- Review [Troubleshooting](guides/troubleshooting.md)
-- Check specific feature guides for FAQs
-
-### Community
-- **GitHub Issues**: Report bugs and request features
-- **Decred Discord**: Get community support
-- **Decred Matrix**: Chat with developers
+- Browse the [documentation index](#documentation-index) above.
+- Review [Troubleshooting](guides/troubleshooting.md).
+- Decred community: GitHub issues, Discord, and Matrix.
 
 ### Logs
-When something goes wrong, check the logs:
 
 ```bash
-# All services
+# all services
 docker compose logs -f
 
-# Specific services
+# a specific service
+docker compose logs -f dashboard
 docker compose logs -f dcrd
-docker compose logs -f backend
-docker compose logs -f frontend
 ```
 
 ---
 
-## 🔗 Quick Links
+## Quick Links
 
-- **Main README**: [README.md](../README.md)
-- **Project Repository**: [GitHub](https://github.com/karamble/decred-pulse)
-- **License**: [ISC License](../LICENSE)
-
----
-
-**Made with ❤️ for the Decred community**
-
+- Main README: [README.md](../README.md)
+- License: [ISC License](../LICENSE)

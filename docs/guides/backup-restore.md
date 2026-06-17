@@ -1,13 +1,16 @@
 # Backup & Restore Guide
 
-This guide covers backing up and restoring your Decred Pulse data, including blockchain data, wallet data, and configuration files.
+This guide covers backing up and restoring your Decred Pulse data, including blockchain data, wallet data, Lightning channel state, Bison Relay identity, DCRDEX state, and configuration files.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [What to Backup](#what-to-backup)
 - [Backup Strategies](#backup-strategies)
 - [Blockchain Data Backup](#blockchain-data-backup)
 - [Wallet Data Backup](#wallet-data-backup)
+- [Lightning (dcrlnd) Backup](#lightning-dcrlnd-backup)
+- [Bison Relay (brclientd) Backup](#bison-relay-brclientd-backup)
+- [DCRDEX Backup](#dcrdex-backup)
 - [Configuration Backup](#configuration-backup)
 - [Complete System Backup](#complete-system-backup)
 - [Restore Procedures](#restore-procedures)
@@ -21,40 +24,58 @@ This guide covers backing up and restoring your Decred Pulse data, including blo
 
 ### Critical Data
 
-**🔴 Must Backup (Can't be recovered):**
+**Must Backup (Can't be recovered):**
 - Wallet seed phrase (if spending wallet)
+- Lightning channel backup (SCB) if you run dcrlnd with open channels
+- Bison Relay identity (brclientd data) if you use Bison Relay
 - Private RPC credentials (`.env` file)
 - Custom configuration files
 
-**🟡 Should Backup (Saves time):**
+**Should Backup (Saves time):**
 - Blockchain data (dcrd - can be resynced)
 - Wallet database (dcrwallet - can be recreated from seed)
+- DCRDEX state (trade and account history)
 - Certificates (auto-regenerated if missing)
 
-**🟢 Optional Backup:**
+**Optional Backup:**
 - Docker images (can be rebuilt)
-- Frontend/backend code (in git)
+- Dashboard code (in git)
 
-### Data Locations
+### Data Model
+
+Decred Pulse stores daemon state under an `/app-data` mount. dcrd, dcrwallet,
+and the shared control files live in a single `dcrpulse_app-data` volume, each
+daemon under its own subdirectory. dcrlnd, brclientd, DCRDEX, the dashboard,
+and Tor each use a dedicated volume.
 
 ```
-decred-pulse/
-├── .env                          # RPC credentials (CRITICAL)
-├── docker-compose.yml            # Service configuration
-├── backups/                      # Backup directory
-└── Docker Volumes:
-    ├── dcrd-data                 # Blockchain (~12GB)
-    ├── dcrd-certs                # TLS certificates
-    └── dcrwallet-data            # Wallet database
+dcrpulse/
+|-- .env                          # RPC credentials (CRITICAL)
+|-- docker-compose.yml            # Service configuration
+|-- backups/                      # Backup directory
+`-- Docker Volumes:
+    |-- dcrpulse_app-data         # Shared volume, mounted at /app-data
+    |     |-- dcrd/               #   Blockchain + dcrd TLS certs (~30 GB)
+    |     |-- dcrwallet/          #   Wallet database
+    |     `-- control/            #   Active-wallet / Tor pointers
+    |-- dcrpulse_dcrlnd-data      # Lightning channel state (-> /app-data/dcrlnd)
+    |-- dcrpulse_brclientd-data   # Bison Relay identity (-> /app-data/brclientd)
+    |-- dcrpulse_dcrdex-data      # DCRDEX state (-> /dex/.dexc)
+    |-- dcrpulse_dashboard-data   # Dashboard settings/themes (-> /dashboard-data)
+    `-- dcrpulse_tor-data         # Tor data and onion keys (-> /app-data/tor)
 ```
+
+The services in the stack are: `dcrd`, `dcrwallet`, `dcrlnd`, `brclientd`,
+`dcrdex`, `tor`, and `dashboard`. Containers are named `dcrpulse-<service>`
+(for example `dcrpulse-dcrwallet`).
 
 ---
 
 ## Backup Strategies
 
 ### Quick Backup (Essential only)
-**Time:** < 1 minute  
-**Size:** < 1 KB  
+**Time:** < 1 minute
+**Size:** < 1 KB
 **Frequency:** After every config change
 
 ```bash
@@ -63,8 +84,8 @@ cp .env .env.backup
 ```
 
 ### Standard Backup (Config + Wallet)
-**Time:** 1-2 minutes  
-**Size:** ~50 MB  
+**Time:** 1-2 minutes
+**Size:** ~50 MB
 **Frequency:** Weekly
 
 ```bash
@@ -73,14 +94,19 @@ make backup-wallet
 ```
 
 ### Full Backup (Everything)
-**Time:** 10-30 minutes  
-**Size:** ~12 GB  
+**Time:** 10-30 minutes
+**Size:** ~30 GB
 **Frequency:** Monthly or before major updates
 
 ```bash
-# Backup blockchain + wallet + config
+# Backup the entire app-data volume (blockchain + wallet + control)
 make backup
 ```
+
+Note: `make backup` archives the shared `dcrpulse_app-data` volume only. The
+dcrlnd, brclientd, and DCRDEX volumes are separate; back them up with the
+manual commands in their sections below, or use the full backup script under
+[Complete System Backup](#complete-system-backup).
 
 ---
 
@@ -88,40 +114,35 @@ make backup
 
 ### Using Make Command
 
-The easiest way to backup blockchain data:
+The easiest way to back up the shared app-data volume (which includes the
+blockchain and dcrd certificates):
 
 ```bash
-# Backup dcrd data
+# Backup all app data
 make backup
 ```
 
-This creates: `backups/dcrd-backup-YYYYMMDD-HHMMSS.tar.gz`
+This creates: `backups/app-data-backup-YYYYMMDD-HHMMSS.tar.gz`
 
 **What's included:**
-- Complete blockchain data
-- Block index
-- Transaction index (if enabled)
-- Address index (if enabled)
+- Complete blockchain data (under `dcrd/`)
+- Wallet database (under `dcrwallet/`)
+- dcrd TLS certificates (under `dcrd/`)
+- Active-wallet and Tor control pointers (under `control/`)
 
 ### Manual Docker Volume Backup
 
-If you need more control:
+If you only want the blockchain subdirectory:
 
 ```bash
 # Create backup directory
 mkdir -p backups
 
-# Backup dcrd data volume
+# Backup dcrd data (blockchain + certs live under /app-data/dcrd)
 docker run --rm \
-  -v decred-pulse_dcrd-data:/data \
+  -v dcrpulse_app-data:/app-data \
   -v $(pwd)/backups:/backup \
-  alpine tar czf /backup/dcrd-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
-
-# Backup certificates
-docker run --rm \
-  -v decred-pulse_dcrd-certs:/certs \
-  -v $(pwd)/backups:/backup \
-  alpine tar czf /backup/dcrd-certs-$(date +%Y%m%d-%H%M%S).tar.gz -C /certs .
+  alpine tar czf /backup/dcrd-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /app-data/dcrd .
 ```
 
 ### Verify Backup
@@ -131,21 +152,21 @@ docker run --rm \
 ls -lh backups/
 
 # Test backup integrity
-tar -tzf backups/dcrd-backup-*.tar.gz > /dev/null && echo "✅ Backup is valid" || echo "❌ Backup is corrupted"
+tar -tzf backups/dcrd-backup-*.tar.gz > /dev/null && echo "Backup is valid" || echo "Backup is corrupted"
 ```
 
 ### When to Backup Blockchain
 
 **You should backup dcrd data when:**
-- ✅ Before major system upgrades
-- ✅ Before changing hardware
-- ✅ After initial sync completes (saves hours)
-- ✅ Before testing experimental features
+- Before major system upgrades
+- Before changing hardware
+- After initial sync completes (saves hours)
+- Before testing experimental features
 
 **You can skip backup if:**
-- ❌ You have fast internet (can resync in hours)
-- ❌ You're on testnet (smaller blockchain)
-- ❌ Storage space is limited
+- You have fast internet (can resync in hours)
+- You're on testnet (smaller blockchain)
+- Storage space is limited
 
 ---
 
@@ -155,10 +176,8 @@ tar -tzf backups/dcrd-backup-*.tar.gz > /dev/null && echo "✅ Backup is valid" 
 
 **Most Important:** Your wallet seed phrase is the ONLY way to recover funds.
 
-```bash
-# View wallet seed (first-time setup only)
-make wallet-seed
-```
+The seed is shown once, in the dashboard, when you create the wallet during
+first-time setup. Write it down then.
 
 **Save the seed phrase:**
 1. Write it on paper (not digital)
@@ -169,17 +188,20 @@ make wallet-seed
 
 ### Wallet Database Backup
 
-For watch-only wallets with imported xpub keys:
+The wallet database lives at `/app-data/dcrwallet` inside the shared volume:
 
 ```bash
 # Create backup directory
 mkdir -p backups
 
 # Backup wallet database
+make backup-wallet
+
+# Or manually:
 docker run --rm \
-  -v decred-pulse_dcrwallet-data:/data \
+  -v dcrpulse_app-data:/app-data \
   -v $(pwd)/backups:/backup \
-  alpine tar czf /backup/dcrwallet-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
+  alpine tar czf /backup/wallet-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /app-data/dcrwallet .
 ```
 
 **What's included:**
@@ -189,7 +211,7 @@ docker run --rm \
 - Transaction history
 - Configuration
 
-**Why backup wallet.db:**
+**Why backup the wallet database:**
 - Saves rescan time after restore
 - Preserves imported xpub keys
 - Keeps transaction labels/notes
@@ -199,7 +221,99 @@ docker run --rm \
 
 ```bash
 # Backup wallet configuration
-docker exec decred-pulse-dcrwallet cat /root/.dcrwallet/dcrwallet.conf > backups/dcrwallet.conf.backup
+docker exec dcrpulse-dcrwallet cat /app-data/dcrwallet/dcrwallet.conf > backups/dcrwallet.conf.backup
+```
+
+---
+
+## Lightning (dcrlnd) Backup
+
+If you run the Lightning Network integration with open channels, dcrlnd holds
+channel state in the `dcrpulse_dcrlnd-data` volume (mounted at
+`/app-data/dcrlnd`). The most important file for disaster recovery is the
+Static Channel Backup (SCB), `channel.backup`. The SCB lets you recover
+on-chain channel funds by forcing your peers to close after a total data loss.
+It does NOT preserve off-chain balances or channel history.
+
+```bash
+# Create backup directory
+mkdir -p backups
+
+# Backup the entire dcrlnd data directory
+docker run --rm \
+  -v dcrpulse_dcrlnd-data:/data \
+  -v $(pwd)/backups:/backup \
+  alpine tar czf /backup/dcrlnd-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
+```
+
+**What's included:**
+- Static Channel Backup (`channel.backup`)
+- Channel database
+- dcrlnd TLS cert and admin macaroon
+
+**Important:** The SCB changes every time a channel opens or closes. Back it up
+again after any channel change. Never restore a stale channel database over a
+live node; use the SCB recovery flow instead. Off-chain Lightning balances are
+not recoverable from a backup alone.
+
+---
+
+## Bison Relay (brclientd) Backup
+
+If you use Bison Relay, brclientd stores your relay identity and message state
+in the `dcrpulse_brclientd-data` volume (mounted at `/app-data/brclientd`).
+This identity cannot be regenerated; losing it means losing your Bison Relay
+account and contacts.
+
+```bash
+# Create backup directory
+mkdir -p backups
+
+# Backup the entire brclientd data directory
+docker run --rm \
+  -v dcrpulse_brclientd-data:/data \
+  -v $(pwd)/backups:/backup \
+  alpine tar czf /backup/brclientd-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
+```
+
+**What's included:**
+- Bison Relay identity (private key)
+- Contact and group lists
+- Local message and post history
+
+The dashboard also provides an in-app Bison Relay backup and restore flow,
+which produces a portable archive of the same state. Either method works;
+keep at least one current copy.
+
+---
+
+## DCRDEX Backup
+
+If you trade on DCRDEX, bisonw stores account and trade state in the
+`dcrpulse_dcrdex-data` volume (mounted at `/dex/.dexc`). This state records
+your registered DEX servers and trade history. It does not hold spendable
+funds (those live in the dcrwallet database), but losing it loses your trade
+records and active-order tracking.
+
+```bash
+# Create backup directory
+mkdir -p backups
+
+# Backup the entire DCRDEX data directory
+docker run --rm \
+  -v dcrpulse_dcrdex-data:/data \
+  -v $(pwd)/backups:/backup \
+  alpine tar czf /backup/dcrdex-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
+```
+
+**Important:** Back up DCRDEX state only when there are no active orders or
+in-flight swaps, so the archive is consistent. Stop the dcrdex service first if
+you want a clean snapshot:
+
+```bash
+docker compose stop dcrdex
+# ... run the backup command above ...
+docker compose up -d dcrdex
 ```
 
 ---
@@ -219,10 +333,11 @@ cat backups/.env.backup-*
 ```
 
 **What to backup from `.env`:**
-- RPC usernames and passwords
+- RPC usernames and passwords (dcrd, dcrwallet, dcrdex)
 - Custom port configurations
 - Network selection (mainnet/testnet)
 - Gap limit settings
+- Volume path overrides (`APP_DATA_DIR`, `DCRLND_DATA_DIR`, etc.)
 - Extra dcrd/dcrwallet arguments
 
 ### Docker Compose Configuration
@@ -245,7 +360,7 @@ cp env.example backups/config-$(date +%Y%m%d)/
 tar czf backups/config-backup-$(date +%Y%m%d).tar.gz -C backups config-$(date +%Y%m%d)/
 rm -rf backups/config-$(date +%Y%m%d)/
 
-echo "✅ Configuration backed up to backups/config-backup-$(date +%Y%m%d).tar.gz"
+echo "Configuration backed up to backups/config-backup-$(date +%Y%m%d).tar.gz"
 ```
 
 ---
@@ -254,7 +369,8 @@ echo "✅ Configuration backed up to backups/config-backup-$(date +%Y%m%d).tar.g
 
 ### Full Backup Script
 
-Create a backup of everything:
+Create a backup of everything, including the separate dcrlnd, brclientd, and
+DCRDEX volumes:
 
 ```bash
 #!/bin/bash
@@ -263,44 +379,51 @@ Create a backup of everything:
 BACKUP_DATE=$(date +%Y%m%d-%H%M%S)
 BACKUP_DIR="backups/full-backup-${BACKUP_DATE}"
 
-echo "🔄 Creating full backup..."
+echo "Creating full backup..."
 mkdir -p "${BACKUP_DIR}"
 
 # 1. Configuration files
-echo "📄 Backing up configuration..."
+echo "Backing up configuration..."
 cp .env "${BACKUP_DIR}/.env" 2>/dev/null || echo "No .env file"
 cp docker-compose.yml "${BACKUP_DIR}/docker-compose.yml"
 
-# 2. Blockchain data
-echo "⛓️  Backing up blockchain data (this may take a while)..."
+# 2. Shared app-data volume (blockchain + wallet + control)
+echo "Backing up app-data (this may take a while)..."
 docker run --rm \
-  -v decred-pulse_dcrd-data:/data \
+  -v dcrpulse_app-data:/data \
   -v $(pwd)/${BACKUP_DIR}:/backup \
-  alpine tar czf /backup/dcrd-data.tar.gz -C /data .
+  alpine tar czf /backup/app-data.tar.gz -C /data .
 
-# 3. Certificates
-echo "🔐 Backing up certificates..."
+# 3. Lightning channel state
+echo "Backing up dcrlnd..."
 docker run --rm \
-  -v decred-pulse_dcrd-certs:/certs \
+  -v dcrpulse_dcrlnd-data:/data \
   -v $(pwd)/${BACKUP_DIR}:/backup \
-  alpine tar czf /backup/dcrd-certs.tar.gz -C /certs .
+  alpine tar czf /backup/dcrlnd-data.tar.gz -C /data . 2>/dev/null || echo "No dcrlnd volume"
 
-# 4. Wallet data
-echo "💰 Backing up wallet data..."
+# 4. Bison Relay identity
+echo "Backing up brclientd..."
 docker run --rm \
-  -v decred-pulse_dcrwallet-data:/data \
+  -v dcrpulse_brclientd-data:/data \
   -v $(pwd)/${BACKUP_DIR}:/backup \
-  alpine tar czf /backup/dcrwallet-data.tar.gz -C /data .
+  alpine tar czf /backup/brclientd-data.tar.gz -C /data . 2>/dev/null || echo "No brclientd volume"
 
-# 5. Create final archive
-echo "📦 Creating final archive..."
+# 5. DCRDEX state
+echo "Backing up dcrdex..."
+docker run --rm \
+  -v dcrpulse_dcrdex-data:/data \
+  -v $(pwd)/${BACKUP_DIR}:/backup \
+  alpine tar czf /backup/dcrdex-data.tar.gz -C /data . 2>/dev/null || echo "No dcrdex volume"
+
+# 6. Create final archive
+echo "Creating final archive..."
 cd backups
 tar czf "full-backup-${BACKUP_DATE}.tar.gz" "full-backup-${BACKUP_DATE}/"
 rm -rf "full-backup-${BACKUP_DATE}/"
 cd ..
 
-echo "✅ Full backup completed: backups/full-backup-${BACKUP_DATE}.tar.gz"
-echo "📊 Backup size:"
+echo "Full backup completed: backups/full-backup-${BACKUP_DATE}.tar.gz"
+echo "Backup size:"
 ls -lh "backups/full-backup-${BACKUP_DATE}.tar.gz"
 ```
 
@@ -311,17 +434,20 @@ chmod +x backup-full.sh
 ./backup-full.sh
 ```
 
+For a fully consistent archive, stop the stack first with `docker compose down`
+and start it again with `docker compose up -d` after the script finishes.
+
 ---
 
 ## Restore Procedures
 
-### Restore Blockchain Data
+### Restore App Data (Blockchain + Wallet)
 
 Using the make command:
 
 ```bash
-# Restore from backup
-make restore BACKUP=backups/dcrd-backup-YYYYMMDD-HHMMSS.tar.gz
+# Restore the whole app-data volume from backup
+make restore BACKUP=backups/app-data-backup-YYYYMMDD-HHMMSS.tar.gz
 ```
 
 Manual restore:
@@ -330,11 +456,11 @@ Manual restore:
 # Stop services
 docker compose down
 
-# Restore dcrd data
+# Restore the app-data volume
 docker run --rm \
-  -v decred-pulse_dcrd-data:/data \
+  -v dcrpulse_app-data:/app-data \
   -v $(pwd)/backups:/backup \
-  alpine sh -c "rm -rf /data/* && tar xzf /backup/dcrd-backup-YYYYMMDD-HHMMSS.tar.gz -C /data"
+  alpine sh -c "rm -rf /app-data/* && tar xzf /backup/app-data-backup-YYYYMMDD-HHMMSS.tar.gz -C /app-data"
 
 # Start services
 docker compose up -d
@@ -346,20 +472,83 @@ make sync-status
 ### Restore Wallet Data
 
 ```bash
+# Restore just the wallet subdirectory from a wallet backup
+make restore-wallet BACKUP=backups/wallet-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+Manual restore:
+
+```bash
 # Stop wallet
 docker compose stop dcrwallet
 
-# Restore wallet database
+# Restore wallet database into /app-data/dcrwallet
 docker run --rm \
-  -v decred-pulse_dcrwallet-data:/data \
+  -v dcrpulse_app-data:/app-data \
   -v $(pwd)/backups:/backup \
-  alpine sh -c "rm -rf /data/* && tar xzf /backup/dcrwallet-backup-YYYYMMDD-HHMMSS.tar.gz -C /data"
+  alpine sh -c "rm -rf /app-data/dcrwallet/* && tar xzf /backup/wallet-backup-YYYYMMDD-HHMMSS.tar.gz -C /app-data/dcrwallet"
 
 # Start wallet
 docker compose up -d dcrwallet
 
 # Verify
 make wallet-info
+```
+
+### Restore Lightning (dcrlnd)
+
+Do not restore a stale channel database over a running node. Restore the full
+data directory only on a fresh setup; for recovery after data loss, use the
+Static Channel Backup (SCB) flow so peers force-close and return your on-chain
+funds.
+
+```bash
+# Stop dcrlnd
+docker compose stop dcrlnd
+
+# Restore the dcrlnd data directory
+docker run --rm \
+  -v dcrpulse_dcrlnd-data:/data \
+  -v $(pwd)/backups:/backup \
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/dcrlnd-backup-YYYYMMDD-HHMMSS.tar.gz -C /data"
+
+# Start dcrlnd
+docker compose up -d dcrlnd
+```
+
+### Restore Bison Relay (brclientd)
+
+```bash
+# Stop brclientd
+docker compose stop brclientd
+
+# Restore the brclientd data directory
+docker run --rm \
+  -v dcrpulse_brclientd-data:/data \
+  -v $(pwd)/backups:/backup \
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/brclientd-backup-YYYYMMDD-HHMMSS.tar.gz -C /data"
+
+# Start brclientd
+docker compose up -d brclientd
+```
+
+You can also restore through the dashboard's in-app Bison Relay restore flow if
+you backed up with that tool.
+
+### Restore DCRDEX
+
+```bash
+# Stop dcrdex
+docker compose stop dcrdex
+
+# Restore the DCRDEX data directory
+docker run --rm \
+  -v dcrpulse_dcrdex-data:/data \
+  -v $(pwd)/backups:/backup \
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/dcrdex-backup-YYYYMMDD-HHMMSS.tar.gz -C /data"
+
+# Start dcrdex
+docker compose up -d dcrdex
 ```
 
 ### Restore Configuration
@@ -374,38 +563,23 @@ docker compose restart
 
 ### Restore from Seed Phrase
 
-If you lost everything but have your seed phrase:
+If you lost everything but have your seed phrase, recreate the wallet through
+the dashboard. After a clean install, open the dashboard and choose the
+"restore from seed" option in the wallet setup wizard, then enter your seed.
+The wallet rescans the blockchain to rediscover your funds.
+
+If you need to wipe the existing wallet first:
 
 ```bash
-# 1. Clean existing wallet
+# Remove only the wallet data (the blockchain stays intact)
 make clean-dcrwallet
 
-# 2. Start fresh wallet
-docker compose up -d dcrwallet
-
-# 3. Access wallet container
-docker exec -it decred-pulse-dcrwallet /bin/sh
-
-# 4. Stop wallet daemon
-pkill dcrwallet
-
-# 5. Create new wallet from seed
-dcrwallet --create
-
-# Follow prompts:
-# - Enter new private passphrase
-# - Choose "existing seed"
-# - Enter your 33-word seed phrase
-# - Confirm seed
-
-# 6. Exit and restart
-exit
-docker compose restart dcrwallet
+# Then open the dashboard and restore from seed in the setup wizard
 ```
 
 ### Complete System Restore
 
-Restore from a full backup:
+Restore from a full backup produced by `backup-full.sh`:
 
 ```bash
 # Extract full backup
@@ -420,29 +594,35 @@ docker compose down
 cp .env ../../.env
 cp docker-compose.yml ../../docker-compose.yml
 
-# Restore dcrd data
+# Restore the shared app-data volume
 docker run --rm \
-  -v decred-pulse_dcrd-data:/data \
+  -v dcrpulse_app-data:/app-data \
   -v $(pwd):/backup \
-  alpine sh -c "rm -rf /data/* && tar xzf /backup/dcrd-data.tar.gz -C /data"
+  alpine sh -c "rm -rf /app-data/* && tar xzf /backup/app-data.tar.gz -C /app-data"
 
-# Restore certificates
+# Restore dcrlnd (if present)
 docker run --rm \
-  -v decred-pulse_dcrd-certs:/certs \
+  -v dcrpulse_dcrlnd-data:/data \
   -v $(pwd):/backup \
-  alpine sh -c "rm -rf /certs/* && tar xzf /backup/dcrd-certs.tar.gz -C /certs"
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/dcrlnd-data.tar.gz -C /data" 2>/dev/null || true
 
-# Restore wallet
+# Restore brclientd (if present)
 docker run --rm \
-  -v decred-pulse_dcrwallet-data:/data \
+  -v dcrpulse_brclientd-data:/data \
   -v $(pwd):/backup \
-  alpine sh -c "rm -rf /data/* && tar xzf /backup/dcrwallet-data.tar.gz -C /data"
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/brclientd-data.tar.gz -C /data" 2>/dev/null || true
+
+# Restore dcrdex (if present)
+docker run --rm \
+  -v dcrpulse_dcrdex-data:/data \
+  -v $(pwd):/backup \
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/dcrdex-data.tar.gz -C /data" 2>/dev/null || true
 
 # Start services
 cd ../..
 docker compose up -d
 
-echo "✅ Full restore completed"
+echo "Full restore completed"
 ```
 
 ---
@@ -458,13 +638,13 @@ Create automated daily backups:
 crontab -e
 
 # Add daily backup at 2 AM
-0 2 * * * cd /path/to/decred-pulse && make backup >> /var/log/decred-pulse-backup.log 2>&1
+0 2 * * * cd /path/to/dcrpulse && make backup >> /var/log/dcrpulse-backup.log 2>&1
 
 # Add weekly wallet backup on Sundays at 3 AM
-0 3 * * 0 cd /path/to/decred-pulse && docker run --rm -v decred-pulse_dcrwallet-data:/data -v $(pwd)/backups:/backup alpine tar czf /backup/dcrwallet-backup-$(date +\%Y\%m\%d).tar.gz -C /data . >> /var/log/decred-pulse-backup.log 2>&1
+0 3 * * 0 cd /path/to/dcrpulse && make backup-wallet >> /var/log/dcrpulse-backup.log 2>&1
 
 # Add monthly config backup on 1st of month at 1 AM
-0 1 1 * * cd /path/to/decred-pulse && cp .env backups/.env.backup-$(date +\%Y\%m\%d) >> /var/log/decred-pulse-backup.log 2>&1
+0 1 1 * * cd /path/to/dcrpulse && cp .env backups/.env.backup-$(date +\%Y\%m\%d) >> /var/log/dcrpulse-backup.log 2>&1
 ```
 
 ### Backup Rotation Script
@@ -480,28 +660,28 @@ KEEP_DAILY=7      # Keep 7 daily backups
 KEEP_WEEKLY=4     # Keep 4 weekly backups
 KEEP_MONTHLY=3    # Keep 3 monthly backups
 
-# Remove daily backups older than 7 days
-find ${BACKUP_DIR} -name "dcrd-backup-*.tar.gz" -mtime +${KEEP_DAILY} -delete
+# Remove daily app-data backups older than 7 days
+find ${BACKUP_DIR} -name "app-data-backup-*.tar.gz" -mtime +${KEEP_DAILY} -delete
 
-# Remove weekly backups older than 4 weeks
-find ${BACKUP_DIR} -name "dcrwallet-backup-*.tar.gz" -mtime +$((KEEP_WEEKLY * 7)) -delete
+# Remove weekly wallet backups older than 4 weeks
+find ${BACKUP_DIR} -name "wallet-backup-*.tar.gz" -mtime +$((KEEP_WEEKLY * 7)) -delete
 
-# Remove monthly backups older than 3 months
+# Remove monthly full backups older than 3 months
 find ${BACKUP_DIR} -name "full-backup-*.tar.gz" -mtime +$((KEEP_MONTHLY * 30)) -delete
 
-echo "✅ Old backups rotated"
+echo "Old backups rotated"
 ```
 
 Add to cron:
 
 ```bash
 # Run daily at 4 AM
-0 4 * * * /path/to/decred-pulse/backup-rotate.sh >> /var/log/decred-pulse-backup.log 2>&1
+0 4 * * * /path/to/dcrpulse/backup-rotate.sh >> /var/log/dcrpulse-backup.log 2>&1
 ```
 
 ### Systemd Timer (Alternative to Cron)
 
-Create `/etc/systemd/system/decred-pulse-backup.service`:
+Create `/etc/systemd/system/dcrpulse-backup.service`:
 
 ```ini
 [Unit]
@@ -511,16 +691,16 @@ After=docker.service
 [Service]
 Type=oneshot
 User=your-user
-WorkingDirectory=/path/to/decred-pulse
+WorkingDirectory=/path/to/dcrpulse
 ExecStart=/usr/bin/make backup
 ```
 
-Create `/etc/systemd/system/decred-pulse-backup.timer`:
+Create `/etc/systemd/system/dcrpulse-backup.timer`:
 
 ```ini
 [Unit]
 Description=Daily Decred Pulse Backup
-Requires=decred-pulse-backup.service
+Requires=dcrpulse-backup.service
 
 [Timer]
 OnCalendar=daily
@@ -535,11 +715,11 @@ Enable:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable decred-pulse-backup.timer
-sudo systemctl start decred-pulse-backup.timer
+sudo systemctl enable dcrpulse-backup.timer
+sudo systemctl start dcrpulse-backup.timer
 
 # Check status
-sudo systemctl status decred-pulse-backup.timer
+sudo systemctl status dcrpulse-backup.timer
 ```
 
 ---
@@ -549,23 +729,26 @@ sudo systemctl status decred-pulse-backup.timer
 ### Backup Checklist
 
 **Daily:**
-- ✅ Configuration changes are backed up immediately
-- ✅ Automated backups are running
+- Configuration changes are backed up immediately
+- Automated backups are running
 
 **Weekly:**
-- ✅ Verify backup integrity
-- ✅ Check backup log for errors
-- ✅ Rotate old backups
+- Verify backup integrity
+- Check backup log for errors
+- Rotate old backups
 
 **Monthly:**
-- ✅ Test restore procedure
-- ✅ Full system backup
-- ✅ Verify wallet seed is still accessible
+- Test restore procedure
+- Full system backup
+- Verify wallet seed is still accessible
+
+**After any Lightning channel change:**
+- Back up dcrlnd (the SCB changes on every open/close)
 
 **Before Major Changes:**
-- ✅ Full backup
-- ✅ Verify backup integrity
-- ✅ Document current state
+- Full backup
+- Verify backup integrity
+- Document current state
 
 ### Storage Recommendations
 
@@ -590,10 +773,10 @@ sudo systemctl status decred-pulse-backup.timer
 
 ```bash
 # Encrypt backup
-gpg --symmetric --cipher-algo AES256 backups/dcrd-backup-*.tar.gz
+gpg --symmetric --cipher-algo AES256 backups/app-data-backup-*.tar.gz
 
 # Decrypt when needed
-gpg --decrypt backups/dcrd-backup-*.tar.gz.gpg > dcrd-backup-restored.tar.gz
+gpg --decrypt backups/app-data-backup-*.tar.gz.gpg > app-data-backup-restored.tar.gz
 ```
 
 **Secure Backup Locations:**
@@ -601,8 +784,10 @@ gpg --decrypt backups/dcrd-backup-*.tar.gz.gpg > dcrd-backup-restored.tar.gz
 - Limit access to backup directory
 - Use separate credentials for backup storage
 
-**What NOT to Backup Online:**
+**What NOT to Backup Online (without encryption):**
 - Wallet seed phrase (paper only!)
+- Bison Relay identity key
+- Lightning channel database
 - Unencrypted private keys
 - Unencrypted RPC credentials
 
@@ -617,7 +802,7 @@ gpg --decrypt backups/dcrd-backup-*.tar.gz.gpg > dcrd-backup-restored.tar.gz
 df -h
 
 # Remove old backups
-rm backups/dcrd-backup-*.tar.gz
+rm backups/app-data-backup-*.tar.gz
 
 # Or clean Docker cache
 docker system prune -a
@@ -626,69 +811,64 @@ docker system prune -a
 ### Restore Fails with "Permission Denied"
 
 ```bash
-# Fix volume permissions
-docker run --rm -v decred-pulse_dcrd-data:/data alpine chmod -R 777 /data
+# Fix volume permissions (daemons run as UID 1000)
+docker run --rm -v dcrpulse_app-data:/data alpine chown -R 1000:1000 /data
 
 # Retry restore
-make restore BACKUP=backups/dcrd-backup-*.tar.gz
+make restore BACKUP=backups/app-data-backup-*.tar.gz
 ```
 
 ### Backup is Corrupted
 
 ```bash
 # Verify backup
-tar -tzf backups/dcrd-backup-*.tar.gz
+tar -tzf backups/app-data-backup-*.tar.gz
 
 # If corrupted, try previous backup
 ls -lt backups/
-make restore BACKUP=backups/dcrd-backup-[previous-date].tar.gz
+make restore BACKUP=backups/app-data-backup-[previous-date].tar.gz
 ```
 
 ### Can't Find Wallet Seed
 
+The seed is shown only once, in the dashboard, when the wallet is first
+created. It is never written to disk or to container logs.
+
 ```bash
-# Check container logs
-docker logs decred-pulse-dcrwallet 2>&1 | grep -A 40 "seed"
-
-# If not found, check older logs (if rotated)
-# Seed is only shown once during first wallet creation
-
-# If completely lost, you'll need to:
-# 1. Create new wallet (new seed)
-# 2. Transfer funds from old wallet using recovery phrase
+# If you did not record the seed and the wallet still exists, your funds are
+# still accessible through the running wallet, but you have no recovery phrase.
+# Move funds to a new wallet whose seed you do record:
+# 1. Create a new wallet (new seed) and write the seed down
+# 2. Send all funds from the old wallet to the new wallet's address
 ```
 
 ### Restore Works But Data is Old
 
 ```bash
-# After restore, rescan to get latest data
+# After restore, the wallet may need a rescan to catch up
 make wallet-info
 
-# Trigger rescan from wallet dashboard
-# Or via API:
-curl -X POST http://localhost:8080/api/wallet/rescan \
-  -H "Content-Type: application/json" \
-  -d '{"beginHeight": 0}'
+# Trigger a rescan from the wallet dashboard (Wallet > rescan),
+# which rediscovers transactions from the blockchain.
 ```
 
 ### Backup Takes Too Long
 
 ```bash
-# Use faster compression
+# Use faster compression (no gzip - larger but quicker)
 docker run --rm \
-  -v decred-pulse_dcrd-data:/data \
+  -v dcrpulse_app-data:/app-data \
   -v $(pwd)/backups:/backup \
-  alpine tar cf /backup/dcrd-backup-$(date +%Y%m%d).tar -C /data .
-# (No gzip compression - faster but larger)
+  alpine tar cf /backup/app-data-backup-$(date +%Y%m%d).tar -C /app-data .
 
-# Or exclude unnecessary files
+# Or exclude log files
 docker run --rm \
-  -v decred-pulse_dcrd-data:/data \
+  -v dcrpulse_app-data:/app-data \
   -v $(pwd)/backups:/backup \
-  alpine tar czf /backup/dcrd-backup-$(date +%Y%m%d).tar.gz \
+  alpine tar czf /backup/app-data-backup-$(date +%Y%m%d).tar.gz \
   --exclude='*.tmp' \
-  --exclude='*.log' \
-  -C /data .
+  --exclude='*/logs/*' \
+  -C /app-data .
 ```
 
 ---
@@ -700,22 +880,25 @@ docker run --rm \
 If you lose everything:
 
 **With Seed Phrase:**
-1. ✅ Reinstall Decred Pulse
-2. ✅ Restore wallet from seed
-3. ✅ Wait for blockchain resync (6-12 hours)
-4. ✅ Import xpub keys if needed
-5. ✅ Rescan wallet
+1. Reinstall Decred Pulse
+2. Restore wallet from seed in the dashboard setup wizard
+3. Wait for blockchain resync (6-12 hours)
+4. Import xpub keys if needed
+5. Rescan wallet
 
 **With Backup:**
-1. ✅ Reinstall Decred Pulse
-2. ✅ Restore configuration files
-3. ✅ Restore blockchain data
-4. ✅ Restore wallet data
-5. ✅ Verify balances
+1. Reinstall Decred Pulse
+2. Restore configuration files
+3. Restore the app-data volume (blockchain + wallet)
+4. Restore dcrlnd, brclientd, and dcrdex volumes if you use them
+5. Verify balances
 
 **Without Seed or Backup:**
-- ❌ Watch-only wallets can be recreated (just import xpub again)
-- ❌ Spending wallets: Funds are PERMANENTLY LOST
+- Watch-only wallets can be recreated (just import the xpub again)
+- Spending wallets: Funds are PERMANENTLY LOST
+- Lightning: only on-chain channel funds may be recoverable, and only if you
+  have a Static Channel Backup
+- Bison Relay: the identity is unrecoverable without a backup
 
 ### Migration to New Server
 
@@ -724,19 +907,19 @@ If you lose everything:
 ./backup-full.sh
 
 # 2. Copy backup to new server
-scp backups/full-backup-*.tar.gz newserver:/path/to/decred-pulse/backups/
+scp backups/full-backup-*.tar.gz newserver:/path/to/dcrpulse/backups/
 
 # 3. On new server: Install Decred Pulse
-git clone https://github.com/karamble/decred-pulse.git
-cd decred-pulse
+git clone https://github.com/karamble/dcrpulse.git
+cd dcrpulse
 
-# 4. Restore from backup
-tar xzf backups/full-backup-*.tar.gz
-cd full-backup-*
-cp .env ../../.env
-# ... (follow complete restore procedure above)
+# 4. Restore from backup (see Complete System Restore above)
+cd backups
+tar xzf full-backup-*.tar.gz
+# ... follow the complete restore procedure ...
 
 # 5. Start services
+cd ../..
 docker compose up -d
 
 # 6. Verify
@@ -760,14 +943,17 @@ make status
 ### Essential Commands
 
 ```bash
-# Backup blockchain
+# Backup all app data (blockchain + wallet + control)
 make backup
 
-# Restore blockchain
-make restore BACKUP=backups/dcrd-backup-*.tar.gz
+# Restore all app data
+make restore BACKUP=backups/app-data-backup-*.tar.gz
 
-# View wallet seed
-make wallet-seed
+# Backup wallet only
+make backup-wallet
+
+# Restore wallet only
+make restore-wallet BACKUP=backups/wallet-backup-*.tar.gz
 
 # Backup configuration
 cp .env .env.backup
@@ -778,14 +964,19 @@ find backups/ -name "*.tar.gz" -mtime +30 -delete
 
 ### Recovery Priority
 
-1. **Wallet Seed** - Write down immediately after wallet creation
-2. **RPC Credentials** - Backup `.env` file after setup
-3. **Wallet Database** - Weekly backups
-4. **Blockchain Data** - Monthly backups (optional)
+1. **Wallet Seed** - Write it down immediately after wallet creation
+2. **Lightning SCB** - Re-back up after every channel open/close
+3. **Bison Relay identity** - Back up the brclientd volume if you use Bison Relay
+4. **RPC Credentials** - Back up the `.env` file after setup
+5. **Wallet Database** - Weekly backups
+6. **Blockchain Data** - Monthly backups (optional, resyncable)
 
 ---
 
-**Remember:** The wallet seed phrase is the most important thing to backup. Everything else can be recreated or resynced, but without the seed, funds in a spending wallet are permanently lost.
+**Remember:** The wallet seed phrase is the most important thing to back up.
+Everything else can be recreated or resynced, but without the seed, funds in a
+spending wallet are permanently lost. If you run Lightning or Bison Relay, also
+back up the dcrlnd Static Channel Backup and the brclientd identity, because
+those cannot be regenerated either.
 
-**Made with ❤️ for the Decred community**
-
+**Made for the Decred community.**

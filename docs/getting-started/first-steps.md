@@ -2,7 +2,7 @@
 
 What to do after installing Decred Pulse. This guide will help you get started with monitoring your Decred node and managing your wallet.
 
-## 🎯 Quick Checklist
+## Quick Checklist
 
 After installation, complete these steps:
 
@@ -16,7 +16,7 @@ After installation, complete these steps:
 
 ---
 
-## 1️⃣ Wait for Initial Blockchain Sync
+## 1. Wait for Initial Blockchain Sync
 
 ### What's Happening
 
@@ -27,7 +27,7 @@ After starting Decred Pulse, `dcrd` begins downloading and validating the blockc
 - **Testnet**: 30-60 minutes
 
 **Disk Space**:
-- **Mainnet**: ~10 GB
+- **Mainnet**: ~30 GB and growing
 - **Testnet**: ~1-2 GB
 
 ---
@@ -35,7 +35,7 @@ After starting Decred Pulse, `dcrd` begins downloading and validating the blockc
 ### Monitor Sync Progress
 
 **Via Dashboard**:
-1. Open http://localhost:3000
+1. Open http://localhost:8080
 2. Node Status card shows sync progress
 3. Progress bar indicates percentage complete
 
@@ -81,13 +81,13 @@ Verified 1200 blocks in the last 30 seconds
 
 ### Tips During Sync
 
-✅ **Do**:
+ **Do**:
 - Let it run uninterrupted
 - Keep computer running
 - Maintain internet connection
 - Monitor logs occasionally
 
-⚠️ **Don't**:
+ **Don't**:
 - Stop services during sync
 - Shut down computer
 - Disconnect internet
@@ -95,11 +95,11 @@ Verified 1200 blocks in the last 30 seconds
 
 ---
 
-## 2️⃣ Access the Dashboard
+## 2. Access the Dashboard
 
 ### Open in Browser
 
-**URL**: http://localhost:3000
+**URL**: http://localhost:8080
 
 **Expected View**:
 ```
@@ -107,7 +107,7 @@ Verified 1200 blocks in the last 30 seconds
 │  Decred Pulse                          │
 │  [Node Dashboard] [Wallet Dashboard]   │
 ├────────────────────────────────────────┤
-│  🔄 Syncing Blockchain                 │
+│   Syncing Blockchain                 │
 │  ━━━━━━━━━━━━━━░░░░░░  68%            │
 │                                        │
 │  Block 692,847 / 1,016,401            │
@@ -149,7 +149,7 @@ Verified 1200 blocks in the last 30 seconds
 
 ---
 
-## 3️⃣ Verify Node Connectivity
+## 3. Verify Node Connectivity
 
 ### Check Node Status
 
@@ -174,13 +174,13 @@ make dcrctl CMD="getinfo"
 
 ### Healthy Node Indicators
 
-✅ **Connected**: Green status indicator
+ **Connected**: Green status indicator
 
-✅ **Peers**: 8+ connected peers
+ **Peers**: 8+ connected peers
 
-✅ **Syncing**: Progress increasing steadily
+ **Syncing**: Progress increasing steadily
 
-✅ **No Errors**: Clean logs without errors
+ **No Errors**: Clean logs without errors
 
 ---
 
@@ -204,7 +204,7 @@ docker compose restart dcrd
 
 ---
 
-## 4️⃣ Connect Wallet (Optional)
+## 4. Connect Wallet (Optional)
 
 ### If You Have a Wallet
 
@@ -235,7 +235,7 @@ make wallet-balance
    # Or from Decrediton: Accounts → Export
    ```
 
-2. Open Wallet Dashboard: http://localhost:3000/wallet
+2. Open Wallet Dashboard: http://localhost:8080/wallet
 
 3. Click "Import Xpub" button
 
@@ -257,7 +257,7 @@ make wallet-balance
 
 ```bash
 # Create new wallet via CLI
-docker exec -it decred-pulse-dcrwallet dcrctl --wallet create
+docker exec -it dcrpulse-dcrwallet dcrctl --wallet create
 
 # Follow prompts to:
 # 1. Set passphrase
@@ -265,7 +265,7 @@ docker exec -it decred-pulse-dcrwallet dcrctl --wallet create
 # 3. Confirm seed
 ```
 
-**⚠️ CRITICAL**: Save your seed phrase securely offline!
+** CRITICAL**: Save your seed phrase securely offline!
 
 **View seed** (one-time, right after creation):
 ```bash
@@ -274,11 +274,11 @@ make wallet-seed
 
 ---
 
-## 5️⃣ Explore the Dashboard
+## 5. Explore the Dashboard
 
 ### Node Dashboard
 
-Navigate to: http://localhost:3000
+Navigate to: http://localhost:8080
 
 **What to explore**:
 
@@ -314,7 +314,7 @@ Navigate to: http://localhost:3000
 
 ### Wallet Dashboard
 
-Navigate to: http://localhost:3000/wallet
+Navigate to: http://localhost:8080/wallet
 
 **If wallet connected**:
 
@@ -353,7 +353,7 @@ Navigate to: http://localhost:3000/wallet
 
 ---
 
-## 6️⃣ Set Up Monitoring Routine
+## 6. Set Up Monitoring Routine
 
 ### Daily Checks
 
@@ -412,7 +412,7 @@ make update-dcrd
 
 ---
 
-## 7️⃣ Common Tasks
+## 7. Common Tasks
 
 ### View Logs
 
@@ -439,7 +439,7 @@ make restart
 
 # Specific service
 docker compose restart dcrd
-docker compose restart backend
+docker compose restart dashboard
 ```
 
 ---
@@ -477,7 +477,7 @@ make dcrctl-wallet CMD="listtransactions * 10"
 
 ---
 
-## 🎓 Learning Resources
+## Learning Resources
 
 ### Documentation to Read
 
@@ -507,14 +507,14 @@ make dcrctl-wallet CMD="listtransactions * 10"
 
 ---
 
-## 🎯 Common Use Cases
+## Common Use Cases
 
 ### Use Case 1: Node Monitoring
 
 **Goal**: Monitor node health and network status
 
 **Daily routine**:
-1. Open dashboard: http://localhost:3000
+1. Open dashboard: http://localhost:8080
 2. Check node status (should be "Connected")
 3. Verify peer count (8+ peers)
 4. Monitor mempool activity
@@ -538,10 +538,10 @@ make dcrctl-wallet CMD="listtransactions * 10"
 4. View balances and transactions
 
 **Benefits**:
-- ✅ Monitor without risk
-- ✅ Track multiple accounts
-- ✅ View transaction history
-- ⚠️ Cannot send transactions
+- Monitor without risk
+- Track multiple accounts
+- View transaction history
+- Cannot send transactions
 
 ---
 
@@ -564,7 +564,7 @@ make dcrctl-wallet CMD="listtransactions * 10"
 
 ---
 
-## 🐛 Common First-Time Issues
+## Common First-Time Issues
 
 ### Issue: "RPC Not Connected"
 
@@ -600,7 +600,7 @@ docker compose restart dcrd
 
 ### Issue: "Out of Disk Space"
 
-**Cause**: Blockchain needs ~10 GB
+**Cause**: Blockchain needs ~30 GB and grows over time
 
 **Solutions**:
 ```bash
@@ -620,18 +620,18 @@ docker system prune -a
 
 **Cause**: Need to wait for dcrd sync first
 
-**Solution**: 
+**Solution**:
 1. Wait for dcrd to reach 100%
 2. Then dcrwallet will sync automatically
 3. May take additional 10-30 minutes
 
 ---
 
-## ✅ Success Checklist
+## Success Checklist
 
 After completing first steps:
 
-- [ ] Dashboard accessible at http://localhost:3000
+- [ ] Dashboard accessible at http://localhost:8080
 - [ ] Node showing "Connected" status
 - [ ] Blockchain fully synced (100%)
 - [ ] Peer count > 8
@@ -644,7 +644,7 @@ After completing first steps:
 
 ---
 
-## 🚀 What's Next?
+## What's Next?
 
 ### For Node Operators
 
@@ -679,13 +679,13 @@ After completing first steps:
 
 ---
 
-## 📚 Additional Help
+## Additional Help
 
 ### Getting Support
 
 **Documentation**:
 - [Troubleshooting Guide](../guides/troubleshooting.md)
-- [FAQ](../reference/faq.md)
+- [FAQ](../guides/troubleshooting.md)
 - [CLI Commands](../reference/cli-commands.md)
 
 **Community**:
@@ -701,7 +701,7 @@ After completing first steps:
 
 ---
 
-**Congratulations!** 🎉 You've completed the first steps. Your Decred Pulse is now up and running!
+**Congratulations!** You've completed the first steps. Your Decred Pulse is now up and running!
 
 **Enjoy monitoring your Decred node and wallet!**
 

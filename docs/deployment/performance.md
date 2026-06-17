@@ -2,7 +2,7 @@
 
 Guide to optimizing Decred Pulse for maximum performance, efficiency, and resource utilization.
 
-## 📊 Performance Overview
+## Performance Overview
 
 ### Optimization Areas
 
@@ -24,7 +24,7 @@ Guide to optimizing Decred Pulse for maximum performance, efficiency, and resour
 
 ---
 
-## ⚡ Quick Wins
+## Quick Wins
 
 ### 1. Use SSD Storage
 
@@ -54,9 +54,13 @@ sudo systemctl start docker
 
 ### 2. Increase RAM
 
-**Minimum**: 4 GB  
-**Recommended**: 8 GB  
+**Minimum**: 4 GB
+**Recommended**: 8 GB
 **Optimal**: 16+ GB
+
+**Measured usage**: the full 7-daemon stack uses about 1.4 GB at steady state (dcrd
+~0.8 GB is the largest consumer); the extra headroom covers the initial sync and the
+operating system.
 
 **Check current usage**:
 ```bash
@@ -97,14 +101,14 @@ docker compose restart dcrd
 ```
 
 **Impact**:
-- ✅ Faster transaction lookups
-- ✅ Required for full explorer
-- ⚠️ 15-20% more disk space
-- ⚠️ Slower initial sync
+- Faster transaction lookups
+- Required for full explorer
+- 15-20% more disk space
+- Slower initial sync
 
 ---
 
-## 🔧 Backend Optimization
+## Backend Optimization
 
 ### Concurrent RPC Calls
 
@@ -205,7 +209,7 @@ func GetDashboardData(w http.ResponseWriter, r *http.Request) {
 
 ---
 
-## 🖥️ Frontend Optimization
+## Frontend Optimization
 
 ### Build Optimization
 
@@ -303,7 +307,7 @@ npm uninstall <unused-package>
 
 ---
 
-## 💾 Database Optimization
+## Database Optimization
 
 ### dcrd Configuration
 
@@ -364,7 +368,7 @@ rpcconnect=dcrd:9109
 
 ---
 
-## 🌐 Network Optimization
+## Network Optimization
 
 ### Nginx Configuration
 
@@ -439,7 +443,7 @@ server {
     # Don't cache HTML (for updates)
     location / {
         add_header Cache-Control "no-cache";
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:8080;
     }
 }
 ```
@@ -463,7 +467,7 @@ For global deployments:
 
 ---
 
-## 💻 System Optimization
+## System Optimization
 
 ### Linux Kernel Tuning
 
@@ -549,7 +553,7 @@ ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue
 
 ---
 
-## 📊 Monitoring Performance
+## Monitoring Performance
 
 ### Baseline Metrics
 
@@ -614,7 +618,7 @@ ab -n 1000 -c 10 http://localhost:8080/api/health
 
 ---
 
-## 🎯 Performance Goals
+## Performance Goals
 
 ### Target Metrics
 
@@ -623,7 +627,7 @@ ab -n 1000 -c 10 http://localhost:8080/api/health
 - API response time: < 500ms (fresh data)
 - RPC timeout: 10 seconds max
 - CPU usage: < 50% average
-- Memory usage: < 2GB
+- Memory usage: < 256 MB (dashboard container; ~30 MB measured)
 
 **Frontend**:
 - Initial load: < 2 seconds
@@ -633,13 +637,13 @@ ab -n 1000 -c 10 http://localhost:8080/api/health
 
 **dcrd**:
 - Sync time: < 4 hours (SSD, good internet)
-- Memory usage: < 2 GB
+- Memory usage: < 2 GB (~0.8 GB typical)
 - Peer count: 8-50 (stable)
 - Block validation: < 500ms per block
 
 ---
 
-## 🚀 Advanced Optimization
+## Advanced Optimization
 
 ### Database Sharding (Future)
 
@@ -674,7 +678,7 @@ server {
 
 ---
 
-## 🔧 Troubleshooting Performance
+## Troubleshooting Performance
 
 ### Slow Dashboard
 
@@ -682,11 +686,11 @@ server {
 
 **Diagnose**:
 ```bash
-# Check backend logs
-docker compose logs backend | grep -i "timeout\|slow"
+# Check dashboard logs
+docker compose logs dashboard | grep -i "timeout\|slow"
 
 # Check RPC response time
-docker exec decred-pulse-dcrd dcrctl --rpcuser=... getinfo
+docker exec dcrpulse-dcrd dcrctl --rpcuser=... getinfo
 
 # Check network latency
 ping localhost
@@ -771,7 +775,7 @@ lsblk -d -o name,rota
 
 ---
 
-## 📚 Performance Resources
+## Performance Resources
 
 ### Monitoring Tools
 

@@ -163,7 +163,7 @@ status: ## Show status of all services
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
-		--rpccert=/app-data/certs/rpc.cert \
+		--rpccert=/app-data/dcrd/rpc.cert \
 		getinfo 2>/dev/null || echo "dcrd not ready yet..."
 
 clean: ## Stop and remove all containers, networks, and volumes (WARNING: deletes ALL data!)
@@ -234,7 +234,7 @@ dcrctl: ## Run dcrctl command for dcrd (usage: make dcrctl CMD="getblockcount")
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
-		--rpccert=/app-data/certs/rpc.cert \
+		--rpccert=/app-data/dcrd/rpc.cert \
 		$(CMD)
 
 dcrctl-wallet: ## Run dcrctl wallet command (usage: make dcrctl-wallet CMD="getbalance")
@@ -243,7 +243,7 @@ dcrctl-wallet: ## Run dcrctl wallet command (usage: make dcrctl-wallet CMD="getb
 		--rpcuser=$(DCRWALLET_RPC_USER) \
 		--rpcpass=$(DCRWALLET_RPC_PASS) \
 		--rpcserver=127.0.0.1:9110 \
-		--rpccert=/app-data/certs/rpc.cert \
+		--rpccert=/app-data/dcrd/rpc.cert \
 		$(CMD)
 
 sync-status: ## Check blockchain sync status
@@ -252,7 +252,7 @@ sync-status: ## Check blockchain sync status
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
-		--rpccert=/app-data/certs/rpc.cert \
+		--rpccert=/app-data/dcrd/rpc.cert \
 		getblockchaininfo 2>/dev/null || echo "dcrd not ready yet..."
 
 peers: ## Show connected peers
@@ -261,7 +261,7 @@ peers: ## Show connected peers
 		--rpcuser=$(DCRD_RPC_USER) \
 		--rpcpass=$(DCRD_RPC_PASS) \
 		--rpcserver=127.0.0.1:9109 \
-		--rpccert=/app-data/certs/rpc.cert \
+		--rpccert=/app-data/dcrd/rpc.cert \
 		getpeerinfo 2>/dev/null | grep -E '"addr"|"id"' || echo "dcrd not ready yet..."
 
 backup: ## Backup all app data
@@ -288,7 +288,7 @@ backup-certs: ## Backup certificates only
 	docker run --rm \
 		-v dcrpulse_app-data:/app-data \
 		-v $(PWD)/backups:/backup \
-		alpine tar czf /backup/certs-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /app-data/certs .
+		alpine tar czf /backup/certs-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /app-data/dcrd rpc.cert rpc.key
 	@echo "Certificates backup created in backups/"
 
 restore: ## Restore all app data from backup (usage: make restore BACKUP=backups/app-data-backup-xxx.tar.gz)
@@ -384,7 +384,7 @@ wallet-info: ## Get wallet info
 		--rpcuser=$(DCRWALLET_RPC_USER) \
 		--rpcpass=$(DCRWALLET_RPC_PASS) \
 		--rpcserver=127.0.0.1:9110 \
-		--rpccert=/app-data/certs/rpc.cert \
+		--rpccert=/app-data/dcrd/rpc.cert \
 		walletinfo 2>/dev/null || echo "dcrwallet not ready yet..."
 
 wallet-balance: ## Get wallet balance
@@ -393,5 +393,5 @@ wallet-balance: ## Get wallet balance
 		--rpcuser=$(DCRWALLET_RPC_USER) \
 		--rpcpass=$(DCRWALLET_RPC_PASS) \
 		--rpcserver=127.0.0.1:9110 \
-		--rpccert=/app-data/certs/rpc.cert \
+		--rpccert=/app-data/dcrd/rpc.cert \
 		getbalance 2>/dev/null || echo "dcrwallet not ready yet..."

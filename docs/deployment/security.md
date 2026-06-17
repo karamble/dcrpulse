@@ -2,7 +2,7 @@
 
 Comprehensive security guide for hardening your Decred Pulse deployment against threats and vulnerabilities.
 
-## 🔒 Security Overview
+## Security Overview
 
 ### Security Layers
 
@@ -24,7 +24,7 @@ Comprehensive security guide for hardening your Decred Pulse deployment against 
 
 ---
 
-## 🛡️ Application Security
+## Application Security
 
 ### RPC Credentials
 
@@ -143,11 +143,11 @@ location /api/ {
 **Never hardcode credentials!**
 
 ```go
-// ❌ BAD
+//  BAD
 rpcUser := "decred"
 rpcPass := "password123"
 
-// ✅ GOOD
+//  GOOD
 rpcUser := os.Getenv("DCRD_RPC_USER")
 rpcPass := os.Getenv("DCRD_RPC_PASS")
 ```
@@ -194,7 +194,7 @@ defer cancel()
 
 ---
 
-## 🌐 Network Security
+## Network Security
 
 ### Firewall Configuration
 
@@ -349,7 +349,7 @@ sudo fail2ban-client status sshd
 
 ---
 
-## 💻 System Security
+## System Security
 
 ### OS Hardening
 
@@ -450,10 +450,10 @@ services:
 
 ```bash
 # Create logrotate config
-sudo nano /etc/logrotate.d/decred-pulse
+sudo nano /etc/logrotate.d/dcrpulse
 
 # Add:
-/var/log/decred-pulse/*.log {
+/var/log/dcrpulse/*.log {
     daily
     rotate 7
     compress
@@ -464,7 +464,7 @@ sudo nano /etc/logrotate.d/decred-pulse
 }
 
 # Test
-sudo logrotate -d /etc/logrotate.d/decred-pulse
+sudo logrotate -d /etc/logrotate.d/dcrpulse
 ```
 
 #### Secure Docker Logs
@@ -481,7 +481,7 @@ services:
 
 ---
 
-## 🔐 Certificate Management
+## Certificate Management
 
 ### Let's Encrypt SSL
 
@@ -527,12 +527,12 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout /etc/nginx/ssl/selfsigned.key \
     -out /etc/nginx/ssl/selfsigned.crt
 
-# ⚠️ Never use in production!
+#  Never use in production!
 ```
 
 ---
 
-## 📊 Security Monitoring
+## Security Monitoring
 
 ### Failed Login Attempts
 
@@ -548,11 +548,10 @@ sudo fail2ban-client status sshd
 
 ```bash
 # Scan images for vulnerabilities
-docker scan decred-pulse-backend:latest
-docker scan decred-pulse-frontend:latest
+docker scan dcrpulse-dashboard:latest
 
 # Or use Trivy
-trivy image decred-pulse-backend:latest
+trivy image dcrpulse-dashboard:latest
 ```
 
 ### API Access Logs
@@ -564,15 +563,15 @@ log_format detailed '$remote_addr - $remote_user [$time_local] '
                     '"$http_referer" "$http_user_agent" '
                     '$request_time $upstream_response_time';
 
-access_log /var/log/nginx/decred-pulse-access.log detailed;
+access_log /var/log/nginx/dcrpulse-access.log detailed;
 
 # Monitor for suspicious activity
-sudo tail -f /var/log/nginx/decred-pulse-access.log | grep -E "POST|DELETE"
+sudo tail -f /var/log/nginx/dcrpulse-access.log | grep -E "POST|DELETE"
 ```
 
 ---
 
-## 🚨 Incident Response
+## Incident Response
 
 ### Security Breach Checklist
 
@@ -614,7 +613,7 @@ sudo tail -f /var/log/nginx/decred-pulse-access.log | grep -E "POST|DELETE"
 
 ---
 
-## 🔒 Security Checklist
+## Security Checklist
 
 ### Pre-Deployment
 
@@ -649,7 +648,7 @@ sudo tail -f /var/log/nginx/decred-pulse-access.log | grep -E "POST|DELETE"
 
 ---
 
-## 🛡️ Defense in Depth
+## Defense in Depth
 
 ### Layer 1: Network
 
@@ -680,7 +679,7 @@ sudo tail -f /var/log/nginx/decred-pulse-access.log | grep -E "POST|DELETE"
 
 ---
 
-## 📚 Security Resources
+## Security Resources
 
 ### Tools
 
@@ -702,7 +701,7 @@ sudo tail -f /var/log/nginx/decred-pulse-access.log | grep -E "POST|DELETE"
 
 ---
 
-## 🔐 Compliance
+## Compliance
 
 ### GDPR Considerations
 

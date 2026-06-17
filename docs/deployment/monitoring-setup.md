@@ -2,7 +2,7 @@
 
 Complete guide to setting up production monitoring, alerting, and observability for Decred Pulse.
 
-## 📊 Monitoring Overview
+## Monitoring Overview
 
 ### Why Monitor?
 
@@ -34,7 +34,7 @@ Complete guide to setting up production monitoring, alerting, and observability 
 
 ---
 
-## 🔧 Basic Monitoring (No Additional Tools)
+## Basic Monitoring (No Additional Tools)
 
 ### Docker Health Checks
 
@@ -60,12 +60,12 @@ docker compose ps
 
 ### System Monitoring Script
 
-Create `/opt/decred-pulse/monitor.sh`:
+Create `/opt/dcrpulse/monitor.sh`:
 
 ```bash
 #!/bin/bash
 
-LOG_FILE="/var/log/decred-pulse-monitor.log"
+LOG_FILE="/var/log/dcrpulse-monitor.log"
 ALERT_EMAIL="admin@your-domain.com"
 
 # Timestamp
@@ -101,7 +101,7 @@ if ! curl -sf http://localhost:8080/api/health > /dev/null; then
 fi
 
 # Check dcrd sync
-BLOCK_COUNT=$(docker exec decred-pulse-dcrd dcrctl \
+BLOCK_COUNT=$(docker exec dcrpulse-dcrd dcrctl \
     --rpcuser=$DCRD_RPC_USER \
     --rpcpass=$DCRD_RPC_PASS \
     --rpcserver=127.0.0.1:9109 \
@@ -120,11 +120,11 @@ echo "" >> $LOG_FILE
 
 **Setup**:
 ```bash
-chmod +x /opt/decred-pulse/monitor.sh
+chmod +x /opt/dcrpulse/monitor.sh
 
 # Add to crontab (every 5 minutes)
 crontab -e
-*/5 * * * * /opt/decred-pulse/monitor.sh
+*/5 * * * * /opt/dcrpulse/monitor.sh
 ```
 
 ---
@@ -134,27 +134,27 @@ crontab -e
 **Centralize logs**:
 ```bash
 # Create log directory
-mkdir -p /var/log/decred-pulse
+mkdir -p /var/log/dcrpulse
 
 # Stream Docker logs to files
-docker compose logs -f dcrd > /var/log/decred-pulse/dcrd.log 2>&1 &
-docker compose logs -f backend > /var/log/decred-pulse/backend.log 2>&1 &
+docker compose logs -f dcrd > /var/log/dcrpulse/dcrd.log 2>&1 &
+docker compose logs -f dashboard > /var/log/dcrpulse/backend.log 2>&1 &
 ```
 
 **Monitor for errors**:
 ```bash
 # Watch for errors in real-time
-tail -f /var/log/decred-pulse/*.log | grep -i "error\|fatal\|panic"
+tail -f /var/log/dcrpulse/*.log | grep -i "error\|fatal\|panic"
 
 # Daily error report
 #!/bin/bash
-grep -i "error\|fatal" /var/log/decred-pulse/*.log | \
+grep -i "error\|fatal" /var/log/dcrpulse/*.log | \
     mail -s "Daily Error Report" admin@your-domain.com
 ```
 
 ---
 
-## 📈 Prometheus + Grafana Setup
+## Prometheus + Grafana Setup
 
 ### Architecture
 
@@ -287,7 +287,7 @@ scrape_configs:
       - targets: ['cadvisor:8080']
 
   # Backend application metrics (if implemented)
-  - job_name: 'decred-pulse-backend'
+  - job_name: 'dcrpulse-dashboard'
     static_configs:
       - targets: ['backend:8080']
     metrics_path: '/metrics'
@@ -317,13 +317,13 @@ docker compose -f docker-compose.monitoring.yml ps
 **Add Prometheus Data Source**:
 1. Open Grafana: http://localhost:3001
 2. Login (admin/admin)
-3. Go to Configuration → Data Sources
-4. Add Data Source → Prometheus
+3. Go to Configuration -> Data Sources
+4. Add Data Source -> Prometheus
 5. URL: `http://prometheus:9090`
 6. Save & Test
 
 **Import Dashboards**:
-1. Go to Dashboards → Import
+1. Go to Dashboards -> Import
 2. Enter dashboard ID or JSON
 
 **Recommended dashboards**:
@@ -333,7 +333,7 @@ docker compose -f docker-compose.monitoring.yml ps
 
 ---
 
-## 🔔 Alerting Setup
+## Alerting Setup
 
 ### Prometheus Alertmanager
 
@@ -432,7 +432,7 @@ groups:
 
       # API health check failed
       - alert: APIHealthCheckFailed
-        expr: up{job="decred-pulse-backend"} == 0
+        expr: up{job="dcrpulse-dashboard"} == 0
         for: 2m
         labels:
           severity: critical
@@ -455,7 +455,7 @@ alerting:
 
 ---
 
-## 📊 Custom Application Metrics
+## Custom Application Metrics
 
 ### Add Metrics to Backend
 
@@ -510,7 +510,7 @@ func main() {
 
 ---
 
-## 📱 Notification Channels
+## Notification Channels
 
 ### Email Alerts
 
@@ -560,7 +560,7 @@ receivers:
 
 ---
 
-## 📝 Log Aggregation with Loki
+## Log Aggregation with Loki
 
 ### Add Loki to Stack
 
@@ -664,7 +664,7 @@ scrape_configs:
 
 ---
 
-## 🔍 Troubleshooting Monitoring
+## Troubleshooting Monitoring
 
 ### Prometheus Not Scraping
 
@@ -710,7 +710,7 @@ docker compose logs alertmanager
 
 ---
 
-## 📊 Dashboard Examples
+## Dashboard Examples
 
 ### System Overview Dashboard
 
@@ -743,7 +743,7 @@ docker compose logs alertmanager
 
 ---
 
-## 📚 Additional Resources
+## Additional Resources
 
 ### Documentation
 - [Prometheus](https://prometheus.io/docs/)

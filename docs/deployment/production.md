@@ -2,19 +2,19 @@
 
 Guide to deploying Decred Pulse in a production environment with best practices for security, reliability, and performance.
 
-## 🎯 Deployment Options
+## Deployment Options
 
 ### Option 1: Docker Compose (Recommended)
 
 **Pros**:
-- ✅ Easiest to deploy and maintain
-- ✅ Isolated environments
-- ✅ Easy updates and rollbacks
-- ✅ Consistent across environments
+- Easiest to deploy and maintain
+- Isolated environments
+- Easy updates and rollbacks
+- Consistent across environments
 
 **Cons**:
-- ⚠️ Requires Docker knowledge
-- ⚠️ Overhead from containerization
+- Requires Docker knowledge
+- Overhead from containerization
 
 **Best for**: Most production deployments
 
@@ -23,13 +23,13 @@ Guide to deploying Decred Pulse in a production environment with best practices 
 ### Option 2: Systemd Services
 
 **Pros**:
-- ✅ Native OS integration
-- ✅ Lower overhead
-- ✅ Standard Linux management
+- Native OS integration
+- Lower overhead
+- Standard Linux management
 
 **Cons**:
-- ⚠️ More manual configuration
-- ⚠️ Less portable
+- More manual configuration
+- Less portable
 
 **Best for**: Bare metal servers, performance-critical deployments
 
@@ -38,20 +38,20 @@ Guide to deploying Decred Pulse in a production environment with best practices 
 ### Option 3: Kubernetes
 
 **Pros**:
-- ✅ High availability
-- ✅ Auto-scaling
-- ✅ Advanced orchestration
+- High availability
+- Auto-scaling
+- Advanced orchestration
 
 **Cons**:
-- ⚠️ Complex setup
-- ⚠️ Requires K8s expertise
-- ⚠️ Overkill for single-instance
+- Complex setup
+- Requires K8s expertise
+- Overkill for single-instance
 
 **Best for**: Large-scale deployments, multiple instances
 
 ---
 
-## 🚀 Production Deployment with Docker Compose
+## Production Deployment with Docker Compose
 
 ### Prerequisites
 
@@ -59,7 +59,7 @@ Guide to deploying Decred Pulse in a production environment with best practices 
 - Ubuntu 22.04 LTS (recommended) or similar
 - 4+ CPU cores
 - 8+ GB RAM
-- 30+ GB SSD storage
+- 80+ GB SSD storage
 - Static IP address
 - Domain name (optional but recommended)
 
@@ -119,12 +119,12 @@ sudo ufw status
 
 ```bash
 # Create application directory
-sudo mkdir -p /opt/decred-pulse
-sudo chown $USER:$USER /opt/decred-pulse
-cd /opt/decred-pulse
+sudo mkdir -p /opt/dcrpulse
+sudo chown $USER:$USER /opt/dcrpulse
+cd /opt/dcrpulse
 
 # Clone repository
-git clone https://github.com/karamble/decred-pulse.git .
+git clone https://github.com/karamble/dcrpulse.git .
 
 # Create .env file
 cp env.example .env
@@ -172,7 +172,7 @@ services:
       context: ./dcrd
       args:
         DCRD_VERSION: ${DCRD_VERSION:-release-v2.0.6}
-    container_name: decred-pulse-dcrd-prod
+    container_name: dcrpulse-dcrd-prod
     restart: always
     volumes:
       - dcrd-data:/home/dcrd/.dcrd
@@ -203,7 +203,7 @@ services:
       context: ./dcrwallet
       args:
         DCRWALLET_VERSION: ${DCRWALLET_VERSION:-release-v2.0.6}
-    container_name: decred-pulse-dcrwallet-prod
+    container_name: dcrpulse-dcrwallet-prod
     restart: always
     depends_on:
       dcrd:
@@ -233,10 +233,10 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  backend:
+  dashboard:
     build:
-      context: ./backend
-    container_name: decred-pulse-backend-prod
+      context: ./dashboard
+    container_name: dcrpulse-dashboard-prod
     restart: always
     depends_on:
       dcrd:
@@ -270,24 +270,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  frontend:
-    build:
-      context: ./frontend
-    container_name: decred-pulse-frontend-prod
-    restart: always
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - decred-network
-    mem_limit: 256m
-    cpus: 0.5
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "3"
-
 networks:
   decred-network:
     driver: bridge
@@ -319,7 +301,7 @@ docker compose -f docker-compose.prod.yml ps
 
 ```bash
 # Create Nginx config
-sudo nano /etc/nginx/sites-available/decred-pulse
+sudo nano /etc/nginx/sites-available/dcrpulse
 ```
 
 **Basic HTTP configuration**:
@@ -330,7 +312,7 @@ server {
 
     # Frontend
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -363,7 +345,7 @@ server {
 **Enable site**:
 ```bash
 # Enable site
-sudo ln -s /etc/nginx/sites-available/decred-pulse /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/dcrpulse /etc/nginx/sites-enabled/
 
 # Test configuration
 sudo nginx -t
@@ -411,7 +393,7 @@ docker compose -f docker-compose.prod.yml logs --tail=50
 
 ---
 
-## 🔒 Production Security Checklist
+## Production Security Checklist
 
 ### Application Security
 
@@ -447,17 +429,17 @@ docker compose -f docker-compose.prod.yml logs --tail=50
 
 ---
 
-## 📦 Updates and Maintenance
+## Updates and Maintenance
 
 ### Update Procedure
 
 ```bash
 # Navigate to installation
-cd /opt/decred-pulse
+cd /opt/dcrpulse
 
 # Backup current state
 docker compose -f docker-compose.prod.yml down
-sudo tar czf /backup/decred-pulse-$(date +%Y%m%d).tar.gz .
+sudo tar czf /backup/dcrpulse-$(date +%Y%m%d).tar.gz .
 
 # Pull latest code
 git fetch origin
@@ -493,7 +475,7 @@ docker compose -f docker-compose.prod.yml logs -f dcrd
 
 ---
 
-## 💾 Backup Strategy
+## Backup Strategy
 
 ### What to Backup
 
@@ -511,12 +493,12 @@ docker compose -f docker-compose.prod.yml logs -f dcrd
 
 ### Backup Script
 
-Create `/opt/decred-pulse/backup.sh`:
+Create `/opt/dcrpulse/backup.sh`:
 
 ```bash
 #!/bin/bash
 
-BACKUP_DIR="/backup/decred-pulse"
+BACKUP_DIR="/backup/dcrpulse"
 DATE=$(date +%Y%m%d-%H%M%S)
 
 mkdir -p $BACKUP_DIR
@@ -532,7 +514,7 @@ tar czf "$BACKUP_DIR/configs-$DATE.tar.gz" \
 # Backup volumes (blockchain data - optional, large)
 # Uncomment if needed
 # docker run --rm \
-#     -v decred-pulse_dcrd-data:/data \
+#     -v dcrpulse_dcrd-data:/data \
 #     -v $BACKUP_DIR:/backup \
 #     alpine tar czf /backup/dcrd-data-$DATE.tar.gz -C /data .
 
@@ -545,30 +527,30 @@ echo "Backup completed: $DATE"
 **Setup cron**:
 ```bash
 # Make executable
-chmod +x /opt/decred-pulse/backup.sh
+chmod +x /opt/dcrpulse/backup.sh
 
 # Add to crontab
 crontab -e
 
 # Daily backup at 2 AM
-0 2 * * * /opt/decred-pulse/backup.sh >> /var/log/decred-pulse-backup.log 2>&1
+0 2 * * * /opt/dcrpulse/backup.sh >> /var/log/dcrpulse-backup.log 2>&1
 ```
 
 ---
 
-## 🔍 Monitoring and Alerts
+## Monitoring and Alerts
 
 ### Basic Monitoring
 
 ```bash
 # Create monitoring script
-cat > /opt/decred-pulse/monitor.sh << 'EOF'
+cat > /opt/dcrpulse/monitor.sh << 'EOF'
 #!/bin/bash
 
 # Check if services are running
-if ! docker compose -f /opt/decred-pulse/docker-compose.prod.yml ps | grep -q "Up"; then
+if ! docker compose -f /opt/dcrpulse/docker-compose.prod.yml ps | grep -q "Up"; then
     echo "ERROR: Some services are down!"
-    docker compose -f /opt/decred-pulse/docker-compose.prod.yml ps
+    docker compose -f /opt/dcrpulse/docker-compose.prod.yml ps
     exit 1
 fi
 
@@ -587,15 +569,15 @@ fi
 echo "All checks passed"
 EOF
 
-chmod +x /opt/decred-pulse/monitor.sh
+chmod +x /opt/dcrpulse/monitor.sh
 
 # Add to crontab (every 5 minutes)
-*/5 * * * * /opt/decred-pulse/monitor.sh >> /var/log/decred-pulse-monitor.log 2>&1
+*/5 * * * * /opt/dcrpulse/monitor.sh >> /var/log/dcrpulse-monitor.log 2>&1
 ```
 
 ---
 
-## 🚨 Disaster Recovery
+## Disaster Recovery
 
 ### Service Failure
 
@@ -631,9 +613,9 @@ docker compose -f docker-compose.prod.yml up -d
 ```bash
 # Reinstall from backup
 cd /opt
-sudo rm -rf decred-pulse
-sudo tar xzf /backup/decred-pulse-YYYYMMDD.tar.gz
-cd decred-pulse
+sudo rm -rf dcrpulse
+sudo tar xzf /backup/dcrpulse-YYYYMMDD.tar.gz
+cd dcrpulse
 
 # Restore volumes if needed
 # Restore .env and configs
@@ -644,7 +626,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 ---
 
-## 📊 Performance Tuning
+## Performance Tuning
 
 See [Performance Guide](performance.md) for detailed optimization.
 
@@ -657,7 +639,7 @@ See [Performance Guide](performance.md) for detailed optimization.
 
 ---
 
-## 🔗 Additional Resources
+## Additional Resources
 
 - **[Security Guide](security.md)** - Hardening and best practices
 - **[Performance Guide](performance.md)** - Optimization techniques

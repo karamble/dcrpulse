@@ -1,8 +1,12 @@
 # Staking Guide
 
-Complete guide to Decred Proof-of-Stake (PoS) staking using the Decred Pulse dashboard. Learn how to monitor ticket pools, track your tickets, and understand staking rewards.
+Complete guide to Decred Proof-of-Stake (PoS) staking using the Decred Pulse dashboard. Learn how to buy tickets, run the autobuyer, choose a Voting Service Provider (VSP), and track your tickets and rewards.
 
-## 📖 What is Decred Staking?
+**Access**: Open `http://localhost:8080`, click the **"Wallet"** button in the header, then **Staking** in the wallet sidebar. The Staking area has five tabs: **Purchase**, **Auto Buyer**, **Ticket Status**, **History**, and **Statistics**.
+
+For consensus, treasury, and Politeia voting, see the [Governance Guide](governance.md).
+
+## What is Decred Staking?
 
 **Decred staking** is the process of time-locking DCR to purchase **tickets** that participate in network governance and consensus. In return, you earn staking rewards when your tickets are called to vote.
 
@@ -16,33 +20,33 @@ Complete guide to Decred Proof-of-Stake (PoS) staking using the Decred Pulse das
 
 ---
 
-## 🎫 Ticket Lifecycle
+## Ticket Lifecycle
 
-### 1. Purchase (Mempool) ⏳
+### 1. Purchase (Mempool)
 - Buy ticket at current ticket price
 - Transaction enters mempool
 - Awaiting confirmation
 - **Duration**: ~5 minutes (1 block)
 
-### 2. Immature 🐣
+### 2. Immature
 - Ticket confirmed on blockchain
 - Not yet eligible to vote
 - Gaining maturity
 - **Duration**: ~21 hours (256 blocks)
 
-### 3. Live/Unspent ✅
+### 3. Live/Unspent
 - Ticket enters the pool
 - Eligible to be called for voting
 - **Duration**: ~28 days average (142 days max)
 - **Probability**: Random selection per block
 
-### 4. Voting 🗳️
+### 4. Voting
 - Ticket is selected to vote
 - Validates previous block
 - Earns voting reward
 - **Reward**: ~0.8% of ticket price
 
-### 5. Voted ✅
+### 5. Voted
 - Vote confirmed
 - Reward + ticket price returned
 - Rewards are immature for 256 blocks
@@ -50,25 +54,27 @@ Complete guide to Decred Proof-of-Stake (PoS) staking using the Decred Pulse das
 
 ### Alternative Outcomes
 
-**Expired** ⌛
+**Expired**
 - Not selected within 142 days (~40,960 blocks)
-- Must be revoked to recover funds
+- Automatically revoked by the network (DCP-0009)
 - No reward earned
 
-**Revoked** ❌
-- Manual or automatic revocation
+**Revoked**
+- Missed or expired ticket, revoked automatically since DCP-0009
 - Original ticket price returned (minus small fee)
 - No reward earned
 
 ---
 
-## 📊 Understanding the Dashboard
+## Understanding the Dashboard
 
-### Ticket Pool Info Card
+The **Purchase** tab shows two read-only cards alongside the purchase form: **Ticket Pool & Difficulty** (network-wide) and **My Tickets** (your own). The other tabs are covered in [Staking Operations](#staking-operations) below.
+
+### Ticket Pool & Difficulty Card
 
 Monitor the global Decred ticket pool:
 
-#### Pool Size 🎫
+#### Pool Size
 **Current**: Number of live tickets in the pool
 **Target**: ~40,960 tickets
 **Significance**: Higher pool = more decentralization
@@ -85,32 +91,33 @@ Pool Size: 41,095 tickets
 
 ---
 
-#### Current Difficulty 💎
-**What it is**: The current ticket price in DCR
+#### Current Price
+**What it is**: The current ticket price (stake difficulty) in DCR
 **Updates**: Every 144 blocks (~12 hours)
 **Algorithm**: Adjusts to maintain ~40,960 pool size
 
 **What you see**:
 ```
-Current Difficulty: 293.08 DCR
+Current Price: 293.08 DCR
 ```
 
 **What it means**:
-- Next ticket purchase costs 293.08 DCR
+- A ticket purchased now costs 293.08 DCR
 - This is the price you'll pay now
 - Changes at next difficulty adjustment
 
 ---
 
-#### Next Difficulty 🔄
+#### Expected Next
 **What it is**: Estimated next ticket price
-**Timing**: Updates in next difficulty window
+**Timing**: Applies at the next difficulty window
 **Calculation**: Based on recent demand
 
 **What you see**:
 ```
-Next Difficulty: 293.08 DCR
+Expected Next: 293.08 DCR
 ```
+The card also shows the change versus the current price (up, down, or unchanged).
 
 **What it means**:
 - Expected price for next window
@@ -120,7 +127,7 @@ Next Difficulty: 293.08 DCR
 
 ---
 
-#### Estimated Difficulty Range 📊
+#### Expected Price Range
 **What it is**: Price prediction range
 **Based on**: Recent ticket purchases
 **Algorithm**: `estimatestakediff` RPC
@@ -134,14 +141,14 @@ Max: 294.59 DCR
 
 **What it means**:
 - **Min**: Lowest possible next price
-- **Expected**: Most likely next price  
+- **Expected**: Most likely next price
 - **Max**: Highest possible next price
 
 **Usage**: Plan your ticket purchases
 
 ---
 
-#### Mempool Tickets ⏳
+#### Mempool Tickets
 **What it is**: Network-wide pending ticket purchases
 **Status**: Awaiting confirmation
 **Accuracy**: Calculated using stake difficulty
@@ -168,7 +175,7 @@ This accurately counts tickets even in coinjoin transactions.
 
 Track your personal ticket statistics:
 
-#### Mempool ⏳
+#### Mempool
 **Your pending tickets**
 - Just purchased
 - Awaiting first confirmation
@@ -182,7 +189,7 @@ Track your personal ticket statistics:
 
 ---
 
-#### Immature 🐣
+#### Immature
 **Your maturing tickets**
 - Confirmed but not yet live
 - Requires 256 confirmations
@@ -197,7 +204,7 @@ Track your personal ticket statistics:
 
 ---
 
-#### Live/Unspent ✅
+#### Live/Unspent
 **Your active tickets**
 - In the ticket pool
 - Eligible to vote on every block
@@ -213,13 +220,13 @@ Track your personal ticket statistics:
 **Probability per block**:
 ```
 Chance = 5 votes needed / ~40,960 pool size
-      ≈ 0.012% per block
-      ≈ 28 days average
+      ~ 0.012% per block
+      ~ 28 days average
 ```
 
 ---
 
-#### Voted 🗳️
+#### Voted
 **Your successful votes**
 - Tickets that have voted
 - Rewards earned
@@ -234,36 +241,31 @@ Chance = 5 votes needed / ~40,960 pool size
 
 ---
 
-#### Revoked ❌
+#### Revoked
 **Your revoked tickets**
-- Manually revoked
-- Auto-revoked after expiry
-- Funds recovered (minus fee)
+- Missed or expired tickets that were revoked
+- Funds recovered (minus a small fee)
 
 **Typical count**: Low (most tickets vote)
 
 **What to expect**:
-- ~5% of tickets expire (statistically)
-- Auto-revoke with `enablevoting=1`
-- Manual revoke if needed
+- A small fraction of tickets miss or expire
+- Since DCP-0009 (auto-revocation, 2022), revocations are created automatically by the network; no manual action is needed
 
 ---
 
-#### Expired ⌛
+#### Expired
 **Your expired unspent tickets**
 - Not selected within 142 days
-- Awaiting revocation
-- Funds still locked
 
-**Typical count**: Should be 0 with auto-revoke
+**Typical count**: Should be 0 on current mainnet
 
-**Action needed**:
-- Manually revoke if auto-revoke disabled
-- Run: `dcrctl rebroadcastmissed`
+**What to expect**:
+- Under the auto-revocation rules active since DCP-0009, expired tickets are revoked automatically and their funds returned; you do not revoke them by hand
 
 ---
 
-#### Total Subsidy 💰
+#### Total Subsidy
 **Cumulative voting rewards**
 - All-time earnings from voting
 - Excludes original ticket prices
@@ -273,7 +275,7 @@ Chance = 5 votes needed / ~40,960 pool size
 
 **Calculation**:
 ```
-Per Vote ≈ Ticket Price × 0.008
+Per Vote ~ Ticket Price x 0.008
 ```
 
 **Example**:
@@ -283,12 +285,12 @@ Per Vote ≈ Ticket Price × 0.008
 
 ---
 
-## 💰 Staking Economics
+## Staking Economics
 
 ### Costs
 
 **Ticket Price**
-- Current: Check "Current Difficulty" card
+- Current: Check the "Current Price" card on the Purchase tab
 - Historical Range: 30-600 DCR
 - Current Range: 200-350 DCR (typical)
 
@@ -319,14 +321,14 @@ Annual ROI: ~7.1%
 
 **Calculation**:
 ```
-ROI per vote = (Reward / Ticket Price) × 100
-             = (2.4 / 300) × 100
-             ≈ 0.8%
+ROI per vote = (Reward / Ticket Price) x 100
+             = (2.4 / 300) x 100
+             ~ 0.8%
 
-Annual ROI = 0.8% × (365 / 28)
-           ≈ 10.4% theoretical
+Annual ROI = 0.8% x (365 / 28)
+           ~ 10.4% theoretical
 
-Actual ROI ≈ 6-7% (accounting for expiries, timing)
+Actual ROI ~ 6-7% (accounting for expiries, timing)
 ```
 
 ### Risk Factors
@@ -348,7 +350,7 @@ Actual ROI ≈ 6-7% (accounting for expiries, timing)
 
 ---
 
-## 🎯 Staking Strategies
+## Staking Strategies
 
 ### Conservative Staking
 **Goal**: Steady, predictable returns
@@ -386,122 +388,140 @@ Actual ROI ≈ 6-7% (accounting for expiries, timing)
 
 ---
 
-## 📱 Monitoring Your Stakes
+## Monitoring Your Stakes
 
 ### Daily Checks
-✅ Live ticket count (stable or growing?)
-✅ Voted tickets (earning rewards?)
-✅ Expired tickets (need revoking?)
-✅ Immature tickets (recently purchased?)
+ Live ticket count (stable or growing?)
+ Voted tickets (earning rewards?)
+ Ticket fee status on the Ticket Status tab (all Confirmed?)
+ Immature tickets (recently purchased?)
 
 ### Weekly Checks
-✅ Total subsidy (rewards accumulating?)
-✅ Ticket difficulty trends (buy now or wait?)
-✅ Pool size changes (network health?)
-✅ Revoked count (within expected ~5%?)
+ Total subsidy (rewards accumulating?)
+ Ticket difficulty trends (buy now or wait?)
+ Pool size changes (network health?)
+ Revoked + missed count (within expected range?)
 
 ### Monthly Reviews
-✅ Total ROI calculation
-✅ Reward reinvestment strategy
-✅ Difficulty trend analysis
-✅ VSP performance (if using)
+ Total ROI calculation
+ Reward reinvestment strategy
+ Difficulty trend analysis
+ VSP performance (if using)
 
 ---
 
-## 🔧 Staking Operations
+## Staking Operations
 
-### Purchasing Tickets
+All staking operations are done from the dashboard tabs. You never need to edit
+`dcrwallet.conf` or run `dcrctl`. Signing a purchase, starting the autobuyer, or
+syncing fees prompts for your private passphrase in a modal.
 
-**Via `dcrwallet` CLI:**
-```bash
-dcrctl --wallet purchaseticket default 300 1 $(dcrctl --wallet getnewaddress)
-```
+### Purchasing Tickets (Purchase tab)
 
-**Parameters**:
-- `default`: Account to purchase from
-- `300`: Maximum price willing to pay
-- `1`: Number of tickets to purchase
-- `getnewaddress`: Commitment address
+The **Purchase** tab holds the purchase form next to the **Ticket Pool &
+Difficulty** and **My Tickets** cards.
 
-**Via `dcrwallet` RPC:**
-See [Wallet Operations Guide](../guides/wallet-operations.md) for API details.
+1. **Source account**: Pick the account to fund the purchase from. When privacy
+   is configured the source is locked to your **mixed** account and the ticket
+   is bought as a mixed (private) ticket.
+2. **Voting Service Provider (VSP)**: Search the VSP picker or type a host to
+   use. The list is sorted by fee, lowest first. See [Choosing a VSP](#choosing-a-vsp-voting-service-provider) below.
+3. **Number of tickets**: Enter how many to buy.
+4. Review the cost breakdown (ticket price, stake total, estimated VSP fee, and
+   the balance remaining after purchase), then click **Purchase** and enter your
+   passphrase.
 
----
+On success the tab lists each new ticket hash with a link to the block explorer.
 
-### Automatic Ticket Buying
-
-**Enable in `dcrwallet.conf`:**
-```ini
-enableticketbuyer=1
-ticketbuyer.limit=10
-ticketbuyer.maxpricerelative=1.25
-```
-
-**Settings**:
-- `limit`: Max tickets to maintain
-- `maxpricerelative`: Max price relative to average (1.25 = 125%)
-
-**Caution**: Only for experienced users with sufficient balance.
+**Mixed (private) purchases** run in the background: your funds are
+CoinShuffle++ mixed before the ticket is bought, which can take up to ~10
+minutes. A progress panel streams the log, and you can leave the page while it
+runs.
 
 ---
 
-### Using a VSP (Voting Service Provider)
+### Automatic Ticket Buying (Auto Buyer tab)
+
+The **Auto Buyer** tab runs an autobuyer that keeps buying tickets while the
+source account's spendable balance stays above a threshold you set.
+
+1. **Source account**: As on the Purchase tab, this is locked to your mixed
+   account when privacy is configured.
+2. **Voting Service Provider (VSP)**: Choose the VSP the autobuyer should use.
+3. **Balance to maintain (DCR)**: The autobuyer keeps buying while spendable
+   balance is above this value, and stops once it drops to the threshold.
+4. **Save settings** to persist the configuration, then **Start** and enter your
+   passphrase. Use **Stop** to halt it.
+
+A status badge shows whether the autobuyer is running, and an **Autobuyer
+events** log streams its activity (and the last error, if any). With privacy
+configured, starting the autobuyer stops the standalone mixer; the autobuyer
+mixes the tickets it buys while it runs.
+
+**Caution**: Only enable this with a balance you intend to fully commit to
+tickets.
+
+---
+
+### Choosing a VSP (Voting Service Provider)
 
 **Why use a VSP?**
-- Ensures votes even if you're offline
+- Ensures votes even if your wallet is offline
 - Professional infrastructure
 - Small fee for reliability
 
-**Setup**:
-1. Choose a VSP from [decred.org/vsp](https://decred.org/vsp/)
-2. Register and get VSP pubkey
-3. Configure in `dcrwallet`:
-   ```ini
-   enablevoting=1
-   vsp.url=https://your-vsp.com
-   vsp.pubkey=your-vsp-pubkey
-   ```
+A VSP is selected directly in the **Purchase**, **Auto Buyer**, and **Ticket
+Status** tabs using the VSP picker; you do not register a VSP in a config file.
 
-**Dashboard Monitoring**:
-- Voted tickets should appear normally
-- VSP handles the voting process
-- You earn rewards minus VSP fee
+**How the picker works**:
+- It lists VSPs from the public registry (`api.decred.org`), or, if the registry
+  is disabled in Settings or unreachable, the VSPs you have already used here.
+- Entries are sorted by fee percentage, lowest first.
+- You can type any VSP host directly; the dashboard probes its
+  `/api/v3/vspinfo` over HTTPS to fetch the fee and pubkey before selecting it.
+
+The VSP handles the voting process for your tickets, and you earn rewards minus
+the VSP fee.
 
 ---
 
-### Revoking Expired Tickets
+### Ticket fee status and recovery (Ticket Status tab)
 
-**Automatic Revocation** (recommended):
-```ini
-# dcrwallet.conf
-enablevoting=1
-```
+The **Ticket Status** tab groups your active tickets (Unmined, Immature, Live)
+by their VSP fee status: **Fee Error**, **Unpaid Fee**, **Paid Fee**, **Confirmed
+Fee**, and **Untracked**. A ticket only votes once its fee reaches **Confirmed**.
 
-**Manual Revocation**:
-```bash
-dcrctl --wallet rebroadcastmissed
-```
+- **Sync Failed VSP Tickets**: Retries fee payment for tickets in Fee Error and
+  re-checks paid fees against the VSP. You can also use it to migrate tracked
+  tickets to a different VSP. Select a fee account and VSP, then run it and enter
+  your passphrase.
+- **Process Unmanaged Tickets**: Appears when you have live tickets that are not
+  associated with a VSP (shown as Untracked). This typically happens after
+  restoring or importing a wallet: the tickets are recovered but their VSP fee
+  records are not. Select the VSP you bought them from to re-associate them so
+  their fees are confirmed and they keep voting. Run it once per VSP if you used
+  more than one.
 
-**Check for Missed**:
-```bash
-dcrctl --wallet getstakeinfo
-```
+### Revocation
 
-Look for `unspentexpired` count.
+Since DCP-0009 (auto-revocation, activated in 2022), missed and expired tickets
+are revoked automatically by the network and their committed funds returned.
+There is no manual revoke step and the dashboard does not expose one. Revoked
+tickets simply appear in the My Tickets and History views.
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### No Tickets Showing in Dashboard
 
 **Problem**: My Tickets card shows zeros
 
 **Solutions**:
-1. **Watch-only wallet**: 
+1. **Watch-only wallet**:
    - Cannot display tickets with xpub import
    - Need full RPC connection
-   - See: [Wallet Setup](../wallet-setup.md)
+   - See: [Wallet Setup](../guides/wallet-operations.md)
 
 2. **Recently purchased**:
    - Check mempool count
@@ -509,9 +529,9 @@ Look for `unspentexpired` count.
    - May take 5+ minutes
 
 3. **RPC connection issue**:
-   - Verify wallet is connected
-   - Check credentials
-   - Restart backend/wallet
+   - Verify the wallet daemon is connected and synced
+   - Check the dashboard's wallet RPC credentials in Settings
+   - Restart the `dcrpulse-dashboard` and `dcrpulse-dcrwallet` containers if needed
 
 ---
 
@@ -536,25 +556,26 @@ Look for `unspentexpired` count.
 
 ---
 
-### Expired Tickets Not Auto-Revoking
+### Tickets Stuck in Fee Error or Untracked
 
-**Problem**: Expired count growing
+**Problem**: On the Ticket Status tab, tickets sit in **Fee Error** or
+**Untracked** and are not voting.
 
 **Solutions**:
-1. **Enable auto-revoke**:
-   ```ini
-   enablevoting=1
-   ```
+1. **Fee Error**: Use **Sync Failed VSP Tickets** on the Ticket Status tab to
+   retry the fee payment and re-check it against the VSP. The fee must reach
+   **Confirmed** before the ticket can vote. The VSP may need more time, so
+   re-sync shortly if it stays in error.
 
-2. **Manual revoke**:
-   ```bash
-   dcrctl --wallet rebroadcastmissed
-   ```
+2. **Untracked** (after restore/import): Use **Process Unmanaged Tickets** to
+   re-associate the tickets with the VSP you bought them from. Run it once per
+   VSP if you used more than one.
 
-3. **Check wallet online**:
-   - Wallet must be running
-   - Must be synced
-   - Must have connectivity
+3. **Check the wallet**: The wallet daemon must be running, synced, and able to
+   reach the VSP over HTTPS.
+
+Note: missed and expired tickets are revoked automatically since DCP-0009; a
+growing expired count is not something you fix by hand.
 
 ---
 
@@ -570,31 +591,31 @@ Look for `unspentexpired` count.
 5. **Short duration**: ROI averages over time
 
 **Check**:
-- Total voted vs expired ratio
+- The **Vote Success** and **Avg Reward per Vote** metrics on the Statistics tab
 - Average time to vote
 - VSP fee structure
 - Difficulty trend during purchases
 
 ---
 
-## 📊 Advanced Metrics
+## Advanced Metrics
 
 ### Effective ROI Calculation
 
 ```
 Total Earned = Total Subsidy
-Total Invested = (Avg Ticket Price) × (Total Tickets Bought)
+Total Invested = (Avg Ticket Price) x (Total Tickets Bought)
 Time Period = Days since first ticket
 
-Annual ROI = (Total Earned / Total Invested) × (365 / Time Period) × 100
+Annual ROI = (Total Earned / Total Invested) x (365 / Time Period) x 100
 ```
 
 ### Expected Vote Time
 
 ```
-Average Time = (Pool Size / 5 votes per block) × 5 minutes per block
+Average Time = (Pool Size / 5 votes per block) x 5 minutes per block
 
-Current: (40,960 / 5) × 5 = 40,960 minutes
+Current: (40,960 / 5) x 5 = 40,960 minutes
        = 28.4 days average
 ```
 
@@ -605,12 +626,12 @@ Probability = 1 - (1 - 5/PoolSize)^MaxBlocks
 
 Max Blocks = 40,960 (142 days)
 Pool Size = 40,960
-Probability ≈ 5%
+Probability ~ 5%
 ```
 
 ---
 
-## 🎓 Learning Resources
+## Learning Resources
 
 ### Official Documentation
 - [Decred Staking Guide](https://docs.decred.org/proof-of-stake/overview/)
@@ -620,7 +641,8 @@ Probability ≈ 5%
 ### Dashboard Features
 - [Wallet Dashboard](wallet-dashboard.md) - Balance and ticket overview
 - [Wallet Operations](../guides/wallet-operations.md) - Manage your wallet
-- [Transaction History](transaction-history.md) - Track transactions
+- [Governance](governance.md) - Consensus, treasury, and Politeia voting
+- [Privacy Mixer](privacy-mixer.md) - Mixed (private) ticket purchases
 
 ### Community
 - [Decred Discord](https://discord.gg/decred) - Ask questions
@@ -629,41 +651,39 @@ Probability ≈ 5%
 
 ---
 
-## ✅ Staking Checklist
+## Staking Checklist
 
 Before you start staking:
 
 - [ ] Wallet fully synced
 - [ ] Sufficient DCR balance (check current ticket price + fees)
 - [ ] Understand ticket lifecycle
-- [ ] Decided: Solo stake or VSP?
-- [ ] Enabled auto-revoke (`enablevoting=1`)
+- [ ] Chosen a VSP in the picker
 - [ ] Reviewed current difficulty trends
-- [ ] Calculated expected ROI
-- [ ] Set up dashboard monitoring
+- [ ] Decided manual purchases or the autobuyer
 
 During staking:
 
-- [ ] Monitor dashboard daily
+- [ ] Monitor dashboard regularly
 - [ ] Track live ticket count
-- [ ] Watch for expired tickets
-- [ ] Review voting rewards
+- [ ] Keep ticket fee status at Confirmed (Ticket Status tab)
+- [ ] Review voting rewards (Statistics tab)
 - [ ] Adjust strategy as needed
 
 ---
 
-## 🚀 Next Steps
+## Next Steps
 
 Ready to start staking?
 
-1. **[Setup Wallet](../wallet-setup.md)** - Configure your wallet
-2. **[Purchase Tickets](../guides/wallet-operations.md)** - Buy your first ticket
+1. **[Setup Wallet](../guides/wallet-operations.md)** - Configure your wallet
+2. **[Purchase Tickets](#purchasing-tickets-purchase-tab)** - Buy your first ticket
 3. **[Monitor Dashboard](wallet-dashboard.md)** - Track your stakes
-4. **[Join Community](../reference/faq.md#community)** - Get support
+4. **[Join Community](#community)** - Get support
 
 ---
 
-**Happy Staking!** 🎫✨
+**Happy Staking!**
 
-Questions? Check the [FAQ](../reference/faq.md) or [Troubleshooting Guide](../guides/troubleshooting.md)
+Questions? Check the [FAQ](../guides/troubleshooting.md) or [Troubleshooting Guide](../guides/troubleshooting.md)
 
