@@ -226,6 +226,9 @@ func startResourceFeeds() {
 		go feedLightning()
 		go feedStaking()
 		go feedMixer()
+		// The BR oversight loop also consumes the Bison Relay event bus, for
+		// operator approve/deny replies.
+		go startOversightConsumer()
 	})
 }
 

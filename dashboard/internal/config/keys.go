@@ -82,6 +82,13 @@ const (
 	// which only seeds the first run.
 	KeyMCPEnabled = "mcp_enabled"
 
+	// KeyMCPNotifyEnabled / KeyMCPNotifyContact configure the Bison Relay
+	// oversight loop: when enabled, every fund-moving agent action requires the
+	// user's approval over a BR DM to the selected contact, and successful spends
+	// (and tripwire blocks) are reported there. The contact is a hex peer UID.
+	KeyMCPNotifyEnabled = "mcp_notify_enabled"
+	KeyMCPNotifyContact = "mcp_notify_contact"
+
 	// Per-wallet record of Politeia vote choices we cast through this
 	// dashboard. Map keyed by proposal token, value = "yes"|"no"|"abstain".
 	// Mirrors Decrediton's savePiVote local cache so the UI can show

@@ -28,8 +28,10 @@ import {
   unblockMCPAgent,
   freezeAllMCPAgents,
   exportMCPAudit,
+  setMCPNotify,
   getAccounts,
 } from '../../services/api';
+import { getBisonrelayContacts, BisonrelayContact } from '../../services/bisonrelayApi';
 import { AgentSpendGrant } from './AgentSpendGrant';
 import { ConfigSection, domainLabel } from './ConfigSection';
 
@@ -58,6 +60,7 @@ export const AgentsSection = () => {
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
   const [confirmFreeze, setConfirmFreeze] = useState(false);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
+  const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -71,6 +74,9 @@ export const AgentsSection = () => {
     refresh();
     getAccounts()
       .then(setAccounts)
+      .catch(() => {});
+    getBisonrelayContacts()
+      .then(setContacts)
       .catch(() => {});
     const id = window.setInterval(refresh, 5000);
     return () => clearInterval(id);
@@ -89,6 +95,23 @@ export const AgentsSection = () => {
           ? 'Failed to start the MCP server (is the port already in use?).'
           : 'Failed to stop the MCP server.',
       });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveNotify = async (enabled: boolean, contact: string) => {
+    if (enabled && !contact) {
+      setFeedback({ kind: 'error', text: 'Select a Bison Relay contact to enable oversight.' });
+      return;
+    }
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await setMCPNotify(enabled, contact);
+      await refresh();
+    } catch {
+      setFeedback({ kind: 'error', text: 'Failed to save Bison Relay oversight settings.' });
     } finally {
       setBusy(false);
     }
@@ -277,6 +300,47 @@ export const AgentsSection = () => {
             )}
           </div>
         )}
+
+        <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
+          <div className="min-w-0">
+            <span className="font-medium block">Bison Relay oversight</span>
+            <span className="text-sm text-muted-foreground block">
+              When on, every agent fund move needs your approval over a Bison Relay DM, and
+              successful spends (and any tripwire blocks) are reported to your selected contact.
+            </span>
+            <select
+              value={settings.notify.contact}
+              onChange={(e) => saveNotify(settings.notify.enabled, e.target.value)}
+              disabled={busy}
+              className="mt-2 w-full sm:w-auto rounded-lg bg-muted/20 border border-border/50 px-3 py-1.5 text-sm disabled:opacity-50"
+            >
+              <option value="">Select a contact...</option>
+              {contacts
+                .filter((c) => c.id?.identity)
+                .map((c) => {
+                  const uid = c.id!.identity as string;
+                  const label = c.nick_alias || c.id?.nick || `${uid.slice(0, 12)}...`;
+                  return (
+                    <option key={uid} value={uid}>
+                      {label}
+                    </option>
+                  );
+                })}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => saveNotify(!settings.notify.enabled, settings.notify.contact)}
+            disabled={busy || (!settings.notify.enabled && !settings.notify.contact)}
+            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              settings.notify.enabled
+                ? 'bg-success/20 text-success hover:bg-success/30'
+                : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+            } disabled:opacity-50 disabled:cursor-wait`}
+          >
+            {settings.notify.enabled ? 'On' : 'Off'}
+          </button>
+        </div>
 
         <div className="flex items-start gap-2 text-sm text-muted-foreground">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />

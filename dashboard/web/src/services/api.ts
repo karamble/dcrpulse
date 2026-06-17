@@ -1564,6 +1564,12 @@ export interface MCPSettings {
   sessions: MCPSession[];
   grants: Record<string, MCPGrant>;
   audit: MCPAuditEntry[];
+  notify: MCPOversight;
+}
+
+export interface MCPOversight {
+  enabled: boolean;
+  contact: string;
 }
 
 export interface MCPGrantRequest {
@@ -1626,6 +1632,12 @@ export const unblockMCPAgent = async (id: string): Promise<void> => {
 // fresh grant.
 export const freezeAllMCPAgents = async (): Promise<void> => {
   await api.post('/settings/mcp/freeze-all');
+};
+
+// setMCPNotify configures the Bison Relay oversight loop: on/off plus the
+// contact (hex peer UID) that receives approval requests and spend notices.
+export const setMCPNotify = async (enabled: boolean, contact: string): Promise<void> => {
+  await api.post('/settings/mcp/notify', { enabled, contact });
 };
 
 // exportMCPAudit downloads the full persisted spend-audit trail as a JSON file.

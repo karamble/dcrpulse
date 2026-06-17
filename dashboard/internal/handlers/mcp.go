@@ -29,15 +29,16 @@ const grantDailyWindow = 24 * time.Hour
 // panel: whether the listener is enabled and where, the capability domains that
 // can be granted, the saved agent roster, and the live sessions.
 type mcpSettingsResponse struct {
-	Enabled  bool                 `json:"enabled"`
-	Bind     string               `json:"bind"`
-	Port     string               `json:"port"`
+	Enabled     bool                 `json:"enabled"`
+	Bind        string               `json:"bind"`
+	Port        string               `json:"port"`
 	Domains     []string             `json:"domains"`
 	WriteScopes []mcp.WriteScope     `json:"writeScopes"`
 	Agents      []mcp.AgentInfo      `json:"agents"`
 	Sessions    []mcp.Session        `json:"sessions"`
 	Grants      map[string]grantView `json:"grants"`
 	Audit       []mcp.AuditEntry     `json:"audit"`
+	Notify      mcp.OversightConfig  `json:"notify"`
 }
 
 // grantView is the dashboard-facing spend grant (DCR amounts, no passphrase).
@@ -58,12 +59,12 @@ func toGrantView(info mcp.GrantInfo) grantView {
 		spent = 0
 	}
 	gv := grantView{
-		Accounts:       info.Accounts,
-		PerTxDCR:       dcrutil.Amount(info.PerTxAtoms).ToCoin(),
-		DailyDCR:       dcrutil.Amount(info.DailyAtoms).ToCoin(),
-		SpentTodayDCR:  dcrutil.Amount(spent).ToCoin(),
-		Allowlist:      info.Allowlist,
-		WriteScopes:    info.WriteScopes,
+		Accounts:      info.Accounts,
+		PerTxDCR:      dcrutil.Amount(info.PerTxAtoms).ToCoin(),
+		DailyDCR:      dcrutil.Amount(info.DailyAtoms).ToCoin(),
+		SpentTodayDCR: dcrutil.Amount(spent).ToCoin(),
+		Allowlist:     info.Allowlist,
+		WriteScopes:   info.WriteScopes,
 	}
 	rem := info.DailyAtoms - spent
 	if rem < 0 {
@@ -88,7 +89,7 @@ func MCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp := mcpSettingsResponse{
-		Enabled:  running,
+		Enabled:     running,
 		Bind:        bind,
 		Port:        port,
 		Domains:     mcp.Domains(),
@@ -97,6 +98,7 @@ func MCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		Sessions:    mcp.ActiveSessions(),
 		Grants:      gmap,
 		Audit:       mcp.AuditLog(50),
+		Notify:      mcp.Oversight(),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -216,13 +218,13 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Accounts       []uint32 `json:"accounts"`
-		PerTxDCR       float64  `json:"perTxDcr"`
-		DailyDCR       float64  `json:"dailyDcr"`
-		Allowlist      []string `json:"allowlist"`
-		ExpiryHours    float64  `json:"expiryHours"`
-		Passphrase     string   `json:"passphrase"`
-		WriteScopes    []string `json:"writeScopes"`
+		Accounts    []uint32 `json:"accounts"`
+		PerTxDCR    float64  `json:"perTxDcr"`
+		DailyDCR    float64  `json:"dailyDcr"`
+		Allowlist   []string `json:"allowlist"`
+		ExpiryHours float64  `json:"expiryHours"`
+		Passphrase  string   `json:"passphrase"`
+		WriteScopes []string `json:"writeScopes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -294,13 +296,13 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mcp.SetSpendGrant(id, mcp.GrantSpec{
-		Accounts:       req.Accounts,
-		PerTxAtoms:     int64(perTx),
-		DailyAtoms:     int64(daily),
-		Allowlist:      allow,
-		Expiry:         expiry,
-		Passphrase:     pass, // copied by the store; our slice is wiped on return
-		WriteScopes:    scopes,
+		Accounts:    req.Accounts,
+		PerTxAtoms:  int64(perTx),
+		DailyAtoms:  int64(daily),
+		Allowlist:   allow,
+		Expiry:      expiry,
+		Passphrase:  pass, // copied by the store; our slice is wiped on return
+		WriteScopes: scopes,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -349,6 +351,29 @@ func ExportMCPAuditHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="dcrpulse-mcp-audit.json"`)
 	_, _ = w.Write(data)
+}
+
+// SetMCPNotifyHandler persists the Bison Relay oversight settings: the on/off
+// state and the contact UID that receives approval requests and spend notices.
+func SetMCPNotifyHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool   `json:"enabled"`
+		Contact string `json:"contact"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	contact := strings.TrimSpace(req.Contact)
+	if req.Enabled && contact == "" {
+		http.Error(w, "select a Bison Relay contact to enable oversight", http.StatusBadRequest)
+		return
+	}
+	if err := mcp.SetOversightConfig(req.Enabled, contact); err != nil {
+		http.Error(w, "failed to save oversight settings", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func wipe(b []byte) {

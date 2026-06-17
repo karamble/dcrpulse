@@ -91,7 +91,7 @@ var walletTools = []toolDef{
 			atoms := int64(amt)
 			// Check the agent's grant (scope, caps, allowlist, expiry) and obtain a
 			// private copy of the passphrase. Denials are returned to the agent.
-			pass, err := grants.authorize(a.id, in.Account, atoms, in.Address, time.Now())
+			pass, err := grants.authorize(ctx, a.id, in.Account, atoms, in.Address, time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "blocked", "spend-limit violation: grant revoked and token blocked")

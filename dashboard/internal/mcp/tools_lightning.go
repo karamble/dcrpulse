@@ -128,7 +128,7 @@ var lightningTools = []toolDef{
 				amtAtoms = int64(amt)
 			}
 			amtDCR := dcrutil.Amount(amtAtoms).ToCoin()
-			if err := grants.authorizeLightning(a.id, amtAtoms, time.Now()); err != nil {
+			if err := grants.authorizeLightning(ctx, a.id, amtAtoms, time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -199,7 +199,7 @@ var lightningTools = []toolDef{
 				return nil, fmt.Errorf("localDcr must be positive")
 			}
 			localAtoms := int64(local)
-			if err := grants.authorizeLightning(a.id, localAtoms, time.Now()); err != nil {
+			if err := grants.authorizeLightning(ctx, a.id, localAtoms, time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -373,7 +373,7 @@ var lightningTools = []toolDef{
 			}
 			feeAtoms := int64(fee)
 			feeDCR := dcrutil.Amount(feeAtoms).ToCoin()
-			if err := grants.authorizeLightning(a.id, feeAtoms, time.Now()); err != nil {
+			if err := grants.authorizeLightning(ctx, a.id, feeAtoms, time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_liquidity_request", 0, feeDCR, in.Server, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {

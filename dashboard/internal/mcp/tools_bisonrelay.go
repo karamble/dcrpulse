@@ -407,7 +407,7 @@ var bisonrelayTools = []toolDef{
 				return nil, fmt.Errorf("invalid amount: %w", err)
 			}
 			atoms := int64(amt)
-			if err := grants.authorizeLightning(a.id, atoms, time.Now()); err != nil {
+			if err := grants.authorizeLightning(ctx, a.id, atoms, time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "br_tip_user", 0, in.AmountDCR, in.UID, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {

@@ -5,6 +5,7 @@
 package mcp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -210,10 +211,30 @@ func (g *spendGrant) reserveLocked(amountAtoms int64, now time.Time) error {
 	return nil
 }
 
-// authorize validates a proposed wallet send against the agent's grant. On
-// success it reserves the amount and returns a private copy of the passphrase
-// for immediate use; call refund if the spend subsequently fails.
-func (s *grantStore) authorize(agentID string, account uint32, amountAtoms int64, toAddr string, now time.Time) ([]byte, error) {
+// authorize validates a proposed wallet send against the agent's grant, reserves
+// the amount, and (when BR oversight is on) blocks for the operator's approval.
+// On success it returns a private copy of the passphrase for immediate use; call
+// refund if the spend subsequently fails.
+func (s *grantStore) authorize(ctx context.Context, agentID string, account uint32, amountAtoms int64, toAddr string, now time.Time) ([]byte, error) {
+	pass, err := s.reserveForSend(agentID, account, amountAtoms, toAddr, now)
+	if err != nil {
+		return nil, err
+	}
+	action := fmt.Sprintf("spend %s", dcrAmountStr(amountAtoms))
+	if toAddr != "" {
+		action = fmt.Sprintf("send %s to %s", dcrAmountStr(amountAtoms), toAddr)
+	}
+	if err := gateApproval(ctx, agentID, action); err != nil {
+		s.refund(agentID, amountAtoms)
+		zero(pass)
+		return nil, err
+	}
+	return pass, nil
+}
+
+// reserveForSend performs the locked grant validation and reservation for a
+// wallet send, returning a private copy of the passphrase.
+func (s *grantStore) reserveForSend(agentID string, account uint32, amountAtoms int64, toAddr string, now time.Time) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
@@ -297,10 +318,22 @@ func (s *grantStore) authorizeActionPass(agentID, scope string, now time.Time) (
 	return append([]byte(nil), g.passphrase...), nil
 }
 
-// authorizeLightning checks the lightning scope and reserves amountAtoms against
-// the (shared) daily cap. No passphrase is returned: dcrlnd is unlocked
-// separately. Call refund if the payment then fails.
-func (s *grantStore) authorizeLightning(agentID string, amountAtoms int64, now time.Time) error {
+// authorizeLightning checks the lightning scope, reserves amountAtoms against
+// the (shared) daily cap, and (when BR oversight is on) blocks for the
+// operator's approval. No passphrase is returned: dcrlnd is unlocked separately.
+// Call refund if the payment then fails.
+func (s *grantStore) authorizeLightning(ctx context.Context, agentID string, amountAtoms int64, now time.Time) error {
+	if err := s.reserveLightning(agentID, amountAtoms, now); err != nil {
+		return err
+	}
+	if err := gateApproval(ctx, agentID, fmt.Sprintf("make a Lightning payment of %s", dcrAmountStr(amountAtoms))); err != nil {
+		s.refund(agentID, amountAtoms)
+		return err
+	}
+	return nil
+}
+
+func (s *grantStore) reserveLightning(agentID string, amountAtoms int64, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
@@ -318,7 +351,24 @@ func (s *grantStore) authorizeLightning(agentID string, amountAtoms int64, now t
 // (other DEX assets) pass 0 and are scope-gated only - the DCR cap cannot bound
 // a non-DCR amount. Used by dex.spend tools. No wallet passphrase (the DEX is
 // unlocked separately). Call refund if a reserved spend then fails.
-func (s *grantStore) authorizeSpendScoped(agentID, scope string, amountAtoms int64, now time.Time) error {
+func (s *grantStore) authorizeSpendScoped(ctx context.Context, agentID, scope string, amountAtoms int64, now time.Time) error {
+	if err := s.reserveSpendScoped(agentID, scope, amountAtoms, now); err != nil {
+		return err
+	}
+	action := "make a DEX spend"
+	if amountAtoms > 0 {
+		action = fmt.Sprintf("make a DEX spend of %s", dcrAmountStr(amountAtoms))
+	}
+	if err := gateApproval(ctx, agentID, action); err != nil {
+		if amountAtoms > 0 {
+			s.refund(agentID, amountAtoms)
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *grantStore) reserveSpendScoped(agentID, scope string, amountAtoms int64, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)

@@ -137,6 +137,16 @@ func (r *registry) has(id string) bool {
 	return ok
 }
 
+// name returns an agent's display name, or "" if unknown.
+func (r *registry) name(id string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if a := r.agents[id]; a != nil {
+		return a.name
+	}
+	return ""
+}
+
 // block marks an agent's token as blocked (tripwire), drops its live session,
 // and invalidates its cached server. A blocked token is rejected at auth.
 func (r *registry) block(id string) {

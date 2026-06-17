@@ -106,7 +106,7 @@ var stakingTools = []toolDef{
 				changeAccount = in.Account
 			}
 			// Ticket purchases have no recipient address; the allowlist is skipped.
-			pass, err := grants.authorize(a.id, in.Account, totalAtoms, "", time.Now())
+			pass, err := grants.authorize(ctx, a.id, in.Account, totalAtoms, "", time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "staking_purchase", in.Account, costDCR, in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")

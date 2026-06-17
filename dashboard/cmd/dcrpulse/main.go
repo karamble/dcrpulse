@@ -397,6 +397,7 @@ func main() {
 	api.HandleFunc("/settings/mcp/agents/{id}/unblock", handlers.UnblockMCPAgentHandler).Methods("POST")
 	api.HandleFunc("/settings/mcp/freeze-all", handlers.FreezeAllMCPAgentsHandler).Methods("POST")
 	api.HandleFunc("/settings/mcp/audit/export", handlers.ExportMCPAuditHandler).Methods("GET")
+	api.HandleFunc("/settings/mcp/notify", handlers.SetMCPNotifyHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records", handlers.ListTimestampsHandler).Methods("GET")
 	api.HandleFunc("/timestamp/records", handlers.CreateTimestampHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records/{digest}", handlers.GetTimestampHandler).Methods("GET")
