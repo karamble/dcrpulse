@@ -191,9 +191,14 @@ func lightningWriteErr(w http.ResponseWriter, label string, err error) {
 	switch {
 	case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 		http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
-	case strings.Contains(lower, "not available"), strings.Contains(lower, "unreachable"),
+	case services.LndStartupOrUnreachable(err),
+		strings.Contains(lower, "not available"),
+		strings.Contains(lower, "unreachable"),
 		strings.Contains(lower, "unavailable"):
-		http.Error(w, "Lightning daemon not available", http.StatusServiceUnavailable)
+		// dcrlnd down or still starting up: a friendly, log-derived message.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		http.Error(w, services.DaemonStartupHint(ctx, services.LogComponentDcrlnd).Message, http.StatusServiceUnavailable)
 	default:
 		log.Printf("%s failed: %v", label, err)
 		http.Error(w, msg, http.StatusInternalServerError)

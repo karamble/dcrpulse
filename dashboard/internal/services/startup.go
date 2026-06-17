@@ -55,6 +55,35 @@ func IsDaemonUnreachable(err error) bool {
 	return false
 }
 
+// lndStartupPhrases are substrings dcrlnd emits while it is down or still
+// booting (the post-unlock "starting up, not yet ready" window) rather than a
+// genuine RPC error such as a locked wallet.
+var lndStartupPhrases = []string{
+	"starting up",
+	"not yet ready",
+	"waiting to start",
+	"rpc services not available",
+}
+
+// LndStartupOrUnreachable reports whether err indicates dcrlnd is unreachable or
+// still starting up (vs a real RPC error like a locked wallet). Lets the UI show
+// a "starting" state instead of the unlock wizard or a raw 500.
+func LndStartupOrUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if IsDaemonUnreachable(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, m := range lndStartupPhrases {
+		if strings.Contains(msg, m) {
+			return true
+		}
+	}
+	return false
+}
+
 // Upgrade and "ready" log markers, lowercased. These are intentionally generic
 // (no hardcoded version numbers) so they keep matching across daemon releases.
 var (
@@ -81,6 +110,14 @@ var (
 	dcrwalletReadyMarkers = []string{
 		"opened wallet",
 	}
+	dcrlndUpgradeStarts = []string{
+		"performing database schema migration",
+		"migrating",
+	}
+	dcrlndReadyMarkers = []string{
+		"rpc server listening",
+		"ready for",
+	}
 )
 
 func startupMarkers(c LogComponent) (starts, ready []string) {
@@ -89,6 +126,8 @@ func startupMarkers(c LogComponent) (starts, ready []string) {
 		return dcrdUpgradeStarts, dcrdReadyMarkers
 	case LogComponentDcrwallet:
 		return dcrwalletUpgradeStarts, dcrwalletReadyMarkers
+	case LogComponentDcrlnd:
+		return dcrlndUpgradeStarts, dcrlndReadyMarkers
 	default:
 		return nil, nil
 	}
@@ -102,8 +141,11 @@ func startupMarkers(c LogComponent) (starts, ready []string) {
 // previously-finished upgrade still in the log tail does not false-positive.
 func DaemonStartupHint(ctx context.Context, component LogComponent) DaemonStartupState {
 	noun := "node"
-	if component == LogComponentDcrwallet {
+	switch component {
+	case LogComponentDcrwallet:
 		noun = "wallet"
+	case LogComponentDcrlnd:
+		noun = "Lightning node"
 	}
 	starting := DaemonStartupState{
 		State:   "starting",

@@ -10,13 +10,16 @@ package types
 // renders in app/components/views/LNPage/ConnectPage/.
 type LightningStatus struct {
 	// Stage is one of:
-	//   "unavailable"  dcrlnd container unreachable
+	//   "unavailable"  dcrlnd unreachable or still starting up (see Message)
 	//   "needs-setup"  no dedicated lightning account yet (sentinel
 	//                  file absent); show the disclaimer + wizard
 	//   "needs-unlock" sentinel exists, dcrlnd is up, wallet locked
 	//   "syncing"      unlocked, currently catching up to chain/graph
 	//   "ready"        unlocked and fully synced
-	Stage           string `json:"stage"`
+	Stage string `json:"stage"`
+	// Message is a human-facing explanation for the "unavailable" stage, e.g.
+	// "The Lightning node is starting up..." or a database upgrade notice.
+	Message         string `json:"message,omitempty"`
 	IdentityPubkey  string `json:"identityPubkey,omitempty"`
 	Alias           string `json:"alias,omitempty"`
 	BlockHeight     uint32 `json:"blockHeight,omitempty"`
@@ -29,18 +32,18 @@ type LightningStatus struct {
 // LightningInfo is the verbatim GetInfo response trimmed to the fields
 // the UI displays.
 type LightningInfo struct {
-	IdentityPubkey      string `json:"identityPubkey"`
-	Alias               string `json:"alias"`
-	Version             string `json:"version"`
-	BlockHeight         uint32 `json:"blockHeight"`
-	BlockHash           string `json:"blockHash"`
-	SyncedToChain       bool   `json:"syncedToChain"`
-	SyncedToGraph       bool   `json:"syncedToGraph"`
-	NumActiveChannels   uint32 `json:"numActiveChannels"`
-	NumInactiveChannels uint32 `json:"numInactiveChannels"`
-	NumPendingChannels  uint32 `json:"numPendingChannels"`
-	NumPeers            uint32 `json:"numPeers"`
-	BestHeaderTimestamp int64  `json:"bestHeaderTimestamp"`
+	IdentityPubkey      string   `json:"identityPubkey"`
+	Alias               string   `json:"alias"`
+	Version             string   `json:"version"`
+	BlockHeight         uint32   `json:"blockHeight"`
+	BlockHash           string   `json:"blockHash"`
+	SyncedToChain       bool     `json:"syncedToChain"`
+	SyncedToGraph       bool     `json:"syncedToGraph"`
+	NumActiveChannels   uint32   `json:"numActiveChannels"`
+	NumInactiveChannels uint32   `json:"numInactiveChannels"`
+	NumPendingChannels  uint32   `json:"numPendingChannels"`
+	NumPeers            uint32   `json:"numPeers"`
+	BestHeaderTimestamp int64    `json:"bestHeaderTimestamp"`
 	Chains              []string `json:"chains"`
 }
 
@@ -121,7 +124,7 @@ type LightningChannel struct {
 	Active         bool   `json:"active,omitempty"`
 	Private        bool   `json:"private,omitempty"`
 	Initiator      bool   `json:"initiator,omitempty"`
-	CloseType      string `json:"closeType,omitempty"`    // closed channels only
+	CloseType      string `json:"closeType,omitempty"`     // closed channels only
 	ClosingTxHash  string `json:"closingTxHash,omitempty"` // closed channels only
 	SettledBalance int64  `json:"settledBalance,omitempty"`
 	TimeLockedBal  int64  `json:"timeLockedBalance,omitempty"`
@@ -144,10 +147,10 @@ type LightningChannels struct {
 }
 
 type OpenChannelRequest struct {
-	PeerURI      string `json:"peerUri"`      // `pubkey@host:port` or bare pubkey
-	LocalAtoms   int64  `json:"localAtoms"`   // local funding amount
-	PushAtoms    int64  `json:"pushAtoms,omitempty"`
-	Private      bool   `json:"private,omitempty"`
+	PeerURI    string `json:"peerUri"`    // `pubkey@host:port` or bare pubkey
+	LocalAtoms int64  `json:"localAtoms"` // local funding amount
+	PushAtoms  int64  `json:"pushAtoms,omitempty"`
+	Private    bool   `json:"private,omitempty"`
 }
 
 type OpenChannelResponse struct {
@@ -369,13 +372,13 @@ type LightningRemoveTowerRequest struct {
 
 // LightningNodePolicy is one direction of a channel's routing policy.
 type LightningNodePolicy struct {
-	Disabled       bool   `json:"disabled"`
-	TimeLockDelta  uint32 `json:"timeLockDelta"`
-	MinHtlcAtoms   int64  `json:"minHtlcAtoms"`
-	MaxHtlcAtoms   int64  `json:"maxHtlcAtoms"`
-	LastUpdate     uint32 `json:"lastUpdate"`
-	FeeBaseMAtoms  int64  `json:"feeBaseMAtoms"`
-	FeeRateMAtoms  int64  `json:"feeRateMAtoms"`
+	Disabled      bool   `json:"disabled"`
+	TimeLockDelta uint32 `json:"timeLockDelta"`
+	MinHtlcAtoms  int64  `json:"minHtlcAtoms"`
+	MaxHtlcAtoms  int64  `json:"maxHtlcAtoms"`
+	LastUpdate    uint32 `json:"lastUpdate"`
+	FeeBaseMAtoms int64  `json:"feeBaseMAtoms"`
+	FeeRateMAtoms int64  `json:"feeRateMAtoms"`
 }
 
 // LightningNodeChannel is one channel involving the queried node.

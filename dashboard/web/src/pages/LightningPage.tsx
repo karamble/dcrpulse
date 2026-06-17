@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   LightningStage,
   LightningStatus,
@@ -57,9 +57,11 @@ export const LightningPage = () => {
 
   if (stage === 'unavailable') {
     return (
-      <div className="p-6 rounded-xl bg-destructive/5 border border-destructive/30 text-sm text-destructive flex items-center gap-2">
-        <AlertCircle className="h-4 w-4" />
-        {error || 'Lightning daemon unavailable. Check that dcrlnd is running.'}
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 text-sm text-muted-foreground flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {status.message ||
+          error ||
+          'Lightning is starting or not reachable. This page will recover automatically once dcrlnd is ready.'}
       </div>
     );
   }

@@ -9,6 +9,7 @@ export type LightningStage =
 
 export interface LightningStatus {
   stage: LightningStage;
+  message?: string;
   identityPubkey?: string;
   alias?: string;
   blockHeight?: number;

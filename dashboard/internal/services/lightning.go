@@ -212,41 +212,50 @@ func LightningStatus(ctx context.Context) types.LightningStatus {
 		return out
 	}
 
-	// The sentinel exists; the dcrlnd container should now be running.
-	// Try the LightningClient first — succeeds only when the LN wallet
-	// is unlocked.
+	// The sentinel exists; the dcrlnd container should now be running. A nil
+	// client means the TLS cert is absent, i.e. dcrlnd has not come up yet —
+	// report "starting" rather than the unlock wizard.
 	if rpc.LightningClient == nil {
 		_ = rpc.ReinitDcrlndClient()
 	}
-	if rpc.LightningClient != nil {
-		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		info, err := rpc.LightningClient.GetInfo(callCtx, &lnrpc.GetInfoRequest{})
-		if err == nil {
-			out.Stage = "syncing"
-			if info.GetSyncedToChain() && info.GetSyncedToGraph() {
-				out.Stage = "ready"
-			}
-			out.IdentityPubkey = info.GetIdentityPubkey()
-			out.Alias = info.GetAlias()
-			out.BlockHeight = info.GetBlockHeight()
-			out.SyncedToChain = info.GetSyncedToChain()
-			out.SyncedToGraph = info.GetSyncedToGraph()
-			out.NumActiveChans = info.GetNumActiveChannels()
-			out.NumPendingChans = info.GetNumPendingChannels()
-			return out
-		}
-		// dcrlnd distinguishes "no wallet on disk" from "wallet locked".
-		// We route the former back through the setup wizard so InitWallet
-		// runs; the latter through the unlock-only path.
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "not created") || strings.Contains(lower, "wallet exists") {
-			out.Stage = "needs-setup"
-			return out
-		}
-		log.Printf("LightningStatus: GetInfo: %v", err)
+	if rpc.LightningClient == nil {
+		out.Stage = "unavailable"
+		out.Message = DaemonStartupHint(ctx, LogComponentDcrlnd).Message
+		return out
 	}
-	out.Stage = "needs-unlock"
+
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	info, err := rpc.LightningClient.GetInfo(callCtx, &lnrpc.GetInfoRequest{})
+	if err == nil {
+		out.Stage = "syncing"
+		if info.GetSyncedToChain() && info.GetSyncedToGraph() {
+			out.Stage = "ready"
+		}
+		out.IdentityPubkey = info.GetIdentityPubkey()
+		out.Alias = info.GetAlias()
+		out.BlockHeight = info.GetBlockHeight()
+		out.SyncedToChain = info.GetSyncedToChain()
+		out.SyncedToGraph = info.GetSyncedToGraph()
+		out.NumActiveChans = info.GetNumActiveChannels()
+		out.NumPendingChans = info.GetNumPendingChannels()
+		return out
+	}
+
+	// Classify the failure: "no wallet on disk" routes back to the setup
+	// wizard; a daemon that is down or still starting up shows the "starting"
+	// state; everything else (locked / unknown) keeps the unlock-only path.
+	lower := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(lower, "not created"), strings.Contains(lower, "wallet exists"):
+		out.Stage = "needs-setup"
+	case LndStartupOrUnreachable(err):
+		out.Stage = "unavailable"
+		out.Message = DaemonStartupHint(ctx, LogComponentDcrlnd).Message
+	default:
+		log.Printf("LightningStatus: GetInfo: %v", err)
+		out.Stage = "needs-unlock"
+	}
 	return out
 }
 
@@ -820,10 +829,10 @@ func GetLightningNetworkInfo(ctx context.Context) (*types.LightningNetworkInfo, 
 // in-memory cache. First call after expiry blocks; subsequent calls
 // within the window return cached data instantly.
 var (
-	describeGraphMu      sync.Mutex
-	describeGraphData    []types.TopLightningNode // sorted by capacity desc
-	describeGraphTime    time.Time
-	describeGraphTTL     = 10 * time.Minute
+	describeGraphMu   sync.Mutex
+	describeGraphData []types.TopLightningNode // sorted by capacity desc
+	describeGraphTime time.Time
+	describeGraphTTL  = 10 * time.Minute
 )
 
 // GetTopLightningNodes returns the top-n nodes by total channel
