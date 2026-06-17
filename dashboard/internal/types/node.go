@@ -56,6 +56,8 @@ type Peer struct {
 	Traffic    string `json:"traffic"`
 	Version    string `json:"version"`
 	IsSyncNode bool   `json:"isSyncNode"`
+	Inbound    bool   `json:"inbound"`
+	Tor        bool   `json:"tor"`
 }
 
 type SupplyInfo struct {

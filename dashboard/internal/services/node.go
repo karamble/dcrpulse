@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -265,6 +267,19 @@ func FetchPeers() ([]types.Peer, error) {
 	peers := make([]types.Peer, 0, len(peerInfo))
 	now := time.Now().Unix()
 
+	// Resolve the Tor container IP(s) to flag INBOUND onion peers: Tor terminates
+	// inbound connections at the local tor proxy, so dcrd reports the source as the
+	// tor container's docker IP rather than a .onion. (Outbound onion peers carry a
+	// .onion addr directly.)
+	torIPs := map[string]bool{}
+	if torHost := os.Getenv("TOR_PROXY_IP"); torHost != "" {
+		if ips, lerr := net.LookupHost(torHost); lerr == nil {
+			for _, ip := range ips {
+				torIPs[ip] = true
+			}
+		}
+	}
+
 	for i, p := range peerInfo {
 		// Convert pingtime from microseconds to milliseconds
 		latency := fmt.Sprintf("%.0fms", float64(p.PingTime)/1000)
@@ -280,6 +295,15 @@ func FetchPeers() ([]types.Peer, error) {
 		// Extract version from subver string (e.g., "/dcrwire:1.0.0/dcrd:2.0.5/" -> "2.0.5")
 		version := utils.ExtractDcrdVersion(p.SubVer)
 
+		// Outbound onion peers carry a .onion addr; inbound onion peers arrive via
+		// the local tor proxy, so dcrd sees the tor container's IP instead.
+		tor := strings.Contains(p.Addr, ".onion")
+		if !tor && p.Inbound {
+			if host, _, serr := net.SplitHostPort(p.Addr); serr == nil && torIPs[host] {
+				tor = true
+			}
+		}
+
 		peers = append(peers, types.Peer{
 			ID:         i + 1,
 			Address:    p.Addr,
@@ -289,6 +313,8 @@ func FetchPeers() ([]types.Peer, error) {
 			Traffic:    traffic,
 			Version:    version,
 			IsSyncNode: p.SyncNode,
+			Inbound:    p.Inbound,
+			Tor:        tor,
 		})
 	}
 

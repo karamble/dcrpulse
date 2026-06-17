@@ -9,6 +9,27 @@ interface PeersListProps {
   peers?: Peer[];
 }
 
+// OnionIcon marks a peer connected over Tor - a .onion address (outbound) or an
+// inbound connection arriving via the local Tor hidden service. Inline SVG to
+// avoid a new dependency; styled like the lucide icons used in this card.
+const OnionIcon = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <title>Connected over Tor (.onion)</title>
+    <path d="M12 3C8 8 6 11 6 14.5 6 18.5 8.7 21 12 21s6-2.5 6-6.5C18 11 16 8 12 3Z" />
+    <path d="M12 3c0-1 .5-1.5 1.5-1.5" />
+    <path d="M9.2 14.5c0 3.5 1.2 6 2.8 6s2.8-2.5 2.8-6" />
+  </svg>
+);
+
 export const PeersList = ({ peers = [] }: PeersListProps) => {
   return (
     <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
@@ -40,23 +61,34 @@ export const PeersList = ({ peers = [] }: PeersListProps) => {
                 className="p-4 rounded-lg bg-muted/30 border border-border/30 hover:border-primary/30 transition-all"
               >
                 <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg border ${
-                      peer.isSyncNode 
-                        ? 'bg-primary/10 border-primary/20' 
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`shrink-0 p-2 rounded-lg border ${
+                      peer.tor
+                        ? 'bg-[#7D4698]/10 border-[#7D4698]/30'
+                        : peer.isSyncNode
+                        ? 'bg-primary/10 border-primary/20'
                         : 'bg-success/10 border-success/20'
                     }`}>
-                      {peer.isSyncNode ? (
+                      {peer.tor ? (
+                        <OnionIcon className="h-4 w-4 text-[#7D4698]" />
+                      ) : peer.isSyncNode ? (
                         <Star className="h-4 w-4 text-primary" />
                       ) : (
                         <Wifi className="h-4 w-4 text-success" />
                       )}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium">{peer.address}</p>
+                    <div className="min-w-0">
+                      <div className="flex items-start gap-2 min-w-0">
+                        {peer.tor && peer.inbound ? (
+                          <p className="text-sm font-medium min-w-0 break-all">
+                            Inbound via Tor{' '}
+                            <span className="text-muted-foreground">({peer.address})</span>
+                          </p>
+                        ) : (
+                          <p className="text-sm font-medium min-w-0 break-all">{peer.address}</p>
+                        )}
                         {peer.isSyncNode && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-primary/20 text-primary rounded">
+                          <span className="shrink-0 mt-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-primary/20 text-primary rounded">
                             SYNC
                           </span>
                         )}

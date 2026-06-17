@@ -89,6 +89,8 @@ export interface Peer {
   traffic: string;
   version: string;
   isSyncNode: boolean;
+  inbound: boolean;
+  tor: boolean;
 }
 
 export interface SupplyInfo {
