@@ -46,20 +46,10 @@ func TestApprovalRegistry(t *testing.T) {
 	if r.resolve("nope", false) {
 		t.Fatal("resolve of an unknown id should return false")
 	}
-	// resolveSingle only fires when exactly one approval is pending.
-	r.register("only")
-	if !r.resolveSingle(false) {
-		t.Fatal("resolveSingle with one pending should succeed")
-	}
-	r.register("x")
-	r.register("y")
-	if r.resolveSingle(true) {
-		t.Fatal("resolveSingle with two pending should fail")
-	}
 }
 
 func TestHandleApprovalReply(t *testing.T) {
-	// handleApprovalReply resolves against the package-global registry.
+	// "yes <id>" / "no <id>" resolve the named approval (case-insensitive).
 	ch := approvals.register("ab12")
 	defer approvals.clear("ab12")
 	handleApprovalReply("yes ab12")
@@ -69,26 +59,36 @@ func TestHandleApprovalReply(t *testing.T) {
 
 	ch2 := approvals.register("cd34")
 	defer approvals.clear("cd34")
-	handleApprovalReply("DENY cd34") // case-insensitive
+	handleApprovalReply("DENY cd34")
 	if v := <-ch2; v {
 		t.Fatal(`"deny <id>" should deny`)
 	}
 
-	// A bare verdict resolves the sole pending approval.
+	// A bare verdict (no id) must NOT resolve anything: the id is required so a
+	// stale or late reply cannot resolve a request it does not name.
 	ch3 := approvals.register("ef56")
 	defer approvals.clear("ef56")
 	handleApprovalReply("yes")
-	if v := <-ch3; !v {
-		t.Fatal("bare yes should approve the single pending approval")
-	}
+	assertPending(t, ch3, "bare yes (no id)")
 
-	// A non-verdict reply leaves the approval pending.
+	// A verdict naming a different (unknown) id must not resolve this request.
 	ch4 := approvals.register("gh78")
 	defer approvals.clear("gh78")
+	handleApprovalReply("yes zzzz")
+	assertPending(t, ch4, "wrong id")
+
+	// A non-verdict reply leaves the approval pending.
+	ch5 := approvals.register("ij90")
+	defer approvals.clear("ij90")
 	handleApprovalReply("hello there")
+	assertPending(t, ch5, "non-verdict reply")
+}
+
+func assertPending(t *testing.T, ch <-chan bool, what string) {
+	t.Helper()
 	select {
-	case <-ch4:
-		t.Fatal("a non-verdict reply must not resolve an approval")
+	case <-ch:
+		t.Fatalf("%s must not resolve an approval", what)
 	default:
 	}
 }

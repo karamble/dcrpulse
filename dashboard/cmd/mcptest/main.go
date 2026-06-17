@@ -32,7 +32,11 @@ func main() {
 	invoice := flag.String("invoice", "", "bolt11 invoice so ln_pay reaches its grant check")
 	noColor := flag.Bool("no-color", false, "disable ANSI colors")
 	resourcesMode := flag.Bool("resources", false, "run only the resources/subscriptions phase (list/read/subscribe + push), then exit")
+	callTO := flag.Int("call-timeout", 60, "per-tool-call timeout in seconds (raise for the approval flow)")
 	flag.Parse()
+	if *callTO > 0 {
+		callTimeout = time.Duration(*callTO) * time.Second
+	}
 
 	optInvoice = *invoice
 	initColor(*noColor)

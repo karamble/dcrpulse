@@ -18,8 +18,12 @@ import (
 const (
 	clientName    = "mcptest"
 	clientVersion = "0.1.0"
-	callTimeout   = 60 * time.Second // treasury/governance reads can be slow
 )
+
+// callTimeout bounds a single tool call. The default suits slow treasury and
+// governance reads; raise it via -call-timeout for the human-in-the-loop flow,
+// where a fund move blocks until the operator approves over Bison Relay.
+var callTimeout = 60 * time.Second
 
 // bearerRT injects a static bearer token on every request so the streamable
 // transport (POSTs and the standalone SSE GET) authenticates as the agent.

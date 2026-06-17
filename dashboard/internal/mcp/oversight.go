@@ -115,22 +115,6 @@ func (r *approvalRegistry) resolve(id string, ok bool) bool {
 	return true
 }
 
-// resolveSingle delivers a verdict to the sole pending approval, for replies
-// that omit the id. Returns false unless exactly one approval is pending.
-func (r *approvalRegistry) resolveSingle(ok bool) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if len(r.pending) != 1 {
-		return false
-	}
-	for id, ch := range r.pending {
-		delete(r.pending, id)
-		ch <- ok
-		return true
-	}
-	return false
-}
-
 var approvals = newApprovalRegistry()
 
 // gateApproval blocks for the operator's approval over Bison Relay before a fund
@@ -202,12 +186,13 @@ func startOversightConsumer() {
 	}
 }
 
-// handleApprovalReply parses an operator reply and resolves the matching pending
-// approval. Accepts "yes <id>" / "no <id>" (and approve/deny/ok/y/n), or a bare
-// yes/no when exactly one approval is pending.
+// handleApprovalReply parses an operator reply and resolves the pending approval
+// whose id the reply carries. The id is REQUIRED: "yes <id>" / "no <id>" (also
+// approve/deny/ok/y/n, case-insensitive). A bare verdict with no id is ignored,
+// so a stale or late reply can never resolve a request it does not name.
 func handleApprovalReply(text string) {
 	fields := strings.Fields(strings.ToLower(strings.TrimSpace(text)))
-	if len(fields) == 0 {
+	if len(fields) < 2 {
 		return
 	}
 	verdict, ok := parseVerdict(fields[0])
@@ -215,13 +200,10 @@ func handleApprovalReply(text string) {
 		return
 	}
 	for _, f := range fields[1:] {
-		if f != "" {
-			if approvals.resolve(f, verdict) {
-				return
-			}
+		if f != "" && approvals.resolve(f, verdict) {
+			return
 		}
 	}
-	approvals.resolveSingle(verdict)
 }
 
 func parseVerdict(s string) (verdict bool, ok bool) {
