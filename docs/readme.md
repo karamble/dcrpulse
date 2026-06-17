@@ -33,6 +33,7 @@ The dashboard is organized into these areas:
 - **[Timestamping (dcrtime)](features/timestamp.md)** - Anchor file hashes to the chain
 - **[Block Explorer](features/explorer.md)** - Browse blocks, transactions, and addresses
 - **[Settings](features/settings.md)** - Tor, themes, the app-password gate, logs, and about
+- **[AI Agents (MCP)](features/ai-agents-mcp.md)** - Give AI agents scoped, capped access over the Model Context Protocol
 
 ### User Guides
 
@@ -91,6 +92,10 @@ The dashboard is organized into these areas:
 1. [Architecture](development/architecture.md)
 2. [API Reference](api/api-reference.md)
 3. [Configuration Guide](setup/configuration.md)
+
+### I'm connecting an AI agent
+1. [AI Agents (MCP)](features/ai-agents-mcp.md)
+2. [Security Best Practices](deployment/security.md)
 
 ### I'm deploying to production
 1. [Production Deployment](deployment/production.md)

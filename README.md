@@ -14,6 +14,7 @@ dcrpulse is a comprehensive dashboard that provides:
 - **Wallet Dashboard**: Track your wallet balances, transactions, staking tickets, and ticket pool statistics
 - **Block Explorer**: Browse blocks, transactions, and addresses directly from your node
 - **Treasury & Governance**: Monitor Decred treasury balance and TSpend proposals
+- **AI Agents (MCP)**: Give AI agents scoped, capped access over the Model Context Protocol ([guide](docs/features/ai-agents-mcp.md))
 
 All data comes from your local dcrd and dcrwallet instances via RPC - no third-party services required.
 
