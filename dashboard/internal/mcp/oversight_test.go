@@ -34,16 +34,16 @@ func TestParseVerdict(t *testing.T) {
 func TestApprovalRegistry(t *testing.T) {
 	r := newApprovalRegistry()
 	ch := r.register("ab12")
-	if !r.resolve("ab12", true) {
+	if !r.resolve("ab12", approvalVerdict{approved: true}) {
 		t.Fatal("resolve of a registered id should return true")
 	}
-	if v := <-ch; !v {
+	if v := <-ch; !v.approved {
 		t.Fatal("channel should carry the verdict")
 	}
-	if r.resolve("ab12", true) {
+	if r.resolve("ab12", approvalVerdict{}) {
 		t.Fatal("resolve of an already-resolved id should return false")
 	}
-	if r.resolve("nope", false) {
+	if r.resolve("nope", approvalVerdict{}) {
 		t.Fatal("resolve of an unknown id should return false")
 	}
 }
@@ -53,38 +53,54 @@ func TestHandleApprovalReply(t *testing.T) {
 	ch := approvals.register("ab12")
 	defer approvals.clear("ab12")
 	handleApprovalReply("yes ab12")
-	if v := <-ch; !v {
-		t.Fatal(`"yes <id>" should approve`)
+	if v := <-ch; !v.approved || v.freeze {
+		t.Fatal(`"yes <id>" should approve without freeze`)
 	}
 
 	ch2 := approvals.register("cd34")
 	defer approvals.clear("cd34")
 	handleApprovalReply("DENY cd34")
-	if v := <-ch2; v {
-		t.Fatal(`"deny <id>" should deny`)
+	if v := <-ch2; v.approved || v.freeze {
+		t.Fatal(`"no <id>" should deny without freeze`)
+	}
+
+	// "no <id> freeze" denies the spend AND flags an agent freeze.
+	chFreeze := approvals.register("ef56")
+	defer approvals.clear("ef56")
+	handleApprovalReply("no ef56 freeze")
+	if v := <-chFreeze; v.approved || !v.freeze {
+		t.Fatal(`"no <id> freeze" should deny and freeze`)
+	}
+
+	// "freeze" forces a deny even if the verb says yes.
+	chForce := approvals.register("kl11")
+	defer approvals.clear("kl11")
+	handleApprovalReply("yes kl11 freeze")
+	if v := <-chForce; v.approved || !v.freeze {
+		t.Fatal("freeze must force a deny")
 	}
 
 	// A bare verdict (no id) must NOT resolve anything: the id is required so a
 	// stale or late reply cannot resolve a request it does not name.
-	ch3 := approvals.register("ef56")
-	defer approvals.clear("ef56")
+	ch3 := approvals.register("gh78")
+	defer approvals.clear("gh78")
 	handleApprovalReply("yes")
 	assertPending(t, ch3, "bare yes (no id)")
 
 	// A verdict naming a different (unknown) id must not resolve this request.
-	ch4 := approvals.register("gh78")
-	defer approvals.clear("gh78")
+	ch4 := approvals.register("ij90")
+	defer approvals.clear("ij90")
 	handleApprovalReply("yes zzzz")
 	assertPending(t, ch4, "wrong id")
 
 	// A non-verdict reply leaves the approval pending.
-	ch5 := approvals.register("ij90")
-	defer approvals.clear("ij90")
+	ch5 := approvals.register("mn22")
+	defer approvals.clear("mn22")
 	handleApprovalReply("hello there")
 	assertPending(t, ch5, "non-verdict reply")
 }
 
-func assertPending(t *testing.T, ch <-chan bool, what string) {
+func assertPending(t *testing.T, ch <-chan approvalVerdict, what string) {
 	t.Helper()
 	select {
 	case <-ch:

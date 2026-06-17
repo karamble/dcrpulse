@@ -34,9 +34,18 @@ var (
 	// and the tripwire does not fire: a refused approval is an operator choice,
 	// not a compromised agent.
 	errApprovalDenied      = errors.New("the operator denied this spend over Bison Relay")
+	errApprovalFrozen      = errors.New("the operator denied this spend and blocked this agent over Bison Relay")
 	errApprovalTimeout     = errors.New("operator approval timed out over Bison Relay; the spend was not made")
 	errApprovalUnreachable = errors.New("could not reach the operator over Bison Relay for approval; the spend was refused")
 )
+
+// approvalVerdict is the operator's reply to a fund-move approval request.
+// freeze means deny AND block the agent (revoke its grant and block its token,
+// the same effect as the tripwire) for an emergency stop over Bison Relay.
+type approvalVerdict struct {
+	approved bool
+	freeze   bool
+}
 
 // oversightConfig reports whether the BR oversight loop is enabled and the hex
 // UID of the contact that receives approval requests and spend notifications.
@@ -80,15 +89,15 @@ func Oversight() OversightConfig {
 // approvalRegistry tracks fund-move approvals awaiting an operator reply.
 type approvalRegistry struct {
 	mu      sync.Mutex
-	pending map[string]chan bool
+	pending map[string]chan approvalVerdict
 }
 
 func newApprovalRegistry() *approvalRegistry {
-	return &approvalRegistry{pending: map[string]chan bool{}}
+	return &approvalRegistry{pending: map[string]chan approvalVerdict{}}
 }
 
-func (r *approvalRegistry) register(id string) chan bool {
-	ch := make(chan bool, 1)
+func (r *approvalRegistry) register(id string) chan approvalVerdict {
+	ch := make(chan approvalVerdict, 1)
 	r.mu.Lock()
 	r.pending[id] = ch
 	r.mu.Unlock()
@@ -103,7 +112,7 @@ func (r *approvalRegistry) clear(id string) {
 
 // resolve delivers a verdict to the pending approval with this id. Returns true
 // if a matching request was waiting.
-func (r *approvalRegistry) resolve(id string, ok bool) bool {
+func (r *approvalRegistry) resolve(id string, v approvalVerdict) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	ch := r.pending[id]
@@ -111,7 +120,7 @@ func (r *approvalRegistry) resolve(id string, ok bool) bool {
 		return false
 	}
 	delete(r.pending, id)
-	ch <- ok
+	ch <- v
 	return true
 }
 
@@ -139,8 +148,8 @@ func gateApproval(ctx context.Context, agentID, action string) error {
 		name = agentID
 	}
 	mins := int(approvalTimeout / time.Minute)
-	msg := fmt.Sprintf("dcrpulse approval [%s]: agent %q wants to %s. Reply \"yes %s\" to approve or \"no %s\" to deny within %d min.",
-		id, name, action, id, id, mins)
+	msg := fmt.Sprintf("dcrpulse approval [%s]: agent %q wants to %s. Reply \"yes %s\" to approve, \"no %s\" to deny, or \"no %s freeze\" to deny and block this agent. Expires in %d min.",
+		id, name, action, id, id, id, mins)
 
 	sctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	sendErr := rpc.BrclientdSendPM(sctx, contact, msg)
@@ -150,8 +159,12 @@ func gateApproval(ctx context.Context, agentID, action string) error {
 	}
 
 	select {
-	case ok := <-ch:
-		if !ok {
+	case v := <-ch:
+		if v.freeze {
+			freezeAgent(agentID)
+			return errApprovalFrozen
+		}
+		if !v.approved {
 			return errApprovalDenied
 		}
 		return nil
@@ -189,7 +202,9 @@ func startOversightConsumer() {
 // handleApprovalReply parses an operator reply and resolves the pending approval
 // whose id the reply carries. The id is REQUIRED: "yes <id>" / "no <id>" (also
 // approve/deny/ok/y/n, case-insensitive). A bare verdict with no id is ignored,
-// so a stale or late reply can never resolve a request it does not name.
+// so a stale or late reply can never resolve a request it does not name. The
+// word "freeze" (or "block") anywhere in the reply denies the spend AND blocks
+// the agent, for an emergency stop.
 func handleApprovalReply(text string) {
 	fields := strings.Fields(strings.ToLower(strings.TrimSpace(text)))
 	if len(fields) < 2 {
@@ -199,8 +214,18 @@ func handleApprovalReply(text string) {
 	if !ok {
 		return
 	}
+	freeze := false
 	for _, f := range fields[1:] {
-		if f != "" && approvals.resolve(f, verdict) {
+		if f == "freeze" || f == "block" {
+			freeze = true
+			verdict = false // freezing always denies the spend
+		}
+	}
+	for _, f := range fields[1:] {
+		if f == "" || f == "freeze" || f == "block" {
+			continue
+		}
+		if approvals.resolve(f, approvalVerdict{approved: verdict, freeze: freeze}) {
 			return
 		}
 	}
@@ -214,6 +239,16 @@ func parseVerdict(s string) (verdict bool, ok bool) {
 		return false, true
 	}
 	return false, false
+}
+
+// freezeAgent denies-and-blocks an agent: it revokes the agent's spend grant and
+// blocks its token (the same effect as the tripwire), so the agent cannot spend
+// or reconnect until the user unblocks it in the dashboard. Triggered when an
+// approval reply includes "freeze".
+func freezeAgent(agentID string) {
+	grants.revoke(agentID)
+	reg.block(agentID)
+	_ = saveAgents()
 }
 
 // notifySpend reports a spend outcome to the configured contact when oversight is
