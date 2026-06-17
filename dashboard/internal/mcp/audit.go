@@ -77,4 +77,5 @@ func recordSpend(a *agent, tool string, account uint32, amountDCR float64, targe
 	}
 	audit.record(e)
 	persistAudit(e)
+	notifyResourceUpdated(resAudit)
 }

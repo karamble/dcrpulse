@@ -29,10 +29,11 @@ type spendCapability struct {
 
 // capabilityReport tells an agent what it is allowed to do.
 type capabilityReport struct {
-	Agent   string          `json:"agent"`
-	Domains []string        `json:"domains"`
-	Spend   spendCapability `json:"spend"`
-	Note    string          `json:"note"`
+	Agent     string          `json:"agent"`
+	Domains   []string        `json:"domains"`
+	Resources []string        `json:"resources,omitempty"`
+	Spend     spendCapability `json:"spend"`
+	Note      string          `json:"note"`
 }
 
 func dcr(atoms int64) float64 { return dcrutil.Amount(atoms).ToCoin() }
@@ -44,9 +45,10 @@ var capabilityTools = []toolDef{
 		"Report what this agent may do: its granted capability domains and current spend grant (account scope, caps, remaining daily allowance). Call this to discover your own permissions before attempting actions.",
 		func(_ context.Context, a *agent, _ emptyInput) (any, error) {
 			rep := capabilityReport{
-				Agent:   a.name,
-				Domains: sortedDomains(a.domains),
-				Note:    "Tools outside your granted domains are not visible. A write/spend tool also needs the matching write scope in your grant (see spend.writeScopes); fund moves are additionally bounded by per-tx/daily DCR caps and you never receive the wallet passphrase.",
+				Agent:     a.name,
+				Domains:   sortedDomains(a.domains),
+				Resources: agentResourceURIs(a),
+				Note:      "Tools outside your granted domains are not visible. A write/spend tool also needs the matching write scope in your grant (see spend.writeScopes); fund moves are additionally bounded by per-tx/daily DCR caps and you never receive the wallet passphrase.",
 			}
 			info, ok := grants.info(a.id)
 			if !ok {

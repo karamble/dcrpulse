@@ -211,6 +211,8 @@ func startListenerLocked() error {
 		Handler:           reg.authMiddleware(buildHandler()),
 		ReadHeaderTimeout: 15 * time.Second,
 	}
+	// Bridge the live event buses into MCP resource notifications (once).
+	startResourceFeeds()
 	go func(s *http.Server) {
 		log.Printf("MCP server listening on http://%s (streamable HTTP, bearer-auth, default domain=%q)", ln.Addr(), defaultDomain)
 		if err := s.Serve(ln); err != nil && err != http.ErrServerClosed {
@@ -291,14 +293,25 @@ func invalidateAgentServer(id string) {
 // buildServer creates an MCP server exposing only the tools whose domain the
 // agent is allowed (node-only by default).
 func buildServer(a *agent) *mcp.Server {
+	// Subscription handlers gate which resources an agent may subscribe to (only
+	// those in a granted domain) and advertise the resources subscribe capability.
+	opts := &mcp.ServerOptions{
+		SubscribeHandler:   func(_ context.Context, req *mcp.SubscribeRequest) error { return allowResourceSub(a, req.Params.URI) },
+		UnsubscribeHandler: func(context.Context, *mcp.UnsubscribeRequest) error { return nil },
+	}
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "dcrpulse",
 		Title:   "Decred Pulse",
 		Version: serverVersion,
-	}, nil)
+	}, opts)
 	for _, t := range toolCatalog {
 		if a.allows(t.domain) {
 			t.register(s, a)
+		}
+	}
+	for _, rd := range resourceCatalog {
+		if a.allows(rd.domain) {
+			rd.register(s)
 		}
 	}
 	return s
@@ -388,6 +401,12 @@ func catalogDomains() []string {
 		if !seen[t.domain] {
 			seen[t.domain] = true
 			out = append(out, t.domain)
+		}
+	}
+	for _, rd := range resourceCatalog {
+		if !seen[rd.domain] {
+			seen[rd.domain] = true
+			out = append(out, rd.domain)
 		}
 	}
 	return out

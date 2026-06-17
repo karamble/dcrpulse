@@ -31,6 +31,7 @@ func main() {
 	only := flag.String("only", "", "comma-separated domains or tool names to test (default all)")
 	invoice := flag.String("invoice", "", "bolt11 invoice so ln_pay reaches its grant check")
 	noColor := flag.Bool("no-color", false, "disable ANSI colors")
+	resourcesMode := flag.Bool("resources", false, "run only the resources/subscriptions phase (list/read/subscribe + push), then exit")
 	flag.Parse()
 
 	optInvoice = *invoice
@@ -44,6 +45,16 @@ func main() {
 
 	ctx := context.Background()
 	failed := false
+
+	// Resources mode is standalone: it needs a session with the standalone SSE
+	// stream enabled to receive server-pushed updates (unlike the tool phases),
+	// so it runs its own session and exits.
+	if *resourcesMode {
+		if runResourcesPhase(ctx, *endpoint, *token) {
+			os.Exit(1)
+		}
+		return
+	}
 
 	// Phase 0: connect + negative auth.
 	section("Connect")
