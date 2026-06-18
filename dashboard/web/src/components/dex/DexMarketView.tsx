@@ -275,25 +275,16 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-px rounded-xl overflow-hidden border border-border/60 bg-border/60 lg:grid-cols-[256px_1fr_340px]">
+      <div className="grid grid-cols-1 gap-px rounded-xl overflow-hidden border border-border/60 bg-border/60 lg:grid-cols-[340px_1fr_340px]">
+        {/* Left sidebar markets: sized to its rows so the trade card sits
+            directly beneath it without a fixed gap. */}
         <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-auto lg:block lg:col-start-1 lg:row-start-1 ${mobilePane === 'markets' ? '' : 'hidden'}`}>
           <DexMarketsPanel markets={markets} selected={sel} onSelect={setSel} statsFor={statsFor} />
         </section>
 
-        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-auto lg:block lg:col-start-2 lg:row-start-1 ${mobilePane === 'chart' ? '' : 'hidden'}`}>
-          <DexChartPanel market={sel} candles={candles} durs={chartDurs} dur={dur} onDur={setDur} />
-        </section>
-
-        {/* Right sidebar order book: a fixed near-fold height so plenty of
-            levels show and the Trades tab's match history scrolls inside it
-            (rather than stretching the page); the trade card flows below. */}
-        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-[calc(100vh-13rem)] lg:block lg:col-start-3 lg:row-start-1 ${mobilePane === 'book' ? '' : 'hidden'}`}>
-          <DexOrderBook market={sel} book={book} mineTokens={mineTokens} onPick={botRunning ? undefined : onPick} />
-        </section>
-
-        {/* Trade card: under the order book, shown in full (the page scrolls);
-            spans the lower rows, leaving room for more cards. */}
-        <section className={`bg-card min-h-0 min-w-0 h-[70vh] overflow-y-auto lg:h-auto lg:overflow-visible lg:block lg:col-start-3 lg:row-start-2 lg:row-span-2 ${mobilePane === 'trade' ? '' : 'hidden'}`}>
+        {/* Trade card: under the markets list in the left column, in full view
+            without scrolling. */}
+        <section className={`bg-card min-h-0 min-w-0 h-[70vh] overflow-y-auto lg:h-auto lg:overflow-visible lg:block lg:col-start-1 lg:row-start-2 ${mobilePane === 'trade' ? '' : 'hidden'}`}>
           {botRunning && botRun ? (
             <DexMMRunningCard bot={botRun} market={sel} assetOf={assetOf} />
           ) : (
@@ -301,11 +292,22 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
           )}
         </section>
 
-        <section className="bg-card min-h-0 min-w-0 overflow-auto lg:col-start-1 lg:col-span-2 lg:row-start-2">
+        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-auto lg:block lg:col-start-2 lg:row-start-1 lg:row-span-2 ${mobilePane === 'chart' ? '' : 'hidden'}`}>
+          <DexChartPanel market={sel} candles={candles} durs={chartDurs} dur={dur} onDur={setDur} />
+        </section>
+
+        {/* Right sidebar order book: spans the left column's markets + trade
+            card rows so plenty of levels show and the Trades tab's match
+            history scrolls inside it rather than stretching the page. */}
+        <section className={`bg-card min-h-0 min-w-0 h-[70vh] lg:h-auto lg:block lg:col-start-3 lg:row-start-1 lg:row-span-2 ${mobilePane === 'book' ? '' : 'hidden'}`}>
+          <DexOrderBook market={sel} book={book} mineTokens={mineTokens} onPick={botRunning ? undefined : onPick} />
+        </section>
+
+        <section className="bg-card min-h-0 min-w-0 overflow-auto lg:col-start-1 lg:col-span-3 lg:row-start-3">
           <DexUserOrdersPanel orders={orders} market={sel} preview={preview} onCancel={requestCancel} />
         </section>
 
-        <section className="bg-card min-h-0 min-w-0 overflow-hidden h-[340px] lg:h-[340px] lg:col-start-1 lg:col-span-2 lg:row-start-3">
+        <section className="bg-card min-h-0 min-w-0 overflow-hidden h-[340px] lg:h-[340px] lg:col-start-1 lg:col-span-3 lg:row-start-4">
           <DexOrdersPanel orders={orders} markets={markets} preview={preview} onCancel={requestCancel} />
         </section>
       </div>
