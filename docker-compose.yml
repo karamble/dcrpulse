@@ -91,7 +91,7 @@ services:
     build:
       context: ./dcrlnd
       args:
-        DCRLND_VERSION: ${DCRLND_VERSION:-master}
+        DCRLND_VERSION: ${DCRLND_VERSION:-v0.8.1}
     container_name: dcrpulse-dcrlnd
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data:ro

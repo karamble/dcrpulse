@@ -13,7 +13,7 @@ RUN apk add --no-cache git make gcc musl-dev
 
 WORKDIR /go/src/github.com/decred
 
-ARG DCRLND_VERSION=master
+ARG DCRLND_VERSION=v0.8.1
 RUN git clone --depth 1 --branch ${DCRLND_VERSION} https://github.com/decred/dcrlnd.git
 
 WORKDIR /go/src/github.com/decred/dcrlnd
