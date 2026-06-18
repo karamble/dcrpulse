@@ -163,8 +163,11 @@ func RefreshProposals(ctx context.Context) ([]types.Proposal, time.Time, error) 
 // stores it in the in-process cache. piCachedList/piCachedAt are written ONLY
 // on success, so a failed fetch leaves the cache (and the refresh cooldown
 // anchor) untouched. Capped at ProposalsFetchTimeout.
-func fetchAndCacheProposals(ctx context.Context) ([]types.Proposal, error) {
-	ctx, cancel := context.WithTimeout(ctx, ProposalsFetchTimeout)
+func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
+	// Decouple from the caller's request context: a cold fetch populates the
+	// shared in-process cache, so a client that disconnects mid-fetch (common
+	// on mobile) must not cancel it and leave the cache empty or partial.
+	ctx, cancel := context.WithTimeout(context.Background(), ProposalsFetchTimeout)
 	defer cancel()
 
 	inv, err := piInventory(ctx)
@@ -213,6 +216,16 @@ func fetchAndCacheProposals(ctx context.Context) ([]types.Proposal, error) {
 		for k, v := range chunk {
 			summaries[k] = v
 		}
+	}
+
+	// A timed-out fetch leaves records/summaries partial or empty; caching that
+	// would poison the list with name-less "invalid" proposals. Bail without
+	// touching the cache so the next request retries.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("politeia fetch incomplete: %w", err)
+	}
+	if len(summaries) == 0 {
+		return nil, fmt.Errorf("politeia enrichment returned no summaries for %d proposals", len(tokens))
 	}
 
 	// Local cache of "you voted X" choices so the UI can show the

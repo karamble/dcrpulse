@@ -10,6 +10,15 @@ import { VoteResultsBar } from './VoteResultsBar';
 
 const statusBuckets = ['all', 'voting', 'pre-vote', 'finished', 'abandoned'] as const;
 
+// Ordering of status buckets in the "All statuses" view: pre-vote first, then
+// active votes, then resolved/abandoned proposals.
+const bucketOrder: Record<string, number> = {
+  'pre-vote': 0,
+  voting: 1,
+  finished: 2,
+  abandoned: 3,
+};
+
 const statusBadge = (voteStatus: string) => {
   switch (voteStatus) {
     case 'approved':
@@ -57,7 +66,7 @@ export const ProposalsTab = () => {
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(false);
-  const [filter, setFilter] = useState<(typeof statusBuckets)[number]>('voting');
+  const [filter, setFilter] = useState<(typeof statusBuckets)[number]>('all');
   // now (unix seconds) drives the live countdown / "updated X ago" display.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
@@ -124,8 +133,17 @@ export const ProposalsTab = () => {
   };
 
   const filtered = useMemo(() => {
-    if (filter === 'all') return proposals;
-    return proposals.filter((p) => p.status === filter);
+    if (filter !== 'all') return proposals.filter((p) => p.status === filter);
+    // Group by status bucket (pre-vote, then voting, then the rest), keeping the
+    // backend's within-bucket order (vote-end block, descending).
+    return proposals
+      .map((p, i) => ({ p, i }))
+      .sort((a, b) => {
+        const oa = bucketOrder[a.p.status] ?? 99;
+        const ob = bucketOrder[b.p.status] ?? 99;
+        return oa - ob || a.i - b.i;
+      })
+      .map((x) => x.p);
   }, [proposals, filter]);
 
   if (disabled) {
