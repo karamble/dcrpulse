@@ -63,6 +63,7 @@ import {
 } from './embedParser';
 import { linkifyChatText } from './chatLinkify';
 import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './editor';
+import { EmojiPicker } from './EmojiPicker';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { AuthorAvatar } from './AuthorAvatar';
@@ -1157,6 +1158,24 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     setPendingImage(null);
   };
 
+  // Splice an emoji into the draft at the textarea cursor, then restore focus
+  // with the caret just past the inserted character so several can be added.
+  const insertEmojiAtCursor = (emoji: string) => {
+    const el = draftInputRef.current;
+    if (!el) {
+      setDraft((d) => d + emoji);
+      return;
+    }
+    const start = el.selectionStart ?? draft.length;
+    const end = el.selectionEnd ?? draft.length;
+    setDraft(draft.slice(0, start) + emoji + draft.slice(end));
+    queueMicrotask(() => {
+      const pos = start + emoji.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
   return (
     <ImageViewerCtx.Provider value={openImageViewer}>
     <div className="flex flex-col">
@@ -1505,6 +1524,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 >
                   <Paperclip className="h-4 w-4" />
                 </button>
+                <EmojiPicker onPick={insertEmojiAtCursor} disabled={sending} />
                 <textarea
                   ref={draftInputRef}
                   rows={1}
