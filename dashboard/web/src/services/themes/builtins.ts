@@ -200,8 +200,80 @@ const midnight: Theme = {
   },
 };
 
+// Jet black: a near-pure-black, monochrome look modeled on the Decred website.
+// The primary token stays near-white for links/text/borders, while the gradient
+// endpoints are mid-grey so the hardcoded white text on bg-gradient-primary
+// buttons stays legible.
+const jetBlack: Theme = {
+  schema: 1,
+  id: 'jet-black',
+  name: 'Jet Black',
+  builtin: true,
+  appearance: 'dark',
+  colors: {
+    background: '0 0% 3%',
+    foreground: '0 0% 96%',
+    card: '0 0% 6%',
+    cardForeground: '0 0% 96%',
+    primary: '0 0% 90%',
+    primaryForeground: '0 0% 8%',
+    secondary: '0 0% 72%',
+    secondaryForeground: '0 0% 8%',
+    success: '142 60% 45%',
+    successForeground: '0 0% 100%',
+    destructive: '0 72% 55%',
+    destructiveForeground: '0 0% 100%',
+    warning: '40 92% 55%',
+    warningForeground: '0 0% 8%',
+    muted: '0 0% 13%',
+    mutedForeground: '0 0% 60%',
+    border: '0 0% 16%',
+  },
+  gradients: {
+    primaryFrom: '0 0% 26%',
+    primaryTo: '0 0% 38%',
+    cardFrom: '0 0% 6%',
+    cardTo: '0 0% 9%',
+  },
+};
+
+// Redshift: a warm, low-blue "night shift" palette shifted toward deep red and
+// amber. Gradient endpoints stay a dark red so white button text reads.
+const redshift: Theme = {
+  schema: 1,
+  id: 'redshift',
+  name: 'Redshift',
+  builtin: true,
+  appearance: 'dark',
+  colors: {
+    background: '6 40% 5%',
+    foreground: '24 50% 92%',
+    card: '6 36% 8%',
+    cardForeground: '24 50% 92%',
+    primary: '14 88% 56%',
+    primaryForeground: '10 50% 6%',
+    secondary: '34 90% 56%',
+    secondaryForeground: '10 50% 6%',
+    success: '130 50% 42%',
+    successForeground: '0 0% 100%',
+    destructive: '358 78% 56%',
+    destructiveForeground: '0 0% 100%',
+    warning: '44 95% 55%',
+    warningForeground: '10 50% 6%',
+    muted: '8 26% 15%',
+    mutedForeground: '20 28% 66%',
+    border: '8 26% 17%',
+  },
+  gradients: {
+    primaryFrom: '6 82% 44%',
+    primaryTo: '18 86% 46%',
+    cardFrom: '6 36% 8%',
+    cardTo: '8 38% 11%',
+  },
+};
+
 // Pulse first so it is the default.
-export const BUILTIN_THEMES: Theme[] = [pulse, daybreak, aurora, ember, matrix, midnight];
+export const BUILTIN_THEMES: Theme[] = [pulse, daybreak, aurora, ember, matrix, midnight, jetBlack, redshift];
 
 export function findBuiltin(id: string): Theme | undefined {
   return BUILTIN_THEMES.find((t) => t.id === id);
