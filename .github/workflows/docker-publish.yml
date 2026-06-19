@@ -101,4 +101,4 @@ jobs:
             ${{ matrix.component.name == 'dcrwallet' && 'DCRWALLET_VERSION=release-v2.1.5' || '' }}
             ${{ matrix.component.name == 'dcrlnd' && 'DCRLND_VERSION=v0.8.1' || '' }}
             ${{ matrix.component.name == 'dcrdex' && 'BISONW_VERSION=v1.0.6' || '' }}
-            ${{ matrix.component.name == 'brclientd' && 'BRCLIENTD_BASE=0.2.2' || '' }}
+            ${{ matrix.component.name == 'brclientd' && 'BRCLIENTD_BASE=0.2.3' || '' }}
