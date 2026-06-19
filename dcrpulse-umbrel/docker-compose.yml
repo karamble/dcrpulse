@@ -13,7 +13,7 @@ services:
       - ${APP_DATA_DIR}:/host
 
   dcrd:
-    image: ghcr.io/karamble/dcrpulse-dcrd:latest
+    image: ghcr.io/karamble/dcrpulse-dcrd:2.1.5@sha256:7f3227bf99a6be2d173daf43aacb7bf405d81fd4ba78f8f35a37ba2116ef5138
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 5m
@@ -43,7 +43,7 @@ services:
         condition: service_completed_successfully
 
   dcrwallet:
-    image: ghcr.io/karamble/dcrpulse-dcrwallet:latest
+    image: ghcr.io/karamble/dcrpulse-dcrwallet:2.1.5@sha256:58c52c67e788936e301edca10aa32f98997f460cb43b23bb277e9e926f7d4502
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -69,7 +69,7 @@ services:
       start_period: 120s
 
   dcrlnd:
-    image: ghcr.io/karamble/dcrpulse-dcrlnd:latest
+    image: ghcr.io/karamble/dcrpulse-dcrlnd:0.8.1@sha256:2aed1e2620c7e2611c75d3f850222db2a1cdda246a06e376e823b825a6f756e3
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -95,7 +95,7 @@ services:
       start_period: 300s
 
   brclientd:
-    image: ghcr.io/karamble/dcrpulse-brclientd:latest
+    image: ghcr.io/karamble/dcrpulse-brclientd:0.2.3@sha256:61557d2f82ef3a7084643794500a54a206faed295b988185aa35a30155a9b437
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
@@ -113,7 +113,7 @@ services:
         condition: service_started
 
   dcrdex:
-    image: ghcr.io/karamble/dcrpulse-dcrdex:latest
+    image: ghcr.io/karamble/dcrpulse-dcrdex:1.0.6@sha256:802962150257cb63d087b8184c771b99ee95eca84241f8b5dbe35565e72a751f
     hostname: dcrdex
     user: "1000:1000"
     restart: on-failure
@@ -131,7 +131,7 @@ services:
         condition: service_completed_successfully
 
   dashboard:
-    image: ghcr.io/karamble/dcrpulse-dashboard:latest
+    image: ghcr.io/karamble/dcrpulse-dashboard:latest@sha256:97314478fcef4a67dd4070eb4faab28902546ee23ab6ac630eea8b766f8a3b3a
     user: "1000:1000"
     restart: on-failure
     volumes:
@@ -182,7 +182,7 @@ services:
         condition: service_healthy
 
   tor:
-    image: ghcr.io/karamble/dcrpulse-tor:latest
+    image: ghcr.io/karamble/dcrpulse-tor:0.4.7.8@sha256:2188228c3f09866d1ea704c3424651788b36d155872915685def7d17e8921ec8
     user: "1000:1000"
     restart: on-failure
     environment:
