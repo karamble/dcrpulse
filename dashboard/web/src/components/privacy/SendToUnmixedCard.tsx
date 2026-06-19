@@ -249,8 +249,16 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
                 <span>{formatDcr(construct.feeAtoms)} DCR</span>
               </div>
               <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">UTXO value used</span>
+                <span>{formatDcr(construct.inputsTotalAtoms)} DCR</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Change returned</span>
+                <span>{formatDcr(construct.changeAtoms)} DCR</span>
+              </div>
+              <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Total debited</span>
-                <span className="font-semibold">{formatDcr(construct.inputsTotalAtoms)} DCR</span>
+                <span className="font-semibold">{formatDcr(construct.totalDebitedAtoms)} DCR</span>
               </div>
             </>
           ) : null}

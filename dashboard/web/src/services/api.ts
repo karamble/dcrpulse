@@ -432,7 +432,9 @@ export interface ConstructTransactionResponse {
   unsignedTxHex: string;
   inputsTotalAtoms: number;
   outputsTotalAtoms: number;
+  changeAtoms: number;
   feeAtoms: number;
+  totalDebitedAtoms: number;
   estimatedSignedSize: number;
 }
 

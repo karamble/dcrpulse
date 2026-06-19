@@ -1063,12 +1063,23 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		outputs += out.Value
 	}
 
+	// Change returns to the user's wallet, so the net debit is inputs - change
+	// (== recipient amount + fee). In send-all mode dcrwallet routes the whole
+	// balance to the recipient through the change destination, so there is no
+	// real change output to subtract.
+	var change int64
+	if !req.SendAll && cResp.ChangeIndex >= 0 && int(cResp.ChangeIndex) < len(decoded.Outputs) {
+		change = decoded.Outputs[cResp.ChangeIndex].Value
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(types.ConstructTransactionResponse{
 		UnsignedTxHex:       hex.EncodeToString(cResp.UnsignedTransaction),
 		InputsTotalAtoms:    inputs,
 		OutputsTotalAtoms:   outputs,
+		ChangeAtoms:         change,
 		FeeAtoms:            inputs - outputs,
+		TotalDebitedAtoms:   inputs - change,
 		EstimatedSignedSize: cResp.EstimatedSignedSize,
 	})
 }

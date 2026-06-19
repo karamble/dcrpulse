@@ -117,7 +117,9 @@ type ConstructTransactionResponse struct {
 	UnsignedTxHex       string `json:"unsignedTxHex"`
 	InputsTotalAtoms    int64  `json:"inputsTotalAtoms"`
 	OutputsTotalAtoms   int64  `json:"outputsTotalAtoms"`
+	ChangeAtoms         int64  `json:"changeAtoms"`
 	FeeAtoms            int64  `json:"feeAtoms"`
+	TotalDebitedAtoms   int64  `json:"totalDebitedAtoms"`
 	EstimatedSignedSize uint32 `json:"estimatedSignedSize"`
 }
 

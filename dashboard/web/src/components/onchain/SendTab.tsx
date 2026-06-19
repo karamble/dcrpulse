@@ -524,10 +524,18 @@ export const SendTab = () => {
                 <span className="text-muted-foreground">Network fee</span>
                 <span>{formatDcr(construct.feeAtoms)} DCR</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">UTXO value used</span>
+                <span>{formatDcr(construct.inputsTotalAtoms)} DCR</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Change returned</span>
+                <span>{formatDcr(construct.changeAtoms)} DCR</span>
+              </div>
               <div className="flex justify-between pt-2 border-t border-border/50">
                 <span className="text-muted-foreground">Total debited</span>
                 <span className="font-semibold">
-                  {formatDcr(construct.inputsTotalAtoms)} DCR
+                  {formatDcr(construct.totalDebitedAtoms)} DCR
                 </span>
               </div>
               <div className="text-xs text-muted-foreground pt-1">
