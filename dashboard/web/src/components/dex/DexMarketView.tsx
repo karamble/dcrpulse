@@ -3,8 +3,8 @@
 // license that can be found in the LICENSE file.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, FlaskConical } from 'lucide-react';
-import { getDexConfig, getDexMyOrders, orderHasActiveMatches, type DexConfig, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
+import { AlertCircle, FlaskConical, Hourglass, ShieldAlert } from 'lucide-react';
+import { getDexConfig, getDexMyOrders, orderHasActiveMatches, type DexAccountStatus, type DexConfig, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { useDexFeed, statsFromCandles, spotToStats, type MarketStats, type MarketSpot } from './useDexFeed';
 import { useDexConn, useDexRefreshOnNotes, useDexSpots, useMMBotRun, useSeedDexSpots } from './DexLiveProvider';
 import { loadDexConfigCache, saveDexConfigCache } from './dexConfigCache';
@@ -17,6 +17,7 @@ import { DexOrdersPanel as DexOrdersPanelBase } from './DexOrdersPanel';
 import { DexUserOrdersPanel as DexUserOrdersPanelBase } from './DexUserOrdersPanel';
 import { DexOrderForm as DexOrderFormBase } from './DexOrderForm';
 import { useDexCancel } from './DexCancelOrder';
+import { useDexAccount } from './useDexAccount';
 import { mockMarkets, mockBook, mockStats, mockCandles, mockOrders } from './dexMockData';
 
 const HOST = 'dex.decred.org:7232';
@@ -37,6 +38,31 @@ const DexOrderForm = memo(DexOrderFormBase);
 // market the server lists.
 const defaultMarket = (ms: DexMarket[] | undefined) =>
   ms?.find((m) => m.baseID === 42 && m.quoteID === 0) || ms?.[0] || null;
+
+// DexRegistrationGate replaces the order form while the account is not active
+// (effective tier below 1), showing the bond confirmation progress. It mirrors
+// the dcrdex web client, which only enables order entry once a bond is confirmed.
+const DexRegistrationGate = ({ status }: { status: DexAccountStatus }) => {
+  const confirming = status.state === 'confirming';
+  const confs = status.pendingConfs ?? 0;
+  return (
+    <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 p-6 text-center">
+      {confirming ? <Hourglass className="h-7 w-7 text-warning" /> : <ShieldAlert className="h-7 w-7 text-warning" />}
+      <div className="text-sm font-semibold text-foreground">{confirming ? 'Bond confirming' : 'Account not active'}</div>
+      {confirming ? (
+        <p className="max-w-[16rem] text-xs text-muted-foreground">
+          Waiting for your fidelity bond to confirm
+          {status.requiredConfs ? ` (${Math.min(confs, status.requiredConfs)}/${status.requiredConfs} confirmations)` : ` (${confs} confirmations)`}
+          . Trading unlocks automatically once it is confirmed.
+        </p>
+      ) : (
+        <p className="max-w-[16rem] text-xs text-muted-foreground">
+          Post a fidelity bond from the Account tab to reach trading tier 1 and start trading.
+        </p>
+      )}
+    </div>
+  );
+};
 
 // DexMarketView is the trading terminal: a market stats bar, a markets sidebar,
 // a price chart, a live order book (with depth visualization) and recent
@@ -63,6 +89,9 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const onPick = (p: { rate: number; qty: number; sell: boolean }) => setPick({ ...p, seq: ++pickSeq.current });
   const seedSpots = useSeedDexSpots();
   const conn = useDexConn(HOST);
+  // Account tier/bonds gate the order form: trading is unlocked only once the
+  // account is active (effective tier >= 1), mirroring the dcrdex web client.
+  const { acct: dexAcct, status: acctStatus } = useDexAccount(HOST);
   const marketsRef = useRef(markets);
   marketsRef.current = markets;
 
@@ -190,6 +219,10 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   // blocked (mirrors bisonw): the order form is replaced by a running-bot card.
   const botRun = useMMBotRun(HOST, sel?.baseID ?? -1, sel?.quoteID ?? -1);
   const botRunning = !preview && !!botRun?.running;
+  // Gate the order form while the account is not yet active (bond confirming or
+  // no bond), but only when the tier is positively known - a transient account
+  // fetch failure leaves it ungated (the daemon still rejects untradable orders).
+  const tradeGated = !preview && !!dexAcct && dexAcct.effectiveTier < 1;
   // After a bot stops no more MM notes fire while its cancellations settle over
   // the next epoch(s), so refresh the orders a few times across that window to
   // drain them promptly (a start, which cancels pre-existing orders, too).
@@ -287,6 +320,8 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
         <section className={`bg-card min-h-0 min-w-0 h-[70vh] overflow-y-auto lg:h-auto lg:overflow-visible lg:block lg:col-start-1 lg:row-start-2 ${mobilePane === 'trade' ? '' : 'hidden'}`}>
           {botRunning && botRun ? (
             <DexMMRunningCard bot={botRun} market={sel} assetOf={assetOf} />
+          ) : tradeGated ? (
+            <DexRegistrationGate status={acctStatus} />
           ) : (
             <DexOrderForm host={HOST} market={sel} preview={preview} pick={pick} bestBid={bestBid} bestAsk={bestAsk} onPlaced={refreshOrders} />
           )}

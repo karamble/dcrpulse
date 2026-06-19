@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle, Info, ShieldCheck } from 'lucide-react';
-import { getDexAccount, postDexBond, setDexBondOptions, type DexAccount } from '../../services/dcrdexApi';
+import { dexAccountState, getDexAccount, postDexBond, setDexBondOptions, type DexAccount } from '../../services/dcrdexApi';
 import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
 
 const Card = ({ title, children }: { title: React.ReactNode; children: React.ReactNode }) => (
@@ -206,22 +206,49 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
   }
 
   const connected = conn ? conn.status === 1 : acct.connectionStatus === 1;
+  // Account-active indicator (mirrors the dcrdex web client): active once the
+  // effective tier reaches 1, otherwise confirming (with bond confs) or inactive.
+  const status = dexAccountState(acct);
+  const stateLabel =
+    status.state === 'active'
+      ? 'Active'
+      : status.state === 'confirming'
+        ? `Bond confirming${status.requiredConfs ? ` ${Math.min(status.pendingConfs ?? 0, status.requiredConfs)}/${status.requiredConfs}` : ''}`
+        : 'Inactive';
 
   return (
     <div className="px-3 lg:px-4 space-y-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
           <h2 className="font-semibold">{host}</h2>
         </div>
-        <span
-          className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border ${
-            connected ? 'bg-success/10 border-success/30 text-success' : 'bg-warning/10 border-warning/30 text-warning'
-          }`}
-        >
-          <span className={`h-2 w-2 rounded-full ${connected ? 'bg-success' : 'bg-warning'}`} />
-          {connected ? 'Connected' : 'Connecting'}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border ${
+              status.state === 'active'
+                ? 'bg-success/10 border-success/30 text-success'
+                : status.state === 'confirming'
+                  ? 'bg-warning/10 border-warning/30 text-warning'
+                  : 'bg-muted/20 border-border/50 text-muted-foreground'
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                status.state === 'active' ? 'bg-success' : status.state === 'confirming' ? 'bg-warning' : 'bg-muted-foreground/50'
+              }`}
+            />
+            {stateLabel}
+          </span>
+          <span
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border ${
+              connected ? 'bg-success/10 border-success/30 text-success' : 'bg-warning/10 border-warning/30 text-warning'
+            }`}
+          >
+            <span className={`h-2 w-2 rounded-full ${connected ? 'bg-success' : 'bg-warning'}`} />
+            {connected ? 'Connected' : 'Connecting'}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -247,9 +274,12 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
 
       {acct.pendingBonds.length > 0 && (
         <Card title="Pending bonds">
-          {acct.pendingBonds.map((b, i) => (
-            <Stat key={i} label={b.symbol} value={`${b.confs} confs`} />
-          ))}
+          {acct.pendingBonds.map((b, i) => {
+            const req = acct.bondAssets.find((a) => a.assetID === b.assetID)?.confs;
+            return (
+              <Stat key={i} label={b.symbol} value={req ? `${Math.min(b.confs, req)} / ${req} confs` : `${b.confs} confs`} />
+            );
+          })}
         </Card>
       )}
 

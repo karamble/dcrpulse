@@ -7,6 +7,8 @@ import { AlertCircle, AlertTriangle, Check, Copy, Info, ShieldCheck } from 'luci
 import {
   discoverDexAccount,
   getDexConfig,
+  getDexExchanges,
+  getDexPostBondStatus,
   getDexWallet,
   postDexBond,
   type DexConfig,
@@ -32,6 +34,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(true);
   const [discoverRun, setDiscoverRun] = useState(0);
@@ -91,6 +94,40 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverConnected]);
 
+  // After submitting, the bond posts in the background (the request returns
+  // immediately), so poll until the account appears - its acctID is set once the
+  // bond broadcasts - and hand off to the trading view, which then shows the
+  // confirmation progress. A pre-broadcast failure (which bisonw does not emit as
+  // a notification) is reported by the post-bond status endpoint.
+  useEffect(() => {
+    if (!submitting) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const s = await getDexPostBondStatus(host);
+        if (cancelled) return;
+        if (s.phase === 'error') {
+          setErr(s.error || 'Bond posting failed');
+          setSubmitting(false);
+          setBusy(false);
+          setConfirming(false);
+          return;
+        }
+        const ex = await getDexExchanges();
+        if (!cancelled && ex[host]?.acctID) onRegistered();
+      } catch {
+        /* keep polling */
+      }
+    };
+    check();
+    const id = window.setInterval(check, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitting, host]);
+
   if (loadErr) {
     return (
       <div className="flex flex-col items-center gap-3 p-6">
@@ -147,7 +184,9 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
     setErr(null);
     try {
       await postDexBond(host, bondAtoms);
-      onRegistered();
+      // The backend posts the bond in the background; the effect above polls for
+      // the broadcast (or a pre-broadcast error) and then hands off to trading.
+      setSubmitting(true);
     } catch (e: any) {
       setErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Bond posting failed');
       setBusy(false);
@@ -312,7 +351,12 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
           </div>
         )}
 
-        {!confirming ? (
+        {submitting ? (
+          <div className="flex items-center justify-center gap-3 rounded-lg bg-muted/10 border border-border/50 px-4 py-3 text-sm text-muted-foreground">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
+            Submitting bond to {host}. Waiting for it to broadcast...
+          </div>
+        ) : !confirming ? (
           <button
             type="button"
             disabled={bondAtoms === 0 || !funded}

@@ -598,10 +598,13 @@ type DexPendingBond struct {
 	Confs   uint32 `json:"confs"`
 }
 
-// DexBondAsset is an asset a DEX accepts for bonds.
+// DexBondAsset is an asset a DEX accepts for bonds. Confs is the confirmations a
+// bond in this asset needs before it counts toward tier (the denominator the UI
+// shows while a bond is pending).
 type DexBondAsset struct {
 	Symbol  string `json:"symbol"`
 	AssetID uint32 `json:"assetID"`
+	Confs   uint32 `json:"confs"`
 }
 
 // DexAccount is the per-server account view (tier, reputation, bonds) for the
@@ -663,8 +666,9 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		PenaltyThreshold uint32 `json:"penaltyThreshold"`
 		MaxScore         uint32 `json:"maxScore"`
 		BondAssets       map[string]struct {
-			ID  uint32 `json:"id"`
-			Amt uint64 `json:"amount"`
+			ID    uint32 `json:"id"`
+			Confs uint32 `json:"confs"`
+			Amt   uint64 `json:"amount"`
 		} `json:"bondAssets"`
 		Auth struct {
 			Rep struct {
@@ -700,7 +704,7 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	bondAssets := make([]DexBondAsset, 0, len(xc.BondAssets))
 	for sym, ba := range xc.BondAssets {
-		bondAssets = append(bondAssets, DexBondAsset{Symbol: strings.ToUpper(sym), AssetID: ba.ID})
+		bondAssets = append(bondAssets, DexBondAsset{Symbol: strings.ToUpper(sym), AssetID: ba.ID, Confs: ba.Confs})
 	}
 	sort.Slice(bondAssets, func(i, j int) bool { return bondAssets[i].Symbol < bondAssets[j].Symbol })
 	json.NewEncoder(w).Encode(DexAccount{
@@ -999,9 +1003,34 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// bondSubmitState tracks an in-flight async PostBond per DEX host. bisonw's
+// postbond returns after broadcast (confirmations arrive later over the notify
+// feed), so the dashboard fires it in the background and returns 202 - the
+// request never blocks and a browser disconnect cannot cancel the bond. A
+// pre-broadcast RPC failure has NO bisonw notification, so it is recorded here
+// for PostDcrdexBondStatusHandler to surface to the UI.
+type bondSubmitState struct {
+	Phase string `json:"phase"` // submitting | broadcast | error | none
+	Error string `json:"error,omitempty"`
+}
+
+var bondSubmit = struct {
+	sync.Mutex
+	m map[string]bondSubmitState
+}{m: map[string]bondSubmitState{}}
+
+func setBondSubmit(host string, s bondSubmitState) {
+	bondSubmit.Lock()
+	bondSubmit.m[host] = s
+	bondSubmit.Unlock()
+}
+
 // PostDcrdexBondHandler posts a fidelity bond to register/maintain a DEX
 // account. This spends real funds on mainnet; the dashboard only calls it on
-// explicit user action.
+// explicit user action. It returns 202 immediately and posts the bond in a
+// detached background goroutine (mirroring bisonw's postbond, which returns
+// after broadcast); confirmation progress arrives over /api/dcrdex/notify and a
+// pre-broadcast failure is exposed via /dcrdex/postbond/status.
 func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req struct {
@@ -1023,19 +1052,41 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	raw, err := client.PostBond(ctx, bisonw.PostBondParams{
+	host := req.Host
+	params := bisonw.PostBondParams{
 		AppPass:      appPass,
-		Host:         req.Host,
+		Host:         host,
 		Bond:         req.Bond,
 		MaintainTier: req.MaintainTier,
-	})
-	if err != nil {
-		dexWriteErr(w, err)
-		return
 	}
-	w.Write(raw)
+	setBondSubmit(host, bondSubmitState{Phase: "submitting"})
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if _, err := client.PostBond(ctx, params); err != nil {
+			log.Printf("DCRDEX PostBond(%s) failed: %v", host, err)
+			setBondSubmit(host, bondSubmitState{Phase: "error", Error: err.Error()})
+			return
+		}
+		setBondSubmit(host, bondSubmitState{Phase: "broadcast"})
+	}()
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]bool{"accepted": true})
+}
+
+// PostDcrdexBondStatusHandler reports the state of the most recent async
+// PostBond for a host (query param "host"), so the UI can surface a
+// pre-broadcast failure that bisonw does not emit as a notification.
+func PostDcrdexBondStatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	host := r.URL.Query().Get("host")
+	bondSubmit.Lock()
+	s, ok := bondSubmit.m[host]
+	bondSubmit.Unlock()
+	if !ok {
+		s = bondSubmitState{Phase: "none"}
+	}
+	_ = json.NewEncoder(w).Encode(s)
 }
 
 // DcrdexWSHandler is a transparent WebSocket relay between the browser and

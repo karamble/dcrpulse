@@ -376,10 +376,28 @@ export const cancelDexOrder = async (orderID: string): Promise<void> => {
   await api.post('/dcrdex/cancel', { orderID });
 };
 
-// postDexBond posts a fidelity bond (in atoms) to register with a DEX server.
-// This spends real funds; only call on explicit user action.
+// postDexBond posts a fidelity bond (in atoms) to register/maintain a DEX
+// account. This spends real funds; only call on explicit user action. The
+// backend returns 202 immediately and posts the bond in the background (like
+// bisonw's postbond, which returns after broadcast); confirmation progress then
+// arrives over the notification feed, and a pre-broadcast failure is reported by
+// getDexPostBondStatus.
 export const postDexBond = async (host: string, bond: number): Promise<void> => {
   await api.post('/dcrdex/postbond', { host, bond });
+};
+
+// DexPostBondStatus is the state of the most recent background bond post for a
+// host: "submitting" while in flight, "broadcast" once the tx is sent (progress
+// then arrives over the notify feed), "error" if it failed before broadcast (the
+// only bond failure bisonw does not emit as a notification), or "none".
+export interface DexPostBondStatus {
+  phase: 'submitting' | 'broadcast' | 'error' | 'none';
+  error?: string;
+}
+
+export const getDexPostBondStatus = async (host: string): Promise<DexPostBondStatus> => {
+  const { data } = await api.get<DexPostBondStatus>('/dcrdex/postbond/status', { params: { host } });
+  return data;
 };
 
 // DexWalletState is a DCRDEX-managed wallet's funding view. Balances are in
@@ -733,11 +751,41 @@ export interface DexAccount {
 export interface DexBondAsset {
   symbol: string;
   assetID: number;
+  // confs is the confirmations a bond in this asset needs before it counts
+  // toward tier (the denominator shown while a bond is confirming).
+  confs: number;
 }
 
 export const getDexAccount = async (host: string): Promise<DexAccount> => {
   const { data } = await api.get<DexAccount>('/dcrdex/account', { params: { host } });
   return data;
+};
+
+// DexAccountState mirrors the dcrdex web client's account status: 'active' once
+// the effective tier is at least 1 (trading unlocked), 'confirming' while a
+// posted bond is still gathering confirmations, 'pending' when the account
+// exists but has no active or confirming bond, and 'none' otherwise.
+export type DexAccountState = 'active' | 'confirming' | 'pending' | 'none';
+
+export interface DexAccountStatus {
+  state: DexAccountState;
+  effectiveTier: number;
+  // For the confirming state: the leading pending bond's confirmations so far
+  // and how many it needs.
+  pendingConfs?: number;
+  requiredConfs?: number;
+}
+
+export const dexAccountState = (acct: DexAccount | null | undefined): DexAccountStatus => {
+  if (!acct) return { state: 'none', effectiveTier: 0 };
+  if (acct.effectiveTier >= 1) return { state: 'active', effectiveTier: acct.effectiveTier };
+  if (acct.pendingBonds && acct.pendingBonds.length > 0) {
+    const b = acct.pendingBonds[0];
+    const req = acct.bondAssets.find((a) => a.assetID === b.assetID)?.confs;
+    return { state: 'confirming', effectiveTier: acct.effectiveTier, pendingConfs: b.confs, requiredConfs: req };
+  }
+  if (acct.acctID || acct.targetTier > 0) return { state: 'pending', effectiveTier: acct.effectiveTier };
+  return { state: 'none', effectiveTier: acct.effectiveTier };
 };
 
 // DexBondOptions are the auto-bond maintenance options; any omitted field is
