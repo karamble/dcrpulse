@@ -161,3 +161,61 @@ func RateLimit(name string, every time.Duration, burst int) func(http.Handler) h
 		})
 	}
 }
+
+// demoReadOnlyPosts are the few non-GET routes that are actually read-only
+// (estimates, invoice decoding, Politeia polling, the login/logout handshake)
+// and so must stay reachable while demo mode blocks every other write.
+var demoReadOnlyPosts = map[string]bool{
+	"/api/auth/login":                          true,
+	"/api/auth/logout":                         true,
+	"/api/dcrdex/preorder":                     true,
+	"/api/dcrdex/maxbuy":                       true,
+	"/api/dcrdex/maxsell":                      true,
+	"/api/wallet/ln/send/decode":               true,
+	"/api/wallet/governance/proposals/refresh": true,
+}
+
+// demoBlockedGets are GET routes that nonetheless perform a fund-moving or
+// otherwise unsafe action and must be blocked in demo mode even though a
+// method-based filter would let them through. /api/wallet/ln/send is a
+// WebSocket upgrade that sends a Lightning payment.
+var demoBlockedGets = map[string]bool{
+	"/api/wallet/ln/send": true,
+}
+
+// demoAllowed reports whether a request may proceed while demo mode is on.
+func demoAllowed(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return !demoBlockedGets[r.URL.Path]
+	default:
+		if demoReadOnlyPosts[r.URL.Path] {
+			return true
+		}
+		// Politeia per-proposal refresh carries a {token} path variable.
+		return strings.HasPrefix(r.URL.Path, "/api/wallet/governance/proposals/") &&
+			strings.HasSuffix(r.URL.Path, "/refresh")
+	}
+}
+
+// DemoBlocker makes the API read-only when enabled: it rejects every
+// state-changing request except an allowlist of read-only POSTs, plus a small
+// set of fund-moving GET endpoints. Blocked requests get 403 with a stable
+// {"error":"demo_disabled"} body the frontend keys on to show its demo modal.
+// When disabled it adds zero overhead (returns the handler unwrapped).
+func DemoBlocker(enabled bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if !enabled {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if demoAllowed(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"demo_disabled","message":"This action is disabled in the demo."}`))
+		})
+	}
+}

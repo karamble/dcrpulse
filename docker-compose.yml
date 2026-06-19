@@ -190,6 +190,7 @@ services:
       - ${TOR_DATA_DIR:-tor-data}:/app-data/tor:ro
     environment:
       - PORT=8080
+      - DEMO_MODE=${DEMO_MODE:-false}
       - TOR_PROXY_IP=tor
       - TOR_PROXY_PORT=9050
       - TOR_CONTROL_PORT=9051

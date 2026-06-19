@@ -6,6 +6,7 @@ import {
   getLightningChannels,
 } from '../../../services/lightningApi';
 import { CloseChannelModal } from './CloseChannelModal';
+import { useDemo } from '../../DemoProvider';
 
 const fmtDcr = (atoms?: number) => ((atoms || 0) / 1e8).toFixed(8) + ' DCR';
 
@@ -88,6 +89,7 @@ export const ChannelDetailPage = () => {
   const [channel, setChannel] = useState<LightningChannel | null>(null);
   const [loading, setLoading] = useState(true);
   const [closeOpen, setCloseOpen] = useState(false);
+  const { demoMode, showDemoDisabledModal } = useDemo();
 
   const load = async () => {
     setLoading(true);
@@ -153,7 +155,13 @@ export const ChannelDetailPage = () => {
         {(channel.status === 'open' || channel.status === 'pending-open') && (
           <div className="flex justify-end pt-2">
             <button
-              onClick={() => setCloseOpen(true)}
+              onClick={() => {
+                if (demoMode) {
+                  showDemoDisabledModal();
+                  return;
+                }
+                setCloseOpen(true);
+              }}
               className="px-4 py-2 rounded-lg bg-destructive/20 hover:bg-destructive/30 text-destructive text-sm font-semibold"
             >
               Close channel

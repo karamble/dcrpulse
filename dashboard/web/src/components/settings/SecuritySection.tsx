@@ -10,6 +10,7 @@ import {
   disableAppPassword,
 } from '../../services/auth';
 import { useAuth } from '../auth/AuthGate';
+import { useDemo } from '../DemoProvider';
 
 const inputClass =
   'w-full px-4 py-3 rounded-lg bg-background border border-border/60 focus:border-primary outline-none';
@@ -18,6 +19,7 @@ export const SecuritySection = () => {
   // Use the shared AuthGate context so enabling/disabling here immediately
   // updates the gate and the Header (logout button) without a page reload.
   const { status, refresh } = useAuth();
+  const { demoMode, showDemoDisabledModal } = useDemo();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
@@ -29,6 +31,10 @@ export const SecuritySection = () => {
 
   const enable = async (e: FormEvent) => {
     e.preventDefault();
+    if (demoMode) {
+      showDemoDisabledModal();
+      return;
+    }
     setErr('');
     setMsg('');
     if (!pw) {
@@ -55,6 +61,10 @@ export const SecuritySection = () => {
 
   const change = async (e: FormEvent) => {
     e.preventDefault();
+    if (demoMode) {
+      showDemoDisabledModal();
+      return;
+    }
     setErr('');
     setMsg('');
     if (!cur || !next) {
@@ -81,6 +91,10 @@ export const SecuritySection = () => {
 
   const disable = async (e: FormEvent) => {
     e.preventDefault();
+    if (demoMode) {
+      showDemoDisabledModal();
+      return;
+    }
     setErr('');
     setMsg('');
     if (!disPw) {

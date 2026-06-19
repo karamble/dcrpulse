@@ -23,6 +23,14 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn;
 }
 
+// In demo mode the backend replies 403 {"error":"demo_disabled"} to any blocked
+// action. The DemoProvider registers a handler here so a blocked call anywhere in
+// the app surfaces the "Disabled in the demo" modal.
+let onDemoDisabled: (() => void) | null = null;
+export function setDemoDisabledHandler(fn: (() => void) | null) {
+  onDemoDisabled = fn;
+}
+
 api.interceptors.response.use(
   (resp) => resp,
   (error) => {
@@ -35,6 +43,13 @@ api.interceptors.response.use(
       onUnauthorized
     ) {
       onUnauthorized();
+    }
+    if (
+      error?.response?.status === 403 &&
+      error.response.data?.error === 'demo_disabled' &&
+      onDemoDisabled
+    ) {
+      onDemoDisabled();
     }
     return Promise.reject(error);
   },
@@ -50,6 +65,16 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
   }
   return res;
 }
+
+export interface DemoStatus {
+  demo: boolean;
+}
+
+// Reports whether the backend runs in read-only demo mode.
+export const getDemoStatus = async (): Promise<DemoStatus> => {
+  const response = await api.get<DemoStatus>('/demo-status');
+  return response.data;
+};
 
 export interface NodeStatus {
   status: string;

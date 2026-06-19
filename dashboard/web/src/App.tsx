@@ -9,6 +9,7 @@ import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { ExternalLinkGuard } from './components/ExternalLinkGuard';
 import { ThemeProvider } from './services/themes/ThemeProvider';
+import { DemoProvider } from './components/DemoProvider';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
 import { WalletLayout } from './components/wallet/WalletLayout';
@@ -220,9 +221,11 @@ function App() {
     <ThemeProvider>
       <BrowserRouter>
         <AuthGate>
-          <BisonrelayLiveProvider>
-            <AppContent />
-          </BisonrelayLiveProvider>
+          <DemoProvider>
+            <BisonrelayLiveProvider>
+              <AppContent />
+            </BisonrelayLiveProvider>
+          </DemoProvider>
         </AuthGate>
       </BrowserRouter>
     </ThemeProvider>

@@ -167,13 +167,33 @@ func main() {
 		log.Printf("Warning: could not load app-password config (auth disabled): %v", err)
 	}
 
+	// Demo mode (public read-only instance). When DEMO_MODE=true, the
+	// middleware.DemoBlocker rejects every state-changing / fund-moving API
+	// request so visitors can browse the full UI without affecting the stack.
+	demoMode := getEnv("DEMO_MODE", "false") == "true"
+	if demoMode {
+		log.Println("DEMO_MODE enabled: state-changing API routes are disabled")
+	}
+
 	// Setup router
 	r := mux.NewRouter()
 	r.Use(middleware.SecurityHeaders)
 
+	// Reports whether this instance runs in read-only demo mode. Registered on
+	// the root router (ahead of the /api subrouter) so it stays reachable
+	// without the app-password gate, letting the UI detect demo mode on load.
+	r.HandleFunc("/api/demo-status", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if demoMode {
+			w.Write([]byte(`{"demo":true}`))
+		} else {
+			w.Write([]byte(`{"demo":false}`))
+		}
+	}).Methods("GET")
+
 	// API routes
 	api := r.PathPrefix("/api").Subrouter()
-	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth)
+	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth, middleware.DemoBlocker(demoMode))
 
 	// Dashboard app-password (optional). /auth/status + /auth/login are exempt
 	// from RequireAuth so the user can reach the login handshake; every other
