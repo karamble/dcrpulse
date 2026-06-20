@@ -770,7 +770,8 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	if _, ok := rpc.DcrdexAppPass(); !ok {
+	appPass, ok := rpc.DcrdexAppPass()
+	if !ok {
 		http.Error(w, "DCRDEX is locked", http.StatusConflict)
 		return
 	}
@@ -801,6 +802,19 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	// bondopts reserves funds in the bond asset, which requires that wallet to be
+	// unlocked, but the bondopts RPC carries no password (unlike trade/postbond), so
+	// unlock the bond asset wallet first via openwallet. Our DCR wallet is the
+	// dashboard's external dcrwallet, which the dashboard can lock outside bisonw, so
+	// it is not reliably open when bondopts runs. openwallet is idempotent.
+	unlockAsset := bondAsset
+	if unlockAsset < 0 {
+		unlockAsset = int(bisonw.AssetDCR)
+	}
+	if err := client.OpenWallet(ctx, appPass, uint32(unlockAsset)); err != nil {
+		dexWriteErr(w, err)
+		return
+	}
 	if err := client.SetBondOptions(ctx, req.Host, targetTier, maxBonded, bondAsset, penaltyComps); err != nil {
 		dexWriteErr(w, err)
 		return
