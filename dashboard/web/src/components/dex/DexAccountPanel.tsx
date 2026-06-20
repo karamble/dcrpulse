@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle, Info, ShieldCheck } from 'lucide-react';
 import { dexAccountState, getDexAccount, postDexBond, setDexBondOptions, type DexAccount } from '../../services/dcrdexApi';
+import { fmtAmt } from './dexFormat';
 import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
 
 const Card = ({ title, children }: { title: React.ReactNode; children: React.ReactNode }) => (
@@ -137,7 +138,10 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
           setTargetTier(a.targetTier > 0 ? a.targetTier : 1);
           setMaxBonded(a.maxBondedDcr > 0 ? String(a.maxBondedDcr) : '');
           setPenaltyComps(a.penaltyComps > 0 ? String(a.penaltyComps) : '');
-          setBondAssetID(a.bondAssetID || a.bondAssets[0]?.assetID || 0);
+          // Asset id 0 (BTC) is a valid bond asset, so prefer the account's bond
+          // asset only when the server actually accepts it, else the first offered.
+          const hasBondAsset = a.bondAssets.some((x) => x.assetID === a.bondAssetID);
+          setBondAssetID(hasBondAsset ? a.bondAssetID : (a.bondAssets[0]?.assetID ?? 0));
           setSeeded(true);
         }
       })
@@ -160,7 +164,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
     try {
       await setDexBondOptions(host, {
         targetTier: autoRenew ? Math.max(1, targetTier) : 0,
-        bondAssetID: bondAssetID || undefined,
+        bondAssetID,
         maxBondedDcr: maxBonded.trim() === '' ? undefined : Math.max(0, parseFloat(maxBonded) || 0),
         penaltyComps: penaltyComps.trim() === '' ? undefined : Math.max(0, parseInt(penaltyComps, 10) || 0),
       });
@@ -177,7 +181,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
     setBusy(true);
     setActionErr(null);
     try {
-      await postDexBond(host, acct.bondPerTierAtoms * postTiers);
+      await postDexBond(host, acct.bondPerTierAtoms * postTiers, acct.bondAssetID);
       setConfirming(false);
       refresh();
     } catch (e: any) {
@@ -265,7 +269,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
         </Card>
 
         <Card title="Bonds">
-          <Stat label="Per tier" value={`${acct.bondPerTierDcr.toFixed(2)} DCR`} />
+          <Stat label="Per tier" value={`${fmtAmt(acct.bondPerTierConv, 8)} ${acct.bondAssetSymbol}`} />
           <Stat label="Expiry" value={`${acct.bondExpiryDays} days`} />
           <Stat label="Pending" value={acct.pendingBonds.length} />
           <Stat label="Pending refund" value={acct.bondsPendingRefund} />
@@ -309,7 +313,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
               />
             </div>
             <div>
-              <div className="text-xs text-muted-foreground mb-1">Max bonded (DCR)</div>
+              <div className="text-xs text-muted-foreground mb-1">Max bonded ({acct.bondAssetSymbol})</div>
               <input
                 type="number"
                 min={0}
@@ -340,7 +344,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
               >
                 {acct.bondAssets.map((a) => (
                   <option key={a.assetID} value={a.assetID}>
-                    {a.symbol}
+                    {a.amt > 0 ? `${a.symbol} (${fmtAmt(a.amt, 8)}/tier)` : a.symbol}
                   </option>
                 ))}
               </select>
@@ -375,7 +379,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
             </div>
             <div className="text-sm">
               <div className="text-xs text-muted-foreground mb-1">Total</div>
-              <div className="font-mono font-semibold">{(acct.bondPerTierDcr * postTiers).toFixed(2)} DCR</div>
+              <div className="font-mono font-semibold">{fmtAmt(acct.bondPerTierConv * postTiers, 8)} {acct.bondAssetSymbol}</div>
             </div>
           </div>
           {!confirming ? (
@@ -390,7 +394,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
             <>
               <div className="p-2.5 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>Spends {(acct.bondPerTierDcr * postTiers).toFixed(2)} DCR from the dex account, locked until expiry.</span>
+                <span>Spends {fmtAmt(acct.bondPerTierConv * postTiers, 8)} {acct.bondAssetSymbol} from the dex account, locked until expiry.</span>
               </div>
               <div className="flex gap-2">
                 <button

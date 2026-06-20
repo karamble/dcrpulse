@@ -181,6 +181,7 @@ export interface DexConfig {
   bondConfs: number;
   bondPerTierAtoms: number;
   bondPerTierDcr: number;
+  bondAssets: DexBondAsset[];
   marketCount: number;
   markets: DexMarket[];
   candleDurs: string[];
@@ -204,6 +205,13 @@ export const getDexConfig = async (host: string): Promise<DexConfig> => {
     timeout: 125000,
   });
   return data;
+};
+
+// getDexBondsFeeBuffer returns the fee buffer (in the asset's conventional units)
+// to reserve on top of the bond when registering. Best effort: 0 if unavailable.
+export const getDexBondsFeeBuffer = async (assetID: number): Promise<number> => {
+  const { data } = await api.get<{ feeBuffer: number }>('/dcrdex/bondsfeebuffer', { params: { assetID } });
+  return data.feeBuffer || 0;
 };
 
 // DexWalletInfo is the DCRDEX Decred wallet's funding view (balance in DCR,
@@ -376,14 +384,15 @@ export const cancelDexOrder = async (orderID: string): Promise<void> => {
   await api.post('/dcrdex/cancel', { orderID });
 };
 
-// postDexBond posts a fidelity bond (in atoms) to register/maintain a DEX
-// account. This spends real funds; only call on explicit user action. The
-// backend returns 202 immediately and posts the bond in the background (like
-// bisonw's postbond, which returns after broadcast); confirmation progress then
-// arrives over the notification feed, and a pre-broadcast failure is reported by
+// postDexBond posts a fidelity bond (bond in the asset's atoms) to
+// register/maintain a DEX account. assetID selects the bond asset (omit/0 =
+// DCR). This spends real funds; only call on explicit user action. The backend
+// returns 202 immediately and posts the bond in the background (like bisonw's
+// postbond, which returns after broadcast); confirmation progress then arrives
+// over the notification feed, and a pre-broadcast failure is reported by
 // getDexPostBondStatus.
-export const postDexBond = async (host: string, bond: number): Promise<void> => {
-  await api.post('/dcrdex/postbond', { host, bond });
+export const postDexBond = async (host: string, bond: number, assetID?: number): Promise<void> => {
+  await api.post('/dcrdex/postbond', { host, bond, assetID });
 };
 
 // DexPostBondStatus is the state of the most recent background bond post for a
@@ -720,8 +729,9 @@ export interface DexPendingBond {
   confs: number;
 }
 
-// DexAccount is the per-server account view (tier, reputation, bonds). The bond
-// amount is converted to DCR in the backend.
+// DexAccount is the per-server account view (tier, reputation, bonds). Amounts
+// are in the bond asset's conventional units (converted in the backend);
+// bondAssetSymbol is that asset's ticker for labels.
 export interface DexAccount {
   host: string;
   acctID: string;
@@ -737,9 +747,10 @@ export interface DexAccount {
   penaltyThreshold: number;
   maxScore: number;
   bondAssetID: number;
+  bondAssetSymbol: string;
   bondExpiryDays: number;
   bondPerTierAtoms: number;
-  bondPerTierDcr: number;
+  bondPerTierConv: number;
   maxBondedDcr: number;
   penaltyComps: number;
   bondsPendingRefund: number;
@@ -754,6 +765,10 @@ export interface DexBondAsset {
   // confs is the confirmations a bond in this asset needs before it counts
   // toward tier (the denominator shown while a bond is confirming).
   confs: number;
+  // amtAtoms/amt are the per-tier bond amount in this asset's atoms and
+  // conventional units.
+  amtAtoms: number;
+  amt: number;
 }
 
 export const getDexAccount = async (host: string): Promise<DexAccount> => {

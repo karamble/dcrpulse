@@ -600,11 +600,14 @@ type DexPendingBond struct {
 
 // DexBondAsset is an asset a DEX accepts for bonds. Confs is the confirmations a
 // bond in this asset needs before it counts toward tier (the denominator the UI
-// shows while a bond is pending).
+// shows while a bond is pending). AmtAtoms/Amt are the per-tier bond amount in the
+// asset's own atoms and conventional units.
 type DexBondAsset struct {
-	Symbol  string `json:"symbol"`
-	AssetID uint32 `json:"assetID"`
-	Confs   uint32 `json:"confs"`
+	Symbol   string  `json:"symbol"`
+	AssetID  uint32  `json:"assetID"`
+	Confs    uint32  `json:"confs"`
+	AmtAtoms uint64  `json:"amtAtoms"`
+	Amt      float64 `json:"amt"`
 }
 
 // DexAccount is the per-server account view (tier, reputation, bonds) for the
@@ -624,9 +627,10 @@ type DexAccount struct {
 	PenaltyThreshold   uint32           `json:"penaltyThreshold"`
 	MaxScore           uint32           `json:"maxScore"`
 	BondAssetID        uint32           `json:"bondAssetID"`
+	BondAssetSymbol    string           `json:"bondAssetSymbol"`
 	BondExpiryDays     int              `json:"bondExpiryDays"`
 	BondPerTierAtoms   uint64           `json:"bondPerTierAtoms"`
-	BondPerTierDcr     float64          `json:"bondPerTierDcr"`
+	BondPerTierConv    float64          `json:"bondPerTierConv"`
 	MaxBondedDcr       float64          `json:"maxBondedDcr"`
 	PenaltyComps       uint16           `json:"penaltyComps"`
 	BondsPendingRefund int              `json:"bondsPendingRefund"`
@@ -704,9 +708,23 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	bondAssets := make([]DexBondAsset, 0, len(xc.BondAssets))
 	for sym, ba := range xc.BondAssets {
-		bondAssets = append(bondAssets, DexBondAsset{Symbol: strings.ToUpper(sym), AssetID: ba.ID, Confs: ba.Confs})
+		bondAssets = append(bondAssets, DexBondAsset{
+			Symbol:   strings.ToUpper(sym),
+			AssetID:  ba.ID,
+			Confs:    ba.Confs,
+			AmtAtoms: ba.Amt,
+			Amt:      atomsToConv(ba.Amt, dexassets.ConvFactor(ba.ID)),
+		})
 	}
 	sort.Slice(bondAssets, func(i, j int) bool { return bondAssets[i].Symbol < bondAssets[j].Symbol })
+	// Per-tier bond is denominated in the account's own bond asset, not always DCR.
+	// BondAssetID is 0 for BTC and also 0 when unset, so fall back to the DCR bond
+	// asset only when that id is not actually offered by the server.
+	bondSym := dexassets.Symbol(xc.Auth.BondAssetID)
+	if _, ok := xc.BondAssets[bondSym]; !ok {
+		bondSym = "dcr"
+	}
+	perTier := xc.BondAssets[bondSym]
 	json.NewEncoder(w).Encode(DexAccount{
 		Host:               host,
 		AcctID:             xc.AcctID,
@@ -722,9 +740,10 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		PenaltyThreshold:   xc.PenaltyThreshold,
 		MaxScore:           xc.MaxScore,
 		BondAssetID:        xc.Auth.BondAssetID,
+		BondAssetSymbol:    strings.ToUpper(bondSym),
 		BondExpiryDays:     int(xc.BondExpiry / 86400),
-		BondPerTierAtoms:   xc.BondAssets["dcr"].Amt,
-		BondPerTierDcr:     dcrutil.Amount(xc.BondAssets["dcr"].Amt).ToCoin(),
+		BondPerTierAtoms:   perTier.Amt,
+		BondPerTierConv:    atomsToConv(perTier.Amt, dexassets.ConvFactor(perTier.ID)),
 		MaxBondedDcr:       atomsToConv(xc.Auth.MaxBondedAmt, dexassets.ConvFactor(xc.Auth.BondAssetID)),
 		PenaltyComps:       xc.Auth.PenaltyComps,
 		BondsPendingRefund: len(xc.Auth.ExpiredBonds),
@@ -819,16 +838,17 @@ type DexSpot struct {
 }
 
 type DexConfigResponse struct {
-	Host             string      `json:"host"`
-	ConnectionStatus int         `json:"connectionStatus"`
-	Registered       bool        `json:"registered"`
-	BondExpiryDays   int         `json:"bondExpiryDays"`
-	BondConfs        uint32      `json:"bondConfs"`
-	BondPerTierAtoms uint64      `json:"bondPerTierAtoms"`
-	BondPerTierDcr   float64     `json:"bondPerTierDcr"`
-	MarketCount      int         `json:"marketCount"`
-	Markets          []DexMarket `json:"markets"`
-	CandleDurs       []string    `json:"candleDurs"`
+	Host             string         `json:"host"`
+	ConnectionStatus int            `json:"connectionStatus"`
+	Registered       bool           `json:"registered"`
+	BondExpiryDays   int            `json:"bondExpiryDays"`
+	BondConfs        uint32         `json:"bondConfs"`
+	BondPerTierAtoms uint64         `json:"bondPerTierAtoms"`
+	BondPerTierDcr   float64        `json:"bondPerTierDcr"`
+	BondAssets       []DexBondAsset `json:"bondAssets"`
+	MarketCount      int            `json:"marketCount"`
+	Markets          []DexMarket    `json:"markets"`
+	CandleDurs       []string       `json:"candleDurs"`
 }
 
 // dexConfigRaw returns a DEX server's config JSON for host. For a host the
@@ -931,6 +951,7 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		BinSizes         []string `json:"binSizes"`
 		CandleDurs       []string `json:"candleDurs"`
 		BondAssets       map[string]struct {
+			ID    uint32 `json:"id"`
 			Confs uint32 `json:"confs"`
 			Amt   uint64 `json:"amount"`
 		} `json:"bondAssets"`
@@ -959,6 +980,17 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		return xc.Assets[itoa(assetID)].UnitInfo.Conventional.ConversionFactor
 	}
 	dcr := xc.BondAssets["dcr"]
+	cfgBondAssets := make([]DexBondAsset, 0, len(xc.BondAssets))
+	for sym, ba := range xc.BondAssets {
+		cfgBondAssets = append(cfgBondAssets, DexBondAsset{
+			Symbol:   strings.ToUpper(sym),
+			AssetID:  ba.ID,
+			Confs:    ba.Confs,
+			AmtAtoms: ba.Amt,
+			Amt:      atomsToConv(ba.Amt, dexassets.ConvFactor(ba.ID)),
+		})
+	}
+	sort.Slice(cfgBondAssets, func(i, j int) bool { return cfgBondAssets[i].Symbol < cfgBondAssets[j].Symbol })
 	markets := make([]DexMarket, 0, len(xc.Markets))
 	for _, m := range xc.Markets {
 		markets = append(markets, DexMarket{
@@ -997,10 +1029,37 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		BondConfs:        dcr.Confs,
 		BondPerTierAtoms: dcr.Amt,
 		BondPerTierDcr:   dcrutil.Amount(dcr.Amt).ToCoin(),
+		BondAssets:       cfgBondAssets,
 		MarketCount:      len(markets),
 		Markets:          markets,
 		CandleDurs:       durs,
 	})
+}
+
+// GetDcrdexBondsFeeBufferHandler returns the fee buffer bisonw recommends
+// reserving (on top of the bond amount) to cover the bond transaction fees for
+// the asset given in the `assetID` query parameter. The registration funding step
+// adds it to the bond when checking the deposit covers a bond post. The amount is
+// returned in the asset's conventional units.
+func GetDcrdexBondsFeeBufferHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	assetID, err := strconv.ParseUint(r.URL.Query().Get("assetID"), 10, 32)
+	if err != nil {
+		http.Error(w, "assetID is required", http.StatusBadRequest)
+		return
+	}
+	client, appPass, ok := mmWebClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	raw, err := client.BondsFeeBuffer(ctx, appPass, uint32(assetID))
+	if err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]float64{"feeBuffer": atomsToConv(raw, dexassets.ConvFactor(uint32(assetID)))})
 }
 
 // bondSubmitState tracks an in-flight async PostBond per DEX host. bisonw's
@@ -1036,6 +1095,7 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Host         string `json:"host"`
 		Bond         uint64 `json:"bond"`
+		AssetID      uint32 `json:"assetID,omitempty"`
 		MaintainTier *bool  `json:"maintainTier,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" || req.Bond == 0 {
@@ -1057,6 +1117,7 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 		AppPass:      appPass,
 		Host:         host,
 		Bond:         req.Bond,
+		AssetID:      req.AssetID,
 		MaintainTier: req.MaintainTier,
 	}
 	setBondSubmit(host, bondSubmitState{Phase: "submitting"})

@@ -172,6 +172,20 @@ func (c *WebClient) NewDepositAddress(ctx context.Context, appPass string, asset
 	return res.Address, nil
 }
 
+// BondsFeeBuffer returns the fee buffer (in the asset's atoms) bisonw recommends
+// reserving on top of the bond amount to cover the bond transaction fees for the
+// given bond asset. Webserver-only route (/api/bondsfeebuffer).
+func (c *WebClient) BondsFeeBuffer(ctx context.Context, appPass string, assetID uint32) (uint64, error) {
+	var res struct {
+		webAck
+		FeeBuffer uint64 `json:"feeBuffer"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/bondsfeebuffer", appPass, map[string]any{"assetID": assetID}, &res); err != nil {
+		return 0, err
+	}
+	return res.FeeBuffer, nil
+}
+
 // EstimateSendTxFee estimates the network fee to send value (atoms of assetID) to
 // addr and reports whether addr is a valid address for the asset. Webserver-only
 // route (/api/txfee). The returned fee is in the fee asset's atoms (the parent
