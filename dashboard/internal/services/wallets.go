@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"log"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -237,10 +236,4 @@ func walletDirExists(path string) bool {
 		return false
 	}
 	return fi.IsDir()
-}
-
-// walletControlBackupsDir is where DeleteWallet stows a tar of a wallet's
-// appdata before removing it.
-func walletControlBackupsDir() string {
-	return filepath.Join(config.WalletDataRoot, "backups")
 }

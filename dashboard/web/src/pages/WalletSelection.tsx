@@ -36,6 +36,8 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  // Typed confirmation: the user must type DELETE to permanently purge a wallet.
+  const [deleteConfirm, setDeleteConfirm] = useState('');
 
   const load = () => {
     listWallets()
@@ -188,7 +190,10 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
                     )}
                     {!w.isDefault && !w.active && (
                       <button
-                        onClick={() => setDeleting(w.name)}
+                        onClick={() => {
+                          setDeleting(w.name);
+                          setDeleteConfirm('');
+                        }}
                         className="p-2 text-red-500 hover:text-red-400"
                         title="Delete"
                       >
@@ -289,19 +294,36 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
           <div className="bg-gradient-card border border-border/50 rounded-xl p-6 w-full max-w-md space-y-4">
             <h3 className="text-lg font-semibold text-red-500">Delete wallet "{deleting}"?</h3>
             <p className="text-sm text-muted-foreground">
-              The wallet's data is backed up inside the wallet volume before removal, but it will no
-              longer appear in the list. Make sure you have your seed phrase.
+              This permanently deletes wallet "{deleting}" and all of its data. This cannot be undone
+              and the wallet is not backed up. Make sure you have its seed phrase before continuing.
             </p>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Type DELETE to confirm
+              </label>
+              <input
+                type="text"
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                placeholder="DELETE"
+                autoComplete="off"
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              />
+            </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setDeleting(null)}
+                onClick={() => {
+                  setDeleting(null);
+                  setDeleteConfirm('');
+                }}
                 className="flex-1 py-2 border border-border rounded-lg hover:bg-background/50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDelete(deleting)}
-                className="flex-1 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
+                disabled={deleteConfirm !== 'DELETE'}
+                className="flex-1 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Delete
               </button>

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"regexp"
 	"time"
 
@@ -257,9 +256,10 @@ func RenameWallet(ctx context.Context, from, to string) error {
 	return nil
 }
 
-// DeleteWallet backs up a non-active wallet's data, then removes it along with
-// its dashboard config. The default wallet cannot be deleted; it is the
-// fallback wallet and its appdata root holds the shared control/backup dirs.
+// DeleteWallet permanently removes a non-active wallet's data and its dashboard
+// config. This is irreversible and does NOT back up: the UI gates it behind a
+// typed "DELETE" confirmation. The default wallet cannot be deleted; it is the
+// fallback wallet and its appdata root holds the shared control dirs.
 func DeleteWallet(ctx context.Context, name string) error {
 	if err := ValidateWalletName(name); err != nil {
 		return err
@@ -280,17 +280,11 @@ func DeleteWallet(ctx context.Context, name string) error {
 		return fmt.Errorf("wallet %q not found", name)
 	}
 
-	// Back up by moving the data aside before removal so coins are never
-	// destroyed outright (mirrors the backup-before-risky-ops policy).
-	backupRoot := walletControlBackupsDir()
-	dest := filepath.Join(backupRoot, fmt.Sprintf("%s-%d", name, time.Now().UnixNano()))
-	if err := os.MkdirAll(dest, 0o700); err != nil {
-		return fmt.Errorf("prepare backup: %w", err)
+	// Permanently remove the wallet's appdata (wallet.db and all data).
+	if err := os.RemoveAll(dataDir); err != nil {
+		return fmt.Errorf("remove wallet data: %w", err)
 	}
-	if err := os.Rename(dataDir, filepath.Join(dest, filepath.Base(dataDir))); err != nil {
-		return fmt.Errorf("back up wallet data: %w", err)
-	}
-	log.Printf("Deleted wallet %q; data backed up to %s", name, dest)
+	log.Printf("Permanently deleted wallet %q (%s)", name, dataDir)
 
 	// Remove the dashboard-side config directory (metadata only).
 	if err := os.RemoveAll(config.WalletDir(network, name)); err != nil {
