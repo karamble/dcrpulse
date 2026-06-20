@@ -47,6 +47,7 @@ import { AutobuyerTab } from './components/staking/AutobuyerTab';
 import { TicketStatusTab } from './components/staking/TicketStatusTab';
 import { TicketHistoryTab } from './components/staking/TicketHistoryTab';
 import { StatisticsTab } from './components/staking/StatisticsTab';
+import { WatchOnlyGuard } from './components/common/WatchOnlyGuard';
 import { ExplorerLanding } from './pages/ExplorerLanding';
 import { BlockDetail } from './pages/BlockDetail';
 import { TransactionDetail } from './pages/TransactionDetail';
@@ -149,8 +150,8 @@ function AppContent() {
             <Route path="privacy" element={<PrivacyPage />} />
             <Route path="staking" element={<StakingPage />}>
               <Route index element={<Navigate to="purchase" replace />} />
-              <Route path="purchase" element={<PurchaseTab />} />
-              <Route path="autobuyer" element={<AutobuyerTab />} />
+              <Route path="purchase" element={<WatchOnlyGuard feature="Ticket purchasing"><PurchaseTab /></WatchOnlyGuard>} />
+              <Route path="autobuyer" element={<WatchOnlyGuard feature="The ticket auto buyer"><AutobuyerTab /></WatchOnlyGuard>} />
               <Route path="status" element={<TicketStatusTab />} />
               <Route path="history" element={<TicketHistoryTab />} />
               <Route path="statistics" element={<StatisticsTab />} />

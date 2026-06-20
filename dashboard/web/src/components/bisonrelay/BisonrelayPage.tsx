@@ -25,6 +25,7 @@ import { useBrTextScale } from './brTextScale';
 import { BisonrelayStatus, getBisonrelayStatus } from '../../services/bisonrelayApi';
 import { useWalletReady } from '../../hooks/useWalletReady';
 import { WalletSyncGate } from '../common/WalletSyncGate';
+import { WatchOnlyGate } from '../common/WatchOnlyGate';
 
 type TabId = 'chat' | 'feed' | 'files' | 'stats' | 'realtime' | 'pages' | 'settings';
 
@@ -101,6 +102,10 @@ export const BisonrelayPage = () => {
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+
+  if (wallet.isWatchOnly) {
+    return <WatchOnlyGate feature="Bison Relay" />;
+  }
 
   if (!ready) {
     if (!wallet.ready) {

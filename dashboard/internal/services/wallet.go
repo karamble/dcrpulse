@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
@@ -119,7 +120,32 @@ func FetchWalletStatus() (*types.WalletStatus, error) {
 		DaemonConnected:  daemonConnected,
 		RescanInProgress: rescanInProgress,
 		SyncMessage:      syncMessage,
+		IsWatchOnly:      ActiveWalletIsWatchOnly(ctx),
 	}, nil
+}
+
+// ActiveWalletIsWatchOnly reports whether the currently-loaded wallet is
+// watching-only (no private keys, cannot spend). The flag is cached per wallet
+// from dcrwallet's authoritative OpenWalletResponse (see cacheWatchOnly).
+// Returns false on any error - callers guarding spend operations get a
+// conservative "assume spendable" default, and dcrwallet itself still rejects
+// signing on a watch-only wallet.
+func ActiveWalletIsWatchOnly(ctx context.Context) bool {
+	name := ActiveWalletName()
+	if name == "" {
+		return false
+	}
+	network, err := CurrentNetwork(ctx)
+	if err != nil {
+		return false
+	}
+	cfg, err := config.LoadWalletCfg(network, name)
+	if err != nil {
+		return false
+	}
+	var isWatchOnly bool
+	_, _ = cfg.Get(config.KeyIsWatchOnly, &isWatchOnly)
+	return isWatchOnly
 }
 
 func FetchWalletDashboardData() (*types.WalletDashboardData, error) {

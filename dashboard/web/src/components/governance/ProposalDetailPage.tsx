@@ -23,6 +23,7 @@ import {
   refreshProposalDetail,
 } from '../../services/api';
 import { VoteModal } from './VoteModal';
+import { useWalletReady } from '../../hooks/useWalletReady';
 import { VoteResultsBar } from './VoteResultsBar';
 
 const POLITEIA_BASE = 'https://proposals.decred.org/record';
@@ -140,6 +141,8 @@ export const ProposalDetailPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [voteModalOpen, setVoteModalOpen] = useState(false);
+  // Watch-only wallets cannot sign a consensus vote, so hide the cast-vote CTA.
+  const { isWatchOnly } = useWalletReady();
   // now (unix seconds) drives the live countdown / "updated X ago" display.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
@@ -336,7 +339,7 @@ export const ProposalDetailPage = () => {
         </div>
       )}
 
-      {isVoting && (
+      {isVoting && !isWatchOnly && (
         <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
           <h3 className="font-semibold">Cast your vote</h3>
           {detail.currentChoice && (

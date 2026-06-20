@@ -101,6 +101,27 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), daemonSwitchTimeout)
+	defer cancel()
+
+	if req.WatchOnly {
+		if msg := validateWatchOnlyRequest(&req); msg != "" {
+			writeJSONError(w, http.StatusBadRequest, msg)
+			return
+		}
+		if err := services.CreateNamedWatchOnlyWallet(ctx, name, req.PublicPassphrase, strings.TrimSpace(req.ExtendedPubKey)); err != nil {
+			log.Printf("Error creating watch-only wallet %q: %v", name, err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(types.CreateWalletResponse{Success: false, Message: err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(types.CreateWalletResponse{Success: true, Message: "Watch-only wallet created successfully"})
+		return
+	}
+
 	if err := validateCreateWalletPassphrases(&req); err != "" {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
@@ -109,9 +130,6 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "Seed is required")
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), daemonSwitchTimeout)
-	defer cancel()
 
 	if err := services.CreateNamedWallet(ctx, name, req.PublicPassphrase, req.PrivatePassphrase, req.SeedHex, req.DiscoverAccounts); err != nil {
 		log.Printf("Error creating wallet %q: %v", name, err)
@@ -193,6 +211,34 @@ func validateCreateWalletPassphrases(req *types.CreateWalletRequest) string {
 	}
 	if req.PrivatePassphrase != req.ConfirmPrivatePassphrase {
 		return "Private passphrases do not match"
+	}
+	if req.PublicPassphrase != "" {
+		if len(req.PublicPassphrase) < 8 {
+			return "Public passphrase must be at least 8 characters"
+		}
+		if req.PublicPassphrase != req.ConfirmPublicPassphrase {
+			return "Public passphrases do not match"
+		}
+	}
+	return ""
+}
+
+// validateWatchOnlyRequest validates a watch-only create request: a dpub/tpub
+// extended public key plus an optional public passphrase (no seed, no private
+// passphrase). Returns an error message string, or "" when valid.
+func validateWatchOnlyRequest(req *types.CreateWalletRequest) string {
+	xpub := strings.TrimSpace(req.ExtendedPubKey)
+	if xpub == "" {
+		return "Extended public key is required"
+	}
+	if !strings.HasPrefix(xpub, "dpub") && !strings.HasPrefix(xpub, "tpub") {
+		return "Invalid extended public key: must start with dpub (mainnet) or tpub (testnet)"
+	}
+	if len(xpub) > 1024 {
+		return "Extended public key too long"
+	}
+	if len(req.PublicPassphrase) > 1024 || len(req.ConfirmPublicPassphrase) > 1024 {
+		return "Passphrase too long"
 	}
 	if req.PublicPassphrase != "" {
 		if len(req.PublicPassphrase) < 8 {

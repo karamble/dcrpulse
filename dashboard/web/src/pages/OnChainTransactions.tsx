@@ -1,4 +1,6 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { useWalletReady } from '../hooks/useWalletReady';
+import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
 
 const tabs = [
   { path: 'send', label: 'Send' },
@@ -10,6 +12,11 @@ const tabs = [
 export const OnChainTransactions = () => {
   const location = useLocation();
   const active = location.pathname.split('/').pop() || 'send';
+  const { isWatchOnly } = useWalletReady();
+
+  if (isWatchOnly) {
+    return <WatchOnlyGate feature="On-chain transactions" />;
+  }
 
   return (
     <div className="space-y-6">

@@ -25,6 +25,7 @@ type WalletStatus struct {
 	DaemonConnected  bool    `json:"daemonConnected"`
 	RescanInProgress bool    `json:"rescanInProgress"`
 	SyncMessage      string  `json:"syncMessage"`
+	IsWatchOnly      bool    `json:"isWatchOnly"` // dcrwallet reports the wallet is watching-only (no spending keys)
 }
 
 type AccountInfo struct {

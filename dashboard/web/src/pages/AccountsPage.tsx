@@ -4,6 +4,7 @@ import { AccountInfo, getAccounts } from '../services/api';
 import { AccountRow, isImportedAccount } from '../components/accounts/AccountRow';
 import { CreateAccountModal } from '../components/accounts/CreateAccountModal';
 import { RenameAccountModal } from '../components/accounts/RenameAccountModal';
+import { useWalletReady } from '../hooks/useWalletReady';
 
 export const AccountsPage = () => {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
@@ -11,6 +12,9 @@ export const AccountsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<AccountInfo | null>(null);
+  // Watch-only wallets cannot derive new HD accounts (no private keys); xpub
+  // accounts are added via Import xpub on the Overview instead.
+  const { isWatchOnly } = useWalletReady();
 
   const load = useCallback(async () => {
     setError(null);
@@ -42,15 +46,17 @@ export const AccountsPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" />
-          <span>New Account</span>
-        </button>
-      </div>
+      {!isWatchOnly && (
+        <div className="flex items-center justify-end">
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New Account</span>
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/30 flex items-start gap-2 text-sm text-destructive">

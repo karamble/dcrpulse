@@ -9,6 +9,7 @@ import { LightningSetupWizard } from '../components/lightning/setup/LightningSet
 import { LightningLayout } from '../components/lightning/LightningLayout';
 import { useWalletReady } from '../hooks/useWalletReady';
 import { WalletSyncGate } from '../components/common/WalletSyncGate';
+import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
 
 export const LightningPage = () => {
   const [status, setStatus] = useState<LightningStatus | null>(null);
@@ -31,6 +32,10 @@ export const LightningPage = () => {
     const id = window.setInterval(refresh, 10000);
     return () => window.clearInterval(id);
   }, []);
+
+  if (wallet.isWatchOnly) {
+    return <WatchOnlyGate feature="Lightning" />;
+  }
 
   if (!status) {
     return (

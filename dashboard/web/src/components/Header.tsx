@@ -8,6 +8,7 @@ import { Wallet, Compass, Vote, Menu, X, LogOut } from 'lucide-react';
 import { useBisonrelayLive } from './bisonrelay/BisonrelayLiveProvider';
 import { useBrNotifPrefs } from './bisonrelay/brNotifPrefs';
 import { useAuth } from './auth/AuthGate';
+import { useWalletReady } from '../hooks/useWalletReady';
 import { logout } from '../services/auth';
 
 interface HeaderProps {
@@ -18,6 +19,9 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const { status: authStatus, refresh: refreshAuth } = useAuth();
+  // Hide spend-dependent sections (Bison Relay, DEX) when the active wallet is
+  // watch-only; they cannot work without private keys.
+  const { isWatchOnly } = useWalletReady(15000);
 
   const isWalletPage = location.pathname.startsWith('/wallet');
   const isExplorerPage = location.pathname.startsWith('/explorer');
@@ -114,19 +118,23 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
         </div>
         <span className="text-primary font-semibold whitespace-nowrap">Treasury</span>
       </Link>
-      <Link to="/br" className={`relative ${linkClass(isBisonrelayPage)}`}>
-        <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
-          <img src="/images/bisonrelay.svg" alt="Bison Relay" className="h-6 w-auto" />
-        </div>
-        <span className="text-primary font-semibold whitespace-nowrap">Bison Relay</span>
-        {brBadge}
-      </Link>
-      <Link to="/dex" className={linkClass(isDexPage)}>
-        <div className="h-10 w-auto rounded-lg flex items-center justify-center bg-gradient-primary px-2">
-          <img src="/images/bisonwallet.svg" alt="Bison Wallet" className="h-6 w-auto" />
-        </div>
-        <span className="text-primary font-semibold whitespace-nowrap">DEX</span>
-      </Link>
+      {!isWatchOnly && (
+        <>
+          <Link to="/br" className={`relative ${linkClass(isBisonrelayPage)}`}>
+            <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
+              <img src="/images/bisonrelay.svg" alt="Bison Relay" className="h-6 w-auto" />
+            </div>
+            <span className="text-primary font-semibold whitespace-nowrap">Bison Relay</span>
+            {brBadge}
+          </Link>
+          <Link to="/dex" className={linkClass(isDexPage)}>
+            <div className="h-10 w-auto rounded-lg flex items-center justify-center bg-gradient-primary px-2">
+              <img src="/images/bisonwallet.svg" alt="Bison Wallet" className="h-6 w-auto" />
+            </div>
+            <span className="text-primary font-semibold whitespace-nowrap">DEX</span>
+          </Link>
+        </>
+      )}
     </>
   );
 

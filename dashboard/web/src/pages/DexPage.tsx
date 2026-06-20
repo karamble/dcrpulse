@@ -12,6 +12,7 @@ import { DexMarketView } from '../components/dex/DexMarketView';
 import { DexSeedBackup } from '../components/dex/DexSeedBackup';
 import { useWalletReady } from '../hooks/useWalletReady';
 import { WalletSyncGate } from '../components/common/WalletSyncGate';
+import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
 
 export const DexPage = () => {
   const [status, setStatus] = useState<DexStatus | null>(null);
@@ -43,6 +44,10 @@ export const DexPage = () => {
 
   if (previewMode) {
     return <DexMarketView preview />;
+  }
+
+  if (wallet.isWatchOnly) {
+    return <WatchOnlyGate feature="DCRDEX" />;
   }
 
   if (!status && err) {

@@ -10,6 +10,7 @@ import { SendToUnmixedCard } from '../components/privacy/SendToUnmixedCard';
 import { MixerEventLog } from '../components/privacy/MixerEventLog';
 import { useWalletReady } from '../hooks/useWalletReady';
 import { WalletSyncGate } from '../components/common/WalletSyncGate';
+import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
 
 export const PrivacyPage = () => {
   const [status, setStatus] = useState<PrivacyStatus | null>(null);
@@ -52,6 +53,10 @@ export const PrivacyPage = () => {
     const found = accounts.find((a) => a.accountNumber === accountNumber);
     return found ? found.spendableBalance + found.unconfirmedBalance : 0;
   };
+
+  if (wallet.isWatchOnly) {
+    return <WatchOnlyGate feature="Privacy mixing" />;
+  }
 
   return (
     <div className="space-y-6">

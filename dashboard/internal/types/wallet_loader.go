@@ -48,6 +48,8 @@ type CreateWalletRequest struct {
 	ConfirmPrivatePassphrase string `json:"confirmPrivatePassphrase"` // Must equal PrivatePassphrase
 	SeedHex                  string `json:"seedHex"`                  // Required: Hex-encoded seed
 	DiscoverAccounts         bool   `json:"discoverAccounts"`         // True when restoring from an existing seed; enables post-create chain rescan
+	WatchOnly                bool   `json:"watchOnly"`                // True to create a watching-only wallet from ExtendedPubKey (no seed, no spending keys)
+	ExtendedPubKey           string `json:"extendedPubKey"`           // Required when WatchOnly: dpub/tpub extended public key
 }
 
 // CreateWalletResponse indicates wallet creation success

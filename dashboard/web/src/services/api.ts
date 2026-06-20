@@ -190,6 +190,7 @@ export interface WalletStatus {
   daemonConnected: boolean;
   rescanInProgress: boolean;
   syncMessage: string;
+  isWatchOnly: boolean;
 }
 
 export interface AccountInfo {
@@ -575,6 +576,8 @@ export interface CreateWalletRequest {
   confirmPrivatePassphrase: string;  // Must equal privatePassphrase
   seedHex: string;                   // Required: Hex-encoded seed
   discoverAccounts: boolean;         // True when restoring from existing seed
+  watchOnly?: boolean;               // True to create a watching-only wallet from extendedPubKey (no seed)
+  extendedPubKey?: string;           // Required when watchOnly: dpub/tpub extended public key
 }
 
 export interface CreateWalletResponse {

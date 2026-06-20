@@ -17,13 +17,14 @@ interface WalletSetupProps {
 const DEFAULT_WALLET_NAME = 'default-wallet';
 const walletNamePattern = /^[A-Za-z0-9_-]{1,64}$/;
 
-type WizardMode = 'create' | 'restore';
+type WizardMode = 'create' | 'restore' | 'watchonly';
 type WizardStep =
   | 'choose'
   | 'welcome'
   | 'generate'
   | 'restore-welcome'
   | 'restore-seed'
+  | 'watchonly'
   | 'passphrases'
   | 'confirm'
   | 'creating'
@@ -47,6 +48,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
   const [privatePassphrase, setPrivatePassphrase] = useState('');
   const [confirmPublicPass, setConfirmPublicPass] = useState('');
   const [confirmPrivatePass, setConfirmPrivatePass] = useState('');
+  const [xpub, setXpub] = useState('');
   const [seedBackupConfirmed, setSeedBackupConfirmed] = useState(false);
   const [confirmWords, setConfirmWords] = useState<Record<number, string>>({});
   const [randomWordIndices, setRandomWordIndices] = useState<number[]>([]);
@@ -187,18 +189,22 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
   };
 
   const handleCreateWallet = async () => {
+    const isWatchOnly = mode === 'watchonly';
+    const failureStep: WizardStep = isWatchOnly ? 'watchonly' : mode === 'restore' ? 'passphrases' : 'confirm';
     try {
       setError(null);
-      
+
       const targetName = defaultExists ? name.trim() : DEFAULT_WALLET_NAME;
       const response = await createNamedWallet({
         name: targetName,
         publicPassphrase,
         confirmPublicPassphrase: confirmPublicPass,
-        privatePassphrase,
-        confirmPrivatePassphrase: confirmPrivatePass,
-        seedHex,
+        privatePassphrase: isWatchOnly ? '' : privatePassphrase,
+        confirmPrivatePassphrase: isWatchOnly ? '' : confirmPrivatePass,
+        seedHex: isWatchOnly ? '' : seedHex,
         discoverAccounts: mode === 'restore',
+        watchOnly: isWatchOnly,
+        extendedPubKey: isWatchOnly ? xpub.trim() : '',
       });
 
       if (response.success) {
@@ -215,11 +221,11 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
         }, 2000);
       } else {
         setError(response.message || 'Failed to create wallet');
-        setStep(mode === 'restore' ? 'passphrases' : 'confirm');
+        setStep(failureStep);
       }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to create wallet. Please try again.');
-      setStep(mode === 'restore' ? 'passphrases' : 'confirm');
+      setStep(failureStep);
       console.error(err);
     }
   };
@@ -242,6 +248,12 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
     confirmPrivatePass !== '' &&
     !privateTooShort &&
     privatePassphrase === confirmPrivatePass &&
+    !publicTooShort &&
+    (publicPassphrase === '' || (confirmPublicPass !== '' && publicPassphrase === confirmPublicPass));
+  const xpubTrimmed = xpub.trim();
+  const xpubValid = xpubTrimmed.startsWith('dpub') || xpubTrimmed.startsWith('tpub');
+  const canSubmitWatchOnly =
+    xpubValid &&
     !publicTooShort &&
     (publicPassphrase === '' || (confirmPublicPass !== '' && publicPassphrase === confirmPublicPass));
 
@@ -302,7 +314,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                 </p>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                 <button
                   onClick={() => proceedFromChoose('welcome', 'create')}
                   className="p-6 rounded-xl border border-border bg-background/50 hover:border-primary/50 hover:bg-background transition-colors text-left space-y-2"
@@ -325,6 +337,18 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                   </div>
                   <p className="text-sm text-muted-foreground">
                     Recover an existing wallet by entering its 33-word seed phrase or raw hex.
+                  </p>
+                </button>
+                <button
+                  onClick={() => proceedFromChoose('watchonly', 'watchonly')}
+                  className="p-6 rounded-xl border border-border bg-background/50 hover:border-primary/50 hover:bg-background transition-colors text-left space-y-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <Eye className="h-6 w-6 text-primary" />
+                    <h3 className="text-lg font-semibold">Watch-only wallet</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Import an extended public key (xpub) to monitor balances without spending keys.
                   </p>
                 </button>
               </div>
@@ -780,6 +804,110 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                   className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold"
                 >
                   Create Wallet
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Watch-only Step */}
+          {step === 'watchonly' && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+                  <Eye className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold">Watch-only Wallet</h2>
+                  <p className="text-sm text-muted-foreground">Monitor an extended public key without spending keys</p>
+                </div>
+              </div>
+
+              <div className="bg-muted/20 border border-border/30 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    <p className="font-semibold text-foreground">What is a watch-only wallet?</p>
+                    <p>It tracks balances and transactions for an extended public key (xpub) but holds no private keys, so it cannot spend funds.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Extended Public Key (xpub) <span className="text-red-500">*</span></label>
+                <textarea
+                  value={xpub}
+                  onChange={(e) => {
+                    setXpub(e.target.value);
+                    if (error) setError(null);
+                  }}
+                  rows={3}
+                  placeholder="dpub..."
+                  className="w-full px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+                />
+                {xpubTrimmed !== '' && !xpubValid && (
+                  <p className="text-xs text-red-500 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> Must start with dpub (mainnet) or tpub (testnet).
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">Paste the account extended public key from your wallet.</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Public Passphrase <span className="text-muted-foreground">(Optional)</span></label>
+                <p className="text-xs text-muted-foreground">Encrypts the wallet database for viewing. Leave empty for no encryption.</p>
+                <div className="relative">
+                  <input
+                    type={showPublicPass ? 'text' : 'password'}
+                    value={publicPassphrase}
+                    onChange={(e) => setPublicPassphrase(e.target.value)}
+                    className="w-full px-4 py-2 pr-10 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Enter public passphrase (optional)"
+                  />
+                  <button
+                    onClick={() => setShowPublicPass(!showPublicPass)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPublicPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {publicTooShort && (
+                  <p className="text-xs text-red-500 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> Must be at least 8 characters.
+                  </p>
+                )}
+                {publicPassphrase && (
+                  <input
+                    type={showPublicPass ? 'text' : 'password'}
+                    value={confirmPublicPass}
+                    onChange={(e) => setConfirmPublicPass(e.target.value)}
+                    className={`w-full px-4 py-2 bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary ${
+                      publicMatch === false ? 'border-red-500/50' : publicMatch === true ? 'border-green-500/50' : 'border-border'
+                    }`}
+                    placeholder="Confirm public passphrase"
+                  />
+                )}
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('choose');
+                  }}
+                  className="flex-1 py-3 border border-border rounded-lg hover:bg-background/50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setStep('creating');
+                    handleCreateWallet();
+                  }}
+                  disabled={!canSubmitWatchOnly}
+                  className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create Watch-only Wallet
                 </button>
               </div>
             </div>

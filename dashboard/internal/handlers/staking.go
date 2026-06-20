@@ -74,6 +74,9 @@ func VSPInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 // PurchaseTicketsHandler triggers a ticket purchase via dcrwallet.
 func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectWatchOnly(w, r) {
+		return
+	}
 	var req types.PurchaseTicketsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -267,6 +270,9 @@ func SaveAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 // StartAutobuyerHandler launches the autobuyer supervisor.
 func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectWatchOnly(w, r) {
+		return
+	}
 	var req types.StartAutobuyerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)

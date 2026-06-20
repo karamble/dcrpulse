@@ -12,6 +12,9 @@ export interface WalletReadiness {
   message: string;
   progress: number;
   loading: boolean;
+  // isWatchOnly mirrors dcrwallet's watching-only flag for the active wallet;
+  // gates spend features that cannot work without private keys.
+  isWatchOnly: boolean;
 }
 
 // useWalletReady polls the wallet status and reports whether the wallet is
@@ -23,6 +26,7 @@ export function useWalletReady(pollMs = 4000): WalletReadiness {
     message: '',
     progress: 0,
     loading: true,
+    isWatchOnly: false,
   });
 
   useEffect(() => {
@@ -37,6 +41,7 @@ export function useWalletReady(pollMs = 4000): WalletReadiness {
           message: ready ? '' : s.syncMessage || 'Your wallet is still syncing.',
           progress: typeof s.syncProgress === 'number' ? s.syncProgress : 0,
           loading: false,
+          isWatchOnly: !!s.isWatchOnly,
         });
       } catch (err: any) {
         if (cancelled) return;
@@ -46,6 +51,7 @@ export function useWalletReady(pollMs = 4000): WalletReadiness {
           message: typeof body === 'string' && body ? body : 'Your wallet is still syncing.',
           progress: 0,
           loading: false,
+          isWatchOnly: false,
         });
       }
     };

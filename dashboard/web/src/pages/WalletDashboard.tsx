@@ -372,11 +372,12 @@ export const WalletDashboard = () => {
                 cumulativeTotal={data.accountInfo.cumulativeTotal}
                 totalSpendable={data.accountInfo.totalSpendable}
                 totalLockedByTickets={data.accountInfo.totalLockedByTickets}
+                isWatchOnly={data.walletStatus.isWatchOnly}
               />
 
               {/* Recent Transactions */}
               {!loading && !showSyncProgress && !isPreparingRescan && (
-                <RecentTransactions />
+                <RecentTransactions hideViewAll={data.walletStatus.isWatchOnly} />
               )}
             </div>
           )}

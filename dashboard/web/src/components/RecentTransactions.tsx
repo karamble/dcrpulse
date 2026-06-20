@@ -75,7 +75,7 @@ const formatWhen = (tx: WalletTransaction) => {
   return toYMD(new Date(ts));
 };
 
-export const RecentTransactions = () => {
+export const RecentTransactions = ({ hideViewAll = false }: { hideViewAll?: boolean } = {}) => {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,13 +115,15 @@ export const RecentTransactions = () => {
             <p className="text-sm text-muted-foreground">Latest wallet activity</p>
           </div>
         </div>
-        <Link
-          to="/wallet/transactions/history"
-          className="flex items-center gap-1 text-sm text-primary hover:underline"
-        >
-          View all
-          <ArrowRight className="h-4 w-4" />
-        </Link>
+        {!hideViewAll && (
+          <Link
+            to="/wallet/transactions/history"
+            className="flex items-center gap-1 text-sm text-primary hover:underline"
+          >
+            View all
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
       </div>
 
       {loading ? (

@@ -14,6 +14,7 @@ interface AccountInfoProps {
   cumulativeTotal?: number;
   totalSpendable?: number;
   totalLockedByTickets?: number;
+  isWatchOnly?: boolean;
 }
 
 export const AccountInfo = ({
@@ -25,7 +26,8 @@ export const AccountInfo = ({
   lockedByTickets = 0,
   cumulativeTotal,
   totalSpendable,
-  totalLockedByTickets
+  totalLockedByTickets,
+  isWatchOnly = false
 }: AccountInfoProps) => {
   const formatDCR = (amount: number) => {
     return amount.toLocaleString('en-US', {
@@ -135,11 +137,13 @@ export const AccountInfo = ({
         )}
       </div>
 
-      <div className="mt-4 p-3 rounded-lg bg-muted/5 border border-muted/10">
-        <p className="text-xs text-muted-foreground">
-          <strong>Watch-Only Mode:</strong> This wallet can monitor balances and transactions but cannot spend funds.
-        </p>
-      </div>
+      {isWatchOnly && (
+        <div className="mt-4 p-3 rounded-lg bg-muted/5 border border-muted/10">
+          <p className="text-xs text-muted-foreground">
+            <strong>Watch-Only Mode:</strong> This wallet can monitor balances and transactions but cannot spend funds.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

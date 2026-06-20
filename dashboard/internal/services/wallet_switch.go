@@ -114,23 +114,77 @@ func CloseActiveWallet(ctx context.Context) error {
 	return ClearActiveWallet()
 }
 
-// CreateNamedWallet creates a new wallet under the given name, switching the
-// daemon to its appdata first, then running the standard create/restore flow.
+// CreateNamedWallet creates a new seed-based wallet under the given name,
+// switching the daemon to its appdata first, then running the standard
+// create/restore flow.
 func CreateNamedWallet(ctx context.Context, name, publicPass, privatePass, seedHex string, discoverAccounts bool) error {
-	if err := ValidateWalletName(name); err != nil {
-		return err
-	}
-	network, err := CurrentNetwork(ctx)
+	network, err := newWalletSlot(ctx, name)
 	if err != nil {
 		return err
-	}
-	if walletExistsByName(name, network) {
-		return fmt.Errorf("wallet %q already exists", name)
 	}
 
 	PauseSync()
 	defer ResumeSync()
 
+	if err := switchDaemonToNewWallet(ctx, name, network); err != nil {
+		return err
+	}
+	if err := CreateNewWallet(ctx, publicPass, privatePass, seedHex, discoverAccounts); err != nil {
+		return err
+	}
+	finishWalletCreate(ctx, network, name)
+	return nil
+}
+
+// CreateNamedWatchOnlyWallet creates a watching-only wallet (from an xpub) under
+// the given name, using the same supervisor handshake as a seed-based create.
+func CreateNamedWatchOnlyWallet(ctx context.Context, name, publicPass, xpub string) error {
+	network, err := newWalletSlot(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	PauseSync()
+	defer ResumeSync()
+
+	if err := switchDaemonToNewWallet(ctx, name, network); err != nil {
+		return err
+	}
+	if err := CreateWatchOnlyWallet(ctx, publicPass, xpub); err != nil {
+		return err
+	}
+	// CreateWatchingOnlyWallet opens the wallet; ensure it is loaded for the
+	// supervisor's sync, then tag the per-wallet config. dcrwallet reports
+	// WatchingOnly=true, so the OpenWallet capture reconfirms it on every open.
+	if err := OpenWallet(ctx, publicPass); err != nil {
+		log.Printf("Watch-only create: ensure open: %v", err)
+	}
+	cacheWatchOnly(ctx, true)
+	finishWalletCreate(ctx, network, name)
+	return nil
+}
+
+// newWalletSlot validates a new wallet name and ensures it does not already
+// exist, returning the current network. Shared by the create paths.
+func newWalletSlot(ctx context.Context, name string) (string, error) {
+	if err := ValidateWalletName(name); err != nil {
+		return "", err
+	}
+	network, err := CurrentNetwork(ctx)
+	if err != nil {
+		return "", err
+	}
+	if walletExistsByName(name, network) {
+		return "", fmt.Errorf("wallet %q already exists", name)
+	}
+	return network, nil
+}
+
+// switchDaemonToNewWallet runs the supervisor handshake that brings a fresh
+// dcrwallet up against a new wallet's appdata: close the current wallet, point
+// the supervisor at the new one, wait for the relaunch, reconnect the gRPC
+// clients, and wait for the loader to answer. Caller must hold PauseSync.
+func switchDaemonToNewWallet(ctx context.Context, name, network string) error {
 	closeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	if err := CloseWallet(closeCtx); err != nil {
 		log.Printf("Create wallet: close current (continuing): %v", err)
@@ -149,16 +203,17 @@ func CreateNamedWallet(ctx context.Context, name, publicPass, privatePass, seedH
 	if err := rpc.WaitForWalletDaemon(ctx); err != nil {
 		return fmt.Errorf("wait for daemon for new wallet: %w", err)
 	}
-	if err := CreateNewWallet(ctx, publicPass, privatePass, seedHex, discoverAccounts); err != nil {
-		return err
-	}
-	touchLastAccess(network, name)
-	// Repoint the dcrlnd / DEX / Bison Relay clients at the new wallet's
-	// per-wallet certs, exactly as a switch does; without this the clients stay
-	// pinned to the previously active wallet's certs (cert-mismatch on DEX,
-	// wrong node for Lightning).
-	reconnectStackServices(ctx, name)
 	return nil
+}
+
+// finishWalletCreate runs the post-create steps shared by every create path:
+// stamp last-access and repoint the dcrlnd / DEX / Bison Relay clients at the new
+// wallet's per-wallet certs, exactly as a switch does; without this the clients
+// stay pinned to the previously active wallet's certs (cert-mismatch on DEX,
+// wrong node for Lightning).
+func finishWalletCreate(ctx context.Context, network, name string) {
+	touchLastAccess(network, name)
+	reconnectStackServices(ctx, name)
 }
 
 // RenameWallet renames a non-active, non-default wallet on disk and renames its

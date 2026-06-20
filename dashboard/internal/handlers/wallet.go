@@ -237,6 +237,18 @@ func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // ImportXpubHandler handles xpub import requests
+// rejectWatchOnly writes a 400 and returns true when the active wallet is
+// watching-only. Spend/sign handlers call it as an upfront guard so the user
+// gets a clear "watch-only" message instead of a deep dcrwallet signing error;
+// the frontend also hides these actions for watch-only wallets.
+func rejectWatchOnly(w http.ResponseWriter, r *http.Request) bool {
+	if services.ActiveWalletIsWatchOnly(r.Context()) {
+		http.Error(w, "This wallet is watch-only and cannot spend or sign.", http.StatusBadRequest)
+		return true
+	}
+	return false
+}
+
 func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletClient == nil {
 		http.Error(w, "Wallet RPC client not initialized", http.StatusServiceUnavailable)
@@ -619,6 +631,9 @@ func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
 		return
 	}
+	if rejectWatchOnly(w, r) {
+		return
+	}
 
 	var req struct {
 		AccountName string `json:"accountName"`
@@ -780,6 +795,9 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
 		return
 	}
+	if rejectWatchOnly(w, r) {
+		return
+	}
 
 	var req struct {
 		Passphrase string `json:"passphrase"`
@@ -821,6 +839,9 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.AccountMixerClient == nil {
 		http.Error(w, "mixer gRPC client not initialized", http.StatusServiceUnavailable)
+		return
+	}
+	if rejectWatchOnly(w, r) {
 		return
 	}
 
@@ -1016,6 +1037,9 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
 		return
 	}
+	if rejectWatchOnly(w, r) {
+		return
+	}
 	var req types.ConstructTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -1087,6 +1111,9 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletGrpcClient == nil {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	if rejectWatchOnly(w, r) {
 		return
 	}
 

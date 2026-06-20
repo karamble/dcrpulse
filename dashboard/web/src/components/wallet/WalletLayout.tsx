@@ -17,6 +17,7 @@ export const WalletLayout = () => {
   // exist but none selected -> wallet picker; a wallet is active -> dashboard.
   const [gate, setGate] = useState<'loading' | 'setup' | 'select' | 'ready'>('loading');
   const [activeName, setActiveName] = useState('');
+  const [isWatchOnly, setIsWatchOnly] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,6 +25,7 @@ export const WalletLayout = () => {
       .then((res) => {
         if (cancelled) return;
         setActiveName(res.active);
+        setIsWatchOnly(!!res.wallets.find((w) => w.active)?.isWatchOnly);
         if (res.wallets.length === 0) {
           setGate('setup');
         } else if (!res.active) {
@@ -71,14 +73,18 @@ export const WalletLayout = () => {
             <LayoutDashboard className="h-4 w-4" />
             <span>Overview</span>
           </NavLink>
-          <NavLink to="/wallet/transactions" className={navItemClass}>
-            <ArrowLeftRight className="h-4 w-4" />
-            <span>On-Chain Transactions</span>
-          </NavLink>
-          <NavLink to="/wallet/privacy" className={navItemClass}>
-            <ShieldCheck className="h-4 w-4" />
-            <span>Privacy</span>
-          </NavLink>
+          {!isWatchOnly && (
+            <NavLink to="/wallet/transactions" className={navItemClass}>
+              <ArrowLeftRight className="h-4 w-4" />
+              <span>On-Chain Transactions</span>
+            </NavLink>
+          )}
+          {!isWatchOnly && (
+            <NavLink to="/wallet/privacy" className={navItemClass}>
+              <ShieldCheck className="h-4 w-4" />
+              <span>Privacy</span>
+            </NavLink>
+          )}
           <NavLink to="/wallet/staking" className={navItemClass}>
             <Ticket className="h-4 w-4" />
             <span>Staking</span>
@@ -87,10 +93,12 @@ export const WalletLayout = () => {
             <Vote className="h-4 w-4" />
             <span>Governance</span>
           </NavLink>
-          <NavLink to="/wallet/lightning" className={navItemClass}>
-            <Zap className="h-4 w-4" />
-            <span>Lightning</span>
-          </NavLink>
+          {!isWatchOnly && (
+            <NavLink to="/wallet/lightning" className={navItemClass}>
+              <Zap className="h-4 w-4" />
+              <span>Lightning</span>
+            </NavLink>
+          )}
           <NavLink to="/wallet/accounts" className={navItemClass}>
             <Users className="h-4 w-4" />
             <span>Accounts</span>

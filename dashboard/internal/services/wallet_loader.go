@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
@@ -170,6 +171,30 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 	return nil
 }
 
+// CreateWatchOnlyWallet creates a watching-only wallet from an extended public
+// key (dpub mainnet / tpub testnet). The wallet has no private keys, so there is
+// no seed and no per-account passphrase to set; dcrwallet reports WatchingOnly=true
+// for it. The supervisor's normal RpcSync discovers used addresses under the key.
+func CreateWatchOnlyWallet(ctx context.Context, publicPass, xpub string) error {
+	if rpc.WalletLoaderClient == nil {
+		return fmt.Errorf("wallet loader client not initialized")
+	}
+	if !strings.HasPrefix(xpub, "dpub") && !strings.HasPrefix(xpub, "tpub") {
+		return fmt.Errorf("invalid extended public key: must start with dpub (mainnet) or tpub (testnet)")
+	}
+
+	req := &pb.CreateWatchingOnlyWalletRequest{
+		ExtendedPubKey:   xpub,
+		PublicPassphrase: []byte(publicPass),
+	}
+	if _, err := rpc.WalletLoaderClient.CreateWatchingOnlyWallet(ctx, req); err != nil {
+		return fmt.Errorf("failed to create watching-only wallet: %w", err)
+	}
+
+	log.Println("Watching-only wallet created and opened successfully")
+	return nil
+}
+
 func runDiscoveryRpcSync(privatePass string) {
 	// Release the RpcSync slot for the supervisor once this discovery stream ends.
 	defer EndRestoreDiscovery()
@@ -252,7 +277,7 @@ func OpenWallet(ctx context.Context, publicPass string) error {
 		PublicPassphrase: []byte(publicPass),
 	}
 
-	_, err = rpc.WalletLoaderClient.OpenWallet(ctx, req)
+	resp, err := rpc.WalletLoaderClient.OpenWallet(ctx, req)
 	if err != nil {
 		// Check if wallet is already opened
 		if strings.Contains(err.Error(), "already opened") {
@@ -262,11 +287,44 @@ func OpenWallet(ctx context.Context, publicPass string) error {
 		}
 	} else {
 		log.Println("Wallet opened successfully")
+		// dcrwallet authoritatively reports watching-only here; cache it for the
+		// active wallet so it survives restarts that skip this open path.
+		cacheWatchOnly(ctx, resp.GetWatchingOnly())
 	}
 
 	// RpcSync is kicked + supervised by SuperviseRpcSync in main.go.
 
 	return nil
+}
+
+// cacheWatchOnly persists dcrwallet's authoritative watching-only flag (from
+// OpenWalletResponse) into the ACTIVE wallet's config, so the value survives
+// dashboard restarts that hit the already-loaded short-circuit above. Per-wallet
+// keyed for the multi-wallet setup; writes only when the stored value changes.
+func cacheWatchOnly(ctx context.Context, watching bool) {
+	name := ActiveWalletName()
+	if name == "" {
+		return
+	}
+	network, err := CurrentNetwork(ctx)
+	if err != nil {
+		return
+	}
+	cfg, err := config.LoadWalletCfg(network, name)
+	if err != nil {
+		return
+	}
+	var stored bool
+	if present, _ := cfg.Get(config.KeyIsWatchOnly, &stored); present && stored == watching {
+		return
+	}
+	if err := cfg.Set(config.KeyIsWatchOnly, watching); err != nil {
+		log.Printf("watch-only flag: set failed for %s: %v", name, err)
+		return
+	}
+	if err := cfg.Save(); err != nil {
+		log.Printf("watch-only flag: save failed for %s: %v", name, err)
+	}
 }
 
 // EnsureRpcSync opens an RpcSync stream and dispatches notifications until
