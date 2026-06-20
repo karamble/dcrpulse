@@ -1205,6 +1205,16 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 		transactions = append(transactions, *tx)
 	}
 
+	// A vote's listtransactions net cancels to ~0; show the stakebase reward
+	// read directly from the vote transaction instead.
+	for i := range transactions {
+		if transactions[i].TxType == "vote" {
+			if reward, ok := voteStakebaseReward(ctx, transactions[i].TxID); ok {
+				transactions[i].Amount = reward
+			}
+		}
+	}
+
 	// Detect VSP fees (paid exactly 6 blocks after ticket)
 	for i := range transactions {
 		isVSPFee, relatedTicket := isVSPFeeTransaction(transactions[i], transactions)
@@ -1256,6 +1266,43 @@ func getTransactionNetAmount(ctx context.Context, txHash string) (float64, error
 	}
 
 	return txInfo.Amount, nil
+}
+
+// voteStakebaseReward returns a vote (SSGen) transaction's stakebase input value,
+// which is the staking reward returned to the ticket. The first input of a vote
+// is the stakebase; its amountin is the reward, read directly from dcrd. Returns
+// false when dcrd is unavailable or the tx is not a vote.
+func voteStakebaseReward(ctx context.Context, txHash string) (float64, bool) {
+	if rpc.DcrdClient == nil {
+		return 0, false
+	}
+
+	rawTxResult, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
+		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
+		json.RawMessage("1"),
+	})
+	if err != nil {
+		log.Printf("Vote reward lookup failed for %s: getrawtransaction error: %v", txHash, err)
+		return 0, false
+	}
+
+	var tx struct {
+		Vin []struct {
+			Stakebase string  `json:"stakebase,omitempty"`
+			AmountIn  float64 `json:"amountin"`
+		} `json:"vin"`
+	}
+
+	if err := json.Unmarshal(rawTxResult, &tx); err != nil {
+		log.Printf("Vote reward lookup failed for %s: unmarshal error: %v", txHash, err)
+		return 0, false
+	}
+
+	if len(tx.Vin) == 0 || tx.Vin[0].Stakebase == "" {
+		return 0, false
+	}
+
+	return tx.Vin[0].AmountIn, true
 }
 
 // isCoinJoinTransaction detects CoinJoin by analyzing tx structure (3+ inputs/outputs, matching amounts)

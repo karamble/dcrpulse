@@ -7,10 +7,10 @@ import { Ticket, Check, Clock, AlertCircle } from 'lucide-react';
 import { TicketRecord } from '../services/api';
 import {
   VoteMaturity,
-  calculateMaturityProgress,
   ticketRecordStatusLabel,
   ticketStatusBadgeClass,
 } from '../services/ticketService';
+import { MaturityBar } from './MaturityBar';
 
 interface TicketDetailRowProps {
   ticket: TicketRecord;
@@ -87,22 +87,17 @@ export const TicketDetailRow = ({ ticket, voteMaturity }: TicketDetailRowProps) 
           <div className="text-xs text-success">+{ticket.reward.toFixed(4)} DCR reward</div>
         )}
         {ticket.status === 'IMMATURE' && ticket.blocksUntilMature > 0 && (
-          <div className="text-xs text-muted-foreground mt-1">
-            {ticket.blocksUntilMature} blocks to live
-          </div>
+          <MaturityBar
+            blocksRemaining={ticket.blocksUntilMature}
+            pendingSuffix="to live"
+            className="mt-1 w-32 text-right"
+          />
         )}
         {voteMaturing && (
-          <div className="mt-1 w-32">
-            <div className="h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-warning transition-all duration-300"
-                style={{ width: `${calculateMaturityProgress(voteMaturity?.blocksUntilSpendable)}%` }}
-              />
-            </div>
-            <div className="text-xs text-muted-foreground mt-1 text-right">
-              {voteMaturity?.blocksUntilSpendable} blocks until spendable
-            </div>
-          </div>
+          <MaturityBar
+            blocksRemaining={voteMaturity?.blocksUntilSpendable}
+            className="mt-1 w-32 text-right"
+          />
         )}
       </div>
     </Link>

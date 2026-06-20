@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 import { toYMD } from '../utils/date';
 import { Link } from 'react-router-dom';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
+import { calculateTicketMaturity } from '../services/ticketService';
+import { MaturityBar } from './MaturityBar';
 import { ArrowDownCircle, ArrowUpCircle, Ticket, Check, X, Coins, Clock, ChevronDown, ChevronUp, Shuffle, BadgeDollarSign } from 'lucide-react';
 
 export const TransactionHistory = () => {
@@ -486,6 +488,19 @@ export const TransactionHistory = () => {
                     </>
                   )}
                 </div>
+                {tx.txType === 'vote' && (
+                  <MaturityBar
+                    blocksRemaining={tx.blocksUntilSpendable}
+                    className="mt-1 max-w-[220px]"
+                  />
+                )}
+                {tx.txType === 'ticket' && tx.confirmations > 0 && calculateTicketMaturity(tx).isImmature && (
+                  <MaturityBar
+                    blocksRemaining={calculateTicketMaturity(tx).blocksUntilMature}
+                    pendingSuffix="to live"
+                    className="mt-1 max-w-[220px]"
+                  />
+                )}
               </div>
             </div>
 

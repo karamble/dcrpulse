@@ -14,6 +14,8 @@ import {
   X,
 } from 'lucide-react';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
+import { calculateTicketMaturity } from '../services/ticketService';
+import { MaturityBar } from './MaturityBar';
 
 const RECENT_LIMIT = 5;
 
@@ -136,18 +138,33 @@ export const RecentTransactions = () => {
             <Link
               key={`${tx.txid}-${tx.vout}-${index}`}
               to={`/explorer/tx/${tx.txid}`}
-              className="flex items-center justify-between p-3 rounded-lg bg-background/50 hover:bg-background transition-colors border border-border/30 hover:border-primary/30"
+              className="flex flex-col gap-2 p-3 rounded-lg bg-background/50 hover:bg-background transition-colors border border-border/30 hover:border-primary/30"
             >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="flex-shrink-0">{categoryIcon(tx)}</div>
-                <div className="min-w-0">
-                  <div className="font-medium text-sm truncate">{categoryLabel(tx)}</div>
-                  <div className="text-xs text-muted-foreground">{formatWhen(tx)}</div>
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="flex-shrink-0">{categoryIcon(tx)}</div>
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm truncate">{categoryLabel(tx)}</div>
+                    <div className="text-xs text-muted-foreground">{formatWhen(tx)}</div>
+                  </div>
+                </div>
+                <div className={`text-sm font-semibold ml-3 whitespace-nowrap ${amountColor(tx)}`}>
+                  {formatAmount(tx.amount)}
                 </div>
               </div>
-              <div className={`text-sm font-semibold ml-3 whitespace-nowrap ${amountColor(tx)}`}>
-                {formatAmount(tx.amount)}
-              </div>
+              {tx.txType === 'vote' && (
+                <MaturityBar
+                  blocksRemaining={tx.blocksUntilSpendable}
+                  className="ml-7 max-w-[180px]"
+                />
+              )}
+              {tx.txType === 'ticket' && tx.confirmations > 0 && calculateTicketMaturity(tx).isImmature && (
+                <MaturityBar
+                  blocksRemaining={calculateTicketMaturity(tx).blocksUntilMature}
+                  pendingSuffix="to live"
+                  className="ml-7 max-w-[180px]"
+                />
+              )}
             </Link>
           ))}
         </div>
