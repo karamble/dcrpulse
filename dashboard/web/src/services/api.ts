@@ -547,6 +547,16 @@ export const getWalletTransactions = async (count: number = 50, from: number = 0
   return response.data;
 };
 
+// exportWalletCsv downloads a Decrediton-format CSV export of the wallet's
+// transaction history or statistics. The full-history Balances exports can take
+// a while, so a long per-request timeout is used.
+export const exportWalletCsv = async (type: string) => {
+  return api.get(`/wallet/export?type=${encodeURIComponent(type)}`, {
+    responseType: 'blob',
+    timeout: 300000,
+  });
+};
+
 // Wallet Creation/Loader Types
 export interface WalletExistsResponse {
   exists: boolean;

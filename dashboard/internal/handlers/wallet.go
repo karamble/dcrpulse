@@ -5,6 +5,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -444,6 +445,44 @@ func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(transactions)
+}
+
+// ExportTransactionsHandler serves a Decrediton-format CSV export of the
+// wallet's transaction history or statistics. Query: type (one of
+// transactions, tickets, votetime, balances, dailybalances; default
+// transactions). The CSV is built fully before sending so a failure mid-build
+// surfaces as a clean error instead of a truncated download.
+func ExportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "Wallet gRPC client not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	typ := r.URL.Query().Get("type")
+	if typ == "" {
+		typ = "transactions"
+	}
+	if !services.ExportTypes[typ] {
+		http.Error(w, "Unknown export type", http.StatusBadRequest)
+		return
+	}
+
+	// Full-history replay (Balances/Daily Balances) can take well beyond the
+	// 10s used for the paged listing, so allow a generous window.
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+
+	var buf bytes.Buffer
+	if err := services.ExportWalletCSV(ctx, &buf, typ); err != nil {
+		log.Printf("Error exporting %s CSV: %v", typ, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	filename := fmt.Sprintf("dcrpulse-%s-%d.csv", typ, time.Now().Unix())
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Write(buf.Bytes())
 }
 
 func StreamRescanProgressHandler(w http.ResponseWriter, r *http.Request) {

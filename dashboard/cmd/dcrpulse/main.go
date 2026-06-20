@@ -279,6 +279,7 @@ func main() {
 	api.HandleFunc("/wallet/status", handlers.GetWalletStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/dashboard", handlers.GetWalletDashboardHandler).Methods("GET")
 	api.HandleFunc("/wallet/transactions", handlers.ListTransactionsHandler).Methods("GET")
+	api.HandleFunc("/wallet/export", handlers.ExportTransactionsHandler).Methods("GET")
 	api.Handle("/wallet/importxpub",
 		middleware.RateLimit("importxpub", 30*time.Second, 1)(
 			http.HandlerFunc(handlers.ImportXpubHandler))).Methods("POST")
