@@ -856,6 +856,10 @@ const emptyFilter: BisonrelayContentFilter = {
   skip_post_comments: false,
 };
 
+// Mirror Go's regexp.QuoteMeta: bridged lines like "[m] <kandiru>" are full of
+// regex metachars, so literal-mode input is escaped before it is stored as a regex.
+const quoteMeta = (s: string): string => s.replace(/[\\.+*?()|[\]{}^$]/g, '\\$&');
+
 const FiltersCard = () => {
   const [filters, setFilters] = useState<BisonrelayContentFilter[] | null>(null);
   const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
@@ -864,6 +868,8 @@ const FiltersCard = () => {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [formErr, setFormErr] = useState<string | null>(null);
+  const [literal, setLiteral] = useState(false);
+  const [sample, setSample] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -902,11 +908,20 @@ const FiltersCard = () => {
       setFormErr('A pattern is required.');
       return;
     }
+    const effective = literal ? quoteMeta(form.regexp.trim()) : form.regexp.trim();
+    try {
+      new RegExp(effective);
+    } catch (e: any) {
+      setFormErr(`Invalid pattern: ${e?.message || 'not a valid regular expression'}`);
+      return;
+    }
     setBusy(true);
     setFormErr(null);
     try {
-      await upsertBisonrelayFilter({ ...form, regexp: form.regexp.trim() });
+      await upsertBisonrelayFilter({ ...form, regexp: effective });
       setForm(null);
+      setLiteral(false);
+      setSample('');
       await refresh();
     } catch (e: any) {
       const body = e?.response?.data;
@@ -939,6 +954,18 @@ const FiltersCard = () => {
     return out;
   };
 
+  const pattern = form ? (literal ? quoteMeta(form.regexp.trim()) : form.regexp.trim()) : '';
+  let patternErr = '';
+  let sampleMatches: boolean | null = null;
+  if (pattern) {
+    try {
+      const re = new RegExp(pattern);
+      if (sample.trim()) sampleMatches = re.test(sample);
+    } catch (e: any) {
+      patternErr = e?.message || 'invalid regular expression';
+    }
+  }
+
   return (
     <SectionCard
       title="Content filters"
@@ -949,6 +976,8 @@ const FiltersCard = () => {
             type="button"
             onClick={() => {
               setFormErr(null);
+              setLiteral(false);
+              setSample('');
               setForm({ ...emptyFilter });
             }}
             className={backupBtnCls}
@@ -961,8 +990,9 @@ const FiltersCard = () => {
     >
       <p className="text-xs text-muted-foreground">
         Messages, posts and comments matching a filter pattern are hidden
-        before they reach the UI. A filter applies to all contacts and group
-        chats unless limited below.
+        before they reach the UI. The pattern is a regular expression; enable
+        "Match literal text" when adding a filter to match exact text instead. A
+        filter applies to all contacts and group chats unless limited below.
       </p>
       {err && <p className="text-xs text-destructive">{err}</p>}
       {filters && filters.length === 0 && !form && (
@@ -988,6 +1018,8 @@ const FiltersCard = () => {
                   aria-label="Edit filter"
                   onClick={() => {
                     setFormErr(null);
+                    setLiteral(false);
+                    setSample('');
                     setForm({ ...f });
                   }}
                   className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground"
@@ -1012,16 +1044,62 @@ const FiltersCard = () => {
         <div className="space-y-3 rounded-lg bg-muted/10 border border-border/50 p-3">
           <p className="text-xs font-medium">{form.id ? 'Edit filter' : 'New filter'}</p>
           <div>
-            <label className="text-[11px] text-muted-foreground block mb-1">
-              Pattern (regular expression)
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-muted-foreground">
+                {literal ? 'Text to match (literal)' : 'Pattern (regular expression)'}
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={literal}
+                  onChange={(e) => setLiteral(e.target.checked)}
+                />
+                Match literal text
+              </label>
+            </div>
             <input
               type="text"
               value={form.regexp}
               onChange={(e) => setForm({ ...form, regexp: e.target.value })}
-              placeholder="e.g. spam|casino"
+              placeholder={literal ? 'e.g. [m] <kandiru>' : 'e.g. spam|casino'}
               className="w-full rounded-lg bg-background/60 border border-border px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:border-primary/50"
             />
+            {patternErr && (
+              <p className="text-[11px] text-destructive break-all mt-1">
+                Invalid pattern: {patternErr}
+              </p>
+            )}
+            {literal && !patternErr && form.regexp.trim() && (
+              <p className="text-[11px] text-muted-foreground break-all mt-1">
+                Stored as: <code className="font-mono text-foreground">{pattern}</code>
+              </p>
+            )}
+            <div className="mt-2">
+              <label className="text-[11px] text-muted-foreground block mb-1">
+                Test against a sample message (optional)
+              </label>
+              <input
+                type="text"
+                value={sample}
+                onChange={(e) => setSample(e.target.value)}
+                placeholder="paste a real message to test"
+                className="w-full rounded-lg bg-background/60 border border-border px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:border-primary/50"
+              />
+              {sample.trim() && !patternErr && sampleMatches !== null && (
+                <p
+                  className={`text-[11px] mt-1 ${
+                    sampleMatches ? 'text-destructive' : 'text-muted-foreground'
+                  }`}
+                >
+                  {sampleMatches
+                    ? 'This message WOULD be hidden by this filter.'
+                    : 'This message would NOT be hidden.'}
+                </p>
+              )}
+              <p className="text-[10px] text-muted-foreground/70 mt-1">
+                Preview uses the browser regex engine; exact for literal text.
+              </p>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -1090,7 +1168,11 @@ const FiltersCard = () => {
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setForm(null)}
+              onClick={() => {
+                setForm(null);
+                setLiteral(false);
+                setSample('');
+              }}
               className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground"
             >
               Cancel
