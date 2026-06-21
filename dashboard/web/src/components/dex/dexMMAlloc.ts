@@ -102,9 +102,23 @@ export const calculateQuoteLot = (
   return quoteFactor;
 };
 
-// TRANSFER_FACTOR is bisonw's defaultTransfer.factor, used to size the minimum
-// auto-rebalance transfer for CEX bots.
-export const TRANSFER_FACTOR = 0.1;
+// AllocProjection carries the per-side projection components (bisonw bProj/qProj,
+// conventional units) plus the asset ids/factors that autoRebalanceSettings needs
+// to reproduce bisonw's mm.ts autoRebalanceSettings exactly.
+export interface AllocProjection {
+  baseID: number;
+  quoteID: number;
+  baseFeeID: number;
+  quoteFeeID: number;
+  baseFactor: number;
+  quoteFactor: number;
+  bBook: number;
+  bBookingFees: number;
+  bCex: number;
+  qBook: number;
+  qBookingFees: number;
+  qCex: number;
+}
 
 export interface SuggestedAllocation {
   dex: Record<number, number>; // assetID -> atoms
@@ -112,9 +126,11 @@ export interface SuggestedAllocation {
   // assets carries the symbol + conversion factor for every id present above so
   // the dialog can label and convert without re-resolving the catalog.
   assets: Record<number, { symbol: string; convFactor: number }>;
-  // quoteLot is the quote-asset value (atomic) of one base lot, used to size the
-  // quote-side auto-rebalance minimum.
+  // quoteLot is the quote-asset value (atomic) of one base lot.
   quoteLot: number;
+  // projection feeds autoRebalanceSettings (the suggested/projected allocation is
+  // what bisonw sizes rebalance transfers from, not the user-edited allocation).
+  projection: AllocProjection;
 }
 
 // suggestedAllocation computes the funding allocation bisonw would propose for a
@@ -159,6 +175,15 @@ export const suggestedAllocation = (
   const baseFeeID = baseMeta.feeID;
   const quoteFeeID = quoteMeta.feeID;
 
+  // Per-asset tuning factors come from the saved uiConfig (bisonw BotAssetConfig),
+  // falling back to bisonw's defaults so an unconfigured bot sizes identically.
+  const ui = cfg.uiConfig;
+  const baseORF = ui?.baseConfig?.orderReservesFactor ?? ORDER_RESERVES_FACTOR;
+  const quoteORF = ui?.quoteConfig?.orderReservesFactor ?? ORDER_RESERVES_FACTOR;
+  const baseSwapN = ui?.baseConfig?.swapFeeN ?? SWAP_FEE_N;
+  const quoteSwapN = ui?.quoteConfig?.swapFeeN ?? SWAP_FEE_N;
+  const quoteSBF = ui?.quoteConfig?.slippageBufferFactor ?? SLIPPAGE_BUFFER_FACTOR;
+
   // ---- feesAndCommit ----
   const cexBaseLots = quoteLots;
   const cexQuoteLots = baseLots;
@@ -193,24 +218,25 @@ export const suggestedAllocation = (
     if (!baseMeta.isAccountLocker && quoteFeeID !== baseFeeID) quoteRedeemReservesPerLot = quoteFees.max.redeem;
   }
 
-  const reservesFactor = 1 + ORDER_RESERVES_FACTOR;
+  const baseReservesFactor = 1 + baseORF;
+  const quoteReservesFactor = 1 + quoteORF;
   const baseBookingFees =
-    baseBookingFeesPerLot * baseLots * reservesFactor + baseRedeemReservesPerLot * quoteLots * reservesFactor;
+    baseBookingFeesPerLot * baseLots * baseReservesFactor + baseRedeemReservesPerLot * quoteLots * baseReservesFactor;
   const quoteBookingFees =
-    quoteBookingFeesPerLot * quoteLots * reservesFactor + quoteRedeemReservesPerLot * baseLots * reservesFactor;
+    quoteBookingFeesPerLot * quoteLots * quoteReservesFactor + quoteRedeemReservesPerLot * baseLots * quoteReservesFactor;
 
   // ---- projectedAllocations (conventional component amounts) ----
   const bBook = commit.dex.base.lots * lotSizeConv;
   const qBook = commit.cex.base.lots * quoteLotConv;
-  const bOrderReserves = (Math.max(commit.cex.base.val, commit.dex.base.val) * ORDER_RESERVES_FACTOR) / baseFactor;
-  const qOrderReserves = (Math.max(commit.cex.quote.val, commit.dex.quote.val) * ORDER_RESERVES_FACTOR) / quoteFactor;
+  const bOrderReserves = (Math.max(commit.cex.base.val, commit.dex.base.val) * baseORF) / baseFactor;
+  const qOrderReserves = (Math.max(commit.cex.quote.val, commit.dex.quote.val) * quoteORF) / quoteFactor;
   const bCex = hasCex ? commit.cex.base.lots * lotSizeConv : 0;
   const qCex = hasCex ? commit.cex.quote.lots * quoteLotConv : 0;
   const bBookingFees = baseBookingFees / baseFeeFactor;
   const qBookingFees = quoteBookingFees / quoteFeeFactor;
-  const bSwapFeeReserves = baseMeta.isToken ? (baseTokenFeesPerSwap * SWAP_FEE_N) / baseFeeFactor : 0;
-  const qSwapFeeReserves = quoteMeta.isToken ? (quoteTokenFeesPerSwap * SWAP_FEE_N) / quoteFeeFactor : 0;
-  const qSlippage = (qBook + qCex + qOrderReserves) * SLIPPAGE_BUFFER_FACTOR;
+  const bSwapFeeReserves = baseMeta.isToken ? (baseTokenFeesPerSwap * baseSwapN) / baseFeeFactor : 0;
+  const qSwapFeeReserves = quoteMeta.isToken ? (quoteTokenFeesPerSwap * quoteSwapN) / quoteFeeFactor : 0;
+  const qSlippage = (qBook + qCex + qOrderReserves) * quoteSBF;
 
   const dex: Record<number, number> = {};
   const cex: Record<number, number> = {};
@@ -241,5 +267,78 @@ export const suggestedAllocation = (
     assets[quoteFeeID] = { symbol: resolveAssetMeta(catalog, quoteFeeID)?.symbol ?? String(quoteFeeID), convFactor: quoteFeeFactor };
   }
 
-  return { dex, cex, assets, quoteLot };
+  const projection: AllocProjection = {
+    baseID,
+    quoteID,
+    baseFeeID,
+    quoteFeeID,
+    baseFactor,
+    quoteFactor,
+    bBook,
+    bBookingFees,
+    bCex,
+    qBook,
+    qBookingFees,
+    qCex,
+  };
+
+  return { dex, cex, assets, quoteLot, projection };
+};
+
+// autoRebalanceSettings ports bisonw v1.0.6's mm.ts autoRebalanceSettings: the
+// minimum CEX transfer for each side, floored at the CEX's own minimum withdrawal
+// and interpolated up to the free (non-DEX-reserved) balance by transferFactor.
+// All amounts are atoms. bisonw sizes this from the projected allocation, so we
+// use the suggestion's projected dex+cex totals, not the user-edited allocation.
+export const autoRebalanceSettings = (
+  suggested: SuggestedAllocation,
+  cexMarket: { baseMinWithdraw: number; quoteMinWithdraw: number },
+  baseTransferFactor: number,
+  quoteTransferFactor: number,
+): { minBaseTransfer: number; minQuoteTransfer: number } => {
+  const p = suggested.projection;
+  const side = (
+    id: number,
+    feeMatchesBaseFee: boolean,
+    feeMatchesQuoteFee: boolean,
+    book: number,
+    cex: number,
+    factor: number,
+    minWithdraw: number,
+    transferFactor: number,
+  ): number => {
+    // bisonw proj.alloc[id] = (book + cex + orderReserves) in atoms; the dashboard
+    // splits that across the dex/cex maps, so recombine for the side total.
+    const total = (suggested.dex[id] ?? 0) + (suggested.cex[id] ?? 0);
+    let dexMinConv = book;
+    if (feeMatchesBaseFee) dexMinConv += p.bBookingFees;
+    if (feeMatchesQuoteFee) dexMinConv += p.qBookingFees;
+    const dexMin = Math.round(dexMinConv * factor);
+    const cexAtoms = Math.round(cex * factor);
+    const maxFree = Math.max(total - dexMin, total - cexAtoms, 0);
+    const max = Math.max(minWithdraw * 2, maxFree);
+    return Math.round(minWithdraw + transferFactor * (max - minWithdraw));
+  };
+  return {
+    minBaseTransfer: side(
+      p.baseID,
+      p.baseID === p.baseFeeID,
+      p.baseID === p.quoteFeeID,
+      p.bBook,
+      p.bCex,
+      p.baseFactor,
+      cexMarket.baseMinWithdraw,
+      baseTransferFactor,
+    ),
+    minQuoteTransfer: side(
+      p.quoteID,
+      p.quoteID === p.baseFeeID,
+      p.quoteID === p.quoteFeeID,
+      p.qBook,
+      p.qCex,
+      p.quoteFactor,
+      cexMarket.quoteMinWithdraw,
+      quoteTransferFactor,
+    ),
+  };
 };

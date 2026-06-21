@@ -28,7 +28,7 @@ import { DexMMArchives } from './DexMMArchives';
 import { DexMMWizard } from './DexMMWizard';
 import { DexMMFundingDialog } from './DexMMFundingDialog';
 import { DexMMCexConfigForm } from './DexMMCexConfigForm';
-import { botTypeOf, needsCex } from './dexMMConfig';
+import { botTypeOf, cexMarketFor, needsCex } from './dexMMConfig';
 
 const HOST = 'dex.decred.org:7232';
 
@@ -390,6 +390,7 @@ export const DexMMPanel = () => {
               report={startReport}
               catalog={catalog}
               needsCex={needsCex(botTypeOf(startBot.config))}
+              cexMarket={cexMarketFor(cexes, startBot.config.cexName, m.baseID, m.quoteID)}
               busy={startBusy}
               onConfirm={confirmStart}
               onCancel={() => setStartBot(null)}

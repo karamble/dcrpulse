@@ -852,6 +852,25 @@ export interface MMAllocation {
   dex: Record<number, number>;
   cex: Record<number, number>;
 }
+// MMBotAssetConfig mirrors bisonw's per-asset uiConfig (client/mm BotAssetConfig):
+// the funding/rebalance tuning factors. swapFeeN is the count of swap-fee
+// reserves; the *Factor fields scale order reserves, the quote slippage buffer,
+// and the auto-rebalance transfer size.
+export interface MMBotAssetConfig {
+  swapFeeN: number;
+  orderReservesFactor: number;
+  slippageBufferFactor: number;
+  transferFactor: number;
+}
+// MMUIConfig mirrors bisonw's mm.BotConfig.uiConfig: per-asset tuning factors,
+// the simple-arb lot count, and the CEX auto-rebalance toggle. Persisted in the
+// saved bot config so it round-trips and stays interoperable with bisonw's UI.
+export interface MMUIConfig {
+  baseConfig: MMBotAssetConfig;
+  quoteConfig: MMBotAssetConfig;
+  simpleArbLots?: number;
+  cexRebalance: boolean;
+}
 export interface MMBotConfig {
   host: string;
   baseID: number;
@@ -863,6 +882,7 @@ export interface MMBotConfig {
   // by option key; bisonw forwards these into each order's funding options.
   baseWalletOptions?: Record<string, string>;
   quoteWalletOptions?: Record<string, string>;
+  uiConfig?: MMUIConfig;
   basicMarketMakingConfig?: MMBasicConfig;
   simpleArbConfig?: MMSimpleArbConfig;
   arbMarketMakingConfig?: MMArbConfig;
@@ -1016,7 +1036,9 @@ export interface MMCexStatus {
   connectErr?: string;
   // markets is the CEX's supported market list (bisonw libxc.Market), keyed by
   // the CEX's own market id; used to tell which pairs a CEX can arbitrage.
-  markets?: Record<string, { baseID: number; quoteID: number }>;
+  // baseMinWithdraw/quoteMinWithdraw are the CEX's minimum withdrawal amounts
+  // (atomic units), used to floor the auto-rebalance transfer size.
+  markets?: Record<string, { baseID: number; quoteID: number; baseMinWithdraw: number; quoteMinWithdraw: number }>;
   // balances are the CEX's per-asset holdings (bisonw libxc.ExchangeBalance),
   // keyed by asset id, in atomic units. Populated once the CEX is connected.
   balances?: Record<number, { available: number; locked: number }>;
@@ -1032,7 +1054,7 @@ export interface MMStartConfig {
   baseID: number;
   quoteID: number;
   alloc?: MMAllocation;
-  autoRebalance?: { minBaseTransfer: number; minQuoteTransfer: number; internalOnly?: boolean };
+  autoRebalance?: { minBaseTransfer: number; minQuoteTransfer: number };
 }
 export interface MMCexConfig {
   name: string;

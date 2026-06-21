@@ -20,7 +20,7 @@ import { DexMMMarketSelector } from './DexMMMarketSelector';
 import { DexMMBotTypeSelector } from './DexMMBotTypeSelector';
 import { DexMMConfigStep } from './DexMMConfigStep';
 import { DexMMFundingDialog } from './DexMMFundingDialog';
-import { botTypeOf, defaultDraft, draftFromConfig, needsCex, type BotType, type ConfigDraft } from './dexMMConfig';
+import { botTypeOf, cexMarketFor, defaultDraft, draftFromConfig, needsCex, type BotType, type ConfigDraft } from './dexMMConfig';
 
 type Step = 'market' | 'type' | 'config';
 
@@ -171,6 +171,7 @@ export const DexMMWizard = ({
             report={report}
             catalog={catalog}
             needsCex={needsCex(botType)}
+            cexMarket={cexMarketFor(cexes, fundingCfg.cexName, market.baseID, market.quoteID)}
             busy={startBusy}
             onConfirm={handleFundingConfirm}
             onCancel={() => {

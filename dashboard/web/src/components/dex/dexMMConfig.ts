@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import type { DexMarket, DexOrderOption, MMBotConfig, MMCexStatus, MMGapStrategy } from '../../services/dcrdexApi';
+import type { DexMarket, DexOrderOption, MMBotAssetConfig, MMBotConfig, MMCexStatus, MMGapStrategy } from '../../services/dcrdexApi';
 
 // Bot types mirror bisonw v1.0.6: a DEX-only basic market maker, a simple
 // DEX/CEX arbitrageur, and a market maker that hedges fills on a CEX.
@@ -29,6 +29,16 @@ export interface PlacementRow {
   factor: string;
 }
 
+// AssetFactors are the per-asset uiConfig tuning factors (bisonw BotAssetConfig),
+// edited as strings. They size order reserves, the quote slippage buffer, the
+// token swap-fee reserves, and the auto-rebalance transfer threshold.
+export interface AssetFactors {
+  swapFeeN: string;
+  orderReservesFactor: string;
+  slippageBufferFactor: string;
+  transferFactor: string;
+}
+
 // ConfigDraft is the editable state shared by the Quick and Advanced config
 // modes. Both modes mutate the same draft so switching between them is lossless.
 export interface ConfigDraft {
@@ -45,6 +55,11 @@ export interface ConfigDraft {
   sells: PlacementRow[];
   baseWalletOptions: Record<string, string>;
   quoteWalletOptions: Record<string, string>;
+  // uiConfig (persisted in the saved bot config so it round-trips):
+  cexRebalance: boolean;
+  simpleArbLots: string;
+  baseFactors: AssetFactors;
+  quoteFactors: AssetFactors;
 }
 
 // QuickDraft holds the simplified slider values. Percent fields are entered as
@@ -58,8 +73,35 @@ export interface QuickDraft {
 }
 
 const num = (s: string): number => Number(s) || 0;
+const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
 const defaultFactor = (t: BotType): string => (t === 'arbmm' ? '1.5' : '0.02');
+
+// defaultFactors seeds bisonw's per-asset uiConfig defaults (mmsettings.ts), so a
+// default-config bot allocates and rebalances identically to the official UI.
+export const defaultFactors = (): AssetFactors => ({
+  swapFeeN: '50',
+  orderReservesFactor: '1',
+  slippageBufferFactor: '0.05',
+  transferFactor: '0.1',
+});
+
+const factorsFromConfig = (c?: MMBotAssetConfig): AssetFactors =>
+  c
+    ? {
+        swapFeeN: String(c.swapFeeN),
+        orderReservesFactor: String(c.orderReservesFactor),
+        slippageBufferFactor: String(c.slippageBufferFactor),
+        transferFactor: String(c.transferFactor),
+      }
+    : defaultFactors();
+
+const factorsToConfig = (f: AssetFactors): MMBotAssetConfig => ({
+  swapFeeN: Math.max(0, Math.floor(num(f.swapFeeN))),
+  orderReservesFactor: Math.max(0, num(f.orderReservesFactor)),
+  slippageBufferFactor: clamp(num(f.slippageBufferFactor), 0, 1),
+  transferFactor: clamp(num(f.transferFactor), 0, 1),
+});
 
 export const defaultDraft = (botType: BotType, cexName?: string): ConfigDraft => ({
   botType,
@@ -75,6 +117,10 @@ export const defaultDraft = (botType: BotType, cexName?: string): ConfigDraft =>
   sells: [{ lots: '1', factor: defaultFactor(botType) }],
   baseWalletOptions: {},
   quoteWalletOptions: {},
+  cexRebalance: true,
+  simpleArbLots: '1',
+  baseFactors: defaultFactors(),
+  quoteFactors: defaultFactors(),
 });
 
 // defaultWalletOptions seeds a wallet's funding options from their defaults,
@@ -122,6 +168,13 @@ export const draftFromConfig = (cfg: MMBotConfig): ConfigDraft => {
     d.profitTrigger = String(simple.profitTrigger);
     d.maxActiveArbs = String(simple.maxActiveArbs);
     d.numEpochs = String(simple.numEpochsLeaveOpen);
+  }
+  const ui = cfg.uiConfig;
+  if (ui) {
+    d.cexRebalance = ui.cexRebalance;
+    if (ui.simpleArbLots !== undefined) d.simpleArbLots = String(ui.simpleArbLots);
+    d.baseFactors = factorsFromConfig(ui.baseConfig);
+    d.quoteFactors = factorsFromConfig(ui.quoteConfig);
   }
   return d;
 };
@@ -181,6 +234,14 @@ export const buildBotConfig = (host: string, market: DexMarket, d: ConfigDraft):
   }
   if (Object.keys(d.baseWalletOptions).length) cfg.baseWalletOptions = d.baseWalletOptions;
   if (Object.keys(d.quoteWalletOptions).length) cfg.quoteWalletOptions = d.quoteWalletOptions;
+  // Persist the per-asset tuning factors + rebalance toggle as bisonw's uiConfig
+  // so they round-trip on edit and stay interoperable with the official UI.
+  cfg.uiConfig = {
+    baseConfig: factorsToConfig(d.baseFactors),
+    quoteConfig: factorsToConfig(d.quoteFactors),
+    cexRebalance: d.cexRebalance,
+  };
+  if (d.botType === 'simplearb') cfg.uiConfig.simpleArbLots = Math.max(1, Math.floor(num(d.simpleArbLots) || 1));
   return cfg;
 };
 
@@ -204,3 +265,19 @@ export const cexesSupportingMarket = (
   baseID: number,
   quoteID: number,
 ): string[] => Object.keys(cexes).filter((name) => cexSupportsMarket(cexes[name], baseID, quoteID));
+
+// cexMarketFor returns the CEX's market entry (with withdrawal minimums) for the
+// pair, or undefined when the CEX is unconfigured or lacks the market. Used to
+// floor the auto-rebalance transfer sizes.
+export const cexMarketFor = (
+  cexes: Record<string, MMCexStatus>,
+  cexName: string | undefined,
+  baseID: number,
+  quoteID: number,
+): { baseMinWithdraw: number; quoteMinWithdraw: number } | undefined => {
+  if (!cexName) return undefined;
+  const markets = cexes[cexName]?.markets;
+  if (!markets) return undefined;
+  const m = Object.values(markets).find((mk) => mk.baseID === baseID && mk.quoteID === quoteID);
+  return m ? { baseMinWithdraw: m.baseMinWithdraw, quoteMinWithdraw: m.quoteMinWithdraw } : undefined;
+};

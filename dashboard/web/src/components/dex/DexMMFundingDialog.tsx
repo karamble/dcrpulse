@@ -16,7 +16,7 @@ import {
 import { CoinIcon } from './CoinIcon';
 import { fmtAmt } from './dexFormat';
 import { toAtoms } from './dexMMConfig';
-import { suggestedAllocation, TRANSFER_FACTOR } from './dexMMAlloc';
+import { suggestedAllocation, autoRebalanceSettings } from './dexMMAlloc';
 
 // DexMMFundingDialog collects the allocation for starting a bot. Per v1.0.6,
 // allocation is supplied at start time (mm.StartConfig), not stored in the bot
@@ -30,6 +30,7 @@ export const DexMMFundingDialog = ({
   report,
   catalog,
   needsCex,
+  cexMarket,
   busy,
   onConfirm,
   onCancel,
@@ -39,6 +40,9 @@ export const DexMMFundingDialog = ({
   report: MMMarketReport | null;
   catalog: DexAsset[];
   needsCex: boolean;
+  // cexMarket carries the selected CEX's minimum withdrawal amounts (atoms) for
+  // the bot's market, used to floor the auto-rebalance transfer sizes.
+  cexMarket?: { baseMinWithdraw: number; quoteMinWithdraw: number };
   busy: boolean;
   onConfirm: (alloc: MMAllocation, autoRebalance?: { minBaseTransfer: number; minQuoteTransfer: number }) => void;
   onCancel: () => void;
@@ -112,14 +116,19 @@ export const DexMMFundingDialog = ({
       setErr('Allocate funds on at least one side before starting.');
       return;
     }
-    // For CEX bots, enable auto-rebalance with a minimum transfer sized off a
-    // lot so the bot keeps inventory balanced without churning on dust.
+    // For CEX bots with rebalance enabled, size the minimum transfers via bisonw's
+    // formula (floored at the CEX minimum withdrawal). Needs the CEX market's
+    // withdrawal minimums; without them, start without auto-rebalance.
+    const ui = config.uiConfig;
+    const rebalanceOn = needsCex && (ui?.cexRebalance ?? true);
     const autoRebalance =
-      needsCex && suggested
-        ? {
-            minBaseTransfer: Math.round(TRANSFER_FACTOR * market.lotSize),
-            minQuoteTransfer: Math.round(TRANSFER_FACTOR * suggested.quoteLot),
-          }
+      rebalanceOn && suggested && cexMarket
+        ? autoRebalanceSettings(
+            suggested,
+            cexMarket,
+            ui?.baseConfig?.transferFactor ?? 0.1,
+            ui?.quoteConfig?.transferFactor ?? 0.1,
+          )
         : undefined;
     onConfirm(alloc, autoRebalance);
   };

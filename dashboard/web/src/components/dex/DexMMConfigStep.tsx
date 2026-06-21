@@ -24,6 +24,7 @@ import {
   defaultWalletOptions,
   deriveQuickPlacements,
   GAP_STRATEGIES,
+  type AssetFactors,
   type ConfigDraft,
   type PlacementRow,
   type QuickDraft,
@@ -113,6 +114,7 @@ export const DexMMConfigStep = ({
 }) => {
   const botType = initial.botType;
   const hasPlacements = botType !== 'simplearb';
+  const cexBot = botType !== 'basicmm';
 
   const [mode, setMode] = useState<'quick' | 'advanced'>(editing ? 'advanced' : 'quick');
   const [draft, setDraft] = useState<ConfigDraft>(initial);
@@ -152,6 +154,9 @@ export const DexMMConfigStep = ({
 
   const setField = <K extends keyof ConfigDraft>(key: K, val: ConfigDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: val }));
+
+  const setFactor = (side: 'baseFactors' | 'quoteFactors', key: keyof AssetFactors, val: string) =>
+    setDraft((d) => ({ ...d, [side]: { ...d[side], [key]: val } }));
 
   const editPlacement = (side: 'buys' | 'sells', i: number, field: keyof PlacementRow, val: string) =>
     setDraft((d) => ({ ...d, [side]: d[side].map((p, idx) => (idx === i ? { ...p, [field]: val } : p)) }));
@@ -413,6 +418,109 @@ export const DexMMConfigStep = ({
             <div className="grid sm:grid-cols-2 gap-4">
               {renderPlacements('Buy placements', 'buys')}
               {renderPlacements('Sell placements', 'sells')}
+            </div>
+          )}
+
+          {/* Advanced allocation tuning (bisonw uiConfig per-asset factors) */}
+          <div className="space-y-2 border-t border-border/40 pt-3">
+            <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70">Advanced allocation</span>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium">
+                  <CoinIcon symbol={market.base} className="h-3.5 w-3.5" />
+                  {market.base}
+                </div>
+                <Field label="Order reserves factor">
+                  <input
+                    value={draft.baseFactors.orderReservesFactor}
+                    onChange={(e) => setFactor('baseFactors', 'orderReservesFactor', e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Swap fee reserves (N)">
+                  <input
+                    value={draft.baseFactors.swapFeeN}
+                    onChange={(e) => setFactor('baseFactors', 'swapFeeN', e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium">
+                  <CoinIcon symbol={market.quote} className="h-3.5 w-3.5" />
+                  {market.quote}
+                </div>
+                <Field label="Order reserves factor">
+                  <input
+                    value={draft.quoteFactors.orderReservesFactor}
+                    onChange={(e) => setFactor('quoteFactors', 'orderReservesFactor', e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Swap fee reserves (N)">
+                  <input
+                    value={draft.quoteFactors.swapFeeN}
+                    onChange={(e) => setFactor('quoteFactors', 'swapFeeN', e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Slippage buffer">
+                  <input
+                    value={draft.quoteFactors.slippageBufferFactor}
+                    onChange={(e) => setFactor('quoteFactors', 'slippageBufferFactor', e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+              </div>
+            </div>
+            {botType === 'simplearb' && (
+              <Field label="Lots per arb">
+                <input
+                  value={draft.simpleArbLots}
+                  onChange={(e) => setField('simpleArbLots', e.target.value)}
+                  className={`${inputCls} w-28`}
+                />
+              </Field>
+            )}
+          </div>
+
+          {/* Auto-rebalance (CEX bots): toggle + per-asset min-transfer factor */}
+          {cexBot && (
+            <div className="space-y-2 border-t border-border/40 pt-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={draft.cexRebalance}
+                  onChange={(e) => setField('cexRebalance', e.target.checked)}
+                  className="accent-primary"
+                />
+                <span>Auto-rebalance funds with the CEX</span>
+              </label>
+              {draft.cexRebalance && (
+                <>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <Slider
+                      label={`${market.base} min transfer`}
+                      value={draft.baseFactors.transferFactor}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      onChange={(v) => setFactor('baseFactors', 'transferFactor', v)}
+                    />
+                    <Slider
+                      label={`${market.quote} min transfer`}
+                      value={draft.quoteFactors.transferFactor}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      onChange={(v) => setFactor('quoteFactors', 'transferFactor', v)}
+                    />
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    Transfers are floored at the CEX minimum withdrawal; the factor sizes the transfer up toward your free balance.
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
