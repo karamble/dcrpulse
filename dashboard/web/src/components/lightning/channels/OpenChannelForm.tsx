@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertCircle, ChevronDown, Loader2, Plug } from 'lucide-react';
+import { AlertCircle, ChevronDown, Info, Loader2, Plug } from 'lucide-react';
 import {
   PeerPreset,
   getLightningPeerPresets,
@@ -72,6 +72,7 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
 
   const localAtoms = dcrToAtoms(localDcr);
   const pushAtoms = pushDcr ? dcrToAtoms(pushDcr) : 0;
+  const isBrHubPreset = presets.some((p) => p.uri === peerUri.trim());
   const canSubmit =
     !submitting &&
     isValidPeerURI(peerUri.trim()) &&
@@ -195,6 +196,18 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
             </p>
           )}
         </div>
+
+        {isBrHubPreset && (
+          <div className="rounded-lg bg-primary/10 border border-primary/30 p-3 text-xs text-foreground/80 flex items-start gap-2">
+            <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+            <span>
+              A channel to a Bison Relay hub is required to use Bison Relay messaging.
+              These hubs are the best connected nodes in Decred's Lightning Network. To
+              get started, open the channel with a Local funding amount plus a small Push
+              amount so you have outbound balance for Bison Relay.
+            </span>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
