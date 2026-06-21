@@ -10,7 +10,6 @@ export const ChannelsTab = () => {
   const [liquidityOpen, setLiquidityOpen] = useState(false);
   return (
     <div className="space-y-6">
-      <AutopilotSwitch />
       <ChannelFundingBalance key={reloadKey} />
       <div className="flex justify-end">
         <button
@@ -23,6 +22,7 @@ export const ChannelsTab = () => {
       </div>
       <OpenChannelForm onChannelOpened={() => setReloadKey((k) => k + 1)} />
       <ChannelList key={reloadKey} />
+      <AutopilotSwitch />
       {liquidityOpen && (
         <RequestLiquidityModal
           onClose={() => setLiquidityOpen(false)}
