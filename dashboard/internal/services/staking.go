@@ -574,8 +574,12 @@ func purchaseTicketsCore(ctx context.Context, account, numTickets uint32, vspHos
 	}
 	defer relockAccount(sourceAccount, func(msg string) { log.Printf("ticket purchase: %s", msg) })
 
+	// Do not set Passphrase. The source account is already unlocked per-account
+	// above, which is all dcrwallet needs to sign: funding, split, mixed, voting
+	// and the VSP fee all resolve to it. Passing the passphrase would instead hold
+	// a wallet-wide unlock for the whole call - and for a mixed purchase that spans
+	// the CoinShuffle++ mix. Mirrors Decrediton's purchaseTickets, which omits it.
 	purchaseReq := &pb.PurchaseTicketsRequest{
-		Passphrase:    passphrase,
 		Account:       sourceAccount,
 		NumTickets:    numTickets,
 		VspHost:       "https://" + strings.TrimPrefix(strings.TrimPrefix(vspHost, "https://"), "http://"),
