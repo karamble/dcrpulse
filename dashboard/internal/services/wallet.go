@@ -626,6 +626,21 @@ func relockAccountsAfterVSP(unlocked []uint32) {
 	}
 }
 
+// relockAccount locks an account that was unlocked for a spend. It runs on a
+// fresh background context so a cancelled operation context cannot prevent the
+// relock. A failed relock leaves the account's signing key usable, so it is
+// reported through onErr (when non-nil) rather than dropped.
+func relockAccount(accountNumber uint32, onErr func(string)) {
+	if rpc.WalletGrpcClient == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := rpc.WalletGrpcClient.LockAccount(ctx, &pb.LockAccountRequest{AccountNumber: accountNumber}); err != nil && onErr != nil {
+		onErr(fmt.Sprintf("Failed to relock account %d: %v", accountNumber, err))
+	}
+}
+
 // RenameAccount renames an existing account. dcrwallet's RenameAccount gRPC
 // does not require the passphrase — the account name is metadata, not key
 // material.

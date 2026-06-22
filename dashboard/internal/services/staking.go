@@ -572,11 +572,7 @@ func purchaseTicketsCore(ctx context.Context, account, numTickets uint32, vspHos
 	if err := unlockAccountForSpend(ctx, sourceAccount, passphrase); err != nil {
 		return nil, err
 	}
-	defer func() {
-		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount})
-	}()
+	defer relockAccount(sourceAccount, func(msg string) { log.Printf("ticket purchase: %s", msg) })
 
 	purchaseReq := &pb.PurchaseTicketsRequest{
 		Passphrase:    passphrase,

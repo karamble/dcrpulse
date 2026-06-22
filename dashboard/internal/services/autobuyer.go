@@ -221,11 +221,7 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphr
 		setAutobuyerErr(fmt.Sprintf("Unlock source account failed: %v", err))
 		return
 	}
-	defer func() {
-		lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer lockCancel()
-		_, _ = rpc.WalletGrpcClient.LockAccount(lockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount})
-	}()
+	defer relockAccount(sourceAccount, setAutobuyerErr)
 
 	// With mixing on, the ticket buyer also runs a per-block account mixer on the
 	// change account (dcrwallet sets MixChange when EnableMixing is set), spending
@@ -243,16 +239,18 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphr
 			setAutobuyerErr(fmt.Sprintf("Unlock change account failed: %v", err))
 			return
 		}
-		defer func() {
-			lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer lockCancel()
-			_, _ = rpc.WalletGrpcClient.LockAccount(lockCtx, &pb.LockAccountRequest{AccountNumber: mixing.Change})
-		}()
+		defer relockAccount(mixing.Change, setAutobuyerErr)
 	}
 
 	balanceAtoms := int64(settings.BalanceToMaintain * 1e8)
+	// Do not set Passphrase. A non-empty passphrase makes dcrwallet unlock the
+	// whole wallet (the RunTicketBuyer handler and ticketbuyer.Run/buy), and the
+	// ticketbuyer's own unlock uses a nil lock channel that is never relocked
+	// when the buyer stops, leaving the wallet spendable until the next relaunch.
+	// The accounts the buyer signs with are already unlocked per-account above
+	// (relocked on stop). Mirrors Decrediton's startTicketAutoBuyer, which omits
+	// the passphrase from this request.
 	req := &pb.RunTicketBuyerRequest{
-		Passphrase:        passphrase,
 		Account:           sourceAccount,
 		VotingAccount:     sourceAccount,
 		BalanceToMaintain: balanceAtoms,

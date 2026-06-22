@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Coins,
   Lock as LockIcon,
+  Unlock,
   Clock,
   AlertCircle,
   Vote,
@@ -54,6 +55,15 @@ export const AccountRow = ({ account, onRename }: Props) => {
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-500/15 text-amber-600 border border-amber-500/30">
                   <ShieldAlert className="h-3 w-3" />
                   Imported
+                </span>
+              )}
+              {account.accountUnlocked && (
+                <span
+                  title="This account's signing key is currently unlocked."
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-warning/15 text-warning border border-warning/30"
+                >
+                  <Unlock className="h-3 w-3" />
+                  Unlocked
                 </span>
               )}
             </div>

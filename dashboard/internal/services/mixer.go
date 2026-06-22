@@ -141,6 +141,14 @@ func recordMixerEvent(level, msg string) {
 	mixerSubsMu.Unlock()
 }
 
+func setMixerErr(msg string) {
+	log.Printf("mixer: %s", msg)
+	mixerMu.Lock()
+	mixerLastErr = msg
+	mixerMu.Unlock()
+	recordMixerEvent("error", msg)
+}
+
 // StartMixer launches the P2P mixer goroutine. Returns an error if it's
 // already running or if the gRPC client isn't wired. The passphrase byte slice
 // is owned by this function for the duration of the call.
@@ -213,11 +221,7 @@ func runMixer(ctx context.Context, passphrase []byte, mixedAccount, mixedBranch,
 		return
 	}
 	// Relock the change account when the mixer stops.
-	defer func() {
-		lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer lockCancel()
-		_, _ = rpc.WalletGrpcClient.LockAccount(lockCtx, &pb.LockAccountRequest{AccountNumber: changeAccount})
-	}()
+	defer relockAccount(changeAccount, setMixerErr)
 
 	// Don't pass the passphrase: dcrwallet's RunAccountMixer would otherwise do a
 	// wallet-wide Unlock, unlocking every account for the mixer's lifetime. We

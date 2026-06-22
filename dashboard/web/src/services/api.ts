@@ -204,6 +204,10 @@ export interface AccountInfo {
   immatureCoinbaseRewards: number;
   immatureStakeGeneration: number;
   accountNumber: number;
+  // Per-account encryption state: accountUnlocked means the account's signing
+  // key is currently usable (a running mixer/autobuyer or a pending spend).
+  accountEncrypted: boolean;
+  accountUnlocked: boolean;
   // Reserved accounts (mixed/unmixed/lightning/dex/imported) cannot be renamed.
   reserved?: boolean;
   // Wallet-wide totals (only on primary AccountInfo)
