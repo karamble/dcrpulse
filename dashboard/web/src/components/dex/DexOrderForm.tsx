@@ -122,6 +122,24 @@ export const DexOrderForm = ({ host, market, preview = false, pick, bestBid, bes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pick?.seq]);
 
+  // Switching markets must not carry a half-entered order over to a different
+  // market, so clear the entry fields (and any dependent estimate/confirm state)
+  // whenever the selected market changes. Keyed on the market identity rather
+  // than the market object so a config refresh that reuses the same market does
+  // not wipe in-progress input.
+  useEffect(() => {
+    setPrice('');
+    setQty('');
+    setLotsStr('');
+    setSpend('');
+    setOpts({});
+    setEst(null);
+    setEstErr(null);
+    setMaxLots(null);
+    setErr(null);
+    setConfirming(false);
+  }, [host, market.baseID, market.quoteID]);
+
   // Keep wallet balances on hand so the form can flag insufficient funds. Skip
   // in preview (no server, and the form renders outside the live provider).
   const refreshWallets = () => {
