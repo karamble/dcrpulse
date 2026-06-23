@@ -136,7 +136,6 @@ func (s *server) bestHeader(hash string) (*blockHeader, error) {
 
 type stakeDiff struct {
 	Current float64 `json:"current"`
-	Next    float64 `json:"next"`
 }
 
 func (s *server) stakeDifficulty() (stakeDiff, error) {
@@ -146,6 +145,22 @@ func (s *server) stakeDifficulty() (stakeDiff, error) {
 		return sd, err
 	}
 	return sd, json.Unmarshal(raw, &sd)
+}
+
+// stakeDiffEstimate is dcrd's estimatestakediff result. Expected is the live
+// estimate for the next window's ticket price; getstakedifficulty's "next" only
+// recomputes at window boundaries, so mid-window it just mirrors the current price.
+type stakeDiffEstimate struct {
+	Expected float64 `json:"expected"`
+}
+
+func (s *server) estimateStakeDiff() (stakeDiffEstimate, error) {
+	var e stakeDiffEstimate
+	raw, err := s.dcrd.call("estimatestakediff")
+	if err != nil {
+		return e, err
+	}
+	return e, json.Unmarshal(raw, &e)
 }
 
 type mempoolInfo struct {
@@ -288,6 +303,10 @@ func (s *server) widgetTicketPrice() (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	est, err := s.estimateStakeDiff()
+	if err != nil {
+		return nil, err
+	}
 	ci, err := s.chainInfo()
 	if err != nil {
 		return nil, err
@@ -298,7 +317,7 @@ func (s *server) widgetTicketPrice() (any, error) {
 		Link:          "/wallet/staking",
 		Title:         "Ticket price",
 		Text:          fmtDCR(sd.Current) + " DCR",
-		Subtext:       "Next ~" + fmtDCR(sd.Next) + " DCR",
+		Subtext:       "Next ~" + fmtDCR(est.Expected) + " DCR",
 		ProgressLabel: commafy(ticketPriceWindow-pos) + " blocks to next",
 		Progress:      float64(pos) / float64(ticketPriceWindow),
 	}, nil
