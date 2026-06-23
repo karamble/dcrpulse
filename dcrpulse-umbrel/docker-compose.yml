@@ -194,3 +194,20 @@ services:
         condition: service_completed_successfully
       dcrd:
         condition: service_started
+
+  widget:
+    image: ghcr.io/karamble/dcrpulse-widgetumbrel:latest
+    user: "1000:1000"
+    restart: on-failure
+    environment:
+      LISTEN: ":3000"
+      DCRD_RPC_HOST: dcrd
+      DCRD_RPC_PORT: 9109
+      DCRD_RPC_USER: ${APP_SEED}
+      DCRD_RPC_PASS: ${APP_SEED}
+      DCRD_RPC_CERT: /app-data/dcrd/rpc.cert
+    volumes:
+      - ${APP_DATA_DIR}/data:/app-data:ro
+    depends_on:
+      dcrd:
+        condition: service_healthy

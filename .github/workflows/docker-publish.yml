@@ -49,6 +49,9 @@ jobs:
           - name: tor
             context: ./tor
             platforms: linux/amd64,linux/arm64
+          - name: widgetumbrel
+            context: ./umbrel-widget
+            platforms: linux/amd64,linux/arm64
     
     steps:
       - name: Checkout repository

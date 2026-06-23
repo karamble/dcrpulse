@@ -56,3 +56,142 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 submission: https://github.com/getumbrel/umbrel-apps/pull/4121
+widgets:
+  - id: sync
+    type: text-with-progress
+    refresh: "10s"
+    endpoint: "widget:3000/widgets/sync"
+    link: ""
+    example:
+      type: text-with-progress
+      title: Blockchain
+      text: "1,091,139"
+      progressLabel: Synced
+      progress: 1
+  - id: node-stats
+    type: four-stats
+    refresh: "10s"
+    endpoint: "widget:3000/widgets/node-stats"
+    link: ""
+    example:
+      type: four-stats
+      items:
+        - { title: Peers, text: "8" }
+        - { title: Mempool, text: "25", subtext: txs }
+        - { title: Hashrate, text: "24.68 TH/s" }
+        - { title: Difficulty, text: "1.81M" }
+  - id: ticket-price
+    type: text-with-progress
+    refresh: "30s"
+    endpoint: "widget:3000/widgets/ticket-price"
+    link: ""
+    example:
+      type: text-with-progress
+      title: Ticket price
+      text: "280.76 DCR"
+      subtext: "Next ~280.76 DCR"
+      progressLabel: "93 blocks to next"
+      progress: 0.35
+  - id: ticket-pool
+    type: four-stats
+    refresh: "30s"
+    endpoint: "widget:3000/widgets/ticket-pool"
+    link: ""
+    example:
+      type: four-stats
+      items:
+        - { title: Pool size, text: "41,398", subtext: tickets }
+        - { title: Pool value, text: "11.16M", subtext: DCR }
+        - { title: Participation, text: "101.1%" }
+        - { title: In mempool, text: "10", subtext: tickets }
+  - id: staking
+    type: three-stats
+    refresh: "30s"
+    endpoint: "widget:3000/widgets/staking"
+    link: ""
+    example:
+      type: three-stats
+      items:
+        - { icon: ticket, text: "280.76", subtext: DCR price }
+        - { icon: stack-2, text: "41,398", subtext: pool }
+        - { icon: chart-pie, text: "101.1%", subtext: participation }
+  - id: price-gauges
+    type: two-stats-with-guage
+    refresh: "30s"
+    endpoint: "widget:3000/widgets/price-gauges"
+    link: ""
+    example:
+      type: two-stats-with-guage
+      items:
+        - { title: Ticket price, text: "280.76 DCR", progress: 0.35 }
+        - { title: Participation, text: "101.1%", progress: 1 }
+  - id: supply
+    type: four-stats
+    refresh: "60s"
+    endpoint: "widget:3000/widgets/supply"
+    link: ""
+    example:
+      type: four-stats
+      items:
+        - { title: Supply, text: "17.49M", subtext: DCR }
+        - { title: Block reward, text: "5.36", subtext: DCR }
+        - { title: Stake reward, text: "4.77", subtext: DCR }
+        - { title: Next reduction, text: "2,493", subtext: blocks }
+  - id: subsidy-countdown
+    type: text-with-progress
+    refresh: "60s"
+    endpoint: "widget:3000/widgets/subsidy-countdown"
+    link: ""
+    example:
+      type: text-with-progress
+      title: Next subsidy reduction
+      text: "2,493 blocks"
+      progressLabel: "59.4%"
+      progress: 0.594
+  - id: network
+    type: four-stats
+    refresh: "60s"
+    endpoint: "widget:3000/widgets/network"
+    link: ""
+    example:
+      type: four-stats
+      items:
+        - { title: Supply, text: "17.49M", subtext: DCR }
+        - { title: Treasury, text: "873.05k", subtext: DCR }
+        - { title: Hashrate, text: "24.68 TH/s" }
+        - { title: Difficulty, text: "1.81M" }
+  - id: votes
+    type: list
+    refresh: "5m"
+    endpoint: "widget:3000/widgets/votes"
+    link: ""
+    example:
+      type: list
+      noItemsText: No active consensus votes
+      items: []
+  - id: status
+    type: list-emoji
+    refresh: "30s"
+    endpoint: "widget:3000/widgets/status"
+    link: ""
+    example:
+      type: list-emoji
+      items:
+        - { emoji: "🧱", text: "Height 1,091,139" }
+        - { emoji: "🎫", text: "Pool 41,398" }
+        - { emoji: "💰", text: "280.76 DCR ticket" }
+        - { emoji: "🏦", text: "873.05k DCR treasury" }
+  - id: launch
+    type: text-with-buttons
+    refresh: "30s"
+    endpoint: "widget:3000/widgets/launch"
+    link: ""
+    example:
+      type: text-with-buttons
+      title: Decred Pulse
+      text: "Block 1,091,139"
+      subtext: Synced
+      buttons:
+        - { text: Explorer, link: /explorer }
+        - { text: Staking, link: /wallet/staking }
+        - { text: DEX, link: /dex }
