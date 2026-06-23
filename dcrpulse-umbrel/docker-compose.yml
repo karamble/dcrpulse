@@ -196,7 +196,7 @@ services:
         condition: service_started
 
   widget:
-    image: ghcr.io/karamble/dcrpulse-widgetumbrel:latest@sha256:ad96d15c01da31fcfeae1c3d556a105f9351a990eeb5941158e4641188a8106b
+    image: ghcr.io/karamble/dcrpulse-widgetumbrel:latest@sha256:b270190471bf13cad8adfd389fbd5acb611599998fba09f36e498152847bad8a
     user: "1000:1000"
     restart: on-failure
     environment:
