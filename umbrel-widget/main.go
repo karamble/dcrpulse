@@ -23,24 +23,25 @@ type server struct {
 }
 
 type widgetDef struct {
-	typ   string
-	build func() (any, error)
+	typ     string
+	refresh string
+	build   func() (any, error)
 }
 
 func (s *server) registry() map[string]widgetDef {
 	return map[string]widgetDef{
-		"sync":              {"text-with-progress", s.widgetSync},
-		"node-stats":        {"four-stats", s.widgetNodeStats},
-		"ticket-price":      {"text-with-progress", s.widgetTicketPrice},
-		"ticket-pool":       {"four-stats", s.widgetTicketPool},
-		"staking":           {"three-stats", s.widgetStaking},
-		"price-gauges":      {"two-stats-with-guage", s.widgetPriceGauges},
-		"supply":            {"four-stats", s.widgetSupply},
-		"subsidy-countdown": {"text-with-progress", s.widgetSubsidyCountdown},
-		"network":           {"four-stats", s.widgetNetwork},
-		"votes":             {"list", s.widgetVotes},
-		"status":            {"list-emoji", s.widgetStatus},
-		"launch":            {"text-with-buttons", s.widgetLaunch},
+		"sync":              {"text-with-progress", "10s", s.widgetSync},
+		"node-stats":        {"four-stats", "10s", s.widgetNodeStats},
+		"ticket-price":      {"text-with-progress", "30s", s.widgetTicketPrice},
+		"ticket-pool":       {"four-stats", "30s", s.widgetTicketPool},
+		"staking":           {"three-stats", "30s", s.widgetStaking},
+		"price-gauges":      {"two-stats-with-guage", "30s", s.widgetPriceGauges},
+		"supply":            {"four-stats", "60s", s.widgetSupply},
+		"subsidy-countdown": {"text-with-progress", "60s", s.widgetSubsidyCountdown},
+		"network":           {"four-stats", "60s", s.widgetNetwork},
+		"votes":             {"list", "5m", s.widgetVotes},
+		"status":            {"list-emoji", "30s", s.widgetStatus},
+		"launch":            {"text-with-buttons", "30s", s.widgetLaunch},
 	}
 }
 
@@ -83,7 +84,7 @@ func main() {
 			log.Printf("widget %s: %v", name, err)
 			payload = fallbackFor(def.typ)
 		}
-		_ = json.NewEncoder(w).Encode(payload)
+		_ = json.NewEncoder(w).Encode(withRefresh(payload, def.refresh))
 	})
 
 	addr := env("LISTEN", ":3000")
@@ -119,4 +120,21 @@ func fallbackFor(typ string) any {
 	default:
 		return map[string]any{"type": typ}
 	}
+}
+
+// withRefresh adds the poll interval to a widget payload. umbrelOS reads the
+// refresh interval from the response body (it runs ms() on it to schedule
+// polling), so every widget response must carry a refresh field alongside its
+// type-specific fields.
+func withRefresh(payload any, refresh string) any {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return map[string]any{"refresh": refresh}
+	}
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return map[string]any{"refresh": refresh}
+	}
+	fields["refresh"], _ = json.Marshal(refresh)
+	return fields
 }
