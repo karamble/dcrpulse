@@ -320,17 +320,20 @@ func buildServer(a *agent) *mcp.Server {
 // emptyInput is the argument type for tools that take no parameters.
 type emptyInput struct{}
 
-// toolResult wraps a tool's payload in a JSON object. MCP requires a tool's
-// structured output schema to be an object, so list/scalar results are nested
-// under "data" rather than returned as bare arrays.
+// toolResult wraps a tool's payload so structured content is always an object,
+// with list/scalar results nested under "data". Handlers return it through the
+// `any` output parameter so the go-sdk omits a generated output schema: a schema
+// inferred from the `any` payload emits `"data": true`, which strict MCP clients
+// reject when listing tools. The value still travels as structured content.
 type toolResult struct {
 	Data any `json:"data"`
 }
 
-// ok adapts a `(value, error)` service return into a tool result.
-func ok(v any, err error) (*mcp.CallToolResult, toolResult, error) {
+// ok adapts a `(value, error)` service return into a tool result. The value is
+// returned as `any` (see toolResult) so no output schema is generated.
+func ok(v any, err error) (*mcp.CallToolResult, any, error) {
 	if err != nil {
-		return nil, toolResult{}, err
+		return nil, nil, err
 	}
 	return nil, toolResult{Data: v}, nil
 }
@@ -363,7 +366,7 @@ var (
 func readTool[In any](domain, name, description string, fn func(context.Context, In) (any, error)) toolDef {
 	return toolDef{domain: domain, readOnly: true, register: func(s *mcp.Server, _ *agent) {
 		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: readAnnotations},
-			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, toolResult, error) {
+			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 				return ok(fn(ctx, in))
 			})
 	}}
@@ -374,7 +377,7 @@ func readTool[In any](domain, name, description string, fn func(context.Context,
 func agentTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
 	return toolDef{domain: domain, readOnly: false, register: func(s *mcp.Server, a *agent) {
 		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: writeAnnotations},
-			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, toolResult, error) {
+			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 				return ok(fn(ctx, a, in))
 			})
 	}}
@@ -386,7 +389,7 @@ func agentTool[In any](domain, name, description string, fn func(context.Context
 func agentReadTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
 	return toolDef{domain: domain, readOnly: true, register: func(s *mcp.Server, a *agent) {
 		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: readAnnotations},
-			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, toolResult, error) {
+			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 				return ok(fn(ctx, a, in))
 			})
 	}}
