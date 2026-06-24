@@ -10,12 +10,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/decred/dcrd/dcrutil/v4"
 
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
 )
 
 type brSaveProductInput struct {
@@ -254,6 +257,67 @@ func brPageSize(n int) int {
 // bisonrelayTools are the read-only "bisonrelay" domain tools. They call the
 // same brclientd status-server endpoints the Bison Relay UI uses. Sending
 // messages, KX, and store/page edits (state-changing) come in a later phase.
+type brPageFetchInput struct {
+	UID        string   `json:"uid" jsonschema:"contact hex UID whose page to fetch"`
+	Path       []string `json:"path,omitempty" jsonschema:"page path segments; defaults to [\"index.md\"] (the contact's root page). Follow a link by passing its path segments."`
+	SessionID  uint64   `json:"sessionId,omitempty" jsonschema:"session id from a prior fetch, to navigate within the same session"`
+	ParentPage uint64   `json:"parentPage,omitempty" jsonschema:"parent page id from a prior fetch"`
+}
+
+type brPageSubmitInput struct {
+	UID       string         `json:"uid" jsonschema:"contact hex UID hosting the page"`
+	Path      []string       `json:"path" jsonschema:"page path segments to submit to (the form's action), e.g. [\"addToCart\"] or [\"placeOrder\"]"`
+	Data      map[string]any `json:"data" jsonschema:"form data payload as a JSON object matching the page's form fields, e.g. {\"sku\":\"abc\",\"qty\":1}"`
+	SessionID uint64         `json:"sessionId,omitempty" jsonschema:"session id from a prior fetch"`
+}
+
+type brShopUIDInput struct {
+	UID string `json:"uid" jsonschema:"merchant contact hex UID"`
+}
+
+type brShopAddToCartInput struct {
+	UID      string `json:"uid" jsonschema:"merchant contact hex UID"`
+	SKU      string `json:"sku" jsonschema:"product SKU to add"`
+	Quantity uint32 `json:"quantity,omitempty" jsonschema:"quantity to add; defaults to 1"`
+}
+
+type brShopOrderInput struct {
+	UID string `json:"uid" jsonschema:"merchant contact hex UID"`
+	ID  uint64 `json:"id" jsonschema:"order id"`
+}
+
+type brShopShippingAddress struct {
+	Name        string `json:"name,omitempty" jsonschema:"recipient name"`
+	Address1    string `json:"address1,omitempty" jsonschema:"address line 1"`
+	Address2    string `json:"address2,omitempty" jsonschema:"address line 2"`
+	City        string `json:"city,omitempty" jsonschema:"city"`
+	State       string `json:"state,omitempty" jsonschema:"state or region"`
+	PostalCode  string `json:"postalCode,omitempty" jsonschema:"postal code"`
+	Phone       string `json:"phone,omitempty" jsonschema:"phone number"`
+	CountryCode string `json:"countrycode,omitempty" jsonschema:"ISO country code"`
+}
+
+type brShopPlaceOrderInput struct {
+	UID      string                 `json:"uid" jsonschema:"merchant contact hex UID"`
+	Shipping *brShopShippingAddress `json:"shipping,omitempty" jsonschema:"shipping address; required only when an ordered product needs shipping"`
+}
+
+type brShopOrderCommentInput struct {
+	UID     string `json:"uid" jsonschema:"merchant contact hex UID"`
+	ID      uint64 `json:"id" jsonschema:"order id"`
+	Comment string `json:"comment" jsonschema:"comment to add to the order"`
+}
+
+type brContentGetInput struct {
+	UID          string `json:"uid" jsonschema:"contact hex UID hosting the shared file"`
+	FID          string `json:"fid" jsonschema:"shared-file id (from a page download embed)"`
+	MaxCostAtoms uint64 `json:"maxCostAtoms,omitempty" jsonschema:"max atoms to pay per chunk; 0 (default) accepts only free files. Any nonzero cost is paid by brclientd/dcrlnd directly and is NOT bounded by the agent's MCP spend caps."`
+}
+
+type brFidInput struct {
+	FID string `json:"fid" jsonschema:"shared-file id of the in-flight download"`
+}
+
 var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_status",
 		"Get the Bison Relay client status (connection stage, nick, server, wallet check).",
@@ -977,6 +1041,170 @@ var bisonrelayTools = []toolDef{
 			recordSpend(a, "br_rtdt_remove", 0, 0, in.RV, "ok", in.UID)
 			return map[string]any{"rv": in.RV, "uid": in.UID, "removed": true}, nil
 		}),
+
+	// Remote pages + storefront (buyer side). Browsing is read-only; outward,
+	// state-changing submissions are gated on scopeBR like br_send_message.
+	readTool("bisonrelay", "br_page_fetch",
+		"Visit and navigate a Bison Relay page or storefront hosted by a remote contact. Defaults to the contact's root page (index.md); follow links by passing their path segments and reuse sessionId to stay in one session. Returns the page markdown plus parsed segments (form fields and download embeds) and session/page ids. Read-only browsing.",
+		func(ctx context.Context, in brPageFetchInput) (any, error) {
+			return brPageFetch(ctx, in.UID, in.Path, in.SessionID, in.ParentPage, nil)
+		}),
+	readTool("bisonrelay", "br_shop_cart",
+		"View your current cart at a remote Bison Relay simplestore merchant. Read-only.",
+		func(ctx context.Context, in brShopUIDInput) (any, error) {
+			return brPageFetch(ctx, in.UID, []string{"cart"}, 0, 0, nil)
+		}),
+	readTool("bisonrelay", "br_shop_orders",
+		"List your orders at a remote Bison Relay simplestore merchant. Read-only.",
+		func(ctx context.Context, in brShopUIDInput) (any, error) {
+			return brPageFetch(ctx, in.UID, []string{"orders"}, 0, 0, nil)
+		}),
+	readTool("bisonrelay", "br_shop_order",
+		"View one of your orders at a remote Bison Relay simplestore merchant (status, items, invoice). Read-only.",
+		func(ctx context.Context, in brShopOrderInput) (any, error) {
+			return brPageFetch(ctx, in.UID, []string{"order", strconv.FormatUint(in.ID, 10)}, 0, 0, nil)
+		}),
+	readTool("bisonrelay", "br_downloads",
+		"List Bison Relay file transfers (in-flight and completed). A purchased digital download lands here after the merchant sends it on payment.",
+		func(ctx context.Context, _ emptyInput) (any, error) {
+			body, err := rpc.BrclientdListDownloads(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return decodeBRResult(body), nil
+		}),
+	agentTool("bisonrelay", "br_page_submit",
+		"Submit a form on a Bison Relay page hosted by a remote contact (the outward, state-changing counterpart of br_page_fetch), e.g. a storefront add-to-cart or place-order. Provide the form's action path and a JSON data payload matching its fields. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brPageSubmitInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_page_submit", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
+			var data json.RawMessage
+			if in.Data != nil {
+				b, err := json.Marshal(in.Data)
+				if err != nil {
+					return nil, fmt.Errorf("encode data: %w", err)
+				}
+				data = b
+			}
+			res, err := brPageFetch(ctx, in.UID, in.Path, in.SessionID, 0, data)
+			if err != nil {
+				recordSpend(a, "br_page_submit", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_page_submit", 0, 0, in.UID, "ok", strings.Join(in.Path, "/"))
+			return res, nil
+		}),
+	agentTool("bisonrelay", "br_shop_add_to_cart",
+		"Add a product to your cart at a remote Bison Relay simplestore merchant. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brShopAddToCartInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_shop_add_to_cart", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
+			qty := in.Quantity
+			if qty == 0 {
+				qty = 1
+			}
+			data, _ := json.Marshal(map[string]any{"sku": in.SKU, "qty": qty})
+			res, err := brPageFetch(ctx, in.UID, []string{"addToCart"}, 0, 0, data)
+			if err != nil {
+				recordSpend(a, "br_shop_add_to_cart", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_shop_add_to_cart", 0, 0, in.UID, "ok", fmt.Sprintf("%s x%d", in.SKU, qty))
+			return res, nil
+		}),
+	agentTool("bisonrelay", "br_shop_clear_cart",
+		"Empty your cart at a remote Bison Relay simplestore merchant. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brShopUIDInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_shop_clear_cart", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
+			res, err := brPageFetch(ctx, in.UID, []string{"clearCart"}, 0, 0, nil)
+			if err != nil {
+				recordSpend(a, "br_shop_clear_cart", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_shop_clear_cart", 0, 0, in.UID, "ok", "")
+			return res, nil
+		}),
+	agentTool("bisonrelay", "br_shop_place_order",
+		"Place an order for the items in your cart at a remote Bison Relay simplestore merchant. Returns the order page, and (when present) the extracted Lightning invoice to pay with ln_pay. Provide a shipping address only if an ordered product requires shipping. This creates an order but does not itself move funds. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brShopPlaceOrderInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_shop_place_order", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
+			var data json.RawMessage
+			if in.Shipping != nil {
+				if b, err := json.Marshal(in.Shipping); err == nil {
+					data = b
+				}
+			}
+			res, err := brPageFetch(ctx, in.UID, []string{"placeOrder"}, 0, 0, data)
+			if err != nil {
+				recordSpend(a, "br_shop_place_order", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			if m, ok := res.(map[string]any); ok {
+				if md, _ := m["markdown"].(string); md != "" {
+					if inv := extractLNInvoice(md); inv != "" {
+						m["invoice"] = inv
+						m["pay_type"] = "ln"
+					}
+				}
+			}
+			recordSpend(a, "br_shop_place_order", 0, 0, in.UID, "ok", "")
+			return res, nil
+		}),
+	agentTool("bisonrelay", "br_shop_order_comment",
+		"Add a comment to one of your orders at a remote Bison Relay simplestore merchant. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brShopOrderCommentInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_shop_order_comment", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
+			// simplestore's orderaddcomment expects the comment as a bare JSON string.
+			data, _ := json.Marshal(in.Comment)
+			res, err := brPageFetch(ctx, in.UID, []string{"orderaddcomment", strconv.FormatUint(in.ID, 10)}, 0, 0, data)
+			if err != nil {
+				recordSpend(a, "br_shop_order_comment", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_shop_order_comment", 0, 0, in.UID, "ok", fmt.Sprintf("order %d", in.ID))
+			return res, nil
+		}),
+	agentTool("bisonrelay", "br_content_get",
+		"Start downloading a shared file advertised by a Bison Relay page download embed (e.g. a purchased digital product). maxCostAtoms defaults to 0 (free files only); any per-chunk cost is paid by brclientd/dcrlnd directly and is NOT bounded by the agent's MCP spend caps. Track progress with br_downloads. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brContentGetInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_content_get", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdContentGet(ctx, in.UID, in.FID, in.MaxCostAtoms); err != nil {
+				recordSpend(a, "br_content_get", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_content_get", 0, 0, in.UID, "ok", in.FID)
+			return map[string]any{"uid": in.UID, "fid": in.FID, "started": true}, nil
+		}),
+	agentTool("bisonrelay", "br_download_cancel",
+		"Cancel an in-flight Bison Relay file download by fid. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brFidInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_download_cancel", 0, 0, in.FID, "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdCancelDownload(ctx, in.FID); err != nil {
+				recordSpend(a, "br_download_cancel", 0, 0, in.FID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_download_cancel", 0, 0, in.FID, "ok", "")
+			return map[string]any{"fid": in.FID, "cancelled": true}, nil
+		}),
 }
 
 // decodeBRResult unmarshals a brclientd JSON response into a generic value so
@@ -1010,6 +1238,81 @@ func safeBRName(p string) bool {
 		}
 	}
 	return true
+}
+
+// brPageFetch fetches a remote Bison Relay page/resource and decorates the reply
+// with the parsed markdown segments (form fields, download embeds), mirroring the
+// dashboard's BisonrelayPagesFetchHandler. data is nil for a plain navigation
+// GET, or a JSON form payload for a submission. The returned map is the
+// structured tool result.
+func brPageFetch(ctx context.Context, uid string, path []string, sessionID, parentPage uint64, data json.RawMessage) (any, error) {
+	if strings.TrimSpace(uid) == "" {
+		return nil, fmt.Errorf("uid is required")
+	}
+	if len(path) == 0 {
+		path = []string{"index.md"}
+	}
+	body := map[string]any{
+		"uid":         uid,
+		"path":        path,
+		"session_id":  sessionID,
+		"parent_page": parentPage,
+	}
+	if len(data) > 0 {
+		body["data"] = data
+	}
+	raw, err := rpc.BrclientdPagesFetch(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	var fetched struct {
+		SessionID  uint64            `json:"session_id"`
+		PageID     uint64            `json:"page_id"`
+		ParentPage uint64            `json:"parent_page"`
+		Status     uint16            `json:"status"`
+		Meta       map[string]string `json:"meta"`
+		Markdown   string            `json:"markdown"`
+	}
+	if err := json.Unmarshal(raw, &fetched); err != nil {
+		return nil, fmt.Errorf("decode page reply: %w", err)
+	}
+	return map[string]any{
+		"uid":         uid,
+		"path":        path,
+		"session_id":  fetched.SessionID,
+		"page_id":     fetched.PageID,
+		"parent_page": fetched.ParentPage,
+		"status":      fetched.Status,
+		"meta":        fetched.Meta,
+		"markdown":    fetched.Markdown,
+		"segments":    leanPageSegments(services.SplitAndRenderBRPage(fetched.Markdown)),
+	}, nil
+}
+
+// leanPageSegments drops the heavy rendered HTML and inline base64 image bytes
+// from page segments: an agent reads the markdown, and keeping those would risk
+// exceeding the MCP result size. The useful structured bits stay: form fields
+// (to submit) and file-download embeds (fid/cost/filename, for br_content_get).
+func leanPageSegments(segs []services.BRPageSegment) []services.BRPageSegment {
+	for i := range segs {
+		segs[i].HTML = ""
+		segs[i].DataB64 = ""
+	}
+	return segs
+}
+
+// lnInvoiceRE matches a bolt11 Lightning invoice, with or without simplestore's
+// "lnpay://" URL prefix, across mainnet/testnet/regtest/simnet HRPs.
+var lnInvoiceRE = regexp.MustCompile(`(?i)(?:lnpay://)?(ln(?:bcrt|bc|tb|sb)[0-9][a-z0-9]+)`)
+
+// extractLNInvoice pulls a bolt11 invoice out of a place-order reply's markdown,
+// stripping the "lnpay://" scheme so the result hands straight to ln_pay. Returns
+// "" when the page carries no LN invoice (e.g. an on-chain or custom template).
+func extractLNInvoice(markdown string) string {
+	if m := lnInvoiceRE.FindStringSubmatch(markdown); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 func containsSlash(s string) bool { return strings.ContainsRune(s, '/') }

@@ -317,6 +317,24 @@ var catalog = []spec{
 		}
 		return map[string]any{"host": d.dexHost, "baseId": 42, "quoteId": 0}, true
 	}),
+	rdArgs("dex", "dex_orderbook", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost, "baseId": 42, "quoteId": 0}, true
+	}),
+	rdArgs("dex", "dex_trades", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost, "baseId": 42, "quoteId": 0}, true
+	}),
+	rdArgs("dex", "dex_candles", func(d *discovered) (map[string]any, bool) {
+		if d.dexHost == "" {
+			return nil, false
+		}
+		return map[string]any{"host": d.dexHost, "baseId": 42, "quoteId": 0, "dur": "24h"}, true
+	}),
 	rdArgs("dex", "dex_mm_run_logs", func(d *discovered) (map[string]any, bool) {
 		if d.dexHost == "" {
 			return nil, false
@@ -351,6 +369,7 @@ var catalog = []spec{
 	rd("bisonrelay", "br_store"),
 	rd("bisonrelay", "br_store_products"),
 	rd("bisonrelay", "br_pages"),
+	rd("bisonrelay", "br_downloads"),
 	rd("bisonrelay", "br_rates"),
 	// bisonrelay read consumers (need a contact/post/groupchat identifier)
 	rdArgs("bisonrelay", "br_pm_history", func(d *discovered) (map[string]any, bool) {
@@ -383,6 +402,13 @@ var catalog = []spec{
 		}
 		return map[string]any{"gcid": d.gcid}, true
 	}),
+	// Remote page/storefront reads: schema-listed but not invoked live -- a fetch
+	// against an arbitrary contact who hosts nothing would 404 or block for the
+	// 30s page-fetch timeout. Exercise these against a known store by hand.
+	rdArgs("bisonrelay", "br_page_fetch", func(*discovered) (map[string]any, bool) { return nil, false }),
+	rdArgs("bisonrelay", "br_shop_cart", func(*discovered) (map[string]any, bool) { return nil, false }),
+	rdArgs("bisonrelay", "br_shop_orders", func(*discovered) (map[string]any, bool) { return nil, false }),
+	rdArgs("bisonrelay", "br_shop_order", func(*discovered) (map[string]any, bool) { return nil, false }),
 
 	// spend / write (gated; placeholder calls must be refused with no grant)
 	sp("wallet", "wallet_send", "no spend grant", "", func(*discovered) map[string]any {
@@ -447,6 +473,27 @@ var catalog = []spec{
 		return map[string]any{"uid": phHex, "amountDcr": 0.0001}
 	}),
 	sp("bisonrelay", "br_unshare_file", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"fid": phHex}
+	}),
+	sp("bisonrelay", "br_page_submit", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "path": []string{"addToCart"}, "data": map[string]any{"sku": "x", "qty": 1}}
+	}),
+	sp("bisonrelay", "br_shop_add_to_cart", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "sku": "mcptest", "quantity": 1}
+	}),
+	sp("bisonrelay", "br_shop_clear_cart", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex}
+	}),
+	sp("bisonrelay", "br_shop_place_order", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex}
+	}),
+	sp("bisonrelay", "br_shop_order_comment", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "id": 1, "comment": "mcptest"}
+	}),
+	sp("bisonrelay", "br_content_get", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"uid": phHex, "fid": phHex}
+	}),
+	sp("bisonrelay", "br_download_cancel", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
 		return map[string]any{"fid": phHex}
 	}),
 

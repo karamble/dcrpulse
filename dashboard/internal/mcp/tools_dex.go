@@ -6,8 +6,10 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"dcrpulse/internal/dexassets"
@@ -120,6 +122,13 @@ type dexMarketInput struct {
 	QuoteID uint32 `json:"quoteId" jsonschema:"quote asset id"`
 }
 
+type dexCandlesInput struct {
+	Host    string `json:"host" jsonschema:"DEX server host"`
+	BaseID  uint32 `json:"baseId" jsonschema:"base asset id"`
+	QuoteID uint32 `json:"quoteId" jsonschema:"quote asset id"`
+	Dur     string `json:"dur,omitempty" jsonschema:"candle bin duration, one of the market's candleDurs (e.g. 24h, 1h, 5m); defaults to 24h"`
+}
+
 type dexMMRunLogsInput struct {
 	Host      string `json:"host" jsonschema:"DEX server host"`
 	BaseID    uint32 `json:"baseId" jsonschema:"base asset id"`
@@ -202,6 +211,67 @@ func dexConvToAtoms(amount float64, assetID uint32) uint64 {
 		cf = uint64(dcrutil.AtomsPerCoin)
 	}
 	return uint64(math.Round(amount * float64(cf)))
+}
+
+// dexRateEncodingFactor is DCRDEX's message-rate encoding factor
+// (decred.org/dcrdex/dex/calc.RateEncodingFactor). A conventional exchange rate
+// is msgRate / dexRateEncodingFactor * baseFactor / quoteFactor.
+const dexRateEncodingFactor = 1e8
+
+// dexMatchSummary mirrors orderbook.MatchSummary, the raw recent-match entry the
+// order book snapshot carries (rate as a message-rate, qty in base atoms, stamp
+// in unix milliseconds).
+type dexMatchSummary struct {
+	Rate  uint64 `json:"rate"`
+	Qty   uint64 `json:"qty"`
+	Stamp uint64 `json:"stamp"`
+	Sell  bool   `json:"sell"`
+}
+
+// dexTrade is a recent match enriched with conventional rate and quantity
+// alongside the raw atomic values.
+type dexTrade struct {
+	Rate      float64 `json:"rate"`
+	MsgRate   uint64  `json:"msgRate"`
+	Qty       float64 `json:"qty"`
+	QtyAtomic uint64  `json:"qtyAtomic"`
+	Sell      bool    `json:"sell"`
+	Stamp     uint64  `json:"stamp"`
+}
+
+// dexRecentMatches extracts the recent-match cache from a core.MarketOrderBook
+// snapshot and enriches each entry with conventional rate and quantity, newest
+// first. It returns an empty slice when the snapshot carries no matches.
+func dexRecentMatches(book json.RawMessage, baseID, quoteID uint32) []dexTrade {
+	var mob struct {
+		Book struct {
+			RecentMatches []dexMatchSummary `json:"recentMatches"`
+		} `json:"book"`
+	}
+	out := []dexTrade{}
+	if len(book) == 0 || json.Unmarshal(book, &mob) != nil {
+		return out
+	}
+	baseCF := float64(dexassets.ConvFactor(baseID))
+	quoteCF := float64(dexassets.ConvFactor(quoteID))
+	if baseCF == 0 {
+		baseCF = float64(dcrutil.AtomsPerCoin)
+	}
+	if quoteCF == 0 {
+		quoteCF = float64(dcrutil.AtomsPerCoin)
+	}
+	for _, m := range mob.Book.RecentMatches {
+		out = append(out, dexTrade{
+			Rate:      float64(m.Rate) / dexRateEncodingFactor * baseCF / quoteCF,
+			MsgRate:   m.Rate,
+			Qty:       float64(m.Qty) / baseCF,
+			QtyAtomic: m.Qty,
+			Sell:      m.Sell,
+			Stamp:     m.Stamp,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Stamp > out[j].Stamp })
+	return out
 }
 
 // dexTools are the dex domain tools: reads that need no write scope (some need
@@ -382,6 +452,37 @@ var dexTools = []toolDef{
 		"Get current USD prices for DEX assets, from Kraken with a Bison Relay fallback for DCR and BTC.",
 		func(ctx context.Context, _ emptyInput) (any, error) {
 			return rpc.BrclientdRates(ctx)
+		}),
+	readTool("dex", "dex_orderbook",
+		"Get the live order book for a market: buy and sell depth, current-epoch orders, and recent matches. Each order carries both conventional (rate, qty) and atomic (msgRate, qtyAtomic) values. Public market data; the DEX need not be unlocked.",
+		func(ctx context.Context, in dexMarketInput) (any, error) {
+			raw, err := rpc.DcrdexOrderBook(ctx, in.Host, in.BaseID, in.QuoteID)
+			if err != nil {
+				return nil, err
+			}
+			return raw, nil
+		}),
+	readTool("dex", "dex_trades",
+		"Get a market's recent public trade history (up to ~100 most recent matches), newest first. Each trade reports the conventional rate and base quantity, the atomic message-rate, the side (true=sell), and the match timestamp (unix milliseconds). Public market data; the DEX need not be unlocked.",
+		func(ctx context.Context, in dexMarketInput) (any, error) {
+			raw, err := rpc.DcrdexOrderBook(ctx, in.Host, in.BaseID, in.QuoteID)
+			if err != nil {
+				return nil, err
+			}
+			return dexRecentMatches(raw, in.BaseID, in.QuoteID), nil
+		}),
+	readTool("dex", "dex_candles",
+		"Get a market's candlestick (OHLC) history for a bin duration (default 24h, or one of the market's candleDurs such as 1h or 5m). Each candle reports start/end timestamps, start/end/high/low message-rates, and the match and quote volumes. Public market data; the DEX need not be unlocked.",
+		func(ctx context.Context, in dexCandlesInput) (any, error) {
+			dur := in.Dur
+			if dur == "" {
+				dur = "24h"
+			}
+			raw, err := rpc.DcrdexCandles(ctx, in.Host, in.BaseID, in.QuoteID, dur)
+			if err != nil {
+				return nil, err
+			}
+			return raw, nil
 		}),
 	readTool("dex", "dex_deposit_address",
 		"Get a fresh deposit address for a DEX wallet by asset id. Requires the DEX unlocked.",
