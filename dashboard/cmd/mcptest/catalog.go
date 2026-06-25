@@ -335,6 +335,7 @@ var catalog = []spec{
 		}
 		return map[string]any{"host": d.dexHost, "baseId": 42, "quoteId": 0, "dur": "24h"}, true
 	}),
+	rd("dex", "dex_market_summary"),
 	rdArgs("dex", "dex_mm_run_logs", func(d *discovered) (map[string]any, bool) {
 		if d.dexHost == "" {
 			return nil, false

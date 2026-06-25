@@ -216,6 +216,20 @@ Rather than list them all here, discover the live set from the client:
 Tools are annotated so a client can tell reads from writes: read-only tools carry the
 read-only hint; state-changing and fund-moving tools carry the destructive hint.
 
+Read tools return lean payloads by default and accept optional parameters to narrow or
+shape the result:
+
+- `governance_proposals` (and `governance_refresh_proposals`) accept an optional
+  `status` filter (`pre-vote`, `voting`, `finished`, `abandoned`); omit it for the full
+  list.
+- `governance_proposal_detail` (and `governance_refresh_proposal_detail`) omit the
+  rendered HTML copies of the markdown body and comments by default; pass
+  `includeHtml: true` to get them.
+- `dex_trades` accepts an optional `limit` to cap how many recent matches are returned.
+- `dex_market_summary` returns a market's last trade rate (conventional and USD where
+  the quote can be priced) plus 24h stats in a single call; with no `host` it covers
+  every market.
+
 ### Resources (live state)
 
 The server also exposes subscribable MCP resources, so an agent can react to events

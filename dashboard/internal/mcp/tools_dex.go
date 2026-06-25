@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"dcrpulse/internal/dexassets"
@@ -120,6 +121,19 @@ type dexMarketInput struct {
 	Host    string `json:"host" jsonschema:"DEX server host"`
 	BaseID  uint32 `json:"baseId" jsonschema:"base asset id"`
 	QuoteID uint32 `json:"quoteId" jsonschema:"quote asset id"`
+}
+
+type dexTradesInput struct {
+	Host    string `json:"host" jsonschema:"DEX server host"`
+	BaseID  uint32 `json:"baseId" jsonschema:"base asset id"`
+	QuoteID uint32 `json:"quoteId" jsonschema:"quote asset id"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"max trades to return, newest first (default ~100)"`
+}
+
+type dexMarketSummaryInput struct {
+	Host    string `json:"host,omitempty" jsonschema:"optional DEX host filter; empty summarizes all markets"`
+	BaseID  uint32 `json:"baseId,omitempty" jsonschema:"optional base asset id (with quoteId) to summarize one market"`
+	QuoteID uint32 `json:"quoteId,omitempty" jsonschema:"optional quote asset id (with baseId) to summarize one market"`
 }
 
 type dexCandlesInput struct {
@@ -271,6 +285,124 @@ func dexRecentMatches(book json.RawMessage, baseID, quoteID uint32) []dexTrade {
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Stamp > out[j].Stamp })
+	return out
+}
+
+// dexSpot mirrors the spot fields a market carries in the Exchanges snapshot: the
+// last match message-rate plus 24h stats (rates as message-rates, volume in base
+// atoms).
+type dexSpot struct {
+	Rate     uint64  `json:"rate"`
+	Change24 float64 `json:"change24"`
+	High24   uint64  `json:"high24"`
+	Low24    uint64  `json:"low24"`
+	Vol24    uint64  `json:"vol24"`
+	Stamp    uint64  `json:"stamp"`
+}
+
+// dexMarketSummary is a one-shot market snapshot: last trade rate (conventional, and
+// USD when the quote can be priced) plus 24h stats, built from the Exchanges spot
+// data and the USD rate feed with no per-market order book calls.
+type dexMarketSummary struct {
+	Host        string   `json:"host"`
+	Market      string   `json:"market"`
+	BaseID      uint32   `json:"baseId"`
+	BaseSymbol  string   `json:"baseSymbol"`
+	QuoteID     uint32   `json:"quoteId"`
+	QuoteSymbol string   `json:"quoteSymbol"`
+	LastRate    float64  `json:"lastRate"`
+	LastRateUSD *float64 `json:"lastRateUsd,omitempty"`
+	Change24    float64  `json:"change24"`
+	High24      float64  `json:"high24"`
+	Low24       float64  `json:"low24"`
+	Vol24Base   float64  `json:"vol24Base"`
+	Stamp       uint64   `json:"stamp"`
+}
+
+// dexQuoteUSD resolves a market quote asset's USD price from the DCR/BTC rate feed,
+// treating USD-pegged stablecoins as $1. Returns false when the quote can't be priced.
+func dexQuoteUSD(symbol string, dcrUSD, btcUSD float64) (float64, bool) {
+	switch {
+	case symbol == "btc":
+		return btcUSD, btcUSD > 0
+	case symbol == "dcr":
+		return dcrUSD, dcrUSD > 0
+	case strings.HasPrefix(symbol, "usdc"), strings.HasPrefix(symbol, "usdt"), strings.HasPrefix(symbol, "dai"):
+		return 1.0, true
+	}
+	return 0, false
+}
+
+// dexMarketSummaries builds per-market summaries from an Exchanges snapshot and the
+// USD rate feed, optionally narrowed to one host and/or one base/quote market.
+func dexMarketSummaries(exch, rates json.RawMessage, host string, baseID, quoteID uint32) []dexMarketSummary {
+	var exMap map[string]struct {
+		Markets map[string]struct {
+			BaseID      uint32   `json:"baseid"`
+			BaseSymbol  string   `json:"basesymbol"`
+			QuoteID     uint32   `json:"quoteid"`
+			QuoteSymbol string   `json:"quotesymbol"`
+			Spot        *dexSpot `json:"spot"`
+		} `json:"markets"`
+	}
+	out := []dexMarketSummary{}
+	if len(exch) == 0 || json.Unmarshal(exch, &exMap) != nil {
+		return out
+	}
+	var r struct {
+		DcrUSD float64 `json:"dcr_usd"`
+		BtcUSD float64 `json:"btc_usd"`
+	}
+	_ = json.Unmarshal(rates, &r)
+	for h, ex := range exMap {
+		if host != "" && h != host {
+			continue
+		}
+		for name, m := range ex.Markets {
+			if m.Spot == nil {
+				continue
+			}
+			if (baseID != 0 || quoteID != 0) && (m.BaseID != baseID || m.QuoteID != quoteID) {
+				continue
+			}
+			baseCF := float64(dexassets.ConvFactor(m.BaseID))
+			quoteCF := float64(dexassets.ConvFactor(m.QuoteID))
+			if baseCF == 0 {
+				baseCF = float64(dcrutil.AtomsPerCoin)
+			}
+			if quoteCF == 0 {
+				quoteCF = float64(dcrutil.AtomsPerCoin)
+			}
+			conv := func(msgRate uint64) float64 {
+				return float64(msgRate) / dexRateEncodingFactor * baseCF / quoteCF
+			}
+			s := dexMarketSummary{
+				Host:        h,
+				Market:      name,
+				BaseID:      m.BaseID,
+				BaseSymbol:  m.BaseSymbol,
+				QuoteID:     m.QuoteID,
+				QuoteSymbol: m.QuoteSymbol,
+				LastRate:    conv(m.Spot.Rate),
+				Change24:    m.Spot.Change24,
+				High24:      conv(m.Spot.High24),
+				Low24:       conv(m.Spot.Low24),
+				Vol24Base:   float64(m.Spot.Vol24) / baseCF,
+				Stamp:       m.Spot.Stamp,
+			}
+			if qUSD, ok := dexQuoteUSD(m.QuoteSymbol, r.DcrUSD, r.BtcUSD); ok {
+				usd := s.LastRate * qUSD
+				s.LastRateUSD = &usd
+			}
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Host != out[j].Host {
+			return out[i].Host < out[j].Host
+		}
+		return out[i].Market < out[j].Market
+	})
 	return out
 }
 
@@ -463,13 +595,17 @@ var dexTools = []toolDef{
 			return raw, nil
 		}),
 	readTool("dex", "dex_trades",
-		"Get a market's recent public trade history (up to ~100 most recent matches), newest first. Each trade reports the conventional rate and base quantity, the atomic message-rate, the side (true=sell), and the match timestamp (unix milliseconds). Public market data; the DEX need not be unlocked.",
-		func(ctx context.Context, in dexMarketInput) (any, error) {
+		"Get a market's recent public trade history (up to ~100 most recent matches), newest first. Each trade reports the conventional rate and base quantity, the atomic message-rate, the side (true=sell), and the match timestamp (unix milliseconds). Pass limit to cap the number returned. Public market data; the DEX need not be unlocked.",
+		func(ctx context.Context, in dexTradesInput) (any, error) {
 			raw, err := rpc.DcrdexOrderBook(ctx, in.Host, in.BaseID, in.QuoteID)
 			if err != nil {
 				return nil, err
 			}
-			return dexRecentMatches(raw, in.BaseID, in.QuoteID), nil
+			trades := dexRecentMatches(raw, in.BaseID, in.QuoteID)
+			if in.Limit > 0 && len(trades) > in.Limit {
+				trades = trades[:in.Limit]
+			}
+			return trades, nil
 		}),
 	readTool("dex", "dex_candles",
 		"Get a market's candlestick (OHLC) history for a bin duration (default 24h, or one of the market's candleDurs such as 1h or 5m). Each candle reports start/end timestamps, start/end/high/low message-rates, and the match and quote volumes. Public market data; the DEX need not be unlocked.",
@@ -483,6 +619,20 @@ var dexTools = []toolDef{
 				return nil, err
 			}
 			return raw, nil
+		}),
+	readTool("dex", "dex_market_summary",
+		"Get a one-shot market summary: last trade rate (conventional, plus USD when the quote can be priced), 24h high/low/change, and 24h base volume. Built from the exchange spot data and the USD rate feed in a single call. With no host it summarizes every market; pass host (and optionally baseId+quoteId) to narrow to one. Public market data; the DEX need not be unlocked.",
+		func(ctx context.Context, in dexMarketSummaryInput) (any, error) {
+			c, err := rpc.DcrdexClient()
+			if err != nil {
+				return nil, err
+			}
+			exch, err := c.Exchanges(ctx)
+			if err != nil {
+				return nil, err
+			}
+			rates, _ := rpc.BrclientdRates(ctx)
+			return dexMarketSummaries(exch, rates, in.Host, in.BaseID, in.QuoteID), nil
 		}),
 	readTool("dex", "dex_deposit_address",
 		"Get a fresh deposit address for a DEX wallet by asset id. Requires the DEX unlocked.",
