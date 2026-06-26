@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"dcrpulse/internal/config"
 
@@ -45,6 +46,17 @@ func BrclientdDownloadsDir(network string) string {
 // BrclientdLogPath is the rotating log file brclientd writes to.
 func BrclientdLogPath(network string) string {
 	return filepath.Join(BrclientdDataDir(), "logs", network, "brclientd.log")
+}
+
+// AgentOutboxDir is the only directory the br_file_send_path MCP tool may read
+// from. It is the sandbox boundary that keeps a path-based file send from
+// reaching arbitrary host files. Override with MCP_AGENT_OUTBOX_DIR; defaults to
+// <brclientd-data>/agent-outbox.
+func AgentOutboxDir() string {
+	if d := strings.TrimSpace(os.Getenv("MCP_AGENT_OUTBOX_DIR")); d != "" {
+		return filepath.Clean(d)
+	}
+	return filepath.Join(BrclientdDataDir(), "agent-outbox")
 }
 
 // BrclientdDaemonCertPaths resolves the mTLS server/client cert and client key

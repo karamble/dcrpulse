@@ -10,6 +10,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -120,6 +122,13 @@ type brFileSendInput struct {
 	Filename string `json:"filename" jsonschema:"file name to present to the recipient"`
 	Mime     string `json:"mime,omitempty" jsonschema:"optional MIME type of the file"`
 	DataB64  string `json:"dataB64" jsonschema:"file bytes, base64-encoded"`
+}
+
+type brFileSendPathInput struct {
+	UID      string `json:"uid" jsonschema:"recipient identity (nick, alias, or hex UID)"`
+	Path     string `json:"path" jsonschema:"relative path under the agent outbox dir (no leading slash, no .. segments)"`
+	Filename string `json:"filename,omitempty" jsonschema:"optional name to present to the recipient; defaults to the file's base name"`
+	Mime     string `json:"mime,omitempty" jsonschema:"optional MIME type of the file"`
 }
 
 type brFileAddInput struct {
@@ -623,6 +632,46 @@ var bisonrelayTools = []toolDef{
 			}
 			recordSpend(a, "br_file_send", 0, 0, in.UID, "ok", in.Filename)
 			return map[string]any{"uid": in.UID, "filename": in.Filename, "result": result, "ok": true}, nil
+		}),
+	agentTool("bisonrelay", "br_file_send_path",
+		"Send a file to a Bison Relay contact by reading it from the agent outbox directory, avoiding base64 for large files. 'path' is relative to that directory (set via MCP_AGENT_OUTBOX_DIR, default <brclientd-data>/agent-outbox); absolute paths and '..' segments are rejected. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brFileSendPathInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
+			candidate, err := resolveOutboxPath(in.Path)
+			if err != nil {
+				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			f, err := os.Open(candidate)
+			if err != nil {
+				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			defer f.Close()
+			fi, err := f.Stat()
+			if err != nil {
+				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			if fi.IsDir() {
+				err := fmt.Errorf("path is a directory")
+				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			name := in.Filename
+			if name == "" {
+				name = filepath.Base(candidate)
+			}
+			result, err := rpc.BrclientdSendFile(ctx, in.UID, name, in.Mime, f)
+			if err != nil {
+				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_file_send_path", 0, 0, in.UID, "ok", name)
+			return map[string]any{"uid": in.UID, "filename": name, "result": result, "ok": true}, nil
 		}),
 	agentTool("bisonrelay", "br_file_add",
 		"Add a file to Bison Relay shared files (globally or scoped to one contact). The file bytes are supplied base64-encoded in 'dataB64'; an optional per-download cost is set in DCR. Requires a grant with Bison Relay write enabled.",
@@ -1219,6 +1268,23 @@ func decodeBRResult(body []byte) any {
 		return map[string]any{"raw": string(body)}
 	}
 	return v
+}
+
+// resolveOutboxPath validates a caller-supplied relative path and returns the
+// absolute path under the agent outbox dir (services.AgentOutboxDir). It is the
+// sandbox guard for br_file_send_path: rejects absolute paths, "..", and any
+// path that would resolve outside the outbox, so a path-based send can never
+// reach arbitrary host files.
+func resolveOutboxPath(rel string) (string, error) {
+	if !safeBRName(rel) {
+		return "", fmt.Errorf("invalid path")
+	}
+	root := filepath.Clean(services.AgentOutboxDir())
+	candidate := filepath.Clean(filepath.Join(root, rel))
+	if candidate != root && !strings.HasPrefix(candidate, root+string(filepath.Separator)) {
+		return "", fmt.Errorf("path outside outbox")
+	}
+	return candidate, nil
 }
 
 // safeBRName mirrors the dashboard handlers' safeBRPath guard for page,

@@ -193,6 +193,7 @@ services:
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/app-data/dcrdex:ro
       - ${DASHBOARD_DATA_DIR:-dashboard-data}:/dashboard-data
       - ${TOR_DATA_DIR:-tor-data}:/app-data/tor:ro
+      - ${AGENT_OUTBOX_DIR:-agent-outbox}:/agent-outbox:ro
     environment:
       - PORT=8080
       - DASHBOARD_HOST_BIND=${DASHBOARD_HOST_BIND:-127.0.0.1}
@@ -225,6 +226,7 @@ services:
       - DCRDEX_WS_PORT=5758
       - MCP_ENABLE=true
       - MCP_BIND=0.0.0.0
+      - MCP_AGENT_OUTBOX_DIR=/agent-outbox
     depends_on:
       dcrd:
         condition: service_healthy
@@ -280,4 +282,7 @@ volumes:
     driver: local
   tor-data:
     name: ${TOR_DATA_DIR:-dcrpulse_tor-data}
+    driver: local
+  agent-outbox:
+    name: ${AGENT_OUTBOX_DIR:-dcrpulse_agent-outbox}
     driver: local
