@@ -29,7 +29,6 @@ import (
 
 const (
 	politeiaBaseURL          = "https://proposals.decred.org/api"
-	politeiaCacheTTL         = 1 * time.Hour
 	politeiaTimeout          = 30 * time.Second
 	politeiaCastTimeout      = 60 * time.Second
 	politeiaSignMessagesChunk = 100
@@ -40,6 +39,11 @@ const (
 	// size their request context and refresh-availability math to match.
 	ProposalsRefreshCooldown = 8 * time.Hour
 	ProposalsFetchTimeout    = 1 * time.Minute
+
+	// piListNegativeTTL briefly suppresses cold list re-fetches after a failed
+	// or timed-out fetch so rapid retries don't each launch a full
+	// ProposalsFetchTimeout fetch against a slow/unreachable Politeia.
+	piListNegativeTTL = 45 * time.Second
 
 	// preparedVoteTTL bounds how long a PrepareProposalVote result is reused
 	// by a follow-up cast. The eligible-ticket snapshot and committed-ticket
@@ -74,11 +78,14 @@ func PoliteiaEnabled() bool {
 	return v
 }
 
-// In-memory caches for politeia HTTP responses. Both the proposals list
-// envelope and per-token detail entries reuse the same 5-min TTL window
-// so repeated navigation between the list and a detail page doesn't
-// hammer proposals.decred.org. Cast-vote invalidates everything for the
-// touched token (and the whole list) so tallies update on next view.
+// In-memory caches for politeia HTTP responses. The proposals list envelope
+// and per-token detail entries are cached in-process indefinitely (no TTL) so
+// repeated navigation between the list and a detail page doesn't hammer
+// proposals.decred.org. A list fetch pre-warms every token's detail entry
+// (description + tally + vote options) from data already in hand; comments and
+// rendered HTML are filled lazily on first detail view. Cast-vote invalidates
+// everything for the touched token (and the whole list) so tallies update on
+// next view.
 var (
 	piCacheMu       sync.RWMutex
 	piCachedList    []types.Proposal
@@ -86,11 +93,23 @@ var (
 	piCachedDetails = map[string]piDetailCacheEntry{}
 	piPreparedVotes = map[string]piPreparedVote{}
 	piHTTPClient    = &http.Client{Timeout: politeiaTimeout, Transport: ExternalTransport()}
+
+	// piListFetchMu single-flights cold list fetches so concurrent readers on
+	// an empty cache trigger one upstream fetch, not one each. piListFailAt is
+	// the last cold-fetch failure time (the piListNegativeTTL anchor); both are
+	// only touched while holding piListFetchMu.
+	piListFetchMu sync.Mutex
+	piListFailAt  time.Time
 )
 
 type piDetailCacheEntry struct {
 	detail *types.ProposalDetail
 	at     time.Time
+	// commentsLoaded is true once the entry holds a full record (comments
+	// fetched). Pre-warmed entries from the list fetch start false: their
+	// description/tally/options are present but comments + rendered HTML are
+	// filled lazily on first GetProposalDetail.
+	commentsLoaded bool
 }
 
 // piPreparedVote caches what PrepareProposalVote computed (the wallet's owned
@@ -122,14 +141,39 @@ func ListProposals(ctx context.Context) ([]types.Proposal, time.Time, error) {
 	}
 	piCacheMu.RUnlock()
 
+	return ensureProposalsCached(ctx)
+}
+
+// ensureProposalsCached performs the cold list fill under piListFetchMu so
+// concurrent readers on an empty cache trigger a single upstream fetch. A
+// failed fetch is negative-cached for piListNegativeTTL so rapid retries don't
+// each launch a full fetch. Returns the warm cache if another caller filled it
+// while we waited for the lock.
+func ensureProposalsCached(ctx context.Context) ([]types.Proposal, time.Time, error) {
+	piListFetchMu.Lock()
+	defer piListFetchMu.Unlock()
+
+	// Another holder may have populated the cache while we waited.
+	piCacheMu.RLock()
+	cached, at := piCachedList, piCachedAt
+	piCacheMu.RUnlock()
+	if cached != nil {
+		return cached, at, nil
+	}
+	if !piListFailAt.IsZero() && time.Since(piListFailAt) < piListNegativeTTL {
+		return nil, time.Time{}, ErrProposalsRecentlyFailed
+	}
+
 	out, err := fetchAndCacheProposals(ctx)
 	if err != nil {
+		piListFailAt = time.Now()
 		return nil, time.Time{}, err
 	}
+	piListFailAt = time.Time{}
 	piCacheMu.RLock()
-	at := piCachedAt
+	newAt := piCachedAt
 	piCacheMu.RUnlock()
-	return out, at, nil
+	return out, newAt, nil
 }
 
 // RefreshProposals forces a re-fetch of the proposals list, subject to the
@@ -149,10 +193,17 @@ func RefreshProposals(ctx context.Context) ([]types.Proposal, time.Time, error) 
 		return cached, at, ErrProposalsRefreshCoolingDown
 	}
 
+	// Serialize the forced re-fetch against a concurrent cold read so they
+	// don't both hit Politeia.
+	piListFetchMu.Lock()
+	defer piListFetchMu.Unlock()
+
 	out, err := fetchAndCacheProposals(ctx)
 	if err != nil {
+		piListFailAt = time.Now()
 		return nil, time.Time{}, err
 	}
+	piListFailAt = time.Time{}
 	piCacheMu.RLock()
 	newAt := piCachedAt
 	piCacheMu.RUnlock()
@@ -233,21 +284,46 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 	localVotes := loadLocalPoliteiaVotes(ctx)
 
 	out := make([]types.Proposal, 0, len(tokens))
+	prewarm := make(map[string]*types.ProposalDetail, len(tokens))
 	for _, t := range tokens {
 		rec := records[t]
 		sum := summaries[t]
 		proposal := proposalFromRecordAndSummary(t, rec, sum)
 		proposal.CurrentChoice = localVotes[t]
 		out = append(out, proposal)
+
+		// Pre-warm the per-token detail from data already in hand so a later
+		// GetProposalDetail serves description/tally/options without re-hitting
+		// Politeia. DescriptionHTML is rendered lazily and comments fetched
+		// lazily on first detail view (see GetProposalDetail).
+		prewarm[t] = &types.ProposalDetail{
+			Proposal:    proposal,
+			Description: indexMarkdown(rec),
+			SubmittedAt: rec.Timestamp,
+			VoteOptions: voteOptionsFromSummary(sum),
+		}
 	}
 
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].EndBlock > out[j].EndBlock
 	})
 
+	now := time.Now()
 	piCacheMu.Lock()
 	piCachedList = out
-	piCachedAt = time.Now()
+	piCachedAt = now
+	for t, d := range prewarm {
+		// Preserve a fuller existing entry's comments/HTML across a list
+		// refresh; only description/tally/options are refreshed from the new
+		// record.
+		if prev, ok := piCachedDetails[t]; ok && prev.commentsLoaded {
+			d.Comments = prev.detail.Comments
+			d.DescriptionHTML = prev.detail.DescriptionHTML
+			piCachedDetails[t] = piDetailCacheEntry{detail: d, at: now, commentsLoaded: true}
+			continue
+		}
+		piCachedDetails[t] = piDetailCacheEntry{detail: d, at: now, commentsLoaded: false}
+	}
 	piCacheMu.Unlock()
 
 	return out, nil
@@ -266,22 +342,61 @@ func GetProposalDetail(ctx context.Context, token string) (*types.ProposalDetail
 	}
 
 	piCacheMu.RLock()
-	if entry, ok := piCachedDetails[token]; ok {
-		cached := *entry.detail
-		at := entry.at
-		piCacheMu.RUnlock()
-		// Local "you voted X" cache might have changed since the entry
-		// was warmed; refresh that field from the per-wallet cfg.
-		if localVotes := loadLocalPoliteiaVotes(ctx); localVotes != nil {
-			if v, ok := localVotes[token]; ok {
-				cached.CurrentChoice = v
-			}
-		}
-		return &cached, at, nil
-	}
+	entry, ok := piCachedDetails[token]
 	piCacheMu.RUnlock()
+	if ok {
+		if entry.commentsLoaded {
+			cached := *entry.detail
+			applyLocalVoteChoice(ctx, token, &cached)
+			return &cached, entry.at, nil
+		}
+		// Pre-warmed entry: description/tally/options are present; render the
+		// HTML once and lazily fetch comments before upgrading to a full entry.
+		return fillProposalDetailComments(ctx, token, entry)
+	}
 
 	return fetchAndCacheProposalDetail(ctx, token)
+}
+
+// applyLocalVoteChoice refreshes a detail's CurrentChoice from the per-wallet
+// "you voted X" cache, which may have changed since the entry was warmed.
+func applyLocalVoteChoice(ctx context.Context, token string, d *types.ProposalDetail) {
+	if localVotes := loadLocalPoliteiaVotes(ctx); localVotes != nil {
+		if v, ok := localVotes[token]; ok {
+			d.CurrentChoice = v
+		}
+	}
+}
+
+// fillProposalDetailComments completes a pre-warmed cache entry: it renders the
+// description HTML once and does a single best-effort comments fetch, then
+// upgrades the cached entry. The rendered HTML is always cached; commentsLoaded
+// is set only when the fetch succeeds, so a later view retries comments only.
+func fillProposalDetailComments(ctx context.Context, token string, entry piDetailCacheEntry) (*types.ProposalDetail, time.Time, error) {
+	detail := *entry.detail
+	if detail.DescriptionHTML == "" && detail.Description != "" {
+		detail.DescriptionHTML = renderProposalMarkdown(detail.Description)
+	}
+
+	cctx, cancel := context.WithTimeout(ctx, ProposalsFetchTimeout)
+	defer cancel()
+	commentsOK := false
+	if cmts, err := piComments(cctx, token); err != nil {
+		log.Printf("politeia comments %s: %v", token, err)
+	} else {
+		detail.Comments = commentsFromPi(cmts)
+		commentsOK = true
+	}
+
+	// Cache a copy taken before the per-read local vote choice is applied, so
+	// the stored entry stays choice-neutral.
+	upgraded := detail
+	piCacheMu.Lock()
+	piCachedDetails[token] = piDetailCacheEntry{detail: &upgraded, at: entry.at, commentsLoaded: commentsOK}
+	piCacheMu.Unlock()
+
+	applyLocalVoteChoice(ctx, token, &detail)
+	return &detail, entry.at, nil
 }
 
 // RefreshProposalDetail forces a re-fetch of one proposal's detail, subject to
@@ -296,10 +411,13 @@ func RefreshProposalDetail(ctx context.Context, token string) (*types.ProposalDe
 		return nil, time.Time{}, fmt.Errorf("token required")
 	}
 
+	// Only a full prior fetch arms the cooldown; a pre-warmed entry (no
+	// comments yet) is treated as not-yet-fetched so a force-refresh still
+	// pulls the complete record.
 	piCacheMu.RLock()
 	entry, ok := piCachedDetails[token]
 	piCacheMu.RUnlock()
-	if ok && !entry.at.IsZero() && time.Since(entry.at) < ProposalsRefreshCooldown {
+	if ok && entry.commentsLoaded && !entry.at.IsZero() && time.Since(entry.at) < ProposalsRefreshCooldown {
 		cached := *entry.detail
 		return &cached, entry.at, ErrProposalsRefreshCoolingDown
 	}
@@ -357,7 +475,7 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 
 	at := time.Now()
 	piCacheMu.Lock()
-	piCachedDetails[token] = piDetailCacheEntry{detail: out, at: at}
+	piCachedDetails[token] = piDetailCacheEntry{detail: out, at: at, commentsLoaded: true}
 	piCacheMu.Unlock()
 
 	return out, at, nil
@@ -710,6 +828,11 @@ var ErrPoliteiaDisabled = fmt.Errorf("politeia disabled in settings")
 // refresh is requested within ProposalsRefreshCooldown of the last successful
 // fetch. Handlers translate to 429.
 var ErrProposalsRefreshCoolingDown = fmt.Errorf("proposals refresh cooling down")
+
+// ErrProposalsRecentlyFailed is returned by a cold list read while a recent
+// fetch failure is still within piListNegativeTTL, suppressing retry storms
+// against a slow/unreachable Politeia. Handlers translate to 502.
+var ErrProposalsRecentlyFailed = fmt.Errorf("proposals fetch recently failed")
 
 type piInventoryResp struct {
 	Vetted    map[string][]string `json:"vetted"`
