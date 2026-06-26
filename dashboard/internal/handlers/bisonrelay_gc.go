@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
 )
 
 // BisonrelayGCListHandler proxies brclientd's GET /gc.
@@ -133,11 +134,11 @@ func BisonrelayGCMessageHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "embed data_b64: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if len(decoded) > maxInlineEmbedBytes {
+		if len(decoded) > services.MaxInlineEmbedBytes {
 			http.Error(w, "embed exceeds inline size cap", http.StatusRequestEntityTooLarge)
 			return
 		}
-		tag := buildEmbedTag(req.Embed.Name, req.Embed.Mime, req.Embed.DataB64)
+		tag := services.BuildEmbedTag(req.Embed.Name, req.Embed.Mime, req.Embed.DataB64)
 		if body == "" {
 			body = tag
 		} else {

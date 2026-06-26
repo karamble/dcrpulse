@@ -10,6 +10,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -46,6 +48,20 @@ type brSendMessageInput struct {
 type brSendGCMessageInput struct {
 	GCID    string `json:"gcid" jsonschema:"group chat id, hex"`
 	Message string `json:"message" jsonschema:"message text to send"`
+}
+
+type brSendMessageImageInput struct {
+	UID     string `json:"uid" jsonschema:"recipient identity (nick, alias, or hex UID)"`
+	Path    string `json:"path" jsonschema:"relative path to the image under the agent outbox dir"`
+	Message string `json:"message,omitempty" jsonschema:"optional caption text shown above the image"`
+	Mime    string `json:"mime,omitempty" jsonschema:"optional MIME type; inferred from the file when empty"`
+}
+
+type brSendGroupchatImageInput struct {
+	GCID    string `json:"gcid" jsonschema:"group chat id, hex"`
+	Path    string `json:"path" jsonschema:"relative path to the image under the agent outbox dir"`
+	Message string `json:"message,omitempty" jsonschema:"optional caption text shown above the image"`
+	Mime    string `json:"mime,omitempty" jsonschema:"optional MIME type; inferred from the file when empty"`
 }
 
 type brTipInput struct {
@@ -470,6 +486,44 @@ var bisonrelayTools = []toolDef{
 				return nil, err
 			}
 			recordSpend(a, "br_send_groupchat_message", 0, 0, in.GCID, "ok", "")
+			return map[string]any{"gcid": in.GCID, "sent": true}, nil
+		}),
+	agentTool("bisonrelay", "br_send_message_image",
+		"Send a private message with an image attached inline in the chat (renders in the message bubble, not as a separate file download). The image is read from the agent outbox by relative path; the agent supplies only the path and an optional caption, and the tool reads the file and embeds it (no base64 handling by the agent). Inline images are capped at 800 KiB; for larger files use br_file_send_path. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brSendMessageImageInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
+			body, err := buildImageEmbedBody(in.Path, in.Message, in.Mime)
+			if err != nil {
+				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdSendPM(ctx, in.UID, body); err != nil {
+				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_send_message_image", 0, 0, in.UID, "ok", filepath.Base(in.Path))
+			return map[string]any{"uid": in.UID, "sent": true}, nil
+		}),
+	agentTool("bisonrelay", "br_send_groupchat_image",
+		"Post a group-chat message with an image attached inline (renders in the message, not as a separate file download). The image is read from the agent outbox by relative path; the agent supplies only the path and an optional caption, and the tool reads the file and embeds it (no base64 handling by the agent). Inline images are capped at 800 KiB; for larger files use br_file_send_path. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brSendGroupchatImageInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "denied", err.Error())
+				return nil, err
+			}
+			body, err := buildImageEmbedBody(in.Path, in.Message, in.Mime)
+			if err != nil {
+				recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "error", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdGCMessage(ctx, in.GCID, body, 0); err != nil {
+				recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "ok", filepath.Base(in.Path))
 			return map[string]any{"gcid": in.GCID, "sent": true}, nil
 		}),
 	agentTool("bisonrelay", "br_tip_user",
@@ -1285,6 +1339,45 @@ func resolveOutboxPath(rel string) (string, error) {
 		return "", fmt.Errorf("path outside outbox")
 	}
 	return candidate, nil
+}
+
+// buildImageEmbedBody reads an image from the agent outbox (path-sandboxed via
+// resolveOutboxPath), enforces the inline-embed size cap, and returns a chat
+// message body with the image carried inline as a bruig --embed[...]-- tag. The
+// agent supplies only the relative path and an optional caption; the file read
+// and base64 encoding happen here, never in the agent's context. Mirrors the
+// dashboard's BisonrelayPMHandler embed assembly.
+func buildImageEmbedBody(relPath, message, mimeOverride string) (string, error) {
+	candidate, err := resolveOutboxPath(relPath)
+	if err != nil {
+		return "", err
+	}
+	fi, err := os.Stat(candidate)
+	if err != nil {
+		return "", err
+	}
+	if fi.IsDir() {
+		return "", fmt.Errorf("path is a directory")
+	}
+	if fi.Size() > services.MaxInlineEmbedBytes {
+		return "", fmt.Errorf("image is %d bytes, over the %d-byte inline embed cap; use br_file_send_path to send it as a file transfer instead", fi.Size(), services.MaxInlineEmbedBytes)
+	}
+	data, err := os.ReadFile(candidate)
+	if err != nil {
+		return "", err
+	}
+	mimeType := strings.TrimSpace(mimeOverride)
+	if mimeType == "" {
+		mimeType = mime.TypeByExtension(filepath.Ext(candidate))
+	}
+	if mimeType == "" {
+		mimeType = http.DetectContentType(data)
+	}
+	tag := services.BuildEmbedTag(filepath.Base(candidate), mimeType, base64.StdEncoding.EncodeToString(data))
+	if message == "" {
+		return tag, nil
+	}
+	return message + "\n" + tag, nil
 }
 
 // safeBRName mirrors the dashboard handlers' safeBRPath guard for page,
