@@ -134,6 +134,61 @@ type SignPublishTransactionResponse struct {
 	TxHash string `json:"txHash"`
 }
 
+// DecodeSignedTxRequest carries a signed transaction for preview. SignedTxB64 is
+// the base64 of a hardware-wallet file's raw bytes (the Passport ".dcrtx" file is
+// the raw serialized transaction); SignedTx is plain-text input (a bare hex string
+// or an export with "=== ... ===" sections). When both are set, SignedTxB64 wins.
+type DecodeSignedTxRequest struct {
+	SignedTxB64 string `json:"signedTxB64,omitempty"`
+	SignedTx    string `json:"signedTx,omitempty"`
+}
+
+type SignedTxPreviewOutput struct {
+	Index       uint32 `json:"index"`
+	Address     string `json:"address,omitempty"`
+	AmountAtoms int64  `json:"amountAtoms"`
+	ScriptClass string `json:"scriptClass"`
+	IsMine      bool   `json:"isMine"`
+}
+
+// SignedTxPreview is the decoded summary shown before broadcasting. FeeKnown is
+// false when an input lacks its committed input amount, in which case FeeAtoms is
+// not meaningful. TxHex echoes the normalized hex so the broadcast call sends
+// exactly what was previewed.
+type SignedTxPreview struct {
+	Txid              string                  `json:"txid"`
+	SizeBytes         int                     `json:"sizeBytes"`
+	InputsTotalAtoms  int64                   `json:"inputsTotalAtoms"`
+	OutputsTotalAtoms int64                   `json:"outputsTotalAtoms"`
+	FeeAtoms          int64                   `json:"feeAtoms"`
+	FeeKnown          bool                    `json:"feeKnown"`
+	Outputs           []SignedTxPreviewOutput `json:"outputs"`
+	TxHex             string                  `json:"txHex"`
+}
+
+type BroadcastSignedTxRequest struct {
+	SignedTxB64 string `json:"signedTxB64,omitempty"`
+	SignedTx    string `json:"signedTx,omitempty"`
+}
+
+type BroadcastSignedTxResponse struct {
+	TxHash           string `json:"txHash"`
+	AlreadyBroadcast bool   `json:"alreadyBroadcast,omitempty"`
+}
+
+// SignRequestExport carries the base64 CBOR SignRequest for an air-gapped hardware
+// wallet, plus the same amount/fee summary the Send preview shows.
+type SignRequestExport struct {
+	SignRequestB64      string `json:"signRequestB64"`
+	SignRequestUR       string `json:"signRequestUR"`
+	InputsTotalAtoms    int64  `json:"inputsTotalAtoms"`
+	OutputsTotalAtoms   int64  `json:"outputsTotalAtoms"`
+	ChangeAtoms         int64  `json:"changeAtoms"`
+	FeeAtoms            int64  `json:"feeAtoms"`
+	TotalDebitedAtoms   int64  `json:"totalDebitedAtoms"`
+	EstimatedSignedSize uint32 `json:"estimatedSignedSize"`
+}
+
 type RescanRequest struct {
 	BeginHeight int32 `json:"beginHeight"`
 }

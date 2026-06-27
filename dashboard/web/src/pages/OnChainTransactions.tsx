@@ -1,22 +1,31 @@
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useWalletReady } from '../hooks/useWalletReady';
-import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
 
-const tabs = [
+const allTabs = [
   { path: 'send', label: 'Send' },
   { path: 'receive', label: 'Receive' },
   { path: 'history', label: 'History' },
   { path: 'export', label: 'Export' },
+  { path: 'offline', label: 'Offline signing' },
 ];
+
+// OnChainTransactionsIndex picks the default sub-tab once the wallet status is
+// known: watch-only wallets cannot sign in-app, so they land on Offline signing
+// (export -> sign on device -> import -> broadcast) rather than Send.
+export const OnChainTransactionsIndex = () => {
+  const { isWatchOnly, loading } = useWalletReady();
+  if (loading) return null;
+  return <Navigate to={isWatchOnly ? 'offline' : 'send'} replace />;
+};
 
 export const OnChainTransactions = () => {
   const location = useLocation();
   const active = location.pathname.split('/').pop() || 'send';
   const { isWatchOnly } = useWalletReady();
 
-  if (isWatchOnly) {
-    return <WatchOnlyGate feature="On-chain transactions" />;
-  }
+  // A watch-only wallet cannot sign in-app, so hide the Send tab; spending happens
+  // through the Offline signing tab.
+  const tabs = isWatchOnly ? allTabs.filter((t) => t.path !== 'send') : allTabs;
 
   return (
     <div className="space-y-6">

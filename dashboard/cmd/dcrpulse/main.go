@@ -508,6 +508,9 @@ func main() {
 	api.HandleFunc("/wallet/validate-address", handlers.ValidateAddressHandler).Methods("GET")
 	api.HandleFunc("/wallet/construct-transaction", handlers.ConstructTransactionHandler).Methods("POST")
 	api.HandleFunc("/wallet/sign-publish-transaction", handlers.SignPublishTransactionHandler).Methods("POST")
+	api.HandleFunc("/wallet/decode-signed-transaction", handlers.DecodeSignedTransactionHandler).Methods("POST")
+	api.HandleFunc("/wallet/broadcast-signed-transaction", handlers.BroadcastSignedTransactionHandler).Methods("POST")
+	api.HandleFunc("/wallet/build-sign-request", handlers.BuildSignRequestHandler).Methods("POST")
 	api.Handle("/wallet/rescan",
 		middleware.RateLimit("rescan", 60*time.Second, 1)(
 			http.HandlerFunc(handlers.RescanWalletHandler))).Methods("POST")

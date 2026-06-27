@@ -73,12 +73,10 @@ export const WalletLayout = () => {
             <LayoutDashboard className="h-4 w-4" />
             <span>Overview</span>
           </NavLink>
-          {!isWatchOnly && (
-            <NavLink to="/wallet/transactions" className={navItemClass}>
-              <ArrowLeftRight className="h-4 w-4" />
-              <span>On-Chain Transactions</span>
-            </NavLink>
-          )}
+          <NavLink to="/wallet/transactions" className={navItemClass}>
+            <ArrowLeftRight className="h-4 w-4" />
+            <span>On-Chain Transactions</span>
+          </NavLink>
           {!isWatchOnly && (
             <NavLink to="/wallet/privacy" className={navItemClass}>
               <ShieldCheck className="h-4 w-4" />

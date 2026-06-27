@@ -13,8 +13,9 @@ import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
 import { WalletLayout } from './components/wallet/WalletLayout';
 import { WalletSelection } from './pages/WalletSelection';
-import { OnChainTransactions } from './pages/OnChainTransactions';
+import { OnChainTransactions, OnChainTransactionsIndex } from './pages/OnChainTransactions';
 import { SendTab } from './components/onchain/SendTab';
+import { OfflineSigningTab } from './components/onchain/OfflineSigningTab';
 import { ReceiveTab } from './components/onchain/ReceiveTab';
 import { HistoryTab } from './components/onchain/HistoryTab';
 import { ExportTab } from './components/onchain/ExportTab';
@@ -184,11 +185,12 @@ function AppContent() {
               <Route path="tor" element={<TorSection />} />
             </Route>
             <Route path="transactions" element={<OnChainTransactions />}>
-              <Route index element={<Navigate to="send" replace />} />
-              <Route path="send" element={<SendTab />} />
+              <Route index element={<OnChainTransactionsIndex />} />
+              <Route path="send" element={<WatchOnlyGuard feature="Sending"><SendTab /></WatchOnlyGuard>} />
               <Route path="receive" element={<ReceiveTab />} />
               <Route path="history" element={<HistoryTab />} />
               <Route path="export" element={<ExportTab />} />
+              <Route path="offline" element={<OfflineSigningTab />} />
             </Route>
           </Route>
           <Route path="/explorer" element={<ExplorerLanding />} />

@@ -472,6 +472,66 @@ export const signPublishTransaction = async (
   return response.data;
 };
 
+export interface SignedTxPreviewOutput {
+  index: number;
+  address?: string;
+  amountAtoms: number;
+  scriptClass: string;
+  isMine: boolean;
+}
+
+export interface SignedTxPreview {
+  txid: string;
+  sizeBytes: number;
+  inputsTotalAtoms: number;
+  outputsTotalAtoms: number;
+  feeAtoms: number;
+  feeKnown: boolean;
+  outputs: SignedTxPreviewOutput[];
+  txHex: string;
+}
+
+export interface BroadcastSignedTxResponse {
+  txHash: string;
+  alreadyBroadcast?: boolean;
+}
+
+// SignedTxInput carries a signed transaction as either base64 of a hardware-wallet
+// file's raw bytes (signedTxB64, binary-safe, used for an uploaded .dcrtx file) or
+// plain text (signedTx: a hex string or a "=== ... ===" export).
+export interface SignedTxInput {
+  signedTxB64?: string;
+  signedTx?: string;
+}
+
+export const decodeSignedTransaction = async (input: SignedTxInput): Promise<SignedTxPreview> => {
+  const response = await api.post<SignedTxPreview>('/wallet/decode-signed-transaction', input);
+  return response.data;
+};
+
+export const broadcastSignedTransaction = async (input: SignedTxInput): Promise<BroadcastSignedTxResponse> => {
+  const response = await api.post<BroadcastSignedTxResponse>('/wallet/broadcast-signed-transaction', input);
+  return response.data;
+};
+
+// SignRequestExport carries the base64 CBOR SignRequest an air-gapped hardware
+// wallet signs, plus the same amount/fee summary the send preview shows.
+export interface SignRequestExport {
+  signRequestB64: string;
+  signRequestUR: string;
+  inputsTotalAtoms: number;
+  outputsTotalAtoms: number;
+  changeAtoms: number;
+  feeAtoms: number;
+  totalDebitedAtoms: number;
+  estimatedSignedSize: number;
+}
+
+export const buildSignRequest = async (req: ConstructTransactionRequest): Promise<SignRequestExport> => {
+  const response = await api.post<SignRequestExport>('/wallet/build-sign-request', req);
+  return response.data;
+};
+
 export const triggerRescan = async (): Promise<any> => {
   const response = await api.post('/wallet/rescan', { beginHeight: 0 });
   return response.data;

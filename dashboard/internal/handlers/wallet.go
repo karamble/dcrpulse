@@ -1076,9 +1076,9 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
 		return
 	}
-	if rejectWatchOnly(w, r) {
-		return
-	}
+	// Constructing an unsigned transaction uses no private keys, so it is allowed
+	// for watch-only wallets to export for offline signing. Signing stays gated in
+	// SignPublishTransactionHandler (and dcrwallet rejects signing without keys).
 	var req types.ConstructTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
