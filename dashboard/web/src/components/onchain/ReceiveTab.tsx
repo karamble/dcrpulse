@@ -3,6 +3,7 @@ import { QrCode, RefreshCw, AlertCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { AccountInfo, getAccounts, getNextAddress } from '../../services/api';
 import { CopyButton } from '../explorer/CopyButton';
+import { useWalletReady } from '../../hooks/useWalletReady';
 
 const MAX_DCR = 21_000_000;
 
@@ -25,6 +26,7 @@ const validateAmount = (raw: string): string | null => {
 };
 
 export const ReceiveTab = () => {
+  const { isWatchOnly } = useWalletReady();
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<number | null>(null);
@@ -150,9 +152,16 @@ export const ReceiveTab = () => {
       <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
         {!address ? (
           <div className="text-center py-6">
-            <p className="text-muted-foreground mb-4">
-              Click below to generate a fresh receiving address.
-            </p>
+            <div className="mb-4">
+              <p className="text-muted-foreground">
+                Click below to generate a fresh receiving address.
+              </p>
+              {isWatchOnly && (
+                <p className="mt-1 text-xs text-warning">
+                  *verify the receiving address on your hardware wallet
+                </p>
+              )}
+            </div>
             {generateError && (
               <div className="mb-4 flex items-center justify-center gap-2 text-destructive text-sm">
                 <AlertCircle className="h-4 w-4" />

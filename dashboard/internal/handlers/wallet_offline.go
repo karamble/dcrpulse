@@ -140,24 +140,17 @@ func BuildSignRequestHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.Address == "" {
-		http.Error(w, "address required", http.StatusBadRequest)
-		return
-	}
-	if !req.SendAll && req.AmountAtoms <= 0 {
-		http.Error(w, "amount must be positive", http.StatusBadRequest)
-		return
-	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	if vResp, err := services.ValidateAddress(ctx, req.Address); err != nil || !vResp.IsValid {
-		http.Error(w, "address has invalid format", http.StatusBadRequest)
+	recipients, err := resolveTxOutputs(ctx, &req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	export, err := services.BuildSignRequest(ctx, req.SourceAccount, req.Address, req.AmountAtoms, req.SendAll)
+	export, err := services.BuildSignRequest(ctx, req.SourceAccount, recipients, req.SendAll)
 	if err != nil {
 		if services.IsDaemonUnreachable(err) {
 			respondDaemonError(w, r, services.LogComponentDcrwallet, err)

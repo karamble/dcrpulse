@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Link } from 'react-router-dom';
-import { Activity, AlertCircle, Loader2, Lock, ShieldCheck, Ticket, Unlock, Wallet } from 'lucide-react';
+import { Activity, AlertCircle, Eye, Loader2, Lock, ShieldCheck, Ticket, Unlock, Wallet } from 'lucide-react';
 import { InsecureRpcWarning } from './InsecureRpcWarning';
 
 interface WalletStatusProps {
@@ -12,6 +12,7 @@ interface WalletStatusProps {
   unlocked?: boolean;
   mixerRunning?: boolean;
   autobuyerRunning?: boolean;
+  isWatchOnly?: boolean;
 }
 
 export const WalletStatus = ({
@@ -20,6 +21,7 @@ export const WalletStatus = ({
   unlocked = false,
   mixerRunning = false,
   autobuyerRunning = false,
+  isWatchOnly = false,
 }: WalletStatusProps) => {
   const getStatusConfig = () => {
     switch (status) {
@@ -87,7 +89,21 @@ export const WalletStatus = ({
           <div>
             <h3 className="text-lg font-semibold">Wallet Status</h3>
             <p className="text-sm text-muted-foreground">
-              {version ? `dcrwallet ${version}` : 'Watch-Only Wallet'}
+              {isWatchOnly ? (
+                <>
+                  Watch-only
+                  {version && (
+                    <>
+                      <span className="text-border"> • </span>
+                      {`dcrwallet ${version}`}
+                    </>
+                  )}
+                </>
+              ) : version ? (
+                `dcrwallet ${version}`
+              ) : (
+                'Watch-Only Wallet'
+              )}
             </p>
           </div>
         </div>
@@ -111,7 +127,20 @@ export const WalletStatus = ({
               <ShieldCheck className="h-6 w-6 text-success animate-pulse" />
             </Link>
           )}
-          {version &&
+          {/* A watch-only wallet holds no private keys, so the lock/unlock state is
+              meaningless; show a Watch-only badge linking to the offline-signing flow
+              (the way to spend) instead of the misleading "Spending locked". */}
+          {isWatchOnly ? (
+            <Link
+              to="/wallet/transactions/offline"
+              title="Watch-only wallet: no private keys here. Sign on your hardware device, then broadcast from the Offline signing tab."
+              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-primary/10 border-2 border-primary/20 hover:bg-primary/20 transition-colors"
+            >
+              <Eye className="h-5 w-5 text-primary" />
+              <span className="text-primary font-semibold text-sm">Watch-only</span>
+            </Link>
+          ) : (
+            version &&
             (unlocked ? (
               <div
                 title="Private keys are currently unlocked."
@@ -128,7 +157,8 @@ export const WalletStatus = ({
                 <Lock className="h-5 w-5 text-muted-foreground" />
                 <span className="text-muted-foreground font-semibold text-sm">Spending locked</span>
               </div>
-            ))}
+            ))
+          )}
           <div className={`px-6 py-3 rounded-xl ${config.bgColor} border-2 ${config.borderColor}`}>
             <span className={`${config.color} font-bold text-lg tracking-wide`}>
               {config.label}

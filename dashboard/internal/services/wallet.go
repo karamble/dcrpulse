@@ -1462,23 +1462,30 @@ func ValidateAddress(ctx context.Context, address string) (*pb.ValidateAddressRe
 	return rpc.WalletGrpcClient.ValidateAddress(ctx, &pb.ValidateAddressRequest{Address: address})
 }
 
-func ConstructTransaction(ctx context.Context, sourceAccount uint32, recipient string, amountAtoms int64, sendAll bool) (*pb.ConstructTransactionResponse, error) {
+func ConstructTransaction(ctx context.Context, sourceAccount uint32, outputs []types.TxRecipient, sendAll bool) (*pb.ConstructTransactionResponse, error) {
 	if rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	if len(outputs) == 0 {
+		return nil, fmt.Errorf("at least one output is required")
 	}
 	req := &pb.ConstructTransactionRequest{
 		SourceAccount:         sourceAccount,
 		RequiredConfirmations: 1,
 	}
 	if sendAll {
+		// Send-all sweeps the whole balance to a single recipient via the change
+		// destination, so only the first output's address is used.
 		req.OutputSelectionAlgorithm = pb.ConstructTransactionRequest_ALL
-		req.ChangeDestination = &pb.ConstructTransactionRequest_OutputDestination{Address: recipient}
+		req.ChangeDestination = &pb.ConstructTransactionRequest_OutputDestination{Address: outputs[0].Address}
 	} else {
 		req.OutputSelectionAlgorithm = pb.ConstructTransactionRequest_UNSPECIFIED
-		req.NonChangeOutputs = []*pb.ConstructTransactionRequest_Output{{
-			Destination: &pb.ConstructTransactionRequest_OutputDestination{Address: recipient},
-			Amount:      amountAtoms,
-		}}
+		for _, o := range outputs {
+			req.NonChangeOutputs = append(req.NonChangeOutputs, &pb.ConstructTransactionRequest_Output{
+				Destination: &pb.ConstructTransactionRequest_OutputDestination{Address: o.Address},
+				Amount:      o.AmountAtoms,
+			})
+		}
 		// When spending the mixed account with privacy enabled, route change to
 		// the unmixed account so mixed coins' change never pollutes the mixed
 		// set. Mirrors Decrediton; otherwise dcrwallet defaults change to the

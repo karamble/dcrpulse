@@ -1071,6 +1071,51 @@ func ValidateAddressHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// maxTxAtoms is the total DCR supply in atoms; no single amount or transaction
+// total can legitimately exceed it.
+const maxTxAtoms = 2_100_000_000_000_000
+
+// resolveTxOutputs normalizes and validates a construct request into the list of
+// recipients to pay. It accepts either the Outputs slice or the legacy single
+// Address/AmountAtoms pair. For send-all it returns the single sweep destination
+// (the amount is ignored). Every recipient address is checked for valid format.
+func resolveTxOutputs(ctx context.Context, req *types.ConstructTransactionRequest) ([]types.TxRecipient, error) {
+	var recipients []types.TxRecipient
+	if len(req.Outputs) > 0 {
+		recipients = req.Outputs
+	} else {
+		recipients = []types.TxRecipient{{Address: req.Address, AmountAtoms: req.AmountAtoms}}
+	}
+
+	if req.SendAll {
+		if strings.TrimSpace(recipients[0].Address) == "" {
+			return nil, fmt.Errorf("address required")
+		}
+		if vResp, err := services.ValidateAddress(ctx, recipients[0].Address); err != nil || !vResp.IsValid {
+			return nil, fmt.Errorf("address has invalid format")
+		}
+		return []types.TxRecipient{{Address: recipients[0].Address}}, nil
+	}
+
+	var total int64
+	for _, o := range recipients {
+		if strings.TrimSpace(o.Address) == "" {
+			return nil, fmt.Errorf("address required")
+		}
+		if o.AmountAtoms <= 0 {
+			return nil, fmt.Errorf("amount must be positive")
+		}
+		total += o.AmountAtoms
+		if o.AmountAtoms > maxTxAtoms || total > maxTxAtoms {
+			return nil, fmt.Errorf("amount exceeds total supply")
+		}
+		if vResp, err := services.ValidateAddress(ctx, o.Address); err != nil || !vResp.IsValid {
+			return nil, fmt.Errorf("address has invalid format")
+		}
+	}
+	return recipients, nil
+}
+
 func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletGrpcClient == nil || rpc.DecodeMessageClient == nil {
 		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
@@ -1084,28 +1129,17 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.Address == "" {
-		http.Error(w, "address required", http.StatusBadRequest)
-		return
-	}
-	if !req.SendAll && req.AmountAtoms <= 0 {
-		http.Error(w, "amount must be positive", http.StatusBadRequest)
-		return
-	}
-	if req.AmountAtoms > 2_100_000_000_000_000 {
-		http.Error(w, "amount exceeds total supply", http.StatusBadRequest)
-		return
-	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	if vResp, err := services.ValidateAddress(ctx, req.Address); err != nil || !vResp.IsValid {
-		http.Error(w, "address has invalid format", http.StatusBadRequest)
+	recipients, err := resolveTxOutputs(ctx, &req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	cResp, err := services.ConstructTransaction(ctx, req.SourceAccount, req.Address, req.AmountAtoms, req.SendAll)
+	cResp, err := services.ConstructTransaction(ctx, req.SourceAccount, recipients, req.SendAll)
 	if err != nil {
 		log.Printf("ConstructTransaction failed: %v", err)
 		http.Error(w, fmt.Sprintf("construct failed: %v", err), http.StatusInternalServerError)

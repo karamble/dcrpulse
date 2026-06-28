@@ -107,11 +107,23 @@ type ValidateAddressResponse struct {
 	AccountNumber uint32 `json:"accountNumber"`
 }
 
+// TxRecipient is one recipient/amount pair of a transaction. It lets a single
+// transaction pay several destinations at once.
+type TxRecipient struct {
+	Address     string `json:"address"`
+	AmountAtoms int64  `json:"amountAtoms"`
+}
+
+// ConstructTransactionRequest builds an unsigned transaction. Outputs carries one
+// or more recipients; the legacy single Address/AmountAtoms pair is still accepted
+// and treated as a one-output Outputs slice. SendAll sweeps the whole spendable
+// balance to a single Address (Outputs is ignored).
 type ConstructTransactionRequest struct {
-	SourceAccount uint32 `json:"sourceAccount"`
-	Address       string `json:"address"`
-	AmountAtoms   int64  `json:"amountAtoms"`
-	SendAll       bool   `json:"sendAll"`
+	SourceAccount uint32        `json:"sourceAccount"`
+	Address       string        `json:"address"`
+	AmountAtoms   int64         `json:"amountAtoms"`
+	Outputs       []TxRecipient `json:"outputs,omitempty"`
+	SendAll       bool          `json:"sendAll"`
 }
 
 type ConstructTransactionResponse struct {

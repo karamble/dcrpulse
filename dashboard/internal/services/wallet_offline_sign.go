@@ -166,11 +166,11 @@ func prevoutInfo(ctx context.Context, prevHash chainhash.Hash, prevIndex uint32)
 // SignRequest for an air-gapped hardware wallet to sign. It uses no private keys
 // (works for watch-only wallets): dcrwallet selects coins and derives change, and
 // each input is enriched with its prevout script and derivation path.
-func BuildSignRequest(ctx context.Context, sourceAccount uint32, recipient string, amountAtoms int64, sendAll bool) (*types.SignRequestExport, error) {
+func BuildSignRequest(ctx context.Context, sourceAccount uint32, outputs []types.TxRecipient, sendAll bool) (*types.SignRequestExport, error) {
 	if rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("wallet gRPC client not initialized")
 	}
-	cResp, err := ConstructTransaction(ctx, sourceAccount, recipient, amountAtoms, sendAll)
+	cResp, err := ConstructTransaction(ctx, sourceAccount, outputs, sendAll)
 	if err != nil {
 		return nil, err
 	}

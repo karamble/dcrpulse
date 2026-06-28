@@ -17,6 +17,10 @@ interface WalletSetupProps {
 const DEFAULT_WALLET_NAME = 'default-wallet';
 const walletNamePattern = /^[A-Za-z0-9_-]{1,64}$/;
 
+// Hardware wallets a watch-only wallet can spend through (via offline signing).
+// Foundation Passport is the only one supported today; add future devices here.
+const HARDWARE_WALLETS = [{ name: 'Foundation', logo: '/images/foundation.svg' }];
+
 type WizardMode = 'create' | 'restore' | 'watchonly';
 type WizardStep =
   | 'choose'
@@ -350,6 +354,14 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                   <p className="text-sm text-muted-foreground">
                     Import an extended public key (xpub) to monitor balances without spending keys.
                   </p>
+                  <div className="pt-2 border-t border-border/50 space-y-1.5">
+                    <p className="text-xs text-muted-foreground">Hardware wallets:</p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {HARDWARE_WALLETS.map((hw) => (
+                        <img key={hw.name} src={hw.logo} alt={hw.name} title={hw.name} className="h-4 w-auto" />
+                      ))}
+                    </div>
+                  </div>
                 </button>
               </div>
               {onCancel && (

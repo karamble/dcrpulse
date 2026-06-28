@@ -351,6 +351,7 @@ export const WalletDashboard = () => {
           unlocked={data.walletStatus.unlocked}
           mixerRunning={mixerRunning}
           autobuyerRunning={autobuyerRunning}
+          isWatchOnly={data.walletStatus.isWatchOnly}
         />
       )}
 

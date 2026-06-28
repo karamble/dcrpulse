@@ -12,9 +12,11 @@ import {
   ExternalLink,
   FileUp,
   Loader2,
+  Plus,
   RotateCcw,
   Send,
   ShieldCheck,
+  Trash2,
   UploadCloud,
 } from 'lucide-react';
 import {
@@ -80,12 +82,13 @@ const scriptClassLabel = (sc: string): string => (sc === 'NULL_DATA' ? 'OP_RETUR
 // ExportUnsignedPanel builds an unsigned transaction from the active wallet and
 // downloads it for an air-gapped device (e.g. a Foundation Passport) to sign. It
 // uses no private keys, so it works for watch-only wallets.
+type OutputRow = { recipient: string; amount: string };
+
 const ExportUnsignedPanel = () => {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [sourceAccount, setSourceAccount] = useState<number | null>(null);
-  const [recipient, setRecipient] = useState('');
-  const [amount, setAmount] = useState('');
+  const [outputs, setOutputs] = useState<OutputRow[]>([{ recipient: '', amount: '' }]);
   const [sendAll, setSendAll] = useState(false);
   const [building, setBuilding] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
@@ -107,11 +110,6 @@ const ExportUnsignedPanel = () => {
       });
   }, []);
 
-  const amountError = sendAll || !amount ? null : validateAmount(amount);
-  const amountAtoms = sendAll ? 0 : Math.round(parseFloat(amount || '0') * 1e8);
-  const formReady =
-    sourceAccount !== null && recipient.trim() !== '' && (sendAll || (!validateAmount(amount) && amountAtoms > 0));
-
   // Any input change invalidates a previously built transaction so a stale
   // unsigned tx is never downloaded.
   const invalidate = () => {
@@ -119,18 +117,52 @@ const ExportUnsignedPanel = () => {
     setBuildError(null);
   };
 
+  const updateOutput = (i: number, patch: Partial<OutputRow>) => {
+    setOutputs((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    invalidate();
+  };
+
+  const addOutput = () => {
+    setOutputs((rows) => [...rows, { recipient: '', amount: '' }]);
+    invalidate();
+  };
+
+  const removeOutput = (i: number) => {
+    setOutputs((rows) => (rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows));
+    invalidate();
+  };
+
+  // Send-all sweeps the whole balance to a single recipient, so it collapses any
+  // extra output rows back to one and the amount field is unused.
+  const onToggleSendAll = (checked: boolean) => {
+    setSendAll(checked);
+    if (checked) setOutputs((rows) => [{ recipient: rows[0]?.recipient ?? '', amount: '' }]);
+    invalidate();
+  };
+
+  const amountAtomsOf = (raw: string) => Math.round(parseFloat(raw || '0') * 1e8);
+  const recipientTotalAtoms = sendAll ? 0 : outputs.reduce((s, o) => s + amountAtomsOf(o.amount), 0);
+  const formReady =
+    sourceAccount !== null &&
+    outputs.every((o) => o.recipient.trim() !== '' && (sendAll || (!validateAmount(o.amount) && amountAtomsOf(o.amount) > 0)));
+
   const onBuild = async () => {
     if (sourceAccount === null) return;
     setBuilding(true);
     setBuildError(null);
     setConstruct(null);
     try {
-      const resp = await buildSignRequest({
-        sourceAccount,
-        address: recipient.trim(),
-        amountAtoms,
-        sendAll,
-      });
+      const resp = await buildSignRequest(
+        sendAll
+          ? { sourceAccount, address: outputs[0].recipient.trim(), amountAtoms: 0, sendAll: true }
+          : {
+              sourceAccount,
+              address: '',
+              amountAtoms: 0,
+              sendAll: false,
+              outputs: outputs.map((o) => ({ address: o.recipient.trim(), amountAtoms: amountAtomsOf(o.amount) })),
+            },
+      );
       setConstruct(resp);
     } catch (err: any) {
       const body = err?.response?.data;
@@ -187,50 +219,72 @@ const ExportUnsignedPanel = () => {
           </div>
 
           <div>
-            <label className="block text-sm text-muted-foreground mb-1">Recipient address</label>
-            <input
-              type="text"
-              value={recipient}
-              onChange={(e) => {
-                setRecipient(e.target.value);
-                invalidate();
-              }}
-              placeholder="DsXXXX… or TsXXXX…"
-              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary font-mono text-sm"
-            />
-          </div>
-
-          <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm text-muted-foreground">Amount (DCR)</label>
+              <label className="block text-sm text-muted-foreground">
+                {sendAll ? 'Recipient' : outputs.length > 1 ? 'Recipients' : 'Recipient'}
+              </label>
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"
                   checked={sendAll}
-                  onChange={(e) => {
-                    setSendAll(e.target.checked);
-                    invalidate();
-                  }}
+                  onChange={(e) => onToggleSendAll(e.target.checked)}
                   className="accent-primary"
                 />
                 Send all
               </label>
             </div>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={sendAll ? '' : amount}
-              onChange={(e) => {
-                setAmount(e.target.value);
-                invalidate();
-              }}
-              disabled={sendAll}
-              placeholder={sendAll ? 'Entire spendable balance' : '0.00000000'}
-              className={`w-full px-3 py-2 rounded-lg bg-background border text-foreground focus:outline-none disabled:opacity-50 ${
-                amountError && amount ? 'border-destructive' : 'border-border focus:border-primary'
-              }`}
-            />
-            {amountError && amount && <p className="mt-1 text-xs text-destructive">{amountError}</p>}
+
+            <div className="space-y-3">
+              {outputs.map((o, i) => {
+                const amountError = sendAll || !o.amount ? null : validateAmount(o.amount);
+                return (
+                  <div key={i} className="space-y-2">
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="text"
+                        value={o.recipient}
+                        onChange={(e) => updateOutput(i, { recipient: e.target.value })}
+                        placeholder="DsXXXX… or TsXXXX…"
+                        className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary font-mono text-sm"
+                      />
+                      {!sendAll && outputs.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeOutput(i)}
+                          aria-label="Remove output"
+                          className="p-2 rounded-lg border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={sendAll ? '' : o.amount}
+                      onChange={(e) => updateOutput(i, { amount: e.target.value })}
+                      disabled={sendAll}
+                      placeholder={sendAll ? 'Entire spendable balance' : 'Amount (DCR) - 0.00000000'}
+                      className={`w-full px-3 py-2 rounded-lg bg-background border text-foreground focus:outline-none disabled:opacity-50 ${
+                        amountError && o.amount ? 'border-destructive' : 'border-border focus:border-primary'
+                      }`}
+                    />
+                    {amountError && o.amount && <p className="text-xs text-destructive">{amountError}</p>}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!sendAll && (
+              <button
+                type="button"
+                onClick={addOutput}
+                className="mt-3 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors inline-flex items-center gap-1.5"
+              >
+                <Plus className="h-4 w-4" />
+                Add another recipient
+              </button>
+            )}
           </div>
 
           <button
@@ -254,8 +308,10 @@ const ExportUnsignedPanel = () => {
             <div className="space-y-3 pt-2 border-t border-border/50">
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount to recipient</span>
-                  <span>{formatDcr(sendAll ? construct.outputsTotalAtoms : amountAtoms)} DCR</span>
+                  <span className="text-muted-foreground">
+                    {outputs.length > 1 ? 'Amount to recipients' : 'Amount to recipient'}
+                  </span>
+                  <span>{formatDcr(sendAll ? construct.outputsTotalAtoms : recipientTotalAtoms)} DCR</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Network fee</span>
@@ -594,11 +650,19 @@ export const OfflineSigningTab = () => {
     <div className="space-y-6">
       <div className="p-4 rounded-xl bg-muted/10 border border-border/50 flex items-start gap-3">
         <ShieldCheck className="h-5 w-5 text-primary mt-0.5 shrink-0" />
-        <p className="text-sm text-muted-foreground">
-          Spend from an air-gapped hardware wallet (e.g. Foundation Passport): export an unsigned
-          transaction, sign it on the device, then import the signed file here to broadcast. Your keys
-          never leave the device.
-        </p>
+        <div>
+          <h2 className="text-base font-semibold">Foundation Passport Hardware Wallet</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Spend from an air-gapped hardware wallet (e.g. Foundation Passport): export an unsigned
+            transaction, sign it on the device, then import the signed file here to broadcast. Your keys
+            never leave the device.
+          </p>
+        </div>
+        <img
+          src="/images/foundation.svg"
+          alt="Foundation"
+          className="hidden sm:block h-5 w-auto ml-auto shrink-0 mt-0.5"
+        />
       </div>
       <ExportUnsignedPanel />
       <ImportSignedPanel />

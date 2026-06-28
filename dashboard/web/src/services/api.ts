@@ -426,10 +426,17 @@ export interface ValidateAddressResponse {
   accountNumber: number;
 }
 
+// TxRecipient is one recipient/amount pair; a transaction can pay several at once.
+export interface TxRecipient {
+  address: string;
+  amountAtoms: number;
+}
+
 export interface ConstructTransactionRequest {
   sourceAccount: number;
   address: string;
   amountAtoms: number;
+  outputs?: TxRecipient[];
   sendAll: boolean;
 }
 
