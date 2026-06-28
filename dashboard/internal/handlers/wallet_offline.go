@@ -156,6 +156,12 @@ func BuildSignRequestHandler(w http.ResponseWriter, r *http.Request) {
 			respondDaemonError(w, r, services.LogComponentDcrwallet, err)
 			return
 		}
+		// A missing BIP44 index mapping for an imported xpub account is a client
+		// fixable condition (re-import specifying the account index).
+		if strings.Contains(err.Error(), "BIP44 account index") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

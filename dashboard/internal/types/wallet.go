@@ -44,6 +44,11 @@ type AccountInfo struct {
 	// Reserved marks accounts other daemons bind to by name (mixed/unmixed/
 	// lightning/dex) or the imported bucket; the UI hides their rename action.
 	Reserved bool `json:"reserved"`
+	// Bip44Index is the real BIP44 account index for an imported xpub account
+	// (AccountNumber >= 2^31), recorded at import. Nil/omitted for normal accounts,
+	// whose AccountNumber already is the BIP44 index. Used to label the account and
+	// to drive offline-signing derivation.
+	Bip44Index *uint32 `json:"bip44Index,omitempty"`
 	// Wallet-wide totals (only populated in primary AccountInfo)
 	CumulativeTotal      float64 `json:"cumulativeTotal,omitempty"`
 	TotalSpendable       float64 `json:"totalSpendable,omitempty"`
@@ -87,7 +92,14 @@ type Address struct {
 type ImportXpubRequest struct {
 	Xpub        string `json:"xpub"`
 	AccountName string `json:"accountName"`
-	Rescan      bool   `json:"rescan"`
+	// AccountIndex is the real BIP44 account index (0,1,2...) the xpub was derived
+	// from on the signing device. dcrwallet assigns imported xpub accounts an
+	// internal number >= 2^31, so this records the true index for offline signing
+	// (the device derives m/44'/coin'/AccountIndex'/branch/index). Optional: nil for
+	// a monitor-only xpub with no hardware wallet to spend from; a pointer so an
+	// omitted value is distinguishable from a deliberate 0.
+	AccountIndex *uint32 `json:"accountIndex,omitempty"`
+	Rescan       bool    `json:"rescan"`
 }
 
 type ImportXpubResponse struct {

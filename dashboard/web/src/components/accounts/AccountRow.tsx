@@ -10,14 +10,23 @@ import {
   Vote,
   Edit2,
   ShieldAlert,
+  Eye,
 } from 'lucide-react';
 import { AccountInfo } from '../../services/api';
 import { ExtendedPubkeyReveal } from './ExtendedPubkeyReveal';
 
 const IMPORTED_ACCOUNT_NUMBER = 2147483647;
+// dcrwallet assigns imported xpub accounts numbers at or above 2^31.
+const XPUB_IMPORTED_ACCOUNT_BASE = 2147483648;
 
 export const isImportedAccount = (a: AccountInfo): boolean =>
   a.accountNumber === IMPORTED_ACCOUNT_NUMBER || a.accountName === 'imported';
+
+// isXpubImportedAccount reports a watch-only account added via "Import xpub"
+// (a per-account extended public key), distinct from the private-key "imported"
+// bucket at 2^31-1.
+export const isXpubImportedAccount = (a: AccountInfo): boolean =>
+  a.accountNumber >= XPUB_IMPORTED_ACCOUNT_BASE;
 
 // Reserved accounts (mixed/unmixed/lightning/dex, plus imported) are bound to
 // by other daemons by name and must not be renamed.
@@ -35,6 +44,7 @@ export const AccountRow = ({ account, onRename }: Props) => {
   const [expanded, setExpanded] = useState(false);
   const isImported = isImportedAccount(account);
   const isReserved = isReservedAccount(account);
+  const isXpubImported = isXpubImportedAccount(account);
 
   return (
     <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden">
@@ -57,6 +67,15 @@ export const AccountRow = ({ account, onRename }: Props) => {
                   Imported
                 </span>
               )}
+              {isXpubImported && (
+                <span
+                  title="Watch-only account added from an extended public key."
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary/15 text-primary border border-primary/30"
+                >
+                  <Eye className="h-3 w-3" />
+                  Imported xpub
+                </span>
+              )}
               {account.accountUnlocked && (
                 <span
                   title="This account's signing key is currently unlocked."
@@ -67,7 +86,13 @@ export const AccountRow = ({ account, onRename }: Props) => {
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">Account #{account.accountNumber}</p>
+            <p className="text-xs text-muted-foreground">
+              {isXpubImported
+                ? account.bip44Index !== undefined
+                  ? `BIP44 account ${account.bip44Index}`
+                  : 'Imported xpub'
+                : `Account #${account.accountNumber}`}
+            </p>
           </div>
         </div>
         <div className="text-right">

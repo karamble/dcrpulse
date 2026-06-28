@@ -285,6 +285,12 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "accountName must be 50 characters or fewer", http.StatusBadRequest)
 		return
 	}
+	// AccountIndex is optional (only set when the user will spend from this account
+	// via offline signing). When provided it must be a valid hardened account index.
+	if req.AccountIndex != nil && *req.AccountIndex >= 1<<31 {
+		http.Error(w, "accountIndex must be a BIP44 account index (0 to 2147483647)", http.StatusBadRequest)
+		return
+	}
 	if services.IsReservedAccountName(accountName) {
 		http.Error(w, fmt.Sprintf("%q is a reserved account name", accountName), http.StatusBadRequest)
 		return
@@ -324,6 +330,23 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("Xpub import completed: %v", string(result))
+
+		// If the user supplied a BIP44 account index, record it so offline signing
+		// derives against the right account on the device. The imported account's
+		// dcrwallet number (>= 2^31) is resolved by name. Omitted for a monitor-only
+		// xpub - no mapping is stored.
+		if req.AccountIndex != nil {
+			if accts, aerr := services.FetchAllAccounts(ctx); aerr == nil {
+				for _, a := range accts {
+					if strings.EqualFold(a.AccountName, accountName) {
+						if serr := services.SetXpubAccountIndex(ctx, a.AccountNumber, *req.AccountIndex); serr != nil {
+							log.Printf("Failed to record BIP44 index for account %q: %v", accountName, serr)
+						}
+						break
+					}
+				}
+			}
+		}
 
 		// Step 2: Discover address usage
 		log.Printf("Step 2/3: Discovering address usage across blockchain...")
@@ -373,7 +396,12 @@ func RescanWalletHandler(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		ctx := context.Background()
 
-		// Step 1: Discover address usage via JSON-RPC
+		// Step 1: Discover address usage via JSON-RPC. This scans the gap limit
+		// across every existing account (including imported xpub accounts) for a
+		// watch-only wallet, and re-derives addresses for a seeded wallet. Account
+		// discovery is intentionally not requested: it needs the seed's cointype
+		// private key, which a watch-only wallet does not have, and a seeded wallet
+		// only discovers accounts during the restore wizard.
 		log.Printf("Step 1/2: Discovering address usage across blockchain for all accounts...")
 		_, err := rpc.WalletClient.RawRequest(ctx, "discoverusage", nil)
 		if err != nil {

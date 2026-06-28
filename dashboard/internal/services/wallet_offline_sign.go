@@ -179,10 +179,18 @@ func BuildSignRequest(ctx context.Context, sourceAccount uint32, outputs []types
 		return nil, fmt.Errorf("decode unsigned tx: %w", err)
 	}
 
+	// The device derives keys by BIP44 account index (m/44'/coin'/account'/...).
+	// For an imported xpub account dcrwallet's number is >= 2^31, not the real
+	// index, so resolve the index the xpub was imported under.
+	bip44Account, err := Bip44AccountIndex(ctx, sourceAccount)
+	if err != nil {
+		return nil, err
+	}
+
 	sr := &signRequest{
 		formatVersion: 1,
 		txVersion:     tx.Version,
-		account:       sourceAccount,
+		account:       bip44Account,
 		lockTime:      tx.LockTime,
 		expiry:        tx.Expiry,
 	}

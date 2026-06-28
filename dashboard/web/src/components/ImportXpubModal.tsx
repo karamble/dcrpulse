@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { importXpub, getAccounts } from '../services/api';
+import { useWalletReady } from '../hooks/useWalletReady';
 
 // Reserved system accounts that other daemons / dcrwallet bind to by name and
 // must never be reused for an imported xpub. Mirrors services.IsReservedAccountName.
@@ -17,8 +18,14 @@ interface ImportXpubModalProps {
 }
 
 export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalProps) => {
+  // The BIP44 account index only matters for a watch-only wallet, where imported
+  // per-account xpubs are later spent through offline signing (the device derives
+  // by account index). A normal wallet importing an xpub for monitoring defaults
+  // to account 0 and is not asked.
+  const { isWatchOnly } = useWalletReady();
   const [xpub, setXpub] = useState('');
   const [accountName, setAccountName] = useState('');
+  const [accountIndex, setAccountIndex] = useState('');
   const [existingNames, setExistingNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,6 +53,17 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
           : existingNames.some((n) => n.toLowerCase() === trimmedName.toLowerCase())
             ? `An account named '${trimmedName}' already exists`
             : null;
+
+  const idxTrimmed = accountIndex.trim();
+  const hasIndex = idxTrimmed !== '';
+  const indexNum = Number(idxTrimmed);
+  const indexError = !hasIndex
+    ? null
+    : !/^\d+$/.test(idxTrimmed)
+      ? 'Account index must be a whole number'
+      : !Number.isSafeInteger(indexNum) || indexNum > 2147483647
+        ? 'Account index must be 0 to 2147483647'
+        : null;
 
   const validateXpub = (value: string): boolean => {
     // Decred mainnet xpubs start with "dpub"
@@ -79,11 +97,16 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
       return;
     }
 
+    if (indexError) {
+      setError(indexError);
+      return;
+    }
+
     setLoading(true);
 
     try {
       // Always rescan when importing xpub to find historical transactions
-      const result = await importXpub(xpub.trim(), trimmedName, true);
+      const result = await importXpub(xpub.trim(), trimmedName, hasIndex ? indexNum : undefined, true);
 
       if (result.success) {
         setSuccess(true);
@@ -110,6 +133,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
     if (!loading) {
       setXpub('');
       setAccountName('');
+      setAccountIndex('');
       setError('');
       setSuccess(false);
       onClose();
@@ -219,6 +243,34 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
             )}
           </div>
 
+          {/* Account Index Input - watch-only wallets only (needed for offline signing) */}
+          {isWatchOnly && (
+          <div>
+            <label htmlFor="accountIndex" className="block text-sm font-medium mb-2">
+              Account Index <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <input
+              id="accountIndex"
+              type="text"
+              inputMode="numeric"
+              value={accountIndex}
+              onChange={(e) => setAccountIndex(e.target.value)}
+              disabled={loading || success}
+              placeholder="Leave empty for a monitor-only xpub"
+              className="w-full px-4 py-3 rounded-lg bg-muted/5 border border-border/50 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-50"
+            />
+            {indexError ? (
+              <p className="text-xs text-destructive mt-1">{indexError}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-1">
+                Only needed to spend from this account via offline signing on a hardware wallet.
+                Leave empty for a monitor-only xpub; otherwise enter the BIP44 account number you
+                exported from the device (0, 1, 2, ...).
+              </p>
+            )}
+          </div>
+          )}
+
           {/* Info about automatic rescan */}
           <div className="p-4 rounded-lg bg-info/5 border border-info/10">
             <p className="text-sm text-muted-foreground">
@@ -247,7 +299,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
             </button>
             <button
               type="submit"
-              disabled={loading || success || trimmedName.length === 0 || !!nameError}
+              disabled={loading || success || trimmedName.length === 0 || !!nameError || !!indexError}
               className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all disabled:opacity-50 flex items-center gap-2"
             >
               {loading ? (

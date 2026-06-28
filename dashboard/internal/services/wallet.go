@@ -148,6 +148,69 @@ func ActiveWalletIsWatchOnly(ctx context.Context) bool {
 	return isWatchOnly
 }
 
+// importedXpubAccountBase is the lowest dcrwallet account number assigned to an
+// imported xpub account; normal BIP44 accounts are below it.
+const importedXpubAccountBase = uint32(1) << 31
+
+// loadXpubAccountIndexes returns the active wallet's map of imported xpub account
+// number (stringified) -> real BIP44 account index. Missing/unreadable config
+// yields an empty map.
+func loadXpubAccountIndexes(ctx context.Context) map[string]uint32 {
+	m := map[string]uint32{}
+	name := ActiveWalletName()
+	network, err := CurrentNetwork(ctx)
+	if name == "" || err != nil {
+		return m
+	}
+	cfg, err := config.LoadWalletCfg(network, name)
+	if err != nil {
+		return m
+	}
+	_, _ = cfg.Get(config.KeyXpubAccountIndexes, &m)
+	if m == nil {
+		m = map[string]uint32{}
+	}
+	return m
+}
+
+// SetXpubAccountIndex records the real BIP44 account index for an imported xpub
+// account, so offline signing can derive against the correct account on the device.
+func SetXpubAccountIndex(ctx context.Context, acctNum, bip44Index uint32) error {
+	name := ActiveWalletName()
+	network, err := CurrentNetwork(ctx)
+	if name == "" || err != nil {
+		return fmt.Errorf("wallet config not available")
+	}
+	cfg, err := config.LoadWalletCfg(network, name)
+	if err != nil {
+		return err
+	}
+	m := map[string]uint32{}
+	_, _ = cfg.Get(config.KeyXpubAccountIndexes, &m)
+	if m == nil {
+		m = map[string]uint32{}
+	}
+	m[fmt.Sprintf("%d", acctNum)] = bip44Index
+	if err := cfg.Set(config.KeyXpubAccountIndexes, m); err != nil {
+		return err
+	}
+	return cfg.Save()
+}
+
+// Bip44AccountIndex maps a dcrwallet account number to its real BIP44 account
+// index. Normal accounts (< 2^31) are their own index. Imported xpub accounts
+// (>= 2^31) resolve through the recorded mapping; a missing entry is an error so
+// offline signing never derives against the wrong account on the device.
+func Bip44AccountIndex(ctx context.Context, acctNum uint32) (uint32, error) {
+	if acctNum < importedXpubAccountBase {
+		return acctNum, nil
+	}
+	if idx, ok := loadXpubAccountIndexes(ctx)[fmt.Sprintf("%d", acctNum)]; ok {
+		return idx, nil
+	}
+	return 0, fmt.Errorf("unknown BIP44 account index for imported account %d; re-import its xpub specifying the account index", acctNum)
+}
+
 func FetchWalletDashboardData() (*types.WalletDashboardData, error) {
 	ctx := context.Background()
 	return FetchWalletDashboardDataWithContext(ctx)
@@ -376,8 +439,18 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 		}
 	}
 
+	xpubIndexes := loadXpubAccountIndexes(ctx)
+
 	accounts := make([]types.AccountInfo, 0, len(balanceResp.Balances))
 	for _, acct := range balanceResp.Balances {
+		num := numbers[acct.AccountName]
+		var bip44Index *uint32
+		if num >= importedXpubAccountBase {
+			if idx, ok := xpubIndexes[fmt.Sprintf("%d", num)]; ok {
+				idx := idx
+				bip44Index = &idx
+			}
+		}
 		accounts = append(accounts, types.AccountInfo{
 			AccountName:             acct.AccountName,
 			TotalBalance:            acct.Total,
@@ -388,10 +461,11 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 			VotingAuthority:         acct.VotingAuthority,
 			ImmatureCoinbaseRewards: acct.ImmatureCoinbaseRewards,
 			ImmatureStakeGeneration: acct.ImmatureStakeGeneration,
-			AccountNumber:           numbers[acct.AccountName],
+			AccountNumber:           num,
 			AccountEncrypted:        encrypted[acct.AccountName],
 			AccountUnlocked:         unlocked[acct.AccountName],
 			Reserved:                IsReservedAccountName(acct.AccountName),
+			Bip44Index:              bip44Index,
 		})
 	}
 

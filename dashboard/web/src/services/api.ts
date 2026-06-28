@@ -210,6 +210,9 @@ export interface AccountInfo {
   accountUnlocked: boolean;
   // Reserved accounts (mixed/unmixed/lightning/dex/imported) cannot be renamed.
   reserved?: boolean;
+  // Real BIP44 account index for an imported xpub account (accountNumber >= 2^31),
+  // recorded at import. Absent for normal accounts (accountNumber is the index).
+  bip44Index?: number;
   // Wallet-wide totals (only on primary AccountInfo)
   cumulativeTotal?: number;
   totalSpendable?: number;
@@ -288,6 +291,7 @@ export interface WalletDashboardData {
 export interface ImportXpubRequest {
   xpub: string;
   accountName: string;
+  accountIndex?: number;
   rescan: boolean;
 }
 
@@ -308,12 +312,16 @@ export const getWalletDashboard = async (): Promise<WalletDashboardData> => {
   return response.data;
 };
 
-export const importXpub = async (xpub: string, accountName: string, rescan: boolean): Promise<ImportXpubResponse> => {
-  const response = await api.post<ImportXpubResponse>('/wallet/importxpub', {
-    xpub,
-    accountName,
-    rescan
-  });
+export const importXpub = async (
+  xpub: string,
+  accountName: string,
+  accountIndex: number | undefined,
+  rescan: boolean,
+): Promise<ImportXpubResponse> => {
+  const body: ImportXpubRequest = { xpub, accountName, rescan };
+  // Only send the index when the user supplied one (monitor-only xpubs omit it).
+  if (accountIndex !== undefined) body.accountIndex = accountIndex;
+  const response = await api.post<ImportXpubResponse>('/wallet/importxpub', body);
   return response.data;
 };
 

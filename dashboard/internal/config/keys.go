@@ -17,6 +17,10 @@ const (
 	KeyLastAccess        = "last_access"
 	KeyIsWatchOnly       = "is_watch_only"
 	KeyHiddenAccounts    = "hidden_accounts"
+	// KeyXpubAccountIndexes maps an imported xpub account's dcrwallet account
+	// number (>= 2^31, stringified) to its real BIP44 account index. dcrpulse-only
+	// (not a Decrediton key); needed because the device derives keys by BIP44 index.
+	KeyXpubAccountIndexes = "xpub_account_indexes"
 	KeyGapLimit          = "gap_limit"
 	KeyDiscoverAccounts  = "discover_accounts"
 	KeyMixedAccountCfg   = "mixed_account_cfg"
