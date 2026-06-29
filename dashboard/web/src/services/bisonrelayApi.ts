@@ -1722,7 +1722,12 @@ export interface BisonrelayPageFetchRequest {
 export const fetchBisonrelayPage = async (
   req: BisonrelayPageFetchRequest,
 ): Promise<BisonrelayFetchedPage> => {
-  const { data } = await api.post<BisonrelayFetchedPage>('/br/pages/fetch', req);
+  // No client-side timeout: a page is fetched over the relay and its transfer
+  // size and time are unbounded, so the global instance timeout must not cut
+  // it off. The request stays cancelable by navigating away.
+  const { data } = await api.post<BisonrelayFetchedPage>('/br/pages/fetch', req, {
+    timeout: 0,
+  });
   return data;
 };
 

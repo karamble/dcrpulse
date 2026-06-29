@@ -49,7 +49,13 @@ var (
 	// deadline: brclientd builds the entire backup tarball before sending
 	// headers, which can exceed the stream client's 60s on multi-GB states.
 	brclientdBackupHTTPClient *http.Client
-	brclientdClientMu         sync.Mutex
+	// brclientdPagesHTTPClient has no overall timeout and no response-header
+	// deadline: a page fetch travels over the relay and brclientd buffers the
+	// whole reply before sending headers, so the transfer size and time are
+	// unbounded. Total time is bounded by the request context (the caller's
+	// own connection) instead of a fixed deadline.
+	brclientdPagesHTTPClient *http.Client
+	brclientdClientMu        sync.Mutex
 )
 
 // InitBrclientdConfig records the brclientd clientrpc connection settings.
@@ -62,6 +68,7 @@ func InitBrclientdConfig(cfg BrclientdConfig) {
 	brclientdHTTPClient = nil
 	brclientdStreamHTTPClient = nil
 	brclientdBackupHTTPClient = nil
+	brclientdPagesHTTPClient = nil
 }
 
 // UpdateBrclientdCerts repoints brclientd at a different wallet's identity certs
@@ -74,6 +81,7 @@ func UpdateBrclientdCerts(serverCertPath, clientCertPath, clientKeyPath string) 
 	brclientdHTTPClient = nil
 	brclientdStreamHTTPClient = nil
 	brclientdBackupHTTPClient = nil
+	brclientdPagesHTTPClient = nil
 	brclientdClientMu.Unlock()
 	// Drop the live WS so it redials and rebuilds TLS with the new cert
 	// immediately instead of waiting for its current socket to die.
@@ -1518,6 +1526,13 @@ func brclientdPostJSONRaw(ctx context.Context, path string, body any) (json.RawM
 	if err != nil {
 		return nil, err
 	}
+	return brclientdDoPostJSONRaw(ctx, cli, path, body)
+}
+
+// brclientdDoPostJSONRaw issues the POST with a caller-supplied client so the
+// caller can pick a timeout policy that fits the endpoint (e.g. the no-deadline
+// pages client for an unbounded /pages/fetch transfer).
+func brclientdDoPostJSONRaw(ctx context.Context, cli *http.Client, path string, body any) (json.RawMessage, error) {
 	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
 		return nil, errors.New("brclientd: status host/port not configured")
 	}
@@ -1552,7 +1567,11 @@ func brclientdPostJSONRaw(ctx context.Context, path string, body any) (json.RawM
 // parent_page?, data?, async_target_id?}. Returns the raw {session_id,
 // page_id, parent_page, status, meta, markdown, async_target_id} JSON.
 func BrclientdPagesFetch(ctx context.Context, body any) (json.RawMessage, error) {
-	return brclientdPostJSONRaw(ctx, "/pages/fetch", body)
+	cli, err := brclientdPagesClient()
+	if err != nil {
+		return nil, err
+	}
+	return brclientdDoPostJSONRaw(ctx, cli, "/pages/fetch", body)
 }
 
 // BrclientdPagesLocalList lists the markdown pages this node hosts.
@@ -1726,6 +1745,31 @@ func brclientdBackupClient() (*http.Client, error) {
 		},
 	}
 	return brclientdBackupHTTPClient, nil
+}
+
+// brclientdPagesClient is the variant for /pages/fetch. A page fetched over the
+// relay has unbounded transfer size and time, and brclientd buffers the whole
+// reply before sending headers, so neither an overall timeout nor a
+// response-header deadline can apply without cutting off a legitimate transfer.
+// Total time is bounded by the request context (the originating connection)
+// instead, so a navigated-away fetch is cancelled rather than timed out.
+func brclientdPagesClient() (*http.Client, error) {
+	brclientdClientMu.Lock()
+	defer brclientdClientMu.Unlock()
+	if brclientdPagesHTTPClient != nil {
+		return brclientdPagesHTTPClient, nil
+	}
+	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
+	if err != nil {
+		log.Printf("brclientd certs not yet available: %v (will retry on next call)", err)
+		return nil, err
+	}
+	brclientdPagesHTTPClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsCfg,
+		},
+	}
+	return brclientdPagesHTTPClient, nil
 }
 
 // BrclientdWSDialer returns a gorilla-websocket-compatible dialer plus the
