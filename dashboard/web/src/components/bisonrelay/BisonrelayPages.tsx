@@ -31,6 +31,7 @@ import {
   saveBisonrelayLocalPage,
 } from '../../services/bisonrelayApi';
 import { AuthorAvatar } from './AuthorAvatar';
+import { BisonrelayUserBar } from './BisonrelayUserBar';
 import { BisonrelayEditor, composeBRBody, EditorEmbedMap } from './editor';
 import { isArticlePath, isBlogManaged, rebuildBlogIndex } from '../../services/bisonrelayStoreBlog';
 import { BisonrelayStoreModePanel } from './BisonrelayStoreMode';
@@ -549,8 +550,24 @@ const PageView = ({
   const [segments, setSegments] = useState<BisonrelayPageSegment[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Contacts power the page-owner info bar (avatar, nick, tip, user menu) shown
+  // when visiting someone else's pages.
+  const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
 
   const current = history[cursor];
+
+  // Load contacts once, and on demand after a menu action (e.g. a rename).
+  // Failure is non-fatal: the info bar just won't render for an unknown uid.
+  const refreshContacts = useCallback(() => {
+    getBisonrelayContacts()
+      .then(setContacts)
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    refreshContacts();
+  }, [refreshContacts]);
+
+  const peerContact = contacts.find((c) => c.id?.identity === current?.uid);
 
   const load = useCallback(async (target: PageTarget): Promise<PageTarget> => {
     setLoading(true);
@@ -673,8 +690,8 @@ const PageView = ({
   const title = current ? `${shortUid(current.uid, ownId)} / ${current.path.join('/')}` : '';
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
+    <div className="relative space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={goBack}
@@ -701,9 +718,21 @@ const PageView = ({
         >
           <RefreshCw className="h-4 w-4" />
         </button>
-        <div className="flex-1 min-w-0 truncate font-mono text-xs text-muted-foreground" title={title}>
+        <div
+          className="flex-1 min-w-0 truncate font-mono text-xs text-muted-foreground"
+          title={title}
+        >
           {title}
         </div>
+        {current && current.uid !== ownId && (
+          <BisonrelayUserBar
+            uid={current.uid}
+            contact={peerContact}
+            contacts={contacts}
+            onContactsChanged={refreshContacts}
+            className="shrink-0"
+          />
+        )}
       </div>
 
       {err && (
