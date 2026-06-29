@@ -193,7 +193,10 @@ type BRPageSegment struct {
 	SectionID string `json:"section_id,omitempty"`
 	// Grid marks segments emitted inside a --grid-- / --/grid-- block so the
 	// viewer can lay that contiguous run out in columns instead of stacking.
+	// Grid2 is the same idea for --grid2-- / --/grid2-- but a one-per-row blog
+	// layout (a wide row per item) rather than a multi-column grid.
 	Grid      bool   `json:"grid,omitempty"`
+	Grid2     bool   `json:"grid2,omitempty"`
 	HTML      string `json:"html,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Mime      string `json:"mime,omitempty"`
@@ -243,6 +246,7 @@ func SplitAndRenderBRPage(src string) []BRPageSegment {
 	var textBuf []string
 	inForm := false
 	inGrid := false
+	inGrid2 := false
 	var formLines []string
 
 	flushText := func() {
@@ -250,9 +254,12 @@ func SplitAndRenderBRPage(src string) []BRPageSegment {
 			return
 		}
 		segs := renderPageTextRun(strings.Join(textBuf, "\n"), section)
-		if inGrid {
-			for i := range segs {
+		for i := range segs {
+			if inGrid {
 				segs[i].Grid = true
+			}
+			if inGrid2 {
+				segs[i].Grid2 = true
 			}
 		}
 		out = append(out, segs...)
@@ -279,6 +286,17 @@ func SplitAndRenderBRPage(src string) []BRPageSegment {
 		case line == "--/grid--":
 			flushText()
 			inGrid = false
+		case line == "--grid2--":
+			flushText()
+			inGrid2 = true
+		case line == "--/grid2--":
+			flushText()
+			inGrid2 = false
+		case line == "--endofpost--":
+			// The intro/main cutoff is meaningful to the blog index (which shows
+			// only the text before it); when viewing a full page it is dropped so
+			// the marker never renders as literal text and the body still shows.
+			continue
 		case pageSectionStartRE.MatchString(line):
 			flushText()
 			section = pageSectionStartRE.FindStringSubmatch(line)[1]

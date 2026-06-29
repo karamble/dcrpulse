@@ -21,14 +21,18 @@ import {
   BisonrelayLocalPage,
   BisonrelayPageFormField,
   BisonrelayPageSegment,
+  BisonrelayContact,
   deleteBisonrelayLocalPage,
   fetchBisonrelayPage,
+  getBisonrelayContacts,
   getBisonrelayIdentity,
   getBisonrelayLocalPage,
   listBisonrelayLocalPages,
   saveBisonrelayLocalPage,
 } from '../../services/bisonrelayApi';
+import { AuthorAvatar } from './AuthorAvatar';
 import { BisonrelayEditor, composeBRBody, EditorEmbedMap } from './editor';
+import { isArticlePath, isBlogManaged, rebuildBlogIndex } from '../../services/bisonrelayStoreBlog';
 import { BisonrelayStoreModePanel } from './BisonrelayStoreMode';
 import { BisonrelayStoreManager } from './BisonrelayStoreManager';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
@@ -78,6 +82,8 @@ const readHash = (): View => {
   if (rest.startsWith('edit/')) {
     return { kind: 'edit', name: decodeURIComponent(rest.slice('edit/'.length)) };
   }
+  // Bare "visit" (no uid) is the address-book landing: pick a contact to visit.
+  if (rest === 'visit') return { kind: 'visit', uid: '', path: [] };
   if (rest.startsWith('visit/')) {
     const segs = rest
       .slice('visit/'.length)
@@ -115,13 +121,15 @@ export const BisonrelayPages = () => {
       case 'edit':
         return <PageEditorView ownId={ownId} name={view.name} />;
       case 'visit':
-        return (
+        return view.uid ? (
           <PageView
             key={`${view.uid}/${view.path.join('/')}`}
             initialUid={view.uid}
-            initialPath={view.path}
+            initialPath={view.path.length ? view.path : ['index.md']}
             ownId={ownId}
           />
+        ) : (
+          <VisitContactsView />
         );
       default:
         return <MyPagesView ownId={ownId} />;
@@ -181,6 +189,73 @@ const PagesSidebar = ({ active, ownId }: { active: 'mine' | 'visit'; ownId: stri
   );
 };
 
+// ---- Visit (address book) ------------------------------------------------
+
+const visitNick = (c: BisonrelayContact): string =>
+  c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || 'unknown';
+
+// VisitContactsView is the address-book landing for "Visit": a grid of contacts
+// (avatar + nick); picking one opens that contact's hosted index.md over BR.
+const VisitContactsView = () => {
+  const [contacts, setContacts] = useState<BisonrelayContact[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    getBisonrelayContacts()
+      .then((cs) => {
+        const withId = cs.filter((c) => c.id?.identity);
+        withId.sort((a, b) =>
+          visitNick(a).toLowerCase().localeCompare(visitNick(b).toLowerCase()),
+        );
+        setContacts(withId);
+        setErr(null);
+      })
+      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Could not load contacts'));
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold">Visit a contact&apos;s site</h2>
+        <p className="text-xs text-muted-foreground">
+          Pick a contact to open the pages they host over Bison Relay.
+        </p>
+      </div>
+      {err && (
+        <div className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
+          {err}
+        </div>
+      )}
+      {contacts === null ? (
+        <div className="text-sm text-muted-foreground">Loading contacts…</div>
+      ) : contacts.length === 0 ? (
+        <div className="rounded-xl border border-border/50 bg-gradient-card p-6 text-sm text-muted-foreground">
+          No contacts yet. Add some from the chat first, then come back to visit their pages.
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          {contacts.map((c) => {
+            const uid = c.id?.identity ?? '';
+            const nick = visitNick(c);
+            return (
+              <button
+                key={uid}
+                type="button"
+                onClick={() => navigateTo(`pages/visit/${uid}/index.md`)}
+                title={`Visit ${nick}'s pages`}
+                className="flex flex-col items-center gap-2 rounded-xl border border-border/50 bg-gradient-card p-4 text-center transition-colors hover:border-primary/30 hover:bg-muted/20"
+              >
+                <AuthorAvatar uid={uid} nick={nick} avatarB64={c.id?.avatar} size="lg" />
+                <span className="text-sm font-medium text-foreground truncate max-w-full">{nick}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ---- My Pages (hosting) --------------------------------------------------
 
 const MyPagesView = ({ ownId }: { ownId: string }) => {
@@ -214,6 +289,27 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
     }
   };
 
+  const [rebuilding, setRebuilding] = useState(false);
+  const onRebuildBlog = async () => {
+    if (
+      !window.confirm(
+        'Rebuild index.md as a blog landing from your articles/ pages? This overwrites index.md.',
+      )
+    )
+      return;
+    setRebuilding(true);
+    try {
+      const n = await rebuildBlogIndex();
+      setErr(null);
+      refresh();
+      window.alert(`Blog index rebuilt from ${n} article${n === 1 ? '' : 's'}.`);
+    } catch (e: any) {
+      setErr(e?.response?.data || e?.message || 'Could not rebuild blog index');
+    } finally {
+      setRebuilding(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <BisonrelayStoreModePanel onModeChange={(m) => setHostMode(m.mode)} />
@@ -235,14 +331,25 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
             Markdown pages you host. Others fetch them over Bison Relay; index.md is your root.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => navigateTo('pages/new')}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          New page
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onRebuildBlog}
+            disabled={rebuilding}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted/40 text-foreground text-sm font-medium hover:bg-muted/60 disabled:opacity-50 transition-colors"
+            title="Generate index.md as a blog feed from your articles/ pages"
+          >
+            {rebuilding ? 'Rebuilding…' : 'Rebuild blog index'}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigateTo('pages/new')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            New page
+          </button>
+        </div>
       </div>
 
       {err && (
@@ -343,6 +450,15 @@ const PageEditorView = ({ ownId, name }: { ownId: string; name?: string }) => {
     setSaving(true);
     try {
       await saveBisonrelayLocalPage(finalName, composeBRBody(body, embeds));
+      // When an article is saved into a managed blog, refresh the generated
+      // index.md so the new/edited article appears in the listing.
+      if (isArticlePath(finalName)) {
+        try {
+          if (await isBlogManaged()) await rebuildBlogIndex();
+        } catch {
+          /* best-effort; the index can be rebuilt manually */
+        }
+      }
       navigateTo('pages');
     } catch (e: any) {
       setErr(e?.message || 'Save failed');
@@ -742,10 +858,60 @@ const PageSegments = ({
     );
   };
 
-  // Walk segments, batching contiguous grid-tagged runs into a grid container
-  // and rendering everything else inline (unchanged from the flat layout).
+  // renderGrid2Run lays a grid2 run out as a one-per-row blog feed of cards that
+  // mirror the posts feed: a gradient panel with a full-width hero image on top
+  // and the caption (title + full intro) below. Each image embed pairs with its
+  // following text; a lone text segment renders inline.
+  const renderGrid2Run = (run: BisonrelayPageSegment[], key: number) => {
+    const rows: ReactNode[] = [];
+    for (let j = 0; j < run.length; j++) {
+      const seg = run[j];
+      const isImage = seg.kind === 'embed' && !!seg.data_b64 && isImageMime(seg.mime);
+      if (isImage) {
+        const next = run[j + 1];
+        const caption = next && next.kind === 'text' ? next : null;
+        if (caption) j++;
+        const src = `data:${seg.mime};base64,${seg.data_b64}`;
+        rows.push(
+          <article
+            key={j}
+            className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden transition-colors hover:border-primary/30"
+          >
+            <img src={src} alt={seg.alt || ''} loading="lazy" className="block w-full max-h-56 object-cover" />
+            {caption && (
+              <div
+                className={`${BR_PROSE_CLASSES} p-4`}
+                dangerouslySetInnerHTML={{ __html: caption.html || '' }}
+              />
+            )}
+          </article>,
+        );
+        continue;
+      }
+      rows.push(<div key={j}>{renderSegment(seg, j)}</div>);
+    }
+    return (
+      <div key={`grid2-${key}`} className="space-y-4">
+        {rows}
+      </div>
+    );
+  };
+
+  // Walk segments, batching contiguous grid/grid2 runs into their containers and
+  // rendering everything else inline (unchanged from the flat layout).
   const blocks: ReactNode[] = [];
   for (let i = 0; i < segments.length; i++) {
+    if (segments[i].grid2) {
+      const start = i;
+      const run: BisonrelayPageSegment[] = [];
+      while (i < segments.length && segments[i].grid2) {
+        run.push(segments[i]);
+        i++;
+      }
+      i--;
+      blocks.push(renderGrid2Run(run, start));
+      continue;
+    }
     if (segments[i].grid) {
       const start = i;
       const run: BisonrelayPageSegment[] = [];
@@ -818,6 +984,10 @@ const PageForm = ({
   // A malformed author regexp is treated as no constraint rather than blocking.
   const validateField = (f: BisonrelayPageFormField, value: string): string | null => {
     if (!f.regexp) return null;
+    // A visited page supplies this regexp; bound the pattern and the tested value
+    // so a catastrophic-backtracking pattern can't freeze the tab (JS has no regex
+    // timeout). Over-long inputs are treated as no-constraint rather than risking it.
+    if (f.regexp.length > 200 || value.length > 4096) return null;
     try {
       return new RegExp(f.regexp).test(value) ? null : f.regexpstr || 'Invalid value';
     } catch {

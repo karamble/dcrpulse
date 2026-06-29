@@ -1680,8 +1680,10 @@ export interface BisonrelayPageSegment {
   kind: 'text' | 'embed' | 'form';
   section_id?: string;
   // grid marks segments emitted inside a --grid-- / --/grid-- block so the
-  // viewer lays that contiguous run out in columns instead of stacking.
+  // viewer lays that contiguous run out in columns instead of stacking; grid2 is
+  // the --grid2-- one-per-row blog layout.
   grid?: boolean;
+  grid2?: boolean;
   html?: string;
   name?: string;
   mime?: string;
