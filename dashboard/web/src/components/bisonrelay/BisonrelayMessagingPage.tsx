@@ -21,6 +21,7 @@ import {
   UserPlus,
   Users,
   X,
+  Zap,
 } from 'lucide-react';
 import {
   ARCHIVED_GROUP_ID,
@@ -64,6 +65,8 @@ import {
 import { linkifyChatText } from './chatLinkify';
 import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './editor';
 import { EmojiPicker } from './EmojiPicker';
+import { ChatFormatMenu } from './ChatFormatMenu';
+import { TipModal } from './TipModal';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { AuthorAvatar } from './AuthorAvatar';
@@ -134,6 +137,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [messagesErr, setMessagesErr] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [showTip, setShowTip] = useState(false);
   const [showInviteCreate, setShowInviteCreate] = useState(false);
   const [showInviteAccept, setShowInviteAccept] = useState(false);
   const [showJoinDecredPulse, setShowJoinDecredPulse] = useState(false);
@@ -1176,6 +1180,26 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     });
   };
 
+  // wrapDraftSelection wraps the composer's current selection (or inserts the
+  // placeholder when nothing is selected) with markdown delimiters - the
+  // actions behind the chat format menu. Mirrors the editor's wrapSelection.
+  const wrapDraftSelection = (left: string, right: string, placeholder: string) => {
+    const el = draftInputRef.current;
+    if (!el) {
+      setDraft((d) => d + left + placeholder + right);
+      return;
+    }
+    const start = el.selectionStart ?? draft.length;
+    const end = el.selectionEnd ?? draft.length;
+    const content = draft.slice(start, end) || placeholder;
+    setDraft(draft.slice(0, start) + left + content + right + draft.slice(end));
+    queueMicrotask(() => {
+      el.focus();
+      const innerStart = start + left.length;
+      el.setSelectionRange(innerStart, innerStart + content.length);
+    });
+  };
+
   return (
     <ImageViewerCtx.Provider value={openImageViewer}>
     <div className="flex flex-col">
@@ -1189,6 +1213,16 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           showAlt={false}
           onCancel={() => setPendingImage(null)}
           onAttach={handleImageAttach}
+        />
+      )}
+      {showTip && selectedContact && (
+        <TipModal
+          nick={displayNick(selectedContact)}
+          uid={selectedContact.id?.identity ?? ''}
+          onClose={() => setShowTip(false)}
+          onSubmit={(dcr) =>
+            handleTip(selectedContact.id?.identity ?? '', displayNick(selectedContact), dcr)
+          }
         />
       )}
     {showGroupMgmt && <GroupManagementModal onClose={() => setShowGroupMgmt(false)} />}
@@ -1508,22 +1542,13 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   <AlertCircle className="h-3 w-3" /> {attachErr}
                 </p>
               )}
-              <div className="flex items-end gap-2">
+              <div className="flex items-end gap-1 rounded-2xl border border-border bg-background px-2 py-1 transition-colors focus-within:border-primary">
                 <input
                   ref={fileInputRef}
                   type="file"
                   className="hidden"
                   onChange={handleAttachPick}
                 />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={sending}
-                  title="Attach a file"
-                  className="shrink-0 p-2 rounded-lg bg-muted/20 hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </button>
                 <EmojiPicker onPick={insertEmojiAtCursor} disabled={sending} />
                 <textarea
                   ref={draftInputRef}
@@ -1536,17 +1561,43 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                       e.currentTarget.form?.requestSubmit();
                     }
                   }}
-                  placeholder="Type a message…"
+                  placeholder={
+                    selectedContact ? `Message ${displayNick(selectedContact)}…` : 'Type a message…'
+                  }
                   disabled={sending}
-                  className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-background border border-border text-foreground leading-normal resize-none overflow-y-auto max-h-[9rem] focus:outline-none focus:border-primary disabled:opacity-50"
+                  className="flex-1 min-w-0 px-1 py-1.5 bg-transparent text-foreground leading-normal resize-none overflow-y-auto max-h-[9rem] focus:outline-none disabled:opacity-50"
                 />
+                <ChatFormatMenu onWrap={wrapDraftSelection} disabled={sending} />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending}
+                  title="Attach a file"
+                  aria-label="Attach a file"
+                  className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
+                {selectedContact && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTip(true)}
+                    disabled={sending}
+                    title={`Pay a tip to ${displayNick(selectedContact)}`}
+                    aria-label="Pay tip"
+                    className="shrink-0 p-2 rounded-lg text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+                  >
+                    <Zap className="h-4 w-4" />
+                  </button>
+                )}
                 <button
                   type="submit"
                   disabled={(!draft.trim() && !attachment) || sending}
-                  className="shrink-0 px-3 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                  title="Send"
+                  aria-label="Send"
+                  className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  <span className="hidden sm:inline">Send</span>
                 </button>
               </div>
             </form>
