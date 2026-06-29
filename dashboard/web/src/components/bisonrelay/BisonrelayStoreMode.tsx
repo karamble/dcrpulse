@@ -7,6 +7,7 @@ import { AlertTriangle, FileText, Loader2, PowerOff, Store } from 'lucide-react'
 import {
   BisonrelayStoreMode,
   getBisonrelayStoreMode,
+  getBisonrelayStoreTemplates,
   setBisonrelayStoreMode,
 } from '../../services/bisonrelayApi';
 
@@ -29,6 +30,17 @@ export const BisonrelayStoreModePanel = ({
   const [payType, setPayType] = useState('ln');
   const [account, setAccount] = useState('');
   const [shipCharge, setShipCharge] = useState('0');
+  // Whether a storefront already exists on disk (templates present). When it
+  // does, returning to it is a one-click switch using the saved settings rather
+  // than a fresh setup.
+  const [storeExists, setStoreExists] = useState(false);
+
+  // A storefront's templates persist on disk across off/pages, so their presence
+  // means a store was already configured here.
+  const refreshExists = () =>
+    getBisonrelayStoreTemplates()
+      .then((t) => setStoreExists(t.length > 0))
+      .catch(() => {});
 
   useEffect(() => {
     getBisonrelayStoreMode()
@@ -41,6 +53,7 @@ export const BisonrelayStoreModePanel = ({
         onModeChange?.(m);
       })
       .catch((e: any) => setErr(e?.response?.data || e?.message || 'Could not load hosting mode'));
+    refreshExists();
     // onModeChange is a stable callback from the host; run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -54,6 +67,7 @@ export const BisonrelayStoreModePanel = ({
       setSetupOpen(false);
       setLeaveTarget(null);
       onModeChange?.(m);
+      refreshExists();
     } catch (e: any) {
       setErr(e?.response?.data || e?.message || 'Could not switch hosting mode');
     } finally {
@@ -105,6 +119,27 @@ export const BisonrelayStoreModePanel = ({
       className="px-3 py-1.5 rounded-md bg-muted/40 text-foreground text-sm font-medium hover:bg-muted/60 disabled:opacity-50"
     >
       {label}
+    </button>
+  );
+
+  // Entry into the storefront: a one-click switch reusing saved settings when a
+  // store already exists, or the first-time setup form otherwise.
+  const storeEntryButton = storeExists ? (
+    <button
+      type="button"
+      disabled={saving}
+      onClick={() => apply({ mode: 'store', ...settings() })}
+      className="px-3 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30 disabled:opacity-50"
+    >
+      {saving ? 'Switching...' : 'Switch to storefront'}
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={() => setSetupOpen(true)}
+      className="px-3 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30"
+    >
+      Set up a storefront
     </button>
   );
 
@@ -218,24 +253,12 @@ export const BisonrelayStoreModePanel = ({
           ) : isPages ? (
             <>
               {switchButton('Deactivate hosting', () => apply({ mode: 'off', ...settings() }))}
-              <button
-                type="button"
-                onClick={() => setSetupOpen(true)}
-                className="px-3 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30"
-              >
-                Set up a storefront
-              </button>
+              {storeEntryButton}
             </>
           ) : (
             <>
               {switchButton('Host static pages', () => apply({ mode: 'pages', ...settings() }))}
-              <button
-                type="button"
-                onClick={() => setSetupOpen(true)}
-                className="px-3 py-1.5 rounded-md bg-primary/20 text-primary text-sm font-semibold hover:bg-primary/30"
-              >
-                Set up a storefront
-              </button>
+              {storeEntryButton}
             </>
           )}
         </div>

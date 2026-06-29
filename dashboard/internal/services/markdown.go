@@ -191,6 +191,9 @@ func SplitAndRenderBRPostBody(src string) []BRPostBodySegment {
 type BRPageSegment struct {
 	Kind      string `json:"kind"` // "text" | "embed" | "form"
 	SectionID string `json:"section_id,omitempty"`
+	// Grid marks segments emitted inside a --grid-- / --/grid-- block so the
+	// viewer can lay that contiguous run out in columns instead of stacking.
+	Grid      bool   `json:"grid,omitempty"`
 	HTML      string `json:"html,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Mime      string `json:"mime,omitempty"`
@@ -239,13 +242,20 @@ func SplitAndRenderBRPage(src string) []BRPageSegment {
 	section := ""
 	var textBuf []string
 	inForm := false
+	inGrid := false
 	var formLines []string
 
 	flushText := func() {
 		if len(textBuf) == 0 {
 			return
 		}
-		out = append(out, renderPageTextRun(strings.Join(textBuf, "\n"), section)...)
+		segs := renderPageTextRun(strings.Join(textBuf, "\n"), section)
+		if inGrid {
+			for i := range segs {
+				segs[i].Grid = true
+			}
+		}
+		out = append(out, segs...)
 		textBuf = textBuf[:0]
 	}
 
@@ -263,6 +273,12 @@ func SplitAndRenderBRPage(src string) []BRPageSegment {
 		case line == "--form--":
 			flushText()
 			inForm = true
+		case line == "--grid--":
+			flushText()
+			inGrid = true
+		case line == "--/grid--":
+			flushText()
+			inGrid = false
 		case pageSectionStartRE.MatchString(line):
 			flushText()
 			section = pageSectionStartRE.FindStringSubmatch(line)[1]

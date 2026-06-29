@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, MouseEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
 import { isImageMime } from './embedParser';
 import {
@@ -659,53 +659,110 @@ const PageSegments = ({
     if (resolved) onNavigate(resolved.uid, resolved.path);
   };
 
+  // renderSegment renders one non-grid segment (text, image/file embed, form).
+  const renderSegment = (seg: BisonrelayPageSegment, i: number) => {
+    if (seg.kind === 'text' && seg.html) {
+      return (
+        <div key={i} className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: seg.html }} />
+      );
+    }
+    if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
+      return <DownloadEmbed key={i} seg={seg} uid={currentUid} />;
+    }
+    if (seg.kind === 'embed' && seg.data_b64) {
+      const isImage = isImageMime(seg.mime);
+      if (isImage) {
+        const src = `data:${seg.mime};base64,${seg.data_b64}`;
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setViewer({ src, name: seg.name || seg.filename || 'image', mime: seg.mime || '' })}
+            className="block p-0 border-0 bg-transparent cursor-zoom-in"
+          >
+            <img
+              src={src}
+              alt={seg.alt || seg.name || ''}
+              className="rounded-lg border border-border/40 max-w-full h-auto"
+            />
+          </button>
+        );
+      }
+      const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
+      return (
+        <a
+          key={i}
+          href={href}
+          download={seg.name || 'attachment'}
+          className="inline-block max-w-full break-words text-xs text-primary underline hover:no-underline"
+        >
+          {seg.name || 'attachment'} ({seg.mime || 'binary'})
+        </a>
+      );
+    }
+    if (seg.kind === 'form' && seg.fields) {
+      return <PageForm key={i} fields={seg.fields} onSubmit={onSubmitForm} />;
+    }
+    return null;
+  };
+
+  // renderGridRun lays a contiguous run of grid-tagged segments out in columns:
+  // each image embed pairs with its immediately-following text segment to form a
+  // card (cover on top, caption below); a lone text segment spans the full width.
+  const renderGridRun = (run: BisonrelayPageSegment[], key: number) => {
+    const cells: ReactNode[] = [];
+    for (let j = 0; j < run.length; j++) {
+      const seg = run[j];
+      const isImage = seg.kind === 'embed' && !!seg.data_b64 && isImageMime(seg.mime);
+      if (isImage) {
+        const next = run[j + 1];
+        const caption = next && next.kind === 'text' ? next : null;
+        if (caption) j++;
+        cells.push(
+          <div key={j} className="flex flex-col gap-2">
+            {renderSegment(seg, j)}
+            {caption && (
+              <div className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: caption.html || '' }} />
+            )}
+          </div>,
+        );
+        continue;
+      }
+      // A non-paired segment (e.g. a heading inside the grid) spans all columns.
+      cells.push(
+        <div key={j} className="col-span-full">
+          {renderSegment(seg, j)}
+        </div>,
+      );
+    }
+    return (
+      <div key={`grid-${key}`} className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {cells}
+      </div>
+    );
+  };
+
+  // Walk segments, batching contiguous grid-tagged runs into a grid container
+  // and rendering everything else inline (unchanged from the flat layout).
+  const blocks: ReactNode[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].grid) {
+      const start = i;
+      const run: BisonrelayPageSegment[] = [];
+      while (i < segments.length && segments[i].grid) {
+        run.push(segments[i]);
+        i++;
+      }
+      i--;
+      blocks.push(renderGridRun(run, start));
+      continue;
+    }
+    blocks.push(renderSegment(segments[i], i));
+  }
+
   return (
     <div className="space-y-3" onClick={onClick}>
-      {segments.map((seg, i) => {
-        if (seg.kind === 'text' && seg.html) {
-          return (
-            <div key={i} className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: seg.html }} />
-          );
-        }
-        if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
-          return <DownloadEmbed key={i} seg={seg} uid={currentUid} />;
-        }
-        if (seg.kind === 'embed' && seg.data_b64) {
-          const isImage = isImageMime(seg.mime);
-          if (isImage) {
-            const src = `data:${seg.mime};base64,${seg.data_b64}`;
-            return (
-              <button
-                key={i}
-                type="button"
-                onClick={() => setViewer({ src, name: seg.name || seg.filename || 'image', mime: seg.mime || '' })}
-                className="block p-0 border-0 bg-transparent cursor-zoom-in"
-              >
-                <img
-                  src={src}
-                  alt={seg.alt || seg.name || ''}
-                  className="rounded-lg border border-border/40 max-w-full h-auto"
-                />
-              </button>
-            );
-          }
-          const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
-          return (
-            <a
-              key={i}
-              href={href}
-              download={seg.name || 'attachment'}
-              className="inline-block max-w-full break-words text-xs text-primary underline hover:no-underline"
-            >
-              {seg.name || 'attachment'} ({seg.mime || 'binary'})
-            </a>
-          );
-        }
-        if (seg.kind === 'form' && seg.fields) {
-          return <PageForm key={i} fields={seg.fields} onSubmit={onSubmitForm} />;
-        }
-        return null;
-      })}
+      {blocks}
       {viewer && <ImageViewerModal image={viewer} onClose={() => setViewer(null)} />}
     </div>
   );

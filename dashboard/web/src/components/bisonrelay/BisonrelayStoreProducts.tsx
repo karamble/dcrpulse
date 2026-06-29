@@ -5,12 +5,17 @@
 import { useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import {
+  BisonrelayStoreFile,
   BisonrelayStoreProduct,
+  bisonrelayStoreFileUrl,
   deleteBisonrelayStoreProduct,
   getBisonrelayStoreProducts,
+  listBisonrelayStoreFiles,
   saveBisonrelayStoreProduct,
   uploadBisonrelayStoreFile,
 } from '../../services/bisonrelayApi';
+import { refreshTheme } from '../../services/bisonrelayStoreTheme';
+import { downscaleImageFile } from './storeImage';
 
 const emptyProduct = (): BisonrelayStoreProduct => ({
   title: '',
@@ -56,9 +61,11 @@ export const BisonrelayStoreProducts = () => {
     setSaving(true);
     setErr(null);
     try {
-      await saveBisonrelayStoreProduct(editing);
+      await saveBisonrelayStoreProduct(editing, isNew);
       setEditing(null);
-      load();
+      const ps = await getBisonrelayStoreProducts();
+      setProducts(ps);
+      await refreshTheme(ps);
     } catch (e: any) {
       setErr(e?.response?.data || e?.message || 'Save failed');
     } finally {
@@ -70,9 +77,21 @@ export const BisonrelayStoreProducts = () => {
     setErr(null);
     try {
       await deleteBisonrelayStoreProduct(sku);
-      load();
+      const ps = await getBisonrelayStoreProducts();
+      setProducts(ps);
+      await refreshTheme(ps);
     } catch (e: any) {
       setErr(e?.response?.data || e?.message || 'Delete failed');
+    }
+  };
+
+  // refreshes the managed theme (live reload) after a cover changes in the form,
+  // so the storefront updates even before the product itself is saved.
+  const onAssetsChanged = async () => {
+    try {
+      await refreshTheme(await getBisonrelayStoreProducts());
+    } catch {
+      /* best-effort live reload */
     }
   };
 
@@ -111,6 +130,7 @@ export const BisonrelayStoreProducts = () => {
           onChange={setEditing}
           onCancel={() => setEditing(null)}
           onSave={save}
+          onAssetsChanged={onAssetsChanged}
         />
       ) : products === null ? (
         <div className="text-sm text-muted-foreground">Loading…</div>
@@ -172,6 +192,7 @@ const ProductForm = ({
   onChange,
   onCancel,
   onSave,
+  onAssetsChanged,
 }: {
   value: BisonrelayStoreProduct;
   isNew: boolean;
@@ -179,6 +200,7 @@ const ProductForm = ({
   onChange: (p: BisonrelayStoreProduct) => void;
   onCancel: () => void;
   onSave: () => void;
+  onAssetsChanged: () => void;
 }) => {
   const set = (patch: Partial<BisonrelayStoreProduct>) => onChange({ ...value, ...patch });
   const [uploading, setUploading] = useState(false);
@@ -195,6 +217,66 @@ const ProductForm = ({
       setUploading(false);
     }
   };
+
+  // The cover image is referenced by the theme at covers/<sku>.jpg. Uploads are
+  // downscaled client-side; "use existing" copies a chosen store image there.
+  const coverPath = value.sku ? `covers/${value.sku}.jpg` : '';
+  const [files, setFiles] = useState<BisonrelayStoreFile[]>([]);
+  const [coverBust, setCoverBust] = useState(0);
+  const [coverErr, setCoverErr] = useState<string | null>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  useEffect(() => {
+    listBisonrelayStoreFiles()
+      .then(setFiles)
+      .catch(() => setFiles([]));
+  }, [coverBust]);
+
+  const onCoverFile = async (file: File) => {
+    if (!value.sku) {
+      setCoverErr('Set a SKU before uploading a cover');
+      return;
+    }
+    setCoverBusy(true);
+    setCoverErr(null);
+    try {
+      const jpg = await downscaleImageFile(file, 600, 0.85);
+      await uploadBisonrelayStoreFile(coverPath, jpg, true);
+      setCoverBust(Date.now());
+      onAssetsChanged();
+    } catch (e: any) {
+      setCoverErr(e?.response?.data || e?.message || 'Cover upload failed');
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
+  const onUseExistingCover = async (srcPath: string) => {
+    if (!srcPath) return;
+    if (!value.sku) {
+      setCoverErr('Enter a SKU above before adding a cover');
+      return;
+    }
+    setCoverBusy(true);
+    setCoverErr(null);
+    try {
+      const resp = await fetch(bisonrelayStoreFileUrl(srcPath));
+      const blob = await resp.blob();
+      const jpg = await downscaleImageFile(
+        new File([blob], srcPath, { type: blob.type || 'image/jpeg' }),
+        600,
+        0.85,
+      );
+      await uploadBisonrelayStoreFile(coverPath, jpg, true);
+      setCoverBust(Date.now());
+      onAssetsChanged();
+    } catch (e: any) {
+      setCoverErr(e?.response?.data || e?.message || 'Could not set cover');
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
+  const imageFiles = files.filter((f) => (f.mime ?? '').startsWith('image/'));
   return (
     <form
       onSubmit={(e) => {
@@ -218,6 +300,7 @@ const ProductForm = ({
             value={value.sku}
             onChange={(e) => set({ sku: e.target.value })}
             disabled={!isNew}
+            pattern="[A-Za-z0-9_-]{1,64}"
             placeholder="letters, digits, dash, underscore"
             className="mt-1 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono disabled:opacity-60"
           />
@@ -258,6 +341,65 @@ const ProductForm = ({
         />
       </label>
       <div className="rounded-md border border-border/50 p-3 space-y-2">
+        <div className="text-xs font-medium text-foreground">Cover image (optional)</div>
+        <p className="text-[11px] text-muted-foreground">
+          Shown on the storefront grid and product page. Stored at{' '}
+          <span className="font-mono">{coverPath || 'covers/<sku>.jpg'}</span>.
+        </p>
+        {!value.sku && (
+          <p className="text-[11px] text-amber-300/80">Enter a SKU above to enable the cover.</p>
+        )}
+        <div className="flex items-start gap-3">
+          {value.sku && (
+            <img
+              key={coverBust}
+              src={`${bisonrelayStoreFileUrl(coverPath)}&t=${coverBust}`}
+              alt=""
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+              }}
+              className="h-24 w-auto rounded-md border border-border/40 bg-muted/20"
+            />
+          )}
+          <div className="space-y-2">
+            <label className="inline-block px-3 py-1.5 rounded-md bg-muted/40 text-foreground text-xs font-medium hover:bg-muted/60 cursor-pointer">
+              {coverBusy ? 'Working…' : 'Upload cover'}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={coverBusy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onCoverFile(f);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            {imageFiles.length > 0 && (
+              <select
+                defaultValue=""
+                disabled={coverBusy}
+                onChange={(e) => {
+                  if (e.target.value) onUseExistingCover(e.target.value);
+                  e.target.value = '';
+                }}
+                className="block w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              >
+                <option value="">Use an existing image…</option>
+                {imageFiles.map((f) => (
+                  <option key={f.path} value={f.path}>
+                    {f.path}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+        {coverErr && <div className="text-[11px] text-rose-300">{coverErr}</div>}
+      </div>
+
+      <div className="rounded-md border border-border/50 p-3 space-y-2">
         <div className="text-xs font-medium text-foreground">Digital download (optional)</div>
         <p className="text-[11px] text-muted-foreground">
           Delivered to the buyer automatically once their order's invoice is paid.
@@ -271,6 +413,23 @@ const ProductForm = ({
             className="mt-1 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono"
           />
         </label>
+        {files.length > 0 && (
+          <select
+            defaultValue=""
+            onChange={(e) => {
+              if (e.target.value) set({ sendfilename: e.target.value });
+              e.target.value = '';
+            }}
+            className="block w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+          >
+            <option value="">Pick an uploaded file…</option>
+            {files.map((f) => (
+              <option key={f.path} value={f.path}>
+                {f.path}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="flex items-center gap-2">
           <label className="px-3 py-1.5 rounded-md bg-muted/40 text-foreground text-xs font-medium hover:bg-muted/60 cursor-pointer">
             {uploading ? 'Uploading…' : 'Upload file'}

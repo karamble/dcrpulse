@@ -15,6 +15,7 @@ export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [confirmingSkip, setConfirmingSkip] = useState(false);
 
   const enable = async (e: FormEvent) => {
     e.preventDefault();
@@ -62,10 +63,16 @@ export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
             <ShieldCheck className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold">Protect your dashboard</h2>
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              Protect your dashboard
+              <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/20">
+                Recommended
+              </span>
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Optionally set an app password so a login is required before anyone
-              can use this dashboard.
+              We recommend setting an app password. This dashboard can move funds
+              and manage your store, Lightning node and DEX, so a login keeps
+              anyone who can reach this page from using it.
             </p>
           </div>
         </div>
@@ -89,24 +96,52 @@ export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
           <p className="text-sm text-red-500">Passwords do not match.</p>
         )}
         {error && <p className="text-sm text-red-500">{error}</p>}
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={skip}
-            disabled={busy}
-            className="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-50"
-          >
-            Skip for now
-          </button>
-          <button
-            type="submit"
-            disabled={busy || !password || password !== confirm}
-            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 flex items-center gap-2"
-          >
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            Enable
-          </button>
-        </div>
+        {confirmingSkip ? (
+          <div className="space-y-2 pt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+            <p className="text-sm text-amber-200">
+              Continue without a password? Anyone who can open this dashboard will
+              have full access to your funds and store.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmingSkip(false)}
+                disabled={busy}
+                className="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                Go back
+              </button>
+              <button
+                type="button"
+                onClick={skip}
+                disabled={busy}
+                className="px-4 py-2 rounded-lg border border-amber-500/50 text-amber-200 hover:bg-amber-500/10 disabled:opacity-50 flex items-center gap-2"
+              >
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Skip anyway
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setConfirmingSkip(true)}
+              disabled={busy}
+              className="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-50"
+            >
+              Skip for now
+            </button>
+            <button
+              type="submit"
+              disabled={busy || !password || password !== confirm}
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 flex items-center gap-2"
+            >
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              Set password
+            </button>
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">
           You can enable or change this anytime in Settings &gt; Security.
         </p>

@@ -1126,8 +1126,14 @@ export const getBisonrelayStoreProducts = async (): Promise<BisonrelayStoreProdu
   return data.products ?? [];
 };
 
-export const saveBisonrelayStoreProduct = async (p: BisonrelayStoreProduct): Promise<void> => {
-  await api.post('/br/store/products', p);
+// saveBisonrelayStoreProduct upserts a product. Pass create=true when adding a
+// NEW product so the backend rejects (rather than silently overwrites) a SKU
+// that already exists.
+export const saveBisonrelayStoreProduct = async (
+  p: BisonrelayStoreProduct,
+  create = false,
+): Promise<void> => {
+  await api.post('/br/store/products', { ...p, create });
 };
 
 export const deleteBisonrelayStoreProduct = async (sku: string): Promise<void> => {
@@ -1137,14 +1143,43 @@ export const deleteBisonrelayStoreProduct = async (sku: string): Promise<void> =
 // uploadBisonrelayStoreFile uploads a digital-download file into the store dir
 // at the given relative path (empty = use the file's own name) and returns the
 // stored path to use as a product's sendfilename.
-export const uploadBisonrelayStoreFile = async (path: string, file: File): Promise<string> => {
+export const uploadBisonrelayStoreFile = async (
+  path: string,
+  file: File,
+  overwrite = false,
+): Promise<string> => {
   const form = new FormData();
   if (path) form.append('path', path);
+  if (overwrite) form.append('overwrite', 'true');
   form.append('file', file, file.name);
   const { data } = await api.post<{ path: string }>('/br/store/files/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return data.path;
+};
+
+export interface BisonrelayStoreFile {
+  path: string;
+  size: number;
+  modified: number;
+  mime?: string;
+}
+
+// listBisonrelayStoreFiles lists the user-managed media under the store dir
+// (cover images, banner, digital-download goods) - templates and operational
+// dirs are excluded by brclientd.
+export const listBisonrelayStoreFiles = async (): Promise<BisonrelayStoreFile[]> => {
+  const { data } = await api.get<{ files: BisonrelayStoreFile[] | null }>('/br/store/files/list');
+  return data.files ?? [];
+};
+
+// bisonrelayStoreFileUrl is the same-origin URL that streams a store file's
+// bytes - usable directly as an <img> src for previews.
+export const bisonrelayStoreFileUrl = (path: string): string =>
+  `/api/br/store/files/get?path=${encodeURIComponent(path)}`;
+
+export const deleteBisonrelayStoreFile = async (path: string): Promise<void> => {
+  await api.post('/br/store/files/delete', { path });
 };
 
 export interface BisonrelayStoreTemplate {
@@ -1644,6 +1679,9 @@ export interface BisonrelayPageFormField {
 export interface BisonrelayPageSegment {
   kind: 'text' | 'embed' | 'form';
   section_id?: string;
+  // grid marks segments emitted inside a --grid-- / --/grid-- block so the
+  // viewer lays that contiguous run out in columns instead of stacking.
+  grid?: boolean;
   html?: string;
   name?: string;
   mime?: string;

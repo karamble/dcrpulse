@@ -17,6 +17,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"os"
 	"strconv"
 	"sync"
@@ -880,7 +881,7 @@ func BrclientdDeleteStoreProduct(ctx context.Context, sku string) error {
 // BrclientdUploadStoreFile streams a file to brclientd's /store/files/upload,
 // stored under the store dir at relPath, for products to reference via
 // sendfilename (digital downloads). Returns {path}.
-func BrclientdUploadStoreFile(ctx context.Context, relPath, filename, mime string, body io.Reader) (json.RawMessage, error) {
+func BrclientdUploadStoreFile(ctx context.Context, relPath, filename, mime string, overwrite bool, body io.Reader) (json.RawMessage, error) {
 	cli, err := brclientdClient()
 	if err != nil {
 		return nil, err
@@ -895,6 +896,9 @@ func BrclientdUploadStoreFile(ctx context.Context, relPath, filename, mime strin
 		defer mp.Close()
 		if relPath != "" {
 			_ = mp.WriteField("path", relPath)
+		}
+		if overwrite {
+			_ = mp.WriteField("overwrite", "true")
 		}
 		hdr := textproto.MIMEHeader{}
 		hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
@@ -927,6 +931,45 @@ func BrclientdUploadStoreFile(ctx context.Context, relPath, filename, mime strin
 		return nil, fmt.Errorf("brclientd /store/files/upload: HTTP %d: %s", resp.StatusCode, respBody)
 	}
 	return json.RawMessage(respBody), nil
+}
+
+// BrclientdListStoreFiles lists the user-managed media files under the store dir
+// (cover images, banner, digital-download goods). Returns {files:[{path,size,...}]}.
+func BrclientdListStoreFiles(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/store/files/list", nil)
+}
+
+// BrclientdDeleteStoreFile removes one media file under the store dir.
+func BrclientdDeleteStoreFile(ctx context.Context, path string) error {
+	return brclientdPostJSON(ctx, "/store/files/delete", map[string]string{"path": path})
+}
+
+// BrclientdGetStoreFile fetches one store file's bytes (for preview/download),
+// returning the body and its Content-Type.
+func BrclientdGetStoreFile(ctx context.Context, path string) ([]byte, string, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, "", err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, "", errors.New("brclientd: status host/port not configured")
+	}
+	u := fmt.Sprintf("https://%s:%s/store/files/get?path=%s",
+		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(path))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("build get-file request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("brclientd /store/files/get: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("brclientd /store/files/get: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return body, resp.Header.Get("Content-Type"), nil
 }
 
 // BrclientdStoreTemplates lists the storefront's *.tmpl files.

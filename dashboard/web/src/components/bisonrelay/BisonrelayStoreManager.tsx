@@ -6,8 +6,9 @@ import { useState } from 'react';
 import { BisonrelayStoreProducts } from './BisonrelayStoreProducts';
 import { BisonrelayStoreOrders } from './BisonrelayStoreOrders';
 import { BisonrelayStoreTemplates } from './BisonrelayStoreTemplates';
+import { BisonrelayStoreAssets } from './BisonrelayStoreAssets';
 
-type StoreTab = 'products' | 'orders' | 'templates';
+type StoreTab = 'products' | 'orders' | 'assets' | 'templates';
 
 // BisonrelayStoreManager is the storefront admin surface shown while the node
 // hosts a store: product catalog, order fulfillment, and template editing.
@@ -20,6 +21,7 @@ export const BisonrelayStoreManager = () => {
   const tabs: { id: StoreTab; label: string }[] = [
     { id: 'products', label: 'Products' },
     { id: 'orders', label: 'Orders' },
+    { id: 'assets', label: 'Assets' },
     { id: 'templates', label: 'Templates' },
   ];
   return (
@@ -33,6 +35,7 @@ export const BisonrelayStoreManager = () => {
       </div>
       {tab === 'products' && <BisonrelayStoreProducts />}
       {tab === 'orders' && <BisonrelayStoreOrders />}
+      {tab === 'assets' && <BisonrelayStoreAssets />}
       {tab === 'templates' && <BisonrelayStoreTemplates />}
     </div>
   );

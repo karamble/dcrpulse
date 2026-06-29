@@ -1570,6 +1570,18 @@ func safeBRPath(p string) bool {
 	return true
 }
 
+// safeStoreMediaPath is safeBRPath plus a denylist for the store file endpoints:
+// .tmpl/.tmp must never be created or served as "media" because the store parses
+// and executes *.tmpl as Go templates. Templates have their own /store/templates
+// routes; this keeps the generic file upload/get/delete from reaching them.
+func safeStoreMediaPath(p string) bool {
+	if !safeBRPath(p) {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimRight(p, ". "))
+	return !strings.HasSuffix(lower, ".tmpl") && !strings.HasSuffix(lower, ".tmp")
+}
+
 // BisonrelayPagesLocalFileHandler proxies the raw markdown of one hosted page.
 func BisonrelayPagesLocalFileHandler(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
@@ -2148,6 +2160,64 @@ func BisonrelayStoreTemplateDeleteHandler(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BisonrelayStoreFilesListHandler proxies brclientd's /store/files/list (the
+// user-managed media files under the store dir: covers, banner, downloads).
+func BisonrelayStoreFilesListHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := rpc.BrclientdListStoreFiles(r.Context())
+	if err != nil {
+		brWriteErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
+// BisonrelayStoreFileGetHandler streams one store file (image preview or
+// download). Query: path.
+func BisonrelayStoreFileGetHandler(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	if path == "" {
+		http.Error(w, "path query param is required", http.StatusBadRequest)
+		return
+	}
+	if !safeStoreMediaPath(path) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	data, ctype, err := rpc.BrclientdGetStoreFile(r.Context(), path)
+	if err != nil {
+		brWriteErr(w, err)
+		return
+	}
+	if ctype == "" {
+		ctype = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", ctype)
+	_, _ = w.Write(data)
+}
+
+// BisonrelayStoreFileDeleteHandler removes one media file under the store dir.
+// Body: {path}.
+func BisonrelayStoreFileDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	p := strings.TrimSpace(req.Path)
+	if p == "" || !safeStoreMediaPath(p) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdDeleteStoreFile(r.Context(), p); err != nil {
+		brWriteErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayStoreOrderCommentHandler appends a merchant comment to an order
 // (brclientd DMs the buyer). Body: {uid, id, comment}.
 func BisonrelayStoreOrderCommentHandler(w http.ResponseWriter, r *http.Request) {
@@ -2183,22 +2253,23 @@ func BisonrelayStoreFileUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.MultipartForm.RemoveAll()
 	relPath := strings.TrimSpace(r.FormValue("path"))
+	overwrite := r.FormValue("overwrite") == "true"
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "file part missing: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
-	if relPath != "" && !safeBRPath(relPath) {
+	if relPath != "" && !safeStoreMediaPath(relPath) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
-	if strings.ContainsRune(header.Filename, '/') || !safeBRPath(header.Filename) {
+	if strings.ContainsRune(header.Filename, '/') || !safeStoreMediaPath(header.Filename) {
 		http.Error(w, "invalid file name", http.StatusBadRequest)
 		return
 	}
 	mime := header.Header.Get("Content-Type")
-	body, err := rpc.BrclientdUploadStoreFile(r.Context(), relPath, header.Filename, mime, file)
+	body, err := rpc.BrclientdUploadStoreFile(r.Context(), relPath, header.Filename, mime, overwrite, file)
 	if err != nil {
 		brWriteErr(w, err)
 		return
