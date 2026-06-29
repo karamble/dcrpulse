@@ -1702,6 +1702,11 @@ func BisonrelayContentFileHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
+// maxEmbedServeBytes mirrors brclientd's per-embed ceiling: bound the proxied
+// embed bytes so a crafted post cannot stream an outsized payload through the
+// dashboard. brclientd already rejects larger embeds; this is belt-and-suspenders.
+const maxEmbedServeBytes = 16 << 20
+
 // BisonrelayPostsEmbedDataHandler streams the inline payload of one post
 // embed from brclientd so feed cards can render images without shipping
 // base64 in the feed JSON. Query: uid (author), pid (required), index
@@ -1739,7 +1744,7 @@ func BisonrelayPostsEmbedDataHandler(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set(h, v)
 		}
 	}
-	_, _ = io.Copy(w, resp.Body)
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, maxEmbedServeBytes))
 }
 
 // Single-slot prepared-backup state. brclientd builds the entire backup

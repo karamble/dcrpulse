@@ -1131,6 +1131,13 @@ const MAX_VISUAL_DEPTH = 6;
 // Shared empty ancestor set for the root render; CommentNode always clones
 // before adding, so it is never mutated.
 const EMPTY_SEEN: Set<string> = new Set();
+// Cap how many top-level comments render at once; a post can carry a very large
+// (remote-supplied) comment list, so render a batch with a "show more" expander
+// instead of building the entire DOM up front.
+const MAX_ROOTS_SHOWN = 200;
+// Collapse a very long individual comment behind a "show more" toggle so one
+// huge comment cannot bloat the DOM.
+const MAX_COMMENT_CHARS = 2000;
 
 type CommentTree = {
   roots: BisonrelayPostComment[];
@@ -1183,6 +1190,7 @@ const PostComments = ({
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
+  const [showAllRoots, setShowAllRoots] = useState(false);
   // Receive receipts per comment status_id; only recorded on the post
   // author's node (it relays the comments), so loaded for own posts only.
   const [commentReceipts, setCommentReceipts] = useState<
@@ -1316,7 +1324,7 @@ const PostComments = ({
         <p className="text-xs text-muted-foreground italic">No comments yet.</p>
       ) : (
         <div className="space-y-2">
-          {tree.roots.map((c) => (
+          {(showAllRoots ? tree.roots : tree.roots.slice(0, MAX_ROOTS_SHOWN)).map((c) => (
             <CommentNode
               key={c.status_id || c.commentKey || `${c.timestamp}-${c.status_from}`}
               comment={c}
@@ -1331,6 +1339,15 @@ const PostComments = ({
               submitting={submitting}
             />
           ))}
+          {!showAllRoots && tree.roots.length > MAX_ROOTS_SHOWN && (
+            <button
+              type="button"
+              onClick={() => setShowAllRoots(true)}
+              className="text-xs text-primary hover:underline"
+            >
+              Show {tree.roots.length - MAX_ROOTS_SHOWN} more comments
+            </button>
+          )}
         </div>
       )}
       <form onSubmit={handleTopLevelSubmit} className="flex items-end gap-2 pt-2">
@@ -1377,6 +1394,7 @@ const CommentNode = ({
   onSubmitReply: (text: string, parent?: string) => Promise<void>;
   submitting: boolean;
 }) => {
+  const [expanded, setExpanded] = useState(false);
   const seen = (comment.status_id && seenReceipts[comment.status_id]) || [];
   // A comment's identity is its status_id (unique per-comment hash); replies
   // reference it as their `parent`. (`identifier` is the shared post id.)
@@ -1463,7 +1481,18 @@ const CommentNode = ({
             </div>
           </div>
           <p className="text-sm text-foreground/90 break-words whitespace-pre-wrap">
-            {comment.comment}
+            {expanded || comment.comment.length <= MAX_COMMENT_CHARS
+              ? comment.comment
+              : `${comment.comment.slice(0, MAX_COMMENT_CHARS)}…`}
+            {comment.comment.length > MAX_COMMENT_CHARS && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="ml-1 text-xs text-primary hover:underline"
+              >
+                {expanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
           </p>
         </div>
       </div>
