@@ -1236,8 +1236,9 @@ export interface ProposalsResponse {
 // getProposals returns the cached proposals envelope. The backend caches the
 // list indefinitely and auto-fetches once when empty; a cold fetch can take up
 // to ~1 min, so allow more than the default client timeout.
-export const getProposals = async (): Promise<ProposalsResponse> => {
+export const getProposals = async (status: string): Promise<ProposalsResponse> => {
   const response = await api.get<ProposalsResponse>('/wallet/governance/proposals', {
+    params: { status },
     timeout: 65 * 1000,
   });
   return response.data;
@@ -1246,11 +1247,11 @@ export const getProposals = async (): Promise<ProposalsResponse> => {
 // refreshProposals forces a backend re-fetch from Politeia. Throws on 429 while
 // the 8h cooldown is active; the error response body carries the envelope so
 // callers can re-sync the countdown.
-export const refreshProposals = async (): Promise<ProposalsResponse> => {
+export const refreshProposals = async (status: string): Promise<ProposalsResponse> => {
   const response = await api.post<ProposalsResponse>(
     '/wallet/governance/proposals/refresh',
     undefined,
-    { timeout: 65 * 1000 },
+    { params: { status }, timeout: 65 * 1000 },
   );
   return response.data;
 };

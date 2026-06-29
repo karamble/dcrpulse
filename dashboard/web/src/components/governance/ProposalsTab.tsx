@@ -2,22 +2,16 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ExternalLink, Filter, Loader2, RefreshCw, ShieldOff } from 'lucide-react';
 import { Proposal, getProposals, refreshProposals } from '../../services/api';
 import { VoteResultsBar } from './VoteResultsBar';
 
-const statusBuckets = ['all', 'voting', 'pre-vote', 'finished', 'abandoned'] as const;
-
-// Ordering of status buckets in the "All statuses" view: pre-vote first, then
-// active votes, then resolved/abandoned proposals.
-const bucketOrder: Record<string, number> = {
-  'pre-vote': 0,
-  voting: 1,
-  finished: 2,
-  abandoned: 3,
-};
+// Status tabs, mirroring Decrediton. There is no "all" bucket: each tab fetches
+// only its own status from the backend on demand (fetching every status at once
+// is the heavy request we avoid). "voting" is the default landing tab.
+const statusBuckets = ['voting', 'pre-vote', 'finished', 'abandoned'] as const;
 
 const statusBadge = (voteStatus: string) => {
   switch (voteStatus) {
@@ -66,15 +60,20 @@ export const ProposalsTab = () => {
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(false);
-  const [filter, setFilter] = useState<(typeof statusBuckets)[number]>('all');
+  const [filter, setFilter] = useState<(typeof statusBuckets)[number]>('voting');
   // now (unix seconds) drives the live countdown / "updated X ago" display.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
+  // Re-fetch whenever the status tab changes; each tab loads only its own
+  // bucket. Clearing the list first shows the loader during the switch.
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setProposals([]);
+    setError(null);
     (async () => {
       try {
-        const r = await getProposals();
+        const r = await getProposals(filter);
         if (cancelled) return;
         setProposals(r.proposals);
         setFetchedAt(r.fetchedAt);
@@ -94,7 +93,7 @@ export const ProposalsTab = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filter]);
 
   // Tick the clock once a minute so the countdown and age stay current.
   useEffect(() => {
@@ -109,7 +108,7 @@ export const ProposalsTab = () => {
     setRefreshing(true);
     setRefreshError(null);
     try {
-      const r = await refreshProposals();
+      const r = await refreshProposals(filter);
       setProposals(r.proposals);
       setFetchedAt(r.fetchedAt);
       setRefreshAvailableAt(r.refreshAvailableAt);
@@ -131,20 +130,6 @@ export const ProposalsTab = () => {
       setNow(Math.floor(Date.now() / 1000));
     }
   };
-
-  const filtered = useMemo(() => {
-    if (filter !== 'all') return proposals.filter((p) => p.status === filter);
-    // Group by status bucket (pre-vote, then voting, then the rest), keeping the
-    // backend's within-bucket order (vote-end block, descending).
-    return proposals
-      .map((p, i) => ({ p, i }))
-      .sort((a, b) => {
-        const oa = bucketOrder[a.p.status] ?? 99;
-        const ob = bucketOrder[b.p.status] ?? 99;
-        return oa - ob || a.i - b.i;
-      })
-      .map((x) => x.p);
-  }, [proposals, filter]);
 
   if (disabled) {
     return (
@@ -196,12 +181,12 @@ export const ProposalsTab = () => {
         >
           {statusBuckets.map((b) => (
             <option key={b} value={b}>
-              {b === 'all' ? 'All statuses' : b}
+              {b}
             </option>
           ))}
         </select>
         <span className="text-xs text-muted-foreground">
-          {filtered.length} of {proposals.length} proposals
+          {proposals.length} proposals
         </span>
         <div className="ml-auto flex items-center gap-3">
           {fetchedAt > 0 && (
@@ -235,13 +220,13 @@ export const ProposalsTab = () => {
         </div>
       )}
 
-      {filtered.length === 0 ? (
+      {proposals.length === 0 ? (
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50 text-sm text-muted-foreground">
-          No proposals match the current filter.
+          No {filter} proposals.
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((p) => (
+          {proposals.map((p) => (
             <Link
               key={p.token}
               to={`/wallet/governance/proposals/${p.token}`}

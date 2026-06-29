@@ -37,7 +37,7 @@ const (
 	// disabled after a successful fetch. ProposalsFetchTimeout caps a full
 	// list fetch (many sequential upstream calls). Exported so handlers can
 	// size their request context and refresh-availability math to match.
-	ProposalsRefreshCooldown = 8 * time.Hour
+	ProposalsRefreshCooldown = 10 * time.Minute
 	ProposalsFetchTimeout    = 1 * time.Minute
 
 	// piListNegativeTTL briefly suppresses cold list re-fetches after a failed
@@ -88,19 +88,24 @@ func PoliteiaEnabled() bool {
 // next view.
 var (
 	piCacheMu       sync.RWMutex
-	piCachedList    []types.Proposal
-	piCachedAt      time.Time
+	piCachedLists   = map[string]piListCacheEntry{} // keyed by status bucket
 	piCachedDetails = map[string]piDetailCacheEntry{}
 	piPreparedVotes = map[string]piPreparedVote{}
 	piHTTPClient    = &http.Client{Timeout: politeiaTimeout, Transport: ExternalTransport()}
 
 	// piListFetchMu single-flights cold list fetches so concurrent readers on
-	// an empty cache trigger one upstream fetch, not one each. piListFailAt is
-	// the last cold-fetch failure time (the piListNegativeTTL anchor); both are
-	// only touched while holding piListFetchMu.
+	// an empty bucket trigger one upstream fetch, not one each. piListFailAt is
+	// the per-bucket last cold-fetch failure time (the piListNegativeTTL
+	// anchor); both are only touched while holding piListFetchMu.
 	piListFetchMu sync.Mutex
-	piListFailAt  time.Time
+	piListFailAt  = map[string]time.Time{}
 )
+
+// piListCacheEntry is one status bucket's cached proposal list + fetch time.
+type piListCacheEntry struct {
+	list []types.Proposal
+	at   time.Time
+}
 
 type piDetailCacheEntry struct {
 	detail *types.ProposalDetail
@@ -128,20 +133,20 @@ type piPreparedVote struct {
 // list is cached in-process indefinitely; an empty cache (e.g. after a
 // restart) auto-fetches once on first access. Use RefreshProposals to force
 // a re-fetch. Returns ErrPoliteiaDisabled if the toggle is off.
-func ListProposals(ctx context.Context) ([]types.Proposal, time.Time, error) {
+func ListProposals(ctx context.Context, bucket string) ([]types.Proposal, time.Time, error) {
 	if !PoliteiaEnabled() {
 		return nil, time.Time{}, ErrPoliteiaDisabled
 	}
 
 	piCacheMu.RLock()
-	if piCachedList != nil {
-		cached, at := piCachedList, piCachedAt
+	if e, ok := piCachedLists[bucket]; ok {
+		list, at := e.list, e.at
 		piCacheMu.RUnlock()
-		return cached, at, nil
+		return list, at, nil
 	}
 	piCacheMu.RUnlock()
 
-	return ensureProposalsCached(ctx)
+	return ensureProposalsCached(ctx, bucket)
 }
 
 // ensureProposalsCached performs the cold list fill under piListFetchMu so
@@ -149,31 +154,28 @@ func ListProposals(ctx context.Context) ([]types.Proposal, time.Time, error) {
 // failed fetch is negative-cached for piListNegativeTTL so rapid retries don't
 // each launch a full fetch. Returns the warm cache if another caller filled it
 // while we waited for the lock.
-func ensureProposalsCached(ctx context.Context) ([]types.Proposal, time.Time, error) {
+func ensureProposalsCached(ctx context.Context, bucket string) ([]types.Proposal, time.Time, error) {
 	piListFetchMu.Lock()
 	defer piListFetchMu.Unlock()
 
-	// Another holder may have populated the cache while we waited.
+	// Another holder may have populated the bucket while we waited.
 	piCacheMu.RLock()
-	cached, at := piCachedList, piCachedAt
+	e, ok := piCachedLists[bucket]
 	piCacheMu.RUnlock()
-	if cached != nil {
-		return cached, at, nil
+	if ok {
+		return e.list, e.at, nil
 	}
-	if !piListFailAt.IsZero() && time.Since(piListFailAt) < piListNegativeTTL {
+	if failAt := piListFailAt[bucket]; !failAt.IsZero() && time.Since(failAt) < piListNegativeTTL {
 		return nil, time.Time{}, ErrProposalsRecentlyFailed
 	}
 
-	out, err := fetchAndCacheProposals(ctx)
+	out, at, err := fetchAndCacheProposals(ctx, bucket)
 	if err != nil {
-		piListFailAt = time.Now()
+		piListFailAt[bucket] = time.Now()
 		return nil, time.Time{}, err
 	}
-	piListFailAt = time.Time{}
-	piCacheMu.RLock()
-	newAt := piCachedAt
-	piCacheMu.RUnlock()
-	return out, newAt, nil
+	delete(piListFailAt, bucket)
+	return out, at, nil
 }
 
 // RefreshProposals forces a re-fetch of the proposals list, subject to the
@@ -181,16 +183,16 @@ func ensureProposalsCached(ctx context.Context) ([]types.Proposal, time.Time, er
 // cooling down it returns the cached list, the last-fetch time, and
 // ErrProposalsRefreshCoolingDown. On success it returns the fresh list and
 // the new fetch time. A failed fetch does not start the cooldown.
-func RefreshProposals(ctx context.Context) ([]types.Proposal, time.Time, error) {
+func RefreshProposals(ctx context.Context, bucket string) ([]types.Proposal, time.Time, error) {
 	if !PoliteiaEnabled() {
 		return nil, time.Time{}, ErrPoliteiaDisabled
 	}
 
 	piCacheMu.RLock()
-	at, cached := piCachedAt, piCachedList
+	e, ok := piCachedLists[bucket]
 	piCacheMu.RUnlock()
-	if !at.IsZero() && time.Since(at) < ProposalsRefreshCooldown {
-		return cached, at, ErrProposalsRefreshCoolingDown
+	if ok && !e.at.IsZero() && time.Since(e.at) < ProposalsRefreshCooldown {
+		return e.list, e.at, ErrProposalsRefreshCoolingDown
 	}
 
 	// Serialize the forced re-fetch against a concurrent cold read so they
@@ -198,23 +200,20 @@ func RefreshProposals(ctx context.Context) ([]types.Proposal, time.Time, error) 
 	piListFetchMu.Lock()
 	defer piListFetchMu.Unlock()
 
-	out, err := fetchAndCacheProposals(ctx)
+	out, at, err := fetchAndCacheProposals(ctx, bucket)
 	if err != nil {
-		piListFailAt = time.Now()
+		piListFailAt[bucket] = time.Now()
 		return nil, time.Time{}, err
 	}
-	piListFailAt = time.Time{}
-	piCacheMu.RLock()
-	newAt := piCachedAt
-	piCacheMu.RUnlock()
-	return out, newAt, nil
+	delete(piListFailAt, bucket)
+	return out, at, nil
 }
 
 // fetchAndCacheProposals fetches the full proposal list from Politeia and
 // stores it in the in-process cache. piCachedList/piCachedAt are written ONLY
 // on success, so a failed fetch leaves the cache (and the refresh cooldown
 // anchor) untouched. Capped at ProposalsFetchTimeout.
-func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
+func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal, time.Time, error) {
 	// Decouple from the caller's request context: a cold fetch populates the
 	// shared in-process cache, so a client that disconnects mid-fetch (common
 	// on mobile) must not cancel it and leave the cache empty or partial.
@@ -223,15 +222,15 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 
 	inv, err := piInventory(ctx)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	tokens := flattenInventory(inv)
+	tokens := tokensForBucket(inv, bucket)
 	if len(tokens) == 0 {
+		now := time.Now()
 		piCacheMu.Lock()
-		piCachedList = []types.Proposal{}
-		piCachedAt = time.Now()
+		piCachedLists[bucket] = piListCacheEntry{list: []types.Proposal{}, at: now}
 		piCacheMu.Unlock()
-		return []types.Proposal{}, nil
+		return []types.Proposal{}, now, nil
 	}
 
 	// Enrich each 5-token chunk (metadata-only record + vote summary) with
@@ -282,10 +281,10 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 	// would poison the list with name-less "invalid" proposals. Bail without
 	// touching the cache so the next request retries.
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("politeia fetch incomplete: %w", err)
+		return nil, time.Time{}, fmt.Errorf("politeia fetch incomplete: %w", err)
 	}
 	if len(summaries) == 0 {
-		return nil, fmt.Errorf("politeia enrichment returned no summaries for %d proposals", len(tokens))
+		return nil, time.Time{}, fmt.Errorf("politeia enrichment returned no summaries for %d proposals", len(tokens))
 	}
 
 	// Local cache of "you voted X" choices so the UI can show the
@@ -320,8 +319,7 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 
 	now := time.Now()
 	piCacheMu.Lock()
-	piCachedList = out
-	piCachedAt = now
+	piCachedLists[bucket] = piListCacheEntry{list: out, at: now}
 	for t, d := range prewarm {
 		// Preserve a fuller existing entry's comments/HTML across a list
 		// refresh; only description/tally/options are refreshed from the new
@@ -337,7 +335,7 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 	}
 	piCacheMu.Unlock()
 
-	return out, nil
+	return out, now, nil
 }
 
 // GetProposalDetail returns one proposal with full description + vote options,
@@ -833,13 +831,32 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 		}
 	}
 
-	// Invalidate the list cache and this proposal's detail cache so the
-	// next view reflects the updated tallies and currentChoice. The list
-	// cache is now unlimited-TTL, so clear the slice itself (not just the
-	// timestamp) to force a re-fetch on next view.
+	// Reflect the just-cast vote in the cached list immediately by patching the
+	// touched proposal's tally + choice in place, rather than dropping the list
+	// and re-fetching: Politeia's summary lags a fresh cast, so a re-fetch can
+	// re-cache a stale tally and (with no TTL) keep showing it on the overview.
+	// The per-token detail cache is dropped so the detail view re-fetches the
+	// authoritative record; a manual refresh later reconciles the list.
 	piCacheMu.Lock()
-	piCachedList = nil
-	piCachedAt = time.Time{}
+	cast64 := int64(result.Cast)
+	// The voted proposal lives in the "voting" (started) bucket; patch it there
+	// if that bucket is cached. e.list shares its backing array with the cached
+	// entry, so element writes are visible without re-storing.
+	if e, ok := piCachedLists["voting"]; ok {
+		for i := range e.list {
+			if e.list[i].Token != req.Token {
+				continue
+			}
+			if e.list[i].VoteCounts == nil {
+				e.list[i].VoteCounts = map[string]int64{}
+			}
+			e.list[i].VoteCounts[req.VoteOption] += cast64
+			e.list[i].TotalVotes += cast64
+			e.list[i].CurrentChoice = req.VoteOption
+			e.list[i].VotedTicketCount = result.Cast
+			break
+		}
+	}
 	delete(piCachedDetails, req.Token)
 	delete(piPreparedVotes, preparedVoteKey(ctx, req.Token))
 	piCacheMu.Unlock()
@@ -1093,34 +1110,43 @@ func piPost(ctx context.Context, path string, body any, out any) error {
 	return dec.Decode(out)
 }
 
-// flattenInventory turns the vetted-by-status map into a single token
-// slice in a stable order (started/voting first, then approved, rejected,
-// unauthorized, authorized, ineligible, abandoned).
-func flattenInventory(inv piInventoryResp) []string {
-	order := []string{"started", "authorized", "unauthorized", "approved", "rejected", "ineligible", "abandoned"}
-	seen := map[string]bool{}
-	out := []string{}
-	for _, key := range order {
-		for _, t := range inv.Vetted[key] {
-			if !seen[t] {
-				seen[t] = true
-				out = append(out, t)
-			}
+// proposalBuckets are the status tabs the overview supports (Decrediton-style).
+// "all" is intentionally absent: fetching every status at once is the heavy
+// request we avoid - each tab fetches only its own bucket on demand.
+var proposalBuckets = []string{"voting", "pre-vote", "finished", "abandoned"}
+
+// IsProposalBucket reports whether s is a known status bucket.
+func IsProposalBucket(s string) bool {
+	for _, b := range proposalBuckets {
+		if b == s {
+			return true
 		}
 	}
-	// Any unknown status buckets we haven't enumerated explicitly:
-	for k, v := range inv.Vetted {
-		known := false
-		for _, k2 := range order {
-			if k == k2 {
-				known = true
-				break
-			}
-		}
-		if known {
-			continue
-		}
-		for _, t := range v {
+	return false
+}
+
+// bucketStatuses maps a status bucket to the Politeia ticketvote inventory
+// statuses it includes (the inverse of summaryStatusToBucket).
+func bucketStatuses(bucket string) []string {
+	switch bucket {
+	case "voting":
+		return []string{"started"}
+	case "pre-vote":
+		return []string{"authorized", "unauthorized"}
+	case "finished":
+		return []string{"approved", "rejected", "ineligible"}
+	case "abandoned":
+		return []string{"abandoned"}
+	}
+	return nil
+}
+
+// tokensForBucket returns the inventory tokens for a status bucket, de-duped.
+func tokensForBucket(inv piInventoryResp, bucket string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, st := range bucketStatuses(bucket) {
+		for _, t := range inv.Vetted[st] {
 			if !seen[t] {
 				seen[t] = true
 				out = append(out, t)

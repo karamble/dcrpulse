@@ -166,9 +166,17 @@ func writeProposalsResponse(w http.ResponseWriter, status int, proposals []types
 // GetProposalsHandler returns the Politeia proposals list. The list is cached
 // indefinitely and auto-fetched once when empty (e.g. after a restart).
 func GetProposalsHandler(w http.ResponseWriter, r *http.Request) {
+	bucket := strings.TrimSpace(r.URL.Query().Get("status"))
+	if bucket == "" {
+		bucket = "voting"
+	}
+	if !services.IsProposalBucket(bucket) {
+		http.Error(w, "unknown proposal status", http.StatusBadRequest)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), services.ProposalsFetchTimeout)
 	defer cancel()
-	proposals, fetchedAt, err := services.ListProposals(ctx)
+	proposals, fetchedAt, err := services.ListProposals(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, services.ErrPoliteiaDisabled) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -185,9 +193,17 @@ func GetProposalsHandler(w http.ResponseWriter, r *http.Request) {
 // cooldown. Returns 429 (with the envelope, so the UI can re-sync the
 // countdown) while cooling down, and 503 if Politeia is disabled.
 func RefreshProposalsHandler(w http.ResponseWriter, r *http.Request) {
+	bucket := strings.TrimSpace(r.URL.Query().Get("status"))
+	if bucket == "" {
+		bucket = "voting"
+	}
+	if !services.IsProposalBucket(bucket) {
+		http.Error(w, "unknown proposal status", http.StatusBadRequest)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), services.ProposalsFetchTimeout)
 	defer cancel()
-	proposals, fetchedAt, err := services.RefreshProposals(ctx)
+	proposals, fetchedAt, err := services.RefreshProposals(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, services.ErrPoliteiaDisabled) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
