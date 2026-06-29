@@ -234,40 +234,49 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 		return []types.Proposal{}, nil
 	}
 
-	// Batch the records call so we don't blow past Politeia's request
-	// size limit on the records endpoint (5 tokens per batch is what
-	// Decrediton uses).
+	// Enrich each 5-token chunk (metadata-only record + vote summary) with
+	// bounded concurrency. 5 tokens is Politeia's per-request records limit
+	// (Decrediton's proposallistpagesize); running the chunks in parallel turns
+	// ~2*ceil(N/5) serial round-trips - which timed out, badly over Tor - into a
+	// few waves. Records use metadata-only filenames; the body loads lazily on
+	// the detail view.
 	records := map[string]piRecord{}
-	for i := 0; i < len(tokens); i += 5 {
-		end := i + 5
-		if end > len(tokens) {
-			end = len(tokens)
-		}
-		chunk, err := piRecordsBatch(ctx, tokens[i:end])
-		if err != nil {
-			log.Printf("politeia records batch: %v", err)
-			continue
-		}
-		for k, v := range chunk {
-			records[k] = v
-		}
-	}
-
 	summaries := map[string]piSummary{}
+	var piMu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 6)
 	for i := 0; i < len(tokens); i += 5 {
 		end := i + 5
 		if end > len(tokens) {
 			end = len(tokens)
 		}
-		chunk, err := piSummariesBatch(ctx, tokens[i:end])
-		if err != nil {
-			log.Printf("politeia summaries batch: %v", err)
-			continue
-		}
-		for k, v := range chunk {
-			summaries[k] = v
-		}
+		chunk := tokens[i:end]
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(chunk []string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if recs, err := piRecordsBatch(ctx, chunk, piListFilenames); err != nil {
+				log.Printf("politeia records batch: %v", err)
+			} else {
+				piMu.Lock()
+				for k, v := range recs {
+					records[k] = v
+				}
+				piMu.Unlock()
+			}
+			if sums, err := piSummariesBatch(ctx, chunk); err != nil {
+				log.Printf("politeia summaries batch: %v", err)
+			} else {
+				piMu.Lock()
+				for k, v := range sums {
+					summaries[k] = v
+				}
+				piMu.Unlock()
+			}
+		}(chunk)
 	}
+	wg.Wait()
 
 	// A timed-out fetch leaves records/summaries partial or empty; caching that
 	// would poison the list with name-less "invalid" proposals. Bail without
@@ -292,13 +301,12 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 		proposal.CurrentChoice = localVotes[t]
 		out = append(out, proposal)
 
-		// Pre-warm the per-token detail from data already in hand so a later
-		// GetProposalDetail serves description/tally/options without re-hitting
-		// Politeia. DescriptionHTML is rendered lazily and comments fetched
-		// lazily on first detail view (see GetProposalDetail).
+		// Pre-warm a light per-token detail (proposal + vote options) from the
+		// list data. The body (index.md) is NOT in the list fetch, so the full
+		// record + comments are pulled lazily on first detail view (see
+		// GetProposalDetail / fetchAndCacheProposalDetail).
 		prewarm[t] = &types.ProposalDetail{
 			Proposal:    proposal,
-			Description: indexMarkdown(rec),
 			SubmittedAt: rec.Timestamp,
 			VoteOptions: voteOptionsFromSummary(sum),
 		}
@@ -317,8 +325,9 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 		// refresh; only description/tally/options are refreshed from the new
 		// record.
 		if prev, ok := piCachedDetails[t]; ok && prev.commentsLoaded {
-			d.Comments = prev.detail.Comments
+			d.Description = prev.detail.Description
 			d.DescriptionHTML = prev.detail.DescriptionHTML
+			d.Comments = prev.detail.Comments
 			piCachedDetails[t] = piDetailCacheEntry{detail: d, at: now, commentsLoaded: true}
 			continue
 		}
@@ -350,8 +359,12 @@ func GetProposalDetail(ctx context.Context, token string) (*types.ProposalDetail
 			applyLocalVoteChoice(ctx, token, &cached)
 			return &cached, entry.at, nil
 		}
-		// Pre-warmed entry: description/tally/options are present; render the
-		// HTML once and lazily fetch comments before upgrading to a full entry.
+		// A pre-warmed list entry carries the summary + vote options but no body
+		// (the list fetches metadata only), so pull the full record + comments on
+		// first open. An entry that already has the body just needs comments.
+		if entry.detail.Description == "" {
+			return fetchAndCacheProposalDetail(ctx, token)
+		}
 		return fillProposalDetailComments(ctx, token, entry)
 	}
 
@@ -433,7 +446,7 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 	ctx, cancel := context.WithTimeout(ctx, ProposalsFetchTimeout)
 	defer cancel()
 
-	records, err := piRecordsBatch(ctx, []string{token})
+	records, err := piRecordsBatch(ctx, []string{token}, piDetailFilenames)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -959,7 +972,16 @@ func piInventory(ctx context.Context) (piInventoryResp, error) {
 	return out, err
 }
 
-func piRecordsBatch(ctx context.Context, tokens []string) (map[string]piRecord, error) {
+// piListFilenames are the small metadata files needed to render the proposals
+// LIST (name + vote metadata); piDetailFilenames adds the full proposal body
+// (index.md), fetched only when a proposal is opened. Mirrors Decrediton, which
+// keeps the list lightweight and pulls the body lazily on the detail view.
+var (
+	piListFilenames   = []string{"proposalmetadata.json", "votemetadata.json"}
+	piDetailFilenames = []string{"proposalmetadata.json", "index.md"}
+)
+
+func piRecordsBatch(ctx context.Context, tokens []string, filenames []string) (map[string]piRecord, error) {
 	type recordReq struct {
 		Token     string   `json:"token"`
 		Filenames []string `json:"filenames,omitempty"`
@@ -970,7 +992,7 @@ func piRecordsBatch(ctx context.Context, tokens []string) (map[string]piRecord, 
 	for _, t := range tokens {
 		body.Requests = append(body.Requests, recordReq{
 			Token:     t,
-			Filenames: []string{"proposalmetadata.json", "index.md"},
+			Filenames: filenames,
 		})
 	}
 	var resp piRecordsResp
