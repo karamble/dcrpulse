@@ -43,6 +43,7 @@ import {
 } from './brEmbedBuilder';
 import { SharedFilePickerModal } from './SharedFilePickerModal';
 import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './ImageAttachModal';
+import { PageLinkPickerModal } from './PageLinkPickerModal';
 import { blobToDataB64 } from './imageCompress';
 
 // MAX_INLINE_BYTES is the per-attachment ceiling for inline embeds. Files
@@ -126,6 +127,7 @@ export const BisonrelayEditor = ({
   const feat = { ...DEFAULT_FEATURES, ...(features ?? {}) };
   const [mode, setMode] = useState<Mode>('write');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pageLinkOpen, setPageLinkOpen] = useState(false);
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -288,6 +290,18 @@ export const BisonrelayEditor = ({
     addInlineEmbed(embed);
   };
 
+  // pageLinkLabel is the default link text used when nothing is selected: the
+  // page's file name without its directory or trailing .md (falls back to a
+  // generic placeholder). A pre-existing selection is kept as the link text.
+  const pageLinkLabel = (target: string): string => {
+    const base = target.split(/[\\/]/).filter(Boolean).pop() || '';
+    return base.replace(/\.md$/i, '') || 'link text';
+  };
+
+  const insertPageLink = (target: string) => {
+    wrapSelection('[', `](${target})`, pageLinkLabel(target));
+  };
+
   const removeEmbed = (id: string) => {
     const placeholder = placeholderFor(id);
     onChange(value.split(placeholder).join(''));
@@ -407,11 +421,7 @@ export const BisonrelayEditor = ({
                 icon={FileSymlink}
                 label="Insert page link"
                 disabled={disabled}
-                onClick={() => {
-                  const target = window.prompt('Page path (e.g. about.md) or br://<uid>/<path>:');
-                  if (!target) return;
-                  wrapSelection('[', `](${target})`, 'link text');
-                }}
+                onClick={() => setPageLinkOpen(true)}
               />
             </>
           )}
@@ -452,6 +462,12 @@ export const BisonrelayEditor = ({
         <SharedFilePickerModal
           onClose={() => setPickerOpen(false)}
           onSubmit={handleSharedFilePicked}
+        />
+      )}
+      {pageLinkOpen && (
+        <PageLinkPickerModal
+          onClose={() => setPageLinkOpen(false)}
+          onSubmit={insertPageLink}
         />
       )}
       {pendingImage && (
