@@ -182,7 +182,11 @@ type BrclientdSendFileResult struct {
 // which persists the bytes under UploadDir and dispatches them to BR's
 // SendFile RPC. user can be a nick / alias / hex UID.
 func BrclientdSendFile(ctx context.Context, user, filename, mime string, body io.Reader) (*BrclientdSendFileResult, error) {
-	cli, err := brclientdClient()
+	// brclientd's c.SendFile blocks synchronously on per-chunk relay acks, so the
+	// response header can be delayed well past the default client's 60s header
+	// deadline for a large/slow transfer. Use the shared no-deadline client (also
+	// used for page fetch); the request context bounds it instead.
+	cli, err := brclientdPagesClient()
 	if err != nil {
 		return nil, err
 	}

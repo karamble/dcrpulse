@@ -173,9 +173,9 @@ func BisonrelayEmbedHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayFileSendHandler accepts a multipart upload (user + file) from
 // the browser and proxies it to brclientd's /files/send endpoint, which
 // stores the file under brclientd's UploadDir and dispatches it to BR's
-// SendFile RPC. Caps the upload at 100 MiB.
+// SendFile RPC. Caps the upload at 1 GiB.
 func BisonrelayFileSendHandler(w http.ResponseWriter, r *http.Request) {
-	const maxUpload = 100 << 20
+	const maxUpload = 1 << 30
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)

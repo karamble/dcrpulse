@@ -400,12 +400,18 @@ export interface BisonrelayFileSendResult {
 export const sendBisonrelayFile = async (
   user: string,
   file: File,
+  onProgress?: (pct: number) => void,
 ): Promise<BisonrelayFileSendResult> => {
   const form = new FormData();
   form.append('user', user);
   form.append('file', file, file.name);
+  // No client-side timeout: a file transfer is unbounded in size/time, so the
+  // global 25s instance timeout must not cut the upload off. onUploadProgress
+  // reports the browser->dashboard upload percentage for the progress indicator.
   const { data } = await api.post<BisonrelayFileSendResult>('/br/files/send', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0,
+    onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded / e.total) * 100) : 0),
   });
   return data ?? { filename: file.name, size: file.size };
 };

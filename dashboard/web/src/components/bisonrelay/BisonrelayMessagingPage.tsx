@@ -26,7 +26,6 @@ import {
 import {
   ARCHIVED_GROUP_ID,
   BisonrelayContact,
-  BisonrelayDownloadEntry,
   BisonrelayGC,
   BisonrelayMessage,
   BisonrelayPMAttachment,
@@ -34,7 +33,6 @@ import {
   acceptBisonrelayInvite,
   acceptBisonrelayKxSuggestion,
   getBisonrelayContacts,
-  getBisonrelayDownloads,
   getBisonrelayGCHistory,
   getBisonrelayIdentity,
   getBisonrelayMessages,
@@ -77,7 +75,7 @@ import { GroupSubNav } from './gc/GroupSubNav';
 import { IncomingGCInvitesBanner } from './gc/IncomingGCInvitesBanner';
 
 const MAX_INLINE_BYTES = 800 * 1024;
-const MAX_TRANSFER_BYTES = 100 * 1024 * 1024;
+const MAX_TRANSFER_BYTES = 1024 * 1024 * 1024;
 
 // DECRED_PULSE_GC is the name of the community welcome group chat the invite
 // bot adds new users to. The "Join Decred chat networks" action is hidden once
@@ -163,6 +161,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     };
   }, []);
   const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
+  const [transfer, setTransfer] = useState<{ pct: number; phase: 'upload' | 'relay' } | null>(null);
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [viewerImage, setViewerImage] = useState<ViewerImage | null>(null);
@@ -276,20 +275,13 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     setMessagesLoading(true);
     setMessagesErr(null);
     try {
-      const peerNick = contact.id?.nick ?? '';
-      const [resp, downloads] = await Promise.all([
-        getBisonrelayMessages(uid, 0, 100),
-        peerNick ? getBisonrelayDownloads(peerNick) : Promise.resolve([] as BisonrelayDownloadEntry[]),
-      ]);
+      // History is the persisted PM log only. Received files are not re-derived
+      // from the downloads directory here (that re-listed them at the bottom on
+      // every load); they live in Files > Downloads, and a transient line is
+      // shown live via the 'file-download-completed' handler below.
+      const resp = await getBisonrelayMessages(uid, 0, 100);
       const pmEntries = resp.entries ?? [];
-      const downloadEntries: BisonrelayMessage[] = downloads.map((d) => ({
-        message: buildDownloadTag(peerNick, d.name, d.size, ''),
-        from: peerNick,
-        timestamp: d.mtime,
-        internal: false,
-      }));
-      const merged = [...pmEntries, ...downloadEntries].sort((a, b) => a.timestamp - b.timestamp);
-      setMessages(merged);
+      setMessages([...pmEntries].sort((a, b) => a.timestamp - b.timestamp));
     } catch (err: any) {
       setMessagesErr(err?.message || 'Could not load messages');
     } finally {
@@ -909,22 +901,30 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         }
         return;
       }
-      if (evt.type === 'download') {
-        const payload = evt.payload ?? {};
-        const senderNick = payload.nick ?? '';
-        const fileMeta = payload.fileMetadata ?? payload.file_metadata ?? {};
-        const filename = fileMeta.filename ?? '';
-        const size = Number(fileMeta.size ?? 0);
+      if (evt.type === 'file-download-completed') {
+        // Transient "file arrived" line for the open thread (mirrors bruig's
+        // FileDownloadedEvent). Not persisted: loadMessages does not re-add it,
+        // so it is gone on reload; the file lives on in Files > Downloads.
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const senderNick = String(payload.nick ?? '');
+        const filename = String(payload.filename ?? '');
+        const size = Number(payload.size ?? 0);
         const fromUid = identityFromPayload(payload);
         if (!filename) return;
         const cur = selectedRef.current;
         if (cur && cur.id?.identity && fromUid === cur.id.identity) {
+          let ts = Math.floor(Date.now() / 1000);
+          const evtTs = (evt as { timestamp?: string }).timestamp;
+          if (evtTs) {
+            const parsed = Date.parse(evtTs);
+            if (Number.isFinite(parsed)) ts = Math.floor(parsed / 1000);
+          }
           setMessages((prev) => [
             ...prev,
             {
               message: buildDownloadTag(senderNick, filename, size, ''),
               from: senderNick,
-              timestamp: Math.floor(Date.now() / 1000),
+              timestamp: ts,
               internal: false,
             },
           ]);
@@ -1067,7 +1067,14 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             },
           ]);
         }
-        await sendBisonrelayFile(recipient, attachment.file);
+        setTransfer({ pct: 0, phase: 'upload' });
+        // Only the browser->dashboard upload is measurable. Once it reaches
+        // 100%, brclientd relays the file to the peer with no usable progress
+        // signal (bisonrelay's SendFile progress channel blocks the send - see
+        // brclientd status_server.go), so switch to an indeterminate state.
+        await sendBisonrelayFile(recipient, attachment.file, (pct) =>
+          setTransfer(pct >= 100 ? { pct: 100, phase: 'relay' } : { pct, phase: 'upload' }),
+        );
         setMessages((prev) => [
           ...prev,
           {
@@ -1106,6 +1113,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       setMessagesErr(typeof body === 'string' ? body : err?.message || 'Send failed');
     } finally {
       setSending(false);
+      setTransfer(null);
     }
   };
 
@@ -1531,6 +1539,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               {attachment && (
                 <AttachmentPreview
                   attachment={attachment}
+                  transfer={transfer}
                   onRemove={() => {
                     setAttachment(null);
                     setAttachErr(null);
@@ -2640,13 +2649,18 @@ const NonImageEmbed = ({ embed, fileUrl }: { embed: EmbedSegment; fileUrl: strin
 const AttachmentPreview = ({
   attachment,
   onRemove,
+  transfer,
 }: {
   attachment: StagedAttachment;
   onRemove: () => void;
+  transfer?: { pct: number; phase: 'upload' | 'relay' } | null;
 }) => {
   const mime = attachment.file.type || 'application/octet-stream';
   const showImage = attachment.mode === 'inline' && isImageMime(mime) && attachment.dataB64;
   const modeLabel = attachment.mode === 'inline' ? 'inline embed' : 'file transfer';
+  const uploading = transfer != null;
+  const relaying = transfer?.phase === 'relay';
+  const transferLabel = relaying ? 'Sending…' : `Uploading ${transfer?.pct ?? 0}%`;
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-border/40 bg-muted/10">
       {showImage ? (
@@ -2660,18 +2674,34 @@ const AttachmentPreview = ({
       )}
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium truncate">{attachment.file.name}</p>
-        <p className="text-[10px] text-muted-foreground">
-          {mime} · {formatBytes(attachment.file.size)} · {modeLabel}
-        </p>
+        {uploading ? (
+          <>
+            <p className="text-[10px] text-muted-foreground">{transferLabel}</p>
+            <div className="mt-1 h-1 w-full overflow-hidden rounded bg-muted/30">
+              <div
+                className={`h-full bg-primary ${
+                  relaying ? 'w-full animate-pulse' : 'transition-[width] duration-150'
+                }`}
+                style={relaying ? undefined : { width: `${transfer?.pct ?? 0}%` }}
+              />
+            </div>
+          </>
+        ) : (
+          <p className="text-[10px] text-muted-foreground">
+            {mime} · {formatBytes(attachment.file.size)} · {modeLabel}
+          </p>
+        )}
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors"
-        title="Remove attachment"
-      >
-        <X className="h-4 w-4" />
-      </button>
+      {!uploading && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors"
+          title="Remove attachment"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 };
