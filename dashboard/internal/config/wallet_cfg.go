@@ -223,8 +223,22 @@ func (c *WalletCfg) PoliteiaVotes() (map[string]string, error) {
 	return m, nil
 }
 
-// UpsertPoliteiaVote records the vote choice for a proposal token.
-func (c *WalletCfg) UpsertPoliteiaVote(token, choice string) error {
+// PoliteiaVoteCounts returns the per-wallet cache of how many tickets were used
+// for each proposal vote. Map keyed by proposal token; value is the count.
+func (c *WalletCfg) PoliteiaVoteCounts() (map[string]int, error) {
+	m := map[string]int{}
+	ok, err := c.Get(KeyPoliteiaVoteCounts, &m)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return m, nil
+}
+
+// UpsertPoliteiaVote records the vote choice and ticket count for a token.
+func (c *WalletCfg) UpsertPoliteiaVote(token, choice string, count int) error {
 	m, err := c.PoliteiaVotes()
 	if err != nil {
 		return err
@@ -233,7 +247,18 @@ func (c *WalletCfg) UpsertPoliteiaVote(token, choice string) error {
 		m = map[string]string{}
 	}
 	m[token] = choice
-	return c.Set(KeyPoliteiaVotes, m)
+	if err := c.Set(KeyPoliteiaVotes, m); err != nil {
+		return err
+	}
+	cm, err := c.PoliteiaVoteCounts()
+	if err != nil {
+		return err
+	}
+	if cm == nil {
+		cm = map[string]int{}
+	}
+	cm[token] = count
+	return c.Set(KeyPoliteiaVoteCounts, cm)
 }
 
 // SetLastAccess records a unix-seconds timestamp under last_access.

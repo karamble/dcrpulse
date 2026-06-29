@@ -1147,6 +1147,7 @@ export interface Proposal {
   endBlock: number;
   blocksLeft: number;
   currentChoice: string;
+  votedTicketCount: number;
 }
 
 export interface ProposalVoteOption {
@@ -1296,6 +1297,7 @@ export interface VoteEligibility {
   voteOptions: ProposalVoteOption[];
   alreadyVoted: boolean;
   currentChoice: string;
+  votedTicketCount: number;
 }
 
 // getVoteEligibility triggers the on-demand eligibility computation for a

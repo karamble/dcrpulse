@@ -130,7 +130,11 @@ export const VoteModal = ({ isOpen, token, onClose, onVoted }: VoteModalProps) =
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm text-success">
                 <CheckCircle2 className="h-4 w-4" />
-                You voted "{eligibility.currentChoice}".
+                {`You voted "${eligibility.currentChoice}"${
+                  eligibility.votedTicketCount > 0
+                    ? ` with ${eligibility.votedTicketCount} ticket${eligibility.votedTicketCount === 1 ? '' : 's'}`
+                    : ''
+                }.`}
               </div>
               <p className="text-xs text-muted-foreground">
                 Each ticket can vote once, so this proposal can no longer be voted from this

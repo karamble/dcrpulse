@@ -74,6 +74,9 @@ const (
 	// "you voted X" without a round-trip to proposals.decred.org for the
 	// vote-results endpoint after each cast.
 	KeyPoliteiaVotes = "politeia_votes"
+	// Per-wallet record of how many tickets each Politeia vote used, keyed by
+	// proposal token, so the UI can show "you voted X with N tickets".
+	KeyPoliteiaVoteCounts = "politeia_vote_counts"
 )
 
 // External-request identifiers used as keys inside the

@@ -73,8 +73,9 @@ type Proposal struct {
 	QuorumMin       int64            `json:"quorumMin"`
 	EligibleTickets int64            `json:"eligibleTickets"`
 	EndBlock        int64            `json:"endBlock"`
-	BlocksLeft      int64            `json:"blocksLeft"`
-	CurrentChoice   string           `json:"currentChoice"`
+	BlocksLeft       int64            `json:"blocksLeft"`
+	CurrentChoice    string           `json:"currentChoice"`
+	VotedTicketCount int              `json:"votedTicketCount"`
 }
 
 // ProposalVoteOption mirrors Politeia's vote option definition.
@@ -121,6 +122,7 @@ type VoteEligibility struct {
 	VoteOptions        []ProposalVoteOption `json:"voteOptions"`
 	AlreadyVoted       bool                 `json:"alreadyVoted"`
 	CurrentChoice      string               `json:"currentChoice"`
+	VotedTicketCount   int                  `json:"votedTicketCount"`
 }
 
 // CastPoliteiaVoteRequest is the body for the cast-vote endpoint.

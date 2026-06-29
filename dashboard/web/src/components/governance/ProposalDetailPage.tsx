@@ -319,6 +319,34 @@ export const ProposalDetailPage = () => {
         )}
       </div>
 
+      {isVoting && !isWatchOnly && (
+        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
+          <h3 className="font-semibold">Cast your vote</h3>
+          {detail.currentChoice && (
+            <div className="flex items-center gap-2 text-sm text-success">
+              <CheckCircle2 className="h-4 w-4" />
+              {`You voted "${detail.currentChoice}"${
+                detail.votedTicketCount > 0
+                  ? ` with ${detail.votedTicketCount} ticket${detail.votedTicketCount === 1 ? '' : 's'}`
+                  : ''
+              }.`}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setVoteModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all"
+          >
+            <Vote className="h-4 w-4" />
+            {detail.currentChoice ? 'View vote' : 'Vote'}
+          </button>
+          <p className="text-xs text-muted-foreground">
+            Opening this checks how many of your tickets are eligible (it fetches the ticket
+            snapshot from Politeia), so it runs only when you click.
+          </p>
+        </div>
+      )}
+
       {(detail.descriptionHtml || detail.description) && (
         <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-2">
           <h3 className="font-semibold">Description</h3>
@@ -335,30 +363,6 @@ export const ProposalDetailPage = () => {
           <p className="text-xs text-muted-foreground pt-2 border-t border-border/30">
             Embedded images are not loaded. Open the proposal on Politeia for visuals or the
             original formatting.
-          </p>
-        </div>
-      )}
-
-      {isVoting && !isWatchOnly && (
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
-          <h3 className="font-semibold">Cast your vote</h3>
-          {detail.currentChoice && (
-            <div className="flex items-center gap-2 text-sm text-success">
-              <CheckCircle2 className="h-4 w-4" />
-              You voted "{detail.currentChoice}".
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => setVoteModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all"
-          >
-            <Vote className="h-4 w-4" />
-            {detail.currentChoice ? 'View vote' : 'Vote'}
-          </button>
-          <p className="text-xs text-muted-foreground">
-            Opening this checks how many of your tickets are eligible (it fetches the ticket
-            snapshot from Politeia), so it runs only when you click.
           </p>
         </div>
       )}

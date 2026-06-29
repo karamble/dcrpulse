@@ -291,6 +291,7 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 	// Local cache of "you voted X" choices so the UI can show the
 	// choice without rehitting Politeia's vote-results endpoint.
 	localVotes := loadLocalPoliteiaVotes(ctx)
+	localVoteCounts := loadLocalPoliteiaVoteCounts(ctx)
 
 	out := make([]types.Proposal, 0, len(tokens))
 	prewarm := make(map[string]*types.ProposalDetail, len(tokens))
@@ -299,6 +300,7 @@ func fetchAndCacheProposals(_ context.Context) ([]types.Proposal, error) {
 		sum := summaries[t]
 		proposal := proposalFromRecordAndSummary(t, rec, sum)
 		proposal.CurrentChoice = localVotes[t]
+		proposal.VotedTicketCount = localVoteCounts[t]
 		out = append(out, proposal)
 
 		// Pre-warm a light per-token detail (proposal + vote options) from the
@@ -460,8 +462,8 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 	}
 
 	proposal := proposalFromRecordAndSummary(token, rec, sum[token])
-	localVotes := loadLocalPoliteiaVotes(ctx)
-	proposal.CurrentChoice = localVotes[token]
+	proposal.CurrentChoice = loadLocalPoliteiaVotes(ctx)[token]
+	proposal.VotedTicketCount = loadLocalPoliteiaVoteCounts(ctx)[token]
 
 	desc := indexMarkdown(rec)
 	out := &types.ProposalDetail{
@@ -517,6 +519,7 @@ func PrepareProposalVote(ctx context.Context, token string) (*types.VoteEligibil
 	if choice := loadLocalPoliteiaVotes(ctx)[token]; choice != "" {
 		out.AlreadyVoted = true
 		out.CurrentChoice = choice
+		out.VotedTicketCount = loadLocalPoliteiaVoteCounts(ctx)[token]
 		return out, nil
 	}
 
@@ -554,10 +557,11 @@ func PrepareProposalVote(ctx context.Context, token string) (*types.VoteEligibil
 	// across the wallet's tickets).
 	if votes, err := piResults(ctx, token); err != nil {
 		log.Printf("politeia results %s: %v", token, err)
-	} else if choice := walletVoteChoice(addrs, votes, options); choice != "" {
+	} else if choice, count := walletVoteChoice(addrs, votes, options); choice != "" {
 		out.AlreadyVoted = true
 		out.CurrentChoice = choice
-		if err := persistLocalPoliteiaVote(ctx, token, choice); err != nil {
+		out.VotedTicketCount = count
+		if err := persistLocalPoliteiaVote(ctx, token, choice, count); err != nil {
 			log.Printf("persist politeia vote: %v", err)
 		}
 		return out, nil
@@ -599,14 +603,19 @@ func committedFromEligible(ctx context.Context, eligible []string) ([]*pb.Commit
 
 // walletVoteChoice returns the option id the wallet voted, or "" if none of its
 // owned tickets appear in the recorded votes.
-func walletVoteChoice(owned []*pb.CommittedTicketsResponse_TicketAddress, votes []piCastVote, options []types.ProposalVoteOption) string {
+func walletVoteChoice(owned []*pb.CommittedTicketsResponse_TicketAddress, votes []piCastVote, options []types.ProposalVoteOption) (string, int) {
 	if len(owned) == 0 || len(votes) == 0 {
-		return ""
+		return "", 0
 	}
 	ownedHex := make(map[string]struct{}, len(owned))
 	for _, ta := range owned {
 		ownedHex[hex.EncodeToString(reversed(ta.GetTicket()))] = struct{}{}
 	}
+	// Count every owned ticket that appears in the recorded votes; the choice
+	// is taken from the first match (a wallet votes a uniform choice across its
+	// tickets, mirroring Decrediton).
+	choice := ""
+	count := 0
 	for _, v := range votes {
 		if _, ok := ownedHex[v.Ticket]; !ok {
 			continue
@@ -617,11 +626,15 @@ func walletVoteChoice(owned []*pb.CommittedTicketsResponse_TicketAddress, votes 
 		}
 		for _, o := range options {
 			if uint64(o.Bit) == bit {
-				return o.ID
+				if choice == "" {
+					choice = o.ID
+				}
+				count++
+				break
 			}
 		}
 	}
-	return ""
+	return choice, count
 }
 
 // parseVoteBit parses a Politeia vote bit, which may be decimal or hex.
@@ -713,15 +726,19 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 		return &types.CastPoliteiaVoteResult{}, nil
 	}
 
-	// Unlock the wallet so SignMessages can sign with the per-ticket
-	// commitment private keys.
-	if err := unlockForVote(ctx, passphrase); err != nil {
+	// Unlock the accounts that own the ticket commitment keys so SignMessages
+	// can sign. dcrwallet uses per-account encryption, so a wallet-wide unlock
+	// does NOT make these keys usable ("account with unique passphrase is
+	// locked"); unlock each owning account and re-lock only the ones we
+	// unlocked - the same path VSP fee signing uses. Mirrors Decrediton's
+	// UnlockAccount-then-sign.
+	unlocked, err := unlockAllAccountsForSpend(ctx, passphrase)
+	if err != nil {
 		return nil, err
 	}
-	defer lockAfterVote()
+	defer relockAccountsAfterVSP(unlocked)
 
 	bitHex := fmt.Sprintf("%x", voteBit)
-	bitDecimal := fmt.Sprintf("%d", voteBit)
 
 	// Build signature requests. The message format is
 	// token||ticketHashHex||voteBitHex.
@@ -745,8 +762,7 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 			end = len(signMsgs)
 		}
 		resp, err := rpc.WalletGrpcClient.SignMessages(ctx, &pb.SignMessagesRequest{
-			Passphrase: passphrase,
-			Messages:   signMsgs[i:end],
+			Messages: signMsgs[i:end],
 		})
 		if err != nil {
 			return nil, fmt.Errorf("SignMessages: %w", err)
@@ -757,7 +773,7 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 				result.Skipped++
 				continue
 			}
-			signatures[i+j] = base64.StdEncoding.EncodeToString(reply.GetSignature())
+			signatures[i+j] = hex.EncodeToString(reply.GetSignature())
 		}
 	}
 
@@ -789,7 +805,7 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 		ballot.Votes = append(ballot.Votes, castVote{
 			Token:     req.Token,
 			Ticket:    ticketHexByIndex[i],
-			VoteBit:   bitDecimal,
+			VoteBit:   bitHex,
 			Signature: sig,
 		})
 	}
@@ -812,7 +828,7 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 
 	// Persist local "you voted X" cache.
 	if result.Cast > 0 {
-		if err := persistLocalPoliteiaVote(ctx, req.Token, req.VoteOption); err != nil {
+		if err := persistLocalPoliteiaVote(ctx, req.Token, req.VoteOption, result.Cast); err != nil {
 			log.Printf("persist politeia vote: %v", err)
 		}
 	}
@@ -1243,7 +1259,22 @@ func loadLocalPoliteiaVotes(ctx context.Context) map[string]string {
 	return m
 }
 
-func persistLocalPoliteiaVote(ctx context.Context, token, choice string) error {
+// loadLocalPoliteiaVoteCounts returns the map of {token: ticketCount} for votes
+// cast through this dashboard, or an empty map.
+func loadLocalPoliteiaVoteCounts(ctx context.Context) map[string]int {
+	network, err := CurrentNetwork(ctx)
+	if err != nil || network == "" {
+		return nil
+	}
+	wc, err := config.LoadWalletCfg(network, CurrentWalletName())
+	if err != nil {
+		return nil
+	}
+	m, _ := wc.PoliteiaVoteCounts()
+	return m
+}
+
+func persistLocalPoliteiaVote(ctx context.Context, token, choice string, count int) error {
 	network, err := CurrentNetwork(ctx)
 	if err != nil {
 		return err
@@ -1252,7 +1283,7 @@ func persistLocalPoliteiaVote(ctx context.Context, token, choice string) error {
 	if err != nil {
 		return err
 	}
-	if err := wc.UpsertPoliteiaVote(token, choice); err != nil {
+	if err := wc.UpsertPoliteiaVote(token, choice, count); err != nil {
 		return err
 	}
 	return wc.Save()
