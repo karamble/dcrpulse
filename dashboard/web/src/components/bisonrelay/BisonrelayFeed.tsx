@@ -4,7 +4,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
-import { isImageMime } from './embedParser';
+import { isImageMime, parseEmbeds } from './embedParser';
+import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
+import { linkifyChatText } from './chatLinkify';
 import {
   AlertCircle,
   ArrowLeft,
@@ -20,6 +22,7 @@ import {
   Users,
   Send,
   FileText,
+  Paperclip,
 } from 'lucide-react';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
 import { useBrNotifPrefs } from './brNotifPrefs';
@@ -28,8 +31,13 @@ import { FeedCard, FeedCardSkeleton, relativeTime } from './FeedCard';
 import {
   BisonrelayEditor,
   EditorEmbedMap,
+  ImageAttachModal,
+  ImageAttachResult,
   composeBRBody,
+  isCompressibleImage,
   isEditorOverHardCap,
+  newEmbedId,
+  placeholderFor,
 } from './editor';
 import {
   BisonrelayContact,
@@ -1138,6 +1146,9 @@ const MAX_ROOTS_SHOWN = 200;
 // Collapse a very long individual comment behind a "show more" toggle so one
 // huge comment cannot bloat the DOM.
 const MAX_COMMENT_CHARS = 2000;
+// MAX_COMMENT_WIRE_BYTES caps the on-wire size of an outgoing comment
+// (text + inline image embeds), mirroring the post editor's hard cap.
+const MAX_COMMENT_WIRE_BYTES = 1024 * 1024;
 
 type CommentTree = {
   roots: BisonrelayPostComment[];
@@ -1191,6 +1202,12 @@ const PostComments = ({
   const [submitting, setSubmitting] = useState(false);
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [showAllRoots, setShowAllRoots] = useState(false);
+  const [viewer, setViewer] = useState<ViewerImage | null>(null);
+  const openViewer = useCallback(
+    (src: string, name: string, mime: string) => setViewer({ src, name, mime }),
+    [],
+  );
+  const topAttach = useCommentImageAttach((ph) => setDraft((d) => (d ? d + ' ' : '') + ph));
   // Receive receipts per comment status_id; only recorded on the post
   // author's node (it relays the comments), so loaded for own posts only.
   const [commentReceipts, setCommentReceipts] = useState<
@@ -1300,10 +1317,12 @@ const PostComments = ({
 
   const handleTopLevelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const text = draft.trim();
-    if (!text || submitting) return;
+    if (topAttach.overCap(draft)) return;
+    const wire = topAttach.composeText(draft).trim();
+    if (!wire || submitting) return;
     setDraft('');
-    await submitComment(text);
+    topAttach.reset();
+    await submitComment(wire);
   };
 
   return (
@@ -1337,6 +1356,7 @@ const PostComments = ({
               setReplyTargetId={setReplyTargetId}
               onSubmitReply={submitComment}
               submitting={submitting}
+              openViewer={openViewer}
             />
           ))}
           {!showAllRoots && tree.roots.length > MAX_ROOTS_SHOWN && (
@@ -1350,6 +1370,9 @@ const PostComments = ({
           )}
         </div>
       )}
+      {topAttach.overCap(draft) && (
+        <p className="text-xs text-destructive">Comment is too large to send. Remove an image.</p>
+      )}
       <form onSubmit={handleTopLevelSubmit} className="flex items-end gap-2 pt-2">
         <textarea
           rows={2}
@@ -1359,17 +1382,152 @@ const PostComments = ({
           disabled={submitting}
           className="flex-1 px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50 resize-y min-h-[44px]"
         />
+        <input
+          ref={topAttach.fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={topAttach.onPickFile}
+        />
+        <button
+          type="button"
+          onClick={() => topAttach.fileInputRef.current?.click()}
+          disabled={submitting}
+          title="Attach image"
+          aria-label="Attach image"
+          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
         <button
           type="submit"
-          disabled={!draft.trim() || submitting}
+          disabled={!draft.trim() || submitting || topAttach.overCap(draft)}
           className="px-3 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting ? 'Sending…' : 'Comment'}
         </button>
       </form>
+      {topAttach.pendingImage && (
+        <ImageAttachModal
+          file={topAttach.pendingImage}
+          maxInlineBytes={512 * 1024}
+          showAlt
+          onCancel={() => topAttach.setPendingImage(null)}
+          onAttach={topAttach.onAttach}
+        />
+      )}
+      {viewer && <ImageViewerModal image={viewer} onClose={() => setViewer(null)} />}
     </div>
   );
 };
+
+// CommentBody renders a comment's text with inline --embed[...]-- image chips
+// (the same renderer the chat uses). Truncation applies to the visible text
+// only, so a base64 image embed is never split or hidden behind "show more".
+const CommentBody = ({
+  text,
+  openViewer,
+}: {
+  text: string;
+  openViewer?: ImageViewerOpenFn | null;
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const segments = useMemo(() => parseEmbeds(text), [text]);
+  const textLen = segments.reduce((n, s) => (s.kind === 'text' ? n + s.text.length : n), 0);
+  const overflow = textLen > MAX_COMMENT_CHARS;
+  const truncating = overflow && !expanded;
+  let remaining = MAX_COMMENT_CHARS;
+  return (
+    <div className="space-y-1">
+      {segments.map((seg, i) => {
+        if (seg.kind === 'embed') {
+          return <EmbedRenderer key={i} embed={seg} openViewer={openViewer} />;
+        }
+        if (seg.kind !== 'text') {
+          return null;
+        }
+        let body = seg.text;
+        let ellipsis = '';
+        if (truncating) {
+          if (remaining <= 0) return null;
+          if (body.length > remaining) {
+            body = body.slice(0, remaining);
+            ellipsis = '…';
+          }
+          remaining -= seg.text.length;
+        }
+        if (!body.trim()) return null;
+        return (
+          <p key={i} className="text-sm text-foreground/90 break-words whitespace-pre-wrap">
+            {linkifyChatText(body)}
+            {ellipsis}
+          </p>
+        );
+      })}
+      {overflow && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="text-xs text-primary hover:underline"
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  );
+};
+
+// useCommentImageAttach wires the shared image-compression modal into a comment
+// composer: it stages a picked image, compresses it via ImageAttachModal, and
+// inserts an --embed[id=..]-- placeholder that composeText() expands to the
+// inline wire tag at submit (mirrors the post editor).
+function useCommentImageAttach(appendPlaceholder: (placeholder: string) => void) {
+  const [embeds, setEmbeds] = useState<EditorEmbedMap>({});
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (f && isCompressibleImage(f.type)) setPendingImage(f);
+  };
+  const onAttach = (r: ImageAttachResult) => {
+    const id = newEmbedId(embeds);
+    setEmbeds((prev) => ({
+      ...prev,
+      [id]: {
+        displayName: r.displayName,
+        name: r.name,
+        mime: r.mime,
+        dataB64: r.dataB64,
+        alt: r.alt,
+        size: r.size,
+      },
+    }));
+    appendPlaceholder(placeholderFor(id));
+    setPendingImage(null);
+  };
+  const composeText = (text: string) => composeBRBody(text, embeds);
+  const overCap = (text: string) => {
+    let bytes = text.length;
+    for (const id in embeds) bytes += embeds[id].dataB64?.length ?? 0;
+    return bytes > MAX_COMMENT_WIRE_BYTES;
+  };
+  const reset = () => {
+    setEmbeds({});
+    setPendingImage(null);
+  };
+  return {
+    pendingImage,
+    setPendingImage,
+    fileInputRef,
+    onPickFile,
+    onAttach,
+    composeText,
+    overCap,
+    reset,
+  };
+}
 
 const CommentNode = ({
   comment,
@@ -1382,6 +1540,7 @@ const CommentNode = ({
   setReplyTargetId,
   onSubmitReply,
   submitting,
+  openViewer,
 }: {
   comment: BisonrelayPostComment;
   level: number;
@@ -1393,8 +1552,8 @@ const CommentNode = ({
   setReplyTargetId: (id: string | null) => void;
   onSubmitReply: (text: string, parent?: string) => Promise<void>;
   submitting: boolean;
+  openViewer?: ImageViewerOpenFn | null;
 }) => {
-  const [expanded, setExpanded] = useState(false);
   const seen = (comment.status_id && seenReceipts[comment.status_id]) || [];
   // A comment's identity is its status_id (unique per-comment hash); replies
   // reference it as their `parent`. (`identifier` is the shared post id.)
@@ -1480,20 +1639,7 @@ const CommentNode = ({
               </button>
             </div>
           </div>
-          <p className="text-sm text-foreground/90 break-words whitespace-pre-wrap">
-            {expanded || comment.comment.length <= MAX_COMMENT_CHARS
-              ? comment.comment
-              : `${comment.comment.slice(0, MAX_COMMENT_CHARS)}…`}
-            {comment.comment.length > MAX_COMMENT_CHARS && (
-              <button
-                type="button"
-                onClick={() => setExpanded((v) => !v)}
-                className="ml-1 text-xs text-primary hover:underline"
-              >
-                {expanded ? 'Show less' : 'Show more'}
-              </button>
-            )}
-          </p>
+          <CommentBody text={comment.comment} openViewer={openViewer} />
         </div>
       </div>
       {(isReplyTarget || safeChildren.length > 0) && (
@@ -1521,6 +1667,7 @@ const CommentNode = ({
               setReplyTargetId={setReplyTargetId}
               onSubmitReply={onSubmitReply}
               submitting={submitting}
+              openViewer={openViewer}
             />
           ))}
         </div>
@@ -1539,12 +1686,15 @@ const InlineReplyComposer = ({
   onSubmit: (text: string) => Promise<void>;
 }) => {
   const [text, setText] = useState('');
+  const attach = useCommentImageAttach((ph) => setText((t) => (t ? t + ' ' : '') + ph));
   const handle = async (e: React.FormEvent) => {
     e.preventDefault();
-    const t = text.trim();
-    if (!t || submitting) return;
+    if (attach.overCap(text)) return;
+    const wire = attach.composeText(text).trim();
+    if (!wire || submitting) return;
     setText('');
-    await onSubmit(t);
+    attach.reset();
+    await onSubmit(wire);
   };
   return (
     <form onSubmit={handle} className="space-y-2">
@@ -1557,7 +1707,27 @@ const InlineReplyComposer = ({
         autoFocus
         className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50 resize-y min-h-[44px]"
       />
-      <div className="flex justify-end gap-2">
+      {attach.overCap(text) && (
+        <p className="text-xs text-destructive">Comment is too large to send. Remove an image.</p>
+      )}
+      <div className="flex items-center justify-end gap-2">
+        <input
+          ref={attach.fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={attach.onPickFile}
+        />
+        <button
+          type="button"
+          onClick={() => attach.fileInputRef.current?.click()}
+          disabled={submitting}
+          title="Attach image"
+          aria-label="Attach image"
+          className="mr-auto p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+        >
+          <Paperclip className="h-3.5 w-3.5" />
+        </button>
         <button
           type="button"
           onClick={onCancel}
@@ -1568,12 +1738,21 @@ const InlineReplyComposer = ({
         </button>
         <button
           type="submit"
-          disabled={!text.trim() || submitting}
+          disabled={!text.trim() || submitting || attach.overCap(text)}
           className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-xs font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting ? 'Sending…' : 'Reply'}
         </button>
       </div>
+      {attach.pendingImage && (
+        <ImageAttachModal
+          file={attach.pendingImage}
+          maxInlineBytes={512 * 1024}
+          showAlt
+          onCancel={() => attach.setPendingImage(null)}
+          onAttach={attach.onAttach}
+        />
+      )}
     </form>
   );
 };

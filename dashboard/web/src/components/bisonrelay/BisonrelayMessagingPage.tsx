@@ -52,14 +52,13 @@ import { GroupManagementModal } from './BisonrelayContactGroupModals';
 import { useBrNotifPrefs } from './brNotifPrefs';
 import {
   DownloadSegment,
-  EmbedSegment,
   buildDownloadTag,
   downloadFileUrl,
-  embedFileUrl,
   formatBytes,
   isImageMime,
   parseEmbeds,
 } from './embedParser';
+import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
 import { linkifyChatText } from './chatLinkify';
 import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './editor';
 import { EmojiPicker } from './EmojiPicker';
@@ -86,10 +85,6 @@ interface StagedAttachment {
   file: File;
   mode: 'inline' | 'transfer';
   dataB64?: string;
-}
-
-interface ImageViewerOpenFn {
-  (src: string, name: string, mime: string): void;
 }
 
 const ImageViewerCtx = createContext<ImageViewerOpenFn | null>(null);
@@ -2523,6 +2518,7 @@ const ContactAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: st
 const SENT_FILE_RE = /^Sent file "(.+)"(?:\s*\(([^)]*)\))?\s*$/;
 
 const MessageBody = ({ body }: { body: string }) => {
+  const openViewer = useContext(ImageViewerCtx);
   const trimmed = body.trim();
   const sent = trimmed.match(SENT_FILE_RE);
   if (sent) {
@@ -2541,7 +2537,7 @@ const MessageBody = ({ body }: { body: string }) => {
           );
         }
         if (seg.kind === 'embed') {
-          return <EmbedRenderer key={i} embed={seg} />;
+          return <EmbedRenderer key={i} embed={seg} openViewer={openViewer} />;
         }
         return <DownloadRenderer key={i} download={seg} />;
       })}
@@ -2582,61 +2578,6 @@ const DownloadRenderer = ({ download }: { download: DownloadSegment }) => {
       <a
         href={url}
         download={download.filename}
-        className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors"
-        title="Save"
-      >
-        <Download className="h-4 w-4" />
-      </a>
-    </div>
-  );
-};
-
-const EmbedRenderer = ({ embed }: { embed: EmbedSegment }) => {
-  const openViewer = useContext(ImageViewerCtx);
-  const inlineUrl = embed.dataB64 ? `data:${embed.mime};base64,${embed.dataB64}` : '';
-  const fileUrl = inlineUrl || embedFileUrl(embed.localFilename);
-  if (!fileUrl) {
-    return (
-      <p className="text-[11px] text-muted-foreground italic">
-        [attachment {embed.name || embed.filename || 'unnamed'} not available]
-      </p>
-    );
-  }
-  if (isImageMime(embed.mime)) {
-    const displayName = embed.name || embed.filename || 'image';
-    return (
-      <button
-        type="button"
-        onClick={() => openViewer?.(fileUrl, displayName, embed.mime)}
-        className="block p-0 border-0 bg-transparent cursor-zoom-in"
-      >
-        <img
-          src={fileUrl}
-          alt={embed.alt || displayName}
-          loading="lazy"
-          className="max-h-72 max-w-full rounded border border-border/40 object-contain bg-background/40"
-        />
-      </button>
-    );
-  }
-  return <NonImageEmbed embed={embed} fileUrl={fileUrl} />;
-};
-
-const NonImageEmbed = ({ embed, fileUrl }: { embed: EmbedSegment; fileUrl: string }) => {
-  const filename = embed.name || embed.filename || 'attachment';
-  const bytes = embed.dataB64 ? Math.floor((embed.dataB64.length * 3) / 4) : embed.size;
-  return (
-    <div className="flex items-center gap-2 px-2 py-1.5 rounded border border-border/40 bg-background/40">
-      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium truncate">{filename}</p>
-        <p className="text-[10px] text-muted-foreground">
-          {embed.mime || 'unknown'}{bytes ? ' · ' + formatBytes(bytes) : ''}
-        </p>
-      </div>
-      <a
-        href={fileUrl}
-        download={filename}
         className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors"
         title="Save"
       >
