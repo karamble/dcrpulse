@@ -171,6 +171,7 @@ export interface BisonrelayNote {
   subject: string;
   detail: string;
   uid?: string;
+  link?: string;
 }
 
 export const getBisonrelayNotifications = async (n: number = 50): Promise<BisonrelayNote[]> => {

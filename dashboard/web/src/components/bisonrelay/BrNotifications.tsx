@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toYMDTime } from '../../utils/date';
 import { Bell } from 'lucide-react';
 import {
@@ -48,6 +49,7 @@ export const BrNotifications = () => {
   const [seen, setSeen] = useState<number>(() => Number(localStorage.getItem(SEEN_KEY) || 0));
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const { addListener } = useBisonrelayLive();
+  const navigate = useNavigate();
 
   const refresh = () => getBisonrelayNotifications(50).then(setNotes).catch(() => {});
 
@@ -109,18 +111,27 @@ export const BrNotifications = () => {
           {notes.length === 0 ? (
             <p className="text-xs text-muted-foreground p-4 text-center">No notifications yet.</p>
           ) : (
-            notes.map((n) => (
-              <div key={n.id} className="px-3 py-2.5 border-b border-border/30 last:border-b-0">
-                <div className="flex items-center gap-2">
-                  <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${sevDot(n.severity)}`} />
-                  <span className="text-xs font-medium text-foreground truncate">{n.subject}</span>
-                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-                    {toYMDTime(new Date(n.ts))}
-                  </span>
+            notes.map((n) => {
+              const link = n.link;
+              return (
+                <div
+                  key={n.id}
+                  onClick={link ? () => { setOpen(false); navigate(link); } : undefined}
+                  className={`px-3 py-2.5 border-b border-border/30 last:border-b-0${
+                    link ? ' cursor-pointer hover:bg-muted/30' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${sevDot(n.severity)}`} />
+                    <span className="text-xs font-medium text-foreground truncate">{n.subject}</span>
+                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                      {toYMDTime(new Date(n.ts))}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1 break-words">{n.detail}</p>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1 break-words">{n.detail}</p>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
