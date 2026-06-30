@@ -48,7 +48,7 @@ import { AutobuyerTab } from './components/staking/AutobuyerTab';
 import { TicketStatusTab } from './components/staking/TicketStatusTab';
 import { TicketHistoryTab } from './components/staking/TicketHistoryTab';
 import { StatisticsTab } from './components/staking/StatisticsTab';
-import { WatchOnlyGuard } from './components/common/WatchOnlyGuard';
+import { WatchOnlyGuard, RequireWatchOnly } from './components/common/WatchOnlyGuard';
 import { ExplorerLanding } from './pages/ExplorerLanding';
 import { BlockDetail } from './pages/BlockDetail';
 import { TransactionDetail } from './pages/TransactionDetail';
@@ -190,7 +190,7 @@ function AppContent() {
               <Route path="receive" element={<ReceiveTab />} />
               <Route path="history" element={<HistoryTab />} />
               <Route path="export" element={<ExportTab />} />
-              <Route path="offline" element={<OfflineSigningTab />} />
+              <Route path="offline" element={<RequireWatchOnly><OfflineSigningTab /></RequireWatchOnly>} />
             </Route>
           </Route>
           <Route path="/explorer" element={<ExplorerLanding />} />

@@ -23,9 +23,10 @@ export const OnChainTransactions = () => {
   const active = location.pathname.split('/').pop() || 'send';
   const { isWatchOnly } = useWalletReady();
 
-  // A watch-only wallet cannot sign in-app, so hide the Send tab; spending happens
-  // through the Offline signing tab.
-  const tabs = isWatchOnly ? allTabs.filter((t) => t.path !== 'send') : allTabs;
+  // A watch-only wallet cannot sign in-app, so it spends through the Offline
+  // signing tab (Send hidden). A full wallet signs in-app and has no use for
+  // Offline signing (that tab hidden).
+  const tabs = allTabs.filter((t) => (isWatchOnly ? t.path !== 'send' : t.path !== 'offline'));
 
   return (
     <div className="space-y-6">
