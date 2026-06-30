@@ -899,6 +899,7 @@ export type BisonrelayEventType =
   | 'post-heart-received'
   | 'file-download-progress'
   | 'file-download-completed'
+  | 'file-send-progress'
   | 'file-download-cost-rejected'
   | 'file-invoice-capacity-low'
   | 'invoice-gen-failed'

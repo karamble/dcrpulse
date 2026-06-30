@@ -629,6 +629,22 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         }
         return;
       }
+      if (evt.type === 'file-send-progress') {
+        // brclientd streams a file-send-progress event as the relay acks each
+        // item (file metadata + every chunk) of an outgoing file. Drive the
+        // composer's relay-phase bar, but only while a transfer to the open
+        // contact is in flight.
+        const payload = (evt.payload ?? {}) as Record<string, unknown>;
+        const uid = String(payload.uid ?? '');
+        const cur = selectedRef.current;
+        if (!cur || cur.id?.identity !== uid) return;
+        const sent = Number(payload.sent ?? 0);
+        const total = Number(payload.total ?? 0);
+        if (total <= 0) return;
+        const pct = Math.min(100, Math.max(0, Math.round((sent / total) * 100)));
+        setTransfer((prev) => (prev ? { pct, phase: 'relay' } : prev));
+        return;
+      }
       if (evt.type === 'tip-sent' || evt.type === 'tip-failed') {
         // Sender-side terminal events. If we have a pending placeholder
         // (from handleTip) for the open thread, replace its text in place
@@ -1063,12 +1079,12 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           ]);
         }
         setTransfer({ pct: 0, phase: 'upload' });
-        // Only the browser->dashboard upload is measurable. Once it reaches
-        // 100%, brclientd relays the file to the peer with no usable progress
-        // signal (bisonrelay's SendFile progress channel blocks the send - see
-        // brclientd status_server.go), so switch to an indeterminate state.
+        // The browser->dashboard upload is measurable via onUploadProgress.
+        // Once it reaches 100%, brclientd relays the file to the peer and
+        // streams per-chunk relay-upload progress back as file-send-progress
+        // events, which drive the relay-phase bar.
         await sendBisonrelayFile(recipient, attachment.file, (pct) =>
-          setTransfer(pct >= 100 ? { pct: 100, phase: 'relay' } : { pct, phase: 'upload' }),
+          setTransfer(pct >= 100 ? { pct: 0, phase: 'relay' } : { pct, phase: 'upload' }),
         );
         setMessages((prev) => [
           ...prev,
@@ -2601,7 +2617,9 @@ const AttachmentPreview = ({
   const modeLabel = attachment.mode === 'inline' ? 'inline embed' : 'file transfer';
   const uploading = transfer != null;
   const relaying = transfer?.phase === 'relay';
-  const transferLabel = relaying ? 'Sending…' : `Uploading ${transfer?.pct ?? 0}%`;
+  const transferLabel = relaying
+    ? `Sending ${transfer?.pct ?? 0}%`
+    : `Uploading ${transfer?.pct ?? 0}%`;
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-border/40 bg-muted/10">
       {showImage ? (
@@ -2620,10 +2638,8 @@ const AttachmentPreview = ({
             <p className="text-[10px] text-muted-foreground">{transferLabel}</p>
             <div className="mt-1 h-1 w-full overflow-hidden rounded bg-muted/30">
               <div
-                className={`h-full bg-primary ${
-                  relaying ? 'w-full animate-pulse' : 'transition-[width] duration-150'
-                }`}
-                style={relaying ? undefined : { width: `${transfer?.pct ?? 0}%` }}
+                className="h-full bg-primary transition-[width] duration-150"
+                style={{ width: `${transfer?.pct ?? 0}%` }}
               />
             </div>
           </>
