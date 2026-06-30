@@ -141,6 +141,9 @@ var (
 	embedFilenameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 	downloadNickRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 	downloadFileRe  = regexp.MustCompile(`^[A-Za-z0-9._ -]+$`)
+	// fid/uid are zkidentity.ShortID hex strings (32 bytes); a cheap first gate
+	// before proxying a delete to brclientd.
+	downloadIDRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 )
 
 // BisonrelayEmbedHandler serves an inline embed file that BR's clientdb has
@@ -1174,6 +1177,35 @@ func BisonrelayManageCancelDownloadHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := rpc.BrclientdCancelDownload(r.Context(), req.FID); err != nil {
+		brWriteErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayManageDeleteDownloadHandler deletes a completed received download's
+// file from disk by proxying to brclientd (the dashboard mounts the BR data dir
+// read-only, so it cannot remove the file itself). The file is addressed by fid
+// (+ optional uid); brclientd resolves it to its own recorded path and refuses
+// anything outside the downloads directory.
+func BisonrelayManageDeleteDownloadHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		FID string `json:"fid"`
+		UID string `json:"uid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !downloadIDRe.MatchString(req.FID) {
+		http.Error(w, "invalid fid", http.StatusBadRequest)
+		return
+	}
+	if req.UID != "" && !downloadIDRe.MatchString(req.UID) {
+		http.Error(w, "invalid uid", http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdDeleteDownload(r.Context(), req.FID, req.UID); err != nil {
 		brWriteErr(w, err)
 		return
 	}

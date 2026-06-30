@@ -1033,7 +1033,10 @@ export interface BisonrelayDownloadItem {
   total_chunks: number;
   missing_chunks: number;
   disk_path: string;
-  is_sent: boolean;
+  // pushed = a contact sent this file to you (SendFile); false = you pulled it
+  // (content-get). Either way the file is RECEIVED - the list never contains
+  // your own outgoing sends.
+  pushed: boolean;
 }
 
 export const getBisonrelayManageDownloads = async (): Promise<BisonrelayDownloadItem[]> => {
@@ -1045,6 +1048,13 @@ export const getBisonrelayManageDownloads = async (): Promise<BisonrelayDownload
 
 export const cancelBisonrelayDownload = async (fid: string): Promise<void> => {
   await api.post('/br/files/downloads/cancel', { fid });
+};
+
+// deleteBisonrelayDownload removes a completed received download's file from
+// disk. The file is addressed by fid (+ optional uid to disambiguate the same
+// file from two peers); brclientd hard-locks the removal to its downloads dir.
+export const deleteBisonrelayDownload = async (fid: string, uid?: string): Promise<void> => {
+  await api.post('/br/files/downloads/delete', { fid, uid: uid ?? '' });
 };
 
 // startBisonrelayContentGet initiates a download of a shared file (FID) that a

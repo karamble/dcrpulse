@@ -18,7 +18,9 @@ import {
   BisonrelayDownloadItem,
   BisonrelayLiveEvent,
   BisonrelaySharedFile,
+  bisonrelayContentFileUrl,
   cancelBisonrelayDownload,
+  deleteBisonrelayDownload,
   getBisonrelayContacts,
   getBisonrelayManageDownloads,
   getBisonrelaySharedFiles,
@@ -406,6 +408,7 @@ const DownloadsView = () => {
   const [items, setItems] = useState<BisonrelayDownloadItem[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   // Live progress overrides keyed by fid. Server snapshots refresh on
   // event arrival; in between we apply notif deltas so the bar moves
   // even before a re-fetch lands.
@@ -455,6 +458,27 @@ const DownloadsView = () => {
     }
   };
 
+  const handleDelete = async (it: BisonrelayDownloadItem) => {
+    if (deleting) return;
+    const name = it.filename || 'this file';
+    if (!window.confirm(`Delete "${name}" from disk? This cannot be undone.`)) {
+      return;
+    }
+    setDeleting(it.fid);
+    try {
+      await deleteBisonrelayDownload(it.fid, it.uid);
+      // Optimistically drop the row; reload reconciles with the server (brclientd
+      // also stops listing a completed download once its file is gone).
+      setItems((prev) => (prev ? prev.filter((x) => !(x.fid === it.fid && x.uid === it.uid)) : prev));
+      await reload();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Delete failed');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   const rows = useMemo(() => {
     if (!items) return null;
     return items.map((it) => {
@@ -484,7 +508,7 @@ const DownloadsView = () => {
         <EmptyState
           icon={Download}
           title="No active downloads"
-          hint="In-flight and recently completed transfers appear here. Request a file from a contact (via a paid post or shared-file link) and progress will show up live."
+          hint="Files you receive appear here - whether a contact sends one to you or you request one (via a paid post or shared-file link). In-flight and recently completed transfers show live progress."
         />
       ) : (
         <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden divide-y divide-border/30">
@@ -495,12 +519,12 @@ const DownloadsView = () => {
                   <span className="truncate">{it.filename || '(unnamed)'}</span>
                   <span
                     className={`shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${
-                      it.is_sent
-                        ? 'bg-muted/30 text-muted-foreground'
-                        : 'bg-primary/15 text-primary'
+                      it.pushed
+                        ? 'bg-primary/15 text-primary'
+                        : 'bg-muted/30 text-muted-foreground'
                     }`}
                   >
-                    {it.is_sent ? 'Sending' : 'Receiving'}
+                    {it.pushed ? 'Pushed' : 'Pulled'}
                   </span>
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
@@ -528,7 +552,7 @@ const DownloadsView = () => {
                   </div>
                 )}
               </div>
-              {!done && !it.is_sent && (
+              {!done && !it.pushed && (
                 <button
                   type="button"
                   onClick={() => handleCancel(it.fid)}
@@ -543,6 +567,31 @@ const DownloadsView = () => {
                   )}
                   Cancel
                 </button>
+              )}
+              {done && (
+                <div className="shrink-0 flex items-center gap-1">
+                  <a
+                    href={bisonrelayContentFileUrl(it.fid, it.uid)}
+                    download={it.filename || 'download'}
+                    title="Download"
+                    className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+                  >
+                    <Download className="h-4 w-4" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(it)}
+                    disabled={deleting === it.fid}
+                    title="Delete from disk"
+                    className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                  >
+                    {deleting === it.fid ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               )}
             </div>
           ))}

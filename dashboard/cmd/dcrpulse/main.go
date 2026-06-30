@@ -413,6 +413,7 @@ func main() {
 	api.HandleFunc("/br/files/shared/remove", handlers.BisonrelayManageUnshareHandler).Methods("POST")
 	api.HandleFunc("/br/files/downloads", handlers.BisonrelayManageDownloadsHandler).Methods("GET")
 	api.HandleFunc("/br/files/downloads/cancel", handlers.BisonrelayManageCancelDownloadHandler).Methods("POST")
+	api.HandleFunc("/br/files/downloads/delete", handlers.BisonrelayManageDeleteDownloadHandler).Methods("POST")
 	api.HandleFunc("/br/content/get", handlers.BisonrelayContentGetHandler).Methods("POST")
 	api.HandleFunc("/br/content/file", handlers.BisonrelayContentFileHandler).Methods("GET")
 	api.HandleFunc("/br/rates", handlers.BisonrelayRatesHandler).Methods("GET")

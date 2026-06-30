@@ -747,6 +747,13 @@ func BrclientdCancelDownload(ctx context.Context, fidHex string) error {
 	return brclientdPostJSON(ctx, "/downloads/cancel", map[string]string{"fid": fidHex})
 }
 
+// BrclientdDeleteDownload removes a completed received download's file from disk
+// via brclientd (uid disambiguates the same file from multiple peers; empty is
+// allowed). brclientd hard-locks the removal to its downloads directory.
+func BrclientdDeleteDownload(ctx context.Context, fidHex, uidHex string) error {
+	return brclientdPostJSON(ctx, "/downloads/delete", map[string]string{"fid": fidHex, "uid": uidHex})
+}
+
 // BrclientdContentGet asks brclientd to start downloading a shared file (FID)
 // from a remote user, as advertised by an --embed[download=<fid>,cost=,...]--
 // tag. The daemon pays per-chunk only when the cost stored on the host's
