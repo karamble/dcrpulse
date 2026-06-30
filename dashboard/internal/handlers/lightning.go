@@ -33,6 +33,9 @@ func LightningStatusHandler(w http.ResponseWriter, r *http.Request) {
 // account, unblocks the dcrlnd container, and runs the first-time
 // InitWallet on dcrlnd. Used once per wallet lifetime.
 func LightningSetupHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectWatchOnly(w, r) {
+		return
+	}
 	if ready, reason := services.WalletReady(r.Context()); !ready {
 		http.Error(w, reason, http.StatusServiceUnavailable)
 		return

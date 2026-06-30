@@ -72,6 +72,12 @@ var (
 	wsOnce   sync.Once
 )
 
+// SkipBrclientdWS, when non-nil and returning true, makes Run idle instead of
+// dialing brclientd - used for a watch-only wallet that has no Bison Relay
+// daemon. Set by the services layer (which owns the watch-only flag) to avoid an
+// import cycle.
+var SkipBrclientdWS func() bool
+
 // BrclientdWS returns the process-wide WebSocket client. Lazily constructs
 // on first call.
 func BrclientdWS() *BrclientdWSClient {
@@ -106,6 +112,16 @@ func (c *BrclientdWSClient) Run(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if SkipBrclientdWS != nil && SkipBrclientdWS() {
+			// Watch-only wallet: no Bison Relay daemon to dial. Idle and re-check
+			// instead of spamming cert-not-found reconnects.
+			select {
+			case <-time.After(time.Second):
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 		if err := c.dialAndServe(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("brclientd-ws: %v (reconnect in %s)", err, backoff)

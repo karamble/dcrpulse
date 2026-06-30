@@ -16,6 +16,7 @@ import { RecentTransactions } from '../components/RecentTransactions';
 import { AddressBookmarksCard } from '../components/wallet/AddressBookmarksCard';
 import { WalletSetup } from '../components/WalletSetup';
 import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet, getPrivacyStatus, getAutobuyerStatus } from '../services/api';
+import { useWalletReady } from '../hooks/useWalletReady';
 
 export const WalletDashboard = () => {
   const [walletExists, setWalletExists] = useState<boolean | null>(null);
@@ -32,8 +33,15 @@ export const WalletDashboard = () => {
   const [isOpeningWallet, setIsOpeningWallet] = useState(false);
   const [mixerRunning, setMixerRunning] = useState(false);
   const [autobuyerRunning, setAutobuyerRunning] = useState(false);
+  const { isWatchOnly } = useWalletReady();
 
   useEffect(() => {
+    // A watch-only wallet has no mixer or ticket autobuyer; skip polling them.
+    if (isWatchOnly) {
+      setMixerRunning(false);
+      setAutobuyerRunning(false);
+      return;
+    }
     const poll = async () => {
       try {
         const s = await getPrivacyStatus();
@@ -51,7 +59,7 @@ export const WalletDashboard = () => {
     poll();
     const id = window.setInterval(poll, 10000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [isWatchOnly]);
 
   const fetchData = async () => {
     try {

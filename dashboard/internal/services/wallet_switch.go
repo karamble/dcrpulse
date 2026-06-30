@@ -88,9 +88,17 @@ func SwitchWallet(ctx context.Context, name, publicPass string) error {
 // control pointer); these clients reconnect best-effort and each service's
 // status machine resolves the rest (needs-unlock / needs-setup / syncing).
 func reconnectStackServices(ctx context.Context, name string) {
+	rpc.ClearDcrdexAppPass()
+	if ActiveWalletIsWatchOnly(ctx) {
+		// Watch-only wallets have no dcrlnd / DEX / Bison Relay daemons, so don't
+		// repoint those clients at per-wallet certs that never exist. Still drop
+		// any stale brclientd stream from the previous wallet; the notifications
+		// loop then idles on its own for watch-only (see StartBrclientdNotifs).
+		ReconnectBrclientdNotifs()
+		return
+	}
 	rpc.ReconnectDcrlnd(config.DcrlndTLSCert(name), config.DcrlndMacaroon(name))
 	rpc.UpdateDcrdexCertPaths(config.DcrdexCert(name), config.DcrdexWSCert(name))
-	rpc.ClearDcrdexAppPass()
 	server, client, key := BrclientdDaemonCertPaths(ctx)
 	rpc.UpdateBrclientdCerts(server, client, key)
 	ReconnectBrclientdNotifs()

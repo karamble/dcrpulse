@@ -187,6 +187,9 @@ type dcrdexAuthRequest struct {
 // in memory for the session. The password is never persisted.
 func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if rejectWatchOnly(w, r) {
+		return
+	}
 	if ready, reason := services.WalletReady(r.Context()); !ready {
 		http.Error(w, reason, http.StatusServiceUnavailable)
 		return

@@ -88,6 +88,9 @@ func (b *BisonrelayEventBus) broadcast(evt BisonrelayEvent) {
 // StartBrclientdNotifs (the in-process /notifications stream). Blocks until
 // ctx is cancelled.
 func StartBisonrelayStreams(ctx context.Context) {
+	// A watch-only wallet has no Bison Relay daemon; idle the clientrpc WS loop
+	// for it instead of spamming cert-not-found reconnects.
+	rpc.SkipBrclientdWS = func() bool { return ActiveWalletIsWatchOnly(context.Background()) }
 	ws := rpc.BrclientdWS()
 	go func() {
 		if err := ws.Run(ctx); err != nil && ctx.Err() == nil {
@@ -158,6 +161,20 @@ func StartBrclientdNotifs(ctx context.Context) {
 			notifReconnectMu.Lock()
 			notifReconnect = cancel
 			notifReconnectMu.Unlock()
+
+			// A watch-only wallet has no Bison Relay daemon; idle (interruptibly)
+			// instead of dialing brclientd, so it does not spam cert-not-found
+			// reconnects. A switch to a full wallet calls ReconnectBrclientdNotifs,
+			// which cancels attemptCtx and wakes the idle to re-check.
+			if ActiveWalletIsWatchOnly(ctx) {
+				select {
+				case <-attemptCtx.Done():
+				case <-time.After(minBackoff):
+				}
+				cancel()
+				continue
+			}
+
 			err := rpc.BrclientdStreamNotifications(attemptCtx, func(evt rpc.BrclientdNotifEvent) {
 				bus.broadcast(BisonrelayEvent{Type: evt.Type, Payload: evt.Payload})
 				backoff = minBackoff

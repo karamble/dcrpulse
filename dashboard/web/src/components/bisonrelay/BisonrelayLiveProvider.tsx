@@ -9,6 +9,7 @@ import {
   BisonrelayLiveEvent,
   getBisonrelayContactGroups,
 } from '../../services/bisonrelayApi';
+import { useWalletReady } from '../../hooks/useWalletReady';
 
 type Listener = (evt: BisonrelayLiveEvent) => void;
 
@@ -38,6 +39,8 @@ export const useBisonrelayLive = (): BisonrelayLiveCtx => {
 };
 
 export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) => {
+  // A watch-only wallet has no Bison Relay daemon; the live socket is skipped for it.
+  const { isWatchOnly } = useWalletReady();
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [gcUnread, setGCUnread] = useState<Record<string, number>>({});
   const [contactGroups, setContactGroups] = useState<BisonrelayContactGroups | null>(null);
@@ -112,6 +115,9 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
   }, []);
 
   useEffect(() => {
+    // A watch-only wallet has no Bison Relay daemon; skip the live socket (the
+    // backend notifications loop also idles for watch-only).
+    if (isWatchOnly) return;
     let ws: WebSocket | null = null;
     let cancelled = false;
     let retry = 1000;
@@ -187,7 +193,7 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
       if (retryTimer) clearTimeout(retryTimer);
       try { ws?.close(); } catch { /* ignore */ }
     };
-  }, []);
+  }, [isWatchOnly]);
 
   const totalUnread = Object.values(unread).reduce((a, b) => a + b, 0);
   const totalGCUnread = Object.values(gcUnread).reduce((a, b) => a + b, 0);
