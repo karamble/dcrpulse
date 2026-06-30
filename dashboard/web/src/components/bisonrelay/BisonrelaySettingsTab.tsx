@@ -44,6 +44,7 @@ import {
   getBisonrelayKXList,
   getBisonrelayKXSearches,
   getBisonrelayMediateIDs,
+  getBisonrelayRates,
   getBisonrelayReceiveReceipts,
   getBisonrelayVersion,
   listBisonrelayGCs,
@@ -1366,38 +1367,159 @@ const BackupCard = () => {
 
 const AboutCard = () => {
   const [version, setVersion] = useState<BisonrelayVersion | null>(null);
+  const [policy, setPolicy] = useState<BisonrelayConnectionState['policy'] | null>(null);
+  const [dcrUsd, setDcrUsd] = useState(0);
+  const [liquidityOpen, setLiquidityOpen] = useState(false);
+  const [liquidityPoint, setLiquidityPoint] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     getBisonrelayVersion()
-      .then((v) => {
-        if (alive) setVersion(v);
-      })
+      .then((v) => alive && setVersion(v))
+      .catch(() => {});
+    getBisonrelayConnection()
+      .then((s) => alive && setPolicy(s.policy ?? null))
+      .catch(() => {});
+    getBisonrelayRates()
+      .then((r) => alive && setDcrUsd(r.dcr_usd || 0))
       .catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
 
+  // Push fees are quoted in milli-atoms per push_pay_rate_bytes; scale to a
+  // per-MB figure (the same formula the Connection card uses).
+  const ratePerMbMatoms =
+    policy && policy.push_pay_rate_bytes > 0
+      ? (policy.push_pay_rate_matoms / policy.push_pay_rate_bytes) * 1024 * 1024
+      : 0;
+
+  // fmtCost renders a milli-atom cost as "X DCR (~$Y)", or just DCR when the
+  // USD rate is not available yet, or "..." before the push rate has loaded.
+  const fmtCost = (matoms: number): string => {
+    if (matoms <= 0) return '...';
+    const dcr = `${formatDCR(matoms, 6)} DCR`;
+    if (dcrUsd <= 0) return dcr;
+    const usd = (matoms / 1e11) * dcrUsd;
+    const usdStr =
+      usd >= 0.01 ? `$${usd.toFixed(2)}` : usd >= 0.0001 ? `$${usd.toFixed(4)}` : '<$0.0001';
+    return `${dcr} (~${usdStr})`;
+  };
+
   return (
-    <SectionCard title="About" icon={Info}>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-        <div>
-          <p className="text-muted-foreground">Daemon</p>
-          <p className="font-medium mt-0.5">
-            {version ? `${version.appName} ${version.appVersion}` : '...'}
+    <div className="space-y-4">
+      <SectionCard title="What using Bison Relay costs" icon={Info}>
+        <div className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+          <p>
+            Bison Relay runs over the Lightning Network, so small payments cover the relay's
+            bandwidth and any paid content. The amounts are tiny, usually fractions of a cent.
+          </p>
+          <ul className="space-y-1 list-disc pl-4">
+            <li>
+              <span className="text-foreground">Sending</span> any message, post, comment, or file
+              is routed by the relay server for a small per-MB push fee. Serving a file a contact
+              downloads from you costs the same.
+            </li>
+            <li>
+              <span className="text-foreground">Paid content</span>: downloading a file or fetching
+              a paid post that a contact put a price on costs that price (paid to them) plus a small
+              routing fee.
+            </li>
+            <li>
+              <span className="text-foreground">Tips</span> you send are the tip amount plus a
+              routing fee.
+            </li>
+          </ul>
+          <div className="rounded-lg bg-muted/15 border border-border/40 p-2.5 space-y-1 text-foreground/90">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">For example</p>
+            <p>
+              A typical chat message:{' '}
+              <span className="font-mono">{fmtCost(policy?.push_pay_rate_min_matoms ?? 0)}</span>
+            </p>
+            <p>
+              Sending 1 MB of data: <span className="font-mono">{fmtCost(ratePerMbMatoms)}</span>
+            </p>
+            <p>
+              The full text of the Bible (~4 MB):{' '}
+              <span className="font-mono">{fmtCost(ratePerMbMatoms * 4)}</span>
+            </p>
+            <p>
+              Sending 1 GB of data:{' '}
+              <span className="font-mono">{fmtCost(ratePerMbMatoms * 1024)}</span>
+            </p>
+          </div>
+          <p>
+            Your actual sent / received / fee totals and a per-type breakdown are under{' '}
+            <a href="#stats/payments" className="text-primary hover:underline">
+              Stats &gt; Payments
+            </a>
+            .
           </p>
         </div>
-        <div>
-          <p className="text-muted-foreground">Bison Relay library</p>
-          <p className="font-medium mt-0.5">{version?.brClientVersion || '-'}</p>
+      </SectionCard>
+
+      <SectionCard title="Receiving payments needs inbound liquidity" icon={Wifi}>
+        <div className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+          <p>
+            A Lightning channel can only <span className="text-foreground">receive</span> up to its
+            inbound capacity. New channels start out mostly outbound (good for sending), so to be
+            paid you need inbound capacity.
+          </p>
+          <p>You need inbound capacity to receive:</p>
+          <ul className="space-y-1 list-disc pl-4">
+            <li>payments for your storefront (simplestore) sales,</li>
+            <li>tips from other users, and</li>
+            <li>tips from tip bots like Oprah, which reward posts and comments.</li>
+          </ul>
+          <p>
+            Without enough inbound capacity an incoming payment cannot be invoiced and fails with a
+            low-capacity warning.
+          </p>
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <span>Get inbound capacity from a liquidity provider for a small fee.</span>
+            <button
+              type="button"
+              onClick={() => setLiquidityOpen(true)}
+              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30 transition-colors"
+            >
+              Request Inbound Channel
+            </button>
+          </div>
+          {liquidityPoint && (
+            <p className="text-xs text-success font-mono break-all">
+              Channel requested: {liquidityPoint}
+            </p>
+          )}
         </div>
-        <div>
-          <p className="text-muted-foreground">Go runtime</p>
-          <p className="font-medium mt-0.5">{version?.goRuntime || '-'}</p>
+      </SectionCard>
+
+      <SectionCard title="About" icon={Info}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+          <div>
+            <p className="text-muted-foreground">Daemon</p>
+            <p className="font-medium mt-0.5">
+              {version ? `${version.appName} ${version.appVersion}` : '...'}
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Bison Relay library</p>
+            <p className="font-medium mt-0.5">{version?.brClientVersion || '-'}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Go runtime</p>
+            <p className="font-medium mt-0.5">{version?.goRuntime || '-'}</p>
+          </div>
         </div>
-      </div>
-    </SectionCard>
+      </SectionCard>
+
+      {liquidityOpen && (
+        <RequestLiquidityModal
+          onClose={() => setLiquidityOpen(false)}
+          onSuccess={(cp) => setLiquidityPoint(cp)}
+        />
+      )}
+    </div>
   );
 };
 
