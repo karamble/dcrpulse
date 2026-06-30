@@ -827,10 +827,10 @@ export interface BisonrelayContentItem {
   file_id: string;
   filename: string;
   size: number;
-  directory: string;
   description: string;
   cost: number;
-  downloaded: boolean;
+  downloaded: boolean; // BR's record-based "saved" signal
+  on_disk: boolean; // whether the file is still present on disk (false after a delete)
 }
 
 export const listBisonrelayUserContent = async (uid: string): Promise<void> => {

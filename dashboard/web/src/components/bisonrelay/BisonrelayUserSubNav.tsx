@@ -577,10 +577,10 @@ export const ContentListModal = ({
         file_id: String(f.file_id ?? ''),
         filename: String(f.filename ?? ''),
         size: Number(f.size ?? 0),
-        directory: String(f.directory ?? ''),
         description: String(f.description ?? ''),
         cost: Number(f.cost ?? 0),
         downloaded: !!f.downloaded,
+        on_disk: !!f.on_disk,
       }));
       list.sort((a, b) => a.filename.localeCompare(b.filename));
       setFiles(list);
@@ -675,7 +675,7 @@ const ContentFileRow = ({
 }) => {
   const [phase, setPhase] = useState<
     'idle' | 'confirm' | 'downloading' | 'mismatch' | 'done' | 'error'
-  >(file.downloaded ? 'done' : 'idle');
+  >(file.downloaded && file.on_disk ? 'done' : 'idle');
   const [err, setErr] = useState<string | null>(null);
   const [realCost, setRealCost] = useState(0);
   // BR transfers are async and the seller may be offline or unable to issue
@@ -762,7 +762,7 @@ const ContentFileRow = ({
         <span className="truncate font-medium text-foreground">
           {file.filename || '(unnamed file)'}
         </span>
-        {phase === 'done' && (
+        {(phase === 'done' || (phase === 'idle' && file.downloaded)) && (
           <span className="shrink-0 text-[9px] uppercase tracking-wide text-success/80">
             saved
           </span>
@@ -773,7 +773,11 @@ const ContentFileRow = ({
             onClick={() => (file.cost > 0 ? setPhase('confirm') : start(0))}
             className={`shrink-0 ml-auto ${actionBtn}`}
           >
-            {file.cost > 0 ? `Download (${formatContentCost(file.cost)} DCR)` : 'Download'}
+            {file.cost > 0
+              ? `${file.downloaded ? 'Redownload' : 'Download'} (${formatContentCost(file.cost)} DCR)`
+              : file.downloaded
+                ? 'Redownload'
+                : 'Download'}
           </button>
         )}
       </div>
@@ -783,12 +787,6 @@ const ContentFileRow = ({
         <span className={file.cost > 0 ? 'text-primary/80' : undefined}>
           {file.cost > 0 ? `${formatContentCost(file.cost)} DCR` : 'free'}
         </span>
-        {file.directory && (
-          <>
-            <span className="opacity-50">·</span>
-            <span className="font-mono">{file.directory}</span>
-          </>
-        )}
       </div>
       {file.description && (
         <p className="text-[11px] text-muted-foreground/90 mt-0.5 break-words">
