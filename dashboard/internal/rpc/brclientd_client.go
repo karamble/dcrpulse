@@ -429,6 +429,16 @@ func BrclientdRecentNotifications(ctx context.Context, n int) (json.RawMessage, 
 	})
 }
 
+// BrclientdDeleteNotification removes a single persisted daemon note by id.
+func BrclientdDeleteNotification(ctx context.Context, id int64) error {
+	return brclientdPostJSON(ctx, "/notifications/delete", map[string]any{"id": id})
+}
+
+// BrclientdClearNotifications removes all persisted daemon notes.
+func BrclientdClearNotifications(ctx context.Context) error {
+	return brclientdPostJSON(ctx, "/notifications/clear", nil)
+}
+
 // BrclientdReceiveReceiptsSetting returns brclientd's
 // /settings/receivereceipts JSON: {enabled: bool}, the effective
 // send-receive-receipts state.

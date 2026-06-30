@@ -501,6 +501,32 @@ func BisonrelayRecentNotificationsHandler(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(body)
 }
 
+// BisonrelayDeleteNotificationHandler removes a single BR notification-bell
+// entry by id.
+func BisonrelayDeleteNotificationHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := rpc.BrclientdDeleteNotification(r.Context(), req.ID); err != nil {
+		brWriteErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BisonrelayClearNotificationsHandler removes all BR notification-bell entries.
+func BisonrelayClearNotificationsHandler(w http.ResponseWriter, r *http.Request) {
+	if err := rpc.BrclientdClearNotifications(r.Context()); err != nil {
+		brWriteErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayReceiveReceiptsHandler proxies brclientd's
 // /settings/receivereceipts: GET reports the effective state; POST {enabled}
 // persists it and, on a change, brclientd restarts to apply (the value is

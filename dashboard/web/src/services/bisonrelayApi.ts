@@ -182,6 +182,14 @@ export const getBisonrelayNotifications = async (n: number = 50): Promise<Bisonr
   return data.notifications ?? [];
 };
 
+export const deleteBisonrelayNotification = async (id: number): Promise<void> => {
+  await api.post('/br/notifications/delete', { id });
+};
+
+export const clearBisonrelayNotifications = async (): Promise<void> => {
+  await api.post('/br/notifications/clear');
+};
+
 export const getBisonrelayReceiveReceipts = async (): Promise<{ enabled: boolean }> => {
   const { data } = await api.get<{ enabled: boolean }>('/br/settings/receivereceipts');
   return data;

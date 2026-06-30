@@ -363,6 +363,8 @@ func main() {
 	api.HandleFunc("/br/connection", handlers.BisonrelayConnectionHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/settings/receivereceipts", handlers.BisonrelayReceiveReceiptsHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/notifications/recent", handlers.BisonrelayRecentNotificationsHandler).Methods("GET")
+	api.HandleFunc("/br/notifications/delete", handlers.BisonrelayDeleteNotificationHandler).Methods("POST")
+	api.HandleFunc("/br/notifications/clear", handlers.BisonrelayClearNotificationsHandler).Methods("POST")
 	api.HandleFunc("/br/payments/tips", handlers.BisonrelayTipAttemptsHandler).Methods("GET")
 	api.HandleFunc("/br/payments/tips/running", handlers.BisonrelayRunningTipsHandler).Methods("GET")
 	api.HandleFunc("/br/filters", handlers.BisonrelayFiltersHandler).Methods("GET", "POST")
