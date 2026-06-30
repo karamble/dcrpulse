@@ -1721,7 +1721,8 @@ export interface BisonrelayPageFetchRequest {
   path: string[];
   session_id?: number;
   parent_page?: number;
-  data?: Record<string, unknown>;
+  data?: unknown;
+  field_types?: Record<string, string>;
   async_target_id?: string;
 }
 

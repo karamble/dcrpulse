@@ -652,7 +652,8 @@ const PageView = ({
   const submitForm = useCallback(
     async (
       actionPath: string[],
-      formData: Record<string, unknown>,
+      formData: unknown,
+      fieldTypes: Record<string, string>,
       asyncTargetId: string,
     ): Promise<string | null> => {
       const cur = history[cursor];
@@ -663,6 +664,7 @@ const PageView = ({
           session_id: cur.sessionId || undefined,
           parent_page: cur.parentPage || undefined,
           data: formData,
+          field_types: fieldTypes,
           async_target_id: asyncTargetId || undefined,
         });
         // A non-200 reply (e.g. a static host can't process the action, or a
@@ -776,7 +778,8 @@ const PageSegments = ({
   onNavigate: (uid: string, path: string[]) => void;
   onSubmitForm: (
     actionPath: string[],
-    data: Record<string, unknown>,
+    data: unknown,
+    fieldTypes: Record<string, string>,
     asyncTargetId: string,
   ) => Promise<string | null>;
 }) => {
@@ -987,7 +990,8 @@ const PageForm = ({
   fields: BisonrelayPageFormField[];
   onSubmit: (
     actionPath: string[],
-    data: Record<string, unknown>,
+    data: unknown,
+    fieldTypes: Record<string, string>,
     asyncTargetId: string,
   ) => Promise<string | null>;
 }) => {
@@ -1028,11 +1032,21 @@ const PageForm = ({
     e.preventDefault();
     if (!action || submitting) return;
     const data: Record<string, unknown> = {};
+    const fieldTypes: Record<string, string> = {};
     const errs: Record<string, string> = {};
     for (const f of fields) {
       if (!f.name) continue;
       const v = values[f.name] ?? f.value ?? '';
-      data[f.name] = v;
+      // Mirror bruig (forms.dart): an intinput is sent as a JSON number, every
+      // other field as a string, so the host unmarshals it into the matching Go
+      // type (e.g. addToCart's qty uint32) instead of rejecting a quoted number.
+      if (f.type === 'intinput') {
+        const n = parseInt(v, 10);
+        data[f.name] = Number.isFinite(n) ? n : 0;
+      } else {
+        data[f.name] = v;
+      }
+      fieldTypes[f.name] = f.type;
       if (f.type === 'txtinput' || f.type === 'intinput') {
         const msg = validateField(f, v);
         if (msg) errs[f.name] = msg;
@@ -1044,9 +1058,20 @@ const PageForm = ({
     }
     setFieldErrs({});
     const actionPath = action.split('/').filter(Boolean).map(decodeURIComponent);
+    // simplestore's order add-comment handler is the lone form that expects a
+    // bare JSON value rather than a name-keyed object; send the single field's
+    // value directly so it unmarshals (matches handleOrderAddComment).
+    let payload: unknown = data;
+    if (actionPath[0] === 'orderaddcomment') {
+      const only = fields.find(
+        (f) => f.name && (f.type === 'txtinput' || f.type === 'intinput'),
+      );
+      const onlyName = only?.name;
+      payload = onlyName ? data[onlyName] ?? '' : '';
+    }
     setSubmitErr(null);
     setSubmitting(true);
-    const err = await onSubmit(actionPath, data, asyncTarget);
+    const err = await onSubmit(actionPath, payload, fieldTypes, asyncTarget);
     setSubmitting(false);
     setSubmitErr(err);
   };

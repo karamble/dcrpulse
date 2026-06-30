@@ -1491,12 +1491,13 @@ func BisonrelayPostBodyHandler(w http.ResponseWriter, r *http.Request) {
 // plain request/response from the dashboard's perspective.
 func BisonrelayPagesFetchHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		UID           string          `json:"uid"`
-		Path          []string        `json:"path"`
-		SessionID     uint64          `json:"session_id"`
-		ParentPage    uint64          `json:"parent_page"`
-		Data          json.RawMessage `json:"data,omitempty"`
-		AsyncTargetID string          `json:"async_target_id,omitempty"`
+		UID           string            `json:"uid"`
+		Path          []string          `json:"path"`
+		SessionID     uint64            `json:"session_id"`
+		ParentPage    uint64            `json:"parent_page"`
+		Data          json.RawMessage   `json:"data,omitempty"`
+		FieldTypes    map[string]string `json:"field_types,omitempty"`
+		AsyncTargetID string            `json:"async_target_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
@@ -1506,6 +1507,13 @@ func BisonrelayPagesFetchHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uid is required", http.StatusBadRequest)
 		return
 	}
+	// Coerce submitted form values to the JSON types the resource handler
+	// expects, keyed by the declared field types, before relaying to the store
+	// owner: an intinput becomes a JSON number, every other field a string. This
+	// backstops the client (e.g. a quoted number would make the host reject the
+	// form). field_types is the dashboard's own hint and is not forwarded.
+	req.Data = sanitizeBRFormData(req.Data, req.FieldTypes)
+	req.FieldTypes = nil
 	body, err := rpc.BrclientdPagesFetch(r.Context(), req)
 	if err != nil {
 		brWriteErr(w, err)
@@ -1536,6 +1544,59 @@ func BisonrelayPagesFetchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// sanitizeBRFormData coerces a page form's submitted values to the JSON types
+// the resource handler expects, keyed by the field types the dashboard sent:
+// intinput -> integer number, anything else -> string. Data that is not a JSON
+// object (e.g. a bare-value form like order add-comment) or that has no field
+// types is returned unchanged.
+func sanitizeBRFormData(data json.RawMessage, fieldTypes map[string]string) json.RawMessage {
+	if len(data) == 0 || len(fieldTypes) == 0 {
+		return data
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return data
+	}
+	for k, v := range obj {
+		if fieldTypes[k] == "intinput" {
+			obj[k] = brFormInt(v)
+		} else {
+			obj[k] = brFormString(v)
+		}
+	}
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return data
+	}
+	return b
+}
+
+func brFormInt(v any) int64 {
+	switch t := v.(type) {
+	case float64:
+		return int64(t)
+	case json.Number:
+		n, _ := t.Int64()
+		return n
+	case string:
+		n, _ := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		return n
+	default:
+		return 0
+	}
+}
+
+func brFormString(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case nil:
+		return ""
+	default:
+		return fmt.Sprintf("%v", t)
+	}
 }
 
 // BisonrelayPagesLocalListHandler proxies the list of markdown pages this
