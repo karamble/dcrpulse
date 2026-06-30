@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Link } from 'react-router-dom';
-import { Activity, AlertCircle, Eye, Loader2, Lock, ShieldCheck, Ticket, Unlock, Wallet } from 'lucide-react';
+import { Activity, AlertCircle, Clock, Eye, Loader2, Lock, ShieldCheck, Ticket, Unlock, Wallet } from 'lucide-react';
 import { InsecureRpcWarning } from './InsecureRpcWarning';
 
 interface WalletStatusProps {
@@ -12,6 +12,7 @@ interface WalletStatusProps {
   unlocked?: boolean;
   mixerRunning?: boolean;
   autobuyerRunning?: boolean;
+  voteTrickleRunning?: boolean;
   isWatchOnly?: boolean;
 }
 
@@ -21,6 +22,7 @@ export const WalletStatus = ({
   unlocked = false,
   mixerRunning = false,
   autobuyerRunning = false,
+  voteTrickleRunning = false,
   isWatchOnly = false,
 }: WalletStatusProps) => {
   const getStatusConfig = () => {
@@ -125,6 +127,15 @@ export const WalletStatus = ({
               className="p-3 rounded-xl bg-success/15 border-2 border-success/30 hover:bg-success/25 transition-colors"
             >
               <ShieldCheck className="h-6 w-6 text-success animate-pulse" />
+            </Link>
+          )}
+          {voteTrickleRunning && (
+            <Link
+              to="/wallet/governance/proposals"
+              title="Vote trickle running - open Proposals page"
+              className="p-3 rounded-xl bg-success/15 border-2 border-success/30 hover:bg-success/25 transition-colors"
+            >
+              <Clock className="h-6 w-6 text-success animate-pulse" />
             </Link>
           )}
           {/* A watch-only wallet holds no private keys, so the lock/unlock state is

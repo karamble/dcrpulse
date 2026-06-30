@@ -1327,5 +1327,83 @@ export const castPoliteiaVote = async (
   return response.data;
 };
 
+// ---- Vote trickle (politeiavoter-style spread-over-time voting) ----------
+
+export interface VoteTrickleStatus {
+  running: boolean;
+  token?: string;
+  proposalName?: string;
+  voteOption?: string;
+  total: number;
+  cast: number;
+  failed: number;
+  pending: number;
+  startedAt?: string;
+  nextAt?: string;
+  finishAt?: string;
+  durationSecs?: number;
+  lastError?: string;
+}
+
+export interface VoteTrickleEvent {
+  timestamp: string;
+  token?: string; // which proposal's run this event belongs to
+  level: 'info' | 'warn' | 'error' | string;
+  kind?: string; // scheduled | cast | failed | done
+  message: string;
+  ticket?: string;
+}
+
+// getVoteTrickleWorkers returns one status per proposal currently or recently
+// trickling (several proposals can trickle at once).
+export const getVoteTrickleWorkers = async (): Promise<VoteTrickleStatus[]> => {
+  const response = await api.get<VoteTrickleStatus[] | null>(
+    '/wallet/governance/votetrickle/status',
+  );
+  return response.data ?? [];
+};
+
+export const startVoteTrickle = async (req: {
+  token: string;
+  voteOption: string;
+  durationSeconds: number;
+  bunches?: number;
+  passphrase: string;
+}): Promise<void> => {
+  // Signs every eligible ticket up front, so allow more than the default timeout.
+  await api.post('/wallet/governance/votetrickle/start', req, { timeout: 2 * 60 * 1000 });
+};
+
+// stopVoteTrickle stops a running proposal's trickle or dismisses a finished one.
+export const stopVoteTrickle = async (token: string): Promise<void> => {
+  await api.post(`/wallet/governance/votetrickle/stop?token=${encodeURIComponent(token)}`);
+};
+
+export const subscribeVoteTrickleEvents = (
+  onEvent: (e: VoteTrickleEvent) => void,
+  onError?: (e: Error) => void,
+  onClose?: () => void,
+): (() => void) => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/api/wallet/governance/votetrickle/events`;
+  const ws = new WebSocket(wsUrl);
+
+  ws.onmessage = (event) => {
+    try {
+      onEvent(JSON.parse(event.data) as VoteTrickleEvent);
+    } catch (err) {
+      onError?.(new Error('Failed to parse vote-trickle event'));
+    }
+  };
+  ws.onerror = () => onError?.(new Error('Vote-trickle events WebSocket error'));
+  ws.onclose = () => onClose?.();
+
+  return () => {
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
+  };
+};
+
 export default api;
 

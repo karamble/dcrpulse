@@ -99,6 +99,15 @@ var (
 	// anchor); both are only touched while holding piListFetchMu.
 	piListFetchMu sync.Mutex
 	piListFailAt  = map[string]time.Time{}
+
+	// voteSignMu serializes the unlock -> sign -> relock critical section in
+	// buildSignedVotes across all callers (the one-shot cast and every per-
+	// proposal trickle worker). Concurrent signings share owning accounts and
+	// relockAccountsAfterVSP only re-locks what its own call unlocked, so without
+	// this an overlapping signing could re-lock an account while another is still
+	// signing. Only the brief sign step holds it; the trickle's hours-long
+	// submission runs unlocked and outside this lock.
+	voteSignMu sync.Mutex
 )
 
 // piListCacheEntry is one status bucket's cached proposal list + fetch time.
@@ -685,61 +694,97 @@ func loadPreparedVote(ctx context.Context, token string) (piPreparedVote, bool) 
 // CastPoliteiaVote runs the full sign + cast flow: fetch eligible tickets,
 // intersect with wallet-owned tickets, sign each message, POST castballot.
 // Returns aggregate counts + per-ticket errors.
-func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, passphrase []byte) (*types.CastPoliteiaVoteResult, error) {
+// piBallotVote is one signed vote in a ticketvote /castballot request.
+type piBallotVote struct {
+	Token     string `json:"token"`
+	Ticket    string `json:"ticket"`
+	VoteBit   string `json:"votebit"`
+	Signature string `json:"signature"`
+}
+type piCastBallotRequest struct {
+	Votes []piBallotVote `json:"votes"`
+}
+type piCastBallotReceipt struct {
+	Ticket    string `json:"ticket"`
+	Receipt   string `json:"receipt"`
+	ErrorCode int    `json:"errorcode"`
+	ErrorMsg  string `json:"errorcontext"`
+}
+type piCastBallotResponse struct {
+	Receipts []piCastBallotReceipt `json:"receipts"`
+}
+
+// buildSignedVotes resolves the wallet's eligible tickets for a proposal and
+// signs one vote per ticket with the given choice. It unlocks the owning
+// accounts, signs, and re-locks them BEFORE returning: the deferred
+// relockAccountsAfterVSP fires on return (including on error/panic) on a fresh
+// background context, so the caller receives passphrase-free signed votes with
+// the wallet already back in its prior lock state. Used by BOTH the one-shot
+// cast and the trickle worker - the only difference is how the returned votes
+// are submitted (one batch vs trickled over time). dcrpulse encrypts accounts
+// per-account, so a wallet-level unlock (e.g. SignMessages{Passphrase}) would
+// leave their commitment keys locked; this uses the per-account UnlockAccount
+// path that VSP fee signing uses.
+func buildSignedVotes(ctx context.Context, token, voteOption string, passphrase []byte) ([]piBallotVote, *types.CastPoliteiaVoteResult, error) {
 	if !PoliteiaEnabled() {
-		return nil, ErrPoliteiaDisabled
+		return nil, nil, ErrPoliteiaDisabled
 	}
 	if rpc.WalletGrpcClient == nil {
-		return nil, fmt.Errorf("wallet gRPC unavailable")
+		return nil, nil, fmt.Errorf("wallet gRPC unavailable")
 	}
 
 	// Reuse the owned-ticket set + options computed when the user opened the
-	// vote modal (PrepareProposalVote), avoiding a redundant snapshot fetch +
-	// CommittedTickets pass. Fall back to computing them here when no fresh
-	// prepared state exists.
+	// vote modal (PrepareProposalVote); fall back to computing them here.
 	var addrs []*pb.CommittedTicketsResponse_TicketAddress
 	var options []types.ProposalVoteOption
-	if pv, ok := loadPreparedVote(ctx, req.Token); ok {
+	if pv, ok := loadPreparedVote(ctx, token); ok {
 		addrs = pv.ownedTickets
 		options = pv.options
 	} else {
-		det, err := piVoteDetails(ctx, req.Token)
+		det, err := piVoteDetails(ctx, token)
 		if err != nil {
-			return nil, fmt.Errorf("vote details: %w", err)
+			return nil, nil, fmt.Errorf("vote details: %w", err)
 		}
 		for _, o := range det.Vote.Params.Options {
 			options = append(options, types.ProposalVoteOption{ID: o.ID, Bit: o.Bit})
 		}
 		addrs, err = committedFromEligible(ctx, det.Vote.EligibleTickets)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	voteBit, found := bitForOption(options, req.VoteOption)
+	voteBit, found := bitForOption(options, voteOption)
 	if !found {
-		return nil, fmt.Errorf("vote option %q not allowed for this proposal", req.VoteOption)
+		return nil, nil, fmt.Errorf("vote option %q not allowed for this proposal", voteOption)
 	}
+	result := &types.CastPoliteiaVoteResult{}
 	if len(addrs) == 0 {
-		return &types.CastPoliteiaVoteResult{}, nil
+		return nil, result, nil
 	}
 
+	// Serialize the unlock -> sign -> relock section across all callers so two
+	// overlapping signings can't have one's relock lock an account the other is
+	// still signing with (relockAccountsAfterVSP only re-locks what its own call
+	// unlocked). Registered before the relock defer so, LIFO, the relock runs
+	// first and the lock is released only after it completes.
+	voteSignMu.Lock()
+	defer voteSignMu.Unlock()
+
 	// Unlock the accounts that own the ticket commitment keys so SignMessages
-	// can sign. dcrwallet uses per-account encryption, so a wallet-wide unlock
-	// does NOT make these keys usable ("account with unique passphrase is
-	// locked"); unlock each owning account and re-lock only the ones we
-	// unlocked - the same path VSP fee signing uses. Mirrors Decrediton's
-	// UnlockAccount-then-sign.
+	// can sign, then re-lock the ones we unlocked when this function returns
+	// (incl. on error). dcrwallet's per-account encryption means a wallet-wide
+	// unlock leaves these keys unusable; this is the same per-account path VSP
+	// fee signing uses. Mirrors Decrediton's UnlockAccount-then-sign.
 	unlocked, err := unlockAllAccountsForSpend(ctx, passphrase)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer relockAccountsAfterVSP(unlocked)
 
 	bitHex := fmt.Sprintf("%x", voteBit)
 
-	// Build signature requests. The message format is
-	// token||ticketHashHex||voteBitHex.
+	// Build signature requests. Message format: token||ticketHashHex||voteBitHex.
 	signMsgs := make([]*pb.SignMessagesRequest_Message, 0, len(addrs))
 	ticketHexByIndex := make([]string, 0, len(addrs))
 	for _, ta := range addrs {
@@ -747,12 +792,11 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 		ticketHexByIndex = append(ticketHexByIndex, ticketHex)
 		signMsgs = append(signMsgs, &pb.SignMessagesRequest_Message{
 			Address: ta.GetAddress(),
-			Message: req.Token + ticketHex + bitHex,
+			Message: token + ticketHex + bitHex,
 		})
 	}
 
 	// Chunk the SignMessages calls.
-	result := &types.CastPoliteiaVoteResult{}
 	signatures := make([]string, len(signMsgs))
 	for i := 0; i < len(signMsgs); i += politeiaSignMessagesChunk {
 		end := i + politeiaSignMessagesChunk
@@ -763,7 +807,7 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 			Messages: signMsgs[i:end],
 		})
 		if err != nil {
-			return nil, fmt.Errorf("SignMessages: %w", err)
+			return nil, nil, fmt.Errorf("SignMessages: %w", err)
 		}
 		for j, reply := range resp.GetReplies() {
 			if reply.GetError() != "" {
@@ -775,44 +819,63 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 		}
 	}
 
-	// Build the ballot.
-	type castVote struct {
-		Token     string `json:"token"`
-		Ticket    string `json:"ticket"`
-		VoteBit   string `json:"votebit"`
-		Signature string `json:"signature"`
-	}
-	type castBallotRequest struct {
-		Votes []castVote `json:"votes"`
-	}
-	type castBallotReceipt struct {
-		Ticket    string `json:"ticket"`
-		Receipt   string `json:"receipt"`
-		ErrorCode int    `json:"errorcode"`
-		ErrorMsg  string `json:"errorcontext"`
-	}
-	type castBallotResponse struct {
-		Receipts []castBallotReceipt `json:"receipts"`
-	}
-
-	ballot := castBallotRequest{Votes: make([]castVote, 0, len(signatures))}
+	votes := make([]piBallotVote, 0, len(signatures))
 	for i, sig := range signatures {
 		if sig == "" {
 			continue
 		}
-		ballot.Votes = append(ballot.Votes, castVote{
-			Token:     req.Token,
+		votes = append(votes, piBallotVote{
+			Token:     token,
 			Ticket:    ticketHexByIndex[i],
 			VoteBit:   bitHex,
 			Signature: sig,
 		})
 	}
-	if len(ballot.Votes) == 0 {
+	return votes, result, nil
+}
+
+// bumpCachedVoteTally reflects `delta` just-cast votes for a proposal in the
+// cached "voting" list (tally + choice) and drops the stale detail / prepared-
+// vote caches, so the UI updates without immediately re-fetching Politeia's
+// lagging summary. Called once by the one-shot cast and once per successful
+// vote by the trickle worker.
+func bumpCachedVoteTally(ctx context.Context, token, voteOption string, delta int) {
+	piCacheMu.Lock()
+	d := int64(delta)
+	if e, ok := piCachedLists["voting"]; ok {
+		for i := range e.list {
+			if e.list[i].Token != token {
+				continue
+			}
+			if e.list[i].VoteCounts == nil {
+				e.list[i].VoteCounts = map[string]int64{}
+			}
+			e.list[i].VoteCounts[voteOption] += d
+			e.list[i].TotalVotes += d
+			e.list[i].CurrentChoice = voteOption
+			e.list[i].VotedTicketCount += delta
+			break
+		}
+	}
+	delete(piCachedDetails, token)
+	delete(piPreparedVotes, preparedVoteKey(ctx, token))
+	piCacheMu.Unlock()
+}
+
+// CastPoliteiaVote signs every eligible ticket's vote up front and submits them
+// in a single batched /castballot. (The trickle worker reuses buildSignedVotes
+// to instead submit the same votes spread over time; see votetrickle.go.)
+func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, passphrase []byte) (*types.CastPoliteiaVoteResult, error) {
+	votes, result, err := buildSignedVotes(ctx, req.Token, req.VoteOption, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	if len(votes) == 0 {
 		return result, nil
 	}
 
-	var resp castBallotResponse
-	if err := piPost(ctx, "/ticketvote/v1/castballot", ballot, &resp); err != nil {
+	var resp piCastBallotResponse
+	if err := piPost(ctx, "/ticketvote/v1/castballot", piCastBallotRequest{Votes: votes}, &resp); err != nil {
 		return nil, fmt.Errorf("castballot: %w", err)
 	}
 	for _, r := range resp.Receipts {
@@ -824,43 +887,12 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 		result.Cast++
 	}
 
-	// Persist local "you voted X" cache.
 	if result.Cast > 0 {
 		if err := persistLocalPoliteiaVote(ctx, req.Token, req.VoteOption, result.Cast); err != nil {
 			log.Printf("persist politeia vote: %v", err)
 		}
 	}
-
-	// Reflect the just-cast vote in the cached list immediately by patching the
-	// touched proposal's tally + choice in place, rather than dropping the list
-	// and re-fetching: Politeia's summary lags a fresh cast, so a re-fetch can
-	// re-cache a stale tally and (with no TTL) keep showing it on the overview.
-	// The per-token detail cache is dropped so the detail view re-fetches the
-	// authoritative record; a manual refresh later reconciles the list.
-	piCacheMu.Lock()
-	cast64 := int64(result.Cast)
-	// The voted proposal lives in the "voting" (started) bucket; patch it there
-	// if that bucket is cached. e.list shares its backing array with the cached
-	// entry, so element writes are visible without re-storing.
-	if e, ok := piCachedLists["voting"]; ok {
-		for i := range e.list {
-			if e.list[i].Token != req.Token {
-				continue
-			}
-			if e.list[i].VoteCounts == nil {
-				e.list[i].VoteCounts = map[string]int64{}
-			}
-			e.list[i].VoteCounts[req.VoteOption] += cast64
-			e.list[i].TotalVotes += cast64
-			e.list[i].CurrentChoice = req.VoteOption
-			e.list[i].VotedTicketCount = result.Cast
-			break
-		}
-	}
-	delete(piCachedDetails, req.Token)
-	delete(piPreparedVotes, preparedVoteKey(ctx, req.Token))
-	piCacheMu.Unlock()
-
+	bumpCachedVoteTally(ctx, req.Token, req.VoteOption, result.Cast)
 	return result, nil
 }
 

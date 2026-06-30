@@ -15,7 +15,7 @@ import { MyTicketsInfo } from '../components/MyTicketsInfo';
 import { RecentTransactions } from '../components/RecentTransactions';
 import { AddressBookmarksCard } from '../components/wallet/AddressBookmarksCard';
 import { WalletSetup } from '../components/WalletSetup';
-import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet, getPrivacyStatus, getAutobuyerStatus } from '../services/api';
+import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet, getPrivacyStatus, getAutobuyerStatus, getVoteTrickleWorkers } from '../services/api';
 import { useWalletReady } from '../hooks/useWalletReady';
 
 export const WalletDashboard = () => {
@@ -33,13 +33,16 @@ export const WalletDashboard = () => {
   const [isOpeningWallet, setIsOpeningWallet] = useState(false);
   const [mixerRunning, setMixerRunning] = useState(false);
   const [autobuyerRunning, setAutobuyerRunning] = useState(false);
+  const [voteTrickleRunning, setVoteTrickleRunning] = useState(false);
   const { isWatchOnly } = useWalletReady();
 
   useEffect(() => {
-    // A watch-only wallet has no mixer or ticket autobuyer; skip polling them.
+    // A watch-only wallet has no mixer, ticket autobuyer, or vote trickle (no
+    // private keys to sign); skip polling them.
     if (isWatchOnly) {
       setMixerRunning(false);
       setAutobuyerRunning(false);
+      setVoteTrickleRunning(false);
       return;
     }
     const poll = async () => {
@@ -54,6 +57,12 @@ export const WalletDashboard = () => {
         setAutobuyerRunning(a.running);
       } catch {
         setAutobuyerRunning(false);
+      }
+      try {
+        const ws = await getVoteTrickleWorkers();
+        setVoteTrickleRunning(ws.some((w) => w.running));
+      } catch {
+        setVoteTrickleRunning(false);
       }
     };
     poll();
@@ -359,6 +368,7 @@ export const WalletDashboard = () => {
           unlocked={data.walletStatus.unlocked}
           mixerRunning={mixerRunning}
           autobuyerRunning={autobuyerRunning}
+          voteTrickleRunning={voteTrickleRunning}
           isWatchOnly={data.walletStatus.isWatchOnly}
         />
       )}

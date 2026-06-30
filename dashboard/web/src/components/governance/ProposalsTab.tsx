@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import { AlertCircle, ExternalLink, Filter, Loader2, RefreshCw, ShieldOff } from 'lucide-react';
 import { Proposal, getProposals, refreshProposals } from '../../services/api';
 import { VoteResultsBar } from './VoteResultsBar';
+import { VoteTrickleCard } from './VoteTrickleCard';
 
 // Status tabs, mirroring Decrediton. There is no "all" bucket: each tab fetches
 // only its own status from the backend on demand (fetching every status at once
@@ -172,6 +173,7 @@ export const ProposalsTab = () => {
 
   return (
     <div className="space-y-4">
+      <VoteTrickleCard />
       <div className="flex items-center gap-3">
         <Filter className="h-4 w-4 text-muted-foreground" />
         <select

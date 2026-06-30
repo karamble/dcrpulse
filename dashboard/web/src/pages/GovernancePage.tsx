@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { VoteTrickleBadge } from '../components/governance/VoteTrickleCard';
 
 const tabs = [
   { path: 'consensus', label: 'Consensus' },
@@ -37,6 +38,9 @@ export const GovernancePage = () => {
             </Link>
           );
         })}
+        <div className="ml-auto flex items-center pb-1.5 pl-2">
+          <VoteTrickleBadge />
+        </div>
       </nav>
 
       <Outlet />

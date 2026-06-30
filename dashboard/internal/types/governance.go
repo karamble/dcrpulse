@@ -4,6 +4,8 @@
 
 package types
 
+import "time"
+
 // AgendaChoice is one option (yes / no / abstain) on a consensus agenda.
 type AgendaChoice struct {
 	ID          string `json:"id"`
@@ -155,4 +157,35 @@ type ProposalDetailResponse struct {
 	Detail             *ProposalDetail `json:"detail"`
 	FetchedAt          int64           `json:"fetchedAt"`
 	RefreshAvailableAt int64           `json:"refreshAvailableAt"`
+}
+
+// VoteTrickleEvent is one live activity line from the vote-trickle worker, which
+// submits a proposal's signed votes spread out over time (a port of upstream
+// politeiavoter's "trickle"). Token identifies which proposal's run it belongs to
+// (several can trickle at once). Level is info/warn/error; Kind groups events for
+// the UI (scheduled / cast / failed / done).
+type VoteTrickleEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Token     string    `json:"token,omitempty"`
+	Level     string    `json:"level"`
+	Kind      string    `json:"kind,omitempty"`
+	Message   string    `json:"message"`
+	Ticket    string    `json:"ticket,omitempty"`
+}
+
+// VoteTrickleStatus is the vote-trickle worker's live status snapshot.
+type VoteTrickleStatus struct {
+	Running      bool      `json:"running"`
+	Token        string    `json:"token,omitempty"`
+	ProposalName string    `json:"proposalName,omitempty"`
+	VoteOption   string    `json:"voteOption,omitempty"`
+	Total        int       `json:"total"`
+	Cast         int       `json:"cast"`
+	Failed       int       `json:"failed"`
+	Pending      int       `json:"pending"`
+	StartedAt    time.Time `json:"startedAt"`
+	NextAt       time.Time `json:"nextAt"`
+	FinishAt     time.Time `json:"finishAt"`
+	DurationSecs int64     `json:"durationSecs,omitempty"`
+	LastError    string    `json:"lastError,omitempty"`
 }
