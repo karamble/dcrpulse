@@ -1037,6 +1037,9 @@ export interface BisonrelayDownloadItem {
   // (content-get). Either way the file is RECEIVED - the list never contains
   // your own outgoing sends.
   pushed: boolean;
+  description?: string; // sharer's description (from the file metadata)
+  cost?: number; // advertised price in atoms
+  paid_atoms?: number; // what you actually paid (sum of the decoded chunk invoices)
 }
 
 export const getBisonrelayManageDownloads = async (): Promise<BisonrelayDownloadItem[]> => {

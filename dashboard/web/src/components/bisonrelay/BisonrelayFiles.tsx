@@ -538,6 +538,16 @@ const DownloadsView = () => {
                     </>
                   )}
                 </div>
+                {it.paid_atoms ? (
+                  <div className="text-[11px] text-success/80 mt-0.5">
+                    paid {formatDCR(it.paid_atoms)}
+                  </div>
+                ) : null}
+                {it.description && (
+                  <div className="text-[11px] text-muted-foreground/80 mt-0.5 break-words">
+                    {it.description}
+                  </div>
+                )}
                 {!done && total > 0 && (
                   <div className="mt-1.5 h-1.5 rounded-full bg-muted/40 overflow-hidden">
                     <div
