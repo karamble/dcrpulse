@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, X } from 'lucide-react';
 
 export interface ViewerImage {
@@ -30,7 +31,11 @@ export const ImageViewerModal = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  return (
+  // Render through a portal to document.body: the lightbox is position:fixed,
+  // but post/feed cards use backdrop-blur (a backdrop-filter), which creates a
+  // containing block that would otherwise trap the overlay inside the card
+  // instead of covering the viewport.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
@@ -85,6 +90,7 @@ export const ImageViewerModal = ({
           <X className="h-4 w-4" />
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
