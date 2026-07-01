@@ -100,6 +100,13 @@ var catalog = []spec{
 		return map[string]any{"count": 5}, true
 	}),
 	rd("wallet", "wallet_sync_progress"),
+	rdArgs("wallet", "wallet_construct_transaction", func(d *discovered) (map[string]any, bool) {
+		if d.address == "" {
+			return nil, false
+		}
+		return map[string]any{"account": 0, "address": d.address, "amountAtoms": 100000}, true
+	}),
+	rdArgs("wallet", "wallet_decode_signed_transaction", func(*discovered) (map[string]any, bool) { return nil, false }),
 	rdArgs("wallet", "wallet_validate_address", func(d *discovered) (map[string]any, bool) {
 		if d.address == "" {
 			return nil, false
@@ -128,6 +135,10 @@ var catalog = []spec{
 	rd("governance", "governance_tspend_policies"),
 	rd("governance", "governance_proposals"),
 	rd("governance", "governance_refresh_proposals"),
+	rd("governance", "governance_vote_trickle_status"),
+	rdArgs("governance", "governance_vote_trickle_events", func(*discovered) (map[string]any, bool) {
+		return map[string]any{"count": 20}, true
+	}),
 	// governance consumers (need a proposal token from governance_proposals)
 	rdArgs("governance", "governance_proposal_detail", func(d *discovered) (map[string]any, bool) {
 		if d.propToken == "" {
@@ -371,6 +382,8 @@ var catalog = []spec{
 	rd("bisonrelay", "br_store_products"),
 	rd("bisonrelay", "br_pages"),
 	rd("bisonrelay", "br_downloads"),
+	rd("bisonrelay", "br_store_files"),
+	rdArgs("bisonrelay", "br_store_file_get", func(*discovered) (map[string]any, bool) { return nil, false }),
 	rd("bisonrelay", "br_rates"),
 	// bisonrelay read consumers (need a contact/post/groupchat identifier)
 	rdArgs("bisonrelay", "br_pm_history", func(d *discovered) (map[string]any, bool) {
@@ -415,6 +428,9 @@ var catalog = []spec{
 	sp("wallet", "wallet_send", "no spend grant", "", func(*discovered) map[string]any {
 		return map[string]any{"account": 0, "address": phAddr, "amountDcr": 0.001}
 	}),
+	sp("wallet", "wallet_broadcast_signed_transaction", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"signedTxHex": phHex}
+	}),
 	sp("staking", "staking_purchase", "no spend grant", "", func(d *discovered) map[string]any {
 		host, key := d.vspHost, d.vspPubkey
 		if host == "" {
@@ -436,6 +452,12 @@ var catalog = []spec{
 	}),
 	sp("governance", "governance_set_tspend_policy", "does not allow governance voting", "", func(*discovered) map[string]any {
 		return map[string]any{"hash": phHex, "policy": "abstain"}
+	}),
+	sp("governance", "governance_vote_trickle_start", "does not allow governance voting", "", func(*discovered) map[string]any {
+		return map[string]any{"token": "mcptest", "voteOption": "yes", "durationSeconds": 60}
+	}),
+	sp("governance", "governance_vote_trickle_stop", "does not allow governance voting", "", func(*discovered) map[string]any {
+		return map[string]any{"token": "mcptest"}
 	}),
 	sp("lightning", "ln_pay", "does not allow Lightning payments",
 		"decode runs before the grant check; without -invoice this fails at decode (still a safe no-op)",
@@ -496,6 +518,18 @@ var catalog = []spec{
 	}),
 	sp("bisonrelay", "br_download_cancel", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
 		return map[string]any{"fid": phHex}
+	}),
+	sp("bisonrelay", "br_download_delete", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"fid": phHex}
+	}),
+	sp("bisonrelay", "br_notification_delete", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"id": 1}
+	}),
+	sp("bisonrelay", "br_notifications_clear", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{}
+	}),
+	sp("bisonrelay", "br_store_file_delete", "does not allow Bison Relay write actions", "", func(*discovered) map[string]any {
+		return map[string]any{"path": "mcptest-placeholder.txt"}
 	}),
 
 	// staking writes (gated)

@@ -85,11 +85,14 @@ follows a two-key model: it needs **both** its read domain (to be visible) **and
 matching write scope in the agent's grant.
 
 Write scopes: `governance`, `lightning`, `dex`, `dex.spend`, `bisonrelay`,
-`bisonrelay.admin`, `timestamp`, `tor`, `staking`, `privacy`. Two carry extra risk
-and are separate tiers you must enable deliberately:
+`bisonrelay.admin`, `timestamp`, `tor`, `staking`, `privacy`, `wallet.broadcast`.
+Some carry extra risk or move funds and are separate tiers you enable deliberately:
 
 - `dex.spend` - withdrawals and bond posting on the DEX (moves funds).
 - `bisonrelay.admin` - destructive group-chat and room administration.
+- `wallet.broadcast` - publish an already-signed transaction. It needs no spend grant
+  or passphrase: a human signs the transaction on a hardware wallet first, so the
+  signature is the authorization and the agent only relays the bytes.
 
 ## Spend grants
 
@@ -220,8 +223,8 @@ Read tools return lean payloads by default and accept optional parameters to nar
 shape the result:
 
 - `governance_proposals` (and `governance_refresh_proposals`) accept an optional
-  `status` filter (`pre-vote`, `voting`, `finished`, `abandoned`); omit it for the full
-  list.
+  `status` bucket (`pre-vote`, `voting`, `finished`, `abandoned`); it defaults to
+  `voting`.
 - `governance_proposal_detail` (and `governance_refresh_proposal_detail`) omit the
   rendered HTML copies of the markdown body and comments by default; pass
   `includeHtml: true` to get them.
@@ -229,6 +232,20 @@ shape the result:
 - `dex_market_summary` returns a market's last trade rate (conventional and USD where
   the quote can be priced) plus 24h stats in a single call; with no `host` it covers
   every market.
+
+Some tools compose into multi-step workflows worth calling out:
+
+- **Air-gapped spending.** `wallet_construct_transaction` builds an unsigned
+  transaction (no keys; works on a watch-only wallet); a human signs it on a hardware
+  wallet; `wallet_decode_signed_transaction` previews the signed result; and
+  `wallet_broadcast_signed_transaction` (scope `wallet.broadcast`) publishes it.
+- **Trickle voting.** `governance_vote_trickle_start` signs a proposal's ballots up
+  front then submits them spread over time; follow it with
+  `governance_vote_trickle_status` / `governance_vote_trickle_events` and stop it with
+  `governance_vote_trickle_stop`.
+- **Bison Relay housekeeping.** Manage downloads (`br_download_delete`), the
+  notification bell (`br_notification_delete`, `br_notifications_clear`), and
+  storefront media (`br_store_files`, `br_store_file_get`, `br_store_file_delete`).
 
 ### Resources (live state)
 
