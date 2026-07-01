@@ -106,10 +106,12 @@ type brPostCreateInput struct {
 }
 
 type brPostCommentInput struct {
-	UID     string `json:"uid" jsonschema:"author identity, hex"`
-	PID     string `json:"pid" jsonschema:"post id, hex"`
-	Comment string `json:"comment" jsonschema:"comment text"`
-	Parent  string `json:"parent,omitempty" jsonschema:"parent comment status id (hex) to reply to; empty posts a top-level comment"`
+	UID       string `json:"uid" jsonschema:"author identity, hex"`
+	PID       string `json:"pid" jsonschema:"post id, hex"`
+	Comment   string `json:"comment" jsonschema:"comment text"`
+	Parent    string `json:"parent,omitempty" jsonschema:"parent comment status id (hex) to reply to; empty posts a top-level comment"`
+	ImagePath string `json:"imagePath,omitempty" jsonschema:"optional image to embed: relative path under the agent outbox dir"`
+	ImageMime string `json:"imageMime,omitempty" jsonschema:"optional MIME type for the embedded image"`
 }
 
 type brPostHeartInput struct {
@@ -169,10 +171,24 @@ type brStoreOrderCommentInput struct {
 }
 
 type brStoreFileUploadInput struct {
-	Path     string `json:"path,omitempty" jsonschema:"relative destination path under the store dir (no leading slash, no .. segments)"`
-	Filename string `json:"filename" jsonschema:"file name (no path separators)"`
-	Mime     string `json:"mime,omitempty" jsonschema:"optional MIME type of the file"`
-	DataB64  string `json:"dataB64" jsonschema:"file bytes, base64-encoded"`
+	Path      string `json:"path,omitempty" jsonschema:"relative destination path under the store dir (no leading slash, no .. segments)"`
+	Filename  string `json:"filename" jsonschema:"file name (no path separators)"`
+	Mime      string `json:"mime,omitempty" jsonschema:"optional MIME type of the file"`
+	DataB64   string `json:"dataB64" jsonschema:"file bytes, base64-encoded"`
+	Overwrite bool   `json:"overwrite,omitempty" jsonschema:"overwrite an existing file at the destination (default false)"`
+}
+
+type brDownloadDeleteInput struct {
+	FID string `json:"fid" jsonschema:"file id, hex"`
+	UID string `json:"uid,omitempty" jsonschema:"optional sender identity (hex) to disambiguate the same file from multiple peers"`
+}
+
+type brNotificationDeleteInput struct {
+	ID int64 `json:"id" jsonschema:"notification id to delete"`
+}
+
+type brStorePathInput struct {
+	Path string `json:"path" jsonschema:"relative store file path (no leading slash, no .. segments)"`
 }
 
 type brStoreTemplateSaveInput struct {
@@ -290,10 +306,11 @@ type brPageFetchInput struct {
 }
 
 type brPageSubmitInput struct {
-	UID       string         `json:"uid" jsonschema:"contact hex UID hosting the page"`
-	Path      []string       `json:"path" jsonschema:"page path segments to submit to (the form's action), e.g. [\"addToCart\"] or [\"placeOrder\"]"`
-	Data      map[string]any `json:"data" jsonschema:"form data payload as a JSON object matching the page's form fields, e.g. {\"sku\":\"abc\",\"qty\":1}"`
-	SessionID uint64         `json:"sessionId,omitempty" jsonschema:"session id from a prior fetch"`
+	UID        string            `json:"uid" jsonschema:"contact hex UID hosting the page"`
+	Path       []string          `json:"path" jsonschema:"page path segments to submit to (the form's action), e.g. [\"addToCart\"] or [\"placeOrder\"]"`
+	Data       map[string]any    `json:"data" jsonschema:"form data payload as a JSON object matching the page's form fields, e.g. {\"sku\":\"abc\",\"qty\":1}"`
+	SessionID  uint64            `json:"sessionId,omitempty" jsonschema:"session id from a prior fetch"`
+	FieldTypes map[string]string `json:"fieldTypes,omitempty" jsonschema:"optional per-field type hints so the store coerces values, e.g. qty=intinput; usually unnecessary when data already uses correct JSON types"`
 }
 
 type brShopUIDInput struct {
@@ -584,13 +601,22 @@ var bisonrelayTools = []toolDef{
 			return decodeBRResult(body), nil
 		}),
 	agentTool("bisonrelay", "br_post_comment",
-		"Comment on a Bison Relay post (or reply to a comment via 'parent'). Requires a grant with Bison Relay write enabled. Returns the new comment identifier.",
+		"Comment on a Bison Relay post (or reply to a comment via 'parent'), optionally embedding an image from the agent outbox via imagePath. Requires a grant with Bison Relay write enabled. Returns the new comment identifier.",
 		func(ctx context.Context, a *agent, in brPostCommentInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
 				recordSpend(a, "br_post_comment", 0, 0, in.PID, "denied", err.Error())
 				return nil, err
 			}
-			identifier, err := rpc.BrclientdPostComment(ctx, in.UID, in.PID, in.Comment, in.Parent)
+			comment := in.Comment
+			if in.ImagePath != "" {
+				embedded, err := buildImageEmbedBody(in.ImagePath, in.Comment, in.ImageMime)
+				if err != nil {
+					recordSpend(a, "br_post_comment", 0, 0, in.PID, "error", err.Error())
+					return nil, err
+				}
+				comment = embedded
+			}
+			identifier, err := rpc.BrclientdPostComment(ctx, in.UID, in.PID, comment, in.Parent)
 			if err != nil {
 				recordSpend(a, "br_post_comment", 0, 0, in.PID, "error", err.Error())
 				return nil, err
@@ -810,7 +836,7 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "error", err.Error())
 				return nil, err
 			}
-			body, err := rpc.BrclientdUploadStoreFile(ctx, in.Path, in.Filename, in.Mime, bytes.NewReader(data))
+			body, err := rpc.BrclientdUploadStoreFile(ctx, in.Path, in.Filename, in.Mime, in.Overwrite, bytes.NewReader(data))
 			if err != nil {
 				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "error", err.Error())
 				return nil, err
@@ -1191,7 +1217,7 @@ var bisonrelayTools = []toolDef{
 				}
 				data = b
 			}
-			res, err := brPageFetch(ctx, in.UID, in.Path, in.SessionID, 0, data)
+			res, err := brPageFetch(ctx, in.UID, in.Path, in.SessionID, 0, data, in.FieldTypes)
 			if err != nil {
 				recordSpend(a, "br_page_submit", 0, 0, in.UID, "error", err.Error())
 				return nil, err
@@ -1308,6 +1334,80 @@ var bisonrelayTools = []toolDef{
 			recordSpend(a, "br_download_cancel", 0, 0, in.FID, "ok", "")
 			return map[string]any{"fid": in.FID, "cancelled": true}, nil
 		}),
+	agentTool("bisonrelay", "br_download_delete",
+		"Delete a completed or failed Bison Relay download from disk by fid (optionally uid to disambiguate the same file from multiple peers). To fetch it again later, call br_content_get. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brDownloadDeleteInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_download_delete", 0, 0, in.FID, "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdDeleteDownload(ctx, in.FID, in.UID); err != nil {
+				recordSpend(a, "br_download_delete", 0, 0, in.FID, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_download_delete", 0, 0, in.FID, "ok", "")
+			return map[string]any{"fid": in.FID, "deleted": true}, nil
+		}),
+	agentTool("bisonrelay", "br_notification_delete",
+		"Delete a single Bison Relay notification-bell entry by id. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brNotificationDeleteInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_notification_delete", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdDeleteNotification(ctx, in.ID); err != nil {
+				recordSpend(a, "br_notification_delete", 0, 0, "", "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_notification_delete", 0, 0, "", "ok", "")
+			return map[string]any{"id": in.ID, "deleted": true}, nil
+		}),
+	agentTool("bisonrelay", "br_notifications_clear",
+		"Clear all Bison Relay notification-bell entries. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, _ emptyInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_notifications_clear", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdClearNotifications(ctx); err != nil {
+				recordSpend(a, "br_notifications_clear", 0, 0, "", "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_notifications_clear", 0, 0, "", "ok", "")
+			return map[string]any{"cleared": true}, nil
+		}),
+	readTool("bisonrelay", "br_store_files",
+		"List the media files in the Bison Relay storefront directory (images and other assets referenced by products and templates).",
+		func(ctx context.Context, _ emptyInput) (any, error) {
+			body, err := rpc.BrclientdListStoreFiles(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return decodeBRResult(body), nil
+		}),
+	readTool("bisonrelay", "br_store_file_get",
+		"Fetch one Bison Relay storefront media file by path. Returns its content type and base64 bytes.",
+		func(ctx context.Context, in brStorePathInput) (any, error) {
+			data, contentType, err := rpc.BrclientdGetStoreFile(ctx, in.Path)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"path": in.Path, "contentType": contentType, "dataB64": base64.StdEncoding.EncodeToString(data)}, nil
+		}),
+	agentTool("bisonrelay", "br_store_file_delete",
+		"Delete a media file from the Bison Relay storefront directory by path. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brStorePathInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "denied", err.Error())
+				return nil, err
+			}
+			if err := rpc.BrclientdDeleteStoreFile(ctx, in.Path); err != nil {
+				recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "ok", "")
+			return map[string]any{"path": in.Path, "deleted": true}, nil
+		}),
 }
 
 // decodeBRResult unmarshals a brclientd JSON response into a generic value so
@@ -1404,7 +1504,7 @@ func safeBRName(p string) bool {
 // dashboard's BisonrelayPagesFetchHandler. data is nil for a plain navigation
 // GET, or a JSON form payload for a submission. The returned map is the
 // structured tool result.
-func brPageFetch(ctx context.Context, uid string, path []string, sessionID, parentPage uint64, data json.RawMessage) (any, error) {
+func brPageFetch(ctx context.Context, uid string, path []string, sessionID, parentPage uint64, data json.RawMessage, fieldTypes ...map[string]string) (any, error) {
 	if strings.TrimSpace(uid) == "" {
 		return nil, fmt.Errorf("uid is required")
 	}
@@ -1419,6 +1519,9 @@ func brPageFetch(ctx context.Context, uid string, path []string, sessionID, pare
 	}
 	if len(data) > 0 {
 		body["data"] = data
+	}
+	if len(fieldTypes) > 0 && len(fieldTypes[0]) > 0 {
+		body["field_types"] = fieldTypes[0]
 	}
 	raw, err := rpc.BrclientdPagesFetch(ctx, body)
 	if err != nil {
