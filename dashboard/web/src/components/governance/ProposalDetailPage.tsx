@@ -80,7 +80,7 @@ const CommentThread = ({ node, now, depth }: { node: CommentNode; now: number; d
     <div>
       <div className="rounded-lg border border-border/50 bg-muted/10 px-4 py-3">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs min-w-0">
+          <div className="flex items-center gap-2 text-base min-w-0">
             <span className="font-semibold text-foreground truncate">{node.username || 'unknown'}</span>
             {node.createdAt > 0 && (
               <>
@@ -105,16 +105,16 @@ const CommentThread = ({ node, now, depth }: { node: CommentNode; now: number; d
         </div>
         <div className="mt-2 pt-2 border-t border-border/30">
           {node.deleted ? (
-            <p className="text-sm italic text-muted-foreground">
+            <p className="text-lg italic text-muted-foreground">
               Comment removed{node.reason ? `: ${node.reason}` : '.'}
             </p>
           ) : node.commentHtml ? (
             <div
-              className="proposal-body text-sm text-foreground/80 leading-relaxed"
+              className="proposal-body text-lg text-foreground/80 leading-relaxed"
               dangerouslySetInnerHTML={{ __html: node.commentHtml }}
             />
           ) : (
-            <pre className="whitespace-pre-wrap text-sm text-foreground/80 font-sans">
+            <pre className="whitespace-pre-wrap text-lg text-foreground/80 font-sans">
               {node.comment}
             </pre>
           )}
@@ -268,8 +268,8 @@ export const ProposalDetailPage = () => {
       <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">{detail.name || detail.token}</h2>
-            <p className="text-xs text-muted-foreground mt-1">
+            <h2 className="text-2xl font-semibold">{detail.name || detail.token}</h2>
+            <p className="text-sm text-muted-foreground mt-1">
               by {detail.username || 'unknown'} &middot; token{' '}
               <span className="font-mono">{detail.token}</span>
             </p>
@@ -285,7 +285,7 @@ export const ProposalDetailPage = () => {
           </a>
         </div>
 
-        <div className="flex flex-wrap gap-3 text-xs">
+        <div className="flex flex-wrap gap-3 text-sm">
           <span className="px-2 py-0.5 rounded bg-muted/15 border border-border/50">
             status: {detail.voteStatus}
           </span>
@@ -349,14 +349,14 @@ export const ProposalDetailPage = () => {
 
       {(detail.descriptionHtml || detail.description) && (
         <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-2">
-          <h3 className="font-semibold">Description</h3>
+          <h3 className="text-xl font-semibold">Description</h3>
           {detail.descriptionHtml ? (
             <div
-              className="proposal-body text-sm text-foreground/80 leading-relaxed"
+              className="proposal-body text-lg text-foreground/80 leading-relaxed"
               dangerouslySetInnerHTML={{ __html: detail.descriptionHtml }}
             />
           ) : (
-            <pre className="whitespace-pre-wrap text-sm text-foreground/80 font-sans">
+            <pre className="whitespace-pre-wrap text-lg text-foreground/80 font-sans">
               {detail.description}
             </pre>
           )}

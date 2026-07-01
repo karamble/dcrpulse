@@ -73,9 +73,9 @@
   .proposal-body h1 { @apply text-xl font-bold mt-5 mb-2; font-size: var(--heading-1-size); font-weight: var(--heading-weight); }
   .proposal-body h2 { @apply text-lg font-bold mt-5 mb-2; font-size: var(--heading-2-size); font-weight: var(--heading-weight); }
   .proposal-body h3 { @apply text-base font-bold mt-4 mb-2; font-size: var(--heading-3-size); font-weight: var(--heading-weight); }
-  .proposal-body h4 { @apply text-sm font-bold mt-3 mb-1; }
+  .proposal-body h4 { @apply text-base font-bold mt-3 mb-1; }
   .proposal-body h5,
-  .proposal-body h6 { @apply text-sm font-semibold mt-3 mb-1; }
+  .proposal-body h6 { @apply text-base font-semibold mt-3 mb-1; }
   .proposal-body p { @apply my-3; }
   .proposal-body a { @apply text-primary underline-offset-2 hover:underline; }
   .proposal-body ul { @apply list-disc pl-6 my-3 space-y-1; }
@@ -85,10 +85,10 @@
     @apply border-l-2 border-border/60 pl-4 my-3 text-muted-foreground italic;
   }
   .proposal-body code {
-    @apply font-mono text-xs bg-muted/20 px-1.5 py-0.5 rounded;
+    @apply font-mono text-base bg-muted/20 px-1.5 py-0.5 rounded;
   }
   .proposal-body pre {
-    @apply font-mono text-xs bg-muted/20 p-3 rounded-lg my-3 overflow-x-auto;
+    @apply font-mono text-base bg-muted/20 p-3 rounded-lg my-3 overflow-x-auto;
   }
   .proposal-body pre code {
     @apply bg-transparent p-0;
@@ -97,7 +97,7 @@
     @apply my-4 border-border/40;
   }
   .proposal-body table {
-    @apply my-3 w-full border-collapse text-xs;
+    @apply my-3 w-full border-collapse text-base;
   }
   .proposal-body th,
   .proposal-body td {

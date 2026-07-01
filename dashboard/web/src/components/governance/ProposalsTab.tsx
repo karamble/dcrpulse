@@ -236,8 +236,8 @@ export const ProposalsTab = () => {
             >
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold truncate">{p.name || p.token}</h3>
-                  <p className="text-xs text-muted-foreground">
+                  <h3 className="text-xl font-semibold truncate">{p.name || p.token}</h3>
+                  <p className="text-base text-muted-foreground">
                     by {p.username || 'unknown'} &middot; token{' '}
                     <span className="font-mono">{p.token.slice(0, 8)}...</span>
                   </p>
@@ -249,7 +249,7 @@ export const ProposalsTab = () => {
                     {p.voteStatus}
                   </span>
                   {p.blocksLeft > 0 && (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-sm text-muted-foreground">
                       {p.blocksLeft.toLocaleString()} blocks left
                     </span>
                   )}
@@ -264,7 +264,7 @@ export const ProposalsTab = () => {
                   quorumMin={p.quorumMin}
                 />
               )}
-              <div className="flex items-center gap-3 text-xs mt-2">
+              <div className="flex items-center gap-3 text-base mt-2">
                 {p.currentChoice && (
                   <span className="text-success">you voted: {p.currentChoice}</span>
                 )}
