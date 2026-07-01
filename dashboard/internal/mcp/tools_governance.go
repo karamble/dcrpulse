@@ -6,6 +6,8 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"dcrpulse/internal/services"
@@ -20,6 +22,17 @@ type setVoteChoiceInput struct {
 type castVoteInput struct {
 	Token      string `json:"token" jsonschema:"Politeia proposal token"`
 	VoteOption string `json:"voteOption" jsonschema:"vote option id for the proposal"`
+}
+
+type voteTrickleStartInput struct {
+	Token           string `json:"token" jsonschema:"Politeia proposal token"`
+	VoteOption      string `json:"voteOption" jsonschema:"vote option id for the proposal"`
+	DurationSeconds int64  `json:"durationSeconds" jsonschema:"spread the votes over this many seconds (minimum 30)"`
+	Bunches         int    `json:"bunches,omitempty" jsonschema:"number of vote clusters over the duration (default/minimum 1)"`
+}
+
+type voteTrickleEventsInput struct {
+	Count int `json:"count,omitempty" jsonschema:"max recent events to return (default 50)"`
 }
 
 type treasuryPolicyInput struct {
@@ -103,19 +116,18 @@ func shapeProposalDetail(d *types.ProposalDetail, includeHtml bool) any {
 	return lean
 }
 
-// filterProposalsByStatus narrows a proposal list to a single computed status bucket;
-// an empty status returns the list unchanged.
-func filterProposalsByStatus(ps []types.Proposal, status string) []types.Proposal {
-	if status == "" {
-		return ps
+// proposalBucketOrDefault resolves an optional agent-supplied status to a valid
+// Politeia status bucket, defaulting to the voting bucket when none is given
+// (matching the dashboard's governance list).
+func proposalBucketOrDefault(status string) (string, error) {
+	bucket := strings.TrimSpace(status)
+	if bucket == "" {
+		bucket = "voting"
 	}
-	out := make([]types.Proposal, 0, len(ps))
-	for _, p := range ps {
-		if p.Status == status {
-			out = append(out, p)
-		}
+	if !services.IsProposalBucket(bucket) {
+		return "", fmt.Errorf("invalid status %q: want pre-vote, voting, finished, or abandoned", bucket)
 	}
-	return out
+	return bucket, nil
 }
 
 // governanceTools are the governance domain tools: read agendas/policies/
@@ -131,13 +143,17 @@ var governanceTools = []toolDef{
 		"List the wallet's treasury-spend (TSpend) voting policies.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.ListTSpendPolicies(ctx) }),
 	readTool("governance", "governance_proposals",
-		"List Politeia governance proposals. Optionally filter by status: pre-vote, voting, finished, abandoned.",
+		"List Politeia governance proposals for one status bucket: pre-vote, voting (default), finished, or abandoned.",
 		func(ctx context.Context, in proposalsListInput) (any, error) {
-			proposals, _, err := services.ListProposals(ctx)
+			bucket, err := proposalBucketOrDefault(in.Status)
 			if err != nil {
 				return nil, err
 			}
-			return filterProposalsByStatus(proposals, in.Status), nil
+			proposals, _, err := services.ListProposals(ctx, bucket)
+			if err != nil {
+				return nil, err
+			}
+			return proposals, nil
 		}),
 	readTool("governance", "governance_proposal_detail",
 		"Get one Politeia proposal's full record (cached, auto-fetched on first access). Rendered HTML is omitted unless includeHtml is set.",
@@ -154,13 +170,17 @@ var governanceTools = []toolDef{
 			return services.PrepareProposalVote(ctx, in.Token)
 		}),
 	readTool("governance", "governance_refresh_proposals",
-		"Force a Politeia re-fetch of the proposals list, subject to the refresh cooldown. Optionally filter by status: pre-vote, voting, finished, abandoned.",
+		"Force a Politeia re-fetch of one status bucket (pre-vote, voting (default), finished, or abandoned), subject to the refresh cooldown.",
 		func(ctx context.Context, in proposalsListInput) (any, error) {
-			proposals, _, err := services.RefreshProposals(ctx)
+			bucket, err := proposalBucketOrDefault(in.Status)
 			if err != nil {
 				return nil, err
 			}
-			return filterProposalsByStatus(proposals, in.Status), nil
+			proposals, _, err := services.RefreshProposals(ctx, bucket)
+			if err != nil {
+				return nil, err
+			}
+			return proposals, nil
 		}),
 	readTool("governance", "governance_refresh_proposal_detail",
 		"Force a re-fetch of one proposal's detail, subject to the refresh cooldown. Rendered HTML is omitted unless includeHtml is set.",
@@ -235,5 +255,48 @@ var governanceTools = []toolDef{
 			}
 			recordSpend(a, "governance_set_tspend_policy", 0, 0, in.Hash, "ok", in.Policy)
 			return map[string]any{"hash": in.Hash, "policy": in.Policy, "ok": true}, nil
+		}),
+	agentTool("governance", "governance_vote_trickle_start",
+		"Start trickle-voting a Politeia proposal: sign all eligible ballots up front, then submit them spread out over durationSeconds (a port of politeiavoter's trickle mode, to obscure total vote volume and timing). Several proposals can trickle at once. Requires a spend grant with voting enabled; signs with the held passphrase. Track progress with governance_vote_trickle_status.",
+		func(ctx context.Context, a *agent, in voteTrickleStartInput) (any, error) {
+			pass, err := grants.authorizeActionPass(a.id, scopeGovernance, time.Now())
+			if err != nil {
+				recordSpend(a, "governance_vote_trickle_start", 0, 0, in.Token, "denied", err.Error())
+				return nil, err
+			}
+			defer zero(pass)
+			bunches := in.Bunches
+			if bunches < 1 {
+				bunches = 1
+			}
+			if err := services.StartVoteTrickle(ctx, in.Token, in.VoteOption, time.Duration(in.DurationSeconds)*time.Second, bunches, pass); err != nil {
+				recordSpend(a, "governance_vote_trickle_start", 0, 0, in.Token, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "governance_vote_trickle_start", 0, 0, in.Token, "ok", in.VoteOption)
+			return map[string]any{"token": in.Token, "voteOption": in.VoteOption, "started": true, "workers": services.VoteTrickleWorkersSnapshot()}, nil
+		}),
+	agentTool("governance", "governance_vote_trickle_stop",
+		"Stop a running proposal's vote trickle, or dismiss a finished one, by token. Requires a spend grant with voting enabled.",
+		func(_ context.Context, a *agent, in proposalTokenInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeGovernance, time.Now()); err != nil {
+				recordSpend(a, "governance_vote_trickle_stop", 0, 0, in.Token, "denied", err.Error())
+				return nil, err
+			}
+			services.StopVoteTrickle(in.Token)
+			recordSpend(a, "governance_vote_trickle_stop", 0, 0, in.Token, "ok", "")
+			return map[string]any{"token": in.Token, "stopped": true}, nil
+		}),
+	readTool("governance", "governance_vote_trickle_status",
+		"List the live status of every proposal currently or recently trickle-voting (running flag, cast/failed/pending counts, next/finish times).",
+		func(_ context.Context, _ emptyInput) (any, error) { return services.VoteTrickleWorkersSnapshot(), nil }),
+	readTool("governance", "governance_vote_trickle_events",
+		"Get the most recent vote-trickle activity events (scheduled/cast/failed/done), newest last. Optional count (default 50). The poll-friendly equivalent of the dashboard's live event stream.",
+		func(_ context.Context, in voteTrickleEventsInput) (any, error) {
+			n := in.Count
+			if n <= 0 {
+				n = 50
+			}
+			return services.LastVoteTrickleEvents(n), nil
 		}),
 }
