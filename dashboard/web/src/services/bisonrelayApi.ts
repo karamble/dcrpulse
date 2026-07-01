@@ -190,16 +190,36 @@ export const clearBisonrelayNotifications = async (): Promise<void> => {
   await api.post('/br/notifications/clear');
 };
 
-export const getBisonrelayReceiveReceipts = async (): Promise<{ enabled: boolean }> => {
-  const { data } = await api.get<{ enabled: boolean }>('/br/settings/receivereceipts');
+export interface BRBehavior {
+  sendReceiveReceipts: boolean;
+  idleRemoveDays: number;
+  idleRemoveIgnore: string[];
+  autoSubscribePosts: boolean;
+  autoHandshakeDays: number;
+  gcInviteDays: number;
+  trackRtdtChat: boolean;
+}
+
+export interface BRBehaviorSettings {
+  saved: BRBehavior;
+  effective: BRBehavior;
+}
+
+// getBisonrelayBehaviorSettings returns the saved (settings.json with Bison
+// Relay defaults applied) and effective (what the running daemon booted with)
+// behavior settings. They differ when a change is pending a restart.
+export const getBisonrelayBehaviorSettings = async (): Promise<BRBehaviorSettings> => {
+  const { data } = await api.get<BRBehaviorSettings>('/br/settings/behavior');
   return data;
 };
 
-// setBisonrelayReceiveReceipts persists the setting; a changed value restarts
-// the messaging daemon (the BR client reads it only at startup), so it is
-// briefly unreachable afterwards.
-export const setBisonrelayReceiveReceipts = async (enabled: boolean): Promise<void> => {
-  await api.post('/br/settings/receivereceipts', { enabled });
+// setBisonrelayBehaviorSettings persists a partial update. The values are read
+// only when the messaging daemon starts, so a change takes effect on the next
+// Bison Relay restart; nothing restarts on its own.
+export const setBisonrelayBehaviorSettings = async (
+  update: Partial<BRBehavior>,
+): Promise<void> => {
+  await api.post('/br/settings/behavior', update);
 };
 
 export interface BisonrelayContentFilter {

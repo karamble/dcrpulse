@@ -439,19 +439,18 @@ func BrclientdClearNotifications(ctx context.Context) error {
 	return brclientdPostJSON(ctx, "/notifications/clear", nil)
 }
 
-// BrclientdReceiveReceiptsSetting returns brclientd's
-// /settings/receivereceipts JSON: {enabled: bool}, the effective
-// send-receive-receipts state.
-func BrclientdReceiveReceiptsSetting(ctx context.Context) (json.RawMessage, error) {
-	return brclientdGetRaw(ctx, "/settings/receivereceipts", nil)
+// BrclientdBRBehavior returns brclientd's /settings/behavior JSON:
+// {saved, effective} resolved BR behavior settings (send-receive-receipts, idle
+// auto-removal, auto-subscribe, auto-handshake, GC invite expiry, RTDT chat).
+func BrclientdBRBehavior(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/settings/behavior", nil)
 }
 
-// BrclientdSetReceiveReceipts persists the send-receive-receipts setting.
-// The BR client reads it only at construction, so a changed value makes
-// brclientd exit for a supervisor relaunch; the daemon is briefly
-// unreachable after this returns.
-func BrclientdSetReceiveReceipts(ctx context.Context, enabled bool) error {
-	return brclientdPostJSON(ctx, "/settings/receivereceipts", map[string]bool{"enabled": enabled})
+// BrclientdSetBRBehavior persists a partial BR behavior update. The values are
+// fixed at BR-client construction, so a change takes effect on the next daemon
+// restart; brclientd does not restart on its own.
+func BrclientdSetBRBehavior(ctx context.Context, update any) error {
+	return brclientdPostJSON(ctx, "/settings/behavior", update)
 }
 
 // BrclientdListFilters returns the active content filters as brclientd's

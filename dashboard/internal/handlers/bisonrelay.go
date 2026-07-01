@@ -530,14 +530,14 @@ func BisonrelayClearNotificationsHandler(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// BisonrelayReceiveReceiptsHandler proxies brclientd's
-// /settings/receivereceipts: GET reports the effective state; POST {enabled}
-// persists it and, on a change, brclientd restarts to apply (the value is
-// fixed at BR client construction).
-func BisonrelayReceiveReceiptsHandler(w http.ResponseWriter, r *http.Request) {
+// BisonrelayBehaviorSettingsHandler proxies brclientd's /settings/behavior: GET
+// reports {saved, effective}; POST persists a partial update. The settings are
+// fixed at BR-client construction, so a change takes effect on the next Bison
+// Relay restart (nothing restarts on its own).
+func BisonrelayBehaviorSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		raw, err := rpc.BrclientdReceiveReceiptsSetting(r.Context())
+		raw, err := rpc.BrclientdBRBehavior(r.Context())
 		if err != nil {
 			brWriteErr(w, err)
 			return
@@ -545,14 +545,12 @@ func BisonrelayReceiveReceiptsHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(raw)
 	case http.MethodPost:
-		var req struct {
-			Enabled bool `json:"enabled"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var update map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 			http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := rpc.BrclientdSetReceiveReceipts(r.Context(), req.Enabled); err != nil {
+		if err := rpc.BrclientdSetBRBehavior(r.Context(), update); err != nil {
 			brWriteErr(w, err)
 			return
 		}

@@ -19,6 +19,7 @@ import {
   RefreshCw,
   RotateCw,
   Rss,
+  SlidersHorizontal,
   Trash2,
   User,
   Wifi,
@@ -34,6 +35,7 @@ import {
   BisonrelayKXSearch,
   BisonrelayMediateID,
   BisonrelayVersion,
+  BRBehavior,
   cancelBisonrelayMediateID,
   deleteBisonrelayFilter,
   getBisonrelayBackupStatus,
@@ -44,15 +46,15 @@ import {
   getBisonrelayKXList,
   getBisonrelayKXSearches,
   getBisonrelayMediateIDs,
+  getBisonrelayBehaviorSettings,
   getBisonrelayRates,
-  getBisonrelayReceiveReceipts,
   getBisonrelayVersion,
   listBisonrelayGCs,
   prepareBisonrelayBackup,
   resetAllBisonrelaySessions,
   setBisonrelayAvatar,
+  setBisonrelayBehaviorSettings,
   setBisonrelayConnection,
-  setBisonrelayReceiveReceipts,
   subscribeAllBisonrelayPosts,
   upsertBisonrelayFilter,
 } from '../../services/bisonrelayApi';
@@ -78,6 +80,7 @@ type SettingsSection =
   | 'notifications'
   | 'sessions'
   | 'connection'
+  | 'behavior'
   | 'filters'
   | 'backup'
   | 'about';
@@ -90,6 +93,7 @@ const readHashSection = (): SettingsSection => {
   if (rest === '/notifications') return 'notifications';
   if (rest === '/sessions') return 'sessions';
   if (rest === '/connection') return 'connection';
+  if (rest === '/behavior') return 'behavior';
   if (rest === '/filters') return 'filters';
   if (rest === '/backup') return 'backup';
   if (rest === '/about') return 'about';
@@ -336,20 +340,34 @@ const AppearanceCard = () => {
 // ---- Notifications ----------------------------------------------------------
 
 // Toggle mirrors the wallet Settings > Privacy & Security switch styling.
+// PendingBadge marks a setting whose saved value differs from the value the
+// running Bison Relay daemon booted with, so it applies only after a restart.
+const PendingBadge = ({ show }: { show: boolean }) =>
+  show ? (
+    <span className="ml-2 shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400 align-middle">
+      pending restart
+    </span>
+  ) : null;
+
 const Toggle = ({
   label,
   description,
   checked,
   onChange,
+  pending,
 }: {
   label: string;
   description: string;
   checked: boolean;
   onChange: (next: boolean) => void;
+  pending?: boolean;
 }) => (
   <div className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
     <div>
-      <span className="font-medium block">{label}</span>
+      <span className="font-medium block">
+        {label}
+        <PendingBadge show={!!pending} />
+      </span>
       <span className="text-sm text-muted-foreground block">{description}</span>
     </div>
     <button
@@ -632,13 +650,206 @@ const KXListCard = () => {
 
 // ---- Connection -------------------------------------------------------------
 
+// ---- Behavior ---------------------------------------------------------------
+
+// NumberRow is a labelled integer input (days / level) with a pending-restart
+// badge, committed on blur or Enter.
+const NumberRow = ({
+  label,
+  description,
+  value,
+  suffix,
+  min,
+  pending,
+  onCommit,
+}: {
+  label: string;
+  description: string;
+  value: number;
+  suffix: string;
+  min: number;
+  pending: boolean;
+  onCommit: (v: number) => void;
+}) => {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const n = Math.floor(Number(draft));
+    if (Number.isFinite(n) && n >= min && n !== value) onCommit(n);
+    else setDraft(String(value));
+  };
+  return (
+    <div className="space-y-1 pt-3 border-t border-border/40">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium flex items-center">
+          {label}
+          <PendingBadge show={pending} />
+        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <input
+            type="number"
+            min={min}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            }}
+            className="w-20 rounded-lg border border-border bg-background px-2 py-1 text-right text-sm"
+          />
+          <span className="text-xs text-muted-foreground w-9">{suffix}</span>
+        </div>
+      </div>
+      <p className="text-sm text-muted-foreground">{description}</p>
+    </div>
+  );
+};
+
+const BehaviorCard = () => {
+  const [saved, setSaved] = useState<BRBehavior | null>(null);
+  const [effective, setEffective] = useState<BRBehavior | null>(null);
+  const [ignoreDraft, setIgnoreDraft] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await getBisonrelayBehaviorSettings();
+      setSaved(r.saved);
+      setEffective(r.effective);
+      setIgnoreDraft(r.saved.idleRemoveIgnore.join('\n'));
+      setErr(null);
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not load behavior settings');
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const commit = useCallback(
+    async (update: Partial<BRBehavior>) => {
+      try {
+        await setBisonrelayBehaviorSettings(update);
+        await refresh();
+      } catch (e: any) {
+        const body = e?.response?.data;
+        setErr(typeof body === 'string' ? body : e?.message || 'Could not save setting');
+      }
+    },
+    [refresh],
+  );
+
+  if (!saved || !effective) {
+    return (
+      <SectionCard title="Behavior" icon={SlidersHorizontal}>
+        <p className="text-sm text-muted-foreground">{err || 'Loading...'}</p>
+      </SectionCard>
+    );
+  }
+
+  const s = saved;
+  const eff = effective;
+  const pend = (k: keyof BRBehavior) => JSON.stringify(s[k]) !== JSON.stringify(eff[k]);
+
+  const commitIgnore = () => {
+    const list = ignoreDraft
+      .split('\n')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (JSON.stringify(list) !== JSON.stringify(s.idleRemoveIgnore)) {
+      commit({ idleRemoveIgnore: list });
+    }
+  };
+
+  return (
+    <SectionCard title="Behavior" icon={SlidersHorizontal}>
+      <p className="text-sm text-muted-foreground">
+        How the Bison Relay client behaves. These are read only when the
+        messaging daemon starts, so a change is saved now and takes effect after
+        Bison Relay next restarts. A "pending restart" tag marks any setting that
+        differs from the value the daemon is currently running.
+      </p>
+
+      <Toggle
+        label="Send receive receipts"
+        description="Acknowledge posts and comments you receive back to their authors, so they can see you got them."
+        checked={s.sendReceiveReceipts}
+        onChange={(next) => commit({ sendReceiveReceipts: next })}
+        pending={pend('sendReceiveReceipts')}
+      />
+      <Toggle
+        label="Auto-subscribe to posts"
+        description="Automatically subscribe to a contact's posts the first time you key-exchange with them."
+        checked={s.autoSubscribePosts}
+        onChange={(next) => commit({ autoSubscribePosts: next })}
+        pending={pend('autoSubscribePosts')}
+      />
+      <Toggle
+        label="Track in-call chat history"
+        description="Keep chat messages exchanged during live voice/video (RTDT) sessions. The in-call chat panel needs this on."
+        checked={s.trackRtdtChat}
+        onChange={(next) => commit({ trackRtdtChat: next })}
+        pending={pend('trackRtdtChat')}
+      />
+
+      <NumberRow
+        label="Idle contact auto-removal"
+        description="Unsubscribe idle contacts from your posts and remove idle members from group chats you admin, after this many days with no message from them. 0 turns it off."
+        value={s.idleRemoveDays}
+        suffix="days"
+        min={0}
+        pending={pend('idleRemoveDays')}
+        onCommit={(v) => commit({ idleRemoveDays: v })}
+      />
+      <NumberRow
+        label="Auto-handshake interval"
+        description="Periodically handshake with contacts you have not heard from, to keep the ratchet fresh. 0 turns it off."
+        value={s.autoHandshakeDays}
+        suffix="days"
+        min={0}
+        pending={pend('autoHandshakeDays')}
+        onCommit={(v) => commit({ autoHandshakeDays: v })}
+      />
+      <NumberRow
+        label="Group chat invite expiration"
+        description="How long a group chat invitation you send stays valid."
+        value={s.gcInviteDays}
+        suffix="days"
+        min={1}
+        pending={pend('gcInviteDays')}
+        onCommit={(v) => commit({ gcInviteDays: v })}
+      />
+
+      <div className="space-y-1 pt-3 border-t border-border/40">
+        <span className="font-medium flex items-center">
+          Idle-removal ignore list
+          <PendingBadge show={pend('idleRemoveIgnore')} />
+        </span>
+        <p className="text-sm text-muted-foreground">
+          One nick or hex identity per line. These contacts are never
+          auto-removed even when idle.
+        </p>
+        <textarea
+          value={ignoreDraft}
+          onChange={(e) => setIgnoreDraft(e.target.value)}
+          onBlur={commitIgnore}
+          rows={3}
+          spellCheck={false}
+          className="w-full rounded-lg border border-border bg-background px-2 py-1 font-mono text-xs"
+        />
+      </div>
+
+      {err && <p className="text-sm text-destructive">{err}</p>}
+    </SectionCard>
+  );
+};
+
 const ConnectionCard = () => {
   const [state, setState] = useState<BisonrelayConnectionState | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [srrEnabled, setSrrEnabled] = useState<boolean | null>(null);
-  const [srrBusy, setSrrBusy] = useState(false);
-  const [srrErr, setSrrErr] = useState<string | null>(null);
   const [liquidityOpen, setLiquidityOpen] = useState(false);
   const [liquidityPoint, setLiquidityPoint] = useState<string | null>(null);
 
@@ -658,25 +869,6 @@ const ConnectionCard = () => {
     return () => clearInterval(id);
   }, [refresh]);
 
-  useEffect(() => {
-    if (srrEnabled !== null || srrBusy) return;
-    let stop = false;
-    const load = async () => {
-      try {
-        const r = await getBisonrelayReceiveReceipts();
-        if (!stop) setSrrEnabled(r.enabled);
-      } catch {
-        /* endpoint missing or daemon booting; row stays hidden */
-      }
-    };
-    load();
-    const id = setInterval(load, 10000);
-    return () => {
-      stop = true;
-      clearInterval(id);
-    };
-  }, [srrEnabled, srrBusy]);
-
   const onToggle = async () => {
     if (!state || busy) return;
     setBusy(true);
@@ -688,38 +880,6 @@ const ConnectionCard = () => {
       setErr(typeof body === 'string' ? body : e?.message || 'Could not change connection');
     } finally {
       setBusy(false);
-    }
-  };
-
-  const onToggleSRR = async (next: boolean) => {
-    if (srrEnabled === null || srrBusy) return;
-    setSrrBusy(true);
-    setSrrErr(null);
-    try {
-      await setBisonrelayReceiveReceipts(next);
-      // A changed value restarts the messaging daemon; poll until it answers
-      // again and trust whatever it reports.
-      const deadline = Date.now() + 90000;
-      for (;;) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        try {
-          const r = await getBisonrelayReceiveReceipts();
-          setSrrEnabled(r.enabled);
-          break;
-        } catch {
-          if (Date.now() > deadline) {
-            throw new Error('The messaging daemon did not come back in time');
-          }
-        }
-      }
-      // The interval refresh likely failed while the daemon was down and
-      // left a stale error; refetch now that it is back so it clears.
-      await refresh();
-    } catch (e: any) {
-      const body = e?.response?.data;
-      setSrrErr(typeof body === 'string' ? body : e?.message || 'Could not change setting');
-    } finally {
-      setSrrBusy(false);
     }
   };
 
@@ -797,24 +957,6 @@ const ConnectionCard = () => {
           />
         </div>
       )}
-      {srrEnabled !== null && (
-        <div className="space-y-1">
-          <Toggle
-            label="Send receive receipts"
-            description="Acknowledge posts and comments you receive back to their authors, so they can see you got them. Changing this restarts the messaging daemon."
-            checked={srrEnabled}
-            onChange={(next) => {
-              if (!srrBusy) onToggleSRR(next);
-            }}
-          />
-          {srrBusy && (
-            <p className="text-xs text-muted-foreground">
-              Restarting messaging daemon, waiting for it to reconnect...
-            </p>
-          )}
-          {srrErr && <p className="text-xs text-destructive">{srrErr}</p>}
-        </div>
-      )}
       <div className="space-y-1 pt-2 border-t border-border/40">
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-muted-foreground">
@@ -835,7 +977,7 @@ const ConnectionCard = () => {
           </p>
         )}
       </div>
-      {!srrBusy && err && <p className="text-xs text-destructive">{err}</p>}
+      {err && <p className="text-xs text-destructive">{err}</p>}
       {liquidityOpen && (
         <RequestLiquidityModal
           onClose={() => setLiquidityOpen(false)}
@@ -1536,6 +1678,7 @@ const sidebarItems: {
   { id: 'notifications', label: 'Notifications', hash: 'settings/notifications', icon: Bell },
   { id: 'sessions', label: 'Sessions', hash: 'settings/sessions', icon: RotateCw },
   { id: 'connection', label: 'Connection', hash: 'settings/connection', icon: Wifi },
+  { id: 'behavior', label: 'Behavior', hash: 'settings/behavior', icon: SlidersHorizontal },
   { id: 'filters', label: 'Filters', hash: 'settings/filters', icon: Filter },
   { id: 'backup', label: 'Backup', hash: 'settings/backup', icon: Download },
   { id: 'about', label: 'About', hash: 'settings/about', icon: Info },
@@ -1594,6 +1737,7 @@ export const BisonrelaySettingsTab = () => {
           <ChannelList />
         </>
       );
+    if (section === 'behavior') return <BehaviorCard />;
     if (section === 'filters') return <FiltersCard />;
     if (section === 'backup') return <BackupCard />;
     if (section === 'about') return <AboutCard />;
