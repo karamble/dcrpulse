@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { ComponentType, useCallback, useEffect, useRef, useState } from 'react';
+import { ComponentType, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ALargeSmall,
   AlertCircle,
@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Download,
   Filter,
+  Gauge,
   Info,
   KeyRound,
   Loader2,
@@ -81,6 +82,7 @@ type SettingsSection =
   | 'sessions'
   | 'connection'
   | 'behavior'
+  | 'advanced'
   | 'filters'
   | 'backup'
   | 'about';
@@ -94,6 +96,7 @@ const readHashSection = (): SettingsSection => {
   if (rest === '/sessions') return 'sessions';
   if (rest === '/connection') return 'connection';
   if (rest === '/behavior') return 'behavior';
+  if (rest === '/advanced') return 'advanced';
   if (rest === '/filters') return 'filters';
   if (rest === '/backup') return 'backup';
   if (rest === '/about') return 'about';
@@ -840,6 +843,184 @@ const BehaviorCard = () => {
           className="w-full rounded-lg border border-border bg-background px-2 py-1 font-mono text-xs"
         />
       </div>
+
+      {err && <p className="text-sm text-destructive">{err}</p>}
+    </SectionCard>
+  );
+};
+
+// ---- Advanced (tuning) ------------------------------------------------------
+
+const AdvancedCard = () => {
+  const [saved, setSaved] = useState<BRBehavior | null>(null);
+  const [effective, setEffective] = useState<BRBehavior | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await getBisonrelayBehaviorSettings();
+      setSaved(r.saved);
+      setEffective(r.effective);
+      setErr(null);
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not load advanced settings');
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const commit = useCallback(
+    async (update: Partial<BRBehavior>) => {
+      try {
+        await setBisonrelayBehaviorSettings(update);
+        await refresh();
+      } catch (e: any) {
+        const body = e?.response?.data;
+        setErr(typeof body === 'string' ? body : e?.message || 'Could not save setting');
+      }
+    },
+    [refresh],
+  );
+
+  if (!saved || !effective) {
+    return (
+      <SectionCard title="Advanced" icon={Gauge}>
+        <p className="text-sm text-muted-foreground">{err || 'Loading...'}</p>
+      </SectionCard>
+    );
+  }
+
+  const s = saved;
+  const eff = effective;
+  const pend = (k: keyof BRBehavior) => s[k] !== eff[k];
+  const GroupLabel = ({ children }: { children: ReactNode }) => (
+    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-3">{children}</p>
+  );
+
+  return (
+    <SectionCard title="Advanced" icon={Gauge}>
+      <p className="text-sm text-muted-foreground">
+        Low-level Bison Relay client tuning. Most people should leave these at
+        their defaults. Like the Behavior settings, changes are saved now and take
+        effect after Bison Relay next restarts.
+      </p>
+
+      <GroupLabel>Performance</GroupLabel>
+      <NumberRow
+        label="Compression level"
+        description="zlib level for outbound routed messages (0 = none, 9 = best). Higher costs more CPU for smaller relay push fees."
+        value={s.compressLevel}
+        suffix="0-9"
+        min={0}
+        pending={pend('compressLevel')}
+        onCommit={(v) => commit({ compressLevel: Math.min(9, v) })}
+      />
+      <NumberRow
+        label="Reconnect delay"
+        description="Wait between reconnection attempts to the relay server."
+        value={s.reconnectSecs}
+        suffix="secs"
+        min={1}
+        pending={pend('reconnectSecs')}
+        onCommit={(v) => commit({ reconnectSecs: v })}
+      />
+      <NumberRow
+        label="GCMQ max lifetime"
+        description="How long to wait for a group-chat message from a member before assuming it will not arrive."
+        value={s.gcmqMaxLifetimeSecs}
+        suffix="secs"
+        min={1}
+        pending={pend('gcmqMaxLifetimeSecs')}
+        onCommit={(v) => commit({ gcmqMaxLifetimeSecs: v })}
+      />
+      <NumberRow
+        label="GCMQ update delay"
+        description="How often the group-chat message queue checks its rules to emit messages."
+        value={s.gcmqUpdateSecs}
+        suffix="secs"
+        min={1}
+        pending={pend('gcmqUpdateSecs')}
+        onCommit={(v) => commit({ gcmqUpdateSecs: v })}
+      />
+      <NumberRow
+        label="GCMQ initial delay"
+        description="How long after initial subscriptions to start processing group-chat queue messages."
+        value={s.gcmqInitialSecs}
+        suffix="secs"
+        min={1}
+        pending={pend('gcmqInitialSecs')}
+        onCommit={(v) => commit({ gcmqInitialSecs: v })}
+      />
+
+      <GroupLabel>Tipping</GroupLabel>
+      <NumberRow
+        label="Tip restart delay"
+        description="Wait after startup before resuming pending tip attempts."
+        value={s.tipRestartSecs}
+        suffix="secs"
+        min={1}
+        pending={pend('tipRestartSecs')}
+        onCommit={(v) => commit({ tipRestartSecs: v })}
+      />
+      <NumberRow
+        label="Tip re-request invoice"
+        description="Re-request an invoice from the recipient if one has not arrived yet."
+        value={s.tipRerequestHours}
+        suffix="hrs"
+        min={1}
+        pending={pend('tipRerequestHours')}
+        onCommit={(v) => commit({ tipRerequestHours: v })}
+      />
+      <NumberRow
+        label="Tip max lifetime"
+        description="Stop attempting to pay a tip's invoice after this long from the initial attempt."
+        value={s.tipMaxLifetimeHours}
+        suffix="hrs"
+        min={1}
+        pending={pend('tipMaxLifetimeHours')}
+        onCommit={(v) => commit({ tipMaxLifetimeHours: v })}
+      />
+      <NumberRow
+        label="Tip pay-retry factor"
+        description="Exponential backoff factor for retrying a tip payment."
+        value={s.tipPayRetrySecs}
+        suffix="secs"
+        min={1}
+        pending={pend('tipPayRetrySecs')}
+        onCommit={(v) => commit({ tipPayRetrySecs: v })}
+      />
+
+      <GroupLabel>Key exchange</GroupLabel>
+      <NumberRow
+        label="Mediate-ID cooldown"
+        description="Wait before requesting a new mediated introduction for the same target."
+        value={s.mediateCooldownDays}
+        suffix="days"
+        min={1}
+        pending={pend('mediateCooldownDays')}
+        onCommit={(v) => commit({ mediateCooldownDays: v })}
+      />
+      <NumberRow
+        label="Max auto-KX mediate requests"
+        description="Maximum automatic mediated-introduction requests to a single user."
+        value={s.maxAutoMediate}
+        suffix="max"
+        min={1}
+        pending={pend('maxAutoMediate')}
+        onCommit={(v) => commit({ maxAutoMediate: v })}
+      />
+      <NumberRow
+        label="Unkxd warning interval"
+        description="Minimum time between warnings about acting with contacts you have not key-exchanged with."
+        value={s.unkxdWarnHours}
+        suffix="hrs"
+        min={1}
+        pending={pend('unkxdWarnHours')}
+        onCommit={(v) => commit({ unkxdWarnHours: v })}
+      />
 
       {err && <p className="text-sm text-destructive">{err}</p>}
     </SectionCard>
@@ -1679,6 +1860,7 @@ const sidebarItems: {
   { id: 'sessions', label: 'Sessions', hash: 'settings/sessions', icon: RotateCw },
   { id: 'connection', label: 'Connection', hash: 'settings/connection', icon: Wifi },
   { id: 'behavior', label: 'Behavior', hash: 'settings/behavior', icon: SlidersHorizontal },
+  { id: 'advanced', label: 'Advanced', hash: 'settings/advanced', icon: Gauge },
   { id: 'filters', label: 'Filters', hash: 'settings/filters', icon: Filter },
   { id: 'backup', label: 'Backup', hash: 'settings/backup', icon: Download },
   { id: 'about', label: 'About', hash: 'settings/about', icon: Info },
@@ -1738,6 +1920,7 @@ export const BisonrelaySettingsTab = () => {
         </>
       );
     if (section === 'behavior') return <BehaviorCard />;
+    if (section === 'advanced') return <AdvancedCard />;
     if (section === 'filters') return <FiltersCard />;
     if (section === 'backup') return <BackupCard />;
     if (section === 'about') return <AboutCard />;

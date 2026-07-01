@@ -198,6 +198,18 @@ export interface BRBehavior {
   autoHandshakeDays: number;
   gcInviteDays: number;
   trackRtdtChat: boolean;
+  compressLevel: number;
+  reconnectSecs: number;
+  gcmqMaxLifetimeSecs: number;
+  gcmqUpdateSecs: number;
+  gcmqInitialSecs: number;
+  tipRestartSecs: number;
+  tipRerequestHours: number;
+  tipMaxLifetimeHours: number;
+  tipPayRetrySecs: number;
+  mediateCooldownDays: number;
+  maxAutoMediate: number;
+  unkxdWarnHours: number;
 }
 
 export interface BRBehaviorSettings {
