@@ -1609,6 +1609,43 @@ func ConstructTransaction(ctx context.Context, sourceAccount uint32, outputs []t
 	return rpc.WalletGrpcClient.ConstructTransaction(ctx, req)
 }
 
+// ConstructUnsignedTx builds an unsigned transaction and summarizes its amounts
+// (inputs, outputs, change, fee) for preview and offline signing. It uses no
+// private keys, so it is allowed for watch-only wallets. Change returns to the
+// wallet, so the net debit is inputs - change (recipient amount + fee); send-all
+// routes the whole balance through the change destination, leaving no real change
+// output to subtract.
+func ConstructUnsignedTx(ctx context.Context, sourceAccount uint32, outputs []types.TxRecipient, sendAll bool) (*types.ConstructTransactionResponse, error) {
+	cResp, err := ConstructTransaction(ctx, sourceAccount, outputs, sendAll)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := DecodeRawTransaction(ctx, cResp.UnsignedTransaction)
+	if err != nil {
+		return nil, err
+	}
+	var inputsTotal, outputsTotal int64
+	for _, in := range decoded.Inputs {
+		inputsTotal += in.AmountIn
+	}
+	for _, out := range decoded.Outputs {
+		outputsTotal += out.Value
+	}
+	var change int64
+	if !sendAll && cResp.ChangeIndex >= 0 && int(cResp.ChangeIndex) < len(decoded.Outputs) {
+		change = decoded.Outputs[cResp.ChangeIndex].Value
+	}
+	return &types.ConstructTransactionResponse{
+		UnsignedTxHex:       hex.EncodeToString(cResp.UnsignedTransaction),
+		InputsTotalAtoms:    inputsTotal,
+		OutputsTotalAtoms:   outputsTotal,
+		ChangeAtoms:         change,
+		FeeAtoms:            inputsTotal - outputsTotal,
+		TotalDebitedAtoms:   inputsTotal - change,
+		EstimatedSignedSize: cResp.EstimatedSignedSize,
+	}, nil
+}
+
 func DecodeRawTransaction(ctx context.Context, txBytes []byte) (*pb.DecodedTransaction, error) {
 	if rpc.DecodeMessageClient == nil {
 		return nil, fmt.Errorf("decode message gRPC client not initialized")

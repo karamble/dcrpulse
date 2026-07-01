@@ -1112,46 +1112,19 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cResp, err := services.ConstructTransaction(ctx, req.SourceAccount, recipients, req.SendAll)
+	resp, err := services.ConstructUnsignedTx(ctx, req.SourceAccount, recipients, req.SendAll)
 	if err != nil {
-		wlltLog.Errorf("ConstructTransaction failed: %v", err)
+		if services.IsDaemonUnreachable(err) {
+			respondDaemonError(w, r, services.LogComponentDcrwallet, err)
+			return
+		}
+		wlltLog.Errorf("ConstructUnsignedTx failed: %v", err)
 		http.Error(w, fmt.Sprintf("construct failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	decoded, err := services.DecodeRawTransaction(ctx, cResp.UnsignedTransaction)
-	if err != nil {
-		wlltLog.Errorf("DecodeRawTransaction failed: %v", err)
-		http.Error(w, fmt.Sprintf("decode failed: %v", err), http.StatusInternalServerError)
-		return
-	}
-	var inputs, outputs int64
-	for _, in := range decoded.Inputs {
-		inputs += in.AmountIn
-	}
-	for _, out := range decoded.Outputs {
-		outputs += out.Value
-	}
-
-	// Change returns to the user's wallet, so the net debit is inputs - change
-	// (== recipient amount + fee). In send-all mode dcrwallet routes the whole
-	// balance to the recipient through the change destination, so there is no
-	// real change output to subtract.
-	var change int64
-	if !req.SendAll && cResp.ChangeIndex >= 0 && int(cResp.ChangeIndex) < len(decoded.Outputs) {
-		change = decoded.Outputs[cResp.ChangeIndex].Value
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types.ConstructTransactionResponse{
-		UnsignedTxHex:       hex.EncodeToString(cResp.UnsignedTransaction),
-		InputsTotalAtoms:    inputs,
-		OutputsTotalAtoms:   outputs,
-		ChangeAtoms:         change,
-		FeeAtoms:            inputs - outputs,
-		TotalDebitedAtoms:   inputs - change,
-		EstimatedSignedSize: cResp.EstimatedSignedSize,
-	})
+	json.NewEncoder(w).Encode(resp)
 }
 
 func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {

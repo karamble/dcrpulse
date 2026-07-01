@@ -6,12 +6,15 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/decred/dcrd/dcrutil/v4"
 
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/types"
 )
 
 // txListInput parameterizes wallet_transactions. Both fields are optional
@@ -36,6 +39,58 @@ type newAddressInput struct {
 // walletValidateInput parameterizes wallet_validate_address.
 type walletValidateInput struct {
 	Address string `json:"address" jsonschema:"Decred address to validate and check ownership of"`
+}
+
+// txOutputInput is one recipient in a constructed transaction.
+type txOutputInput struct {
+	Address     string `json:"address" jsonschema:"destination Decred address"`
+	AmountAtoms int64  `json:"amountAtoms" jsonschema:"amount to send to this address, in atoms"`
+}
+
+// walletConstructInput parameterizes wallet_construct_transaction. Provide either a
+// single address+amountAtoms or an outputs list; set sendAll to sweep the whole
+// account balance to the single address.
+type walletConstructInput struct {
+	Account     uint32          `json:"account" jsonschema:"source wallet account number"`
+	Address     string          `json:"address,omitempty" jsonschema:"destination address for a single-recipient send"`
+	AmountAtoms int64           `json:"amountAtoms,omitempty" jsonschema:"amount for a single-recipient send, in atoms"`
+	Outputs     []txOutputInput `json:"outputs,omitempty" jsonschema:"multiple recipients; alternative to address+amountAtoms"`
+	SendAll     bool            `json:"sendAll,omitempty" jsonschema:"sweep the whole account balance to the single address"`
+}
+
+// signedTxInput carries a signed transaction for decode or broadcast, either as
+// base64 of the raw signed bytes (e.g. a hardware wallet .dcrtx file) or as a
+// hex/text export.
+type signedTxInput struct {
+	SignedTxB64 string `json:"signedTxB64,omitempty" jsonschema:"base64 of the raw signed transaction bytes (e.g. a hardware wallet .dcrtx file)"`
+	SignedTxHex string `json:"signedTxHex,omitempty" jsonschema:"signed transaction as hex or a text export; used when signedTxB64 is empty"`
+}
+
+// signedTxBytes resolves a signed transaction from base64 (raw bytes, e.g. a
+// hardware wallet .dcrtx file) or a hex/text export, mirroring the offline-signing
+// HTTP handlers.
+func signedTxBytes(b64, text string) ([]byte, error) {
+	if s := strings.TrimSpace(b64); s != "" {
+		data, err := base64.StdEncoding.DecodeString(s)
+		if err != nil {
+			return nil, fmt.Errorf("invalid base64 signed transaction")
+		}
+		return data, nil
+	}
+	if strings.TrimSpace(text) == "" {
+		return nil, fmt.Errorf("signedTxB64 or signedTxHex required")
+	}
+	return []byte(text), nil
+}
+
+// txAlreadyKnown reports whether a broadcast error means the transaction was
+// already accepted (already broadcast or in the mempool), a benign "already done"
+// outcome rather than a failure.
+func txAlreadyKnown(err error) bool {
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "already have") || strings.Contains(s, "already exists") ||
+		strings.Contains(s, "duplicate") || strings.Contains(s, "in mempool") ||
+		strings.Contains(s, "transaction already")
 }
 
 // walletTools are the read-only "wallet" domain tools. They report on the
@@ -100,7 +155,7 @@ var walletTools = []toolDef{
 				}
 				return nil, err
 			}
-			unsigned, err := services.ConstructTransaction(ctx, in.Account, in.Address, atoms, false)
+			unsigned, err := services.ConstructTransaction(ctx, in.Account, []types.TxRecipient{{Address: in.Address, AmountAtoms: atoms}}, false)
 			if err != nil {
 				grants.refund(a.id, atoms)
 				zero(pass)
@@ -121,5 +176,57 @@ var walletTools = []toolDef{
 				"address":   in.Address,
 				"amountDcr": in.AmountDCR,
 			}, nil
+		}),
+	readTool("wallet", "wallet_construct_transaction",
+		"Build an UNSIGNED transaction and summarize its inputs, outputs, change, fee, and net debit. Uses no private keys and works on watch-only wallets. Returns unsignedTxHex to sign offline on a hardware wallet, then broadcast the signed result with wallet_broadcast_signed_transaction. Provide either address+amountAtoms or an outputs list; set sendAll to sweep the account.",
+		func(ctx context.Context, in walletConstructInput) (any, error) {
+			var recipients []types.TxRecipient
+			if len(in.Outputs) > 0 {
+				for _, o := range in.Outputs {
+					recipients = append(recipients, types.TxRecipient{Address: o.Address, AmountAtoms: o.AmountAtoms})
+				}
+			} else {
+				recipients = []types.TxRecipient{{Address: in.Address, AmountAtoms: in.AmountAtoms}}
+			}
+			return services.ConstructUnsignedTx(ctx, in.Account, recipients, in.SendAll)
+		}),
+	readTool("wallet", "wallet_decode_signed_transaction",
+		"Decode a signed transaction (base64 of the raw bytes, or a hex/text export) into a preview: txid, size, per-output address/amount/isMine, and fee. Uses no private keys; use it to verify a hardware-signed transaction before broadcasting.",
+		func(ctx context.Context, in signedTxInput) (any, error) {
+			data, err := signedTxBytes(in.SignedTxB64, in.SignedTxHex)
+			if err != nil {
+				return nil, err
+			}
+			return services.PreviewSignedTransaction(ctx, data)
+		}),
+	agentTool("wallet", "wallet_broadcast_signed_transaction",
+		"Broadcast an already-signed transaction (base64 raw bytes or hex/text export) to the network. The transaction must have been signed by a human on a hardware wallet; the agent only relays it. Requires a grant with the wallet.broadcast scope. Returns the txid; an already-broadcast transaction is reported as success.",
+		func(ctx context.Context, a *agent, in signedTxInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeWalletBroadcast, time.Now()); err != nil {
+				recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
+			data, err := signedTxBytes(in.SignedTxB64, in.SignedTxHex)
+			if err != nil {
+				recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, "", "error", err.Error())
+				return nil, err
+			}
+			txBytes, tx, err := services.ParseSignedTransaction(data)
+			if err != nil {
+				recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, "", "error", err.Error())
+				return nil, err
+			}
+			txid := tx.TxHash().String()
+			txHash, err := services.BroadcastSignedTransaction(ctx, txBytes)
+			if err != nil {
+				if txAlreadyKnown(err) {
+					recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, txid, "ok", "already broadcast")
+					return map[string]any{"txHash": txid, "alreadyBroadcast": true}, nil
+				}
+				recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, txid, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "wallet_broadcast_signed_transaction", 0, 0, txHash, "ok", txHash)
+			return map[string]any{"txHash": txHash, "alreadyBroadcast": false}, nil
 		}),
 }

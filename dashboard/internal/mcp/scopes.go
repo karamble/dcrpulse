@@ -20,6 +20,10 @@ const (
 	scopeTor        = "tor"
 	scopeStaking    = "staking"
 	scopePrivacy    = "privacy"
+
+	// Broadcasting a hardware-signed transaction is a non-fund action: the human
+	// authorized the spend by signing on the device, so the agent only relays bytes.
+	scopeWalletBroadcast = "wallet.broadcast"
 )
 
 // WriteScope is one grantable write/action capability. The dashboard renders the
@@ -47,6 +51,7 @@ var writeScopeCatalog = []WriteScope{
 	{scopeTor, "Tor control", "tor", false, false, false},
 	{scopeStaking, "Staking actions", "staking", true, false, false},
 	{scopePrivacy, "Mixer control", "privacy", true, false, false},
+	{scopeWalletBroadcast, "Broadcast pre-signed transactions", "wallet", false, false, false},
 }
 
 var writeScopeByKey = func() map[string]WriteScope {
