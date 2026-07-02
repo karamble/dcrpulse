@@ -78,8 +78,9 @@
 {% do dcrlnd.healthcheck.set_test("netcat", {"port": values.consts.dcrlnd_grpc_port}) %}
 {% do dcrlnd.healthcheck.set_start_period(300) %}
 {% do dcrlnd.set_grace_period(60) %}
-{# /app-data mounted read-write so docker can create the nested /app-data/dcrlnd mountpoint #}
-{% do dcrlnd.add_storage(values.consts.app_data_dir, values.storage.data) %}
+{# Outer /app-data is read-only; the nested mountpoints below are pre-created inside
+   the shared volume by the dcrwallet entrypoint (which always starts first). #}
+{% do dcrlnd.add_storage(values.consts.app_data_dir, data_ro) %}
 {% do dcrlnd.add_storage(values.consts.dcrlnd_dir, values.storage.dcrlnd) %}
 {% do dcrlnd.depends.add_dependency(values.consts.dcrwallet_container_name, "service_healthy") %}
 {% do perms.add_or_skip_action("dcrlnd", values.storage.dcrlnd, perms_config) %}
@@ -91,8 +92,8 @@
 {% do brclientd.set_grace_period(60) %}
 {% do brclientd.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
 {% do brclientd.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
-{# /app-data mounted read-write so docker can create the nested mountpoints below #}
-{% do brclientd.add_storage(values.consts.app_data_dir, values.storage.data) %}
+{# Outer /app-data read-only; nested mountpoints pre-created by the dcrwallet entrypoint #}
+{% do brclientd.add_storage(values.consts.app_data_dir, data_ro) %}
 {% do brclientd.add_storage(values.consts.dcrlnd_dir, dcrlnd_ro) %}
 {% do brclientd.add_storage(values.consts.brclientd_dir, values.storage.brclientd) %}
 {% do brclientd.depends.add_dependency(values.consts.dcrlnd_container_name, "service_started") %}
@@ -100,6 +101,9 @@
 
 {# ============================== dcrdex (decentralized exchange) ============================== #}
 {% set dcrdex = tpl.add_container(values.consts.dcrdex_container_name, "dcrdex_image") %}
+{# bisonw generates TLS certs bound to the container hostname; the dashboard validates
+   them when connecting to "dcrdex", so pin the hostname (matches upstream compose) #}
+{% do dcrdex.set_hostname(values.consts.dcrdex_container_name) %}
 {% do dcrdex.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
 {% do dcrdex.healthcheck.disable() %}
 {% do dcrdex.set_grace_period(60) %}
@@ -168,7 +172,9 @@
   {% do dashboard.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
 {% endif %}
 
-{# ============================== Portal ============================== #}
+{# ============================== Portal / notes ============================== #}
 {% do tpl.portals.add(values.network.web_port, {"name": "Web UI", "scheme": "http", "path": "/"}) %}
+{% do tpl.notes.add_info("The initial blockchain sync takes several hours and needs roughly 15GB+ of disk space. Progress is visible on the dashboard.") %}
+{% do tpl.notes.add_info("No wallet exists after install - create or restore one from the dashboard web UI. Lightning, DCRDEX and Bison Relay stay idle until you set them up there.") %}
 
 {{ tpl.render() | tojson }}

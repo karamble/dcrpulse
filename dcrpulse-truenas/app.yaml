@@ -33,6 +33,7 @@ screenshots:
 - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/screenshot_2.jpg
 - https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/screenshot_3.jpg
 sources:
+- https://apps.truenas.com/catalog/dcrpulse_community/
 - https://github.com/karamble/dcrpulse
 - https://decred.org
 title: Decred Pulse
