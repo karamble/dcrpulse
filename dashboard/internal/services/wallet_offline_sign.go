@@ -8,13 +8,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
+	"log"
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/dcrutil/v4"
+	"github.com/decred/dcrd/hdkeychain/v3"
 	"github.com/decred/dcrd/wire"
 )
 
@@ -51,6 +56,10 @@ type signRequest struct {
 	expiry        uint32
 	inputs        []srInput
 	outputs       []srOutput
+	// accountFp is the optional trailing element (airgap.rs #[n(7)]): the
+	// account dpub's own BIP32 fingerprint. nil omits it, keeping the
+	// 7-element shape older devices accept.
+	accountFp []byte
 }
 
 // cborWriter encodes the small, fixed subset of CBOR the SignRequest needs:
@@ -115,7 +124,11 @@ func (w *cborWriter) boolean(b bool) {
 // and byte fields are integer arrays.
 func encodeSignRequest(sr *signRequest) []byte {
 	w := &cborWriter{}
-	w.arrayHead(7)
+	if sr.accountFp != nil {
+		w.arrayHead(8)
+	} else {
+		w.arrayHead(7)
+	}
 	w.uint(uint64(sr.formatVersion))
 	w.uint(uint64(sr.txVersion))
 	w.uint(uint64(sr.account))
@@ -141,7 +154,48 @@ func encodeSignRequest(sr *signRequest) []byte {
 		w.byteArray(out.pkScript)
 		w.boolean(out.isChange)
 	}
+	if sr.accountFp != nil {
+		w.byteArray(sr.accountFp)
+	}
 	return w.buf
+}
+
+// hdChainParams maps the wallet's network to the chaincfg params hdkeychain
+// needs to parse an extended public key.
+func hdChainParams(ctx context.Context) (*chaincfg.Params, error) {
+	network, err := CurrentNetwork(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch network {
+	case "mainnet":
+		return chaincfg.MainNetParams(), nil
+	case "testnet":
+		return chaincfg.TestNet3Params(), nil
+	case "simnet":
+		return chaincfg.SimNetParams(), nil
+	default:
+		return nil, fmt.Errorf("unknown network %q", network)
+	}
+}
+
+// accountFingerprint computes the device-checked wrong-wallet marker: the
+// source account dpub's own BIP32 fingerprint, dcrutil.Hash160 (Decred's
+// ripemd160-over-blake256) of its compressed public key, first four bytes.
+func accountFingerprint(ctx context.Context, sourceAccount uint32) ([]byte, error) {
+	dpub, err := GetAccountExtendedPubKey(ctx, sourceAccount)
+	if err != nil {
+		return nil, err
+	}
+	params, err := hdChainParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	key, err := hdkeychain.NewKeyFromString(dpub, params)
+	if err != nil {
+		return nil, fmt.Errorf("parse account xpub: %w", err)
+	}
+	return dcrutil.Hash160(key.SerializedPubKey())[:4], nil
 }
 
 // prevoutInfo returns the prevout's pkScript, owning address, and amount for an
@@ -193,6 +247,14 @@ func BuildSignRequest(ctx context.Context, sourceAccount uint32, outputs []types
 		account:       bip44Account,
 		lockTime:      tx.LockTime,
 		expiry:        tx.Expiry,
+	}
+	// The fingerprint is optional in the format: a request without it keeps
+	// working on every device, so a lookup failure only costs the
+	// wrong-wallet pre-check, never the flow.
+	if fp, err := accountFingerprint(ctx, sourceAccount); err == nil {
+		sr.accountFp = fp
+	} else {
+		log.Printf("WARN: sign request without account fingerprint: %v", err)
 	}
 
 	var inputsTotal int64
@@ -262,6 +324,7 @@ func BuildSignRequest(ctx context.Context, sourceAccount uint32, outputs []types
 	return &types.SignRequestExport{
 		SignRequestB64:      base64.StdEncoding.EncodeToString(cbor),
 		SignRequestUR:       EncodeUR("dcr-sign-request", cbor),
+		AccountFp:           hex.EncodeToString(sr.accountFp),
 		InputsTotalAtoms:    inputsTotal,
 		OutputsTotalAtoms:   outputsTotal,
 		ChangeAtoms:         change,

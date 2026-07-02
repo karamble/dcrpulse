@@ -326,6 +326,12 @@ const ExportUnsignedPanel = () => {
                   <span className="text-muted-foreground">Total debited</span>
                   <span className="font-semibold">{formatDcr(construct.totalDebitedAtoms)} DCR</span>
                 </div>
+                {construct.accountFp && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Account fingerprint</span>
+                    <span className="font-mono text-xs self-center">{construct.accountFp}</span>
+                  </div>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 <button

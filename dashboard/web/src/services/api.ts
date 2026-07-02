@@ -534,6 +534,7 @@ export const broadcastSignedTransaction = async (input: SignedTxInput): Promise<
 export interface SignRequestExport {
   signRequestB64: string;
   signRequestUR: string;
+  accountFp?: string;
   inputsTotalAtoms: number;
   outputsTotalAtoms: number;
   changeAtoms: number;

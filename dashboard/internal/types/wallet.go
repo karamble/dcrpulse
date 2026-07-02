@@ -205,6 +205,7 @@ type BroadcastSignedTxResponse struct {
 type SignRequestExport struct {
 	SignRequestB64      string `json:"signRequestB64"`
 	SignRequestUR       string `json:"signRequestUR"`
+	AccountFp           string `json:"accountFp,omitempty"`
 	InputsTotalAtoms    int64  `json:"inputsTotalAtoms"`
 	OutputsTotalAtoms   int64  `json:"outputsTotalAtoms"`
 	ChangeAtoms         int64  `json:"changeAtoms"`
