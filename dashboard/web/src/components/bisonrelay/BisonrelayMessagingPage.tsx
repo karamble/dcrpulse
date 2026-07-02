@@ -62,6 +62,7 @@ import {
 } from './embedParser';
 import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
 import { linkifyChatText } from './chatLinkify';
+import { QuoteBlock, splitLeadingQuote } from './quoteBlock';
 import {
   ImageAttachModal,
   ImageAttachResult,
@@ -165,6 +166,9 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
   const [quotedEmbeds, setQuotedEmbeds] = useState<QuotedEmbed[]>([]);
   const quoteSeq = useRef(0);
+  // A quote reply is STAGED, not typed: the composer shows a banner and the
+  // textarea stays empty; the wire-format quote block is assembled at send.
+  const [stagedReply, setStagedReply] = useState<{ nick: string; flat: string } | null>(null);
   const [transfer, setTransfer] = useState<{ pct: number; phase: 'upload' | 'relay' } | null>(null);
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -1031,8 +1035,11 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selected || sending) return;
-    if (!draft.trim() && !attachment) return;
-    const text = finalizeOutgoing(draft.trim());
+    if (!draft.trim() && !attachment && !stagedReply) return;
+    const typed = draft.trim();
+    const text = finalizeOutgoing(
+      stagedReply ? quoteBlock(stagedReply.flat, stagedReply.nick) + typed : typed,
+    );
     setSending(true);
     try {
       if (selected.kind === 'group') {
@@ -1068,6 +1075,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         ]);
         setDraft('');
         setQuotedEmbeds([]);
+        setStagedReply(null);
         setAttachment(null);
         setAttachErr(null);
         return;
@@ -1128,6 +1136,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       }
       setDraft('');
       setQuotedEmbeds([]);
+      setStagedReply(null);
       setAttachment(null);
       setAttachErr(null);
     } catch (err: any) {
@@ -1230,15 +1239,16 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     });
   };
 
-  // Prefill the composer with a quoted copy of a bubble's message, keeping
-  // any text already typed below the quote, and put the caret at the end.
-  // Raster-image embeds are re-encoded into small JPEG thumbnails and staged
-  // for re-attachment so the picture shows up again inside the quote on both
-  // sides; anything unattachable (non-image, over the inline budget, bytes
-  // gone, encode failure) degrades to a plain placeholder.
+  // Stage a reply to a bubble's message: the composer shows a "Replying to"
+  // banner while the textarea stays empty; the quote block is prepended in
+  // wire format only at send. Raster-image embeds are re-encoded into small
+  // JPEG thumbnails and staged for re-attachment so the picture shows up
+  // again inside the quote on both sides; anything unattachable (non-image,
+  // over the inline budget, bytes gone, encode failure) degrades to a plain
+  // placeholder. Staging a new reply replaces any previous one.
   const quoteReplyTo = async (m: BisonrelayMessage) => {
     const staged: QuotedEmbed[] = [];
-    let budget = QUOTE_EMBED_BUDGET - quotedEmbeds.reduce((s, qe) => s + b64Size(qe.dataB64), 0);
+    let budget = QUOTE_EMBED_BUDGET;
     const parts: string[] = [];
     for (const seg of parseEmbeds(m.message)) {
       if (seg.kind === 'text') {
@@ -1274,20 +1284,19 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       }
       parts.push(seg.kind === 'embed' && isImageMime(seg.mime) ? '[image]' : '[attachment]');
     }
-    const next = quoteBlock(parts.join('').trim(), m.from) + draft;
-    if (staged.length) setQuotedEmbeds((prev) => [...prev, ...staged]);
-    setDraft(next);
-    queueMicrotask(() => {
-      const el = draftInputRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(next.length, next.length);
-    });
+    setQuotedEmbeds(staged);
+    setStagedReply({ nick: m.from, flat: parts.join('').trim() });
+    queueMicrotask(() => draftInputRef.current?.focus());
+  };
+
+  const clearStagedReply = () => {
+    setStagedReply(null);
+    setQuotedEmbeds([]);
   };
 
   const removeQuotedEmbed = (qe: QuotedEmbed) => {
     setQuotedEmbeds((prev) => prev.filter((e) => e.marker !== qe.marker));
-    setDraft((d) => d.split(qe.marker).join(''));
+    setStagedReply((r) => (r ? { ...r, flat: r.flat.split(qe.marker).join('') } : r));
   };
 
   // Replace staged quote markers with their full inline-embed tags; any
@@ -1629,6 +1638,26 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               </div>
             ) : (
             <form onSubmit={handleSend} className="p-3 border-t border-border/50 flex flex-col gap-2">
+              {stagedReply && (
+                <div className="flex items-start gap-2 border-l-2 border-primary bg-muted/20 rounded px-2 py-1">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-primary">Replying to {stagedReply.nick}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {stagedReply.flat.replace(QUOTE_MARKER_RE, '[image]').split('\n').join(' ').trim() ||
+                        '[attachment]'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearStagedReply}
+                    aria-label="Cancel reply"
+                    title="Cancel reply"
+                    className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 shrink-0"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
               {quotedEmbeds.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {quotedEmbeds.map((qe) => (
@@ -2747,6 +2776,29 @@ const MessageBody = ({ body }: { body: string }) => {
   if (sent) {
     return <SentFileChip filename={sent[1]} fileid={sent[2] ?? ''} />;
   }
+  // A leading quote block renders as an inset panel instead of its raw
+  // "> **nick:**" wire form; the reply below it uses the normal pipeline.
+  const quote = splitLeadingQuote(body);
+  if (quote) {
+    return (
+      <div>
+        <QuoteBlock nick={quote.nick} text={quote.text} openViewer={openViewer ?? undefined} />
+        {quote.rest.trim() !== '' && (
+          <MessageBodySegments body={quote.rest} openViewer={openViewer ?? undefined} />
+        )}
+      </div>
+    );
+  }
+  return <MessageBodySegments body={body} openViewer={openViewer ?? undefined} />;
+};
+
+const MessageBodySegments = ({
+  body,
+  openViewer,
+}: {
+  body: string;
+  openViewer?: ImageViewerOpenFn;
+}) => {
   const segments = parseEmbeds(body);
   return (
     <div className="space-y-1">
