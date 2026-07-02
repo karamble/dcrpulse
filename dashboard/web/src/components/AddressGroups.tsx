@@ -2,9 +2,9 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-// Mirrors the hardware wallet's verification grid: 5-char groups over two
-// rows with the outer groups emphasized. Both screens share the same visual
-// shape so a human can compare them at a glance.
+// Mirrors the hardware wallet's verification grid: 5-char groups on a
+// single line with the outer groups emphasized. Both screens share the same
+// visual shape so a human can compare them at a glance.
 
 const chunk5 = (value: string): string[] => {
   const groups: string[] = [];
@@ -15,32 +15,31 @@ const chunk5 = (value: string): string[] => {
 interface AddressGroupsProps {
   value: string;
   className?: string;
+  // change tints the whole address so a change-to-own-wallet output reads
+  // differently from a recipient at a glance.
+  variant?: 'default' | 'change';
 }
 
-export const AddressGroups = ({ value, className = '' }: AddressGroupsProps) => {
+export const AddressGroups = ({ value, className = '', variant = 'default' }: AddressGroupsProps) => {
   const clean = value.trim();
+  const body = variant === 'change' ? 'text-warning/80' : undefined;
+  const outerClass =
+    variant === 'change' ? 'text-warning font-semibold' : 'text-success font-semibold';
   if (clean.length <= 10) {
-    return <span className={`font-mono ${className}`}>{clean}</span>;
+    return <span className={`font-mono ${body ?? ''} ${className}`}>{clean}</span>;
   }
   const groups = chunk5(clean);
-  const split = Math.ceil(groups.length / 2);
-  const rows = [groups.slice(0, split), groups.slice(split)];
   return (
     <span className={`font-mono ${className}`} aria-label={clean}>
-      <span aria-hidden="true">
-        {rows.map((row, r) => (
-          <span key={r} className="flex flex-wrap gap-x-2">
-            {row.map((g, i) => {
-              const gi = r === 0 ? i : split + i;
-              const outer = gi === 0 || gi === groups.length - 1;
-              return (
-                <span key={gi} className={outer ? 'text-success font-semibold' : undefined}>
-                  {g}
-                </span>
-              );
-            })}
-          </span>
-        ))}
+      <span aria-hidden="true" className="inline-flex gap-x-2 whitespace-nowrap">
+        {groups.map((g, gi) => {
+          const outer = gi === 0 || gi === groups.length - 1;
+          return (
+            <span key={gi} className={outer ? outerClass : body}>
+              {g}
+            </span>
+          );
+        })}
       </span>
     </span>
   );

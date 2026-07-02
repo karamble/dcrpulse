@@ -589,17 +589,28 @@ const ImportSignedPanel = () => {
               <p className="text-xs text-muted-foreground mb-1">Outputs</p>
               <div className="space-y-1">
                 {preview.outputs.map((o) => (
-                  <div key={o.index} className="flex items-start justify-between gap-3 text-sm">
+                  <div
+                    key={o.index}
+                    className={`flex items-start justify-between gap-3 text-sm ${
+                      o.isMine ? 'mt-2 pt-2 border-t border-border/30' : ''
+                    }`}
+                  >
                     <span className="min-w-0">
                       {o.address ? (
-                        <AddressGroups value={o.address} className="text-sm" />
+                        <AddressGroups
+                          value={o.address}
+                          className="text-sm"
+                          variant={o.isMine ? 'change' : 'default'}
+                        />
                       ) : (
                         <span className="font-mono text-xs break-all">
                           {scriptClassLabel(o.scriptClass)}
                         </span>
                       )}
                       {o.isMine && (
-                        <span className="block text-xs text-success">(your wallet)</span>
+                        <span className="block text-xs text-warning/80">
+                          Change - comes back to your wallet
+                        </span>
                       )}
                     </span>
                     <span className="shrink-0">{formatDcr(o.amountAtoms)} DCR</span>
