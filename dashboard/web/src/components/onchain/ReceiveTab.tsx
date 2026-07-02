@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { QrCode, RefreshCw, AlertCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { AccountInfo, getAccounts, getNextAddress } from '../../services/api';
+import { AddressGroups } from '../AddressGroups';
 import { CopyButton } from '../explorer/CopyButton';
 import { useWalletReady } from '../../hooks/useWalletReady';
 
@@ -184,11 +185,8 @@ export const ReceiveTab = () => {
             </div>
             <div className="flex-1 min-w-0 w-full">
               <p className="text-sm text-muted-foreground mb-2">Address</p>
-              <div
-                className="font-mono text-sm md:text-base break-all p-3 rounded-lg bg-background border border-border mb-3"
-                aria-label={`Receive address ${address}`}
-              >
-                {address}
+              <div className="p-3 rounded-lg bg-background border border-border mb-3">
+                <AddressGroups value={address} className="text-base md:text-lg" />
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <CopyButton text={address} label="Copy address" />

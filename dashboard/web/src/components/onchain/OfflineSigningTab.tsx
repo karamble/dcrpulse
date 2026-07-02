@@ -28,6 +28,7 @@ import {
   decodeSignedTransaction,
   getAccounts,
 } from '../../services/api';
+import { AddressGroups } from '../AddressGroups';
 
 const MAX_DCR = 21_000_000;
 // Above 1 DCR a fee is almost certainly a mistake; we soft-warn (non-blocking).
@@ -583,9 +584,17 @@ const ImportSignedPanel = () => {
               <div className="space-y-1">
                 {preview.outputs.map((o) => (
                   <div key={o.index} className="flex items-start justify-between gap-3 text-sm">
-                    <span className="font-mono text-xs break-all min-w-0">
-                      {o.address || scriptClassLabel(o.scriptClass)}
-                      {o.isMine && <span className="ml-1 text-success">(your wallet)</span>}
+                    <span className="min-w-0">
+                      {o.address ? (
+                        <AddressGroups value={o.address} className="text-sm" />
+                      ) : (
+                        <span className="font-mono text-xs break-all">
+                          {scriptClassLabel(o.scriptClass)}
+                        </span>
+                      )}
+                      {o.isMine && (
+                        <span className="block text-xs text-success">(your wallet)</span>
+                      )}
                     </span>
                     <span className="shrink-0">{formatDcr(o.amountAtoms)} DCR</span>
                   </div>

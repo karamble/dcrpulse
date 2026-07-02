@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Copy, Check, AlertCircle, Lock, Key, Shield, CheckCircle, Eye, EyeOff, Sprout, RotateCcw } from 'lucide-react';
 import { generateSeed, createNamedWallet, listWallets } from '../services/api';
+import { KeyEnds } from './AddressGroups';
 import { SeedEntry } from './wallet/SeedEntry';
 
 interface WalletSetupProps {
@@ -862,6 +863,12 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">Paste the account extended public key from your wallet.</p>
+                {xpubValid && xpubTrimmed.length > 30 && (
+                  <div className="p-3 rounded-lg bg-muted/20 border border-border/30">
+                    <p className="text-xs text-muted-foreground mb-1">Verify against your device</p>
+                    <KeyEnds value={xpubTrimmed} className="text-sm" />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

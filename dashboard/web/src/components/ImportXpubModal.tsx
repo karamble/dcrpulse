@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { importXpub, getAccounts } from '../services/api';
 import { useWalletReady } from '../hooks/useWalletReady';
+import { KeyEnds } from './AddressGroups';
 
 // Reserved system accounts that other daemons / dcrwallet bind to by name and
 // must never be reused for an imported xpub. Mirrors services.IsReservedAccountName.
@@ -217,6 +218,12 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
             <p className="text-xs text-muted-foreground mt-1">
               Paste your extended public key here
             </p>
+            {validateXpub(xpub.trim()) && xpub.trim().length > 30 && (
+              <div className="mt-2 p-3 rounded-lg bg-muted/5 border border-border/50">
+                <p className="text-xs text-muted-foreground mb-1">Verify against your device</p>
+                <KeyEnds value={xpub} className="text-sm" />
+              </div>
+            )}
           </div>
 
           {/* Account Name Input */}
