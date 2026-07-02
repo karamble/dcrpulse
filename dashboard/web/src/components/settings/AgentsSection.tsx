@@ -33,6 +33,7 @@ import {
 } from '../../services/api';
 import { getBisonrelayContacts, BisonrelayContact } from '../../services/bisonrelayApi';
 import { AgentSpendGrant } from './AgentSpendGrant';
+import { BrMcpSection } from './BrMcpSection';
 import { ConfigSection, domainLabel } from './ConfigSection';
 
 const fmtDate = (iso: string) => {
@@ -636,6 +637,8 @@ export const AgentsSection = () => {
           )}
         </div>
       )}
+
+      <BrMcpSection />
     </div>
   );
 };
