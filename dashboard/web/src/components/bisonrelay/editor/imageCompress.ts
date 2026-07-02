@@ -83,11 +83,12 @@ export interface CompressResult {
 export async function compressImageToJpeg(
   file: File,
   maxBytes: number,
+  ladder: ReadonlyArray<{ maxEdge: number; quality: number }> = COMPRESS_LADDER,
 ): Promise<CompressResult> {
   const { src, w, h } = await decodeImage(file);
   let smallest: { blob: Blob; w: number; h: number } | null = null;
 
-  for (const rung of COMPRESS_LADDER) {
+  for (const rung of ladder) {
     const scale = Math.min(1, rung.maxEdge / Math.max(w, h));
     const dw = Math.max(1, Math.round(w * scale));
     const dh = Math.max(1, Math.round(h * scale));

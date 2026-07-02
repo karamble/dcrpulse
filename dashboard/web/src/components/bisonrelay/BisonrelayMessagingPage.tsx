@@ -17,6 +17,7 @@ import {
   Loader2,
   MessageSquare,
   Paperclip,
+  Reply,
   Send,
   UserPlus,
   Users,
@@ -54,13 +55,19 @@ import {
   DownloadSegment,
   buildDownloadTag,
   downloadFileUrl,
+  embedFileUrl,
   formatBytes,
   isImageMime,
   parseEmbeds,
 } from './embedParser';
 import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
 import { linkifyChatText } from './chatLinkify';
-import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './editor';
+import {
+  ImageAttachModal,
+  ImageAttachResult,
+  compressImageToJpeg,
+  isCompressibleImage,
+} from './editor';
 import { EmojiPicker } from './EmojiPicker';
 import { ChatFormatMenu } from './ChatFormatMenu';
 import { TipModal } from './TipModal';
@@ -156,6 +163,8 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     };
   }, []);
   const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
+  const [quotedEmbeds, setQuotedEmbeds] = useState<QuotedEmbed[]>([]);
+  const quoteSeq = useRef(0);
   const [transfer, setTransfer] = useState<{ pct: number; phase: 'upload' | 'relay' } | null>(null);
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -1023,7 +1032,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     e.preventDefault();
     if (!selected || sending) return;
     if (!draft.trim() && !attachment) return;
-    const text = draft.trim();
+    const text = finalizeOutgoing(draft.trim());
     setSending(true);
     try {
       if (selected.kind === 'group') {
@@ -1058,6 +1067,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           },
         ]);
         setDraft('');
+        setQuotedEmbeds([]);
         setAttachment(null);
         setAttachErr(null);
         return;
@@ -1117,6 +1127,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         ]);
       }
       setDraft('');
+      setQuotedEmbeds([]);
       setAttachment(null);
       setAttachErr(null);
     } catch (err: any) {
@@ -1217,6 +1228,76 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       const innerStart = start + left.length;
       el.setSelectionRange(innerStart, innerStart + content.length);
     });
+  };
+
+  // Prefill the composer with a quoted copy of a bubble's message, keeping
+  // any text already typed below the quote, and put the caret at the end.
+  // Raster-image embeds are re-encoded into small JPEG thumbnails and staged
+  // for re-attachment so the picture shows up again inside the quote on both
+  // sides; anything unattachable (non-image, over the inline budget, bytes
+  // gone, encode failure) degrades to a plain placeholder.
+  const quoteReplyTo = async (m: BisonrelayMessage) => {
+    const staged: QuotedEmbed[] = [];
+    let budget = QUOTE_EMBED_BUDGET - quotedEmbeds.reduce((s, qe) => s + b64Size(qe.dataB64), 0);
+    const parts: string[] = [];
+    for (const seg of parseEmbeds(m.message)) {
+      if (seg.kind === 'text') {
+        parts.push(seg.text);
+        continue;
+      }
+      if (seg.kind === 'embed' && isImageMime(seg.mime)) {
+        const file = seg.dataB64
+          ? b64ToFile(seg.dataB64, seg.mime)
+          : await fetchEmbedFile(embedFileUrl(seg.localFilename), seg.mime);
+        if (file && budget > 0) {
+          try {
+            const thumb = await compressImageToJpeg(file, budget, QUOTE_THUMB_LADDER);
+            URL.revokeObjectURL(thumb.previewUrl);
+            if (thumb.fitsCap) {
+              budget -= b64Size(thumb.dataB64);
+              quoteSeq.current += 1;
+              const qe: QuotedEmbed = {
+                marker: `--embed[#${quoteSeq.current}]--`,
+                // Fixed literal: the payload is our own canvas re-encode,
+                // never the sender's bytes or mime string.
+                mime: 'image/jpeg',
+                dataB64: thumb.dataB64,
+              };
+              staged.push(qe);
+              parts.push(qe.marker);
+              continue;
+            }
+          } catch {
+            /* decode or encode failed; fall through to the placeholder */
+          }
+        }
+      }
+      parts.push(seg.kind === 'embed' && isImageMime(seg.mime) ? '[image]' : '[attachment]');
+    }
+    const next = quoteBlock(parts.join('').trim(), m.from) + draft;
+    if (staged.length) setQuotedEmbeds((prev) => [...prev, ...staged]);
+    setDraft(next);
+    queueMicrotask(() => {
+      const el = draftInputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(next.length, next.length);
+    });
+  };
+
+  const removeQuotedEmbed = (qe: QuotedEmbed) => {
+    setQuotedEmbeds((prev) => prev.filter((e) => e.marker !== qe.marker));
+    setDraft((d) => d.split(qe.marker).join(''));
+  };
+
+  // Replace staged quote markers with their full inline-embed tags; any
+  // marker without a staged payload is dropped rather than sent.
+  const finalizeOutgoing = (text: string): string => {
+    let out = text;
+    for (const qe of quotedEmbeds) {
+      out = out.split(qe.marker).join(`--embed[type=${qe.mime},data=${qe.dataB64}]--`);
+    }
+    return out.replace(QUOTE_MARKER_RE, '');
   };
 
   return (
@@ -1538,6 +1619,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                   contactByNick={contactByNick}
                   onOpenContact={setSubNavContact}
                   onAcceptSuggestion={handleAcceptSuggestion}
+                  onQuote={selectedGroupRemoved ? undefined : quoteReplyTo}
                 />
               )}
             </div>
@@ -1547,6 +1629,34 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               </div>
             ) : (
             <form onSubmit={handleSend} className="p-3 border-t border-border/50 flex flex-col gap-2">
+              {quotedEmbeds.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {quotedEmbeds.map((qe) => (
+                    <div
+                      key={qe.marker}
+                      className="flex items-center gap-2 px-2 py-1 rounded-lg border border-border/40 bg-background/40"
+                    >
+                      <img
+                        src={`data:${qe.mime};base64,${qe.dataB64}`}
+                        alt=""
+                        className="h-8 w-8 rounded object-cover"
+                      />
+                      <span className="text-[11px] text-muted-foreground">
+                        Quoted image · {formatBytes(b64Size(qe.dataB64))} · sent as thumbnail
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeQuotedEmbed(qe)}
+                        aria-label="Remove quoted image"
+                        title="Remove quoted image"
+                        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               {attachment && (
                 <AttachmentPreview
                   attachment={attachment}
@@ -1743,6 +1853,76 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
 // is the 64-hex target identity, group 2 is the target nick.
 const SUGGESTED_KX_RE = /^Suggested KX to ([0-9a-f]{64}) "(.*)"$/;
 
+// A quoted image staged for re-attachment. The composer draft holds only the
+// short marker; the full --embed[type=,data=]-- tag is substituted in at send
+// so the textarea never carries a base64 payload. Outgoing quotes never carry
+// localfilename references: the names are generated from the logging client's
+// own clock, so they resolve on no other machine, and emitting local paths is
+// unacceptable regardless.
+interface QuotedEmbed {
+  marker: string;
+  mime: string;
+  dataB64: string;
+}
+
+// Markers left in the draft with no staged payload (removed chip, hand-typed
+// lookalike) are stripped at send so a bare reference never reaches the wire.
+const QUOTE_MARKER_RE = /--embed\[#\d+\]--/g;
+
+// Tag-sourced payloads are attacker-authored strings; refuse anything that
+// is not well-formed base64 before decoding it for the thumbnail re-encode.
+const B64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+
+// Combined decoded-size budget for re-attached quote images. Tighter than
+// MAX_INLINE_BYTES because the full send request (quote text + base64
+// payloads + JSON envelope) must stay under the API's 1 MiB body cap.
+const QUOTE_EMBED_BUDGET = 700 * 1024;
+
+// Quoted images are always re-encoded down to a small JPEG thumbnail: the
+// full-size original stays one scroll away in the thread, and re-sending
+// pays BR push fees per byte, so a quote only needs a visual reference.
+const QUOTE_THUMB_LADDER: ReadonlyArray<{ maxEdge: number; quality: number }> = [
+  { maxEdge: 480, quality: 0.5 },
+  { maxEdge: 320, quality: 0.4 },
+];
+
+function b64Size(b64: string): number {
+  return Math.floor((b64.length * 3) / 4);
+}
+
+function b64ToFile(b64: string, mime: string): File | null {
+  if (!B64_RE.test(b64)) return null;
+  try {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    return new File([bytes], 'quote', { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+// fetchEmbedFile re-reads a persisted embed's bytes through the same endpoint
+// the bubble uses to display it. Returns null when unavailable.
+async function fetchEmbedFile(url: string, mime: string): Promise<File | null> {
+  if (!url) return null;
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const buf = await resp.arrayBuffer();
+    return new File([buf], 'quote', { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+// quoteBlock renders flattened message text as the markdown quote block other
+// Bison Relay clients send for replies: "> **nick:** first line" with "> "
+// continuation lines, then a blank line for the typed reply.
+function quoteBlock(flat: string, from: string): string {
+  const lines = (flat || '[attachment]').split('\n').map((l) => l.trimEnd());
+  const quoted = lines.map((l, i) => (i === 0 ? `> **${from}:** ${l}` : `> ${l}`)).join('\n');
+  return `${quoted}\n\n`;
+}
+
 interface MessageListProps {
   messages: BisonrelayMessage[];
   ownNick: string;
@@ -1752,6 +1932,7 @@ interface MessageListProps {
   contactByNick: Map<string, BisonrelayContact>;
   onOpenContact: (c: BisonrelayContact) => void;
   onAcceptSuggestion: (target: string, targetNick: string) => Promise<void>;
+  onQuote?: (m: BisonrelayMessage) => void;
 }
 
 // Day labels for the chat date separators: Today / Yesterday / a full date.
@@ -1833,7 +2014,11 @@ const MessageList = ({
   contactByNick,
   onOpenContact,
   onAcceptSuggestion,
+  onQuote,
 }: MessageListProps) => {
+  // Index of the bubble whose quote button is shown on touch devices, where
+  // the desktop hover reveal never fires; tapping a bubble toggles it.
+  const [revealed, setRevealed] = useState<number | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1901,11 +2086,30 @@ const MessageList = ({
             ? contactByNick.get(m.from)
             : knownContactsByUid.get(mediatorUid)
           : undefined;
+        const quoteBtn = onQuote ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setRevealed(null);
+              onQuote(m);
+            }}
+            title="Quote reply"
+            aria-label="Quote reply"
+            className={`self-center shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-opacity ${
+              revealed === i
+                ? 'opacity-100'
+                : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+            }`}
+          >
+            <Reply className="h-3.5 w-3.5" />
+          </button>
+        ) : null;
         return (
           <Fragment key={i}>
             {daySeparator}
             <div
-              className={`flex ${own ? 'justify-end' : 'justify-start gap-2 items-end'} ${
+              className={`group flex ${own ? 'justify-end gap-2' : 'justify-start gap-2 items-end'} ${
                 startOfRun ? 'mt-2' : 'mt-0.5'
               }`}
             >
@@ -1932,7 +2136,9 @@ const MessageList = ({
                 ) : (
                   <div className="w-7 shrink-0" />
                 ))}
+              {own && quoteBtn}
               <div
+                onClick={() => setRevealed((cur) => (cur === i ? null : i))}
                 className={`max-w-[75%] rounded-lg px-3 py-1.5 text-sm ${
                   own ? 'bg-primary/20 text-foreground' : 'bg-muted/30 text-foreground'
                 }`}
@@ -1963,6 +2169,7 @@ const MessageList = ({
                   )}
                 </p>
               </div>
+              {!own && quoteBtn}
             </div>
           </Fragment>
         );
