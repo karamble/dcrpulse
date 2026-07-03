@@ -13,6 +13,7 @@ import {
   FileUp,
   Loader2,
   Plus,
+  QrCode,
   RotateCcw,
   Send,
   ShieldCheck,
@@ -21,11 +22,13 @@ import {
 } from 'lucide-react';
 import {
   AccountInfo,
+  DeviceBalanceExport,
   SignRequestExport,
   SignedTxPreview,
   broadcastSignedTransaction,
   buildSignRequest,
   decodeSignedTransaction,
+  fetchDeviceBalance,
   getAccounts,
 } from '../../services/api';
 import { AddressGroups } from '../AddressGroups';
@@ -671,6 +674,128 @@ const ImportSignedPanel = () => {
   );
 };
 
+// DeviceBalancePanel exports every account's balance plus the DCR/USD rate for
+// the air-gapped device's display, as a balance.dcr file for the microSD card or
+// a UR QR to scan. Accounts are identified by their account fingerprint (the
+// dpub's hash160 shorty, the same value the device checks on sign requests) -
+// names and numbers below are local labels and never sent. Display only: the
+// device never spends or verifies against these figures.
+const DeviceBalancePanel = () => {
+  const [data, setData] = useState<DeviceBalanceExport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    fetchDeviceBalance()
+      .then(setData)
+      .catch((err: any) => {
+        const body = err?.response?.data;
+        setError(typeof body === 'string' ? body : err?.message || 'Failed to build the balance update');
+        setData(null);
+      })
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const onDownload = () => {
+    if (!data) return;
+    downloadBlob(base64ToBytes(data.balanceB64), data.fileName, 'application/octet-stream');
+  };
+
+  return (
+    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+          <QrCode className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold">3. Update the device balance display</h2>
+          <p className="text-sm text-muted-foreground">
+            Send your account balances and the exchange rate to the device. Informational only -
+            signing and verification never rely on these figures.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Collecting balances…
+        </div>
+      ) : error ? (
+        <div className="space-y-3">
+          <div className="flex items-start gap-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span className="break-words">{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={load}
+            className="px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors inline-flex items-center gap-1.5"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Retry
+          </button>
+        </div>
+      ) : data ? (
+        <div className="space-y-4">
+          <div className="space-y-2 text-sm">
+            {data.accounts.map((a) => (
+              <div key={a.fp} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="font-mono">{a.fp}</span>
+                  <span className="text-muted-foreground truncate"> · {a.name}</span>
+                </div>
+                <span className="shrink-0">{formatDcr(a.atoms)} DCR</span>
+              </div>
+            ))}
+            <div className="flex justify-between pt-2 border-t border-border/50">
+              <span className="text-muted-foreground">Exchange rate</span>
+              <span>{data.rateUsd > 0 ? `$${data.rateUsd.toFixed(4)} / DCR` : 'unavailable - fiat omitted'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">As of</span>
+              <span>{new Date(data.asOf * 1000).toLocaleString()}</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onDownload}
+              className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all inline-flex items-center gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Download balance.dcr
+            </button>
+            <button
+              type="button"
+              onClick={load}
+              className="px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors inline-flex items-center gap-1.5"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Refresh
+            </button>
+          </div>
+          {data.balanceUR && data.balanceUR.length <= 1800 && (
+            <div className="flex flex-col items-center gap-2 pt-2">
+              <div className="rounded-lg bg-white p-3">
+                <QRCodeSVG value={data.balanceUR.toUpperCase()} size={256} level="M" />
+              </div>
+              <p className="text-xs text-muted-foreground">…or scan this with your Passport</p>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Put balance.dcr in the same microSD folder as your .dcrtx files - the device reads it when
+            the Decred app launches. Each row is matched on the device by its account fingerprint.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 export const OfflineSigningTab = () => {
   return (
     <div className="space-y-6">
@@ -692,6 +817,7 @@ export const OfflineSigningTab = () => {
       </div>
       <ExportUnsignedPanel />
       <ImportSignedPanel />
+      <DeviceBalancePanel />
     </div>
   );
 };

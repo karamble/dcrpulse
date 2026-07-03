@@ -548,6 +548,32 @@ export const buildSignRequest = async (req: ConstructTransactionRequest): Promis
   return response.data;
 };
 
+export interface DeviceBalanceAccount {
+  name: string;
+  number: number;
+  fp: string;
+  atoms: number;
+  dcr: number;
+}
+
+// DeviceBalanceExport carries the CBOR balance update an air-gapped device
+// imports for its display (a balance.dcr file on microSD, or a UR QR):
+// per-account balances keyed by account fingerprint plus the DCR/USD rate.
+// rateUsd is 0 when no rate was available (fiat omitted on the device).
+export interface DeviceBalanceExport {
+  balanceB64: string;
+  balanceUR: string;
+  accounts: DeviceBalanceAccount[];
+  rateUsd: number;
+  asOf: number;
+  fileName: string;
+}
+
+export const fetchDeviceBalance = async (): Promise<DeviceBalanceExport> => {
+  const response = await api.get<DeviceBalanceExport>('/wallet/device-balance');
+  return response.data;
+};
+
 export const triggerRescan = async (): Promise<any> => {
   const response = await api.post('/wallet/rescan', { beginHeight: 0 });
   return response.data;

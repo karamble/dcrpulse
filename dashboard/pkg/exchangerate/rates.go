@@ -179,6 +179,45 @@ func (c *Cache) fetchCryptoCompare(ctx context.Context) (map[string]float64, err
 	return out, nil
 }
 
+// KrakenUSD fetches the current USD price for one asset symbol with a single
+// uncached Kraken ticker request: exactly one API call per invocation, no TTL.
+// For callers that must stamp a fresh price at a specific moment, unlike USD()
+// which serves from the cache. The symbol must have a direct Kraken USD pair.
+func (c *Cache) KrakenUSD(ctx context.Context, symbol string) (float64, error) {
+	var a *asset
+	for i := range assets {
+		if assets[i].symbol == symbol {
+			a = &assets[i]
+			break
+		}
+	}
+	if a == nil || a.krUSDReq == "" {
+		return 0, fmt.Errorf("kraken: no USD pair for %q", symbol)
+	}
+	u := krakenTickerURL + "?" + url.Values{"pair": {a.krUSDReq}}.Encode()
+	var kr struct {
+		Error  []string `json:"error"`
+		Result map[string]struct {
+			C []string `json:"c"`
+		} `json:"result"`
+	}
+	if err := c.get(ctx, u, &kr); err != nil {
+		return 0, err
+	}
+	if len(kr.Error) > 0 {
+		return 0, fmt.Errorf("kraken: %s", strings.Join(kr.Error, "; "))
+	}
+	t, ok := kr.Result[a.krUSDKey]
+	if !ok || len(t.C) == 0 {
+		return 0, fmt.Errorf("kraken: no ticker for %q", symbol)
+	}
+	price, err := strconv.ParseFloat(t.C[0], 64)
+	if err != nil || price <= 0 {
+		return 0, fmt.Errorf("kraken: bad price for %q", symbol)
+	}
+	return price, nil
+}
+
 func (c *Cache) fetchKraken(ctx context.Context) (map[string]float64, error) {
 	reqSet := map[string]struct{}{"XBTUSD": {}}
 	for _, a := range assets {

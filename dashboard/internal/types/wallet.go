@@ -214,6 +214,29 @@ type SignRequestExport struct {
 	EstimatedSignedSize uint32 `json:"estimatedSignedSize"`
 }
 
+// DeviceBalanceAccount is one account row of the device balance export: the
+// fingerprint sent to the device plus display metadata for the panel.
+type DeviceBalanceAccount struct {
+	Name   string  `json:"name"`
+	Number uint32  `json:"number"`
+	Fp     string  `json:"fp"`
+	Atoms  int64   `json:"atoms"`
+	Dcr    float64 `json:"dcr"`
+}
+
+// DeviceBalanceExport carries the CBOR BalanceUpdate an air-gapped device
+// imports for its display (a balance.dcr file on microSD, or a UR QR):
+// per-account balances keyed by account fingerprint plus the DCR/USD rate.
+// RateUsd is 0 when no rate was available (fiat omitted on the device).
+type DeviceBalanceExport struct {
+	BalanceB64 string                 `json:"balanceB64"`
+	BalanceUR  string                 `json:"balanceUR"`
+	Accounts   []DeviceBalanceAccount `json:"accounts"`
+	RateUsd    float64                `json:"rateUsd"`
+	AsOf       int64                  `json:"asOf"`
+	FileName   string                 `json:"fileName"`
+}
+
 type RescanRequest struct {
 	BeginHeight int32 `json:"beginHeight"`
 }

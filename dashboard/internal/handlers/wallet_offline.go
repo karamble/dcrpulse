@@ -127,6 +127,31 @@ func BroadcastSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(types.BroadcastSignedTxResponse{TxHash: txHash})
 }
 
+// DeviceBalanceHandler exports the wallet's per-account balances and the DCR/USD
+// rate as a CBOR BalanceUpdate for an air-gapped device's display (a balance.dcr
+// microSD file or a UR QR). It uses no private keys and is allowed for watch-only
+// wallets.
+func DeviceBalanceHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	export, err := services.BuildDeviceBalance(ctx)
+	if err != nil {
+		if services.IsDaemonUnreachable(err) {
+			respondDaemonError(w, r, services.LogComponentDcrwallet, err)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(export)
+}
+
 // BuildSignRequestHandler constructs an unsigned transaction and returns it as a
 // base64 CBOR SignRequest for an air-gapped hardware wallet to sign. It uses no
 // private keys and is allowed for watch-only wallets.
