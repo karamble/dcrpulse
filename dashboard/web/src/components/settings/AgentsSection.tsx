@@ -15,6 +15,7 @@ import {
   Eye,
   Snowflake,
   Download,
+  HelpCircle,
 } from 'lucide-react';
 import {
   MCPSettings,
@@ -35,6 +36,8 @@ import { getBisonrelayContacts, BisonrelayContact } from '../../services/bisonre
 import { AgentSpendGrant } from './AgentSpendGrant';
 import { BrMcpSection } from './BrMcpSection';
 import { ConfigSection, domainLabel } from './ConfigSection';
+import { connectHost } from '../../utils/mcpEndpoint';
+import { McpHelpModal } from './McpHelpModal';
 
 const fmtDate = (iso: string) => {
   const t = Date.parse(iso);
@@ -60,6 +63,7 @@ export const AgentsSection = () => {
   const [copied, setCopied] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
   const [confirmFreeze, setConfirmFreeze] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
 
@@ -239,11 +243,22 @@ export const AgentsSection = () => {
 
         <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
           <div>
-            <span className="font-medium block">MCP server</span>
+            <span className="font-medium flex items-center gap-1.5">
+              MCP server
+              <button
+                type="button"
+                onClick={() => setShowHelp(true)}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="How to connect an AI agent"
+                title="How to connect an AI agent"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </button>
+            </span>
             <span className="text-sm text-muted-foreground block">
               {settings.enabled
-                ? `Accepting agent connections on ${settings.bind}:${settings.port}`
-                : `Off. When on, it listens on ${settings.bind}:${settings.port}.`}
+                ? `Accepting agent connections on ${connectHost(settings.bind)}:${settings.port}`
+                : `Off. When on, agents connect on ${connectHost(settings.bind)}:${settings.port}.`}
             </span>
           </div>
           <button
@@ -343,12 +358,21 @@ export const AgentsSection = () => {
           </button>
         </div>
 
+        {showHelp && (
+          <McpHelpModal
+            title="Connect an AI agent to dcrpulse"
+            agentName="dcrpulse"
+            connectUrl={`http://${connectHost(settings.bind)}:${settings.port}`}
+            tokenHint="Create an agent below to get its bearer token (shown once)."
+            onClose={() => setShowHelp(false)}
+          />
+        )}
         <div className="flex items-start gap-2 text-sm text-muted-foreground">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
           <span>
-            The server binds to {settings.bind} (local only by default). Expose it beyond this
-            machine only behind an authenticated, TLS-terminating reverse proxy. Each agent still
-            needs its own token and starts limited to node status.
+            The port is published on this machine only (127.0.0.1) by default. To reach it from
+            another host, publish the port and put it behind an authenticated, TLS-terminating
+            reverse proxy. Each agent still needs its own token and starts limited to node status.
           </span>
         </div>
       </div>
