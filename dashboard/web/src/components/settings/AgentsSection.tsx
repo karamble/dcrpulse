@@ -36,7 +36,6 @@ import { getBisonrelayContacts, BisonrelayContact } from '../../services/bisonre
 import { AgentSpendGrant } from './AgentSpendGrant';
 import { BrMcpSection } from './BrMcpSection';
 import { ConfigSection, domainLabel } from './ConfigSection';
-import { connectHost } from '../../utils/mcpEndpoint';
 import { McpHelpModal } from './McpHelpModal';
 
 const fmtDate = (iso: string) => {
@@ -257,8 +256,8 @@ export const AgentsSection = () => {
             </span>
             <span className="text-sm text-muted-foreground block">
               {settings.enabled
-                ? `Accepting agent connections on ${connectHost(settings.bind)}:${settings.port}`
-                : `Off. When on, agents connect on ${connectHost(settings.bind)}:${settings.port}.`}
+                ? `Accepting agent connections on <ip address>:${settings.port}`
+                : `Off. When on, agents connect on <ip address>:${settings.port}.`}
             </span>
           </div>
           <button
@@ -362,7 +361,7 @@ export const AgentsSection = () => {
           <McpHelpModal
             title="Connect an AI agent to dcrpulse"
             agentName="dcrpulse"
-            connectUrl={`http://${connectHost(settings.bind)}:${settings.port}`}
+            connectUrl={`http://<ip address>:${settings.port}`}
             tokenHint="Create an agent below to get its bearer token (shown once)."
             onClose={() => setShowHelp(false)}
           />
