@@ -110,7 +110,14 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, msg)
 			return
 		}
-		if err := services.CreateNamedWatchOnlyWallet(ctx, name, req.PublicPassphrase, strings.TrimSpace(req.ExtendedPubKey)); err != nil {
+		// HARD RULE: a new watch-only wallet is created from the device's
+		// account 0, so the wallet's default account and the device's account
+		// 0 always correspond. Further device accounts import afterwards.
+		if req.AccountIndex != nil && *req.AccountIndex != 0 {
+			writeJSONError(w, http.StatusBadRequest, "a new watch-only wallet must be created from the device's account 0 (index 0); import further accounts after creation")
+			return
+		}
+		if err := services.CreateNamedWatchOnlyWallet(ctx, name, req.PublicPassphrase, strings.TrimSpace(req.ExtendedPubKey), req.AccountIndex); err != nil {
 			log.Printf("Error creating watch-only wallet %q: %v", name, err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)

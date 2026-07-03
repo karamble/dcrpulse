@@ -198,17 +198,31 @@ func SetXpubAccountIndex(ctx context.Context, acctNum, bip44Index uint32) error 
 }
 
 // Bip44AccountIndex maps a dcrwallet account number to its real BIP44 account
-// index. Normal accounts (< 2^31) are their own index. Imported xpub accounts
-// (>= 2^31) resolve through the recorded mapping; a missing entry is an error so
+// index. The recorded mapping wins for ANY account number: a watch-only wallet
+// created from a device account-export may bind a non-zero device account to
+// the wallet's default account 0. Unmapped normal accounts (< 2^31) are their
+// own index. An unmapped imported xpub account (>= 2^31) is an error so
 // offline signing never derives against the wrong account on the device.
 func Bip44AccountIndex(ctx context.Context, acctNum uint32) (uint32, error) {
-	if acctNum < importedXpubAccountBase {
-		return acctNum, nil
-	}
 	if idx, ok := loadXpubAccountIndexes(ctx)[fmt.Sprintf("%d", acctNum)]; ok {
 		return idx, nil
 	}
+	if acctNum < importedXpubAccountBase {
+		return acctNum, nil
+	}
 	return 0, fmt.Errorf("unknown BIP44 account index for imported account %d; re-import its xpub specifying the account index", acctNum)
+}
+
+// Bip44IndexInUse reports whether some account already maps the given BIP44
+// index, returning the wallet account number that holds it. Two accounts
+// mapping the same device index would make offline signing ambiguous.
+func Bip44IndexInUse(ctx context.Context, index uint32) (string, bool) {
+	for acct, idx := range loadXpubAccountIndexes(ctx) {
+		if idx == index {
+			return acct, true
+		}
+	}
+	return "", false
 }
 
 func FetchWalletDashboardData() (*types.WalletDashboardData, error) {

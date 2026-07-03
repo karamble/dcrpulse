@@ -574,6 +574,31 @@ export const fetchDeviceBalance = async (): Promise<DeviceBalanceExport> => {
   return response.data;
 };
 
+// AccountExportEntry is one account from a device account-export file
+// (accounts.dcr), parse-validated server-side. alreadyImported marks the
+// benign duplicate (same xpub AND index - skip silently); conflict is set when
+// something is WRONG (same key under a different index, or the index is taken
+// by a different key).
+export interface AccountExportEntry {
+  account: number;
+  dpub: string;
+  name: string;
+  fp: string;
+  alreadyImported?: boolean;
+  conflict?: string;
+}
+
+// newWallet skips the conflict annotation against the currently open wallet
+// (used by the create-watch-only wizard, which imports into a wallet that does
+// not exist yet).
+export const parseAccountExport = async (fileB64: string, newWallet = false): Promise<AccountExportEntry[]> => {
+  const response = await api.post<{ entries: AccountExportEntry[] }>('/wallet/parse-account-export', {
+    fileB64,
+    newWallet,
+  });
+  return response.data.entries || [];
+};
+
 export const triggerRescan = async (): Promise<any> => {
   const response = await api.post('/wallet/rescan', { beginHeight: 0 });
   return response.data;
@@ -694,6 +719,7 @@ export interface CreateWalletRequest {
   discoverAccounts: boolean;         // True when restoring from existing seed
   watchOnly?: boolean;               // True to create a watching-only wallet from extendedPubKey (no seed)
   extendedPubKey?: string;           // Required when watchOnly: dpub/tpub extended public key
+  accountIndex?: number;             // Optional: BIP44 index of extendedPubKey's device account (offline signing)
 }
 
 export interface CreateWalletResponse {

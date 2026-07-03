@@ -145,7 +145,10 @@ func CreateNamedWallet(ctx context.Context, name, publicPass, privatePass, seedH
 
 // CreateNamedWatchOnlyWallet creates a watching-only wallet (from an xpub) under
 // the given name, using the same supervisor handshake as a seed-based create.
-func CreateNamedWatchOnlyWallet(ctx context.Context, name, publicPass, xpub string) error {
+// accountIndex optionally records the BIP44 index of the xpub's device account
+// for the wallet's default account 0, so offline signing derives against the
+// right account even when the wallet was created from a non-zero device account.
+func CreateNamedWatchOnlyWallet(ctx context.Context, name, publicPass, xpub string, accountIndex *uint32) error {
 	network, err := newWalletSlot(ctx, name)
 	if err != nil {
 		return err
@@ -167,6 +170,11 @@ func CreateNamedWatchOnlyWallet(ctx context.Context, name, publicPass, xpub stri
 		log.Printf("Watch-only create: ensure open: %v", err)
 	}
 	cacheWatchOnly(ctx, true)
+	if accountIndex != nil {
+		if err := SetXpubAccountIndex(ctx, 0, *accountIndex); err != nil {
+			log.Printf("Watch-only create: record account index %d: %v", *accountIndex, err)
+		}
+	}
 	finishWalletCreate(ctx, network, name)
 	return nil
 }

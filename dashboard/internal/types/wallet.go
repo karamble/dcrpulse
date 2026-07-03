@@ -237,6 +237,34 @@ type DeviceBalanceExport struct {
 	FileName   string                 `json:"fileName"`
 }
 
+// AccountExportEntry is one account from a device account-export file
+// (accounts.dcr), parse-validated, with the fingerprint computed for display
+// cross-checks against the device.
+type AccountExportEntry struct {
+	Account uint32 `json:"account"`
+	Dpub    string `json:"dpub"`
+	Name    string `json:"name"`
+	Fp      string `json:"fp"`
+	// AlreadyImported marks the benign duplicate (same xpub AND same index as
+	// an existing account): the UI skips it silently.
+	AlreadyImported bool `json:"alreadyImported,omitempty"`
+	// Conflict is set when something is WRONG: the same key exists under a
+	// different index, or the index is taken by a different key.
+	Conflict string `json:"conflict,omitempty"`
+}
+
+type ParseAccountExportRequest struct {
+	FileB64 string `json:"fileB64"`
+	// NewWallet skips the conflict annotation against the currently open
+	// wallet: the create-watch-only wizard imports into a wallet that does
+	// not exist yet, so the current wallet's accounts are irrelevant.
+	NewWallet bool `json:"newWallet,omitempty"`
+}
+
+type ParseAccountExportResponse struct {
+	Entries []AccountExportEntry `json:"entries"`
+}
+
 type RescanRequest struct {
 	BeginHeight int32 `json:"beginHeight"`
 }

@@ -7,6 +7,7 @@ import { X, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { importXpub, getAccounts } from '../services/api';
 import { useWalletReady } from '../hooks/useWalletReady';
 import { KeyEnds } from './AddressGroups';
+import { AccountExportPicker, SelectedAccountEntry } from './AccountExportPicker';
 
 // Reserved system accounts that other daemons / dcrwallet bind to by name and
 // must never be reused for an imported xpub. Mirrors services.IsReservedAccountName.
@@ -31,6 +32,11 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  // Selection from a device account-export file; non-empty switches the modal
+  // from manual entry to the sequential file import.
+  const [fileSelected, setFileSelected] = useState<SelectedAccountEntry[]>([]);
+  // account -> live status while the sequential file import runs.
+  const [queue, setQueue] = useState<Record<number, string> | null>(null);
 
   // Load existing account names when the modal opens so the new account name can
   // be checked for collisions client-side (the backend is the authoritative check).
@@ -72,10 +78,57 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
     return value.startsWith('dpub') || value.startsWith('tpub');
   };
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // Sequential import of the file selection through the existing single-import
+  // path. importxpub is rate-limited (one call per 30s) and each import starts
+  // an async rescan that dcrwallet serializes, so the entries are spaced out.
+  const runFileImport = async () => {
+    setLoading(true);
+    const status: Record<number, string> = {};
+    fileSelected.forEach((en) => {
+      status[en.account] = 'pending';
+    });
+    setQueue({ ...status });
+    let imported = 0;
+    for (let i = 0; i < fileSelected.length; i++) {
+      const en = fileSelected[i];
+      status[en.account] = 'importing...';
+      setQueue({ ...status });
+      try {
+        const result = await importXpub(en.dpub, en.editedName || `account-${en.account}`, en.account, true);
+        if (!result.success) throw new Error(result.message || 'import failed');
+        status[en.account] = 'imported';
+        imported++;
+      } catch (err: any) {
+        const body = err?.response?.data;
+        status[en.account] = typeof body === 'string' ? body : err?.message || 'failed';
+      }
+      setQueue({ ...status });
+      if (i < fileSelected.length - 1) {
+        status[fileSelected[i + 1].account] = 'waiting out the 30s rate limit...';
+        setQueue({ ...status });
+        await sleep(31_000);
+      }
+    }
+    setLoading(false);
+    if (imported > 0) {
+      setSuccess(true);
+      onSuccess();
+    } else {
+      setError('No accounts were imported - see the per-account results above.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess(false);
+
+    if (fileSelected.length > 0) {
+      await runFileImport();
+      return;
+    }
 
     // Validation
     if (!xpub.trim()) {
@@ -137,6 +190,8 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
       setAccountIndex('');
       setError('');
       setSuccess(false);
+      setFileSelected([]);
+      setQueue(null);
       onClose();
     }
   };
@@ -201,6 +256,30 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
             </p>
           </div>
 
+          {/* Import from a device account-export file */}
+          {!success && (
+            <div className="p-4 rounded-lg bg-muted/5 border border-border/50 space-y-2">
+              <h4 className="text-sm font-semibold">From the hardware wallet's SD card</h4>
+              <AccountExportPicker disabled={loading} onSelectionChange={setFileSelected} />
+            </div>
+          )}
+
+          {queue && (
+            <div className="p-4 rounded-lg bg-muted/5 border border-border/50 space-y-1">
+              <h4 className="text-sm font-semibold mb-1">Import progress</h4>
+              {fileSelected.map((en) => (
+                <div key={en.account} className="flex justify-between gap-3 text-sm">
+                  <span className="truncate">
+                    {en.editedName} (m/44'/42'/{en.account}')
+                  </span>
+                  <span className="text-muted-foreground shrink-0">{queue[en.account]}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {fileSelected.length === 0 && !queue && (
+          <>
           {/* Xpub Input */}
           <div>
             <label htmlFor="xpub" className="block text-sm font-medium mb-2">
@@ -293,6 +372,8 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
               dpubZF4LSCdF7y8x8CX1mGz4DEKHGTy9Jd5jMmhJPfTqPqTc...
             </code>
           </div>
+          </>
+          )}
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/50">
@@ -306,7 +387,11 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
             </button>
             <button
               type="submit"
-              disabled={loading || success || trimmedName.length === 0 || !!nameError || !!indexError}
+              disabled={
+                loading ||
+                success ||
+                (fileSelected.length === 0 && (trimmedName.length === 0 || !!nameError || !!indexError))
+              }
               className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all disabled:opacity-50 flex items-center gap-2"
             >
               {loading ? (
@@ -319,6 +404,8 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
                   <CheckCircle className="h-4 w-4" />
                   Imported!
                 </>
+              ) : fileSelected.length > 0 ? (
+                `Import ${fileSelected.length} account${fileSelected.length === 1 ? '' : 's'}`
               ) : (
                 'Import Xpub'
               )}

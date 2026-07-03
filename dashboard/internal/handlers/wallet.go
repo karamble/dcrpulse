@@ -286,10 +286,21 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// AccountIndex is optional (only set when the user will spend from this account
-	// via offline signing). When provided it must be a valid hardened account index.
-	if req.AccountIndex != nil && *req.AccountIndex >= 1<<31 {
-		http.Error(w, "accountIndex must be a BIP44 account index (0 to 2147483647)", http.StatusBadRequest)
-		return
+	// via offline signing). When provided it must be a valid hardened account index
+	// that no existing account already maps - a duplicate index would make offline
+	// signing ambiguous about which account to derive against.
+	if req.AccountIndex != nil {
+		if *req.AccountIndex >= 1<<31 {
+			http.Error(w, "accountIndex must be a BIP44 account index (0 to 2147483647)", http.StatusBadRequest)
+			return
+		}
+		guardCtx, guardCancel := context.WithTimeout(r.Context(), 5*time.Second)
+		acct, used := services.Bip44IndexInUse(guardCtx, *req.AccountIndex)
+		guardCancel()
+		if used {
+			http.Error(w, fmt.Sprintf("BIP44 account index %d is already imported (wallet account %s)", *req.AccountIndex, acct), http.StatusConflict)
+			return
+		}
 	}
 	if services.IsReservedAccountName(accountName) {
 		http.Error(w, fmt.Sprintf("%q is a reserved account name", accountName), http.StatusBadRequest)
@@ -306,6 +317,15 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	checkCancel()
+	// Reject re-importing a key that already backs an existing account, under
+	// any name or index (compared by pubkey, so metadata cannot mask it).
+	dupCtx, dupCancel := context.WithTimeout(r.Context(), 10*time.Second)
+	dupAcct, dup, dupErr := services.XpubAlreadyImported(dupCtx, strings.TrimSpace(req.Xpub))
+	dupCancel()
+	if dupErr == nil && dup {
+		http.Error(w, fmt.Sprintf("this xpub is already imported as account %q", dupAcct), http.StatusConflict)
+		return
+	}
 
 	// Import the xpub asynchronously
 	// We run it in a goroutine and return immediately so the frontend doesn't timeout

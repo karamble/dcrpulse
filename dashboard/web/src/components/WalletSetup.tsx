@@ -4,8 +4,9 @@
 
 import { useEffect, useState } from 'react';
 import { Copy, Check, AlertCircle, Lock, Key, Shield, CheckCircle, Eye, EyeOff, Sprout, RotateCcw } from 'lucide-react';
-import { generateSeed, createNamedWallet, listWallets } from '../services/api';
+import { generateSeed, createNamedWallet, importXpub, listWallets } from '../services/api';
 import { KeyEnds } from './AddressGroups';
+import { AccountExportPicker, SelectedAccountEntry } from './AccountExportPicker';
 import { SeedEntry } from './wallet/SeedEntry';
 
 interface WalletSetupProps {
@@ -54,6 +55,10 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
   const [confirmPublicPass, setConfirmPublicPass] = useState('');
   const [confirmPrivatePass, setConfirmPrivatePass] = useState('');
   const [xpub, setXpub] = useState('');
+  // Selection from a device account-export file: the first entry creates the
+  // wallet (with its true BIP44 index), the rest import after creation.
+  const [fileAccounts, setFileAccounts] = useState<SelectedAccountEntry[]>([]);
+  const [importNote, setImportNote] = useState<string | null>(null);
   const [seedBackupConfirmed, setSeedBackupConfirmed] = useState(false);
   const [confirmWords, setConfirmWords] = useState<Record<number, string>>({});
   const [randomWordIndices, setRandomWordIndices] = useState<number[]>([]);
@@ -210,10 +215,32 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
         discoverAccounts: mode === 'restore',
         watchOnly: isWatchOnly,
         extendedPubKey: isWatchOnly ? xpub.trim() : '',
+        accountIndex: isWatchOnly && fileAccounts.length > 0 ? fileAccounts[0].account : undefined,
       });
 
       if (response.success) {
         setStep('success');
+        // Any further accounts selected from the device file import now,
+        // spaced for the importxpub rate limit (one call per 30s); each
+        // import kicks an async rescan dcrwallet serializes internally.
+        const remaining = isWatchOnly ? fileAccounts.slice(1) : [];
+        for (let i = 0; i < remaining.length; i++) {
+          const en = remaining[i];
+          setImportNote(`Importing account "${en.editedName}" (${i + 1}/${remaining.length})...`);
+          try {
+            if (i > 0) await new Promise((r) => setTimeout(r, 31_000));
+            const res = await importXpub(en.dpub, en.editedName || `account-${en.account}`, en.account, true);
+            if (!res.success) throw new Error(res.message || 'import failed');
+          } catch (impErr: any) {
+            const body = impErr?.response?.data;
+            console.error('post-create account import failed:', impErr);
+            setImportNote(
+              `Account "${en.editedName}": ${typeof body === 'string' ? body : impErr?.message || 'import failed'}`,
+            );
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        }
+        if (remaining.length > 0) setImportNote('Accounts imported.');
         // Send the user to the Overview after a brief success screen so
         // they land on the sync-progress card even if they navigated
         // away from /wallet before triggering creation.
@@ -257,8 +284,12 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
     (publicPassphrase === '' || (confirmPublicPass !== '' && publicPassphrase === confirmPublicPass));
   const xpubTrimmed = xpub.trim();
   const xpubValid = xpubTrimmed.startsWith('dpub') || xpubTrimmed.startsWith('tpub');
+  // HARD RULE: creating from a device file requires the device's account 0 as
+  // the wallet creator (fileAccounts is sorted by index, so [0] is the lowest).
+  const fileZeroOk = fileAccounts.length === 0 || fileAccounts[0].account === 0;
   const canSubmitWatchOnly =
     xpubValid &&
+    fileZeroOk &&
     !publicTooShort &&
     (publicPassphrase === '' || (confirmPublicPass !== '' && publicPassphrase === confirmPublicPass));
 
@@ -845,6 +876,40 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                 </div>
               </div>
 
+              <div className="p-4 rounded-lg bg-muted/20 border border-border/30 space-y-2">
+                <p className="text-sm font-semibold">From the hardware wallet's SD card</p>
+                <AccountExportPicker
+                  newWallet
+                  onSelectionChange={(sel) => {
+                    // The lowest device index creates the wallet, so a
+                    // selected account 0 always becomes the default account.
+                    const ordered = [...sel].sort((a, b) => a.account - b.account);
+                    setFileAccounts(ordered);
+                    if (ordered.length > 0) {
+                      setXpub(ordered[0].dpub);
+                      if (error) setError(null);
+                    }
+                  }}
+                />
+                {fileAccounts.length > 0 && fileAccounts[0].account === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    "{fileAccounts[0].editedName}" (m/44'/42'/0') creates the wallet as its default
+                    account
+                    {fileAccounts.length > 1
+                      ? `; ${fileAccounts.length - 1} more account${fileAccounts.length > 2 ? 's' : ''} will be imported after creation`
+                      : ''}
+                    .
+                  </p>
+                )}
+                {fileAccounts.length > 0 && fileAccounts[0].account !== 0 && (
+                  <p className="text-xs text-red-500 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    The device's account 0 must be selected to create a new wallet. If it is missing
+                    from this file, export it from the device first.
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <label className="text-sm font-medium">Extended Public Key (xpub) <span className="text-red-500">*</span></label>
                 <textarea
@@ -854,8 +919,9 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
                     if (error) setError(null);
                   }}
                   rows={3}
+                  disabled={fileAccounts.length > 0}
                   placeholder="dpub..."
-                  className="w-full px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+                  className="w-full px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm disabled:opacity-60"
                 />
                 {xpubTrimmed !== '' && !xpubValid && (
                   <p className="text-xs text-red-500 flex items-center gap-1">
@@ -953,6 +1019,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
               </div>
               <h2 className="text-2xl font-bold text-green-500">Wallet Created Successfully!</h2>
               <p className="text-muted-foreground">Redirecting to your dashboard...</p>
+              {importNote && <p className="text-sm text-muted-foreground">{importNote}</p>}
             </div>
           )}
 

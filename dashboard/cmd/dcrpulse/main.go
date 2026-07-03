@@ -522,6 +522,7 @@ func main() {
 	api.HandleFunc("/wallet/broadcast-signed-transaction", handlers.BroadcastSignedTransactionHandler).Methods("POST")
 	api.HandleFunc("/wallet/build-sign-request", handlers.BuildSignRequestHandler).Methods("POST")
 	api.HandleFunc("/wallet/device-balance", handlers.DeviceBalanceHandler).Methods("GET")
+	api.HandleFunc("/wallet/parse-account-export", handlers.ParseAccountExportHandler).Methods("POST")
 	api.Handle("/wallet/rescan",
 		middleware.RateLimit("rescan", 60*time.Second, 1)(
 			http.HandlerFunc(handlers.RescanWalletHandler))).Methods("POST")
