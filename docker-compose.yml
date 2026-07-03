@@ -180,7 +180,7 @@ services:
     build: ./dashboard
     container_name: dcrpulse-dashboard
     ports:
-      - "8080:8080"
+      - "${DASHBOARD_HOST_BIND:-127.0.0.1}:${DASHBOARD_PORT:-8080}:8080"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data
       - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd
