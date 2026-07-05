@@ -313,6 +313,7 @@ export const BisonrelayFeed = () => {
           pendingQuote={pendingQuote}
           ownUid={ownUid}
           onClearQuote={() => setPendingQuote(null)}
+          refreshFeed={reload}
         />
       );
     }
@@ -650,10 +651,12 @@ const NewPostView = ({
   pendingQuote,
   ownUid,
   onClearQuote,
+  refreshFeed,
 }: {
   pendingQuote: PendingQuote | null;
   ownUid: string;
   onClearQuote: () => void;
+  refreshFeed: () => Promise<void>;
 }) => {
   const [body, setBody] = useState('');
   const [embeds, setEmbeds] = useState<EditorEmbedMap>({});
@@ -695,6 +698,10 @@ const NewPostView = ({
       const wire = composeBRBody(body, embeds) + quoteSuffix;
       const summ = await createBisonrelayPost(wire, descr.trim());
       onClearQuote();
+      // Pull the new post (with brclientd's derived clean title and the rest
+      // of its enriched summary) into the feed list before navigating, so the
+      // detail view finds it instead of rendering an "(untitled post)" header.
+      await refreshFeed();
       navigateTo(`feed/post/${summ.author_id}/${summ.id}`);
     } catch (e: any) {
       const respBody = e?.response?.data;
