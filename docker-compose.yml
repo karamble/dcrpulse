@@ -123,6 +123,7 @@ services:
     container_name: dcrpulse-brclientd
     ports:
       - "127.0.0.1:7677:7677"
+      - "${MCP_BRIDGE_HOST:-127.0.0.1}:${MCP_BRIDGE_PORT:-8891}:8891"
     entrypoint: ["/bin/sh", "/supervisor.sh"]
     environment:
       - TOR_PROXY_IP=tor

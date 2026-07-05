@@ -96,6 +96,7 @@ launch() {
         --dcrlnd.rpchost=dcrlnd:10009 \
         --dcrlnd.tlscertpath="${lndir}/tls.cert" \
         --dcrlnd.macaroonpath="${lndir}/admin.macaroon" \
+        --mcp.mcplisten=0.0.0.0:8891 \
         ${TOR_ARGS} &
     CHILD_PID=$!
 }

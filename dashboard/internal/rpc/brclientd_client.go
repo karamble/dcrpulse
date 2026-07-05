@@ -1835,3 +1835,33 @@ func loadBrclientdTLS(cfg BrclientdConfig) (*tls.Config, error) {
 		VerifyPeerCertificate: pinnedLeafVerifier(pool),
 	}, nil
 }
+
+// --- BR-MCP client bridge (proxied to brclientd's mcpclient endpoints) ---
+
+// BrclientdMCPSettings fetches the BR-MCP client settings.
+func BrclientdMCPSettings(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/settings/mcpclient", nil)
+}
+
+// BrclientdMCPApplySettings persists new BR-MCP client settings and returns
+// the applied state.
+func BrclientdMCPApplySettings(ctx context.Context, body any) (json.RawMessage, error) {
+	return brclientdPostJSONRaw(ctx, "/settings/mcpclient", body)
+}
+
+// BrclientdMCPPending lists payments awaiting user approval.
+func BrclientdMCPPending(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/mcp/pending", nil)
+}
+
+// BrclientdMCPResolvePending approves or denies one pending payment.
+func BrclientdMCPResolvePending(ctx context.Context, id string, approve bool) error {
+	return brclientdPostJSON(ctx, "/mcp/pending/resolve", map[string]any{
+		"id": id, "approve": approve,
+	})
+}
+
+// BrclientdMCPSpend returns the BR-MCP spend log and rolling-day total.
+func BrclientdMCPSpend(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/mcp/spend", nil)
+}

@@ -7,6 +7,7 @@ import {
   ALargeSmall,
   AlertCircle,
   Bell,
+  Bot,
   Camera,
   CheckCircle2,
   Download,
@@ -72,6 +73,7 @@ import { BR_TEXT_SCALES, BrTextScale, setBrTextScale, useBrTextScale } from './b
 import { ChannelList } from '../lightning/channels/ChannelList';
 import { RequestLiquidityModal } from '../lightning/channels/RequestLiquidityModal';
 import { setBrNotifPrefs, useBrNotifPrefs } from './brNotifPrefs';
+import { BrMcpSection } from '../settings/BrMcpSection';
 
 // ---- Section routing --------------------------------------------------------
 
@@ -84,6 +86,7 @@ type SettingsSection =
   | 'behavior'
   | 'advanced'
   | 'filters'
+  | 'aiagents'
   | 'backup'
   | 'about';
 
@@ -98,6 +101,7 @@ const readHashSection = (): SettingsSection => {
   if (rest === '/behavior') return 'behavior';
   if (rest === '/advanced') return 'advanced';
   if (rest === '/filters') return 'filters';
+  if (rest === '/aiagents') return 'aiagents';
   if (rest === '/backup') return 'backup';
   if (rest === '/about') return 'about';
   return 'account';
@@ -1862,6 +1866,7 @@ const sidebarItems: {
   { id: 'behavior', label: 'Behavior', hash: 'settings/behavior', icon: SlidersHorizontal },
   { id: 'advanced', label: 'Advanced', hash: 'settings/advanced', icon: Gauge },
   { id: 'filters', label: 'Filters', hash: 'settings/filters', icon: Filter },
+  { id: 'aiagents', label: 'AI Agent Access', hash: 'settings/aiagents', icon: Bot },
   { id: 'backup', label: 'Backup', hash: 'settings/backup', icon: Download },
   { id: 'about', label: 'About', hash: 'settings/about', icon: Info },
 ];
@@ -1922,6 +1927,7 @@ export const BisonrelaySettingsTab = () => {
     if (section === 'behavior') return <BehaviorCard />;
     if (section === 'advanced') return <AdvancedCard />;
     if (section === 'filters') return <FiltersCard />;
+    if (section === 'aiagents') return <BrMcpSection />;
     if (section === 'backup') return <BackupCard />;
     if (section === 'about') return <AboutCard />;
     return <AccountCard />;

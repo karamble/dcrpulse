@@ -482,6 +482,12 @@ func main() {
 	api.HandleFunc("/br/invites/accept", handlers.BisonrelayInviteAcceptHandler).Methods("POST")
 	api.HandleFunc("/br/join-decred-pulse", handlers.JoinDecredPulseHandler).Methods("POST")
 	api.HandleFunc("/br/events", handlers.BisonrelayEventsHandler).Methods("GET")
+	// BR-MCP client bridge (agent access to Bison Relay tool bots), proxied
+	// to brclientd's mcpclient endpoints.
+	api.HandleFunc("/br/mcp/settings", handlers.BisonrelayMCPSettingsHandler).Methods("GET", "POST")
+	api.HandleFunc("/br/mcp/pending", handlers.BisonrelayMCPPendingHandler).Methods("GET")
+	api.HandleFunc("/br/mcp/pending/resolve", handlers.BisonrelayMCPResolvePendingHandler).Methods("POST")
+	api.HandleFunc("/br/mcp/spend", handlers.BisonrelayMCPSpendHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")

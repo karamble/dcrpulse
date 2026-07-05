@@ -1831,3 +1831,56 @@ export const saveBisonrelayLocalPage = async (name: string, content: string): Pr
 export const deleteBisonrelayLocalPage = async (name: string): Promise<void> => {
   await api.post('/br/pages/local/delete', { name });
 };
+
+// --- BR-MCP client (call MCP tool services offered by Bison Relay bots) ---
+
+export interface BrMcpSettings {
+  enabled: boolean;
+  token: string;
+  mode: 'approval' | 'autopay';
+  perCallCapDcr: number;
+  perDayCapDcr: number;
+  allowedBots: string[];
+  approvalTimeoutSecs: number;
+  tipWaitSecs: number;
+}
+
+export interface BrMcpPendingPayment {
+  id: string;
+  bot: string;
+  tool: string;
+  amountDcr: number;
+  created: number;
+}
+
+export interface BrMcpSpendEntry {
+  ts: number;
+  bot: string;
+  tool: string;
+  rail: string;
+  amountDcr: number;
+}
+
+export const getBrMcpSettings = async (): Promise<BrMcpSettings> => {
+  const { data } = await api.get<BrMcpSettings>('/br/mcp/settings');
+  return data;
+};
+
+export const setBrMcpSettings = async (s: BrMcpSettings): Promise<BrMcpSettings> => {
+  const { data } = await api.post<BrMcpSettings>('/br/mcp/settings', s);
+  return data;
+};
+
+export const getBrMcpPending = async (): Promise<BrMcpPendingPayment[]> => {
+  const { data } = await api.get<{ pending: BrMcpPendingPayment[] }>('/br/mcp/pending');
+  return data.pending ?? [];
+};
+
+export const resolveBrMcpPending = async (id: string, approve: boolean): Promise<void> => {
+  await api.post('/br/mcp/pending/resolve', { id, approve });
+};
+
+export const getBrMcpSpend = async (): Promise<{ entries: BrMcpSpendEntry[]; todayDcr: number }> => {
+  const { data } = await api.get<{ entries: BrMcpSpendEntry[]; todayDcr: number }>('/br/mcp/spend');
+  return data;
+};
