@@ -246,6 +246,12 @@ Some tools compose into multi-step workflows worth calling out:
 - **Bison Relay housekeeping.** Manage downloads (`br_download_delete`), the
   notification bell (`br_notification_delete`, `br_notifications_clear`), and
   storefront media (`br_store_files`, `br_store_file_get`, `br_store_file_delete`).
+- **Contact resolution.** `br_resolve_nick` maps a nick, alias, or name to its
+  64-hex uid and returns ALL matches (nicks are not unique on Bison Relay);
+  `br_resolve_uid` maps a uid back to its nick, alias, and name. `br_contacts`
+  lists the address book without avatar bytes or key material (each entry
+  carries `hasAvatar`), and `br_contact_avatar` fetches a single contact's
+  avatar as base64 with a sniffed content type.
 
 ### Resources (live state)
 

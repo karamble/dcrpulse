@@ -66,4 +66,15 @@ func TestToolInputOptionalParams(t *testing.T) {
 	if !requiredSet[explorerTxInput](t)["txHash"] {
 		t.Error("explorer_transaction: txHash should be required")
 	}
+
+	// Contact resolvers need their lookup key.
+	if !requiredSet[brResolveNickInput](t)["nick"] {
+		t.Error("br_resolve_nick: nick should be required")
+	}
+	if !requiredSet[brResolveUIDInput](t)["uid"] {
+		t.Error("br_resolve_uid: uid should be required")
+	}
+	if !requiredSet[brContactAvatarInput](t)["uid"] {
+		t.Error("br_contact_avatar: uid should be required")
+	}
 }

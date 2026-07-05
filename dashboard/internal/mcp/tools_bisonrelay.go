@@ -295,6 +295,36 @@ func brPageSize(n int) int {
 	return n
 }
 
+var brUIDRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+
+// brContactEntries fetches the brclientd address book and returns its
+// entries as generic maps, so this layer never has to track BR's
+// AddressBookEntry shape.
+func brContactEntries(ctx context.Context) ([]map[string]any, error) {
+	raw, err := rpc.BrclientdContacts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		Entries []map[string]any `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, fmt.Errorf("decode contacts: %w", err)
+	}
+	return envelope.Entries, nil
+}
+
+// brContactStrings pulls the identity handles out of one contacts entry.
+func brContactStrings(entry map[string]any) (uid, nick, alias, name string) {
+	if id, ok := entry["id"].(map[string]any); ok {
+		uid, _ = id["identity"].(string)
+		nick, _ = id["nick"].(string)
+		name, _ = id["name"].(string)
+	}
+	alias, _ = entry["nick_alias"].(string)
+	return
+}
+
 // bisonrelayTools are the read-only "bisonrelay" domain tools. They call the
 // same brclientd status-server endpoints the Bison Relay UI uses. Sending
 // messages, KX, and store/page edits (state-changing) come in a later phase.
@@ -360,6 +390,18 @@ type brFidInput struct {
 	FID string `json:"fid" jsonschema:"shared-file id of the in-flight download"`
 }
 
+type brResolveNickInput struct {
+	Nick string `json:"nick" jsonschema:"nick, local alias, or name to resolve"`
+}
+
+type brResolveUIDInput struct {
+	UID string `json:"uid" jsonschema:"contact identity, 64-char hex"`
+}
+
+type brContactAvatarInput struct {
+	UID string `json:"uid" jsonschema:"contact identity, 64-char hex"`
+}
+
 var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_status",
 		"Get the Bison Relay client status (connection stage, nick, server, wallet check).",
@@ -371,8 +413,108 @@ var bisonrelayTools = []toolDef{
 		"Get the Bison Relay connection state (online intent, session state, server policy).",
 		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdConnectionState(ctx) }),
 	readTool("bisonrelay", "br_contacts",
-		"List Bison Relay contacts (completed key exchanges).",
-		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdContacts(ctx) }),
+		"List Bison Relay contacts (completed key exchanges). Avatar bytes and key material are omitted; entries carry hasAvatar and br_contact_avatar fetches an avatar.",
+		func(ctx context.Context, _ emptyInput) (any, error) {
+			entries, err := brContactEntries(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, entry := range entries {
+				var has bool
+				if id, ok := entry["id"].(map[string]any); ok {
+					if avatar, _ := id["avatar"].(string); avatar != "" {
+						has = true
+					}
+					// Avatar bytes and raw key material are noise to an
+					// agent; identity handles and timestamps remain.
+					for _, k := range []string{"avatar", "key", "sigKey", "signature", "digest"} {
+						delete(id, k)
+					}
+				}
+				delete(entry, "myResetRV")
+				delete(entry, "theirResetRV")
+				entry["hasAvatar"] = has
+			}
+			return map[string]any{"entries": entries}, nil
+		}),
+	readTool("bisonrelay", "br_resolve_nick",
+		"Resolve a contact nick, local alias, or name to its 64-hex uid. Nicks are not unique, so ALL matches are returned.",
+		func(ctx context.Context, in brResolveNickInput) (any, error) {
+			want := strings.TrimSpace(in.Nick)
+			if want == "" {
+				return nil, fmt.Errorf("nick is required")
+			}
+			entries, err := brContactEntries(ctx)
+			if err != nil {
+				return nil, err
+			}
+			matches := []map[string]string{}
+			for _, entry := range entries {
+				uid, nick, alias, name := brContactStrings(entry)
+				if strings.EqualFold(nick, want) || strings.EqualFold(alias, want) ||
+					strings.EqualFold(name, want) {
+					matches = append(matches, map[string]string{
+						"uid": uid, "nick": nick, "alias": alias, "name": name,
+					})
+				}
+			}
+			return map[string]any{"matches": matches, "count": len(matches)}, nil
+		}),
+	readTool("bisonrelay", "br_resolve_uid",
+		"Resolve a contact's 64-hex uid to its nick, local alias, and name.",
+		func(ctx context.Context, in brResolveUIDInput) (any, error) {
+			if !brUIDRe.MatchString(in.UID) {
+				return nil, fmt.Errorf("uid must be 64 hex characters")
+			}
+			entries, err := brContactEntries(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, entry := range entries {
+				uid, nick, alias, name := brContactStrings(entry)
+				if strings.EqualFold(uid, in.UID) {
+					return map[string]string{
+						"uid": uid, "nick": nick, "alias": alias, "name": name,
+					}, nil
+				}
+			}
+			return nil, fmt.Errorf("no contact with uid %s", in.UID)
+		}),
+	readTool("bisonrelay", "br_contact_avatar",
+		"Get a contact's avatar image by 64-hex uid, as base64 with a sniffed content type.",
+		func(ctx context.Context, in brContactAvatarInput) (any, error) {
+			if !brUIDRe.MatchString(in.UID) {
+				return nil, fmt.Errorf("uid must be 64 hex characters")
+			}
+			entries, err := brContactEntries(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, entry := range entries {
+				uid, nick, _, _ := brContactStrings(entry)
+				if !strings.EqualFold(uid, in.UID) {
+					continue
+				}
+				var avatarB64 string
+				if id, ok := entry["id"].(map[string]any); ok {
+					avatarB64, _ = id["avatar"].(string)
+				}
+				if avatarB64 == "" {
+					return nil, fmt.Errorf("contact %s has no avatar", nick)
+				}
+				data, err := base64.StdEncoding.DecodeString(avatarB64)
+				if err != nil {
+					return nil, fmt.Errorf("decode avatar: %w", err)
+				}
+				return map[string]any{
+					"uid":         uid,
+					"nick":        nick,
+					"contentType": http.DetectContentType(data),
+					"dataB64":     avatarB64,
+				}, nil
+			}
+			return nil, fmt.Errorf("no contact with uid %s", in.UID)
+		}),
 	readTool("bisonrelay", "br_blocked_contacts",
 		"List blocked Bison Relay contacts.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdBlockedContacts(ctx) }),

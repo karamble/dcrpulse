@@ -15,6 +15,8 @@ type discovered struct {
 	blockHash   string
 	blockHeight int64
 	uid         string
+	nick        string // a contact nick or alias (br_contacts)
+	avatarUID   string // identity of a contact that reports an avatar (br_contacts)
 	gcid        string
 	postUID     string
 	postID      string
@@ -392,6 +394,24 @@ var catalog = []spec{
 		}
 		return map[string]any{"uid": d.uid}, true
 	}),
+	rdArgs("bisonrelay", "br_resolve_nick", func(d *discovered) (map[string]any, bool) {
+		if d.nick == "" {
+			return nil, false
+		}
+		return map[string]any{"nick": d.nick}, true
+	}),
+	rdArgs("bisonrelay", "br_resolve_uid", func(d *discovered) (map[string]any, bool) {
+		if d.uid == "" {
+			return nil, false
+		}
+		return map[string]any{"uid": d.uid}, true
+	}),
+	rdArgs("bisonrelay", "br_contact_avatar", func(d *discovered) (map[string]any, bool) {
+		if d.avatarUID == "" {
+			return nil, false
+		}
+		return map[string]any{"uid": d.avatarUID}, true
+	}),
 	rdArgs("bisonrelay", "br_post", func(d *discovered) (map[string]any, bool) {
 		if d.postUID == "" || d.postID == "" {
 			return nil, false
@@ -749,6 +769,34 @@ var catalog = []spec{
 
 // absorb harvests live identifiers from a successful read result into d, scoped
 // by which tool produced it so that 64-hex values are not cross-assigned.
+// findAvatarUID picks the identity of the first contact reporting an
+// avatar, so br_contact_avatar is exercised with a hit instead of a
+// no-avatar error.
+func findAvatarUID(v any) string {
+	switch t := v.(type) {
+	case map[string]any:
+		if has, _ := t["hasAvatar"].(bool); has {
+			if id, ok := t["id"].(map[string]any); ok {
+				if uid, _ := id["identity"].(string); isHex64(uid) {
+					return uid
+				}
+			}
+		}
+		for _, sub := range t {
+			if uid := findAvatarUID(sub); uid != "" {
+				return uid
+			}
+		}
+	case []any:
+		for _, sub := range t {
+			if uid := findAvatarUID(sub); uid != "" {
+				return uid
+			}
+		}
+	}
+	return ""
+}
+
 func absorb(d *discovered, name string, data any) {
 	switch name {
 	case "node_status", "node_blockchain_info":
@@ -779,6 +827,15 @@ func absorb(d *discovered, name string, data any) {
 	case "br_contacts", "br_identity":
 		if d.uid == "" {
 			d.uid = findString(data, isHex64, "uid", "id", "identity", "pubkey")
+		}
+		if name == "br_contacts" {
+			if d.nick == "" {
+				d.nick = findString(data, func(s string) bool { return s != "" && !isHex64(s) },
+					"nick", "nick_alias")
+			}
+			if d.avatarUID == "" {
+				d.avatarUID = findAvatarUID(data)
+			}
 		}
 	case "br_groupchats":
 		if d.gcid == "" {
