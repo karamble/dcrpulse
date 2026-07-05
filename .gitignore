@@ -15,6 +15,9 @@ dashboard/web/node_modules/
 dashboard/web/dist/
 dashboard/web/.vite/
 dashboard/web/package-lock.json
+dashboard/web/*.tsbuildinfo
+dashboard/web/vite.config.d.ts
+dashboard/web/vite.config.js
 
 # Docker volumes and data
 dcrd-data/
