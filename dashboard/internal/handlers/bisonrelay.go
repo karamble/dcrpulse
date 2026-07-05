@@ -1574,6 +1574,7 @@ func resolveQuoteSegments(r *http.Request, segments []services.BRPostBodySegment
 		seg.Quote.AuthorNick = pm.Attributes["from_nick"]
 		seg.Quote.Title = pm.Attributes["title"]
 		seg.Quote.Snippet = services.BRQuoteSnippet(pm.Attributes["main"], 240)
+		seg.Quote.ImageIndex, seg.Quote.ImageMime = services.BRQuoteFirstImage(pm.Attributes["main"])
 	}
 }
 

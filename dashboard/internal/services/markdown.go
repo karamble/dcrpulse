@@ -151,6 +151,11 @@ type BRQuoteInfo struct {
 	AuthorNick string `json:"author_nick,omitempty"`
 	Title      string `json:"title,omitempty"`
 	Snippet    string `json:"snippet,omitempty"`
+	// ImageIndex/ImageMime reference the quoted post's first inline image
+	// (index in its embed order, servable via the posts embed-data
+	// endpoint). Nil when the quoted post has no inline image.
+	ImageIndex *int   `json:"image_index,omitempty"`
+	ImageMime  string `json:"image_mime,omitempty"`
 }
 
 // brQuoteIDRe validates the quote reference ids.
@@ -456,6 +461,27 @@ func parseBREmbedTag(inner string) BRPostBodySegment {
 		}
 	}
 	return seg
+}
+
+// BRQuoteFirstImage finds the quoted post's first inline image embed and
+// returns its index in the post's embed order (the index the embed-data
+// endpoint serves) plus its mime type. Only --embed tags count toward the
+// index, matching brclientd's embed indexing; download-only images (paid
+// files without inline bytes) are skipped.
+func BRQuoteFirstImage(main string) (*int, string) {
+	ordinal := 0
+	for _, m := range brPostEmbedRE.FindAllStringSubmatch(main, -1) {
+		if m[1] != "embed" {
+			continue
+		}
+		seg := parseBREmbedTag(m[2])
+		if strings.HasPrefix(seg.Mime, "image/") && seg.DataB64 != "" {
+			idx := ordinal
+			return &idx, seg.Mime
+		}
+		ordinal++
+	}
+	return nil, ""
 }
 
 // BRQuoteSnippet reduces a post body to plain text for a quote card:

@@ -22,6 +22,7 @@ import {
   bisonrelayPostEmbedUrl,
 } from '../../services/bisonrelayApi';
 import { AuthorAvatar } from './AuthorAvatar';
+import { FeedCardQuote } from './QuoteEmbedCard';
 import { formatDcrFromAtoms, formatDownloadBytes } from './DownloadEmbed';
 
 export const relativeTime = (ts: number): string => {
@@ -132,6 +133,7 @@ export const FeedCard = ({
   );
   const extraImages = img ? Math.max(0, imageEmbeds.length - 1) : 0;
   const paidEmbed = (post.embeds ?? []).find((e) => e.download && !e.has_data);
+  const quoteMeta = (post.embeds ?? []).find((e) => e.mime === 'quote');
   const mediaFirst = !!img && !snippet && isPlaceholderTitle(post.title || '');
 
   const hearts = post.hearts_count ?? 0;
@@ -190,6 +192,8 @@ export const FeedCard = ({
         {snippet && (
           <p className="text-sm text-foreground/80 line-clamp-3 break-words">{snippet}</p>
         )}
+
+        {quoteMeta && <FeedCardQuote uid={post.author_id} pid={post.id} />}
 
         {img && (
           <FeedCardMedia

@@ -639,6 +639,8 @@ export interface BisonrelayQuoteInfo {
   author_nick?: string;
   title?: string;
   snippet?: string;
+  image_index?: number;
+  image_mime?: string;
 }
 
 export interface BisonrelayPostBodySegment {

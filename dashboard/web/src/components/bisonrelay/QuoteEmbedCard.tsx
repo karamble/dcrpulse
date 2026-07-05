@@ -5,9 +5,12 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Quote } from 'lucide-react';
 import {
+  BisonrelayPostBodySegment,
+  bisonrelayPostEmbedUrl,
   fetchBisonrelayUserPost,
   getBisonrelayPostBody,
 } from '../../services/bisonrelayApi';
+import { isImageMime, parseEmbeds } from './embedParser';
 
 // QuoteEmbedCard renders a quote-by-reference embed
 // (--embed[type=quote,from=,post=]--, docs/features/bison-relay-quote-embed.md)
@@ -20,7 +23,22 @@ export interface ResolvedQuote {
   author_nick?: string;
   title?: string;
   snippet?: string;
+  image_index?: number;
+  image_mime?: string;
 }
+
+// firstImageIndex finds the quoted post's first inline image and its index
+// in the post's embed order (the index the embed-data endpoint serves).
+// Only embed segments count toward the index, matching the backend.
+const firstImageIndex = (markdown: string): { index: number; mime: string } | null => {
+  let ordinal = 0;
+  for (const seg of parseEmbeds(markdown)) {
+    if (seg.kind !== 'embed') continue;
+    if (isImageMime(seg.mime) && seg.dataB64) return { index: ordinal, mime: seg.mime };
+    ordinal++;
+  }
+  return null;
+};
 
 // stripEmbedTags reduces a quoted body to plain text: quote depth is one,
 // so nothing nested is ever resolved or rendered.
@@ -29,6 +47,45 @@ const stripEmbedTags = (s: string): string =>
     .replace(/--(embed|download)\[.*?\]--/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+// FeedCardQuote shows a quoting post's quoted content on the feed
+// OVERVIEW card. The summary meta only flags that a quote embed exists
+// (mime "quote"), so the quoting post's body is fetched once - the backend
+// returns it with the quote segments already resolved from the local
+// store - and the first quote renders as a card. Renders nothing while
+// loading or when the body has no valid quote reference.
+export const FeedCardQuote = ({ uid, pid }: { uid: string; pid: string }) => {
+  const [seg, setSeg] = useState<BisonrelayPostBodySegment | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const body = await getBisonrelayPostBody(uid, pid);
+        if (!alive) return;
+        const quote = (body.segments ?? []).find((s) => s.quote_from && s.quote_post);
+        if (quote) setSeg(quote);
+      } catch {
+        // Leave the card without a preview; the detail view reports errors.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [uid, pid]);
+
+  if (!seg?.quote_from || !seg?.quote_post) return null;
+  return (
+    <div className="pointer-events-auto">
+      <QuoteEmbedCard
+        from={seg.quote_from}
+        post={seg.quote_post}
+        alt={seg.alt}
+        resolved={seg.quote ?? { available: false }}
+      />
+    </div>
+  );
+};
 
 export const QuoteEmbedCard = ({
   from,
@@ -53,11 +110,14 @@ export const QuoteEmbedCard = ({
       try {
         const body = await getBisonrelayPostBody(from, post);
         if (!alive) return;
+        const img = firstImageIndex(body.markdown || '');
         setSelfResolved({
           available: true,
           author_nick: body.attributes?.from_nick,
           title: body.title,
           snippet: stripEmbedTags(body.markdown || '').slice(0, 240),
+          image_index: img?.index,
+          image_mime: img?.mime,
         });
       } catch {
         if (alive) setSelfResolved({ available: false });
@@ -145,6 +205,14 @@ export const QuoteEmbedCard = ({
       </div>
       {q.snippet ? (
         <p className="mt-0.5 text-xs text-foreground/90 line-clamp-3 break-words">{q.snippet}</p>
+      ) : null}
+      {q.image_index !== undefined && q.image_index !== null ? (
+        <img
+          src={bisonrelayPostEmbedUrl(from, post, q.image_index)}
+          alt=""
+          loading="lazy"
+          className="mt-1.5 rounded-md border border-border/40 max-h-44 max-w-full object-cover"
+        />
       ) : null}
     </button>
   );
