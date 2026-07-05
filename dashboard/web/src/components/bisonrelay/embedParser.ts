@@ -14,7 +14,13 @@ export interface EmbedSegment {
   download: string;
   cost: number;
   localFilename: string;
+  // Quote-by-reference embed (type=quote): both are validated 64-hex or
+  // empty. See docs/features/bison-relay-quote-embed.md.
+  quoteFrom: string;
+  quotePost: string;
 }
+
+const QUOTE_ID_RE = /^[0-9a-f]{64}$/;
 
 export interface TextSegment {
   kind: 'text';
@@ -72,6 +78,8 @@ function parseEmbedArgs(raw: string, inner: string): EmbedSegment {
     download: '',
     cost: 0,
     localFilename: '',
+    quoteFrom: '',
+    quotePost: '',
   };
   for (const part of inner.split(',')) {
     const eq = part.indexOf('=');
@@ -110,6 +118,16 @@ function parseEmbedArgs(raw: string, inner: string): EmbedSegment {
       case 'localfilename':
         out.localFilename = v;
         break;
+      case 'from': {
+        const lv = v.toLowerCase();
+        if (QUOTE_ID_RE.test(lv)) out.quoteFrom = lv;
+        break;
+      }
+      case 'post': {
+        const lv = v.toLowerCase();
+        if (QUOTE_ID_RE.test(lv)) out.quotePost = lv;
+        break;
+      }
     }
   }
   return out;

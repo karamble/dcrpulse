@@ -7,6 +7,7 @@ import { toYMDTime } from '../../utils/date';
 import { isImageMime } from './embedParser';
 import {
   Atom,
+  Quote,
   Eye,
   Image,
   Images,
@@ -102,12 +103,14 @@ export const FeedCard = ({
   avatarB64,
   ownUid,
   onOpen,
+  onQuote,
 }: {
   post: BisonrelayPostSummary;
   hasActivity: boolean;
   avatarB64?: string;
   ownUid: string;
   onOpen: () => void;
+  onQuote?: () => void;
 }) => {
   const nick = post.author_nick || post.author_id.slice(0, 12);
   const isRelayed = post.relayed ?? (!!post.from && post.from !== post.author_id);
@@ -235,6 +238,20 @@ export const FeedCard = ({
               {post.last_comment_nick} commented {relativeTime(post.last_comment_ts)}
             </span>
           ) : null}
+          {onQuote && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onQuote();
+              }}
+              title="Quote this post in a new post"
+              className="pointer-events-auto relative z-20 ml-auto inline-flex items-center gap-1.5 shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Quote className="h-4 w-4" />
+              <span>Quote</span>
+            </button>
+          )}
         </div>
       </div>
     </article>

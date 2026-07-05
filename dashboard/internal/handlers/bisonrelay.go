@@ -1530,6 +1530,7 @@ func BisonrelayPostBodyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	mainMD := pm.Attributes["main"]
 	segments := services.SplitAndRenderBRPostBody(mainMD)
+	resolveQuoteSegments(r, segments)
 	out := map[string]any{
 		"title":      pm.Attributes["title"],
 		"markdown":   mainMD,
@@ -1538,6 +1539,42 @@ func BisonrelayPostBodyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// maxResolvedQuotes bounds how many quote embeds one post body resolves.
+const maxResolvedQuotes = 4
+
+// resolveQuoteSegments fills the Quote info of quote-by-reference embeds
+// from the LOCAL post store only: a quoted post the daemon does not have
+// stays Available=false (the frontend offers a user-initiated fetch, never
+// an automatic one). Snippets are plain text, so quotes never nest.
+func resolveQuoteSegments(r *http.Request, segments []services.BRPostBodySegment) {
+	resolved := 0
+	for i := range segments {
+		seg := &segments[i]
+		if seg.Mime != "quote" || seg.QuoteFrom == "" || seg.QuotePost == "" {
+			continue
+		}
+		seg.Quote = &services.BRQuoteInfo{}
+		if resolved >= maxResolvedQuotes {
+			continue
+		}
+		resolved++
+		body, err := rpc.BrclientdPostBody(r.Context(), seg.QuoteFrom, seg.QuotePost)
+		if err != nil {
+			continue
+		}
+		var pm struct {
+			Attributes map[string]string `json:"attributes"`
+		}
+		if err := json.Unmarshal(body, &pm); err != nil {
+			continue
+		}
+		seg.Quote.Available = true
+		seg.Quote.AuthorNick = pm.Attributes["from_nick"]
+		seg.Quote.Title = pm.Attributes["title"]
+		seg.Quote.Snippet = services.BRQuoteSnippet(pm.Attributes["main"], 240)
+	}
 }
 
 // BisonrelayPagesFetchHandler fetches a single BR page (resource) via

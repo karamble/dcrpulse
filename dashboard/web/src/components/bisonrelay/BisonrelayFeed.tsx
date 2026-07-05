@@ -23,10 +23,12 @@ import {
   Send,
   FileText,
   Paperclip,
+  Quote,
 } from 'lucide-react';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
 import { useBrNotifPrefs } from './brNotifPrefs';
 import { AuthorAvatar } from './AuthorAvatar';
+import { QuoteEmbedCard } from './QuoteEmbedCard';
 import { FeedCard, FeedCardSkeleton, relativeTime } from './FeedCard';
 import {
   BisonrelayEditor,
@@ -71,6 +73,13 @@ import { TipModal } from './TipModal';
 import { UserProfileView } from './BisonrelayUserProfile';
 
 type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail' | 'user';
+
+// PendingQuote stages a quote-by-reference for the composer.
+interface PendingQuote {
+  uid: string;
+  pid: string;
+  nick: string;
+}
 
 interface FeedTarget {
   uid: string;
@@ -237,6 +246,16 @@ export const BisonrelayFeed = () => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  const [pendingQuote, setPendingQuote] = useState<PendingQuote | null>(null);
+  const startQuote = (p: BisonrelayPostSummary) => {
+    setPendingQuote({
+      uid: p.author_id,
+      pid: p.id,
+      nick: p.author_nick || p.author_id.slice(0, 12),
+    });
+    navigateTo('feed/new');
+  };
+
   const content = (() => {
     if (route.section === 'detail' && route.target) {
       const key = `${route.target.uid}-${route.target.pid}`;
@@ -253,6 +272,7 @@ export const BisonrelayFeed = () => {
           avatars={avatars}
           onBack={() => navigateTo('feed')}
           onMarkSeen={(ts) => markSeen(key, ts)}
+          onQuote={summary ? () => startQuote(summary) : undefined}
         />
       );
     }
@@ -280,6 +300,7 @@ export const BisonrelayFeed = () => {
           ownUid={ownUid}
           emptyTitle="You haven't published any posts yet"
           emptyHint='Use "New Post" in the sidebar to write your first one.'
+          onQuote={startQuote}
         />
       );
     }
@@ -287,7 +308,13 @@ export const BisonrelayFeed = () => {
       return <SubscriptionsView />;
     }
     if (route.section === 'new') {
-      return <NewPostView />;
+      return (
+        <NewPostView
+          pendingQuote={pendingQuote}
+          ownUid={ownUid}
+          onClearQuote={() => setPendingQuote(null)}
+        />
+      );
     }
     return (
       <PostsListView
@@ -299,6 +326,7 @@ export const BisonrelayFeed = () => {
         ownUid={ownUid}
         emptyTitle="No posts yet"
         emptyHint="Subscribe to a contact's posts from their sub-nav (click their avatar in Chat) and new posts will land here as they publish."
+        onQuote={startQuote}
       />
     );
   })();
@@ -357,6 +385,7 @@ const PostsListView = ({
   filter,
   emptyTitle,
   emptyHint,
+  onQuote,
 }: {
   posts: BisonrelayPostSummary[] | null;
   err: string | null;
@@ -366,6 +395,7 @@ const PostsListView = ({
   filter?: (p: BisonrelayPostSummary) => boolean;
   emptyTitle: string;
   emptyHint: string;
+  onQuote?: (p: BisonrelayPostSummary) => void;
 }) => {
   const filtered = posts ? (filter ? posts.filter(filter) : posts) : null;
   // The BR notification switches gate the new-activity dots only; the seen
@@ -422,6 +452,7 @@ const PostsListView = ({
               avatarB64={avatars[p.author_id]}
               ownUid={ownUid}
               onOpen={() => navigateTo(`feed/post/${p.author_id}/${p.id}`)}
+              onQuote={onQuote ? () => onQuote(p) : undefined}
             />
           );
         })
@@ -615,14 +646,30 @@ const SubscriptionsView = () => {
   );
 };
 
-const NewPostView = () => {
+const NewPostView = ({
+  pendingQuote,
+  ownUid,
+  onClearQuote,
+}: {
+  pendingQuote: PendingQuote | null;
+  ownUid: string;
+  onClearQuote: () => void;
+}) => {
   const [body, setBody] = useState('');
   const [embeds, setEmbeds] = useState<EditorEmbedMap>({});
   const [descr, setDescr] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [relayOriginal, setRelayOriginal] = useState(true);
 
-  const overCap = isEditorOverHardCap(body, embeds);
+  const quotingOwnPost = !!pendingQuote && !!ownUid && pendingQuote.uid === ownUid;
+  // The quote reference travels as a standard embed appended to the wire
+  // body (docs/features/bison-relay-quote-embed.md); alt gives clients
+  // that do not understand quotes readable fallback text.
+  const quoteSuffix = pendingQuote
+    ? `\n\n--embed[type=quote,from=${pendingQuote.uid},post=${pendingQuote.pid},alt=${encodeURIComponent(`Quoted post from ${pendingQuote.nick}`)}]--`
+    : '';
+  const overCap = isEditorOverHardCap(body + quoteSuffix, embeds);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -631,8 +678,23 @@ const NewPostView = () => {
     setSubmitting(true);
     setErr(null);
     try {
-      const wire = composeBRBody(body, embeds);
+      if (pendingQuote && relayOriginal && !quotingOwnPost) {
+        // Relay first so subscribers receive the quoted post and the
+        // reference resolves for them ("quote relay").
+        try {
+          await relayBisonrelayPost(pendingQuote.uid, pendingQuote.pid);
+        } catch (re: any) {
+          const relayBody = re?.response?.data;
+          throw new Error(
+            'Could not relay the quoted post: ' +
+              (typeof relayBody === 'string' ? relayBody : re?.message || 'relay failed') +
+              '. Uncheck the relay option to publish without it.',
+          );
+        }
+      }
+      const wire = composeBRBody(body, embeds) + quoteSuffix;
       const summ = await createBisonrelayPost(wire, descr.trim());
+      onClearQuote();
       navigateTo(`feed/post/${summ.author_id}/${summ.id}`);
     } catch (e: any) {
       const respBody = e?.response?.data;
@@ -670,6 +732,34 @@ const NewPostView = () => {
             className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50"
           />
         </div>
+        {pendingQuote && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-muted-foreground">Quoting</label>
+              <button
+                type="button"
+                onClick={onClearQuote}
+                disabled={submitting}
+                className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </div>
+            <QuoteEmbedCard from={pendingQuote.uid} post={pendingQuote.pid} />
+            {!quotingOwnPost && (
+              <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={relayOriginal}
+                  onChange={(e) => setRelayOriginal(e.target.checked)}
+                  disabled={submitting}
+                  className="accent-primary"
+                />
+                Relay the original post so your subscribers can resolve it
+              </label>
+            )}
+          </div>
+        )}
         <div>
           <label className="block text-xs text-muted-foreground mb-1">Body</label>
           <BisonrelayEditor
@@ -721,6 +811,7 @@ const PostDetailView = ({
   avatars,
   onBack,
   onMarkSeen,
+  onQuote,
 }: {
   uid: string;
   pid: string;
@@ -730,6 +821,7 @@ const PostDetailView = ({
   avatars: Record<string, string>;
   onBack: () => void;
   onMarkSeen?: (ts: number) => void;
+  onQuote?: () => void;
 }) => {
   const [body, setBody] = useState<BisonrelayPostBody | null>(null);
   const [loading, setLoading] = useState(false);
@@ -964,6 +1056,17 @@ const PostDetailView = ({
               >
                 <Coins className="h-4 w-4" />
                 <span>Pay tip</span>
+              </button>
+            )}
+            {onQuote && (
+              <button
+                type="button"
+                onClick={onQuote}
+                title="Quote this post in a new post"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Quote className="h-4 w-4" />
+                <span>Quote</span>
               </button>
             )}
             <button
@@ -1768,6 +1871,17 @@ const PostBodySegments = ({ segments, uid }: { segments: BisonrelayPostBodySegme
               key={i}
               className={BR_PROSE_CLASSES}
               dangerouslySetInnerHTML={{ __html: seg.html }}
+            />
+          );
+        }
+        if (seg.kind === 'embed' && seg.quote_from && seg.quote_post) {
+          return (
+            <QuoteEmbedCard
+              key={i}
+              from={seg.quote_from}
+              post={seg.quote_post}
+              alt={seg.alt}
+              resolved={seg.quote ?? { available: false }}
             />
           );
         }

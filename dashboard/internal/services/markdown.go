@@ -135,7 +135,26 @@ type BRPostBodySegment struct {
 	Download string `json:"download,omitempty"`
 	Cost     uint64 `json:"cost,omitempty"`
 	Filename string `json:"filename,omitempty"`
+	// QuoteFrom/QuotePost describe a quote-by-reference embed
+	// (--embed[type=quote,from=<uid>,post=<pid>]--, see
+	// docs/features/bison-relay-quote-embed.md). Both are 64-hex or empty.
+	// Quote carries the resolved quoted post, filled by the handler.
+	QuoteFrom string       `json:"quote_from,omitempty"`
+	QuotePost string       `json:"quote_post,omitempty"`
+	Quote     *BRQuoteInfo `json:"quote,omitempty"`
 }
+
+// BRQuoteInfo is the resolved target of a quote embed. Available is false
+// when the quoted post is not in the local store (unsubscribed author).
+type BRQuoteInfo struct {
+	Available  bool   `json:"available"`
+	AuthorNick string `json:"author_nick,omitempty"`
+	Title      string `json:"title,omitempty"`
+	Snippet    string `json:"snippet,omitempty"`
+}
+
+// brQuoteIDRe validates the quote reference ids.
+var brQuoteIDRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // brPostEmbedRE matches BR's --embed[k=v,k=v]-- (and the parallel
 // --download[...]-- chat-side tag, which we silently drop in posts).
@@ -195,14 +214,14 @@ type BRPageSegment struct {
 	// viewer can lay that contiguous run out in columns instead of stacking.
 	// Grid2 is the same idea for --grid2-- / --/grid2-- but a one-per-row blog
 	// layout (a wide row per item) rather than a multi-column grid.
-	Grid      bool   `json:"grid,omitempty"`
-	Grid2     bool   `json:"grid2,omitempty"`
-	HTML      string `json:"html,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Mime      string `json:"mime,omitempty"`
-	DataB64   string `json:"data_b64,omitempty"`
-	Size      int    `json:"size,omitempty"`
-	Alt       string `json:"alt,omitempty"`
+	Grid    bool   `json:"grid,omitempty"`
+	Grid2   bool   `json:"grid2,omitempty"`
+	HTML    string `json:"html,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Mime    string `json:"mime,omitempty"`
+	DataB64 string `json:"data_b64,omitempty"`
+	Size    int    `json:"size,omitempty"`
+	Alt     string `json:"alt,omitempty"`
 	// Download/Cost/Filename describe a file-transfer embed (see
 	// BRPostBodySegment): bytes are fetched over BR file transfer, not inline.
 	Download string            `json:"download,omitempty"`
@@ -426,7 +445,31 @@ func parseBREmbedTag(inner string) BRPostBodySegment {
 			}
 		case "filename":
 			seg.Filename = v
+		case "from":
+			if lv := strings.ToLower(v); brQuoteIDRe.MatchString(lv) {
+				seg.QuoteFrom = lv
+			}
+		case "post":
+			if lv := strings.ToLower(v); brQuoteIDRe.MatchString(lv) {
+				seg.QuotePost = lv
+			}
 		}
 	}
 	return seg
+}
+
+// BRQuoteSnippet reduces a post body to plain text for a quote card:
+// embed and download tags are stripped, whitespace is collapsed, and the
+// result is bounded. By construction nothing nested is ever resolved.
+func BRQuoteSnippet(main string, max int) string {
+	text := brPostEmbedRE.ReplaceAllString(main, " ")
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) > max {
+		cut := text[:max]
+		if i := strings.LastIndex(cut, " "); i > max/2 {
+			cut = cut[:i]
+		}
+		text = cut + "..."
+	}
+	return text
 }

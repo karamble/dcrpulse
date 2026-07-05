@@ -632,6 +632,15 @@ export interface BisonrelayPostSummary {
   first_image?: BisonrelayPostFirstImage | null;
 }
 
+// BisonrelayQuoteInfo is the resolved target of a quote embed; available
+// is false when the quoted post is not in the local store.
+export interface BisonrelayQuoteInfo {
+  available: boolean;
+  author_nick?: string;
+  title?: string;
+  snippet?: string;
+}
+
 export interface BisonrelayPostBodySegment {
   kind: 'text' | 'embed';
   html?: string;
@@ -644,7 +653,9 @@ export interface BisonrelayPostBodySegment {
   // bytes are fetched over BR's file transfer (paying cost), not inline.
   download?: string;
   cost?: number;
-  filename?: string;
+  filename?: string;  quote_from?: string;
+  quote_post?: string;
+  quote?: BisonrelayQuoteInfo;
 }
 
 export interface BisonrelayPostBody {

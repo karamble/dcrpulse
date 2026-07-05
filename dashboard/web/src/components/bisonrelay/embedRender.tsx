@@ -4,6 +4,7 @@
 
 import { Download, FileText } from 'lucide-react';
 import { EmbedSegment, embedFileUrl, formatBytes, isImageMime } from './embedParser';
+import { QuoteEmbedCard } from './QuoteEmbedCard';
 
 // ImageViewerOpenFn opens the shared image lightbox. Callers supply their own
 // opener: the chat reads it from context, the feed wraps its viewer state.
@@ -26,6 +27,9 @@ export const EmbedRenderer = ({
   embed: EmbedSegment;
   openViewer?: ImageViewerOpenFn | null;
 }) => {
+  if (embed.mime === 'quote' && embed.quoteFrom && embed.quotePost) {
+    return <QuoteEmbedCard from={embed.quoteFrom} post={embed.quotePost} alt={embed.alt} />;
+  }
   const inlineUrl = embed.dataB64 ? `data:${embed.mime};base64,${embed.dataB64}` : '';
   const fileUrl = inlineUrl || embedFileUrl(embed.localFilename);
   if (!fileUrl) {
