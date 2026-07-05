@@ -34,7 +34,6 @@ import {
 } from '../../services/api';
 import { getBisonrelayContacts, BisonrelayContact } from '../../services/bisonrelayApi';
 import { AgentSpendGrant } from './AgentSpendGrant';
-import { BrMcpSection } from './BrMcpSection';
 import { ConfigSection, domainLabel } from './ConfigSection';
 import { McpHelpModal } from './McpHelpModal';
 
@@ -660,8 +659,6 @@ export const AgentsSection = () => {
           )}
         </div>
       )}
-
-      <BrMcpSection />
     </div>
   );
 };
