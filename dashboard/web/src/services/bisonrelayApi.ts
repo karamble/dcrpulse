@@ -758,6 +758,10 @@ export interface BisonrelayPostComment {
   status_from: string;
   from_nick: string;
   comment: string;
+  // Server-rendered markdown of `comment`, split around --embed[...]-- tags
+  // (same pipeline as post bodies). Absent on an optimistic in-flight comment
+  // until the reload swaps in the server row.
+  segments?: BisonrelayPostBodySegment[] | null;
   // For a reply, the parent comment's status_id; absent for a top-level comment.
   // A reply nests under the comment whose status_id this matches.
   parent?: string;

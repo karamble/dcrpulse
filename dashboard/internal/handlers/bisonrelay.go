@@ -949,7 +949,60 @@ func BisonrelayPostCommentsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	_, _ = w.Write(renderCommentSegments(body))
+}
+
+// renderCommentSegments adds a rendered "segments" field to each comment,
+// mirroring how post bodies are rendered (services.SplitAndRenderBRPostBody):
+// the comment text is split around --embed[...]-- tags and the markdown between
+// them is rendered to sanitized HTML. It works on the raw brclientd JSON,
+// preserving every existing field (numeric precision included) by round-tripping
+// through json.RawMessage. Any parse failure returns the input unchanged so a
+// readable comment list is never lost to a render error.
+func renderCommentSegments(body []byte) []byte {
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal(body, &env); err != nil {
+		return body
+	}
+	rawComments, ok := env["comments"]
+	if !ok {
+		return body
+	}
+	var comments []json.RawMessage
+	if err := json.Unmarshal(rawComments, &comments); err != nil {
+		return body
+	}
+	for i, rc := range comments {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(rc, &m); err != nil {
+			return body
+		}
+		var text string
+		if err := json.Unmarshal(m["comment"], &text); err != nil {
+			continue
+		}
+		segs := services.SplitAndRenderBRPostBody(text)
+		segJSON, err := json.Marshal(segs)
+		if err != nil {
+			continue
+		}
+		m["segments"] = segJSON
+		merged, err := json.Marshal(m)
+		if err != nil {
+			return body
+		}
+		comments[i] = merged
+	}
+	mergedComments, err := json.Marshal(comments)
+	if err != nil {
+		return body
+	}
+	env["comments"] = mergedComments
+	out, err := json.Marshal(env)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // BisonrelayPostCommentHandler publishes a new comment on a post.

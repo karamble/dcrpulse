@@ -1536,20 +1536,69 @@ const PostComments = ({
 // only, so a base64 image embed is never split or hidden behind "show more".
 const CommentBody = ({
   text,
+  segments,
   openViewer,
 }: {
   text: string;
+  segments?: BisonrelayPostBodySegment[] | null;
   openViewer?: ImageViewerOpenFn | null;
 }) => {
   const [expanded, setExpanded] = useState(false);
-  const segments = useMemo(() => parseEmbeds(text), [text]);
-  const textLen = segments.reduce((n, s) => (s.kind === 'text' ? n + s.text.length : n), 0);
-  const overflow = textLen > MAX_COMMENT_CHARS;
+  const [viewer, setViewer] = useState<ViewerImage | null>(null);
+  // A long comment collapses behind Show more. With rendered HTML segments the
+  // text cannot be safely sliced, so the overflow is keyed off the raw length
+  // and clamped with a CSS max-height instead of cutting the markup.
+  const overflow = text.length > MAX_COMMENT_CHARS;
   const truncating = overflow && !expanded;
+
+  if (segments && segments.length > 0) {
+    return (
+      <div className="space-y-1">
+        <div
+          className={truncating ? 'relative max-h-72 overflow-hidden' : undefined}
+        >
+          <div className="space-y-2">
+            {segments.map((seg, i) =>
+              seg.kind === 'text' && seg.html ? (
+                <div
+                  key={i}
+                  className={BR_PROSE_CLASSES}
+                  dangerouslySetInnerHTML={{ __html: seg.html }}
+                />
+              ) : (
+                <PostSegmentEmbed key={i} seg={seg} onImage={setViewer} />
+              ),
+            )}
+          </div>
+          {truncating && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent" />
+          )}
+        </div>
+        {overflow && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-xs text-primary hover:underline"
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
+        )}
+        {viewer && <ImageViewerModal image={viewer} onClose={() => setViewer(null)} />}
+      </div>
+    );
+  }
+
+  // Fallback for an in-flight comment that has no server segments yet: the
+  // original client-side inline render (embeds + inline markdown), which the
+  // reload upgrades to full markdown once the server row arrives.
+  const inlineSegments = parseEmbeds(text);
+  const textLen = inlineSegments.reduce((n, s) => (s.kind === 'text' ? n + s.text.length : n), 0);
+  const inlineOverflow = textLen > MAX_COMMENT_CHARS;
+  const inlineTruncating = inlineOverflow && !expanded;
   let remaining = MAX_COMMENT_CHARS;
   return (
     <div className="space-y-1">
-      {segments.map((seg, i) => {
+      {inlineSegments.map((seg, i) => {
         if (seg.kind === 'embed') {
           return <EmbedRenderer key={i} embed={seg} openViewer={openViewer} />;
         }
@@ -1558,7 +1607,7 @@ const CommentBody = ({
         }
         let body = seg.text;
         let ellipsis = '';
-        if (truncating) {
+        if (inlineTruncating) {
           if (remaining <= 0) return null;
           if (body.length > remaining) {
             body = body.slice(0, remaining);
@@ -1574,7 +1623,7 @@ const CommentBody = ({
           </p>
         );
       })}
-      {overflow && (
+      {inlineOverflow && (
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -1749,7 +1798,7 @@ const CommentNode = ({
               </button>
             </div>
           </div>
-          <CommentBody text={comment.comment} openViewer={openViewer} />
+          <CommentBody text={comment.comment} segments={comment.segments} openViewer={openViewer} />
         </div>
       </div>
       {(isReplyTarget || safeChildren.length > 0) && (
@@ -1867,67 +1916,79 @@ const InlineReplyComposer = ({
   );
 };
 
+// PostSegmentEmbed renders a single non-text segment (quote / file-transfer /
+// inline data embed) from a server-rendered body. Shared by post bodies and
+// comments. onImage opens the caller's image viewer; uid is only needed for a
+// file-transfer download embed (never present in comment segments).
+const PostSegmentEmbed = ({
+  seg,
+  uid,
+  onImage,
+}: {
+  seg: BisonrelayPostBodySegment;
+  uid?: string;
+  onImage: (img: ViewerImage) => void;
+}) => {
+  if (seg.kind === 'embed' && seg.quote_from && seg.quote_post) {
+    return (
+      <QuoteEmbedCard
+        from={seg.quote_from}
+        post={seg.quote_post}
+        alt={seg.alt}
+        resolved={seg.quote ?? { available: false }}
+      />
+    );
+  }
+  if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
+    return uid ? <DownloadEmbed seg={seg} uid={uid} /> : null;
+  }
+  if (seg.kind === 'embed' && seg.data_b64) {
+    const isImage = isImageMime(seg.mime);
+    if (isImage) {
+      const src = `data:${seg.mime};base64,${seg.data_b64}`;
+      return (
+        <button
+          type="button"
+          onClick={() => onImage({ src, name: seg.name || seg.filename || 'image', mime: seg.mime || '' })}
+          className="block p-0 border-0 bg-transparent cursor-zoom-in"
+        >
+          <img
+            src={src}
+            alt={seg.alt || seg.name || ''}
+            className="rounded-lg border border-border/40 max-w-full h-auto"
+          />
+        </button>
+      );
+    }
+    const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
+    return (
+      <a
+        href={href}
+        download={seg.name || 'attachment'}
+        className="inline-block max-w-full break-words text-xs text-primary underline hover:no-underline"
+      >
+        {seg.name || 'attachment'} ({seg.mime || 'binary'})
+      </a>
+    );
+  }
+  return null;
+};
+
 const PostBodySegments = ({ segments, uid }: { segments: BisonrelayPostBodySegment[]; uid: string }) => {
   const [viewer, setViewer] = useState<ViewerImage | null>(null);
   return (
     <div className="space-y-3">
-      {segments.map((seg, i) => {
-        if (seg.kind === 'text' && seg.html) {
-          return (
-            <div
-              key={i}
-              className={BR_PROSE_CLASSES}
-              dangerouslySetInnerHTML={{ __html: seg.html }}
-            />
-          );
-        }
-        if (seg.kind === 'embed' && seg.quote_from && seg.quote_post) {
-          return (
-            <QuoteEmbedCard
-              key={i}
-              from={seg.quote_from}
-              post={seg.quote_post}
-              alt={seg.alt}
-              resolved={seg.quote ?? { available: false }}
-            />
-          );
-        }
-        if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
-          return <DownloadEmbed key={i} seg={seg} uid={uid} />;
-        }
-        if (seg.kind === 'embed' && seg.data_b64) {
-          const isImage = isImageMime(seg.mime);
-          if (isImage) {
-            const src = `data:${seg.mime};base64,${seg.data_b64}`;
-            return (
-              <button
-                key={i}
-                type="button"
-                onClick={() => setViewer({ src, name: seg.name || seg.filename || 'image', mime: seg.mime || '' })}
-                className="block p-0 border-0 bg-transparent cursor-zoom-in"
-              >
-                <img
-                  src={src}
-                  alt={seg.alt || seg.name || ''}
-                  className="rounded-lg border border-border/40 max-w-full h-auto"
-                />
-              </button>
-            );
-          }
-          const href = `data:${seg.mime || 'application/octet-stream'};base64,${seg.data_b64}`;
-          return (
-            <a
-              key={i}
-              href={href}
-              download={seg.name || 'attachment'}
-              className="inline-block max-w-full break-words text-xs text-primary underline hover:no-underline"
-            >
-              {seg.name || 'attachment'} ({seg.mime || 'binary'})
-            </a>
-          );
-        }
-        return null;
-      })}
+      {segments.map((seg, i) =>
+        seg.kind === 'text' && seg.html ? (
+          <div
+            key={i}
+            className={BR_PROSE_CLASSES}
+            dangerouslySetInnerHTML={{ __html: seg.html }}
+          />
+        ) : (
+          <PostSegmentEmbed key={i} seg={seg} uid={uid} onImage={setViewer} />
+        ),
+      )}
       {viewer && <ImageViewerModal image={viewer} onClose={() => setViewer(null)} />}
     </div>
   );
