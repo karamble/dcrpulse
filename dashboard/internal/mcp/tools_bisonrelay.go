@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -85,9 +86,11 @@ type brPostInput struct {
 }
 
 type brPmHistoryInput struct {
-	UID      string `json:"uid" jsonschema:"peer identity, hex"`
-	Page     int    `json:"page,omitempty" jsonschema:"page number, 0-based"`
-	PageSize int    `json:"pageSize,omitempty" jsonschema:"messages per page (default 50)"`
+	UID        string `json:"uid" jsonschema:"peer identity, hex"`
+	Page       int    `json:"page,omitempty" jsonschema:"page number, 0-based"`
+	PageSize   int    `json:"pageSize,omitempty" jsonschema:"messages per page (default 50)"`
+	Since      int64  `json:"since,omitempty" jsonschema:"only entries with timestamp >= this unix-seconds value; scans newest-first"`
+	OnlyEmbeds bool   `json:"onlyEmbeds,omitempty" jsonschema:"only entries carrying an --embed[...]-- tag (e.g. delivered images)"`
 }
 
 type brGCInput struct {
@@ -133,6 +136,19 @@ type brPageSaveInput struct {
 
 type brPageDeleteInput struct {
 	Name string `json:"name" jsonschema:"page name or relative path to delete"`
+}
+
+type brPageGetInput struct {
+	Name string `json:"name" jsonschema:"page name or relative path to read"`
+}
+
+type brEmbedGetInput struct {
+	Localfilename string `json:"localfilename" jsonschema:"received-embed reference exactly as PM history reports it: embeds/<uid16>/<file>"`
+}
+
+type brPageImportEmbedInput struct {
+	Source string `json:"source" jsonschema:"received-embed reference from PM history: embeds/<uid16>/<file>"`
+	Dest   string `json:"dest" jsonschema:"image path to create inside the pages directory, e.g. articles/img/hero.jpg"`
 }
 
 type brFileSendInput struct {
@@ -531,9 +547,35 @@ var bisonrelayTools = []toolDef{
 			return rpc.BrclientdRecentNotifications(ctx, n)
 		}),
 	readTool("bisonrelay", "br_pm_history",
-		"Get paginated private-message history with a contact. Requires 'uid'; optional page and pageSize (default 50).",
+		"Get paginated private-message history with a contact. Requires 'uid'; optional page and pageSize (default 50). Optional 'since' (unix seconds) and 'onlyEmbeds' filters scan newest-first and return only matching entries.",
 		func(ctx context.Context, in brPmHistoryInput) (any, error) {
-			return rpc.BrclientdHistoryPM(ctx, in.UID, in.Page, brPageSize(in.PageSize))
+			if in.Since <= 0 && !in.OnlyEmbeds {
+				return rpc.BrclientdHistoryPM(ctx, in.UID, in.Page, brPageSize(in.PageSize))
+			}
+			return filteredPMHistory(ctx, in)
+		}),
+	readTool("bisonrelay", "br_embed_get",
+		"Read a received chat embed image by the embeds/<uid16>/<file> localfilename PM history reports. Raster images only (jpeg/png/gif/webp).",
+		func(ctx context.Context, in brEmbedGetInput) (any, error) {
+			if !pageImageExtRE.MatchString(in.Localfilename) {
+				return nil, fmt.Errorf("not a raster image embed")
+			}
+			data, err := readChatEmbed(ctx, in.Localfilename)
+			if err != nil {
+				return nil, err
+			}
+			contentType := http.DetectContentType(data)
+			switch contentType {
+			case "image/jpeg", "image/png", "image/gif", "image/webp":
+			default:
+				return nil, fmt.Errorf("not a raster image embed")
+			}
+			return map[string]any{
+				"localfilename": in.Localfilename,
+				"contentType":   contentType,
+				"sizeBytes":     len(data),
+				"dataB64":       base64.StdEncoding.EncodeToString(data),
+			}, nil
 		}),
 	readTool("bisonrelay", "br_posts",
 		"Get the Bison Relay posts feed.",
@@ -574,6 +616,14 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_pages",
 		"List the markdown pages this node hosts over Bison Relay.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdPagesLocalList(ctx) }),
+	readTool("bisonrelay", "br_page_get",
+		"Read the raw markdown of one page this node hosts. Requires 'name'.",
+		func(ctx context.Context, in brPageGetInput) (any, error) {
+			if !safeBRName(in.Name) {
+				return nil, fmt.Errorf("invalid name")
+			}
+			return rpc.BrclientdPagesLocalFile(ctx, in.Name)
+		}),
 	readTool("bisonrelay", "br_rates",
 		"Get the latest DCR/USD and BTC/USD exchange rates known to brclientd.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdRates(ctx) }),
@@ -813,6 +863,31 @@ var bisonrelayTools = []toolDef{
 			}
 			recordSpend(a, "br_page_save", 0, 0, in.Name, "ok", "")
 			return map[string]any{"name": in.Name, "ok": true}, nil
+		}),
+	agentTool("bisonrelay", "br_page_import_embed",
+		"Copy a received chat embed image into the pages directory server-side, so a page can reference it via an embed localfilename without the bytes transiting the agent. Imported assets cannot be deleted via MCP. Requires a grant with Bison Relay write enabled.",
+		func(ctx context.Context, a *agent, in brPageImportEmbedInput) (any, error) {
+			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
+				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "denied", err.Error())
+				return nil, err
+			}
+			if !chatEmbedRE.MatchString(in.Source) || strings.Contains(in.Source, "..") {
+				err := fmt.Errorf("invalid source: must be embeds/<uid16>/<file>")
+				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "error", err.Error())
+				return nil, err
+			}
+			if !safeBRName(in.Dest) || !pageImageExtRE.MatchString(in.Dest) {
+				err := fmt.Errorf("invalid dest: must be an image path (jpg/jpeg/jfif/png/gif/webp) inside the pages directory")
+				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "error", err.Error())
+				return nil, err
+			}
+			res, err := rpc.BrclientdPagesImportEmbed(ctx, map[string]any{"source": in.Source, "dest": in.Dest})
+			if err != nil {
+				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "ok", "")
+			return res, nil
 		}),
 	agentTool("bisonrelay", "br_page_delete",
 		"Delete a hosted Bison Relay page by name. Requires a grant with Bison Relay write enabled.",
@@ -1620,6 +1695,115 @@ func buildImageEmbedBody(relPath, message, mimeOverride string) (string, error) 
 		return tag, nil
 	}
 	return message + "\n" + tag, nil
+}
+
+// chatEmbedRE matches the localfilename form PM history uses for a received
+// chat embed: embeds/<16-hex ShortLogID>/<file>. The file segment has no
+// separators, so a match names exactly one file in one peer's embed folder.
+var chatEmbedRE = regexp.MustCompile(`^embeds/([0-9a-f]{16})/([A-Za-z0-9._-]+)$`)
+
+// pageImageExtRE is the raster set a page may embed (and br_embed_get may
+// serve); mirrors brclientd's pageAssetNameRE extension set.
+var pageImageExtRE = regexp.MustCompile(`\.(?:jpg|jpeg|jfif|png|gif|webp)$`)
+
+// maxEmbedGetBytes bounds br_embed_get reads; BR transport cannot deliver
+// larger embeds and the cap also protects the agent's context window.
+const maxEmbedGetBytes = 4 << 20
+
+// readChatEmbed reads a received chat embed strictly inside brclientd's
+// embeds store (mounted read-only). The regex is the first gate; os.Root
+// makes traversal and symlink escape impossible even past it.
+func readChatEmbed(ctx context.Context, localfilename string) ([]byte, error) {
+	m := chatEmbedRE.FindStringSubmatch(localfilename)
+	if m == nil || strings.Contains(localfilename, "..") {
+		return nil, fmt.Errorf("localfilename must be embeds/<uid16>/<file>")
+	}
+	network, _ := services.CurrentNetwork(ctx)
+	if network == "" {
+		network = "mainnet"
+	}
+	root, err := os.OpenRoot(services.BrclientdEmbedsDir(network))
+	if err != nil {
+		return nil, fmt.Errorf("embeds store unavailable: %w", err)
+	}
+	defer root.Close()
+	rel := m[1] + "/" + m[2]
+	fi, err := root.Lstat(rel)
+	if err != nil {
+		return nil, fmt.Errorf("embed not found")
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("embed is not a regular file")
+	}
+	if fi.Size() > maxEmbedGetBytes {
+		return nil, fmt.Errorf("embed exceeds %d bytes", maxEmbedGetBytes)
+	}
+	f, err := root.Open(rel)
+	if err != nil {
+		return nil, fmt.Errorf("open embed: %w", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxEmbedGetBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read embed: %w", err)
+	}
+	if len(data) > maxEmbedGetBytes {
+		return nil, fmt.Errorf("embed exceeds %d bytes", maxEmbedGetBytes)
+	}
+	return data, nil
+}
+
+// filteredPMHistory scans PM history newest-first (page 0 is the newest) and
+// returns the entries matching the since/onlyEmbeds filters. The scan is
+// bounded so a filter cannot walk an arbitrarily long history; sparse pages
+// (envelope frames are dropped server-side after pagination) are not treated
+// as the end of history.
+func filteredPMHistory(ctx context.Context, in brPmHistoryInput) (any, error) {
+	const maxPages = 10
+	pageSize := brPageSize(in.PageSize)
+	out := make([]map[string]any, 0)
+	pages := 0
+	for page := 0; page < maxPages; page++ {
+		raw, err := rpc.BrclientdHistoryPM(ctx, in.UID, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		var h struct {
+			Entries []map[string]any `json:"entries"`
+		}
+		if err := json.Unmarshal(raw, &h); err != nil {
+			return nil, fmt.Errorf("decode history: %w", err)
+		}
+		pages++
+		if len(h.Entries) == 0 {
+			break
+		}
+		olderSeen := false
+		for _, e := range h.Entries {
+			ts, _ := e["timestamp"].(float64)
+			if in.Since > 0 && int64(ts) < in.Since {
+				olderSeen = true
+				continue
+			}
+			if in.OnlyEmbeds {
+				msg, _ := e["message"].(string)
+				if !strings.Contains(msg, "--embed[") {
+					continue
+				}
+			}
+			out = append(out, e)
+		}
+		if olderSeen {
+			break
+		}
+	}
+	return map[string]any{
+		"uid":          in.UID,
+		"entries":      out,
+		"pagesScanned": pages,
+		"since":        in.Since,
+		"onlyEmbeds":   in.OnlyEmbeds,
+	}, nil
 }
 
 // safeBRName mirrors the dashboard handlers' safeBRPath guard for page,

@@ -4,7 +4,10 @@
 
 package main
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // discovered holds live identifiers harvested from earlier read calls so that
 // parameter-taking read tools can be exercised with real values instead of
@@ -25,6 +28,8 @@ type discovered struct {
 	propToken   string // Politeia proposal token (governance_proposals)
 	dexHost     string // a configured DEX server host (dex_exchanges)
 	tsDigest    string // a sha256 hex digest of a timestamp record (timestamp_records)
+	pageName    string // a hosted page name (br_pages)
+	embedRef    string // a received-embed localfilename (br_pm_history messages)
 }
 
 type toolKind int
@@ -51,6 +56,10 @@ type spec struct {
 	denial string
 	note   string
 }
+
+// embedRefRE extracts a received-embed localfilename from a PM message so
+// br_embed_get can be exercised against a real delivered embed.
+var embedRefRE = regexp.MustCompile(`embeds/[0-9a-f]{16}/[A-Za-z0-9._-]+`)
 
 // placeholder values for spend gating: they only need to satisfy each tool's
 // input schema and reach the grant check, which refuses before anything moves.
@@ -383,6 +392,12 @@ var catalog = []spec{
 	rd("bisonrelay", "br_store"),
 	rd("bisonrelay", "br_store_products"),
 	rd("bisonrelay", "br_pages"),
+	rdArgs("bisonrelay", "br_page_get", func(d *discovered) (map[string]any, bool) {
+		if d.pageName == "" {
+			return nil, false
+		}
+		return map[string]any{"name": d.pageName}, true
+	}),
 	rd("bisonrelay", "br_downloads"),
 	rd("bisonrelay", "br_store_files"),
 	rdArgs("bisonrelay", "br_store_file_get", func(*discovered) (map[string]any, bool) { return nil, false }),
@@ -393,6 +408,12 @@ var catalog = []spec{
 			return nil, false
 		}
 		return map[string]any{"uid": d.uid}, true
+	}),
+	rdArgs("bisonrelay", "br_embed_get", func(d *discovered) (map[string]any, bool) {
+		if d.embedRef == "" {
+			return nil, false
+		}
+		return map[string]any{"localfilename": d.embedRef}, true
 	}),
 	rdArgs("bisonrelay", "br_resolve_nick", func(d *discovered) (map[string]any, bool) {
 		if d.nick == "" {
@@ -679,6 +700,9 @@ var catalog = []spec{
 	sp("bisonrelay", "br_page_save", "no spend grant", "", func(*discovered) map[string]any {
 		return map[string]any{"name": "mcptest", "content": "mcptest"}
 	}),
+	sp("bisonrelay", "br_page_import_embed", "no spend grant", "", func(*discovered) map[string]any {
+		return map[string]any{"source": "embeds/0000000000000000/mcptest.jpg", "dest": "articles/img/mcptest.jpg"}
+	}),
 	sp("bisonrelay", "br_page_delete", "no spend grant", "", func(*discovered) map[string]any {
 		return map[string]any{"name": "mcptest"}
 	}),
@@ -827,6 +851,17 @@ func absorb(d *discovered, name string, data any) {
 	case "br_contacts", "br_identity":
 		if d.uid == "" {
 			d.uid = findString(data, isHex64, "uid", "id", "identity", "pubkey")
+		}
+	case "br_pages":
+		if d.pageName == "" {
+			d.pageName = findString(data, func(s string) bool { return strings.HasSuffix(s, ".md") }, "name")
+		}
+	case "br_pm_history":
+		if d.embedRef == "" {
+			msg := findString(data, func(s string) bool { return strings.Contains(s, "localfilename=embeds/") }, "message")
+			if m := embedRefRE.FindString(msg); m != "" {
+				d.embedRef = m
+			}
 		}
 		if name == "br_contacts" {
 			if d.nick == "" {

@@ -39,13 +39,25 @@ func TestToolInputOptionalParams(t *testing.T) {
 		t.Errorf("br_groupchat_history: page/pageSize should be optional, required=%v", gc)
 	}
 
-	// PM history: uid required, paging optional.
+	// PM history: uid required, paging and filters optional.
 	pm := requiredSet[brPmHistoryInput](t)
 	if !pm["uid"] {
 		t.Error("br_pm_history: uid should be required")
 	}
-	if pm["page"] || pm["pageSize"] {
-		t.Errorf("br_pm_history: page/pageSize should be optional, required=%v", pm)
+	if pm["page"] || pm["pageSize"] || pm["since"] || pm["onlyEmbeds"] {
+		t.Errorf("br_pm_history: page/pageSize/since/onlyEmbeds should be optional, required=%v", pm)
+	}
+
+	// Embed and page reads need their reference.
+	if !requiredSet[brEmbedGetInput](t)["localfilename"] {
+		t.Error("br_embed_get: localfilename should be required")
+	}
+	if !requiredSet[brPageGetInput](t)["name"] {
+		t.Error("br_page_get: name should be required")
+	}
+	ie := requiredSet[brPageImportEmbedInput](t)
+	if !ie["source"] || !ie["dest"] {
+		t.Errorf("br_page_import_embed: source and dest should be required, required=%v", ie)
 	}
 
 	// Fully-optional inputs should require nothing.
