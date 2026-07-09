@@ -3,6 +3,7 @@ import { toYMD } from '../utils/date';
 import { Link } from 'react-router-dom';
 import {
   ArrowDownCircle,
+  ArrowLeftRight,
   ArrowUpCircle,
   ArrowRight,
   BadgeDollarSign,
@@ -12,6 +13,7 @@ import {
   Shuffle,
   Ticket,
   X,
+  Zap,
 } from 'lucide-react';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
 import { calculateTicketMaturity } from '../services/ticketService';
@@ -24,10 +26,12 @@ const categoryIcon = (tx: WalletTransaction) => {
   if (txType === 'ticket') return <Ticket className="h-4 w-4 text-warning" />;
   if (txType === 'vote') return <Check className="h-4 w-4 text-success" />;
   if (txType === 'revocation') return <X className="h-4 w-4 text-destructive" />;
+  if (tx.isChannelFunding || tx.isChannelClose) return <Zap className="h-4 w-4 text-warning" />;
   if (category === 'vspfee') return <BadgeDollarSign className="h-4 w-4 text-orange-500" />;
   if (category === 'coinjoin' || isMixed) return <Shuffle className="h-4 w-4 text-purple-500" />;
   if (category === 'send') return <ArrowUpCircle className="h-4 w-4 text-red-500" />;
   if (category === 'receive') return <ArrowDownCircle className="h-4 w-4 text-success" />;
+  if (category === 'self') return <ArrowLeftRight className="h-4 w-4 text-muted-foreground" />;
   if (category === 'generate') return <Coins className="h-4 w-4 text-primary" />;
   return <Coins className="h-4 w-4 text-muted-foreground" />;
 };
@@ -37,10 +41,13 @@ const categoryLabel = (tx: WalletTransaction) => {
   if (txType === 'ticket') return 'Ticket Purchase';
   if (txType === 'vote') return 'Vote';
   if (txType === 'revocation') return 'Revocation';
+  if (tx.isChannelFunding) return 'Channel Open';
+  if (tx.isChannelClose) return 'Channel Close';
   if (category === 'vspfee') return 'VSP Fee';
   if (category === 'coinjoin') return 'CoinJoin';
   if (category === 'send') return isMixed ? 'Sent (CoinJoin)' : 'Sent';
   if (category === 'receive') return isMixed ? 'Received (CoinJoin)' : 'Received';
+  if (category === 'self') return 'Self Transfer';
   if (category === 'generate') return 'Mined';
   return 'Transaction';
 };
@@ -59,9 +66,9 @@ const amountColor = (tx: WalletTransaction) => {
 const formatAmount = (amount: number) => {
   const abs = Math.abs(amount);
   const sign = amount < 0 ? '-' : '+';
-  // Small amounts (e.g. CoinJoin fees ~0.00002530 DCR) need more decimals
-  // to be visible; larger transfers stay readable at 4.
-  const decimals = abs > 0 && abs < 0.0001 ? 8 : 4;
+  // Fee-sized amounts (CoinJoin fees, self-transfer fees ~0.0001 DCR) need
+  // more decimals to be visible; larger transfers stay readable at 4.
+  const decimals = abs > 0 && abs < 0.001 ? 8 : 4;
   return `${sign}${abs.toFixed(decimals)} DCR`;
 };
 

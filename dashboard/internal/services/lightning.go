@@ -502,6 +502,59 @@ func pendingChannelRow(c *lnrpc.PendingChannelsResponse_PendingChannel, status, 
 	}
 }
 
+// lightningChannelTxIDs returns the funding and closing transaction IDs of
+// every channel dcrlnd knows about (open, pending, closed), used to tag
+// wallet-history rows. Best-effort: an unavailable dcrlnd or a failing RPC
+// yields empty maps rather than an error.
+func lightningChannelTxIDs(ctx context.Context) (funding, closing map[string]bool) {
+	funding = make(map[string]bool)
+	closing = make(map[string]bool)
+	if rpc.LightningClient == nil {
+		return funding, closing
+	}
+
+	addFunding := func(channelPoint string) {
+		if txid, _, err := splitChannelPoint(channelPoint); err == nil {
+			funding[txid] = true
+		}
+	}
+	addClosing := func(txid string) {
+		if txid != "" {
+			closing[txid] = true
+		}
+	}
+
+	if resp, err := rpc.LightningClient.ListChannels(ctx, &lnrpc.ListChannelsRequest{}); err == nil {
+		for _, c := range resp.GetChannels() {
+			addFunding(c.GetChannelPoint())
+		}
+	}
+	if resp, err := rpc.LightningClient.PendingChannels(ctx, &lnrpc.PendingChannelsRequest{}); err == nil {
+		for _, p := range resp.GetPendingOpenChannels() {
+			addFunding(p.GetChannel().GetChannelPoint())
+		}
+		for _, p := range resp.GetPendingClosingChannels() {
+			addFunding(p.GetChannel().GetChannelPoint())
+			addClosing(p.GetClosingTxid())
+		}
+		for _, p := range resp.GetPendingForceClosingChannels() {
+			addFunding(p.GetChannel().GetChannelPoint())
+			addClosing(p.GetClosingTxid())
+		}
+		for _, p := range resp.GetWaitingCloseChannels() {
+			addFunding(p.GetChannel().GetChannelPoint())
+			addClosing(p.GetClosingTxid())
+		}
+	}
+	if resp, err := rpc.LightningClient.ClosedChannels(ctx, &lnrpc.ClosedChannelsRequest{}); err == nil {
+		for _, c := range resp.GetChannels() {
+			addFunding(c.GetChannelPoint())
+			addClosing(c.GetClosingTxHash())
+		}
+	}
+	return funding, closing
+}
+
 // OpenLightningChannel parses the user-supplied peer URI (`pubkey` or
 // `pubkey@host:port`), runs ConnectPeer when an address is present, and
 // then OpenChannelSync. Decrediton's flow at LNActions.js:775-851 uses

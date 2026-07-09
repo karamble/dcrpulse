@@ -75,6 +75,8 @@ type Transaction struct {
 	BlockHeight          int64     `json:"blockHeight,omitempty"`          // Confirmed block height
 	IsTicketMature       bool      `json:"isTicketMature,omitempty"`       // Vote: passed 256-block maturity
 	BlocksUntilSpendable int64     `json:"blocksUntilSpendable,omitempty"` // Vote: blocks until spendable
+	IsChannelFunding     bool      `json:"isChannelFunding,omitempty"`     // LN channel open funding tx
+	IsChannelClose       bool      `json:"isChannelClose,omitempty"`       // LN channel close settlement
 }
 
 type TransactionListResponse struct {

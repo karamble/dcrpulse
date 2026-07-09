@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -1167,17 +1168,20 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				blockHeight = currentHeight - rpcTx.Confirmations + 1
 			}
 
-			// Determine category from net amount for regular txs
+			// Determine category from net amount for regular txs. The net
+			// is compared against half an atom rather than exact zero:
+			// float summation across multi-output transfers can leave
+			// sub-atom residue, while any real movement is at least one atom.
 			category := rpcTx.Category
 			if rpcTx.TxType == "regular" {
 				if isMixed {
 					category = "coinjoin"
+				} else if math.Abs(netAmount) < 5e-9 {
+					category = "self"
 				} else if netAmount > 0 {
 					category = "receive"
-				} else if netAmount < 0 {
-					category = "send"
 				} else {
-					category = "self"
+					category = "send"
 				}
 			}
 
@@ -1185,6 +1189,19 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 			var fee float64 = 0
 			if isMixed && netAmount < 0 {
 				fee = -netAmount
+			}
+
+			// Intra-wallet transfer: every output returns to the wallet, so
+			// the wallet's true delta is just the fee, which dcrwallet
+			// attaches (negative) to the debit-side entries.
+			if category == "self" {
+				for _, idx := range group.Entries {
+					if f := rpcTransactions[idx].Fee; f != 0 {
+						fee = math.Abs(f)
+						break
+					}
+				}
+				netAmount = -fee
 			}
 
 			// Vote maturity: a vote's returned stake + reward matures over 256
@@ -1351,6 +1368,22 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 			transactions[i].Category = "vspfee"
 			transactions[i].IsVSPFee = true
 			transactions[i].RelatedTicket = relatedTicket
+		}
+	}
+
+	// Tag Lightning channel funding/close transactions: on-chain they are
+	// indistinguishable from external sends/receives (a funding output is a
+	// 2-of-2 script the wallet does not own), so cross-reference dcrlnd's
+	// channel list.
+	fundingTxs, closingTxs := lightningChannelTxIDs(ctx)
+	if len(fundingTxs) > 0 || len(closingTxs) > 0 {
+		for i := range transactions {
+			switch transactions[i].Category {
+			case "send":
+				transactions[i].IsChannelFunding = fundingTxs[transactions[i].TxID]
+			case "receive":
+				transactions[i].IsChannelClose = closingTxs[transactions[i].TxID]
+			}
 		}
 	}
 

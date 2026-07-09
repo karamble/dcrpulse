@@ -240,6 +240,8 @@ export interface WalletTransaction {
   blockHeight?: number;         // Block height where transaction was confirmed
   isTicketMature?: boolean;     // For votes: whether the 256-block maturity period has passed
   blocksUntilSpendable?: number; // For votes: remaining blocks until funds are spendable (0 if already spendable)
+  isChannelFunding?: boolean;   // LN channel open funding tx
+  isChannelClose?: boolean;     // LN channel close settlement
 }
 
 export interface TransactionListResponse {

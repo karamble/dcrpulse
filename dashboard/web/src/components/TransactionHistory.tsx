@@ -8,7 +8,7 @@ import { Link } from 'react-router-dom';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
 import { calculateTicketMaturity } from '../services/ticketService';
 import { MaturityBar } from './MaturityBar';
-import { ArrowDownCircle, ArrowUpCircle, Ticket, Check, X, Coins, Clock, ChevronDown, ChevronUp, Shuffle, BadgeDollarSign } from 'lucide-react';
+import { ArrowDownCircle, ArrowLeftRight, ArrowUpCircle, Ticket, Check, X, Coins, Clock, ChevronDown, ChevronUp, Shuffle, BadgeDollarSign, Zap } from 'lucide-react';
 
 export const TransactionHistory = () => {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
@@ -75,31 +75,40 @@ export const TransactionHistory = () => {
     return count.toString();
   };
 
-  const getCategoryIcon = (category: string, txType: string, isMixed: boolean) => {
+  const getCategoryIcon = (tx: WalletTransaction) => {
+    const { category, txType } = tx;
+    const isMixed = tx.isMixed || false;
     if (txType === 'ticket') return <Ticket className="h-5 w-5 text-warning" />;
     if (txType === 'vote') return <Check className="h-5 w-5 text-success" />;
     if (txType === 'revocation') return <X className="h-5 w-5 text-destructive" />;
+    if (tx.isChannelFunding || tx.isChannelClose) return <Zap className="h-5 w-5 text-warning" />;
     if (category === 'vspfee') return <BadgeDollarSign className="h-5 w-5 text-orange-500" />;
     if (category === 'coinjoin') return <Shuffle className="h-5 w-5 text-purple-500" />;
     if (category === 'send' && isMixed) return <Shuffle className="h-5 w-5 text-purple-500" />;
     if (category === 'send') return <ArrowUpCircle className="h-5 w-5 text-red-500" />;
     if (category === 'receive' && isMixed) return <Shuffle className="h-5 w-5 text-purple-500" />;
     if (category === 'receive') return <ArrowDownCircle className="h-5 w-5 text-success" />;
+    if (category === 'self') return <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />;
     if (category === 'generate') return <Coins className="h-5 w-5 text-primary" />;
     if (category === 'immature') return <Clock className="h-5 w-5 text-muted-foreground" />;
     return <Coins className="h-5 w-5 text-muted-foreground" />;
   };
 
-  const getCategoryLabel = (category: string, txType: string, isMixed: boolean) => {
+  const getCategoryLabel = (tx: WalletTransaction) => {
+    const { category, txType } = tx;
+    const isMixed = tx.isMixed || false;
     if (txType === 'ticket') return 'Ticket Purchase';
     if (txType === 'vote') return 'Vote';
     if (txType === 'revocation') return 'Revocation';
+    if (tx.isChannelFunding) return 'Channel Open';
+    if (tx.isChannelClose) return 'Channel Close';
     if (category === 'vspfee') return 'VSP Fee';
     if (category === 'coinjoin') return 'CoinJoin';
     if (category === 'send' && isMixed) return 'Sent (CoinJoin)';
     if (category === 'send') return 'Sent';
     if (category === 'receive' && isMixed) return 'Received (CoinJoin)';
     if (category === 'receive') return 'Received';
+    if (category === 'self') return 'Self Transfer';
     if (category === 'generate') return 'Mined';
     if (category === 'immature') return 'Immature';
     return 'Transaction';
@@ -455,12 +464,12 @@ export const TransactionHistory = () => {
           >
             <div className="flex items-center gap-4 flex-1 min-w-0">
               <div className="flex-shrink-0">
-                {getCategoryIcon(tx.category, tx.txType, tx.isMixed || false)}
+                {getCategoryIcon(tx)}
               </div>
-              
+
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="font-medium">{getCategoryLabel(tx.category, tx.txType, tx.isMixed || false)}</span>
+                  <span className="font-medium">{getCategoryLabel(tx)}</span>
                   {tx.account && (
                     <span className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">
                       {tx.account}
