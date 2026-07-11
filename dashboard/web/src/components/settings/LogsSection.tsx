@@ -12,6 +12,7 @@ const components: { value: LogComponent; label: string }[] = [
   { value: 'dcrlnd', label: 'dcrlnd' },
   { value: 'brclientd', label: 'brclientd' },
   { value: 'dcrdex', label: 'dcrdex' },
+  { value: 'tor', label: 'tor' },
 ];
 
 const lineOptions = [200, 500, 1000, 2000];
@@ -101,8 +102,11 @@ export const LogsSection = () => {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Read-only tail of the {component} log file under <span className="font-mono">/app-data/{component}/logs/</span>.
-        Logs are written by the {component} container; the dashboard does not interpret them.
+        Read-only tail of the {component} log file under{' '}
+        <span className="font-mono">
+          {component === 'tor' ? '/app-data/tor/tor.log' : `/app-data/${component}/logs/`}
+        </span>
+        . Logs are written by the {component} container; the dashboard does not interpret them.
       </p>
 
       {error && (

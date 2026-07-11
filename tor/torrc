@@ -4,6 +4,8 @@
 
 SocksPort 0.0.0.0:9050
 ControlPort 0.0.0.0:9051
+Log notice file /data/tor.log
+Log notice stdout
 CookieAuthentication 1
 CookieAuthFile /data/control_auth_cookie
 CookieAuthFileGroupReadable 1

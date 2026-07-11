@@ -24,6 +24,7 @@ const (
 	LogComponentDcrlnd    LogComponent = "dcrlnd"
 	LogComponentBrclientd LogComponent = "brclientd"
 	LogComponentDcrdex    LogComponent = "dcrdex"
+	LogComponentTor       LogComponent = "tor"
 )
 
 const (
@@ -51,6 +52,10 @@ func logPath(component LogComponent, network, wallet string) (string, error) {
 	case LogComponentDcrdex:
 		// bisonw writes its app log to <appdata>/<network>/logs/dexc.log.
 		return filepath.Join(config.DcrdexDir(wallet), network, "logs", "dexc.log"), nil
+	case LogComponentTor:
+		// The tor sidecar has no network or wallet dimension; torrc logs
+		// straight into its DataDirectory volume.
+		return filepath.Join(logsRoot, "tor", "tor.log"), nil
 	default:
 		return "", fmt.Errorf("unknown log component: %q", component)
 	}
