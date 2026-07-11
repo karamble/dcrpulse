@@ -61,7 +61,7 @@ export const formatDownloadBytes = (n: number): string => {
 // showing the actual price. While in flight we poll the downloads list for
 // progress; on completion the bytes load from the dashboard's /content/file
 // proxy - images render inline, other types as a download link.
-export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string }) => {
+export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: string; self?: boolean }) => {
   const fid = seg.download || '';
   const filename = seg.filename || seg.name || 'file';
   const cost = seg.cost || 0;
@@ -231,6 +231,17 @@ export const DownloadEmbed = ({ seg, uid }: { seg: DownloadEmbedSeg; uid: string
   const meta = [filename, seg.size ? formatDownloadBytes(seg.size) : '', cost > 0 ? costLabel : 'free']
     .filter(Boolean)
     .join(' · ');
+
+  // Our own share: BR cannot fetch a file from ourselves, so render the
+  // advertisement without a download action.
+  if (self) {
+    return (
+      <div className="rounded-lg border border-border/50 bg-background/40 p-3 text-sm space-y-1">
+        <div className="text-xs text-muted-foreground break-words" title={usdTitle}>{meta}</div>
+        <div className="text-xs text-muted-foreground">Your shared file</div>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-lg border border-border/50 bg-background/40 p-3 text-sm space-y-2">

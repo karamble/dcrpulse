@@ -2175,7 +2175,11 @@ const MessageList = ({
                 {startOfRun && !own && (
                   <p className="text-[10px] font-medium text-muted-foreground mb-0.5">{m.from}</p>
                 )}
-                <MessageBody body={m.message} />
+                <MessageBody
+                  body={m.message}
+                  senderUid={own ? '' : sender?.id?.identity ?? (isGroup ? '' : mediatorUid)}
+                  senderSelf={own}
+                />
                 <p className="text-[10px] text-muted-foreground mt-0.5">
                   <span title={toYMDTime(new Date(m.timestamp * 1000))}>
                     {new Date(m.timestamp * 1000).toLocaleTimeString([], {
@@ -2769,7 +2773,17 @@ const ContactAvatar = ({ contact, nick }: { contact: BisonrelayContact; nick: st
 
 const SENT_FILE_RE = /^Sent file "(.+)"(?:\s*\(([^)]*)\))?\s*$/;
 
-const MessageBody = ({ body }: { body: string }) => {
+const MessageBody = ({
+  body,
+  senderUid,
+  senderSelf,
+}: {
+  body: string;
+  // Sender identity for download= (shared file) embeds: who to fetch the
+  // file from. senderSelf marks our own messages (own share, nothing to fetch).
+  senderUid?: string;
+  senderSelf?: boolean;
+}) => {
   const openViewer = useContext(ImageViewerCtx);
   const trimmed = body.trim();
   const sent = trimmed.match(SENT_FILE_RE);
@@ -2784,20 +2798,36 @@ const MessageBody = ({ body }: { body: string }) => {
       <div>
         <QuoteBlock nick={quote.nick} text={quote.text} openViewer={openViewer ?? undefined} />
         {quote.rest.trim() !== '' && (
-          <MessageBodySegments body={quote.rest} openViewer={openViewer ?? undefined} />
+          <MessageBodySegments
+            body={quote.rest}
+            openViewer={openViewer ?? undefined}
+            senderUid={senderUid}
+            senderSelf={senderSelf}
+          />
         )}
       </div>
     );
   }
-  return <MessageBodySegments body={body} openViewer={openViewer ?? undefined} />;
+  return (
+    <MessageBodySegments
+      body={body}
+      openViewer={openViewer ?? undefined}
+      senderUid={senderUid}
+      senderSelf={senderSelf}
+    />
+  );
 };
 
 const MessageBodySegments = ({
   body,
   openViewer,
+  senderUid,
+  senderSelf,
 }: {
   body: string;
   openViewer?: ImageViewerOpenFn;
+  senderUid?: string;
+  senderSelf?: boolean;
 }) => {
   const segments = parseEmbeds(body);
   return (
@@ -2812,7 +2842,15 @@ const MessageBodySegments = ({
           );
         }
         if (seg.kind === 'embed') {
-          return <EmbedRenderer key={i} embed={seg} openViewer={openViewer} />;
+          return (
+            <EmbedRenderer
+              key={i}
+              embed={seg}
+              openViewer={openViewer}
+              downloadUid={senderUid}
+              downloadSelf={senderSelf}
+            />
+          );
         }
         return <DownloadRenderer key={i} download={seg} />;
       })}

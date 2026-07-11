@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Download, FileText } from 'lucide-react';
+import { DownloadEmbed } from './DownloadEmbed';
 import { EmbedSegment, embedFileUrl, formatBytes, isImageMime } from './embedParser';
 import { QuoteEmbedCard } from './QuoteEmbedCard';
 
@@ -23,12 +24,22 @@ const MAX_INLINE_RENDER_BYTES = 4 * 1024 * 1024;
 export const EmbedRenderer = ({
   embed,
   openViewer,
+  downloadUid,
+  downloadSelf,
 }: {
   embed: EmbedSegment;
   openViewer?: ImageViewerOpenFn | null;
+  // Host to fetch a download= (shared file) embed from; without it such an
+  // embed falls back to the not-available line. downloadSelf marks the embed
+  // as referencing our own share (rendered inertly, nothing to fetch).
+  downloadUid?: string;
+  downloadSelf?: boolean;
 }) => {
   if (embed.mime === 'quote' && embed.quoteFrom && embed.quotePost) {
     return <QuoteEmbedCard from={embed.quoteFrom} post={embed.quotePost} alt={embed.alt} />;
+  }
+  if (embed.download && !embed.dataB64 && (downloadSelf || downloadUid)) {
+    return <DownloadEmbed seg={embed} uid={downloadUid ?? ''} self={downloadSelf} />;
   }
   const inlineUrl = embed.dataB64 ? `data:${embed.mime};base64,${embed.dataB64}` : '';
   const fileUrl = inlineUrl || embedFileUrl(embed.localFilename);

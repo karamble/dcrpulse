@@ -1168,7 +1168,13 @@ const PostDetailView = ({
       </article>
       {body && (
         <section className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5">
-          <PostComments authorId={uid} pid={pid} avatars={avatars} isOwnPost={isOwnPost} />
+          <PostComments
+            authorId={uid}
+            pid={pid}
+            avatars={avatars}
+            isOwnPost={isOwnPost}
+            ownUid={ownUid}
+          />
         </section>
       )}
       {isOwnPost && (receipts.length > 0 || heartedBy.length > 0) && (
@@ -1300,11 +1306,13 @@ const PostComments = ({
   pid,
   avatars,
   isOwnPost,
+  ownUid,
 }: {
   authorId: string;
   pid: string;
   avatars: Record<string, string>;
   isOwnPost: boolean;
+  ownUid: string;
 }) => {
   const [comments, setComments] = useState<BisonrelayPostComment[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -1467,6 +1475,7 @@ const PostComments = ({
               onSubmitReply={submitComment}
               submitting={submitting}
               openViewer={openViewer}
+              ownUid={ownUid}
             />
           ))}
           {!showAllRoots && tree.roots.length > MAX_ROOTS_SHOWN && (
@@ -1538,10 +1547,16 @@ const CommentBody = ({
   text,
   segments,
   openViewer,
+  downloadUid,
+  downloadSelf,
 }: {
   text: string;
   segments?: BisonrelayPostBodySegment[] | null;
   openViewer?: ImageViewerOpenFn | null;
+  // Commenter identity for download= (shared file) embeds: the host to fetch
+  // from. downloadSelf marks our own comments (own share, nothing to fetch).
+  downloadUid?: string;
+  downloadSelf?: boolean;
 }) => {
   const [expanded, setExpanded] = useState(false);
   const [viewer, setViewer] = useState<ViewerImage | null>(null);
@@ -1566,7 +1581,13 @@ const CommentBody = ({
                   dangerouslySetInnerHTML={{ __html: seg.html }}
                 />
               ) : (
-                <PostSegmentEmbed key={i} seg={seg} onImage={setViewer} />
+                <PostSegmentEmbed
+                  key={i}
+                  seg={seg}
+                  uid={downloadUid}
+                  self={downloadSelf}
+                  onImage={setViewer}
+                />
               ),
             )}
           </div>
@@ -1600,7 +1621,15 @@ const CommentBody = ({
     <div className="space-y-1">
       {inlineSegments.map((seg, i) => {
         if (seg.kind === 'embed') {
-          return <EmbedRenderer key={i} embed={seg} openViewer={openViewer} />;
+          return (
+            <EmbedRenderer
+              key={i}
+              embed={seg}
+              openViewer={openViewer}
+              downloadUid={downloadUid}
+              downloadSelf={downloadSelf}
+            />
+          );
         }
         if (seg.kind !== 'text') {
           return null;
@@ -1700,6 +1729,7 @@ const CommentNode = ({
   onSubmitReply,
   submitting,
   openViewer,
+  ownUid,
 }: {
   comment: BisonrelayPostComment;
   level: number;
@@ -1712,6 +1742,7 @@ const CommentNode = ({
   onSubmitReply: (text: string, parent?: string) => Promise<void>;
   submitting: boolean;
   openViewer?: ImageViewerOpenFn | null;
+  ownUid: string;
 }) => {
   const seen = (comment.status_id && seenReceipts[comment.status_id]) || [];
   // A comment's identity is its status_id (unique per-comment hash); replies
@@ -1798,7 +1829,13 @@ const CommentNode = ({
               </button>
             </div>
           </div>
-          <CommentBody text={comment.comment} segments={comment.segments} openViewer={openViewer} />
+          <CommentBody
+            text={comment.comment}
+            segments={comment.segments}
+            openViewer={openViewer}
+            downloadUid={comment.status_from || ''}
+            downloadSelf={!comment.status_from || comment.status_from === ownUid}
+          />
         </div>
       </div>
       {(isReplyTarget || safeChildren.length > 0) && (
@@ -1827,6 +1864,7 @@ const CommentNode = ({
               onSubmitReply={onSubmitReply}
               submitting={submitting}
               openViewer={openViewer}
+              ownUid={ownUid}
             />
           ))}
         </div>
@@ -1919,14 +1957,17 @@ const InlineReplyComposer = ({
 // PostSegmentEmbed renders a single non-text segment (quote / file-transfer /
 // inline data embed) from a server-rendered body. Shared by post bodies and
 // comments. onImage opens the caller's image viewer; uid is only needed for a
-// file-transfer download embed (never present in comment segments).
+// file-transfer download embed (the post author or commenter to fetch from).
+// self marks a download embed referencing our own share (rendered inertly).
 const PostSegmentEmbed = ({
   seg,
   uid,
+  self,
   onImage,
 }: {
   seg: BisonrelayPostBodySegment;
   uid?: string;
+  self?: boolean;
   onImage: (img: ViewerImage) => void;
 }) => {
   if (seg.kind === 'embed' && seg.quote_from && seg.quote_post) {
@@ -1940,7 +1981,10 @@ const PostSegmentEmbed = ({
     );
   }
   if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
-    return uid ? <DownloadEmbed seg={seg} uid={uid} /> : null;
+    if (self || uid) {
+      return <DownloadEmbed seg={seg} uid={uid ?? ''} self={self} />;
+    }
+    return null;
   }
   if (seg.kind === 'embed' && seg.data_b64) {
     const isImage = isImageMime(seg.mime);
