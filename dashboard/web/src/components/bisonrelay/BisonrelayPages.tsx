@@ -38,6 +38,7 @@ import { BisonrelayStoreModePanel } from './BisonrelayStoreMode';
 import { BisonrelayStoreManager } from './BisonrelayStoreManager';
 import { BR_PROSE_CLASSES } from './bisonrelayProse';
 import { DownloadEmbed } from './DownloadEmbed';
+import { LnPayChip } from './LnPayChip';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 
 const navigateTo = (hash: string): void => {
@@ -766,6 +767,45 @@ const shortUid = (uid: string, ownId: string): string => {
   return uid ? `${uid.slice(0, 8)}…` : '';
 };
 
+// LNPAY_RE matches an lnpay://<bolt11> link in a rendered text segment, either
+// alone in its own paragraph (the common storefront case: `<p>lnpay://ln...</p>`)
+// or inline. goldmark (GFM) does not autolink the lnpay: scheme, so the URL
+// survives as plain text in the segment HTML and this split is safe.
+const LNPAY_RE = /<p>\s*lnpay:\/\/(ln[a-z0-9]{15,})\s*<\/p>|lnpay:\/\/(ln[a-z0-9]{15,})/gi;
+
+// renderTextWithPayChips renders a text segment's HTML, replacing any lnpay://
+// invoice with an interactive LnPayChip (matching bruig/brclient) and rendering
+// the surrounding HTML as prose. Falls back to plain prose when there is none.
+const renderTextWithPayChips = (html: string, key: number): JSX.Element => {
+  LNPAY_RE.lastIndex = 0;
+  if (!LNPAY_RE.test(html)) {
+    return <div key={key} className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: html }} />;
+  }
+  const parts: JSX.Element[] = [];
+  let last = 0;
+  let idx = 0;
+  let m: RegExpExecArray | null;
+  LNPAY_RE.lastIndex = 0;
+  while ((m = LNPAY_RE.exec(html)) !== null) {
+    const before = html.slice(last, m.index);
+    if (before.trim()) {
+      parts.push(
+        <div key={`${key}-t${idx}`} className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: before }} />,
+      );
+    }
+    parts.push(<LnPayChip key={`${key}-p${idx}`} invoice={m[1] || m[2]} />);
+    last = m.index + m[0].length;
+    idx += 1;
+  }
+  const after = html.slice(last);
+  if (after.trim()) {
+    parts.push(
+      <div key={`${key}-t${idx}`} className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: after }} />,
+    );
+  }
+  return <div key={key}>{parts}</div>;
+};
+
 // PageSegments renders the structured page and intercepts in-app links.
 const PageSegments = ({
   segments,
@@ -810,9 +850,7 @@ const PageSegments = ({
   // renderSegment renders one non-grid segment (text, image/file embed, form).
   const renderSegment = (seg: BisonrelayPageSegment, i: number) => {
     if (seg.kind === 'text' && seg.html) {
-      return (
-        <div key={i} className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: seg.html }} />
-      );
+      return renderTextWithPayChips(seg.html, i);
     }
     if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
       return <DownloadEmbed key={i} seg={seg} uid={currentUid} />;
