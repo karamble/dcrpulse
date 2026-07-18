@@ -1074,6 +1074,19 @@ func lastHop(hops []*lnrpc.Hop) *lnrpc.Hop {
 	return hops[len(hops)-1]
 }
 
+// defaultRoutingFeeLimitAtoms mirrors dcrlnd's
+// lnwallet.DefaultRoutingFeeLimitForAmount: a payment is allowed a 100%
+// routing fee up to 1000 atoms, where per-hop base fees dominate, and 5%
+// above that. routerrpc.SendPaymentV2 provides no default of its own, so a
+// caller that omits a fee limit gets this same curve instead of the
+// 0-fee-only behaviour of an unset field.
+func defaultRoutingFeeLimitAtoms(amountAtoms int64) int64 {
+	if amountAtoms <= 1000 {
+		return amountAtoms
+	}
+	return amountAtoms * 5 / 100
+}
+
 // StreamLightningPayment opens Router.SendPaymentV2 and pushes every
 // snapshot the daemon emits onto the returned channel. The channel is
 // closed when the stream terminates (terminal snapshot) or ctx is
@@ -1088,10 +1101,25 @@ func StreamLightningPayment(ctx context.Context, req *types.LightningSendPayment
 	if timeout <= 0 {
 		timeout = 60
 	}
+	feeLimit := req.FeeLimitAtoms
+	if feeLimit <= 0 {
+		// routerrpc applies no default fee ceiling, and a 0 limit makes
+		// dcrlnd reject every fee-bearing route (FAILURE_REASON_NO_ROUTE).
+		// When the caller omits the limit, fall back to dcrlnd's own
+		// default curve, resolving the amount from the request and, for a
+		// normal invoice that carries the value, from the decoded pay req.
+		amt := req.Amt
+		if amt <= 0 && rpc.LightningClient != nil {
+			if dec, err := rpc.LightningClient.DecodePayReq(ctx, &lnrpc.PayReqString{PayReq: req.PayReq}); err == nil {
+				amt = dec.NumAtoms
+			}
+		}
+		feeLimit = defaultRoutingFeeLimitAtoms(amt)
+	}
 	rpcReq := &routerrpc.SendPaymentRequest{
 		PaymentRequest:    req.PayReq,
 		Amt:               req.Amt,
-		FeeLimitAtoms:     req.FeeLimitAtoms,
+		FeeLimitAtoms:     feeLimit,
 		TimeoutSeconds:    timeout,
 		NoInflightUpdates: false,
 	}

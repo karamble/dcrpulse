@@ -7,6 +7,7 @@ import { getBisonrelayRates } from '../../services/bisonrelayApi';
 import {
   LightningDecodedPayReq,
   decodeLnPayReq,
+  lnFeeLimitAtoms,
   streamLnPayment,
 } from '../../services/lightningApi';
 
@@ -69,7 +70,7 @@ export const LnPayChip = ({ invoice }: { invoice: string }) => {
     setErr(null);
     setPhase('paying');
     cleanupRef.current = streamLnPayment(
-      { payReq: invoice },
+      { payReq: invoice, feeLimitAtoms: lnFeeLimitAtoms(decoded?.numAtoms ?? 0) },
       (snap) => {
         if (snap.status === 'pending') return;
         if (snap.status === 'confirmed') {

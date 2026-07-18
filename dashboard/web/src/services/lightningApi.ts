@@ -304,6 +304,17 @@ export interface LightningSendPaymentReq {
   feeLimitAtoms?: number;
 }
 
+// lnFeeLimitAtoms picks a routing fee ceiling for a payment of the given
+// amount. dcrlnd treats an unset (0) fee limit as "zero fee allowed", which
+// makes every real multi-hop route fail with FAILURE_REASON_NO_ROUTE, so the
+// UI must always send one. This mirrors dcrlnd's own default curve
+// (lnwallet.DefaultRoutingFeeLimitForAmount): payments up to 1000 atoms are
+// allowed a 100% fee because per-hop base fees dominate small amounts, and
+// anything larger gets 5%. routerrpc.SendPaymentV2 applies no default of its
+// own, so replicating dcrlnd's keeps us in step with the rest of the network.
+export const lnFeeLimitAtoms = (amountAtoms: number): number =>
+  amountAtoms <= 1000 ? amountAtoms : Math.ceil(amountAtoms * 0.05);
+
 // decodeLnPayReq calls the unary backend that wraps lnrpc.DecodePayReq.
 export const decodeLnPayReq = async (
   payReq: string,
