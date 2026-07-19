@@ -46,6 +46,7 @@ const EXPLORERS: Record<number, (cid: string) => string> = {
   60: etherscan,
   60001: etherscan,
   60002: etherscan,
+  60003: etherscan, // matic.eth (not in bisonw's table)
   // polygon + its tokens
   966: polygonscan,
   966001: polygonscan,

@@ -7,6 +7,7 @@ import { toYMDTime } from '../../utils/date';
 import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { getDexWalletTxs, type DexWalletState, type DexWalletTx } from '../../services/dcrdexApi';
+import { dexCoinExplorer } from './dexExplorers';
 import { fmtAmt } from './dexFormat';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
 
@@ -33,6 +34,37 @@ const TX_TYPES: Record<number, string> = {
 };
 const INCOMING = new Set([2, 4, 8]);
 const PAGE = 25;
+
+const DCR_ASSET_ID = 42;
+
+// TxLink links a transaction to its block explorer: Decred to dcrpulse's own
+// /explorer/tx route, other assets to their external explorer. Assets with no
+// known explorer render as plain text.
+const TxLink = ({ assetID, id }: { assetID: number; id: string }) => {
+  const cls = 'inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline';
+  if (assetID === DCR_ASSET_ID) {
+    return (
+      <Link to={`/explorer/tx/${id}`} title={id} className={cls}>
+        {id.slice(0, 8)}...
+        <ExternalLink className="h-3 w-3 opacity-60" />
+      </Link>
+    );
+  }
+  const url = dexCoinExplorer(assetID, id);
+  if (!url) {
+    return (
+      <span className="font-mono text-xs text-muted-foreground" title={id}>
+        {id.slice(0, 8)}...
+      </span>
+    );
+  }
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" title={id} className={cls}>
+      {id.slice(0, 8)}...
+      <ExternalLink className="h-3 w-3 opacity-60" />
+    </a>
+  );
+};
 
 export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
   const [txs, setTxs] = useState<DexWalletTx[]>([]);
@@ -120,14 +152,7 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
                   {t.timestamp ? toYMDTime(new Date(t.timestamp * 1000)) : '-'}
                 </td>
                 <td className="py-2">
-                  <Link
-                    to={`/explorer/tx/${t.id}`}
-                    title={t.id}
-                    className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-                  >
-                    {t.id.slice(0, 8)}...
-                    <ExternalLink className="h-3 w-3 opacity-60" />
-                  </Link>
+                  <TxLink assetID={assetID} id={t.id} />
                 </td>
               </tr>
             );
