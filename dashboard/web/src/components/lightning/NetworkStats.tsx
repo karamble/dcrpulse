@@ -14,8 +14,10 @@ import {
   Wallet,
 } from 'lucide-react';
 import {
+  LightningChannel,
   LightningNetworkPanel,
   TopLightningNode,
+  getLightningChannels,
   getLightningNetwork,
 } from '../../services/lightningApi';
 
@@ -41,9 +43,17 @@ const StatCard = ({ icon, label, value, sub }: StatCardProps) => (
   </div>
 );
 
+interface PeerChannelAgg {
+  local: number;
+  remote: number;
+  capacity: number;
+  anyOpen: boolean;
+}
+
 export const NetworkStats = () => {
   const navigate = useNavigate();
   const [panel, setPanel] = useState<LightningNetworkPanel | null>(null);
+  const [channels, setChannels] = useState<LightningChannel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +63,9 @@ export const NetworkStats = () => {
   };
 
   const load = async () => {
+    getLightningChannels()
+      .then((r) => setChannels(r.channels || []))
+      .catch(() => setChannels([]));
     try {
       const p = await getLightningNetwork();
       setPanel(p);
@@ -92,6 +105,22 @@ export const NetworkStats = () => {
   if (!panel) return null;
 
   const info = panel.info;
+
+  const byPeer = new Map<string, PeerChannelAgg>();
+  for (const c of channels) {
+    if (c.status === 'closed') continue;
+    const agg = byPeer.get(c.remotePubkey) || {
+      local: 0,
+      remote: 0,
+      capacity: 0,
+      anyOpen: false,
+    };
+    agg.local += c.localBalance;
+    agg.remote += c.remoteBalance;
+    agg.capacity += c.capacity;
+    if (c.status === 'open') agg.anyOpen = true;
+    byPeer.set(c.remotePubkey, agg);
+  }
 
   return (
     <div className="space-y-4">
@@ -163,11 +192,33 @@ export const NetworkStats = () => {
                 </tr>
               </thead>
               <tbody>
-                {panel.topNodes.map((n, idx) => (
+                {panel.topNodes.map((n, idx) => {
+                  const agg = byPeer.get(n.pubkey);
+                  return (
                   <tr key={n.pubkey} className="border-b border-border/20 last:border-none">
                     <td className="px-2 py-2 text-muted-foreground">{idx + 1}</td>
                     <td className="px-2 py-2 font-medium">
                       {n.alias || <span className="text-muted-foreground">(no alias)</span>}
+                      {agg && (
+                        <div
+                          className="mt-1 max-w-[160px]"
+                          title={`Your channel — Local ${atomsToDcr(agg.local)} DCR / Remote ${atomsToDcr(agg.remote)} DCR`}
+                        >
+                          <div className="h-1 rounded-full bg-muted/30 overflow-hidden">
+                            <div
+                              className="h-full bg-primary/60"
+                              style={{
+                                width: `${agg.capacity > 0 ? Math.max(0, Math.min(100, (agg.local / agg.capacity) * 100)) : 0}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="mt-0.5 flex justify-between text-[10px] font-normal text-muted-foreground">
+                            <span>{(agg.local / 1e8).toFixed(3)}</span>
+                            {!agg.anyOpen && <span className="text-warning">pending</span>}
+                            <span>{(agg.remote / 1e8).toFixed(3)}</span>
+                          </div>
+                        </div>
+                      )}
                     </td>
                     <td className="px-2 py-2 font-mono text-xs text-muted-foreground hidden sm:table-cell">
                       {truncate(n.pubkey, 8)}
@@ -187,7 +238,8 @@ export const NetworkStats = () => {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
