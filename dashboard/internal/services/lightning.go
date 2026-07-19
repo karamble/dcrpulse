@@ -398,6 +398,39 @@ func GetLightningActivity(ctx context.Context) (*types.LightningActivity, error)
 
 // ---- Channels (Decrediton parity) ------------------------------------------
 
+var (
+	nodeAliasMu    sync.Mutex
+	nodeAliasCache = map[string]string{}
+)
+
+// lightningNodeAlias resolves a node's advertised alias via GetNodeInfo.
+// Non-empty aliases are cached for the process lifetime; misses are not,
+// so a node that appears in the graph later (or a graph that is still
+// syncing) resolves on a subsequent call. Best-effort: unknown nodes
+// yield "".
+func lightningNodeAlias(ctx context.Context, pubkey string) string {
+	if pubkey == "" {
+		return ""
+	}
+	nodeAliasMu.Lock()
+	alias, ok := nodeAliasCache[pubkey]
+	nodeAliasMu.Unlock()
+	if ok {
+		return alias
+	}
+	resp, err := rpc.LightningClient.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{PubKey: pubkey})
+	if err != nil {
+		return ""
+	}
+	alias = resp.GetNode().GetAlias()
+	if alias != "" {
+		nodeAliasMu.Lock()
+		nodeAliasCache[pubkey] = alias
+		nodeAliasMu.Unlock()
+	}
+	return alias
+}
+
 // ListLightningChannels merges the three dcrlnd RPCs Decrediton runs in
 // parallel (ListChannels + PendingChannels + ClosedChannels) into one
 // flat slice with a status discriminator, matching Decrediton's
@@ -477,6 +510,10 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 		}
 	} else {
 		log.Printf("ClosedChannels: %v", err)
+	}
+
+	for i := range out.Channels {
+		out.Channels[i].RemoteAlias = lightningNodeAlias(ctx, out.Channels[i].RemotePubkey)
 	}
 
 	return out, nil
