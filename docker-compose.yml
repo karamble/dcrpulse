@@ -96,6 +96,7 @@ services:
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data:ro
       - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd
+      - ${TOR_DATA_DIR:-tor-data}:/app-data/tor:ro
     environment:
       - DCRWALLET_HOST=dcrwallet
       - DCRWALLET_GRPC_PORT=9111

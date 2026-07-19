@@ -234,6 +234,7 @@ export interface TopLightningNode {
   alias?: string;
   color?: string;
   address?: string;
+  onionAddress?: string;
   numChannels: number;
   capacityAtoms: number;
 }

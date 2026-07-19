@@ -210,12 +210,15 @@ type LightningNetworkInfo struct {
 	AvgOutDegree         float64 `json:"avgOutDegree"`
 }
 
-// TopLightningNode is one row in the Top-N nodes table.
+// TopLightningNode is one row in the Top-N nodes table. Address is the
+// node's first advertised clearnet endpoint, OnionAddress its first
+// advertised Tor endpoint; either may be empty.
 type TopLightningNode struct {
 	Pubkey        string `json:"pubkey"`
 	Alias         string `json:"alias,omitempty"`
 	Color         string `json:"color,omitempty"`
 	Address       string `json:"address,omitempty"`
+	OnionAddress  string `json:"onionAddress,omitempty"`
 	NumChannels   uint32 `json:"numChannels"`
 	CapacityAtoms int64  `json:"capacityAtoms"`
 }

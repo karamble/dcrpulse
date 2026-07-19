@@ -8,6 +8,7 @@ export interface TorSettings {
   enabled: boolean;
   isolation: boolean;
   dcrdOnion: boolean;
+  lnOnion: boolean;
   circuitLimit: number;
   rev: number;
 }

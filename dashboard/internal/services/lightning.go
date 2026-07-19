@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -772,6 +773,17 @@ func SearchLightningNodes(ctx context.Context, query string) (*types.NodeSearchR
 
 // ---- Channel helpers -------------------------------------------------------
 
+// isOnionAddr reports whether a host:port (or bare host) advertised in the
+// channel graph is a Tor onion endpoint. The graph API tags every address
+// Network="tcp", so the .onion suffix is the only discriminator.
+func isOnionAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	return strings.HasSuffix(host, ".onion")
+}
+
 func splitPeerURI(uri string) (pubkey, hostPort string, err error) {
 	uri = strings.TrimSpace(uri)
 	if uri == "" {
@@ -988,6 +1000,7 @@ func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode,
 		alias    string
 		color    string
 		address  string
+		onion    string
 		channels uint32
 		capacity int64
 	}
@@ -997,8 +1010,17 @@ func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode,
 			alias: node.GetAlias(),
 			color: node.GetColor(),
 		}
-		if addrs := node.GetAddresses(); len(addrs) > 0 {
-			entry.address = addrs[0].GetAddr()
+		// Address order is announcement order (peer-controlled), so scan
+		// instead of taking [0]: first clearnet and first onion endpoint.
+		for _, a := range node.GetAddresses() {
+			addr := a.GetAddr()
+			if isOnionAddr(addr) {
+				if entry.onion == "" {
+					entry.onion = addr
+				}
+			} else if entry.address == "" {
+				entry.address = addr
+			}
 		}
 		agg[node.GetPubKey()] = entry
 	}
@@ -1026,6 +1048,7 @@ func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode,
 			Alias:         a.alias,
 			Color:         a.color,
 			Address:       a.address,
+			OnionAddress:  a.onion,
 			NumChannels:   a.channels,
 			CapacityAtoms: a.capacity,
 		})

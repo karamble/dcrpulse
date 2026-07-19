@@ -8,6 +8,8 @@ import {
   getLightningNetwork,
   setLightningAutopilot,
 } from '../../../services/lightningApi';
+import { getTorSettings } from '../../../services/tor/client';
+import { OnionIcon } from '../OnionIcon';
 import { ScoreMeter } from '../ScoreMeter';
 
 const truncate = (s: string, n = 10) =>
@@ -25,11 +27,15 @@ export const AutopilotSwitch = () => {
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [heuristic, setHeuristic] = useState('');
+  const [torOn, setTorOn] = useState(false);
 
   useEffect(() => {
     getLightningAutopilot()
       .then((r) => setActive(r.active))
       .catch((err) => setError(err?.message || 'Failed to load autopilot status'));
+    getTorSettings()
+      .then((s) => setTorOn(s.enabled))
+      .catch(() => setTorOn(false));
   }, []);
 
   // Suggestions are a secondary decoration: score the top capacity nodes
@@ -80,6 +86,11 @@ export const AutopilotSwitch = () => {
     navigate(`/wallet/lightning/channels?peer=${encodeURIComponent(uri)}`);
   };
 
+  const openChannelViaTor = (n: TopLightningNode) => {
+    if (!n.onionAddress) return;
+    navigate(`/wallet/lightning/channels?peer=${encodeURIComponent(`${n.pubkey}@${n.onionAddress}`)}`);
+  };
+
   return (
     <div className="p-4 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
       <div className="flex items-center gap-3">
@@ -119,14 +130,31 @@ export const AutopilotSwitch = () => {
               <span className="ml-auto shrink-0">
                 <ScoreMeter score={s.score} heuristic={heuristic} />
               </span>
-              <button
-                type="button"
-                onClick={() => openChannelTo(s.node)}
-                title="Open a channel with this node"
-                className="inline-flex items-center px-2 py-1 rounded hover:bg-muted/20 transition-colors text-muted-foreground hover:text-foreground shrink-0"
-              >
-                <Plug className="h-4 w-4" />
-              </button>
+              {(s.node.address || !s.node.onionAddress) && (
+                <button
+                  type="button"
+                  onClick={() => openChannelTo(s.node)}
+                  title="Open a channel with this node"
+                  className="inline-flex items-center px-2 py-1 rounded hover:bg-muted/20 transition-colors text-muted-foreground hover:text-foreground shrink-0"
+                >
+                  <Plug className="h-4 w-4" />
+                </button>
+              )}
+              {s.node.onionAddress && (
+                <button
+                  type="button"
+                  onClick={() => openChannelViaTor(s.node)}
+                  disabled={!torOn}
+                  title={
+                    torOn
+                      ? 'Open a channel via Tor'
+                      : 'Advertises a Tor onion address - enable Tor routing in Settings to connect'
+                  }
+                  className="inline-flex items-center px-2 py-1 rounded hover:bg-muted/20 transition-colors text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                >
+                  <OnionIcon className="h-4 w-4" />
+                </button>
+              )}
             </div>
           ))}
         </div>

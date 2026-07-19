@@ -36,10 +36,19 @@ tor_field() {
 
 build_tor_args() {
     TOR_ARGS=""
+    LISTEN_ARGS="--nolisten"
     [ "$(tor_field enabled false)" = "true" ] || return
     [ -n "${TOR_PROXY_IP}" ] && [ -n "${TOR_PROXY_PORT}" ] || return
     TOR_ARGS="--tor.active --tor.socks=${TOR_PROXY_IP}:${TOR_PROXY_PORT}"
     [ "$(tor_field isolation true)" = "true" ] && TOR_ARGS="${TOR_ARGS} --tor.streamisolation"
+    # Inbound over Tor: the tor container's dcrlnd-hs hidden service forwards
+    # onion port 9735 here. dcrlnd drops --externalip under --nolisten, so the
+    # listener must be enabled; the bind is not advertised - only the onion
+    # from --externalip is, keeping the clearnet address private.
+    if [ "$(tor_field lnOnion false)" = "true" ] && [ -f /app-data/tor/dcrlnd-hs/hostname ]; then
+        host=$(cat /app-data/tor/dcrlnd-hs/hostname 2>/dev/null)
+        [ -n "${host}" ] && LISTEN_ARGS="--listen=0.0.0.0:9735 --externalip=${host}:9735"
+    fi
 }
 
 read_selected() {
@@ -93,7 +102,7 @@ launch() {
     build_tor_args
     # shellcheck disable=SC2086
     dcrlnd \
-        --nolisten \
+        ${LISTEN_ARGS} \
         --norest \
         --logdir="${dir}/logs" \
         --datadir="${dir}/data" \

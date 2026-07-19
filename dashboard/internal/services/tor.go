@@ -50,6 +50,7 @@ func WriteTorSettings(in types.TorSettings) (types.TorSettings, error) {
 		Enabled:      in.Enabled,
 		Isolation:    in.Isolation,
 		DcrdOnion:    in.DcrdOnion,
+		LnOnion:      in.LnOnion,
 		CircuitLimit: in.CircuitLimit,
 		Rev:          cur.Rev + 1,
 	}

@@ -12,3 +12,5 @@ CookieAuthFileGroupReadable 1
 DataDirectory /data
 HiddenServiceDir /data/dcrd-hs
 HiddenServicePort 9108 dcrd:9108
+HiddenServiceDir /data/dcrlnd-hs
+HiddenServicePort 9735 dcrlnd:9735

@@ -12,6 +12,7 @@ type TorSettings struct {
 	Enabled      bool `json:"enabled"`
 	Isolation    bool `json:"isolation"`
 	DcrdOnion    bool `json:"dcrdOnion"`
+	LnOnion      bool `json:"lnOnion"`
 	CircuitLimit int  `json:"circuitLimit"`
 	Rev          int  `json:"rev"`
 }

@@ -204,6 +204,13 @@ export const TorSection = () => {
           disabled={busy || !settings.enabled}
           onChange={(v) => apply({ dcrdOnion: v })}
         />
+        <Toggle
+          label="Host an inbound onion service (Lightning)"
+          description="Accept inbound Lightning connections via Tor. Your node advertises only its .onion address, never a clearnet one."
+          checked={settings.lnOnion}
+          disabled={busy || !settings.enabled}
+          onChange={(v) => apply({ lnOnion: v })}
+        />
         <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
           <div>
             <span className="font-medium block">Circuit limit</span>
