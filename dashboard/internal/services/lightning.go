@@ -699,6 +699,43 @@ func SetLightningAutopilotStatus(ctx context.Context, enable bool) error {
 	return nil
 }
 
+// GetLightningAutopilotScores returns the autopilot agent's heuristic
+// scores for the given pubkeys. The scorer runs regardless of whether
+// the agent is enabled. With ignoreLocalState false, nodes the wallet
+// already has channels with score ~0 (the agent discounts them).
+func GetLightningAutopilotScores(ctx context.Context, pubkeys []string, ignoreLocalState bool) (*types.AutopilotScores, error) {
+	if rpc.AutopilotClient == nil {
+		return nil, fmt.Errorf("dcrlnd autopilot rpc not available")
+	}
+	resp, err := rpc.AutopilotClient.QueryScores(ctx, &autopilotrpc.QueryScoresRequest{
+		Pubkeys:          pubkeys,
+		IgnoreLocalState: ignoreLocalState,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("QueryScores: %w", err)
+	}
+	out := &types.AutopilotScores{Scores: map[string]float64{}}
+	results := resp.GetResults()
+	var picked map[string]float64
+	for _, r := range results {
+		// Multiple heuristics can be registered; the agent's default
+		// mix is top_centrality alone, so prefer it when present.
+		if r.GetHeuristic() == "top_centrality" || picked == nil {
+			out.Heuristic = r.GetHeuristic()
+			picked = r.GetScores()
+			if out.Heuristic == "top_centrality" {
+				break
+			}
+		}
+	}
+	// dcrlnd omits zero-score nodes from the map; fill explicit zeros
+	// so callers can tell "scored 0" apart from "no data".
+	for _, pk := range pubkeys {
+		out.Scores[pk] = picked[pk]
+	}
+	return out, nil
+}
+
 // SearchLightningNodes queries dcrlnd's DescribeGraph and filters
 // client-side by substring match against alias + pubkey. Capped at 50.
 // Until the channel graph syncs (i.e. the wallet has a connected peer

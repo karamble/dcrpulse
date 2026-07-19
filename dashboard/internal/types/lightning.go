@@ -181,6 +181,13 @@ type AutopilotStatus struct {
 	Active bool `json:"active"`
 }
 
+// AutopilotScores maps node pubkeys to the autopilot agent's heuristic
+// scores (0.0-1.0).
+type AutopilotScores struct {
+	Heuristic string             `json:"heuristic"`
+	Scores    map[string]float64 `json:"scores"`
+}
+
 // ChannelEvent is a tagged-union event pushed over the WebSocket.
 // Type values match dcrlnd's ChannelEventUpdate.UpdateType (lowercased).
 type ChannelEvent struct {

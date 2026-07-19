@@ -192,6 +192,22 @@ export const setLightningAutopilot = async (active: boolean): Promise<void> => {
   await api.post('/wallet/ln/autopilot', { active });
 };
 
+export interface AutopilotScores {
+  heuristic: string;
+  scores: Record<string, number>;
+}
+
+export const getLightningAutopilotScores = async (
+  pubkeys: string[],
+  ignoreLocalState = false,
+): Promise<AutopilotScores> => {
+  if (pubkeys.length === 0) return { heuristic: '', scores: {} };
+  const params = new URLSearchParams({ pubkeys: pubkeys.join(',') });
+  if (ignoreLocalState) params.set('ignoreLocalState', 'true');
+  const { data } = await api.get<AutopilotScores>(`/wallet/ln/autopilot/scores?${params}`);
+  return data;
+};
+
 export const searchLightningNodes = async (
   query: string,
 ): Promise<{ matches: NodeMatch[] }> => {
@@ -227,8 +243,8 @@ export interface LightningNetworkPanel {
   topNodes: TopLightningNode[];
 }
 
-export const getLightningNetwork = async (): Promise<LightningNetworkPanel> => {
-  const { data } = await api.get<LightningNetworkPanel>('/wallet/ln/network');
+export const getLightningNetwork = async (top = 10): Promise<LightningNetworkPanel> => {
+  const { data } = await api.get<LightningNetworkPanel>(`/wallet/ln/network?top=${top}`);
   return data;
 };
 

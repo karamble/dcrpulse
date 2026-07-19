@@ -6,9 +6,11 @@ package handlers
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -309,6 +311,44 @@ func LightningAutopilotSetHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// LightningAutopilotScoresHandler — autopilot heuristic scores for a
+// comma-separated list of node pubkeys.
+func LightningAutopilotScoresHandler(w http.ResponseWriter, r *http.Request) {
+	var pubkeys []string
+	for _, pk := range strings.Split(r.URL.Query().Get("pubkeys"), ",") {
+		pk = strings.TrimSpace(pk)
+		if pk == "" {
+			continue
+		}
+		if len(pk) != 66 {
+			http.Error(w, "invalid pubkey", http.StatusBadRequest)
+			return
+		}
+		if _, err := hex.DecodeString(pk); err != nil {
+			http.Error(w, "invalid pubkey", http.StatusBadRequest)
+			return
+		}
+		pubkeys = append(pubkeys, pk)
+	}
+	if len(pubkeys) == 0 || len(pubkeys) > 100 {
+		http.Error(w, "pubkeys required (1-100)", http.StatusBadRequest)
+		return
+	}
+	ignoreLocalState := r.URL.Query().Get("ignoreLocalState") == "true"
+
+	// QueryScores walks the channel graph; allow more headroom than the
+	// usual 5s for the first uncached call on a large graph.
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	resp, err := services.GetLightningAutopilotScores(ctx, pubkeys, ignoreLocalState)
+	if err != nil {
+		lightningWriteErr(w, "GetLightningAutopilotScores", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 // LightningGraphSearchHandler — substring search of DescribeGraph nodes.
 func LightningGraphSearchHandler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
@@ -366,10 +406,20 @@ func LightningChannelEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 // LightningNetworkHandler — global network statistics for the Overview
 // tab's "Network statistics" section. Returns the GetNetworkInfo
-// aggregate + top-10 nodes by capacity. Best-effort on top-nodes —
-// network info is essential, the top list can be empty if the graph
-// walk fails.
+// aggregate + top-N nodes by capacity (?top=, default 10, max 50).
+// Best-effort on top-nodes — network info is essential, the top list
+// can be empty if the graph walk fails.
 func LightningNetworkHandler(w http.ResponseWriter, r *http.Request) {
+	topN := 10
+	if v, err := strconv.Atoi(r.URL.Query().Get("top")); err == nil {
+		topN = v
+	}
+	if topN < 1 {
+		topN = 1
+	} else if topN > 50 {
+		topN = 50
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
@@ -383,7 +433,7 @@ func LightningNetworkHandler(w http.ResponseWriter, r *http.Request) {
 		Info:     *info,
 		TopNodes: []types.TopLightningNode{},
 	}
-	if top, terr := services.GetTopLightningNodes(ctx, 10); terr == nil {
+	if top, terr := services.GetTopLightningNodes(ctx, topN); terr == nil {
 		out.TopNodes = top
 	} else {
 		log.Printf("GetTopLightningNodes (best-effort): %v", terr)

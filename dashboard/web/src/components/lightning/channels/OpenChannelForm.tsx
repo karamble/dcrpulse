@@ -36,6 +36,7 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const presetsRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
   const [highlight, setHighlight] = useState(false);
 
@@ -45,19 +46,22 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
       .catch(() => setPresets([]));
   }, []);
 
-  // Prefill the peer from a deep link (e.g. the BR setup wizard "Open channel"
-  // CTA passes ?peer=<hub uri>); only on mount, never clobbering user edits.
+  // Prefill the peer from a deep link (?peer=<uri>, used by the BR setup
+  // wizard and the top-nodes / autopilot suggestion buttons). Keyed on the
+  // param value: same-route clicks (e.g. the Autopilot card below this
+  // form) only change the query string, so a mount-only effect would
+  // ignore them. A new param arriving is explicit intent — overwrite.
+  const peerParam = searchParams.get('peer');
   useEffect(() => {
-    const peer = searchParams.get('peer');
-    if (peer && isValidPeerURI(peer)) {
-      setPeerUri((cur) => (cur ? cur : peer));
+    if (peerParam && isValidPeerURI(peerParam)) {
+      setPeerUri(peerParam);
       // Frame the form so the user lands straight on the action; fades out.
       setHighlight(true);
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       const t = setTimeout(() => setHighlight(false), 6000);
       return () => clearTimeout(t);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [peerParam]);
 
   useEffect(() => {
     if (!presetsOpen) return;
@@ -106,6 +110,7 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
 
   return (
     <div
+      ref={cardRef}
       className={`p-6 rounded-xl bg-gradient-card backdrop-blur-sm border space-y-4 transition-colors duration-500 ${
         highlight ? 'border-primary ring-2 ring-primary/40' : 'border-border/50'
       }`}

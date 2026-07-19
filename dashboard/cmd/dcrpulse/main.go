@@ -503,6 +503,7 @@ func main() {
 	api.HandleFunc("/wallet/ln/liquidity/request", handlers.LightningLiquidityRequestHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/autopilot", handlers.LightningAutopilotStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/autopilot", handlers.LightningAutopilotSetHandler).Methods("POST")
+	api.HandleFunc("/wallet/ln/autopilot/scores", handlers.LightningAutopilotScoresHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/graph/search", handlers.LightningGraphSearchHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/channel-events", handlers.LightningChannelEventsHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/network", handlers.LightningNetworkHandler).Methods("GET")
