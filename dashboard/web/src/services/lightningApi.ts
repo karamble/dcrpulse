@@ -217,6 +217,7 @@ export interface TopLightningNode {
   pubkey: string;
   alias?: string;
   color?: string;
+  address?: string;
   numChannels: number;
   capacityAtoms: number;
 }

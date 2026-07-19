@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -7,12 +8,14 @@ import {
   Layers,
   Loader2,
   Network,
+  Plug,
   Sigma,
   Users,
   Wallet,
 } from 'lucide-react';
 import {
   LightningNetworkPanel,
+  TopLightningNode,
   getLightningNetwork,
 } from '../../services/lightningApi';
 
@@ -39,9 +42,15 @@ const StatCard = ({ icon, label, value, sub }: StatCardProps) => (
 );
 
 export const NetworkStats = () => {
+  const navigate = useNavigate();
   const [panel, setPanel] = useState<LightningNetworkPanel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const openChannelTo = (n: TopLightningNode) => {
+    const uri = n.address ? `${n.pubkey}@${n.address}` : n.pubkey;
+    navigate(`/wallet/lightning/channels?peer=${encodeURIComponent(uri)}`);
+  };
 
   const load = async () => {
     try {
@@ -150,6 +159,7 @@ export const NetworkStats = () => {
                   <th className="px-2 py-2 text-left font-medium hidden sm:table-cell">Pubkey</th>
                   <th className="px-2 py-2 text-right font-medium">Channels</th>
                   <th className="px-2 py-2 text-right font-medium">Capacity</th>
+                  <th className="px-2 py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -165,6 +175,16 @@ export const NetworkStats = () => {
                     <td className="px-2 py-2 text-right">{n.numChannels.toLocaleString()}</td>
                     <td className="px-2 py-2 text-right font-mono text-xs">
                       {atomsToDcr(n.capacityAtoms)}
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => openChannelTo(n)}
+                        title="Open a channel with this node"
+                        className="inline-flex items-center px-2 py-1 rounded hover:bg-muted/20 transition-colors text-muted-foreground hover:text-foreground"
+                      >
+                        <Plug className="h-4 w-4" />
+                      </button>
                     </td>
                   </tr>
                 ))}

@@ -913,15 +913,20 @@ func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode,
 	type nodeAgg struct {
 		alias    string
 		color    string
+		address  string
 		channels uint32
 		capacity int64
 	}
 	agg := map[string]*nodeAgg{}
 	for _, node := range graph.GetNodes() {
-		agg[node.GetPubKey()] = &nodeAgg{
+		entry := &nodeAgg{
 			alias: node.GetAlias(),
 			color: node.GetColor(),
 		}
+		if addrs := node.GetAddresses(); len(addrs) > 0 {
+			entry.address = addrs[0].GetAddr()
+		}
+		agg[node.GetPubKey()] = entry
 	}
 	addCapacity := func(pubkey string, capacity int64) {
 		if pubkey == "" {
@@ -946,6 +951,7 @@ func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode,
 			Pubkey:        pubkey,
 			Alias:         a.alias,
 			Color:         a.color,
+			Address:       a.address,
 			NumChannels:   a.channels,
 			CapacityAtoms: a.capacity,
 		})

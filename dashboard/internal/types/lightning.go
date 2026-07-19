@@ -208,6 +208,7 @@ type TopLightningNode struct {
 	Pubkey        string `json:"pubkey"`
 	Alias         string `json:"alias,omitempty"`
 	Color         string `json:"color,omitempty"`
+	Address       string `json:"address,omitempty"`
 	NumChannels   uint32 `json:"numChannels"`
 	CapacityAtoms int64  `json:"capacityAtoms"`
 }
