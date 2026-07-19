@@ -997,7 +997,10 @@ const PageSegments = ({
   }
 
   return (
-    <div className="space-y-3" onClick={onClick}>
+    <div
+      className="space-y-3 font-mono [&_p]:!leading-none [&_li]:!leading-none [&_pre]:!leading-none [&_pre>code]:!leading-none"
+      onClick={onClick}
+    >
       {blocks}
       {viewer && <ImageViewerModal image={viewer} onClose={() => setViewer(null)} />}
     </div>
