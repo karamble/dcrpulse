@@ -1863,6 +1863,8 @@ export interface BrMcpSpendEntry {
   tool: string;
   rail: string;
   amountDcr: number;
+  status?: string;
+  err?: string;
 }
 
 export const getBrMcpSettings = async (): Promise<BrMcpSettings> => {

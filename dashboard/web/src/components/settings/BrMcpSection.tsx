@@ -394,6 +394,24 @@ export const BrMcpSection = () => {
                       <span className="text-muted-foreground"> · bot {e.bot.slice(0, 8)}</span>
                       <span className="text-muted-foreground"> · {fmtDcr(e.amountDcr)}</span>
                       <span className="text-muted-foreground"> · {e.rail}</span>
+                      {e.status === 'paid' && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded bg-success/20 text-success text-[10px] font-semibold">
+                          Paid
+                        </span>
+                      )}
+                      {e.status === 'pending' && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded bg-warning/20 text-warning text-[10px] font-semibold">
+                          Pending
+                        </span>
+                      )}
+                      {e.status === 'failed' && (
+                        <span
+                          className="ml-2 px-1.5 py-0.5 rounded bg-destructive/20 text-destructive text-[10px] font-semibold"
+                          title={e.err}
+                        >
+                          Failed
+                        </span>
+                      )}
                     </div>
                     <span className="text-muted-foreground shrink-0">
                       {new Date(e.ts * 1000).toLocaleTimeString()}

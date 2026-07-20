@@ -191,11 +191,13 @@ func BisonrelayMCPSpendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var wire struct {
 		Entries []struct {
-			TS    int64  `json:"ts"`
-			Bot   string `json:"bot"`
-			Tool  string `json:"tool"`
-			Rail  string `json:"rail"`
-			Atoms int64  `json:"atoms"`
+			TS     int64  `json:"ts"`
+			Bot    string `json:"bot"`
+			Tool   string `json:"tool"`
+			Rail   string `json:"rail"`
+			Atoms  int64  `json:"atoms"`
+			Status string `json:"status"`
+			Err    string `json:"err"`
 		} `json:"entries"`
 		TodayAtoms int64 `json:"today_atoms"`
 	}
@@ -209,12 +211,15 @@ func BisonrelayMCPSpendHandler(w http.ResponseWriter, r *http.Request) {
 		Tool      string  `json:"tool"`
 		Rail      string  `json:"rail"`
 		AmountDcr float64 `json:"amountDcr"`
+		Status    string  `json:"status,omitempty"`
+		Err       string  `json:"err,omitempty"`
 	}
 	out := make([]entry, 0, len(wire.Entries))
 	for _, e := range wire.Entries {
 		out = append(out, entry{
 			TS: e.TS, Bot: e.Bot, Tool: e.Tool, Rail: e.Rail,
 			AmountDcr: dcrutil.Amount(e.Atoms).ToCoin(),
+			Status:    e.Status, Err: e.Err,
 		})
 	}
 	brMCPJSON(w, struct {
