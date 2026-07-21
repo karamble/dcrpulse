@@ -27,7 +27,7 @@ const matchesFilter = (status: ChannelStatus, f: Filter): boolean => {
 export const ChannelList = () => {
   const navigate = useNavigate();
   const [channels, setChannels] = useState<LightningChannel[]>([]);
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<Filter>('open');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
