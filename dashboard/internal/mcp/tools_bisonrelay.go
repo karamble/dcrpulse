@@ -1890,8 +1890,9 @@ func leanPageSegments(segs []services.BRPageSegment) []services.BRPageSegment {
 }
 
 // lnInvoiceRE matches a bolt11 Lightning invoice, with or without simplestore's
-// "lnpay://" URL prefix, across mainnet/testnet/regtest/simnet HRPs.
-var lnInvoiceRE = regexp.MustCompile(`(?i)(?:lnpay://)?(ln(?:bcrt|bc|tb|sb)[0-9][a-z0-9]+)`)
+// "lnpay://" URL prefix, across dcrlnd's mainnet/testnet/simnet/regnet HRPs
+// (lndcr/lntdcr/lnsdcr/lnrdcr).
+var lnInvoiceRE = regexp.MustCompile(`(?i)(?:lnpay://)?\b(ln[tsr]?dcr[0-9][a-z0-9]+)`)
 
 // extractLNInvoice pulls a bolt11 invoice out of a place-order reply's markdown,
 // stripping the "lnpay://" scheme so the result hands straight to ln_pay. Returns
