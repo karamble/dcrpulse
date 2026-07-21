@@ -62,6 +62,8 @@ import {
 } from './embedParser';
 import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
 import { linkifyChatText } from './chatLinkify';
+import { splitLnInvoices } from './lnpayParse';
+import { LnPayChip } from './LnPayChip';
 import { QuoteBlock, splitLeadingQuote } from './quoteBlock';
 import {
   ImageAttachModal,
@@ -2835,10 +2837,17 @@ const MessageBodySegments = ({
       {segments.map((seg, i) => {
         if (seg.kind === 'text') {
           if (!seg.text.trim()) return null;
-          return (
-            <p key={i} className="whitespace-pre-wrap break-words">
-              {linkifyChatText(seg.text)}
-            </p>
+          // Lightning invoices (lnpay:// links or bare bolt11) render as pay
+          // chips between the surrounding prose; the chip is a block card, so
+          // it cannot live inside the paragraph.
+          return splitLnInvoices(seg.text).map((part, j) =>
+            part.kind === 'invoice' ? (
+              <LnPayChip key={`${i}-${j}`} invoice={part.invoice} />
+            ) : part.text.trim() ? (
+              <p key={`${i}-${j}`} className="whitespace-pre-wrap break-words">
+                {linkifyChatText(part.text)}
+              </p>
+            ) : null,
           );
         }
         if (seg.kind === 'embed') {
