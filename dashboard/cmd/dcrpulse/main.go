@@ -467,6 +467,7 @@ func main() {
 	api.HandleFunc("/br/gc/{gcid}/invite", handlers.BisonrelayGCInviteHandler).Methods("POST")
 	api.HandleFunc("/br/gc/{gcid}/message", handlers.BisonrelayGCMessageHandler).Methods("POST")
 	api.HandleFunc("/br/gc/{gcid}/history", handlers.BisonrelayGCHistoryHandler).Methods("GET")
+	api.HandleFunc("/br/gc/{gcid}/history/clear", handlers.BisonrelayGCClearHistoryHandler).Methods("POST")
 	api.HandleFunc("/br/gc/{gcid}/part", handlers.BisonrelayGCPartHandler).Methods("POST")
 	api.HandleFunc("/br/gc/{gcid}/kill", handlers.BisonrelayGCKillHandler).Methods("POST")
 	api.HandleFunc("/br/gc/{gcid}/kick", handlers.BisonrelayGCKickHandler).Methods("POST")

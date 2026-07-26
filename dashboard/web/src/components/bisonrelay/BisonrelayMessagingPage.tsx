@@ -1870,6 +1870,11 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             setSelected(null);
             refreshGCs();
           }}
+          onHistoryCleared={() => {
+            // Scrollback wiped on disk; reload rather than blanking the state
+            // so a message that landed mid-delete still shows.
+            loadGCMessages(selectedGroup);
+          }}
         />
       )}
     </div>

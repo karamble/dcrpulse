@@ -1202,6 +1202,14 @@ func BrclientdGCHistory(ctx context.Context, gcid string, page, pageSize int) (j
 	return brclientdGetRaw(ctx, "/gc/"+gcid+"/history", q)
 }
 
+// BrclientdGCClearHistory permanently deletes the local scrollback (and inline
+// media) for a group chat. Wraps brclientd's /gc/{gcid}/history/clear, which
+// removes the on-disk message log(s) + embeds for the gcid. Membership and the
+// group itself remain; only the local copy is wiped. Irreversible.
+func BrclientdGCClearHistory(ctx context.Context, gcid string) error {
+	return brclientdPostJSON(ctx, "/gc/"+gcid+"/history/clear", map[string]any{})
+}
+
 func BrclientdGCPart(ctx context.Context, gcid, reason string) error {
 	return brclientdPostJSON(ctx, "/gc/"+gcid+"/part", map[string]any{"reason": reason})
 }

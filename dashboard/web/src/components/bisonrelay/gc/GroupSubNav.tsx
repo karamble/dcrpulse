@@ -11,6 +11,7 @@ import {
   Edit2,
   Loader2,
   LogOut,
+  Radiation,
   RefreshCw,
   Shield,
   Skull,
@@ -25,6 +26,7 @@ import {
   BisonrelayGC,
   aliasBisonrelayGC,
   blockInBisonrelayGC,
+  clearBisonrelayGCHistory,
   getBisonrelayGCDetail,
   kickFromBisonrelayGC,
   killBisonrelayGC,
@@ -35,6 +37,7 @@ import {
   unblockInBisonrelayGC,
   upgradeBisonrelayGCVersion,
 } from '../../../services/bisonrelayApi';
+import { ConfirmActionModal } from '../BisonrelayUserSubNav';
 
 // GroupSubNav is the per-group sliding sidebar (mirror of
 // BisonrelayUserSubNav for contacts). Admin-only actions are gated on
@@ -47,6 +50,7 @@ export const GroupSubNav = ({
   onClose,
   onMutated,
   onPartedOrKilled,
+  onHistoryCleared,
 }: {
   gc: BisonrelayGC;
   contactsByUid: Map<string, BisonrelayContact>;
@@ -55,6 +59,7 @@ export const GroupSubNav = ({
   onClose: () => void;
   onMutated: () => void;
   onPartedOrKilled: () => void;
+  onHistoryCleared?: () => void;
 }) => {
   const [detail, setDetail] = useState<BisonrelayGC>(gc);
   const [err, setErr] = useState<string | null>(null);
@@ -63,6 +68,7 @@ export const GroupSubNav = ({
     | { kind: 'part' }
     | { kind: 'kill' }
     | { kind: 'upgrade' }
+    | { kind: 'clear-history' }
     | { kind: 'kick' | 'block' | 'unblock' | 'promote' | 'demote' | 'transfer-owner'; uid: string; nick: string }
     | null
   >(null);
@@ -280,6 +286,12 @@ export const GroupSubNav = ({
                 onClick={() => setModal({ kind: 'upgrade' })}
               />
             )}
+            <ActionButton
+              icon={Radiation}
+              label="Clear Chat History"
+              tone="rose"
+              onClick={() => setModal({ kind: 'clear-history' })}
+            />
             {!detail.local_is_owner ? (
               <ActionButton
                 icon={LogOut}
@@ -337,6 +349,20 @@ export const GroupSubNav = ({
           onConfirm={async (reason) => {
             await killBisonrelayGC(detail.id, reason.trim());
             onPartedOrKilled();
+          }}
+        />
+      )}
+      {modal?.kind === 'clear-history' && (
+        <ConfirmActionModal
+          title={`Clear chat history for ${detail.alias || detail.name}?`}
+          body={`Permanently deletes your local scrollback and any inline media for this group. This CANNOT be undone. You stay a member and can keep chatting - only your local copy is removed; the other members keep theirs.`}
+          confirmLabel="Delete history"
+          confirmWord="DELETE"
+          onClose={() => setModal(null)}
+          onConfirm={() => clearBisonrelayGCHistory(detail.id)}
+          onSuccess={() => {
+            onClose();
+            onHistoryCleared?.();
           }}
         />
       )}

@@ -176,6 +176,18 @@ func BisonrelayGCHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// BisonrelayGCClearHistoryHandler wipes the locally stored scrollback for a GC.
+// Local-only and irreversible: the group and its members are untouched and the
+// other members keep their own copies.
+func BisonrelayGCClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	gcid := mux.Vars(r)["gcid"]
+	if err := rpc.BrclientdGCClearHistory(r.Context(), gcid); err != nil {
+		brWriteErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // BisonrelayGCPartHandler leaves a GC (non-owner action).
 func BisonrelayGCPartHandler(w http.ResponseWriter, r *http.Request) {
 	gcid := mux.Vars(r)["gcid"]

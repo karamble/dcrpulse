@@ -1684,6 +1684,13 @@ export const getBisonrelayGCHistory = async (
   return data;
 };
 
+// clearBisonrelayGCHistory permanently deletes the local scrollback + inline
+// media for a group. Irreversible; membership and the group itself remain (only
+// your local copy is removed, the other members keep theirs).
+export const clearBisonrelayGCHistory = async (gcid: string): Promise<void> => {
+  await api.post(`/br/gc/${gcid}/history/clear`);
+};
+
 export const partBisonrelayGC = async (gcid: string, reason = ''): Promise<void> => {
   await api.post(`/br/gc/${gcid}/part`, { reason });
 };
