@@ -157,6 +157,13 @@ func TorPointerPath() string {
 	return filepath.Join(StackControlDir(), "tor.json")
 }
 
+// GamingSettingsPath is where the Bison Relay gaming section's confinement
+// policy lives: which wallet account games may touch, and the caps on what they
+// may stake.
+func GamingSettingsPath() string {
+	return filepath.Join(StackControlDir(), "gaming.json")
+}
+
 // Per-service state files. Each supervisor writes the wallet it currently has
 // running to a fixed (not per-wallet) path so the dashboard can poll it during a
 // switch. dcrwallet keeps its original control/state.json location.

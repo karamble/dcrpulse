@@ -609,11 +609,14 @@ func main() {
 	// to brclientd's mcpclient endpoints.
 	// The bridge holds a durable bearer token, sets the caps that bound what it
 	// pays, and approves real payments, so it is gated like the agent surface's
-	// own settings above rather than left on RequireAuth's pass-through.
+	// own settings above rather than left on RequireAuth's pass-through. The
+	// gaming bridge is the same class and takes the same gate.
 	api.Handle("/br/mcp/settings", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPSettingsHandler))).Methods("GET", "POST")
 	api.Handle("/br/mcp/pending", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPPendingHandler))).Methods("GET")
 	api.Handle("/br/mcp/pending/resolve", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPResolvePendingHandler))).Methods("POST")
 	api.Handle("/br/mcp/spend", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPSpendHandler))).Methods("GET")
+	api.Handle("/br/gaming/settings", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSettingsHandler))).Methods("GET", "POST")
+	api.Handle("/br/gaming/games", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingGamesHandler))).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.Handle("/wallet/ln/unlock",
