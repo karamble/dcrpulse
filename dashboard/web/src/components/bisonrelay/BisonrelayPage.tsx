@@ -7,6 +7,7 @@ import {
   BarChart3,
   FileText,
   FolderOpen,
+  Gamepad2,
   MessageSquare,
   // Phone, // icon for the hidden Realtime tab (see tabs[] below)
   Rss,
@@ -19,6 +20,7 @@ import { BisonrelayFiles } from './BisonrelayFiles';
 import { BisonrelayStats } from './BisonrelayStats';
 import { BisonrelayRealtime } from './BisonrelayRealtime';
 import { BisonrelayPages } from './BisonrelayPages';
+import { BisonrelayGamingTab } from './BisonrelayGamingTab';
 import { BisonrelaySettingsTab } from './BisonrelaySettingsTab';
 import { BrNotifications } from './BrNotifications';
 import { useBrTextScale } from './brTextScale';
@@ -28,7 +30,7 @@ import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { WalletSyncGate } from '../common/WalletSyncGate';
 import { WatchOnlyGate } from '../common/WatchOnlyGate';
 
-type TabId = 'chat' | 'feed' | 'files' | 'stats' | 'realtime' | 'pages' | 'settings';
+type TabId = 'chat' | 'feed' | 'files' | 'stats' | 'realtime' | 'pages' | 'gaming' | 'settings';
 
 interface TabDef {
   id: TabId;
@@ -45,6 +47,7 @@ const tabs: TabDef[] = [
   // Still reachable via the #realtime hash (route + render kept below) as an easter egg.
   // { id: 'realtime', label: 'Realtime', icon: Phone },
   { id: 'pages', label: 'Pages', icon: FileText },
+  { id: 'gaming', label: 'Gaming', icon: Gamepad2 },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -59,6 +62,7 @@ const readHashTab = (): TabId => {
   if (h.startsWith('stats')) return 'stats';
   if (h.startsWith('realtime')) return 'realtime';
   if (h.startsWith('pages')) return 'pages';
+  if (h.startsWith('gaming')) return 'gaming';
   if (h.startsWith('settings')) return 'settings';
   return 'chat';
 };
@@ -170,6 +174,7 @@ export const BisonrelayPage = () => {
       {activeTab === 'stats' && <BisonrelayStats />}
       {activeTab === 'realtime' && <BisonrelayRealtime />}
       {activeTab === 'pages' && <BisonrelayPages />}
+      {activeTab === 'gaming' && <BisonrelayGamingTab />}
       {activeTab === 'settings' && <BisonrelaySettingsTab />}
     </div>
   );
