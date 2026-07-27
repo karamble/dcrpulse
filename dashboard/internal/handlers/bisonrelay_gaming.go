@@ -374,6 +374,39 @@ func gamingChainError(w http.ResponseWriter, err error) {
 // decides which account, how much, how often, and whether a person said yes.
 // Policy belongs where money moves, not where messages do.
 
+// BisonrelayGamingBroadcastHandler relays a transaction a game signed itself.
+//
+// The other money route, /spend, has the host build the transaction and a
+// person approve it. That covers paying money in and cannot cover taking it
+// back out: a bond, or a stake behind its refund timelock, sits under a script
+// only the game holds the key for. The game signs it; this puts the bytes on
+// the network.
+//
+// Nobody is asked, because there is nobody to ask about - the coin is already
+// the game's to move and the wallet's passphrase has nothing to do with it. So
+// this is bounded instead of approved, and what bounds it (services.
+// GamingBroadcast) is about shape rather than intent: every input a script hash
+// the wallet does not own, every output paying an address it does. The host is
+// not going to be taught what a table is.
+func BisonrelayGamingBroadcastHandler(w http.ResponseWriter, r *http.Request) {
+	game := gamingCaller(r)
+
+	var req struct {
+		RawTxHex string `json:"rawTxHex"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	txid, err := services.GamingBroadcast(r.Context(), game, req.RawTxHex)
+	if err != nil {
+		// The refusal is the game's to read and act on, so it says why.
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	gamingJSON(w, map[string]any{"txid": txid})
+}
+
 // BisonrelayGamingSpendHandler records a game's request to spend, or refuses it.
 //
 // It never spends. The dashboard holds no wallet passphrase - every send route

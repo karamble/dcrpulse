@@ -240,6 +240,10 @@ func main() {
 	gaming.HandleFunc("/chain/tip", handlers.BisonrelayGamingChainTipHandler).Methods("GET")
 	gaming.HandleFunc("/chain/outpoint", handlers.BisonrelayGamingOutpointHandler).Methods("GET")
 	gaming.HandleFunc("/chain/blockhash", handlers.BisonrelayGamingBlockHashHandler).Methods("GET")
+	// The one way coin moves without anybody being asked: a game reclaiming
+	// its own timelocked money, which only it can sign for. Bounded rather
+	// than approved - see the handler.
+	gaming.HandleFunc("/chain/broadcast", handlers.BisonrelayGamingBroadcastHandler).Methods("POST")
 	gaming.HandleFunc("/spend", handlers.BisonrelayGamingSpendHandler).Methods("POST")
 	gaming.HandleFunc("/spend/status", handlers.BisonrelayGamingSpendStatusHandler).Methods("GET")
 
