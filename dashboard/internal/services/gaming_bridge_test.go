@@ -193,3 +193,38 @@ func TestCarryGameTokens(t *testing.T) {
 		t.Fatal("an uninstalled game must lose its token")
 	}
 }
+
+// Installed and ready are separate answers. Reporting an installed-but-dead
+// game as ready would send a player to a table nothing is listening on.
+func TestGamingCatalogueSeparatesInstalledFromReady(t *testing.T) {
+	for name, tc := range map[string]struct {
+		installed bool
+		state     GamingState
+		wantReady bool
+	}{
+		"not installed, nothing running": {false, GamingState{}, false},
+		"installed but no process":       {true, GamingState{Running: map[string]int{}}, false},
+		"installed and running":          {true, GamingState{Running: map[string]int{"poker": 42}}, true},
+		"installed, pid zero":            {true, GamingState{Running: map[string]int{"poker": 0}}, false},
+		"running but not installed":      {false, GamingState{Running: map[string]int{"poker": 42}}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := types.GamingGame{ID: "poker"}
+			g.Installed = tc.installed
+			pid, up := tc.state.Running[g.ID]
+			ready := g.Installed && up && pid > 0
+			if ready != tc.wantReady {
+				t.Fatalf("ready=%v, want %v", ready, tc.wantReady)
+			}
+		})
+	}
+}
+
+// An absent or unreadable state file means nothing is running, which is the
+// safe reading: the sandbox may not have started yet.
+func TestReadGamingStateToleratesAbsence(t *testing.T) {
+	st := ReadGamingState()
+	if len(st.Running) != 0 {
+		t.Fatalf("a missing state file should report nothing running, got %+v", st)
+	}
+}

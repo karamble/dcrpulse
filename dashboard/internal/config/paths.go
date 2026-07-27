@@ -27,6 +27,18 @@ const (
 	// dashboard. Holds each daemon's data plus the stack control directory.
 	AppDataRoot = "/app-data"
 
+	// GamingControlRoot is the gaming sandbox's configuration volume. The
+	// dashboard writes it; the sandbox mounts it read-only. It is separate
+	// from AppDataRoot so the sandbox can be given this and nothing else.
+	GamingControlRoot = "/control"
+
+	// GamingDataRoot is the sandbox's own volume, holding installed game
+	// binaries and the state file it reports through. The dashboard mounts
+	// it read-only to read that state - the same way it reads brclientd's.
+	// Nothing sensitive lives here; it is written by the sandbox, which is
+	// why the dashboard never writes to it.
+	GamingDataRoot = "/gaming-data"
+
 	// WalletDataRoot is dcrwallet's appdata mount, shared read-write with
 	// the dashboard. Matches WALLET_DIR in dcrwallet/docker-entrypoint.sh.
 	WalletDataRoot = "/app-data/dcrwallet"
@@ -157,11 +169,33 @@ func TorPointerPath() string {
 	return filepath.Join(StackControlDir(), "tor.json")
 }
 
+// GamingControlDir is the only directory the gaming sandbox can read.
+//
+// It is deliberately not the stack control directory every other service uses.
+// That one sits inside /app-data alongside dcrwallet's files and brclientd's
+// client certificate, and games are the one component in this stack that is not
+// trusted - a game able to read that certificate would reach Bison Relay
+// directly and the bridge in front of it would be decoration. So the gaming
+// policy lives on its own volume, mounted read-only into the sandbox and
+// containing nothing else.
+func GamingControlDir() string {
+	return filepath.Join(GamingControlRoot, "control")
+}
+
 // GamingSettingsPath is where the Bison Relay gaming section's confinement
-// policy lives: which wallet account games may touch, and the caps on what they
-// may stake.
+// policy lives: which wallet account games may touch, the caps on what they may
+// stake, and each installed game's bearer token. It is how a game learns its
+// own identity, so it is the sandbox's only inbound configuration.
 func GamingSettingsPath() string {
-	return filepath.Join(StackControlDir(), "gaming.json")
+	return filepath.Join(GamingControlDir(), "gaming.json")
+}
+
+// GamingStatePath is where the sandbox's portal reports what is actually
+// running, the way every other supervisor reports through control-state.json.
+// Installed and running are separate answers: a game can be installed and
+// crashed, and the dashboard should say so rather than claim it is ready.
+func GamingStatePath() string {
+	return filepath.Join(GamingDataRoot, "control-state.json")
 }
 
 // Per-service state files. Each supervisor writes the wallet it currently has

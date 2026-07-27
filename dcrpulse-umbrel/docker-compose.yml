@@ -8,7 +8,7 @@ services:
     image: alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
     user: "0:0"
     restart: "no"
-    command: ["sh", "-c", "mkdir -p /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor && chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor"]
+    command: ["sh", "-c", "mkdir -p /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor /host/gaming-control /host/gaming && chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor /host/gaming-control /host/gaming"]
     volumes:
       - ${APP_DATA_DIR}:/host
 
@@ -143,6 +143,17 @@ services:
       - ${APP_DATA_DIR}/dcrdex:/app-data/dcrdex:ro
       - ${APP_DATA_DIR}/dashboard:/dashboard-data
       - ${APP_DATA_DIR}/tor:/app-data/tor:ro
+      # The dashboard is the only writer of the gaming policy, and reads the
+      # sandbox's state read-only the way it reads every other supervisor's.
+      - ${APP_DATA_DIR}/gaming-control:/control
+      - ${APP_DATA_DIR}/gaming:/gaming-data:ro
+    # Both networks, explicitly. Naming any network removes a service from the
+    # default one, and app_proxy reaches this container by name on the default
+    # - so listing only gaming-net here would take the whole app offline rather
+    # than degrade.
+    networks:
+      - default
+      - gaming-net
     environment:
       PORT: 8735
       DCRPULSE_LOG_LEVEL: ${DCRPULSE_LOG_LEVEL:-info}
@@ -210,3 +221,33 @@ services:
     depends_on:
       dcrd:
         condition: service_healthy
+
+  # Games are untrusted: they play for real money against strangers, beside a
+  # wallet and a Bison Relay identity. This service mounts neither the app data
+  # nor the dcrlnd data that every other service does - those hold dcrwallet's
+  # files and brclientd's client certificate, and that certificate is the
+  # credential for Bison Relay's RPC. A game able to read it would reach the
+  # relay directly and the bridge in front of it would be decoration.
+  #
+  # gaming-net is internal, so there is no route off the host. The isolation is
+  # the absence of a route, not a rule anything must honour.
+  gaming:
+    image: ghcr.io/karamble/dcrpulse-gaming:latest
+    user: "1000:1000"
+    restart: on-failure
+    networks:
+      - gaming-net
+    volumes:
+      - ${APP_DATA_DIR}/gaming-control:/control:ro
+      - ${APP_DATA_DIR}/gaming:/data
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+networks:
+  # Umbrel declares no networks of its own; everything else stays on the
+  # implicit default, which is why only the two services that need gaming-net
+  # name any at all.
+  gaming-net:
+    driver: bridge
+    internal: true
