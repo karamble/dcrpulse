@@ -207,6 +207,10 @@ func main() {
 	// Persistent WS subscriptions to brclientd for chat / KX / GC events.
 	services.StartBisonrelayStreams(context.Background())
 	services.StartBrclientdNotifs(context.Background())
+	// Game frames come over clientrpc rather than the /notifications stream
+	// above, because brclientd keeps them out of that one: they are protocol,
+	// not conversation.
+	go services.StartGamingBridge(context.Background())
 
 	// Shared-wallet coordination frames arrive as typed "msig" events on
 	// the same notification pipeline. The ladder's deferred rescans ride
@@ -621,6 +625,8 @@ func main() {
 	api.Handle("/br/mcp/spend", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPSpendHandler))).Methods("GET")
 	api.Handle("/br/gaming/settings", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSettingsHandler))).Methods("GET", "POST")
 	api.Handle("/br/gaming/games", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingGamesHandler))).Methods("GET")
+	api.Handle("/br/gaming/send", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSendHandler))).Methods("POST")
+	api.Handle("/br/gaming/events", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingEventsHandler))).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.Handle("/wallet/ln/unlock",
