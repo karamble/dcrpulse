@@ -18,8 +18,12 @@ ARG GAMING_SIGNING_KEY=""
 RUN cd portal && CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X main.signingKeyHex=${GAMING_SIGNING_KEY}" -o /portal .
 
+RUN mkdir -p /mnt/control /mnt/data
+
 FROM scratch
 COPY --from=build /portal /portal
+COPY --from=build --chown=1000:1000 /mnt/control /control
+COPY --from=build --chown=1000:1000 /mnt/data /data
 # Games run as this uid. It owns /data and can read /control; it has no access
 # to anything else, because nothing else is mounted.
 USER 1000:1000
