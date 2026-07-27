@@ -59,3 +59,40 @@ export const acceptGamingInvite = async (
 ): Promise<void> => {
   await api.post('/br/gaming/invite', { game, invite, gcid });
 };
+
+export type GamingSpendState = 'pending' | 'approved' | 'denied' | 'expired' | 'failed';
+
+export interface GamingSpend {
+  id: string;
+  game: string;
+  address: string;
+  amountAtoms: number;
+  reason?: string;
+  state: GamingSpendState;
+  txid?: string;
+  error?: string;
+  requestedAt: number;
+  decidedAt?: number;
+  expiresAt: number;
+}
+
+export const getGamingSpends = async (): Promise<GamingSpend[]> => {
+  const { data } = await api.get<{ spends: GamingSpend[] }>('/br/gaming/spends');
+  return data.spends ?? [];
+};
+
+// decideGamingSpend answers a game's request. Approving needs the wallet
+// passphrase, because that is the only thing that can move money and it belongs
+// to the person, not to the dashboard and never to the game.
+export const decideGamingSpend = async (
+  id: string,
+  approve: boolean,
+  passphrase?: string,
+): Promise<GamingSpend> => {
+  const { data } = await api.post<GamingSpend>('/br/gaming/spends/decide', {
+    id,
+    approve,
+    passphrase: passphrase ?? '',
+  });
+  return data;
+};
