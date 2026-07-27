@@ -205,11 +205,9 @@ func main() {
 
 	// Persistent WS subscriptions to brclientd for chat / KX / GC events.
 	services.StartBisonrelayStreams(context.Background())
+	// Game frames arrive on the /notifications stream above, as their own
+	// event type, and are routed to the gaming bridge from there.
 	services.StartBrclientdNotifs(context.Background())
-	// Game frames come over clientrpc rather than the /notifications stream
-	// above, because brclientd keeps them out of that one: they are protocol,
-	// not conversation.
-	go services.StartGamingBridge(context.Background())
 
 	// Shared-wallet coordination frames arrive as typed "msig" events on
 	// the same notification pipeline. The ladder's deferred rescans ride

@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -107,6 +106,20 @@ func (b *GamingBus) Subscribe(game string, buf int) (<-chan GamingFrameEvent, fu
 	}
 }
 
+// subscribers counts the listeners for a game, so a frame that reaches nobody
+// can be told apart from one that was never received.
+func (b *GamingBus) subscribers(game string) int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	n := 0
+	for s := range b.subs {
+		if s.game == game {
+			n++
+		}
+	}
+	return n
+}
+
 // broadcast delivers a frame to every listener for its game.
 //
 // A listener that is not draining is skipped rather than waited for. Blocking
@@ -129,59 +142,50 @@ func (b *GamingBus) broadcast(ev GamingFrameEvent) {
 	}
 }
 
-// StartGamingBridge subscribes to inbound group chat messages and routes game
-// frames. It blocks until ctx is cancelled.
-func StartGamingBridge(ctx context.Context) {
-	ws := rpc.BrclientdWS()
-	bus := Gaming()
+// gamingFrameEvent is the notification type brclientd forwards gaming envelope
+// frames on. It is deliberately not "pm" or "gc-message": a frame that took the
+// chat path would badge a conversation the user never had.
+const gamingFrameEvent = "gaming-frame"
 
-	cancel, err := ws.Subscribe("ChatService.GCMStream", struct{}{}, func(payload json.RawMessage) {
-		var msg struct {
-			UID        []byte `json:"uid"`
-			SequenceID int64  `json:"sequenceId"`
-			Msg        struct {
-				ID      []byte `json:"id"`
-				Message string `json:"message"`
-			} `json:"msg"`
-		}
-		if err := json.Unmarshal(payload, &msg); err != nil {
-			return
-		}
-
-		// Ack whatever arrives, frame or not. The stream is shared with
-		// the chat path's own delivery and resumes from the last acked
-		// id; declining to ack a chat message would replay it forever.
-		if msg.SequenceID != 0 {
-			ackParams := map[string]int64{"sequenceId": msg.SequenceID}
-			if err := ws.Call(ctx, "ChatService.AckReceivedGCM", ackParams, nil); err != nil && ctx.Err() == nil {
-				log.Printf("gaming bridge: ack gcm: %v", err)
-			}
-		}
-
-		frame, ok := parseGamingFrame(msg.Msg.Message)
-		if !ok {
-			return // ordinary conversation
-		}
-		if !gamingGameInstalled(frame.Game) {
-			// A game this installation does not have. Dropping it is
-			// what makes the namespace work: a new game can appear
-			// without every existing host being taught about it.
-			return
-		}
-		bus.broadcast(GamingFrameEvent{
-			Game:  frame.Game,
-			GCID:  hex.EncodeToString(msg.Msg.ID),
-			From:  hex.EncodeToString(msg.UID),
-			Frame: frame.Text,
-		})
-	})
-	if err != nil {
-		log.Printf("gaming bridge: subscribe to GCMStream: %v", err)
+// deliverFrame routes one inbound frame to the game it belongs to.
+//
+// Frames reach us on brclientd's /notifications feed, the same in-process path
+// every other kind of Bison Relay message takes here, fed by an OnGCMNtfn (or
+// OnPMNtfn, for invites) registration on the client's notification manager -
+// which is how the MCP bridge receives as well. The clientrpc ChatService
+// streams are not used: they replay their whole backlog on every (re)subscribe,
+// which is why the chat path avoids them too.
+func (b *GamingBus) deliverFrame(payload json.RawMessage) {
+	var evt struct {
+		GCID    string `json:"gcid"`
+		From    string `json:"from"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(payload, &evt); err != nil {
+		log.Printf("gaming bridge: undecodable frame event: %v", err)
 		return
 	}
-	log.Printf("gaming bridge: routing game frames")
-	<-ctx.Done()
-	cancel()
+	frame, ok := parseGamingFrame(evt.Message)
+	if !ok {
+		// brclientd forwards envelopes and nothing else, so reaching
+		// here means the two sides disagree about the envelope format.
+		log.Printf("gaming bridge: forwarded event from %s is not a frame (%d bytes)",
+			evt.From, len(evt.Message))
+		return
+	}
+	if !gamingGameInstalled(frame.Game) {
+		// A game this installation does not have. Dropping it is what
+		// makes the namespace work: a new game can appear without every
+		// existing host being taught about it.
+		return
+	}
+	log.Printf("gaming bridge: delivering %q frame to %d subscriber(s)", frame.Game, b.subscribers(frame.Game))
+	b.broadcast(GamingFrameEvent{
+		Game:  frame.Game,
+		GCID:  evt.GCID,
+		From:  evt.From,
+		Frame: frame.Text,
+	})
 }
 
 // gamingGameInstalled reports whether the user added a game. The installed list
