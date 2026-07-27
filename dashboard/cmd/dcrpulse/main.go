@@ -231,6 +231,14 @@ func main() {
 	r.Use(middleware.SecurityHeaders)
 
 	// API routes
+	// The gaming tunnel authenticates with a per-game bearer token, so it
+	// sits outside the browser API: that API requires same-origin and a
+	// dashboard session, and a game running as its own process has neither.
+	gaming := r.PathPrefix("/gaming").Subrouter()
+	gaming.Use(handlers.GamingTunnelAuth)
+	gaming.HandleFunc("/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
+	gaming.HandleFunc("/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
+
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth)
 
@@ -566,8 +574,7 @@ func main() {
 	api.HandleFunc("/br/mcp/spend", handlers.BisonrelayMCPSpendHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/settings", handlers.BisonrelayGamingSettingsHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/gaming/games", handlers.BisonrelayGamingGamesHandler).Methods("GET")
-	api.HandleFunc("/br/gaming/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
-	api.HandleFunc("/br/gaming/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
+
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")
