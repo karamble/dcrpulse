@@ -5,11 +5,18 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
+	"regexp"
+	"time"
 
 	"github.com/decred/dcrd/dcrutil/v4"
+	"github.com/gorilla/websocket"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 )
@@ -109,4 +116,107 @@ func BisonrelayGamingGamesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gamingJSON(w, map[string]any{"games": services.GamingCatalogue()})
+}
+
+// ---- The tunnel ----
+//
+// A game sends and receives its own protocol frames through these two routes.
+// The host carries them and reads only the routing key: what a frame means is
+// between the players, who sign their own traffic and check each other's.
+//
+// Both sit on the same authenticated API as everything else. A game running as
+// a separate process in the stack therefore needs a credential of its own,
+// which does not exist yet - plugin authentication is unresolved, and until it
+// is, only something already holding a dashboard session can use the tunnel.
+
+var gamingGCIDRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+
+// BisonrelayGamingSendHandler sends one frame to a table's group chat.
+func BisonrelayGamingSendHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Game  string `json:"game"`
+		GCID  string `json:"gcid"`
+		Frame string `json:"frame"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !gamingGCIDRe.MatchString(req.GCID) {
+		http.Error(w, "gcid must be 64 hex characters", http.StatusBadRequest)
+		return
+	}
+	if req.Game == "" || req.Frame == "" {
+		http.Error(w, "game and frame are required", http.StatusBadRequest)
+		return
+	}
+
+	switch err := services.SendGamingFrame(r.Context(), req.Game, req.GCID, req.Frame); {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, services.ErrGamingGameNotInstalled),
+		errors.Is(err, services.ErrGamingNotAFrame),
+		errors.Is(err, services.ErrGamingWrongGame):
+		// A game is told it was refused, and nothing about what else the
+		// host is carrying.
+		http.Error(w, err.Error(), http.StatusForbidden)
+	default:
+		http.Error(w, "send frame: "+err.Error(), http.StatusBadGateway)
+	}
+}
+
+// BisonrelayGamingEventsHandler streams one game's inbound frames.
+//
+// The subscription is per game, so a game never sees another's traffic. That is
+// containment rather than secrecy - frames cross a group chat any member can
+// read - but nothing is served to a game that was not addressed to it.
+func BisonrelayGamingEventsHandler(w http.ResponseWriter, r *http.Request) {
+	game := r.URL.Query().Get("game")
+	if game == "" {
+		http.Error(w, "game is required", http.StatusBadRequest)
+		return
+	}
+
+	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("BisonrelayGamingEventsHandler upgrade: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	frames, unsubscribe := services.Gaming().Subscribe(game, 64)
+	defer unsubscribe()
+
+	go func() {
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	pinger := time.NewTicker(30 * time.Second)
+	defer pinger.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-pinger.C:
+			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+				return
+			}
+		case ev, ok := <-frames:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(ev); err != nil {
+				return
+			}
+		}
+	}
 }
