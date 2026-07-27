@@ -96,3 +96,23 @@ export const decideGamingSpend = async (
   });
   return data;
 };
+
+// A game's identity seed, fetched only when a person asks for it.
+//
+// It is the one secret in this stack the host does not otherwise hold: a game
+// derives its bond key and every table key from it, and keeps it in its own
+// volume. Losing that volume without a copy makes the bond permanently
+// unspendable, so the host offers to carry it out - once, deliberately, and
+// never as part of loading a page.
+export interface GamingBackup {
+  game: string;
+  seedHex: string;
+  bondOutpoint?: string;
+}
+
+export const getGamingIdentityBackup = async (game: string): Promise<GamingBackup> => {
+  const { data } = await api.get<GamingBackup>('/br/gaming/identity/backup', {
+    params: { game },
+  });
+  return data;
+};
