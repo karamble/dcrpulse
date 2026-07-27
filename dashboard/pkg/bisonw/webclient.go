@@ -308,6 +308,32 @@ func (c *WebClient) AddressUsed(ctx context.Context, appPass string, assetID uin
 	return res.Used, nil
 }
 
+// WalletSettings returns bisonw's stored configuration for the asset's wallet.
+// Webserver-only route. The map holds credentials in the clear.
+func (c *WebClient) WalletSettings(ctx context.Context, appPass string, assetID uint32) (map[string]string, error) {
+	var res struct {
+		webAck
+		Map map[string]string `json:"map"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/walletsettings", appPass, map[string]any{"assetID": assetID}, &res); err != nil {
+		return nil, err
+	}
+	return res.Map, nil
+}
+
+// ReconfigureWallet replaces the asset wallet's stored configuration and
+// reconnects it. Webserver-only route; cfg replaces the settings wholesale.
+// newWalletPW is omitted so bisonw keeps the current wallet password.
+func (c *WebClient) ReconfigureWallet(ctx context.Context, appPass string, assetID uint32, walletType string, cfg map[string]string) error {
+	body := map[string]any{
+		"assetID":    assetID,
+		"walletType": walletType,
+		"config":     cfg,
+		"appPW":      appPass,
+	}
+	return c.call(ctx, http.MethodPost, "/api/reconfigurewallet", appPass, body, nil)
+}
+
 // MMStatus returns the market-making status (bots + CEX state) as the raw
 // `status` object from /api/marketmakingstatus.
 func (c *WebClient) MMStatus(ctx context.Context, appPass string) (json.RawMessage, error) {

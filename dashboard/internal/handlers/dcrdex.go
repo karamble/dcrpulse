@@ -215,6 +215,7 @@ func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rpc.SetDcrdexAppPass(req.AppPass)
+	go ensureDexWalletSettings(req.AppPass)
 	if err := setDcrdexInitialized(); err != nil {
 		log.Printf("dcrdex: persist initialized flag: %v", err)
 	}
@@ -247,6 +248,8 @@ func UnlockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rpc.SetDcrdexAppPass(req.AppPass)
+	// Reconnects the wallet in bisonw, so it runs off the response.
+	go ensureDexWalletSettings(req.AppPass)
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
@@ -305,18 +308,104 @@ func CreateDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg := bisonw.DCRWalletRPCConfig{
-		Account:   dexAccountName,
-		Username:  dexEnv("DCRWALLET_RPC_USER", "dcrwallet"),
-		Password:  dexEnv("DCRWALLET_RPC_PASS", "dcrwalletpass"),
-		RPCListen: dexEnv("DCRWALLET_RPC_HOST", "dcrwallet") + ":" + dexEnv("DCRWALLET_RPC_PORT", "9110"),
-		RPCCert:   dexEnv("DCRDEX_DCRWALLET_CERT", "/app-data/dcrd/rpc.cert"),
+	cfg, err := dexDCRWalletCfg()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	if err := client.NewDCRWallet(ctx, appPass, req.WalletPass, cfg); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// dexDCRWalletCfg builds the dcrwalletRPC settings bisonw reaches dcrwallet
+// with, taking the credentials from the dashboard's own dcrwallet connection.
+// Host, port and certificate resolve inside the bisonw container.
+func dexDCRWalletCfg() (bisonw.DCRWalletRPCConfig, error) {
+	cfg := bisonw.DCRWalletRPCConfig{
+		Account:   dexAccountName,
+		Username:  rpc.WalletConfig.RPCUser,
+		Password:  rpc.WalletConfig.RPCPassword,
+		RPCListen: dexEnv("DCRWALLET_RPC_HOST", rpc.WalletConfig.RPCHost) + ":" + dexEnv("DCRWALLET_RPC_PORT", rpc.WalletConfig.RPCPort),
+		RPCCert:   dexEnv("DCRDEX_DCRWALLET_CERT", rpc.WalletConfig.RPCCert),
+	}
+	if cfg.Username == "" || cfg.Password == "" {
+		return cfg, fmt.Errorf("dcrwallet RPC credentials are not configured")
+	}
+	return cfg, nil
+}
+
+// ensureDexWalletSettings pushes the dcrwalletRPC settings to bisonw when its
+// stored copy differs from this deployment. Best effort; failures are logged
+// and retried on the next unlock.
+func ensureDexWalletSettings(appPass string) {
+	want, err := dexDCRWalletCfg()
+	if err != nil {
+		log.Printf("dcrdex: check dcr wallet settings: %v", err)
+		return
+	}
+	// Runs after the handler returns, so it needs its own context.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Only push credentials the dashboard's own connection proves work.
+	if ready, reason := services.WalletReady(ctx); !ready {
+		log.Printf("dcrdex: skip dcr wallet settings check: %s", reason)
+		return
+	}
+
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		log.Printf("dcrdex: check dcr wallet settings: %v", err)
+		return
+	}
+	// Nothing to reconcile until the wallet has been created.
+	has, err := client.HasWallet(ctx, bisonw.AssetDCR)
+	if err != nil {
+		log.Printf("dcrdex: check dcr wallet settings: %v", err)
+		return
+	}
+	if !has {
+		return
+	}
+	web, err := rpc.DcrdexWebClient()
+	if err != nil {
+		log.Printf("dcrdex: check dcr wallet settings: %v", err)
+		return
+	}
+	stored, err := web.WalletSettings(ctx, appPass, bisonw.AssetDCR)
+	if err != nil {
+		// The error can carry the response body, which holds credentials.
+		log.Print("dcrdex: could not read dcr wallet settings; see the bisonw log")
+		return
+	}
+
+	// Reconfiguring replaces the map wholesale; carry over the keys the
+	// dashboard does not own.
+	merged := make(map[string]string, len(stored)+len(want.ConfigMap()))
+	for k, v := range stored {
+		merged[k] = v
+	}
+	var drifted []string
+	for k, v := range want.ConfigMap() {
+		if merged[k] != v {
+			drifted = append(drifted, k)
+		}
+		merged[k] = v
+	}
+	if len(drifted) == 0 {
+		return
+	}
+	sort.Strings(drifted)
+	// Log key names only; the values are credentials.
+	log.Printf("dcrdex: dcr wallet settings are stale (%s), updating", strings.Join(drifted, ", "))
+	if err := web.ReconfigureWallet(ctx, appPass, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, merged); err != nil {
+		log.Printf("dcrdex: update dcr wallet settings: %v", err)
+		return
+	}
+	log.Print("dcrdex: dcr wallet settings updated")
 }
 
 // ensureDexAccount makes sure the dedicated `dex` account exists in dcrwallet,
