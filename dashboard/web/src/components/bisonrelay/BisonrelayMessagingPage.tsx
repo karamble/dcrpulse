@@ -64,6 +64,8 @@ import { formatBytes } from '../../utils/bytes';
 import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
 import { ChatMarkdown } from './chatMarkdown';
 import { splitLnInvoices } from './lnpayParse';
+import { splitGamingInvites } from './gamingInviteParse';
+import { GamingInviteChip } from './GamingInviteChip';
 import { LnPayChip } from './LnPayChip';
 import { QuoteBlock, splitLeadingQuote } from './quoteBlock';
 import {
@@ -3096,7 +3098,17 @@ const MessageBodySegments = ({
             part.kind === 'invoice' ? (
               <LnPayChip key={`${i}-${j}`} invoice={part.invoice} />
             ) : part.text.trim() ? (
-              <ChatMarkdown key={`${i}-${j}`} text={part.text} />
+              // Game invites are ordinary messages, not the hidden
+              // --gaming[...]-- envelope gameplay rides: an invitation has to
+              // be legible to whoever receives it, and it is what starts a
+              // game, so there is no game running to deliver it to.
+              splitGamingInvites(part.text).map((gp, k) =>
+                gp.kind === 'invite' ? (
+                  <GamingInviteChip key={`${i}-${j}-${k}`} invite={gp.invite} />
+                ) : gp.text.trim() ? (
+                  <ChatMarkdown key={`${i}-${j}-${k}`} text={gp.text} />
+                ) : null,
+              )
             ) : null,
           );
         }
