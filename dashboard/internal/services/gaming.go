@@ -206,7 +206,11 @@ func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) 
 		out.Enabled = false
 	}
 
-	if err := os.MkdirAll(config.StackControlDir(), 0o700); err != nil {
+	// The gaming volume, not the stack's control directory. Creating the
+	// wrong one meant the write below landed on a path nothing had made -
+	// and the policy is how a game learns its own identity, so without it
+	// nothing in the sandbox can start at all.
+	if err := os.MkdirAll(config.GamingControlDir(), 0o700); err != nil {
 		return out, err
 	}
 	data, err := json.MarshalIndent(out, "", "  ")

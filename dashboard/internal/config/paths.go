@@ -178,8 +178,15 @@ func TorPointerPath() string {
 // directly and the bridge in front of it would be decoration. So the gaming
 // policy lives on its own volume, mounted read-only into the sandbox and
 // containing nothing else.
+//
+// It is the volume root, not a subdirectory of it. The other services keep
+// their control files one level down because they share /app-data with a great
+// deal else; this volume holds the gaming policy and nothing else, so an extra
+// level is only somewhere for the two sides to disagree - which is what
+// happened. The sandbox reads /control/gaming.json, and the subdirectory here
+// meant the policy was written where nothing ever looked for it.
 func GamingControlDir() string {
-	return filepath.Join(GamingControlRoot, "control")
+	return GamingControlRoot
 }
 
 // GamingSettingsPath is where the Bison Relay gaming section's confinement
