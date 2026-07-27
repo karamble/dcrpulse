@@ -48,3 +48,14 @@ export const getGamingGames = async (): Promise<GamingGame[]> => {
   const { data } = await api.get<{ games: GamingGame[] }>('/br/gaming/games');
   return data.games ?? [];
 };
+
+// acceptGamingInvite hands an accepted invitation to the game that can act on
+// it. The dashboard speaks to the game as the host; what the terms mean is the
+// game's business, not this one's.
+export const acceptGamingInvite = async (
+  game: string,
+  invite: string,
+  gcid: string,
+): Promise<void> => {
+  await api.post('/br/gaming/invite', { game, invite, gcid });
+};

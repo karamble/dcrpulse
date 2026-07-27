@@ -128,6 +128,59 @@ func BisonrelayGamingGamesHandler(w http.ResponseWriter, r *http.Request) {
 	gamingJSON(w, map[string]any{"games": services.GamingCatalogue()})
 }
 
+// BisonrelayGamingInviteHandler hands an accepted invitation to the game that
+// can act on it.
+//
+// This is a browser route, not a tunnel one: accepting an invitation is a
+// person's decision, taken in their own session, so it belongs behind the same
+// origin and session checks as everything else they do. The dashboard then
+// speaks to the game as the host, with that game's own token.
+//
+// It forms no opinion about the invitation beyond which game it names. What the
+// terms mean is the game's business, and a host that judged them would be a
+// party to a table nobody agreed to trust.
+func BisonrelayGamingInviteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Game   string `json:"game"`
+		Invite string `json:"invite"`
+		GCID   string `json:"gcid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	req.Game = strings.ToLower(strings.TrimSpace(req.Game))
+	req.GCID = strings.ToLower(strings.TrimSpace(req.GCID))
+
+	if req.Game == "" || strings.TrimSpace(req.Invite) == "" {
+		http.Error(w, "game and invite are required", http.StatusBadRequest)
+		return
+	}
+	if !gamingGCIDRe.MatchString(req.GCID) {
+		http.Error(w, "gcid must be 64 hex characters", http.StatusBadRequest)
+		return
+	}
+
+	err := services.AcceptGamingInvite(r.Context(), req.Game, req.Invite, req.GCID)
+	switch {
+	case err == nil:
+		gamingJSON(w, map[string]any{"accepted": true})
+	case errors.Is(err, services.ErrGamingGameNotInstalled):
+		http.Error(w, "game is not added", http.StatusForbidden)
+	case errors.Is(err, services.ErrGamingGameNotRunning):
+		// Added but not up. Worth distinguishing: the user can do
+		// something about one of these and not the other.
+		http.Error(w, "game is not running", http.StatusConflict)
+	default:
+		http.Error(w, err.Error(), http.StatusBadGateway)
+	}
+}
+
 // ---- The tunnel ----
 //
 // A game sends and receives its own protocol frames through these two routes.

@@ -575,6 +575,7 @@ func main() {
 	api.HandleFunc("/br/mcp/spend", handlers.BisonrelayMCPSpendHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/settings", handlers.BisonrelayGamingSettingsHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/gaming/games", handlers.BisonrelayGamingGamesHandler).Methods("GET")
+	api.HandleFunc("/br/gaming/invite", handlers.BisonrelayGamingInviteHandler).Methods("POST")
 
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
