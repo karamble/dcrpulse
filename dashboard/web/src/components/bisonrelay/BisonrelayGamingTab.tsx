@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
+import { GamingIdentityBackup } from './GamingIdentityBackup';
 import { GamingSpendApprovals } from './GamingSpendApprovals';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import {
@@ -288,6 +289,10 @@ export const BisonrelayGamingTab = () => {
           </div>
         ))}
       </div>
+
+      {/* Only games that are actually up: the seed lives in the sandbox's
+          volume and only the game itself can read it. */}
+      <GamingIdentityBackup games={games.filter((g) => g.installed && g.ready).map((g) => g.id)} />
 
       <GamingSpendApprovals />
     </div>
