@@ -239,6 +239,8 @@ func main() {
 	gaming.HandleFunc("/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
 	gaming.HandleFunc("/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
 	gaming.HandleFunc("/bundle", handlers.BisonrelayGamingBundleHandler).Methods("GET")
+	gaming.HandleFunc("/chain/tip", handlers.BisonrelayGamingChainTipHandler).Methods("GET")
+	gaming.HandleFunc("/chain/outpoint", handlers.BisonrelayGamingOutpointHandler).Methods("GET")
 
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth)

@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -198,6 +199,57 @@ func BisonrelayGamingInviteHandler(w http.ResponseWriter, r *http.Request) {
 // same-origin and a dashboard session, neither of which a separate process has,
 // and same-origin is a defence against a browser being tricked into using
 // someone's cookies - which has no bearing on a caller that presents a token.
+
+// BisonrelayGamingChainTipHandler reports where the chain is.
+//
+// A game needs this to agree a deadline with its peers: a height is a fact
+// everyone can check, where a clock is each machine's opinion and nobody can
+// be shown to have read it wrong.
+func BisonrelayGamingChainTipHandler(w http.ResponseWriter, r *http.Request) {
+	tip, err := services.GamingChainTipNow(r.Context())
+	if err != nil {
+		gamingChainError(w, err)
+		return
+	}
+	gamingJSON(w, tip)
+}
+
+// BisonrelayGamingOutpointHandler reports what is at an outpoint.
+//
+// This is how a game checks somebody else's bond for itself. The host says what
+// the chain contains; what that means for a table is the game's own business,
+// and a host that decided it would be a party nobody agreed to trust.
+func BisonrelayGamingOutpointHandler(w http.ResponseWriter, r *http.Request) {
+	txid := strings.TrimSpace(r.URL.Query().Get("txid"))
+	if !gamingTxidRe.MatchString(txid) {
+		http.Error(w, "txid must be 64 hex characters", http.StatusBadRequest)
+		return
+	}
+	vout, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("vout")), 10, 32)
+	if err != nil {
+		http.Error(w, "vout must be a number", http.StatusBadRequest)
+		return
+	}
+
+	out, err := services.GamingChainOutpoint(r.Context(), txid, uint32(vout))
+	if err != nil {
+		gamingChainError(w, err)
+		return
+	}
+	gamingJSON(w, out)
+}
+
+var gamingTxidRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+
+// gamingChainError separates "the node is not there" from "the question was
+// wrong", because a game can wait out the first and never the second.
+func gamingChainError(w http.ResponseWriter, err error) {
+	if errors.Is(err, services.ErrGamingChainUnavailable) {
+		http.Error(w, "chain is not available", http.StatusServiceUnavailable)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusBadGateway)
+}
 
 // gamingTunnelGameKey carries the authenticated game down to the handlers.
 type gamingTunnelGameKey struct{}
