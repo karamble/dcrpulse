@@ -634,6 +634,7 @@ func main() {
 	api.Handle("/br/mcp/spend", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPSpendHandler))).Methods("GET")
 	api.Handle("/br/gaming/settings", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSettingsHandler))).Methods("GET", "POST")
 	api.Handle("/br/gaming/games", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingGamesHandler))).Methods("GET")
+	api.Handle("/br/gaming/invite", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingInviteHandler))).Methods("POST")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.Handle("/wallet/ln/unlock",

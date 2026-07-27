@@ -66,6 +66,7 @@ import { ChatMarkdown } from './chatMarkdown';
 import { splitLnInvoices } from './lnpayParse';
 import { splitGamingInvites } from './gamingInviteParse';
 import { GamingInviteChip } from './GamingInviteChip';
+import { GamingChatCtx } from './gamingChatContext';
 import { LnPayChip } from './LnPayChip';
 import { QuoteBlock, splitLeadingQuote } from './quoteBlock';
 import {
@@ -97,6 +98,7 @@ const MAX_INLINE_BYTES = 800 * 1024;
 const MAX_TRANSFER_BYTES = 1024 * 1024 * 1024;
 
 const ImageViewerCtx = createContext<ImageViewerOpenFn | null>(null);
+
 
 // ActiveTarget tags the chat-window subject as either a 1:1 PM contact or
 // an N-peer GC. Most existing code paths only care about the contact case;
@@ -1361,6 +1363,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
 
   return (
     <ImageViewerCtx.Provider value={openImageViewer}>
+    <GamingChatCtx.Provider value={selectedGroup?.id ?? null}>
     <div className="flex flex-col">
       <IncomingGCInvitesBanner onAccepted={refreshGCs} />
       {pendingImage && (
@@ -1841,6 +1844,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       )}
     </div>
     </div>
+    </GamingChatCtx.Provider>
     </ImageViewerCtx.Provider>
   );
 };

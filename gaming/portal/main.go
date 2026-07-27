@@ -40,6 +40,13 @@ const (
 	// killed. A game may be mid-hand with money escrowed, so it is worth
 	// waiting for it to shut down in an orderly way.
 	stopGrace = 10 * time.Second
+
+	// basePort is where games start listening, one port each.
+	basePort = 8790
+
+	// maxGames bounds the port range. It is deliberately small: this is a
+	// sandbox for the games a person added, not a hosting platform.
+	maxGames = 32
 )
 
 type settings struct {
@@ -56,6 +63,11 @@ type settings struct {
 type state struct {
 	Rev     int            `json:"rev"`
 	Running map[string]int `json:"running"` // game id -> pid
+	// Ports is where each running game listens, so the dashboard can reach
+	// it. The sandbox has no route out, so this file is the only way the
+	// answer travels, and a game the dashboard cannot address is one a user
+	// cannot accept an invitation into.
+	Ports   map[string]int `json:"ports"`
 	Missing []string       `json:"missing"` // installed, but no binary present
 	Updated int64          `json:"updated"`
 }
@@ -68,6 +80,32 @@ type portal struct {
 
 	mu      sync.Mutex
 	running map[string]*exec.Cmd
+	// ports remembers which port each game was given, so a game that is
+	// restarted after crashing comes back where the dashboard last saw it.
+	ports map[string]int
+}
+
+// portFor assigns a game its listening port, keeping the one it already has.
+// The caller holds p.mu.
+//
+// The range is small and private to the sandbox: nothing outside it can reach
+// these, because the only network the container is on has the dashboard at one
+// end and nothing at the other.
+func (p *portal) portFor(id string) int {
+	if port, ok := p.ports[id]; ok {
+		return port
+	}
+	taken := make(map[int]bool, len(p.ports))
+	for _, port := range p.ports {
+		taken[port] = true
+	}
+	for port := basePort; port < basePort+maxGames; port++ {
+		if !taken[port] {
+			p.ports[id] = port
+			return port
+		}
+	}
+	return 0
 }
 
 func main() {
@@ -85,6 +123,7 @@ func main() {
 		gamesDir:    *games,
 		bridgeURL:   *bridge,
 		running:     make(map[string]*exec.Cmd),
+		ports:       make(map[string]int),
 	}
 
 	if err := os.MkdirAll(p.gamesDir, 0o700); err != nil {
@@ -225,9 +264,19 @@ func (p *portal) startLocked(id, token string) {
 	// supervisor passes its cert paths. It is the game's identity: the
 	// dashboard resolves it to decide which game is calling, so a game
 	// never states which game it is.
+	port := p.portFor(id)
+	if port == 0 {
+		log.Printf("portal: no port left for %s; not starting it", id)
+		return
+	}
+
 	cmd := exec.Command(bin,
 		"--bridge="+p.bridgeURL,
 		"--token="+token,
+		// Where the dashboard reaches this game to drive it - accepting
+		// an invitation, and later the game's own interface. It cannot
+		// be loopback: the dashboard is a different container.
+		fmt.Sprintf("--listen=:%d", port),
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -240,7 +289,7 @@ func (p *portal) startLocked(id, token string) {
 		return
 	}
 	p.running[id] = cmd
-	log.Printf("portal: started %s (pid %d)", id, cmd.Process.Pid)
+	log.Printf("portal: started %s (pid %d) on port %d", id, cmd.Process.Pid, port)
 
 	// Reap it so a crashed game does not linger as a zombie between polls.
 	go func() { _ = cmd.Wait() }()
@@ -299,10 +348,13 @@ func (p *portal) readSettings() (settings, error) {
 // this stack reports.
 func (p *portal) writeState(s settings) {
 	p.mu.Lock()
-	st := state{Rev: s.Rev, Running: map[string]int{}, Updated: time.Now().Unix()}
+	st := state{Rev: s.Rev, Running: map[string]int{}, Ports: map[string]int{}, Updated: time.Now().Unix()}
 	for id, cmd := range p.running {
 		if cmd.Process != nil && cmd.ProcessState == nil {
 			st.Running[id] = cmd.Process.Pid
+			if port, ok := p.ports[id]; ok {
+				st.Ports[id] = port
+			}
 		}
 	}
 	p.mu.Unlock()
