@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
+import { GamingSpendApprovals } from './GamingSpendApprovals';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import {
   GamingGame,
@@ -287,6 +288,8 @@ export const BisonrelayGamingTab = () => {
           </div>
         ))}
       </div>
+
+      <GamingSpendApprovals />
     </div>
   );
 };
