@@ -581,6 +581,9 @@ func main() {
 	api.HandleFunc("/br/gaming/invite", handlers.BisonrelayGamingInviteHandler).Methods("POST")
 	api.HandleFunc("/br/gaming/spends", handlers.BisonrelayGamingSpendsHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/spends/decide", handlers.BisonrelayGamingSpendDecideHandler).Methods("POST")
+	// Fetched only when a person asks: it carries the seed a game's bond
+	// and stakes are locked to, and nothing else has a copy of it.
+	api.HandleFunc("/br/gaming/identity/backup", handlers.BisonrelayGamingIdentityBackupHandler).Methods("GET")
 
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")

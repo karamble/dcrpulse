@@ -241,6 +241,39 @@ func BisonrelayGamingSpendDecideHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// BisonrelayGamingIdentityBackupHandler hands a game's seed to the person
+// running the host, so a lost data volume is not a lost bond.
+//
+// A game's keys are the one thing here the host does not already hold a copy
+// of: they are derived from a seed the game generated itself and keeps in its
+// own volume. Remove that volume without this and the game's fidelity bond can
+// never be spent again, because the script names a key only that seed derives.
+//
+// It sits behind the same session as the rest of this API, and the dashboard
+// neither stores nor logs what comes back. Anyone who can call it can already
+// spend the wallet from that same session, so it grants nothing new - but a
+// secret should not be sitting in a page that is merely open, which is why
+// nothing fetches it until a person asks.
+func BisonrelayGamingIdentityBackupHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	game := strings.TrimSpace(r.URL.Query().Get("game"))
+	if game == "" {
+		http.Error(w, "game is required", http.StatusBadRequest)
+		return
+	}
+	backup, err := services.GamingIdentityBackup(r.Context(), game)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	// Nothing carrying a secret belongs in a cache nobody asked for.
+	w.Header().Set("Cache-Control", "no-store")
+	gamingJSON(w, backup)
+}
+
 // ---- The tunnel ----
 //
 // A game sends and receives its own protocol frames through these two routes.
