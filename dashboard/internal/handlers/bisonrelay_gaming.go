@@ -11,12 +11,12 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/gorilla/websocket"
 
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 )
@@ -37,13 +37,22 @@ type gamingSettingsView struct {
 	MaxOpenTables       int      `json:"maxOpenTables"`
 	ApprovalTimeoutSecs int      `json:"approvalTimeoutSecs"`
 	InstalledGames      []string `json:"installedGames"`
+
+	// GameTokens is what a game authenticates with. It is shown so the user
+	// can copy it into a game's configuration; it is the game's identity,
+	// so anything holding it is that game as far as this host is concerned.
+	GameTokens map[string]string `json:"gameTokens"`
 }
 
 func gamingToView(s types.GamingSettings) gamingSettingsView {
 	if s.InstalledGames == nil {
 		s.InstalledGames = []string{}
 	}
+	if s.GameTokens == nil {
+		s.GameTokens = map[string]string{}
+	}
 	return gamingSettingsView{
+		GameTokens:          s.GameTokens,
 		Enabled:             s.Enabled,
 		Account:             s.Account,
 		Mode:                s.Mode,
@@ -124,17 +133,52 @@ func BisonrelayGamingGamesHandler(w http.ResponseWriter, r *http.Request) {
 // The host carries them and reads only the routing key: what a frame means is
 // between the players, who sign their own traffic and check each other's.
 //
-// Both sit on the same authenticated API as everything else. A game running as
-// a separate process in the stack therefore needs a credential of its own,
-// which does not exist yet - plugin authentication is unresolved, and until it
-// is, only something already holding a dashboard session can use the tunnel.
+// A game authenticates with a bearer token, and that token is its identity.
+// It never states which game it is - it presents a token and the host decides -
+// so a game cannot send another game's traffic even by asking to. The same
+// identity is what later spend limits attach to; a shared secret would make
+// every game one principal, and a cap on a principal nobody can tell apart is
+// not a cap.
+//
+// These routes sit outside the browser API on purpose. That API is guarded by
+// same-origin and a dashboard session, neither of which a separate process has,
+// and same-origin is a defence against a browser being tricked into using
+// someone's cookies - which has no bearing on a caller that presents a token.
+
+// gamingTunnelGameKey carries the authenticated game down to the handlers.
+type gamingTunnelGameKey struct{}
 
 var gamingGCIDRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
+// GamingTunnelAuth resolves the bearer token to the game it identifies.
+//
+// A gaming section that is switched off answers as though the routes are not
+// there, rather than admitting they exist and refusing - the same way the
+// BR-MCP bridge does. There is nothing to authenticate against when no game is
+// installed, and saying so would only describe the host to a stranger.
+func GamingTunnelAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		game, ok := services.GamingGameForToken(strings.TrimSpace(token))
+		if !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gamingTunnelGameKey{}, game)))
+	})
+}
+
+// gamingCaller returns the game the request authenticated as.
+func gamingCaller(r *http.Request) string {
+	game, _ := r.Context().Value(gamingTunnelGameKey{}).(string)
+	return game
+}
+
 // BisonrelayGamingSendHandler sends one frame to a table's group chat.
 func BisonrelayGamingSendHandler(w http.ResponseWriter, r *http.Request) {
+	game := gamingCaller(r)
+
 	var req struct {
-		Game  string `json:"game"`
 		GCID  string `json:"gcid"`
 		Frame string `json:"frame"`
 	}
@@ -146,12 +190,12 @@ func BisonrelayGamingSendHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gcid must be 64 hex characters", http.StatusBadRequest)
 		return
 	}
-	if req.Game == "" || req.Frame == "" {
-		http.Error(w, "game and frame are required", http.StatusBadRequest)
+	if req.Frame == "" {
+		http.Error(w, "frame is required", http.StatusBadRequest)
 		return
 	}
 
-	switch err := services.SendGamingFrame(r.Context(), req.Game, req.GCID, req.Frame); {
+	switch err := services.SendGamingFrame(r.Context(), game, req.GCID, req.Frame); {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)
 	case errors.Is(err, services.ErrGamingGameNotInstalled),
@@ -165,19 +209,18 @@ func BisonrelayGamingSendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// BisonrelayGamingEventsHandler streams one game's inbound frames.
+// BisonrelayGamingEventsHandler streams the calling game's inbound frames.
 //
-// The subscription is per game, so a game never sees another's traffic. That is
-// containment rather than secrecy - frames cross a group chat any member can
-// read - but nothing is served to a game that was not addressed to it.
+// The subscription follows the token, so a game receives its own traffic and no
+// more. That is containment rather than secrecy - frames cross a group chat any
+// member can read - but nothing is served to a game it was not addressed to.
 func BisonrelayGamingEventsHandler(w http.ResponseWriter, r *http.Request) {
-	game := r.URL.Query().Get("game")
-	if game == "" {
-		http.Error(w, "game is required", http.StatusBadRequest)
-		return
-	}
+	game := gamingCaller(r)
 
-	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
+	// The bearer token is what authenticates here, so an origin check would
+	// add nothing: it guards against a browser being made to spend cookies
+	// it already holds, and there are no cookies in play.
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("BisonrelayGamingEventsHandler upgrade: %v", err)

@@ -244,6 +244,14 @@ func main() {
 		"/api/br/store/files/upload": true,
 	}
 
+	// The gaming tunnel authenticates with a per-game bearer token, so it
+	// sits outside the browser API: that API requires same-origin and a
+	// dashboard session, and a game running as its own process has neither.
+	gaming := r.PathPrefix("/gaming").Subrouter()
+	gaming.Use(handlers.GamingTunnelAuth)
+	gaming.HandleFunc("/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
+	gaming.HandleFunc("/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
+
 	// API routes. The body cap is Bison Relay's payload maximum on the protocol
 	// version servers ship with: the largest legitimate JSON body on this surface
 	// is a BR message, and anything bigger could not be delivered anyway.
@@ -621,8 +629,6 @@ func main() {
 	api.Handle("/br/mcp/spend", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPSpendHandler))).Methods("GET")
 	api.Handle("/br/gaming/settings", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSettingsHandler))).Methods("GET", "POST")
 	api.Handle("/br/gaming/games", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingGamesHandler))).Methods("GET")
-	api.Handle("/br/gaming/send", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSendHandler))).Methods("POST")
-	api.Handle("/br/gaming/events", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingEventsHandler))).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.Handle("/wallet/ln/unlock",
