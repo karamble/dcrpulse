@@ -309,7 +309,12 @@ func BisonrelayGamingOutpointHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := services.GamingChainOutpoint(r.Context(), txid, uint32(vout))
+	// Confirmed only unless asked otherwise: staking against somebody else's
+	// deposit needs a buried one, but locating an output of a payment just
+	// made needs the mempool, because it is in no block yet.
+	includeMempool := r.URL.Query().Get("mempool") == "1"
+
+	out, err := services.GamingChainOutpoint(r.Context(), txid, uint32(vout), includeMempool)
 	if err != nil {
 		gamingChainError(w, err)
 		return
