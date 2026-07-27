@@ -273,6 +273,7 @@ func (p *portal) startLocked(id, token string) {
 	cmd := exec.Command(bin,
 		"--bridge="+p.bridgeURL,
 		"--token="+token,
+		"--debug",
 		// Where the dashboard reaches this game to drive it - accepting
 		// an invitation, and later the game's own interface. It cannot
 		// be loopback: the dashboard is a different container.
