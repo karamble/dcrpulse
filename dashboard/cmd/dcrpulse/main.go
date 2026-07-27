@@ -251,6 +251,7 @@ func main() {
 	gaming.Use(handlers.GamingTunnelAuth)
 	gaming.HandleFunc("/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
 	gaming.HandleFunc("/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
+	gaming.HandleFunc("/bundle", handlers.BisonrelayGamingBundleHandler).Methods("GET")
 
 	// API routes. The body cap is Bison Relay's payload maximum on the protocol
 	// version servers ship with: the largest legitimate JSON body on this surface

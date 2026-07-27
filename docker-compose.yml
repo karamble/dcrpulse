@@ -164,7 +164,12 @@ services:
   # isolation is the absence of a route rather than a rule anything must honour,
   # and the dashboard is the only other member.
   gaming:
-    build: ./gaming
+    build:
+      context: ./gaming
+      args:
+        # Empty by default: a portal with no key installs nothing, which is
+        # the failure worth having.
+        GAMING_SIGNING_KEY: ${GAMING_SIGNING_KEY:-}
     image: ghcr.io/karamble/dcrpulse-gaming:dev
     restart: unless-stopped
     networks:
