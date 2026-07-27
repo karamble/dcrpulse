@@ -1,6 +1,10 @@
 package services
 
-import "testing"
+import (
+	"testing"
+
+	"dcrpulse/internal/types"
+)
 
 const testFrame = `--gaming[v=1,game=poker,gv=1,sid=0123456789abcdef,mid=0123456789abcdef,seq=1/1,exp=1783000000]--eyJhY3Rpb24iOiJmb2xkIn0=`
 
@@ -108,5 +112,84 @@ func TestGamingBusUnsubscribeStopsDelivery(t *testing.T) {
 	bus.broadcast(GamingFrameEvent{Game: "poker", Frame: testFrame})
 	if _, open := <-ch; open {
 		t.Fatal("a cancelled subscription should be closed and empty")
+	}
+}
+
+// The token is the game's identity. Everything the host enforces hangs off what
+// it resolves to, so resolution is the security boundary.
+func TestGamingGameForToken(t *testing.T) {
+	tokens, err := carryGameTokens(nil, []string{"poker", "chess"})
+	if err != nil {
+		t.Fatalf("mint tokens: %v", err)
+	}
+	s := types.GamingSettings{Enabled: true, GameTokens: tokens}
+
+	for game, tok := range tokens {
+		got, ok := gamingGameForToken(s, tok)
+		if !ok || got != game {
+			t.Fatalf("token for %s resolved to (%q, %v)", game, got, ok)
+		}
+	}
+	// One game's token must never resolve to another.
+	if got, _ := gamingGameForToken(s, tokens["poker"]); got == "chess" {
+		t.Fatal("a token resolved to the wrong game")
+	}
+
+	for _, bad := range []string{"", "wrong", tokens["poker"] + "x", tokens["poker"][:len(tokens["poker"])-1]} {
+		if _, ok := gamingGameForToken(s, bad); ok {
+			t.Errorf("token %q should not resolve", bad)
+		}
+	}
+}
+
+// A disabled section resolves nothing, so the tunnel answers as though it is
+// not there rather than admitting it exists and refusing.
+func TestDisabledSectionResolvesNoToken(t *testing.T) {
+	tokens, err := carryGameTokens(nil, []string{"poker"})
+	if err != nil {
+		t.Fatalf("mint tokens: %v", err)
+	}
+	off := types.GamingSettings{Enabled: false, GameTokens: tokens}
+	if _, ok := gamingGameForToken(off, tokens["poker"]); ok {
+		t.Fatal("a disabled gaming section must resolve no tokens")
+	}
+}
+
+// Tokens survive unrelated edits and die with the game they identify.
+func TestCarryGameTokens(t *testing.T) {
+	first, err := carryGameTokens(nil, []string{"poker"})
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	if first["poker"] == "" {
+		t.Fatal("installing a game must mint it a token")
+	}
+
+	// An unrelated policy edit must not rotate it, or every save would cut
+	// off every running game.
+	again, err := carryGameTokens(first, []string{"poker"})
+	if err != nil {
+		t.Fatalf("carry: %v", err)
+	}
+	if again["poker"] != first["poker"] {
+		t.Fatal("a token must survive an unrelated settings write")
+	}
+
+	// Adding a game mints only the new one.
+	added, err := carryGameTokens(first, []string{"poker", "chess"})
+	if err != nil {
+		t.Fatalf("carry: %v", err)
+	}
+	if added["poker"] != first["poker"] || added["chess"] == "" || added["chess"] == added["poker"] {
+		t.Fatalf("adding a game disturbed the others: %+v", added)
+	}
+
+	// Uninstalling revokes rather than hides.
+	removed, err := carryGameTokens(added, []string{"chess"})
+	if err != nil {
+		t.Fatalf("carry: %v", err)
+	}
+	if _, still := removed["poker"]; still {
+		t.Fatal("an uninstalled game must lose its token")
 	}
 }

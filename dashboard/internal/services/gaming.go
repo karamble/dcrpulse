@@ -5,7 +5,11 @@
 package services
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -58,6 +62,63 @@ func DefaultGamingSettings() types.GamingSettings {
 	}
 }
 
+// newGamingToken mints a bearer token for a game.
+func newGamingToken() (string, error) {
+	var tok [16]byte
+	if _, err := rand.Read(tok[:]); err != nil {
+		return "", fmt.Errorf("generate game token: %w", err)
+	}
+	return hex.EncodeToString(tok[:]), nil
+}
+
+// carryGameTokens keeps a token for every game still installed and mints one
+// for a game that has just been added.
+//
+// A token is not rotated by an unrelated policy edit, or saving the settings
+// would cut off every running game. Removing a game drops its token, so
+// uninstalling revokes rather than hides: a game left running finds that its
+// identity no longer resolves.
+func carryGameTokens(prev map[string]string, installed []string) (map[string]string, error) {
+	out := make(map[string]string, len(installed))
+	for _, id := range installed {
+		if tok := prev[id]; tok != "" {
+			out[id] = tok
+			continue
+		}
+		tok, err := newGamingToken()
+		if err != nil {
+			return nil, err
+		}
+		out[id] = tok
+	}
+	return out, nil
+}
+
+// GamingGameForToken resolves a bearer token to the game it identifies.
+//
+// This is the only place a game's identity is established, and everything the
+// host enforces hangs off what it returns.
+func GamingGameForToken(token string) (string, bool) {
+	return gamingGameForToken(ReadGamingSettings(), token)
+}
+
+// gamingGameForToken is the resolution itself, without the file read.
+//
+// Comparison is constant time so a caller cannot learn a token a character at a
+// time, and a disabled section resolves nothing at all - the tunnel then
+// answers as though it is not there.
+func gamingGameForToken(s types.GamingSettings, token string) (string, bool) {
+	if token == "" || !s.Enabled {
+		return "", false
+	}
+	for game, tok := range s.GameTokens {
+		if tok != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(token)) == 1 {
+			return game, true
+		}
+	}
+	return "", false
+}
+
 // ReadGamingSettings returns the stored gaming policy, falling back to the
 // disabled default when the file is absent or unreadable. Read failures are
 // deliberately not surfaced as an enabled policy.
@@ -90,8 +151,19 @@ func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) 
 		MaxOpenTables:       in.MaxOpenTables,
 		ApprovalTimeoutSecs: in.ApprovalTimeoutSecs,
 		InstalledGames:      sanitizeInstalledGames(in.InstalledGames),
+		GameTokens:          map[string]string{},
 		Rev:                 cur.Rev + 1,
 	}
+
+	// Carry tokens across for games that are still installed, and mint one
+	// for a game that has just been added. Removing a game drops its token,
+	// so uninstalling actually revokes rather than merely hiding: a game
+	// that kept running would find its identity no longer resolves.
+	tokens, err := carryGameTokens(cur.GameTokens, out.InstalledGames)
+	if err != nil {
+		return types.GamingSettings{}, err
+	}
+	out.GameTokens = tokens
 
 	if out.Mode != gamingModeApproval && out.Mode != gamingModeAutopay {
 		out.Mode = gamingModeApproval

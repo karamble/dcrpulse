@@ -46,6 +46,20 @@ type GamingSettings struct {
 	// installation routes only the games listed here.
 	InstalledGames []string `json:"installedGames"`
 
+	// GameTokens maps an installed game id to its bearer token.
+	//
+	// The token is the game's identity, not merely a password. A game
+	// authenticates with it, and everything the host enforces - which game
+	// a frame may be sent as, and later which account may be spent from and
+	// under what caps - is enforced against the identity it resolves to.
+	// That is why there is one per game rather than one for the section: a
+	// shared secret would make every game the same principal, and a limit
+	// on a principal nobody can tell apart is not a limit.
+	//
+	// A game never states who it is. It presents a token and the host
+	// decides, so a game cannot claim to be another one.
+	GameTokens map[string]string `json:"gameTokens,omitempty"`
+
 	// Rev bumps on every write so a supervisor can notice a policy change.
 	Rev int `json:"rev"`
 }
