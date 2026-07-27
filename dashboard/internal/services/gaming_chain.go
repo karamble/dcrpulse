@@ -95,7 +95,13 @@ func GamingBlockHash(ctx context.Context, height int64) (string, error) {
 // It looks up unspent outputs only, which is the whole question: a bond that
 // has been spent is not a bond any more, and an escrow whose deposit is gone
 // cannot be settled against.
-func GamingChainOutpoint(ctx context.Context, txid string, vout uint32) (GamingOutpoint, error) {
+//
+// includeMempool answers a different question and must be asked for. Deciding
+// whether somebody else's deposit is worth staking against needs a confirmed
+// one, because an unconfirmed transaction can still be replaced. Finding which
+// output of a payment you just made is yours needs the opposite - it is not in
+// a block yet by definition.
+func GamingChainOutpoint(ctx context.Context, txid string, vout uint32, includeMempool bool) (GamingOutpoint, error) {
 	if rpc.DcrdClient == nil {
 		return GamingOutpoint{}, ErrGamingChainUnavailable
 	}
@@ -104,9 +110,7 @@ func GamingChainOutpoint(ctx context.Context, txid string, vout uint32) (GamingO
 		return GamingOutpoint{}, fmt.Errorf("txid: %w", err)
 	}
 
-	// Mempool is excluded. A game is deciding whether to stake money against
-	// somebody else's deposit, and an unconfirmed one can still be replaced.
-	out, err := rpc.DcrdClient.GetTxOut(ctx, hash, vout, 0, false)
+	out, err := rpc.DcrdClient.GetTxOut(ctx, hash, vout, 0, includeMempool)
 	if err != nil {
 		return GamingOutpoint{}, fmt.Errorf("outpoint: %w", err)
 	}
