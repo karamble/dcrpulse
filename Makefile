@@ -23,7 +23,7 @@ help: ## Show this help message
 
 init-volumes: ## Initialize volume directories with correct permissions
 	@echo "Initializing volume directories..."
-	@for v in app-data dcrlnd-data brclientd-data dcrdex-data tor-data dashboard-data; do \
+	@for v in app-data dcrlnd-data brclientd-data dcrdex-data tor-data dashboard-data gaming-control gaming-data; do \
 		docker volume create dcrpulse_$$v >/dev/null 2>&1 || true; \
 	done
 	@docker run --rm \
@@ -33,6 +33,8 @@ init-volumes: ## Initialize volume directories with correct permissions
 		-v dcrpulse_dcrdex-data:/v/dcrdex-data \
 		-v dcrpulse_tor-data:/v/tor-data \
 		-v dcrpulse_dashboard-data:/v/dashboard-data \
+		-v dcrpulse_gaming-control:/v/gaming-control \
+		-v dcrpulse_gaming-data:/v/gaming-data \
 		alpine sh -c "mkdir -p /v/app-data/dcrd /v/app-data/dcrwallet && chown -R 1000:1000 /v"
 	@echo "✓ Volumes initialized"
 
