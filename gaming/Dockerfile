@@ -7,7 +7,16 @@
 FROM golang:1.24-alpine AS build
 WORKDIR /src
 COPY portal/ ./portal/
-RUN cd portal && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /portal .
+
+# The public key game binaries must be signed with. A build that does not set
+# it produces a portal that installs nothing at all - which is the safe
+# failure, because the alternative is a portal that installs whatever it is
+# handed. Release builds pass the real key:
+#
+#   docker build --build-arg GAMING_SIGNING_KEY=<64 hex chars> ./gaming
+ARG GAMING_SIGNING_KEY=""
+RUN cd portal && CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X main.signingKeyHex=${GAMING_SIGNING_KEY}" -o /portal .
 
 FROM scratch
 COPY --from=build /portal /portal

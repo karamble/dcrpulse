@@ -211,9 +211,14 @@ func (p *portal) binaryFor(id string) string { return filepath.Join(p.gamesDir, 
 func (p *portal) startLocked(id, token string) {
 	bin := p.binaryFor(id)
 	if _, err := os.Stat(bin); err != nil {
-		// Installed but not present. The dashboard reports this through
-		// the state file rather than the portal pretending otherwise.
-		return
+		// Installed in policy but not present on disk. Fetch it through
+		// the host, which is the only route out of the sandbox, and
+		// verify it before it is ever written under a name this portal
+		// will execute.
+		if err := p.install(id, token); err != nil {
+			log.Printf("portal: %v", err)
+			return
+		}
 	}
 
 	// The token goes on the command line the same way brclientd's

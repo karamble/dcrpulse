@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"regexp"
@@ -261,5 +262,38 @@ func BisonrelayGamingEventsHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+}
+
+// BisonrelayGamingBundleHandler serves a game's binary, or its signature, to
+// the sandbox.
+//
+// The sandbox has no route off the host, so it cannot fetch its own binaries.
+// The host does the fetching, from a URL in its own catalogue rather than one
+// the caller supplies - a game able to name a URL could ask the host to reach
+// anything reachable from here, which is exactly what the sandbox gives up.
+//
+// The bytes are passed through unverified. The portal checks the signature,
+// because the portal is what executes them.
+func BisonrelayGamingBundleHandler(w http.ResponseWriter, r *http.Request) {
+	game := gamingCaller(r)
+	signature := r.URL.Query().Get("part") == "sig"
+
+	body, err := services.FetchGamingBundle(r.Context(), game, signature)
+	if err != nil {
+		if errors.Is(err, services.ErrGamingGameNotInstalled) {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		http.Error(w, "fetch bundle: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer body.Close()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if _, err := io.Copy(w, body); err != nil {
+		// The response is already streaming, so there is no status left
+		// to change; the portal sees a short read and refuses it.
+		log.Printf("gaming bundle for %s: %v", game, err)
 	}
 }

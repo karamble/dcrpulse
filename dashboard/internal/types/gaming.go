@@ -78,7 +78,18 @@ type GamingGame struct {
 	// Installed reports whether the user added this game.
 	Installed bool `json:"installed"`
 
-	// Ready reports whether the game's backend is actually reachable. A game
-	// can be installed and not ready while its service is starting or absent.
+	// Ready reports whether the sandbox has this game's process running.
+	// Deliberately not the same as installed: a game can be installed and
+	// crashed, or installed with its binary never fetched.
 	Ready bool `json:"ready"`
+
+	// BundleURL is where the game's binary is published, and BundleSigURL
+	// its detached signature. The sandbox has no route off the host, so the
+	// host fetches both on its behalf - which also makes this the single
+	// audited point where anything enters the sandbox.
+	//
+	// They are not served to the browser: a URL the frontend could rewrite
+	// would be a way to ask the host to fetch something else.
+	BundleURL    string `json:"-"`
+	BundleSigURL string `json:"-"`
 }

@@ -238,6 +238,7 @@ func main() {
 	gaming.Use(handlers.GamingTunnelAuth)
 	gaming.HandleFunc("/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
 	gaming.HandleFunc("/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
+	gaming.HandleFunc("/bundle", handlers.BisonrelayGamingBundleHandler).Methods("GET")
 
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth)

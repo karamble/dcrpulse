@@ -5,10 +5,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"sync"
 
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/types"
 )
 
 // Errors a game can be told about. They are deliberately unrevealing: a game
@@ -208,4 +212,66 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 		return ErrGamingWrongGame
 	}
 	return rpc.BrclientdGCMessage(ctx, gcid, frame, 0)
+}
+
+// maxBundleBytes bounds a game binary. A static Go binary is tens of megabytes;
+// this leaves room without letting a bad URL fill the sandbox's volume.
+const maxBundleBytes = 128 << 20
+
+// FetchGamingBundle retrieves a game's binary, or its signature, on the
+// sandbox's behalf.
+//
+// The sandbox has no route off the host, so it cannot fetch anything itself.
+// That is not a limitation to work around: it makes this the single point where
+// anything enters the sandbox, and the host can refuse a game the user never
+// installed rather than discovering afterwards what was downloaded.
+//
+// The host does not verify the signature. The portal does, because the portal
+// is what executes the binary, and the thing that runs code should be the thing
+// that checks it - if this host were compromised it still could not put
+// arbitrary code into the sandbox.
+func FetchGamingBundle(ctx context.Context, game string, signature bool) (io.ReadCloser, error) {
+	if !gamingGameInstalled(game) {
+		return nil, ErrGamingGameNotInstalled
+	}
+	var entry *types.GamingGame
+	for i := range gamingCatalogue {
+		if gamingCatalogue[i].ID == game {
+			entry = &gamingCatalogue[i]
+			break
+		}
+	}
+	if entry == nil {
+		return nil, ErrGamingGameNotInstalled
+	}
+
+	// The URL comes from this build's catalogue, never from the caller. A
+	// game that could name its own URL could ask the host to fetch anything
+	// reachable from here, which is precisely what the sandbox gives up.
+	url := entry.BundleURL
+	if signature {
+		url = entry.BundleSigURL
+	}
+	if url == "" {
+		return nil, fmt.Errorf("no bundle published for %s", game)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build bundle request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch bundle: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("bundle source returned %s", resp.Status)
+	}
+	return readCloser{Reader: io.LimitReader(resp.Body, maxBundleBytes), Closer: resp.Body}, nil
+}
+
+type readCloser struct {
+	io.Reader
+	io.Closer
 }
