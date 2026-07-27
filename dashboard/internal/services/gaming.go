@@ -215,18 +215,50 @@ func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) 
 	return out, nil
 }
 
+// GamingState is what the sandbox's portal reports about itself.
+type GamingState struct {
+	Rev     int            `json:"rev"`
+	Running map[string]int `json:"running"` // game id -> pid
+	Missing []string       `json:"missing"` // installed, but no binary present
+	Updated int64          `json:"updated"`
+}
+
+// ReadGamingState reads the sandbox's state file.
+//
+// The dashboard cannot start or inspect a container - there is no docker socket
+// and no exec anywhere in this codebase - so this file is the only way the
+// answer travels back, exactly as it is for dcrwallet, dcrlnd and the rest.
+func ReadGamingState() GamingState {
+	var st GamingState
+	blob, err := os.ReadFile(config.GamingStatePath())
+	if err != nil {
+		return GamingState{}
+	}
+	if err := json.Unmarshal(blob, &st); err != nil {
+		return GamingState{}
+	}
+	return st
+}
+
 // GamingCatalogue reports every known game, marked with whether the user
-// installed it. Ready stays false until a game's backend actually exists;
-// nothing is wired up yet.
+// installed it and whether it is actually running.
+//
+// Installed and ready are separate answers on purpose. A game can be installed
+// and crashed, or installed with its binary never fetched, and reporting it as
+// ready would send a player to a table nothing is listening on. Ready means the
+// portal has the process up right now.
 func GamingCatalogue() []types.GamingGame {
 	installed := make(map[string]bool)
 	for _, id := range ReadGamingSettings().InstalledGames {
 		installed[id] = true
 	}
+	state := ReadGamingState()
+
 	out := make([]types.GamingGame, 0, len(gamingCatalogue))
 	for _, g := range gamingCatalogue {
 		g.Installed = installed[g.ID]
-		g.Ready = false
+		pid, up := state.Running[g.ID]
+		g.Ready = g.Installed && up && pid > 0
 		out = append(out, g)
 	}
 	return out

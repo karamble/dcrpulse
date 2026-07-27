@@ -11,7 +11,8 @@ services:
     # Each directory is committed in the app, so umbrelOS seeds it; Docker
     # still creates it root-owned when an update adds one, which is what this
     # repairs. Mounted one by one because ${APP_DATA_DIR} itself may not be.
-    command: ["sh", "-c", "chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor"]
+    # The two gaming directories are created here because they are not committed.
+    command: ["sh", "-c", "mkdir -p /host/gaming-control /host/gaming && chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor /host/gaming-control /host/gaming"]
     volumes:
       - ${APP_DATA_DIR}/data/dashboard:/host/dashboard
       - ${APP_DATA_DIR}/data/dcrlnd:/host/dcrlnd
@@ -148,11 +149,22 @@ services:
     volumes:
       - ${APP_DATA_DIR}/data:/app-data
       - ${APP_DATA_DIR}/data/dashboard:/dashboard-data
+      # The dashboard is the only writer of the gaming policy, and reads the
+      # sandbox's state read-only the way it reads every other supervisor's.
+      - ${APP_DATA_DIR}/data/gaming-control:/control
+      - ${APP_DATA_DIR}/data/gaming:/gaming-data:ro
     ports:
       # The agents MCP server, beside the app proxy: MCP clients present a
       # bearer token, not an Umbrel session. No listener binds until the
       # server is switched on in Settings > AI Agents.
       - "${APP_DCRPULSE_MCP_AGENTS_PORT}:8090"
+    # Both networks, explicitly. Naming any network removes a service from the
+    # default one, and app_proxy reaches this container by name on the default
+    # - so listing only gaming-net here would take the whole app offline rather
+    # than degrade.
+    networks:
+      - default
+      - gaming-net
     environment:
       PORT: 8735
       DCRPULSE_LOG_LEVEL: ${DCRPULSE_LOG_LEVEL:-info}
@@ -226,3 +238,33 @@ services:
     depends_on:
       dcrd:
         condition: service_healthy
+
+  # Games are untrusted: they play for real money against strangers, beside a
+  # wallet and a Bison Relay identity. This service mounts neither the app data
+  # nor the dcrlnd data that every other service does - those hold dcrwallet's
+  # files and brclientd's client certificate, and that certificate is the
+  # credential for Bison Relay's RPC. A game able to read it would reach the
+  # relay directly and the bridge in front of it would be decoration.
+  #
+  # gaming-net is internal, so there is no route off the host. The isolation is
+  # the absence of a route, not a rule anything must honour.
+  gaming:
+    image: ghcr.io/karamble/dcrpulse-gaming:latest
+    user: "1000:1000"
+    restart: on-failure
+    networks:
+      - gaming-net
+    volumes:
+      - ${APP_DATA_DIR}/gaming-control:/control:ro
+      - ${APP_DATA_DIR}/gaming:/data
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+networks:
+  # Umbrel declares no networks of its own; everything else stays on the
+  # implicit default, which is why only the two services that need gaming-net
+  # name any at all.
+  gaming-net:
+    driver: bridge
+    internal: true
