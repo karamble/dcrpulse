@@ -88,6 +88,11 @@ type GamingGame struct {
 	// host fetches both on its behalf - which also makes this the single
 	// audited point where anything enters the sandbox.
 	//
+	// {arch} is replaced with the sandbox's architecture. A game is a single
+	// static binary, so it is built per platform: desktop stacks run amd64
+	// and Umbrel is usually arm64, and serving one to the other produces a
+	// binary that cannot execute.
+	//
 	// They are not served to the browser: a URL the frontend could rewrite
 	// would be a way to ask the host to fetch something else.
 	BundleURL    string `json:"-"`
