@@ -273,6 +273,25 @@ func BisonrelayGamingChainTipHandler(w http.ResponseWriter, r *http.Request) {
 	gamingJSON(w, tip)
 }
 
+// BisonrelayGamingBlockHashHandler reports the hash of a block.
+//
+// A table seats itself from one, so it asks by height rather than for the tip:
+// the tip moves, and two peers reading it a second apart would seat the same
+// table differently.
+func BisonrelayGamingBlockHashHandler(w http.ResponseWriter, r *http.Request) {
+	height, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("height")), 10, 64)
+	if err != nil || height < 0 {
+		http.Error(w, "height must be a block number", http.StatusBadRequest)
+		return
+	}
+	hash, err := services.GamingBlockHash(r.Context(), height)
+	if err != nil {
+		gamingChainError(w, err)
+		return
+	}
+	gamingJSON(w, map[string]any{"height": height, "hash": hash})
+}
+
 // BisonrelayGamingOutpointHandler reports what is at an outpoint.
 //
 // This is how a game checks somebody else's bond for itself. The host says what

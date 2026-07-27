@@ -241,6 +241,7 @@ func main() {
 	gaming.HandleFunc("/bundle", handlers.BisonrelayGamingBundleHandler).Methods("GET")
 	gaming.HandleFunc("/chain/tip", handlers.BisonrelayGamingChainTipHandler).Methods("GET")
 	gaming.HandleFunc("/chain/outpoint", handlers.BisonrelayGamingOutpointHandler).Methods("GET")
+	gaming.HandleFunc("/chain/blockhash", handlers.BisonrelayGamingBlockHashHandler).Methods("GET")
 	gaming.HandleFunc("/spend", handlers.BisonrelayGamingSpendHandler).Methods("POST")
 	gaming.HandleFunc("/spend/status", handlers.BisonrelayGamingSpendStatusHandler).Methods("GET")
 
