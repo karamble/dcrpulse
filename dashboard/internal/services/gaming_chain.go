@@ -67,6 +67,29 @@ func GamingChainTipNow(ctx context.Context) (GamingChainTip, error) {
 	return GamingChainTip{Height: height, Hash: hash.String()}, nil
 }
 
+// GamingBlockHash reports the hash of the block at a height.
+//
+// A table draws its seating from one, and it has to be a block from after
+// everybody committed: a fact all of them can check and none could predict when
+// they were choosing keys. Which is why a height is asked for rather than the
+// tip - the tip moves, and two peers reading it a second apart would seat the
+// same table differently.
+func GamingBlockHash(ctx context.Context, height int64) (string, error) {
+	if rpc.DcrdClient == nil {
+		return "", ErrGamingChainUnavailable
+	}
+	if height < 0 {
+		return "", fmt.Errorf("height %d is not a block", height)
+	}
+	hash, err := rpc.DcrdClient.GetBlockHash(ctx, height)
+	if err != nil {
+		// Most often the chain has simply not got there yet, which is
+		// an ordinary thing for a table waiting on its deadline.
+		return "", fmt.Errorf("block at height %d: %w", height, err)
+	}
+	return hash.String(), nil
+}
+
 // GamingChainOutpoint reports what is at an outpoint, if anything.
 //
 // It looks up unspent outputs only, which is the whole question: a bond that
