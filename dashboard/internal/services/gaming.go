@@ -5,14 +5,20 @@
 package services
 
 import (
+	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/types"
@@ -221,6 +227,7 @@ func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) 
 type GamingState struct {
 	Rev     int            `json:"rev"`
 	Running map[string]int `json:"running"` // game id -> pid
+	Ports   map[string]int `json:"ports"`   // game id -> the port it listens on
 	Missing []string       `json:"missing"` // installed, but no binary present
 	Updated int64          `json:"updated"`
 }
@@ -264,6 +271,92 @@ func GamingCatalogue() []types.GamingGame {
 		out = append(out, g)
 	}
 	return out
+}
+
+// gamingSandboxHost is where the sandbox is reached. It is the compose service
+// name, resolved on the internal gaming network - the one network the sandbox
+// is attached to, and the only one it can reach anything on.
+const gamingSandboxHost = "gaming"
+
+// ErrGamingGameNotRunning says the sandbox has nothing listening for a game.
+var ErrGamingGameNotRunning = errors.New("game is not running")
+
+// GamingGameURL is where a running game can be driven.
+//
+// The port comes from the portal's own report rather than from anything the
+// caller supplies. The sandbox has no route out, so what it says about itself
+// is the only account there is - and a URL a caller could shape is exactly what
+// the sandbox exists to prevent.
+func GamingGameURL(id string) (string, error) {
+	return gamingGameURL(ReadGamingState(), id, gamingGameInstalled(id))
+}
+
+// gamingGameURL is the decision on its own. The state file's path is a
+// compile-time constant, so anything that reads it is unreachable from a test;
+// keeping the rule separate is what makes it checkable.
+func gamingGameURL(st GamingState, id string, installed bool) (string, error) {
+	if !installed {
+		return "", ErrGamingGameNotInstalled
+	}
+	pid, up := st.Running[id]
+	port, known := st.Ports[id]
+	if !up || pid <= 0 || !known || port <= 0 {
+		// Installed and running are different answers. A game that is
+		// added but not up has nothing listening, and pointing a player
+		// at it would fail in a way nobody could act on.
+		return "", ErrGamingGameNotRunning
+	}
+	return fmt.Sprintf("http://%s:%d", gamingSandboxHost, port), nil
+}
+
+// AcceptGamingInvite hands an accepted invitation to the game that can act on
+// it, authenticated as the host with that game's own token.
+//
+// The dashboard does not read the invitation beyond deciding which game it
+// names. What the terms mean is the game's business, and a host that formed an
+// opinion about them would be a party to a table nobody agreed to trust.
+func AcceptGamingInvite(ctx context.Context, id, invite, gcid string) error {
+	base, err := GamingGameURL(id)
+	if err != nil {
+		return err
+	}
+	token, err := gamingTokenFor(id)
+	if err != nil {
+		return err
+	}
+
+	body, err := json.Marshal(map[string]string{"invite": invite, "gcid": gcid})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/table/join", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("reach %s: %w", id, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return fmt.Errorf("%s refused the invitation: %s", id, strings.TrimSpace(string(msg)))
+	}
+	return nil
+}
+
+// gamingTokenFor returns the token the host issued a game, which is the only
+// thing that game will answer to.
+func gamingTokenFor(id string) (string, error) {
+	s := ReadGamingSettings()
+	token := s.GameTokens[id]
+	if strings.TrimSpace(token) == "" {
+		return "", ErrGamingGameNotInstalled
+	}
+	return token, nil
 }
 
 // sanitizeInstalledGames drops unknown ids and duplicates, so a policy can only
