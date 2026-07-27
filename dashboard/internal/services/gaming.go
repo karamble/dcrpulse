@@ -43,8 +43,8 @@ var gamingCatalogue = []types.GamingGame{
 		Name:            "Poker",
 		Description:     "Self-custodial Decred poker. Stakes are held in per-player escrow that only the whole table can settle, and are refundable by you alone after a timeout.",
 		ProtocolVersion: 1,
-		BundleURL:       "https://github.com/vctt94/pokerbisonrelay/releases/latest/download/pokerplugin-linux-amd64",
-		BundleSigURL:    "https://github.com/vctt94/pokerbisonrelay/releases/latest/download/pokerplugin-linux-amd64.sig",
+		BundleURL:       "https://github.com/vctt94/pokerbisonrelay/releases/latest/download/pokerplugin-linux-{arch}",
+		BundleSigURL:    "https://github.com/vctt94/pokerbisonrelay/releases/latest/download/pokerplugin-linux-{arch}.sig",
 	},
 }
 

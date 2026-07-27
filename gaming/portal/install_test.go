@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -19,6 +20,9 @@ func bundleHost(t *testing.T, bundle, sig []byte) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer tok" {
 			t.Errorf("bundle fetched without the game's token: %q", got)
+		}
+		if got := r.URL.Query().Get("arch"); got != runtime.GOARCH {
+			t.Errorf("bundle fetched for arch %q, want %q", got, runtime.GOARCH)
 		}
 		if r.URL.Query().Get("part") == "sig" {
 			_, _ = w.Write(sig)

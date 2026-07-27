@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"dcrpulse/internal/rpc"
@@ -230,7 +231,7 @@ const maxBundleBytes = 128 << 20
 // is what executes the binary, and the thing that runs code should be the thing
 // that checks it - if this host were compromised it still could not put
 // arbitrary code into the sandbox.
-func FetchGamingBundle(ctx context.Context, game string, signature bool) (io.ReadCloser, error) {
+func FetchGamingBundle(ctx context.Context, game, arch string, signature bool) (io.ReadCloser, error) {
 	if !gamingGameInstalled(game) {
 		return nil, ErrGamingGameNotInstalled
 	}
@@ -256,6 +257,19 @@ func FetchGamingBundle(ctx context.Context, game string, signature bool) (io.Rea
 		return nil, fmt.Errorf("no bundle published for %s", game)
 	}
 
+	// The sandbox says which architecture it needs, because the host cannot
+	// know it - a desktop stack runs amd64 while Umbrel is usually arm64,
+	// and a single static binary is built per platform.
+	//
+	// It is an allowlisted enum rather than free text substituted into a
+	// URL. The caller choosing part of a URL the host will fetch is exactly
+	// what the sandbox gives up, so this stays a choice between two known
+	// values.
+	if !gamingArchAllowed(arch) {
+		return nil, fmt.Errorf("unsupported architecture %q", arch)
+	}
+	url = strings.ReplaceAll(url, "{arch}", arch)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build bundle request: %w", err)
@@ -269,6 +283,16 @@ func FetchGamingBundle(ctx context.Context, game string, signature bool) (io.Rea
 		return nil, fmt.Errorf("bundle source returned %s", resp.Status)
 	}
 	return readCloser{Reader: io.LimitReader(resp.Body, maxBundleBytes), Closer: resp.Body}, nil
+}
+
+// gamingArchAllowed reports whether an architecture is one this host will
+// fetch a binary for.
+func gamingArchAllowed(arch string) bool {
+	switch arch {
+	case "amd64", "arm64":
+		return true
+	}
+	return false
 }
 
 type readCloser struct {
