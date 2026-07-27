@@ -228,3 +228,27 @@ func TestReadGamingStateToleratesAbsence(t *testing.T) {
 		t.Fatalf("a missing state file should report nothing running, got %+v", st)
 	}
 }
+
+// A game is a single static binary built per platform: desktop stacks run
+// amd64 and Umbrel is usually arm64. Serving one to the other hands the sandbox
+// a binary that cannot execute.
+func TestGamingArchAllowlist(t *testing.T) {
+	for _, ok := range []string{"amd64", "arm64"} {
+		if !gamingArchAllowed(ok) {
+			t.Errorf("%s should be fetchable", ok)
+		}
+	}
+	// The architecture is substituted into a URL the host then fetches, so
+	// it stays a choice between known values rather than free text - a
+	// caller shaping that URL is what the sandbox exists to prevent.
+	for _, bad := range []string{
+		"", "386", "riscv64",
+		"../../etc/passwd",
+		"amd64/../..",
+		"amd64 arm64",
+	} {
+		if gamingArchAllowed(bad) {
+			t.Errorf("%q should not be fetchable", bad)
+		}
+	}
+}

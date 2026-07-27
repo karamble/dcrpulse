@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -92,7 +93,12 @@ func (p *portal) install(id, token string) error {
 // the sandbox has.
 func (p *portal) fetch(id, token, part string) ([]byte, error) {
 	client := &http.Client{Timeout: bundleTimeout}
-	req, err := http.NewRequest(http.MethodGet, p.bridgeURL+"/bundle?part="+part, nil)
+	// The sandbox names its own architecture: the host cannot know it, and a
+	// desktop stack running amd64 while Umbrel runs arm64 would otherwise be
+	// handed a binary that cannot execute. runtime.GOARCH is this portal's
+	// own, which is by construction the one a game must match.
+	req, err := http.NewRequest(http.MethodGet,
+		p.bridgeURL+"/bundle?part="+part+"&arch="+runtime.GOARCH, nil)
 	if err != nil {
 		return nil, err
 	}

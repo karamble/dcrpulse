@@ -278,8 +278,9 @@ func BisonrelayGamingEventsHandler(w http.ResponseWriter, r *http.Request) {
 func BisonrelayGamingBundleHandler(w http.ResponseWriter, r *http.Request) {
 	game := gamingCaller(r)
 	signature := r.URL.Query().Get("part") == "sig"
+	arch := r.URL.Query().Get("arch")
 
-	body, err := services.FetchGamingBundle(r.Context(), game, signature)
+	body, err := services.FetchGamingBundle(r.Context(), game, arch, signature)
 	if err != nil {
 		if errors.Is(err, services.ErrGamingGameNotInstalled) {
 			http.Error(w, err.Error(), http.StatusForbidden)
