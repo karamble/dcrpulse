@@ -157,13 +157,23 @@ func StartBrclientdNotifs(ctx context.Context) {
 			}
 
 			err := rpc.BrclientdStreamNotifications(attemptCtx, func(evt rpc.BrclientdNotifEvent) {
+				backoff = minBackoff
+				alerts.Resolve("br_disconnected", "")
+				// Game frames are protocol traffic for the gaming
+				// bridge, not chat. They go to the game that owns
+				// them and no further: a browser has no use for a
+				// poker table's wire format, and forwarding it
+				// would put game traffic on the operator's socket
+				// for the whole length of a hand.
+				if evt.Type == gamingFrameEvent {
+					Gaming().deliverFrame(evt.Payload)
+					return
+				}
 				// Keepalives prove the stream is healthy but carry
 				// nothing for the browser fan-out or the event bus.
 				if evt.Type != "keepalive" {
 					bus.broadcast(BisonrelayEvent{Type: evt.Type, Payload: evt.Payload})
 				}
-				backoff = minBackoff
-				alerts.Resolve("br_disconnected", "")
 			})
 			forced := attemptCtx.Err() != nil
 			cancel()
