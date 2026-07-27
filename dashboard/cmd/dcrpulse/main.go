@@ -254,6 +254,8 @@ func main() {
 	gaming.HandleFunc("/bundle", handlers.BisonrelayGamingBundleHandler).Methods("GET")
 	gaming.HandleFunc("/chain/tip", handlers.BisonrelayGamingChainTipHandler).Methods("GET")
 	gaming.HandleFunc("/chain/outpoint", handlers.BisonrelayGamingOutpointHandler).Methods("GET")
+	gaming.HandleFunc("/spend", handlers.BisonrelayGamingSpendHandler).Methods("POST")
+	gaming.HandleFunc("/spend/status", handlers.BisonrelayGamingSpendStatusHandler).Methods("GET")
 
 	// API routes. The body cap is Bison Relay's payload maximum on the protocol
 	// version servers ship with: the largest legitimate JSON body on this surface
@@ -633,6 +635,8 @@ func main() {
 	api.Handle("/br/gaming/settings", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSettingsHandler))).Methods("GET", "POST")
 	api.Handle("/br/gaming/games", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingGamesHandler))).Methods("GET")
 	api.Handle("/br/gaming/invite", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingInviteHandler))).Methods("POST")
+	api.Handle("/br/gaming/spends", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSpendsHandler))).Methods("GET")
+	api.Handle("/br/gaming/spends/decide", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSpendDecideHandler))).Methods("POST")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.Handle("/wallet/ln/unlock",

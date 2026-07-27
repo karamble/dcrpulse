@@ -190,6 +190,17 @@ func GamingSettingsPath() string {
 	return filepath.Join(GamingControlDir(), "gaming.json")
 }
 
+// GamingSpendLogPath is where every spend a game asked for is recorded, with
+// what was decided about it.
+//
+// It lives in the stack's own control directory rather than the sandbox's,
+// because the sandbox can read that one - and one game being able to read what
+// another has been spending is exactly the sort of thing keeping games apart is
+// for.
+func GamingSpendLogPath() string {
+	return filepath.Join(StackControlDir(), "gaming-spends.json")
+}
+
 // GamingStatePath is where the sandbox's portal reports what is actually
 // running, the way every other supervisor reports through control-state.json.
 // Installed and running are separate answers: a game can be installed and
