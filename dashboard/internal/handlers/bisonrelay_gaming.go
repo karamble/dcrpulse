@@ -182,6 +182,65 @@ func BisonrelayGamingInviteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// BisonrelayGamingSpendsHandler lists what games have asked to spend, and what
+// was decided, for a person to read.
+func BisonrelayGamingSpendsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	gamingJSON(w, map[string]any{"spends": services.GamingSpends()})
+}
+
+// BisonrelayGamingSpendDecideHandler is a person answering a game's request.
+//
+// Approving takes the passphrase, because that is the only thing that can move
+// money here and it belongs to them. What is paid is the amount and address
+// recorded when the request was made, never anything passed in now - so what
+// is signed is what was shown.
+func BisonrelayGamingSpendDecideHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID         string `json:"id"`
+		Approve    bool   `json:"approve"`
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+
+	var (
+		spend services.GamingSpend
+		err   error
+	)
+	if req.Approve {
+		if len(passphrase) == 0 {
+			http.Error(w, "passphrase is required to approve a spend", http.StatusBadRequest)
+			return
+		}
+		spend, err = services.ApproveGamingSpend(r.Context(), strings.TrimSpace(req.ID), passphrase)
+	} else {
+		spend, err = services.DenyGamingSpend(strings.TrimSpace(req.ID))
+	}
+
+	switch {
+	case err == nil:
+		gamingJSON(w, spend)
+	case errors.Is(err, services.ErrGamingSpendNotFound):
+		http.Error(w, "no such spend request", http.StatusNotFound)
+	case errors.Is(err, services.ErrGamingSpendNotPending):
+		http.Error(w, "that request was already decided", http.StatusConflict)
+	default:
+		http.Error(w, err.Error(), http.StatusBadGateway)
+	}
+}
+
 // ---- The tunnel ----
 //
 // A game sends and receives its own protocol frames through these two routes.
@@ -249,6 +308,60 @@ func gamingChainError(w http.ResponseWriter, err error) {
 		return
 	}
 	http.Error(w, err.Error(), http.StatusBadGateway)
+}
+
+// ---- Spending ----
+//
+// The one place a game can move money, and the one place the bridge forms an
+// opinion about anything. Everywhere else it carries frames whole; here it
+// decides which account, how much, how often, and whether a person said yes.
+// Policy belongs where money moves, not where messages do.
+
+// BisonrelayGamingSpendHandler records a game's request to spend, or refuses it.
+//
+// It never spends. The dashboard holds no wallet passphrase - every send route
+// takes one from the user and wipes it - so all this can do is ask a person.
+func BisonrelayGamingSpendHandler(w http.ResponseWriter, r *http.Request) {
+	game := gamingCaller(r)
+
+	var req struct {
+		Address     string `json:"address"`
+		AmountAtoms int64  `json:"amountAtoms"`
+		Reason      string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	spend, err := services.RequestGamingSpend(game, req.Address, req.AmountAtoms, req.Reason)
+	switch {
+	case err == nil:
+		gamingJSON(w, spend)
+	case errors.Is(err, services.ErrGamingSpendRefused):
+		// The reason matters: a game told only "no" cannot tell a cap
+		// it will never get under from one it could wait out.
+		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, services.ErrGamingGameNotInstalled):
+		http.Error(w, "game is not installed", http.StatusForbidden)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// BisonrelayGamingSpendStatusHandler reports what became of a request.
+//
+// Scoped to the game that made it: what another game has been spending is a
+// question this one has no business having answered.
+func BisonrelayGamingSpendStatusHandler(w http.ResponseWriter, r *http.Request) {
+	game := gamingCaller(r)
+
+	spend, err := services.GamingSpendFor(game, strings.TrimSpace(r.URL.Query().Get("id")))
+	if err != nil {
+		http.Error(w, "no such spend request", http.StatusNotFound)
+		return
+	}
+	gamingJSON(w, spend)
 }
 
 // gamingTunnelGameKey carries the authenticated game down to the handlers.
