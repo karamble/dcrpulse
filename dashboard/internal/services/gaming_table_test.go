@@ -49,15 +49,18 @@ func TestCreatingRefusesTermsNobodyCanPlay(t *testing.T) {
 	for _, c := range []struct {
 		seats uint32
 		buyin uint64
+		open  uint32
 		why   string
 	}{
-		{1, 10_000_000, "one seat is not a table"},
-		{7, 10_000_000, "seven seats is beyond the escrow"},
-		{2, 0, "no buy-in is no stake"},
+		{1, 10_000_000, 1, "one seat is not a table"},
+		{7, 10_000_000, 1, "seven seats is beyond the escrow"},
+		{2, 0, 1, "no buy-in is no stake"},
+		{2, 10_000_000, gamingMaxOpenBlocks + 1, "an invitation open for over a day is not worth keeping"},
 	} {
-		_, err := CreateGamingTable(t.Context(), "poker", strings.Repeat("ab", 32), c.buyin, c.seats)
+		_, err := CreateGamingTable(t.Context(), "poker", strings.Repeat("ab", 32), c.buyin, c.seats, c.open)
 		if err == nil {
-			t.Errorf("%d seats at %d atoms was accepted, and %s", c.seats, c.buyin, c.why)
+			t.Errorf("%d seats at %d atoms open for %d blocks was accepted, and %s",
+				c.seats, c.buyin, c.open, c.why)
 		}
 	}
 }
