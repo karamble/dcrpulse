@@ -6,6 +6,7 @@ import { useContext, useEffect, useState } from 'react';
 import { Check, Gamepad2, Loader2 } from 'lucide-react';
 import { GamingGame, acceptGamingInvite, getGamingGames } from '../../services/gamingApi';
 import { GamingInvite } from './gamingInviteParse';
+import { useGamePanel } from './GamePanelProvider';
 import { GamingChatCtx } from './gamingChatContext';
 
 const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
@@ -24,6 +25,7 @@ const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0
 // the game is actually running: a game that is added but not up would take the
 // click and do nothing, which is worse than saying so.
 export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
+  const panel = useGamePanel();
   const [game, setGame] = useState<GamingGame | null>(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -107,9 +109,17 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
           {name} is added, but its service is not running yet.
         </span>
       ) : accepted ? (
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <Check className="h-3 w-3" />
           Joined. {name} is forming the table.
+          <button
+            type="button"
+            onClick={() => { void panel.open(invite.game, invite.sid); }}
+            disabled={panel.opening}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/20 hover:bg-primary/30 disabled:opacity-50 text-xs font-medium text-primary"
+          >
+            {panel.opening ? 'Opening...' : 'Open table'}
+          </button>
         </span>
       ) : !gcid ? (
         // A table plays in the conversation its invitation arrived in, so

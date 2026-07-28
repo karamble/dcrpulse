@@ -13,6 +13,7 @@ import { IncomingCallPill } from './components/bisonrelay/realtime/IncomingCallP
 import { RealtimeToast } from './components/bisonrelay/realtime/RealtimeToast';
 import { IncomingCallsProvider } from './components/bisonrelay/realtime/IncomingCallsProvider';
 import { ThemeProvider } from './services/themes/ThemeProvider';
+import { GamePanelProvider } from './components/bisonrelay/GamePanelProvider';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
 import { WalletLayout } from './components/wallet/WalletLayout';
@@ -265,9 +266,14 @@ function App() {
       <BrowserRouter>
         <AuthGate>
           <BisonrelayLiveProvider>
-            <IncomingCallsProvider>
-              <AppContent />
-            </IncomingCallsProvider>
+            {/* Above the routes rather than inside a page: a hand of poker is
+                money in escrow with obligations attached, and it has to
+                survive somebody navigating away to check a balance. */}
+            <GamePanelProvider>
+              <IncomingCallsProvider>
+                <AppContent />
+              </IncomingCallsProvider>
+            </GamePanelProvider>
           </BisonrelayLiveProvider>
         </AuthGate>
       </BrowserRouter>
