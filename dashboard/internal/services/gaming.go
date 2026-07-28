@@ -102,10 +102,31 @@ func carryGameTokens(prev map[string]string, installed []string) (map[string]str
 	return out, nil
 }
 
+// GamingGameToken is the token this host authenticates *as* a game with.
+//
+// The other direction from GamingGameForToken, and it exists for exactly one
+// caller: the proxy that lets a browser reach a game. That proxy authenticates
+// the browser by this dashboard's own session and then speaks upstream as the
+// game, so the token is swapped in here and goes no further. It must never
+// leave this process in either direction - it authorizes spending.
+func GamingGameToken(game string) (string, bool) {
+	s := ReadGamingSettings()
+	if !s.Enabled {
+		return "", false
+	}
+	tok := s.GameTokens[game]
+	return tok, tok != ""
+}
+
 // GamingGameForToken resolves a bearer token to the game it identifies.
 //
 // This is the only place a game's identity is established, and everything the
 // host enforces hangs off what it returns.
+//
+// It resolves game tokens and nothing else. A panel token, which is a different
+// kind of thing with a different lifetime, is resolved by GamingUISessionFor
+// and the two namespaces must never overlap - a page holding something this
+// function accepted would be a page that can spend.
 func GamingGameForToken(token string) (string, bool) {
 	return gamingGameForToken(ReadGamingSettings(), token)
 }
@@ -172,6 +193,20 @@ func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) 
 		return types.GamingSettings{}, err
 	}
 	out.GameTokens = tokens
+
+	// Open panels go with the game they were opened onto. A token that
+	// outlived an uninstall would be a browser tab still able to reach a
+	// game the user removed - and switching the section off has to mean off,
+	// not off for everything except what is already open.
+	if !out.Enabled {
+		RevokeAllGamingUISessions()
+	} else {
+		for game := range cur.GameTokens {
+			if _, still := out.GameTokens[game]; !still {
+				RevokeGamingUISessionsFor(game)
+			}
+		}
+	}
 
 	if out.Mode != gamingModeApproval && out.Mode != gamingModeAutopay {
 		out.Mode = gamingModeApproval
