@@ -10,6 +10,7 @@ import { Footer } from './components/Footer';
 import { ExternalLinkGuard } from './components/ExternalLinkGuard';
 import { AlertsPill } from './components/alerts/AlertsPill';
 import { ThemeProvider } from './services/themes/ThemeProvider';
+import { GamePanelProvider } from './components/bisonrelay/GamePanelProvider';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
 import { WalletLayout } from './components/wallet/WalletLayout';
@@ -258,7 +259,12 @@ function App() {
       <BrowserRouter>
         <AuthGate>
           <BisonrelayLiveProvider>
-            <AppContent />
+            {/* Above the routes rather than inside a page: a hand of poker is
+                money in escrow with obligations attached, and it has to
+                survive somebody navigating away to check a balance. */}
+            <GamePanelProvider>
+              <AppContent />
+            </GamePanelProvider>
           </BisonrelayLiveProvider>
         </AuthGate>
       </BrowserRouter>
