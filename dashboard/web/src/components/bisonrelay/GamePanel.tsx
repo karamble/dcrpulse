@@ -10,29 +10,8 @@ import { refreshGamePanel, type GamePanelSession } from '../../services/gameUiAp
 import { parseFromFrame, PROTOCOL_VERSION, type ToFrame } from './gamePanelProtocol';
 import { GamingSpendApprovals } from './GamingSpendApprovals';
 
-// A game's own interface, framed.
-//
-// Three decisions here are not cosmetic.
-//
-// **`sandbox="allow-scripts"` and nothing else.** Adding `allow-same-origin`
-// would give the framed document this dashboard's origin: the session cookie,
-// same-origin access to every /api route, and localStorage. That single
-// attribute would collapse the container isolation, the internal network and
-// the bearer tokens all at once. It is the one thing in this file that must
-// never change.
-//
-// **Not a modal.** No backdrop, no focus trap, and z-index below the dialogs.
-// A game asks this host for money by calling /table/fund, which blocks for
-// minutes while a person approves the payment *in the dashboard behind this
-// panel*. A modal would deadlock the user against their own approval prompt -
-// which is also why the approvals card is rendered inside the panel.
-//
-// **A MessageChannel rather than window.postMessage.** The frame's origin is
-// opaque, so `event.origin` on a message from it is the literal string "null" -
-// and any sandboxed frame on the page can produce that, so it authenticates
-// nothing. A port is bound to the document that received it: if the frame
-// navigates itself somewhere else, the port is neutered and nothing further
-// reaches it.
+// A game's interface, framed. Not a modal: a game blocks on /table/fund while
+// the user approves the payment in the dashboard behind this panel.
 
 export interface GamePanelProps {
   game: string;
@@ -40,9 +19,7 @@ export interface GamePanelProps {
   onClose: () => void;
 }
 
-/** refreshBefore is how long before expiry the parent rotates the token. The
- *  parent holds the dashboard session and the frame does not, so this is the
- *  only side that can - and a hand should never end because a token did. */
+/** The parent rotates the token; only it holds the dashboard session. */
 const refreshBefore = 4 * 60 * 1000;
 
 export default function GamePanel({ game, session, onClose }: GamePanelProps) {
@@ -67,9 +44,10 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
     port.current?.postMessage(msg);
   }, []);
 
-  // Hand over one end of a private channel, once, on the frame's first load.
-  // The message that carries the port has to use targetOrigin '*' because an
-  // opaque origin cannot be named - so it deliberately carries nothing else.
+  // A MessageChannel rather than window.postMessage: the frame's origin is
+  // opaque, so event.origin on a message from it is the string "null", which
+  // any sandboxed frame can produce. The port hand-off carries no secret,
+  // because its targetOrigin has to be '*'.
   const onLoad = useCallback(() => {
     if (handed.current) return;
     const win = frame.current?.contentWindow;
@@ -117,8 +95,6 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
           send({ type: 'pulse.token', v: PROTOCOL_VERSION, token: next.token, expiresAt: next.expiresAt });
         })
         .catch(() => {
-          // The panel will stop working when the current token lapses.
-          // Saying so beats a table that silently goes quiet.
           setError('This panel lost its connection to the host. Close and reopen it.');
         });
     }, refreshBefore);
@@ -127,8 +103,7 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Escape closes the panel only when the focus is outside the frame,
-      // because inside it the game may want the key.
+      // Inside the frame the game may want Escape.
       if (e.key === 'Escape' && document.activeElement !== frame.current) onClose();
     };
     window.addEventListener('keydown', onKey);
@@ -142,8 +117,7 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
     height: minimised ? undefined : rect.h,
   };
 
-  // Through a portal, because feed and post cards use backdrop-blur, and a
-  // blurred ancestor creates a containing block that traps position: fixed.
+  // A portal, because a backdrop-blur ancestor traps position: fixed.
   return createPortal(
     <div
       className="fixed z-40 flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
@@ -195,9 +169,8 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
               src={session.uiUrl}
               onLoad={onLoad}
               title={`${game} interface`}
-              // allow-same-origin is never added here. See the note at the
-              // top of this file: it is the one attribute that would give
-              // the game this dashboard's origin.
+              // allow-same-origin would give the game this dashboard's
+              // origin, its cookie and every /api route. Never add it.
               sandbox="allow-scripts"
               referrerPolicy="no-referrer"
               allow=""
@@ -205,9 +178,6 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
             />
           </div>
           <div className="max-h-40 overflow-y-auto border-t border-border">
-            {/* The one thing the frame cannot do is the one it blocks on: a
-                stake or a bond needs a person to approve the payment, and
-                that happens out here. */}
             <GamingSpendApprovals />
           </div>
         </>

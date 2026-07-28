@@ -4,26 +4,18 @@
 
 import api from './api';
 
-// Opening and closing a game panel.
-//
-// These go through the ordinary dashboard API, which means same-origin plus the
-// session cookie - and that is the whole reason the token they hand back can be
-// as narrow as it is. Only this application, at this origin, with the user
-// logged in, can ask for one. The page that receives it could never have.
+// Opening and closing a game panel. Same-origin plus the session cookie is what
+// mints the token, which is why it can be as narrow as it is.
 
 export interface GamePanelSession {
-  /** The credential the framed page uses, and its only one. It is not the
-   *  game's own token: that one authorizes spending and never reaches a
-   *  browser. */
+  /** The framed page's only credential. Not the game's own token, which
+   *  authorizes spending and never reaches a browser. */
   token: string;
   expiresAt: string;
-  /** Where to point the frame. */
   uiUrl: string;
-  /** Where the frame sends its API calls. */
   apiBase: string;
   tableId?: string;
-  /** Where this host will have the game pay the user. Derived here from the
-   *  bound wallet account and pinned on the game before the panel opened. */
+  /** Derived from the bound gaming account and pinned on the game. */
   payout?: string;
 }
 

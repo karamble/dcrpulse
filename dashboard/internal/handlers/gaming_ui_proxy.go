@@ -1,3 +1,7 @@
+// Copyright (c) 2015-2026 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
 package handlers
 
 import (
@@ -19,46 +23,21 @@ import (
 	"dcrpulse/internal/services"
 )
 
-// Letting a browser reach a game, without letting it reach anything else.
+// The gaming sandbox has no route off this host, so this is the only way a
+// browser reaches a game. The panel token arriving here is swapped for the
+// game's own token, which the page never holds.
 //
-// The gaming sandbox is on a network with no route off this host, which is what
-// makes an untrusted game safe to run beside a wallet. A page served by that
-// game therefore cannot be fetched directly by a browser, and this is the only
-// door.
-//
-// It is a translating door, and the translation is the point. On the way in it
-// takes a short-lived token that means "an open panel in this dashboard" and
-// swaps it for the game's own token, which means "this game" and authorizes
-// spending. The page never holds the second one. On the way out it strips
-// anything the game says about cookies or framing, because the game is
-// untrusted and those are this host's business.
-//
-// Two routes with two different kinds of authentication, which is exactly why
-// they are not under /api and not under /gaming:
-//
-//	GET /gameui/{game}/          the document, authenticated by the dashboard
-//	                             session cookie, which a frame navigation
-//	                             carries because it is same-site
-//	*   /gameui/{game}/api/...   the game's API, authenticated by the panel
-//	                             token, because the frame has an opaque origin
-//	                             and sends no cookies at all
-//
-// /api would 403 the second on Origin: null and would want a cookie that will
-// never arrive; /gaming wants a game token and points the other way.
+// The document is authenticated by the dashboard session cookie, which a frame
+// navigation carries; the API calls under it are authenticated by the panel
+// token, because the frame has an opaque origin and sends no cookies.
 
-// gamingSandbox is the one transport for every proxied call, so connections are
-// pooled rather than a new one per request.
-//
-// ResponseHeaderTimeout is deliberately unset. /table/fund and /bond/fund
-// answer only when a person has decided whether to approve a payment, which is
-// minutes away, and a header timeout would cancel the request they were in the
-// middle of approving.
+// ResponseHeaderTimeout is unset: the funding routes answer only once a person
+// has approved a payment, minutes later.
 var gamingSandbox = &http.Transport{
 	DialContext:         (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
 	MaxIdleConnsPerHost: 8,
 	IdleConnTimeout:     90 * time.Second,
-	// So a stream arrives as it is produced rather than in whatever chunks
-	// a compressor decides to emit.
+	// Uncompressed so a stream arrives as it is produced.
 	DisableCompression: true,
 }
 
@@ -84,12 +63,8 @@ func GameUIDocumentHandler(w http.ResponseWriter, r *http.Request) {
 	proxyDocumentTo(w, r, base, token)
 }
 
-// proxyDocumentTo is the fetch, the hashing and the policy, with the upstream
-// already decided.
-//
-// Split out so it can be driven against a stand-in game. Which game runs on
-// which port comes from the portal's own state file and is resolved above; what
-// happens to the headers is this, and it is the part worth pinning.
+// proxyDocumentTo fetches a game's page and returns it under a synthesized
+// policy, with the upstream already resolved.
 func proxyDocumentTo(w http.ResponseWriter, r *http.Request, base, token string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
@@ -99,9 +74,6 @@ func proxyDocumentTo(w http.ResponseWriter, r *http.Request, base, token string)
 		http.Error(w, "bad gateway", http.StatusBadGateway)
 		return
 	}
-	// The document route on the plugin is unauthenticated, but the token is
-	// sent anyway so this one call does not become the exception that makes
-	// somebody wonder whether the rest are authenticated.
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := gamingSandbox.RoundTrip(req)
@@ -111,9 +83,7 @@ func proxyDocumentTo(w http.ResponseWriter, r *http.Request, base, token string)
 	}
 	defer resp.Body.Close()
 
-	// Buffered, unlike everything else here, for two reasons that both
-	// require having the whole document: hashing its inline scripts into a
-	// script-src, and refusing to serve one large enough to be a problem.
+	// Buffered so the inline scripts can be hashed into a script-src.
 	const maxDocument = 8 << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDocument+1))
 	if err != nil {
@@ -132,31 +102,20 @@ func proxyDocumentTo(w http.ResponseWriter, r *http.Request, base, token string)
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
-	// SecurityHeaders set the dashboard's own policy on the way in. This is
-	// a different document with a different origin, so it gets a different
-	// one - the same override the dcrtime worker already uses.
 	h.Set("Content-Security-Policy", policy)
-	// Never X-Frame-Options: it is the whole point that this is framed, and
-	// in older browsers it would override frame-ancestors and break it.
+	// X-Frame-Options would override frame-ancestors in older browsers and
+	// stop this being framed at all.
 	h.Del("X-Frame-Options")
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(body)
 }
 
-// gamingUIFramePolicy is the policy a page with an opaque origin needs.
-//
-// 'self' matches nothing in an opaque origin, so a policy copied from the
-// dashboard's would produce a page that can fetch nothing and cannot even be
-// framed - and the failure would look exactly like this proxy being broken.
-// Every source has to name the origin literally.
-//
-// The sandbox directive is stated here as well as on the frame element. The
-// element is what actually applies it; repeating it means a document that
-// somehow got loaded outside a frame is still confined.
+// gamingUIFramePolicy builds the policy for a page served into a sandboxed
+// frame. Every source names the origin literally: 'self' matches nothing in an
+// opaque origin.
 func gamingUIFramePolicy(origin string, scriptHashes []string) string {
 	script := "script-src"
 	if len(scriptHashes) == 0 {
-		// Nothing inline to allow. A page with no script is still a page.
 		script += " 'none'"
 	}
 	for _, h := range scriptHashes {
@@ -165,8 +124,6 @@ func gamingUIFramePolicy(origin string, scriptHashes []string) string {
 	return strings.Join([]string{
 		"default-src 'none'",
 		script,
-		// The bundle is one document with its styles inlined, and there is
-		// no origin it could load a stylesheet from anyway.
 		"style-src 'unsafe-inline'",
 		"img-src data: blob: " + origin,
 		"font-src data:",
@@ -178,13 +135,9 @@ func gamingUIFramePolicy(origin string, scriptHashes []string) string {
 	}, "; ")
 }
 
-// GameUIPreflightHandler answers the CORS preflight every call from the frame
-// makes.
-//
-// It answers before any token is looked at, because a preflight carries no
-// Authorization header - that is what it is asking permission to send. And it
-// answers identically for any well-formed path, so it cannot be used to
-// enumerate which games are installed or which routes exist.
+// GameUIPreflightHandler answers the CORS preflight. It answers before any
+// token check, because a preflight carries none, and identically for every
+// path so it cannot be used to enumerate games or routes.
 func GameUIPreflightHandler(w http.ResponseWriter, r *http.Request) {
 	gamingUICORS(w)
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -194,17 +147,9 @@ func GameUIPreflightHandler(w http.ResponseWriter, r *http.Request) {
 	_ = r
 }
 
-// gamingUICORS is the one place these headers are set.
-//
-// Allow-Origin is '*' and Allow-Credentials is never set, and the pair is
-// deliberate. A browser refuses '*' together with credentials, but accepts
-// 'null' with them - and 'null' is an origin any page can produce by opening a
-// sandboxed frame of its own, which is the textbook way this arrangement gets
-// broken. Choosing '*' makes that mistake unrepresentable.
-//
-// The consequence, stated plainly: on this subtree the bearer token is the
-// entire authority. That is why it is narrow, short-lived, revocable, and
-// bounded by an allowlist.
+// gamingUICORS sets Allow-Origin '*' and never Allow-Credentials: a browser
+// refuses '*' with credentials but accepts 'null' with them, and any page can
+// produce a null origin. The bearer token is the whole authority here.
 func gamingUICORS(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Access-Control-Allow-Origin", "*")
@@ -224,16 +169,12 @@ func GameUIAPIHandler(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	session, ok := services.GamingUISessionFor(token)
 	if !ok || session.Game != game {
-		// Not found rather than unauthorized, matching how the gaming
-		// tunnel answers: there is no reason to describe this host to
-		// somebody holding nothing.
 		http.NotFound(w, r)
 		return
 	}
 
-	// The path the caller asked for is used to *look up* a route and never
-	// to build one. What goes upstream is the allowlist entry's own string,
-	// so traversal and encoded separators have nothing to act on.
+	// The asked path only looks a route up; the entry's own Path is what
+	// goes upstream, so traversal has nothing to act on.
 	asked := "/" + strings.TrimPrefix(mux.Vars(r)["rest"], "/")
 	route, ok := services.GamingUIRouteFor(game, r.Method, asked)
 	if !ok {
@@ -257,7 +198,7 @@ func GameUIAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A body cap, because this subtree is not under the API router's.
+	// This subtree is not under the API router's body limit.
 	if r.Body != nil {
 		r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
 	}
@@ -272,27 +213,19 @@ func GameUIAPIHandler(w http.ResponseWriter, r *http.Request) {
 
 	proxy := &httputil.ReverseProxy{
 		Transport: gamingSandbox,
-		// Unconditional, rather than trusting content-type sniffing to
-		// notice a stream. A buffered stream is indistinguishable from a
-		// table where nothing is happening.
+		// Unconditional: a buffered stream looks like a quiet one.
 		FlushInterval: -1,
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL.Scheme = target.Scheme
 			pr.Out.URL.Host = target.Host
 			pr.Out.URL.Path = route.Path
-			// Cleared, not left over. RawPath is what actually goes on
-			// the wire when it is a valid encoding of Path, and one
-			// carried in from the request would be an encoding of a
-			// path this proxy just decided not to use.
 			pr.Out.URL.RawPath = ""
 			pr.Out.URL.RawQuery = query
 			pr.Out.Host = ""
 
-			// Built from nothing rather than filtered. The header that
-			// matters most is Cookie: a default ReverseProxy forwards it
-			// verbatim, which would hand the sandbox a live dashboard
-			// session and make the isolated network decorative. Building
-			// up means a header can only be forwarded on purpose.
+			// Built up rather than filtered, so a header can only be
+			// forwarded on purpose. Cookie above all: a default
+			// ReverseProxy would hand the sandbox a live session.
 			out := make(http.Header, 4)
 			if ct := pr.In.Header.Get("Content-Type"); ct != "" {
 				out.Set("Content-Type", ct)
@@ -300,29 +233,26 @@ func GameUIAPIHandler(w http.ResponseWriter, r *http.Request) {
 			if ac := pr.In.Header.Get("Accept"); ac != "" {
 				out.Set("Accept", ac)
 			}
-			// Replaced, never merged: the panel token goes no further
-			// than this function.
+			// Replaced, never merged: the panel token stops here.
 			out.Set("Authorization", "Bearer "+gameToken)
 			pr.Out.Header = out
 		},
 		ModifyResponse: func(resp *http.Response) error {
-			// The game is untrusted and these are this host's to decide.
-			// A Set-Cookie from it would land on the dashboard's own
-			// origin, including one that shadows the session cookie.
+			// A Set-Cookie from the game would land on this origin.
 			resp.Header.Del("Set-Cookie")
 			resp.Header.Del("Content-Security-Policy")
 			resp.Header.Del("Content-Security-Policy-Report-Only")
 			resp.Header.Del("X-Frame-Options")
+			// Deleted, not replaced: ReverseProxy adds these to the
+			// writer, which already carries the one set below, and a
+			// duplicated Allow-Origin fails CORS outright.
 			resp.Header.Del("Access-Control-Allow-Origin")
 			resp.Header.Del("Access-Control-Allow-Credentials")
-			resp.Header.Set("Access-Control-Allow-Origin", "*")
 			resp.Header.Set("Cache-Control", "no-store")
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			if errors.Is(err, context.Canceled) {
-				// The panel closed, or the person navigated away. Not
-				// worth a line, and there is nobody to answer.
 				return
 			}
 			log.Printf("gaming: %s %s: %v", game, route.Path, err)
@@ -332,11 +262,7 @@ func GameUIAPIHandler(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r.WithContext(ctx))
 }
 
-// gamingUIUpstreamError says what went wrong without describing this host.
-//
-// Installed and running are different answers on purpose: a game that is added
-// but not up is something the user can act on, and a game that is not installed
-// is not something to confirm the existence of.
+// gamingUIUpstreamError answers without describing this host.
 func gamingUIUpstreamError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, services.ErrGamingGameNotInstalled):
