@@ -116,3 +116,52 @@ export const getGamingIdentityBackup = async (game: string): Promise<GamingBacku
   });
   return data;
 };
+
+export interface GamingTable {
+  sid: string;
+  invite: string;
+  until: number;
+  height: number;
+  gcid: string;
+}
+
+export const createGamingTable = async (
+  game: string,
+  gcid: string,
+  buyinDcr: number,
+  seats: number,
+): Promise<GamingTable> => {
+  const { data } = await api.post<GamingTable>('/br/gaming/table', { game, gcid, buyinDcr, seats });
+  return data;
+};
+
+export interface GamingBond {
+  game: string;
+  address: string;
+  outpoint: string;
+  hasDeposit: boolean;
+  minAtoms: number;
+  minBlocks: number;
+  atoms?: number;
+  confirmations?: number;
+  height?: number;
+  maturesAt?: number;
+  blocksLeft?: number;
+  spendable?: boolean;
+  spent?: boolean;
+  chainErr?: string;
+}
+
+export const getGamingBond = async (game: string): Promise<GamingBond> => {
+  const { data } = await api.get<GamingBond>('/br/gaming/bond', { params: { game } });
+  return data;
+};
+
+export const reclaimGaming = async (
+  game: string,
+  kind: 'bond' | 'stake',
+  sid?: string,
+): Promise<{ txid: string }> => {
+  const { data } = await api.post<{ txid: string }>('/br/gaming/reclaim', { game, kind, sid });
+  return data;
+};
