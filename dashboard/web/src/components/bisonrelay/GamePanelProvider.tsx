@@ -6,15 +6,8 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { closeGamePanel, openGamePanel, type GamePanelSession } from '../../services/gameUiApi';
 import GamePanel from './GamePanel';
 
-// One panel, mounted above the whole application.
-//
-// Above rather than inside the Bison Relay page, and that is a decision about
-// what a game is rather than about React: a hand of poker is money in escrow
-// with obligations attached, and it must survive the user going to look at
-// their wallet balance. Mounting it inside a page would end a hand every time
-// somebody navigated. The two places a panel is opened from - the gaming tab
-// and an accepted invitation in a chat - are also in different parts of the
-// tree and need the same one.
+// One panel, above the routes: a hand in progress has money in escrow and has
+// to survive the user navigating away.
 
 interface GamePanelContextValue {
   open: (game: string, tableId?: string) => Promise<void>;
@@ -46,9 +39,6 @@ export function GamePanelProvider({ children }: { children: ReactNode }) {
     setSession(undefined);
     setError(undefined);
     if (token) {
-      // The token dies with the panel. It is short-lived anyway, but a
-      // closed panel leaving a working credential behind would make
-      // "closed" mean less than it says.
       closeGamePanel(token).catch(() => {});
     }
   }, [session]);
