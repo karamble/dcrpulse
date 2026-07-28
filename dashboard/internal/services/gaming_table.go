@@ -27,10 +27,20 @@ const (
 	gamingInviteScheme = "gaming"
 	gamingInviteKind   = "table"
 
-	// gamingOpenBlocks is how long registration stays open, in blocks. A
-	// height rather than a time because every peer has to read the same
-	// deadline and clocks disagree.
-	gamingOpenBlocks = 4
+	// gamingOpenBlocks is the default for how long registration stays open,
+	// in blocks. A height rather than a time because every peer has to read
+	// the same deadline and clocks disagree.
+	//
+	// One block, because seating cannot begin until a block past the close
+	// and every block of waiting is paid by a table that has already agreed.
+	// A peer who does not accept within the block misses the table, so a
+	// caller expecting anybody it has not already spoken to should ask for
+	// more.
+	gamingOpenBlocks = 1
+
+	// gamingMaxOpenBlocks bounds it. A day is already far longer than an
+	// invitation nobody has taken up is worth keeping.
+	gamingMaxOpenBlocks = 288
 
 	// gamingRefundBlocks is the relative timelock on every seat's refund
 	// branch. It has to outlast a hand by enough that nobody can pull their
@@ -76,7 +86,14 @@ func gamingInviteLink(game, sid string, buyinAtoms uint64, seats, csvBlocks, unt
 // The seat is taken before the invitation is sent. A join that fails leaves an
 // invitation nobody is at; a send that fails leaves a table only this player
 // knows about, which nobody can join and which expires on its own.
-func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64, seats uint32) (GamingTable, error) {
+func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64, seats, openBlocks uint32) (GamingTable, error) {
+	if openBlocks == 0 {
+		openBlocks = gamingOpenBlocks
+	}
+	if openBlocks > gamingMaxOpenBlocks {
+		return GamingTable{}, fmt.Errorf("registration can stay open for at most %d blocks, not %d",
+			gamingMaxOpenBlocks, openBlocks)
+	}
 	if seats < gamingMinSeats || seats > gamingMaxSeats {
 		return GamingTable{}, fmt.Errorf("a table holds %d to %d seats, not %d",
 			gamingMinSeats, gamingMaxSeats, seats)
@@ -101,7 +118,7 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	if err != nil {
 		return GamingTable{}, err
 	}
-	until := uint32(tip.Height) + gamingOpenBlocks
+	until := uint32(tip.Height) + openBlocks
 	invite := gamingInviteLink(game, sid, buyinAtoms, seats, gamingRefundBlocks, until)
 
 	if err := AcceptGamingInvite(ctx, game, invite, gcid); err != nil {

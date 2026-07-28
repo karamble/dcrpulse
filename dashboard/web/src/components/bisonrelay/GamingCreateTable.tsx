@@ -21,8 +21,9 @@ const mutedBtnCls =
 export const GamingCreateTable = ({ game, onClose }: { game: string; onClose: () => void }) => {
   const [gcs, setGcs] = useState<BisonrelayGC[]>([]);
   const [gcid, setGcid] = useState('');
-  const [buyin, setBuyin] = useState(0.01);
+  const [buyin, setBuyin] = useState(0.001);
   const [seats, setSeats] = useState(2);
+  const [openBlocks, setOpenBlocks] = useState(1);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<{ sid: string; until: number } | null>(null);
@@ -44,7 +45,7 @@ export const GamingCreateTable = ({ game, onClose }: { game: string; onClose: ()
   const create = () => {
     setBusy(true);
     setErr(null);
-    createGamingTable(game, gcid, buyin, seats)
+    createGamingTable(game, gcid, buyin, seats, openBlocks)
       .then((t) => setDone({ sid: t.sid, until: t.until }))
       .catch((e) => {
         const body = (e as { response?: { data?: string } })?.response?.data;
@@ -75,11 +76,11 @@ export const GamingCreateTable = ({ game, onClose }: { game: string; onClose: ()
           <div className="space-y-3">
             <p className="text-sm">
               Posted, and you are seated. Registration closes at block {done.until.toLocaleString()},
-              about 20 minutes from now.
+              about {openBlocks * 5} minutes from now.
             </p>
             <p className="text-xs text-muted-foreground">
-              Anybody in that group chat can take a seat until then. The table forms when it is full
-              and gives up if it is not.
+              Anybody in that group chat can take a seat until then, and seats are drawn a block
+              later. The table forms when it is full and gives up if it is not.
             </p>
             <div className="flex gap-2 pt-1">
               <button type="button" onClick={onClose} className={primaryBtnCls}>
@@ -105,7 +106,7 @@ export const GamingCreateTable = ({ game, onClose }: { game: string; onClose: ()
               </span>
             </label>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <label className="text-xs space-y-1">
                 <span className="text-muted-foreground block">Buy-in a seat (DCR)</span>
                 <input
@@ -129,12 +130,26 @@ export const GamingCreateTable = ({ game, onClose }: { game: string; onClose: ()
                   className={inputCls}
                 />
               </label>
+              <label className="text-xs space-y-1">
+                <span className="text-muted-foreground block">Open for (blocks)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={288}
+                  step="1"
+                  value={openBlocks}
+                  onChange={(e) => setOpenBlocks(Number(e.target.value) || 1)}
+                  className={inputCls}
+                />
+              </label>
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Registration stays open about 20 minutes, stated as a block height because that is
-              what every player checks. Your stake is refundable by you alone after a day if the
-              table never deals.
+              Registration closes {openBlocks === 1 ? 'one block' : `${openBlocks} blocks`} from now,
+              about {openBlocks * 5} minutes, stated as a height because that is what every player
+              checks. Seats are drawn a block after that, from a hash nobody could know while
+              anybody was still joining. Anyone who has not accepted by then misses the table. Your
+              stake is refundable by you alone after a day if the table never deals.
             </p>
 
             {err && (

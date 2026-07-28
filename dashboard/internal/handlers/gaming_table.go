@@ -26,6 +26,8 @@ func BisonrelayGamingCreateHandler(w http.ResponseWriter, r *http.Request) {
 		GCID     string  `json:"gcid"`
 		BuyInDcr float64 `json:"buyinDcr"`
 		Seats    uint32  `json:"seats"`
+		// OpenBlocks is optional; zero takes the default.
+		OpenBlocks uint32 `json:"openBlocks"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -47,7 +49,7 @@ func BisonrelayGamingCreateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	table, err := services.CreateGamingTable(r.Context(), game, gcid, uint64(buyin), req.Seats)
+	table, err := services.CreateGamingTable(r.Context(), game, gcid, uint64(buyin), req.Seats, req.OpenBlocks)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrGamingGameNotInstalled):

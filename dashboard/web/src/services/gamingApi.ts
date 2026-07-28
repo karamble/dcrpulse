@@ -130,8 +130,15 @@ export const createGamingTable = async (
   gcid: string,
   buyinDcr: number,
   seats: number,
+  openBlocks: number,
 ): Promise<GamingTable> => {
-  const { data } = await api.post<GamingTable>('/br/gaming/table', { game, gcid, buyinDcr, seats });
+  const { data } = await api.post<GamingTable>('/br/gaming/table', {
+    game,
+    gcid,
+    buyinDcr,
+    seats,
+    openBlocks,
+  });
   return data;
 };
 
