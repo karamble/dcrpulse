@@ -4,7 +4,7 @@
 # little as possible: a portal that supervises game binaries, and nothing else.
 # There is no shell, no package manager and no CA bundle, because a game that
 # got out of its process should find nothing useful around it.
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY portal/ ./portal/
 
