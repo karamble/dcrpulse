@@ -599,6 +599,12 @@ func main() {
 	api.HandleFunc("/br/gaming/ui/session/refresh", handlers.BisonrelayGamingUIRefreshHandler).Methods("POST")
 	api.HandleFunc("/br/gaming/ui/session/end", handlers.BisonrelayGamingUIEndHandler).Methods("POST")
 
+	// Proposing a table, and taking back coin a game locked. Both are host
+	// actions: one sends as this identity, the other signs and broadcasts.
+	api.HandleFunc("/br/gaming/table", handlers.BisonrelayGamingCreateHandler).Methods("POST")
+	api.HandleFunc("/br/gaming/bond", handlers.BisonrelayGamingBondHandler).Methods("GET")
+	api.HandleFunc("/br/gaming/reclaim", handlers.BisonrelayGamingReclaimHandler).Methods("POST")
+
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")

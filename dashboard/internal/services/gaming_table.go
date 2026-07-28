@@ -1,0 +1,126 @@
+// Copyright (c) 2015-2026 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+package services
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"net/url"
+	"strconv"
+
+	"github.com/decred/dcrd/dcrutil/v4"
+
+	"dcrpulse/internal/rpc"
+)
+
+// A game has no host: an invitation is terms plus a session id, and a table
+// exists once enough peers join under the same ones. Creating one is composing
+// that link and putting it in a group chat.
+
+const (
+	// gamingInviteScheme and gamingInviteKind must stay the shape a game's
+	// own parser accepts.
+	gamingInviteScheme = "gaming"
+	gamingInviteKind   = "table"
+
+	// gamingOpenBlocks is how long registration stays open, in blocks. A
+	// height rather than a time because every peer has to read the same
+	// deadline and clocks disagree.
+	gamingOpenBlocks = 4
+
+	// gamingRefundBlocks is the relative timelock on every seat's refund
+	// branch. It has to outlast a hand by enough that nobody can pull their
+	// stake mid-play.
+	gamingRefundBlocks = 288
+
+	gamingMinSeats = 2
+	gamingMaxSeats = 6
+)
+
+// GamingTable is a table this host has just proposed.
+type GamingTable struct {
+	SID    string `json:"sid"`
+	Invite string `json:"invite"`
+	Until  uint32 `json:"until"`
+	Height int64  `json:"height"`
+	GCID   string `json:"gcid"`
+}
+
+// gamingSessionID mints the id that identifies one table. It becomes the
+// routing key on the wire, which is 1 to 32 lowercase hex.
+func gamingSessionID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw[:]), nil
+}
+
+// gamingInviteLink renders the link that goes in a chat message.
+func gamingInviteLink(game, sid string, buyinAtoms uint64, seats, csvBlocks, until uint32) string {
+	q := url.Values{}
+	q.Set("buyin", strconv.FormatUint(buyinAtoms, 10))
+	q.Set("seats", strconv.FormatUint(uint64(seats), 10))
+	q.Set("sid", sid)
+	q.Set("csv", strconv.FormatUint(uint64(csvBlocks), 10))
+	q.Set("until", strconv.FormatUint(uint64(until), 10))
+	return fmt.Sprintf("%s://%s/%s?%s", gamingInviteScheme, game, gamingInviteKind, q.Encode())
+}
+
+// CreateGamingTable proposes a table and puts it in a group chat.
+//
+// The seat is taken before the invitation is sent. A join that fails leaves an
+// invitation nobody is at; a send that fails leaves a table only this player
+// knows about, which nobody can join and which expires on its own.
+func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64, seats uint32) (GamingTable, error) {
+	if seats < gamingMinSeats || seats > gamingMaxSeats {
+		return GamingTable{}, fmt.Errorf("a table holds %d to %d seats, not %d",
+			gamingMinSeats, gamingMaxSeats, seats)
+	}
+	if buyinAtoms == 0 {
+		return GamingTable{}, fmt.Errorf("a table needs a buy-in")
+	}
+	s := ReadGamingSettings()
+	if s.PerTableCapAtoms > 0 && int64(buyinAtoms) > s.PerTableCapAtoms {
+		return GamingTable{}, fmt.Errorf("a buy-in of %d atoms is over this installation's per-table limit of %d",
+			buyinAtoms, s.PerTableCapAtoms)
+	}
+
+	tip, err := GamingChainTipNow(ctx)
+	if err != nil {
+		// Without a height there is no deadline every peer can check, and
+		// a table cannot be formed by guessing.
+		return GamingTable{}, fmt.Errorf("cannot read the chain, so a deadline cannot be set: %w", err)
+	}
+
+	sid, err := gamingSessionID()
+	if err != nil {
+		return GamingTable{}, err
+	}
+	until := uint32(tip.Height) + gamingOpenBlocks
+	invite := gamingInviteLink(game, sid, buyinAtoms, seats, gamingRefundBlocks, until)
+
+	if err := AcceptGamingInvite(ctx, game, invite, gcid); err != nil {
+		return GamingTable{}, err
+	}
+
+	// Prose and the link, not a bare URL: a client that knows nothing about
+	// games must still show a person something they can act on.
+	msg := fmt.Sprintf("Table for %d at %s DCR a seat. Registration closes at block %d.\n%s",
+		seats, gamingAtomsText(buyinAtoms), until, invite)
+	if err := rpc.BrclientdGCMessage(ctx, gcid, msg, 0); err != nil {
+		return GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid},
+			fmt.Errorf("you are seated, but the invitation could not be sent: %w", err)
+	}
+	return GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid}, nil
+}
+
+// gamingAtomsText renders atoms for a chat message, trailing zeros trimmed.
+func gamingAtomsText(atoms uint64) string {
+	s := strconv.FormatFloat(dcrutil.Amount(atoms).ToCoin(), 'f', -1, 64)
+	return s
+}
