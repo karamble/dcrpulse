@@ -80,6 +80,10 @@ func GamingIdentityBackup(ctx context.Context, game string) (GamingBackup, error
 		return GamingBackup{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	// A game asks for a deliberate header before handing over its seed, so a
+	// plain fetch from its own page cannot read one. This route is the
+	// deliberate path.
+	req.Header.Set("X-Poker-Confirm", "seed")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)

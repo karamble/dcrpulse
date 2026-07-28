@@ -13,15 +13,8 @@ export interface Rect {
 
 /** useDraggable moves and resizes a panel with pointer events.
  *
- *  Hand-written rather than a dependency, for one reason that is not
- *  minimalism: the panel contains an iframe from another origin, and pointer
- *  capture is what makes dragging over it work at all. Without capture the
- *  frame swallows every pointermove the instant the cursor crosses into it and
- *  the panel sticks halfway. Most drag libraries handle this; relying on one to
- *  is a thing to have checked rather than assumed.
- *
- *  The caller is expected to also set `pointer-events: none` on the frame while
- *  `dragging` is true, which is belt and braces for the same problem. */
+ *  Pointer capture is what makes dragging over the panel's iframe work: without
+ *  it the frame keeps every pointermove once the cursor crosses into it. */
 export function useDraggable(storageKey: string, initial: Rect) {
   const [rect, setRect] = useState<Rect>(() => clamp(restore(storageKey) ?? initial));
   const [dragging, setDragging] = useState(false);
@@ -31,8 +24,7 @@ export function useDraggable(storageKey: string, initial: Rect) {
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(rect));
     } catch {
-      // Private mode, or a full quota. The panel still works; it just does
-      // not remember where it was.
+      // Private mode or a full quota; the panel just forgets its place.
     }
   }, [storageKey, rect]);
 
@@ -45,10 +37,10 @@ export function useDraggable(storageKey: string, initial: Rect) {
   const onPointerDown = useCallback(
     (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
       if (e.button !== 0) return;
+      // A control inside the drag surface keeps its own click: capturing the
+      // pointer here would swallow it before it ever reaches the button.
+      if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return;
       e.preventDefault();
-      // Capture is the load-bearing line. It routes every subsequent
-      // pointermove to this element even while the cursor is over the
-      // iframe, which is otherwise a different document that keeps them.
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       from.current = { x: e.clientX, y: e.clientY, rect, mode };
       setDragging(true);
@@ -99,8 +91,7 @@ export function useDraggable(storageKey: string, initial: Rect) {
   };
 }
 
-/** clamp keeps the panel on screen, including after the window is resized to
- *  something smaller than where the panel was left. */
+/** clamp keeps the panel on screen after a resize. */
 function clamp(r: Rect): Rect {
   const maxW = Math.max(320, window.innerWidth - 16);
   const maxH = Math.max(240, window.innerHeight - 16);
@@ -128,7 +119,7 @@ function restore(key: string): Rect | null {
       return parsed as Rect;
     }
   } catch {
-    // Nothing usable was stored. Fall back to the default position.
+    // Nothing usable stored.
   }
   return null;
 }

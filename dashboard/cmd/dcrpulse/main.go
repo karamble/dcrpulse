@@ -242,15 +242,9 @@ func main() {
 	gaming.HandleFunc("/spend", handlers.BisonrelayGamingSpendHandler).Methods("POST")
 	gaming.HandleFunc("/spend/status", handlers.BisonrelayGamingSpendStatusHandler).Methods("GET")
 
-	// A game's own interface, framed by the dashboard.
-	//
-	// A third subtree, because it needs a third kind of authentication: the
-	// document is fetched by a frame navigation and carries the dashboard's
-	// session cookie, while every call the framed page then makes has an
-	// opaque origin, carries no cookie at all, and presents a short-lived
-	// panel token instead. /api would reject the second on Origin: null;
-	// /gaming wants a game's own token and points the other way. See
-	// internal/handlers/gaming_ui_proxy.go.
+	// A game's own interface. Its own subtree because the document is
+	// authenticated by the dashboard session and the calls under it by a
+	// short-lived panel token, neither of which fits /api or /gaming.
 	gameui := r.PathPrefix("/gameui").Subrouter()
 	gameui.HandleFunc("/{game}/", handlers.GameUIDocumentHandler).Methods("GET")
 	gameui.HandleFunc("/{game}/api/{rest:.*}", handlers.GameUIPreflightHandler).Methods("OPTIONS")
@@ -598,9 +592,7 @@ func main() {
 	// and stakes are locked to, and nothing else has a copy of it.
 	api.HandleFunc("/br/gaming/identity/backup", handlers.BisonrelayGamingIdentityBackupHandler).Methods("GET")
 
-	// Opening a panel. Under /api on purpose: same-origin and a dashboard
-	// session are what make "only this application can mint one" true, and
-	// they are the reason the token it hands out can be narrow.
+	// Under /api so same-origin and a dashboard session are what mint one.
 	api.Handle("/br/gaming/ui/session",
 		middleware.RateLimit("gaming-ui-session", time.Second, 3)(
 			http.HandlerFunc(handlers.BisonrelayGamingUISessionHandler))).Methods("POST")

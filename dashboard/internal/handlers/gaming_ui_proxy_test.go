@@ -1,3 +1,7 @@
+// Copyright (c) 2015-2026 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
 package handlers
 
 import (
@@ -232,5 +236,24 @@ func TestCredentialsAreNeverAllowedOnTheProxy(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("Allow-Origin is %q; it must be * so credentials can never be added", got)
+	}
+}
+
+// A repeated Allow-Origin fails CORS in every browser, and the proxy sets one
+// on the writer while the upstream response carries another into it.
+func TestAllowOriginIsSentOnce(t *testing.T) {
+	rec := httptest.NewRecorder()
+	gamingUICORS(rec)
+	// What ReverseProxy does with the upstream headers after ModifyResponse.
+	upstream := http.Header{}
+	upstream.Set("Access-Control-Allow-Origin", "*")
+	upstream.Del("Access-Control-Allow-Origin")
+	for k, vs := range upstream {
+		for _, v := range vs {
+			rec.Header().Add(k, v)
+		}
+	}
+	if got := rec.Header().Values("Access-Control-Allow-Origin"); len(got) != 1 {
+		t.Fatalf("Allow-Origin sent %d times: %v", len(got), got)
 	}
 }

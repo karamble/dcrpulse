@@ -31,30 +31,18 @@ func buildCSP(scriptHashes []string) string {
 		"img-src 'self' data: blob:; " +
 		"font-src 'self'; " +
 		"connect-src 'self'; " +
-		// Explicit rather than inherited from default-src, because a game's
-		// interface is framed here and a reader should not have to work out
-		// that framing is allowed by deduction. It loosens nothing.
 		"frame-src 'self'; " +
 		"frame-ancestors 'self'; " +
 		"base-uri 'self'; " +
 		"form-action 'self'"
 }
 
-// InlineScriptHashesFor returns a CSP token for every inline script in an HTML
-// document.
+// InlineScriptHashesFor returns a CSP script-src token for every inline script
+// in an HTML document.
 //
-// Shared between the dashboard's own index.html and the pages it proxies for
-// games, because two implementations of "which scripts are inline" would
-// disagree at exactly the moment one of them mattered.
-//
-// It scans the way an HTML parser does rather than matching a pattern, and the
-// difference is not academic. Inside a script element the parser looks for the
-// next "</script>" and nothing else - a "<script>" appearing in the JavaScript
-// is text. React's bundle contains the literal string "<script><\/script>", so
-// a pattern hunting for opening tags anywhere found a second script that does
-// not exist, hashed a body no browser will ever run, and put that hash in the
-// policy. Scanning past each script's own end is what makes this agree with the
-// thing it is writing a policy for.
+// Scanned rather than pattern-matched: inside a script element an HTML parser
+// looks only for the next closing tag, so a script open tag appearing in the
+// JavaScript is text, and bundlers do emit that string.
 func InlineScriptHashesFor(html []byte) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -65,8 +53,6 @@ func InlineScriptHashesFor(html []byte) []string {
 			break
 		}
 		open += i
-		// The rest of the opening tag. One that never closes is not a
-		// script element to anybody.
 		gt := bytes.IndexByte(html[open:], '>')
 		if gt < 0 {
 			break
@@ -76,15 +62,11 @@ func InlineScriptHashesFor(html []byte) []string {
 
 		end := bytes.Index(html[bodyAt:], []byte("</script"))
 		if end < 0 {
-			// Unterminated: a browser would run everything to the end
-			// of the document. A document shaped like that is not one
-			// to write a policy for.
 			break
 		}
 		body := html[bodyAt : bodyAt+end]
 
-		// A script with a src loads its content from elsewhere, so its
-		// element body is empty and there is nothing to hash.
+		// A script with a src has an empty element body.
 		if !bytes.Contains(bytes.ToLower(tag), []byte(" src=")) {
 			if h := InlineScriptHash(body); !seen[h] {
 				seen[h] = true
@@ -92,25 +74,16 @@ func InlineScriptHashesFor(html []byte) []string {
 			}
 		}
 
-		// Past this element's own end, so anything script-shaped inside
-		// it was text - exactly as the parser treated it.
 		i = bodyAt + end
 	}
 	return out
 }
 
-// ExternalOrigin is the origin a browser sees this dashboard as.
+// ExternalOrigin is the origin a browser sees this dashboard as, for policies
+// on documents with an opaque origin where 'self' matches nothing.
 //
-// Needed because a page served into a sandboxed frame has an opaque origin,
-// where 'self' matches nothing at all: a policy copied from buildCSP would
-// produce a page that can fetch nothing and cannot even be framed, and the
-// failure looks exactly like a broken proxy. Every source in such a policy has
-// to name this origin literally.
-//
-// Honours X-Forwarded-Proto and X-Forwarded-Host only behind a trusted proxy,
-// which is the same assumption RequireSameOrigin already makes - but note that
-// here it puts a caller-influenced string into a security policy, so the
-// TRUSTED_PROXY switch is load-bearing in one more place.
+// Honours X-Forwarded-* only behind a trusted proxy, which here puts a
+// caller-influenced string into a security policy.
 func ExternalOrigin(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
