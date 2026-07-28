@@ -59,8 +59,8 @@ export function useDraggable(storageKey: string, initial: Rect) {
           ? { ...start.rect, x: start.rect.x + dx, y: start.rect.y + dy }
           : {
               ...start.rect,
-              w: Math.max(360, start.rect.w + dx),
-              h: Math.max(280, start.rect.h + dy),
+              w: Math.max(320, start.rect.w + dx),
+              h: Math.max(220, start.rect.h + dy),
             },
       ),
     );

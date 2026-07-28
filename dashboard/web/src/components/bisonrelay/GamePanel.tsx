@@ -185,10 +185,15 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
 
       {!minimised && (
         <div
-          className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
-          aria-label="resize"
+          className="absolute bottom-0 right-0 h-5 w-5 cursor-nwse-resize text-muted-foreground/70 hover:text-foreground"
+          aria-label="Resize"
+          title="Drag to resize"
           {...resizeHandlers}
-        />
+        >
+          <svg viewBox="0 0 20 20" className="h-5 w-5" aria-hidden="true">
+            <path d="M19 7 L7 19 M19 12 L12 19 M19 17 L17 19" stroke="currentColor" strokeWidth="1.5" fill="none" />
+          </svg>
+        </div>
       )}
     </div>,
     document.body,
