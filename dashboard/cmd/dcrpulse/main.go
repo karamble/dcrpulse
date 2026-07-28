@@ -13,7 +13,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -35,10 +34,6 @@ var dcrpLog = dcrlog.DCRP
 
 //go:embed web/dist
 var embeddedFiles embed.FS
-
-// inlineScriptRe matches bare inline <script> blocks in index.html. The app
-// bundle is loaded via <script type="module" src=...> and is not matched.
-var inlineScriptRe = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
 
 func main() {
 	// Open the dashboard's rotated log file before anything else logs.
@@ -246,6 +241,20 @@ func main() {
 	gaming.HandleFunc("/chain/broadcast", handlers.BisonrelayGamingBroadcastHandler).Methods("POST")
 	gaming.HandleFunc("/spend", handlers.BisonrelayGamingSpendHandler).Methods("POST")
 	gaming.HandleFunc("/spend/status", handlers.BisonrelayGamingSpendStatusHandler).Methods("GET")
+
+	// A game's own interface, framed by the dashboard.
+	//
+	// A third subtree, because it needs a third kind of authentication: the
+	// document is fetched by a frame navigation and carries the dashboard's
+	// session cookie, while every call the framed page then makes has an
+	// opaque origin, carries no cookie at all, and presents a short-lived
+	// panel token instead. /api would reject the second on Origin: null;
+	// /gaming wants a game's own token and points the other way. See
+	// internal/handlers/gaming_ui_proxy.go.
+	gameui := r.PathPrefix("/gameui").Subrouter()
+	gameui.HandleFunc("/{game}/", handlers.GameUIDocumentHandler).Methods("GET")
+	gameui.HandleFunc("/{game}/api/{rest:.*}", handlers.GameUIPreflightHandler).Methods("OPTIONS")
+	gameui.HandleFunc("/{game}/api/{rest:.*}", handlers.GameUIAPIHandler).Methods("GET", "POST")
 
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth)
@@ -589,6 +598,15 @@ func main() {
 	// and stakes are locked to, and nothing else has a copy of it.
 	api.HandleFunc("/br/gaming/identity/backup", handlers.BisonrelayGamingIdentityBackupHandler).Methods("GET")
 
+	// Opening a panel. Under /api on purpose: same-origin and a dashboard
+	// session are what make "only this application can mint one" true, and
+	// they are the reason the token it hands out can be narrow.
+	api.Handle("/br/gaming/ui/session",
+		middleware.RateLimit("gaming-ui-session", time.Second, 3)(
+			http.HandlerFunc(handlers.BisonrelayGamingUISessionHandler))).Methods("POST")
+	api.HandleFunc("/br/gaming/ui/session/refresh", handlers.BisonrelayGamingUIRefreshHandler).Methods("POST")
+	api.HandleFunc("/br/gaming/ui/session/end", handlers.BisonrelayGamingUIEndHandler).Methods("POST")
+
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")
@@ -691,11 +709,7 @@ func main() {
 		// startup. Recomputing from the embedded HTML means edits to the inline
 		// script never require updating the CSP by hand.
 		if html, rerr := fs.ReadFile(distFS, "index.html"); rerr == nil {
-			var hashes []string
-			for _, m := range inlineScriptRe.FindAllSubmatch(html, -1) {
-				hashes = append(hashes, middleware.InlineScriptHash(m[1]))
-			}
-			middleware.ConfigureInlineScriptHashes(hashes...)
+			middleware.ConfigureInlineScriptHashes(middleware.InlineScriptHashesFor(html)...)
 		} else {
 			dcrpLog.Warnf("Could not hash inline frontend scripts for CSP: %v", rerr)
 		}

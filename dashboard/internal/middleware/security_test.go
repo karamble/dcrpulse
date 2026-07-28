@@ -4,7 +4,12 @@
 
 package middleware
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
 func TestHostAllowedDefaults(t *testing.T) {
 	tests := []struct {
@@ -68,5 +73,92 @@ func TestHostAllowedWildcard(t *testing.T) {
 	t.Setenv("DASHBOARD_ALLOWED_HOSTS", "*")
 	if !hostAllowed("evil.com") {
 		t.Error(`hostAllowed("evil.com") = false, want true with the wildcard set`)
+	}
+}
+
+// Which scripts are inline, decided the way the browser decides it.
+//
+// This is not a parsing nicety. The hashes here go into a script-src, so a
+// wrong answer either blocks the page it is serving or allows a body nobody
+// intended - and one of those failures looks exactly like the proxy being
+// broken.
+func TestScriptsInsideAScriptAreText(t *testing.T) {
+	// The shape that caused this to be rewritten: React's bundle contains
+	// the literal string "<script><\/script>", which a pattern hunting for
+	// opening tags read as a second script element that does not exist.
+	html := []byte(`<!doctype html><html><head>` +
+		`<script type="module" crossorigin>const a="<script><\/script>";run(a)</script>` +
+		`</head><body></body></html>`)
+
+	got := InlineScriptHashesFor(html)
+	if len(got) != 1 {
+		t.Fatalf("found %d scripts in a document with one: %v", len(got), got)
+	}
+	want := InlineScriptHash([]byte(`const a="<script><\/script>";run(a)`))
+	if got[0] != want {
+		t.Fatalf("hashed something other than the script's own body:\n got %s\n want %s", got[0], want)
+	}
+}
+
+// A script that loads its content from elsewhere has an empty body, so there is
+// nothing to hash and hashing the empty string would allow every empty script
+// anywhere.
+func TestAScriptWithASourceIsNotHashed(t *testing.T) {
+	html := []byte(`<script type="module" src="/assets/app.js"></script>`)
+	if got := InlineScriptHashesFor(html); len(got) != 0 {
+		t.Fatalf("hashed a script that has a src: %v", got)
+	}
+}
+
+// Several genuinely separate scripts are all hashed, in order, once each.
+func TestEveryInlineScriptIsHashed(t *testing.T) {
+	html := []byte(`<script>one()</script><script src="x.js"></script><script>two()</script>`)
+	got := InlineScriptHashesFor(html)
+	if len(got) != 2 {
+		t.Fatalf("found %d scripts, want 2: %v", len(got), got)
+	}
+	if got[0] != InlineScriptHash([]byte("one()")) || got[1] != InlineScriptHash([]byte("two()")) {
+		t.Fatalf("hashed the wrong bodies: %v", got)
+	}
+}
+
+// A document that does not close a script is not one to write a policy for, and
+// this must not loop or read past the end trying.
+func TestAnUnterminatedScriptIsNotAScript(t *testing.T) {
+	for _, html := range []string{
+		`<script>never closed`,
+		`<script`,
+		`<script>a</script><script>never closed`,
+	} {
+		got := InlineScriptHashesFor([]byte(html))
+		if len(got) > 1 {
+			t.Errorf("%q produced %d hashes", html, len(got))
+		}
+	}
+}
+
+// The origin a framed page's policy has to name, because 'self' matches nothing
+// in an opaque origin.
+func TestTheExternalOriginIsNamed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/gameui/poker/", nil)
+	req.Host = "pulse.example:8080"
+
+	got := ExternalOrigin(req)
+	if got != "http://pulse.example:8080" {
+		t.Fatalf("the external origin is %q", got)
+	}
+	if strings.Contains(got, "'self'") {
+		t.Fatal("the external origin is not an origin")
+	}
+}
+
+// Framing is stated rather than inherited, so a reader does not have to deduce
+// that a game's interface is allowed to be framed here.
+func TestTheDocumentPolicyAllowsFraming(t *testing.T) {
+	policy := buildCSP(nil)
+	for _, want := range []string{"frame-src 'self'", "frame-ancestors 'self'"} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("the document policy is missing %q: %s", want, policy)
+		}
 	}
 }

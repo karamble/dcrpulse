@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"dcrpulse/internal/auth"
+	"dcrpulse/internal/services"
 )
 
 // AuthStatusHandler reports the app-password state. Unauthenticated and
@@ -85,6 +86,10 @@ func AuthSkipSetupHandler(w http.ResponseWriter, r *http.Request) {
 // AuthLogoutHandler clears the session cookie.
 func AuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	auth.ClearSessionCookie(w, r)
+	// And every open game panel with it. A panel token is not carried by the
+	// cookie and would otherwise outlive the session that authorised it,
+	// which would make locking the dashboard something a page could ignore.
+	services.RevokeAllGamingUISessions()
 	w.WriteHeader(http.StatusNoContent)
 }
 
