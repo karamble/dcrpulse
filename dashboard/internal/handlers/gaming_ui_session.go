@@ -7,6 +7,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -50,6 +51,13 @@ func BisonrelayGamingUISessionHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
+	}
+
+	// Names for the chairs, best-effort and after the money question: a
+	// panel that opens with numbered seats is fine, a panel that cannot say
+	// where winnings go is not.
+	if err := services.PushGamingNames(r.Context(), game); err != nil {
+		log.Printf("gaming names: %v", err)
 	}
 
 	token, session, err := services.MintGamingUISession(game, strings.TrimSpace(req.TableID), payout)

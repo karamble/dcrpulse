@@ -8,9 +8,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/decred/dcrd/dcrutil/v4"
 
@@ -140,4 +143,12 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 func gamingAtomsText(atoms uint64) string {
 	s := strconv.FormatFloat(dcrutil.Amount(atoms).ToCoin(), 'f', -1, 64)
 	return s
+}
+
+// GamingTables asks a game what tables it is at, verbatim.
+//
+// The host relaying the game's own answer to its own chrome: the chat sidebar
+// needs the conversation a table plays in, and the game already reports it.
+func GamingTables(ctx context.Context, game string) (json.RawMessage, error) {
+	return gamingCall(ctx, game, http.MethodGet, "/tables", nil, 15*time.Second)
 }
