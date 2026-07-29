@@ -107,6 +107,26 @@ func BisonrelayGamingTableBondsHandler(w http.ResponseWriter, r *http.Request) {
 	gamingJSON(w, map[string]any{"bonds": bonds})
 }
 
+// BisonrelayGamingTablesHandler relays a game's own list of its tables.
+func BisonrelayGamingTablesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	game := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("game")))
+	if game == "" {
+		http.Error(w, "no game named", http.StatusBadRequest)
+		return
+	}
+	body, err := services.GamingTables(r.Context(), game)
+	if err != nil {
+		gamingReclaimError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
+}
+
 // BisonrelayGamingReclaimHandler takes back coin a game locked, into the bound
 // account.
 func BisonrelayGamingReclaimHandler(w http.ResponseWriter, r *http.Request) {

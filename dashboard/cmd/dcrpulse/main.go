@@ -604,6 +604,7 @@ func main() {
 	api.HandleFunc("/br/gaming/table", handlers.BisonrelayGamingCreateHandler).Methods("POST")
 	api.HandleFunc("/br/gaming/bond", handlers.BisonrelayGamingBondHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/table-bonds", handlers.BisonrelayGamingTableBondsHandler).Methods("GET")
+	api.HandleFunc("/br/gaming/tables", handlers.BisonrelayGamingTablesHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/reclaim", handlers.BisonrelayGamingReclaimHandler).Methods("POST")
 
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")

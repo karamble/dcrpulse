@@ -192,6 +192,22 @@ export const getGamingTableBonds = async (game: string): Promise<GamingTableBond
   return data.bonds ?? [];
 };
 
+/** A game's own list of its tables, relayed by the host. The chrome needs the
+ *  conversation a table plays in, and the game already reports it. */
+export interface GamingGameTable {
+  sid: string;
+  gcid: string;
+  finished?: boolean;
+  dealing?: boolean;
+}
+
+export const getGamingGameTables = async (game: string): Promise<GamingGameTable[]> => {
+  const { data } = await api.get<{ tables: GamingGameTable[] }>('/br/gaming/tables', {
+    params: { game },
+  });
+  return data.tables ?? [];
+};
+
 export const reclaimGaming = async (
   game: string,
   kind: 'bond' | 'stake' | 'tablebond',
