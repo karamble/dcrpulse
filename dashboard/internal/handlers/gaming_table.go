@@ -83,6 +83,30 @@ func BisonrelayGamingBondHandler(w http.ResponseWriter, r *http.Request) {
 	gamingJSON(w, bond)
 }
 
+// BisonrelayGamingTableBondsHandler lists what a game still holds locked at
+// tables.
+//
+// Its own route rather than a field on the bond: these outlive the tables they
+// belong to by a week, so by the time one matures the table is long finished and
+// is not where anybody would look for it.
+func BisonrelayGamingTableBondsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	game := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("game")))
+	if game == "" {
+		http.Error(w, "no game named", http.StatusBadRequest)
+		return
+	}
+	bonds, err := services.GamingTableBonds(r.Context(), game)
+	if err != nil {
+		gamingReclaimError(w, err)
+		return
+	}
+	gamingJSON(w, map[string]any{"bonds": bonds})
+}
+
 // BisonrelayGamingReclaimHandler takes back coin a game locked, into the bound
 // account.
 func BisonrelayGamingReclaimHandler(w http.ResponseWriter, r *http.Request) {

@@ -667,6 +667,8 @@ func main() {
 	api.Handle("/br/gaming/table", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCreateHandler))).Methods("POST")
 	api.Handle("/br/gaming/bond", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingBondHandler))).Methods("GET")
 	api.Handle("/br/gaming/reclaim", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingReclaimHandler))).Methods("POST")
+
+	api.Handle("/br/gaming/table-bonds", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingTableBondsHandler))).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.Handle("/wallet/ln/unlock",

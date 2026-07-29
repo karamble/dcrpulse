@@ -4,7 +4,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Coins, Loader2 } from 'lucide-react';
-import { getGamingBond, reclaimGaming, type GamingBond } from '../../services/gamingApi';
+import {
+  getGamingBond,
+  getGamingTableBonds,
+  reclaimGaming,
+  type GamingBond,
+  type GamingTableBond,
+} from '../../services/gamingApi';
 
 const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
 
@@ -14,6 +20,7 @@ const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0
 
 export const GamingBonds = ({ games }: { games: string[] }) => {
   const [bonds, setBonds] = useState<Record<string, GamingBond>>({});
+  const [held, setHeld] = useState<GamingTableBond[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
@@ -24,6 +31,12 @@ export const GamingBonds = ({ games }: { games: string[] }) => {
         .then((b) => setBonds((all) => ({ ...all, [game]: b })))
         .catch(() => {});
     });
+    // Table bonds are listed separately because they outlive their tables by a
+    // week: by the time one matures the table is long finished, so the table is
+    // not where anybody would look for it.
+    Promise.all(games.map((game) => getGamingTableBonds(game).catch(() => [])))
+      .then((lists) => setHeld(lists.flat()))
+      .catch(() => {});
   }, [games]);
 
   useEffect(() => {
@@ -32,11 +45,11 @@ export const GamingBonds = ({ games }: { games: string[] }) => {
 
   if (games.length === 0) return null;
 
-  const reclaim = (game: string) => {
-    setBusy(game);
+  const reclaim = (game: string, kind: 'bond' | 'tablebond' = 'bond', sid?: string) => {
+    setBusy(kind === 'bond' ? game : `${game}/${sid}`);
     setError(null);
     setSent(null);
-    reclaimGaming(game, 'bond')
+    reclaimGaming(game, kind, sid)
       .then((r) => {
         setSent(r.txid);
         refresh();
@@ -118,6 +131,55 @@ export const GamingBonds = ({ games }: { games: string[] }) => {
             </div>
           );
         })}
+
+        {held.filter((b) => !b.spent).length > 0 && (
+          <div className="space-y-1 pt-2 border-t border-border/50">
+            <p className="text-xs font-medium">Locked at tables</p>
+            <p className="text-xs text-muted-foreground">
+              A second bond, posted per table and forfeitable: it is what a seat loses for
+              walking out of a hand. It is locked longer than a stake, so that nobody can sit
+              out their own claim window, and it comes back whole if nothing was claimed.
+            </p>
+            {held
+              .filter((b) => !b.spent)
+              .map((b) => (
+                <div key={`${b.game}/${b.sid}/${b.seat}`} className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>
+                      <code>{b.sid.slice(0, 8)}</code> seat {b.seat} ·{' '}
+                      {fmtDcr(b.atoms || 0)} DCR
+                      {b.spendable
+                        ? ', free to take back'
+                        : b.maturesAt
+                          ? `, free from block ${b.maturesAt.toLocaleString()}`
+                          : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => reclaim(b.game, 'tablebond', b.sid)}
+                      disabled={busy !== null || !b.spendable}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/30 hover:bg-muted/50 disabled:opacity-50 text-xs font-medium shrink-0"
+                    >
+                      {busy === `${b.game}/${b.sid}` && <Loader2 className="h-3 w-3 animate-spin" />}
+                      Take it back
+                    </button>
+                  </div>
+                  <code className="block text-muted-foreground break-all">{b.outpoint}</code>
+                  {!b.spendable && b.blocksLeft ? (
+                    <span className="text-muted-foreground">
+                      {b.blocksLeft.toLocaleString()} blocks to go, about{' '}
+                      {Math.round((b.blocksLeft * 5) / 60 / 24)} days.
+                    </span>
+                  ) : null}
+                  {b.chainErr && (
+                    <span className="text-muted-foreground">
+                      The chain could not be asked just now, so this may be stale.
+                    </span>
+                  )}
+                </div>
+              ))}
+          </div>
+        )}
 
         {sent && (
           <div className="p-2 rounded-lg bg-muted/20 border border-border/50 text-xs">
