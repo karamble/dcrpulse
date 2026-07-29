@@ -32,6 +32,9 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [minimised, setMinimised] = useState(false);
+  // How many payments the wallet is waiting on. It comes from the approvals
+  // strip's own polling, never from the frame - see GamingSpendApprovals.
+  const [pending, setPending] = useState(0);
 
   const { rect, dragging, dragHandlers, resizeHandlers } = useDraggable('dcrpulse.gamePanel.rect', {
     x: Math.max(8, window.innerWidth - 1000),
@@ -177,8 +180,18 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
               className={`h-full w-full border-0 ${dragging ? 'pointer-events-none' : ''}`}
             />
           </div>
-          <div className="max-h-40 overflow-y-auto border-t border-border">
-            <GamingSpendApprovals />
+          {/* The wallet's own strip, below the game and outside it. It grows
+            * when something is waiting, because a payment nobody notices is a
+            * table that appears to have stalled - and it settles back after,
+            * because a permanent third of the panel would be spent on nothing
+            * most of the time. The border is heavy on purpose: it is the seam
+            * between what the game drew and what your wallet drew. */}
+          <div
+            className={`overflow-y-auto border-t-2 transition-[max-height,border-color] duration-200 ${
+              pending > 0 ? 'max-h-80 border-primary/60' : 'max-h-40 border-border'
+            }`}
+          >
+            <GamingSpendApprovals onPending={setPending} />
           </div>
         </>
       )}
