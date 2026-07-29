@@ -48,9 +48,20 @@ import (
 // transaction every member signs and checks, so it earns a rule of its own
 // rather than inheriting one written for unilateral recovery.
 
-// sigLen is the length of the signatures these escrows use. Schnorr over
-// secp256k1, fixed width, which is what makes counting them reliable.
-const sigLen = 64
+// sigLen is the length of a signature as it appears in a signature script:
+// 64 bytes of schnorr over secp256k1, and one byte of sighash type after it.
+//
+// Sixty-five, not sixty-four, and the difference cost two live tables. A schnorr
+// signature is 64 bytes and is never pushed on its own - txscript wants the hash
+// type with it, and pkg/escrow appends it (escrow.SigLen is 65 for the same
+// reason). Counting 64 here found no signatures in anything, so every co-signed
+// spend looked unilateral, so a table could neither pay its winner nor hand a
+// bond back to anybody but the person running this wallet.
+//
+// The tests below now measure real escrow bytes rather than bytes built from
+// this constant. A fixture derived from the number being tested cannot disagree
+// with it, which is why nothing caught this.
+const sigLen = 65
 
 // signaturesIn counts how many parties had to agree to a spend.
 //
