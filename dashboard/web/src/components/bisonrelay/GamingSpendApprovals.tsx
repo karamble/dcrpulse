@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Wallet } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { GamingSpend, decideGamingSpend, getGamingSpends } from '../../services/gamingApi';
 
 const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
@@ -72,19 +72,10 @@ export const GamingSpendApprovals = ({ onPending }: { onPending?: (n: number) =>
 
   return (
     <div className="space-y-2">
-      {/* Wallet chrome, and it has to look like it.
-        *
-        * The security property of this strip is that it is drawn by the
-        * dashboard and a game cannot draw it. If it blended into the game
-        * framed above, the habit it would teach is approving whatever appears
-        * inside a game window - which is the one habit worth not teaching,
-        * and every future game would inherit it. So: our own name, our own
-        * edge, and the game spoken of in the third person. */}
-      <h3 className="font-medium flex items-center gap-2 text-sm">
-        <Wallet className="h-4 w-4 text-primary" />
-        <span>dcrpulse</span>
-        <span className="text-muted-foreground font-normal">· your wallet</span>
-      </h3>
+      {/* Wallet chrome, and it has to look like it - but said once. The
+        * collapsible handle above this strip now carries the "dcrpulse · your
+        * wallet" identity, so repeating it here read as a stutter. The handle
+        * owns the name; this owns the asking. */}
 
       {error && (
         <div className="p-2 rounded-lg bg-destructive/10 border border-destructive/30 text-xs text-destructive">
