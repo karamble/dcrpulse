@@ -9,6 +9,8 @@ import { useDraggable } from '../../hooks/useDraggable';
 import { refreshGamePanel, type GamePanelSession } from '../../services/gameUiApi';
 import { parseFromFrame, PROTOCOL_VERSION, type ToFrame } from './gamePanelProtocol';
 import { GamingSpendApprovals } from './GamingSpendApprovals';
+import { GamingChatSidebar } from './GamingChatSidebar';
+import { ChevronDown, ChevronUp, Wallet } from 'lucide-react';
 
 // A game's interface, framed. Not a modal: a game blocks on /table/fund while
 // the user approves the payment in the dashboard behind this panel.
@@ -35,6 +37,17 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
   // How many payments the wallet is waiting on. It comes from the approvals
   // strip's own polling, never from the frame - see GamingSpendApprovals.
   const [pending, setPending] = useState(0);
+  // The wallet strip folds to a handle, and the preference is remembered -
+  // but a pending payment overrules it. A hidden request for money is worse
+  // than an intrusive one, so while one is waiting the strip may not close.
+  const [walletOpen, setWalletOpen] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('dcrpulse.gamePanel.wallet') !== 'closed';
+    } catch {
+      return true;
+    }
+  });
+  const walletShown = walletOpen || pending > 0;
 
   const { rect, dragging, dragHandlers, resizeHandlers } = useDraggable('dcrpulse.gamePanel.rect', {
     x: Math.max(8, window.innerWidth - 1000),
@@ -161,37 +174,83 @@ export default function GamePanel({ game, session, onClose }: GamePanelProps) {
               {error}
             </div>
           )}
-          <div className="relative flex-1">
-            {!ready && (
-              <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-                Starting {game}…
-              </div>
-            )}
-            <iframe
-              ref={frame}
-              src={session.uiUrl}
-              onLoad={onLoad}
-              title={`${game} interface`}
-              // allow-same-origin would give the game this dashboard's
-              // origin, its cookie and every /api route. Never add it.
-              sandbox="allow-scripts"
-              referrerPolicy="no-referrer"
-              allow=""
-              className={`h-full w-full border-0 ${dragging ? 'pointer-events-none' : ''}`}
-            />
+          {/* The game in its frame, and the table's conversation beside it.
+            * The chat is dashboard chrome: the frame reaches an allowlist of
+            * game routes and has never been able to read a Bison Relay
+            * message, and it stays that way. */}
+          <div className="flex min-h-0 flex-1">
+            <div className="relative min-w-0 flex-1">
+              {!ready && (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+                  Starting {game}…
+                </div>
+              )}
+              <iframe
+                ref={frame}
+                src={session.uiUrl}
+                onLoad={onLoad}
+                title={`${game} interface`}
+                // allow-same-origin would give the game this dashboard's
+                // origin, its cookie and every /api route. Never add it.
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+                allow=""
+                className={`h-full w-full border-0 ${dragging ? 'pointer-events-none' : ''}`}
+              />
+            </div>
+            <GamingChatSidebar game={game} tableId={session.tableId ?? undefined} />
           </div>
-          {/* The wallet's own strip, below the game and outside it. It grows
-            * when something is waiting, because a payment nobody notices is a
-            * table that appears to have stalled - and it settles back after,
-            * because a permanent third of the panel would be spent on nothing
-            * most of the time. The border is heavy on purpose: it is the seam
-            * between what the game drew and what your wallet drew. */}
+          {/* The wallet's own strip, below the game and outside it, folded to
+            * a slim handle until it is wanted. The border is heavy on purpose:
+            * it is the seam between what the game drew and what your wallet
+            * drew. The approvals component stays mounted while folded - its
+            * polling is what knows a payment is waiting, and a pending payment
+            * forces the strip open and keeps it open. */}
           <div
-            className={`overflow-y-auto border-t-2 transition-[max-height,border-color] duration-200 ${
-              pending > 0 ? 'max-h-80 border-primary/60' : 'max-h-40 border-border'
-            }`}
+            className={`border-t-2 ${pending > 0 ? 'border-primary/60' : 'border-border'}`}
           >
-            <GamingSpendApprovals onPending={setPending} />
+            <button
+              type="button"
+              onClick={() => {
+                if (pending > 0) return;
+                setWalletOpen((was) => {
+                  try {
+                    window.localStorage.setItem(
+                      'dcrpulse.gamePanel.wallet',
+                      was ? 'closed' : 'open',
+                    );
+                  } catch {
+                    // Remembering is a nicety.
+                  }
+                  return !was;
+                });
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-expanded={walletShown}
+            >
+              <Wallet className="h-3.5 w-3.5 text-primary" />
+              <span className="font-medium">dcrpulse</span>
+              <span>· your wallet</span>
+              {pending > 0 && (
+                <span className="font-medium text-primary">
+                  {pending} payment{pending === 1 ? '' : 's'} waiting for you
+                </span>
+              )}
+              <span className="flex-1" />
+              {pending === 0 &&
+                (walletShown ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ))}
+            </button>
+            <div
+              className={`overflow-y-auto transition-[max-height] duration-200 ${
+                walletShown ? (pending > 0 ? 'max-h-80' : 'max-h-40') : 'max-h-0'
+              }`}
+            >
+              <GamingSpendApprovals onPending={setPending} />
+            </div>
           </div>
         </>
       )}
