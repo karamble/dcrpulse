@@ -170,3 +170,45 @@ func gamingCall(ctx context.Context, game, method, path string, body []byte, wai
 	}
 	return out, nil
 }
+
+// GamingTableBond is one forfeitable bond a game holds at one table.
+//
+// Separate from GamingBond because it is separate coin under a separate key on a
+// separate clock. Conflating them in the interface would invite the mistake the
+// protocol is careful to avoid: the standing bond buys the right to join and can
+// never be forfeited, this one is what a seat loses for walking out of a hand.
+type GamingTableBond struct {
+	Game      string `json:"game"`
+	SID       string `json:"sid"`
+	Seat      uint32 `json:"seat"`
+	Outpoint  string `json:"outpoint"`
+	Address   string `json:"address,omitempty"`
+	Atoms     int64  `json:"atoms,omitempty"`
+	MinBlocks uint32 `json:"minBlocks"`
+
+	Confirmations int64  `json:"confirmations,omitempty"`
+	Height        int64  `json:"height,omitempty"`
+	MaturesAt     int64  `json:"maturesAt,omitempty"`
+	BlocksLeft    int64  `json:"blocksLeft,omitempty"`
+	Spendable     bool   `json:"spendable,omitempty"`
+	Spent         bool   `json:"spent,omitempty"`
+	ChainErr      string `json:"chainErr,omitempty"`
+}
+
+// GamingTableBonds asks a game what it still holds locked at tables.
+func GamingTableBonds(ctx context.Context, game string) ([]GamingTableBond, error) {
+	body, err := gamingCall(ctx, game, http.MethodGet, "/table/bonds", nil, 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Bonds []GamingTableBond `json:"bonds"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("%s answered with something unreadable: %w", game, err)
+	}
+	for i := range out.Bonds {
+		out.Bonds[i].Game = game
+	}
+	return out.Bonds, nil
+}
