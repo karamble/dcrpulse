@@ -6,6 +6,7 @@ package services
 
 import (
 	"bytes"
+	"encoding/hex"
 	"testing"
 
 	"github.com/decred/dcrd/txscript/v4"
@@ -111,5 +112,56 @@ func TestOneCoSignedInputDoesNotExcuseTheRest(t *testing.T) {
 func TestSpendingNothingIsNotCoSigned(t *testing.T) {
 	if outputsMayPayAnyone(wire.NewMsgTx()) {
 		t.Fatal("a transaction with no inputs was treated as co-signed")
+	}
+}
+
+// The bytes a real table actually hands over, and the reason this file exists.
+//
+// Every other case here builds its own signatures, which is how the rule came to
+// be wrong in a way nothing caught: sigLen said 64, the fixtures were built from
+// sigLen, and so the test and the code agreed with each other while disagreeing
+// with the escrow. A schnorr signature is 64 bytes and what goes in a signature
+// script is 65 - the signature and the sighash type byte after it.
+//
+// The consequence was not subtle. signaturesIn counted no signatures at all, so
+// outputsMayPayAnyone was false for everything, so a table could not pay its
+// winner and could not hand a bond back to anybody but the person running this
+// wallet. Two live tables were stranded by it.
+//
+// These are captured from pkg/escrow itself. They must not be regenerated from
+// anything in this package, because that is exactly the mistake being fixed.
+const (
+	realAliveSigScript    = "417af65a0dde09a82e4094c8172c505910e141264d4768fa1680a3cab24e77e66a0b48ff56605f50e83d61840d95567acc19b888934dd6cbbf6f04b098c8f039a80141041b08ce7fa14ed6e1de2414767ef0150d1b9f0352fd516768b577d6cadc70fbd8799e6aeb43012154c1f37427853564fbdf61712fdf4f79ea98bd9ca0e2b1f101514c9f632102a42612f5da95ce742e9b10bb51eb6616c7138013a4822bf802a7de5022839bff52bf2103e59b7836fdba1f1425e11a8874d7bb8c225d1c15c8ad172276a45258f272849952bf676353b2752102a42612f5da95ce742e9b10bb51eb6616c7138013a4822bf802a7de5022839bff52bf6702e007b2752103e59b7836fdba1f1425e11a8874d7bb8c225d1c15c8ad172276a45258f272849952bf686851"
+	realBackstopSigScript = "417af65a0dde09a82e4094c8172c505910e141264d4768fa1680a3cab24e77e66a0b48ff56605f50e83d61840d95567acc19b888934dd6cbbf6f04b098c8f039a80100004c9f632102a42612f5da95ce742e9b10bb51eb6616c7138013a4822bf802a7de5022839bff52bf2103e59b7836fdba1f1425e11a8874d7bb8c225d1c15c8ad172276a45258f272849952bf676353b2752102a42612f5da95ce742e9b10bb51eb6616c7138013a4822bf802a7de5022839bff52bf6702e007b2752103e59b7836fdba1f1425e11a8874d7bb8c225d1c15c8ad172276a45258f272849952bf686851"
+)
+
+func fromHex(t *testing.T, s string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return b
+}
+
+// A bond released the way a table that ends properly releases it: every member
+// signs, and it may pay the member whose bond it is.
+func TestARealCoSignedSpendIsSeenAsCoSigned(t *testing.T) {
+	got := signaturesIn(fromHex(t, realAliveSigScript))
+	if got != 2 {
+		t.Fatalf("a real two-member release counts %d signatures, want 2", got)
+	}
+	if !outputsMayPayAnyone(txSpending(fromHex(t, realAliveSigScript))) {
+		t.Fatal("a real co-signed spend was refused permission to pay anyone")
+	}
+}
+
+// And the branch one key can take alone still must not.
+func TestARealUnilateralSpendMustStillComeHome(t *testing.T) {
+	if got := signaturesIn(fromHex(t, realBackstopSigScript)); got != 1 {
+		t.Fatalf("a real backstop counts %d signatures, want 1", got)
+	}
+	if outputsMayPayAnyone(txSpending(fromHex(t, realBackstopSigScript))) {
+		t.Fatal("a spend one key can make alone was allowed to pay anyone")
 	}
 }
