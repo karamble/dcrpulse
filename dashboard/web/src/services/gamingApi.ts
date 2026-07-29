@@ -164,9 +164,37 @@ export const getGamingBond = async (game: string): Promise<GamingBond> => {
   return data;
 };
 
+/** A forfeitable bond held at one table. Separate from GamingBond because it is
+ *  separate coin under a separate key on a separate clock: the standing bond
+ *  buys the right to join and can never be forfeited, this is what a seat loses
+ *  for walking out of a hand. */
+export interface GamingTableBond {
+  game: string;
+  sid: string;
+  seat: number;
+  outpoint: string;
+  address?: string;
+  atoms?: number;
+  minBlocks: number;
+  confirmations?: number;
+  height?: number;
+  maturesAt?: number;
+  blocksLeft?: number;
+  spendable?: boolean;
+  spent?: boolean;
+  chainErr?: string;
+}
+
+export const getGamingTableBonds = async (game: string): Promise<GamingTableBond[]> => {
+  const { data } = await api.get<{ bonds: GamingTableBond[] }>('/br/gaming/table-bonds', {
+    params: { game },
+  });
+  return data.bonds ?? [];
+};
+
 export const reclaimGaming = async (
   game: string,
-  kind: 'bond' | 'stake',
+  kind: 'bond' | 'stake' | 'tablebond',
   sid?: string,
 ): Promise<{ txid: string }> => {
   const { data } = await api.post<{ txid: string }>('/br/gaming/reclaim', { game, kind, sid });
