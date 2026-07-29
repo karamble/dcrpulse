@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
-import { Coins, Loader2 } from 'lucide-react';
+import { Loader2, Wallet } from 'lucide-react';
 import { GamingSpend, decideGamingSpend, getGamingSpends } from '../../services/gamingApi';
 
 const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
@@ -15,7 +15,7 @@ const fmtWhen = (unix: number): string => new Date(unix * 1000).toLocaleString()
 // this is the asking. Nothing about a request can be edited here - what gets
 // signed is the amount and address recorded when it was made, so what is
 // approved is what is shown.
-export const GamingSpendApprovals = () => {
+export const GamingSpendApprovals = ({ onPending }: { onPending?: (n: number) => void }) => {
   const [spends, setSpends] = useState<GamingSpend[]>([]);
   const [passphrase, setPassphrase] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -60,13 +60,30 @@ export const GamingSpendApprovals = () => {
   const pending = spends.filter((s) => s.state === 'pending');
   const recent = spends.filter((s) => s.state !== 'pending').slice(0, 8);
 
+  // Told, not asked. The panel above could have sent word that it wants a
+  // payment approved, and deliberately does not: this already polls, so it
+  // knows without being told, and a message would hand a game a new thing to
+  // say and a new moment to choose for information the host already has.
+  useEffect(() => {
+    onPending?.(pending.length);
+  }, [pending.length, onPending]);
+
   if (pending.length === 0 && recent.length === 0) return null;
 
   return (
     <div className="space-y-2">
+      {/* Wallet chrome, and it has to look like it.
+        *
+        * The security property of this strip is that it is drawn by the
+        * dashboard and a game cannot draw it. If it blended into the game
+        * framed above, the habit it would teach is approving whatever appears
+        * inside a game window - which is the one habit worth not teaching,
+        * and every future game would inherit it. So: our own name, our own
+        * edge, and the game spoken of in the third person. */}
       <h3 className="font-medium flex items-center gap-2 text-sm">
-        <Coins className="h-4 w-4" />
-        Spending
+        <Wallet className="h-4 w-4 text-primary" />
+        <span>dcrpulse</span>
+        <span className="text-muted-foreground font-normal">· your wallet</span>
       </h3>
 
       {error && (
@@ -76,10 +93,12 @@ export const GamingSpendApprovals = () => {
       )}
 
       {pending.length > 0 && (
-        <div className="space-y-2 p-3 rounded-lg bg-muted/10 border border-border/50">
+        <div className="space-y-2 p-3 rounded-lg bg-primary/5 border-2 border-primary/40">
           <p className="text-xs text-muted-foreground">
-            A game is asking to spend from the account you bound. Nothing moves unless you say so,
-            and what is signed is exactly what is shown here.
+            A game is asking to spend from the account you bound. It never learns your
+            passphrase and never chooses where the money goes. Nothing moves unless you say
+            so, and what gets signed is what was recorded when it asked — which is exactly
+            what is shown here, not anything it could change since.
           </p>
           <input
             type="password"
