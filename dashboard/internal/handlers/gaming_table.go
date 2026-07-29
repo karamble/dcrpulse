@@ -117,8 +117,19 @@ func BisonrelayGamingReclaimHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		txid, err = services.ReclaimGamingStake(r.Context(), game, sid)
+	case "tablebond":
+		// A table's forfeitable bond, which is not the standing one above:
+		// that buys the right to join and is never forfeitable, this is
+		// what a seat loses for walking out of a hand. Different key,
+		// different lock, so it cannot share a branch with either.
+		sid := strings.ToLower(strings.TrimSpace(req.SID))
+		if sid == "" {
+			http.Error(w, "no table named", http.StatusBadRequest)
+			return
+		}
+		txid, err = services.ReclaimGamingTableBond(r.Context(), game, sid)
 	default:
-		http.Error(w, "kind must be bond or stake", http.StatusBadRequest)
+		http.Error(w, "kind must be bond, stake or tablebond", http.StatusBadRequest)
 		return
 	}
 	if err != nil {

@@ -50,7 +50,12 @@ var gamingUIRoutes = map[string][]GamingUIRoute{
 
 // Absent on purpose, host-only: /identity/backup, /identity/restore,
 // /payout/set, /table/deposit/set, /bond/set, /table/refund, /bond/sweep,
-// /table/join, /cmd.
+// /table/bond/sweep, /table/join, /cmd.
+//
+// The three reclaim routes are host-only for one reason: each builds and
+// broadcasts a transaction the game signed itself, and a page that can cause a
+// broadcast is a larger thing than a page that can read. Where to send the coin
+// is named by the host, never by the game.
 
 // GamingUIRouteFor resolves a request against one game's allowlist. The
 // returned Path, not the request's, is what the proxy must send upstream.

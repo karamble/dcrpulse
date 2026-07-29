@@ -71,6 +71,21 @@ func ReclaimGamingStake(ctx context.Context, game, sid string) (string, error) {
 	return gamingReclaim(ctx, game, "/table/refund", map[string]string{"sid": sid, "destAddr": addr})
 }
 
+// ReclaimGamingTableBond takes a matured forfeitable bond back from one table.
+//
+// The third lock and the slowest. A stake waits out that table's CSV, the
+// standing bond waits out the minimum, and this waits out a week - long enough
+// that nobody can sit out their own claim window. It is the branch that needs
+// nobody else's agreement, which is what makes it the way out of a table that
+// dissolved rather than ended.
+func ReclaimGamingTableBond(ctx context.Context, game, sid string) (string, error) {
+	addr, err := gamingReceiveAddress(ctx)
+	if err != nil {
+		return "", err
+	}
+	return gamingReclaim(ctx, game, "/table/bond/sweep", map[string]string{"sid": sid, "destAddr": addr})
+}
+
 // gamingReceiveAddress is where reclaimed coin lands: a fresh address in the
 // account games are confined to, never one a game supplied.
 func gamingReceiveAddress(ctx context.Context) (string, error) {
