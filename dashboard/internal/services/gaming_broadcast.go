@@ -12,6 +12,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/decred/dcrd/txscript/v4"
 	"github.com/decred/dcrd/wire"
 
 	"dcrpulse/internal/rpc"
@@ -46,6 +47,71 @@ import (
 // be another player. That is not a flaw here: settlement is an n-of-n
 // transaction every member signs and checks, so it earns a rule of its own
 // rather than inheriting one written for unilateral recovery.
+
+// sigLen is the length of the signatures these escrows use. Schnorr over
+// secp256k1, fixed width, which is what makes counting them reliable.
+const sigLen = 64
+
+// signaturesIn counts how many parties had to agree to a spend.
+//
+// A pay-to-script-hash signature script ends with the redeem script it
+// satisfies, and everything pushed before it is what that script consumes -
+// signatures, and whatever selects a branch. So the count is the pushes before
+// the last one that are the size of a signature.
+//
+// Counting signatures rather than recognising an escrow, deliberately. The
+// moment this file learns what a poker table looks like the bridge stops being
+// a tunnel, and it would have to learn again for the next game.
+func signaturesIn(sigScript []byte) int {
+	var pushes [][]byte
+	tok := txscript.MakeScriptTokenizer(scriptVersion, sigScript)
+	for tok.Next() {
+		if d := tok.Data(); d != nil {
+			pushes = append(pushes, d)
+		}
+	}
+	if tok.Err() != nil || len(pushes) < 2 {
+		return 0
+	}
+	// The last push is the redeem script, not a signature.
+	var n int
+	for _, p := range pushes[:len(pushes)-1] {
+		if len(p) == sigLen {
+			n++
+		}
+	}
+	return n
+}
+
+// outputsMayPayAnyone reports whether this transaction is allowed to pay
+// somebody other than the person running this wallet.
+//
+// It may when every input needed more than one signature, and not otherwise.
+//
+// The distinction is the whole of the rule. Coin this box could move on its own
+// - a stake past its timelock, a bond past its lock - must come home, because
+// the game holds that key and nothing else stands between it and paying itself.
+// Coin that took every member of a table to move is different: the thing
+// protecting it is the other signers, and they have already signed. Refusing it
+// here would protect nobody, because any of those co-signers can relay the same
+// transaction from their own machine. It would only decide which of them does.
+//
+// Every input, not any: a transaction that mixes the two would otherwise carry
+// a unilateral spend out of the wallet on the back of a co-signed one.
+func outputsMayPayAnyone(tx *wire.MsgTx) bool {
+	if len(tx.TxIn) == 0 {
+		return false
+	}
+	for _, in := range tx.TxIn {
+		if signaturesIn(in.SignatureScript) < 2 {
+			return false
+		}
+	}
+	return true
+}
+
+// scriptVersion is the only script version these games use.
+const scriptVersion = 0
 
 // maxGamingTxBytes bounds what a game may hand over. A refund or a sweep is one
 // input and one output - a few hundred bytes. This is room to be wrong in
@@ -139,14 +205,17 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("decode: %w", err)
 	}
-	for _, out := range decoded.Outputs {
-		if !walletOwns(ctx, out.Addresses) {
-			where := "an address this wallet does not hold"
-			if len(out.Addresses) > 0 {
-				where = out.Addresses[0]
+	coSigned := outputsMayPayAnyone(&tx)
+	if !coSigned {
+		for _, out := range decoded.Outputs {
+			if !walletOwns(ctx, out.Addresses) {
+				where := "an address this wallet does not hold"
+				if len(out.Addresses) > 0 {
+					where = out.Addresses[0]
+				}
+				return "", fmt.Errorf("output %d pays %s; coin this game could move on its own "+
+					"may only come back to this wallet", out.Index, where)
 			}
-			return "", fmt.Errorf("output %d pays %s; a game may only return coin to this wallet",
-				out.Index, where)
 		}
 	}
 
@@ -162,6 +231,10 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 	for _, in := range tx.TxIn {
 		ins = append(ins, fmt.Sprintf("%s:%d", in.PreviousOutPoint.Hash, in.PreviousOutPoint.Index))
 	}
-	log.Printf("gaming: %s broadcast %s, spending %s", game, txid, strings.Join(ins, " "))
+	how := "returning coin to this wallet"
+	if coSigned {
+		how = "co-signed, so its outputs were not checked against this wallet"
+	}
+	log.Printf("gaming: %s broadcast %s, spending %s (%s)", game, txid, strings.Join(ins, " "), how)
 	return txid, nil
 }
