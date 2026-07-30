@@ -57,6 +57,11 @@ func TestThePageCanReachWhatItNeeds(t *testing.T) {
 		{http.MethodGet, "/events"},
 		{http.MethodPost, "/table/act"},
 		{http.MethodPost, "/table/leave"},
+		// Without this the audit is unreachable from the panel: a
+		// challenge POST died at the proxy and the page read the 404 as
+		// success, so a table settled and released with a challenge the
+		// player thought they had made.
+		{http.MethodPost, "/table/challenge"},
 	}
 	for _, n := range needed {
 		if _, ok := GamingUIRouteFor("poker", n.method, n.path); !ok {
