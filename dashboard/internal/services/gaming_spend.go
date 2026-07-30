@@ -85,6 +85,30 @@ var (
 // must not each see the other's spend as not yet counted.
 var spendMu sync.Mutex
 
+// spendApproving is the requests a person is approving right now. The spend
+// itself runs outside spendMu - signing and broadcasting take as long as they
+// take - and a request that stays pending while it runs would let a second
+// approval pass the Pending check and pay twice. Guarded by spendMu.
+var spendApproving = map[string]bool{}
+
+// The staged calls of a spend, swappable in tests, which have no wallet to
+// sign with and no /dashboard-data to log to. Production never touches these.
+var (
+	spendLogPath   = config.GamingSpendLogPath
+	spendAccount   = gamingAccountNumber
+	spendConstruct = func(ctx context.Context, account uint32, address string, amountAtoms int64) ([]byte, error) {
+		tx, err := ConstructTransaction(ctx, account, []types.TxRecipient{{
+			Address: address, AmountAtoms: amountAtoms,
+		}}, false)
+		if err != nil {
+			return nil, err
+		}
+		return tx.UnsignedTransaction, nil
+	}
+	spendSign    = signTransactionForSpend
+	spendPublish = publishSignedTransaction
+)
+
 // spendLog is the whole record, oldest first.
 type spendLog struct {
 	Spends []GamingSpend `json:"spends"`
@@ -96,7 +120,7 @@ const maxSpendLog = 500
 
 func readSpendLog() spendLog {
 	var log spendLog
-	blob, err := os.ReadFile(config.GamingSpendLogPath())
+	blob, err := os.ReadFile(spendLogPath())
 	if err != nil {
 		return spendLog{}
 	}
@@ -110,7 +134,7 @@ func writeSpendLog(log spendLog) error {
 	if len(log.Spends) > maxSpendLog {
 		log.Spends = log.Spends[len(log.Spends)-maxSpendLog:]
 	}
-	dir := filepath.Dir(config.GamingSpendLogPath())
+	dir := filepath.Dir(spendLogPath())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create control directory: %w", err)
 	}
@@ -118,11 +142,11 @@ func writeSpendLog(log spendLog) error {
 	if err != nil {
 		return err
 	}
-	tmp := config.GamingSpendLogPath() + ".tmp"
+	tmp := spendLogPath() + ".tmp"
 	if err := os.WriteFile(tmp, blob, 0o600); err != nil {
 		return fmt.Errorf("write spend log: %w", err)
 	}
-	return os.Rename(tmp, config.GamingSpendLogPath())
+	return os.Rename(tmp, spendLogPath())
 }
 
 // expireLocked marks anything nobody answered in time. A request that stays
@@ -324,6 +348,15 @@ func DenyGamingSpend(id string) (GamingSpend, error) {
 // The amount and address are the ones recorded when the request was made, never
 // anything the approver passes in - so what is paid is what was shown, and a
 // request cannot be edited between being seen and being signed.
+//
+// What an error decides depends on where it happened. Everything up to and
+// including signing is pre-broadcast by construction - resolving the account,
+// constructing the transaction, unlocking with the passphrase - so a failure
+// there leaves the request pending and the person free to try again; a
+// mistyped passphrase costs a retype, not the table. Only publishing is
+// ambiguous: the transaction may have been relayed despite the error, and a
+// request left approvable after a possible broadcast is the documented
+// double-payment. That one records failed, as every failure used to.
 func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (GamingSpend, error) {
 	spendMu.Lock()
 	now := time.Now().Unix()
@@ -346,22 +379,40 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 		spendMu.Unlock()
 		return out, ErrGamingSpendNotPending
 	}
+	// Pending in the log is no longer enough: a retryable failure leaves the
+	// request pending on purpose, so the state alone cannot tell "waiting on
+	// a person" from "a person's approval is running right now" - and two
+	// copies of the second would each construct their own transaction and
+	// pay the address twice.
+	if spendApproving[id] {
+		out := log.Spends[idx]
+		spendMu.Unlock()
+		return out, ErrGamingSpendNotPending
+	}
+	spendApproving[id] = true
 	req := log.Spends[idx]
 	spendMu.Unlock()
+	defer func() {
+		spendMu.Lock()
+		delete(spendApproving, id)
+		spendMu.Unlock()
+	}()
 
 	// Spend outside the lock: signing and broadcasting take as long as they
 	// take, and holding the log shut meanwhile would stall every other game.
-	account, err := gamingAccountNumber(ctx)
+	account, err := spendAccount(ctx)
 	if err != nil {
-		return recordSpendOutcome(id, GamingSpendFailed, "", err.Error())
+		return req, err
 	}
-	tx, err := ConstructTransaction(ctx, account, []types.TxRecipient{{
-		Address: req.Address, AmountAtoms: req.AmountAtoms,
-	}}, false)
+	unsigned, err := spendConstruct(ctx, account, req.Address, req.AmountAtoms)
 	if err != nil {
-		return recordSpendOutcome(id, GamingSpendFailed, "", err.Error())
+		return req, err
 	}
-	txid, err := SignAndPublishTransaction(ctx, account, tx.UnsignedTransaction, passphrase)
+	signed, err := spendSign(ctx, account, unsigned, passphrase)
+	if err != nil {
+		return req, err
+	}
+	txid, err := spendPublish(ctx, signed)
 	if err != nil {
 		return recordSpendOutcome(id, GamingSpendFailed, "", err.Error())
 	}

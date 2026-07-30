@@ -1727,11 +1727,26 @@ func walletSwitchGuard() error {
 const publishTimeout = 60 * time.Second
 
 func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsignedTxBytes []byte, passphrase []byte) (string, error) {
-	if err := spendGuard(); err != nil {
+	signed, err := signTransactionForSpend(ctx, sourceAccount, unsignedTxBytes, passphrase)
+	if err != nil {
 		return "", err
 	}
+	return publishSignedTransaction(ctx, signed)
+}
+
+// signTransactionForSpend is every step of a spend that happens before
+// anything reaches the network: the mixer guard, unlocking the account with
+// the passphrase, signing, and relocking. Split from publishing on purpose -
+// an error from here is guaranteed pre-broadcast, nothing was relayed and no
+// coin can have moved, which is what lets a caller treat a mistyped
+// passphrase as a retry rather than a verdict. The passphrase is wiped
+// whatever happens.
+func signTransactionForSpend(ctx context.Context, sourceAccount uint32, unsignedTxBytes []byte, passphrase []byte) ([]byte, error) {
+	if err := spendGuard(); err != nil {
+		return nil, err
+	}
 	if rpc.WalletGrpcClient == nil {
-		return "", fmt.Errorf("wallet gRPC client not initialized")
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
 	}
 	defer utils.Zero(passphrase)
 
@@ -1742,7 +1757,7 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 	// migrating to per-account encryption if needed.
 	didUnlock, err := unlockAccountForSpend(ctx, sourceAccount, passphrase)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	// Only re-lock an account this send opened; one the VSP reconciler or a
 	// mixer is holding open has to stay that way.
@@ -1760,14 +1775,26 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 		SerializedTransaction: unsignedTxBytes,
 	})
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	return signResp.Transaction, nil
+}
+
+// publishSignedTransaction relays a signed transaction. An error from here is
+// ambiguous in the one way that matters: the transaction may have been relayed
+// despite it, so a caller must treat the spend as possibly made and never
+// retry it.
+func publishSignedTransaction(ctx context.Context, signedTx []byte) (string, error) {
+	if rpc.WalletGrpcClient == nil {
+		return "", fmt.Errorf("wallet gRPC client not initialized")
 	}
 	// Detached and wrapped: once the transaction is handed over it may reach the
-	// network whatever this call returns. The signing above is still pre-spend.
+	// network whatever this call returns. Signing is a separate call and is
+	// still pre-spend.
 	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
 	defer cancel()
 	pubResp, err := rpc.WalletGrpcClient.PublishTransaction(pubCtx, &pb.PublishTransactionRequest{
-		SignedTransaction: signResp.Transaction,
+		SignedTransaction: signedTx,
 	})
 	if err != nil {
 		return "", fmt.Errorf("PublishTransaction: %w: %w", ErrSpendStarted, err)
