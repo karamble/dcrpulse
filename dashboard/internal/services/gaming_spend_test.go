@@ -5,7 +5,9 @@
 package services
 
 import (
+	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -152,5 +154,170 @@ func TestAnUnansweredRequestExpires(t *testing.T) {
 	}
 	if expireLocked(&log, now) {
 		t.Fatal("expiring twice reported a change the second time")
+	}
+}
+
+// spendSeams points the spend log at a directory a test may write and puts
+// every staged call back the way it was.
+func spendSeams(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	origPath, origAccount := spendLogPath, spendAccount
+	origConstruct, origSign, origPublish := spendConstruct, spendSign, spendPublish
+	spendLogPath = func() string { return filepath.Join(dir, "gaming-spends.json") }
+	t.Cleanup(func() {
+		spendLogPath, spendAccount = origPath, origAccount
+		spendConstruct, spendSign, spendPublish = origConstruct, origSign, origPublish
+	})
+}
+
+// seedPendingSpend writes one request awaiting a person.
+func seedPendingSpend(t *testing.T, id string, expiresAt int64) {
+	t.Helper()
+	if err := writeSpendLog(spendLog{Spends: []GamingSpend{{
+		ID: id, Game: "poker", Address: "Tsaddr", AmountAtoms: 1_000_000,
+		State: GamingSpendPending, RequestedAt: time.Now().Unix(), ExpiresAt: expiresAt,
+	}}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+}
+
+// A mistyped passphrase fails before anything reaches the network, so it must
+// cost a retype, not the table: the request stays pending and the same
+// approval works when the passphrase is right. Only a publish failure - the
+// one stage that may have relayed the transaction despite the error - decides
+// the request, exactly as every failure used to.
+func TestAMistypedPassphraseLeavesTheRequestApprovable(t *testing.T) {
+	spendSeams(t)
+	seedPendingSpend(t, "aa11", time.Now().Unix()+300)
+
+	spendAccount = func(context.Context) (uint32, error) { return 1, nil }
+	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
+		return []byte("unsigned"), nil
+	}
+	wrong := true
+	spendSign = func(_ context.Context, _ uint32, _ []byte, _ []byte) ([]byte, error) {
+		if wrong {
+			return nil, errors.New("invalid passphrase for master private key")
+		}
+		return []byte("signed"), nil
+	}
+	published := 0
+	spendPublish = func(context.Context, []byte) (string, error) {
+		published++
+		return "txid00", nil
+	}
+
+	if _, err := ApproveGamingSpend(context.Background(), "aa11", []byte("wrogn")); err == nil {
+		t.Fatal("a failed signing reported success")
+	}
+	if got := readSpendLog().Spends[0].State; got != GamingSpendPending {
+		t.Fatalf("a pre-broadcast failure decided the request: %v", got)
+	}
+	if published != 0 {
+		t.Fatal("published without a signature")
+	}
+
+	wrong = false
+	out, err := ApproveGamingSpend(context.Background(), "aa11", []byte("right"))
+	if err != nil {
+		t.Fatalf("the retype was refused: %v", err)
+	}
+	if out.State != GamingSpendApproved || out.TxID != "txid00" {
+		t.Fatalf("approved as %v txid %q", out.State, out.TxID)
+	}
+
+	// Once truly decided, deciding again is refused.
+	if _, err := ApproveGamingSpend(context.Background(), "aa11", []byte("right")); !errors.Is(err, ErrGamingSpendNotPending) {
+		t.Fatalf("an approved request was approvable again: %v", err)
+	}
+}
+
+func TestAPublishFailureIsTerminal(t *testing.T) {
+	spendSeams(t)
+	seedPendingSpend(t, "bb22", time.Now().Unix()+300)
+
+	spendAccount = func(context.Context) (uint32, error) { return 1, nil }
+	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
+		return []byte("unsigned"), nil
+	}
+	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+		return []byte("signed"), nil
+	}
+	spendPublish = func(context.Context, []byte) (string, error) {
+		return "", errors.New("tls handshake torn down mid-send")
+	}
+
+	out, err := ApproveGamingSpend(context.Background(), "bb22", []byte("right"))
+	if err == nil {
+		t.Fatal("a failed publish reported success")
+	}
+	if out.State != GamingSpendFailed {
+		t.Fatalf("a publish failure left the request %v; it may have relayed, so it must be terminal", out.State)
+	}
+	if _, err := ApproveGamingSpend(context.Background(), "bb22", []byte("right")); !errors.Is(err, ErrGamingSpendNotPending) {
+		t.Fatalf("a possibly-broadcast request was approvable again: %v", err)
+	}
+}
+
+// Leaving failures pending makes retries ordinary, and retries make the race
+// practical: the request is still pending in the log while an approval runs
+// outside the lock, so without the in-flight guard a second click constructs
+// a second transaction and pays the address twice.
+func TestOneApprovalRunsAtATime(t *testing.T) {
+	spendSeams(t)
+	seedPendingSpend(t, "cc33", time.Now().Unix()+300)
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	published := 0
+
+	spendAccount = func(context.Context) (uint32, error) { return 1, nil }
+	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
+		return []byte("unsigned"), nil
+	}
+	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+		close(entered)
+		<-release
+		return []byte("signed"), nil
+	}
+	spendPublish = func(context.Context, []byte) (string, error) {
+		published++
+		return "txid00", nil
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := ApproveGamingSpend(context.Background(), "cc33", []byte("right"))
+		done <- err
+	}()
+	<-entered
+
+	if _, err := ApproveGamingSpend(context.Background(), "cc33", []byte("right")); !errors.Is(err, ErrGamingSpendNotPending) {
+		t.Fatalf("a second approval ran beside the first: %v", err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("the first approval failed: %v", err)
+	}
+	if published != 1 {
+		t.Fatalf("published %d times for one request", published)
+	}
+}
+
+// The retry window is the approval window. A failed attempt does not extend
+// it, and a request nobody answered in time refuses even a correct
+// passphrase.
+func TestARequestPastItsWindowRefusesApproval(t *testing.T) {
+	spendSeams(t)
+	seedPendingSpend(t, "dd44", time.Now().Unix()-1)
+
+	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+		t.Fatal("an expired request reached the wallet")
+		return nil, nil
+	}
+
+	if _, err := ApproveGamingSpend(context.Background(), "dd44", []byte("right")); !errors.Is(err, ErrGamingSpendNotPending) {
+		t.Fatalf("an expired request was approvable: %v", err)
 	}
 }
