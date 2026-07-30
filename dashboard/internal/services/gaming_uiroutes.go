@@ -41,6 +41,7 @@ var gamingUIRoutes = map[string][]GamingUIRoute{
 
 		{Method: http.MethodPost, Path: "/table/act", Deadline: 30 * time.Second},
 		{Method: http.MethodPost, Path: "/table/leave", Deadline: 30 * time.Second},
+		{Method: http.MethodPost, Path: "/table/challenge", Deadline: 30 * time.Second},
 
 		{Method: http.MethodPost, Path: "/table/fund", Deadline: 10 * time.Minute},
 		{Method: http.MethodPost, Path: "/table/bond", Deadline: 10 * time.Minute},
