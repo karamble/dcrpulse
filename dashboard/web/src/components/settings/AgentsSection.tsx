@@ -65,11 +65,22 @@ export const AgentsSection = () => {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
 
+  // Agent settings require the dashboard app password: they mint tokens and
+  // widen an agent's authority, so they are not left open the way the rest of
+  // the API is when no password is set.
+  const [needsAppPassword, setNeedsAppPassword] = useState(false);
+
   const refresh = useCallback(async () => {
     try {
       setSettings(await getMCPSettings());
-    } catch {
-      /* keep last good values */
+      setNeedsAppPassword(false);
+    } catch (e) {
+      const res = (e as { response?: { status?: number; headers?: Record<string, string> } })
+        .response;
+      if (res?.status === 401 && res.headers?.['x-dashboard-auth'] === 'password-required') {
+        setNeedsAppPassword(true);
+      }
+      /* otherwise keep last good values */
     }
   }, []);
 
@@ -238,6 +249,19 @@ export const AgentsSection = () => {
           with its own bearer token and, on first connect, can only read node and blockchain
           status. Grant additional capabilities per agent below.
         </p>
+
+        {needsAppPassword && (
+          <div className="p-4 rounded-lg bg-warning/10 border border-warning/40 flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <span className="font-medium block text-warning">Set a dashboard app password first</span>
+              <span className="text-muted-foreground">
+                Agent settings mint tokens and widen what an agent may spend, so they need a
+                logged-in session. Set an app password under Settings &gt; Account, then come back.
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
           <div>

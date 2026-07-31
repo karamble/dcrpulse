@@ -22,6 +22,7 @@ import {
   revokeMCPGrant,
 } from '../../services/api';
 import { ConfigSection, domainLabels, domainLabel } from './ConfigSection';
+import { isReservedAccount } from '../accounts/AccountRow';
 
 interface Props {
   agentId: string;
@@ -60,6 +61,9 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
   // once something signs. Mirrors the submit-time validation exactly.
   const needsLimits = selected.size > 0 || selectedNeedsFund;
   const needsAuth = selected.size > 0 || selectedNeedsPass;
+  // A per-transaction cap above the daily one is legal but misleading: the
+  // daily cap silently becomes the real ceiling.
+  const capsInverted = parseFloat(perTx) > 0 && parseFloat(daily) > 0 && parseFloat(perTx) > parseFloat(daily);
 
   // Scopes grouped by their capability domain, in the canonical domain order.
   const scopeGroups = (() => {
@@ -248,14 +252,22 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
             </div>
             {grant.writeScopes?.length ? (
               <div className="flex flex-wrap gap-1.5">
-                {grant.writeScopes.map((k) => (
-                  <span
-                    key={k}
-                    className="rounded-md bg-muted/20 px-2 py-0.5 text-xs text-foreground"
-                  >
-                    {scopeLabel(k)}
-                  </span>
-                ))}
+                {grant.writeScopes.map((k) => {
+                  const s = byKey(k);
+                  return (
+                    <span
+                      key={k}
+                      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs ${
+                        s?.risk ? 'bg-warning/15 text-warning' : 'bg-muted/20 text-foreground'
+                      }`}
+                    >
+                      {scopeLabel(k)}
+                      {s?.fund && <Coins className="h-3 w-3" />}
+                      {s?.needsPass && <KeyRound className="h-3 w-3" />}
+                      {s?.risk && <AlertTriangle className="h-3 w-3" />}
+                    </span>
+                  );
+                })}
               </div>
             ) : (
               <span className="text-xs text-muted-foreground">none</span>
@@ -349,17 +361,44 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
                     key={a.accountNumber}
                     type="button"
                     onClick={() => toggleAccount(a.accountNumber)}
+                    title={
+                      isReservedAccount(a)
+                        ? `${a.accountName} is used by another part of the stack (mixer, Lightning or DEX). Granting it lets the agent spend funds those subsystems rely on.`
+                        : undefined
+                    }
                     className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                       on
-                        ? 'bg-success/20 text-success hover:bg-success/30'
-                        : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+                        ? isReservedAccount(a)
+                          ? 'bg-warning/25 text-warning hover:bg-warning/35'
+                          : 'bg-success/20 text-success hover:bg-success/30'
+                        : isReservedAccount(a)
+                          ? 'bg-warning/10 text-warning/80 hover:bg-warning/20'
+                          : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
                     }`}
                   >
                     {a.accountName} (#{a.accountNumber})
+                    {isReservedAccount(a) && <AlertTriangle className="ml-1 inline h-3 w-3" />}
                   </button>
                 );
               })}
             </div>
+            {selected.size > 0 && (
+              <label className="block text-xs text-muted-foreground animate-fade-in">
+                Restrict wallet sends to these addresses (optional; blank = any)
+                <textarea
+                  value={allowlist}
+                  onChange={(e) => setAllowlist(e.target.value)}
+                  rows={2}
+                  placeholder="One address per line"
+                  className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-xs font-mono text-foreground"
+                />
+                <span className="mt-1 block text-[11px] text-muted-foreground/80">
+                  Applies to wallet sends only. Lightning payments and DEX
+                  withdrawals have their own destinations and are bounded by the
+                  caps, not by this list.
+                </span>
+              </label>
+            )}
           </ConfigSection>
 
           {needsLimits && (
@@ -367,7 +406,7 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
               icon={Gauge}
               tone="warning"
               title="Spending limits"
-              description="Hard caps on the DCR this agent can move - absolute, there is no unlimited. Shared across wallet, staking, Lightning and DEX spends; both are required."
+              description="Hard caps on the DCR this agent can move - absolute, there is no unlimited. One shared budget across wallet sends, ticket purchases, Lightning payments and DEX trades; both are required. A DEX withdrawal in another asset cannot be measured in DCR, so it is bounded by the scope alone."
             >
               <div className="grid grid-cols-2 gap-3 animate-fade-in">
                 <label className="text-xs text-muted-foreground">
@@ -399,16 +438,12 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
                   remaining on the current grant.
                 </p>
               )}
-              <label className="block text-xs text-muted-foreground">
-                Restrict to recipient addresses (optional; blank = any)
-                <textarea
-                  value={allowlist}
-                  onChange={(e) => setAllowlist(e.target.value)}
-                  rows={2}
-                  placeholder="One address per line"
-                  className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-xs font-mono text-foreground"
-                />
-              </label>
+              {capsInverted && (
+                <p className="text-xs text-warning">
+                  The per-transaction cap is above the daily cap, so the daily
+                  cap is the real limit.
+                </p>
+              )}
             </ConfigSection>
           )}
 
