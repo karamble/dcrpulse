@@ -15,6 +15,7 @@ import (
 	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/gorilla/mux"
 
+	"dcrpulse/internal/auth"
 	"dcrpulse/internal/mcp"
 	"dcrpulse/internal/services"
 )
@@ -112,6 +113,13 @@ func SetMCPEnabledHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	// The agent surface can move funds, so it must not run on an install whose
+	// dashboard has no password: the settings that widen an agent's authority
+	// would be reachable by anything that can talk to the port.
+	if req.Enabled && !auth.Enabled() {
+		http.Error(w, auth.ErrAppPasswordRequired, http.StatusConflict)
 		return
 	}
 	if err := mcp.SetEnabled(req.Enabled); err != nil {
