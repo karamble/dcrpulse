@@ -28,6 +28,31 @@ func TestGrantScopedRejectsNegative(t *testing.T) {
 	}
 }
 
+// TestGrantEditKeepsSpentWindow pins that editing a grant does not refill the
+// day's allowance: the window belongs to the agent's spending, not to the grant.
+func TestGrantEditKeepsSpentWindow(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	spec := GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms}
+	s.set("a", spec, now)
+	if _, err := s.authorize(context.Background(), "a", 0, 5*dcrAtoms, "", now); err != nil {
+		t.Fatalf("spend to the cap: %v", err)
+	}
+	// Re-grant with an extra allowlist entry - an edit that touches nothing
+	// about the caps.
+	spec.Allowlist = []string{"Dsomething"}
+	s.set("a", spec, now)
+	if _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "Dsomething", now); err != errDailyExceeded {
+		t.Fatalf("after an edit the day should still be spent: want errDailyExceeded, got %v", err)
+	}
+	// A fresh window after 24h still resets.
+	later := now.Add(grantWindow + time.Minute)
+	s.set("a", spec, later)
+	if _, err := s.authorize(context.Background(), "a", 0, dcrAtoms, "Dsomething", later); err != nil {
+		t.Fatalf("new window: want ok, got %v", err)
+	}
+}
+
 // TestGrantRefundIgnoresNonPositive pins the counter-reset fix: a negative
 // refund would otherwise raise spentAtoms and the <0 clamp would then zero the
 // whole window's usage.

@@ -99,8 +99,16 @@ func newGrantStore() *grantStore { return &grantStore{byAgent: map[string]*spend
 func (s *grantStore) set(agentID string, spec GrantSpec, now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Carry the current window across an edit. The daily allowance belongs to
+	// the agent's spending, not to the grant document, so editing an unrelated
+	// field must not hand back headroom already used. An explicit revoke drops
+	// the grant and does start a fresh window.
+	spent, windowStart := int64(0), now
 	if old := s.byAgent[agentID]; old != nil {
 		zero(old.passphrase)
+		if now.Sub(old.windowStart) < grantWindow {
+			spent, windowStart = old.spentAtoms, old.windowStart
+		}
 	}
 	accounts := make(map[uint32]bool, len(spec.Accounts))
 	for _, a := range spec.Accounts {
@@ -126,7 +134,8 @@ func (s *grantStore) set(agentID string, spec GrantSpec, now time.Time) {
 		expiry:      spec.Expiry,
 		passphrase:  append([]byte(nil), spec.Passphrase...),
 		writeScopes: scopes,
-		windowStart: now,
+		spentAtoms:  spent,
+		windowStart: windowStart,
 	}
 }
 
