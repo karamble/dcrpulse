@@ -118,7 +118,8 @@ func TestEveryWriteToolGatesWithoutGrant(t *testing.T) {
 		if tl.Name == "ln_pay" {
 			continue
 		}
-		if txt := resultText(out); !strings.Contains(txt, "no spend grant") && !strings.Contains(txt, "does not allow") {
+		if txt := resultText(out); !strings.Contains(txt, "no spend grant") && !strings.Contains(txt, "no write grant") &&
+			!strings.Contains(txt, "does not allow") && !strings.Contains(txt, "does not include") {
 			t.Errorf("%s: refused, but not by the grant gate: %q", tl.Name, txt)
 		}
 	}

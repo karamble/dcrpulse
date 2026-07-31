@@ -92,7 +92,7 @@ func TestActivityLoggingMarksRefusals(t *testing.T) {
 		t.Fatalf("ungranted write must refuse in-band: res=%+v err=%v", res, err)
 	}
 	out := sb.String()
-	if !strings.Contains(out, `tool=tor_new_identity dur=`) || !strings.Contains(out, `err="no spend grant`) {
+	if !strings.Contains(out, `tool=tor_new_identity dur=`) || !strings.Contains(out, `err="no write grant`) {
 		t.Fatalf("refusal line missing err marker: %q", out)
 	}
 	if strings.Contains(out, "tool=tor_new_identity dur=0s ok") {

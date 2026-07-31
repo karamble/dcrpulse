@@ -345,8 +345,10 @@ automating):
   mcp_...` header.
 - **HTTP 403, "agent blocked"** - the agent tripped a cap or was frozen. Unblock it in
   Settings -> AI Agents and grant a fresh spend capability.
-- **A tool returns "no spend grant"** - the action moves funds but the agent has no
-  spend grant. Grant one (account + caps) in the dashboard.
+- **A tool returns "no spend grant" or "no write grant"** - the agent has no grant.
+  Fund tools say "no spend grant" (grant an account + caps); scoped actions say
+  "no write grant" and name the write scope to enable. A grant that exists but
+  lacks the scope says "does not include the ... write scope".
 - **A tool is not in `tools/list`** - its domain is not granted to this agent. Grant
   the domain (and, for writes, the matching write scope).
 - **A spend hangs, then is refused with "approval timed out"** - Bison Relay oversight

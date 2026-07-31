@@ -196,7 +196,8 @@ func runGating(ctx context.Context, s *mcp.ClientSession, exposed map[string]boo
 
 // gate calls a spend tool with placeholder args and asserts it is refused.
 // Returns false if the gate did not hold (a real failure). With no grant every
-// spend tool fails the grant lookup first, so the denial is "no spend grant".
+// spend tool fails the grant lookup first, so the denial is "no spend grant"
+// (fund tools) or "no write grant" (scope-gated actions).
 func gate(ctx context.Context, s *mcp.ClientSession, sp spec) bool {
 	res, err := call(ctx, s, sp.name, sp.spend(d2(sp)))
 	if err != nil {
@@ -214,7 +215,8 @@ func gate(ctx context.Context, s *mcp.ClientSession, sp spec) bool {
 		return false
 	}
 	switch {
-	case res.isError && (strings.Contains(res.text, "no spend grant") || strings.Contains(res.text, sp.denial)):
+	case res.isError && (strings.Contains(res.text, "no spend grant") ||
+		strings.Contains(res.text, "no write grant") || strings.Contains(res.text, sp.denial)):
 		add(sp, "GATED", preview(res.text, 90))
 		return true
 	case !res.isError:

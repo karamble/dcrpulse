@@ -41,7 +41,15 @@ var (
 // scopeDenied is the denial returned when a grant exists but does not include
 // the write scope a tool requires.
 func scopeDenied(scope string) error {
-	return fmt.Errorf("the spend grant does not allow %q actions: ask the user to enable it", scope)
+	return fmt.Errorf("the agent's grant does not include the %q write scope: ask the user to enable it", scope)
+}
+
+// noScopeGrant is the no-grant denial for scope-gated tools. It names the
+// missing write scope and avoids "spend" wording: most scoped actions (tor,
+// timestamp, governance votes) move no funds, and errNoGrant's spend language
+// reads wrong for them.
+func noScopeGrant(scope string) error {
+	return fmt.Errorf("no write grant: this tool needs the %q write scope: ask the user to grant it in the dashboard", scope)
 }
 
 // spendGrant is one agent's in-memory spend capability. Wallet sends and ticket
@@ -313,6 +321,9 @@ func (s *grantStore) authorizeAction(agentID, scope string, now time.Time) error
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
+		if errors.Is(err, errNoGrant) {
+			return noScopeGrant(scope)
+		}
 		return err
 	}
 	if !g.writeScopes[scope] {
@@ -329,6 +340,9 @@ func (s *grantStore) authorizeActionPass(agentID, scope string, now time.Time) (
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
+		if errors.Is(err, errNoGrant) {
+			return nil, noScopeGrant(scope)
+		}
 		return nil, err
 	}
 	if !g.writeScopes[scope] {
@@ -392,6 +406,9 @@ func (s *grantStore) reserveSpendScoped(agentID, scope string, amountAtoms int64
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
+		if errors.Is(err, errNoGrant) {
+			return noScopeGrant(scope)
+		}
 		return err
 	}
 	if !g.writeScopes[scope] {
