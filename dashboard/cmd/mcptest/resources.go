@@ -6,8 +6,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,9 +50,10 @@ func (s *updateSink) count(uri string) int {
 	return s.uris[uri]
 }
 
-// connectWithNotify opens a session with the standalone SSE stream ENABLED (so
-// the server can push notifications) and a resource-updated handler. The tool
-// phases disable that stream; the subscriptions test needs it.
+// connectWithNotify opens a session with a resource-updated handler. On the
+// 2026-07-28 wire pushes arrive over each subscription's listen stream (the
+// legacy standalone SSE stream is gone: the stateless server answers GET with
+// 405 and new-wire clients never issue it).
 func connectWithNotify(ctx context.Context, endpoint, token string, sink *updateSink) (*mcp.ClientSession, error) {
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   endpoint,
@@ -121,17 +125,33 @@ func runResourcesPhase(ctx context.Context, endpoint, token string) bool {
 	}
 
 	// Subscribe gating: a resource outside the agent's domains must be refused.
+	// The new wire's Subscribe opens its listen stream asynchronously and
+	// swallows a refusal, so the deny is probed with a raw legacy-wire
+	// resources/subscribe frame; the new-wire subscription is still opened so
+	// the push phase can prove it delivers nothing.
+	withheld := ""
 	for _, uri := range resourceURIs {
-		if exposed[uri] {
-			continue
+		if !exposed[uri] {
+			withheld = uri
+			break
 		}
-		if serr := s.Subscribe(ctx, &mcp.SubscribeParams{URI: uri}); serr == nil {
-			fmt.Printf("  %s subscribe to withheld %s was NOT refused\n", red("FAIL"), uri)
+	}
+	if withheld != "" {
+		refused, perr := legacySubscribeRefused(ctx, endpoint, token, withheld)
+		switch {
+		case perr != nil:
+			fmt.Printf("  %s legacy subscribe probe %s: %v\n", red("FAIL"), withheld, perr)
 			failed = true
-		} else {
-			fmt.Printf("  %s subscribe to withheld %s refused\n", green("OK"), uri)
+		case refused:
+			fmt.Printf("  %s subscribe to withheld %s refused (legacy wire)\n", green("OK"), withheld)
+		default:
+			fmt.Printf("  %s subscribe to withheld %s was NOT refused\n", red("FAIL"), withheld)
+			failed = true
 		}
-		break
+		if serr := s.Subscribe(ctx, &mcp.SubscribeParams{URI: withheld}); serr != nil {
+			fmt.Printf("  %s new-wire subscribe to withheld %s errored: %v\n", red("FAIL"), withheld, serr)
+			failed = true
+		}
 	}
 
 	// Trigger a server push: a denied wallet_send (no grant) records an audit
@@ -159,10 +179,60 @@ func runResourcesPhase(ctx context.Context, endpoint, token string) bool {
 			fmt.Printf("  %s no resources/updated push for %s within 6s\n", red("FAIL"), auditResourceURI)
 			failed = true
 		}
+		// Delivery is proven above, so the withheld subscription's silence is
+		// meaningful: its listen stream was refused before registration.
+		if withheld != "" {
+			if n := sink.count(withheld); n != 0 {
+				fmt.Printf("  %s withheld %s received %d pushes\n", red("FAIL"), withheld, n)
+				failed = true
+			} else {
+				fmt.Printf("  %s withheld %s received no pushes\n", green("PASS"), withheld)
+			}
+		}
 	} else {
 		fmt.Printf("  %s skipping push test (grant the wallet+audit domains to run it)\n", yellow("note:"))
 	}
 	return failed
+}
+
+// legacySubscribeRefused probes the subscribe gate over the legacy wire, where
+// resources/subscribe is synchronous and a refusal comes back as a JSON-RPC
+// error. It reports whether the server refused the URI.
+func legacySubscribeRefused(ctx context.Context, endpoint, token, uri string) (bool, error) {
+	frame := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"resources/subscribe","params":{"uri":%q}}`, uri)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(frame))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+	body := string(raw)
+	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		var sb strings.Builder
+		for _, line := range strings.Split(body, "\n") {
+			if data, ok := strings.CutPrefix(line, "data:"); ok {
+				sb.WriteString(strings.TrimSpace(data))
+			}
+		}
+		body = sb.String()
+	}
+	var rpc struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &rpc); err != nil {
+		return false, fmt.Errorf("undecodable subscribe reply: %v", err)
+	}
+	return len(rpc.Error) > 0, nil
 }
 
 // hasTool reports whether a named tool is exposed to this session.

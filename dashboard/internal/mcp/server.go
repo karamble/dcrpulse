@@ -238,10 +238,6 @@ func shutdownServer(s *http.Server) {
 	log.Printf("MCP server stopped")
 }
 
-// sessionIdleTimeout closes an MCP session that has gone quiet, so a session
-// cannot outlive a capability change indefinitely.
-const sessionIdleTimeout = 30 * time.Minute
-
 // buildHandler builds the streamable-HTTP handler. The getServer callback
 // resolves the agent (placed in context by authMiddleware) and returns its
 // scoped server (built lazily, rebuilt when grants change).
@@ -252,11 +248,16 @@ func buildHandler() http.Handler {
 		}
 		return mcp.NewServer(&mcp.Implementation{Name: "dcrpulse", Version: serverVersion}, nil)
 	}, &mcp.StreamableHTTPOptions{
-		// A session holds the server it was built with. Without a timeout an
-		// idle one is never closed, so it could outlive a revocation
-		// indefinitely; the per-call domain check covers the live case and this
-		// bounds the stale one.
-		SessionTimeout: sessionIdleTimeout,
+		// The SDK serves the 2026-07-28 wire only in stateless mode (stateful
+		// answers it 400). Stateless serves both protocol generations per
+		// request, and every request re-resolves the agent's scoped server, so
+		// a revocation applies immediately; no session survives to outlive it.
+		Stateless: true,
+		// The default 4 MiB cap would 413 the base64 file tools (br_file_add,
+		// br_file_send, br_store_file_upload).
+		MaxRequestBodyBytes: 16 << 20,
+		// PropagateRequestCancellation stays off: an HTTP disconnect must not
+		// become a cancel trigger inside spend handlers.
 	})
 }
 

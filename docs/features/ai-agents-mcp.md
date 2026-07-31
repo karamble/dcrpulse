@@ -156,6 +156,10 @@ refused.
 - **Endpoint:** `http://127.0.0.1:8090/` (streamable HTTP; the whole listener is the
   root path).
 - **Auth:** send `Authorization: Bearer mcp_<token>` on every request.
+- **Protocol:** both MCP generations are served per request - 2026-07-28
+  (`server/discover`, per-request `_meta`) and the legacy revisions through
+  2025-11-25 (`initialize`). The endpoint is stateless: no `Mcp-Session-Id` is
+  issued, `GET`/`DELETE` answer 405, and request bodies are capped at 16 MiB.
 
 Point any MCP-capable client, or a custom agent built on an MCP SDK, at that endpoint
 with the bearer token. The server advertises tools and resources scoped to the
@@ -183,25 +187,29 @@ it for the approval flow, which blocks until you reply), `-invoice`, `-no-color`
 
 ### Low-level: connecting with curl
 
-MCP streamable HTTP is JSON-RPC 2.0. Initialize, capture the session id, then call:
+MCP streamable HTTP is JSON-RPC 2.0 and the endpoint is stateless, so every POST
+stands alone - there is no session id to capture:
 
 ```bash
 TOKEN=mcp_xxx
 H='-H Authorization:Bearer '"$TOKEN"' -H Content-Type:application/json -H Accept:application/json,text/event-stream'
 
-# 1. initialize, capturing the Mcp-Session-Id response header
-SID=$(curl -sS $H -D - -o /dev/null http://127.0.0.1:8090/ \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' \
-  | awk 'tolower($1)=="mcp-session-id:"{print $2}' | tr -d '\r')
-
-# 2. tell the server we are initialized
-curl -sS $H -H "Mcp-Session-Id: $SID" http://127.0.0.1:8090/ \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-
-# 3. call a tool (the JSON result arrives on the SSE "data:" line)
-curl -sS $H -H "Mcp-Session-Id: $SID" http://127.0.0.1:8090/ \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"node_status","arguments":{}}}' \
+# call a tool (the JSON result arrives on the SSE "data:" line)
+curl -sS $H http://127.0.0.1:8090/ \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"node_status","arguments":{}}}' \
   | sed -n 's/^data: //p' | jq .
+
+# a legacy initialize still works and shows the negotiated version
+curl -sS $H http://127.0.0.1:8090/ \
+  -d '{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' \
+  | sed -n 's/^data: //p' | jq .result.protocolVersion
+
+# 2026-07-28 callers probe with server/discover and mirror the two standard
+# headers on every request
+curl -sS $H -H Mcp-Protocol-Version:2026-07-28 -H Mcp-Method:server/discover \
+  http://127.0.0.1:8090/ \
+  -d '{"jsonrpc":"2.0","id":3,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
+  | sed -n 's/^data: //p' | jq .result.supportedVersions
 ```
 
 ## Capabilities and resources
@@ -269,9 +277,13 @@ instead of polling. Each is gated by the same domain as the matching tools.
 | `dcrpulse://privacy/mixer` | privacy | Recent mixer events |
 | `dcrpulse://mcp/audit` | audit | Recent agent spend attempts (all agents) |
 
-Subscribe to a URI with `resources/subscribe`. When the underlying state changes the
-server sends a `resources/updated` notification (the URI only); read the new value
-with `resources/read`.
+How updates are delivered depends on the client's MCP revision. Clients on the
+2026-07-28 wire (e.g. go-sdk >= v1.7.0 `ClientSession.Subscribe`) subscribe via a
+long-lived `subscriptions/listen` call and receive `resources/updated`
+notifications (the URI only) on that stream. The legacy `resources/subscribe` is
+still accepted and gated the same way, but the stateless endpoint has no legacy
+standalone SSE stream (`GET` answers 405), so receiving pushes requires a
+2026-07-28 client. Read the new value with `resources/read` either way.
 
 ## Examples
 
@@ -289,7 +301,8 @@ amount; if Bison Relay oversight is on, you approve it over a DM first):
  "params":{"name":"wallet_send","arguments":{"account":0,"address":"Dsxxx","amountDcr":0.01}}}
 ```
 
-Subscribe to the agent audit feed (needs the `audit` domain):
+Subscribe to the agent audit feed (needs the `audit` domain; legacy-wire frame -
+on the 2026-07-28 wire subscriptions ride `subscriptions/listen`):
 
 ```json
 {"jsonrpc":"2.0","id":4,"method":"resources/subscribe","params":{"uri":"dcrpulse://mcp/audit"}}

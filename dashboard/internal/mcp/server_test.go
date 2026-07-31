@@ -22,19 +22,31 @@ func testAgent(id, name string, domains map[string]bool) *agent {
 // connectTo wires an in-memory MCP client to a server scoped for agent a.
 func connectTo(t *testing.T, a *agent) *mcp.ClientSession {
 	t.Helper()
+	_, cs := connectToWithOptions(t, a, nil)
+	return cs
+}
+
+// connectToWithOptions is connectTo with client options, also returning the
+// server handle for tests that drive server-side notifications.
+func connectToWithOptions(t *testing.T, a *agent, copts *mcp.ClientOptions) (*mcp.Server, *mcp.ClientSession) {
+	t.Helper()
 	ctx := context.Background()
 	srvT, cliT := mcp.NewInMemoryTransports()
-	ss, err := buildServer(a).Connect(ctx, srvT, nil)
+	srv := buildServer(a)
+	ss, err := srv.Connect(ctx, srvT, nil)
 	if err != nil {
 		t.Fatalf("server connect: %v", err)
 	}
 	t.Cleanup(func() { ss.Close() })
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, cliT, nil)
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, copts).Connect(ctx, cliT, nil)
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
 	t.Cleanup(func() { cs.Close() })
-	return cs
+	if v := cs.InitializeResult().ProtocolVersion; v < "2026-07-28" {
+		t.Fatalf("in-memory session negotiated %q; want the 2026-07-28 wire", v)
+	}
+	return srv, cs
 }
 
 func toolNames(t *testing.T, cs *mcp.ClientSession) map[string]bool {

@@ -6,7 +6,9 @@ package mcp
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -80,15 +82,76 @@ func TestNotifyResourceUpdatedNoSubscribersNoPanic(t *testing.T) {
 }
 
 // TestResourceSubscribeGating verifies an agent cannot subscribe to a resource
-// outside its granted domains but can subscribe within them.
+// outside its granted domains but can subscribe within them. On the 2026-07-28
+// wire ClientSession.Subscribe opens its subscriptions/listen stream
+// asynchronously and swallows a server refusal, so the deny is asserted on the
+// gate itself here, on the legacy wire in TestLegacyWireHTTP, and behaviorally
+// in TestResourceSubscribePushNewWire.
 func TestResourceSubscribeGating(t *testing.T) {
 	a := testAgent("rs", "node-only", map[string]bool{"node": true})
 	cs := connectTo(t, a)
-	ctx := context.Background()
-	if err := cs.Subscribe(ctx, &mcp.SubscribeParams{URI: resNodeSync}); err != nil {
+	if err := cs.Subscribe(context.Background(), &mcp.SubscribeParams{URI: resNodeSync}); err != nil {
 		t.Errorf("subscribe to granted node resource failed: %v", err)
 	}
-	if err := cs.Subscribe(ctx, &mcp.SubscribeParams{URI: resAudit}); err == nil {
-		t.Error("subscribe to ungranted audit resource should be refused")
+	if err := allowResourceSub(a, resNodeSync); err != nil {
+		t.Errorf("gate refused granted node resource: %v", err)
+	}
+	if err := allowResourceSub(a, resAudit); err == nil {
+		t.Error("gate allowed the ungranted audit resource")
+	}
+}
+
+// TestResourceSubscribePushNewWire proves the 2026-07-28 subscription path end
+// to end: a granted subscription receives ResourceUpdated pushes over its
+// subscriptions/listen stream while a denied one stays silent. Subscribe
+// registers asynchronously on this wire, so the triggers retry until a push
+// lands.
+func TestResourceSubscribePushNewWire(t *testing.T) {
+	a := testAgent("rp", "node-only", map[string]bool{"node": true})
+	var mu sync.Mutex
+	got := map[string]int{}
+	srv, cs := connectToWithOptions(t, a, &mcp.ClientOptions{
+		ResourceUpdatedHandler: func(_ context.Context, req *mcp.ResourceUpdatedNotificationRequest) {
+			mu.Lock()
+			got[req.Params.URI]++
+			mu.Unlock()
+		},
+	})
+	ctx := context.Background()
+	count := func(uri string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return got[uri]
+	}
+
+	if err := cs.Subscribe(ctx, &mcp.SubscribeParams{URI: resNodeSync}); err != nil {
+		t.Fatalf("subscribe granted: %v", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for count(resNodeSync) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no resources/updated push for the granted subscription")
+		}
+		srv.ResourceUpdated(ctx, &mcp.ResourceUpdatedNotificationParams{URI: resNodeSync})
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// The denied listen errors before any subscription registers, so audit
+	// pushes can never arrive even though Subscribe reported nothing.
+	if err := cs.Subscribe(ctx, &mcp.SubscribeParams{URI: resAudit}); err != nil {
+		t.Fatalf("async subscribe reported: %v", err)
+	}
+	base := count(resNodeSync)
+	deadline = time.Now().Add(10 * time.Second)
+	for count(resNodeSync) < base+2 {
+		if time.Now().After(deadline) {
+			t.Fatal("granted subscription stopped receiving pushes")
+		}
+		srv.ResourceUpdated(ctx, &mcp.ResourceUpdatedNotificationParams{URI: resAudit})
+		srv.ResourceUpdated(ctx, &mcp.ResourceUpdatedNotificationParams{URI: resNodeSync})
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := count(resAudit); n != 0 {
+		t.Fatalf("denied subscription received %d pushes", n)
 	}
 }

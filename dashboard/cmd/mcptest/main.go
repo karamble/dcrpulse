@@ -50,9 +50,10 @@ func main() {
 	ctx := context.Background()
 	failed := false
 
-	// Resources mode is standalone: it needs a session with the standalone SSE
-	// stream enabled to receive server-pushed updates (unlike the tool phases),
-	// so it runs its own session and exits.
+	// Resources mode is standalone: it needs a session with a resource-updated
+	// handler to receive server-pushed updates (on the 2026-07-28 wire they
+	// arrive over each subscription's listen stream), so it runs its own
+	// session and exits.
 	if *resourcesMode {
 		if runResourcesPhase(ctx, *endpoint, *token) {
 			os.Exit(1)
@@ -73,6 +74,11 @@ func main() {
 	if init := session.InitializeResult(); init != nil && init.ServerInfo != nil {
 		fmt.Printf("  connected to %s %s (protocol %s)\n",
 			bold(init.ServerInfo.Name), init.ServerInfo.Version, init.ProtocolVersion)
+		if init.ProtocolVersion < "2026-07-28" {
+			fmt.Printf("  %s server negotiated %s; want the 2026-07-28 wire\n",
+				red("FAIL"), init.ProtocolVersion)
+			failed = true
+		}
 	}
 	if ok := negativeAuth(ctx, *endpoint, *token); ok {
 		fmt.Printf("  %s bad token rejected\n", green("PASS"))
