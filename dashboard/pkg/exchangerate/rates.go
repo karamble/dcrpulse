@@ -33,8 +33,8 @@ const (
 // cc is the CryptoCompare fsym; krUSD*/krBTC* are Kraken's request name and
 // canonical result key for the USD pair and the BTC-conversion fallback pair.
 type asset struct {
-	symbol           string
-	cc               string
+	symbol             string
+	cc                 string
 	krUSDReq, krUSDKey string
 	krBTCReq, krBTCKey string
 }

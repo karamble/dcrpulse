@@ -28,9 +28,9 @@ import (
 )
 
 const (
-	politeiaBaseURL          = "https://proposals.decred.org/api"
-	politeiaTimeout          = 30 * time.Second
-	politeiaCastTimeout      = 60 * time.Second
+	politeiaBaseURL           = "https://proposals.decred.org/api"
+	politeiaTimeout           = 30 * time.Second
+	politeiaCastTimeout       = 60 * time.Second
 	politeiaSignMessagesChunk = 100
 
 	// ProposalsRefreshCooldown is how long the manual proposals refresh stays
@@ -921,12 +921,12 @@ type piInventoryResp struct {
 }
 
 type piRecord struct {
-	State           int          `json:"state"`
-	Status          int          `json:"status"`
-	Version         int          `json:"version"`
-	Timestamp       int64        `json:"timestamp"`
-	Username        string       `json:"username"`
-	Files           []piFile     `json:"files"`
+	State            int          `json:"state"`
+	Status           int          `json:"status"`
+	Version          int          `json:"version"`
+	Timestamp        int64        `json:"timestamp"`
+	Username         string       `json:"username"`
+	Files            []piFile     `json:"files"`
 	CensorshipRecord piCensorship `json:"censorshiprecord"`
 }
 

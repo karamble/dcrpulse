@@ -46,12 +46,12 @@ func ListAgendas(ctx context.Context) ([]types.Agenda, error) {
 	var vi struct {
 		Currentheight int64 `json:"currentheight"`
 		Agendas       []struct {
-			ID             string `json:"id"`
-			Description    string `json:"description"`
-			Mask           uint64 `json:"mask"`
-			Starttime      int64  `json:"starttime"`
-			Expiretime     int64  `json:"expiretime"`
-			Status         string `json:"status"`
+			ID             string  `json:"id"`
+			Description    string  `json:"description"`
+			Mask           uint64  `json:"mask"`
+			Starttime      int64   `json:"starttime"`
+			Expiretime     int64   `json:"expiretime"`
+			Status         string  `json:"status"`
 			Quorumprogress float64 `json:"quorumprogress"`
 			Choices        []struct {
 				ID          string  `json:"id"`

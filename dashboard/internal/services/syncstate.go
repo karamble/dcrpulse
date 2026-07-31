@@ -18,13 +18,13 @@ import (
 type SyncPhase string
 
 const (
-	SyncPhaseUnknown            SyncPhase = "unknown"
-	SyncPhaseUnsynced           SyncPhase = "unsynced"
-	SyncPhaseFetchingCfilters   SyncPhase = "fetching_cfilters"
-	SyncPhaseFetchingHeaders    SyncPhase = "fetching_headers"
-	SyncPhaseDiscoverAddresses  SyncPhase = "discovering_addresses"
-	SyncPhaseRescanning         SyncPhase = "rescanning"
-	SyncPhaseSynced             SyncPhase = "synced"
+	SyncPhaseUnknown           SyncPhase = "unknown"
+	SyncPhaseUnsynced          SyncPhase = "unsynced"
+	SyncPhaseFetchingCfilters  SyncPhase = "fetching_cfilters"
+	SyncPhaseFetchingHeaders   SyncPhase = "fetching_headers"
+	SyncPhaseDiscoverAddresses SyncPhase = "discovering_addresses"
+	SyncPhaseRescanning        SyncPhase = "rescanning"
+	SyncPhaseSynced            SyncPhase = "synced"
 )
 
 // SyncSnapshot is the current wallet sync state.
@@ -45,10 +45,10 @@ type SyncSnapshot struct {
 }
 
 var (
-	syncMu       sync.RWMutex
-	syncSnap     = SyncSnapshot{Phase: SyncPhaseUnknown}
-	syncSubsMu   sync.Mutex
-	syncSubs     []chan SyncSnapshot
+	syncMu     sync.RWMutex
+	syncSnap   = SyncSnapshot{Phase: SyncPhaseUnknown}
+	syncSubsMu sync.Mutex
+	syncSubs   []chan SyncSnapshot
 )
 
 // GetSyncSnapshot returns a copy of the current snapshot.

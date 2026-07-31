@@ -65,16 +65,16 @@ type SetTSpendPolicyRequest struct {
 
 // Proposal is the list-view shape for a Politeia proposal.
 type Proposal struct {
-	Token           string           `json:"token"`
-	Name            string           `json:"name"`
-	Username        string           `json:"username"`
-	Status          string           `json:"status"`
-	VoteStatus      string           `json:"voteStatus"`
-	VoteCounts      map[string]int64 `json:"voteCounts"`
-	TotalVotes      int64            `json:"totalVotes"`
-	QuorumMin       int64            `json:"quorumMin"`
-	EligibleTickets int64            `json:"eligibleTickets"`
-	EndBlock        int64            `json:"endBlock"`
+	Token            string           `json:"token"`
+	Name             string           `json:"name"`
+	Username         string           `json:"username"`
+	Status           string           `json:"status"`
+	VoteStatus       string           `json:"voteStatus"`
+	VoteCounts       map[string]int64 `json:"voteCounts"`
+	TotalVotes       int64            `json:"totalVotes"`
+	QuorumMin        int64            `json:"quorumMin"`
+	EligibleTickets  int64            `json:"eligibleTickets"`
+	EndBlock         int64            `json:"endBlock"`
 	BlocksLeft       int64            `json:"blocksLeft"`
 	CurrentChoice    string           `json:"currentChoice"`
 	VotedTicketCount int              `json:"votedTicketCount"`

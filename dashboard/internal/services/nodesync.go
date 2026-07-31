@@ -27,11 +27,11 @@ type NodeSyncSnapshot struct {
 }
 
 var (
-	nodeSyncMu     sync.RWMutex
-	nodeSyncSnap   NodeSyncSnapshot
-	nodeSubsMu     sync.Mutex
-	nodeSubs       []chan NodeSyncSnapshot
-	nodeRefreshCh  = make(chan struct{}, 1)
+	nodeSyncMu    sync.RWMutex
+	nodeSyncSnap  NodeSyncSnapshot
+	nodeSubsMu    sync.Mutex
+	nodeSubs      []chan NodeSyncSnapshot
+	nodeRefreshCh = make(chan struct{}, 1)
 )
 
 // GetNodeSyncSnapshot returns a copy of the current node sync snapshot.
