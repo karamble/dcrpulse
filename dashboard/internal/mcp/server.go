@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"dcrpulse/internal/auth"
 	"dcrpulse/internal/config"
 )
 
@@ -163,6 +164,13 @@ func Start(cfg Config) {
 		enabled = v
 	}
 	if !enabled {
+		return
+	}
+	// The same precondition the settings route enforces: without a dashboard
+	// password the routes that mint tokens and widen an agent's authority are
+	// open, so the agent surface must not come up on a persisted flag either.
+	if !auth.Enabled() {
+		log.Printf("MCP server not started: %s", auth.ErrAppPasswordRequired)
 		return
 	}
 	srvMu.Lock()
