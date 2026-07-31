@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"time"
 
@@ -76,31 +78,96 @@ func GetLiquidityDefaults(ctx context.Context) (*types.LiquidityDefaults, error)
 }
 
 // resolveServerCert applies the network defaults for fields the caller left
-// blank, mirroring how bruig pre-fills from its built-in table.
+// blank, mirroring how bruig pre-fills from its built-in table, then validates
+// the address that will be used.
 func resolveServerCert(ctx context.Context, server, certPEM string) (string, []byte, error) {
 	server = strings.TrimSpace(server)
 	certPEM = strings.TrimSpace(certPEM)
-	if server == "" || certPEM == "" {
-		network, err := liquidityNetwork(ctx)
-		if err != nil {
-			return "", nil, err
-		}
-		d := liquidityDefaults[network]
-		if server == "" {
-			server = d.server
-		}
-		if certPEM == "" {
-			certPEM = d.certPEM
-		}
+	network, err := liquidityNetwork(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	d := liquidityDefaults[network]
+	if server == "" {
+		server = d.server
+	}
+	if certPEM == "" {
+		certPEM = d.certPEM
 	}
 	if server == "" {
 		return "", nil, fmt.Errorf("no liquidity provider server configured for this network")
+	}
+	server, err = checkLPServer(ctx, server, d.server, network)
+	if err != nil {
+		return "", nil, err
 	}
 	var certBytes []byte
 	if certPEM != "" {
 		certBytes = []byte(certPEM)
 	}
 	return server, certBytes, nil
+}
+
+// checkLPServer validates a liquidity provider address before it is used. The
+// dcrlnlpd client builds its own http.Client and exposes no dial, redirect or
+// timeout hook, so the address itself is all there is to check. The built-in
+// default is accepted as supplied: the request wizard pre-fills the field from
+// it, and on simnet it points at localhost.
+func checkLPServer(ctx context.Context, server, defaultServer, network string) (string, error) {
+	if defaultServer != "" && server == defaultServer {
+		return server, nil
+	}
+	if !strings.Contains(server, "://") {
+		server = "https://" + server
+	}
+	server = strings.TrimRight(server, "/")
+	// The client appends its request path to this address, so a query or
+	// fragment would truncate it.
+	if strings.ContainsAny(server, "?#") {
+		return "", fmt.Errorf("liquidity provider address must not contain a query or fragment")
+	}
+	u, err := url.Parse(server)
+	if err != nil {
+		return "", fmt.Errorf("invalid liquidity provider address: %w", err)
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && network == "simnet") {
+		return "", fmt.Errorf("liquidity provider address must use https")
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("liquidity provider address must include a host")
+	}
+	// Simnet providers run on localhost.
+	if network == "simnet" {
+		return server, nil
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if disallowedProbeIP(ip) {
+			return "", fmt.Errorf("refusing to connect to non-public address %s", ip)
+		}
+		return server, nil
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return "", fmt.Errorf("liquidity provider address: %w", err)
+	}
+	for _, ip := range ips {
+		if disallowedProbeIP(ip.IP) {
+			return "", fmt.Errorf("refusing to connect to non-public address %s", ip.IP)
+		}
+	}
+	return server, nil
+}
+
+// lpErr bounds an error surfaced by the dcrlnlpd client: on a non-200 it
+// embeds the provider's whole response body in the error text.
+func lpErr(err error) error {
+	const max = 512
+	s := err.Error()
+	if len(s) <= max {
+		return err
+	}
+	return errors.New(strings.ToValidUTF8(s[:max], "") + " ... (truncated)")
 }
 
 // errEstimateAbort is returned from the PolicyFetched callback during the
@@ -149,7 +216,7 @@ func EstimateLiquidityChannel(ctx context.Context, req *types.RequestLiquidityEs
 		return &out, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, lpErr(err)
 	}
 	return nil, fmt.Errorf("liquidity estimate did not abort as expected")
 }
@@ -212,7 +279,7 @@ func RequestLiquidityChannel(ctx context.Context, req *types.RequestLiquidityReq
 		}, nil
 	case err := <-doneCh:
 		if err != nil {
-			return nil, err
+			return nil, lpErr(err)
 		}
 		return nil, fmt.Errorf("channel opened without an observed pending event")
 	case <-ctx.Done():
