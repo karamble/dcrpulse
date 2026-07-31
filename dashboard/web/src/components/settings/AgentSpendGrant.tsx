@@ -401,86 +401,84 @@ export const AgentSpendGrant = ({ agentId, grant, accounts, scopes, onChanged }:
             )}
           </ConfigSection>
 
-          {needsLimits && (
-            <ConfigSection
-              icon={Gauge}
-              tone="warning"
-              title="Spending limits"
-              description="Hard caps on the DCR this agent can move - absolute, there is no unlimited. One shared budget across wallet sends, ticket purchases, Lightning payments and DEX trades; both are required. A DEX withdrawal in another asset cannot be measured in DCR, so it is bounded by the scope alone."
-            >
-              <div className="grid grid-cols-2 gap-3 animate-fade-in">
-                <label className="text-xs text-muted-foreground">
-                  Per-transaction cap (DCR)
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={perTx}
-                    onChange={(e) => setPerTx(e.target.value)}
-                    className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
-                  />
-                </label>
-                <label className="text-xs text-muted-foreground">
-                  Daily cap (DCR)
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={daily}
-                    onChange={(e) => setDaily(e.target.value)}
-                    className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
-                  />
-                </label>
-              </div>
-              {grant && grant.dailyDcr > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {fmtDcr(grant.spentTodayDcr)} spent today, {fmtDcr(grant.remainingTodayDcr)}{' '}
-                  remaining on the current grant.
-                </p>
-              )}
-              {capsInverted && (
-                <p className="text-xs text-warning">
-                  The per-transaction cap is above the daily cap, so the daily
-                  cap is the real limit.
-                </p>
-              )}
-            </ConfigSection>
-          )}
+          <ConfigSection
+            icon={Gauge}
+            tone="warning"
+            dimmed={!needsLimits}
+            title="Spending limits"
+            description="Hard caps on the DCR this agent can move - absolute, there is no unlimited. One shared budget across wallet sends, ticket purchases, Lightning payments and DEX trades; both are required. A DEX withdrawal in another asset cannot be measured in DCR, so it is bounded by the scope alone."
+          >
+            <div className="grid grid-cols-2 gap-3 animate-fade-in">
+              <label className="text-xs text-muted-foreground">
+                Per-transaction cap (DCR)
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={perTx}
+                  onChange={(e) => setPerTx(e.target.value)}
+                  className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
+                />
+              </label>
+              <label className="text-xs text-muted-foreground">
+                Daily cap (DCR)
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={daily}
+                  onChange={(e) => setDaily(e.target.value)}
+                  className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
+                />
+              </label>
+            </div>
+            {grant && grant.dailyDcr > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {fmtDcr(grant.spentTodayDcr)} spent today, {fmtDcr(grant.remainingTodayDcr)}{' '}
+                remaining on the current grant.
+              </p>
+            )}
+            {capsInverted && (
+              <p className="text-xs text-warning">
+                The per-transaction cap is above the daily cap, so the daily
+                cap is the real limit.
+              </p>
+            )}
+          </ConfigSection>
 
-          {needsAuth && (
-            <ConfigSection
-              icon={KeyRound}
-              tone="primary"
-              title="Authorization"
-              description="Confirm with your wallet passphrase. The dashboard verifies it once and holds it in memory to spend on the agent's behalf within these limits - the agent never sees it, and it is wiped on revoke and on restart."
-            >
-              <div className="grid grid-cols-2 gap-3 animate-fade-in">
-                <label className="text-xs text-muted-foreground">
-                  Wallet passphrase
-                  <input
-                    type="password"
-                    value={passphrase}
-                    onChange={(e) => setPassphrase(e.target.value)}
-                    autoComplete="off"
-                    className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
-                  />
-                </label>
-                <label className="text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Auto-revoke after (hours, 0 = never)
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={expiryHours}
-                    onChange={(e) => setExpiryHours(e.target.value)}
-                    className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
-                  />
-                </label>
-              </div>
-            </ConfigSection>
-          )}
+          <ConfigSection
+            icon={KeyRound}
+            tone="primary"
+            dimmed={!needsAuth}
+            title="Authorization"
+            description="Confirm with your wallet passphrase. The dashboard verifies it once and holds it in memory to spend on the agent's behalf within these limits - the agent never sees it, and it is wiped on revoke and on restart."
+          >
+            <div className="grid grid-cols-2 gap-3 animate-fade-in">
+              <label className="text-xs text-muted-foreground">
+                Wallet passphrase
+                <input
+                  type="password"
+                  value={passphrase}
+                  onChange={(e) => setPassphrase(e.target.value)}
+                  autoComplete="off"
+                  className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
+                />
+              </label>
+              <label className="text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> Auto-revoke after (hours, 0 = never)
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={expiryHours}
+                  onChange={(e) => setExpiryHours(e.target.value)}
+                  className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm text-foreground"
+                />
+              </label>
+            </div>
+          </ConfigSection>
 
           {scopeKeys.size > 0 && !needsLimits && !needsAuth && (
             <p className="text-xs text-muted-foreground">

@@ -577,7 +577,7 @@ export const AgentsSection = () => {
                     icon={Eye}
                     tone="muted"
                     title="Capabilities - read access"
-                    description="What the agent can see across the dashboard. Read-only - no funds move and nothing changes. The node domain is always on."
+                    description="What the agent can see across the dashboard. Read-only - no funds move and nothing changes. The node domain is always on. Changes apply immediately, including to an agent that is already connected."
                   >
                     <div className="flex flex-wrap gap-2">
                       <span
