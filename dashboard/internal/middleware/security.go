@@ -4,6 +4,7 @@ package middleware
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -64,6 +65,82 @@ func expectedHost(r *http.Request) string {
 		}
 	}
 	return r.Host
+}
+
+// extraAllowedHosts returns the host names accepted in addition to the
+// built-in ones. Set DASHBOARD_ALLOWED_HOSTS to a comma-separated list when
+// the dashboard is reached through a reverse proxy under a domain name; a
+// single "*" accepts anything.
+func extraAllowedHosts() []string {
+	raw := os.Getenv("DASHBOARD_ALLOWED_HOSTS")
+	if raw == "" {
+		return nil
+	}
+	return strings.Split(raw, ",")
+}
+
+// hostOnly strips the port and any trailing dot from a Host header value.
+func hostOnly(host string) string {
+	if strings.HasPrefix(host, "[") {
+		// [::1] with no port: SplitHostPort would reject it.
+		if i := strings.LastIndex(host, "]"); i > 0 && !strings.Contains(host[i:], ":") {
+			return host[1:i]
+		}
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.TrimSuffix(host, ".")
+}
+
+// hostAllowed reports whether a Host header value may address this dashboard.
+// Treating whatever host arrives as our own would make the Origin comparison
+// self-referential, so the names accepted by default are the ones that cannot
+// be aimed here through public DNS: address literals, single-label names, and
+// the mDNS and onion suffixes. A public domain has to be named in
+// DASHBOARD_ALLOWED_HOSTS.
+func hostAllowed(host string) bool {
+	h := strings.ToLower(hostOnly(host))
+	// Requests that carry no Host reach us by address alone.
+	if h == "" {
+		return true
+	}
+	if net.ParseIP(h) != nil {
+		return true
+	}
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	// A name with no dot cannot come from public DNS. Container and compose
+	// service names land here, including the Umbrel app proxy's target.
+	if !strings.Contains(h, ".") {
+		return true
+	}
+	// mDNS names resolve on the local network only (umbrel.local and a
+	// renamed device's own .local name); an onion address is itself a key.
+	if strings.HasSuffix(h, ".local") || strings.HasSuffix(h, ".onion") {
+		return true
+	}
+	for _, a := range extraAllowedHosts() {
+		a = strings.TrimSpace(a)
+		if a == "*" || (a != "" && strings.EqualFold(hostOnly(a), h)) {
+			return true
+		}
+	}
+	return false
+}
+
+// RequireAllowedHost rejects requests carrying a Host this dashboard does not
+// serve. Unlike RequireSameOrigin it applies to every method, since reads and
+// WebSocket upgrades are GETs.
+func RequireAllowedHost(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !hostAllowed(expectedHost(r)) {
+			http.Error(w, "host not served by this dashboard; set DASHBOARD_ALLOWED_HOSTS to accept it", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // RequireSameOrigin rejects state-changing requests whose Origin header does

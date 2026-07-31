@@ -342,6 +342,17 @@ server {
 }
 ```
 
+`proxy_set_header Host $host` passes the browser's host through, so the
+dashboard sees `your-domain.com`. It only answers to a domain name you list,
+so set this in `.env` and restart the dashboard:
+
+```bash
+DASHBOARD_ALLOWED_HOSTS=your-domain.com
+```
+
+Without it those requests are refused with a 403. Access by IP address,
+localhost, or a `.local` name needs no entry.
+
 **Enable site**:
 ```bash
 # Enable site

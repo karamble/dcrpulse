@@ -192,6 +192,7 @@ services:
       - ${TOR_DATA_DIR:-tor-data}:/app-data/tor:ro
     environment:
       - PORT=8080
+      - DASHBOARD_ALLOWED_HOSTS=${DASHBOARD_ALLOWED_HOSTS:-}
       - TOR_PROXY_IP=tor
       - TOR_PROXY_PORT=9050
       - TOR_CONTROL_PORT=9051

@@ -106,6 +106,18 @@ server {
 }
 ```
 
+Tell the dashboard which domain it is served under, or it refuses the proxied
+requests with a 403:
+
+```bash
+DASHBOARD_ALLOWED_HOSTS=your-domain.com
+```
+
+It answers to IP addresses, localhost, container/service names and
+`.local`/`.onion` names without any entry, so only proxied domain names need
+listing. Set `TRUSTED_PROXY=true` as well if your proxy sends
+`X-Forwarded-Host`.
+
 #### Security Headers
 
 ```nginx

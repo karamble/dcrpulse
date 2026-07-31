@@ -624,13 +624,19 @@ func main() {
 	log.Println("Explorer endpoints: /api/explorer/search, /api/explorer/blocks/*, /api/explorer/transactions/*")
 	log.Println("Treasury endpoints: /api/treasury/info, /api/treasury/scan-history, /api/treasury/scan-progress")
 	log.Println("Frontend: Embedded static files served at /")
+	if strings.TrimSpace(os.Getenv("DASHBOARD_ALLOWED_HOSTS")) == "*" {
+		log.Println("WARNING: DASHBOARD_ALLOWED_HOSTS=* accepts any Host header")
+	}
 	// ReadHeaderTimeout bounds the header-read phase to defeat Slowloris. Read
 	// and Write timeouts are intentionally left unset so long-lived streams
 	// (WebSocket rescan/events, SSE progress) and large BR file uploads are not
 	// cut off mid-transfer.
+	// The host check wraps the router rather than joining r.Use: mux only runs
+	// root middleware on a matched route, and a dev build without the embedded
+	// frontend has no catch-all to match.
 	srv := &http.Server{
 		Addr:              address,
-		Handler:           r,
+		Handler:           middleware.RequireAllowedHost(r),
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}

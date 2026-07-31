@@ -176,6 +176,7 @@ services:
       PGID: $PGID
       TZ: $TZ
       PORT: 8080
+      DASHBOARD_ALLOWED_HOSTS: ""
       DCRD_RPC_HOST: dcrd
       DCRD_RPC_PORT: 9109
       DCRD_RPC_USER: casaos
