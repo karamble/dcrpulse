@@ -40,9 +40,9 @@ func (r *registry) snapshot() []persistedAgent {
 			ID:        a.id,
 			Name:      a.name,
 			TokenHash: hex.EncodeToString(a.hash[:]),
-			Domains:   sortedDomains(a.domains),
+			Domains:   sortedDomains(a.domainMap()),
 			CreatedAt: a.createdAt,
-			Blocked:   a.blocked,
+			Blocked:   a.blocked.Load(),
 		})
 	}
 	return out

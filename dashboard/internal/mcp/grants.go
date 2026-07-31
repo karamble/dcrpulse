@@ -271,6 +271,16 @@ func (s *grantStore) precheckAccount(agentID string, account uint32, now time.Ti
 	return nil
 }
 
+// precheckGrant verifies a grant exists, without checking an account or scope.
+// It lets a tool reject an ungranted agent before doing any work to resolve
+// which account it would actually spend from.
+func (s *grantStore) precheckGrant(agentID string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.currentLocked(agentID, now)
+	return err
+}
+
 // precheckScope verifies a grant exists and includes the scope, without
 // reserving. It lets amount-derived spends (e.g. ln_pay) reject before doing
 // work like decoding an invoice when access is not granted.
@@ -378,14 +388,26 @@ func (s *grantStore) reserveSpendScoped(agentID, scope string, amountAtoms int64
 	if !g.writeScopes[scope] {
 		return scopeDenied(scope)
 	}
+	// Only a zero amount means "not DCR-denominated". A negative one is a
+	// caller bug (an unsigned amount that overflowed int64) and must not slip
+	// past the caps the way a zero legitimately does.
+	if amountAtoms < 0 {
+		return errBadAmount
+	}
 	if amountAtoms > 0 {
 		return g.reserveLocked(amountAtoms, now)
 	}
 	return nil
 }
 
-// refund returns reserved spend headroom after a failed transaction.
+// refund returns reserved spend headroom after a failed transaction. Only a
+// positive amount is meaningful: refunding zero is a no-op and refunding a
+// negative would add to the spent total and, via the clamp below, hand back the
+// whole window's headroom.
 func (s *grantStore) refund(agentID string, amountAtoms int64) {
+	if amountAtoms <= 0 {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if g := s.byAgent[agentID]; g != nil {

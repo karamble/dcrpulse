@@ -127,8 +127,16 @@ var lightningTools = []toolDef{
 				}
 				amtAtoms = int64(amt)
 			}
+			// The routing fee leaves the channel on top of the invoice, so
+			// reserve the ceiling too and pin the daemon to it; the unused part
+			// is returned once the payment settles.
+			feeCeiling := services.RoutingFeeCeilingAtoms(amtAtoms)
+			if f, err := dcrutil.NewAmount(in.FeeLimitDCR); err == nil && int64(f) > 0 {
+				feeCeiling = int64(f)
+			}
+			reserved := amtAtoms + feeCeiling
 			amtDCR := dcrutil.Amount(amtAtoms).ToCoin()
-			if err := grants.authorizeLightning(ctx, a.id, amtAtoms, time.Now()); err != nil {
+			if err := grants.authorizeLightning(ctx, a.id, reserved, time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -136,16 +144,13 @@ var lightningTools = []toolDef{
 				}
 				return nil, err
 			}
-			req := &types.LightningSendPaymentRequest{PayReq: in.PayReq}
+			req := &types.LightningSendPaymentRequest{PayReq: in.PayReq, FeeLimitAtoms: feeCeiling}
 			if dec.NumAtoms <= 0 {
 				req.Amt = amtAtoms
 			}
-			if f, err := dcrutil.NewAmount(in.FeeLimitDCR); err == nil && int64(f) > 0 {
-				req.FeeLimitAtoms = int64(f)
-			}
 			ch, err := services.StreamLightningPayment(ctx, req)
 			if err != nil {
-				grants.refund(a.id, amtAtoms)
+				grants.refund(a.id, reserved)
 				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "error", err.Error())
 				return nil, err
 			}
@@ -156,14 +161,23 @@ var lightningTools = []toolDef{
 					break
 				}
 			}
-			if last.Status != "confirmed" {
-				grants.refund(a.id, amtAtoms)
-				reason := last.Status
-				if reason == "" {
-					reason = "incomplete"
+			switch last.Status {
+			case "confirmed":
+				// Return the fee headroom the route did not use.
+				if unused := feeCeiling - last.FeeAtoms; unused > 0 {
+					grants.refund(a.id, unused)
 				}
-				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "error", "payment "+reason)
-				return nil, fmt.Errorf("payment %s", reason)
+			case "failed":
+				grants.refund(a.id, reserved)
+				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "error", "payment failed")
+				return nil, fmt.Errorf("payment failed")
+			default:
+				// The stream ended without a verdict - cancelled context, or the
+				// daemon stopped reporting. dcrlnd keeps the payment alive
+				// server-side, so the reservation stands rather than handing back
+				// headroom for a spend that may still settle.
+				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "error", "payment still in flight")
+				return nil, fmt.Errorf("payment is still in flight; it may still settle, so it stays counted against the daily cap")
 			}
 			recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "ok", last.PaymentHash)
 			return last, nil

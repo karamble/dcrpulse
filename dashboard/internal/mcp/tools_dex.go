@@ -43,6 +43,36 @@ type dexCancelInput struct {
 	OrderID string `json:"orderId" jsonschema:"hex order id to cancel"`
 }
 
+// dexOrderDCROutlay reports the DCR that leaves the wallet when an order fills,
+// or 0 when neither side of the market is DCR. Selling gives up the base asset;
+// buying gives up the quote, whose quantity is derived from the rate for a limit
+// order and is already quote-denominated for a market buy.
+func dexOrderDCROutlay(in dexPlaceOrderInput) (int64, error) {
+	switch {
+	case in.Sell && in.Base == bisonw.AssetDCR:
+		return dexAtomsToInt64(in.Qty)
+	case !in.Sell && in.Quote == bisonw.AssetDCR:
+		if !in.IsLimit {
+			return dexAtomsToInt64(in.Qty)
+		}
+		if in.Rate == 0 {
+			return 0, fmt.Errorf("rate is required for a limit order")
+		}
+		if in.Rate > math.MaxUint64/in.Qty {
+			return 0, fmt.Errorf("order value is out of range")
+		}
+		return dexAtomsToInt64(in.Qty * in.Rate / dexRateEncodingFactor)
+	}
+	return 0, nil
+}
+
+func dexAtomsToInt64(v uint64) (int64, error) {
+	if v > math.MaxInt64 {
+		return 0, fmt.Errorf("amount is out of range")
+	}
+	return int64(v), nil
+}
+
 type dexHostInput struct {
 	Host string `json:"host" jsonschema:"DEX server host"`
 }
@@ -768,18 +798,35 @@ var dexTools = []toolDef{
 		"Place a DCRDEX trade order. Requires a spend grant with DEX trading enabled and the DEX unlocked. Quantity and rate are in atomic units.",
 		func(ctx context.Context, a *agent, in dexPlaceOrderInput) (any, error) {
 			detail := fmt.Sprintf("base=%d quote=%d qty=%d", in.Base, in.Quote, in.Qty)
-			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
-				recordSpend(a, "dex_place_order", 0, 0, in.Host, "denied", err.Error())
+			if in.Qty == 0 {
+				return nil, fmt.Errorf("qty must be positive")
+			}
+			// An order commits funds, so reserve the DCR side against the grant's
+			// caps. A market with no DCR side is scope-gated only, as for a
+			// non-DCR dex_send: the DCR cap cannot bound a non-DCR amount.
+			outlay, err := dexOrderDCROutlay(in)
+			if err != nil {
+				return nil, err
+			}
+			amountDCR := dcrutil.Amount(outlay).ToCoin()
+			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDex, outlay, time.Now()); err != nil {
+				if tripwire(a.id, err) {
+					recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "blocked", "spend-limit violation: grant revoked and token blocked")
+				} else {
+					recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "denied", err.Error())
+				}
 				return nil, err
 			}
 			appPass, ok := rpc.DcrdexAppPass()
 			if !ok {
+				grants.refund(a.id, outlay)
 				err := dexLocked()
-				recordSpend(a, "dex_place_order", 0, 0, in.Host, "error", err.Error())
+				recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
 			}
 			client, err := rpc.DcrdexClient()
 			if err != nil {
+				grants.refund(a.id, outlay)
 				return nil, err
 			}
 			raw, err := client.Trade(ctx, bisonw.TradeParams{
@@ -794,10 +841,11 @@ var dexTools = []toolDef{
 				TifNow:  in.TifNow,
 			})
 			if err != nil {
-				recordSpend(a, "dex_place_order", 0, 0, in.Host, "error", err.Error())
+				grants.refund(a.id, outlay)
+				recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
 			}
-			recordSpend(a, "dex_place_order", 0, 0, in.Host, "ok", detail)
+			recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "ok", detail)
 			return raw, nil
 		}),
 	agentTool("dex", "dex_cancel_order",
@@ -821,7 +869,9 @@ var dexTools = []toolDef{
 	agentTool("dex", "dex_set_bond_options",
 		"Update a DEX account's auto-bond options (target tier, max bonded, bond asset, penalty comps). Omit a field to leave it unchanged; targetTier 0 disables auto-renewal. Requires a spend grant with DEX trading enabled and the DEX unlocked.",
 		func(ctx context.Context, a *agent, in dexSetBondOptionsInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
+			// Auto-renewal posts bonds on its own, so this belongs with the
+			// explicit bond scope rather than with plain trading.
+			if err := grants.authorizeAction(a.id, scopeDexSpend, time.Now()); err != nil {
 				recordSpend(a, "dex_set_bond_options", 0, 0, in.Host, "denied", err.Error())
 				return nil, err
 			}
@@ -1151,8 +1201,10 @@ var dexTools = []toolDef{
 	agentTool("dex", "dex_post_bond",
 		"Post a fidelity bond (in DCR) to register or maintain a DEX account. Requires a spend grant with DEX send/post-bond enabled and the DEX unlocked. The bond counts against the grant's DCR daily cap.",
 		func(ctx context.Context, a *agent, in dexPostBondInput) (any, error) {
-			if in.Bond == 0 {
-				return nil, fmt.Errorf("bond must be positive")
+			// Bound before the int64 conversion: a bond above MaxInt64 would
+			// wrap negative and skip the cap reservation entirely.
+			if in.Bond == 0 || in.Bond > math.MaxInt64 {
+				return nil, fmt.Errorf("bond must be positive and below %d atoms", int64(math.MaxInt64))
 			}
 			capAtoms := int64(in.Bond)
 			amountDCR := dcrutil.Amount(capAtoms).ToCoin()

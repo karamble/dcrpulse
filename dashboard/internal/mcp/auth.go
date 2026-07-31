@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -29,19 +30,38 @@ const defaultDomain = "node"
 
 // agent is a named identity behind a bearer token, with the set of capability
 // domains the user has granted it. Tokens are high-entropy, so a fast SHA-256
-// (not bcrypt) is sufficient and keeps per-request auth cheap.
+// (not bcrypt) is sufficient and keeps per-request auth cheap. The two mutable
+// fields are atomic: both are read on every request (and the domain set on
+// every tool call) while the settings API mutates them.
 type agent struct {
 	id        string
 	name      string
 	hash      [32]byte
-	domains   map[string]bool // granted domains; defaults to {node}
+	domains   atomic.Pointer[map[string]bool] // granted domains; defaults to {node}
 	createdAt time.Time
-	blocked   bool // tripwire: set when the agent attempts to exceed its grant
+	blocked   atomic.Bool // tripwire: set when the agent attempts to exceed its grant
 }
 
 func (a *agent) allows(domain string) bool {
-	return a != nil && a.domains[domain]
+	if a == nil {
+		return false
+	}
+	m := a.domains.Load()
+	return m != nil && (*m)[domain]
 }
+
+// domainMap returns the agent's current domain set for read-only use.
+func (a *agent) domainMap() map[string]bool {
+	if a == nil {
+		return nil
+	}
+	if m := a.domains.Load(); m != nil {
+		return *m
+	}
+	return nil
+}
+
+func (a *agent) setDomainMap(m map[string]bool) { a.domains.Store(&m) }
 
 // AgentInfo is the dashboard-facing view of an agent identity. It never
 // includes the token (only its hash is stored, and not exposed here).
@@ -88,14 +108,15 @@ func (r *registry) addToken(id, name, token string) {
 func (r *registry) addAgentRecord(id, name string, hash [32]byte, domains []string, createdAt time.Time, blocked bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.agents[id] = &agent{
+	a := &agent{
 		id:        id,
 		name:      name,
 		hash:      hash,
-		domains:   domainSet(domains),
 		createdAt: createdAt,
-		blocked:   blocked,
 	}
+	a.setDomainMap(domainSet(domains))
+	a.blocked.Store(blocked)
+	r.agents[id] = a
 }
 
 // create mints a new agent: a random id and a high-entropy bearer token. Only
@@ -153,7 +174,7 @@ func (r *registry) block(id string) {
 	r.mu.Lock()
 	a := r.agents[id]
 	if a != nil {
-		a.blocked = true
+		a.blocked.Store(true)
 	}
 	delete(r.sessions, id)
 	onChange := r.onChange
@@ -169,7 +190,7 @@ func (r *registry) blockAllAgents() {
 	r.mu.Lock()
 	ids := make([]string, 0, len(r.agents))
 	for id, a := range r.agents {
-		a.blocked = true
+		a.blocked.Store(true)
 		ids = append(ids, id)
 	}
 	r.sessions = map[string]*Session{}
@@ -187,7 +208,7 @@ func (r *registry) unblock(id string) bool {
 	r.mu.Lock()
 	a := r.agents[id]
 	if a != nil {
-		a.blocked = false
+		a.blocked.Store(false)
 	}
 	r.mu.Unlock()
 	return a != nil
@@ -201,9 +222,9 @@ func (r *registry) list() []AgentInfo {
 		out = append(out, AgentInfo{
 			ID:        a.id,
 			Name:      a.name,
-			Domains:   sortedDomains(a.domains),
+			Domains:   sortedDomains(a.domainMap()),
 			CreatedAt: a.createdAt,
-			Blocked:   a.blocked,
+			Blocked:   a.blocked.Load(),
 		})
 	}
 	r.mu.Unlock()
@@ -255,7 +276,7 @@ func (r *registry) setDomains(id string, domains []string) bool {
 	r.mu.Lock()
 	a := r.agents[id]
 	if a != nil {
-		a.domains = domainSet(domains)
+		a.setDomainMap(domainSet(domains))
 	}
 	onChange := r.onChange
 	r.mu.Unlock()
@@ -335,7 +356,7 @@ func (r *registry) authMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if a.blocked {
+		if a.blocked.Load() {
 			http.Error(w, "agent blocked: a spend-limit violation revoked this token; the user must unblock it in the dashboard", http.StatusForbidden)
 			return
 		}

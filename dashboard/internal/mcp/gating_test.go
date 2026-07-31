@@ -87,7 +87,7 @@ func TestEveryWriteToolGatesWithoutGrant(t *testing.T) {
 	for _, d := range catalogDomains() {
 		domains[d] = true
 	}
-	a := &agent{id: "gating-test", name: "gating", domains: domains}
+	a := testAgent("gating-test", "gating", domains)
 	cs := connectTo(t, a)
 
 	res, err := cs.ListTools(context.Background(), nil)
@@ -126,6 +126,32 @@ func TestEveryWriteToolGatesWithoutGrant(t *testing.T) {
 		t.Fatal("no write tools detected - annotation classification is broken")
 	}
 	t.Logf("grant gate verified for %d write tools", writes)
+}
+
+// TestDomainRevocationAppliesToLiveSession covers the revocation gap: a session
+// keeps the server it was built with, so the domain has to be re-checked when
+// the tool is called or a removed domain keeps working until the session ends.
+func TestDomainRevocationAppliesToLiveSession(t *testing.T) {
+	// The session is built while the wallet domain is granted, so wallet tools
+	// are registered on its server.
+	a := testAgent("revoke-test", "revoke", map[string]bool{"node": true, "wallet": true})
+	cs := connectTo(t, a)
+
+	// Take the domain away on that same live session. The tool stays registered
+	// (the server is not rebuilt), so only the per-call check can refuse it -
+	// and it must refuse before reaching the absent daemon.
+	a.setDomainMap(map[string]bool{"node": true})
+
+	after, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "wallet_accounts"})
+	if err != nil {
+		t.Fatalf("call after revocation: %v", err)
+	}
+	if !after.IsError {
+		t.Fatal("wallet_accounts succeeded after its domain was revoked")
+	}
+	if txt := resultText(after); !strings.Contains(txt, "does not allow") {
+		t.Fatalf("refused, but not by the domain check: %q", txt)
+	}
 }
 
 // TestFreezeMechanics covers the kill-switch in-memory effects: every grant is
@@ -167,7 +193,7 @@ func TestReadToolsAnnotatedReadOnly(t *testing.T) {
 	for _, d := range catalogDomains() {
 		domains[d] = true
 	}
-	cs := connectTo(t, &agent{id: "anno-test", name: "anno", domains: domains})
+	cs := connectTo(t, testAgent("anno-test", "anno", domains))
 	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("list tools: %v", err)

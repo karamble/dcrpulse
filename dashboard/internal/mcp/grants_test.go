@@ -12,6 +12,43 @@ import (
 
 const dcrAtoms = 100_000_000 // 1 DCR
 
+// TestGrantScopedRejectsNegative covers the overflow path: an unsigned tool
+// amount above MaxInt64 wraps negative, and a negative must not slip past the
+// caps the way a legitimate zero (non-DCR) does.
+func TestGrantScopedRejectsNegative(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	s.set("a", GrantSpec{PerTxAtoms: dcrAtoms, DailyAtoms: dcrAtoms, WriteScopes: []string{scopeDexSpend}}, now)
+	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, -1, now); err != errBadAmount {
+		t.Fatalf("negative scoped amount: want errBadAmount, got %v", err)
+	}
+	// The reservation must not have run.
+	if got := s.byAgent["a"].spentAtoms; got != 0 {
+		t.Fatalf("negative amount moved the spend counter: got %d, want 0", got)
+	}
+}
+
+// TestGrantRefundIgnoresNonPositive pins the counter-reset fix: a negative
+// refund would otherwise raise spentAtoms and the <0 clamp would then zero the
+// whole window's usage.
+func TestGrantRefundIgnoresNonPositive(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	s.set("a", GrantSpec{Accounts: []uint32{0}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms}, now)
+	if _, err := s.authorize(context.Background(), "a", 0, 4*dcrAtoms, "", now); err != nil {
+		t.Fatalf("spend within cap: %v", err)
+	}
+	s.refund("a", -9_000_000_000_000_000_000)
+	s.refund("a", 0)
+	if got := s.byAgent["a"].spentAtoms; got != 4*dcrAtoms {
+		t.Fatalf("non-positive refund changed the spend counter: got %d, want %d", got, 4*dcrAtoms)
+	}
+	// The remaining headroom is still only 1 DCR.
+	if _, err := s.authorize(context.Background(), "a", 0, 2*dcrAtoms, "", now); err != errDailyExceeded {
+		t.Fatalf("after bogus refunds: want errDailyExceeded, got %v", err)
+	}
+}
+
 func TestGrantAuthorizeScopeAndCaps(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()

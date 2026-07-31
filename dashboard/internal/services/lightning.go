@@ -1259,6 +1259,14 @@ func defaultRoutingFeeLimitAtoms(amountAtoms int64) int64 {
 	return amountAtoms * 5 / 100
 }
 
+// RoutingFeeCeilingAtoms reports the routing fee a payment of amountAtoms may
+// incur when the caller sets no explicit limit. Spend accounting needs it: the
+// fee leaves the channel on top of the invoice amount, so a budget that counts
+// only the invoice under-reserves by up to this much.
+func RoutingFeeCeilingAtoms(amountAtoms int64) int64 {
+	return defaultRoutingFeeLimitAtoms(amountAtoms)
+}
+
 // StreamLightningPayment opens Router.SendPaymentV2 and pushes every
 // snapshot the daemon emits onto the returned channel. The channel is
 // closed when the stream terminates (terminal snapshot) or ctx is

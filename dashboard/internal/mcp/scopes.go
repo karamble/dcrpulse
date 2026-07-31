@@ -43,7 +43,7 @@ type WriteScope struct {
 var writeScopeCatalog = []WriteScope{
 	{scopeGovernance, "Governance voting", "governance", true, false, false},
 	{scopeLightning, "Lightning actions", "lightning", false, true, false},
-	{scopeDex, "DEX trading + wallet ops", "dex", false, false, false},
+	{scopeDex, "DEX trading + wallet ops", "dex", false, true, true},
 	{scopeDexSpend, "DEX send / post-bond", "dex", false, true, true},
 	{scopeBR, "Bison Relay write", "bisonrelay", false, false, false},
 	{scopeBRAdmin, "Bison Relay group admin", "bisonrelay", false, false, true},

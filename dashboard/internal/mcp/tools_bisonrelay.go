@@ -1393,6 +1393,9 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_page_fetch",
 		"Visit and navigate a Bison Relay page or storefront hosted by a remote contact. Defaults to the contact's root page (index.md); follow links by passing their path segments and reuse sessionId to stay in one session. Returns the page markdown plus parsed segments (form fields and download embeds) and session/page ids. Read-only browsing.",
 		func(ctx context.Context, in brPageFetchInput) (any, error) {
+			if err := rejectMutatingPagePath(in.Path); err != nil {
+				return nil, err
+			}
 			return brPageFetch(ctx, in.UID, in.Path, in.SessionID, in.ParentPage, nil)
 		}),
 	readTool("bisonrelay", "br_shop_cart",
@@ -1830,6 +1833,29 @@ func safeBRName(p string) bool {
 // dashboard's BisonrelayPagesFetchHandler. data is nil for a plain navigation
 // GET, or a JSON form payload for a submission. The returned map is the
 // structured tool result.
+// mutatingPagePaths are the simplestore routes that change state on the remote
+// merchant. They reach the same primitive as browsing, so a read-only fetch has
+// to refuse them explicitly or it becomes an ungated write.
+var mutatingPagePaths = map[string]bool{
+	"placeorder":      true,
+	"addtocart":       true,
+	"clearcart":       true,
+	"orderaddcomment": true,
+	"admin":           true,
+}
+
+// rejectMutatingPagePath refuses a browsing path that would act rather than
+// read. Only the first segment is dispatched on by the simplestore handler.
+func rejectMutatingPagePath(path []string) error {
+	if len(path) == 0 {
+		return nil
+	}
+	if head := strings.ToLower(strings.TrimSpace(path[0])); mutatingPagePaths[head] {
+		return fmt.Errorf("%q changes state on the merchant; use the matching br_shop_* tool, which requires a Bison Relay write grant", head)
+	}
+	return nil
+}
+
 func brPageFetch(ctx context.Context, uid string, path []string, sessionID, parentPage uint64, data json.RawMessage, fieldTypes ...map[string]string) (any, error) {
 	if strings.TrimSpace(uid) == "" {
 		return nil, fmt.Errorf("uid is required")

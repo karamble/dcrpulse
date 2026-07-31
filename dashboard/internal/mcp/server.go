@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -229,6 +230,10 @@ func shutdownServer(s *http.Server) {
 	log.Printf("MCP server stopped")
 }
 
+// sessionIdleTimeout closes an MCP session that has gone quiet, so a session
+// cannot outlive a capability change indefinitely.
+const sessionIdleTimeout = 30 * time.Minute
+
 // buildHandler builds the streamable-HTTP handler. The getServer callback
 // resolves the agent (placed in context by authMiddleware) and returns its
 // scoped server (built lazily, rebuilt when grants change).
@@ -238,7 +243,13 @@ func buildHandler() http.Handler {
 			return scopedServerFor(a)
 		}
 		return mcp.NewServer(&mcp.Implementation{Name: "dcrpulse", Version: serverVersion}, nil)
-	}, nil)
+	}, &mcp.StreamableHTTPOptions{
+		// A session holds the server it was built with. Without a timeout an
+		// idle one is never closed, so it could outlive a revocation
+		// indefinitely; the per-call domain check covers the live case and this
+		// bounds the stale one.
+		SessionTimeout: sessionIdleTimeout,
+	})
 }
 
 // persistEnabled / persistedEnabled store the on/off toggle in the global config
@@ -346,8 +357,20 @@ func ok(v any, err error) (*mcp.CallToolResult, any, error) {
 // can distinguish them.
 type toolDef struct {
 	domain   string
+	name     string
 	readOnly bool
 	register func(*mcp.Server, *agent)
+}
+
+// requireDomain re-checks the agent's capability domain when the tool is called.
+// Domains are also applied when the per-agent server is built, but a live
+// session keeps the server it was built with, so without this a domain the user
+// revoked would keep working until that session ended.
+func requireDomain(a *agent, domain string) error {
+	if !a.allows(domain) {
+		return fmt.Errorf("agent access does not allow the %s domain", domain)
+	}
+	return nil
 }
 
 func boolPtr(b bool) *bool { return &b }
@@ -364,9 +387,12 @@ var (
 // (value, error) result for MCP. In is the tool's argument type (emptyInput for
 // tools that take no parameters); its exported fields become the input schema.
 func readTool[In any](domain, name, description string, fn func(context.Context, In) (any, error)) toolDef {
-	return toolDef{domain: domain, readOnly: true, register: func(s *mcp.Server, _ *agent) {
+	return toolDef{domain: domain, name: name, readOnly: true, register: func(s *mcp.Server, a *agent) {
 		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: readAnnotations},
 			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+				if err := requireDomain(a, domain); err != nil {
+					return ok(nil, err)
+				}
 				return ok(fn(ctx, in))
 			})
 	}}
@@ -375,9 +401,12 @@ func readTool[In any](domain, name, description string, fn func(context.Context,
 // agentTool builds a grant-gated write tool whose handler also receives the
 // calling agent's identity.
 func agentTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
-	return toolDef{domain: domain, readOnly: false, register: func(s *mcp.Server, a *agent) {
+	return toolDef{domain: domain, name: name, readOnly: false, register: func(s *mcp.Server, a *agent) {
 		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: writeAnnotations},
 			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+				if err := requireDomain(a, domain); err != nil {
+					return ok(nil, err)
+				}
 				return ok(fn(ctx, a, in))
 			})
 	}}
@@ -387,9 +416,12 @@ func agentTool[In any](domain, name, description string, fn func(context.Context
 // capabilities): it receives the agent yet moves nothing, so it carries the
 // read-only hint and is exempt from the spend-gating test.
 func agentReadTool[In any](domain, name, description string, fn func(context.Context, *agent, In) (any, error)) toolDef {
-	return toolDef{domain: domain, readOnly: true, register: func(s *mcp.Server, a *agent) {
+	return toolDef{domain: domain, name: name, readOnly: true, register: func(s *mcp.Server, a *agent) {
 		mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, Annotations: readAnnotations},
 			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+				if err := requireDomain(a, domain); err != nil {
+					return ok(nil, err)
+				}
 				return ok(fn(ctx, a, in))
 			})
 	}}

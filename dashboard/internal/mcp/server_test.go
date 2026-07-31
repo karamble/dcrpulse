@@ -11,6 +11,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// testAgent builds an agent with its domain set installed (domains is atomic,
+// so it cannot be set in a struct literal).
+func testAgent(id, name string, domains map[string]bool) *agent {
+	a := &agent{id: id, name: name}
+	a.setDomainMap(domains)
+	return a
+}
+
 // connectTo wires an in-memory MCP client to a server scoped for agent a.
 func connectTo(t *testing.T, a *agent) *mcp.ClientSession {
 	t.Helper()
@@ -43,7 +51,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) map[string]bool {
 }
 
 func TestNodeOnlyAgentSeesOnlyNodeTools(t *testing.T) {
-	a := &agent{id: "n", name: "node-only", domains: map[string]bool{"node": true}}
+	a := testAgent("n", "node-only", map[string]bool{"node": true})
 	names := toolNames(t, connectTo(t, a))
 	// capabilities is always available so any agent can introspect itself.
 	for _, want := range []string{"node_status", "node_dashboard", "node_blockchain_info", "capabilities"} {
@@ -59,7 +67,7 @@ func TestNodeOnlyAgentSeesOnlyNodeTools(t *testing.T) {
 }
 
 func TestGrantedAgentSeesMoreTools(t *testing.T) {
-	a := &agent{id: "g", name: "granted", domains: map[string]bool{"node": true, "wallet": true, "staking": true}}
+	a := testAgent("g", "granted", map[string]bool{"node": true, "wallet": true, "staking": true})
 	names := toolNames(t, connectTo(t, a))
 	for _, want := range []string{"node_status", "wallet_dashboard", "wallet_accounts", "staking_tickets", "wallet_send"} {
 		if !names[want] {
@@ -76,7 +84,7 @@ func TestFullCatalogRegistersUniquely(t *testing.T) {
 	for _, d := range catalogDomains() {
 		domains[d] = true
 	}
-	a := &agent{id: "all", name: "all-domains", domains: domains}
+	a := testAgent("all", "all-domains", domains)
 	names := toolNames(t, connectTo(t, a))
 	if len(names) != len(toolCatalog) {
 		t.Fatalf("expected %d unique tools, server exposed %d (duplicate tool name?)", len(toolCatalog), len(names))

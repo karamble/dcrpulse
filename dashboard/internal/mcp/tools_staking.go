@@ -75,7 +75,9 @@ var stakingTools = []toolDef{
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.PurchaseStatusSnapshot(), nil }),
 	readTool("staking", "staking_autobuyer_status",
 		"Get the automatic ticket-buyer status (running flag, last error, persisted settings).",
-		func(ctx context.Context, _ emptyInput) (any, error) { return services.AutobuyerStatusSnapshot(ctx), nil }),
+		func(ctx context.Context, _ emptyInput) (any, error) {
+			return services.AutobuyerStatusSnapshot(ctx), nil
+		}),
 	agentTool("staking", "staking_purchase",
 		"Buy staking tickets through a VSP. Requires a spend grant covering the account; the cost (ticket price x count) is checked against the grant caps. The agent never supplies a passphrase.",
 		func(ctx context.Context, a *agent, in purchaseInput) (any, error) {
@@ -85,10 +87,27 @@ var stakingTools = []toolDef{
 			if in.VSPHost == "" || in.VSPPubkey == "" {
 				return nil, fmt.Errorf("vspHost and vspPubkey are required (see staking_vsps)")
 			}
-			// Reject before pricing the ticket when the agent has no grant for
-			// this account, so an ungranted call does no chain work.
-			if err := grants.precheckAccount(a.id, in.Account, time.Now()); err != nil {
+			// Reject an ungranted agent before any wallet work, so the gate stays
+			// first and a call without a grant costs nothing.
+			if err := grants.precheckGrant(a.id, time.Now()); err != nil {
 				recordSpend(a, "staking_purchase", in.Account, 0, in.VSPHost, "denied", err.Error())
+				return nil, err
+			}
+			// The service overrides the caller's account when privacy is
+			// configured, funding the ticket from the mixed account. Resolve that
+			// here so the grant is checked against the account the purchase
+			// actually spends from, not the one the agent named.
+			srcAccount := in.Account
+			changeAccount := in.ChangeAccount
+			if changeAccount == 0 {
+				changeAccount = in.Account
+			}
+			if mixing, mixed := services.TicketMixingParams(ctx); mixed {
+				srcAccount = mixing.Mixed
+				changeAccount = mixing.Change
+			}
+			if err := grants.precheckAccount(a.id, srcAccount, time.Now()); err != nil {
+				recordSpend(a, "staking_purchase", srcAccount, 0, in.VSPHost, "denied", err.Error())
 				return nil, err
 			}
 			info, err := services.FetchStakingInfo()
@@ -101,17 +120,13 @@ var stakingTools = []toolDef{
 			}
 			costDCR := info.TicketPrice * float64(in.NumTickets)
 			totalAtoms := int64(perTicket) * int64(in.NumTickets)
-			changeAccount := in.ChangeAccount
-			if changeAccount == 0 {
-				changeAccount = in.Account
-			}
 			// Ticket purchases have no recipient address; the allowlist is skipped.
-			pass, err := grants.authorize(ctx, a.id, in.Account, totalAtoms, "", time.Now())
+			pass, err := grants.authorize(ctx, a.id, srcAccount, totalAtoms, "", time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
-					recordSpend(a, "staking_purchase", in.Account, costDCR, in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")
+					recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
-					recordSpend(a, "staking_purchase", in.Account, costDCR, in.VSPHost, "denied", err.Error())
+					recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "denied", err.Error())
 				}
 				return nil, err
 			}
@@ -119,10 +134,10 @@ var stakingTools = []toolDef{
 			resp, err := services.PurchaseTickets(ctx, in.Account, in.NumTickets, in.VSPHost, in.VSPPubkey, changeAccount, pass)
 			if err != nil {
 				grants.refund(a.id, totalAtoms)
-				recordSpend(a, "staking_purchase", in.Account, costDCR, in.VSPHost, "error", err.Error())
+				recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "error", err.Error())
 				return nil, err
 			}
-			recordSpend(a, "staking_purchase", in.Account, costDCR, in.VSPHost, "ok",
+			recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "ok",
 				fmt.Sprintf("%d ticket(s)", len(resp.TicketHashes)))
 			return resp, nil
 		}),

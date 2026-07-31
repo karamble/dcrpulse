@@ -27,7 +27,7 @@ func resourceURIs(t *testing.T, cs *mcp.ClientSession) map[string]bool {
 // TestNodeOnlyAgentSeesOnlyNodeResources mirrors the tool gating: a node-only
 // agent sees the node resource and none of the others.
 func TestNodeOnlyAgentSeesOnlyNodeResources(t *testing.T) {
-	a := &agent{id: "rn", name: "node-only", domains: map[string]bool{"node": true}}
+	a := testAgent("rn", "node-only", map[string]bool{"node": true})
 	uris := resourceURIs(t, connectTo(t, a))
 	if !uris[resNodeSync] {
 		t.Errorf("node-only agent missing %s", resNodeSync)
@@ -46,7 +46,7 @@ func TestAllDomainsAgentSeesAllResources(t *testing.T) {
 	for _, d := range catalogDomains() {
 		domains[d] = true
 	}
-	a := &agent{id: "rall", name: "all", domains: domains}
+	a := testAgent("rall", "all", domains)
 	uris := resourceURIs(t, connectTo(t, a))
 	if len(uris) != len(resourceCatalog) {
 		t.Fatalf("expected %d resources, server exposed %d", len(resourceCatalog), len(uris))
@@ -82,7 +82,7 @@ func TestNotifyResourceUpdatedNoSubscribersNoPanic(t *testing.T) {
 // TestResourceSubscribeGating verifies an agent cannot subscribe to a resource
 // outside its granted domains but can subscribe within them.
 func TestResourceSubscribeGating(t *testing.T) {
-	a := &agent{id: "rs", name: "node-only", domains: map[string]bool{"node": true}}
+	a := testAgent("rs", "node-only", map[string]bool{"node": true})
 	cs := connectTo(t, a)
 	ctx := context.Background()
 	if err := cs.Subscribe(ctx, &mcp.SubscribeParams{URI: resNodeSync}); err != nil {

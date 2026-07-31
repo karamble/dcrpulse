@@ -46,7 +46,7 @@ var capabilityTools = []toolDef{
 		func(_ context.Context, a *agent, _ emptyInput) (any, error) {
 			rep := capabilityReport{
 				Agent:     a.name,
-				Domains:   sortedDomains(a.domains),
+				Domains:   sortedDomains(a.domainMap()),
 				Resources: agentResourceURIs(a),
 				Note:      "Tools outside your granted domains are not visible. A write/spend tool also needs the matching write scope in your grant (see spend.writeScopes); fund moves are additionally bounded by per-tx/daily DCR caps and you never receive the wallet passphrase.",
 			}

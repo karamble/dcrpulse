@@ -69,7 +69,7 @@ func TestCreateListRevokeAgent(t *testing.T) {
 	}
 	// New agents start node-only.
 	if !a.allows("node") || a.allows("wallet") {
-		t.Fatalf("new agent should be node-only, got domains %v", sortedDomains(a.domains))
+		t.Fatalf("new agent should be node-only, got domains %v", sortedDomains(a.domainMap()))
 	}
 	list := r.list()
 	if len(list) != 1 || list[0].ID != id || list[0].Name != "trading-bot" {
@@ -101,7 +101,7 @@ func TestSetDomainsAlwaysKeepsNode(t *testing.T) {
 	}
 	a, _ := r.verify(token)
 	if !a.allows("node") || !a.allows("wallet") || !a.allows("staking") {
-		t.Fatalf("granted domains missing: %v", sortedDomains(a.domains))
+		t.Fatalf("granted domains missing: %v", sortedDomains(a.domainMap()))
 	}
 	// Replacing the grant set always re-implies node.
 	if !r.setDomains(id, []string{"wallet"}) || !a.allows("node") {
