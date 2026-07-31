@@ -153,7 +153,7 @@ func setMixerErr(msg string) {
 // already running or if the gRPC client isn't wired. The passphrase byte slice
 // is owned by this function for the duration of the call.
 func StartMixer(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) error {
-	if rpc.AccountMixerClient == nil {
+	if rpc.AccountMixerClient == nil || rpc.WalletGrpcClient == nil {
 		return fmt.Errorf("mixer gRPC client unavailable")
 	}
 
@@ -167,10 +167,30 @@ func StartMixer(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint
 	mixerLastErr = ""
 	mixerMu.Unlock()
 
-	// Copy the passphrase: the caller's slice may be zeroed once it returns,
-	// but the mixer goroutine uses the passphrase for the lifetime of the run.
-	pp := append([]byte(nil), passphrase...)
-	go runMixer(ctx, pp, mixedAccount, mixedBranch, changeAccount)
+	// Unlock before the goroutine starts so a wrong passphrase is reported to
+	// the caller instead of surfacing later as a mixer event. Mixing spends
+	// outputs from the change account, so it stays unlocked for the lifetime of
+	// the run; dcrwallet's wallet-wide Unlock (driven by the passphrase in
+	// RunAccountMixerRequest) does NOT unlock per-account-encrypted accounts.
+	// Mirrors Decrediton's unlockAcctAndExecFn(changeAccount, leaveUnlock=true).
+	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
+	_, err := rpc.WalletGrpcClient.UnlockAccount(unlockCtx, &pb.UnlockAccountRequest{
+		Passphrase:    passphrase,
+		AccountNumber: changeAccount,
+	})
+	unlockCancel()
+	if err != nil {
+		cancel()
+		mixerMu.Lock()
+		mixerCancel = nil
+		mixerLastErr = err.Error()
+		mixerMu.Unlock()
+		return fmt.Errorf("unlock change account: %w", err)
+	}
+
+	// The passphrase is not needed past this point: the mixer signs with the
+	// account key unlocked above and the RPC below carries no passphrase.
+	go runMixer(ctx, mixedAccount, mixedBranch, changeAccount)
 	return nil
 }
 
@@ -185,43 +205,16 @@ func StopMixer() {
 	}
 }
 
-func runMixer(ctx context.Context, passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) {
-	// This goroutine owns its passphrase copy; wipe it when it exits.
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+func runMixer(ctx context.Context, mixedAccount, mixedBranch, changeAccount uint32) {
 	defer func() {
 		mixerMu.Lock()
 		mixerCancel = nil
 		mixerMu.Unlock()
 	}()
+	// Relock the change account StartMixer unlocked when the mixer stops.
+	defer relockAccount(changeAccount, setMixerErr)
 
 	recordMixerEvent("info", fmt.Sprintf("Mixer starting (mixed=%d branch=%d change=%d)", mixedAccount, mixedBranch, changeAccount))
-
-	// Mixing spends outputs from the change account, so it must be unlocked
-	// for the lifetime of the mixer. dcrwallet's wallet-wide Unlock (driven
-	// by the passphrase in RunAccountMixerRequest) does NOT unlock
-	// per-account-encrypted accounts. Mirrors Decrediton's
-	// unlockAcctAndExecFn(changeAccount, leaveUnlock=true).
-	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err := rpc.WalletGrpcClient.UnlockAccount(unlockCtx, &pb.UnlockAccountRequest{
-		Passphrase:    passphrase,
-		AccountNumber: changeAccount,
-	})
-	unlockCancel()
-	if err != nil {
-		msg := fmt.Sprintf("Unlock change account failed: %v", err)
-		log.Printf("❌ %s", msg)
-		mixerMu.Lock()
-		mixerLastErr = err.Error()
-		mixerMu.Unlock()
-		recordMixerEvent("error", msg)
-		return
-	}
-	// Relock the change account when the mixer stops.
-	defer relockAccount(changeAccount, setMixerErr)
 
 	// Don't pass the passphrase: dcrwallet's RunAccountMixer would otherwise do a
 	// wallet-wide Unlock, unlocking every account for the mixer's lifetime. We

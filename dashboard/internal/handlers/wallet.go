@@ -976,6 +976,11 @@ func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := services.StartMixer(passphrase, mixed, 0, change); err != nil {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "passphrase") || strings.Contains(lower, "decrypt") {
+			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+			return
+		}
 		log.Printf("StartMixer failed: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

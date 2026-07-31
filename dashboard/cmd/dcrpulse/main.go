@@ -99,6 +99,9 @@ func main() {
 			// Supervise RpcSync from dcrd. Resumes automatically when the
 			// wallet is loaded, reconnects with backoff if the stream dies.
 			go superviseRpcSync(context.Background())
+			// Re-lock accounts left unlocked by a subsystem that is no longer
+			// running, which a restart would otherwise leave open indefinitely.
+			services.StartAccountLockMonitor(context.Background())
 		}
 	} else {
 		log.Println("No gRPC certificate provided. Streaming features disabled.")

@@ -146,11 +146,58 @@ func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error 
 	// dispatch(updateUsedVSPs(vsp)) in ControlActions.js:519.
 	rememberVSPUsed(ctx, sCopy.VspHost, sCopy.VspPubkey)
 
-	// Copy the passphrase: the HTTP handler zeroes its slice when it returns
-	// (right after this call), but the autobuyer goroutine uses the passphrase
-	// later (after StopMixer/WaitForMixerStop), so it must own its own copy.
-	pp := append([]byte(nil), passphrase...)
-	go runAutobuyer(ctx, sCopy, pp)
+	// When privacy is configured, the autobuyer buys mixed tickets: fund + split
+	// + mix from the "mixed" account, change to the "unmixed" account, mixing on.
+	// Otherwise buy plainly from the configured account. Mirrors Decrediton's
+	// startTicketAutoBuyer branch.
+	sourceAccount := sCopy.Account
+	mixing, mixed := TicketMixingParams(ctx)
+	if mixed {
+		sourceAccount = mixing.Mixed
+	}
+
+	// Unlock before the goroutine starts so a wrong passphrase reaches the
+	// caller instead of surfacing later as an autobuyer event. The accounts stay
+	// unlocked for the buyer's lifetime and are re-locked when it stops.
+	abort := func(err error, what string) error {
+		cancel()
+		autobuyerMu.Lock()
+		autobuyerCancel = nil
+		autobuyerActive = nil
+		autobuyerLastErr = err.Error()
+		autobuyerMu.Unlock()
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
+	didUnlockSource, err := unlockAccountForSpend(unlockCtx, sourceAccount, passphrase)
+	unlockCancel()
+	if err != nil {
+		return abort(err, "unlock source account")
+	}
+	// With mixing on, the ticket buyer also runs a per-block account mixer on the
+	// change account (dcrwallet sets MixChange when EnableMixing is set), spending
+	// the unmixed account to mix it into the mixed account. That account is
+	// per-account-encrypted, and the buyer's wallet-wide Unlock does not reach
+	// per-account-encrypted accounts, so it must be unlocked explicitly like the
+	// standalone mixer does. Without this, dcrwallet logs "TKBY: Account mixing
+	// failed: ... account with unique passphrase is locked" every block and the
+	// unmixed balance never mixes.
+	var didUnlockChange bool
+	if mixed && mixing.Change != sourceAccount {
+		changeCtx, changeCancel := context.WithTimeout(ctx, 10*time.Second)
+		didUnlockChange, err = unlockAccountForSpend(changeCtx, mixing.Change, passphrase)
+		changeCancel()
+		if err != nil {
+			if didUnlockSource {
+				relockAccount(sourceAccount, setAutobuyerErr)
+			}
+			return abort(err, "unlock change account")
+		}
+	}
+
+	// The passphrase is not needed past this point: the buyer signs with the
+	// account keys unlocked above and its RPC carries no passphrase.
+	go runAutobuyer(ctx, sCopy, sourceAccount, mixing, mixed, didUnlockSource, didUnlockChange)
 	return nil
 }
 
@@ -174,31 +221,25 @@ func AutobuyerStatusSnapshot(ctx context.Context) types.AutobuyerStatus {
 	}
 }
 
-func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphrase []byte) {
-	// This goroutine owns its passphrase copy; wipe it when it exits.
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceAccount uint32, mixing TicketMixing, mixed, didUnlockSource, didUnlockChange bool) {
 	defer func() {
 		autobuyerMu.Lock()
 		autobuyerCancel = nil
 		autobuyerActive = nil
 		autobuyerMu.Unlock()
 	}()
+	// Re-lock whatever StartAutobuyer opened once the buyer stops.
+	if didUnlockSource {
+		defer relockAccount(sourceAccount, setAutobuyerErr)
+	}
+	if didUnlockChange {
+		defer relockAccount(mixing.Change, setAutobuyerErr)
+	}
 
 	recordAutobuyerEvent("info", fmt.Sprintf("Autobuyer starting (account=%d vsp=%s balanceToMaintain=%.8f DCR)",
 		settings.Account, settings.VspHost, settings.BalanceToMaintain))
 
-	// When privacy is configured, the autobuyer buys mixed tickets: fund + split
-	// + mix from the "mixed" account, change to the "unmixed" account, mixing on.
-	// Otherwise buy plainly from the configured account. Mirrors Decrediton's
-	// startTicketAutoBuyer branch.
-	sourceAccount := settings.Account
-	mixing, mixed := TicketMixingParams(ctx)
 	if mixed {
-		sourceAccount = mixing.Mixed
 		// The autobuyer mixes inline while it runs, so the standalone continuous
 		// mixer must not run alongside it (both spend the mixed account). Stop it
 		// if running; the user can restart it from the privacy tab after stopping
@@ -208,38 +249,6 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, passphr
 			WaitForMixerStop(5 * time.Second)
 			recordAutobuyerEvent("info", "Stopped the account mixer; the autobuyer mixes tickets while it runs")
 		}
-	}
-
-	// Make the source account usable for signing. Skips the unlock if it's
-	// already unlocked (e.g. by a prior mix session) to avoid dcrwallet's
-	// already-unlocked "invalid passphrase" hash check; migrates to per-account
-	// encryption if needed.
-	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
-	err := unlockAccountForSpend(unlockCtx, sourceAccount, passphrase)
-	unlockCancel()
-	if err != nil {
-		setAutobuyerErr(fmt.Sprintf("Unlock source account failed: %v", err))
-		return
-	}
-	defer relockAccount(sourceAccount, setAutobuyerErr)
-
-	// With mixing on, the ticket buyer also runs a per-block account mixer on the
-	// change account (dcrwallet sets MixChange when EnableMixing is set), spending
-	// the unmixed account to mix it into the mixed account. That account is
-	// per-account-encrypted, and the buyer's wallet-wide Unlock does not reach
-	// per-account-encrypted accounts, so it must be unlocked explicitly like the
-	// standalone mixer does. Without this, dcrwallet logs "TKBY: Account mixing
-	// failed: ... account with unique passphrase is locked" every block and the
-	// unmixed balance never mixes.
-	if mixed && mixing.Change != sourceAccount {
-		changeCtx, changeCancel := context.WithTimeout(ctx, 10*time.Second)
-		err := unlockAccountForSpend(changeCtx, mixing.Change, passphrase)
-		changeCancel()
-		if err != nil {
-			setAutobuyerErr(fmt.Sprintf("Unlock change account failed: %v", err))
-			return
-		}
-		defer relockAccount(mixing.Change, setAutobuyerErr)
 	}
 
 	balanceAtoms := int64(settings.BalanceToMaintain * 1e8)

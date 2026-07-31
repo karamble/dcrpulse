@@ -333,7 +333,11 @@ func unlockForVote(ctx context.Context, passphrase []byte) error {
 func lockAfterVote() {
 	lockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, _ = rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{})
+	// A failed lock leaves the wallet's keys usable, so say so rather than
+	// dropping it.
+	if _, err := rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{}); err != nil {
+		log.Printf("lock wallet after vote: %v", err)
+	}
 }
 
 // reversed returns a copy of b with the byte order reversed. Hashes

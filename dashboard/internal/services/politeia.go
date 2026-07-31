@@ -776,6 +776,9 @@ func buildSignedVotes(ctx context.Context, token, voteOption string, passphrase 
 	// (incl. on error). dcrwallet's per-account encryption means a wallet-wide
 	// unlock leaves these keys unusable; this is the same per-account path VSP
 	// fee signing uses. Mirrors Decrediton's UnlockAccount-then-sign.
+	beginUnlockedOp()
+	defer endUnlockedOp()
+
 	unlocked, err := unlockAllAccountsForSpend(ctx, passphrase)
 	if err != nil {
 		return nil, nil, err

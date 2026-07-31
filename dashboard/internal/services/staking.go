@@ -464,6 +464,14 @@ func StartPurchaseWorker(account, numTickets uint32, vspHost, vspPubkey string, 
 	if vspHost == "" || vspPubkey == "" {
 		return fmt.Errorf("vspHost and vspPubkey are required")
 	}
+	// Check the passphrase before detaching: once the worker is running the
+	// caller has its 202 and a failure could only be reported as an event.
+	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err := verifyAccountPassphrase(verifyCtx, account, passphrase)
+	verifyCancel()
+	if err != nil {
+		return err
+	}
 	if !tryBeginTicketPurchase() {
 		return fmt.Errorf("a ticket purchase is already in progress")
 	}
@@ -567,12 +575,18 @@ func purchaseTicketsCore(ctx context.Context, account, numTickets uint32, vspHos
 		}()
 	}
 
-	// Make the source account usable for signing (skips if already unlocked,
-	// migrates to per-account encryption if needed).
-	if err := unlockAccountForSpend(ctx, sourceAccount, passphrase); err != nil {
+	beginUnlockedOp()
+	defer endUnlockedOp()
+
+	// Verify the passphrase and make the source account usable for signing,
+	// migrating to per-account encryption if needed.
+	didUnlock, err := unlockAccountForSpend(ctx, sourceAccount, passphrase)
+	if err != nil {
 		return nil, err
 	}
-	defer relockAccount(sourceAccount, func(msg string) { log.Printf("ticket purchase: %s", msg) })
+	if didUnlock {
+		defer relockAccount(sourceAccount, func(msg string) { log.Printf("ticket purchase: %s", msg) })
+	}
 
 	// Do not set Passphrase. The source account is already unlocked per-account
 	// above, which is all dcrwallet needs to sign: funding, split, mixed, voting
@@ -821,6 +835,9 @@ func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, accoun
 		return nil, fmt.Errorf("vspHost and vspPubkey are required")
 	}
 
+	beginUnlockedOp()
+	defer endUnlockedOp()
+
 	unlockedAccts, err := unlockAllAccountsForSpend(ctx, passphrase)
 	if err != nil {
 		return nil, err
@@ -874,6 +891,9 @@ func ProcessUnmanagedVSPTickets(ctx context.Context, vspHost, vspPubkey string, 
 	if vspHost == "" || vspPubkey == "" {
 		return nil, fmt.Errorf("vspHost and vspPubkey are required")
 	}
+
+	beginUnlockedOp()
+	defer endUnlockedOp()
 
 	unlockedAccts, err := unlockAllAccountsForSpend(ctx, passphrase)
 	if err != nil {

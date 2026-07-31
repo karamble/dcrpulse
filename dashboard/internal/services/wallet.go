@@ -13,6 +13,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"dcrpulse/internal/config"
@@ -563,25 +564,25 @@ func ensureAllAccountsEncrypted(ctx context.Context, passphrase []byte) error {
 	return nil
 }
 
-// unlockAccountForSpend makes a per-account-encrypted account usable for signing.
-// It first checks whether the account is already unlocked: dcrwallet's
-// UnlockAccount, when called on an already-unlocked account, does a strict
-// passphrase-hash compare against the passphrase that first unlocked it and
-// returns "invalid passphrase" on any mismatch (e.g. the account was unlocked
-// earlier by a mix session). Skipping the redundant unlock avoids that. When the
-// account is locked, it unlocks, lazily migrating to per-account encryption if
-// needed (the default account on a fresh wallet isn't encrypted yet).
-func unlockAccountForSpend(ctx context.Context, accountNumber uint32, passphrase []byte) error {
+// unlockAccountForSpend makes a per-account-encrypted account usable for signing
+// and verifies the passphrase in the process. The unlock is the only check
+// standing behind a spend: SignTransaction is called without a passphrase, so it
+// signs with whatever keys are unlocked. dcrwallet compares the passphrase
+// against the one that encrypted the account even when it is already unlocked,
+// and every account this app encrypts carries the wallet passphrase, so
+// re-unlocking an open account succeeds. Reports whether this call transitioned
+// the account from locked to unlocked, so a caller only re-locks what it opened.
+// Lazily migrates to per-account encryption if needed (the default account on a
+// fresh wallet isn't encrypted yet).
+func unlockAccountForSpend(ctx context.Context, accountNumber uint32, passphrase []byte) (bool, error) {
 	if rpc.WalletGrpcClient == nil {
-		return fmt.Errorf("wallet gRPC client not initialized")
+		return false, fmt.Errorf("wallet gRPC client not initialized")
 	}
-	acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
-	if err == nil {
+	wasUnlocked := false
+	if acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{}); err == nil {
 		for _, a := range acctsResp.Accounts {
 			if a.AccountNumber == accountNumber {
-				if a.AccountUnlocked {
-					return nil // already usable; don't re-unlock (avoids the hash compare)
-				}
+				wasUnlocked = a.AccountUnlocked
 				break
 			}
 		}
@@ -593,19 +594,19 @@ func unlockAccountForSpend(ctx context.Context, accountNumber uint32, passphrase
 	}); err != nil {
 		if strings.Contains(err.Error(), "account is not encrypted with a unique passphrase") {
 			if mErr := ensureAccountEncrypted(ctx, accountNumber, passphrase); mErr != nil {
-				return fmt.Errorf("migrate account to per-account encryption: %w", mErr)
+				return false, fmt.Errorf("migrate account to per-account encryption: %w", mErr)
 			}
 			if _, err := rpc.WalletGrpcClient.UnlockAccount(ctx, &pb.UnlockAccountRequest{
 				Passphrase:    passphrase,
 				AccountNumber: accountNumber,
 			}); err != nil {
-				return fmt.Errorf("unlock source account: %w", err)
+				return false, fmt.Errorf("unlock source account: %w", err)
 			}
-			return nil
+			return !wasUnlocked, nil
 		}
-		return fmt.Errorf("unlock source account: %w", err)
+		return false, fmt.Errorf("unlock source account: %w", err)
 	}
-	return nil
+	return !wasUnlocked, nil
 }
 
 // unlockAllAccountsForSpend unlocks every normal (non-imported, non-watch-only)
@@ -620,18 +621,6 @@ func unlockAllAccountsForSpend(ctx context.Context, passphrase []byte) ([]uint32
 	if err != nil {
 		return nil, err
 	}
-	// Snapshot current unlock state so we only report (and later re-lock)
-	// accounts we ourselves unlock, leaving any already-unlocked account (e.g.
-	// one a running mixer needs) untouched.
-	alreadyUnlocked := map[uint32]bool{}
-	if resp, aerr := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{}); aerr == nil {
-		for _, a := range resp.Accounts {
-			if a.AccountUnlocked {
-				alreadyUnlocked[a.AccountNumber] = true
-			}
-		}
-	}
-
 	var candidates, succeeded int
 	var newlyUnlocked []uint32
 	for _, a := range accounts {
@@ -643,11 +632,11 @@ func unlockAllAccountsForSpend(ctx context.Context, passphrase []byte) ([]uint32
 			continue
 		}
 		candidates++
-		if alreadyUnlocked[a.AccountNumber] {
-			succeeded++
-			continue
-		}
-		if err := unlockAccountForSpend(ctx, a.AccountNumber, passphrase); err != nil {
+		// Every candidate is unlocked, including one that is already open, so
+		// the passphrase is checked against all of them: crediting an
+		// already-open account would let a wrong passphrase through here.
+		didUnlock, err := unlockAccountForSpend(ctx, a.AccountNumber, passphrase)
+		if err != nil {
 			// An account may carry a divergent per-account passphrase; skip it
 			// rather than abort, so the accounts that do unlock (including each
 			// ticket's commitment account) can still sign for the VSP. A
@@ -656,7 +645,11 @@ func unlockAllAccountsForSpend(ctx context.Context, passphrase []byte) ([]uint32
 			continue
 		}
 		succeeded++
-		newlyUnlocked = append(newlyUnlocked, a.AccountNumber)
+		// Only accounts this call opened are re-locked afterwards, leaving one
+		// something else needs (a running mixer, say) untouched.
+		if didUnlock {
+			newlyUnlocked = append(newlyUnlocked, a.AccountNumber)
+		}
 	}
 	if candidates > 0 && succeeded == 0 {
 		return nil, fmt.Errorf("invalid passphrase")
@@ -711,7 +704,9 @@ func relockAccountsAfterVSP(unlocked []uint32) {
 		if keep[acct] {
 			continue
 		}
-		_, _ = rpc.WalletGrpcClient.LockAccount(ctx, &pb.LockAccountRequest{AccountNumber: acct})
+		if _, err := rpc.WalletGrpcClient.LockAccount(ctx, &pb.LockAccountRequest{AccountNumber: acct}); err != nil {
+			log.Printf("relockAccountsAfterVSP: lock account %d: %v", acct, err)
+		}
 	}
 }
 
@@ -727,6 +722,95 @@ func relockAccount(accountNumber uint32, onErr func(string)) {
 	defer cancel()
 	if _, err := rpc.WalletGrpcClient.LockAccount(ctx, &pb.LockAccountRequest{AccountNumber: accountNumber}); err != nil && onErr != nil {
 		onErr(fmt.Sprintf("Failed to relock account %d: %v", accountNumber, err))
+	}
+}
+
+// verifyAccountPassphrase checks a passphrase against an account and leaves the
+// account's lock state exactly as it found it. Flows that detach into a
+// goroutine use this to reject a wrong passphrase while the HTTP caller is still
+// listening, instead of reporting it later through an event.
+func verifyAccountPassphrase(ctx context.Context, accountNumber uint32, passphrase []byte) error {
+	didUnlock, err := unlockAccountForSpend(ctx, accountNumber, passphrase)
+	if err != nil {
+		return err
+	}
+	if didUnlock {
+		relockAccount(accountNumber, nil)
+	}
+	return nil
+}
+
+// unlockedOps counts the flows that currently depend on an account staying
+// unlocked between their unlock and their matching re-lock. The lock monitor
+// stands down while any is in flight so it cannot lock an account out from
+// under a spend. Mirrors Decrediton's control.unlockAndExecFnRunning.
+var unlockedOps atomic.Int32
+
+func beginUnlockedOp() { unlockedOps.Add(1) }
+
+func endUnlockedOp() { unlockedOps.Add(-1) }
+
+// accountLockSweepInterval matches Decrediton's monitorLockableAccounts timer.
+const accountLockSweepInterval = 30 * time.Second
+
+// StartAccountLockMonitor re-locks accounts that no longer need to be open.
+// Accounts are deliberately left unlocked by the VSP fee reconciler, the mixer
+// and the autobuyer, and the latter two only re-lock from deferred calls inside
+// their goroutine, which a dashboard restart skips while dcrwallet keeps
+// running. Without this sweep such an account stays unlocked until dcrwallet
+// itself restarts. Mirrors Decrediton's monitorLockableAccounts.
+func StartAccountLockMonitor(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(accountLockSweepInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				sweepLockableAccounts(ctx)
+			}
+		}
+	}()
+}
+
+// sweepLockableAccounts locks every account dcrwallet reports unlocked that
+// nothing still needs.
+func sweepLockableAccounts(ctx context.Context) {
+	if rpc.WalletGrpcClient == nil {
+		return
+	}
+	// The mixer and autobuyer hold their accounts open for their whole run, and
+	// a spend holds its own between the unlock and the re-lock.
+	if unlockedOps.Load() > 0 || IsMixerRunning() || IsAutobuyerRunning() {
+		return
+	}
+	sweepCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	resp, err := rpc.WalletGrpcClient.Accounts(sweepCtx, &pb.AccountsRequest{})
+	if err != nil {
+		return
+	}
+	// Resolved on first use so an idle wallet costs no VSP lookup.
+	var keep map[uint32]bool
+	for _, a := range resp.Accounts {
+		// Only individually encrypted accounts can be locked; the dex account
+		// is bisonw's to manage. Mirrors Decrediton's unlocked && encrypted
+		// filter plus its dex exclusion.
+		if !a.AccountUnlocked || !a.AccountEncrypted || a.AccountName == "dex" || a.AccountNumber >= 1<<31 {
+			continue
+		}
+		if keep == nil {
+			keep = vspTicketCommitAccounts(sweepCtx)
+		}
+		if keep[a.AccountNumber] {
+			continue
+		}
+		if _, err := rpc.WalletGrpcClient.LockAccount(sweepCtx, &pb.LockAccountRequest{AccountNumber: a.AccountNumber}); err != nil {
+			log.Printf("account lock monitor: lock account %d: %v", a.AccountNumber, err)
+			continue
+		}
+		log.Printf("account lock monitor: locked unused account %d", a.AccountNumber)
 	}
 }
 
@@ -1653,16 +1737,26 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 		}
 	}()
 
-	// Make the source account usable for signing (skips if already unlocked,
-	// migrates to per-account encryption if needed), then auto-relock on return.
-	if err := unlockAccountForSpend(ctx, sourceAccount, passphrase); err != nil {
+	beginUnlockedOp()
+	defer endUnlockedOp()
+
+	// Verify the passphrase and make the source account usable for signing,
+	// migrating to per-account encryption if needed.
+	didUnlock, err := unlockAccountForSpend(ctx, sourceAccount, passphrase)
+	if err != nil {
 		return "", err
 	}
-	defer func() {
-		relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount})
-	}()
+	// Only re-lock an account this send opened; one the VSP reconciler or a
+	// mixer is holding open has to stay that way.
+	if didUnlock {
+		defer func() {
+			relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount}); err != nil {
+				log.Printf("SignAndPublishTransaction: lock account %d: %v", sourceAccount, err)
+			}
+		}()
+	}
 
 	signResp, err := rpc.WalletGrpcClient.SignTransaction(ctx, &pb.SignTransactionRequest{
 		SerializedTransaction: unsignedTxBytes,
@@ -1751,7 +1845,9 @@ func DiscoverUsage(ctx context.Context, passphrase []byte, gapLimit uint32) erro
 	defer func() {
 		lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer lockCancel()
-		_, _ = rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{})
+		if _, err := rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{}); err != nil {
+			log.Printf("DiscoverUsage: lock wallet: %v", err)
+		}
 	}()
 
 	if _, err := rpc.WalletGrpcClient.DiscoverUsage(ctx, &pb.DiscoverUsageRequest{
