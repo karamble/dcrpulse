@@ -7,7 +7,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -152,6 +151,8 @@ func Start(cfg Config) {
 
 	// Open the persisted spend-audit log so the trail survives restarts.
 	initAuditStore()
+	// Seed the activity-log gate before any listener can serve a request.
+	applyPersistedLogging()
 
 	// Bootstrap token from the environment for headless/dev use. Registered
 	// regardless of the enabled state so a later toggle-on can accept it.
@@ -170,13 +171,13 @@ func Start(cfg Config) {
 	// password the routes that mint tokens and widen an agent's authority are
 	// open, so the agent surface must not come up on a persisted flag either.
 	if !auth.Enabled() {
-		log.Printf("MCP server not started: %s", auth.ErrAppPasswordRequired)
+		mcpLog.Warnf("MCP server not started: %s", auth.ErrAppPasswordRequired)
 		return
 	}
 	srvMu.Lock()
 	defer srvMu.Unlock()
 	if err := startListenerLocked(); err != nil {
-		log.Printf("MCP server start: %v", err)
+		mcpLog.Errorf("MCP server start: %v", err)
 	}
 }
 
@@ -223,9 +224,9 @@ func startListenerLocked() error {
 	// Bridge the live event buses into MCP resource notifications (once).
 	startResourceFeeds()
 	go func(s *http.Server) {
-		log.Printf("MCP server listening on http://%s (streamable HTTP, bearer-auth, default domain=%q)", ln.Addr(), defaultDomain)
+		mcpLog.Infof("MCP server listening on http://%s (streamable HTTP, bearer-auth, default domain=%q)", ln.Addr(), defaultDomain)
 		if err := s.Serve(ln); err != nil && err != http.ErrServerClosed {
-			log.Printf("MCP server error: %v", err)
+			mcpLog.Errorf("MCP server error: %v", err)
 		}
 	}(httpSrv)
 	return nil
@@ -235,7 +236,7 @@ func shutdownServer(s *http.Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = s.Shutdown(ctx)
-	log.Printf("MCP server stopped")
+	mcpLog.Infof("MCP server stopped")
 }
 
 // buildHandler builds the streamable-HTTP handler. The getServer callback
@@ -258,6 +259,7 @@ func buildHandler() http.Handler {
 		MaxRequestBodyBytes: 16 << 20,
 		// PropagateRequestCancellation stays off: an HTTP disconnect must not
 		// become a cancel trigger inside spend handlers.
+		Logger: sdkLogger,
 	})
 }
 
@@ -318,12 +320,14 @@ func buildServer(a *agent) *mcp.Server {
 	opts := &mcp.ServerOptions{
 		SubscribeHandler:   func(_ context.Context, req *mcp.SubscribeRequest) error { return allowResourceSub(a, req.Params.URI) },
 		UnsubscribeHandler: func(context.Context, *mcp.UnsubscribeRequest) error { return nil },
+		Logger:             sdkLogger,
 	}
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "dcrpulse",
 		Title:   "Decred Pulse",
 		Version: serverVersion,
 	}, opts)
+	s.AddReceivingMiddleware(activityMiddleware(a))
 	for _, t := range toolCatalog {
 		if a.allows(t.domain) {
 			t.register(s, a)

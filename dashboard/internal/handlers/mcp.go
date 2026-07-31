@@ -40,6 +40,7 @@ type mcpSettingsResponse struct {
 	Grants      map[string]grantView `json:"grants"`
 	Audit       []mcp.AuditEntry     `json:"audit"`
 	Notify      mcp.OversightConfig  `json:"notify"`
+	Logging     mcp.LoggingConfig    `json:"logging"`
 }
 
 // grantView is the dashboard-facing spend grant (DCR amounts, no passphrase).
@@ -100,6 +101,7 @@ func MCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		Grants:      gmap,
 		Audit:       mcp.AuditLog(50),
 		Notify:      mcp.Oversight(),
+		Logging:     mcp.Logging(),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -379,6 +381,22 @@ func SetMCPNotifyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := mcp.SetOversightConfig(req.Enabled, contact); err != nil {
 		http.Error(w, "failed to save oversight settings", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SetMCPLoggingHandler persists the agent-activity logging on/off state.
+func SetMCPLoggingHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := mcp.SetLogging(req.Enabled); err != nil {
+		http.Error(w, "failed to save logging settings", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

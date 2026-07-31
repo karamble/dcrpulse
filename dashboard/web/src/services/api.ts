@@ -1565,11 +1565,16 @@ export interface MCPSettings {
   grants: Record<string, MCPGrant>;
   audit: MCPAuditEntry[];
   notify: MCPOversight;
+  logging: MCPLogging;
 }
 
 export interface MCPOversight {
   enabled: boolean;
   contact: string;
+}
+
+export interface MCPLogging {
+  enabled: boolean;
 }
 
 export interface MCPGrantRequest {
@@ -1638,6 +1643,12 @@ export const freezeAllMCPAgents = async (): Promise<void> => {
 // contact (hex peer UID) that receives approval requests and spend notices.
 export const setMCPNotify = async (enabled: boolean, contact: string): Promise<void> => {
   await api.post('/settings/mcp/notify', { enabled, contact });
+};
+
+// setMCPLogging toggles agent-activity logging into the dcrpulse log file
+// (viewable under Settings -> Logs).
+export const setMCPLogging = async (enabled: boolean): Promise<void> => {
+  await api.post('/settings/mcp/logging', { enabled });
 };
 
 // exportMCPAudit downloads the full persisted spend-audit trail as a JSON file.

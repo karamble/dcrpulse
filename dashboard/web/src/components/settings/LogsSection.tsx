@@ -120,7 +120,7 @@ export const LogsSection = () => {
         </span>
         .{' '}
         {component === 'dcrpulse'
-          ? "This is the dashboard's own log, rotated at 10 MB over 3 compressed rolls."
+          ? "This is the dashboard's own log, rotated at 10 MB over 3 compressed rolls; agent activity appears here when enabled under AI Agents."
           : `Logs are written by the ${component} container; the dashboard does not interpret them.`}
       </p>
 

@@ -30,6 +30,7 @@ import {
   freezeAllMCPAgents,
   exportMCPAudit,
   setMCPNotify,
+  setMCPLogging,
   getAccounts,
 } from '../../services/api';
 import { getBisonrelayContacts, BisonrelayContact } from '../../services/bisonrelayApi';
@@ -126,6 +127,19 @@ export const AgentsSection = () => {
       await refresh();
     } catch {
       setFeedback({ kind: 'error', text: 'Failed to save Bison Relay oversight settings.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveLogging = async (enabled: boolean) => {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await setMCPLogging(enabled);
+      await refresh();
+    } catch {
+      setFeedback({ kind: 'error', text: 'Failed to save agent activity log settings.' });
     } finally {
       setBusy(false);
     }
@@ -377,6 +391,28 @@ export const AgentsSection = () => {
             } disabled:opacity-50 disabled:cursor-wait`}
           >
             {settings.notify.enabled ? 'On' : 'Off'}
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
+          <div className="min-w-0">
+            <span className="font-medium block">Agent activity log</span>
+            <span className="text-sm text-muted-foreground block">
+              When on, agent tool calls and resource activity are written to the dcrpulse log
+              (viewable under Settings &gt; Logs). Tool arguments are never recorded.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => saveLogging(!settings.logging.enabled)}
+            disabled={busy}
+            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              settings.logging.enabled
+                ? 'bg-success/20 text-success hover:bg-success/30'
+                : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
+            } disabled:opacity-50 disabled:cursor-wait`}
+          >
+            {settings.logging.enabled ? 'On' : 'Off'}
           </button>
         </div>
 

@@ -127,6 +127,19 @@ Fund-moving tools include `wallet_send`, `staking_purchase`, `ln_pay`,
 - **Unblock + re-grant.** A blocked agent is restored by Unblocking it and granting a
   fresh spend capability.
 
+### Activity log (optional)
+
+Settings -> AI Agents -> "Agent activity log" (off by default) writes agent
+activity to the dashboard's own log file, viewable under Settings -> Logs ->
+dcrpulse (`/dashboard-data/logs/dcrpulse.log`, 10 MB rotation, 3 gzipped rolls).
+Recorded per request: the agent, the method, the tool name, the duration, and
+the outcome - never tool arguments. Tool calls and resource activity log at
+info; protocol probes (initialize, discover, list calls) at debug. MCP server
+lifecycle lines (listening/stopped/errors) always log regardless of the toggle,
+and the toggle flips are themselves logged so gaps in the file are explained.
+Like the daemon logs, the viewer is available to any authenticated dashboard
+session; changing the toggle requires the app password.
+
 ### Bison Relay approvals (optional)
 
 When enabled (Settings -> AI Agents -> Bison Relay oversight: toggle on and pick a

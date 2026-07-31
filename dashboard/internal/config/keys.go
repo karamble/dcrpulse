@@ -89,6 +89,11 @@ const (
 	KeyMCPNotifyEnabled = "mcp_notify_enabled"
 	KeyMCPNotifyContact = "mcp_notify_contact"
 
+	// KeyMCPLogEnabled is the persisted on/off state of agent-activity logging
+	// to the dashboard log file (MCPS subsystem). The always-on MCP lifecycle
+	// lines are unaffected by it.
+	KeyMCPLogEnabled = "mcp_log_enabled"
+
 	// Per-wallet record of Politeia vote choices we cast through this
 	// dashboard. Map keyed by proposal token, value = "yes"|"no"|"abstain".
 	// Mirrors Decrediton's savePiVote local cache so the UI can show

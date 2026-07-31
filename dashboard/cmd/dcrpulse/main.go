@@ -398,6 +398,7 @@ func main() {
 	api.Handle("/settings/mcp/freeze-all", auth.RequireAppPassword(http.HandlerFunc(handlers.FreezeAllMCPAgentsHandler))).Methods("POST")
 	api.Handle("/settings/mcp/audit/export", auth.RequireAppPassword(http.HandlerFunc(handlers.ExportMCPAuditHandler))).Methods("GET")
 	api.Handle("/settings/mcp/notify", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPNotifyHandler))).Methods("POST")
+	api.Handle("/settings/mcp/logging", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPLoggingHandler))).Methods("POST")
 	api.HandleFunc("/timestamp/records", handlers.ListTimestampsHandler).Methods("GET")
 	api.HandleFunc("/timestamp/records", handlers.CreateTimestampHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records/{digest}", handlers.GetTimestampHandler).Methods("GET")
