@@ -28,6 +28,7 @@ The dashboard is organized into these areas:
 - **[DEX (DCRDEX)](features/dex.md)** - Decentralized trading via bisonw
 - **[Bison Relay](features/bison-relay.md)** - Encrypted messaging, posts, pages, and storefront
 - **[Bison Relay MCP](features/bison-relay-mcp.md)** - AI agent access to Bison Relay tool bots, paid per call by tip
+- **[Shared Wallets](features/shared-wallets.md)** - Multisig wallets co-signed with Bison Relay contacts
 - **[Privacy and the Mixer](features/privacy-mixer.md)** - Account-based CoinShuffle++ mixing
 - **[Timestamping (dcrtime)](features/timestamp.md)** - Anchor file hashes to the chain
 - **[Block Explorer](features/explorer.md)** - Browse blocks, transactions, and addresses

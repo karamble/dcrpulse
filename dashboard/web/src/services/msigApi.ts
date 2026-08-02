@@ -21,6 +21,48 @@ export interface MsigPeer {
   reason?: string;
 }
 
+export interface MsigProposalInput {
+  txid: string;
+  vout: number;
+  tree: number;
+  atoms: number;
+}
+
+export interface MsigProposalOutput {
+  address: string;
+  atoms: number;
+  isChange: boolean;
+}
+
+export interface MsigQueueHop {
+  uid: string;
+  nick: string;
+  state: string;
+  sentAt?: number;
+  deadline?: number;
+  reason?: string;
+}
+
+export interface MsigProposal {
+  txid: string;
+  role: 'initiator' | 'cosigner';
+  status: string;
+  rawTx: string;
+  sigCount: number;
+  signedBy?: Record<string, boolean>;
+  inputs: MsigProposalInput[];
+  outputs: MsigProposalOutput[];
+  feeAtoms: number;
+  note?: string;
+  reason?: string;
+  queue?: MsigQueueHop[];
+  hopTtlSecs?: number;
+  fromUid?: string;
+  fromNick?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface MsigWallet {
   tempId: string;
   address?: string;
@@ -39,6 +81,7 @@ export interface MsigWallet {
   peers: MsigPeer[];
   createdAt: number;
   updatedAt: number;
+  proposals?: Record<string, MsigProposal>;
 }
 
 export interface MsigUTXO {
@@ -118,6 +161,98 @@ export const getMsigPending = async (): Promise<MsigPendingItem[]> => {
 
 export const refreshMsig = async (): Promise<void> => {
   await api.post('/msig/refresh');
+};
+
+export const restoreMsigWallet = async (card: unknown): Promise<MsigWallet> => {
+  const { data } = await api.post<MsigWallet>('/msig/wallets/restore', card);
+  return data;
+};
+
+export interface MsigRecipient {
+  address: string;
+  amountAtoms: number;
+}
+
+export const proposeMsigSpend = async (
+  walletId: string,
+  recipients: MsigRecipient[],
+  queueUids: string[],
+  note: string,
+  hopTtlSecs: number,
+  account: number,
+  passphrase: string,
+): Promise<MsigProposal> => {
+  const { data } = await api.post<MsigProposal>('/msig/proposals/propose', {
+    walletId, recipients, queueUids, note, hopTtlSecs, account, passphrase,
+  });
+  return data;
+};
+
+export const signMsigProposal = async (
+  walletId: string,
+  txid: string,
+  account: number,
+  passphrase: string,
+): Promise<void> => {
+  await api.post('/msig/proposals/sign', { walletId, txid, account, passphrase });
+};
+
+export const rejectMsigProposal = async (walletId: string, txid: string, reason?: string): Promise<void> => {
+  await api.post('/msig/proposals/reject', { walletId, txid, reason });
+};
+
+export const abortMsigProposal = async (walletId: string, txid: string): Promise<void> => {
+  await api.post('/msig/proposals/abort', { walletId, txid });
+};
+
+export const rebroadcastMsigProposal = async (walletId: string, txid: string): Promise<void> => {
+  await api.post('/msig/proposals/rebroadcast', { walletId, txid });
+};
+
+export const msigProposalLabel = (status: string): string => {
+  switch (status) {
+    case 'collecting':
+      return 'Collecting signatures';
+    case 'ready':
+      return 'Ready to broadcast';
+    case 'broadcast':
+      return 'Broadcast';
+    case 'confirmed':
+      return 'Confirmed';
+    case 'incoming':
+      return 'Needs your approval';
+    case 'signed':
+      return 'You approved';
+    case 'declined':
+      return 'Declined';
+    case 'failed':
+      return 'Failed';
+    case 'aborted':
+      return 'Cancelled';
+    case 'superseded':
+      return 'Superseded';
+    default:
+      return status;
+  }
+};
+
+export const msigHopLabel = (state: string): string => {
+  switch (state) {
+    case 'pending':
+      return 'Waiting in queue';
+    case 'sent':
+      return 'Asked to approve';
+    case 'signed':
+      return 'Approved';
+    case 'declined':
+      return 'Declined';
+    case 'timeout':
+      return 'No answer';
+    case 'skipped':
+      return 'Skipped';
+    default:
+      return state;
+  }
 };
 
 // Status labels shared by the list, banner and detail screens.

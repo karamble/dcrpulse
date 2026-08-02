@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"dcrpulse/internal/msig"
@@ -174,6 +175,144 @@ func MsigPendingHandler(w http.ResponseWriter, r *http.Request) {
 		Items []msig.PendingItem `json:"items"`
 		Count int                `json:"count"`
 	}{items, len(items)})
+}
+
+// msigPassphraseError maps wallet unlock failures to 401 the way the
+// send path does, so the UI can re-prompt instead of showing a raw error.
+func msigPassphraseError(w http.ResponseWriter, err error) {
+	msg := err.Error()
+	if strings.Contains(strings.ToLower(msg), "passphrase") ||
+		strings.Contains(strings.ToLower(msg), "decrypt") {
+		http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
+		return
+	}
+	http.Error(w, msg, http.StatusBadRequest)
+}
+
+// MsigProposeHandler builds and dispatches a shared wallet payment.
+func MsigProposeHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectWatchOnly(w, r) {
+		return
+	}
+	var req types.MsigProposeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Passphrase) > 1024 {
+		http.Error(w, "Passphrase too long", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+	recipients := make([]msig.Recipient, 0, len(req.Recipients))
+	for _, rc := range req.Recipients {
+		recipients = append(recipients, msig.Recipient{Address: rc.Address, Atoms: rc.AmountAtoms})
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	prop, err := msig.ProposeSpend(ctx, req.WalletID, recipients, req.QueueUIDs, req.Note,
+		time.Duration(req.HopTTLSecs)*time.Second, req.Account, passphrase)
+	if err != nil {
+		msigPassphraseError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(prop)
+}
+
+// MsigSignHandler adds this wallet's signature to an incoming request.
+func MsigSignHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectWatchOnly(w, r) {
+		return
+	}
+	var req types.MsigProposalActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.WalletID == "" || req.TxID == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Passphrase) > 1024 {
+		http.Error(w, "Passphrase too long", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	if err := msig.SignIncomingProposal(ctx, req.WalletID, req.TxID, req.Account, passphrase); err != nil {
+		msigPassphraseError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MsigRejectHandler declines an incoming payment request.
+func MsigRejectHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.MsigProposalActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.WalletID == "" || req.TxID == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := msig.RejectIncomingProposal(ctx, req.WalletID, req.TxID, req.Reason); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MsigAbortHandler cancels a payment this wallet proposed.
+func MsigAbortHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.MsigProposalActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.WalletID == "" || req.TxID == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := msig.AbortProposal(ctx, req.WalletID, req.TxID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MsigRebroadcastHandler retries a fully signed payment.
+func MsigRebroadcastHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.MsigProposalActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.WalletID == "" || req.TxID == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	if err := msig.RebroadcastProposal(ctx, req.WalletID, req.TxID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MsigRestoreHandler imports a backup card into the active wallet.
+func MsigRestoreHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectWatchOnly(w, r) {
+		return
+	}
+	var card msig.BackupCard
+	if err := json.NewDecoder(r.Body).Decode(&card); err != nil {
+		http.Error(w, "The backup file could not be read", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	rec, err := msig.ImportBackupCard(ctx, &card)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rec)
 }
 
 // MsigRefreshHandler retries unsent frames, resumes wallet-gated steps

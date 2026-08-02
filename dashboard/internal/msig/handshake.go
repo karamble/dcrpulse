@@ -33,6 +33,36 @@ var (
 	msigHistorySeam  = rpc.BrclientdMsigHistory
 	activeWalletSeam = services.CurrentWalletName
 	networkSeam      = services.CurrentNetwork
+
+	// verifyOwnKeySeam proves a restored key belongs to this wallet's
+	// seed. The address never appears on-chain as a plain payment, so
+	// the cursor must be advanced before the wallet recognizes it.
+	verifyOwnKeySeam = func(ctx context.Context, own *OwnKey) error {
+		accounts, err := services.FetchAllAccounts(ctx)
+		if err != nil {
+			return err
+		}
+		accountName := ""
+		for _, a := range accounts {
+			if a.AccountNumber == own.Account {
+				accountName = a.AccountName
+			}
+		}
+		if accountName == "" {
+			return fmt.Errorf("account %d from the backup does not exist in this wallet", own.Account)
+		}
+		if err := services.SyncAccountAddressIndex(ctx, accountName, own.Branch, own.Index+1); err != nil {
+			return fmt.Errorf("could not advance the address cursor: %v", err)
+		}
+		res, err := services.ValidateAddress(ctx, own.Address)
+		if err != nil {
+			return err
+		}
+		if !res.IsMine {
+			return fmt.Errorf("this wallet does not own the backup's key; restore it into the wallet whose seed created it")
+		}
+		return nil
+	}
 )
 
 const walletCallTimeout = 60 * time.Second
@@ -285,7 +315,7 @@ func dispatchInbound(msg *Message, frame *Frame, fromUID, fromNick string, now t
 	case TypeAccept, TypeDecline, TypeRoster, TypeReady, TypeInviteCancel:
 		inboundHandshake(ctx, m, msg, frame, fromUID, fromNick, now)
 	case TypeSignReq, TypeSig, TypeSigDecline, TypeBroadcast:
-		log.Printf("msig: %s frame %s from %s: spend protocol not yet enabled", msg.Type, frame.MID, fromNick)
+		inboundSpend(ctx, m, msg, frame, fromUID, fromNick, now)
 	}
 }
 

@@ -165,6 +165,7 @@ func runSweep(ctx context.Context) {
 	for _, s := range m.Stores() {
 		resendOutbox(s)
 		expireStaleRounds(s)
+		sweepProposals(sctx, s)
 	}
 	ResumePending(sctx)
 	catchUpKnownPeers(sctx, m)

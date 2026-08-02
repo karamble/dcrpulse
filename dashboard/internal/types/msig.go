@@ -26,3 +26,30 @@ type MsigActionRequest struct {
 	Account uint32 `json:"account,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 }
+
+// MsigRecipient is one payment output of a proposal.
+type MsigRecipient struct {
+	Address     string `json:"address"`
+	AmountAtoms int64  `json:"amountAtoms"`
+}
+
+// MsigProposeRequest builds, self-signs and dispatches a shared wallet
+// payment. QueueUIDs lists the cosigners to ask, in order.
+type MsigProposeRequest struct {
+	WalletID   string          `json:"walletId"`
+	Recipients []MsigRecipient `json:"recipients"`
+	QueueUIDs  []string        `json:"queueUids"`
+	Note       string          `json:"note,omitempty"`
+	HopTTLSecs int64           `json:"hopTtlSecs,omitempty"`
+	Account    uint32          `json:"account"`
+	Passphrase string          `json:"passphrase"`
+}
+
+// MsigProposalActionRequest targets one proposal of a shared wallet.
+type MsigProposalActionRequest struct {
+	WalletID   string `json:"walletId"`
+	TxID       string `json:"txid"`
+	Account    uint32 `json:"account,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	Passphrase string `json:"passphrase,omitempty"`
+}

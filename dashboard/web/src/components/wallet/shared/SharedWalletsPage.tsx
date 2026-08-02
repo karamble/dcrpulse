@@ -4,13 +4,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Loader2, Plus, RefreshCw, Users } from 'lucide-react';
+import { AlertCircle, Loader2, Plus, RefreshCw, Upload, Users } from 'lucide-react';
 import { useBisonrelayLive } from '../../bisonrelay/BisonrelayLiveProvider';
 import {
   MsigWallet,
   listMsigWallets,
   msigStatusLabel,
   refreshMsig,
+  restoreMsigWallet,
 } from '../../../services/msigApi';
 import { IncomingInviteBanner } from './IncomingInviteBanner';
 import { SharedWalletCreateWizard } from './SharedWalletCreateWizard';
@@ -60,6 +61,24 @@ export const SharedWalletsPage = () => {
     if (evt.type === 'msig') load();
   }), [addListener, load]);
 
+  // Restoring re-imports the shared script and rescans from the recorded
+  // creation height, so it can take a while on a large chain.
+  const restore = async (file: File) => {
+    setErr(null);
+    try {
+      const card = JSON.parse(await file.text());
+      await restoreMsigWallet(card);
+      await load();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(
+        typeof body === 'string'
+          ? body
+          : e?.message || 'Could not restore from that file',
+      );
+    }
+  };
+
   const manualRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
@@ -95,6 +114,20 @@ export const SharedWalletsPage = () => {
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+          <label className="px-3 py-2 rounded-lg border border-border hover:bg-muted/30 text-sm inline-flex items-center gap-2 cursor-pointer">
+            <Upload className="h-4 w-4" />
+            Restore
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) restore(file);
+              }}
+            />
+          </label>
           <button
             type="button"
             onClick={() => setWizard(true)}

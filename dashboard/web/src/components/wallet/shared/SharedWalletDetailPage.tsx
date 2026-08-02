@@ -17,6 +17,8 @@ import {
   msigPeerLabel,
   msigStatusLabel,
 } from '../../../services/msigApi';
+import { ProposalComposePanel } from './ProposalComposePanel';
+import { ProposalList } from './ProposalList';
 
 const formatDcr = (atoms: number): string => (atoms / 1e8).toFixed(8);
 
@@ -108,6 +110,7 @@ export const SharedWalletDetailPage = () => {
 
   const rec = detail.record;
   const active = rec.status === 'active';
+  const proposals = Object.values(rec.proposals ?? {}).sort((a, b) => b.createdAt - a.createdAt);
 
   return (
     <div className="p-6 space-y-6">
@@ -228,6 +231,17 @@ export const SharedWalletDetailPage = () => {
             The shared address appears once every cosigner has confirmed. Do not send funds before
             then.
           </p>
+        </div>
+      )}
+
+      {active && detail.isActiveWallet && (
+        <ProposalComposePanel wallet={rec} onProposed={load} />
+      )}
+
+      {active && (
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Payments</p>
+          <ProposalList wallet={rec} proposals={proposals} onChanged={load} />
         </div>
       )}
 

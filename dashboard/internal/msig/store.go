@@ -69,6 +69,32 @@ const (
 	OutboxSent    = "sent"
 )
 
+// Proposal statuses. A proposer collects signatures, then broadcasts; a
+// cosigner sees an incoming request it can sign or reject. Superseded
+// marks a proposal whose inputs were spent by a different transaction.
+const (
+	ProposalCollecting = "collecting"
+	ProposalReady      = "ready"
+	ProposalBroadcast  = "broadcast"
+	ProposalConfirmed  = "confirmed"
+	ProposalIncoming   = "incoming"
+	ProposalSigned     = "signed"
+	ProposalDeclined   = "declined"
+	ProposalFailed     = "failed"
+	ProposalAborted    = "aborted"
+	ProposalSuperseded = "superseded"
+)
+
+// Per-hop states in a proposer's cosigner queue.
+const (
+	HopPending  = "pending"
+	HopSent     = "sent"
+	HopSigned   = "signed"
+	HopDeclined = "declined"
+	HopTimeout  = "timeout"
+	HopSkipped  = "skipped"
+)
+
 // OwnKey records this wallet's contribution and its derivation
 // coordinates for the backup card.
 type OwnKey struct {
@@ -100,6 +126,74 @@ type OutboxItem struct {
 	Ts    int64  `json:"ts"`
 }
 
+// ProposalInput is one shared UTXO a proposal spends. Values are
+// recorded so a cosigner can verify the fee without a chain lookup.
+type ProposalInput struct {
+	TxID  string `json:"txid"`
+	Vout  uint32 `json:"vout"`
+	Tree  int8   `json:"tree"`
+	Atoms int64  `json:"atoms"`
+}
+
+// ProposalOutput is one recipient of a proposal.
+type ProposalOutput struct {
+	Address  string `json:"address"`
+	Atoms    int64  `json:"atoms"`
+	IsChange bool   `json:"isChange"`
+}
+
+// QueueHop is one cosigner's turn in the signing relay.
+type QueueHop struct {
+	UID      string `json:"uid"`
+	Nick     string `json:"nick"`
+	State    string `json:"state"`
+	SentMID  string `json:"sentMid,omitempty"`
+	SentAt   int64  `json:"sentAt,omitempty"`
+	Deadline int64  `json:"deadline,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// Proposal is one spend awaiting or having gathered signatures. The txid
+// is stable from construction because Decred excludes signatures from it,
+// so it keys the proposal for its whole life.
+type Proposal struct {
+	TxID       string           `json:"txid"`
+	Role       string           `json:"role"`
+	Status     string           `json:"status"`
+	RawTx      string           `json:"rawTx"`
+	SigCount   int              `json:"sigCount"`
+	SignedBy   map[string]bool  `json:"signedBy,omitempty"`
+	Inputs     []ProposalInput  `json:"inputs"`
+	Outputs    []ProposalOutput `json:"outputs"`
+	FeeAtoms   int64            `json:"feeAtoms"`
+	Note       string           `json:"note,omitempty"`
+	Reason     string           `json:"reason,omitempty"`
+	Queue      []*QueueHop      `json:"queue,omitempty"`
+	HopTTLSecs int64            `json:"hopTtlSecs,omitempty"`
+	FromUID    string           `json:"fromUid,omitempty"`
+	FromNick   string           `json:"fromNick,omitempty"`
+	CreatedAt  int64            `json:"createdAt"`
+	UpdatedAt  int64            `json:"updatedAt"`
+}
+
+// Terminal reports whether a proposal can never progress again.
+func (p *Proposal) Terminal() bool {
+	switch p.Status {
+	case ProposalConfirmed, ProposalDeclined, ProposalFailed, ProposalAborted, ProposalSuperseded:
+		return true
+	}
+	return false
+}
+
+// Live reports whether a proposal still holds a claim on its inputs.
+func (p *Proposal) Live() bool {
+	switch p.Status {
+	case ProposalCollecting, ProposalReady, ProposalIncoming, ProposalSigned, ProposalBroadcast:
+		return true
+	}
+	return false
+}
+
 // WalletRecord is one shared wallet's lifecycle state.
 type WalletRecord struct {
 	TempID        string   `json:"tempId"`
@@ -119,6 +213,8 @@ type WalletRecord struct {
 	Peers         []*Peer  `json:"peers"`
 	CreatedAt     int64    `json:"createdAt"`
 	UpdatedAt     int64    `json:"updatedAt"`
+
+	Proposals map[string]*Proposal `json:"proposals,omitempty"`
 }
 
 // Terminal reports whether the record can never progress again.
@@ -205,7 +301,79 @@ func cloneRecord(r *WalletRecord) *WalletRecord {
 		c.Own = &oc
 	}
 	c.RosterPubKeys = append([]string(nil), r.RosterPubKeys...)
+	if r.Proposals != nil {
+		c.Proposals = make(map[string]*Proposal, len(r.Proposals))
+		for k, p := range r.Proposals {
+			c.Proposals[k] = cloneProposal(p)
+		}
+	}
 	return &c
+}
+
+func cloneProposal(p *Proposal) *Proposal {
+	if p == nil {
+		return nil
+	}
+	c := *p
+	c.Inputs = append([]ProposalInput(nil), p.Inputs...)
+	c.Outputs = append([]ProposalOutput(nil), p.Outputs...)
+	c.Queue = make([]*QueueHop, len(p.Queue))
+	for i, h := range p.Queue {
+		hc := *h
+		c.Queue[i] = &hc
+	}
+	if p.SignedBy != nil {
+		c.SignedBy = make(map[string]bool, len(p.SignedBy))
+		for k, v := range p.SignedBy {
+			c.SignedBy[k] = v
+		}
+	}
+	return &c
+}
+
+// Proposal returns a clone of one proposal of a shared wallet.
+func (s *Store) Proposal(walletID, txid string) (*WalletRecord, *Proposal, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := s.lookupLocked(walletID)
+	if r == nil {
+		return nil, nil, false
+	}
+	p, ok := r.Proposals[txid]
+	if !ok {
+		return cloneRecord(r), nil, false
+	}
+	return cloneRecord(r), cloneProposal(p), true
+}
+
+// UpdateProposal mutates one proposal under the store lock, creating it
+// when create is true.
+func (s *Store) UpdateProposal(walletID, txid string, create bool, fn func(*WalletRecord, *Proposal) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := s.lookupLocked(walletID)
+	if r == nil {
+		return fmt.Errorf("unknown shared wallet %s", walletID)
+	}
+	if r.Proposals == nil {
+		r.Proposals = make(map[string]*Proposal)
+	}
+	p, ok := r.Proposals[txid]
+	if !ok {
+		if !create {
+			return fmt.Errorf("unknown proposal %s", txid)
+		}
+		now := time.Now().Unix()
+		p = &Proposal{TxID: txid, CreatedAt: now}
+		r.Proposals[txid] = p
+	}
+	if err := fn(r, p); err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	p.UpdatedAt = now
+	r.UpdatedAt = now
+	return s.saveLocked()
 }
 
 // Wallets returns clones of every record.
