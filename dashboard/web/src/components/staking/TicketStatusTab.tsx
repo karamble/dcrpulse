@@ -26,6 +26,7 @@ import {
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VSPSelect } from './VSPSelect';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const ACTIVE_STATES = new Set<TicketRecord['status']>(['UNMINED', 'IMMATURE', 'LIVE']);
 
@@ -203,7 +204,6 @@ export const TicketStatusTab = () => {
 
   useEffect(() => {
     let cancelled = false;
-    load();
     getAccounts()
       .then((accs) => {
         if (cancelled) return;
@@ -213,13 +213,17 @@ export const TicketStatusTab = () => {
         if (mixed) setAccount(mixed.accountNumber);
       })
       .catch(() => {});
-    const id = window.setInterval(load, 30000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useVisiblePoll(load, 30000);
+
+  // Per-fee-group render cap; a large staker can hold hundreds of live
+  // tickets and the full table re-renders on every 30s refresh.
+  const [shownRows, setShownRows] = useState<Record<string, number>>({});
 
   const active = useMemo(() => tickets.filter((t) => ACTIVE_STATES.has(t.status)), [tickets]);
 
@@ -410,6 +414,7 @@ export const TicketStatusTab = () => {
       {feeGroups.map((g) => {
         const rows = grouped[g.key];
         if (!rows || rows.length === 0) return null;
+        const visibleRows = rows.slice(0, shownRows[g.key] ?? 50);
         return (
           <div key={g.key} className={`p-6 rounded-xl border ${g.tone}`}>
             <div className="flex items-center justify-between mb-4">
@@ -429,7 +434,7 @@ export const TicketStatusTab = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((t) => (
+                  {visibleRows.map((t) => (
                     <tr key={t.hash} className="border-b border-border/20">
                       <td className="py-2 pr-3 font-mono">
                         <Link
@@ -460,6 +465,17 @@ export const TicketStatusTab = () => {
                   ))}
                 </tbody>
               </table>
+              {rows.length > visibleRows.length && (
+                <div className="flex justify-center pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShownRows((prev) => ({ ...prev, [g.key]: rows.length }))}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Show all {rows.length}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         );

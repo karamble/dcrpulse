@@ -2,25 +2,18 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, ChevronLeft, ArrowRightLeft, Ticket, CheckCircle, XCircle, Landmark, Shuffle } from 'lucide-react';
 import { getMempoolTransactions, MempoolTransactions, TransactionSummary } from '../services/explorerApi';
 import { CopyButton } from '../components/explorer/CopyButton';
+import { useVisiblePoll } from '../hooks/useVisiblePoll';
 
 export const MempoolView = () => {
   const navigate = useNavigate();
   const [mempool, setMempool] = useState<MempoolTransactions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    fetchMempool();
-    
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchMempool, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   const fetchMempool = async () => {
     try {
@@ -33,6 +26,9 @@ export const MempoolView = () => {
       setLoading(false);
     }
   };
+
+  // Auto-refresh every 30 seconds.
+  useVisiblePoll(fetchMempool, 30000);
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -98,6 +94,11 @@ export const MempoolView = () => {
     };
   };
 
+  // Six full filter passes over the mempool; recompute only when it changes,
+  // not on every render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const txGroups = useMemo(groupTransactionsByType, [mempool]);
+
   if (loading) {
     return (
       <div className="text-center py-20">
@@ -122,8 +123,6 @@ export const MempoolView = () => {
       </div>
     );
   }
-
-  const txGroups = groupTransactionsByType();
 
   return (
     <div className="space-y-6">

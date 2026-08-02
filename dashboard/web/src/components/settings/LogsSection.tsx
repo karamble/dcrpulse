@@ -28,6 +28,9 @@ export const LogsSection = () => {
   const [component, setComponent] = useState<LogComponent>('dcrwallet');
   const [lines, setLines] = useState<number>(500);
   const [data, setData] = useState<string[]>([]);
+  // Rendered tail window: a 2000-line fetch would otherwise become 2000 DOM
+  // nodes at once; older lines sit behind a "show earlier" button.
+  const [shownLines, setShownLines] = useState(500);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -38,6 +41,7 @@ export const LogsSection = () => {
     try {
       const r = await getLogs(component, lines);
       setData(r.lines);
+      setShownLines(500);
     } catch (err: any) {
       const body = err?.response?.data;
       setError(typeof body === 'string' ? body : err?.message || 'Failed to load logs');
@@ -45,6 +49,9 @@ export const LogsSection = () => {
       setLoading(false);
     }
   };
+
+  const visible = data.slice(-shownLines);
+  const hidden = data.length - visible.length;
 
   useEffect(() => {
     load();
@@ -125,11 +132,24 @@ export const LogsSection = () => {
         ) : data.length === 0 ? (
           <p className="text-muted-foreground">No log lines.</p>
         ) : (
-          data.map((line, i) => (
-            <div key={i} className={`whitespace-pre-wrap break-words ${levelClass(line)}`}>
-              {line}
-            </div>
-          ))
+          <>
+            {hidden > 0 && (
+              <div className="flex justify-center py-1">
+                <button
+                  type="button"
+                  onClick={() => setShownLines((n) => n + 500)}
+                  className="text-xs text-primary hover:underline"
+                >
+                  Show earlier lines ({hidden} more)
+                </button>
+              </div>
+            )}
+            {visible.map((line, i) => (
+              <div key={hidden + i} className={`whitespace-pre-wrap break-words ${levelClass(line)}`}>
+                {line}
+              </div>
+            ))}
+          </>
         )}
       </div>
     </div>
