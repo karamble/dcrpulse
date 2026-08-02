@@ -22,6 +22,7 @@ import (
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/handlers"
 	"dcrpulse/internal/middleware"
+	"dcrpulse/internal/msig"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/timestamp"
@@ -160,6 +161,10 @@ func main() {
 	// Persistent WS subscriptions to brclientd for chat / KX / GC events.
 	services.StartBisonrelayStreams(context.Background())
 	services.StartBrclientdNotifs(context.Background())
+
+	// Shared-wallet coordination frames arrive as typed "msig" events on
+	// the same notification pipeline.
+	msig.StartEngine(context.Background())
 
 	// Background poller that advances dcrtime timestamp records to "anchored" as
 	// the public dcrtime server commits their digests to the chain.

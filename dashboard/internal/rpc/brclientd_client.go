@@ -275,6 +275,39 @@ func BrclientdContacts(ctx context.Context) (json.RawMessage, error) {
 	return body, nil
 }
 
+// BrclientdMsigHistory returns the shared-wallet coordination frames
+// exchanged with one contact from brclientd's /msig/history endpoint, both
+// directions, oldest first. The msig engine uses it as the replay source
+// after downtime; live frames ride the notification stream.
+func BrclientdMsigHistory(ctx context.Context, uidHex string, limit int, since int64) (json.RawMessage, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+		return nil, errors.New("brclientd: status host/port not configured")
+	}
+	endpoint := fmt.Sprintf("https://%s:%s/msig/history?uid=%s&limit=%d&since=%d",
+		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(uidHex), limit, since)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build msig history request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brclientd /msig/history: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read msig history: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("brclientd /msig/history: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return body, nil
+}
+
 // BrclientdSendPM sends a private message through brclientd's /messages/send
 // status endpoint. `user` can be a nick, alias, or hex peer UID.
 func BrclientdSendPM(ctx context.Context, user, msg string) error {
