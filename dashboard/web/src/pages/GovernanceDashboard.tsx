@@ -237,7 +237,7 @@ export const GovernanceDashboard = () => {
         <ActiveTreasuryVotes />
 
         {/* Historical Scan Section */}
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 mb-2">

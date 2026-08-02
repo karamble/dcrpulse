@@ -213,7 +213,7 @@ export const TransactionDetail = () => {
         </div>
 
         {/* Transaction Hash */}
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <p className="text-sm text-muted-foreground mb-2">Transaction ID</p>
           <div className="flex items-center gap-3">
             <p className="font-mono text-lg break-all flex-1">{tx.txid}</p>
@@ -222,7 +222,7 @@ export const TransactionDetail = () => {
         </div>
 
         {/* Transaction Information */}
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <h2 className="text-xl font-semibold mb-6">Transaction Information</h2>
 
           {showRawJson ? (
@@ -312,7 +312,7 @@ export const TransactionDetail = () => {
 
         {/* Treasury Spend Information */}
         {tx.type === 'tspend' && (
-          <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-amber-500/30 bg-amber-500/5">
+          <div className="p-6 rounded-xl bg-gradient-card border border-amber-500/30 bg-amber-500/5">
             <div className="flex items-center gap-2 mb-6">
               <Landmark className="h-5 w-5 text-amber-500" />
               <h2 className="text-xl font-semibold">Treasury Spend Details</h2>
@@ -364,7 +364,7 @@ export const TransactionDetail = () => {
 
         {/* Treasury Spend Approval/Voting */}
         {tx.type === 'tspend' && tx.votingInfo && (
-          <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+          <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
             <div className="mb-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">Treasury Spend Approval</h2>
@@ -540,13 +540,13 @@ export const TransactionDetail = () => {
         )}
 
         {/* Inputs and Outputs */}
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <InputOutputList inputs={tx.inputs} outputs={tx.outputs} />
         </div>
 
         {/* Raw Transaction Hex */}
         {tx.rawHex && (
-          <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+          <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Raw Transaction</h2>
               <button

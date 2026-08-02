@@ -1338,7 +1338,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       )}
     {showGroupMgmt && <GroupManagementModal onClose={() => setShowGroupMgmt(false)} />}
     <div className="relative flex gap-4 h-[calc(100dvh-9.5rem)] min-h-[320px] md:h-[calc(100vh-12rem)] md:min-h-[480px]">
-      <aside className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-72 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
+      <aside className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-72 flex-col rounded-xl bg-gradient-card border border-border/50`}>
         <div className="p-3 border-b border-border/50 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Chats</h3>
           <div className="flex gap-1">
@@ -1511,7 +1511,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         </div>
       </aside>
 
-      <section className={`${selected ? 'flex max-md:fixed max-md:inset-0 max-md:z-20 max-md:rounded-none max-md:border-0 max-md:bg-background' : 'hidden md:flex'} relative flex-1 min-w-0 flex-col rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50`}>
+      <section className={`${selected ? 'flex max-md:fixed max-md:inset-0 max-md:z-20 max-md:rounded-none max-md:border-0 max-md:bg-background' : 'hidden md:flex'} relative flex-1 min-w-0 flex-col rounded-xl bg-gradient-card border border-border/50`}>
         {kickNotice && selectedGroup?.id === kickNotice.gcid && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-xl bg-background/95 backdrop-blur-sm p-6 text-center">
             <div className="h-16 w-16 rounded-full bg-rose-500/15 border border-rose-500/40 flex items-center justify-center">
@@ -2281,7 +2281,7 @@ const SuggestedKXCard = ({
               type="button"
               onClick={handleClick}
               disabled={state === 'submitting' || !mediatorUid}
-              className="px-2.5 py-1 rounded-md bg-gradient-primary text-white text-[11px] font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-2.5 py-1 rounded-md bg-gradient-primary text-white text-[11px] font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {state === 'submitting' ? 'Accepting…' : 'Accept'}
             </button>

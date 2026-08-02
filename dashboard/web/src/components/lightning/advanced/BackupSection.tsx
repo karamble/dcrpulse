@@ -77,7 +77,7 @@ export const BackupSection = () => {
   };
 
   return (
-    <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/60 space-y-4">
+    <div className="p-5 rounded-xl bg-gradient-card border border-border/60 space-y-4">
       <div>
         <h3 className="text-lg font-semibold">Channel backup</h3>
         <p className="text-sm text-muted-foreground">
@@ -94,7 +94,7 @@ export const BackupSection = () => {
             type="button"
             onClick={onExport}
             disabled={exporting}
-            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all text-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             {exporting ? 'Exporting…' : 'Download backup'}

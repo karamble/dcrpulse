@@ -168,7 +168,7 @@ export const SharedWalletDetailPage = () => {
 
       {active && rec.address ? (
         <div className="grid gap-4 lg:grid-cols-2">
-          <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+          <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
             <p className="text-sm font-medium mb-3">Shared address</p>
             <div className="flex items-start gap-4 flex-wrap">
               <div className="p-3 bg-white rounded-lg">
@@ -184,7 +184,7 @@ export const SharedWalletDetailPage = () => {
             </div>
           </div>
 
-          <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+          <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
             <p className="text-sm font-medium mb-3">Funds</p>
             {detail.isActiveWallet ? (
               <>
@@ -226,7 +226,7 @@ export const SharedWalletDetailPage = () => {
           </div>
         </div>
       ) : (
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <p className="text-sm text-muted-foreground">
             The shared address appears once every cosigner has confirmed. Do not send funds before
             then.
@@ -245,7 +245,7 @@ export const SharedWalletDetailPage = () => {
         </div>
       )}
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <p className="text-sm font-medium mb-3">Cosigners</p>
         <ul className="space-y-2 text-sm">
           <li className="flex items-center justify-between gap-3 py-2 border-b border-border/50">

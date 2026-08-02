@@ -17,7 +17,7 @@ export const PrivacySetupCard = ({ onConfigured }: Props) => {
   };
 
   return (
-    <div className="p-8 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 text-center space-y-4">
+    <div className="p-8 rounded-xl bg-gradient-card border border-border/50 text-center space-y-4">
       <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border border-primary/20">
         <ShieldCheck className="h-8 w-8 text-primary" />
       </div>
@@ -34,7 +34,7 @@ export const PrivacySetupCard = ({ onConfigured }: Props) => {
       </p>
       <button
         onClick={() => setModalOpen(true)}
-        className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all inline-flex items-center gap-2"
+        className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition inline-flex items-center gap-2"
       >
         <ShieldCheck className="h-5 w-5" />
         Set up privacy

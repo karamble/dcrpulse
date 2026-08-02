@@ -304,7 +304,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-muted/20">
       <div className="w-full max-w-3xl">
-        <div className="bg-gradient-card backdrop-blur-sm border border-border/50 rounded-xl shadow-xl p-8 animate-fade-in">
+        <div className="bg-gradient-card border border-border/50 rounded-xl shadow-xl p-8">
           {/* Chooser Step */}
           {step === 'choose' && (
             <div className="text-center space-y-6">

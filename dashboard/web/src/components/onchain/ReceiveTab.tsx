@@ -90,7 +90,7 @@ export const ReceiveTab = () => {
 
   return (
     <div className="space-y-6">
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
             <QrCode className="h-5 w-5 text-primary" />
@@ -150,7 +150,7 @@ export const ReceiveTab = () => {
         )}
       </div>
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         {!address ? (
           <div className="text-center py-6">
             <div className="mb-4">
@@ -172,7 +172,7 @@ export const ReceiveTab = () => {
             <button
               onClick={handleGenerate}
               disabled={selectedAccount === null || generating}
-              className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RefreshCw className={`h-5 w-5 ${generating ? 'animate-spin' : ''}`} />
               {generating ? 'Generating...' : 'Generate new address'}

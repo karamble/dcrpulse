@@ -93,7 +93,7 @@ const ChartCard = ({
   action?: React.ReactNode;
   children: React.ReactNode;
 }) => (
-  <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+  <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
     <div className="flex items-center gap-2 mb-4">
       <Icon className="h-5 w-5 text-primary" />
       <h3 className="text-lg font-semibold">{title}</h3>
@@ -286,6 +286,7 @@ export const TreasuryStats = () => {
                   stroke={C.spend}
                   strokeWidth={2.5}
                   fill="url(#gSpend)"
+                  isAnimationActive={false}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -306,7 +307,7 @@ export const TreasuryStats = () => {
                     'Spent',
                   ]}
                 />
-                <Bar dataKey="amount" fill="url(#gYear)" stroke={C.year} radius={[6, 6, 0, 0]} />
+                <Bar dataKey="amount" fill="url(#gYear)" stroke={C.year} radius={[6, 6, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -329,6 +330,7 @@ export const TreasuryStats = () => {
                     stroke={C.balance}
                     strokeWidth={2.5}
                     fill="url(#gBal)"
+                    isAnimationActive={false}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -377,8 +379,8 @@ export const TreasuryStats = () => {
                     formatter={(v: number, n: string) => [`${dcr(v)} DCR`, n]}
                   />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="inflow" name="Inflow" fill="url(#gIn)" stroke={C.inflow} radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="outflow" name="Outflow" fill="url(#gOut)" stroke={C.outflow} radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="inflow" name="Inflow" fill="url(#gIn)" stroke={C.inflow} radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                  <Bar dataKey="outflow" name="Outflow" fill="url(#gOut)" stroke={C.outflow} radius={[6, 6, 0, 0]} isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>

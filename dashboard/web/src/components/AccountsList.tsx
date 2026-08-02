@@ -12,7 +12,7 @@ interface AccountsListProps {
 
 export const AccountsList = ({ accounts }: AccountsListProps) => {
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <Wallet className="w-5 h-5 text-primary" />

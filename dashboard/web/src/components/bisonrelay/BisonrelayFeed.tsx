@@ -348,7 +348,7 @@ const sidebarItems: { id: Section; label: string; hash: string; icon: typeof Rss
 ];
 
 const FeedSidebar = ({ active }: { active: Section }) => (
-  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-2 md:self-start">
+  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card border border-border/50 p-2 md:self-start">
     <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible">
       {sidebarItems.map((item) => {
         // Treat the post-detail and user-profile views as belonging to the
@@ -472,7 +472,7 @@ const PostsListView = ({
 };
 
 const EmptyState = ({ title, hint }: { title: string; hint: string }) => (
-  <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 flex items-start gap-3">
+  <div className="p-6 rounded-xl bg-gradient-card border border-border/50 flex items-start gap-3">
     <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
       <Rss className="h-5 w-5 text-primary" />
     </div>
@@ -609,7 +609,7 @@ const SubscriptionsView = () => {
           }
         />
       ) : (
-        <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden divide-y divide-border/30">
+        <div className="rounded-xl bg-gradient-card border border-border/50 overflow-hidden divide-y divide-border/30">
           {list?.map((c) => {
             const uid = c.id?.identity ?? '';
             const nick = c.nick_alias || c.id?.nick || uid.slice(0, 12);
@@ -712,7 +712,7 @@ const NewPostView = ({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-4">
+      <div className="rounded-xl bg-gradient-card border border-border/50 p-5 space-y-4">
         <div>
           <h3 className="text-base font-semibold">New post</h3>
           <p className="text-xs text-muted-foreground mt-1">
@@ -797,7 +797,7 @@ const NewPostView = ({
             type="submit"
             disabled={!body.trim() || submitting || overCap}
             title={overCap ? 'Post exceeds the BR wire size limit' : undefined}
-            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             <Send className="h-4 w-4" />
@@ -1020,7 +1020,7 @@ const PostDetailView = ({
           Back to feed
         </button>
       </div>
-      <header className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 flex items-start gap-3">
+      <header className="rounded-xl bg-gradient-card border border-border/50 p-5 flex items-start gap-3">
         <AuthorAvatar uid={uid} nick={authorNick} avatarB64={avatarB64} size="md" />
         <div className="min-w-0 flex-1 space-y-2">
           <h2 className="text-lg font-semibold text-foreground break-words">{title}</h2>
@@ -1149,7 +1149,7 @@ const PostDetailView = ({
           )}
         </div>
       </header>
-      <article className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-3">
+      <article className="rounded-xl bg-gradient-card border border-border/50 p-5 space-y-3">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -1167,7 +1167,7 @@ const PostDetailView = ({
         ) : null}
       </article>
       {body && (
-        <section className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5">
+        <section className="rounded-xl bg-gradient-card border border-border/50 p-5">
           <PostComments
             authorId={uid}
             pid={pid}
@@ -1178,7 +1178,7 @@ const PostDetailView = ({
         </section>
       )}
       {isOwnPost && (receipts.length > 0 || heartedBy.length > 0) && (
-        <section className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5">
+        <section className="rounded-xl bg-gradient-card border border-border/50 p-5">
           <div
             className={`grid grid-cols-1 gap-4 ${
               receipts.length > 0 && heartedBy.length > 0 ? 'sm:grid-cols-2' : ''
@@ -1521,7 +1521,7 @@ const PostComments = ({
         <button
           type="submit"
           disabled={!draft.trim() || submitting || topAttach.overCap(draft)}
-          className="px-3 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting ? 'Sending…' : 'Comment'}
         </button>
@@ -1936,7 +1936,7 @@ const InlineReplyComposer = ({
         <button
           type="submit"
           disabled={!text.trim() || submitting || attach.overCap(text)}
-          className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-xs font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting ? 'Sending…' : 'Reply'}
         </button>

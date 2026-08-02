@@ -95,7 +95,7 @@ export const SharedWalletCreateWizard = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="w-full max-w-2xl mx-4 rounded-xl bg-card border border-border/50 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-border/50 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">

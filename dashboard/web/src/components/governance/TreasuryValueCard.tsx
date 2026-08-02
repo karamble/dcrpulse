@@ -58,7 +58,7 @@ export const TreasuryValueCard = () => {
   const spark = useMemo(() => series.map((s) => ({ balance: s.balance })), [series]);
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 flex flex-col animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50 flex flex-col">
       <div className="flex items-start justify-between">
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground mb-1">Treasury Value</p>
@@ -98,6 +98,7 @@ export const TreasuryValueCard = () => {
                 stroke="hsl(173 80% 50%)"
                 strokeWidth={2}
                 fill="url(#gTreasuryVal)"
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>

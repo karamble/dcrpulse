@@ -69,7 +69,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   }, [menuOpen]);
 
   const linkClass = (active: boolean) =>
-    `px-4 py-3 rounded-lg border transition-all duration-300 flex items-center gap-2 ${
+    `px-4 py-3 rounded-lg border transition duration-300 flex items-center gap-2 ${
       active
         ? 'bg-primary/20 border-primary/40'
         : 'bg-primary/10 border-primary/20 hover:bg-primary/20'
@@ -176,7 +176,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   ) : null;
 
   return (
-    <div className="flex items-center justify-between mb-6 sm:mb-8 animate-fade-in">
+    <div className="flex items-center justify-between mb-6 sm:mb-8">
       <Link to="/" className="shrink-0">
         <img src="/images/decred-logo.svg" alt="Decred" className="h-12 sm:h-[72px] w-auto" />
       </Link>
@@ -209,7 +209,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
       {menuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setMenuOpen(false)}
           />
           <div className="absolute inset-y-0 right-0 w-72 max-w-[80vw] flex flex-col overflow-y-auto border-l border-border/50 bg-background p-4 shadow-xl">

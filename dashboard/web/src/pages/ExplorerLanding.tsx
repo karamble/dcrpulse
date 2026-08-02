@@ -79,7 +79,7 @@ export const ExplorerLanding = () => {
         {/* Verify Timestamp tool */}
         <div
           onClick={() => navigate('/explorer/verify-timestamp')}
-          className="flex items-center gap-3 p-4 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 hover:bg-muted/5 cursor-pointer transition-colors"
+          className="flex items-center gap-3 p-4 rounded-xl bg-gradient-card border border-border/50 hover:bg-muted/5 cursor-pointer transition-colors"
         >
           <FileClock className="h-5 w-5 text-primary shrink-0" />
           <div className="min-w-0">
@@ -91,7 +91,7 @@ export const ExplorerLanding = () => {
         </div>
 
         {/* Recent Blocks */}
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
               <Box className="h-5 w-5 text-primary" />

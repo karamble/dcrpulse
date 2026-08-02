@@ -52,10 +52,10 @@ export const McpHelpModal = ({
   };
 
   // Portal to body: a position:fixed overlay is trapped inside any ancestor
-  // with backdrop-filter/transform (the settings cards use backdrop-blur), so
-  // it would fill the card instead of the viewport.
+  // with backdrop-filter/transform, so it would fill the card instead of the
+  // viewport.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="w-full max-w-lg mx-4 rounded-xl bg-card border border-border/50 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-border/50">
           <h3 className="text-lg font-semibold flex items-center gap-2">

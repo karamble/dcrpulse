@@ -170,7 +170,7 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
               <button
                 type="button"
                 onClick={confirm}
-                className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all"
+                className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition"
               >
                 Insert link
               </button>

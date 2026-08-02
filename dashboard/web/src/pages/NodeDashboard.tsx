@@ -115,7 +115,7 @@ export const NodeDashboard = () => {
     <div className="space-y-6">
       {/* Error Message */}
       {error && (
-        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 animate-fade-in">
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
           <p className="text-red-500 font-medium">{error}</p>
         </div>
       )}

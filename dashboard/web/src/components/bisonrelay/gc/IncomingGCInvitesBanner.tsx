@@ -235,7 +235,7 @@ export const IncomingGCInvitesBanner = ({
       {pending.map((inv) => (
         <div
           key={inv.iid}
-          className="rounded-xl bg-gradient-card backdrop-blur-sm border border-primary/40 p-3 flex items-center gap-3"
+          className="rounded-xl bg-gradient-card border border-primary/40 p-3 flex items-center gap-3"
         >
           <div className="h-8 w-8 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
             <Users className="h-4 w-4 text-primary" />

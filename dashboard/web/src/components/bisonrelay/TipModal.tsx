@@ -144,7 +144,7 @@ export const TipModal = ({
           <button
             type="submit"
             disabled={!canSubmit}
-            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Send tip
           </button>

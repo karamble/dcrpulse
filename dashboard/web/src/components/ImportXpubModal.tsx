@@ -197,7 +197,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-background border border-border/50 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border/50">
@@ -222,7 +222,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Error Message */}
           {error && (
-            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3 animate-fade-in">
+            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="font-medium text-red-500">Import Failed</p>
@@ -233,7 +233,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
 
           {/* Success Message */}
           {success && (
-            <div className="p-4 rounded-lg bg-success/10 border border-success/20 flex items-start gap-3 animate-fade-in">
+            <div className="p-4 rounded-lg bg-success/10 border border-success/20 flex items-start gap-3">
               <CheckCircle className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
               <div>
                 <p className="font-medium text-success">Import Successful!</p>
@@ -292,7 +292,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
               disabled={loading || success}
               placeholder="dpub..."
               rows={3}
-              className="w-full px-4 py-3 rounded-lg bg-muted/5 border border-border/50 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-50 font-mono text-sm"
+              className="w-full px-4 py-3 rounded-lg bg-muted/5 border border-border/50 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition disabled:opacity-50 font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground mt-1">
               Paste your extended public key here
@@ -318,7 +318,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
               onChange={(e) => setAccountName(e.target.value)}
               disabled={loading || success}
               placeholder="e.g. savings-xpub"
-              className="w-full px-4 py-3 rounded-lg bg-muted/5 border border-border/50 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-50"
+              className="w-full px-4 py-3 rounded-lg bg-muted/5 border border-border/50 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition disabled:opacity-50"
             />
             {nameError ? (
               <p className="text-xs text-destructive mt-1">{nameError}</p>
@@ -343,7 +343,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
               onChange={(e) => setAccountIndex(e.target.value)}
               disabled={loading || success}
               placeholder="Leave empty for a monitor-only xpub"
-              className="w-full px-4 py-3 rounded-lg bg-muted/5 border border-border/50 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-50"
+              className="w-full px-4 py-3 rounded-lg bg-muted/5 border border-border/50 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition disabled:opacity-50"
             />
             {indexError ? (
               <p className="text-xs text-destructive mt-1">{indexError}</p>
@@ -381,7 +381,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
               type="button"
               onClick={handleClose}
               disabled={loading}
-              className="px-6 py-3 rounded-lg border border-border/50 hover:bg-muted/20 transition-all disabled:opacity-50"
+              className="px-6 py-3 rounded-lg border border-border/50 hover:bg-muted/20 transition disabled:opacity-50"
             >
               Cancel
             </button>
@@ -392,7 +392,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
                 success ||
                 (fileSelected.length === 0 && (trimmedName.length === 0 || !!nameError || !!indexError))
               }
-              className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all disabled:opacity-50 flex items-center gap-2"
+              className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition disabled:opacity-50 flex items-center gap-2"
             >
               {loading ? (
                 <>

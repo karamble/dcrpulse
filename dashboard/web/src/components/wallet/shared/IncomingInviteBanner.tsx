@@ -78,7 +78,7 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
       {items.map((item) => (
         <div
           key={`${item.walletName}:${item.tempId}`}
-          className="p-4 rounded-xl bg-gradient-card backdrop-blur-sm border border-primary/30"
+          className="p-4 rounded-xl bg-gradient-card border border-primary/30"
         >
           <div className="flex items-start gap-3 flex-wrap">
             <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">

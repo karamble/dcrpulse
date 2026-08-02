@@ -142,7 +142,7 @@ export const FeedCard = ({
   const isOwn = !!ownUid && post.author_id === ownUid;
 
   return (
-    <article className="relative rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden transition-colors hover:border-primary/30 focus-within:border-primary/40">
+    <article className="relative rounded-xl bg-gradient-card border border-border/50 overflow-hidden transition-colors hover:border-primary/30 focus-within:border-primary/40">
       <button
         type="button"
         onClick={onOpen}
@@ -263,7 +263,7 @@ export const FeedCard = ({
 };
 
 export const FeedCardSkeleton = () => (
-  <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-4 space-y-3 animate-pulse">
+  <div className="rounded-xl bg-gradient-card border border-border/50 p-4 space-y-3 animate-pulse">
     <div className="flex items-center gap-3">
       <div className="h-10 w-10 rounded-full bg-muted/40" />
       <div className="flex-1 space-y-2">

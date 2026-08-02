@@ -158,7 +158,7 @@ export const TorSection = () => {
   return (
     <div className="space-y-6">
       {/* Settings */}
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
         <div className="flex items-center gap-2">
           <Shield className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Tor</h3>
@@ -242,7 +242,7 @@ export const TorSection = () => {
       </div>
 
       {/* Health / control */}
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-lg font-semibold">Tor network</h3>
           <button
@@ -286,7 +286,7 @@ export const TorSection = () => {
       </div>
 
       {/* Daemon routing */}
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-semibold">Daemon routing</h3>
           {applying && (

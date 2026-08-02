@@ -182,7 +182,7 @@ const ExportUnsignedPanel = () => {
   };
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-3 mb-4">
         <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
           <Download className="h-5 w-5 text-primary" />
@@ -295,7 +295,7 @@ const ExportUnsignedPanel = () => {
             type="button"
             onClick={onBuild}
             disabled={!formReady || building}
-            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {building ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
             {building ? 'Building…' : 'Build unsigned transaction'}
@@ -340,7 +340,7 @@ const ExportUnsignedPanel = () => {
                 <button
                   type="button"
                   onClick={onDownload}
-                  className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all inline-flex items-center gap-2"
+                  className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition inline-flex items-center gap-2"
                 >
                   <Download className="h-4 w-4" />
                   Download unsigned.dcrtx
@@ -458,7 +458,7 @@ const ImportSignedPanel = () => {
 
   if (result) {
     return (
-      <div className="p-8 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 text-center space-y-4">
+      <div className="p-8 rounded-xl bg-gradient-card border border-border/50 text-center space-y-4">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-success/10 border border-success/30">
           <Check className="h-8 w-8 text-success" />
         </div>
@@ -482,7 +482,7 @@ const ImportSignedPanel = () => {
         </div>
         <button
           onClick={resetAll}
-          className="px-6 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all"
+          className="px-6 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition"
         >
           Broadcast another
         </button>
@@ -496,7 +496,7 @@ const ImportSignedPanel = () => {
   const highFee = !!preview?.feeKnown && preview.feeAtoms > HIGH_FEE_ATOMS;
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-3 mb-4">
         <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
           <UploadCloud className="h-5 w-5 text-primary" />
@@ -567,7 +567,7 @@ const ImportSignedPanel = () => {
           type="button"
           onClick={onDecode}
           disabled={decoding || (!file && !pasteText.trim())}
-          className="px-4 py-2 rounded-lg border border-border text-sm transition-all inline-flex items-center gap-2 hover:bg-muted/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-2 rounded-lg border border-border text-sm transition inline-flex items-center gap-2 hover:bg-muted/20 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {decoding ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
           {decoding ? 'Decoding…' : 'Decode & verify'}
@@ -662,7 +662,7 @@ const ImportSignedPanel = () => {
               type="button"
               onClick={onBroadcast}
               disabled={broadcasting}
-              className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {broadcasting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
               {broadcasting ? 'Broadcasting…' : 'Broadcast'}
@@ -705,7 +705,7 @@ const DeviceBalancePanel = () => {
   };
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-3 mb-4">
         <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
           <QrCode className="h-5 w-5 text-primary" />
@@ -764,7 +764,7 @@ const DeviceBalancePanel = () => {
             <button
               type="button"
               onClick={onDownload}
-              className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all inline-flex items-center gap-2"
+              className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition inline-flex items-center gap-2"
             >
               <Download className="h-4 w-4" />
               Download balance.dcr

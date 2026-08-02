@@ -238,7 +238,7 @@ export const StampView = ({ onStamped }: Props) => {
               <button
                 onClick={submit}
                 disabled={!digest || phase === 'submitting' || phase === 'done'}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ShieldCheck className="h-4 w-4" />
                 {phase === 'submitting' ? 'Submitting…' : 'Timestamp this file'}

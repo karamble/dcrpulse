@@ -48,7 +48,7 @@ export const DexSetupWizard = ({ mode, onReady }: DexSetupWizardProps) => {
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-6">
-      <div className="w-full max-w-md p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-5">
+      <div className="w-full max-w-md p-6 rounded-xl bg-gradient-card border border-border/50 space-y-5">
         <div className="flex items-center gap-2">
           {isInit ? (
             <ShieldCheck className="h-5 w-5 text-primary" />

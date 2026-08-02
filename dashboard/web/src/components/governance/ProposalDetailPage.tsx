@@ -265,7 +265,7 @@ export const ProposalDetailPage = () => {
         </div>
       )}
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-2xl font-semibold">{detail.name || detail.token}</h2>
@@ -320,7 +320,7 @@ export const ProposalDetailPage = () => {
       </div>
 
       {isVoting && !isWatchOnly && (
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3">
           <h3 className="font-semibold">Cast your vote</h3>
           {detail.currentChoice && (
             <div className="flex items-center gap-2 text-sm text-success">
@@ -335,7 +335,7 @@ export const ProposalDetailPage = () => {
           <button
             type="button"
             onClick={() => setVoteModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition"
           >
             <Vote className="h-4 w-4" />
             {detail.currentChoice ? 'View vote' : 'Vote'}
@@ -348,7 +348,7 @@ export const ProposalDetailPage = () => {
       )}
 
       {(detail.descriptionHtml || detail.description) && (
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-2">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-2">
           <h3 className="text-xl font-semibold">Description</h3>
           {detail.descriptionHtml ? (
             <div
@@ -367,7 +367,7 @@ export const ProposalDetailPage = () => {
         </div>
       )}
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-2">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-2">
         <h3 className="font-semibold flex items-center gap-2">
           <MessageSquare className="h-4 w-4" />
           Discussion

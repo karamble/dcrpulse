@@ -139,7 +139,7 @@ export const ChannelDetailPage = () => {
         Back to channels
       </button>
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
         <h3 className="text-lg font-semibold">Channel details</h3>
         <dl className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-x-4 gap-y-2 text-sm">
           {fieldsForStatus(channel).map(([label, value]) => (

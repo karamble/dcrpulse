@@ -154,7 +154,7 @@ const PagesSidebar = ({ active, ownId }: { active: 'mine' | 'visit'; ownId: stri
     { id: 'visit', label: 'Visit', hash: 'pages/visit', icon: Globe },
   ];
   return (
-    <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-2 md:self-start">
+    <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card border border-border/50 p-2 md:self-start">
       <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible">
         {items.map((item) => {
           const isActive = item.id === active;
@@ -945,7 +945,7 @@ const PageSegments = ({
         rows.push(
           <article
             key={j}
-            className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden transition-colors hover:border-primary/30"
+            className="rounded-xl bg-gradient-card border border-border/50 overflow-hidden transition-colors hover:border-primary/30"
           >
             <img src={src} alt={seg.alt || ''} loading="lazy" className="block w-full max-h-56 object-cover" />
             {caption && (

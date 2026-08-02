@@ -121,7 +121,7 @@ export const MyTicketsInfo = ({
   // Show loading state while fetching initial tickets
   if (loading && tickets.length === 0) {
     return (
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-3 rounded-xl bg-muted/10 border border-border/50">
             <Ticket className="h-6 w-6 text-muted-foreground" />
@@ -141,7 +141,7 @@ export const MyTicketsInfo = ({
 
   if (!hasTickets) {
     return (
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-3 rounded-xl bg-muted/10 border border-border/50">
             <Ticket className="h-6 w-6 text-muted-foreground" />
@@ -174,7 +174,7 @@ export const MyTicketsInfo = ({
   const displayExpired = hasTicketsFromRPC ? unspentExpired : countByStatus('EXPIRED');
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 rounded-xl bg-success/10 border border-success/20">
           <Ticket className="h-6 w-6 text-success" />
@@ -296,7 +296,7 @@ export const MyTicketsInfo = ({
 
       {/* Detailed Ticket List */}
       {isExpanded && (
-        <div className="mt-4 pt-4 border-t border-border/50 animate-fade-in">
+        <div className="mt-4 pt-4 border-t border-border/50">
           <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
             Ticket History
           </h4>

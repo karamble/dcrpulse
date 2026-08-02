@@ -53,7 +53,7 @@ export const ChannelList = () => {
   const visible = channels.filter((c) => matchesFilter(c.status, filter));
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <Network className="h-5 w-5 text-primary" />
         <h3 className="text-lg font-semibold flex-1">Channels</h3>

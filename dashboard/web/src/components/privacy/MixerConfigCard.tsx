@@ -6,7 +6,7 @@ interface Props {
 }
 
 export const MixerConfigCard = ({ mixedAccount, changeAccount }: Props) => (
-  <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+  <div className="p-5 rounded-xl bg-gradient-card border border-border/50">
     <div className="flex items-center gap-2 mb-3">
       <Settings className="h-4 w-4 text-muted-foreground" />
       <h3 className="text-sm font-semibold">Configuration</h3>

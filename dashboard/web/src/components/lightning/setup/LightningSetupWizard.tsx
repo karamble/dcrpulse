@@ -145,7 +145,7 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
     return (
       <form
         onSubmit={handleSubmit}
-        className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4 max-w-md"
+        className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4 max-w-md"
       >
         <h2 className="text-lg font-semibold">
           {needsSetup ? 'Enable Lightning' : 'Unlock Lightning Wallet'}
@@ -182,7 +182,7 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
           <button
             type="submit"
             disabled={passphrase.length < 8 || submitting}
-            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Working…' : needsSetup ? 'Enable Lightning' : 'Unlock'}
           </button>
@@ -193,7 +193,7 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
 
   if (step === 'running') {
     return (
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4 max-w-md">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4 max-w-md">
         <div className="flex items-center gap-3">
           <Loader2 className="h-5 w-5 animate-spin text-primary" />
           <h2 className="text-lg font-semibold">Setting up Lightning</h2>
@@ -204,7 +204,7 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
   }
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4 max-w-md">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4 max-w-md">
       <div className="flex items-center gap-3 text-success">
         <CheckCircle2 className="h-5 w-5" />
         <h2 className="text-lg font-semibold">Lightning is ready</h2>

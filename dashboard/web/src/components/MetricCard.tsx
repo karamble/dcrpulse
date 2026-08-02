@@ -19,7 +19,7 @@ interface MetricCardProps {
 
 export const MetricCard = ({ title, value, subtitle, icon: Icon, trend, usdValue }: MetricCardProps) => {
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 hover:border-primary/20 transition-all duration-300 group animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50 hover:border-primary/20 transition duration-300 group">
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p className="text-sm text-muted-foreground mb-1">{title}</p>
@@ -38,7 +38,7 @@ export const MetricCard = ({ title, value, subtitle, icon: Icon, trend, usdValue
             </div>
           )}
         </div>
-        <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 transition-all duration-300">
+        <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 transition duration-300">
           <Icon className="h-5 w-5 text-primary" />
         </div>
       </div>

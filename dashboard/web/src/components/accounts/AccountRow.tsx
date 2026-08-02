@@ -47,7 +47,7 @@ export const AccountRow = ({ account, onRename }: Props) => {
   const isXpubImported = isXpubImportedAccount(account);
 
   return (
-    <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden">
+    <div className="rounded-xl bg-gradient-card border border-border/50 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between p-4 hover:bg-muted/10 transition-colors text-left"

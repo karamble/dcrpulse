@@ -57,7 +57,7 @@ export const AccountInfo = ({
   };
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-3 mb-6">
         <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
           <Wallet className="h-5 w-5 text-primary" />

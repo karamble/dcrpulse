@@ -22,7 +22,7 @@ export const TicketPoolInfo = ({
   allMempoolTix
 }: TicketPoolInfoProps) => {
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
           <Target className="h-6 w-6 text-primary" />

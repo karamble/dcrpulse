@@ -20,7 +20,7 @@ export const TSpendScanProgress = ({
   message,
 }: TSpendScanProgressProps) => {
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-2 mb-4">
         <SearchCheck className="h-5 w-5 text-primary animate-pulse" />
         <h3 className="font-semibold">Scanning Blockchain for TSpends</h3>

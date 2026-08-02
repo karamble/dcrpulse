@@ -32,9 +32,9 @@ export const ImageViewerModal = ({
   }, [onClose]);
 
   // Render through a portal to document.body: the lightbox is position:fixed,
-  // but post/feed cards use backdrop-blur (a backdrop-filter), which creates a
-  // containing block that would otherwise trap the overlay inside the card
-  // instead of covering the viewport.
+  // and any ancestor with a backdrop-filter or transform creates a containing
+  // block that would trap the overlay inside the card instead of covering the
+  // viewport.
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"

@@ -153,7 +153,7 @@ export const SharedWalletsPage = () => {
           <Loader2 className="h-4 w-4 animate-spin" /> Loading...
         </div>
       ) : wallets.length === 0 ? (
-        <div className="p-8 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 text-center">
+        <div className="p-8 rounded-xl bg-gradient-card border border-border/50 text-center">
           <div className="inline-flex p-3 rounded-lg bg-primary/10 border border-primary/20 mb-3">
             <Users className="h-6 w-6 text-primary" />
           </div>
@@ -170,7 +170,7 @@ export const SharedWalletsPage = () => {
             <Link
               key={wlt.tempId}
               to={`/wallet/shared/${encodeURIComponent(wlt.tempId)}`}
-              className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 hover:border-primary/40 transition-colors"
+              className="p-6 rounded-xl bg-gradient-card border border-border/50 hover:border-primary/40 transition-colors"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">

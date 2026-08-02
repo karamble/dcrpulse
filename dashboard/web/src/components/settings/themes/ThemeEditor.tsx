@@ -269,7 +269,7 @@ export const ThemeEditor = ({ initial, onSaved, onCancel }: ThemeEditorProps) =>
           type="button"
           onClick={handleSave}
           disabled={busy}
-          className="inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-4 py-2 text-sm font-semibold text-white transition-all disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50"
         >
           <Check className="h-4 w-4" /> {busy ? 'Saving…' : 'Save theme'}
         </button>

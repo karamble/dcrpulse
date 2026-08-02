@@ -22,7 +22,7 @@ export const BlockchainInfo = ({ data }: BlockchainInfoProps) => {
   };
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 hover:border-primary/20 transition-all duration-300 group animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50 hover:border-primary/20 transition duration-300 group">
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
           <Blocks className="h-6 w-6 text-primary" />
@@ -39,7 +39,7 @@ export const BlockchainInfo = ({ data }: BlockchainInfoProps) => {
             <Link
               key={block.hash}
               to={`/explorer/block/${block.height}`}
-              className="flex items-center justify-between p-3 rounded-lg bg-muted/10 hover:bg-muted/20 border border-border/30 hover:border-primary/30 transition-all duration-200 group/block"
+              className="flex items-center justify-between p-3 rounded-lg bg-muted/10 hover:bg-muted/20 border border-border/30 hover:border-primary/30 transition duration-200 group/block"
             >
               <div className="flex items-center gap-3">
                 <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 border border-primary/20">

@@ -156,7 +156,7 @@ export const TreasuryPaymentsCard = () => {
   const { mainPart, decimalPart } = formatAmount(localStats.totalSpent);
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       {/* Header with Total Spent and Icon */}
       <div className="flex items-start justify-between mb-6">
         <div className="flex-1">

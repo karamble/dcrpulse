@@ -10,7 +10,7 @@ interface Props {
 
 export const BisonrelayDisclaimer = ({ onAcknowledge }: Props) => {
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-6 max-w-2xl">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-6 max-w-2xl">
       <div className="flex items-center gap-3">
         <MessageSquare className="h-6 w-6 text-warning" />
         <h2 className="text-xl font-semibold">Enable Bison Relay</h2>
@@ -44,7 +44,7 @@ export const BisonrelayDisclaimer = ({ onAcknowledge }: Props) => {
       <div className="flex justify-end">
         <button
           onClick={onAcknowledge}
-          className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all text-sm"
+          className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm"
         >
           I Understand, Continue
         </button>

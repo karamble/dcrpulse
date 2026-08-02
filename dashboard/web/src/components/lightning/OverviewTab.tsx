@@ -73,7 +73,7 @@ export const OverviewTab = () => {
       )}
 
       {info && (
-        <div className="p-4 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 flex flex-wrap items-center gap-3">
+        <div className="p-4 rounded-xl bg-gradient-card border border-border/50 flex flex-wrap items-center gap-3">
           <Zap className="h-5 w-5 text-warning shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold">
@@ -167,7 +167,7 @@ export const OverviewTab = () => {
         </div>
       )}
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3">
         <h3 className="text-lg font-semibold">Recent activity</h3>
         {!activity || activity.entries.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Lightning activity yet.</p>

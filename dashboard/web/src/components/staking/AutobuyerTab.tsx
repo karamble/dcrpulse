@@ -218,7 +218,7 @@ export const AutobuyerTab = () => {
   return (
     <div className="space-y-6">
       {/* Status badge */}
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 flex items-center justify-between">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div
             className={`p-3 rounded-xl ${running ? 'bg-success/15 border border-success/30' : 'bg-muted/10 border border-border/50'}`}
@@ -242,7 +242,7 @@ export const AutobuyerTab = () => {
       </div>
 
       {/* Settings */}
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
         <div className="flex items-center gap-2">
           <Coins className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Settings</h3>
@@ -347,7 +347,7 @@ export const AutobuyerTab = () => {
             <button
               onClick={() => setModalOpen(true)}
               disabled={!settingsValid || busy}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play className="h-4 w-4" />
               Start
@@ -357,7 +357,7 @@ export const AutobuyerTab = () => {
       </div>
 
       {/* Event log */}
-      <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden">
+      <div className="rounded-xl bg-gradient-card border border-border/50 overflow-hidden">
         <div
           onClick={() => setExpanded(!expanded)}
           className="w-full flex items-center justify-between p-4 hover:bg-muted/10 transition-colors cursor-pointer"

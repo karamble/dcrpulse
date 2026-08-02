@@ -92,7 +92,7 @@ export const ExportTab = () => {
         type="button"
         onClick={onExport}
         disabled={exporting}
-        className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all text-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         {exporting ? 'Exporting…' : 'Export CSV'}

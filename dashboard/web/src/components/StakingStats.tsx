@@ -56,7 +56,7 @@ export const StakingStats = ({ data }: StakingStatsProps) => {
   ];
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
           <Activity className="h-6 w-6 text-primary" />
@@ -70,7 +70,7 @@ export const StakingStats = ({ data }: StakingStatsProps) => {
         {stakingItems.map((item, index) => {
           const Icon = item.icon;
           return (
-            <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-all duration-200">
+            <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition duration-200">
               <div className="flex items-center gap-3">
                 <div className={`p-2 rounded-lg bg-primary/10 ${item.color}`}>
                   <Icon className="w-4 h-4" />

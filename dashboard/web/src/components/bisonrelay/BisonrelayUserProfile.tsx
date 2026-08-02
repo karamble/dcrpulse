@@ -244,7 +244,7 @@ export const UserProfileView = ({
         </button>
       </div>
 
-      <header className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5">
+      <header className="rounded-xl bg-gradient-card border border-border/50 p-5">
         {!contactsLoaded ? (
           <div className="flex items-center gap-4 animate-pulse">
             <div className="h-16 w-16 rounded-full bg-muted/40 shrink-0" />
@@ -341,7 +341,7 @@ export const UserProfileView = ({
                   onClick={() => {
                     window.location.hash = `chat/${uid}`;
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-xs font-semibold transition-all"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-xs font-semibold transition"
                 >
                   <MessageSquare className="h-3.5 w-3.5" />
                   Message

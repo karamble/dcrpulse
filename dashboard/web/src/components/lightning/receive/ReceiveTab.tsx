@@ -146,7 +146,7 @@ export const ReceiveTab = () => {
       </div>
 
       {/* Form */}
-      <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/60 space-y-4">
+      <div className="p-5 rounded-xl bg-gradient-card border border-border/60 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1" htmlFor="ln-rcv-amount">
@@ -202,7 +202,7 @@ export const ReceiveTab = () => {
             type="button"
             onClick={onCreate}
             disabled={!canCreate}
-            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all text-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Inbox className="h-4 w-4" />}
             {creating ? 'Creating…' : 'Create invoice'}
@@ -212,7 +212,7 @@ export const ReceiveTab = () => {
 
       {/* Active invoice card */}
       {active && (
-        <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/60 space-y-3">
+        <div className="p-5 rounded-xl bg-gradient-card border border-border/60 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-wide text-muted-foreground">

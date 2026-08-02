@@ -53,7 +53,7 @@ export const ProposalList = ({
 
   if (proposals.length === 0) {
     return (
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <p className="text-sm text-muted-foreground">No payments yet.</p>
       </div>
     );
@@ -97,7 +97,7 @@ export const ProposalList = ({
         const payments = p.outputs.filter((o) => !o.isChange);
         const total = payments.reduce((sum, o) => sum + o.atoms, 0);
         return (
-          <div key={p.txid} className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
+          <div key={p.txid} className="p-5 rounded-xl bg-gradient-card border border-border/50 space-y-3">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <p className="font-semibold">

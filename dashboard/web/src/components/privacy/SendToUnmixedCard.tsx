@@ -150,7 +150,7 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
 
   if (successTxHash) {
     return (
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 text-center space-y-3">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 text-center space-y-3">
         <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-success/10 border border-success/30">
           <Check className="h-6 w-6 text-success" />
         </div>
@@ -167,7 +167,7 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
   }
 
   return (
-    <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+    <div className="p-5 rounded-xl bg-gradient-card border border-border/50 space-y-4">
       <div className="flex items-center gap-2">
         <ArrowDown className="h-4 w-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Send to unmixed</h3>
@@ -279,7 +279,7 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
             setModalOpen(true);
           }}
           disabled={!construct || constructing || sourceAccount === null}
-          className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Send className="h-4 w-4" />
           Send to unmixed

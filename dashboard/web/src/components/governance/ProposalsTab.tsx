@@ -232,7 +232,7 @@ export const ProposalsTab = () => {
             <Link
               key={p.token}
               to={`/wallet/governance/proposals/${p.token}`}
-              className="block p-4 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 hover:bg-muted/10 transition-colors"
+              className="block p-4 rounded-xl bg-gradient-card border border-border/50 hover:bg-muted/10 transition-colors"
             >
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="flex-1 min-w-0">

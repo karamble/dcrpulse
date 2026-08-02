@@ -125,7 +125,7 @@ export const AccountExportPicker = ({ onSelectionChange, disabled, newWallet }: 
         type="button"
         disabled={disabled || loading}
         onClick={() => fileRef.current?.click()}
-        className="px-4 py-2 rounded-lg border border-border/50 hover:border-primary/50 hover:bg-muted/10 transition-all inline-flex items-center gap-2 text-sm disabled:opacity-50"
+        className="px-4 py-2 rounded-lg border border-border/50 hover:border-primary/50 hover:bg-muted/10 transition inline-flex items-center gap-2 text-sm disabled:opacity-50"
       >
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
         Import from file (accounts.dcr)

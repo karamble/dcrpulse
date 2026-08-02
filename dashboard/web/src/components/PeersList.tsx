@@ -32,7 +32,7 @@ const OnionIcon = ({ className }: { className?: string }) => (
 
 export const PeersList = ({ peers = [] }: PeersListProps) => {
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
           <Wifi className="h-6 w-6 text-primary" />
@@ -58,7 +58,7 @@ export const PeersList = ({ peers = [] }: PeersListProps) => {
             peers.map((peer) => (
               <div
                 key={peer.id}
-                className="p-4 rounded-lg bg-muted/30 border border-border/30 hover:border-primary/30 transition-all"
+                className="p-4 rounded-lg bg-muted/30 border border-border/30 hover:border-primary/30 transition"
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-3 min-w-0">

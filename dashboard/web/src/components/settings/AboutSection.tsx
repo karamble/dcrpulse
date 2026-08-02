@@ -96,7 +96,7 @@ export const AboutSection = () => {
 
   return (
     <div className="space-y-6">
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
         <div className="flex items-center gap-2">
           <Info className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Application</h3>
@@ -111,7 +111,7 @@ export const AboutSection = () => {
         </div>
       </div>
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
         <div className="flex items-center gap-2">
           <BookOpen className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Sources</h3>
@@ -156,7 +156,7 @@ export const AboutSection = () => {
         </div>
       </div>
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
         <div className="flex items-center gap-2">
           <MessageCircle className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Communications</h3>

@@ -95,7 +95,7 @@ const sidebarItems: { id: Section; label: string; hash: string; icon: typeof Plu
 ];
 
 const FilesSidebar = ({ active }: { active: Section }) => (
-  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-2 md:self-start">
+  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card border border-border/50 p-2 md:self-start">
     <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible">
       {sidebarItems.map((item) => {
         const isActive = item.id === active;
@@ -166,7 +166,7 @@ const AddContentView = ({ onShared }: { onShared: () => void }) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-4">
+      <div className="rounded-xl bg-gradient-card border border-border/50 p-5 space-y-4">
         <div>
           <h3 className="text-base font-semibold">Share a file</h3>
           <p className="text-xs text-muted-foreground mt-1">
@@ -280,7 +280,7 @@ const AddContentView = ({ onShared }: { onShared: () => void }) => {
           <button
             type="submit"
             disabled={!file || submitting}
-            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             <Upload className="h-4 w-4" />
@@ -348,7 +348,7 @@ const SharedListView = () => {
           hint='Use "Add" in the sidebar to share a file with a contact or globally with subscribers.'
         />
       ) : (
-        <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden divide-y divide-border/30">
+        <div className="rounded-xl bg-gradient-card border border-border/50 overflow-hidden divide-y divide-border/30">
           {items?.map((f) => (
             <div
               key={f.fid}
@@ -511,7 +511,7 @@ const DownloadsView = () => {
           hint="Files you receive appear here - whether a contact sends one to you or you request one (via a paid post or shared-file link). In-flight and recently completed transfers show live progress."
         />
       ) : (
-        <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden divide-y divide-border/30">
+        <div className="rounded-xl bg-gradient-card border border-border/50 overflow-hidden divide-y divide-border/30">
           {rows?.map(({ it, total, missing, pct, done }) => (
             <div key={it.fid} className="px-4 py-3 flex items-center gap-3">
               <div className="flex-1 min-w-0">
@@ -620,7 +620,7 @@ const EmptyState = ({
   title: string;
   hint: string;
 }) => (
-  <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 flex items-start gap-3">
+  <div className="p-6 rounded-xl bg-gradient-card border border-border/50 flex items-start gap-3">
     <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
       <Icon className="h-5 w-5 text-primary" />
     </div>

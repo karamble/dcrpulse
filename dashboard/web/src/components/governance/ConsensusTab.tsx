@@ -100,7 +100,7 @@ export const ConsensusTab = () => {
       {agendas.map((a) => (
         <div
           key={a.id}
-          className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3"
+          className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3"
         >
           <div className="flex items-start justify-between gap-3">
             <div>

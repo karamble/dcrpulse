@@ -68,7 +68,7 @@ export const MixerControls = ({ running, onChanged }: Props) => {
             onClick={() => setModalOpen(true)}
             disabled={autobuyerRunning}
             title={autobuyerRunning ? 'Stop the ticket autobuyer first' : undefined}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Play className="h-4 w-4" />
             Start mixer

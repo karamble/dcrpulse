@@ -173,7 +173,7 @@ export const BlockDetail = () => {
         </div>
 
         {/* Block Information Card */}
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
               <Box className="h-5 w-5 text-primary" />
@@ -288,7 +288,7 @@ export const BlockDetail = () => {
 
         {/* Transactions */}
         {block.transactions.length > 0 && (
-          <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+          <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
             <div className="flex items-center gap-2 mb-6">
               <ArrowRightLeft className="h-5 w-5 text-primary" />
               <h2 className="text-xl font-semibold">Transactions ({block.transactions.length})</h2>

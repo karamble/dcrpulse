@@ -180,7 +180,7 @@ export const PurchaseTicketForm = () => {
 
   if (inProgress) {
     return (
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-primary/30 space-y-3 animate-fade-in">
+      <div className="p-6 rounded-xl bg-gradient-card border border-primary/30 space-y-3">
         <div className="flex items-center gap-2">
           <Loader2 className="h-5 w-5 text-primary animate-spin shrink-0" />
           <h3 className="text-lg font-semibold">Purchasing mixed tickets...</h3>
@@ -209,7 +209,7 @@ export const PurchaseTicketForm = () => {
 
   if (success) {
     return (
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-success/30 space-y-3 animate-fade-in">
+      <div className="p-6 rounded-xl bg-gradient-card border border-success/30 space-y-3">
         <h3 className="text-lg font-semibold text-success">
           Purchased {success.length} ticket{success.length === 1 ? '' : 's'}
         </h3>
@@ -240,7 +240,7 @@ export const PurchaseTicketForm = () => {
   }
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
       <div className="flex items-center gap-2">
         <Send className="h-5 w-5 text-primary" />
         <h3 className="text-lg font-semibold">Purchase tickets</h3>
@@ -336,7 +336,7 @@ export const PurchaseTicketForm = () => {
       <button
         onClick={() => setModalOpen(true)}
         disabled={!canSubmit}
-        className="w-full px-4 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full px-4 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {!canAfford && selectedAccount ? 'Insufficient balance' : 'Purchase'}
       </button>

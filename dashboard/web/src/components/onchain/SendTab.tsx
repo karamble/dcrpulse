@@ -303,7 +303,7 @@ export const SendTab = () => {
 
   if (successTxHash) {
     return (
-      <div className="p-8 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 text-center space-y-4">
+      <div className="p-8 rounded-xl bg-gradient-card border border-border/50 text-center space-y-4">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-success/10 border border-success/30">
           <Check className="h-8 w-8 text-success" />
         </div>
@@ -326,7 +326,7 @@ export const SendTab = () => {
             loadAccounts();
             setSuccessTxHash(null);
           }}
-          className="px-6 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all"
+          className="px-6 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition"
         >
           Send another
         </button>
@@ -336,7 +336,7 @@ export const SendTab = () => {
 
   return (
     <div className="space-y-6">
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
             <Send className="h-5 w-5 text-primary" />
@@ -501,7 +501,7 @@ export const SendTab = () => {
       </div>
 
       {(constructing || construct || constructError) && (
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <h3 className="text-lg font-semibold mb-3">Preview</h3>
           {constructing ? (
             <p className="text-muted-foreground text-sm">Building transaction…</p>
@@ -571,7 +571,7 @@ export const SendTab = () => {
           }}
           disabled={!construct || constructing || sourceAccount === null || spendBlocked}
           title={spendBlocked ? 'Stop the privacy mixer or ticket autobuyer first' : undefined}
-          className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Send className="h-5 w-5" />
           Send

@@ -173,7 +173,7 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
 
   return (
     <div className="space-y-4 w-full max-w-2xl mx-auto overflow-x-clip">
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-5">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-5">
         <div>
           <h2 className="text-lg font-semibold">Bison Relay setup</h2>
           <p className="text-sm text-muted-foreground mt-1">
@@ -446,7 +446,7 @@ const IdentityForm = ({
       <button
         type="submit"
         disabled={!nick.trim() || submitting}
-        className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {submitting ? 'Creating…' : 'Create identity'}
       </button>

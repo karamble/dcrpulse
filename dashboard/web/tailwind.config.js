@@ -58,10 +58,6 @@ export default {
         'gradient-card': 'linear-gradient(135deg, hsl(var(--gradient-card-from) / 0.5) 0%, hsl(var(--gradient-card-to) / 0.3) 100%)',
       },
       keyframes: {
-        'fade-in': {
-          '0%': { opacity: '0', transform: 'translateY(10px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' }
-        },
         'spin': {
           'from': { transform: 'rotate(0deg)' },
           'to': { transform: 'rotate(360deg)' }
@@ -76,7 +72,6 @@ export default {
         }
       },
       animation: {
-        'fade-in': 'fade-in 0.5s ease-out',
         'spin': 'spin 1s linear infinite',
         'flash-buy': 'flash-buy 0.7s ease-out',
         'flash-sell': 'flash-sell 0.7s ease-out',

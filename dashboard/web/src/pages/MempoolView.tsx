@@ -146,7 +146,7 @@ export const MempoolView = () => {
         </div>
 
         {/* Mempool Summary Card */}
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <div className="flex items-center gap-2 mb-6">
             <Activity className="h-5 w-5 text-primary" />
             <h2 className="text-xl font-semibold">Mempool Summary</h2>
@@ -182,14 +182,14 @@ export const MempoolView = () => {
 
         {/* Transactions List */}
         {mempool.count === 0 ? (
-          <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+          <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
             <div className="text-center py-8">
               <Activity className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
               <p className="text-muted-foreground">Mempool is empty</p>
             </div>
           </div>
         ) : (
-          <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+          <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
             <div className="flex items-center gap-2 mb-6">
               <ArrowRightLeft className="h-5 w-5 text-primary" />
               <h2 className="text-xl font-semibold">Transactions ({mempool.count})</h2>
@@ -391,7 +391,7 @@ export const MempoolView = () => {
         )}
 
         {/* Auto-refresh notice */}
-        <div className="text-center text-sm text-muted-foreground animate-fade-in">
+        <div className="text-center text-sm text-muted-foreground">
           Auto-refreshing every 30 seconds
         </div>
       </div>

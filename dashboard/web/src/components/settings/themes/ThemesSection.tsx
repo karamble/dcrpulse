@@ -102,7 +102,7 @@ export const ThemesSection = () => {
 
   if (editing) {
     return (
-      <div className="max-w-2xl space-y-4 rounded-xl border border-border/50 bg-gradient-card p-6 backdrop-blur-sm">
+      <div className="max-w-2xl space-y-4 rounded-xl border border-border/50 bg-gradient-card p-6">
         <h3 className="text-lg font-semibold">
           {editing.id ? 'Edit theme' : 'New theme'}
         </h3>
@@ -112,7 +112,7 @@ export const ThemesSection = () => {
   }
 
   return (
-    <div className="max-w-3xl space-y-4 rounded-xl border border-border/50 bg-gradient-card p-6 backdrop-blur-sm">
+    <div className="max-w-3xl space-y-4 rounded-xl border border-border/50 bg-gradient-card p-6">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-lg font-semibold">Themes</h3>
         <div className="flex gap-2">

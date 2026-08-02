@@ -1872,7 +1872,7 @@ const sidebarItems: {
 ];
 
 const SettingsSidebar = ({ active }: { active: SettingsSection }) => (
-  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-2 md:self-start">
+  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card border border-border/50 p-2 md:self-start">
     <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible">
       {sidebarItems.map((item) => {
         const isActive = item.id === active;

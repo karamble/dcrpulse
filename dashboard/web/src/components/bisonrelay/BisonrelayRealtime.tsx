@@ -80,7 +80,7 @@ export const BisonrelayRealtime = () => {
 };
 
 const ChromeRequired = () => (
-  <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 flex items-start gap-3">
+  <div className="p-6 rounded-xl bg-gradient-card border border-border/50 flex items-start gap-3">
     <div className="p-2 rounded-lg bg-amber-500/15 border border-amber-500/30 shrink-0">
       <Radio className="h-5 w-5 text-amber-400" />
     </div>
@@ -143,7 +143,7 @@ const RoomList = ({ onOpen }: { onOpen: (rv: string) => void }) => {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-4 flex items-center justify-between gap-3">
+      <div className="rounded-xl bg-gradient-card border border-border/50 p-4 flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">Realtime calls</h3>
           <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -171,7 +171,7 @@ const RoomList = ({ onOpen }: { onOpen: (rv: string) => void }) => {
       {err && <ErrorBanner msg={err} />}
       {sessions === null && !err && <Loading />}
       {sessions && sessions.length === 0 && (
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <p className="text-sm text-muted-foreground">
             No realtime sessions yet. Start an instant call or create a group
             room above.
@@ -235,7 +235,7 @@ const SectionList = ({
     <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-1">
       {title}
     </div>
-    <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 overflow-hidden divide-y divide-border/30">
+    <div className="rounded-xl bg-gradient-card border border-border/50 overflow-hidden divide-y divide-border/30">
       {items.map((s) => (
         <div key={s.rv} className="px-4 py-3 flex items-center gap-3">
           <div className="flex-1 min-w-0">
@@ -483,7 +483,7 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-3">
+      <div className="rounded-xl bg-gradient-card border border-border/50 p-5 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-base font-semibold flex items-center gap-2">
@@ -706,7 +706,7 @@ const PeerRoster = ({
   fromSession.sort((a, b) => a.peerID - b.peerID);
 
   return (
-    <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-3">
+    <div className="rounded-xl bg-gradient-card border border-border/50 p-5 space-y-3">
       <h4 className="text-sm font-semibold flex items-center gap-2">
         <Users className="h-4 w-4 text-primary" />
         Peers

@@ -288,7 +288,7 @@ export const TicketStatusTab = () => {
 
   return (
     <div className="space-y-6">
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Sync Failed VSP Tickets</h3>
@@ -329,7 +329,7 @@ export const TicketStatusTab = () => {
         <button
           onClick={() => setModalOpen(true)}
           disabled={!canSync || syncing}
-          className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+          className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           {syncing ? 'Syncing…' : 'Sync Failed VSP Tickets'}
@@ -337,7 +337,7 @@ export const TicketStatusTab = () => {
       </div>
 
       {untrackedCount > 0 && (
-        <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+        <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-primary" />
             <h3 className="text-lg font-semibold">Process Unmanaged Tickets</h3>
@@ -380,7 +380,7 @@ export const TicketStatusTab = () => {
           <button
             onClick={() => setModalOpenU(true)}
             disabled={!canProcess || processing}
-            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
             {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {processing ? 'Processing…' : 'Process Unmanaged Tickets'}

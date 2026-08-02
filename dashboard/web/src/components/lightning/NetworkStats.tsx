@@ -42,7 +42,7 @@ interface StatCardProps {
 }
 
 const StatCard = ({ icon, label, value, sub }: StatCardProps) => (
-  <div className="p-4 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-1">
+  <div className="p-4 rounded-xl bg-gradient-card border border-border/50 space-y-1">
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       {icon}
       <span>{label}</span>
@@ -213,7 +213,7 @@ export const NetworkStats = () => {
         />
       </div>
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-3">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-3">
         <h3 className="text-base font-semibold">Top nodes by capacity</h3>
         {panel.topNodes.length === 0 ? (
           <p className="text-sm text-muted-foreground">

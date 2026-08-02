@@ -287,7 +287,7 @@ export const ImageAttachModal = ({
             type="button"
             onClick={submit}
             disabled={!canAttach}
-            className="px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            className="px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
             {attaching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             Attach

@@ -171,7 +171,7 @@ export const StatisticsTab = () => {
         />
       </div>
 
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Cumulative Stake Reward</h3>
@@ -202,6 +202,7 @@ export const StatisticsTab = () => {
                   stroke="hsl(217 91% 62%)"
                   strokeWidth={2.5}
                   dot={false}
+                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>

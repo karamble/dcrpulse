@@ -111,7 +111,7 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
   return (
     <div
       ref={cardRef}
-      className={`p-6 rounded-xl bg-gradient-card backdrop-blur-sm border space-y-4 transition-colors duration-500 ${
+      className={`p-6 rounded-xl bg-gradient-card border space-y-4 transition-colors duration-500 ${
         highlight ? 'border-primary ring-2 ring-primary/40' : 'border-border/50'
       }`}
     >
@@ -255,7 +255,7 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
           <button
             type="submit"
             disabled={!canSubmit}
-            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting ? 'Opening…' : 'Open channel'}

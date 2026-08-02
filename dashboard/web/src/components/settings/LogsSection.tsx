@@ -58,7 +58,7 @@ export const LogsSection = () => {
   }, [data]);
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2 flex-1">
           <ScrollText className="h-5 w-5 text-primary" />

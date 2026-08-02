@@ -322,7 +322,7 @@ const sidebarItems: { id: Section; label: string; hash: string; icon: ComponentT
 ];
 
 const StatsSidebar = ({ active }: { active: Section }) => (
-  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-2 md:self-start">
+  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card border border-border/50 p-2 md:self-start">
     <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible">
       {sidebarItems.map((item) => {
         const isActive = item.id === active;
@@ -384,7 +384,7 @@ export const HeroCard = ({
   }[tone];
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border border-border/50 bg-gradient-to-br ${toneClass} backdrop-blur-sm p-4`}
+      className={`relative overflow-hidden rounded-xl border border-border/50 bg-gradient-to-br ${toneClass} p-4`}
     >
       <div className="flex items-center justify-between mb-1">
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -409,7 +409,7 @@ export const SectionCard = ({
   children: React.ReactNode;
   action?: React.ReactNode;
 }) => (
-  <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 space-y-4">
+  <div className="rounded-xl bg-gradient-card border border-border/50 p-5 space-y-4">
     <div className="flex items-center justify-between gap-2">
       <h3 className="text-sm font-semibold flex items-center gap-2">
         {Icon && <Icon className="h-4 w-4 text-primary" />}
@@ -485,7 +485,7 @@ const OverviewView = () => {
   return (
     <div className="space-y-4">
       {/* Identity strip */}
-      <div className="rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 p-5 flex items-center gap-4">
+      <div className="rounded-xl bg-gradient-card border border-border/50 p-5 flex items-center gap-4">
         <AvatarDisplay nick={data.nick || ''} />
         <div className="flex-1 min-w-0">
           <div className="text-lg font-semibold text-foreground truncate">

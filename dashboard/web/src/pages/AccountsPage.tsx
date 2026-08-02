@@ -50,7 +50,7 @@ export const AccountsPage = () => {
         <div className="flex items-center justify-end">
           <button
             onClick={() => setCreateOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition-all hover:opacity-90"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition hover:opacity-90"
           >
             <Plus className="h-4 w-4" />
             <span>New Account</span>

@@ -104,7 +104,7 @@ export const AddressBookmarksCard = () => {
 
   return (
     <>
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
           <div className="flex items-center gap-2">
             <BookmarkCheck className="h-5 w-5 text-warning" />
@@ -165,7 +165,7 @@ export const AddressBookmarksCard = () => {
                   </div>
                   <button
                     onClick={() => handleEdit(bookmark)}
-                    className="p-2 opacity-0 group-hover:opacity-100 hover:bg-muted/10 rounded-lg transition-all"
+                    className="p-2 opacity-0 group-hover:opacity-100 hover:bg-muted/10 rounded-lg transition"
                     title="Edit bookmark"
                   >
                     <Edit3 className="h-4 w-4" />

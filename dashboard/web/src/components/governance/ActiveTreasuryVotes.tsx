@@ -69,7 +69,7 @@ export const ActiveTreasuryVotes = () => {
   }, []);
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-2 mb-4">
         <Vote className="h-5 w-5 text-primary" />
         <h3 className="text-lg font-semibold">Active Treasury Votes</h3>

@@ -10,7 +10,7 @@ const fmt = (v: number) => v.toFixed(8);
 
 export const MixerBalanceCards = ({ unmixedBalance, mixedBalance, running }: Props) => (
   <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-center">
-    <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50">
+    <div className="p-5 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
         <Coins className="h-4 w-4 text-warning" />
         <span>Unmixed (source)</span>
@@ -31,7 +31,7 @@ export const MixerBalanceCards = ({ unmixedBalance, mixedBalance, running }: Pro
         className={`h-7 w-7 ${running ? 'animate-pulse [animation-delay:400ms]' : 'opacity-50'}`}
       />
     </div>
-    <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-primary/30">
+    <div className="p-5 rounded-xl bg-gradient-card border border-primary/30">
       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
         <Shuffle className="h-4 w-4 text-primary" />
         <span>Mixed</span>

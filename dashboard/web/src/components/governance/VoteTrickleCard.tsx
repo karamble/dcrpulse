@@ -199,7 +199,7 @@ const VoteTrickleWorkerCard = ({ status, events, now, onStop }: WorkerCardProps)
   };
 
   return (
-    <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-primary/30 space-y-4">
+    <div className="p-5 rounded-xl bg-gradient-card border border-primary/30 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div

@@ -5,7 +5,7 @@ interface Props {
 }
 
 export const LightningDisclaimer = ({ onAcknowledge }: Props) => (
-  <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-6 max-w-2xl">
+  <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-6 max-w-2xl">
     <div className="flex items-center gap-3">
       <Zap className="h-6 w-6 text-warning" />
       <h2 className="text-xl font-semibold">Enable Lightning Network</h2>
@@ -58,7 +58,7 @@ export const LightningDisclaimer = ({ onAcknowledge }: Props) => (
       <button
         type="button"
         onClick={onAcknowledge}
-        className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all text-sm"
+        className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm"
       >
         I Understand, Continue
       </button>

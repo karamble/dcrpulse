@@ -34,7 +34,7 @@ export const InfosSection = () => {
   };
 
   return (
-    <div className="p-5 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/60 space-y-3">
+    <div className="p-5 rounded-xl bg-gradient-card border border-border/60 space-y-3">
       <h3 className="text-lg font-semibold">Node info</h3>
       {!info ? (
         <div className="text-sm text-muted-foreground">Loading…</div>

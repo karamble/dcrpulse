@@ -146,7 +146,7 @@ export const TreasuryCard = () => {
 
   if (error) {
     return (
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <div className="flex items-center gap-2 mb-4">
           <Landmark className="h-5 w-5 text-warning" />
           <h2 className="text-xl font-semibold">Treasury Status</h2>
@@ -161,7 +161,7 @@ export const TreasuryCard = () => {
 
   if (loading && !info) {
     return (
-      <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+      <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
         <div className="flex items-center gap-2 mb-4">
           <Landmark className="h-5 w-5 text-warning" />
           <h2 className="text-xl font-semibold">Treasury Status</h2>
@@ -175,7 +175,7 @@ export const TreasuryCard = () => {
   }
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 animate-fade-in">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">

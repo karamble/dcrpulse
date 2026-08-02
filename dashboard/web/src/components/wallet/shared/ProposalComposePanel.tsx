@@ -81,7 +81,7 @@ export const ProposalComposePanel = ({
   };
 
   return (
-    <div className="p-6 rounded-xl bg-gradient-card backdrop-blur-sm border border-border/50 space-y-4">
+    <div className="p-6 rounded-xl bg-gradient-card border border-border/50 space-y-4">
       <div className="flex items-center gap-2">
         <Send className="h-4 w-4 text-primary" />
         <p className="text-sm font-medium">Send from this wallet</p>

@@ -296,7 +296,7 @@ export const WalletDashboard = () => {
     <div className="space-y-6">
       {/* Disconnected-from-dcrd indicator (event-driven from RpcSync). */}
       {data?.walletStatus && data.walletStatus.daemonConnected === false && (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2 animate-fade-in">
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2">
           <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
           <span className="text-sm text-red-400">
             Disconnected from dcrd - wallet won't see new blocks. Auto-reconnecting…
@@ -309,7 +309,7 @@ export const WalletDashboard = () => {
         <button
           onClick={handleRescan}
           disabled={showSyncProgress || isPreparingRescan || data?.walletStatus.status === 'no_wallet'}
-          className="px-6 py-3 rounded-lg bg-muted/20 text-foreground font-semibold hover:bg-muted/30 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-6 py-3 rounded-lg bg-muted/20 text-foreground font-semibold hover:bg-muted/30 transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw className={`h-5 w-5 ${(showSyncProgress || isPreparingRescan) ? 'animate-spin' : ''}`} />
           {isPreparingRescan ? 'Preparing...' : showSyncProgress ? 'Rescanning...' : 'Rescan'}
@@ -317,7 +317,7 @@ export const WalletDashboard = () => {
         <button
           onClick={() => setShowImportModal(true)}
           disabled={showSyncProgress || isPreparingRescan}
-          className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="h-5 w-5" />
           Add X-Pub
@@ -326,7 +326,7 @@ export const WalletDashboard = () => {
 
       {/* Preparing State - immediate feedback when rescan/import is clicked */}
       {isPreparingRescan && (
-        <div className="p-8 rounded-lg bg-card border border-border text-center animate-fade-in">
+        <div className="p-8 rounded-lg bg-card border border-border text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent mb-4"></div>
           <h3 className="text-lg font-semibold mb-2">Preparing Rescan...</h3>
           <p className="text-muted-foreground">
@@ -347,7 +347,7 @@ export const WalletDashboard = () => {
 
       {/* Error Message - hide during rescan */}
       {error && !showSyncProgress && !isPreparingRescan && (
-        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 animate-fade-in">
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
           <p className="text-red-500 font-medium">{error}</p>
         </div>
       )}
@@ -379,7 +379,7 @@ export const WalletDashboard = () => {
 
           {/* Row 1: Account Balance | Recent Transactions */}
           {data && data.walletStatus.status !== 'no_wallet' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Account Info */}
               <AccountInfo
                 accountName={data.accountInfo.accountName}
@@ -403,7 +403,7 @@ export const WalletDashboard = () => {
 
           {/* Row 2: My Tickets | Ticket Pool & Difficulty */}
           {data && data.walletStatus.status !== 'no_wallet' && data.stakingInfo && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* My Tickets Info */}
               <MyTicketsInfo
                 ownMempoolTix={data.stakingInfo.ownMempoolTix}
@@ -429,7 +429,7 @@ export const WalletDashboard = () => {
 
           {/* Row 3: Block Subsidy | Accounts */}
           {data && data.walletStatus.status !== 'no_wallet' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Block Subsidy */}
               {data.stakingInfo && (
                 <BlockSubsidyInfo
@@ -452,7 +452,7 @@ export const WalletDashboard = () => {
 
           {/* Row 4: Address Bookmarks */}
           {data && data.walletStatus.status !== 'no_wallet' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <AddressBookmarksCard />
             </div>
           )}

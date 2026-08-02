@@ -129,7 +129,7 @@ export const AddressView = () => {
 
       {/* Tickets Section */}
       {info.tickets && info.tickets.length > 0 && (
-        <div className="p-6 rounded-lg bg-gradient-card backdrop-blur-sm border border-border/50">
+        <div className="p-6 rounded-lg bg-gradient-card border border-border/50">
           <div className="flex items-center gap-2 mb-6">
             <Ticket className="h-5 w-5 text-warning" />
             <h2 className="text-xl font-semibold">Tickets Owned</h2>

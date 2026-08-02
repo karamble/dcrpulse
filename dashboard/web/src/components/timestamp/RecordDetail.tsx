@@ -175,7 +175,7 @@ export const RecordDetail = ({ digest, onClose, onChanged }: Props) => {
   const merklePathText = rec?.merklePath ? JSON.stringify(rec.merklePath, null, 2) : '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-card border border-border/50 shadow-xl">
         <div className="flex items-center justify-between p-5 border-b border-border/50 sticky top-0 bg-card">
           <div className="min-w-0">

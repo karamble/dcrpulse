@@ -55,7 +55,7 @@ export const ExternalLinkGuard = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={handleCancel}
     >
       <div
@@ -98,7 +98,7 @@ export const ExternalLinkGuard = () => {
             <button
               type="button"
               onClick={handleVisit}
-              className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition-all text-sm inline-flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm inline-flex items-center gap-1.5"
             >
               <ExternalLink className="h-4 w-4" />
               Visit Link

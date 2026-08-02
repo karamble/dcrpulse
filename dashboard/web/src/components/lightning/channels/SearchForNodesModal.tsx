@@ -31,7 +31,7 @@ export const SearchForNodesModal = ({ onClose, onPick }: Props) => {
   }, [query]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="w-full max-w-lg mx-4 rounded-xl bg-card border border-border/50 shadow-xl max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between p-6 border-b border-border/50">
           <h3 className="text-lg font-semibold">Search nodes</h3>
