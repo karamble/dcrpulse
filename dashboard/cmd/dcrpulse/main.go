@@ -605,6 +605,8 @@ func main() {
 			log.Printf("Warning: Could not hash inline frontend scripts for CSP: %v", rerr)
 		}
 
+		staticSrv := newStaticServer(distFS)
+
 		// Serve static files with SPA fallback
 		r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			path := req.URL.Path
@@ -627,14 +629,14 @@ func main() {
 						w.Header().Set("Content-Security-Policy",
 							"default-src 'none'; script-src 'self' 'wasm-unsafe-eval'")
 					}
-					http.FileServer(http.FS(distFS)).ServeHTTP(w, req)
+					staticSrv.ServeHTTP(w, req)
 					return
 				}
 			}
 
 			// Fallback to index.html for SPA routing
 			req.URL.Path = "/"
-			http.FileServer(http.FS(distFS)).ServeHTTP(w, req)
+			staticSrv.ServeHTTP(w, req)
 		})
 	}
 
