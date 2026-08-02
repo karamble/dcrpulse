@@ -241,6 +241,16 @@ func SignMsigTransaction(ctx context.Context, rawTxHex string, prevInputs []Msig
 	return res.Hex, nil
 }
 
+// WalletTipHeight returns the wallet's best block height, used to record
+// a shared wallet's creation height for bounded restore rescans.
+func WalletTipHeight(ctx context.Context) (int64, error) {
+	if rpc.WalletClient == nil {
+		return 0, fmt.Errorf("wallet RPC client not initialized")
+	}
+	_, height, err := rpc.WalletClient.GetBestBlock(ctx)
+	return height, err
+}
+
 // SyncAccountAddressIndex fast-forwards the wallet's derived-address
 // cursor for one account branch. Shared-wallet restore runs this before
 // validateaddress so a seed-restored wallet recognizes its own key even

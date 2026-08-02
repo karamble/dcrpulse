@@ -9,49 +9,29 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"sync"
 	"time"
 
+	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 )
 
 // The engine consumes typed "msig" events that brclientd publishes for
-// coordination frames. This is the transport skeleton: strict parse,
-// in-memory dedup by mid, log. Protocol dispatch and the durable
-// per-wallet journal arrive with the registry store. Log lines carry only
+// coordination frames and replays missed frames from brclientd's PM log.
+// Live events are a hint only: the event bus drops on slow consumers, so
+// the /msig/history catch-up is the reliability backbone. Log lines carry
 // type, mid and peer, never payloads.
 
-// seenTTL keeps mids past the BR server's 7 day delivery horizon so a
-// replayed frame can never be mistaken for a new one.
-const seenTTL = 30 * 24 * time.Hour
-
-var (
-	seenMu   sync.Mutex
-	seenMIDs = make(map[string]time.Time)
+const (
+	sweepInterval = 15 * time.Minute
+	// roundExpiry fails handshakes that outlived the BR delivery horizon
+	// plus a day of grace for an initiator restart.
+	roundExpiry = 8 * 24 * time.Hour
 )
 
-// markSeen records a mid and reports whether it was new.
-func markSeen(mid string, now time.Time) bool {
-	seenMu.Lock()
-	defer seenMu.Unlock()
-	if len(seenMIDs) > 4096 {
-		for k, t := range seenMIDs {
-			if now.Sub(t) > seenTTL {
-				delete(seenMIDs, k)
-			}
-		}
-	}
-	if _, ok := seenMIDs[mid]; ok {
-		return false
-	}
-	seenMIDs[mid] = now
-	return true
-}
-
 // StartEngine subscribes to the dashboard's Bison Relay event bus and
-// consumes coordination frames. Live events are a hint only; the reliable
-// backbone is replay through brclientd's /msig/history, which later phases
-// run at startup, on wallet switch and on a periodic sweep.
+// starts the maintenance sweep. Frames for wallets this node has not yet
+// activated are intentionally left unjournaled so a later catch-up can
+// process them.
 func StartEngine(ctx context.Context) {
 	ch, cancel := services.Bisonrelay().Subscribe(64)
 	go func() {
@@ -71,6 +51,19 @@ func StartEngine(ctx context.Context) {
 			}
 		}
 	}()
+	go sweepLoop(ctx)
+	// One-shot full-contact replay so invites that arrived while the
+	// dashboard was down surface without a manual refresh. Delayed so
+	// brclientd has a chance to come up first.
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-time.After(20 * time.Second):
+			cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+			defer cancel()
+			CatchUpAllContacts(cctx)
+		}
+	}()
 	log.Printf("msig engine: listening for coordination frames")
 }
 
@@ -84,12 +77,19 @@ func handleFrameEvent(payload json.RawMessage, now time.Time) {
 		log.Printf("msig: malformed event payload: %v", err)
 		return
 	}
-	peer := p.FromNick
-	if len(p.From) >= 12 {
-		peer = p.FromNick + " (" + p.From[:12] + ")"
+	handleInbound(p.From, p.FromNick, p.Message, now)
+}
+
+// handleInbound is the single entry point for live and replayed frames.
+func handleInbound(fromUID, fromNick, body string, now time.Time) {
+	peer := fromNick
+	if len(fromUID) >= 12 {
+		peer = fromNick + " (" + fromUID[:12] + ")"
 	}
-	frame, err := Parse(p.Message, now)
+	frame, err := Parse(body, now)
 	switch {
+	case errors.Is(err, ErrNotEnvelope):
+		return
 	case errors.Is(err, ErrExpired):
 		log.Printf("msig: dropping expired frame from %s", peer)
 		return
@@ -100,18 +100,179 @@ func handleFrameEvent(payload json.RawMessage, now time.Time) {
 		log.Printf("msig: dropping malformed frame from %s: %v", peer, err)
 		return
 	}
-	if !markSeen(frame.MID, now) {
-		log.Printf("msig: duplicate frame %s from %s", frame.MID, peer)
-		return
-	}
 	msg, err := DecodeMessage(frame.Payload)
 	if errors.Is(err, ErrUnknownType) {
-		log.Printf("msig: ignoring frame %s of unknown type %q from %s", frame.MID, msg.Type, peer)
+		journalUnknownType(msg, frame, peer, now)
 		return
 	}
 	if err != nil {
 		log.Printf("msig: dropping invalid frame %s from %s: %v", frame.MID, peer, err)
 		return
 	}
-	log.Printf("msig: received %s frame %s from %s", msg.Type, frame.MID, peer)
+	dispatchInbound(msg, frame, fromUID, fromNick, now)
+}
+
+// journalUnknownType records the mid of a structurally valid message this
+// build cannot interpret, when it can be routed to a known record, so a
+// resend never reprocesses it after an upgrade either.
+func journalUnknownType(msg *Message, frame *Frame, peer string, now time.Time) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	network, err := networkSeam(ctx)
+	if err != nil {
+		return
+	}
+	id := msg.TempID
+	if id == "" {
+		id = msg.WalletID
+	}
+	if id != "" {
+		if store, rec := manager(network).Route(id, nil); rec != nil {
+			if _, err := store.MarkProcessed(frame.MID, now); err != nil {
+				log.Printf("msig: journal: %v", err)
+			}
+		}
+	}
+	log.Printf("msig: ignoring frame %s of unknown type %q from %s", frame.MID, msg.Type, peer)
+}
+
+func sweepLoop(ctx context.Context) {
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			runSweep(ctx)
+			timer.Reset(sweepInterval)
+		}
+	}
+}
+
+// runSweep retries unsent frames, expires stale rounds, resumes
+// wallet-gated steps for the active wallet and replays missed frames from
+// known peers. Also run by the manual refresh endpoint.
+func runSweep(ctx context.Context) {
+	sctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	network, err := networkSeam(sctx)
+	if err != nil {
+		return
+	}
+	m := manager(network)
+	m.OpenExisting()
+	for _, s := range m.Stores() {
+		resendOutbox(s)
+		expireStaleRounds(s)
+	}
+	ResumePending(sctx)
+	catchUpKnownPeers(sctx, m)
+}
+
+// RunSweepNow is the manual refresh entry used by the API.
+func RunSweepNow(ctx context.Context) {
+	runSweep(ctx)
+}
+
+func resendOutbox(s *Store) {
+	for _, it := range s.PendingOutbox() {
+		deliverOutbox(s, it.MID, it.ToUID, it.Body)
+	}
+}
+
+func expireStaleRounds(s *Store) {
+	cutoff := time.Now().Add(-roundExpiry).Unix()
+	for _, rec := range s.Wallets() {
+		switch rec.Status {
+		case StatusInviting, StatusInvited, StatusAccepted, StatusActivating:
+			if rec.CreatedAt > 0 && rec.CreatedAt < cutoff {
+				failRound(s, rec.TempID, "invite round expired")
+			}
+		}
+	}
+}
+
+// catchUpKnownPeers replays frames from every peer of a non-terminal
+// record of the ACTIVE wallet. Only the active wallet's BR identity is
+// online, so other stores have nothing new to read.
+func catchUpKnownPeers(ctx context.Context, m *Manager) {
+	s, err := m.StoreFor(activeWalletSeam())
+	if err != nil {
+		return
+	}
+	peers := make(map[string]int64)
+	for _, rec := range s.Wallets() {
+		if rec.Terminal() {
+			continue
+		}
+		for _, p := range rec.Peers {
+			last, ok := peers[p.UID]
+			if !ok || p.LastSeenTs < last {
+				peers[p.UID] = p.LastSeenTs
+			}
+		}
+	}
+	for uid, last := range peers {
+		since := last - 7200
+		if since < 0 {
+			since = 0
+		}
+		replayPeer(ctx, uid, since)
+	}
+}
+
+// CatchUpAllContacts scans every KX'd contact's frame history. Run at
+// engine start and on manual refresh so invites that arrived while the
+// dashboard was down are still discovered; the mid journals absorb
+// everything already processed.
+func CatchUpAllContacts(ctx context.Context) {
+	raw, err := rpc.BrclientdContacts(ctx)
+	if err != nil {
+		return
+	}
+	var resp struct {
+		Entries []struct {
+			ID struct {
+				Identity string `json:"identity"`
+				Nick     string `json:"nick"`
+			} `json:"id"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		log.Printf("msig: parse contacts: %v", err)
+		return
+	}
+	since := time.Now().Add(-roundExpiry).Unix()
+	for _, e := range resp.Entries {
+		if e.ID.Identity == "" {
+			continue
+		}
+		replayPeer(ctx, e.ID.Identity, since)
+	}
+}
+
+func replayPeer(ctx context.Context, uid string, since int64) {
+	raw, err := msigHistorySeam(ctx, uid, 500, since)
+	if err != nil {
+		return
+	}
+	var resp struct {
+		LocalNick string `json:"local_nick"`
+		Entries   []struct {
+			Message   string `json:"message"`
+			From      string `json:"from"`
+			Timestamp int64  `json:"timestamp"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return
+	}
+	now := time.Now()
+	for _, e := range resp.Entries {
+		if resp.LocalNick != "" && e.From == resp.LocalNick {
+			continue
+		}
+		handleInbound(uid, e.From, e.Message, now)
+	}
 }
