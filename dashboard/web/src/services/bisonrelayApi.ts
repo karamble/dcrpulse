@@ -1004,7 +1004,10 @@ export type BisonrelayEventType =
   | 'gc-version-warning'
   | 'gc-unkxd-member'
   | 'store-order-placed'
-  | 'store-order-status';
+  | 'store-order-status'
+  // Shared-wallet coordination frames. brclientd keeps them out of chat
+  // and publishes them under this type instead.
+  | 'msig';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;

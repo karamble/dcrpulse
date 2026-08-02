@@ -49,6 +49,8 @@ import { TicketStatusTab } from './components/staking/TicketStatusTab';
 import { TicketHistoryTab } from './components/staking/TicketHistoryTab';
 import { StatisticsTab } from './components/staking/StatisticsTab';
 import { WatchOnlyGuard, RequireWatchOnly } from './components/common/WatchOnlyGuard';
+import { SharedWalletsPage } from './components/wallet/shared/SharedWalletsPage';
+import { SharedWalletDetailPage } from './components/wallet/shared/SharedWalletDetailPage';
 import { ExplorerLanding } from './pages/ExplorerLanding';
 import { BlockDetail } from './pages/BlockDetail';
 import { TransactionDetail } from './pages/TransactionDetail';
@@ -182,6 +184,14 @@ function AppContent() {
               <Route path="advanced" element={<LightningAdvancedTab />} />
             </Route>
             <Route path="accounts" element={<AccountsPage />} />
+            <Route
+              path="shared"
+              element={<WatchOnlyGuard feature="Shared wallets"><SharedWalletsPage /></WatchOnlyGuard>}
+            />
+            <Route
+              path="shared/:id"
+              element={<WatchOnlyGuard feature="Shared wallets"><SharedWalletDetailPage /></WatchOnlyGuard>}
+            />
             <Route path="timestamp" element={<TimestampPage />} />
             <Route path="settings" element={<SettingsPage />}>
               <Route index element={<Navigate to="wallet" replace />} />

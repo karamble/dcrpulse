@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, ArrowLeftRight, Settings, Users, ShieldCheck, Ticket, Vote, Zap, Wallet, FileClock } from 'lucide-react';
+import { LayoutDashboard, ArrowLeftRight, Settings, Users, UsersRound, ShieldCheck, Ticket, Vote, Zap, Wallet, FileClock } from 'lucide-react';
 import { listWallets } from '../../services/api';
 import { WalletSetup } from '../WalletSetup';
 import { WalletSelection } from '../../pages/WalletSelection';
@@ -101,6 +101,12 @@ export const WalletLayout = () => {
             <Users className="h-4 w-4" />
             <span>Accounts</span>
           </NavLink>
+          {!isWatchOnly && (
+            <NavLink to="/wallet/shared" className={navItemClass}>
+              <UsersRound className="h-4 w-4" />
+              <span>Shared Wallets</span>
+            </NavLink>
+          )}
           <NavLink to="/wallet/timestamp" className={navItemClass}>
             <FileClock className="h-4 w-4" />
             <span>Timestamp</span>

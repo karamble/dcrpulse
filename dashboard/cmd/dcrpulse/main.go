@@ -539,6 +539,17 @@ func main() {
 	api.HandleFunc("/wallet/build-sign-request", handlers.BuildSignRequestHandler).Methods("POST")
 	api.HandleFunc("/wallet/device-balance", handlers.DeviceBalanceHandler).Methods("GET")
 	api.HandleFunc("/wallet/parse-account-export", handlers.ParseAccountExportHandler).Methods("POST")
+
+	// Shared wallets: multisig coordinated over Bison Relay.
+	api.HandleFunc("/msig/wallets", handlers.MsigWalletsHandler).Methods("GET")
+	api.HandleFunc("/msig/wallets/invite", handlers.MsigInviteHandler).Methods("POST")
+	api.HandleFunc("/msig/wallets/accept", handlers.MsigAcceptHandler).Methods("POST")
+	api.HandleFunc("/msig/wallets/decline", handlers.MsigDeclineHandler).Methods("POST")
+	api.HandleFunc("/msig/wallets/cancel", handlers.MsigCancelHandler).Methods("POST")
+	api.HandleFunc("/msig/wallets/detail", handlers.MsigDetailHandler).Methods("GET")
+	api.HandleFunc("/msig/wallets/backup", handlers.MsigBackupHandler).Methods("GET")
+	api.HandleFunc("/msig/pending", handlers.MsigPendingHandler).Methods("GET")
+	api.HandleFunc("/msig/refresh", handlers.MsigRefreshHandler).Methods("POST")
 	api.Handle("/wallet/rescan",
 		middleware.RateLimit("rescan", 60*time.Second, 1)(
 			http.HandlerFunc(handlers.RescanWalletHandler))).Methods("POST")
