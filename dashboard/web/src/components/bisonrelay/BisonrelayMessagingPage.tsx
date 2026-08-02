@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, Fragment, MutableRefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toYMD, toYMDTime } from '../../utils/date';
 import {
   AlertCircle,
@@ -111,6 +111,10 @@ type ActiveTarget =
 // internally. Keep in sync with the textarea's max-h-[9rem] class (9rem = 144px).
 const COMPOSER_MAX_PX = 144;
 
+// How many of the newest messages the thread renders before older ones go
+// behind a "Show earlier messages" button.
+const MESSAGE_WINDOW = 200;
+
 export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
   const [contactsErr, setContactsErr] = useState<string | null>(null);
@@ -126,6 +130,9 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   // no longer a member.
   const selectedGroupRemoved =
     !!selectedGroup && gcs.some((g) => g.id === selectedGroup.id && g.local_is_member === false);
+  // Stable identity of the open conversation; keys the message list (so its
+  // window resets per thread) and drives the composer's autoresize.
+  const conversationKey = selectedContact?.id?.identity ?? selectedGroup?.id ?? '';
   const [messages, setMessages] = useState<BisonrelayMessage[]>([]);
   // Set when we are removed from / the dissolution of the GC we are actively
   // viewing arrives: the thread blanks out with a prominent notice.
@@ -138,7 +145,6 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   } | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesErr, setMessagesErr] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [showTip, setShowTip] = useState(false);
   const [showInviteCreate, setShowInviteCreate] = useState(false);
@@ -197,15 +203,6 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
-  // Grow the composer to fit its content up to COMPOSER_MAX_PX, then let it
-  // scroll. Re-runs when the draft changes (typing, paste, and the reset to ''
-  // after a send) and when the active chat changes (the textarea may remount).
-  useLayoutEffect(() => {
-    const el = draftInputRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_PX)}px`;
-  }, [draft, selected]);
   const {
     unread,
     clearUnread,
@@ -1034,11 +1031,12 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     });
   }, [addListener, refreshContacts]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selected || sending) return;
-    if (!draft.trim() && !attachment && !stagedReply) return;
-    const typed = draft.trim();
+  // handleSend performs the actual send for the composer; it resolves true
+  // when the message went out (the composer then clears its draft) and false
+  // on any refusal or failure (the draft survives for a retry).
+  const handleSend = async (typed: string): Promise<boolean> => {
+    if (!selected || sending) return false;
+    if (!typed && !attachment && !stagedReply) return false;
     const text = finalizeOutgoing(
       stagedReply ? quoteBlock(stagedReply.flat, stagedReply.nick) + typed : typed,
     );
@@ -1052,7 +1050,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         // path; for now PMs-only file send.
         if (attachment && attachment.mode === 'transfer') {
           setMessagesErr('File transfer in groups is not yet supported.');
-          return;
+          return false;
         }
         const embed: BisonrelayPMAttachment | undefined =
           attachment && attachment.mode === 'inline' && attachment.dataB64
@@ -1075,12 +1073,11 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
             internal: false,
           },
         ]);
-        setDraft('');
         setQuotedEmbeds([]);
         setStagedReply(null);
         setAttachment(null);
         setAttachErr(null);
-        return;
+        return true;
       }
 
       const recipient = nickOrUid(selected.value);
@@ -1136,14 +1133,15 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           },
         ]);
       }
-      setDraft('');
       setQuotedEmbeds([]);
       setStagedReply(null);
       setAttachment(null);
       setAttachErr(null);
+      return true;
     } catch (err: any) {
       const body = err?.response?.data;
       setMessagesErr(typeof body === 'string' ? body : err?.message || 'Send failed');
+      return false;
     } finally {
       setSending(false);
       setTransfer(null);
@@ -1201,44 +1199,6 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     }
     setAttachErr(null);
     setPendingImage(null);
-  };
-
-  // Splice an emoji into the draft at the textarea cursor, then restore focus
-  // with the caret just past the inserted character so several can be added.
-  const insertEmojiAtCursor = (emoji: string) => {
-    const el = draftInputRef.current;
-    if (!el) {
-      setDraft((d) => d + emoji);
-      return;
-    }
-    const start = el.selectionStart ?? draft.length;
-    const end = el.selectionEnd ?? draft.length;
-    setDraft(draft.slice(0, start) + emoji + draft.slice(end));
-    queueMicrotask(() => {
-      const pos = start + emoji.length;
-      el.focus();
-      el.setSelectionRange(pos, pos);
-    });
-  };
-
-  // wrapDraftSelection wraps the composer's current selection (or inserts the
-  // placeholder when nothing is selected) with markdown delimiters - the
-  // actions behind the chat format menu. Mirrors the editor's wrapSelection.
-  const wrapDraftSelection = (left: string, right: string, placeholder: string) => {
-    const el = draftInputRef.current;
-    if (!el) {
-      setDraft((d) => d + left + placeholder + right);
-      return;
-    }
-    const start = el.selectionStart ?? draft.length;
-    const end = el.selectionEnd ?? draft.length;
-    const content = draft.slice(start, end) || placeholder;
-    setDraft(draft.slice(0, start) + left + content + right + draft.slice(end));
-    queueMicrotask(() => {
-      el.focus();
-      const innerStart = start + left.length;
-      el.setSelectionRange(innerStart, innerStart + content.length);
-    });
   };
 
   // Stage a reply to a bubble's message: the composer shows a "Replying to"
@@ -1622,6 +1582,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 <p className="text-xs text-muted-foreground">No messages yet.</p>
               ) : (
                 <MessageList
+                  key={conversationKey}
                   messages={messages}
                   ownNick={ownNick}
                   isGroup={selected?.kind === 'group'}
@@ -1639,129 +1600,28 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 You're no longer a member of this group.
               </div>
             ) : (
-            <form onSubmit={handleSend} className="p-3 border-t border-border/50 flex flex-col gap-2">
-              {stagedReply && (
-                <div className="flex items-start gap-2 border-l-2 border-primary bg-muted/20 rounded px-2 py-1">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-primary">Replying to {stagedReply.nick}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {stagedReply.flat.replace(QUOTE_MARKER_RE, '[image]').split('\n').join(' ').trim() ||
-                        '[attachment]'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={clearStagedReply}
-                    aria-label="Cancel reply"
-                    title="Cancel reply"
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 shrink-0"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
-              {quotedEmbeds.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {quotedEmbeds.map((qe) => (
-                    <div
-                      key={qe.marker}
-                      className="flex items-center gap-2 px-2 py-1 rounded-lg border border-border/40 bg-background/40"
-                    >
-                      <img
-                        src={`data:${qe.mime};base64,${qe.dataB64}`}
-                        alt=""
-                        className="h-8 w-8 rounded object-cover"
-                      />
-                      <span className="text-[11px] text-muted-foreground">
-                        Quoted image · {formatBytes(b64Size(qe.dataB64))} · sent as thumbnail
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeQuotedEmbed(qe)}
-                        aria-label="Remove quoted image"
-                        title="Remove quoted image"
-                        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {attachment && (
-                <AttachmentPreview
-                  attachment={attachment}
-                  transfer={transfer}
-                  onRemove={() => {
-                    setAttachment(null);
-                    setAttachErr(null);
-                  }}
-                />
-              )}
-              {attachErr && (
-                <p className="text-xs text-destructive flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" /> {attachErr}
-                </p>
-              )}
-              <div className="flex items-end gap-1 rounded-2xl border border-border bg-background px-2 py-1 transition-colors focus-within:border-primary">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={handleAttachPick}
-                />
-                <EmojiPicker onPick={insertEmojiAtCursor} disabled={sending} />
-                <textarea
-                  ref={draftInputRef}
-                  rows={1}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      e.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  placeholder={
-                    selectedContact ? `Message ${displayNick(selectedContact)}…` : 'Type a message…'
-                  }
-                  disabled={sending}
-                  className="flex-1 min-w-0 px-1 py-1.5 bg-transparent text-foreground leading-normal resize-none overflow-y-auto max-h-[9rem] focus:outline-none disabled:opacity-50"
-                />
-                <ChatFormatMenu onWrap={wrapDraftSelection} disabled={sending} />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={sending}
-                  title="Attach a file"
-                  aria-label="Attach a file"
-                  className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </button>
-                {selectedContact && (
-                  <button
-                    type="button"
-                    onClick={() => setShowTip(true)}
-                    disabled={sending}
-                    title={`Pay a tip to ${displayNick(selectedContact)}`}
-                    aria-label="Pay tip"
-                    className="shrink-0 p-2 rounded-lg text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
-                  >
-                    <Zap className="h-4 w-4" />
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  disabled={(!draft.trim() && !attachment) || sending}
-                  title="Send"
-                  aria-label="Send"
-                  className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                </button>
-              </div>
-            </form>
+            <ChatComposer
+              selectedContact={selectedContact}
+              conversationKey={conversationKey}
+              sending={sending}
+              attachment={attachment}
+              transfer={transfer}
+              attachErr={attachErr}
+              stagedReply={stagedReply}
+              quotedEmbeds={quotedEmbeds}
+              draftRef={draftInputRef}
+              fileInputRef={fileInputRef}
+              displayNick={displayNick}
+              onSend={handleSend}
+              onAttachPick={handleAttachPick}
+              onRemoveAttachment={() => {
+                setAttachment(null);
+                setAttachErr(null);
+              }}
+              onRemoveQuotedEmbed={removeQuotedEmbed}
+              onClearStagedReply={clearStagedReply}
+              onShowTip={() => setShowTip(true)}
+            />
             )}
           </>
         )}
@@ -1959,6 +1819,231 @@ function quoteBlock(flat: string, from: string): string {
   return `${quoted}\n\n`;
 }
 
+interface ChatComposerProps {
+  selectedContact: BisonrelayContact | null;
+  conversationKey: string;
+  sending: boolean;
+  attachment: StagedAttachment | null;
+  transfer: { pct: number; phase: 'upload' | 'relay' } | null;
+  attachErr: string | null;
+  stagedReply: { nick: string; flat: string } | null;
+  quotedEmbeds: QuotedEmbed[];
+  // Both refs stay owned by the page: it focuses the textarea on chat switch
+  // and opens the file picker from the user sub-nav.
+  draftRef: MutableRefObject<HTMLTextAreaElement | null>;
+  fileInputRef: MutableRefObject<HTMLInputElement | null>;
+  displayNick: (c: BisonrelayContact) => string;
+  // Resolves true when the message went out (the draft is then cleared);
+  // false on any refusal or failure, so the draft survives for a retry.
+  onSend: (typed: string) => Promise<boolean>;
+  onAttachPick: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemoveAttachment: () => void;
+  onRemoveQuotedEmbed: (qe: QuotedEmbed) => void;
+  onClearStagedReply: () => void;
+  onShowTip: () => void;
+}
+
+// ChatComposer owns the draft text so per-keystroke re-renders stay inside
+// the composer instead of re-rendering the page and the whole message thread
+// (whose bodies can carry megabyte-scale inline images).
+const ChatComposer = ({
+  selectedContact,
+  conversationKey,
+  sending,
+  attachment,
+  transfer,
+  attachErr,
+  stagedReply,
+  quotedEmbeds,
+  draftRef,
+  fileInputRef,
+  displayNick,
+  onSend,
+  onAttachPick,
+  onRemoveAttachment,
+  onRemoveQuotedEmbed,
+  onClearStagedReply,
+  onShowTip,
+}: ChatComposerProps) => {
+  const [draft, setDraft] = useState('');
+
+  // Grow the composer to fit its content up to COMPOSER_MAX_PX, then let it
+  // scroll. Re-runs when the draft changes (typing, paste, and the reset to ''
+  // after a send) and when the active chat changes (the textarea may remount).
+  useLayoutEffect(() => {
+    const el = draftRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_PX)}px`;
+  }, [draft, conversationKey, draftRef]);
+
+  // Splice an emoji into the draft at the textarea cursor, then restore focus
+  // with the caret just past the inserted character so several can be added.
+  const insertEmojiAtCursor = (emoji: string) => {
+    const el = draftRef.current;
+    if (!el) {
+      setDraft((d) => d + emoji);
+      return;
+    }
+    const start = el.selectionStart ?? draft.length;
+    const end = el.selectionEnd ?? draft.length;
+    setDraft(draft.slice(0, start) + emoji + draft.slice(end));
+    queueMicrotask(() => {
+      const pos = start + emoji.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  // wrapDraftSelection wraps the composer's current selection (or inserts the
+  // placeholder when nothing is selected) with markdown delimiters - the
+  // actions behind the chat format menu. Mirrors the editor's wrapSelection.
+  const wrapDraftSelection = (left: string, right: string, placeholder: string) => {
+    const el = draftRef.current;
+    if (!el) {
+      setDraft((d) => d + left + placeholder + right);
+      return;
+    }
+    const start = el.selectionStart ?? draft.length;
+    const end = el.selectionEnd ?? draft.length;
+    const content = draft.slice(start, end) || placeholder;
+    setDraft(draft.slice(0, start) + left + content + right + draft.slice(end));
+    queueMicrotask(() => {
+      el.focus();
+      const innerStart = start + left.length;
+      el.setSelectionRange(innerStart, innerStart + content.length);
+    });
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (await onSend(draft.trim())) setDraft('');
+  };
+
+  return (
+    <form onSubmit={submit} className="p-3 border-t border-border/50 flex flex-col gap-2">
+      {stagedReply && (
+        <div className="flex items-start gap-2 border-l-2 border-primary bg-muted/20 rounded px-2 py-1">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-primary">Replying to {stagedReply.nick}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {stagedReply.flat.replace(QUOTE_MARKER_RE, '[image]').split('\n').join(' ').trim() ||
+                '[attachment]'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClearStagedReply}
+            aria-label="Cancel reply"
+            title="Cancel reply"
+            className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 shrink-0"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+      {quotedEmbeds.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {quotedEmbeds.map((qe) => (
+            <div
+              key={qe.marker}
+              className="flex items-center gap-2 px-2 py-1 rounded-lg border border-border/40 bg-background/40"
+            >
+              <img
+                src={`data:${qe.mime};base64,${qe.dataB64}`}
+                alt=""
+                className="h-8 w-8 rounded object-cover"
+              />
+              <span className="text-[11px] text-muted-foreground">
+                Quoted image · {formatBytes(b64Size(qe.dataB64))} · sent as thumbnail
+              </span>
+              <button
+                type="button"
+                onClick={() => onRemoveQuotedEmbed(qe)}
+                aria-label="Remove quoted image"
+                title="Remove quoted image"
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {attachment && (
+        <AttachmentPreview
+          attachment={attachment}
+          transfer={transfer}
+          onRemove={onRemoveAttachment}
+        />
+      )}
+      {attachErr && (
+        <p className="text-xs text-destructive flex items-center gap-1">
+          <AlertCircle className="h-3 w-3" /> {attachErr}
+        </p>
+      )}
+      <div className="flex items-end gap-1 rounded-2xl border border-border bg-background px-2 py-1 transition-colors focus-within:border-primary">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={onAttachPick}
+        />
+        <EmojiPicker onPick={insertEmojiAtCursor} disabled={sending} />
+        <textarea
+          ref={draftRef}
+          rows={1}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              e.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder={
+            selectedContact ? `Message ${displayNick(selectedContact)}…` : 'Type a message…'
+          }
+          disabled={sending}
+          className="flex-1 min-w-0 px-1 py-1.5 bg-transparent text-foreground leading-normal resize-none overflow-y-auto max-h-[9rem] focus:outline-none disabled:opacity-50"
+        />
+        <ChatFormatMenu onWrap={wrapDraftSelection} disabled={sending} />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={sending}
+          title="Attach a file"
+          aria-label="Attach a file"
+          className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
+        {selectedContact && (
+          <button
+            type="button"
+            onClick={onShowTip}
+            disabled={sending}
+            title={`Pay a tip to ${displayNick(selectedContact)}`}
+            aria-label="Pay tip"
+            className="shrink-0 p-2 rounded-lg text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+          >
+            <Zap className="h-4 w-4" />
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={(!draft.trim() && !attachment) || sending}
+          title="Send"
+          aria-label="Send"
+          className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </button>
+      </div>
+    </form>
+  );
+};
+
 interface MessageListProps {
   messages: BisonrelayMessage[];
   ownNick: string;
@@ -2055,14 +2140,34 @@ const MessageList = ({
   // Index of the bubble whose quote button is shown on touch devices, where
   // the desktop hover reveal never fires; tapping a bubble toggles it.
   const [revealed, setRevealed] = useState<number | null>(null);
+  // Only the newest window is mapped to DOM; long threads (whose bodies can
+  // carry base64 images) otherwise grow render cost without bound. The parent
+  // keys this component by conversation, so the window resets per thread.
+  const [shown, setShown] = useState(MESSAGE_WINDOW);
+  const start = Math.max(0, messages.length - shown);
+  const visible = messages.slice(start);
   const endRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
   return (
     <>
-      {messages.map((m, i) => {
-        const prev = i > 0 ? messages[i - 1] : undefined;
+      {start > 0 && (
+        <div className="flex justify-center my-2">
+          <button
+            type="button"
+            onClick={() => setShown((n) => n + MESSAGE_WINDOW)}
+            className="text-xs text-primary hover:underline"
+          >
+            Show earlier messages ({start} more)
+          </button>
+        </div>
+      )}
+      {visible.map((m, i) => {
+        // Positions are absolute within the full array so keys and the
+        // revealed index stay stable while older rows are outside the window.
+        const abs = start + i;
+        const prev = i > 0 ? visible[i - 1] : undefined;
         const showDaySeparator = !prev || startOfDay(prev.timestamp) !== startOfDay(m.timestamp);
         const daySeparator = showDaySeparator ? (
           <div className="flex justify-center my-2">
@@ -2081,7 +2186,7 @@ const MessageList = ({
             const targetUid = sugg[1];
             const known = knownContactsByUid.get(targetUid);
             return (
-              <Fragment key={i}>
+              <Fragment key={abs}>
                 {daySeparator}
                 <SuggestedKXCard
                   mediatorUid={mediatorUid}
@@ -2095,7 +2200,7 @@ const MessageList = ({
             );
           }
           return (
-            <Fragment key={i}>
+            <Fragment key={abs}>
               {daySeparator}
               <div className="flex justify-center py-0.5">
                 <p className="text-[11px] italic text-muted-foreground/80 px-3 text-center inline-flex items-center gap-1.5 max-w-full">
@@ -2133,7 +2238,7 @@ const MessageList = ({
             title="Quote reply"
             aria-label="Quote reply"
             className={`self-center shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-opacity ${
-              revealed === i
+              revealed === abs
                 ? 'opacity-100'
                 : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
             }`}
@@ -2142,7 +2247,7 @@ const MessageList = ({
           </button>
         ) : null;
         return (
-          <Fragment key={i}>
+          <Fragment key={abs}>
             {daySeparator}
             <div
               className={`group flex ${own ? 'justify-end gap-2' : 'justify-start gap-2 items-end'} ${
@@ -2174,7 +2279,7 @@ const MessageList = ({
                 ))}
               {own && quoteBtn}
               <div
-                onClick={() => setRevealed((cur) => (cur === i ? null : i))}
+                onClick={() => setRevealed((cur) => (cur === abs ? null : abs))}
                 className={`max-w-[75%] rounded-lg px-3 py-1.5 text-sm ${
                   own ? 'bg-primary/20 text-foreground' : 'bg-muted/30 text-foreground'
                 }`}
@@ -2836,7 +2941,10 @@ const MessageBodySegments = ({
   senderUid?: string;
   senderSelf?: boolean;
 }) => {
-  const segments = parseEmbeds(body);
+  // Bodies can carry megabyte-scale base64 embeds; re-running the tag regex
+  // over them on every render (e.g. while the thread re-renders for a new
+  // message) is the dominant chat CPU cost.
+  const segments = useMemo(() => parseEmbeds(body), [body]);
   return (
     <div className="space-y-1">
       {segments.map((seg, i) => {
