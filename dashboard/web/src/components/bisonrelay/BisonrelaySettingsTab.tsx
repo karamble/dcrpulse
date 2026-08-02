@@ -74,6 +74,7 @@ import { ChannelList } from '../lightning/channels/ChannelList';
 import { RequestLiquidityModal } from '../lightning/channels/RequestLiquidityModal';
 import { setBrNotifPrefs, useBrNotifPrefs } from './brNotifPrefs';
 import { BrMcpSection } from '../settings/BrMcpSection';
+import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 
 // ---- Section routing --------------------------------------------------------
 
@@ -1597,9 +1598,7 @@ const BackupCard = () => {
     }
     const start = status.startedAt * 1000;
     const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    return startVisiblePoll(tick, 1000);
   }, [status?.state, status?.startedAt]);
 
   const onPrepare = async () => {

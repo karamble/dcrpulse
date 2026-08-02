@@ -14,6 +14,7 @@ import {
 } from '../../services/api';
 import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const MAX_DCR = 21_000_000;
 const VALIDATE_DEBOUNCE_MS = 400;
@@ -93,25 +94,18 @@ export const SendTab = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Poll mixer/autobuyer state so the send block clears once the user stops them.
-  useEffect(() => {
-    let cancelled = false;
-    const check = async () => {
-      const [priv, ab] = await Promise.all([
-        getPrivacyStatus().catch(() => null),
-        getAutobuyerStatus().catch(() => null),
-      ]);
-      if (cancelled) return;
-      setPrivacy(priv);
-      setSpendBlocked(!!priv?.mixerRunning || !!ab?.running);
-    };
-    check();
-    const id = window.setInterval(check, 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+  // Poll mixer/autobuyer state so the send block clears once the user stops
+  // them. 15s suffices for a precautionary banner, and returning to the tab
+  // refreshes immediately.
+  const checkSpendBlock = async () => {
+    const [priv, ab] = await Promise.all([
+      getPrivacyStatus().catch(() => null),
+      getAutobuyerStatus().catch(() => null),
+    ]);
+    setPrivacy(priv);
+    setSpendBlocked(!!priv?.mixerRunning || !!ab?.running);
+  };
+  useVisiblePoll(checkSpendBlock, 15000);
 
   // When privacy is configured the unmixed (change) account is receive-only:
   // spending it directly would defeat mixing, so drop it from the source list.

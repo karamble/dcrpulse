@@ -8,6 +8,7 @@ import { Bell } from 'lucide-react';
 import { getDexNotifications, type DexNote } from '../../services/dcrdexApi';
 import { loadNotifPrefs, shouldNotify } from './dexNotifPrefs';
 import { useDexOnNotes, useDexRefreshOnNotes } from './DexLiveProvider';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const SEEN_KEY = 'dexNotesSeen';
 const FIRED_KEY = 'dexNotesFired';
@@ -52,12 +53,7 @@ export const DexNotifications = () => {
   const [reconnectNote, setReconnectNote] = useState<DexNote | null>(null);
 
   const refresh = () => getDexNotifications(50).then(setNotes).catch(() => {});
-  useEffect(() => {
-    refresh();
-    const id = window.setInterval(refresh, 60000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useVisiblePoll(refresh, 60000);
   useDexRefreshOnNotes(REFRESH_NOTE_TYPES, refresh);
 
   // When the dcr bond wallet reconnects, clear the lingering connection warnings

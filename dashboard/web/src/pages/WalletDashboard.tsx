@@ -17,6 +17,8 @@ import { AddressBookmarksCard } from '../components/wallet/AddressBookmarksCard'
 import { WalletSetup } from '../components/WalletSetup';
 import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress, streamRescanProgress, SyncProgressData, checkWalletExists, checkWalletLoaded, openWallet, getPrivacyStatus, getAutobuyerStatus, getVoteTrickleWorkers } from '../services/api';
 import { useWalletReady } from '../hooks/useWalletReady';
+import { useVisiblePoll } from '../hooks/useVisiblePoll';
+import { shallowEqual } from '../utils/shallowEqual';
 
 export const WalletDashboard = () => {
   const [walletExists, setWalletExists] = useState<boolean | null>(null);
@@ -43,32 +45,20 @@ export const WalletDashboard = () => {
       setMixerRunning(false);
       setAutobuyerRunning(false);
       setVoteTrickleRunning(false);
-      return;
     }
-    const poll = async () => {
-      try {
-        const s = await getPrivacyStatus();
-        setMixerRunning(s.mixerRunning);
-      } catch {
-        setMixerRunning(false);
-      }
-      try {
-        const a = await getAutobuyerStatus();
-        setAutobuyerRunning(a.running);
-      } catch {
-        setAutobuyerRunning(false);
-      }
-      try {
-        const ws = await getVoteTrickleWorkers();
-        setVoteTrickleRunning(ws.some((w) => w.running));
-      } catch {
-        setVoteTrickleRunning(false);
-      }
-    };
-    poll();
-    const id = window.setInterval(poll, 10000);
-    return () => window.clearInterval(id);
   }, [isWatchOnly]);
+
+  const pollActivityFlags = async () => {
+    const [s, a, ws] = await Promise.all([
+      getPrivacyStatus().catch(() => null),
+      getAutobuyerStatus().catch(() => null),
+      getVoteTrickleWorkers().catch(() => null),
+    ]);
+    setMixerRunning(!!s?.mixerRunning);
+    setAutobuyerRunning(!!a?.running);
+    setVoteTrickleRunning(!!ws?.some((w) => w.running));
+  };
+  useVisiblePoll(pollActivityFlags, 15000, { enabled: !isWatchOnly });
 
   const fetchData = async () => {
     try {
@@ -107,7 +97,6 @@ export const WalletDashboard = () => {
     
     try {
       await openWallet({ publicPassphrase });
-      console.log('Wallet opened successfully with provided passphrase');
       setShowPassphraseModal(false);
       setPublicPassphrase('');
       
@@ -141,30 +130,25 @@ export const WalletDashboard = () => {
           
           if (!loadedResponse.loaded) {
             // Wallet not loaded, try to open it with empty passphrase
-            console.log('Wallet exists but not loaded, attempting to open...');
             try {
               await openWallet({ publicPassphrase: '' });
-              console.log('Wallet opened successfully with empty passphrase');
             } catch (err: any) {
               const errorMsg = err.response?.data?.message || err.message || '';
-              
+
               // Check if error is due to wrong passphrase
               if (errorMsg.includes('passphrase') || errorMsg.includes('invalid') || errorMsg.includes('incorrect')) {
-                console.log('Wallet requires public passphrase - showing modal');
                 setShowPassphraseModal(true);
                 setLoading(false);
                 return;
               }
-              
-              console.log('Failed to open wallet:', errorMsg);
+
+              console.error('Failed to open wallet:', errorMsg);
               setLoading(false);
               return;
             }
-          } else {
-            console.log('Wallet already loaded and ready');
           }
-        } catch (err: any) {
-          console.log('Error checking wallet load status:', err);
+        } catch {
+          /* non-fatal: proceed and let the dashboard load surface errors */
         }
 
         // Check for active rescan
@@ -172,7 +156,6 @@ export const WalletDashboard = () => {
           const progress = await getSyncProgress();
           if (progress.isRescanning && progress.progress < 100) {
             // Active rescan detected - show progress bar only
-            console.log('Active rescan detected on load - showing progress bar');
             setSyncProgress(progress);
             setShowSyncProgress(true);
             setLoading(false);
@@ -180,8 +163,8 @@ export const WalletDashboard = () => {
             fetchData();
             return;
           }
-        } catch (err) {
-          console.log('No active rescan, loading wallet data normally');
+        } catch {
+          /* no active rescan; load wallet data normally */
         }
         
         // No active rescan - fetch wallet data normally
@@ -198,46 +181,31 @@ export const WalletDashboard = () => {
 
   // Auto-refresh balances every 10 seconds. Unconditional - sync state
   // belongs to the WebSocket, not polling, so polling doesn't need to pause
-  // during rescan.
-  useEffect(() => {
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  // during rescan. The initial fetch is done by initialize() above.
+  useVisiblePoll(fetchData, 10000, { immediate: false });
 
   // WebSocket streaming for wallet sync status (always active, purely reactive)
   useEffect(() => {
-    console.log('🔌 Starting continuous wallet sync monitoring stream');
-    
     const cleanup = streamRescanProgress(
-      // onProgress callback - called every second with wallet state
+      // onProgress - frames repeat ~1/s while rescanning; keep the previous
+      // snapshot object when nothing changed so repeat frames don't re-render
+      // the dashboard.
       (progress) => {
-        // Purely reactive: Show progress bar when rescanning, hide when not
         if (progress.isRescanning) {
-          // Wallet is behind chain - show progress bar
-          if (!showSyncProgress) {
-            console.log('✅ Rescan active - showing progress bar');
-          }
           setShowSyncProgress(true);
-          setSyncProgress(progress);
-          setIsPreparingRescan(false); // Clear preparing state once actual rescan starts
+          setSyncProgress((prev) => (prev && shallowEqual(prev, progress) ? prev : progress));
+          setIsPreparingRescan(false);
         } else {
-          // Wallet is synced - hide progress bar
-          if (showSyncProgress) {
-            console.log('✅ Wallet synced - hiding progress bar');
-          }
           setShowSyncProgress(false);
-          setIsPreparingRescan(false); // Clear preparing state
+          setIsPreparingRescan(false);
         }
       },
-      // onError callback
       (error) => {
-        console.error('❌ WebSocket error:', error);
+        console.error('Wallet sync stream error:', error);
       },
-      // onClose callback - just log; do NOT mutate sync state. A stream
-      // close means the server hung up, not that sync finished.
-      () => {
-        console.log('🔌 WebSocket stream closed');
-      }
+      // onClose - do NOT mutate sync state. A stream close means the server
+      // hung up, not that sync finished; the stream reconnects on its own.
+      () => {},
     );
 
     // Cleanup WebSocket connection when component unmounts
@@ -249,7 +217,6 @@ export const WalletDashboard = () => {
     setIsPreparingRescan(true);
     setError(null);
     setShowImportModal(false);
-    console.log('Xpub import initiated - showing preparing state');
     // WebSocket stream will automatically detect and show rescan progress
   };
 
@@ -264,7 +231,6 @@ export const WalletDashboard = () => {
       // Show immediate loading state
       setIsPreparingRescan(true);
       setError(null);
-      console.log('Rescan initiated - showing preparing state');
       
       await triggerRescan();
       // WebSocket stream will automatically detect and show rescan progress

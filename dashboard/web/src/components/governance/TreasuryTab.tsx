@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, ExternalLink, KeyRound, Landmark, Loader2 } from 'lucide-react';
 import {
@@ -14,6 +14,7 @@ import {
   setTreasuryKeyPolicy,
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const POLICIES = ['yes', 'no', 'abstain'] as const;
 type Policy = (typeof POLICIES)[number];
@@ -67,11 +68,7 @@ export const TreasuryTab = () => {
     }
   };
 
-  useEffect(() => {
-    load();
-    const id = window.setInterval(load, 30000);
-    return () => window.clearInterval(id);
-  }, []);
+  useVisiblePoll(load, 30000);
 
   const handleSubmit = async (passphrase: string) => {
     if (!pending) return;

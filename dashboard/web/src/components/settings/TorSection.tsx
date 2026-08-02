@@ -14,6 +14,7 @@ import {
   getTorControl,
   torNewIdentity,
 } from '../../services/tor/client';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 interface ToggleProps {
   label: string;
@@ -92,10 +93,9 @@ export const TorSection = () => {
 
   useEffect(() => {
     getTorSettings().then(setSettings).catch(() => {});
-    refresh();
-    const id = window.setInterval(refresh, 5000);
-    return () => clearInterval(id);
-  }, [refresh]);
+  }, []);
+
+  useVisiblePoll(refresh, 5000);
 
   const apply = async (patch: Partial<TorSettings>) => {
     if (!settings) return;

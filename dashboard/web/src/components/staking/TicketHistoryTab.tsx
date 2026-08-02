@@ -2,11 +2,12 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowDownUp, ExternalLink, Filter, History, Search } from 'lucide-react';
 import { TicketRecord, TicketLifecycleStatus, listTickets } from '../../services/api';
 import { ticketStatusBadgeClass } from '../../services/ticketService';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const ALL_STATES: TicketLifecycleStatus[] = [
   'UNMINED',
@@ -95,11 +96,7 @@ export const TicketHistoryTab = () => {
     }
   };
 
-  useEffect(() => {
-    load();
-    const id = window.setInterval(load, 30000);
-    return () => window.clearInterval(id);
-  }, []);
+  useVisiblePoll(load, 30000);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

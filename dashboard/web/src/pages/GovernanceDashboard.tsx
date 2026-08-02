@@ -124,9 +124,8 @@ export const GovernanceDashboard = () => {
             detectedAt: new Date().toISOString(),
           }));
           
-          const added = saveTSpends(records);
-          console.log(`Saved ${added} new TSpends at block ${progress.currentHeight}`);
-          
+          saveTSpends(records);
+
           // Trigger refresh of treasury card to show new data
           setRefreshTrigger(prev => prev + 1);
         }
@@ -177,7 +176,7 @@ export const GovernanceDashboard = () => {
       } catch (error) {
         console.error('Failed to fetch scan progress:', error);
       }
-    }, 1000); // Poll every second
+    }, 3000); // A full-chain scan runs for minutes; 3s is plenty for a progress bar
 
     return () => clearInterval(interval);
   }, [isScanning]);

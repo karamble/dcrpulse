@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toYMDTime } from '../../utils/date';
 import { Link } from 'react-router-dom';
 import {
@@ -21,6 +21,7 @@ import {
 } from '../../services/lightningApi';
 import { NetworkStats } from './NetworkStats';
 import { StatCard, fmtDcr } from './StatCard';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 export const OverviewTab = () => {
   const [info, setInfo] = useState<LightningInfo | null>(null);
@@ -48,11 +49,7 @@ export const OverviewTab = () => {
     }
   };
 
-  useEffect(() => {
-    load();
-    const id = window.setInterval(load, 15000);
-    return () => window.clearInterval(id);
-  }, []);
+  useVisiblePoll(load, 15000);
 
   if (loading && !info) {
     return (

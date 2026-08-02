@@ -7,6 +7,7 @@ import { AlertCircle, AlertTriangle, Info, ShieldCheck } from 'lucide-react';
 import { dexAccountState, getDexAccount, postDexBond, setDexBondOptions, type DexAccount } from '../../services/dcrdexApi';
 import { fmtAmt } from './dexFormat';
 import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
+import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const Card = ({ title, children }: { title: React.ReactNode; children: React.ReactNode }) => (
   <div className="p-4 rounded-xl bg-gradient-card border border-border/50 space-y-2">
@@ -148,9 +149,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
       .catch((e: any) => setErr(e?.response?.data || e?.message || 'Failed to load account'));
   };
   useEffect(() => {
-    refresh();
-    const id = window.setInterval(refresh, 60000);
-    return () => window.clearInterval(id);
+    return startVisiblePoll(refresh, 60000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host]);
   useDexRefreshOnNotes(['bondpost', 'bondrefund', 'reputation'], refresh);

@@ -22,6 +22,7 @@ import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
 import { dexCoinExplorer } from './dexExplorers';
 import { stepIndex, StepBar } from './dexSteps';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
+import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 
 interface Props {
   order: DexOrder;
@@ -236,8 +237,7 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
   const settling = orderHasActiveMatches(order);
   useEffect(() => {
     if (!settling) return;
-    const id = window.setInterval(loadFull, 10000);
-    return () => window.clearInterval(id);
+    return startVisiblePoll(loadFull, 10000, false);
   }, [settling, loadFull]);
 
   const baseConv = market?.baseConvFactor || 1e8;

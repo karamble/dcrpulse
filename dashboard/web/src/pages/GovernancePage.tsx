@@ -2,8 +2,11 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+import { useCallback, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { VoteTrickleBadge } from '../components/governance/VoteTrickleCard';
+import { VoteTrickleBadge, VoteTrickleOutletContext } from '../components/governance/VoteTrickleCard';
+import { VoteTrickleStatus, getVoteTrickleWorkers } from '../services/api';
+import { useVisiblePoll } from '../hooks/useVisiblePoll';
 
 const tabs = [
   { path: 'consensus', label: 'Consensus' },
@@ -17,6 +20,19 @@ export const GovernancePage = () => {
   const segments = location.pathname.split('/').filter(Boolean);
   const idx = segments.indexOf('governance');
   const active = (idx >= 0 && segments[idx + 1]) || 'consensus';
+
+  // One worker poll for the whole governance tree: the header badge and the
+  // proposals-tab cards read this list via the Outlet context instead of each
+  // polling the endpoint themselves.
+  const [workers, setWorkers] = useState<VoteTrickleStatus[]>([]);
+  const refreshWorkers = useCallback(async () => {
+    try {
+      setWorkers(await getVoteTrickleWorkers());
+    } catch {
+      /* ignore transient poll errors */
+    }
+  }, []);
+  useVisiblePoll(refreshWorkers, 5000);
 
   return (
     <div className="space-y-6">
@@ -39,11 +55,11 @@ export const GovernancePage = () => {
           );
         })}
         <div className="ml-auto flex items-center pb-1.5 pl-2">
-          <VoteTrickleBadge />
+          <VoteTrickleBadge workers={workers} />
         </div>
       </nav>
 
-      <Outlet />
+      <Outlet context={{ workers, refreshWorkers } satisfies VoteTrickleOutletContext} />
     </div>
   );
 };

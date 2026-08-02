@@ -35,6 +35,7 @@ import {
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VSPSelect } from './VSPSelect';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const MAX_EVENTS = 200;
 
@@ -126,12 +127,13 @@ export const AutobuyerTab = () => {
         }
       }
     })();
-    const id = window.setInterval(refreshStatus, 5000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
     };
   }, []);
+
+  // The initial load above already fetched the status once.
+  useVisiblePoll(refreshStatus, 5000, { immediate: false });
 
   // WS event subscription.
   useEffect(() => {

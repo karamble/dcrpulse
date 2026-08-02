@@ -11,7 +11,11 @@ export const useSecondTick = (active = true, ms = 1000): number => {
   const [n, setN] = useState(0);
   useEffect(() => {
     if (!active) return;
-    const id = window.setInterval(() => setN((x) => x + 1), ms);
+    const id = window.setInterval(() => {
+      // Age labels don't need to advance while the tab is hidden.
+      if (document.visibilityState !== 'visible') return;
+      setN((x) => x + 1);
+    }, ms);
     return () => window.clearInterval(id);
   }, [active, ms]);
   return n;

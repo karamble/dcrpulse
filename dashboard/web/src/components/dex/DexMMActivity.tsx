@@ -10,6 +10,7 @@ import { botProblemMessages, cexProblemMessages, placedCount } from './dexMMProb
 import { DexMMOrderReport } from './DexMMOrderReport';
 import { DexMMPlacementsChart } from './DexMMPlacementsChart';
 import { draftFromConfig } from './dexMMConfig';
+import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 
 // AssetInfo resolves an asset id to a display ticker and its atoms-per-unit
 // conversion factor.
@@ -88,8 +89,7 @@ export const DexMMActivity = ({
   // Re-render once a second so the run timer advances while a bot is running.
   useEffect(() => {
     if (!bot.running || !stats) return;
-    const id = window.setInterval(() => tick((n) => n + 1), 1000);
-    return () => window.clearInterval(id);
+    return startVisiblePoll(() => tick((n) => n + 1), 1000, false);
   }, [bot.running, stats]);
 
   // The bot's configured placement layout, previewed the same way the wizard

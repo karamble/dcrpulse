@@ -14,6 +14,7 @@ import {
   clearBisonrelayNotifications,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const SEEN_KEY = 'brNotesSeen';
 
@@ -76,12 +77,7 @@ export const BrNotifications = () => {
     }
   };
 
-  useEffect(() => {
-    refresh();
-    const id = window.setInterval(refresh, 60000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useVisiblePoll(refresh, 60000);
 
   useEffect(() => {
     return addListener((evt: BisonrelayLiveEvent) => {

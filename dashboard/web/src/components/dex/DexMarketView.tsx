@@ -7,6 +7,7 @@ import { AlertCircle, FlaskConical, Hourglass, ShieldAlert } from 'lucide-react'
 import { getDexConfig, getDexMyOrders, orderHasActiveMatches, type DexAccountStatus, type DexConfig, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { useDexFeed, statsFromCandles, spotToStats, type MarketStats, type MarketSpot } from './useDexFeed';
 import { useDexConn, useDexRefreshOnNotes, useDexSpots, useMMBotRun, useSeedDexSpots } from './DexLiveProvider';
+import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 import { loadDexConfigCache, saveDexConfigCache } from './dexConfigCache';
 import { DexMMRunningCard } from './DexMMRunningCard';
 import { DexStatsBar } from './DexStatsBar';
@@ -151,9 +152,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
   const settling = !preview && liveOrders.some(orderHasActiveMatches);
   useEffect(() => {
     if (preview) return;
-    refreshOrders();
-    const id = window.setInterval(refreshOrders, settling ? 10000 : 60000);
-    return () => window.clearInterval(id);
+    return startVisiblePoll(refreshOrders, settling ? 10000 : 60000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview, settling]);
   // A running bot places/cancels orders each epoch (epochreport) and on

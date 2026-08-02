@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
   LightningStage,
@@ -8,6 +8,7 @@ import {
 import { LightningSetupWizard } from '../components/lightning/setup/LightningSetupWizard';
 import { LightningLayout } from '../components/lightning/LightningLayout';
 import { useWalletReady } from '../hooks/useWalletReady';
+import { useVisiblePoll } from '../hooks/useVisiblePoll';
 import { WalletSyncGate } from '../components/common/WalletSyncGate';
 import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
 
@@ -27,11 +28,7 @@ export const LightningPage = () => {
     }
   };
 
-  useEffect(() => {
-    refresh();
-    const id = window.setInterval(refresh, 10000);
-    return () => window.clearInterval(id);
-  }, []);
+  useVisiblePoll(refresh, 10000);
 
   if (wallet.isWatchOnly) {
     return <WatchOnlyGate feature="Lightning" />;

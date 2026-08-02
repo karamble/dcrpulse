@@ -24,6 +24,7 @@ import {
   getLightningNetwork,
 } from '../../services/lightningApi';
 import { getTorSettings } from '../../services/tor/client';
+import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 import { OnionIcon } from './OnionIcon';
 import { ScoreMeter } from './ScoreMeter';
 import { StatusPill } from './StatusPill';
@@ -106,9 +107,7 @@ export const NetworkStats = () => {
   };
 
   useEffect(() => {
-    load();
-    const id = window.setInterval(load, 30000);
-    return () => window.clearInterval(id);
+    return startVisiblePoll(load, 30000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit]);
 

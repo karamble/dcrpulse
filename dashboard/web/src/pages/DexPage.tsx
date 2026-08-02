@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AlertCircle, AlertTriangle, X } from 'lucide-react';
 import { getDexStatus, type DexStatus } from '../services/dcrdexApi';
 import { DexSetupWizard } from '../components/dex/DexSetupWizard';
@@ -11,6 +11,7 @@ import { DexHome } from '../components/dex/DexHome';
 import { DexMarketView } from '../components/dex/DexMarketView';
 import { DexSeedBackup } from '../components/dex/DexSeedBackup';
 import { useWalletReady } from '../hooks/useWalletReady';
+import { useVisiblePoll } from '../hooks/useVisiblePoll';
 import { WalletSyncGate } from '../components/common/WalletSyncGate';
 import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
 
@@ -34,13 +35,7 @@ export const DexPage = () => {
     }
   };
 
-  useEffect(() => {
-    if (previewMode) return;
-    refresh();
-    const id = window.setInterval(refresh, 10000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewMode]);
+  useVisiblePoll(refresh, 10000, { enabled: !previewMode });
 
   if (previewMode) {
     return <DexMarketView preview />;

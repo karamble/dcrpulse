@@ -630,7 +630,8 @@ export const getSyncProgress = async (): Promise<SyncProgressData> => {
   return response.data;
 };
 
-// WebSocket streaming for rescan progress
+// WebSocket streaming for rescan progress. Reconnects with capped exponential
+// backoff so a daemon restart does not silently kill the stream.
 export const streamRescanProgress = (
   onProgress: (data: SyncProgressData) => void,
   onError?: (error: Error) => void,
@@ -639,39 +640,49 @@ export const streamRescanProgress = (
   // Get WebSocket URL from current origin
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/api/wallet/grpc/stream-rescan`;
-  
-  console.log('Connecting to gRPC WebSocket:', wsUrl);
-  const ws = new WebSocket(wsUrl);
 
-  ws.onopen = () => {
-    console.log('WebSocket connection established');
-  };
+  let ws: WebSocket | null = null;
+  let cancelled = false;
+  let retry = 1000;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data) as SyncProgressData;
-      onProgress(data);
-    } catch (err) {
-      console.error('Failed to parse WebSocket message:', err);
-      onError?.(new Error('Failed to parse progress data'));
-    }
-  };
+  const connect = () => {
+    if (cancelled) return;
+    ws = new WebSocket(wsUrl);
 
-  ws.onerror = (event) => {
-    console.error('WebSocket error:', event);
-    onError?.(new Error('WebSocket connection error'));
-  };
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as SyncProgressData;
+        onProgress(data);
+      } catch (err) {
+        console.error('Failed to parse WebSocket message:', err);
+        onError?.(new Error('Failed to parse progress data'));
+      }
+    };
 
-  ws.onclose = () => {
-    console.log('WebSocket connection closed');
-    onClose?.();
+    ws.onopen = () => {
+      retry = 1000;
+    };
+
+    ws.onerror = (event) => {
+      console.error('WebSocket error:', event);
+      onError?.(new Error('WebSocket connection error'));
+    };
+
+    ws.onclose = () => {
+      onClose?.();
+      if (cancelled) return;
+      retryTimer = setTimeout(connect, retry);
+      retry = Math.min(retry * 2, 30000);
+    };
   };
+  connect();
 
   // Return cleanup function
   return () => {
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close();
-    }
+    cancelled = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    ws?.close();
   };
 };
 

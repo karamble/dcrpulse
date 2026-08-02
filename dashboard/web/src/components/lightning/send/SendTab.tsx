@@ -11,6 +11,7 @@ import {
 import { DecodedPayRequest } from './DecodedPayRequest';
 import { PaymentRow } from './PaymentRow';
 import { PaymentDetailsModal } from './PaymentDetailsModal';
+import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 
 type Filter = 'all' | 'confirmed' | 'pending' | 'failed';
 
@@ -81,11 +82,7 @@ export const SendTab = () => {
     }
   }, []);
 
-  useEffect(() => {
-    reloadPayments();
-    const id = window.setInterval(reloadPayments, 10000);
-    return () => window.clearInterval(id);
-  }, [reloadPayments]);
+  useVisiblePoll(reloadPayments, 10000);
 
   // Clean up the WebSocket on unmount.
   useEffect(() => () => cleanupRef.current?.(), []);

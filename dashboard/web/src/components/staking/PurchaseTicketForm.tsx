@@ -10,19 +10,24 @@ import {
   getAccounts,
   getPrivacyStatus,
   getPurchaseStatus,
-  getWalletDashboard,
   isAsyncPurchase,
   purchaseTickets,
   subscribePurchaseEvents,
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VSPSelect } from './VSPSelect';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const formatDcr = (v: number): string => v.toFixed(8);
 
-export const PurchaseTicketForm = () => {
+interface PurchaseTicketFormProps {
+  // Ticket price / pool snapshot, polled by PurchaseTab so the parent and the
+  // form share one wallet-dashboard fetch.
+  staking: StakingInfo | null;
+}
+
+export const PurchaseTicketForm = ({ staking }: PurchaseTicketFormProps) => {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
-  const [staking, setStaking] = useState<StakingInfo | null>(null);
   const [privacy, setPrivacy] = useState<PrivacyStatus | null>(null);
   const [account, setAccount] = useState<number | null>(null);
   const [vsp, setVsp] = useState<VSPInfo | null>(null);
@@ -39,43 +44,31 @@ export const PurchaseTicketForm = () => {
   const inProgressRef = useRef(false);
   const network: 'mainnet' | 'testnet' = 'mainnet';
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const [accs, dash, priv] = await Promise.all([
-          getAccounts(),
-          getWalletDashboard(),
-          getPrivacyStatus().catch(() => null),
-        ]);
-        if (cancelled) return;
-        const usable = accs.filter((a) => a.accountName !== 'imported');
-        setAccounts(usable);
-        setPrivacy(priv);
-        // When privacy is configured the purchase is always mixed and the
-        // backend funds it from the mixed account, so lock the source to it.
-        if (priv?.configured && priv.mixedAccount !== undefined) {
-          setAccount(priv.mixedAccount);
-        } else {
-          setAccount((current) => {
-            if (current !== null) return current;
-            const mixed = usable.find((a) => a.accountName === 'mixed');
-            return mixed ? mixed.accountNumber : null;
-          });
-        }
-        setStaking(dash.stakingInfo ?? null);
-      } catch (err: any) {
-        if (cancelled) return;
-        setError(err?.message || 'Failed to load wallet state');
+  const load = async () => {
+    try {
+      const [accs, priv] = await Promise.all([
+        getAccounts(),
+        getPrivacyStatus().catch(() => null),
+      ]);
+      const usable = accs.filter((a) => a.accountName !== 'imported');
+      setAccounts(usable);
+      setPrivacy(priv);
+      // When privacy is configured the purchase is always mixed and the
+      // backend funds it from the mixed account, so lock the source to it.
+      if (priv?.configured && priv.mixedAccount !== undefined) {
+        setAccount(priv.mixedAccount);
+      } else {
+        setAccount((current) => {
+          if (current !== null) return current;
+          const mixed = usable.find((a) => a.accountName === 'mixed');
+          return mixed ? mixed.accountNumber : null;
+        });
       }
-    };
-    load();
-    const id = window.setInterval(load, 10000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load wallet state');
+    }
+  };
+  useVisiblePoll(load, 10000);
 
   // Bootstrap in-progress state on mount so a page reload during a long mixed
   // purchase re-attaches to it (status is the source of truth, like the

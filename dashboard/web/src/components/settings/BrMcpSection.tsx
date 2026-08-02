@@ -15,6 +15,7 @@ import {
   setBrMcpSettings,
 } from '../../services/bisonrelayApi';
 import { McpHelpModal } from './McpHelpModal';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const UID_RE = /^[0-9a-f]{64}$/i;
 
@@ -58,8 +59,9 @@ export const BrMcpSection = () => {
 
   const refreshLive = useCallback(async () => {
     try {
-      setPending(await getBrMcpPending());
-      setSpend(await getBrMcpSpend());
+      const [p, s] = await Promise.all([getBrMcpPending(), getBrMcpSpend()]);
+      setPending(p);
+      setSpend(s);
     } catch {
       /* ignore */
     }
@@ -69,12 +71,7 @@ export const BrMcpSection = () => {
     refreshSettings();
   }, [refreshSettings]);
 
-  useEffect(() => {
-    if (!settings?.enabled) return;
-    refreshLive();
-    const id = window.setInterval(refreshLive, 5000);
-    return () => clearInterval(id);
-  }, [settings?.enabled, refreshLive]);
+  useVisiblePoll(refreshLive, 5000, { enabled: !!settings?.enabled });
 
   const apply = async (next: BrMcpSettings) => {
     setBusy(true);

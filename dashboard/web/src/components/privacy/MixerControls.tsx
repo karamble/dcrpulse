@@ -1,35 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AlertCircle, Play, Square } from 'lucide-react';
-import { getAutobuyerStatus, startMixer, stopMixer } from '../../services/api';
+import { startMixer, stopMixer } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 
 interface Props {
   running: boolean;
+  // The autobuyer and the mixer both spend the mixed account, so the mixer
+  // can't start while the autobuyer is running. The parent's poll keeps this
+  // fresh so the block clears once the autobuyer is stopped.
+  autobuyerRunning: boolean;
   onChanged: () => void;
 }
 
-export const MixerControls = ({ running, onChanged }: Props) => {
+export const MixerControls = ({ running, autobuyerRunning, onChanged }: Props) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // The autobuyer and the mixer both spend the mixed account, so the mixer
-  // can't start while the autobuyer is running. Poll so the block clears once
-  // the autobuyer is stopped.
-  const [autobuyerRunning, setAutobuyerRunning] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const check = async () => {
-      const ab = await getAutobuyerStatus().catch(() => null);
-      if (!cancelled) setAutobuyerRunning(!!ab?.running);
-    };
-    check();
-    const id = window.setInterval(check, 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
 
   const handleStart = async (passphrase: string) => {
     await startMixer(passphrase);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, ChevronDown, Copy } from 'lucide-react';
 import type { LightningDecodedPayReq } from '../../../services/lightningApi';
+import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 
 const atomsPerDcr = 1e8;
 const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
@@ -41,10 +42,7 @@ export const DecodedPayRequest = ({
   const [showDetails, setShowDetails] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+  useVisiblePoll(() => setNow(Date.now()), 1000);
 
   const expiryAt = decoded.timestamp + decoded.expiry;
   const expiryInfo = fmtExpiry(expiryAt, now);

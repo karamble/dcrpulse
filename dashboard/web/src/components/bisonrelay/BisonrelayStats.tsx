@@ -4,6 +4,7 @@
 
 import { ComponentType, useCallback, useEffect, useRef, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
+import { startVisiblePoll, useVisiblePoll } from '../../hooks/useVisiblePoll';
 import {
   Activity,
   AlertCircle,
@@ -164,11 +165,7 @@ const usePolledStats = <T,>(loader: () => Promise<T>): {
     }
   }, [loader]);
 
-  useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, 30000);
-    return () => clearInterval(id);
-  }, [refresh]);
+  useVisiblePoll(refresh, 30000);
 
   return { data, err, refresh };
 };
@@ -471,9 +468,7 @@ const OverviewView = () => {
     }
     const start = Date.parse(data.connected_at);
     const tick = () => setUptime(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    return startVisiblePoll(tick, 1000);
   }, [data?.connected_at]);
 
   if (err) return <ErrorBanner msg={err} />;
@@ -627,12 +622,8 @@ const PaymentsView = () => {
   // polled separately from the aggregate stats.
   const [runningTips, setRunningTips] = useState<BisonrelayRunningTip[]>([]);
 
-  useEffect(() => {
-    const load = () => getBisonrelayRunningTips().then(setRunningTips).catch(() => {});
-    load();
-    const id = window.setInterval(load, 30000);
-    return () => window.clearInterval(id);
-  }, []);
+  const loadRunningTips = () => getBisonrelayRunningTips().then(setRunningTips).catch(() => {});
+  useVisiblePoll(loadRunningTips, 30000);
 
   if (err) return <ErrorBanner msg={err} />;
   if (!data) return <Loading what="payment stats" />;

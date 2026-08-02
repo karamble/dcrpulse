@@ -24,6 +24,7 @@ import { BrNotifications } from './BrNotifications';
 import { useBrTextScale } from './brTextScale';
 import { BisonrelayStatus, getBisonrelayStatus } from '../../services/bisonrelayApi';
 import { useWalletReady } from '../../hooks/useWalletReady';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { WalletSyncGate } from '../common/WalletSyncGate';
 import { WatchOnlyGate } from '../common/WatchOnlyGate';
 
@@ -69,23 +70,29 @@ export const BisonrelayPage = () => {
   const { factor: textScaleFactor } = useBrTextScale();
   const textScaleStyle = { '--br-fs': textScaleFactor } as React.CSSProperties;
 
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const s = await getBisonrelayStatus();
-        if (!cancelled && s.stage === 'ready') setReady(s);
-      } catch {
-        /* keep last known */
-      }
-    };
-    const id = setInterval(tick, 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [ready]);
+  // Refresh the ready status so header fields (nick, server) stay current.
+  // Compare fields before setState: a fresh object every tick would re-render
+  // the whole BR page (chat, feed, files) even when nothing changed, and
+  // lastUpdated changes on every poll.
+  const brStatusTick = async () => {
+    try {
+      const s = await getBisonrelayStatus();
+      if (s.stage !== 'ready') return; // keep last known
+      setReady((prev) =>
+        prev &&
+        prev.stage === s.stage &&
+        prev.nick === s.nick &&
+        prev.serverNode === s.serverNode &&
+        prev.recommendedPeer === s.recommendedPeer &&
+        prev.walletCheckErr === s.walletCheckErr
+          ? prev
+          : s,
+      );
+    } catch {
+      /* keep last known */
+    }
+  };
+  useVisiblePoll(brStatusTick, 15000, { enabled: !!ready, immediate: false });
 
   // Keep the URL hash in sync with the active tab so deep links and
   // browser back/forward work. Don't overwrite when the hash already

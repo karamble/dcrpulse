@@ -9,6 +9,7 @@ import {
 } from '../../../services/lightningApi';
 import { InvoiceRow } from './InvoiceRow';
 import { InvoiceDetailsModal } from './InvoiceDetailsModal';
+import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 
 const atomsPerDcr = 1e8;
 const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
@@ -41,10 +42,7 @@ export const ReceiveTab = () => {
   // ---- Active invoice card -----------------------------------------------
   const [active, setActive] = useState<LightningInvoice | null>(null);
   const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+  useVisiblePoll(() => setNow(Date.now()), 1000);
   const [copied, setCopied] = useState<string | null>(null);
 
   // ---- History list state -------------------------------------------------

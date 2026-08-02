@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertCircle, Award, Coins, Lock, Percent, Ticket, TrendingUp, XCircle } from 'lucide-react';
 import {
   CartesianGrid,
@@ -14,6 +14,7 @@ import {
   YAxis,
 } from 'recharts';
 import { TicketRecord, listTickets } from '../../services/api';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const formatDcr = (v: number) => v.toFixed(8);
 const formatDcr4 = (v: number) => v.toFixed(4);
@@ -52,22 +53,18 @@ export const StatisticsTab = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const list = await listTickets();
-        setTickets(list);
-        setError(null);
-      } catch (err: any) {
-        setError(err?.message || 'Failed to load tickets');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-    const id = window.setInterval(load, 30000);
-    return () => window.clearInterval(id);
-  }, []);
+  const load = async () => {
+    try {
+      const list = await listTickets();
+      setTickets(list);
+      setError(null);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load tickets');
+    } finally {
+      setLoading(false);
+    }
+  };
+  useVisiblePoll(load, 30000);
 
   const stats = useMemo(() => {
     const bought = tickets.length;

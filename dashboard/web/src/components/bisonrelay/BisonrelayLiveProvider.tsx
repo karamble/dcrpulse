@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ARCHIVED_GROUP_ID,
   BisonrelayContactGroups,
@@ -195,27 +195,37 @@ export const BisonrelayLiveProvider = ({ children }: { children: ReactNode }) =>
     };
   }, [isWatchOnly]);
 
-  const totalUnread = Object.values(unread).reduce((a, b) => a + b, 0);
-  const totalGCUnread = Object.values(gcUnread).reduce((a, b) => a + b, 0);
-
-  return (
-    <Ctx.Provider
-      value={{
-        unread,
-        totalUnread,
-        clearUnread,
-        setActiveUid,
-        gcUnread,
-        totalGCUnread,
-        clearGCUnread,
-        pruneGCUnread,
-        setActiveGCID,
-        addListener,
-        contactGroups,
-        refreshContactGroups,
-      }}
-    >
-      {children}
-    </Ctx.Provider>
+  // The value identity must only change when live state changes: this provider
+  // wraps the whole app, so an identity that churns per render re-renders
+  // every consumer on every page.
+  const value = useMemo<BisonrelayLiveCtx>(
+    () => ({
+      unread,
+      totalUnread: Object.values(unread).reduce((a, b) => a + b, 0),
+      clearUnread,
+      setActiveUid,
+      gcUnread,
+      totalGCUnread: Object.values(gcUnread).reduce((a, b) => a + b, 0),
+      clearGCUnread,
+      pruneGCUnread,
+      setActiveGCID,
+      addListener,
+      contactGroups,
+      refreshContactGroups,
+    }),
+    [
+      unread,
+      gcUnread,
+      contactGroups,
+      clearUnread,
+      setActiveUid,
+      clearGCUnread,
+      pruneGCUnread,
+      setActiveGCID,
+      addListener,
+      refreshContactGroups,
+    ],
   );
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };

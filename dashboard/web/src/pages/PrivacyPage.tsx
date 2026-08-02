@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { AccountInfo, PrivacyStatus, getAccounts, getPrivacyStatus } from '../services/api';
+import { AccountInfo, PrivacyStatus, getAccounts, getAutobuyerStatus, getPrivacyStatus } from '../services/api';
+import { useVisiblePoll } from '../hooks/useVisiblePoll';
 import { PrivacySetupCard } from '../components/privacy/PrivacySetupCard';
 import { MixerStatusBadge } from '../components/privacy/MixerStatusBadge';
 import { MixerBalanceCards } from '../components/privacy/MixerBalanceCards';
@@ -15,15 +16,24 @@ import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
 export const PrivacyPage = () => {
   const [status, setStatus] = useState<PrivacyStatus | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
+  // The autobuyer and the mixer both spend the mixed account, so the mixer
+  // can't start while the autobuyer runs; polled here (not in MixerControls)
+  // so the page owns the single privacy poll.
+  const [autobuyerRunning, setAutobuyerRunning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const wallet = useWalletReady();
 
   const load = useCallback(async () => {
     try {
-      const [s, a] = await Promise.all([getPrivacyStatus(), getAccounts()]);
+      const [s, a, ab] = await Promise.all([
+        getPrivacyStatus(),
+        getAccounts(),
+        getAutobuyerStatus().catch(() => null),
+      ]);
       setStatus(s);
       setAccounts(a);
+      setAutobuyerRunning(!!ab?.running);
       setError(null);
     } catch (err: any) {
       if (err?.response?.status === 503) {
@@ -36,11 +46,7 @@ export const PrivacyPage = () => {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-    const id = window.setInterval(load, 5000);
-    return () => window.clearInterval(id);
-  }, [load]);
+  useVisiblePoll(load, 5000);
 
   const balanceFor = (accountNumber: number | undefined): number => {
     if (accountNumber === undefined) return 0;
@@ -91,7 +97,7 @@ export const PrivacyPage = () => {
             running={status.mixerRunning}
           />
 
-          <MixerControls running={status.mixerRunning} onChanged={load} />
+          <MixerControls running={status.mixerRunning} autobuyerRunning={autobuyerRunning} onChanged={load} />
 
           {status.lastError && !status.mixerRunning && (
             <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-sm text-destructive flex items-start gap-2">

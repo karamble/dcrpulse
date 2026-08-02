@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { dexAccountState, getDexAccount, type DexAccount } from '../../services/dcrdexApi';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
+import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 
 // useDexAccount fetches a DEX server's account state (tier, bonds, reputation)
 // and keeps it fresh off the bond/reputation notification feed. It backs both
@@ -17,9 +18,7 @@ export const useDexAccount = (host: string) => {
 
   const refresh = () => getDexAccount(host).then(setAcct).catch(() => {});
   useEffect(() => {
-    refresh();
-    const id = window.setInterval(refresh, 60000);
-    return () => window.clearInterval(id);
+    return startVisiblePoll(refresh, 60000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host]);
   useDexRefreshOnNotes(['bondpost', 'bondrefund', 'reputation'], refresh);

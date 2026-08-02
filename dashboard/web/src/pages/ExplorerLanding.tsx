@@ -8,6 +8,7 @@ import { SearchBar } from '../components/explorer/SearchBar';
 import { Pagination } from '../components/explorer/Pagination';
 import { getRecentBlocksPaginated, BlockSummary } from '../services/explorerApi';
 import { useNavigate } from 'react-router-dom';
+import { startVisiblePoll } from '../hooks/useVisiblePoll';
 
 export const ExplorerLanding = () => {
   const [recentBlocks, setRecentBlocks] = useState<BlockSummary[]>([]);
@@ -23,11 +24,12 @@ export const ExplorerLanding = () => {
   }, [currentPage]);
 
   useEffect(() => {
-    // Refresh every 30 seconds, but only if on first page
+    // Refresh every 30 seconds, but only if on first page; the effect above
+    // already fetched the current page, so skip the immediate fire.
     if (currentPage === 1) {
-      const interval = setInterval(() => fetchRecentBlocks(1), 30000);
-      return () => clearInterval(interval);
+      return startVisiblePoll(() => fetchRecentBlocks(1), 30000, false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
 
   const fetchRecentBlocks = async (page: number) => {

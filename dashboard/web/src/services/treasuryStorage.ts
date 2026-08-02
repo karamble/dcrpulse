@@ -49,11 +49,9 @@ const getStorage = (): TreasuryStorageData => {
     initStorage();
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) {
-      console.log('Treasury storage not found, returning empty');
       return { version: STORAGE_VERSION, tspends: [], totalSpent: 0, lastSyncHeight: 0 };
     }
     const parsed = JSON.parse(data) as TreasuryStorageData;
-    console.log(`Treasury storage loaded: ${parsed.tspends.length} TSpends, lastSyncHeight: ${parsed.lastSyncHeight}`);
     return parsed;
   } catch (error) {
     console.error('Failed to parse treasury storage:', error);
@@ -66,7 +64,6 @@ const saveStorage = (storage: TreasuryStorageData): void => {
   try {
     const serialized = JSON.stringify(storage);
     localStorage.setItem(STORAGE_KEY, serialized);
-    console.log(`Treasury storage saved: ${storage.tspends.length} TSpends, ${(serialized.length / 1024).toFixed(2)} KB, lastSyncHeight: ${storage.lastSyncHeight}`);
     
     // Verify it was saved correctly
     const verification = localStorage.getItem(STORAGE_KEY);
@@ -229,7 +226,6 @@ export const updateLastSyncHeight = (height: number): void => {
   if (height > storage.lastSyncHeight) {
     storage.lastSyncHeight = height;
     saveStorage(storage);
-    console.log(`Updated lastSyncHeight to ${height}`);
   }
 };
 
@@ -313,12 +309,10 @@ if (typeof window !== 'undefined') {
 // Load and sync with the historical TSpend snapshot
 export const syncWithSnapshot = async (): Promise<{ success: boolean; synced: number; error?: string }> => {
   try {
-    console.log('🔄 Checking if snapshot sync is needed...');
     
     // Check current storage BEFORE fetching snapshot
     const currentStorage = getStorage();
     const currentCount = currentStorage.tspends.length;
-    console.log(`📊 Current localStorage state: ${currentCount} TSpends, lastSyncHeight: ${currentStorage.lastSyncHeight}`);
     
     // Fetch the snapshot from public folder
     const response = await fetch('/tspend-snapshot.json');
@@ -333,22 +327,15 @@ export const syncWithSnapshot = async (): Promise<{ success: boolean; synced: nu
     }
     
     const snapshotCount = snapshot.tspends.length;
-    console.log(`📦 Snapshot loaded: ${snapshotCount} TSpends, lastSyncHeight: ${snapshot.lastSyncHeight}`);
     
     // If we already have more or equal TSpends than the snapshot, skip
     if (currentCount >= snapshotCount) {
-      console.log('✓ localStorage already has complete data, skipping snapshot sync');
       return { success: true, synced: 0 };
     }
     
     // Sync snapshot data
-    console.log(`🔄 Syncing ${snapshotCount - currentCount} missing TSpends from snapshot...`);
     const syncedCount = saveTSpends(snapshot.tspends);
-    
-    // Verify after sync
-    const afterSync = getStorage();
-    console.log(`✓ Sync complete: ${syncedCount} new TSpends added. Total: ${afterSync.tspends.length}, lastSyncHeight: ${afterSync.lastSyncHeight}`);
-    
+
     return { success: true, synced: syncedCount };
     
   } catch (error) {

@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import {
   AlertCircle,
   ChevronDown,
@@ -16,12 +16,20 @@ import {
 import {
   VoteTrickleEvent,
   VoteTrickleStatus,
-  getVoteTrickleWorkers,
   stopVoteTrickle,
   subscribeVoteTrickleEvents,
 } from '../../services/api';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const MAX_EVENTS = 200;
+
+// VoteTrickleOutletContext is provided by GovernancePage's Outlet so the
+// header badge and the proposals-tab cards share one worker poll instead of
+// each polling the same endpoint.
+export interface VoteTrickleOutletContext {
+  workers: VoteTrickleStatus[];
+  refreshWorkers: () => Promise<void>;
+}
 
 // formatCountdown renders a positive second count as "7h 12m" / "12m 03s" / "3s".
 const formatCountdown = (secs: number) => {
@@ -59,28 +67,12 @@ const levelClass = (level: VoteTrickleEvent['level']) => {
 // cast/total progress, countdown, and event log. It is pinned at the top of the
 // proposals page and polls the worker list + subscribes the shared event stream.
 export const VoteTrickleCard = () => {
-  const [workers, setWorkers] = useState<VoteTrickleStatus[]>([]);
+  const { workers, refreshWorkers } = useOutletContext<VoteTrickleOutletContext>();
   const [eventsByToken, setEventsByToken] = useState<Record<string, VoteTrickleEvent[]>>({});
   const [now, setNow] = useState(() => Date.now());
 
-  const refresh = async () => {
-    try {
-      setWorkers(await getVoteTrickleWorkers());
-    } catch {
-      /* ignore transient poll errors */
-    }
-  };
-
-  useEffect(() => {
-    refresh();
-    const id = window.setInterval(refresh, 5000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+  // Countdown tick, only while there is a trickle card to advance.
+  useVisiblePoll(() => setNow(Date.now()), 1000, { enabled: workers.length > 0 });
 
   useEffect(() => {
     const cleanup = subscribeVoteTrickleEvents(
@@ -103,7 +95,7 @@ export const VoteTrickleCard = () => {
     } catch {
       /* ignore */
     }
-    await refresh();
+    await refreshWorkers();
   };
 
   if (workers.length === 0) return null;
@@ -126,26 +118,8 @@ export const VoteTrickleCard = () => {
 // VoteTrickleBadge is a compact cross-tab indicator of how many proposals are
 // currently trickling, shown in the governance header. It links to the proposals
 // page where the full per-proposal cards live. Renders nothing when idle.
-export const VoteTrickleBadge = () => {
-  const [running, setRunning] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const ws = await getVoteTrickleWorkers();
-        if (!cancelled) setRunning(ws.filter((w) => w.running).length);
-      } catch {
-        /* ignore */
-      }
-    };
-    poll();
-    const id = window.setInterval(poll, 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+export const VoteTrickleBadge = ({ workers }: { workers: VoteTrickleStatus[] }) => {
+  const running = workers.filter((w) => w.running).length;
 
   if (running === 0) return null;
 

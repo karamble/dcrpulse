@@ -21,7 +21,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   const { status: authStatus, refresh: refreshAuth } = useAuth();
   // Hide spend-dependent sections (Bison Relay, DEX) when the active wallet is
   // watch-only; they cannot work without private keys.
-  const { isWatchOnly } = useWalletReady(15000);
+  const { isWatchOnly } = useWalletReady();
 
   const isWalletPage = location.pathname.startsWith('/wallet');
   const isExplorerPage = location.pathname.startsWith('/explorer');

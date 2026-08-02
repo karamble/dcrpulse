@@ -1,28 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Network, Wallet } from 'lucide-react';
 import { LightningBalance, getLightningBalance } from '../../../services/lightningApi';
 import { StatCard, fmtDcr } from '../StatCard';
+import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 
 export const ChannelFundingBalance = () => {
   const [balance, setBalance] = useState<LightningBalance | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const b = await getLightningBalance();
-        if (active) setBalance(b);
-      } catch {
-        // The Overview tab surfaces Lightning errors; keep this row quiet.
-      }
-    };
-    load();
-    const id = window.setInterval(load, 15000);
-    return () => {
-      active = false;
-      window.clearInterval(id);
-    };
-  }, []);
+  const load = async () => {
+    try {
+      const b = await getLightningBalance();
+      setBalance(b);
+    } catch {
+      // The Overview tab surfaces Lightning errors; keep this row quiet.
+    }
+  };
+  useVisiblePoll(load, 15000);
 
   if (!balance) return null;
 

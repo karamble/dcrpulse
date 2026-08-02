@@ -25,6 +25,7 @@ import { DexServerBanner } from './DexServerBanner';
 import { DexWalletConfigForm } from './DexWalletConfigForm';
 import { fmtAmt } from './dexFormat';
 import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
+import { startVisiblePoll, useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 interface DexRegisterProps {
   host: string;
@@ -93,12 +94,9 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
 
   const refreshWallets = () => getDexWallets().then(setWallets).catch(() => {});
   useEffect(() => {
-    refreshWallets();
     getDexAssetCatalog().then(setCatalog).catch(() => {});
-    const id = window.setInterval(refreshWallets, 60000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useVisiblePoll(refreshWallets, 60000);
   useDexRefreshOnNotes(['balance', 'walletstate', 'walletsync', 'createwallet'], refreshWallets);
   const conn = useDexConn(host);
 
@@ -167,10 +165,10 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
       }
     };
     check();
-    const id = window.setInterval(check, 3000);
+    const stop = startVisiblePoll(check, 3000, false);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submitting, host]);

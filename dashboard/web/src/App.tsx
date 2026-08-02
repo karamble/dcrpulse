@@ -62,7 +62,7 @@ import { BisonrelayLiveProvider } from './components/bisonrelay/BisonrelayLivePr
 import { AuthGate } from './components/auth/AuthGate';
 import { SecuritySection } from './components/settings/SecuritySection';
 import { TorSection } from './components/settings/TorSection';
-import { getDashboardData, getWalletStatus } from './services/api';
+import { getDashboardData } from './services/api';
 import { getLightningInfo } from './services/lightningApi';
 import { getBisonrelayVersion } from './services/bisonrelayApi';
 import { getDexStatus } from './services/dcrdexApi';
@@ -71,70 +71,45 @@ import { useWalletReady } from './hooks/useWalletReady';
 function AppContent() {
   const location = useLocation();
   const [nodeVersion, setNodeVersion] = useState<string>('');
-  const [walletVersion, setWalletVersion] = useState<string>('');
   const [lndVersion, setLndVersion] = useState<string>('');
   const [brclientdVersion, setBrclientdVersion] = useState<string>('');
   const [bisonwVersion, setBisonwVersion] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<string>('');
   // A watch-only wallet has no dcrlnd / brclientd / bisonw daemons, so skip
-  // those version fetches (they would error against absent daemons).
-  const { isWatchOnly } = useWalletReady();
+  // those version fetches (they would error against absent daemons). The
+  // dcrwallet version rides along on the shared status snapshot.
+  const { isWatchOnly, version: walletVersion } = useWalletReady();
 
-  // Fetch versions for header and footer
+  // Fetch versions for header and footer. Daemon versions never change within
+  // a session, so this runs once (again only if the watch-only flag flips when
+  // the first wallet status lands) instead of on every navigation. The LN /
+  // BR / DEX daemons may be locked or absent; a rejected probe simply leaves
+  // that footer entry blank.
   useEffect(() => {
+    let cancelled = false;
     const fetchVersions = async () => {
-      try {
-        // Fetch node version and last update
-        const dashboardData = await getDashboardData();
-        setNodeVersion(dashboardData.nodeStatus?.version || '');
-        if (dashboardData.lastUpdate) {
-          setLastUpdate(toYMDTime(new Date(dashboardData.lastUpdate)));
+      const [dash, ln, br, dex] = await Promise.allSettled([
+        getDashboardData(),
+        isWatchOnly ? null : getLightningInfo(),
+        isWatchOnly ? null : getBisonrelayVersion(),
+        isWatchOnly ? null : getDexStatus(),
+      ]);
+      if (cancelled) return;
+      if (dash.status === 'fulfilled') {
+        setNodeVersion(dash.value.nodeStatus?.version || '');
+        if (dash.value.lastUpdate) {
+          setLastUpdate(toYMDTime(new Date(dash.value.lastUpdate)));
         }
-        
-        // Fetch wallet version
-        try {
-          const walletStatus = await getWalletStatus();
-          setWalletVersion(walletStatus.version || '');
-        } catch (walletErr) {
-          // Wallet might not be available, that's ok
-          console.debug('Wallet version not available:', walletErr);
-        }
-
-        // dcrlnd / brclientd / bisonw only exist for full wallets; a watch-only
-        // wallet has none of them, so skip these fetches to avoid erroring
-        // against absent daemons.
-        if (!isWatchOnly) {
-          // Fetch dcrlnd version. The LN wallet may be locked / un-set-up;
-          // in those cases GetInfo returns 503 and we simply don't show the
-          // footer entry. Backend already normalises this to a clean
-          // "v0.8.1" via Versioner.GetVersion.
-          try {
-            const lnInfo = await getLightningInfo();
-            setLndVersion(lnInfo.version || '');
-          } catch (lnErr) {
-            console.debug('Lightning version not available:', lnErr);
-          }
-
-          try {
-            const br = await getBisonrelayVersion();
-            setBrclientdVersion(br.appVersion || '');
-          } catch (brErr) {
-            console.debug('brclientd version not available:', brErr);
-          }
-
-          try {
-            const dex = await getDexStatus();
-            setBisonwVersion(dex.bisonwVersion || '');
-          } catch (dexErr) {
-            console.debug('bisonw version not available:', dexErr);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching versions:', err);
       }
+      if (ln.status === 'fulfilled' && ln.value) setLndVersion(ln.value.version || '');
+      if (br.status === 'fulfilled' && br.value) setBrclientdVersion(br.value.appVersion || '');
+      if (dex.status === 'fulfilled' && dex.value) setBisonwVersion(dex.value.bisonwVersion || '');
     };
     fetchVersions();
-  }, [location.pathname, isWatchOnly]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isWatchOnly]);
 
   // The DEX trading view is full-bleed: skip the centered max-width container
   // and outer padding so it uses the full viewport width.

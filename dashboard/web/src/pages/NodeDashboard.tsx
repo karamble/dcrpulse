@@ -15,6 +15,7 @@ import { StakingStats } from '../components/StakingStats';
 import { MempoolActivity } from '../components/MempoolActivity';
 import { TicketPoolCard } from '../components/TicketPoolCard';
 import { getDashboardData, DashboardData } from '../services/api';
+import { useVisiblePoll } from '../hooks/useVisiblePoll';
 
 interface NodeSync {
   status: string;
@@ -54,12 +55,7 @@ export const NodeDashboard = () => {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  useVisiblePoll(fetchData, 30000);
 
   // Push-driven dcrd sync progress via WebSocket (reconnects with backoff).
   useEffect(() => {

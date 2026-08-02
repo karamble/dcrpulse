@@ -39,6 +39,7 @@ import { IncomingInviteBanner } from './realtime/IncomingInviteBanner';
 import { InstantCallModal } from './realtime/InstantCallModal';
 import { InviteToRoomModal } from './realtime/InviteToRoomModal';
 import { NewRoomModal } from './realtime/NewRoomModal';
+import { shallowEqual } from '../../utils/shallowEqual';
 
 const readHashRoom = (): string | null => {
   const h = window.location.hash.replace(/^#/, '');
@@ -335,14 +336,18 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
     };
   }, [rv]);
 
-  // Tick outbound packet counter + per-peer activity / buffer state.
+  // Tick outbound packet counter + per-peer activity / buffer state. Each
+  // setter keeps the previous value when nothing changed, so a quiet call
+  // ticks without re-rendering the peer grid.
   useEffect(() => {
     if (!pipeline) return;
     const id = setInterval(() => {
       const c = pipeline.outboundCounters();
       setPacketsSent(c.sent);
       const ids = pipeline.livePeerIDs();
-      setLivePeerIDs(ids);
+      setLivePeerIDs((prev) =>
+        prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids,
+      );
       const speaking: Record<number, boolean> = {};
       const depth: Record<number, number> = {};
       for (const id of ids) {
@@ -350,9 +355,9 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
         const s = pipeline.peerStats(id);
         if (s) depth[id] = s.bufferDepthMs;
       }
-      setSpeakingMap(speaking);
-      setBufferDepthMap(depth);
-    }, 250);
+      setSpeakingMap((prev) => (shallowEqual(prev, speaking) ? prev : speaking));
+      setBufferDepthMap((prev) => (shallowEqual(prev, depth) ? prev : depth));
+    }, 500);
     return () => clearInterval(id);
   }, [pipeline]);
 
