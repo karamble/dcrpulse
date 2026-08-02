@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getDexExchanges, getMMStatus } from '../../services/dcrdexApi';
 import type { DexNote, MMStatus, MMBotStatus } from '../../services/dcrdexApi';
 import type { MarketSpot } from './useDexFeed';
@@ -148,6 +148,11 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
+  // spots notes arrive faster than they are worth rendering; they are batched
+  // here and flushed to state at most once per animation frame.
+  const pendingSpotsRef = useRef<Record<string, MarketSpot>>({});
+  const spotsRafRef = useRef(0);
+
   useEffect(() => {
     let ws: WebSocket | null = null;
     let cancelled = false;
@@ -171,19 +176,25 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
         }
         if (msg?.route !== 'notify' || !msg.payload) return;
         const note = msg.payload as LiveNote;
-        // spots is high-frequency and has no refresh listeners, so accumulate and
-        // swallow it. conn/dex_auth/bridge update live state but still fall
-        // through to listeners (e.g. the notifications bell refreshes on conn).
+        // spots is high-frequency and has no refresh listeners, so accumulate
+        // and swallow it, committing at most one state update per animation
+        // frame (rAF also pauses flushes while the tab is hidden).
+        // conn/dex_auth/bridge update live state but still fall through to
+        // listeners (e.g. the notifications bell refreshes on conn).
         if (note.type === 'spots' && note.spots) {
           const incoming = Object.values(note.spots).filter((s): s is MarketSpot => !!s);
           if (incoming.length) {
-            setSpots((prev) => {
-              const next = { ...prev };
-              incoming.forEach((s) => {
-                next[spotKey(s)] = s;
-              });
-              return next;
+            incoming.forEach((s) => {
+              pendingSpotsRef.current[spotKey(s)] = s;
             });
+            if (!spotsRafRef.current) {
+              spotsRafRef.current = requestAnimationFrame(() => {
+                spotsRafRef.current = 0;
+                const batch = pendingSpotsRef.current;
+                pendingSpotsRef.current = {};
+                setSpots((prev) => ({ ...prev, ...batch }));
+              });
+            }
           }
           return;
         }
@@ -251,6 +262,10 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
       if (mmTimer) clearTimeout(mmTimer);
+      if (spotsRafRef.current) {
+        cancelAnimationFrame(spotsRafRef.current);
+        spotsRafRef.current = 0;
+      }
       try {
         ws?.close();
       } catch {
@@ -259,11 +274,15 @@ export const DexLiveProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  return (
-    <Ctx.Provider value={{ addNoteListener, spots, seedSpots, conns, bridges, mmStatus, refreshMMStatus }}>
-      {children}
-    </Ctx.Provider>
+  // The value identity must only change when live state changes: consumers'
+  // effects depend on it, and an identity that churns per render turns them
+  // into refetch loops.
+  const value = useMemo<DexLiveCtx>(
+    () => ({ addNoteListener, spots, seedSpots, conns, bridges, mmStatus, refreshMMStatus }),
+    [addNoteListener, spots, seedSpots, conns, bridges, mmStatus, refreshMMStatus],
   );
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };
 
 // useDexSpots returns the live last/24h price map for all markets, keyed by
@@ -291,9 +310,12 @@ export function useDexConn(host: string): DexConn | null {
 // outside the provider or before the first fetch resolves.
 export function useMMStatus(): MMStatus | null {
   const ctx = useContext(Ctx);
+  // Depend on the stable callback, not the ctx object: the value changes
+  // identity whenever mmStatus lands, and refetching on that would loop.
+  const refresh = ctx?.refreshMMStatus;
   useEffect(() => {
-    ctx?.refreshMMStatus();
-  }, [ctx]);
+    refresh?.();
+  }, [refresh]);
   return ctx?.mmStatus ?? null;
 }
 
@@ -328,16 +350,19 @@ const noop = () => {};
 // so a flurry of notes triggers a single refresh. It is a no-op outside the
 // provider (e.g. the preview view), where panels keep their initial fetch.
 export function useDexRefreshOnNotes(types: string[], refresh: () => void) {
-  const ctx = useContext(Ctx);
+  // Register against the stable listener registrar rather than the ctx value,
+  // whose identity changes with every live-state update; re-registering per
+  // note would cancel in-flight debounce timers.
+  const addNoteListener = useContext(Ctx)?.addNoteListener;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
   const typesKey = types.join(',');
 
   useEffect(() => {
-    if (!ctx) return;
+    if (!addNoteListener) return;
     const want = new Set(typesKey ? typesKey.split(',') : []);
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const off = ctx.addNoteListener((note) => {
+    const off = addNoteListener((note) => {
       if (!want.has(note.type)) return;
       if (timer) return;
       timer = setTimeout(() => {
@@ -349,7 +374,7 @@ export function useDexRefreshOnNotes(types: string[], refresh: () => void) {
       off();
       if (timer) clearTimeout(timer);
     };
-  }, [ctx, typesKey]);
+  }, [addNoteListener, typesKey]);
 }
 
 // useDexOnNotes calls handler with each notify-feed note whose type is in
@@ -357,18 +382,18 @@ export function useDexRefreshOnNotes(types: string[], refresh: () => void) {
 // passes the note payload through (not debounced), for callers that need to
 // inspect note contents. A no-op outside the provider.
 export function useDexOnNotes(types: string[], handler: (note: LiveNote) => void) {
-  const ctx = useContext(Ctx);
+  const addNoteListener = useContext(Ctx)?.addNoteListener;
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
   const typesKey = types.join(',');
 
   useEffect(() => {
-    if (!ctx) return;
+    if (!addNoteListener) return;
     const want = new Set(typesKey ? typesKey.split(',') : []);
-    const off = ctx.addNoteListener((note) => {
+    const off = addNoteListener((note) => {
       if (want.size && !want.has(note.type)) return;
       handlerRef.current(note);
     });
     return off;
-  }, [ctx, typesKey]);
+  }, [addNoteListener, typesKey]);
 }
