@@ -7,6 +7,7 @@ import { Link, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, Download, Loader2, XCircle } from 'lucide-react';
 import { KeyEnds } from '../../AddressGroups';
 import { useBisonrelayLive } from '../../bisonrelay/BisonrelayLiveProvider';
+import { CoordinationCard } from './CoordinationCard';
 import { ReceiveCard } from './ReceiveCard';
 import {
   MsigDetail,
@@ -251,6 +252,10 @@ export const SharedWalletDetailPage = () => {
           <p className="text-sm font-medium">Payments</p>
           <ProposalList wallet={rec} proposals={proposals} onChanged={load} />
         </div>
+      )}
+
+      {rec.transport === 'manual' && !['declined', 'failed', 'cancelled'].includes(rec.status) && (
+        <CoordinationCard wallet={rec} onChanged={load} />
       )}
 
       <div className="p-6 rounded-xl bg-gradient-card border border-border/50">

@@ -29,6 +29,8 @@ export const SharedWalletCreateWizard = ({
   const [step, setStep] = useState<Step>('scheme');
   const [label, setLabel] = useState('');
   const [required, setRequired] = useState(2);
+  const [transport, setTransport] = useState<'' | 'manual'>('');
+  const [labels, setLabels] = useState<string[]>(['']);
   const [contacts, setContacts] = useState<BisonrelayContact[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [askPass, setAskPass] = useState(false);
@@ -46,16 +48,23 @@ export const SharedWalletCreateWizard = ({
   const candidates = (contacts ?? [])
     .filter((c) => c.id?.identity)
     .sort((a, b) => displayNick(a).toLowerCase().localeCompare(displayNick(b).toLowerCase()));
-  const total = selected.size + 1;
+  const manual = transport === 'manual';
+  const cleanLabels = labels.map((l) => l.trim()).filter((l) => l.length > 0);
+  const labelsUnique = new Set(cleanLabels.map((l) => l.toLowerCase())).size === cleanLabels.length;
+  const total = (manual ? cleanLabels.length : selected.size) + 1;
   const schemeValid = label.trim().length > 0 && label.length <= 64 && required >= 1;
-  const cosignersValid = selected.size >= 1 && total <= 8 && required <= total;
+  const cosignersValid = manual
+    ? cleanLabels.length >= 1 && labelsUnique && total <= 8 && required <= total
+    : selected.size >= 1 && total <= 8 && required <= total;
 
   const invitees: MsigInvitee[] = useMemo(
     () =>
-      candidates
-        .filter((c) => selected.has(c.id!.identity!))
-        .map((c) => ({ uid: c.id!.identity!, nick: displayNick(c) })),
-    [candidates, selected],
+      manual
+        ? cleanLabels.map((l) => ({ uid: '', nick: l }))
+        : candidates
+            .filter((c) => selected.has(c.id!.identity!))
+            .map((c) => ({ uid: c.id!.identity!, nick: displayNick(c) })),
+    [manual, labels, candidates, selected],
   );
 
   const toggle = (uid: string) => {
@@ -70,7 +79,7 @@ export const SharedWalletCreateWizard = ({
   const submit = async (passphrase: string) => {
     setErr(null);
     try {
-      await createMsigWallet(label.trim(), required, invitees, passphrase);
+      await createMsigWallet(label.trim(), required, invitees, transport, passphrase);
       setAskPass(false);
       onCreated();
       onClose();
@@ -124,6 +133,35 @@ export const SharedWalletCreateWizard = ({
                   How many cosigners must approve each payment. You pick the participants next.
                 </p>
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Coordination</label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setTransport('')}
+                    className={`px-3 py-2 rounded-lg border text-left ${
+                      !manual ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'
+                    }`}
+                  >
+                    <span className="block text-sm font-medium">Bison Relay</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      Messages travel automatically between your contacts.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTransport('manual')}
+                    className={`px-3 py-2 rounded-lg border text-left ${
+                      manual ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'
+                    }`}
+                  >
+                    <span className="block text-sm font-medium">Manual exchange</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      You hand each message to your cosigners over any channel you trust.
+                    </span>
+                  </button>
+                </div>
+              </div>
               <p className="text-xs text-muted-foreground">
                 Creating the wallet adds a dedicated account to your wallet. Only that
                 account's extended public key is shared with your cosigners; your other
@@ -132,7 +170,59 @@ export const SharedWalletCreateWizard = ({
             </>
           )}
 
-          {step === 'cosigners' && (
+          {step === 'cosigners' && manual && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Name the people who hold the other keys. After the wallet is created you hand
+                each of them their invitation from the Coordination card.
+              </p>
+              <div className="space-y-2">
+                {labels.map((l, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={l}
+                      maxLength={64}
+                      onChange={(e) =>
+                        setLabels((prev) => prev.map((v, vi) => (vi === i ? e.target.value : v)))
+                      }
+                      placeholder={`Cosigner ${i + 1}`}
+                      className="flex-1 px-3 py-2 rounded-lg bg-background border border-border focus:outline-none focus:border-primary"
+                    />
+                    {labels.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setLabels((prev) => prev.filter((_, vi) => vi !== i))}
+                        className="px-3 py-2 rounded-lg border border-border hover:bg-muted/30 text-sm"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {labels.length < 7 && (
+                  <button
+                    type="button"
+                    onClick={() => setLabels((prev) => [...prev, ''])}
+                    className="px-3 py-2 rounded-lg border border-border hover:bg-muted/30 text-sm"
+                  >
+                    Add cosigner
+                  </button>
+                )}
+              </div>
+              {!labelsUnique && (
+                <p className="text-xs text-destructive">Every cosigner needs a distinct name.</p>
+              )}
+              <p className="text-sm">
+                Scheme: <span className="font-semibold">{required} of {total}</span> keys
+                {required > total && (
+                  <span className="text-destructive"> (add more cosigners)</span>
+                )}
+              </p>
+            </>
+          )}
+
+          {step === 'cosigners' && !manual && (
             <>
               <p className="text-sm text-muted-foreground">
                 Pick the Bison Relay contacts who hold the other keys. They each confirm on their
@@ -200,15 +290,15 @@ export const SharedWalletCreateWizard = ({
                   <span className="text-muted-foreground">Cosigners</span>
                   <ul className="mt-1 space-y-1">
                     {invitees.map((p) => (
-                      <li key={p.uid} className="truncate">{p.nick}</li>
+                      <li key={p.uid || p.nick} className="truncate">{p.nick}</li>
                     ))}
                   </ul>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Sending the invitations creates the dedicated account in your wallet.
-                Receive addresses appear once every cosigner has confirmed; do not send
-                funds before then.
+                {manual
+                  ? 'Creating the wallet adds the dedicated account and prepares an invitation for each cosigner on the Coordination card. Receive addresses appear once every cosigner has confirmed; do not send funds before then.'
+                  : 'Sending the invitations creates the dedicated account in your wallet. Receive addresses appear once every cosigner has confirmed; do not send funds before then.'}
               </p>
             </>
           )}
@@ -236,7 +326,7 @@ export const SharedWalletCreateWizard = ({
               onClick={() => setAskPass(true)}
               className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm inline-flex items-center gap-2"
             >
-              Send invitations
+              {manual ? 'Create wallet' : 'Send invitations'}
             </button>
           ) : (
             <button

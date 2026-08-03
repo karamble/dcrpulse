@@ -46,6 +46,7 @@ export const ProposalComposePanel = ({
   const [err, setErr] = useState<string | null>(null);
 
   const parsed = useMemo(() => parseAmount(amount), [amount]);
+  const manual = wallet.transport === 'manual';
   const needed = wallet.m - 1;
   const enough = queue.length >= needed;
   const valid = address.trim().length > 0 && (sendAll || parsed.error === null) && enough;
@@ -64,7 +65,7 @@ export const ProposalComposePanel = ({
         sendAll,
         queue,
         note.trim(),
-        ttl,
+        manual ? 0 : ttl,
         passphrase,
       );
       setAddress('');
@@ -126,21 +127,23 @@ export const ProposalComposePanel = ({
             <p className="text-xs text-destructive mt-1">{parsed.error}</p>
           )}
         </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Give cosigners</label>
-          <select
-            value={ttl}
-            onChange={(e) => setTtl(Number(e.target.value))}
-            className="w-full px-3 py-2 rounded-lg bg-background border border-border focus:outline-none focus:border-primary"
-          >
-            {TTL_CHOICES.map((c) => (
-              <option key={c.secs} value={c.secs}>{c.label}</option>
-            ))}
-          </select>
-          <p className="text-xs text-muted-foreground mt-1">
-            After this, the request moves to the next cosigner.
-          </p>
-        </div>
+        {!manual && (
+          <div>
+            <label className="block text-sm font-medium mb-1">Give cosigners</label>
+            <select
+              value={ttl}
+              onChange={(e) => setTtl(Number(e.target.value))}
+              className="w-full px-3 py-2 rounded-lg bg-background border border-border focus:outline-none focus:border-primary"
+            >
+              {TTL_CHOICES.map((c) => (
+                <option key={c.secs} value={c.secs}>{c.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              After this, the request moves to the next cosigner.
+            </p>
+          </div>
+        )}
         <div className="sm:col-span-2">
           <label className="block text-sm font-medium mb-1">Note for cosigners (optional)</label>
           <input

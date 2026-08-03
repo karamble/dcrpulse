@@ -143,6 +143,14 @@ export const ProposalList = ({
               </ul>
             )}
 
+            {wallet.transport === 'manual' &&
+              (p.queue ?? []).some((h) => h.state === 'sent') && (
+                <p className="text-xs text-muted-foreground">
+                  Hand the signing request to its cosigner from the Coordination card below,
+                  and import their answer there.
+                </p>
+              )}
+
             <p className="text-[10px] font-mono text-muted-foreground break-all">
               <Link to={`/explorer/tx/${p.txid}`} className="hover:text-primary">
                 {p.txid}

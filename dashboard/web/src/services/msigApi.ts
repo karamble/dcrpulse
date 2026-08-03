@@ -74,6 +74,7 @@ export interface MsigWallet {
   m: number;
   n: number;
   network: string;
+  transport?: 'manual' | '';
   hd?: boolean;
   xpubs?: string[];
   ownHd?: MsigOwnHDKey;
@@ -140,10 +141,74 @@ export const createMsigWallet = async (
   label: string,
   m: number,
   invitees: MsigInvitee[],
+  transport: '' | 'manual',
   passphrase: string,
 ): Promise<MsigWallet> => {
-  const { data } = await api.post<MsigWallet>('/msig/wallets/invite', { label, m, invitees, passphrase });
+  const { data } = await api.post<MsigWallet>('/msig/wallets/invite', { label, m, invitees, transport, passphrase });
   return data;
+};
+
+export interface MsigManualFrame {
+  mid: string;
+  toUid: string;
+  toNick: string;
+  type: string;
+  body: string;
+  ts: number;
+}
+
+export const getMsigOutbox = async (id: string): Promise<MsigManualFrame[]> => {
+  const { data } = await api.get('/msig/outbox', { params: { id } });
+  return data.frames ?? [];
+};
+
+export const markMsigDelivered = async (id: string, mid: string, toUid: string): Promise<void> => {
+  await api.post('/msig/outbox/done', { id, mid, toUid });
+};
+
+export interface MsigImportResult {
+  outcome: 'processed' | 'duplicate' | 'ignored';
+  type: string;
+  walletId?: string;
+  label?: string;
+}
+
+export const importMsigFrame = async (req: {
+  body: string;
+  id?: string;
+  fromUid?: string;
+  fromLabel?: string;
+}): Promise<MsigImportResult> => {
+  const { data } = await api.post<MsigImportResult>('/msig/import', req);
+  return data;
+};
+
+// msigFrameTypeLabel names a coordination message for humans.
+export const msigFrameTypeLabel = (type: string): string => {
+  switch (type) {
+    case 'invite':
+      return 'Invitation';
+    case 'accept':
+      return 'Acceptance';
+    case 'decline':
+      return 'Decline';
+    case 'roster':
+      return 'Key roster';
+    case 'ready':
+      return 'Ready confirmation';
+    case 'invite_cancel':
+      return 'Cancellation';
+    case 'sign_req':
+      return 'Signing request';
+    case 'sig':
+      return 'Signature';
+    case 'sig_decline':
+      return 'Signing refusal';
+    case 'broadcast':
+      return 'Broadcast notice';
+    default:
+      return type;
+  }
 };
 
 export const acceptMsigInvite = async (id: string, passphrase: string): Promise<void> => {

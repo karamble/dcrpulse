@@ -3,7 +3,10 @@
 Shared wallets are m-of-n multisig wallets whose cosigners coordinate
 over Bison Relay private messages. Invitations, key exchange and payment
 approvals all travel over the encrypted connection you already have with
-your contacts; no server, no email, no files to pass around.
+your contacts; no server, no email, no files to pass around. A wallet
+can instead opt into manual coordination at creation, where the same
+messages are carried by the participants themselves — see the
+transports section.
 
 A shared wallet is not one address but a ladder of them: every
 participant contributes the extended public key of a dedicated account,
@@ -14,13 +17,20 @@ its own, and no address ever needs to be reused.
 ## Using them
 
 The MultiSig Wallet entry in the wallet sidebar lists your shared
-wallets. Creating one takes three steps: name it and choose how many
-signatures each payment needs, pick the Bison Relay contacts who hold
-the other keys, then review and send the invitations. Creating or
-accepting asks for your wallet passphrase once: it creates a dedicated
-account in your wallet, and only that account's extended public key is
-shared with your cosigners — your other accounts stay private. Declining
-an invitation costs nothing and shares nothing.
+wallets. Creating one takes three steps: name it, choose how many
+signatures each payment needs and how the wallet coordinates, pick the
+Bison Relay contacts who hold the other keys (or name them, on a
+manually coordinated wallet), then review and send the invitations.
+Creating or accepting asks for your wallet passphrase once: it creates
+a dedicated account in your wallet, and only that account's extended
+public key is shared with your cosigners — your other accounts stay
+private. Declining an invitation costs nothing and shares nothing.
+
+On a manually coordinated wallet the invitations do not travel by
+themselves: the wallet's Coordination card lists every message waiting
+to be handed over, and everything cosigners hand back is imported
+there. An invitation received out of band is imported from the shared
+wallets page.
 
 Receive addresses appear once every cosigner has confirmed. The Receive
 card shows the current address and mints the next one on demand; a fresh
@@ -304,12 +314,42 @@ build the sorted multisig script, and import or sign for the addresses
 that carry funds. Any implementation that follows the named scheme
 derives the identical wallet.
 
+## Coordination transports
+
+Each wallet chooses at creation how its frames travel, and both
+transports speak the identical wire format.
+
+- **Bison Relay** (default): frames are sent as direct messages between
+  KX'd contacts, delivery and replay are automatic, and the relay's
+  end-to-end encryption authenticates every sender.
+- **Manual**: no frame is ever sent anywhere. Outbound frames wait on
+  the wallet's Coordination card as per-cosigner hand-over items —
+  copy, file download or QR for small frames — and inbound frames are
+  pasted or opened there, attributed by the importer to the cosigner
+  who handed them over. Cosigners are local labels with locally minted
+  pseudo-identities; the wire carries no identities, so each
+  participant's table is private and never needs to match anyone
+  else's.
+
+Manual frames are minted with a 30-day envelope lifetime, and exporting
+a frame that has passed half of it re-wraps the stored payload with a
+fresh expiry (same message id, so duplicates stay harmless). Signing
+requests carry no per-cosigner deadlines — a courier cannot be timed
+out — so a stalled request is resolved by the humans: decline it,
+abort it, or just hand it over again. Rounds that never complete are
+failed after 31 days. Hand-over items retire themselves once the
+protocol state proves the counterpart acted on them.
+
 ## Trust model
 
-Bison Relay authenticates peers, so the identity carries no keys of its
-own: a frame is accepted only from the round's initiator, from a member
-of the named wallet, or from the cosigner currently holding the baton,
-as the message type requires. Nothing in a frame is trusted beyond that.
+On Bison Relay the transport authenticates peers, so the identity
+carries no keys of its own: a frame is accepted only from the round's
+initiator, from a member of the named wallet, or from the cosigner
+currently holding the baton, as the message type requires. On the
+manual transport that sender identity comes from the hand-over itself —
+whoever gave you the blob is who you attribute it to — while everything
+that guards funds stays cryptographic and is verified identically on
+both transports. Nothing in a frame is trusted beyond that.
 Rosters, wallet ids, scripts, addresses, amounts, fees and signatures
 are all recomputed locally — at every index — and a transaction is only
 ever signed after it has been verified against this node's own view of

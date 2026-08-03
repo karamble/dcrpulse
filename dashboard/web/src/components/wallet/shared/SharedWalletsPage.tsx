@@ -2,12 +2,13 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Loader2, Plus, RefreshCw, Upload, Users } from 'lucide-react';
+import { AlertCircle, Loader2, Mail, Plus, RefreshCw, Upload, Users, X } from 'lucide-react';
 import { useBisonrelayLive } from '../../bisonrelay/BisonrelayLiveProvider';
 import {
   MsigWallet,
+  importMsigFrame,
   listMsigWallets,
   msigStatusLabel,
   refreshMsig,
@@ -39,6 +40,12 @@ export const SharedWalletsPage = () => {
   const [wizard, setWizard] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [restoreCard, setRestoreCard] = useState<unknown>(null);
+  const [importing, setImporting] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [fromLabel, setFromLabel] = useState('');
+  const [importBusy, setImportBusy] = useState(false);
+  const [importErr, setImportErr] = useState<string | null>(null);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
   const { addListener } = useBisonrelayLive();
 
   const load = useCallback(async () => {
@@ -109,6 +116,33 @@ export const SharedWalletsPage = () => {
     }
   };
 
+  const closeImport = () => {
+    setImporting(false);
+    setImportText('');
+    setFromLabel('');
+    setImportErr(null);
+  };
+
+  // Manually coordinated invitations arrive as hand-carried blobs; the
+  // importer names the sender because the wire itself carries no identity.
+  const runImport = async () => {
+    if (importBusy || !importText.trim() || !fromLabel.trim()) return;
+    setImportBusy(true);
+    setImportErr(null);
+    try {
+      await importMsigFrame({ body: importText, fromLabel: fromLabel.trim() });
+      closeImport();
+      await load();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setImportErr(
+        typeof body === 'string' ? body : e?.message || 'Could not import the invitation',
+      );
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   const manualRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
@@ -158,6 +192,14 @@ export const SharedWalletsPage = () => {
               }}
             />
           </label>
+          <button
+            type="button"
+            onClick={() => setImporting(true)}
+            className="px-3 py-2 rounded-lg border border-border hover:bg-muted/30 text-sm inline-flex items-center gap-2"
+          >
+            <Mail className="h-4 w-4" />
+            Import invitation
+          </button>
           <button
             type="button"
             onClick={() => setWizard(true)}
@@ -231,6 +273,83 @@ export const SharedWalletsPage = () => {
 
       {wizard && (
         <SharedWalletCreateWizard onClose={() => setWizard(false)} onCreated={load} />
+      )}
+
+      {importing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-card border border-border/50 shadow-xl">
+            <div className="p-6 border-b border-border/50 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">Import an invitation</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Paste the shared wallet invitation someone handed you and name its sender.
+                  Later messages for that wallet are imported from its Coordination card.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeImport}
+                className="p-1 rounded-lg hover:bg-muted/30"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3">
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder="Paste a --msig[...]-- invitation message..."
+                className="w-full h-28 px-3 py-2 rounded-lg bg-background border border-border font-mono text-xs focus:outline-none focus:border-primary"
+              />
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".txt,.msig,text/plain"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (file) setImportText((await file.text()).trim());
+                }}
+              />
+              <div>
+                <label className="block text-sm font-medium mb-1">Sender's name</label>
+                <input
+                  type="text"
+                  value={fromLabel}
+                  maxLength={64}
+                  onChange={(e) => setFromLabel(e.target.value)}
+                  placeholder="Who handed you this invitation"
+                  className="w-full px-3 py-2 rounded-lg bg-background border border-border focus:outline-none focus:border-primary"
+                />
+              </div>
+              {importErr && (
+                <p className="text-xs text-destructive flex items-start gap-1">
+                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>{importErr}</span>
+                </p>
+              )}
+            </div>
+            <div className="p-6 border-t border-border/50 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => importFileRef.current?.click()}
+                className="px-3 py-2 rounded-lg border border-border hover:bg-muted/30 text-sm"
+              >
+                Open file...
+              </button>
+              <button
+                type="button"
+                onClick={runImport}
+                disabled={importBusy || !importText.trim() || !fromLabel.trim()}
+                className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              >
+                {importBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <PassphraseModal
