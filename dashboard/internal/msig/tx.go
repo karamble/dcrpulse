@@ -26,12 +26,15 @@ import (
 // stays far below the Bison Relay message floor.
 const MaxInputs = 30
 
-// UTXO identifies one unspent output of the shared P2SH address.
+// UTXO identifies one unspent output of a shared P2SH address. Address
+// says which one; HD wallets use it to map the output to its ladder
+// index. Empty on the single-address paths.
 type UTXO struct {
-	TxID  string
-	Vout  uint32
-	Tree  int8
-	Atoms int64
+	TxID    string
+	Vout    uint32
+	Tree    int8
+	Atoms   int64
+	Address string
 }
 
 // Recipient is one payment output of a proposal.

@@ -42,15 +42,21 @@ func MsigInviteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	if len(req.Passphrase) > 1024 {
+		http.Error(w, "Passphrase too long", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
 	invitees := make([]msig.InviteePeer, 0, len(req.Invitees))
 	for _, p := range req.Invitees {
 		invitees = append(invitees, msig.InviteePeer{UID: p.UID, Nick: p.Nick})
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	rec, err := msig.CreateSharedWallet(ctx, req.Label, req.M, invitees, req.Account)
+	rec, err := msig.CreateSharedWalletHD(ctx, req.Label, req.M, invitees, passphrase)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		msigPassphraseError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -67,10 +73,16 @@ func MsigAcceptHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	if len(req.Passphrase) > 1024 {
+		http.Error(w, "Passphrase too long", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	if err := msig.AcceptInvite(ctx, req.ID, req.Account); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err := msig.AcceptInviteHD(ctx, req.ID, passphrase); err != nil {
+		msigPassphraseError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

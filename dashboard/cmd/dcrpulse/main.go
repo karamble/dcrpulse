@@ -163,7 +163,9 @@ func main() {
 	services.StartBrclientdNotifs(context.Background())
 
 	// Shared-wallet coordination frames arrive as typed "msig" events on
-	// the same notification pipeline.
+	// the same notification pipeline. The ladder's deferred rescans ride
+	// the handlers' gRPC rescan starter.
+	msig.SetRescanner(handlers.StartWalletRescan)
 	msig.StartEngine(context.Background())
 
 	// Background poller that advances dcrtime timestamp records to "anchored" as

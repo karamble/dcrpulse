@@ -45,6 +45,14 @@ const (
 	maxXpubLen = 120
 )
 
+// DerivationScheme names the exact procedure implemented here, and is
+// recorded in every backup card: a card is only restorable by a build
+// that implements its scheme, because deriving even one address any
+// other way rebuilds the wrong wallet. Changing anything about the
+// derivation (path, child variant, sorting, skip rule) is a NEW scheme,
+// never a refactor; the golden fixture test seals it.
+const DerivationScheme = "dcrpulse-msig-hd-1"
+
 // ErrSkipIndex marks a child index the whole roster deterministically
 // skips because at least one xpub cannot derive it.
 var ErrSkipIndex = errors.New("child index skipped")

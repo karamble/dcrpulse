@@ -21,7 +21,11 @@ import (
 // seed restore, so this registry is the durable source of truth for
 // everything except keys.
 
-const storeSchemaVersion = 1
+// storeSchemaVersion 2 added the HD ladder fields. Documents are
+// forward-readable (unknown JSON fields are dropped on the next save),
+// which is exactly why openStore refuses files written by a NEWER build:
+// silently stripping a future schema's fields would destroy state.
+const storeSchemaVersion = 2
 
 // seenTTL keeps journaled mids and sent outbox items past the BR server's
 // 7 day delivery horizon so a replayed frame can never look new.
@@ -105,11 +109,32 @@ type OwnKey struct {
 	Index   uint32 `json:"index"`
 }
 
+// OwnHDKey records this wallet's HD contribution: the dedicated
+// account's number and its extended public key. The xpub doubles as the
+// restore-time ownership proof, since the same seed always derives the
+// same xpub at the same account.
+type OwnHDKey struct {
+	Xpub    string `json:"xpub"`
+	Account uint32 `json:"account"`
+}
+
+// CursorState tracks one branch of an HD wallet's ladder. Next is the
+// next index to hand out, ImportedThrough is one past the highest index
+// whose script this wallet has imported, and LastUsed is one past the
+// highest index observed used on-chain (0 = none). All three count raw
+// child indices, skipped holes included.
+type CursorState struct {
+	Next            uint32 `json:"next"`
+	ImportedThrough uint32 `json:"importedThrough"`
+	LastUsed        uint32 `json:"lastUsed"`
+}
+
 // Peer is one cosigner as seen from this node.
 type Peer struct {
 	UID        string `json:"uid"`
 	Nick       string `json:"nick"`
 	PubKey     string `json:"pubkey,omitempty"`
+	Xpub       string `json:"xpub,omitempty"`
 	State      string `json:"state"`
 	LastSeenTs int64  `json:"lastSeenTs,omitempty"`
 	Reason     string `json:"reason,omitempty"`
@@ -204,15 +229,24 @@ type WalletRecord struct {
 	Network       string   `json:"network"`
 	ScriptHex     string   `json:"scriptHex,omitempty"`
 	RosterPubKeys []string `json:"rosterPubKeys,omitempty"`
-	Role          string   `json:"role"`
-	Status        string   `json:"status"`
-	FailReason    string   `json:"failReason,omitempty"`
-	CreatedHeight int64    `json:"createdHeight,omitempty"`
-	Own           *OwnKey  `json:"own,omitempty"`
-	InitiatorUID  string   `json:"initiatorUid,omitempty"`
-	Peers         []*Peer  `json:"peers"`
-	CreatedAt     int64    `json:"createdAt"`
-	UpdatedAt     int64    `json:"updatedAt"`
+
+	// HD ladder fields; empty on v1 single-address records. Address then
+	// holds the external index-0 address, the wallet's identity.
+	HD    bool         `json:"hd,omitempty"`
+	Xpubs []string     `json:"xpubs,omitempty"`
+	OwnHD *OwnHDKey    `json:"ownHd,omitempty"`
+	Ext   *CursorState `json:"ext,omitempty"`
+	Int   *CursorState `json:"int,omitempty"`
+
+	Role          string  `json:"role"`
+	Status        string  `json:"status"`
+	FailReason    string  `json:"failReason,omitempty"`
+	CreatedHeight int64   `json:"createdHeight,omitempty"`
+	Own           *OwnKey `json:"own,omitempty"`
+	InitiatorUID  string  `json:"initiatorUid,omitempty"`
+	Peers         []*Peer `json:"peers"`
+	CreatedAt     int64   `json:"createdAt"`
+	UpdatedAt     int64   `json:"updatedAt"`
 
 	Proposals map[string]*Proposal `json:"proposals,omitempty"`
 }
@@ -268,6 +302,10 @@ func openStore(path, walletName string) (*Store, error) {
 	if err := json.Unmarshal(raw, &f); err != nil {
 		return nil, fmt.Errorf("parse %s: %v", path, err)
 	}
+	if f.SchemaVersion > storeSchemaVersion {
+		return nil, fmt.Errorf("%s was written by a newer dcrpulse (schema %d, this build reads %d); upgrade instead of downgrading",
+			path, f.SchemaVersion, storeSchemaVersion)
+	}
 	if f.Wallets == nil {
 		f.Wallets = make(map[string]*WalletRecord)
 	}
@@ -321,6 +359,19 @@ func cloneRecord(r *WalletRecord) *WalletRecord {
 		c.Own = &oc
 	}
 	c.RosterPubKeys = append([]string(nil), r.RosterPubKeys...)
+	c.Xpubs = append([]string(nil), r.Xpubs...)
+	if r.OwnHD != nil {
+		hc := *r.OwnHD
+		c.OwnHD = &hc
+	}
+	if r.Ext != nil {
+		ec := *r.Ext
+		c.Ext = &ec
+	}
+	if r.Int != nil {
+		ic := *r.Int
+		c.Int = &ic
+	}
 	if r.Proposals != nil {
 		c.Proposals = make(map[string]*Proposal, len(r.Proposals))
 		for k, p := range r.Proposals {

@@ -37,6 +37,16 @@ var (
 	rescanChannelsMutex  sync.Mutex
 )
 
+// StartWalletRescan exposes the gRPC rescan starter to subsystems that
+// cannot import handlers (the msig ladder schedules deferred rescans for
+// imports that may postdate their funding).
+func StartWalletRescan(beginHeight int64) {
+	if beginHeight < 0 {
+		beginHeight = 0
+	}
+	go startRescanViaGrpc(int32(beginHeight))
+}
+
 // startRescanViaGrpc initiates a blockchain rescan using gRPC and broadcasts progress
 func startRescanViaGrpc(beginHeight int32) {
 	if rpc.WalletGrpcClient == nil {

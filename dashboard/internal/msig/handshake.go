@@ -343,8 +343,9 @@ func inboundInvite(ctx context.Context, m *Manager, msg *Message, frame *Frame, 
 	}
 	rec := &WalletRecord{
 		TempID: msg.TempID, Label: msg.Label, M: msg.M, N: msg.N, Network: msg.Network,
+		HD:   msg.Ver == ProtoHD,
 		Role: RoleCosigner, Status: StatusInvited, InitiatorUID: fromUID,
-		Peers: []*Peer{{UID: fromUID, Nick: fromNick, PubKey: msg.PubKey, State: PeerAccepted, LastSeenTs: now.Unix()}},
+		Peers: []*Peer{{UID: fromUID, Nick: fromNick, PubKey: msg.PubKey, Xpub: msg.Xpub, State: PeerAccepted, LastSeenTs: now.Unix()}},
 	}
 	if err := store.PutWallet(rec); err != nil {
 		log.Printf("msig: store invite: %v", err)
@@ -382,11 +383,19 @@ func inboundHandshake(ctx context.Context, m *Manager, msg *Message, frame *Fram
 	}
 	switch msg.Type {
 	case TypeAccept:
-		inboundAccept(ctx, store, rec, msg, fromUID, now)
+		if rec.HD {
+			inboundAcceptHD(ctx, store, rec, msg, fromUID, now)
+		} else {
+			inboundAccept(ctx, store, rec, msg, fromUID, now)
+		}
 	case TypeDecline:
 		inboundDecline(store, rec, msg, fromUID, fromNick)
 	case TypeRoster:
-		inboundRoster(ctx, store, rec, msg, fromUID, now)
+		if rec.HD {
+			inboundRosterHD(ctx, store, rec, msg, fromUID)
+		} else {
+			inboundRoster(ctx, store, rec, msg, fromUID, now)
+		}
 	case TypeReady:
 		inboundReady(store, rec, msg, fromUID, now)
 	case TypeInviteCancel:
@@ -719,8 +728,9 @@ func inboundCancel(store *Store, rec *WalletRecord, fromUID string) {
 }
 
 // ResumePending re-attempts wallet-gated steps for the active wallet:
-// initiator activation waiting on a wallet switch and verified rosters
-// waiting on their script import.
+// initiator activation waiting on a wallet switch, verified rosters
+// waiting on their script import, and active HD ladders whose windows
+// fell behind their cursors.
 func ResumePending(ctx context.Context) {
 	network, err := networkSeam(ctx)
 	if err != nil {
@@ -733,9 +743,23 @@ func ResumePending(ctx context.Context) {
 	for _, rec := range store.Wallets() {
 		switch rec.Status {
 		case StatusInviting:
-			maybeActivateInitiator(ctx, store, rec.TempID)
+			if rec.HD {
+				maybeActivateInitiatorHD(ctx, store, rec.TempID)
+			} else {
+				maybeActivateInitiator(ctx, store, rec.TempID)
+			}
 		case StatusPendingImport:
-			completeCosignerImport(ctx, store, rec.TempID)
+			if rec.HD {
+				completeCosignerImportHD(ctx, store, rec.TempID)
+			} else {
+				completeCosignerImport(ctx, store, rec.TempID)
+			}
+		case StatusActive:
+			if rec.HD {
+				if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
+					log.Printf("msig: window catch-up for %q: %v", rec.Label, err)
+				}
+			}
 		}
 	}
 }

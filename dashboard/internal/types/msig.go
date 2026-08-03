@@ -12,19 +12,22 @@ type MsigInvitee struct {
 }
 
 // MsigInviteRequest starts a shared wallet round. The invitees plus this
-// wallet form the n keys of an m-of-n scheme.
+// wallet form the n keys of an m-of-n scheme. The wallet passphrase
+// creates the round's dedicated account.
 type MsigInviteRequest struct {
-	Label    string        `json:"label"`
-	M        int           `json:"m"`
-	Account  uint32        `json:"account"`
-	Invitees []MsigInvitee `json:"invitees"`
+	Label      string        `json:"label"`
+	M          int           `json:"m"`
+	Invitees   []MsigInvitee `json:"invitees"`
+	Passphrase string        `json:"passphrase"`
 }
 
 // MsigActionRequest targets one shared wallet round by tempId or address.
+// Accepting carries the wallet passphrase to create the dedicated
+// account; declining never needs it.
 type MsigActionRequest struct {
-	ID      string `json:"id"`
-	Account uint32 `json:"account,omitempty"`
-	Reason  string `json:"reason,omitempty"`
+	ID         string `json:"id"`
+	Reason     string `json:"reason,omitempty"`
+	Passphrase string `json:"passphrase,omitempty"`
 }
 
 // MsigRecipient is one payment output of a proposal.
