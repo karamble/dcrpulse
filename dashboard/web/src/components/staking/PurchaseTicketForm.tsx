@@ -50,7 +50,7 @@ export const PurchaseTicketForm = ({ staking }: PurchaseTicketFormProps) => {
         getAccounts(),
         getPrivacyStatus().catch(() => null),
       ]);
-      const usable = accs.filter((a) => a.accountName !== 'imported');
+      const usable = accs.filter((a) => a.accountName !== 'imported' && !a.sharedWallet);
       setAccounts(usable);
       setPrivacy(priv);
       // When privacy is configured the purchase is always mixed and the

@@ -58,7 +58,8 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
             a.accountName !== 'imported' &&
             a.accountNumber !== 2147483647 &&
             a.accountName !== 'mixed' &&
-            a.accountName !== 'unmixed',
+            a.accountName !== 'unmixed' &&
+            !a.sharedWallet,
           )
           .sort((a, b) => a.accountNumber - b.accountNumber);
         setAccounts(visible);

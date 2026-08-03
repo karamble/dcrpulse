@@ -85,7 +85,7 @@ export const AutobuyerTab = () => {
           getPrivacyStatus().catch(() => null),
         ]);
         if (cancelled) return;
-        const usable = accs.filter((a) => a.accountName !== 'imported');
+        const usable = accs.filter((a) => a.accountName !== 'imported' && !a.sharedWallet);
         setAccounts(usable);
         setStatus(s);
         setPrivacy(priv);
