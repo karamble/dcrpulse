@@ -43,10 +43,12 @@ export const SharedWalletCreateWizard = ({
       });
   }, []);
 
-  const candidates = (contacts ?? []).filter((c) => c.id?.identity);
+  const candidates = (contacts ?? [])
+    .filter((c) => c.id?.identity)
+    .sort((a, b) => displayNick(a).toLowerCase().localeCompare(displayNick(b).toLowerCase()));
   const total = selected.size + 1;
   const schemeValid = label.trim().length > 0 && label.length <= 64 && required >= 1;
-  const cosignersValid = selected.size >= 1 && total <= 15 && required <= total;
+  const cosignersValid = selected.size >= 1 && total <= 8 && required <= total;
 
   const invitees: MsigInvitee[] = useMemo(
     () =>
@@ -113,9 +115,9 @@ export const SharedWalletCreateWizard = ({
                 <input
                   type="number"
                   min={1}
-                  max={15}
+                  max={8}
                   value={required}
-                  onChange={(e) => setRequired(Math.max(1, Math.min(15, Number(e.target.value) || 1)))}
+                  onChange={(e) => setRequired(Math.max(1, Math.min(8, Number(e.target.value) || 1)))}
                   className="w-32 px-3 py-2 rounded-lg bg-background border border-border focus:outline-none focus:border-primary"
                 />
                 <p className="text-xs text-muted-foreground mt-1">

@@ -156,7 +156,9 @@ unknown types after journaling their mid.
 Extended public keys travel in their standard base58 encoding and must
 be public-only. The roster's `xpubs` list is canonical: exactly n keys
 in strictly ascending string order, which doubles as duplicate
-rejection. A handshake frame carrying both the historical single-key
+rejection. Schemes are capped at 8 participants — the network itself
+allows more, but the serial signing relay becomes impractical first.
+A handshake frame carrying both the historical single-key
 fields and the extended-key fields is invalid — receivers must reject
 it rather than guess, so one frame can never mean different wallets to
 different builds. Amounts, where present, are in atoms. Handshake

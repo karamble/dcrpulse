@@ -22,10 +22,11 @@ const (
 	// MinRequired is the smallest usable signature threshold.
 	MinRequired = 1
 
-	// MaxPubKeys caps the key count at dcrd's relay policy limit:
-	// redeeming an m-of-n P2SH input counts n sigops and the mempool
-	// rejects P2SH signature scripts with more than 15.
-	MaxPubKeys = 15
+	// MaxPubKeys caps the roster size. The network itself allows more
+	// (dcrd's relay policy rejects P2SH redemptions past 15 sigops), but
+	// dcrpulse caps schemes at 8 participants: beyond that the serial
+	// signing relay becomes impractical before the chain does.
+	MaxPubKeys = 8
 
 	compressedPubKeyLen = 33
 )
