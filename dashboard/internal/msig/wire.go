@@ -159,4 +159,27 @@ func Parse(text string, now time.Time) (*Frame, error) {
 		return nil, fmt.Errorf("payload exceeds %d bytes", MaxPayload)
 	}
 	return &Frame{MID: mid, Exp: expT, Payload: payload}, nil
+} // Reencode re-frames an existing envelope with a fresh expiry, keeping
+// the mid and payload byte-identical. Manual exports use it so a blob is
+// always valid for its full lifetime from the moment it is handed over;
+// the unchanged mid keeps receiver journals deduplicating correctly no
+// matter which copy arrives.
+func Reencode(body string, exp time.Time) (string, error) {
+	m := envelopeRE.FindStringSubmatch(body)
+	if m == nil {
+		return "", ErrNotEnvelope
+	}
+	mid, payload := "", ""
+	header := m[1]
+	for _, kv := range strings.Split(header, ",") {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) == 2 && parts[0] == "mid" {
+			mid = parts[1]
+		}
+	}
+	payload = m[2]
+	if mid == "" {
+		return "", fmt.Errorf("envelope carries no mid")
+	}
+	return fmt.Sprintf("--msig[v=%d,mid=%s,exp=%d]--%s", WireVersion, mid, exp.Unix(), payload), nil
 }

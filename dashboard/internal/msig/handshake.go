@@ -44,7 +44,10 @@ func paramsForNetwork(network string) (*chaincfg.Params, error) {
 // sendFrame persists one frame to the store's outbox and attempts the
 // send. fixedMID lets the invite reuse its tempId as the frame id; pass
 // "" for a fresh id. Transport failures are not errors: the item stays
-// queued and the sweep resends it byte-identical.
+// queued and the sweep resends it byte-identical. Frames of a manual
+// wallet are never sent at all: they wait in the outbox for the user to
+// hand them over, and the record-changed signal makes the export card
+// appear at once.
 func sendFrame(store *Store, toUID string, msg *Message, fixedMID string) error {
 	payload, err := EncodeMessage(msg)
 	if err != nil {
@@ -56,14 +59,33 @@ func sendFrame(store *Store, toUID string, msg *Message, fixedMID string) error 
 			return err
 		}
 	}
-	body, err := Encode(payload, mid, time.Now().Add(TTLFor(msg.Type)))
+	// Every message names its record (tempId for the handshake, walletId
+	// after activation), and terminal records still resolve, so the
+	// transport is always derivable here without widening the signature.
+	recID := msg.TempID
+	if recID == "" {
+		recID = msg.WalletID
+	}
+	manual := false
+	if rec, ok := store.Wallet(recID); ok {
+		manual = rec.ManualTransport()
+		recID = rec.TempID
+	}
+	body, err := Encode(payload, mid, time.Now().Add(TTLFor(msg.Type, manual)))
 	if err != nil {
 		return err
 	}
 	if err := store.AppendOutbox(&OutboxItem{
 		MID: mid, ToUID: toUID, Body: body, State: OutboxSending, Ts: time.Now().Unix(),
+		Manual: manual, Type: msg.Type, RecID: recID, TxID: msg.TxID,
 	}); err != nil {
 		return err
+	}
+	if manual {
+		if rec, ok := store.Wallet(recID); ok {
+			notifyRecordChanged(rec)
+		}
+		return nil
 	}
 	deliverOutbox(store, mid, toUID, body)
 	return nil
@@ -163,7 +185,7 @@ func CancelRound(ctx context.Context, id string) error {
 // dispatchInbound routes one validated message to its handler. Frames
 // referencing records this node does not know are dropped WITHOUT being
 // journaled, so a later restore or activation lets catch-up process them.
-func dispatchInbound(msg *Message, frame *Frame, fromUID, fromNick string, now time.Time) {
+func dispatchInbound(msg *Message, frame *Frame, fromUID, fromNick string, now time.Time, imported bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), walletCallTimeout)
 	defer cancel()
 	network, err := networkSeam(ctx)
@@ -174,7 +196,7 @@ func dispatchInbound(msg *Message, frame *Frame, fromUID, fromNick string, now t
 	m := manager(network)
 	switch msg.Type {
 	case TypeInvite:
-		inboundInvite(ctx, m, msg, frame, fromUID, fromNick, network, now)
+		inboundInvite(ctx, m, msg, frame, fromUID, fromNick, network, now, imported)
 	case TypeAccept, TypeDecline, TypeRoster, TypeReady, TypeInviteCancel:
 		inboundHandshake(ctx, m, msg, frame, fromUID, fromNick, now)
 	case TypeSignReq, TypeSig, TypeSigDecline, TypeBroadcast:
@@ -182,7 +204,7 @@ func dispatchInbound(msg *Message, frame *Frame, fromUID, fromNick string, now t
 	}
 }
 
-func inboundInvite(ctx context.Context, m *Manager, msg *Message, frame *Frame, fromUID, fromNick, network string, now time.Time) {
+func inboundInvite(ctx context.Context, m *Manager, msg *Message, frame *Frame, fromUID, fromNick, network string, now time.Time, imported bool) {
 	store, err := m.StoreFor(activeWalletSeam())
 	if err != nil {
 		log.Printf("msig: open store: %v", err)
@@ -208,9 +230,13 @@ func inboundInvite(ctx context.Context, m *Manager, msg *Message, frame *Frame, 
 		log.Printf("msig: duplicate invite round %s from %s", msg.TempID, fromNick)
 		return
 	}
+	transport := ""
+	if imported {
+		transport = TransportManual
+	}
 	rec := &WalletRecord{
 		TempID: msg.TempID, Label: msg.Label, M: msg.M, N: msg.N, Network: msg.Network,
-		HD:   true,
+		HD: true, Transport: transport,
 		Role: RoleCosigner, Status: StatusInvited, InitiatorUID: fromUID,
 		Peers: []*Peer{{UID: fromUID, Nick: fromNick, Xpub: msg.Xpub, State: PeerAccepted, LastSeenTs: now.Unix()}},
 	}

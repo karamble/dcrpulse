@@ -126,11 +126,17 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 	if len(note) > MaxNoteLen {
 		return nil, fmt.Errorf("note exceeds %d characters", MaxNoteLen)
 	}
-	if hopTTL == 0 {
-		hopTTL = DefaultHopTTL
-	}
-	if hopTTL < minHopTTL || hopTTL > maxHopTTL {
-		return nil, fmt.Errorf("signing window must be between 1 hour and 7 days")
+	if rec.ManualTransport() {
+		// The human ferries the request; deadlines would only re-route
+		// behind their back.
+		hopTTL = 0
+	} else {
+		if hopTTL == 0 {
+			hopTTL = DefaultHopTTL
+		}
+		if hopTTL < minHopTTL || hopTTL > maxHopTTL {
+			return nil, fmt.Errorf("signing window must be between 1 hour and 7 days")
+		}
 	}
 	if len(queueUIDs) < rec.M-1 {
 		return nil, fmt.Errorf("pick at least %d cosigner(s) to reach %d signatures", rec.M-1, rec.M)
@@ -315,11 +321,19 @@ func advanceProposal(store *Store, walletID, txid string) {
 		log.Printf("msig: %v", err)
 		return
 	}
-	ttl := time.Duration(prop.HopTTLSecs) * time.Second
-	if ttl == 0 {
-		ttl = DefaultHopTTL
+	// A manual request carries the long hand-carried lifetime and no hop
+	// deadline: the human is the relay, nothing re-routes behind them.
+	manual := rec.ManualTransport()
+	expiry := time.Now().Add(ManualTTL)
+	var hopDeadline int64
+	if !manual {
+		ttl := time.Duration(prop.HopTTLSecs) * time.Second
+		if ttl == 0 {
+			ttl = DefaultHopTTL
+		}
+		expiry = time.Now().Add(ttl)
+		hopDeadline = expiry.Unix()
 	}
-	deadline := time.Now().Add(ttl)
 	msg := &Message{
 		Type: TypeSignReq, WalletID: rec.Address, TxID: txid,
 		RawTx: prop.RawTx, Note: prop.Note, SigsHave: prop.SigCount,
@@ -329,7 +343,7 @@ func advanceProposal(store *Store, walletID, txid string) {
 		log.Printf("msig: %v", err)
 		return
 	}
-	body, err := Encode(payload, mid, deadline)
+	body, err := Encode(payload, mid, expiry)
 	if err != nil {
 		log.Printf("msig: %v", err)
 		return
@@ -340,7 +354,7 @@ func advanceProposal(store *Store, walletID, txid string) {
 				h.State = HopSent
 				h.SentMID = mid
 				h.SentAt = time.Now().Unix()
-				h.Deadline = deadline.Unix()
+				h.Deadline = hopDeadline
 				return nil
 			}
 		}
@@ -351,8 +365,16 @@ func advanceProposal(store *Store, walletID, txid string) {
 	}
 	if err := store.AppendOutbox(&OutboxItem{
 		MID: mid, ToUID: next.UID, Body: body, State: OutboxSending, Ts: time.Now().Unix(),
+		Manual: manual, Type: TypeSignReq, RecID: rec.TempID, TxID: txid,
 	}); err != nil {
 		log.Printf("msig: %v", err)
+		return
+	}
+	if manual {
+		if fresh, ok := store.Wallet(rec.TempID); ok {
+			notifyRecordChanged(fresh)
+		}
+		log.Printf("msig: proposal %s waiting for hand-over to %s (%d/%d signatures)", txid[:12], next.Nick, prop.SigCount, rec.M)
 		return
 	}
 	deliverOutbox(store, mid, next.UID, body)

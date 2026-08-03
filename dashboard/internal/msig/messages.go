@@ -77,10 +77,20 @@ type Message struct {
 	SigsHave int      `json:"sigsHave,omitempty"`
 }
 
-// TTLFor returns the envelope lifetime for a message type. Everything
-// matches the BR server's queued-PM horizon except sign requests, which
-// stay short so a stale signing prompt dies after the hub re-routes.
-func TTLFor(msgType string) time.Duration {
+// ManualTTL is the envelope lifetime for hand-carried frames: long
+// enough for sneakernet, equal to the receiver journals' horizon, and
+// refreshed at export time anyway.
+const ManualTTL = 30 * 24 * time.Hour
+
+// TTLFor returns the envelope lifetime for a message type. On Bison
+// Relay everything matches the server's queued-PM horizon except sign
+// requests, which stay short so a stale signing prompt dies after the
+// hub re-routes. Manual frames all get the long lifetime: the human is
+// the relay and nothing re-routes behind their back.
+func TTLFor(msgType string, manual bool) time.Duration {
+	if manual {
+		return ManualTTL
+	}
 	if msgType == TypeSignReq {
 		return 24 * time.Hour
 	}

@@ -24,8 +24,11 @@ import (
 const (
 	sweepInterval = 15 * time.Minute
 	// roundExpiry fails handshakes that outlived the BR delivery horizon
-	// plus a day of grace for an initiator restart.
-	roundExpiry = 8 * 24 * time.Hour
+	// plus a day of grace for an initiator restart. Manual rounds get the
+	// hand-carried frame lifetime plus the same grace: nobody re-routes
+	// behind the humans, but zombie rounds still die eventually.
+	roundExpiry       = 8 * 24 * time.Hour
+	manualRoundExpiry = ManualTTL + 24*time.Hour
 )
 
 // StartEngine subscribes to the dashboard's Bison Relay event bus and
@@ -92,8 +95,21 @@ func handleFrameEvent(payload json.RawMessage, now time.Time) {
 	handleInbound(p.From, p.FromNick, p.Message, now)
 }
 
-// handleInbound is the single entry point for live and replayed frames.
+// handleInbound is the entry point for live and replayed Bison Relay
+// frames. Manually imported frames come in through handleImportedFrame,
+// which differs only in stamping new invite records as manual.
 func handleInbound(fromUID, fromNick, body string, now time.Time) {
+	handleFrame(fromUID, fromNick, body, now, false)
+}
+
+// handleImportedFrame ingests a hand-carried frame. The wire is
+// transport-free by design, so the import path itself marks the records
+// it creates.
+func handleImportedFrame(fromUID, fromNick, body string, now time.Time) {
+	handleFrame(fromUID, fromNick, body, now, true)
+}
+
+func handleFrame(fromUID, fromNick, body string, now time.Time, imported bool) {
 	peer := fromNick
 	if len(fromUID) >= 12 {
 		peer = fromNick + " (" + fromUID[:12] + ")"
@@ -121,7 +137,7 @@ func handleInbound(fromUID, fromNick, body string, now time.Time) {
 		log.Printf("msig: dropping invalid frame %s from %s: %v", frame.MID, peer, err)
 		return
 	}
-	dispatchInbound(msg, frame, fromUID, fromNick, now)
+	dispatchInbound(msg, frame, fromUID, fromNick, now, imported)
 }
 
 // journalUnknownType records the mid of a structurally valid message this
@@ -176,11 +192,32 @@ func runSweep(ctx context.Context) {
 	m.OpenExisting()
 	for _, s := range m.Stores() {
 		resendOutbox(s)
+		sweepManualOutbox(s)
 		expireStaleRounds(s)
 		sweepProposals(sctx, s)
 	}
 	ResumePending(sctx)
 	catchUpKnownPeers(sctx, m)
+}
+
+// sweepManualOutbox retires hand-over cards whose delivery the protocol
+// state already proves, so they never linger after the counterpart acted
+// through some other copy of the frame.
+func sweepManualOutbox(s *Store) {
+	for _, it := range s.PendingOutbox() {
+		if !it.Manual {
+			continue
+		}
+		rec, ok := s.Wallet(it.RecID)
+		if !ok {
+			continue
+		}
+		if manualFrameStale(rec, it) {
+			if err := s.MarkOutboxSent(it.MID, it.ToUID); err != nil {
+				log.Printf("msig: retire manual frame: %v", err)
+			}
+		}
+	}
 }
 
 // RunSweepNow is the manual refresh entry used by the API.
@@ -190,13 +227,22 @@ func RunSweepNow(ctx context.Context) {
 
 func resendOutbox(s *Store) {
 	for _, it := range s.PendingOutbox() {
+		// Manual items wait for the user; sending them would hand a
+		// pseudo peer id to brclientd.
+		if it.Manual {
+			continue
+		}
 		deliverOutbox(s, it.MID, it.ToUID, it.Body)
 	}
 }
 
 func expireStaleRounds(s *Store) {
-	cutoff := time.Now().Add(-roundExpiry).Unix()
+	now := time.Now()
 	for _, rec := range s.Wallets() {
+		cutoff := now.Add(-roundExpiry).Unix()
+		if rec.ManualTransport() {
+			cutoff = now.Add(-manualRoundExpiry).Unix()
+		}
 		switch rec.Status {
 		case StatusInviting, StatusInvited, StatusAccepted, StatusActivating:
 			if rec.CreatedAt > 0 && rec.CreatedAt < cutoff {
@@ -216,7 +262,9 @@ func catchUpKnownPeers(ctx context.Context, m *Manager) {
 	}
 	peers := make(map[string]int64)
 	for _, rec := range s.Wallets() {
-		if rec.Terminal() {
+		if rec.Terminal() || rec.ManualTransport() {
+			// Manual peers are pseudo ids; brclientd has no history
+			// for them.
 			continue
 		}
 		for _, p := range rec.Peers {

@@ -122,10 +122,10 @@ func TestMessageUnknownTypeAndFields(t *testing.T) {
 }
 
 func TestMessageTTLs(t *testing.T) {
-	if TTLFor(TypeSignReq) >= TTLFor(TypeSig) {
+	if TTLFor(TypeSignReq, false) >= TTLFor(TypeSig, false) {
 		t.Fatalf("sign_req TTL must be the short one")
 	}
-	if TTLFor(TypeInvite) != 7*24*time.Hour {
+	if TTLFor(TypeInvite, false) != 7*24*time.Hour {
 		t.Fatalf("handshake TTL should match the BR delivery horizon")
 	}
 }

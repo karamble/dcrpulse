@@ -61,13 +61,21 @@ func newDedicatedAccount(ctx context.Context, label, tempID string, passphrase [
 
 // CreateSharedWalletHD starts an HD round: it creates the dedicated
 // account, records the round and invites every participant with this
-// wallet's xpub. The invitees plus this wallet form the n keys.
-func CreateSharedWalletHD(ctx context.Context, label string, m int, invitees []InviteePeer, passphrase []byte) (*WalletRecord, error) {
+// wallet's xpub. The invitees plus this wallet form the n keys. With the
+// manual transport the invitees are just labels: pseudo peer ids are
+// minted locally (the wire never carries identities, so each side keeps
+// its own table) and the invite frames wait in the outbox for the user
+// to hand over.
+func CreateSharedWalletHD(ctx context.Context, label string, m int, invitees []InviteePeer, transport string, passphrase []byte) (*WalletRecord, error) {
 	defer zero(passphrase)
 	network, err := networkSeam(ctx)
 	if err != nil {
 		return nil, err
 	}
+	if transport != "" && transport != TransportManual {
+		return nil, fmt.Errorf("unknown coordination transport %q", transport)
+	}
+	manual := transport == TransportManual
 	n := len(invitees) + 1
 	if label == "" || len(label) > MaxLabelLen {
 		return nil, fmt.Errorf("label must be 1 to %d characters", MaxLabelLen)
@@ -76,7 +84,22 @@ func CreateSharedWalletHD(ctx context.Context, label string, m int, invitees []I
 		return nil, fmt.Errorf("invalid scheme: %d-of-%d", m, n)
 	}
 	seen := make(map[string]bool, len(invitees))
-	for _, p := range invitees {
+	for i := range invitees {
+		p := &invitees[i]
+		if manual {
+			if p.Nick == "" || len(p.Nick) > MaxLabelLen {
+				return nil, fmt.Errorf("every cosigner needs a name of 1 to %d characters", MaxLabelLen)
+			}
+			key := strings.ToLower(p.Nick)
+			if seen[key] {
+				return nil, fmt.Errorf("duplicate cosigner name %q", p.Nick)
+			}
+			seen[key] = true
+			if p.UID, err = NewID(); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if p.UID == "" || seen[p.UID] {
 			return nil, fmt.Errorf("duplicate or empty invitee")
 		}
@@ -100,7 +123,7 @@ func CreateSharedWalletHD(ctx context.Context, label string, m int, invitees []I
 	}
 	rec := &WalletRecord{
 		TempID: tempID, Label: label, M: m, N: n, Network: network,
-		HD: true, OwnHD: own,
+		HD: true, OwnHD: own, Transport: transport,
 		Role: RoleInitiator, Status: StatusInviting, Peers: peers,
 	}
 	if err := store.PutWallet(rec); err != nil {

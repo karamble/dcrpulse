@@ -21,11 +21,17 @@ import (
 // seed restore, so this registry is the durable source of truth for
 // everything except keys.
 
-// storeSchemaVersion 2 added the HD ladder fields. Documents are
+// storeSchemaVersion 2 added the HD ladder fields; 3 added the manual
+// transport (record transport + typed outbox items). Documents are
 // forward-readable (unknown JSON fields are dropped on the next save),
 // which is exactly why openStore refuses files written by a NEWER build:
 // silently stripping a future schema's fields would destroy state.
-const storeSchemaVersion = 2
+const storeSchemaVersion = 3
+
+// TransportManual marks a wallet whose coordination frames are ferried
+// by the humans themselves instead of Bison Relay. The empty string is
+// the Bison Relay default, keeping older records byte-stable.
+const TransportManual = "manual"
 
 // seenTTL keeps journaled mids and sent outbox items past the BR server's
 // 7 day delivery horizon so a replayed frame can never look new.
@@ -133,12 +139,19 @@ type Peer struct {
 // OutboxItem is one frame persisted before its first send attempt so a
 // crash between the state change and the send never loses the message.
 // Bodies are resent byte-identical; receiver mid journals absorb repeats.
+// Manual items are never sent by the engine: they wait for the user to
+// hand them over, and Type/RecID let the export surface group them
+// without re-parsing bodies.
 type OutboxItem struct {
-	MID   string `json:"mid"`
-	ToUID string `json:"toUid"`
-	Body  string `json:"body"`
-	State string `json:"state"`
-	Ts    int64  `json:"ts"`
+	MID    string `json:"mid"`
+	ToUID  string `json:"toUid"`
+	Body   string `json:"body"`
+	State  string `json:"state"`
+	Ts     int64  `json:"ts"`
+	Manual bool   `json:"manual,omitempty"`
+	Type   string `json:"type,omitempty"`
+	RecID  string `json:"recId,omitempty"`
+	TxID   string `json:"txid,omitempty"`
 }
 
 // ProposalInput is one shared UTXO a proposal spends. Values are
@@ -229,6 +242,8 @@ type WalletRecord struct {
 	Ext   *CursorState `json:"ext,omitempty"`
 	Int   *CursorState `json:"int,omitempty"`
 
+	Transport string `json:"transport,omitempty"`
+
 	Role          string  `json:"role"`
 	Status        string  `json:"status"`
 	FailReason    string  `json:"failReason,omitempty"`
@@ -245,6 +260,9 @@ type WalletRecord struct {
 func (r *WalletRecord) Terminal() bool {
 	return r.Status == StatusDeclined || r.Status == StatusFailed
 }
+
+// ManualTransport reports whether this wallet's frames are hand-carried.
+func (r *WalletRecord) ManualTransport() bool { return r.Transport == TransportManual }
 
 // peerByUID returns the peer entry for uid, or nil.
 func (r *WalletRecord) peerByUID(uid string) *Peer {
@@ -562,6 +580,27 @@ func (s *Store) MarkOutboxSent(mid, toUID string) error {
 }
 
 // PendingOutbox returns clones of items still awaiting a successful send.
+// SeenMid reports whether a frame id was already processed.
+func (s *Store) SeenMid(mid string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.data.ProcessedMids[mid]
+	return ok
+}
+
+// UpdateOutboxBody persists a re-framed body (same mid and payload, a
+// fresh expiry) so manual exports never hand out stale envelopes.
+func (s *Store) UpdateOutboxBody(mid, toUID, newBody string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, it := range s.data.Outbox {
+		if it.MID == mid && it.ToUID == toUID {
+			it.Body = newBody
+		}
+	}
+	return s.saveLocked()
+}
+
 func (s *Store) PendingOutbox() []*OutboxItem {
 	s.mu.Lock()
 	defer s.mu.Unlock()

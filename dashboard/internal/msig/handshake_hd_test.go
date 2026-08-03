@@ -97,7 +97,7 @@ func (hd *hdHarness) createHD(t *testing.T, m int, initiator string, invitees ..
 		n := hd.nodeByNick(nick)
 		peers = append(peers, InviteePeer{UID: n.uid, Nick: n.nick})
 	}
-	rec, err := CreateSharedWalletHD(hd.ctx, "hd drill", m, peers, []byte("wallet-pass"))
+	rec, err := CreateSharedWalletHD(hd.ctx, "hd drill", m, peers, "", []byte("wallet-pass"))
 	if err != nil {
 		t.Fatalf("create HD: %v", err)
 	}

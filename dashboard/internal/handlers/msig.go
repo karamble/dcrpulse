@@ -55,7 +55,7 @@ func MsigInviteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	rec, err := msig.CreateSharedWalletHD(ctx, req.Label, req.M, invitees, passphrase)
+	rec, err := msig.CreateSharedWalletHD(ctx, req.Label, req.M, invitees, req.Transport, passphrase)
 	if err != nil {
 		msigPassphraseError(w, err)
 		return
@@ -199,6 +199,72 @@ func MsigReceiveHandler(w http.ResponseWriter, r *http.Request) {
 		Address string `json:"address"`
 		Index   uint32 `json:"index"`
 	}{addr, index})
+}
+
+// MsigManualOutboxHandler lists a manual wallet's frames waiting to be
+// handed over.
+func MsigManualOutboxHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id query param is required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	frames, err := msig.ManualOutbox(ctx, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		Frames []msig.ManualFrame `json:"frames"`
+	}{frames})
+}
+
+// MsigManualDoneHandler records a frame as handed over.
+func MsigManualDoneHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID    string `json:"id"`
+		MID   string `json:"mid"`
+		ToUID string `json:"toUid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" || req.MID == "" || req.ToUID == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := msig.MarkManualDelivered(ctx, req.ID, req.MID, req.ToUID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MsigImportHandler ingests one hand-carried coordination message.
+func MsigImportHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectWatchOnly(w, r) {
+		return
+	}
+	var req types.MsigImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Body) > 600_000 {
+		http.Error(w, "Message too large", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	res, err := msig.ImportFrame(ctx, req.Body, req.ID, req.FromUID, req.FromLabel)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
 }
 
 // MsigBackupHandler exports the backup card for one shared wallet.

@@ -18,7 +18,18 @@ type MsigInviteRequest struct {
 	Label      string        `json:"label"`
 	M          int           `json:"m"`
 	Invitees   []MsigInvitee `json:"invitees"`
+	Transport  string        `json:"transport,omitempty"`
 	Passphrase string        `json:"passphrase"`
+}
+
+// MsigImportRequest carries one hand-carried coordination message. ID
+// and FromUID name the wallet and cosigner for every frame except
+// invitations, which instead carry the sender's display name.
+type MsigImportRequest struct {
+	Body      string `json:"body"`
+	ID        string `json:"id,omitempty"`
+	FromUID   string `json:"fromUid,omitempty"`
+	FromLabel string `json:"fromLabel,omitempty"`
 }
 
 // MsigActionRequest targets one shared wallet round by tempId or address.
