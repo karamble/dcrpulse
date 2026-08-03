@@ -175,8 +175,10 @@ func CancelRound(ctx context.Context, id string) error {
 		if p.State == PeerDeclined {
 			continue
 		}
+		// Keep fanning out past a failed peer like every other fan-out;
+		// stopping early would leave later peers waiting on a dead round.
 		if err := sendFrame(store, p.UID, cancel, ""); err != nil {
-			return err
+			log.Printf("msig: cancel to %s: %v", p.Nick, err)
 		}
 	}
 	return nil

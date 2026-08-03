@@ -240,7 +240,8 @@ func reannounceRosters(ctx context.Context) {
 		return
 	}
 	for _, rec := range s.Wallets() {
-		if !rec.HD || rec.Role != RoleInitiator || rec.Status != StatusActive ||
+		if !rec.HD || rec.Role != RoleInitiator ||
+			(rec.Status != StatusActive && rec.Status != StatusActivating) ||
 			rec.Address == "" || len(rec.Xpubs) == 0 {
 			continue
 		}
@@ -254,10 +255,19 @@ func reannounceRosters(ctx context.Context) {
 }
 
 func resendOutbox(s *Store) {
+	now := time.Now()
 	for _, it := range s.PendingOutbox() {
 		// Manual items wait for the user; sending them would hand a
 		// pseudo peer id to brclientd.
 		if it.Manual {
+			continue
+		}
+		// An undeliverable frame whose envelope has expired is dead on
+		// arrival; retire it instead of retrying it every sweep forever.
+		if _, err := Parse(it.Body, now); errors.Is(err, ErrExpired) {
+			if merr := s.MarkOutboxSent(it.MID, it.ToUID); merr != nil {
+				log.Printf("msig: retire expired frame: %v", merr)
+			}
 			continue
 		}
 		deliverOutbox(s, it.MID, it.ToUID, it.Body)
@@ -272,7 +282,12 @@ func expireStaleRounds(s *Store) {
 			cutoff = now.Add(-manualRoundExpiry).Unix()
 		}
 		switch rec.Status {
-		case StatusInviting, StatusInvited, StatusAccepted, StatusActivating:
+		// Activating is deliberately absent: at that point the ladder
+		// is imported, the address is real and cosigners may already
+		// hold funds - a record for an on-chain wallet must never fail
+		// by clock. Lost readies are recovered by re-announcing the
+		// roster, which active cosigners answer with a fresh ready.
+		case StatusInviting, StatusInvited, StatusAccepted:
 			if rec.CreatedAt > 0 && rec.CreatedAt < cutoff {
 				failRound(s, rec.TempID, "invite round expired")
 			}

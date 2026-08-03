@@ -203,6 +203,14 @@ func inboundAcceptHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 		log.Printf("msig: %s answered an HD round with a v1 accept; peer must upgrade", peer.Nick)
 		return
 	}
+	// A cosigner that already delivered a key never changes it. On the
+	// manual transport this is the misattribution backstop: crediting a
+	// second acceptance to the wrong person must not overwrite the key
+	// they really delivered.
+	if peer.Xpub != "" && peer.Xpub != msg.Xpub {
+		log.Printf("msig: %s already delivered a different key for %s; frame ignored", peer.Nick, rec.TempID)
+		return
+	}
 	dup := rec.OwnHD != nil && msg.Xpub == rec.OwnHD.Xpub
 	for _, p := range rec.Peers {
 		if p.UID != fromUID && p.Xpub == msg.Xpub {
@@ -333,12 +341,19 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 	if rec.Status != StatusAccepted && rec.Status != StatusPendingImport {
 		// A settled record accepts a byte-identical roster purely to
 		// fill in peer identities a pre-tuple build never delivered.
-		// Nothing else changes: membership settled at activation.
+		// Nothing else changes: membership settled at activation. The
+		// repeat is also answered with a fresh ready, so an initiator
+		// stuck activating on a lost ready recovers by re-announcing.
 		if rec.Status == StatusActive && rosterMatchesRecord(rec, msg) {
 			if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
 				return mergeRosterPeers(r, msg)
 			}); err != nil {
 				log.Printf("msig: %v", err)
+			}
+			if err := sendFrame(store, rec.InitiatorUID, &Message{
+				Type: TypeReady, TempID: rec.TempID, WalletID: rec.Address,
+			}, ""); err != nil {
+				log.Printf("msig: ready: %v", err)
 			}
 		}
 		return

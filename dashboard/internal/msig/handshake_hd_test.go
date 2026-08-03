@@ -473,3 +473,88 @@ func TestMergeRosterPeersLegacyAndBounds(t *testing.T) {
 		t.Fatalf("merged peer: %+v", p)
 	}
 }
+
+// An initiator stuck activating must never expire by clock (the wallet
+// is on-chain by then) and must recover lost readies by re-announcing
+// the roster, which active cosigners answer with a fresh ready.
+func TestActivationSurvivesLostReady(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob")
+	tempID := hd.createHD(t, 2, "alice", "bob")
+	hd.pump()
+	hd.as("bob")
+	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	hd.pumpTo("alice")
+	hd.pumpTo("bob")
+	// Bob is active and his ready sits queued; lose it.
+	hd.queue = nil
+	if got := hd.record("bob", tempID); got.Status != StatusActive {
+		t.Fatalf("bob after roster: %s", got.Status)
+	}
+	alice := hd.record("alice", tempID)
+	if alice.Status != StatusActivating {
+		t.Fatalf("alice without the ready: %s", alice.Status)
+	}
+
+	// The expiry sweep leaves the settled round alone even long past
+	// the round horizon, while a plain stale invite round still dies.
+	hd.as("alice")
+	store := hd.store("alice")
+	if err := store.UpdateWallet(tempID, func(r *WalletRecord) error {
+		r.CreatedAt = time.Now().Add(-30 * 24 * time.Hour).Unix()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	expireStaleRounds(store)
+	if got := hd.record("alice", tempID); got.Status != StatusActivating {
+		t.Fatalf("expiry sweep killed a settled round: %s (%s)", got.Status, got.FailReason)
+	}
+
+	// Re-announcing the roster (the Refresh path) makes bob re-ack and
+	// alice finish activating.
+	reannounceRosters(hd.ctx)
+	hd.pumpTo("bob")
+	hd.pumpTo("alice")
+	if got := hd.record("alice", tempID); got.Status != StatusActive {
+		t.Fatalf("alice after re-announce: %s (%s)", got.Status, got.FailReason)
+	}
+}
+
+// Undeliverable frames whose envelopes expired are retired by the
+// resend sweep instead of being retried forever.
+func TestExpiredOutboxFrameRetired(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob")
+	// The relay is down during the create, so the invite stays pending.
+	origSend := sendPMSeam
+	sendPMSeam = func(ctx context.Context, uid, body string) error {
+		return fmt.Errorf("relay offline")
+	}
+	hd.createHD(t, 2, "alice", "bob")
+	sendPMSeam = origSend
+	hd.as("alice")
+	store := hd.store("alice")
+	pending := store.PendingOutbox()
+	if len(pending) == 0 {
+		t.Fatal("no pending outbox after create")
+	}
+	it := pending[0]
+	stale, err := Reencode(it.Body, time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateOutboxBody(it.MID, it.ToUID, stale); err != nil {
+		t.Fatal(err)
+	}
+	hd.queue = nil
+	resendOutbox(store)
+	for _, left := range store.PendingOutbox() {
+		if left.MID == it.MID && left.ToUID == it.ToUID {
+			t.Fatalf("expired frame still pending: %+v", left)
+		}
+	}
+	if len(hd.queue) != 0 {
+		t.Fatalf("expired frame was re-sent: %d sends", len(hd.queue))
+	}
+}

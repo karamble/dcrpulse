@@ -559,3 +559,58 @@ func TestManualRosterMintsLocalPeers(t *testing.T) {
 		t.Fatalf("bob kept the initiator's pseudo id: %q", carly.UID)
 	}
 }
+
+// A second acceptance credited to a peer that already delivered a key
+// is ignored outright: the misattribution backstop keeps the first key
+// intact instead of silently overwriting it.
+func TestManualMisattributedAcceptIgnored(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob", "carol")
+	rec := createManual(t, hd, "alice", 2, "bobby", "carly")
+	tempID := rec.TempID
+
+	invite := exportAll(t, hd, "alice", tempID, TypeInvite)[0]
+	for _, nick := range []string{"bob", "carol"} {
+		importAs(t, hd, nick, invite.Body, "", "", "alice-label")
+		hd.as(nick)
+		if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+			t.Fatalf("%s accept: %v", nick, err)
+		}
+	}
+	initRec := hd.record("alice", tempID)
+	var bobbyUID string
+	for _, p := range initRec.Peers {
+		if p.Nick == "bobby" {
+			bobbyUID = p.UID
+		}
+	}
+
+	bobAccept := exportAll(t, hd, "bob", tempID, TypeAccept)[0]
+	if res := importAs(t, hd, "alice", bobAccept.Body, tempID, bobbyUID, ""); res.Outcome != "processed" {
+		t.Fatalf("bob accept import: %s", res.Outcome)
+	}
+	bobbyX := ""
+	for _, p := range hd.record("alice", tempID).Peers {
+		if p.Nick == "bobby" {
+			bobbyX = p.Xpub
+		}
+	}
+	if bobbyX == "" {
+		t.Fatal("bobby's key not recorded")
+	}
+
+	// Carol's acceptance credited to bobby: ignored, nothing changes.
+	carolAccept := exportAll(t, hd, "carol", tempID, TypeAccept)[0]
+	importAs(t, hd, "alice", carolAccept.Body, tempID, bobbyUID, "")
+	after := hd.record("alice", tempID)
+	if after.Status != StatusInviting {
+		t.Fatalf("round state changed: %s (%s)", after.Status, after.FailReason)
+	}
+	for _, p := range after.Peers {
+		if p.Nick == "bobby" && p.Xpub != bobbyX {
+			t.Fatalf("bobby's key was overwritten")
+		}
+		if p.Nick == "carly" && p.Xpub != "" {
+			t.Fatalf("carly gained a key from a misattributed frame")
+		}
+	}
+}
