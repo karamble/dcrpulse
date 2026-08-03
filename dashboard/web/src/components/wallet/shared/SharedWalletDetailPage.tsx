@@ -167,14 +167,16 @@ export const SharedWalletDetailPage = () => {
       )}
 
       {active && rec.address ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
+        <div className="grid gap-4 lg:grid-cols-5">
+          <div className="p-6 rounded-xl bg-gradient-card border border-border/50 lg:col-span-3">
             <p className="text-sm font-medium mb-3">Shared address</p>
             <div className="flex items-start gap-4 flex-wrap">
               <div className="p-3 bg-white rounded-lg">
                 <QRCodeSVG value={rec.address} size={160} level="H" />
               </div>
-              <div className="flex-1 min-w-[12rem] space-y-2">
+              {/* min-w matches the nowrap AddressGroups line so a narrow
+                  card wraps the address below the QR instead of clipping it. */}
+              <div className="flex-1 min-w-[21rem] space-y-2">
                 <AddressGroups value={rec.address} />
                 <CopyButton text={rec.address} />
                 <p className="text-xs text-muted-foreground">
@@ -184,7 +186,7 @@ export const SharedWalletDetailPage = () => {
             </div>
           </div>
 
-          <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
+          <div className="p-6 rounded-xl bg-gradient-card border border-border/50 lg:col-span-2">
             <p className="text-sm font-medium mb-3">Funds</p>
             {detail.isActiveWallet ? (
               <>
