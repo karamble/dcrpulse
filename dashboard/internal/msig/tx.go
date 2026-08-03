@@ -30,11 +30,12 @@ const MaxInputs = 30
 // says which one; HD wallets use it to map the output to its ladder
 // index. Empty on the single-address paths.
 type UTXO struct {
-	TxID    string
-	Vout    uint32
-	Tree    int8
-	Atoms   int64
-	Address string
+	TxID          string
+	Vout          uint32
+	Tree          int8
+	Atoms         int64
+	Address       string
+	Confirmations int64
 }
 
 // Recipient is one payment output of a proposal.

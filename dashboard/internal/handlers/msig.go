@@ -154,7 +154,8 @@ func MsigDetailHandler(w http.ResponseWriter, r *http.Request) {
 			if utxos, uerr := msig.WindowUTXOs(ctx, rec.TempID); uerr == nil {
 				for _, u := range utxos {
 					resp.UTXOs = append(resp.UTXOs, services.SharedUTXO{
-						TxID: u.TxID, Vout: u.Vout, Tree: u.Tree, Atoms: u.Atoms, Address: u.Address,
+						TxID: u.TxID, Vout: u.Vout, Tree: u.Tree, Atoms: u.Atoms,
+						Address: u.Address, Confirmations: u.Confirmations,
 					})
 					resp.BalanceAtoms += u.Atoms
 				}

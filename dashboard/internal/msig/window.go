@@ -27,7 +27,7 @@ var (
 		}
 		out := make([]UTXO, 0, len(rows))
 		for _, r := range rows {
-			out = append(out, UTXO{TxID: r.TxID, Vout: r.Vout, Tree: r.Tree, Atoms: r.Atoms, Address: r.Address})
+			out = append(out, UTXO{TxID: r.TxID, Vout: r.Vout, Tree: r.Tree, Atoms: r.Atoms, Address: r.Address, Confirmations: r.Confirmations})
 		}
 		return out, nil
 	}
