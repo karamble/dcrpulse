@@ -270,7 +270,7 @@ func MsigProposeHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	prop, err := msig.ProposeSpend(ctx, req.WalletID, recipients, req.SendAll, req.QueueUIDs, req.Note,
-		time.Duration(req.HopTTLSecs)*time.Second, req.Account, passphrase)
+		time.Duration(req.HopTTLSecs)*time.Second, passphrase)
 	if err != nil {
 		msigPassphraseError(w, err)
 		return
@@ -297,7 +297,7 @@ func MsigSignHandler(w http.ResponseWriter, r *http.Request) {
 	req.Passphrase = ""
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
-	if err := msig.SignIncomingProposal(ctx, req.WalletID, req.TxID, req.Account, passphrase); err != nil {
+	if err := msig.SignIncomingProposal(ctx, req.WalletID, req.TxID, passphrase); err != nil {
 		msigPassphraseError(w, err)
 		return
 	}
@@ -357,16 +357,31 @@ func MsigRestoreHandler(w http.ResponseWriter, r *http.Request) {
 	if rejectWatchOnly(w, r) {
 		return
 	}
-	var card msig.BackupCard
-	if err := json.NewDecoder(r.Body).Decode(&card); err != nil {
+	var req struct {
+		Card       *msig.BackupCard `json:"card"`
+		Passphrase string           `json:"passphrase,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Card == nil {
 		http.Error(w, "The backup file could not be read", http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	if len(req.Passphrase) > 1024 {
+		http.Error(w, "Passphrase too long", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+	// The window imports return quickly; the history rescan runs
+	// deferred, so the handler does not block on it.
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	rec, err := msig.ImportBackupCard(ctx, &card)
+	rec, err := msig.ImportBackupCard(ctx, req.Card, passphrase)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		if errors.Is(err, msig.ErrRestoreNeedsPassphrase) {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+		msigPassphraseError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

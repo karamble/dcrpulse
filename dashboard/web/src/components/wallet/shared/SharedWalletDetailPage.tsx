@@ -259,15 +259,11 @@ export const SharedWalletDetailPage = () => {
           <li className="flex items-center justify-between gap-3 py-2 border-b border-border/50">
             <span className="min-w-0">
               <span className="block truncate">You</span>
-              {rec.ownHd ? (
+              {rec.ownHd && (
                 <span className="block text-xs text-muted-foreground truncate">
                   <KeyEnds value={rec.ownHd.xpub} />
                 </span>
-              ) : rec.own ? (
-                <span className="block text-xs font-mono text-muted-foreground truncate">
-                  {rec.own.pubKey.slice(0, 24)}...
-                </span>
-              ) : null}
+              )}
             </span>
             <span className="text-xs text-muted-foreground whitespace-nowrap">
               {rec.role === 'initiator' ? 'Initiator' : 'Cosigner'}
@@ -283,7 +279,7 @@ export const SharedWalletDetailPage = () => {
                   </span>
                 ) : (
                   <span className="block text-xs font-mono text-muted-foreground truncate">
-                    {p.pubkey ? `${p.pubkey.slice(0, 24)}...` : p.uid.slice(0, 16)}
+                    {p.uid.slice(0, 16)}
                   </span>
                 )}
               </span>

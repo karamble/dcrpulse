@@ -104,7 +104,7 @@ export const WalletLayout = () => {
           {!isWatchOnly && (
             <NavLink to="/wallet/shared" className={navItemClass}>
               <UsersRound className="h-4 w-4" />
-              <span>Shared Wallets</span>
+              <span>MultiSig Wallet</span>
             </NavLink>
           )}
           <NavLink to="/wallet/timestamp" className={navItemClass}>

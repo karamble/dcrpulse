@@ -6,7 +6,6 @@ package msig
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"sort"
 	"time"
@@ -42,15 +41,27 @@ func Detail(ctx context.Context, id string) (*WalletRecord, string, bool, error)
 	return rec, store.WalletName(), store.WalletName() == activeWalletSeam(), nil
 }
 
-// BackupCard bundles everything a restore needs: the roster, the script,
-// the address and this wallet's own key coordinates. Proposals and
-// journals are device-local and deliberately excluded.
+// BackupCard bundles everything a restore needs: the xpub roster, the
+// cursors and this wallet's own account coordinates. The seed alone
+// recovers nothing (the roster lives only here), and the xpubs recover
+// nothing without the exact derivation procedure, so the card names its
+// scheme and a restore refuses schemes it does not implement — deriving
+// any other way would rebuild the wrong wallet. Proposals and journals
+// are device-local and deliberately excluded.
 type BackupCard struct {
-	CardVersion int           `json:"cardVersion"`
-	WalletName  string        `json:"walletName"`
-	ExportedAt  int64         `json:"exportedAt"`
-	Record      *WalletRecord `json:"record"`
+	CardVersion      int           `json:"cardVersion"`
+	DerivationScheme string        `json:"derivationScheme"`
+	WalletName       string        `json:"walletName"`
+	ExportedAt       int64         `json:"exportedAt"`
+	Record           *WalletRecord `json:"record"`
 }
+
+const backupCardVersion = 2
+
+// ErrRestoreNeedsPassphrase asks the caller to re-run the restore with
+// the wallet passphrase: the card's dedicated account does not exist yet
+// and recreating it needs one.
+var ErrRestoreNeedsPassphrase = fmt.Errorf("the wallet passphrase is needed to recreate this shared wallet's account")
 
 // ExportBackupCard builds the backup card for one shared wallet.
 func ExportBackupCard(ctx context.Context, id string) (*BackupCard, error) {
@@ -58,28 +69,45 @@ func ExportBackupCard(ctx context.Context, id string) (*BackupCard, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rec.ScriptHex == "" || rec.Address == "" {
+	if !rec.HD || rec.Address == "" || len(rec.Xpubs) == 0 || rec.OwnHD == nil {
 		return nil, fmt.Errorf("shared wallet %q has not activated yet; nothing to back up", rec.Label)
 	}
 	return &BackupCard{
-		CardVersion: 1,
-		WalletName:  walletName,
-		ExportedAt:  time.Now().Unix(),
-		Record:      rec,
+		CardVersion:      backupCardVersion,
+		DerivationScheme: DerivationScheme,
+		WalletName:       walletName,
+		ExportedAt:       time.Now().Unix(),
+		Record:           rec,
 	}, nil
 }
 
 // ImportBackupCard restores a shared wallet from its backup card into
-// the active wallet: it fast-forwards the address cursor, proves the
-// recorded key belongs to this seed and re-imports the redeem script
-// with a rescan bounded by the recorded creation height.
-func ImportBackupCard(ctx context.Context, card *BackupCard) (*WalletRecord, error) {
+// the active wallet. Ownership is proven by extended-key equality: the
+// same seed derives the same account xpub, so the card's own xpub must
+// match an account of this wallet — located by scanning every account,
+// which also survives renames and renumbering. Only when no account
+// matches are accounts created sequentially up to the card's number,
+// which needs the wallet passphrase. The ladder windows are re-imported
+// and one deferred rescan bounded by the creation height recovers the
+// history.
+func ImportBackupCard(ctx context.Context, card *BackupCard, passphrase []byte) (*WalletRecord, error) {
+	defer zero(passphrase)
 	if card == nil || card.Record == nil {
 		return nil, fmt.Errorf("the backup file is empty")
 	}
+	if card.CardVersion > backupCardVersion {
+		return nil, fmt.Errorf("this backup was made by a newer dcrpulse; upgrade to restore it")
+	}
+	if card.CardVersion < backupCardVersion {
+		return nil, fmt.Errorf("this backup predates HD shared wallets and cannot be restored by this build")
+	}
+	if card.DerivationScheme != DerivationScheme {
+		return nil, fmt.Errorf("this backup uses derivation scheme %q; this build implements %q and restoring would rebuild the wrong addresses",
+			card.DerivationScheme, DerivationScheme)
+	}
 	rec := card.Record
-	if rec.Address == "" || rec.ScriptHex == "" || rec.Own == nil {
-		return nil, fmt.Errorf("the backup file is missing the shared address, script or key")
+	if !rec.HD || rec.Address == "" || len(rec.Xpubs) == 0 || rec.OwnHD == nil {
+		return nil, fmt.Errorf("the backup file is missing the roster or the account key")
 	}
 	network, err := networkSeam(ctx)
 	if err != nil {
@@ -88,21 +116,29 @@ func ImportBackupCard(ctx context.Context, card *BackupCard) (*WalletRecord, err
 	if rec.Network != network {
 		return nil, fmt.Errorf("this backup is for %s; this wallet runs on %s", rec.Network, network)
 	}
-	script, err := hex.DecodeString(rec.ScriptHex)
-	if err != nil {
-		return nil, fmt.Errorf("the backup script is malformed")
-	}
-	// Recompute the address rather than trusting the card.
 	params, err := paramsForNetwork(network)
 	if err != nil {
 		return nil, err
 	}
-	address, err := P2SHAddress(script, params)
-	if err != nil || address != rec.Address {
-		return nil, fmt.Errorf("the backup script does not match its address")
+	if err := ValidateXpubRoster(rec.Xpubs, rec.N); err != nil {
+		return nil, fmt.Errorf("the backup roster is malformed: %v", err)
 	}
-	if !ContainsPubKeyHex(rec.Own.PubKey, rec.RosterPubKeys) {
+	ownIn := false
+	for _, x := range rec.Xpubs {
+		if x == rec.OwnHD.Xpub {
+			ownIn = true
+		}
+	}
+	if !ownIn {
 		return nil, fmt.Errorf("the backup key is not part of the shared wallet's roster")
+	}
+	// Recompute the wallet id rather than trusting the card.
+	derived, err := WalletIDForRoster(rec.M, rec.Xpubs, params)
+	if err != nil {
+		return nil, err
+	}
+	if derived != rec.Address {
+		return nil, fmt.Errorf("the backup roster does not derive its recorded address")
 	}
 	store, err := manager(network).StoreFor(activeWalletSeam())
 	if err != nil {
@@ -111,35 +147,94 @@ func ImportBackupCard(ctx context.Context, card *BackupCard) (*WalletRecord, err
 	if _, exists := store.Wallet(rec.Address); exists {
 		return nil, fmt.Errorf("this shared wallet is already restored here")
 	}
-	if err := verifyOwnKeySeam(ctx, rec.Own); err != nil {
-		return nil, err
+	account, err := locateAccountByXpub(ctx, rec.OwnHD.Xpub)
+	if err != nil {
+		if len(passphrase) == 0 {
+			return nil, ErrRestoreNeedsPassphrase
+		}
+		account, err = recreateAccountTo(ctx, rec.OwnHD, passphrase)
+		if err != nil {
+			return nil, err
+		}
 	}
-	scanFrom := rec.CreatedHeight - 1
-	if scanFrom < 0 {
-		scanFrom = 0
-	}
-	if err := importScriptSeam(ctx, rec.ScriptHex, true, scanFrom); err != nil {
-		return nil, fmt.Errorf("the wallet could not import the shared script: %v", err)
-	}
+
 	restored := cloneRecord(rec)
 	restored.Proposals = nil
 	restored.Status = StatusActive
 	restored.FailReason = ""
+	restored.OwnHD.Account = account
+	// Import everything from scratch; the card's cursors only widen the
+	// window, they are not trusted as import state.
+	if restored.Ext != nil {
+		restored.Ext.ImportedThrough = 0
+	}
+	if restored.Int != nil {
+		restored.Int.ImportedThrough = 0
+	}
 	if err := store.PutWallet(restored); err != nil {
 		return nil, err
 	}
+	if err := ensureWindowImported(ctx, store, restored.TempID); err != nil {
+		return nil, fmt.Errorf("the wallet could not import the ladder: %v", err)
+	}
+	scanFrom := restored.CreatedHeight - 1
+	if scanFrom < 0 {
+		scanFrom = 0
+	}
+	rescanSeam(scanFrom)
 	out, _ := store.Wallet(restored.TempID)
 	return out, nil
 }
 
-// ContainsPubKeyHex reports whether hexKey is one of keys.
-func ContainsPubKeyHex(hexKey string, keys []string) bool {
-	for _, k := range keys {
-		if k == hexKey {
-			return true
+// locateAccountByXpub scans every account for the one whose extended
+// public key matches; renames and different numbering do not matter.
+func locateAccountByXpub(ctx context.Context, xpub string) (uint32, error) {
+	accounts, err := accountsSeam(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, a := range accounts {
+		got, err := accountXpubSeam(ctx, a.AccountNumber)
+		if err != nil {
+			continue
+		}
+		if got == xpub {
+			return a.AccountNumber, nil
 		}
 	}
-	return false
+	return 0, fmt.Errorf("no account of this wallet holds the backup's key")
+}
+
+// recreateAccountTo creates accounts sequentially until the card's
+// account number exists, then proves the seed by xpub equality.
+func recreateAccountTo(ctx context.Context, own *OwnHDKey, passphrase []byte) (uint32, error) {
+	for i := 0; i < int(own.Account)+1; i++ {
+		accounts, err := accountsSeam(ctx)
+		if err != nil {
+			return 0, err
+		}
+		highest := uint32(0)
+		for _, a := range accounts {
+			if a.AccountNumber < 1<<31 && a.AccountNumber > highest {
+				highest = a.AccountNumber
+			}
+		}
+		if highest >= own.Account {
+			break
+		}
+		name := fmt.Sprintf("shared-restored-%d", highest+1)
+		if _, err := createAccountSeam(ctx, name, passphrase); err != nil {
+			return 0, fmt.Errorf("recreate account %d: %v", highest+1, err)
+		}
+	}
+	got, err := accountXpubSeam(ctx, own.Account)
+	if err != nil {
+		return 0, err
+	}
+	if got != own.Xpub {
+		return 0, fmt.Errorf("this wallet's seed does not produce the backup's key; restore it into the wallet whose seed created it")
+	}
+	return own.Account, nil
 }
 
 // PendingItem is one action waiting on the user, across every local

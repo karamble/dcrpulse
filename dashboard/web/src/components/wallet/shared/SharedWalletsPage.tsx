@@ -13,6 +13,7 @@ import {
   refreshMsig,
   restoreMsigWallet,
 } from '../../../services/msigApi';
+import { PassphraseModal } from '../PassphraseModal';
 import { IncomingInviteBanner } from './IncomingInviteBanner';
 import { SharedWalletCreateWizard } from './SharedWalletCreateWizard';
 
@@ -37,6 +38,7 @@ export const SharedWalletsPage = () => {
   const [err, setErr] = useState<string | null>(null);
   const [wizard, setWizard] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [restoreCard, setRestoreCard] = useState<unknown>(null);
   const { addListener } = useBisonrelayLive();
 
   const load = useCallback(async () => {
@@ -71,8 +73,10 @@ export const SharedWalletsPage = () => {
     };
   }, [addListener, load]);
 
-  // Restoring re-imports the shared script and rescans from the recorded
-  // creation height, so it can take a while on a large chain.
+  // Restoring re-imports the ladder and rescans from the recorded
+  // creation height. When the card's dedicated account no longer exists
+  // (fresh seed restore), the backend asks for the wallet passphrase to
+  // recreate it and the modal re-runs the restore with it.
   const restore = async (file: File) => {
     setErr(null);
     try {
@@ -80,12 +84,28 @@ export const SharedWalletsPage = () => {
       await restoreMsigWallet(card);
       await load();
     } catch (e: any) {
+      if (e?.response?.status === 401) {
+        setRestoreCard(JSON.parse(await file.text()));
+        return;
+      }
       const body = e?.response?.data;
       setErr(
         typeof body === 'string'
           ? body
           : e?.message || 'Could not restore from that file',
       );
+    }
+  };
+
+  const restoreWithPass = async (passphrase: string) => {
+    try {
+      await restoreMsigWallet(restoreCard, passphrase);
+      setRestoreCard(null);
+      await load();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not restore from that file');
+      throw e;
     }
   };
 
@@ -212,6 +232,16 @@ export const SharedWalletsPage = () => {
       {wizard && (
         <SharedWalletCreateWizard onClose={() => setWizard(false)} onCreated={load} />
       )}
+
+      <PassphraseModal
+        isOpen={restoreCard !== null}
+        title="Recreate the wallet's account"
+        description="This backup's dedicated account does not exist in this wallet yet. Your wallet passphrase recreates it from the seed."
+        submitLabel="Restore"
+        busyLabel="Restoring..."
+        onSubmit={restoreWithPass}
+        onClose={() => setRestoreCard(null)}
+      />
     </div>
   );
 };

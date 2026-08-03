@@ -99,16 +99,6 @@ const (
 	HopSkipped  = "skipped"
 )
 
-// OwnKey records this wallet's contribution and its derivation
-// coordinates for the backup card.
-type OwnKey struct {
-	PubKey  string `json:"pubKey"`
-	Address string `json:"address"`
-	Account uint32 `json:"account"`
-	Branch  uint32 `json:"branch"`
-	Index   uint32 `json:"index"`
-}
-
 // OwnHDKey records this wallet's HD contribution: the dedicated
 // account's number and its extended public key. The xpub doubles as the
 // restore-time ownership proof, since the same seed always derives the
@@ -152,12 +142,14 @@ type OutboxItem struct {
 }
 
 // ProposalInput is one shared UTXO a proposal spends. Values are
-// recorded so a cosigner can verify the fee without a chain lookup.
+// recorded so a cosigner can verify the fee without a chain lookup;
+// Address names the ladder rung the input spends from.
 type ProposalInput struct {
-	TxID  string `json:"txid"`
-	Vout  uint32 `json:"vout"`
-	Tree  int8   `json:"tree"`
-	Atoms int64  `json:"atoms"`
+	TxID    string `json:"txid"`
+	Vout    uint32 `json:"vout"`
+	Tree    int8   `json:"tree"`
+	Atoms   int64  `json:"atoms"`
+	Address string `json:"address,omitempty"`
 }
 
 // ProposalOutput is one recipient of a proposal.
@@ -221,17 +213,16 @@ func (p *Proposal) Live() bool {
 
 // WalletRecord is one shared wallet's lifecycle state.
 type WalletRecord struct {
-	TempID        string   `json:"tempId"`
-	Address       string   `json:"address,omitempty"`
-	Label         string   `json:"label"`
-	M             int      `json:"m"`
-	N             int      `json:"n"`
-	Network       string   `json:"network"`
-	ScriptHex     string   `json:"scriptHex,omitempty"`
-	RosterPubKeys []string `json:"rosterPubKeys,omitempty"`
+	TempID  string `json:"tempId"`
+	Address string `json:"address,omitempty"`
+	Label   string `json:"label"`
+	M       int    `json:"m"`
+	N       int    `json:"n"`
+	Network string `json:"network"`
 
-	// HD ladder fields; empty on v1 single-address records. Address then
-	// holds the external index-0 address, the wallet's identity.
+	// The ladder: the roster's account xpubs, this wallet's own account,
+	// and the per-branch cursors. Address holds the external index-0
+	// address, the wallet's identity.
 	HD    bool         `json:"hd,omitempty"`
 	Xpubs []string     `json:"xpubs,omitempty"`
 	OwnHD *OwnHDKey    `json:"ownHd,omitempty"`
@@ -242,7 +233,6 @@ type WalletRecord struct {
 	Status        string  `json:"status"`
 	FailReason    string  `json:"failReason,omitempty"`
 	CreatedHeight int64   `json:"createdHeight,omitempty"`
-	Own           *OwnKey `json:"own,omitempty"`
 	InitiatorUID  string  `json:"initiatorUid,omitempty"`
 	Peers         []*Peer `json:"peers"`
 	CreatedAt     int64   `json:"createdAt"`
@@ -354,11 +344,6 @@ func cloneRecord(r *WalletRecord) *WalletRecord {
 		pc := *p
 		c.Peers[i] = &pc
 	}
-	if r.Own != nil {
-		oc := *r.Own
-		c.Own = &oc
-	}
-	c.RosterPubKeys = append([]string(nil), r.RosterPubKeys...)
 	c.Xpubs = append([]string(nil), r.Xpubs...)
 	if r.OwnHD != nil {
 		hc := *r.OwnHD

@@ -47,7 +47,6 @@ type MsigProposeRequest struct {
 	QueueUIDs  []string        `json:"queueUids"`
 	Note       string          `json:"note,omitempty"`
 	HopTTLSecs int64           `json:"hopTtlSecs,omitempty"`
-	Account    uint32          `json:"account"`
 	Passphrase string          `json:"passphrase"`
 }
 
@@ -55,7 +54,6 @@ type MsigProposeRequest struct {
 type MsigProposalActionRequest struct {
 	WalletID   string `json:"walletId"`
 	TxID       string `json:"txid"`
-	Account    uint32 `json:"account,omitempty"`
 	Reason     string `json:"reason,omitempty"`
 	Passphrase string `json:"passphrase,omitempty"`
 }

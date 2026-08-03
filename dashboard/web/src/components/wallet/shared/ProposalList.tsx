@@ -77,7 +77,7 @@ export const ProposalList = ({
 
   const approve = async (txid: string, passphrase: string) => {
     try {
-      await signMsigProposal(wallet.tempId, txid, wallet.ownHd?.account ?? wallet.own?.account ?? 0, passphrase);
+      await signMsigProposal(wallet.tempId, txid, passphrase);
       setAskPassFor(null);
       onChanged();
     } catch (e: any) {

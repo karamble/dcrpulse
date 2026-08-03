@@ -4,14 +4,6 @@
 
 import api from './api';
 
-export interface MsigOwnKey {
-  pubKey: string;
-  address: string;
-  account: number;
-  branch: number;
-  index: number;
-}
-
 export interface MsigPeer {
   uid: string;
   nick: string;
@@ -82,8 +74,6 @@ export interface MsigWallet {
   m: number;
   n: number;
   network: string;
-  scriptHex?: string;
-  rosterPubKeys?: string[];
   hd?: boolean;
   xpubs?: string[];
   ownHd?: MsigOwnHDKey;
@@ -93,7 +83,6 @@ export interface MsigWallet {
   status: string;
   failReason?: string;
   createdHeight?: number;
-  own?: MsigOwnKey;
   initiatorUid?: string;
   peers: MsigPeer[];
   createdAt: number;
@@ -193,8 +182,8 @@ export const refreshMsig = async (): Promise<void> => {
   await api.post('/msig/refresh');
 };
 
-export const restoreMsigWallet = async (card: unknown): Promise<MsigWallet> => {
-  const { data } = await api.post<MsigWallet>('/msig/wallets/restore', card);
+export const restoreMsigWallet = async (card: unknown, passphrase?: string): Promise<MsigWallet> => {
+  const { data } = await api.post<MsigWallet>('/msig/wallets/restore', { card, passphrase });
   return data;
 };
 
@@ -210,11 +199,10 @@ export const proposeMsigSpend = async (
   queueUids: string[],
   note: string,
   hopTtlSecs: number,
-  account: number,
   passphrase: string,
 ): Promise<MsigProposal> => {
   const { data } = await api.post<MsigProposal>('/msig/proposals/propose', {
-    walletId, recipients, sendAll, queueUids, note, hopTtlSecs, account, passphrase,
+    walletId, recipients, sendAll, queueUids, note, hopTtlSecs, passphrase,
   });
   return data;
 };
@@ -222,10 +210,9 @@ export const proposeMsigSpend = async (
 export const signMsigProposal = async (
   walletId: string,
   txid: string,
-  account: number,
   passphrase: string,
 ): Promise<void> => {
-  await api.post('/msig/proposals/sign', { walletId, txid, account, passphrase });
+  await api.post('/msig/proposals/sign', { walletId, txid, passphrase });
 };
 
 export const rejectMsigProposal = async (walletId: string, txid: string, reason?: string): Promise<void> => {

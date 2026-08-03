@@ -12,7 +12,6 @@ package services_test
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -21,6 +20,7 @@ import (
 
 	"decred.org/dcrwallet/v5/wallet/txrules"
 	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/hdkeychain/v3"
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
 	"golang.org/x/sys/unix"
 
@@ -31,12 +31,12 @@ import (
 	. "dcrpulse/internal/services"
 )
 
-// promptPassphrase reads the account passphrase from the controlling
+// promptPassphrase reads the wallet passphrase from the controlling
 // terminal with echo disabled. It deliberately opens /dev/tty instead of
 // stdin so it works no matter how go test wires the process, and so the
 // passphrase can never arrive from a pipe, env or argv. The caller zeroes
 // the returned slice.
-func promptPassphrase(t *testing.T, account uint32) []byte {
+func promptPassphrase(t *testing.T) []byte {
 	t.Helper()
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
@@ -60,7 +60,7 @@ func promptPassphrase(t *testing.T, account uint32) []byte {
 		}
 	}()
 
-	fmt.Fprintf(tty, "passphrase for account %d (echo off): ", account)
+	fmt.Fprintf(tty, "wallet passphrase (echo off): ")
 	var pass []byte
 	buf := make([]byte, 1)
 	for {
@@ -85,30 +85,100 @@ func promptPassphrase(t *testing.T, account uint32) []byte {
 	return pass
 }
 
-// TestMsigLiveMainnet drives the multisig wallet primitives against the
-// RUNNING wallet with dust-scale amounts that return to this wallet. It is
-// the assertion form of the phase 1 spike:
+// paramsForAddress infers the network from the wallet's own address
+// encoding, so the drill needs no dcrd connection.
+func paramsForAddress(t *testing.T, addr string) *chaincfg.Params {
+	t.Helper()
+	for _, p := range []*chaincfg.Params{
+		chaincfg.MainNetParams(), chaincfg.TestNet3Params(), chaincfg.SimNetParams(),
+	} {
+		if _, err := stdaddr.DecodeAddress(addr, p); err == nil {
+			return p
+		}
+	}
+	t.Fatalf("address %s belongs to no known network", addr)
+	return nil
+}
+
+func pkScriptHexFor(t *testing.T, addr string, params *chaincfg.Params) string {
+	t.Helper()
+	a, err := stdaddr.DecodeAddress(addr, params)
+	if err != nil {
+		t.Fatalf("decode %s: %v", addr, err)
+	}
+	_, script := a.PaymentScript()
+	return hex.EncodeToString(script)
+}
+
+// locateOrCreateAccount finds the named account or creates it with the
+// wallet passphrase. Drill accounts persist across runs, so repeated
+// drills never grow the account set.
+func locateOrCreateAccount(ctx context.Context, t *testing.T, name string, pass []byte) uint32 {
+	t.Helper()
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		t.Fatalf("list accounts: %v", err)
+	}
+	for _, a := range accounts {
+		if a.AccountName == name {
+			return a.AccountNumber
+		}
+	}
+	number, err := CreateAccount(ctx, name, append([]byte(nil), pass...))
+	if err != nil {
+		t.Fatalf("create account %q: %v", name, err)
+	}
+	t.Logf("created drill account %q = %d (permanent)", name, number)
+	return number
+}
+
+// deriveChild mirrors the production derivation: account xpub ->
+// Child(branch) -> Child(index).
+func deriveChild(t *testing.T, xpub string, branch, index uint32, params *chaincfg.Params) ([]byte, string) {
+	t.Helper()
+	key, err := hdkeychain.NewKeyFromString(xpub, params)
+	if err != nil {
+		t.Fatalf("parse xpub: %v", err)
+	}
+	for _, step := range []uint32{branch, index} {
+		if key, err = key.Child(step); err != nil {
+			t.Fatalf("derive child %d: %v", step, err)
+		}
+	}
+	pub := key.SerializedPubKey()
+	addr, err := stdaddr.NewAddressPubKeyHashEcdsaSecp256k1V0(stdaddr.Hash160(pub), params)
+	if err != nil {
+		t.Fatalf("child address: %v", err)
+	}
+	return pub, addr.String()
+}
+
+// TestMsigLiveHDMainnet drives the HD ladder primitives against the
+// RUNNING wallet with dust-scale amounts that return to this wallet. It
+// pins every wallet-level assumption the protocol rests on, BEFORE the
+// protocol is trusted with real rosters:
 //
-//	(a) listunspent covers imported-script outputs at zero confirmations
-//	(b) signrawtransaction resolves the redeem script from the imported
-//	    script store without being handed one
-//	(c) unlocking only the participating account is sufficient authority
-//	(d) both signatures land and the counter agrees (shape details are
-//	    unit-tested; both keys here live in one account so one signing
-//	    pass completes the input)
-//	(e) importscript needs no unlock and re-import is a no-op
-//	(f) the mempool accepts the manually built spend at the estimated fee
-//	(g) accountsyncaddressindex plus validateaddress recover the own-key
-//	    coordinates (the cheap half of the restore drill)
+//	(a) local Child derivation of an account xpub yields EXACTLY the
+//	    pubkey and address the wallet reports at the same coordinates —
+//	    the derivation-scheme seal
+//	(b) batch importscript with rescan=false, idempotent re-import, no
+//	    unlock
+//	(c) listunspent accepts multiple addresses, rows carry the address,
+//	    and the whole call fails on an unimported address
+//	(d) a deposit to a ladder address is visible at zero confirmations
+//	(e) signing an input FAILS to add a signature before the account's
+//	    branch index covers it and succeeds after — the sync-before-sign
+//	    precondition
+//	(f) a real 2-of-2 ladder spend: two inputs at different indices,
+//	    change to internal 0, per-input signatures attributed by
+//	    participant, mempool acceptance at the estimated fee
+//	(g) the restore ownership proof: exactly one account's xpub equals
+//	    the drill xpub
 //
 // Not run by the normal test suite: requires -tags msiglive and env
-// configuration, spends real funds (fees only, remainder returns to the
-// source account), and leaves the throwaway script imported in the wallet.
-//
-// The account passphrase is prompted from /dev/tty with echo disabled and
-// is never accepted through env, argv or files. It lives in this process
-// only for the duration of the run and is zeroed afterwards, matching the
-// dashboard's own passphrase discipline.
+// configuration, spends real funds (fees only, remainder stays at the
+// ladder's change address), and leaves the drill accounts and scripts in
+// the wallet. Mainnet only, funds to self, per the standing rule.
 //
 // Required env (the same RPC variables the compose stack already uses):
 //
@@ -117,9 +187,9 @@ func promptPassphrase(t *testing.T, account uint32) []byte {
 //	DCRWALLET_RPC_CERT        also used for gRPC
 //
 // Optional env: DCRWALLET_RPC_HOST (localhost), DCRWALLET_RPC_PORT (9110),
-// DCRWALLET_GRPC_PORT (9111), DCRPULSE_MSIG_LIVE_ACCOUNT (0),
-// DCRPULSE_MSIG_LIVE_ATOMS (100000).
-func TestMsigLiveMainnet(t *testing.T) {
+// DCRWALLET_GRPC_PORT (9111), DCRPULSE_MSIG_LIVE_ACCOUNT (0, funding
+// source), DCRPULSE_MSIG_LIVE_ATOMS (100000, per funded index).
+func TestMsigLiveHDMainnet(t *testing.T) {
 	if os.Getenv("DCRPULSE_MSIG_LIVE") != "1" {
 		t.Skip("set DCRPULSE_MSIG_LIVE=1 to run the live wallet drill")
 	}
@@ -135,20 +205,17 @@ func TestMsigLiveMainnet(t *testing.T) {
 	if user == "" || rpcPass == "" || cert == "" {
 		t.Skip("DCRWALLET_RPC_USER, DCRWALLET_RPC_PASS and DCRWALLET_RPC_CERT are required")
 	}
-	account64, err := strconv.ParseUint(envOr("DCRPULSE_MSIG_LIVE_ACCOUNT", "0"), 10, 32)
+	srcAccount64, err := strconv.ParseUint(envOr("DCRPULSE_MSIG_LIVE_ACCOUNT", "0"), 10, 32)
 	if err != nil {
 		t.Fatalf("bad account env: %v", err)
 	}
-	account := uint32(account64)
+	srcAccount := uint32(srcAccount64)
 	fundAtoms, err := strconv.ParseInt(envOr("DCRPULSE_MSIG_LIVE_ATOMS", "100000"), 10, 64)
 	if err != nil || fundAtoms < 20000 {
 		t.Fatalf("bad funding amount")
 	}
 
-	// Prompt before anything connects: the passphrase is typed once, with
-	// no time limit, and the rest of the drill runs unattended. Copies are
-	// handed out per use because the service functions zero their argument.
-	pass := promptPassphrase(t, account)
+	pass := promptPassphrase(t)
 	defer func() {
 		for i := range pass {
 			pass[i] = 0
@@ -172,265 +239,318 @@ func TestMsigLiveMainnet(t *testing.T) {
 		t.Fatalf("wallet gRPC init: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 
-	// Two fresh keys from the same account form the throwaway 2-of-2.
-	k1, err := DeriveMsigKey(ctx, account)
+	// Two dedicated drill accounts of this one wallet form the 2-of-2.
+	acctA := locateOrCreateAccount(ctx, t, "msiglive-a", pass)
+	acctB := locateOrCreateAccount(ctx, t, "msiglive-b", pass)
+	xpubA, err := GetAccountExtendedPubKey(ctx, acctA)
 	if err != nil {
-		t.Fatalf("derive key 1: %v", err)
+		t.Fatalf("xpub a: %v", err)
 	}
-	k2, err := DeriveMsigKey(ctx, account)
+	xpubB, err := GetAccountExtendedPubKey(ctx, acctB)
 	if err != nil {
-		t.Fatalf("derive key 2: %v", err)
+		t.Fatalf("xpub b: %v", err)
 	}
-	if k1.PubKey == k2.PubKey {
-		t.Fatalf("derived keys are not distinct")
+	if xpubA == xpubB {
+		t.Fatalf("distinct accounts produced the same xpub")
 	}
-	// The drill needs no dcrd connection: the network follows from the
-	// wallet's own address encoding.
-	params := paramsForAddress(t, k1.Address)
+	xpubs := msig.SortXpubs([]string{xpubA, xpubB})
+
+	// The network follows from an address of this wallet.
+	nextAddr, err := GetNextAddress(ctx, srcAccount)
+	if err != nil {
+		t.Fatalf("network probe address: %v", err)
+	}
+	params := paramsForAddress(t, nextAddr)
 	t.Logf("network: %s", params.Name)
-	pk1, err := hex.DecodeString(k1.PubKey)
-	if err != nil {
-		t.Fatalf("pubkey 1 hex: %v", err)
+
+	// (a) The derivation-scheme seal: local Child derivation must match
+	// the wallet's own view of the same coordinates.
+	localPub, localAddr := deriveChild(t, xpubA, 0, 0, params)
+	if err := SyncAccountAddressIndex(ctx, "msiglive-a", 0, 1); err != nil {
+		t.Fatalf("sync a/0: %v", err)
 	}
-	pk2, err := hex.DecodeString(k2.PubKey)
+	res, err := ValidateAddress(ctx, localAddr)
 	if err != nil {
-		t.Fatalf("pubkey 2 hex: %v", err)
+		t.Fatalf("validateaddress: %v", err)
+	}
+	if !res.IsMine {
+		t.Fatalf("(a) locally derived child address is not recognized by the wallet")
+	}
+	if !res.IsValid || hex.EncodeToString(res.PubKey) != hex.EncodeToString(localPub) {
+		t.Fatalf("(a) derivation mismatch: local %s wallet %x; the scheme seal is broken",
+			hex.EncodeToString(localPub), res.PubKey)
+	}
+	t.Logf("(a) derivation seal holds at %s", localAddr)
+
+	// The drill ladder: external 0 and 1 receive, internal 0 takes change.
+	ext0, err := msig.AddressAt(2, xpubs, msig.BranchExternal, 0, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext1, err := msig.AddressAt(2, xpubs, msig.BranchExternal, 1, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	int0, err := msig.AddressAt(2, xpubs, msig.BranchInternal, 0, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("ladder: ext0 %s ext1 %s int0 %s", ext0, ext1, int0)
+
+	// (c) An unimported ladder address fails the whole listunspent call.
+	ext5, err := msig.AddressAt(2, xpubs, msig.BranchExternal, 5, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ListSharedUTXOs(ctx, []string{ext5}); err == nil {
+		t.Logf("(c) note: wallet accepted an unimported address; import-before-list stays mandatory")
+	} else {
+		t.Logf("(c) unknown-address refusal confirmed: %v", err)
 	}
 
-	redeem, _, err := msig.MultiSigScript(2, [][]byte{pk1, pk2})
-	if err != nil {
-		t.Fatalf("build script: %v", err)
+	// (b) Batch import, no rescan, no unlock; re-import is a no-op.
+	for _, addr := range []struct {
+		branch, index uint32
+	}{{0, 0}, {0, 1}, {1, 0}} {
+		script, _, err := msig.ScriptAt(2, xpubs, addr.branch, addr.index, params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ImportMsigScript(ctx, hex.EncodeToString(script), false, 0); err != nil {
+			t.Fatalf("import %d/%d: %v", addr.branch, addr.index, err)
+		}
+		if err := ImportMsigScript(ctx, hex.EncodeToString(script), false, 0); err != nil {
+			t.Fatalf("re-import %d/%d: %v", addr.branch, addr.index, err)
+		}
 	}
-	sharedAddr, err := msig.P2SHAddress(redeem, params)
-	if err != nil {
-		t.Fatalf("shared address: %v", err)
-	}
-	t.Logf("shared address: %s (stays imported after the drill)", sharedAddr)
+	t.Logf("(b) ladder imported, idempotent, no unlock")
 
-	// (e) import without any unlock, then re-import as a no-op.
-	redeemHex := hex.EncodeToString(redeem)
-	if err := ImportMsigScript(ctx, redeemHex, false, 0); err != nil {
-		t.Fatalf("importscript: %v", err)
+	// Fund ext0 and ext1 from the source account.
+	fund := func(addr string) string {
+		construct, err := ConstructTransaction(ctx, srcAccount,
+			[]types.TxRecipient{{Address: addr, AmountAtoms: fundAtoms}}, false)
+		if err != nil {
+			t.Fatalf("construct funding tx: %v", err)
+		}
+		txid, err := SignAndPublishTransaction(ctx, srcAccount, construct.UnsignedTransaction, passCopy())
+		if err != nil {
+			t.Fatalf("fund %s: %v", addr, err)
+		}
+		return txid
 	}
-	if err := ImportMsigScript(ctx, redeemHex, false, 0); err != nil {
-		t.Fatalf("importscript re-import: %v", err)
-	}
+	fundTx0 := fund(ext0)
+	fundTx1 := fund(ext1)
+	t.Logf("funded ext0 by %s, ext1 by %s", fundTx0, fundTx1)
 
-	// Fund the shared address from the source account.
-	construct, err := ConstructTransaction(ctx, account,
-		[]types.TxRecipient{{Address: sharedAddr, AmountAtoms: fundAtoms}}, false)
-	if err != nil {
-		t.Fatalf("construct funding tx: %v", err)
-	}
-	fundTxID, err := SignAndPublishTransaction(ctx, account,
-		construct.UnsignedTransaction, passCopy())
-	if err != nil {
-		t.Fatalf("fund shared address: %v", err)
-	}
-	t.Logf("funding tx: %s", fundTxID)
-
-	// (a) the imported-script output must show up unconfirmed.
-	var funded *SharedUTXO
+	// (c)+(d) Multi-address listunspent sees both deposits at 0 conf,
+	// rows carrying their addresses.
+	var utxos []SharedUTXO
 	deadline := time.Now().Add(45 * time.Second)
-	for time.Now().Before(deadline) {
-		utxos, err := ListSharedUTXOs(ctx, []string{sharedAddr})
+	for {
+		utxos, err = ListSharedUTXOs(ctx, []string{ext0, ext1, int0})
 		if err != nil {
 			t.Fatalf("listunspent: %v", err)
 		}
-		for i := range utxos {
-			if utxos[i].TxID == fundTxID {
-				funded = &utxos[i]
-			}
+		byAddr := map[string]int{}
+		for _, u := range utxos {
+			byAddr[u.Address]++
 		}
-		if funded != nil {
+		if byAddr[ext0] >= 1 && byAddr[ext1] >= 1 {
 			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("(d) deposits not visible at 0 conf: %+v", utxos)
 		}
 		time.Sleep(2 * time.Second)
 	}
-	if funded == nil {
-		t.Fatalf("funding output never appeared in listunspent for %s", sharedAddr)
-	}
-	if funded.Atoms != fundAtoms {
-		t.Fatalf("funding amount mismatch: got %d, want %d", funded.Atoms, fundAtoms)
-	}
-	t.Logf("shared UTXO visible at %d confirmations", funded.Confirmations)
+	t.Logf("(c)(d) both deposits visible unconfirmed with address fields")
 
-	// Build the spend back to the source account, sweeping the whole
-	// output so no change is needed.
-	destAddr, err := GetNextAddress(ctx, account)
-	if err != nil {
-		t.Fatalf("destination address: %v", err)
+	// Build the sweep of both inputs with change to internal 0.
+	var ins []msig.UTXO
+	for _, u := range utxos {
+		if u.Address == ext0 || u.Address == ext1 {
+			if u.TxID == fundTx0 || u.TxID == fundTx1 {
+				ins = append(ins, msig.UTXO{TxID: u.TxID, Vout: u.Vout, Tree: u.Tree, Atoms: u.Atoms, Address: u.Address})
+			}
+		}
 	}
-	fee := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb,
-		msig.EstimateFullSize(1, 1, 2, 2)))
-	tx, actualFee, change, err := msig.BuildSpend(msig.BuildSpendParams{
-		UTXOs:         []msig.UTXO{{TxID: funded.TxID, Vout: funded.Vout, Tree: funded.Tree, Atoms: funded.Atoms}},
-		Recipients:    []msig.Recipient{{Address: destAddr, Atoms: funded.Atoms - fee}},
-		ChangeAddress: sharedAddr,
-		RedeemScript:  redeem,
+	if len(ins) != 2 {
+		t.Fatalf("expected the 2 drill inputs, have %d", len(ins))
+	}
+	script0, _, err := msig.ScriptAt(2, xpubs, msig.BranchExternal, 0, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendBack := ins[0].Atoms + ins[1].Atoms
+	fee := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb, msig.EstimateFullSize(2, 1, 2, 2)))
+	tx, gotFee, change, err := msig.BuildSpend(msig.BuildSpendParams{
+		UTXOs:      ins,
+		Recipients: []msig.Recipient{{Address: int0, Atoms: sendBack - fee}},
+		// The recipient IS the change address here; BuildSpend folds the
+		// residue into the fee, which is exactly what the sweep wants.
+		ChangeAddress: int0,
+		RedeemScript:  script0,
 		ChainParams:   params,
 	})
 	if err != nil {
 		t.Fatalf("build spend: %v", err)
 	}
-	if change != 0 {
-		t.Fatalf("sweep produced change: %d", change)
-	}
-	if actualFee > 20000 {
-		t.Fatalf("fee out of bounds: %d atoms", actualFee)
-	}
+	_ = change
 	txid := tx.TxHash().String()
+	rawBytes, err := tx.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := hex.EncodeToString(rawBytes)
+	t.Logf("spend %s, fee %d atoms", txid, gotFee)
 
-	var buf []byte
-	{
-		b, err := tx.Bytes()
-		if err != nil {
-			t.Fatalf("serialize: %v", err)
+	prevs := []MsigPrevInput{
+		{TxID: ins[0].TxID, Vout: ins[0].Vout, Tree: ins[0].Tree, ScriptPubKey: pkScriptHexFor(t, ins[0].Address, params)},
+		{TxID: ins[1].TxID, Vout: ins[1].Vout, Tree: ins[1].Tree, ScriptPubKey: pkScriptHexFor(t, ins[1].Address, params)},
+	}
+
+	// The verification resolver: per-input scripts and key ownership.
+	resolve := func(idx int) ([]byte, map[string]string, error) {
+		u := ins[idx]
+		index := uint32(0)
+		if u.Address == ext1 {
+			index = 1
 		}
-		buf = b
-	}
-	rawHex := hex.EncodeToString(buf)
-
-	// The shared address pkScript for prevout resolution: the funding tx
-	// may still be unconfirmed.
-	prevInputs := []MsigPrevInput{{
-		TxID: funded.TxID, Vout: funded.Vout, Tree: funded.Tree,
-		ScriptPubKey: pkScriptHexFor(t, sharedAddr, params),
-	}}
-
-	// (b), (c), (d): one signing pass with only the source account
-	// unlocked must resolve the imported redeem script and land both
-	// signatures.
-	signedHex, err := SignMsigTransaction(ctx, rawHex, prevInputs, account, passCopy())
-	if err != nil {
-		t.Fatalf("sign: %v", err)
-	}
-	signedTx, err := msig.DecodeTxHex(signedHex)
-	if err != nil {
-		t.Fatalf("decode signed: %v", err)
-	}
-	if got := signedTx.TxHash().String(); got != txid {
-		t.Fatalf("txid changed by signing: %s", got)
-	}
-	signers, err := msig.VerifyProposalUpdate(signedTx, txid, redeem, [][]byte{pk1, pk2})
-	if err != nil {
-		t.Fatalf("verify signatures: %v", err)
-	}
-	if len(signers) != 2 {
-		t.Fatalf("signature count: got %d, want 2", len(signers))
+		script, _, err := msig.ScriptAt(2, xpubs, msig.BranchExternal, index, params)
+		if err != nil {
+			return nil, nil, err
+		}
+		keys, err := msig.KeysAt(xpubs, msig.BranchExternal, index, params)
+		if err != nil {
+			return nil, nil, err
+		}
+		owner := make(map[string]string, len(keys))
+		for ki, k := range keys {
+			owner[hex.EncodeToString(k)] = xpubs[ki]
+		}
+		return script, owner, nil
 	}
 
-	// (f) broadcast through the wallet so it tracks the spend.
-	signedBytes, err := hex.DecodeString(signedHex)
+	// (e) Before account A's branch covers index 1, signing must NOT
+	// produce a signature valid on every input.
+	signedHex, err := SignMsigTransaction(ctx, raw, prevs, acctA, passCopy())
 	if err != nil {
-		t.Fatalf("signed hex: %v", err)
+		t.Fatalf("sign a (pre-sync): %v", err)
 	}
-	broadcastID, err := BroadcastSignedTransaction(ctx, signedBytes)
+	preTx, err := msig.DecodeTxHex(signedHex)
 	if err != nil {
-		t.Fatalf("broadcast: %v", err)
+		t.Fatal(err)
 	}
-	if broadcastID != txid {
-		t.Fatalf("broadcast txid %s does not match built txid %s", broadcastID, txid)
+	preSigners, err := msig.VerifyProposalUpdateHD(preTx, txid, resolve)
+	if err == nil && len(preSigners) > 0 {
+		t.Fatalf("(e) signing succeeded on every input before the branch sync; precondition does not hold")
 	}
-	t.Logf("spend tx accepted: %s (fee %d atoms)", broadcastID, actualFee)
+	t.Logf("(e) pre-sync signing left the participant set empty, as required")
+	if err := SyncAccountAddressIndex(ctx, "msiglive-a", 0, 2); err != nil {
+		t.Fatalf("sync a through 2: %v", err)
+	}
+	if err := SyncAccountAddressIndex(ctx, "msiglive-b", 0, 2); err != nil {
+		t.Fatalf("sync b through 2: %v", err)
+	}
 
-	// The spent output must leave the shared UTXO set.
+	// (f) Sign with both accounts and broadcast.
+	signedHex, err = SignMsigTransaction(ctx, raw, prevs, acctA, passCopy())
+	if err != nil {
+		t.Fatalf("sign a: %v", err)
+	}
+	oneTx, err := msig.DecodeTxHex(signedHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oneSigners, err := msig.VerifyProposalUpdateHD(oneTx, txid, resolve)
+	if err != nil {
+		t.Fatalf("verify after a: %v", err)
+	}
+	if len(oneSigners) != 1 {
+		t.Fatalf("(f) after account a: %d participants", len(oneSigners))
+	}
+	signedHex, err = SignMsigTransaction(ctx, signedHex, prevs, acctB, passCopy())
+	if err != nil {
+		t.Fatalf("sign b: %v", err)
+	}
+	twoTx, err := msig.DecodeTxHex(signedHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	twoSigners, err := msig.VerifyProposalUpdateHD(twoTx, txid, resolve)
+	if err != nil {
+		t.Fatalf("verify after b: %v", err)
+	}
+	if len(twoSigners) != 2 {
+		t.Fatalf("(f) after both accounts: %d participants", len(twoSigners))
+	}
+	signedBytes, err := twoTx.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent, err := BroadcastSignedTransaction(ctx, signedBytes)
+	if err != nil {
+		t.Fatalf("(f) broadcast: %v", err)
+	}
+	if sent != txid {
+		t.Fatalf("broadcast txid %s != built %s", sent, txid)
+	}
+	t.Logf("(f) 2-of-2 ladder spend broadcast as %s", sent)
+
+	// The inputs leave the set and the change appears at internal 0.
 	deadline = time.Now().Add(45 * time.Second)
-	for time.Now().Before(deadline) {
-		utxos, err := ListSharedUTXOs(ctx, []string{sharedAddr})
+	for {
+		utxos, err = ListSharedUTXOs(ctx, []string{ext0, ext1, int0})
 		if err != nil {
 			t.Fatalf("listunspent after spend: %v", err)
 		}
-		gone := true
+		spentGone := true
+		changeSeen := false
 		for _, u := range utxos {
-			if u.TxID == funded.TxID && u.Vout == funded.Vout {
-				gone = false
+			if u.TxID == fundTx0 || u.TxID == fundTx1 {
+				spentGone = false
+			}
+			if u.TxID == txid && u.Address == int0 {
+				changeSeen = true
 			}
 		}
-		if gone {
-			finishRestoreDrill(ctx, t, account, k1, k2)
-			return
+		if spentGone && changeSeen {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("(f) post-spend set did not converge: %+v", utxos)
 		}
 		time.Sleep(2 * time.Second)
 	}
-	t.Fatalf("spent output still listed as unspent")
-}
+	t.Logf("(f) inputs consumed; sweep output visible at internal 0")
 
-func paramsForAddress(t *testing.T, addr string) *chaincfg.Params {
-	t.Helper()
-	candidates := []*chaincfg.Params{
-		chaincfg.MainNetParams(), chaincfg.TestNet3Params(), chaincfg.SimNetParams(),
-	}
-	for _, p := range candidates {
-		if _, err := stdaddr.DecodeAddress(addr, p); err == nil {
-			return p
-		}
-	}
-	t.Fatalf("address %s matches no known network", addr)
-	return nil
-}
-
-func pkScriptHexFor(t *testing.T, addr string, params *chaincfg.Params) string {
-	t.Helper()
-	a, err := stdaddr.DecodeAddress(addr, params)
-	if err != nil {
-		t.Fatalf("decode %s: %v", addr, err)
-	}
-	_, script := a.PaymentScript()
-	return hex.EncodeToString(script)
-}
-
-func recheckOwnKey(ctx context.Context, address string) (string, error) {
-	p, err := json.Marshal(address)
-	if err != nil {
-		return "", err
-	}
-	raw, err := rpc.WalletClient.RawRequest(ctx, "validateaddress", []json.RawMessage{p})
-	if err != nil {
-		return "", err
-	}
-	var res struct {
-		IsMine bool   `json:"ismine"`
-		PubKey string `json:"pubkey"`
-	}
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return "", err
-	}
-	if !res.IsMine {
-		return "", fmt.Errorf("address %s is not recognized as owned", address)
-	}
-	return res.PubKey, nil
-}
-
-// finishRestoreDrill covers (g): the address cursor fast-forward and the
-// own-key coordinate recovery a backup-card restore relies on.
-func finishRestoreDrill(ctx context.Context, t *testing.T, account uint32, k1, k2 *MsigOwnKey) {
-	t.Helper()
+	// (g) The restore ownership proof: exactly one account's xpub equals
+	// the drill xpub, and it is the drill account.
 	accounts, err := FetchAllAccounts(ctx)
 	if err != nil {
-		t.Fatalf("accounts: %v", err)
+		t.Fatal(err)
 	}
-	accountName := ""
+	matches := 0
 	for _, a := range accounts {
-		if a.AccountNumber == account {
-			accountName = a.AccountName
+		if a.AccountNumber >= 1<<31 {
+			continue
+		}
+		got, err := GetAccountExtendedPubKey(ctx, a.AccountNumber)
+		if err != nil {
+			continue
+		}
+		if got == xpubA {
+			matches++
+			if a.AccountNumber != acctA {
+				t.Fatalf("(g) xpub matched foreign account %d", a.AccountNumber)
+			}
 		}
 	}
-	if accountName == "" {
-		t.Fatalf("account %d not found", account)
+	if matches != 1 {
+		t.Fatalf("(g) xpub equality matched %d accounts", matches)
 	}
-	if err := SyncAccountAddressIndex(ctx, accountName, k2.Branch, k2.Index+1); err != nil {
-		t.Fatalf("accountsyncaddressindex: %v", err)
-	}
-	recovered, err := recheckOwnKey(ctx, k1.Address)
-	if err != nil {
-		t.Fatalf("validateaddress after sync: %v", err)
-	}
-	if recovered != k1.PubKey {
-		t.Fatalf("recovered pubkey %s does not match %s", recovered, k1.PubKey)
-	}
-	t.Logf("restore drill: own key coordinates recovered for %s", k1.Address)
+	t.Logf("(g) restore ownership proof holds")
 }

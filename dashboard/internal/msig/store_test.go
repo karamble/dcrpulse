@@ -5,6 +5,7 @@
 package msig
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,7 +20,9 @@ func TestStoreRoundtrip(t *testing.T) {
 	rec := &WalletRecord{
 		TempID: "00aa", Label: "team", M: 2, N: 3, Network: "simnet",
 		Role: RoleInitiator, Status: StatusInviting,
-		Own:   &OwnKey{PubKey: "02aa", Address: "Ss1", Account: 0, Branch: 0, Index: 7},
+		HD:    true,
+		OwnHD: &OwnHDKey{Xpub: "spub-test", Account: 7},
+		Ext:   &CursorState{Next: 3, ImportedThrough: 20, LastUsed: 1},
 		Peers: []*Peer{{UID: "u1", Nick: "bob", State: PeerInvited}},
 	}
 	if err := s.PutWallet(rec); err != nil {
@@ -41,7 +44,7 @@ func TestStoreRoundtrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("record lost on reopen")
 	}
-	if got.Address != "SsShared" || got.Status != StatusActivating || got.Own.Index != 7 {
+	if got.Address != "SsShared" || got.Status != StatusActivating || got.OwnHD.Account != 7 || got.Ext.Next != 3 {
 		t.Fatalf("roundtrip mismatch: %+v", got)
 	}
 	// Lookup by address works too.
@@ -98,5 +101,16 @@ func TestStoreJournalAndOutbox(t *testing.T) {
 	}
 	if len(re.PendingOutbox()) != 1 {
 		t.Fatalf("outbox lost on reopen")
+	}
+}
+
+func TestOpenStoreRefusesFutureSchema(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "msig.json")
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":99,"wallets":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openStore(path, "w1"); err == nil {
+		t.Fatalf("future schema accepted; a downgrade would strip its fields")
 	}
 }

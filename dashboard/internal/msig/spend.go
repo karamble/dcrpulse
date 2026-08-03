@@ -5,7 +5,6 @@
 package msig
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -23,17 +22,6 @@ import (
 // Spend seams, mirroring the handshake ones so the relay is testable
 // without a wallet.
 var (
-	listUTXOsSeam = func(ctx context.Context, address string) ([]UTXO, error) {
-		rows, err := services.ListSharedUTXOs(ctx, []string{address})
-		if err != nil {
-			return nil, err
-		}
-		out := make([]UTXO, 0, len(rows))
-		for _, r := range rows {
-			out = append(out, UTXO{TxID: r.TxID, Vout: r.Vout, Tree: r.Tree, Atoms: r.Atoms})
-		}
-		return out, nil
-	}
 	signSeam = func(ctx context.Context, rawTxHex string, prevInputs []services.MsigPrevInput, account uint32, passphrase []byte) (string, error) {
 		return services.SignMsigTransaction(ctx, rawTxHex, prevInputs, account, passphrase)
 	}
@@ -58,24 +46,24 @@ const (
 )
 
 // prevInputsFor builds the explicit prevout list handed to
-// signrawtransaction. The redeem script is deliberately absent: dcrwallet
-// ignores it unless raw private keys are passed and always resolves
-// scripts from its own store, which is why the script must be imported.
+// signrawtransaction, one pkScript per input from its own ladder
+// address. The redeem script is deliberately absent: dcrwallet ignores
+// it unless raw private keys are passed and always resolves scripts from
+// its own store, which is why every ladder script must be imported.
 func prevInputsFor(rec *WalletRecord, inputs []ProposalInput) ([]services.MsigPrevInput, error) {
 	params, err := paramsForNetwork(rec.Network)
 	if err != nil {
 		return nil, err
 	}
-	addr, err := stdaddr.DecodeAddress(rec.Address, params)
-	if err != nil {
-		return nil, err
-	}
-	_, pkScript := addr.PaymentScript()
-	pkHex := hex.EncodeToString(pkScript)
 	out := make([]services.MsigPrevInput, 0, len(inputs))
 	for _, in := range inputs {
+		addr, err := stdaddr.DecodeAddress(in.Address, params)
+		if err != nil {
+			return nil, fmt.Errorf("input %s:%d address: %v", in.TxID, in.Vout, err)
+		}
+		_, pkScript := addr.PaymentScript()
 		out = append(out, services.MsigPrevInput{
-			TxID: in.TxID, Vout: in.Vout, Tree: in.Tree, ScriptPubKey: pkHex,
+			TxID: in.TxID, Vout: in.Vout, Tree: in.Tree, ScriptPubKey: hex.EncodeToString(pkScript),
 		})
 	}
 	return out, nil
@@ -106,28 +94,13 @@ func requireActive(store *Store, rec *WalletRecord) error {
 	return nil
 }
 
-func rosterKeys(rec *WalletRecord) ([][]byte, []byte, error) {
-	keys := make([][]byte, 0, len(rec.RosterPubKeys))
-	for _, h := range rec.RosterPubKeys {
-		k, err := hex.DecodeString(h)
-		if err != nil {
-			return nil, nil, fmt.Errorf("roster key: %v", err)
-		}
-		keys = append(keys, k)
-	}
-	script, err := hex.DecodeString(rec.ScriptHex)
-	if err != nil {
-		return nil, nil, fmt.Errorf("redeem script: %v", err)
-	}
-	return keys, script, nil
-}
-
 // ProposeSpend builds, self-signs and dispatches a spend from a shared
 // wallet. The queue lists the cosigners asked to sign, in order; it must
 // hold at least m-1 entries. With sendAll the whole spendable balance
 // sweeps to a single recipient: the amount is computed here as the input
-// sum minus the fee and any amount in the request is ignored.
-func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, sendAll bool, queueUIDs []string, note string, hopTTL time.Duration, account uint32, passphrase []byte) (*Proposal, error) {
+// sum minus the fee and any amount in the request is ignored. Change
+// pays a fresh internal ladder index; the dedicated account signs.
+func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, sendAll bool, queueUIDs []string, note string, hopTTL time.Duration, passphrase []byte) (*Proposal, error) {
 	defer func() {
 		for i := range passphrase {
 			passphrase[i] = 0
@@ -176,15 +149,14 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 		queue = append(queue, &QueueHop{UID: uid, Nick: p.Nick, State: HopPending})
 	}
 
+	if !rec.HD || rec.OwnHD == nil {
+		return nil, fmt.Errorf("this shared wallet predates the HD ladder; recreate it")
+	}
 	params, err := paramsForNetwork(rec.Network)
 	if err != nil {
 		return nil, err
 	}
-	keys, script, err := rosterKeys(rec)
-	if err != nil {
-		return nil, err
-	}
-	all, err := listUTXOsSeam(ctx, rec.Address)
+	all, err := listWindowUTXOs(ctx, store, rec)
 	if err != nil {
 		return nil, err
 	}
@@ -225,9 +197,22 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 			return nil, err
 		}
 	}
+	// Change pays a fresh internal index, allocated (and its window
+	// imported) before the transaction exists. A sendAll sweep produces
+	// no change, so it skips the allocation instead of burning an index.
+	changeAddr := rec.Address
+	if !sendAll {
+		if _, changeAddr, err = allocateChangeIndex(ctx, store, rec); err != nil {
+			return nil, err
+		}
+	}
+	sizeScript, _, err := ScriptAt(rec.M, rec.Xpubs, BranchExternal, 0, params)
+	if err != nil {
+		return nil, err
+	}
 	tx, fee, change, err := BuildSpend(BuildSpendParams{
-		UTXOs: selected, Recipients: recipients, ChangeAddress: rec.Address,
-		RedeemScript: script, ChainParams: params,
+		UTXOs: selected, Recipients: recipients, ChangeAddress: changeAddr,
+		RedeemScript: sizeScript, ChainParams: params,
 	})
 	if err != nil {
 		return nil, err
@@ -240,21 +225,21 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 
 	inputs := make([]ProposalInput, 0, len(selected))
 	for _, u := range selected {
-		inputs = append(inputs, ProposalInput{TxID: u.TxID, Vout: u.Vout, Tree: u.Tree, Atoms: u.Atoms})
+		inputs = append(inputs, ProposalInput{TxID: u.TxID, Vout: u.Vout, Tree: u.Tree, Atoms: u.Atoms, Address: u.Address})
 	}
 	outputs := make([]ProposalOutput, 0, len(recipients)+1)
 	for _, r := range recipients {
 		outputs = append(outputs, ProposalOutput{Address: r.Address, Atoms: r.Atoms})
 	}
 	if change > 0 {
-		outputs = append(outputs, ProposalOutput{Address: rec.Address, Atoms: change, IsChange: true})
+		outputs = append(outputs, ProposalOutput{Address: changeAddr, Atoms: change, IsChange: true})
 	}
 
 	prevs, err := prevInputsFor(rec, inputs)
 	if err != nil {
 		return nil, err
 	}
-	signedHex, err := signSeam(ctx, hex.EncodeToString(rawBytes), prevs, account, passphrase)
+	signedHex, err := signSeam(ctx, hex.EncodeToString(rawBytes), prevs, rec.OwnHD.Account, passphrase)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +247,11 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 	if err != nil {
 		return nil, err
 	}
-	signers, err := VerifyProposalUpdate(signedTx, txid, script, keys)
+	resolve, err := resolverForInputs(rec, inputs)
+	if err != nil {
+		return nil, err
+	}
+	signers, err := VerifyProposalUpdateHD(signedTx, txid, resolve)
 	if err != nil {
 		return nil, fmt.Errorf("local signing produced an unusable transaction: %v", err)
 	}
@@ -463,8 +452,10 @@ func AbortProposal(ctx context.Context, walletID, txid string) error {
 }
 
 // SignIncomingProposal verifies an incoming request against local state,
-// adds this wallet's signature and returns it to the proposer.
-func SignIncomingProposal(ctx context.Context, walletID, txid string, account uint32, passphrase []byte) error {
+// adds this wallet's signature and returns it to the proposer. The
+// dedicated account signs after its branch indices are synced through
+// the imported window.
+func SignIncomingProposal(ctx context.Context, walletID, txid string, passphrase []byte) error {
 	defer func() {
 		for i := range passphrase {
 			passphrase[i] = 0
@@ -481,6 +472,9 @@ func SignIncomingProposal(ctx context.Context, walletID, txid string, account ui
 	if err := requireActive(store, rec); err != nil {
 		return err
 	}
+	if !rec.HD || rec.OwnHD == nil {
+		return fmt.Errorf("this shared wallet predates the HD ladder; recreate it")
+	}
 	_, prop, ok := store.Proposal(rec.TempID, txid)
 	if !ok {
 		return fmt.Errorf("unknown payment request")
@@ -488,24 +482,25 @@ func SignIncomingProposal(ctx context.Context, walletID, txid string, account ui
 	if prop.Status != ProposalIncoming {
 		return fmt.Errorf("this payment request is no longer open")
 	}
-	keys, script, err := rosterKeys(rec)
-	if err != nil {
-		return err
-	}
 	tx, err := DecodeTxHex(prop.RawTx)
 	if err != nil {
 		return err
 	}
 	// Re-verify against live wallet state at signing time, not just at
 	// arrival: funds may have moved while the request sat in the inbox.
-	if err := verifyAgainstWallet(ctx, rec, tx, prop); err != nil {
+	if err := verifyAgainstWallet(ctx, store, rec, tx, prop); err != nil {
+		return err
+	}
+	// The wallet only signs for child keys its address manager has seen;
+	// make sure the window (and so every input's index) is synced.
+	if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
 		return err
 	}
 	prevs, err := prevInputsFor(rec, prop.Inputs)
 	if err != nil {
 		return err
 	}
-	signedHex, err := signSeam(ctx, prop.RawTx, prevs, account, passphrase)
+	signedHex, err := signSeam(ctx, prop.RawTx, prevs, rec.OwnHD.Account, passphrase)
 	if err != nil {
 		return err
 	}
@@ -513,7 +508,11 @@ func SignIncomingProposal(ctx context.Context, walletID, txid string, account ui
 	if err != nil {
 		return err
 	}
-	signers, err := VerifyProposalUpdate(signedTx, txid, script, keys)
+	resolve, err := resolverForInputs(rec, prop.Inputs)
+	if err != nil {
+		return err
+	}
+	signers, err := VerifyProposalUpdateHD(signedTx, txid, resolve)
 	if err != nil {
 		return err
 	}
@@ -569,11 +568,13 @@ func RejectIncomingProposal(ctx context.Context, walletID, txid, reason string) 
 }
 
 // verifyAgainstWallet checks a proposal against this node's own view of
-// the shared wallet: every input must be a current UTXO of the shared
-// address, the change must return to it, and the fee must be sane. A
-// cosigner never trusts the proposer's summary.
-func verifyAgainstWallet(ctx context.Context, rec *WalletRecord, tx *wire.MsgTx, prop *Proposal) error {
-	utxos, err := listUTXOsSeam(ctx, rec.Address)
+// the shared wallet: every input must be a current UTXO of the ladder
+// window, and the fee must be sane. Outputs are CLASSIFIED, not vetoed:
+// an output to a derived internal address is machine-verified change,
+// everything else is a recipient the human reviews in the approval UI.
+// A cosigner never trusts the proposer's summary.
+func verifyAgainstWallet(ctx context.Context, store *Store, rec *WalletRecord, tx *wire.MsgTx, prop *Proposal) error {
+	utxos, err := listWindowUTXOs(ctx, store, rec)
 	if err != nil {
 		return err
 	}
@@ -590,31 +591,23 @@ func verifyAgainstWallet(ctx context.Context, rec *WalletRecord, tx *wire.MsgTx,
 		}
 		totalIn += atoms
 	}
-	params, err := paramsForNetwork(rec.Network)
-	if err != nil {
-		return err
-	}
-	sharedAddr, err := stdaddr.DecodeAddress(rec.Address, params)
-	if err != nil {
-		return err
-	}
-	_, sharedScript := sharedAddr.PaymentScript()
 	var totalOut int64
 	for _, out := range tx.TxOut {
 		totalOut += out.Value
-		if bytes.Equal(out.PkScript, sharedScript) {
-			continue
-		}
 	}
 	fee := totalIn - totalOut
 	if fee <= 0 {
 		return fmt.Errorf("this payment has no fee and would be rejected by the network")
 	}
-	_, script, err := rosterKeys(rec)
+	params, err := paramsForNetwork(rec.Network)
 	if err != nil {
 		return err
 	}
-	size := EstimateSize(tx, rec.M, len(script))
+	sizeScript, _, err := ScriptAt(rec.M, rec.Xpubs, BranchExternal, 0, params)
+	if err != nil {
+		return err
+	}
+	size := EstimateSize(tx, rec.M, len(sizeScript))
 	ceiling := int64(txrules.FeeForSerializeSize(maxFeeRateMultiple*txrules.DefaultRelayFeePerKb, size))
 	if fee > ceiling {
 		return fmt.Errorf("this payment pays an unusually high fee (%v); refusing to sign",

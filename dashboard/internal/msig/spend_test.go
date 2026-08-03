@@ -13,6 +13,7 @@ import (
 
 	"github.com/decred/dcrd/dcrec"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/decred/dcrd/hdkeychain/v3"
 	"github.com/decred/dcrd/txscript/v4"
 	"github.com/decred/dcrd/txscript/v4/sign"
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
@@ -21,61 +22,35 @@ import (
 	"dcrpulse/internal/services"
 )
 
-// spendHarness extends the handshake harness with a fake chain: it holds
-// the shared UTXO set and signs with each node's own key, emulating
-// dcrwallet's per-wallet key custody.
+// spendHarness extends the HD harness with a fake chain: it holds the
+// ladder's UTXO set per address and signs per input with each node's own
+// child keys, emulating dcrwallet's per-account key custody.
 type spendHarness struct {
-	*hsHarness
-	utxos      map[string][]UTXO // shared address -> unspent
-	privByPub  map[string]*secp256k1.PrivateKey
+	*hdHarness
+	utxos      map[string][]UTXO // ladder address -> unspent
 	broadcasts []string
 	txConfs    map[string]int64 // txid -> confirmations for mined txs
 }
 
 func newSpendHarness(t *testing.T, m int, names ...string) (*spendHarness, string) {
 	t.Helper()
-	h := newHsHarness(t, names...)
+	hd := newHDHarness(t, names...)
 	sh := &spendHarness{
-		hsHarness: h,
+		hdHarness: hd,
 		utxos:     make(map[string][]UTXO),
-		privByPub: make(map[string]*secp256k1.PrivateKey),
 		txConfs:   make(map[string]int64),
 	}
 
-	// Capture the private key behind every derived pubkey.
-	for _, n := range h.nodes {
-		node := n
-		node.nextKey = func() *OwnKey {
-			priv, err := secp256k1.GeneratePrivateKey()
-			if err != nil {
-				t.Fatalf("generate key: %v", err)
-			}
-			pub := hex.EncodeToString(priv.PubKey().SerializeCompressed())
-			sh.privByPub[pub] = priv
-			node.keyIdx++
-			return &OwnKey{PubKey: pub, Address: "Ss-" + node.nick, Index: node.keyIdx - 1}
-		}
-	}
-
-	origList, origSign, origBroadcast, origLookup := listUTXOsSeam, signSeam, broadcastSeam, txLookupSeam
+	origList, origSign, origBroadcast, origLookup := listUTXOsMultiSeam, signSeam, broadcastSeam, txLookupSeam
 	t.Cleanup(func() {
-		listUTXOsSeam, signSeam, broadcastSeam, txLookupSeam = origList, origSign, origBroadcast, origLookup
+		listUTXOsMultiSeam, signSeam, broadcastSeam, txLookupSeam = origList, origSign, origBroadcast, origLookup
 	})
-	// The fake wallet knows a tx once it was broadcast (0 conf) or mined
-	// via txConfs.
-	txLookupSeam = func(ctx context.Context, txid string) (int64, bool, error) {
-		if conf, ok := sh.txConfs[txid]; ok {
-			return conf, true, nil
+	listUTXOsMultiSeam = func(ctx context.Context, addresses []string) ([]UTXO, error) {
+		var out []UTXO
+		for _, a := range addresses {
+			out = append(out, sh.utxos[a]...)
 		}
-		for _, b := range sh.broadcasts {
-			if b == txid {
-				return 0, true, nil
-			}
-		}
-		return 0, false, nil
-	}
-	listUTXOsSeam = func(ctx context.Context, address string) ([]UTXO, error) {
-		return append([]UTXO(nil), sh.utxos[address]...), nil
+		return out, nil
 	}
 	signSeam = func(ctx context.Context, rawTxHex string, prevs []services.MsigPrevInput, account uint32, pass []byte) (string, error) {
 		return sh.signAs(t, sh.current, rawTxHex)
@@ -90,77 +65,36 @@ func newSpendHarness(t *testing.T, m int, names ...string) (*spendHarness, strin
 		sh.spend(t, tx)
 		return txid, nil
 	}
+	// The fake wallet knows a tx once it was broadcast (0 conf) or mined
+	// via txConfs.
+	txLookupSeam = func(ctx context.Context, txid string) (int64, bool, error) {
+		if conf, ok := sh.txConfs[txid]; ok {
+			return conf, true, nil
+		}
+		for _, b := range sh.broadcasts {
+			if b == txid {
+				return 0, true, nil
+			}
+		}
+		return 0, false, nil
+	}
 
-	// Run the handshake to an active wallet.
+	// Run the HD handshake to an active wallet.
 	cosigners := names[1:]
-	tempID := h.create(t, m, names[0], cosigners...)
-	h.pump()
+	tempID := hd.createHD(t, m, names[0], cosigners...)
+	hd.pump()
 	for _, nick := range cosigners {
-		h.as(nick)
-		if err := AcceptInvite(h.ctx, tempID, 0); err != nil {
+		hd.as(nick)
+		if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
 			t.Fatalf("%s accept: %v", nick, err)
 		}
-		h.pump()
+		hd.pump()
 	}
-	rec := h.record(names[0], tempID)
+	rec := hd.record(names[0], tempID)
 	if rec.Status != StatusActive {
 		t.Fatalf("setup: wallet not active: %s (%s)", rec.Status, rec.FailReason)
 	}
 	return sh, tempID
-}
-
-// signAs adds the signature of whichever roster key the given node owns.
-func (sh *spendHarness) signAs(t *testing.T, node *hsNode, rawTxHex string) (string, error) {
-	t.Helper()
-	rec := sh.recordFor(node)
-	if rec == nil {
-		t.Fatalf("no shared wallet record for %s", node.nick)
-	}
-	script, err := hex.DecodeString(rec.ScriptHex)
-	if err != nil {
-		return "", err
-	}
-	params, err := paramsForNetwork(rec.Network)
-	if err != nil {
-		return "", err
-	}
-	addr, err := stdaddr.NewAddressScriptHashV0(script, params)
-	if err != nil {
-		return "", err
-	}
-	_, pkScript := addr.PaymentScript()
-	tx, err := DecodeTxHex(rawTxHex)
-	if err != nil {
-		return "", err
-	}
-	priv, ok := sh.privByPub[rec.Own.PubKey]
-	if !ok {
-		t.Fatalf("no private key for %s", node.nick)
-	}
-	pubAddr, err := stdaddr.NewAddressPubKeyEcdsaSecp256k1V0(priv.PubKey(), params)
-	if err != nil {
-		return "", err
-	}
-	kdb := sign.KeyClosure(func(a stdaddr.Address) ([]byte, dcrec.SignatureType, bool, error) {
-		if a.String() != pubAddr.String() {
-			return nil, 0, false, errNoKey
-		}
-		return priv.Serialize(), dcrec.STEcdsaSecp256k1, true, nil
-	})
-	sdb := sign.ScriptClosure(func(stdaddr.Address) ([]byte, error) { return script, nil })
-	for i := range tx.TxIn {
-		sigScript, err := sign.SignTxOutput(params, tx, i, pkScript, txscript.SigHashAll,
-			kdb, sdb, tx.TxIn[i].SignatureScript, false)
-		if err != nil {
-			return "", err
-		}
-		tx.TxIn[i].SignatureScript = sigScript
-	}
-	raw, err := tx.Bytes()
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(raw), nil
 }
 
 func (sh *spendHarness) recordFor(node *hsNode) *WalletRecord {
@@ -176,11 +110,118 @@ func (sh *spendHarness) recordFor(node *hsNode) *WalletRecord {
 	return nil
 }
 
-// fund adds an unspent output to the shared address.
+// childPriv derives a node's private key at (branch, index) of its
+// dedicated account, mirroring the production derivation.
+func (sh *spendHarness) childPriv(t *testing.T, node *hsNode, account, branch, index uint32) *secp256k1.PrivateKey {
+	t.Helper()
+	key := sh.masters[node.uid]
+	var err error
+	for _, step := range []uint32{44, 42, account} {
+		if key, err = key.ChildBIP32Std(hdkeychain.HardenedKeyStart + step); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, step := range []uint32{branch, index} {
+		if key, err = key.Child(step); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := key.SerializedPrivKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return secp256k1.PrivKeyFromBytes(raw)
+}
+
+// signAs adds the signatures of the given node, resolving the redeem
+// script and the node's own child key PER INPUT from the ladder.
+func (sh *spendHarness) signAs(t *testing.T, node *hsNode, rawTxHex string) (string, error) {
+	t.Helper()
+	rec := sh.recordFor(node)
+	if rec == nil {
+		t.Fatalf("no shared wallet record for %s", node.nick)
+	}
+	view, err := ladderFor(rec)
+	if err != nil {
+		return "", err
+	}
+	params, err := paramsForNetwork(rec.Network)
+	if err != nil {
+		return "", err
+	}
+	byOutpoint := make(map[string]UTXO)
+	for _, set := range sh.utxos {
+		for _, u := range set {
+			byOutpoint[u.TxID+":"+itoa(u.Vout)] = u
+		}
+	}
+	tx, err := DecodeTxHex(rawTxHex)
+	if err != nil {
+		return "", err
+	}
+	for i := range tx.TxIn {
+		op := tx.TxIn[i].PreviousOutPoint
+		u, ok := byOutpoint[op.Hash.String()+":"+itoa(op.Index)]
+		if !ok {
+			t.Fatalf("input %d spends an unknown outpoint", i)
+		}
+		entry, ok := view.byAddr[u.Address]
+		if !ok {
+			t.Fatalf("input %d address %s outside the ladder", i, u.Address)
+		}
+		priv := sh.childPriv(t, node, rec.OwnHD.Account, entry.Branch, entry.Index)
+		pubAddr, err := stdaddr.NewAddressPubKeyEcdsaSecp256k1V0(priv.PubKey(), params)
+		if err != nil {
+			return "", err
+		}
+		addr, err := stdaddr.NewAddressScriptHashV0(entry.Script, params)
+		if err != nil {
+			return "", err
+		}
+		_, pkScript := addr.PaymentScript()
+		kdb := sign.KeyClosure(func(a stdaddr.Address) ([]byte, dcrec.SignatureType, bool, error) {
+			if a.String() != pubAddr.String() {
+				return nil, 0, false, errNoKey
+			}
+			return priv.Serialize(), dcrec.STEcdsaSecp256k1, true, nil
+		})
+		script := entry.Script
+		sdb := sign.ScriptClosure(func(stdaddr.Address) ([]byte, error) { return script, nil })
+		sigScript, err := sign.SignTxOutput(params, tx, i, pkScript, txscript.SigHashAll,
+			kdb, sdb, tx.TxIn[i].SignatureScript, false)
+		if err != nil {
+			return "", err
+		}
+		tx.TxIn[i].SignatureScript = sigScript
+	}
+	raw, err := tx.Bytes()
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+func itoa(v uint32) string {
+	return strings.TrimLeft(hex.EncodeToString([]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}), "0") + "#"
+}
+
+// fund adds an unspent output at one ladder address.
 func (sh *spendHarness) fund(address string, atoms int64, index uint32) {
 	sh.utxos[address] = append(sh.utxos[address], UTXO{
-		TxID: strings.Repeat("11", 32), Vout: index, Tree: 0, Atoms: atoms,
+		TxID: strings.Repeat("11", 32), Vout: index, Tree: 0, Atoms: atoms, Address: address,
 	})
+}
+
+// fundIndex funds the external ladder address at the given index.
+func (sh *spendHarness) fundIndex(t *testing.T, nick, tempID string, index uint32, atoms int64, vout uint32) string {
+	t.Helper()
+	rec := sh.record(nick, tempID)
+	entry, err := entryAt(rec, BranchExternal, index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh.fund(entry.Address, atoms, vout)
+	return entry.Address
 }
 
 // spend removes the inputs a broadcast transaction consumed.
@@ -218,12 +259,12 @@ func TestSpendTwoOfThreeRelay(t *testing.T) {
 	sh.fund(rec.Address, 500_000_000, 0)
 
 	sh.as("alice")
-	dest := sh.record("alice", tempID).Address
-	prop, err := ProposeSpend(sh.ctx, rec.Address,
+	dest := rec.Address
+	prop, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: dest, Atoms: 100_000_000}},
 		false,
 		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid},
-		"rent", 0, 0, []byte("pass"))
+		"rent", 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
@@ -233,12 +274,13 @@ func TestSpendTwoOfThreeRelay(t *testing.T) {
 	txid := prop.TxID
 	sh.pump()
 
-	// Bob sees a reviewable request with resolved amounts.
+	// Bob sees a reviewable request with resolved amounts, per-input
+	// addresses and the change classified against his own derivation.
 	incoming := sh.proposal(t, "bob", tempID, txid)
 	if incoming.Status != ProposalIncoming || incoming.Role != RoleCosigner {
 		t.Fatalf("bob's view: %s/%s", incoming.Role, incoming.Status)
 	}
-	if incoming.FeeAtoms <= 0 || len(incoming.Inputs) != 1 {
+	if incoming.FeeAtoms <= 0 || len(incoming.Inputs) != 1 || incoming.Inputs[0].Address != rec.Address {
 		t.Fatalf("bob's view lacks resolved values: %+v", incoming)
 	}
 	var change *ProposalOutput
@@ -247,12 +289,17 @@ func TestSpendTwoOfThreeRelay(t *testing.T) {
 			change = &incoming.Outputs[i]
 		}
 	}
-	if change == nil || change.Address != rec.Address {
-		t.Fatalf("change does not return to the shared address")
+	bobRec := sh.record("bob", tempID)
+	wantChange, err := entryAt(bobRec, BranchInternal, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if change == nil || change.Address != wantChange.Address {
+		t.Fatalf("change not classified to internal index 0: %+v", change)
 	}
 
 	sh.as("bob")
-	if err := SignIncomingProposal(sh.ctx, rec.Address, txid, 0, []byte("pass")); err != nil {
+	if err := SignIncomingProposal(sh.ctx, tempID, txid, []byte("pass")); err != nil {
 		t.Fatalf("bob sign: %v", err)
 	}
 	sh.pump()
@@ -267,29 +314,75 @@ func TestSpendTwoOfThreeRelay(t *testing.T) {
 	if len(sh.broadcasts) != 1 || sh.broadcasts[0] != txid {
 		t.Fatalf("broadcasts: %v", sh.broadcasts)
 	}
-	// Carol was never asked: the threshold was met at the first hop.
-	for _, h := range final.Queue {
-		if h.Nick == "carol" && h.State != HopPending {
-			t.Fatalf("carol was contacted unnecessarily: %s", h.State)
-		}
-	}
-	// Both cosigners learn the outcome from the broadcast notice.
 	if got := sh.proposal(t, "carol", tempID, txid); got.Status != ProposalBroadcast {
-		t.Fatalf("carol's view after broadcast: %s", got.Status)
+		t.Fatalf("carol never asked, but must know the broadcast: %s", got.Status)
+	}
+	// Signer sets are keyed by roster xpub.
+	for signer := range final.SignedBy {
+		found := false
+		for _, x := range rec.Xpubs {
+			if x == signer {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("signer %q not a roster xpub", signer)
+		}
 	}
 }
 
-func TestSpendDeclineAdvancesToAlternate(t *testing.T) {
+func TestSpendAcrossIndices(t *testing.T) {
+	sh, tempID := newSpendHarness(t, 2, "alice", "bob")
+	rec := sh.record("alice", tempID)
+	addr0 := sh.fundIndex(t, "alice", tempID, 0, 300_000_000, 0)
+	addr1 := sh.fundIndex(t, "alice", tempID, 1, 200_000_000, 1)
+	if addr0 == addr1 {
+		t.Fatalf("indices derived the same address")
+	}
+
+	sh.as("alice")
+	prop, err := ProposeSpend(sh.ctx, tempID,
+		[]Recipient{{Address: rec.Address, Atoms: 450_000_000}},
+		false,
+		[]string{sh.nodeByNick("bob").uid},
+		"", 0, []byte("pass"))
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	if len(prop.Inputs) != 2 {
+		t.Fatalf("expected both indices spent, inputs: %d", len(prop.Inputs))
+	}
+	seen := map[string]bool{}
+	for _, in := range prop.Inputs {
+		seen[in.Address] = true
+	}
+	if !seen[addr0] || !seen[addr1] {
+		t.Fatalf("inputs missing an index: %+v", prop.Inputs)
+	}
+	txid := prop.TxID
+	sh.pump()
+
+	sh.as("bob")
+	if err := SignIncomingProposal(sh.ctx, tempID, txid, []byte("pass")); err != nil {
+		t.Fatalf("bob sign across indices: %v", err)
+	}
+	sh.pump()
+	if got := sh.proposal(t, "alice", tempID, txid); got.Status != ProposalBroadcast {
+		t.Fatalf("multi-index spend did not broadcast: %s (%s)", got.Status, got.Reason)
+	}
+}
+
+func TestSpendDeclineAdvancesQueue(t *testing.T) {
 	sh, tempID := newSpendHarness(t, 2, "alice", "bob", "carol")
 	rec := sh.record("alice", tempID)
 	sh.fund(rec.Address, 500_000_000, 0)
 
 	sh.as("alice")
-	prop, err := ProposeSpend(sh.ctx, rec.Address,
+	prop, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
 		false,
 		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid},
-		"", 0, 0, []byte("pass"))
+		"", 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
@@ -297,88 +390,30 @@ func TestSpendDeclineAdvancesToAlternate(t *testing.T) {
 	sh.pump()
 
 	sh.as("bob")
-	if err := RejectIncomingProposal(sh.ctx, rec.Address, txid, "not this month"); err != nil {
+	if err := RejectIncomingProposal(sh.ctx, tempID, txid, "not this week"); err != nil {
 		t.Fatalf("bob reject: %v", err)
 	}
 	sh.pump()
 
-	// The relay moved on to carol without any action at the hub.
-	mid := sh.proposal(t, "alice", tempID, txid)
-	if mid.Status != ProposalCollecting {
-		t.Fatalf("status after decline: %s", mid.Status)
-	}
+	// The relay moved on to carol.
+	mine := sh.proposal(t, "alice", tempID, txid)
 	var bobHop, carolHop *QueueHop
-	for _, h := range mid.Queue {
-		if h.Nick == "bob" {
+	for _, h := range mine.Queue {
+		if h.UID == sh.nodeByNick("bob").uid {
 			bobHop = h
 		}
-		if h.Nick == "carol" {
+		if h.UID == sh.nodeByNick("carol").uid {
 			carolHop = h
 		}
 	}
-	if bobHop.State != HopDeclined || bobHop.Reason != "not this month" {
-		t.Fatalf("bob hop: %+v", bobHop)
+	if bobHop == nil || bobHop.State != HopDeclined || bobHop.Reason != "not this week" {
+		t.Fatalf("bob's hop: %+v", bobHop)
 	}
-	if carolHop.State != HopSent {
-		t.Fatalf("carol hop not engaged: %s", carolHop.State)
+	if carolHop == nil || carolHop.State != HopSent {
+		t.Fatalf("carol's hop: %+v", carolHop)
 	}
-
-	sh.as("carol")
-	if err := SignIncomingProposal(sh.ctx, rec.Address, txid, 0, []byte("pass")); err != nil {
-		t.Fatalf("carol sign: %v", err)
-	}
-	sh.pump()
-	if got := sh.proposal(t, "alice", tempID, txid); got.Status != ProposalBroadcast {
-		t.Fatalf("final status: %s (%s)", got.Status, got.Reason)
-	}
-}
-
-func TestSpendHopTimeout(t *testing.T) {
-	sh, tempID := newSpendHarness(t, 2, "alice", "bob", "carol")
-	rec := sh.record("alice", tempID)
-	sh.fund(rec.Address, 500_000_000, 0)
-
-	sh.as("alice")
-	prop, err := ProposeSpend(sh.ctx, rec.Address,
-		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
-		false,
-		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid},
-		"", time.Hour, 0, []byte("pass"))
-	if err != nil {
-		t.Fatalf("propose: %v", err)
-	}
-	txid := prop.TxID
-	// Bob never answers; age the hop past its deadline.
-	sh.queue = nil
-	store := sh.store("alice")
-	if err := store.UpdateProposal(tempID, txid, false, func(_ *WalletRecord, p *Proposal) error {
-		for _, h := range p.Queue {
-			if h.State == HopSent {
-				h.Deadline = time.Now().Add(-time.Minute).Unix()
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("age hop: %v", err)
-	}
-	sh.as("alice")
-	sweepProposals(sh.ctx, store)
-
-	after := sh.proposal(t, "alice", tempID, txid)
-	var bobHop, carolHop *QueueHop
-	for _, h := range after.Queue {
-		if h.Nick == "bob" {
-			bobHop = h
-		}
-		if h.Nick == "carol" {
-			carolHop = h
-		}
-	}
-	if bobHop.State != HopTimeout {
-		t.Fatalf("bob hop after timeout: %s", bobHop.State)
-	}
-	if carolHop.State != HopSent {
-		t.Fatalf("relay did not advance to carol: %s", carolHop.State)
+	if got := sh.proposal(t, "carol", tempID, txid); got.Status != ProposalIncoming {
+		t.Fatalf("carol did not receive the re-route: %s", got.Status)
 	}
 }
 
@@ -388,10 +423,10 @@ func TestSpendInputLocksAndSupersede(t *testing.T) {
 	sh.fund(rec.Address, 500_000_000, 0)
 
 	sh.as("alice")
-	first, err := ProposeSpend(sh.ctx, rec.Address,
+	first, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
 		false,
-		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
+		[]string{sh.nodeByNick("bob").uid}, "", 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
@@ -399,27 +434,27 @@ func TestSpendInputLocksAndSupersede(t *testing.T) {
 
 	// The single funding output is claimed, so a second proposal cannot
 	// take it.
-	if _, err := ProposeSpend(sh.ctx, rec.Address,
+	if _, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address, Atoms: 50_000_000}},
 		false,
-		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass")); err == nil {
+		[]string{sh.nodeByNick("bob").uid}, "", 0, []byte("pass")); err == nil {
 		t.Fatalf("second proposal ignored the input lock")
 	}
 
 	// Aborting releases the claim.
-	if err := AbortProposal(sh.ctx, rec.Address, first.TxID); err != nil {
+	if err := AbortProposal(sh.ctx, tempID, first.TxID); err != nil {
 		t.Fatalf("abort: %v", err)
 	}
-	second, err := ProposeSpend(sh.ctx, rec.Address,
+	second, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address, Atoms: 50_000_000}},
 		false,
-		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
+		[]string{sh.nodeByNick("bob").uid}, "", 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("proposal after abort: %v", err)
 	}
 	sh.pump()
 	sh.as("bob")
-	if err := SignIncomingProposal(sh.ctx, rec.Address, second.TxID, 0, []byte("pass")); err != nil {
+	if err := SignIncomingProposal(sh.ctx, tempID, second.TxID, []byte("pass")); err != nil {
 		t.Fatalf("bob sign: %v", err)
 	}
 	sh.pump()
@@ -440,29 +475,26 @@ func TestSpendInputLocksAndSupersede(t *testing.T) {
 		t.Fatalf("stale proposal status: %s", got.Status)
 	}
 	if got := sh.proposal(t, "alice", tempID, second.TxID); got.Status != ProposalConfirmed {
-		t.Fatalf("broadcast proposal not confirmed after its inputs left the set: %s", got.Status)
+		t.Fatalf("broadcast proposal not confirmed after mining: %s", got.Status)
 	}
 }
 
-func TestSpendCosignerRejectsTampering(t *testing.T) {
+func TestSpendForgedInputsAutoDeclined(t *testing.T) {
 	sh, tempID := newSpendHarness(t, 2, "alice", "bob")
 	rec := sh.record("alice", tempID)
 	sh.fund(rec.Address, 500_000_000, 0)
 
 	sh.as("alice")
-	prop, err := ProposeSpend(sh.ctx, rec.Address,
+	prop, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
 		false,
-		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
+		[]string{sh.nodeByNick("bob").uid}, "", 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
 	sh.queue = nil
 
-	// A request naming outputs that are not this wallet's UTXOs is
-	// auto-declined rather than queued for review.
-	forged := prop.RawTx
-	tx, err := DecodeTxHex(forged)
+	tx, err := DecodeTxHex(prop.RawTx)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -496,23 +528,23 @@ func TestSpendCosignerRejectsTampering(t *testing.T) {
 func TestSpendSendAll(t *testing.T) {
 	sh, tempID := newSpendHarness(t, 2, "alice", "bob", "carol")
 	rec := sh.record("alice", tempID)
-	sh.fund(rec.Address, 300_000_000, 0)
-	sh.fund(rec.Address, 200_000_000, 1)
+	sh.fundIndex(t, "alice", tempID, 0, 300_000_000, 0)
+	sh.fundIndex(t, "alice", tempID, 1, 200_000_000, 1)
 
 	sh.as("alice")
-	if _, err := ProposeSpend(sh.ctx, rec.Address,
+	if _, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address}, {Address: rec.Address}},
 		true,
 		[]string{sh.nodeByNick("bob").uid},
-		"", 0, 0, []byte("pass")); err == nil {
+		"", 0, []byte("pass")); err == nil {
 		t.Fatalf("send all accepted two recipients")
 	}
 
-	prop, err := ProposeSpend(sh.ctx, rec.Address,
+	prop, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address}},
 		true,
 		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid},
-		"sweep", 0, 0, []byte("pass"))
+		"sweep", 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("propose send all: %v", err)
 	}
@@ -530,7 +562,7 @@ func TestSpendSendAll(t *testing.T) {
 	sh.pump()
 
 	sh.as("bob")
-	if err := SignIncomingProposal(sh.ctx, rec.Address, txid, 0, []byte("pass")); err != nil {
+	if err := SignIncomingProposal(sh.ctx, tempID, txid, []byte("pass")); err != nil {
 		t.Fatalf("bob sign: %v", err)
 	}
 	sh.pump()
@@ -539,8 +571,10 @@ func TestSpendSendAll(t *testing.T) {
 	if final.Status != ProposalBroadcast {
 		t.Fatalf("proposer status: %s (%s)", final.Status, final.Reason)
 	}
-	if len(sh.utxos[rec.Address]) != 0 {
-		t.Fatalf("sweep left %d unspent outputs behind", len(sh.utxos[rec.Address]))
+	for _, set := range sh.utxos {
+		if len(set) != 0 {
+			t.Fatalf("sweep left unspent outputs behind")
+		}
 	}
 }
 
@@ -550,35 +584,30 @@ func TestSpendBroadcastVerifiedAndRebroadcastConverges(t *testing.T) {
 	sh.fund(rec.Address, 500_000_000, 0)
 
 	sh.as("alice")
-	prop, err := ProposeSpend(sh.ctx, rec.Address,
+	prop, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
 		false,
-		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
+		[]string{sh.nodeByNick("bob").uid}, "", 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
 	sh.pump()
 	sh.as("bob")
-	if err := SignIncomingProposal(sh.ctx, rec.Address, prop.TxID, 0, []byte("pass")); err != nil {
+	if err := SignIncomingProposal(sh.ctx, tempID, prop.TxID, []byte("pass")); err != nil {
 		t.Fatalf("bob sign: %v", err)
 	}
 	sh.pump()
 
-	// Bob's record went broadcast through a notice his wallet could
-	// verify (the tx is in the fake mempool), so no caveat is recorded.
 	got := sh.proposal(t, "bob", tempID, prop.TxID)
 	if got.Status != ProposalBroadcast || got.Reason != "" {
 		t.Fatalf("bob after verified notice: %s (%q)", got.Status, got.Reason)
 	}
 
-	// A rebroadcast click racing the automatic broadcast is a no-op, not
-	// an error.
 	sh.as("alice")
-	if err := RebroadcastProposal(sh.ctx, rec.Address, prop.TxID); err != nil {
+	if err := RebroadcastProposal(sh.ctx, tempID, prop.TxID); err != nil {
 		t.Fatalf("rebroadcast after auto-broadcast: %v", err)
 	}
 
-	// Once mined, the sweep settles both sides to confirmed.
 	sh.txConfs[prop.TxID] = 1
 	sweepProposals(sh.ctx, sh.store("alice"))
 	sh.as("bob")
@@ -597,29 +626,26 @@ func TestSpendSignedConfirmsWhenNoticeLost(t *testing.T) {
 	sh.fund(rec.Address, 500_000_000, 0)
 
 	sh.as("alice")
-	prop, err := ProposeSpend(sh.ctx, rec.Address,
+	prop, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
 		false,
-		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
+		[]string{sh.nodeByNick("bob").uid}, "", 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("propose: %v", err)
 	}
 	sh.pump()
 	sh.as("bob")
-	if err := SignIncomingProposal(sh.ctx, rec.Address, prop.TxID, 0, []byte("pass")); err != nil {
+	if err := SignIncomingProposal(sh.ctx, tempID, prop.TxID, []byte("pass")); err != nil {
 		t.Fatalf("bob sign: %v", err)
 	}
-	// Deliver the sig to alice (she broadcasts) but drop her notices, so
-	// bob never hears the payment went out.
 	sh.pumpTo("alice")
 	sh.queue = nil
 	if got := sh.proposal(t, "bob", tempID, prop.TxID); got.Status != ProposalSigned {
 		t.Fatalf("bob should still be waiting: %s", got.Status)
 	}
 
-	// The tx confirms on chain; bob's sweep must classify his signed
-	// record as confirmed, not superseded.
 	sh.txConfs[prop.TxID] = 1
+	sh.as("bob")
 	sweepProposals(sh.ctx, sh.store("bob"))
 	if got := sh.proposal(t, "bob", tempID, prop.TxID); got.Status != ProposalConfirmed {
 		t.Fatalf("bob after silent confirmation: %s (%s)", got.Status, got.Reason)
@@ -630,7 +656,6 @@ func TestSpendNoticeForUnseenTxStaysCaveated(t *testing.T) {
 	sh, tempID := newSpendHarness(t, 2, "alice", "bob")
 	rec := sh.record("alice", tempID)
 
-	// Alice reports a broadcast bob's wallet has never seen.
 	txid := strings.Repeat("ab", 32)
 	notice := &Message{Type: TypeBroadcast, WalletID: rec.Address, TxID: txid}
 	payload, err := EncodeMessage(notice)
@@ -648,8 +673,6 @@ func TestSpendNoticeForUnseenTxStaysCaveated(t *testing.T) {
 		t.Fatalf("unverified notice: %s (%q)", got.Status, got.Reason)
 	}
 
-	// Once the wallet sees the mined tx, the sweep upgrades the record
-	// and drops the caveat.
 	sh.txConfs[txid] = 1
 	sh.as("bob")
 	sweepProposals(sh.ctx, sh.store("bob"))

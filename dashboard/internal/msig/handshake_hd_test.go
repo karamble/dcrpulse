@@ -288,3 +288,117 @@ func TestHandshakeHDWindowCatchUp(t *testing.T) {
 		t.Fatalf("top-up imported %d scripts, want 5", len(alice.imports)-before)
 	}
 }
+
+func TestHandshakeHDTwoOfThree(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob", "carol")
+	tempID := hd.createHD(t, 2, "alice", "bob", "carol")
+	hd.pump()
+	for _, nick := range []string{"bob", "carol"} {
+		hd.as(nick)
+		if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+			t.Fatalf("%s accept: %v", nick, err)
+		}
+		hd.pump()
+	}
+	alice := hd.record("alice", tempID)
+	if alice.Status != StatusActive || len(alice.Xpubs) != 3 {
+		t.Fatalf("alice: %s (%s), %d xpubs", alice.Status, alice.FailReason, len(alice.Xpubs))
+	}
+	for _, p := range alice.Peers {
+		if p.State != PeerReady {
+			t.Fatalf("peer %s state %s", p.Nick, p.State)
+		}
+	}
+	for _, nick := range []string{"bob", "carol"} {
+		rec := hd.record(nick, tempID)
+		if rec.Status != StatusActive || rec.Address != alice.Address {
+			t.Fatalf("%s diverges: %s %s", nick, rec.Status, rec.Address)
+		}
+		if rec.CreatedHeight != 4242 {
+			t.Fatalf("%s created height: %d", nick, rec.CreatedHeight)
+		}
+	}
+}
+
+func TestHandshakeHDDecline(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob")
+	tempID := hd.createHD(t, 2, "alice", "bob")
+	hd.pump()
+
+	hd.as("bob")
+	if err := DeclineInvite(hd.ctx, tempID, "not now"); err != nil {
+		t.Fatalf("decline: %v", err)
+	}
+	hd.pump()
+
+	alice := hd.record("alice", tempID)
+	if alice.Status != StatusFailed || !strings.Contains(alice.FailReason, "bob") {
+		t.Fatalf("alice after decline: %s (%s)", alice.Status, alice.FailReason)
+	}
+	if bob := hd.record("bob", tempID); bob.Status != StatusDeclined {
+		t.Fatalf("bob after decline: %s", bob.Status)
+	}
+	// Declining never creates the dedicated account.
+	if got := len(hd.accounts[hd.nodeByNick("bob").uid]); got != 0 {
+		t.Fatalf("decline created %d accounts", got)
+	}
+}
+
+func TestHandshakeHDCancel(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob")
+	tempID := hd.createHD(t, 2, "alice", "bob")
+	hd.pump()
+
+	hd.as("alice")
+	if err := CancelRound(hd.ctx, tempID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	hd.pump()
+
+	if bob := hd.record("bob", tempID); bob.Status != StatusFailed {
+		t.Fatalf("bob after cancel: %s", bob.Status)
+	}
+}
+
+func TestHandshakeHDReplayAbsorbed(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob")
+	tempID := hd.createHD(t, 2, "alice", "bob")
+	hd.pump()
+	hd.as("bob")
+	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if len(hd.queue) != 1 {
+		t.Fatalf("expected one queued accept, got %d", len(hd.queue))
+	}
+	replay := hd.queue[0]
+	hd.pump()
+
+	if rec := hd.record("alice", tempID); rec.Status != StatusActive {
+		t.Fatalf("round not active: %s", rec.Status)
+	}
+	imports := len(hd.nodeByNick("alice").imports)
+
+	// Replaying the identical accept frame must be absorbed by the journal.
+	hd.current = hd.nodeByNick("alice")
+	handleInbound(replay.from.uid, replay.from.nick, replay.body, time.Now())
+	if got := len(hd.nodeByNick("alice").imports); got != imports {
+		t.Fatalf("replayed frame re-ran activation: %d imports", got)
+	}
+}
+
+func TestHDExpireStaleRounds(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob")
+	tempID := hd.createHD(t, 2, "alice", "bob")
+	store := hd.store("alice")
+	if err := store.UpdateWallet(tempID, func(r *WalletRecord) error {
+		r.CreatedAt = time.Now().Add(-9 * 24 * time.Hour).Unix()
+		return nil
+	}); err != nil {
+		t.Fatalf("age record: %v", err)
+	}
+	expireStaleRounds(store)
+	if rec := hd.record("alice", tempID); rec.Status != StatusFailed {
+		t.Fatalf("stale round not expired: %s", rec.Status)
+	}
+}

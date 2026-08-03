@@ -76,16 +76,6 @@ func inboundSignReq(ctx context.Context, store *Store, rec *WalletRecord, msg *M
 		autoDecline("the transaction does not match its stated id")
 		return
 	}
-	keys, script, err := rosterKeys(rec)
-	if err != nil {
-		log.Printf("msig: %v", err)
-		return
-	}
-	signers, err := VerifyProposalUpdate(tx, msg.TxID, script, keys)
-	if err != nil {
-		autoDecline("the transaction carries signatures this wallet cannot verify")
-		return
-	}
 	if _, prop, ok := store.Proposal(rec.TempID, msg.TxID); ok && prop.Terminal() {
 		return
 	}
@@ -98,9 +88,36 @@ func inboundSignReq(ctx context.Context, store *Store, rec *WalletRecord, msg *M
 		}
 	}
 
-	inputs, outputs, fee, err := describeTx(ctx, rec, tx)
+	inputs, outputs, fee, err := describeTx(ctx, store, rec, tx)
+	if err != nil {
+		// The request may spend indices this node has not imported or
+		// scanned yet (a peer ran ahead within the gap window). Top the
+		// window up, schedule the bounded rescan and retry once before
+		// burning the hop with a decline.
+		if ierr := ensureWindowImported(ctx, store, rec.TempID); ierr == nil {
+			from := rec.CreatedHeight - 1
+			if from < 0 {
+				from = 0
+			}
+			rescanSeam(from)
+			if fresh, ok := store.Wallet(rec.TempID); ok {
+				rec = fresh
+			}
+			inputs, outputs, fee, err = describeTx(ctx, store, rec, tx)
+		}
+	}
 	if err != nil {
 		autoDecline(err.Error())
+		return
+	}
+	resolve, err := resolverForInputs(rec, inputs)
+	if err != nil {
+		autoDecline("this payment spends addresses outside the wallet's ladder")
+		return
+	}
+	signers, err := VerifyProposalUpdateHD(tx, msg.TxID, resolve)
+	if err != nil {
+		autoDecline("the transaction carries signatures this wallet cannot verify")
 		return
 	}
 	prop := &Proposal{
@@ -109,7 +126,7 @@ func inboundSignReq(ctx context.Context, store *Store, rec *WalletRecord, msg *M
 		Inputs: inputs, Outputs: outputs, FeeAtoms: fee,
 		Note: msg.Note, FromUID: fromUID, FromNick: fromNick,
 	}
-	if err := verifyAgainstWallet(ctx, rec, tx, prop); err != nil {
+	if err := verifyAgainstWallet(ctx, store, rec, tx, prop); err != nil {
 		autoDecline(err.Error())
 		return
 	}
@@ -128,9 +145,11 @@ func inboundSignReq(ctx context.Context, store *Store, rec *WalletRecord, msg *M
 }
 
 // describeTx renders a transaction into the reviewable shape, resolving
-// input values from this node's own UTXO view.
-func describeTx(ctx context.Context, rec *WalletRecord, tx *wire.MsgTx) ([]ProposalInput, []ProposalOutput, int64, error) {
-	utxos, err := listUTXOsSeam(ctx, rec.Address)
+// input values from this node's own UTXO view across the ladder window.
+// An output is labeled change only when it pays a derived internal-branch
+// address this node can verify; the proposer's word is never taken.
+func describeTx(ctx context.Context, store *Store, rec *WalletRecord, tx *wire.MsgTx) ([]ProposalInput, []ProposalOutput, int64, error) {
+	utxos, err := listWindowUTXOs(ctx, store, rec)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("the wallet could not list the shared funds")
 	}
@@ -146,10 +165,14 @@ func describeTx(ctx context.Context, rec *WalletRecord, tx *wire.MsgTx) ([]Propo
 		if !ok {
 			return nil, nil, 0, fmt.Errorf("this payment spends funds that are no longer available")
 		}
-		inputs = append(inputs, ProposalInput{TxID: u.TxID, Vout: u.Vout, Tree: u.Tree, Atoms: u.Atoms})
+		inputs = append(inputs, ProposalInput{TxID: u.TxID, Vout: u.Vout, Tree: u.Tree, Atoms: u.Atoms, Address: u.Address})
 		totalIn += u.Atoms
 	}
 	params, err := paramsForNetwork(rec.Network)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	view, err := ladderFor(rec)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -161,7 +184,9 @@ func describeTx(ctx context.Context, rec *WalletRecord, tx *wire.MsgTx) ([]Propo
 		_, addrs := stdscript.ExtractAddrs(out.Version, out.PkScript, params)
 		if len(addrs) > 0 {
 			entry.Address = addrs[0].String()
-			entry.IsChange = entry.Address == rec.Address
+			if e, ok := view.byAddr[entry.Address]; ok && e.Branch == BranchInternal {
+				entry.IsChange = true
+			}
 		}
 		outputs = append(outputs, entry)
 	}
@@ -173,17 +198,17 @@ func inboundSig(store *Store, rec *WalletRecord, msg *Message, fromUID string) {
 	if !ok || prop.Role != RoleInitiator || prop.Terminal() {
 		return
 	}
-	keys, script, err := rosterKeys(rec)
-	if err != nil {
-		log.Printf("msig: %v", err)
-		return
-	}
 	tx, err := DecodeTxHex(msg.RawTx)
 	if err != nil {
 		log.Printf("msig: signature frame for %s could not be decoded", msg.TxID[:12])
 		return
 	}
-	signers, err := VerifyProposalUpdate(tx, msg.TxID, script, keys)
+	resolve, err := resolverForInputs(rec, prop.Inputs)
+	if err != nil {
+		log.Printf("msig: %v", err)
+		return
+	}
+	signers, err := VerifyProposalUpdateHD(tx, msg.TxID, resolve)
 	if err != nil {
 		log.Printf("msig: rejecting returned transaction for %s: %v", msg.TxID[:12], err)
 		return
@@ -304,15 +329,23 @@ func sweepProposals(ctx context.Context, store *Store) {
 				broadcastProposal(store, rec.TempID, txid)
 			}
 		}
-		if store.WalletName() == activeWalletSeam() && rec.Status == StatusActive {
-			reconcileSpent(ctx, store, rec)
+		if store.WalletName() == activeWalletSeam() && rec.Status == StatusActive && rec.HD {
+			utxos, err := listWindowUTXOs(ctx, store, rec)
+			if err != nil {
+				continue
+			}
+			// Chain observation drives the cursors: usage a peer caused
+			// advances the windows and, when it outran this node's
+			// imports, schedules the bounded rescan.
+			observeUsage(ctx, store, rec, utxos)
+			reconcileSpent(ctx, store, rec, utxos)
 		}
 	}
 }
 
 // reconcileSpent marks proposals whose inputs have left the UTXO set:
 // the wallet's own broadcast becomes confirmed, anything else superseded.
-func reconcileSpent(ctx context.Context, store *Store, rec *WalletRecord) {
+func reconcileSpent(ctx context.Context, store *Store, rec *WalletRecord, utxos []UTXO) {
 	var live bool
 	for _, p := range rec.Proposals {
 		if p.Live() {
@@ -320,10 +353,6 @@ func reconcileSpent(ctx context.Context, store *Store, rec *WalletRecord) {
 		}
 	}
 	if !live {
-		return
-	}
-	utxos, err := listUTXOsSeam(ctx, rec.Address)
-	if err != nil {
 		return
 	}
 	unspent := make(map[string]bool, len(utxos))

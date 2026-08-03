@@ -65,7 +65,6 @@ export const ProposalComposePanel = ({
         queue,
         note.trim(),
         ttl,
-        wallet.ownHd?.account ?? wallet.own?.account ?? 0,
         passphrase,
       );
       setAddress('');
