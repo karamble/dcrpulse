@@ -691,3 +691,82 @@ func TestSpendNoticeForUnseenTxStaysCaveated(t *testing.T) {
 		t.Fatalf("after local confirmation: %s (%q)", got.Status, got.Reason)
 	}
 }
+
+// A cosigner-proposed payment routed to the OTHER cosigner, bypassing
+// the initiator entirely - only possible because the roster carried the
+// full membership.
+func TestSpendCosignerToCosigner(t *testing.T) {
+	sh, tempID := newSpendHarness(t, 2, "alice", "bob", "carol")
+	rec := sh.record("bob", tempID)
+	sh.fund(rec.Address, 500_000_000, 0)
+
+	sh.as("bob")
+	prop, err := ProposeSpend(sh.ctx, tempID,
+		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
+		[]string{sh.nodeByNick("carol").uid}, "", 0, []byte("pass"))
+	if err != nil {
+		t.Fatalf("bob propose: %v", err)
+	}
+	sh.pump()
+
+	incoming := sh.proposal(t, "carol", tempID, prop.TxID)
+	if incoming.Status != ProposalIncoming {
+		t.Fatalf("carol's view: %s", incoming.Status)
+	}
+	sh.as("carol")
+	if err := SignIncomingProposal(sh.ctx, tempID, prop.TxID, []byte("pass")); err != nil {
+		t.Fatalf("carol sign: %v", err)
+	}
+	sh.pump()
+
+	final := sh.proposal(t, "bob", tempID, prop.TxID)
+	if final.Status != ProposalBroadcast || final.SigCount != 2 {
+		t.Fatalf("after carol's sig: %s with %d sigs", final.Status, final.SigCount)
+	}
+}
+
+// The full product cap: an 8-participant 5-of-8 wallet activates with
+// complete peer knowledge everywhere and a cosigner-proposed payment
+// collects five signatures to broadcast.
+func TestSpendEightParticipants(t *testing.T) {
+	names := []string{"n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"}
+	sh, tempID := newSpendHarness(t, 5, names...)
+
+	addr := sh.record("n1", tempID).Address
+	for _, nick := range names {
+		r := sh.record(nick, tempID)
+		if r.Status != StatusActive || r.Address != addr {
+			t.Fatalf("%s: %s at %s", nick, r.Status, r.Address)
+		}
+		if len(r.Peers) != len(names)-1 {
+			t.Fatalf("%s knows %d peers, want %d", nick, len(r.Peers), len(names)-1)
+		}
+	}
+
+	sh.fund(addr, 500_000_000, 0)
+	sh.as("n3")
+	queue := []string{
+		sh.nodeByNick("n4").uid, sh.nodeByNick("n5").uid,
+		sh.nodeByNick("n6").uid, sh.nodeByNick("n7").uid,
+	}
+	prop, err := ProposeSpend(sh.ctx, tempID,
+		[]Recipient{{Address: addr, Atoms: 100_000_000}},
+		false, queue, "", 0, []byte("pass"))
+	if err != nil {
+		t.Fatalf("n3 propose: %v", err)
+	}
+	for _, nick := range []string{"n4", "n5", "n6", "n7"} {
+		sh.pump()
+		sh.as(nick)
+		if err := SignIncomingProposal(sh.ctx, tempID, prop.TxID, []byte("pass")); err != nil {
+			t.Fatalf("%s sign: %v", nick, err)
+		}
+	}
+	sh.pump()
+
+	final := sh.proposal(t, "n3", tempID, prop.TxID)
+	if final.Status != ProposalBroadcast || final.SigCount != 5 {
+		t.Fatalf("after the queue: %s with %d sigs", final.Status, final.SigCount)
+	}
+}

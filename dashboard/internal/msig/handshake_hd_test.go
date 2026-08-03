@@ -402,3 +402,74 @@ func TestHDExpireStaleRounds(t *testing.T) {
 		t.Fatalf("stale round not expired: %s", rec.Status)
 	}
 }
+
+// Every cosigner learns the full membership from the roster's identity
+// tuples, so cosigner-to-cosigner frames pass the membership check and
+// the cosigner card shows all participants.
+func TestHDRosterCarriesPeers(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob", "carol")
+	tempID := hd.createHD(t, 2, "alice", "bob", "carol")
+	hd.pump()
+	for _, nick := range []string{"bob", "carol"} {
+		hd.as(nick)
+		if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+			t.Fatalf("%s accept: %v", nick, err)
+		}
+		hd.pump()
+	}
+
+	carolX := hd.record("carol", tempID).OwnHD.Xpub
+	bob := hd.record("bob", tempID)
+	if bob.Status != StatusActive || len(bob.Peers) != 2 {
+		t.Fatalf("bob: %s with %d peers", bob.Status, len(bob.Peers))
+	}
+	if bob.Peers[0].UID != bob.InitiatorUID {
+		t.Fatalf("initiator no longer first: %+v", bob.Peers[0])
+	}
+	var carolPeer *Peer
+	for _, p := range bob.Peers {
+		if p.Xpub == carolX {
+			carolPeer = p
+		}
+	}
+	if carolPeer == nil || carolPeer.Nick != "carol" || carolPeer.UID != hd.nodeByNick("carol").uid {
+		t.Fatalf("bob's view of carol: %+v", carolPeer)
+	}
+}
+
+// mergeRosterPeers must tolerate tuple-less legacy rosters and skip
+// self, known, out-of-roster and identity-colliding tuples.
+func TestMergeRosterPeersLegacyAndBounds(t *testing.T) {
+	fresh := func() *WalletRecord {
+		return &WalletRecord{
+			OwnHD: &OwnHDKey{Xpub: "xown"},
+			Peers: []*Peer{{UID: "uinit", Nick: "init", Xpub: "xinit"}},
+			Xpubs: []string{"xinit", "xown", "xnew"},
+		}
+	}
+
+	rec := fresh()
+	if err := mergeRosterPeers(rec, &Message{Xpubs: rec.Xpubs}); err != nil || len(rec.Peers) != 1 {
+		t.Fatalf("legacy roster changed peers: %v %d", err, len(rec.Peers))
+	}
+
+	rec = fresh()
+	msg := &Message{Xpubs: rec.Xpubs, Peers: []RosterPeer{
+		{UID: "uself", Nick: "self", Xpub: "xown"},
+		{UID: "uinit2", Nick: "dup", Xpub: "xinit"},
+		{UID: "uout", Nick: "out", Xpub: "xoutsider"},
+		{UID: "uinit", Nick: "collide", Xpub: "xnew"},
+	}}
+	if err := mergeRosterPeers(rec, msg); err != nil || len(rec.Peers) != 1 {
+		t.Fatalf("bad tuples merged: %v %+v", err, rec.Peers)
+	}
+
+	rec = fresh()
+	msg = &Message{Xpubs: rec.Xpubs, Peers: []RosterPeer{{UID: "unew", Nick: "newbie", Xpub: "xnew"}}}
+	if err := mergeRosterPeers(rec, msg); err != nil || len(rec.Peers) != 2 {
+		t.Fatalf("valid tuple not merged: %v %+v", err, rec.Peers)
+	}
+	if p := rec.Peers[1]; p.UID != "unew" || p.Nick != "newbie" || p.Xpub != "xnew" || p.State != PeerAccepted {
+		t.Fatalf("merged peer: %+v", p)
+	}
+}

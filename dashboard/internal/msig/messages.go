@@ -75,6 +75,19 @@ type Message struct {
 	Note     string   `json:"note,omitempty"`
 	Reason   string   `json:"reason,omitempty"`
 	SigsHave int      `json:"sigsHave,omitempty"`
+
+	// Peers optionally rides the roster so every cosigner learns who
+	// holds which key, not just the initiator. Routing hints only: the
+	// mapping is initiator-asserted and never guards funds, which stay
+	// bound to the xpubs.
+	Peers []RosterPeer `json:"peers,omitempty"`
+}
+
+// RosterPeer names one participant of a settled roster.
+type RosterPeer struct {
+	UID  string `json:"uid,omitempty"`
+	Nick string `json:"nick,omitempty"`
+	Xpub string `json:"xpub"`
 }
 
 // ManualTTL is the envelope lifetime for hand-carried frames: long
@@ -269,6 +282,20 @@ func ValidateMessage(m *Message) error {
 		if ver == ProtoHD {
 			if err := ValidateXpubRoster(m.Xpubs, m.N); err != nil {
 				return fmt.Errorf("roster: %v", err)
+			}
+			if len(m.Peers) > MaxPubKeys {
+				return fmt.Errorf("roster: too many peer entries")
+			}
+			for i, p := range m.Peers {
+				if p.Xpub == "" {
+					return fmt.Errorf("roster: peer %d missing xpub", i)
+				}
+				if len(p.Nick) > MaxLabelLen {
+					return fmt.Errorf("roster: peer %d nick too long", i)
+				}
+				if len(p.UID) > 64 || (p.UID != "" && !isLowerHex(p.UID)) {
+					return fmt.Errorf("roster: peer %d malformed uid", i)
+				}
 			}
 		} else {
 			if len(m.PubKeys) != m.N {

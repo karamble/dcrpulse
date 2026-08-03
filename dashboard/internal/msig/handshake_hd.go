@@ -299,16 +299,27 @@ func maybeActivateInitiatorHD(ctx context.Context, store *Store, tempID string) 
 		return
 	}
 	rec, _ = store.Wallet(tempID)
-	msg := &Message{
-		Type: TypeRoster, Ver: ProtoHD, TempID: tempID, Label: rec.Label,
-		M: rec.M, N: rec.N, Network: rec.Network, Xpubs: xpubs, Address: walletID,
-	}
+	msg := rosterMessage(rec)
 	for _, p := range rec.Peers {
 		if err := sendFrame(store, p.UID, msg, ""); err != nil {
 			log.Printf("msig: roster to %s: %v", p.Nick, err)
 		}
 	}
 	log.Printf("msig: HD shared wallet %q activating at %s", rec.Label, walletID)
+}
+
+// rosterMessage builds the roster frame from a settled record. The peer
+// tuples name the invitees so every cosigner learns the full membership,
+// not just the initiator it heard the invite from.
+func rosterMessage(rec *WalletRecord) *Message {
+	msg := &Message{
+		Type: TypeRoster, Ver: ProtoHD, TempID: rec.TempID, Label: rec.Label,
+		M: rec.M, N: rec.N, Network: rec.Network, Xpubs: rec.Xpubs, Address: rec.Address,
+	}
+	for _, p := range rec.Peers {
+		msg.Peers = append(msg.Peers, RosterPeer{UID: p.UID, Nick: p.Nick, Xpub: p.Xpub})
+	}
+	return msg
 }
 
 // inboundRosterHD verifies the roster against everything this node
@@ -320,6 +331,16 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 		return
 	}
 	if rec.Status != StatusAccepted && rec.Status != StatusPendingImport {
+		// A settled record accepts a byte-identical roster purely to
+		// fill in peer identities a pre-tuple build never delivered.
+		// Nothing else changes: membership settled at activation.
+		if rec.Status == StatusActive && rosterMatchesRecord(rec, msg) {
+			if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
+				return mergeRosterPeers(r, msg)
+			}); err != nil {
+				log.Printf("msig: %v", err)
+			}
+		}
 		return
 	}
 	fail := func(reason string) {
@@ -377,12 +398,69 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 		r.Xpubs = append([]string(nil), msg.Xpubs...)
 		r.Address = msg.Address
 		r.Status = StatusPendingImport
-		return nil
+		return mergeRosterPeers(r, msg)
 	}); err != nil {
 		log.Printf("msig: %v", err)
 		return
 	}
 	completeCosignerImportHD(ctx, store, rec.TempID)
+}
+
+// rosterMatchesRecord reports whether a roster frame restates exactly
+// the membership this record settled on.
+func rosterMatchesRecord(rec *WalletRecord, msg *Message) bool {
+	if msg.M != rec.M || msg.N != rec.N || msg.Label != rec.Label ||
+		msg.Network != rec.Network || msg.Address != rec.Address ||
+		len(msg.Xpubs) != len(rec.Xpubs) {
+		return false
+	}
+	for i, x := range msg.Xpubs {
+		if rec.Xpubs[i] != x {
+			return false
+		}
+	}
+	return true
+}
+
+// mergeRosterPeers folds the roster's identity tuples into the peer
+// list. Routing hints only: tuples for unknown roster xpubs are added,
+// everything already known stays untouched. Manual records mint local
+// ids because wire uids belong to the sender's namespace; relay records
+// need an unused identity or the tuple is skipped.
+func mergeRosterPeers(r *WalletRecord, msg *Message) error {
+	if len(msg.Peers) == 0 {
+		return nil
+	}
+	inRoster := make(map[string]bool, len(msg.Xpubs))
+	for _, x := range msg.Xpubs {
+		inRoster[x] = true
+	}
+	known := make(map[string]bool, 2*len(r.Peers))
+	for _, p := range r.Peers {
+		if p.Xpub != "" {
+			known[p.Xpub] = true
+		}
+		if p.UID != "" {
+			known[p.UID] = true
+		}
+	}
+	for _, t := range msg.Peers {
+		if !inRoster[t.Xpub] || known[t.Xpub] || (r.OwnHD != nil && t.Xpub == r.OwnHD.Xpub) {
+			continue
+		}
+		uid := t.UID
+		if r.ManualTransport() {
+			var err error
+			if uid, err = NewID(); err != nil {
+				return err
+			}
+		} else if uid == "" || known[uid] {
+			continue
+		}
+		known[t.Xpub], known[uid] = true, true
+		r.Peers = append(r.Peers, &Peer{UID: uid, Nick: t.Nick, Xpub: t.Xpub, State: PeerAccepted})
+	}
+	return nil
 }
 
 // completeCosignerImportHD imports the ladder windows and reports ready.

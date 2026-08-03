@@ -155,7 +155,7 @@ unknown types after journaling their mid.
 | `invite` | initiator | ver, tempId, label, m, n, network, xpub | 7 d |
 | `accept` | cosigner | ver, tempId, xpub | 7 d |
 | `decline` | cosigner | tempId, reason | 7 d |
-| `roster` | initiator | ver, tempId, label, m, n, network, xpubs, address | 7 d |
+| `roster` | initiator | ver, tempId, label, m, n, network, xpubs, address, peers | 7 d |
 | `ready` | cosigner | tempId, walletId | 7 d |
 | `invite_cancel` | initiator | tempId | 7 d |
 | `sign_req` | proposer | walletId, txid, rawTx, note, sigsHave | 24 h default |
@@ -166,7 +166,15 @@ unknown types after journaling their mid.
 Extended public keys travel in their standard base58 encoding and must
 be public-only. The roster's `xpubs` list is canonical: exactly n keys
 in strictly ascending string order, which doubles as duplicate
-rejection. Schemes are capped at 8 participants — the network itself
+rejection. The roster's optional `peers` list carries one
+`{uid, nick, xpub}` tuple per invitee so every cosigner learns the full
+membership, not only the initiator it heard the invite from. The
+tuples are initiator-asserted routing hints and never key material:
+funds stay bound to the xpubs, signatures verify per key, and a wrong
+identity mapping can only misroute a signing request, never move money.
+Receivers ignore tuples for keys outside the roster; on the manual
+transport they discard the sender-local ids entirely and mint their
+own. Rosters without the field remain valid (older builds). Schemes are capped at 8 participants — the network itself
 allows more, but the serial signing relay becomes impractical first.
 A handshake frame carrying both the historical single-key
 fields and the extended-key fields is invalid — receivers must reject
@@ -195,7 +203,10 @@ initiator only, not to each other.
    and label must match the invite; its own xpub and the initiator's
    must be present; and the wallet id must re-derive byte-identically
    from the xpub set. Any mismatch fails the round permanently. On
-   success it imports its own windows and answers `ready`.
+   success it records the peer tuples, imports its own windows and
+   answers `ready`. A settled wallet accepts a byte-identical roster
+   again purely to fill in missing peer identities; membership itself
+   never changes after activation.
 5. The wallet is active for a cosigner once it has imported; for the
    initiator once every `ready` has arrived.
 

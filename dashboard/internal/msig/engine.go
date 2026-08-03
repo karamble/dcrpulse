@@ -220,9 +220,37 @@ func sweepManualOutbox(s *Store) {
 	}
 }
 
-// RunSweepNow is the manual refresh entry used by the API.
+// RunSweepNow is the manual refresh entry used by the API. On top of
+// the periodic sweep's work it re-announces settled rosters, so an
+// initiator on a tuple-aware build can fill the peer lists of cosigners
+// that settled under an older one. Explicit refresh only; nothing
+// re-announces in the background.
 func RunSweepNow(ctx context.Context) {
 	runSweep(ctx)
+	reannounceRosters(ctx)
+}
+
+func reannounceRosters(ctx context.Context) {
+	network, err := networkSeam(ctx)
+	if err != nil {
+		return
+	}
+	s, err := manager(network).StoreFor(activeWalletSeam())
+	if err != nil {
+		return
+	}
+	for _, rec := range s.Wallets() {
+		if !rec.HD || rec.Role != RoleInitiator || rec.Status != StatusActive ||
+			rec.Address == "" || len(rec.Xpubs) == 0 {
+			continue
+		}
+		msg := rosterMessage(rec)
+		for _, p := range rec.Peers {
+			if err := sendFrame(s, p.UID, msg, ""); err != nil {
+				log.Printf("msig: roster to %s: %v", p.Nick, err)
+			}
+		}
+	}
 }
 
 func resendOutbox(s *Store) {

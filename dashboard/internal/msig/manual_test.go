@@ -475,3 +475,87 @@ func TestManualDoneScoping(t *testing.T) {
 		t.Fatalf("done marking not scoped per peer: %+v", after)
 	}
 }
+
+// exportAll returns every pending manual frame of one type.
+func exportAll(t *testing.T, hd *hdHarness, nick, recID, frameType string) []ManualFrame {
+	t.Helper()
+	hd.as(nick)
+	frames, err := ManualOutbox(hd.ctx, recID)
+	if err != nil {
+		t.Fatalf("%s outbox: %v", nick, err)
+	}
+	var got []ManualFrame
+	for _, f := range frames {
+		if f.Type == frameType {
+			got = append(got, f)
+		}
+	}
+	if len(got) == 0 {
+		t.Fatalf("%s has no pending %s frames (%+v)", nick, frameType, frames)
+	}
+	return got
+}
+
+// A manual roster's identity tuples carry the initiator's local pseudo
+// ids; every receiver must mint its own and keep only nick and xpub.
+func TestManualRosterMintsLocalPeers(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob", "carol")
+	rec := createManual(t, hd, "alice", 2, "bobby", "carly")
+	tempID := rec.TempID
+
+	invite := exportAll(t, hd, "alice", tempID, TypeInvite)[0]
+	for _, nick := range []string{"bob", "carol"} {
+		if res := importAs(t, hd, nick, invite.Body, "", "", "alice-label"); res.Outcome != "processed" {
+			t.Fatalf("%s invite import: %s", nick, res.Outcome)
+		}
+		hd.as(nick)
+		if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+			t.Fatalf("%s accept: %v", nick, err)
+		}
+	}
+
+	initRec := hd.record("alice", tempID)
+	peerUID := func(nick string) string {
+		for _, p := range initRec.Peers {
+			if p.Nick == nick {
+				return p.UID
+			}
+		}
+		t.Fatalf("initiator lacks peer %q", nick)
+		return ""
+	}
+	bobAccept := exportAll(t, hd, "bob", tempID, TypeAccept)[0]
+	if res := importAs(t, hd, "alice", bobAccept.Body, tempID, peerUID("bobby"), ""); res.Outcome != "processed" {
+		t.Fatalf("bob accept import: %s", res.Outcome)
+	}
+	carolAccept := exportAll(t, hd, "carol", tempID, TypeAccept)[0]
+	if res := importAs(t, hd, "alice", carolAccept.Body, tempID, peerUID("carly"), ""); res.Outcome != "processed" {
+		t.Fatalf("carol accept import: %s", res.Outcome)
+	}
+
+	roster := exportAll(t, hd, "alice", tempID, TypeRoster)[0]
+	for _, nick := range []string{"bob", "carol"} {
+		co := hd.record(nick, tempID)
+		if res := importAs(t, hd, nick, roster.Body, tempID, co.InitiatorUID, ""); res.Outcome != "processed" {
+			t.Fatalf("%s roster import: %s", nick, res.Outcome)
+		}
+	}
+
+	carolX := hd.record("carol", tempID).OwnHD.Xpub
+	bob := hd.record("bob", tempID)
+	if !bob.ManualTransport() || len(bob.Peers) != 2 {
+		t.Fatalf("bob: manual=%v peers=%d", bob.ManualTransport(), len(bob.Peers))
+	}
+	var carly *Peer
+	for _, p := range bob.Peers {
+		if p.Xpub == carolX {
+			carly = p
+		}
+	}
+	if carly == nil || carly.Nick != "carly" {
+		t.Fatalf("bob's view of carly: %+v", carly)
+	}
+	if carly.UID == "" || carly.UID == peerUID("carly") {
+		t.Fatalf("bob kept the initiator's pseudo id: %q", carly.UID)
+	}
+}
