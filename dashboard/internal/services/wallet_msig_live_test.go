@@ -4,7 +4,10 @@
 
 //go:build msiglive
 
-package services
+// The live test sits in the external test package because it imports
+// internal/msig, which imports services back; only exported services
+// identifiers are used, brought in by the dot import.
+package services_test
 
 import (
 	"context"
@@ -24,6 +27,8 @@ import (
 	"dcrpulse/internal/msig"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+
+	. "dcrpulse/internal/services"
 )
 
 // promptPassphrase reads the account passphrase from the controlling
@@ -231,7 +236,7 @@ func TestMsigLiveMainnet(t *testing.T) {
 	var funded *SharedUTXO
 	deadline := time.Now().Add(45 * time.Second)
 	for time.Now().Before(deadline) {
-		utxos, err := ListSharedUTXOs(ctx, sharedAddr)
+		utxos, err := ListSharedUTXOs(ctx, []string{sharedAddr})
 		if err != nil {
 			t.Fatalf("listunspent: %v", err)
 		}
@@ -335,7 +340,7 @@ func TestMsigLiveMainnet(t *testing.T) {
 	// The spent output must leave the shared UTXO set.
 	deadline = time.Now().Add(45 * time.Second)
 	for time.Now().Before(deadline) {
-		utxos, err := ListSharedUTXOs(ctx, sharedAddr)
+		utxos, err := ListSharedUTXOs(ctx, []string{sharedAddr})
 		if err != nil {
 			t.Fatalf("listunspent after spend: %v", err)
 		}

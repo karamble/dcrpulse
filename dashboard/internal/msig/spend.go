@@ -24,7 +24,7 @@ import (
 // without a wallet.
 var (
 	listUTXOsSeam = func(ctx context.Context, address string) ([]UTXO, error) {
-		rows, err := services.ListSharedUTXOs(ctx, address)
+		rows, err := services.ListSharedUTXOs(ctx, []string{address})
 		if err != nil {
 			return nil, err
 		}

@@ -131,7 +131,7 @@ func MsigDetailHandler(w http.ResponseWriter, r *http.Request) {
 		BalanceAtoms   int64                 `json:"balanceAtoms"`
 	}{Record: rec, WalletName: walletName, IsActiveWallet: isActive}
 	if isActive && rec.Address != "" && rec.Status == msig.StatusActive {
-		if utxos, uerr := services.ListSharedUTXOs(ctx, rec.Address); uerr == nil {
+		if utxos, uerr := services.ListSharedUTXOs(ctx, []string{rec.Address}); uerr == nil {
 			resp.UTXOs = utxos
 			for _, u := range utxos {
 				resp.BalanceAtoms += u.Atoms

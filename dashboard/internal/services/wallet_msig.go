@@ -105,24 +105,32 @@ func ImportMsigScript(ctx context.Context, scriptHex string, rescan bool, scanFr
 	return err
 }
 
-// SharedUTXO is one unspent output of a shared P2SH address.
+// SharedUTXO is one unspent output paying a shared P2SH address. Address
+// identifies which one, so ladder wallets can map an output back to its
+// derivation index.
 type SharedUTXO struct {
 	TxID          string `json:"txid"`
 	Vout          uint32 `json:"vout"`
 	Tree          int8   `json:"tree"`
 	Atoms         int64  `json:"atoms"`
 	Confirmations int64  `json:"confirmations"`
+	Address       string `json:"address"`
 }
 
-// ListSharedUTXOs returns every unspent output paying the shared address,
-// including unconfirmed ones. Imported script outputs are watched by the
-// wallet from the moment importscript runs.
-func ListSharedUTXOs(ctx context.Context, address string) ([]SharedUTXO, error) {
+// ListSharedUTXOs returns every unspent output paying the given shared
+// addresses, including unconfirmed ones. Imported script outputs are
+// watched by the wallet from the moment importscript runs. The wallet
+// fails the whole call when any address is unknown to it, so callers
+// must only pass imported addresses.
+func ListSharedUTXOs(ctx context.Context, addresses []string) ([]SharedUTXO, error) {
 	if rpc.WalletClient == nil {
 		return nil, fmt.Errorf("wallet RPC client not initialized")
 	}
+	if len(addresses) == 0 {
+		return nil, nil
+	}
 	params := make([]json.RawMessage, 0, 3)
-	for _, v := range []interface{}{0, 9999999, []string{address}} {
+	for _, v := range []interface{}{0, 9999999, addresses} {
 		p, err := json.Marshal(v)
 		if err != nil {
 			return nil, err
@@ -139,6 +147,7 @@ func ListSharedUTXOs(ctx context.Context, address string) ([]SharedUTXO, error) 
 		Tree          int8    `json:"tree"`
 		Amount        float64 `json:"amount"`
 		Confirmations int64   `json:"confirmations"`
+		Address       string  `json:"address"`
 	}
 	if err := json.Unmarshal(raw, &rows); err != nil {
 		return nil, err
@@ -155,6 +164,7 @@ func ListSharedUTXOs(ctx context.Context, address string) ([]SharedUTXO, error) 
 			Tree:          row.Tree,
 			Atoms:         int64(amt),
 			Confirmations: row.Confirmations,
+			Address:       row.Address,
 		})
 	}
 	return utxos, nil
