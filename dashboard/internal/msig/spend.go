@@ -121,8 +121,10 @@ func rosterKeys(rec *WalletRecord) ([][]byte, []byte, error) {
 
 // ProposeSpend builds, self-signs and dispatches a spend from a shared
 // wallet. The queue lists the cosigners asked to sign, in order; it must
-// hold at least m-1 entries.
-func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, queueUIDs []string, note string, hopTTL time.Duration, account uint32, passphrase []byte) (*Proposal, error) {
+// hold at least m-1 entries. With sendAll the whole spendable balance
+// sweeps to a single recipient: the amount is computed here as the input
+// sum minus the fee and any amount in the request is ignored.
+func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, sendAll bool, queueUIDs []string, note string, hopTTL time.Duration, account uint32, passphrase []byte) (*Proposal, error) {
 	defer func() {
 		for i := range passphrase {
 			passphrase[i] = 0
@@ -141,6 +143,9 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 	}
 	if len(recipients) == 0 {
 		return nil, fmt.Errorf("no recipients")
+	}
+	if sendAll && len(recipients) != 1 {
+		return nil, fmt.Errorf("send all pays a single recipient")
 	}
 	if len(note) > MaxNoteLen {
 		return nil, fmt.Errorf("note exceeds %d characters", MaxNoteLen)
@@ -190,13 +195,32 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 	if len(avail) == 0 {
 		return nil, fmt.Errorf("no spendable funds: every output is claimed by another proposal")
 	}
-	var target int64
-	for _, r := range recipients {
-		target += r.Atoms
-	}
-	selected, err := SelectUTXOs(avail, target, len(recipients), rec.M, rec.N, 0)
-	if err != nil {
-		return nil, err
+	var selected []UTXO
+	if sendAll {
+		if len(avail) > MaxInputs {
+			return nil, fmt.Errorf("send all would require more than %d inputs", MaxInputs)
+		}
+		var sum int64
+		for _, u := range avail {
+			sum += u.Atoms
+		}
+		fee := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb,
+			EstimateFullSize(len(avail), 1, rec.M, rec.N)))
+		if sum <= fee {
+			return nil, fmt.Errorf("spendable balance %v does not cover the %v fee",
+				dcrutil.Amount(sum), dcrutil.Amount(fee))
+		}
+		recipients[0].Atoms = sum - fee
+		selected = avail
+	} else {
+		var target int64
+		for _, r := range recipients {
+			target += r.Atoms
+		}
+		selected, err = SelectUTXOs(avail, target, len(recipients), rec.M, rec.N, 0)
+		if err != nil {
+			return nil, err
+		}
 	}
 	tx, fee, change, err := BuildSpend(BuildSpendParams{
 		UTXOs: selected, Recipients: recipients, ChangeAddress: rec.Address,

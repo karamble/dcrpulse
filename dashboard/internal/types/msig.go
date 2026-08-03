@@ -34,10 +34,13 @@ type MsigRecipient struct {
 }
 
 // MsigProposeRequest builds, self-signs and dispatches a shared wallet
-// payment. QueueUIDs lists the cosigners to ask, in order.
+// payment. QueueUIDs lists the cosigners to ask, in order. SendAll sweeps
+// the wallet's whole spendable balance to a single recipient, whose
+// amount is then computed server-side.
 type MsigProposeRequest struct {
 	WalletID   string          `json:"walletId"`
 	Recipients []MsigRecipient `json:"recipients"`
+	SendAll    bool            `json:"sendAll,omitempty"`
 	QueueUIDs  []string        `json:"queueUids"`
 	Note       string          `json:"note,omitempty"`
 	HopTTLSecs int64           `json:"hopTtlSecs,omitempty"`

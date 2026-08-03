@@ -37,6 +37,7 @@ export const ProposalComposePanel = ({
 }) => {
   const [address, setAddress] = useState('');
   const [amount, setAmount] = useState('');
+  const [sendAll, setSendAll] = useState(false);
   const [note, setNote] = useState('');
   const [ttl, setTtl] = useState(86400);
   const [queue, setQueue] = useState<string[]>(() => wallet.peers.map((p) => p.uid));
@@ -47,7 +48,7 @@ export const ProposalComposePanel = ({
   const parsed = useMemo(() => parseAmount(amount), [amount]);
   const needed = wallet.m - 1;
   const enough = queue.length >= needed;
-  const valid = address.trim().length > 0 && parsed.error === null && enough;
+  const valid = address.trim().length > 0 && (sendAll || parsed.error === null) && enough;
 
   const toggle = (uid: string) => {
     setQueue((prev) => (prev.includes(uid) ? prev.filter((u) => u !== uid) : [...prev, uid]));
@@ -59,7 +60,8 @@ export const ProposalComposePanel = ({
     try {
       await proposeMsigSpend(
         wallet.address!,
-        [{ address: address.trim(), amountAtoms: parsed.atoms }],
+        [{ address: address.trim(), amountAtoms: sendAll ? 0 : parsed.atoms }],
+        sendAll,
         queue,
         note.trim(),
         ttl,
@@ -68,6 +70,7 @@ export const ProposalComposePanel = ({
       );
       setAddress('');
       setAmount('');
+      setSendAll(false);
       setNote('');
       setAskPass(false);
       onProposed();
@@ -99,16 +102,28 @@ export const ProposalComposePanel = ({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Amount (DCR)</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium">Amount (DCR)</label>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={sendAll}
+                onChange={(e) => setSendAll(e.target.checked)}
+                className="accent-primary"
+              />
+              Send all
+            </label>
+          </div>
           <input
             type="text"
             inputMode="decimal"
-            value={amount}
+            value={sendAll ? '' : amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.00000000"
-            className="w-full px-3 py-2 rounded-lg bg-background border border-border focus:outline-none focus:border-primary"
+            disabled={sendAll}
+            placeholder={sendAll ? 'Entire spendable balance' : '0.00000000'}
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border focus:outline-none focus:border-primary disabled:opacity-50"
           />
-          {amount.trim() !== '' && parsed.error && (
+          {!sendAll && amount.trim() !== '' && parsed.error && (
             <p className="text-xs text-destructive mt-1">{parsed.error}</p>
           )}
         </div>

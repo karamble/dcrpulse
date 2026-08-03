@@ -206,6 +206,7 @@ func TestSpendTwoOfThreeRelay(t *testing.T) {
 	dest := sh.record("alice", tempID).Address
 	prop, err := ProposeSpend(sh.ctx, rec.Address,
 		[]Recipient{{Address: dest, Atoms: 100_000_000}},
+		false,
 		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid},
 		"rent", 0, 0, []byte("pass"))
 	if err != nil {
@@ -271,6 +272,7 @@ func TestSpendDeclineAdvancesToAlternate(t *testing.T) {
 	sh.as("alice")
 	prop, err := ProposeSpend(sh.ctx, rec.Address,
 		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
 		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid},
 		"", 0, 0, []byte("pass"))
 	if err != nil {
@@ -324,6 +326,7 @@ func TestSpendHopTimeout(t *testing.T) {
 	sh.as("alice")
 	prop, err := ProposeSpend(sh.ctx, rec.Address,
 		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
 		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid},
 		"", time.Hour, 0, []byte("pass"))
 	if err != nil {
@@ -372,6 +375,7 @@ func TestSpendInputLocksAndSupersede(t *testing.T) {
 	sh.as("alice")
 	first, err := ProposeSpend(sh.ctx, rec.Address,
 		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
 		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("propose: %v", err)
@@ -382,6 +386,7 @@ func TestSpendInputLocksAndSupersede(t *testing.T) {
 	// take it.
 	if _, err := ProposeSpend(sh.ctx, rec.Address,
 		[]Recipient{{Address: rec.Address, Atoms: 50_000_000}},
+		false,
 		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass")); err == nil {
 		t.Fatalf("second proposal ignored the input lock")
 	}
@@ -392,6 +397,7 @@ func TestSpendInputLocksAndSupersede(t *testing.T) {
 	}
 	second, err := ProposeSpend(sh.ctx, rec.Address,
 		[]Recipient{{Address: rec.Address, Atoms: 50_000_000}},
+		false,
 		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("proposal after abort: %v", err)
@@ -430,6 +436,7 @@ func TestSpendCosignerRejectsTampering(t *testing.T) {
 	sh.as("alice")
 	prop, err := ProposeSpend(sh.ctx, rec.Address,
 		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
 		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
 	if err != nil {
 		t.Fatalf("propose: %v", err)
@@ -467,5 +474,56 @@ func TestSpendCosignerRejectsTampering(t *testing.T) {
 	}
 	if len(sh.queue) == 0 {
 		t.Fatalf("no automatic decline was sent")
+	}
+}
+
+func TestSpendSendAll(t *testing.T) {
+	sh, tempID := newSpendHarness(t, 2, "alice", "bob", "carol")
+	rec := sh.record("alice", tempID)
+	sh.fund(rec.Address, 300_000_000, 0)
+	sh.fund(rec.Address, 200_000_000, 1)
+
+	sh.as("alice")
+	if _, err := ProposeSpend(sh.ctx, rec.Address,
+		[]Recipient{{Address: rec.Address}, {Address: rec.Address}},
+		true,
+		[]string{sh.nodeByNick("bob").uid},
+		"", 0, 0, []byte("pass")); err == nil {
+		t.Fatalf("send all accepted two recipients")
+	}
+
+	prop, err := ProposeSpend(sh.ctx, rec.Address,
+		[]Recipient{{Address: rec.Address}},
+		true,
+		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid},
+		"sweep", 0, 0, []byte("pass"))
+	if err != nil {
+		t.Fatalf("propose send all: %v", err)
+	}
+	if len(prop.Inputs) != 2 {
+		t.Fatalf("send all left inputs behind: %d", len(prop.Inputs))
+	}
+	if len(prop.Outputs) != 1 || prop.Outputs[0].IsChange {
+		t.Fatalf("send all outputs: %+v", prop.Outputs)
+	}
+	if prop.FeeAtoms <= 0 || prop.Outputs[0].Atoms != 500_000_000-prop.FeeAtoms {
+		t.Fatalf("sweep amount %d + fee %d does not consume the balance",
+			prop.Outputs[0].Atoms, prop.FeeAtoms)
+	}
+	txid := prop.TxID
+	sh.pump()
+
+	sh.as("bob")
+	if err := SignIncomingProposal(sh.ctx, rec.Address, txid, 0, []byte("pass")); err != nil {
+		t.Fatalf("bob sign: %v", err)
+	}
+	sh.pump()
+
+	final := sh.proposal(t, "alice", tempID, txid)
+	if final.Status != ProposalBroadcast {
+		t.Fatalf("proposer status: %s (%s)", final.Status, final.Reason)
+	}
+	if len(sh.utxos[rec.Address]) != 0 {
+		t.Fatalf("sweep left %d unspent outputs behind", len(sh.utxos[rec.Address]))
 	}
 }

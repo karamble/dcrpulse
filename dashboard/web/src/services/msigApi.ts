@@ -176,6 +176,7 @@ export interface MsigRecipient {
 export const proposeMsigSpend = async (
   walletId: string,
   recipients: MsigRecipient[],
+  sendAll: boolean,
   queueUids: string[],
   note: string,
   hopTtlSecs: number,
@@ -183,7 +184,7 @@ export const proposeMsigSpend = async (
   passphrase: string,
 ): Promise<MsigProposal> => {
   const { data } = await api.post<MsigProposal>('/msig/proposals/propose', {
-    walletId, recipients, queueUids, note, hopTtlSecs, account, passphrase,
+    walletId, recipients, sendAll, queueUids, note, hopTtlSecs, account, passphrase,
   });
   return data;
 };

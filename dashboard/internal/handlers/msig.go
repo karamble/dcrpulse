@@ -211,7 +211,7 @@ func MsigProposeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
-	prop, err := msig.ProposeSpend(ctx, req.WalletID, recipients, req.QueueUIDs, req.Note,
+	prop, err := msig.ProposeSpend(ctx, req.WalletID, recipients, req.SendAll, req.QueueUIDs, req.Note,
 		time.Duration(req.HopTTLSecs)*time.Second, req.Account, passphrase)
 	if err != nil {
 		msigPassphraseError(w, err)
