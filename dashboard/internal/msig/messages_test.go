@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
@@ -126,5 +127,119 @@ func TestMessageTTLs(t *testing.T) {
 	}
 	if TTLFor(TypeInvite) != 7*24*time.Hour {
 		t.Fatalf("handshake TTL should match the BR delivery horizon")
+	}
+}
+
+func testRosterXpubs(t *testing.T, n int) []string {
+	t.Helper()
+	params := chaincfg.MainNetParams()
+	names := []string{"alice", "bob", "carol", "dave"}
+	xpubs := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		xpubs = append(xpubs, testXpub(t, names[i%len(names)], uint32(i), params))
+	}
+	return SortXpubs(xpubs)
+}
+
+func TestMessageHDForms(t *testing.T) {
+	xp := testRosterXpubs(t, 3)
+	valid := []*Message{
+		{Type: TypeInvite, Ver: ProtoHD, TempID: "00aabbcc", Label: "team", M: 2, N: 3,
+			Network: "mainnet", Xpub: xp[0]},
+		{Type: TypeAccept, Ver: ProtoHD, TempID: "00aabbcc", Xpub: xp[1]},
+		{Type: TypeRoster, Ver: ProtoHD, TempID: "00aabbcc", Label: "team", M: 2, N: 3,
+			Network: "mainnet", Xpubs: xp, Address: "DcSharedAddr"},
+	}
+	for _, m := range valid {
+		payload, err := EncodeMessage(m)
+		if err != nil {
+			t.Fatalf("%s v2 rejected: %v", m.Type, err)
+		}
+		back, err := DecodeMessage(payload)
+		if err != nil {
+			t.Fatalf("%s v2 decode: %v", m.Type, err)
+		}
+		if back.Ver != ProtoHD {
+			t.Fatalf("%s lost its version", m.Type)
+		}
+	}
+}
+
+func TestMessageHDRejections(t *testing.T) {
+	xp := testRosterXpubs(t, 3)
+	pks := sortedPubKeyHexes(t, 3)
+	invalid := []*Message{
+		// Mixed forms, both directions.
+		{Type: TypeInvite, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 3,
+			Network: "mainnet", Xpub: xp[0], PubKey: pks[0]},
+		{Type: TypeInvite, TempID: "00aabbcc", Label: "t", M: 2, N: 3,
+			Network: "mainnet", Xpub: xp[0]},
+		{Type: TypeAccept, Ver: ProtoHD, TempID: "00aabbcc", Xpub: xp[0], PubKey: pks[0]},
+		{Type: TypeAccept, TempID: "00aabbcc", Xpub: xp[0]},
+		{Type: TypeRoster, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 3,
+			Network: "mainnet", Xpubs: xp, PubKeys: pks, Address: "A"},
+		{Type: TypeRoster, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 3,
+			Network: "mainnet", Xpubs: xp, Script: "5221aa52ae", Address: "A"},
+		// Missing the HD payload.
+		{Type: TypeInvite, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 3,
+			Network: "mainnet"},
+		// Unsorted and short rosters.
+		{Type: TypeRoster, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 3,
+			Network: "mainnet", Xpubs: []string{xp[2], xp[0], xp[1]}, Address: "A"},
+		{Type: TypeRoster, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 3,
+			Network: "mainnet", Xpubs: xp[:2], Address: "A"},
+		// Future version.
+		{Type: TypeInvite, Ver: 3, TempID: "00aabbcc", Label: "t", M: 2, N: 3,
+			Network: "mainnet", Xpub: xp[0]},
+	}
+	for i, m := range invalid {
+		if err := ValidateMessage(m); err == nil {
+			t.Fatalf("case %d (%s ver %d) unexpectedly valid", i, m.Type, m.Ver)
+		}
+	}
+}
+
+// validateV1Rules replicates the pre-HD validation of the three handshake
+// types verbatim. It freezes the compatibility contract: every valid HD
+// frame MUST fail these rules, because that is what makes old builds drop
+// the frame without journaling its mid, letting the post-upgrade history
+// replay process it.
+func validateV1Rules(m *Message) error {
+	switch m.Type {
+	case TypeInvite:
+		if !validTempID(m.TempID) || m.Label == "" || !validParams(m.M, m.N) ||
+			!validNetwork(m.Network) || !validPubKey(m.PubKey) {
+			return errors.New("invalid under v1 rules")
+		}
+	case TypeAccept:
+		if !validTempID(m.TempID) || !validPubKey(m.PubKey) {
+			return errors.New("invalid under v1 rules")
+		}
+	case TypeRoster:
+		if !validTempID(m.TempID) || m.Label == "" || !validParams(m.M, m.N) ||
+			!validNetwork(m.Network) || len(m.PubKeys) != m.N ||
+			m.Script == "" || !validWalletID(m.Address) {
+			return errors.New("invalid under v1 rules")
+		}
+	}
+	return nil
+}
+
+func TestHDFramesFailV1Rules(t *testing.T) {
+	xp := testRosterXpubs(t, 2)
+	hdFrames := []*Message{
+		{Type: TypeInvite, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 2,
+			Network: "mainnet", Xpub: xp[0]},
+		{Type: TypeAccept, Ver: ProtoHD, TempID: "00aabbcc", Xpub: xp[1]},
+		{Type: TypeRoster, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 2,
+			Network: "mainnet", Xpubs: xp, Address: "DcSharedAddr"},
+	}
+	for _, m := range hdFrames {
+		if err := ValidateMessage(m); err != nil {
+			t.Fatalf("%s not valid under HD rules: %v", m.Type, err)
+		}
+		if err := validateV1Rules(m); err == nil {
+			t.Fatalf("%s frame passes v1 rules; old builds would journal it as processed", m.Type)
+		}
 	}
 }

@@ -44,11 +44,20 @@ const (
 // can grow without breaking older nodes.
 var ErrUnknownType = errors.New("unknown msig message type")
 
+// ProtoHD is the handshake protocol version for HD (xpub ladder) shared
+// wallets. Version 0 (the field absent) is the original single-address
+// form. The two forms are mutually exclusive on the wire: a handshake
+// frame carrying fields of both is invalid, and HD frames never include
+// the v1 fields, so pre-HD builds fail validation and drop them without
+// journaling — the post-upgrade history replay then completes the round.
+const ProtoHD = 2
+
 // Message is the JSON payload of one coordination frame. One flat struct
 // covers every type; ValidateMessage enforces the per-type requirements
 // and unknown JSON fields are ignored on decode.
 type Message struct {
 	Type     string   `json:"type"`
+	Ver      int      `json:"ver,omitempty"`
 	TempID   string   `json:"tempId,omitempty"`
 	WalletID string   `json:"walletId,omitempty"`
 	Label    string   `json:"label,omitempty"`
@@ -57,6 +66,8 @@ type Message struct {
 	Network  string   `json:"network,omitempty"`
 	PubKey   string   `json:"pubkey,omitempty"`
 	PubKeys  []string `json:"pubkeys,omitempty"`
+	Xpub     string   `json:"xpub,omitempty"`
+	Xpubs    []string `json:"xpubs,omitempty"`
 	Script   string   `json:"scriptHex,omitempty"`
 	Address  string   `json:"address,omitempty"`
 	TxID     string   `json:"txid,omitempty"`
@@ -136,6 +147,40 @@ func validParams(m, n int) bool {
 	return m >= MinRequired && n >= m && n <= MaxPubKeys
 }
 
+// handshakeVer resolves and bounds the protocol version of a handshake
+// message, rejecting frames that mix the v1 (pubkey/script) and HD
+// (xpub) field sets. Guessing between mixed forms would let one frame
+// mean different wallets to different builds.
+func handshakeVer(m *Message) (int, error) {
+	switch m.Ver {
+	case 0, ProtoHD:
+	default:
+		return 0, fmt.Errorf("%s: unsupported protocol version %d", m.Type, m.Ver)
+	}
+	v1Fields := m.PubKey != "" || len(m.PubKeys) > 0 || m.Script != ""
+	hdFields := m.Xpub != "" || len(m.Xpubs) > 0
+	if v1Fields && hdFields {
+		return 0, fmt.Errorf("%s: mixed protocol forms", m.Type)
+	}
+	if m.Ver == ProtoHD && v1Fields {
+		return 0, fmt.Errorf("%s: v1 fields in an HD frame", m.Type)
+	}
+	if m.Ver == 0 && hdFields {
+		return 0, fmt.Errorf("%s: xpub fields without ver", m.Type)
+	}
+	return m.Ver, nil
+}
+
+// validXpubField bounds and parses one extended public key on the wire.
+// The network cannot be pinned here (accept frames carry none); handlers
+// re-parse strictly against the record's network.
+func validXpubField(s string) error {
+	if s == "" || len(s) > maxXpubLen {
+		return fmt.Errorf("malformed xpub")
+	}
+	return ParseXpubAnyNet(s)
+}
+
 // ValidateMessage enforces the per-type field requirements.
 func ValidateMessage(m *Message) error {
 	if m.Type == "" {
@@ -152,6 +197,10 @@ func ValidateMessage(m *Message) error {
 	}
 	switch m.Type {
 	case TypeInvite:
+		ver, err := handshakeVer(m)
+		if err != nil {
+			return err
+		}
 		if !validTempID(m.TempID) {
 			return fmt.Errorf("invite: malformed tempId")
 		}
@@ -164,14 +213,26 @@ func ValidateMessage(m *Message) error {
 		if !validNetwork(m.Network) {
 			return fmt.Errorf("invite: invalid network")
 		}
-		if !validPubKey(m.PubKey) {
+		if ver == ProtoHD {
+			if err := validXpubField(m.Xpub); err != nil {
+				return fmt.Errorf("invite: %v", err)
+			}
+		} else if !validPubKey(m.PubKey) {
 			return fmt.Errorf("invite: malformed pubkey")
 		}
 	case TypeAccept:
+		ver, err := handshakeVer(m)
+		if err != nil {
+			return err
+		}
 		if !validTempID(m.TempID) {
 			return fmt.Errorf("accept: malformed tempId")
 		}
-		if !validPubKey(m.PubKey) {
+		if ver == ProtoHD {
+			if err := validXpubField(m.Xpub); err != nil {
+				return fmt.Errorf("accept: %v", err)
+			}
+		} else if !validPubKey(m.PubKey) {
 			return fmt.Errorf("accept: malformed pubkey")
 		}
 	case TypeDecline, TypeInviteCancel:
@@ -179,6 +240,10 @@ func ValidateMessage(m *Message) error {
 			return fmt.Errorf("%s: malformed tempId", m.Type)
 		}
 	case TypeRoster:
+		ver, err := handshakeVer(m)
+		if err != nil {
+			return err
+		}
 		if !validTempID(m.TempID) {
 			return fmt.Errorf("roster: malformed tempId")
 		}
@@ -191,21 +256,27 @@ func ValidateMessage(m *Message) error {
 		if !validNetwork(m.Network) {
 			return fmt.Errorf("roster: invalid network")
 		}
-		if len(m.PubKeys) != m.N {
-			return fmt.Errorf("roster: expected %d pubkeys, got %d", m.N, len(m.PubKeys))
-		}
-		for i, pk := range m.PubKeys {
-			if !validPubKey(pk) {
-				return fmt.Errorf("roster: malformed pubkey %d", i)
+		if ver == ProtoHD {
+			if err := ValidateXpubRoster(m.Xpubs, m.N); err != nil {
+				return fmt.Errorf("roster: %v", err)
 			}
-			// The roster is canonical: strictly ascending order also
-			// forbids duplicate keys.
-			if i > 0 && m.PubKeys[i-1] >= pk {
-				return fmt.Errorf("roster: pubkeys not in canonical sorted order")
+		} else {
+			if len(m.PubKeys) != m.N {
+				return fmt.Errorf("roster: expected %d pubkeys, got %d", m.N, len(m.PubKeys))
 			}
-		}
-		if m.Script == "" || len(m.Script) > maxScriptHexLen || !isLowerHex(m.Script) {
-			return fmt.Errorf("roster: malformed scriptHex")
+			for i, pk := range m.PubKeys {
+				if !validPubKey(pk) {
+					return fmt.Errorf("roster: malformed pubkey %d", i)
+				}
+				// The roster is canonical: strictly ascending order also
+				// forbids duplicate keys.
+				if i > 0 && m.PubKeys[i-1] >= pk {
+					return fmt.Errorf("roster: pubkeys not in canonical sorted order")
+				}
+			}
+			if m.Script == "" || len(m.Script) > maxScriptHexLen || !isLowerHex(m.Script) {
+				return fmt.Errorf("roster: malformed scriptHex")
+			}
 		}
 		if !validWalletID(m.Address) {
 			return fmt.Errorf("roster: missing address")
