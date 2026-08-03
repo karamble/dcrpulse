@@ -1473,13 +1473,18 @@ type BrclientdNotifEvent struct {
 	Payload   json.RawMessage `json:"payload"`
 }
 
+// notifIdleTimeout is how long the /notifications stream may stay silent
+// before the connection is presumed dead and redialed. brclientd writes a
+// keepalive every 30 seconds, so this allows three missed heartbeats.
+const notifIdleTimeout = 90 * time.Second
+
 // BrclientdStreamNotifications opens a long-lived GET against brclientd's
-// /notifications JSONL endpoint and invokes onEvent per decoded line.
-// Returns when ctx is cancelled or the stream errors. Used by the dashboard
-// to forward brclientd-side events (e.g. OnKXSuggested) into the existing
-// browser-WS event bus.
+// /notifications JSONL endpoint and invokes onEvent per decoded line,
+// keepalives included. Returns when ctx is cancelled or the stream errors.
+// Used by the dashboard to forward brclientd-side events (e.g.
+// OnKXSuggested) into the existing browser-WS event bus.
 func BrclientdStreamNotifications(ctx context.Context, onEvent func(BrclientdNotifEvent)) error {
-	cli, err := brclientdClient()
+	cli, err := brclientdStreamClient()
 	if err != nil {
 		return err
 	}
@@ -1487,7 +1492,15 @@ func BrclientdStreamNotifications(ctx context.Context, onEvent func(BrclientdNot
 		return errors.New("brclientd: status host/port not configured")
 	}
 	url := fmt.Sprintf("https://%s:%s/notifications", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	// The stream client carries no overall timeout, so a silently dead
+	// connection would otherwise block Decode forever. The watchdog cancels
+	// the request when nothing arrives within notifIdleTimeout; any decoded
+	// frame, keepalives included, rearms it.
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	watchdog := time.AfterFunc(notifIdleTimeout, cancel)
+	defer watchdog.Stop()
+	req, err := http.NewRequestWithContext(sctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
@@ -1507,8 +1520,12 @@ func BrclientdStreamNotifications(ctx context.Context, onEvent func(BrclientdNot
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			if sctx.Err() != nil {
+				return fmt.Errorf("no traffic on /notifications for %s", notifIdleTimeout)
+			}
 			return fmt.Errorf("decode notif: %w", err)
 		}
+		watchdog.Reset(notifIdleTimeout)
 		onEvent(evt)
 	}
 }

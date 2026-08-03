@@ -176,7 +176,11 @@ func StartBrclientdNotifs(ctx context.Context) {
 			}
 
 			err := rpc.BrclientdStreamNotifications(attemptCtx, func(evt rpc.BrclientdNotifEvent) {
-				bus.broadcast(BisonrelayEvent{Type: evt.Type, Payload: evt.Payload})
+				// Keepalives prove the stream is healthy but carry
+				// nothing for the browser fan-out or the event bus.
+				if evt.Type != "keepalive" {
+					bus.broadcast(BisonrelayEvent{Type: evt.Type, Payload: evt.Payload})
+				}
 				backoff = minBackoff
 			})
 			forced := attemptCtx.Err() != nil
