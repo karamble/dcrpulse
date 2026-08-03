@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Bot,
   Plus,
@@ -243,6 +244,30 @@ export const AgentsSection = () => {
     );
   };
 
+  // Agent settings mint tokens and widen agent authority, so the backend
+  // refuses to serve them while no app password protects the dashboard.
+  if (needsAppPassword) {
+    return (
+      <div className="p-4 rounded-lg bg-warning/10 border border-warning/40 flex items-start gap-3">
+        <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+        <div className="text-sm">
+          <span className="font-medium block text-warning">Set a dashboard app password first</span>
+          <span className="text-muted-foreground">
+            Agent settings mint tokens and widen what an agent may spend, so they need a
+            logged-in session. Set an app password under Settings &gt; Security, then come back.
+          </span>
+          <Link
+            to="/wallet/settings/security"
+            className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm"
+          >
+            <KeyRound className="h-4 w-4" />
+            Set app password
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!settings) {
     return <div className="text-muted-foreground">Loading...</div>;
   }
@@ -263,19 +288,6 @@ export const AgentsSection = () => {
           with its own bearer token and, on first connect, can only read node and blockchain
           status. Grant additional capabilities per agent below.
         </p>
-
-        {needsAppPassword && (
-          <div className="p-4 rounded-lg bg-warning/10 border border-warning/40 flex items-start gap-3">
-            <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
-            <div className="text-sm">
-              <span className="font-medium block text-warning">Set a dashboard app password first</span>
-              <span className="text-muted-foreground">
-                Agent settings mint tokens and widen what an agent may spend, so they need a
-                logged-in session. Set an app password under Settings &gt; Account, then come back.
-              </span>
-            </div>
-          </div>
-        )}
 
         <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
           <div>
