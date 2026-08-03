@@ -45,7 +45,9 @@ export const CoordinationCard = ({
   const [frames, setFrames] = useState<MsigManualFrame[]>([]);
   const [qrFor, setQrFor] = useState<string | null>(null);
   const [importText, setImportText] = useState('');
-  const [fromUid, setFromUid] = useState(wallet.peers[0]?.uid ?? '');
+  // Attribution is deliberately unsticky: it IS the sender identity, so
+  // every import must name its courier anew.
+  const [fromUid, setFromUid] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -87,11 +89,11 @@ export const CoordinationCard = ({
     }
   };
 
-  const describeOutcome = (res: MsigImportResult): string => {
+  const describeOutcome = (res: MsigImportResult, from: string): string => {
     const what = msigFrameTypeLabel(res.type).toLowerCase();
     switch (res.outcome) {
       case 'processed':
-        return `Imported the ${what}.`;
+        return `Imported the ${what} from ${from}.`;
       case 'duplicate':
         return `This ${what} was already imported.`;
       default:
@@ -100,7 +102,7 @@ export const CoordinationCard = ({
   };
 
   const runImport = async () => {
-    if (busy || !importText.trim()) return;
+    if (busy || !importText.trim() || !fromUid) return;
     setBusy(true);
     setErr(null);
     setResult(null);
@@ -110,8 +112,10 @@ export const CoordinationCard = ({
         id: wallet.tempId,
         fromUid,
       });
-      setResult(describeOutcome(res));
+      const from = wallet.peers.find((p) => p.uid === fromUid);
+      setResult(describeOutcome(res, from?.nick || fromUid.slice(0, 12)));
       setImportText('');
+      setFromUid('');
       await load();
       onChanged();
     } catch (e: any) {
@@ -128,7 +132,7 @@ export const CoordinationCard = ({
 
   const byPeer = new Map<string, MsigManualFrame[]>();
   for (const f of frames) {
-    byPeer.set(f.toNick, [...(byPeer.get(f.toNick) ?? []), f]);
+    byPeer.set(f.toUid, [...(byPeer.get(f.toUid) ?? []), f]);
   }
 
   return (
@@ -143,11 +147,11 @@ export const CoordinationCard = ({
 
       {byPeer.size > 0 && (
         <div className="space-y-3">
-          {[...byPeer.entries()].map(([nick, items]) => (
-            <div key={nick} className="p-4 rounded-lg bg-background border border-border/50 space-y-3">
+          {[...byPeer.entries()].map(([uid, items]) => (
+            <div key={uid} className="p-4 rounded-lg bg-background border border-border/50 space-y-3">
               <p className="text-sm font-medium flex items-center gap-2">
                 <ArrowUpFromLine className="h-4 w-4 text-primary" />
-                Hand to {nick}
+                Hand to {items[0].toNick || uid.slice(0, 12)}
               </p>
               {items.map((f) => (
                 <div key={`${f.mid}:${f.toUid}`} className="space-y-2">
@@ -213,6 +217,9 @@ export const CoordinationCard = ({
             onChange={(e) => setFromUid(e.target.value)}
             className="px-2 py-2 rounded-lg bg-background border border-border text-sm focus:outline-none focus:border-primary"
           >
+            <option value="" disabled>
+              Who handed you this?
+            </option>
             {wallet.peers.map((p) => (
               <option key={p.uid} value={p.uid}>
                 From {p.nick || p.uid.slice(0, 12)}
@@ -240,7 +247,7 @@ export const CoordinationCard = ({
           <button
             type="button"
             onClick={runImport}
-            disabled={busy || !importText.trim()}
+            disabled={busy || !importText.trim() || !fromUid}
             className="px-3 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}

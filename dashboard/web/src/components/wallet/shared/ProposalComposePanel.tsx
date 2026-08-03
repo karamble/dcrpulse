@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, Send } from 'lucide-react';
 import { PassphraseModal } from '../PassphraseModal';
 import { MsigWallet, proposeMsigSpend } from '../../../services/msigApi';
@@ -41,6 +41,18 @@ export const ProposalComposePanel = ({
   const [note, setNote] = useState('');
   const [ttl, setTtl] = useState(86400);
   const [queue, setQueue] = useState<string[]>(() => wallet.peers.map((p) => p.uid));
+
+  // The record's peer list can grow (a re-announced roster fills in
+  // missing cosigners) or lose entries; keep the queue inside it while
+  // preserving the chosen order.
+  useEffect(() => {
+    const current = new Set(wallet.peers.map((p) => p.uid));
+    setQueue((prev) => {
+      const kept = prev.filter((uid) => current.has(uid));
+      const added = wallet.peers.map((p) => p.uid).filter((uid) => !prev.includes(uid));
+      return [...kept, ...added];
+    });
+  }, [wallet.peers]);
   const [askPass, setAskPass] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);

@@ -246,7 +246,7 @@ export const SharedWalletCreateWizard = ({
                     )}
                   </div>
                 ))}
-                {labels.length < 7 && (
+                {cleanLabels.length < 7 && (
                   <button
                     type="button"
                     onClick={() => setLabels((prev) => [...prev, ''])}
@@ -287,12 +287,16 @@ export const SharedWalletCreateWizard = ({
                   {candidates.map((c) => {
                     const uid = c.id!.identity!;
                     const on = selected.has(uid);
+                    const full = !on && total >= 8;
                     return (
                       <button
                         key={uid}
                         type="button"
-                        onClick={() => toggle(uid)}
-                        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/30"
+                        onClick={() => !full && toggle(uid)}
+                        aria-disabled={full}
+                        className={`w-full flex items-center gap-3 px-3 py-2 text-left ${
+                          full ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/30'
+                        }`}
                       >
                         <span
                           className={`h-4 w-4 rounded border flex items-center justify-center ${
@@ -316,6 +320,9 @@ export const SharedWalletCreateWizard = ({
                 Scheme: <span className="font-semibold">{required} of {total}</span> keys
                 {required > total && (
                   <span className="text-destructive"> (pick more cosigners)</span>
+                )}
+                {total >= 8 && (
+                  <span className="text-muted-foreground"> (8 participants is the maximum)</span>
                 )}
               </p>
             </>
