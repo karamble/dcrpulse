@@ -558,6 +558,7 @@ func main() {
 	api.HandleFunc("/msig/proposals/rebroadcast", handlers.MsigRebroadcastHandler).Methods("POST")
 	api.HandleFunc("/msig/pending", handlers.MsigPendingHandler).Methods("GET")
 	api.HandleFunc("/msig/refresh", handlers.MsigRefreshHandler).Methods("POST")
+	api.HandleFunc("/msig/receive", handlers.MsigReceiveHandler).Methods("POST")
 	api.Handle("/wallet/rescan",
 		middleware.RateLimit("rescan", 60*time.Second, 1)(
 			http.HandlerFunc(handlers.RescanWalletHandler))).Methods("POST")

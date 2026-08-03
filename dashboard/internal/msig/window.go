@@ -464,3 +464,45 @@ func observeUsage(ctx context.Context, store *Store, rec *WalletRecord, utxos []
 		rescanSeam(from)
 	}
 }
+
+// ReceiveInfo reports the wallet's current receive address without
+// allocating: the most recently handed-out external index, or index 0
+// before any hand-out. Exhausted warns that AllocateReceiveAddress would
+// refuse.
+func ReceiveInfo(ctx context.Context, id string) (string, uint32, bool, error) {
+	network, err := networkSeam(ctx)
+	if err != nil {
+		return "", 0, false, err
+	}
+	_, rec := manager(network).Route(id, nil)
+	if rec == nil || !rec.HD {
+		return "", 0, false, fmt.Errorf("unknown HD shared wallet %s", id)
+	}
+	if rec.Status != StatusActive || rec.Address == "" {
+		return "", 0, false, fmt.Errorf("this shared wallet is not active yet")
+	}
+	ext := cursorValue(rec.Ext)
+	index := uint32(0)
+	if ext.Next > 0 {
+		index = ext.Next - 1
+	}
+	entry, err := entryAt(rec, BranchExternal, index)
+	if err != nil {
+		return "", 0, false, err
+	}
+	return entry.Address, index, ext.Next >= ext.LastUsed+GapExt, nil
+}
+
+// WindowUTXOs lists the unspent outputs across the wallet's imported
+// ladder window.
+func WindowUTXOs(ctx context.Context, id string) ([]UTXO, error) {
+	network, err := networkSeam(ctx)
+	if err != nil {
+		return nil, err
+	}
+	store, rec := manager(network).Route(id, nil)
+	if rec == nil || !rec.HD {
+		return nil, fmt.Errorf("unknown HD shared wallet %s", id)
+	}
+	return listWindowUTXOs(ctx, store, rec)
+}

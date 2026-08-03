@@ -77,7 +77,7 @@ export const ProposalList = ({
 
   const approve = async (txid: string, passphrase: string) => {
     try {
-      await signMsigProposal(wallet.address!, txid, wallet.own?.account ?? 0, passphrase);
+      await signMsigProposal(wallet.tempId, txid, wallet.ownHd?.account ?? wallet.own?.account ?? 0, passphrase);
       setAskPassFor(null);
       onChanged();
     } catch (e: any) {
@@ -163,7 +163,7 @@ export const ProposalList = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => run(p.txid, () => rejectMsigProposal(wallet.address!, p.txid))}
+                    onClick={() => run(p.txid, () => rejectMsigProposal(wallet.tempId, p.txid))}
                     disabled={busy === p.txid}
                     className="px-3 py-2 rounded-lg border border-border hover:bg-muted/30 text-sm disabled:opacity-50 inline-flex items-center gap-2"
                   >
@@ -175,7 +175,7 @@ export const ProposalList = ({
               {p.role === 'initiator' && (p.status === 'collecting' || p.status === 'ready') && (
                 <button
                   type="button"
-                  onClick={() => run(p.txid, () => abortMsigProposal(wallet.address!, p.txid))}
+                  onClick={() => run(p.txid, () => abortMsigProposal(wallet.tempId, p.txid))}
                   disabled={busy === p.txid}
                   className="px-3 py-2 rounded-lg border border-border hover:bg-muted/30 text-sm disabled:opacity-50"
                 >
@@ -185,7 +185,7 @@ export const ProposalList = ({
               {p.role === 'initiator' && p.status === 'ready' && (
                 <button
                   type="button"
-                  onClick={() => run(p.txid, () => rebroadcastMsigProposal(wallet.address!, p.txid))}
+                  onClick={() => run(p.txid, () => rebroadcastMsigProposal(wallet.tempId, p.txid))}
                   disabled={busy === p.txid}
                   className="px-3 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm disabled:opacity-50 inline-flex items-center gap-2"
                 >

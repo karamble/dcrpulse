@@ -59,13 +59,13 @@ export const ProposalComposePanel = ({
     setErr(null);
     try {
       await proposeMsigSpend(
-        wallet.address!,
+        wallet.tempId,
         [{ address: address.trim(), amountAtoms: sendAll ? 0 : parsed.atoms }],
         sendAll,
         queue,
         note.trim(),
         ttl,
-        wallet.own?.account ?? 0,
+        wallet.ownHd?.account ?? wallet.own?.account ?? 0,
         passphrase,
       );
       setAddress('');

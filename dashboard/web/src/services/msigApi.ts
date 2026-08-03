@@ -16,6 +16,7 @@ export interface MsigPeer {
   uid: string;
   nick: string;
   pubkey?: string;
+  xpub?: string;
   state: string;
   lastSeenTs?: number;
   reason?: string;
@@ -63,6 +64,17 @@ export interface MsigProposal {
   updatedAt: number;
 }
 
+export interface MsigOwnHDKey {
+  xpub: string;
+  account: number;
+}
+
+export interface MsigCursor {
+  next: number;
+  importedThrough: number;
+  lastUsed: number;
+}
+
 export interface MsigWallet {
   tempId: string;
   address?: string;
@@ -72,6 +84,11 @@ export interface MsigWallet {
   network: string;
   scriptHex?: string;
   rosterPubKeys?: string[];
+  hd?: boolean;
+  xpubs?: string[];
+  ownHd?: MsigOwnHDKey;
+  ext?: MsigCursor;
+  int?: MsigCursor;
   role: 'initiator' | 'cosigner';
   status: string;
   failReason?: string;
@@ -90,6 +107,13 @@ export interface MsigUTXO {
   tree: number;
   atoms: number;
   confirmations: number;
+  address?: string;
+}
+
+export interface MsigReceive {
+  address: string;
+  index: number;
+  gapExhausted: boolean;
 }
 
 export interface MsigDetail {
@@ -98,6 +122,7 @@ export interface MsigDetail {
   isActiveWallet: boolean;
   utxos?: MsigUTXO[];
   balanceAtoms: number;
+  receive?: MsigReceive;
 }
 
 export interface MsigPendingItem {
@@ -125,15 +150,20 @@ export const listMsigWallets = async (): Promise<{ walletName: string; wallets: 
 export const createMsigWallet = async (
   label: string,
   m: number,
-  account: number,
   invitees: MsigInvitee[],
+  passphrase: string,
 ): Promise<MsigWallet> => {
-  const { data } = await api.post<MsigWallet>('/msig/wallets/invite', { label, m, account, invitees });
+  const { data } = await api.post<MsigWallet>('/msig/wallets/invite', { label, m, invitees, passphrase });
   return data;
 };
 
-export const acceptMsigInvite = async (id: string, account: number): Promise<void> => {
-  await api.post('/msig/wallets/accept', { id, account });
+export const acceptMsigInvite = async (id: string, passphrase: string): Promise<void> => {
+  await api.post('/msig/wallets/accept', { id, passphrase });
+};
+
+export const freshMsigAddress = async (id: string): Promise<MsigReceive> => {
+  const { data } = await api.post<MsigReceive>('/msig/receive', { id });
+  return { ...data, gapExhausted: false };
 };
 
 export const declineMsigInvite = async (id: string, reason?: string): Promise<void> => {

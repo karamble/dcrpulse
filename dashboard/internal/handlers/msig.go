@@ -7,6 +7,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -135,15 +136,33 @@ func MsigDetailHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	type receiveInfo struct {
+		Address      string `json:"address"`
+		Index        uint32 `json:"index"`
+		GapExhausted bool   `json:"gapExhausted"`
+	}
 	resp := struct {
 		Record         *msig.WalletRecord    `json:"record"`
 		WalletName     string                `json:"walletName"`
 		IsActiveWallet bool                  `json:"isActiveWallet"`
 		UTXOs          []services.SharedUTXO `json:"utxos,omitempty"`
 		BalanceAtoms   int64                 `json:"balanceAtoms"`
+		Receive        *receiveInfo          `json:"receive,omitempty"`
 	}{Record: rec, WalletName: walletName, IsActiveWallet: isActive}
 	if isActive && rec.Address != "" && rec.Status == msig.StatusActive {
-		if utxos, uerr := services.ListSharedUTXOs(ctx, []string{rec.Address}); uerr == nil {
+		if rec.HD {
+			if utxos, uerr := msig.WindowUTXOs(ctx, rec.TempID); uerr == nil {
+				for _, u := range utxos {
+					resp.UTXOs = append(resp.UTXOs, services.SharedUTXO{
+						TxID: u.TxID, Vout: u.Vout, Tree: u.Tree, Atoms: u.Atoms, Address: u.Address,
+					})
+					resp.BalanceAtoms += u.Atoms
+				}
+			}
+			if addr, index, exhausted, rerr := msig.ReceiveInfo(ctx, rec.TempID); rerr == nil {
+				resp.Receive = &receiveInfo{Address: addr, Index: index, GapExhausted: exhausted}
+			}
+		} else if utxos, uerr := services.ListSharedUTXOs(ctx, []string{rec.Address}); uerr == nil {
 			resp.UTXOs = utxos
 			for _, u := range utxos {
 				resp.BalanceAtoms += u.Atoms
@@ -152,6 +171,33 @@ func MsigDetailHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// MsigReceiveHandler hands out the next receive address of an HD shared
+// wallet. The gap bound answers with 409 so the UI can explain instead
+// of erroring.
+func MsigReceiveHandler(w http.ResponseWriter, r *http.Request) {
+	var req types.MsigActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	addr, index, err := msig.AllocateReceiveAddress(ctx, req.ID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, msig.ErrGapExhausted) {
+			status = http.StatusConflict
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		Address string `json:"address"`
+		Index   uint32 `json:"index"`
+	}{addr, index})
 }
 
 // MsigBackupHandler exports the backup card for one shared wallet.

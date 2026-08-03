@@ -4,8 +4,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, Loader2, UserPlus } from 'lucide-react';
-import { AccountInfo, getAccounts } from '../../../services/api';
 import { useBisonrelayLive } from '../../bisonrelay/BisonrelayLiveProvider';
+import { PassphraseModal } from '../PassphraseModal';
 import {
   MsigPendingItem,
   acceptMsigInvite,
@@ -15,11 +15,12 @@ import {
 
 // IncomingInviteBanner surfaces shared-wallet invitations waiting for an
 // answer, plus rosters that need a wallet switch to finish importing.
+// Accepting creates the wallet's dedicated account, so it asks for the
+// wallet passphrase; declining never does.
 export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) => {
   const [items, setItems] = useState<MsigPendingItem[]>([]);
-  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
-  const [account, setAccount] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [askPassFor, setAskPassFor] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const { addListener } = useBisonrelayLive();
 
@@ -33,15 +34,6 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
 
   useEffect(() => {
     load();
-    getAccounts()
-      .then((data) => {
-        const visible = data
-          .filter((a) => a.accountName !== 'imported' && a.accountNumber < 2147483647)
-          .sort((a, b) => a.accountNumber - b.accountNumber);
-        setAccounts(visible);
-        if (visible.length > 0) setAccount(visible[0].accountNumber);
-      })
-      .catch(() => undefined);
   }, [load]);
 
   useEffect(() => {
@@ -57,13 +49,12 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
     };
   }, [addListener, load]);
 
-  const act = async (item: MsigPendingItem, accept: boolean) => {
-    if (busyId || account === null) return;
+  const decline = async (item: MsigPendingItem) => {
+    if (busyId) return;
     setBusyId(item.tempId);
     setErr(null);
     try {
-      if (accept) await acceptMsigInvite(item.tempId, account);
-      else await declineMsigInvite(item.tempId);
+      await declineMsigInvite(item.tempId);
       await load();
       onChanged();
     } catch (e: any) {
@@ -71,6 +62,20 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
       setErr(typeof body === 'string' ? body : e?.message || 'Could not answer the invitation');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const accept = async (tempId: string, passphrase: string) => {
+    setErr(null);
+    try {
+      await acceptMsigInvite(tempId, passphrase);
+      setAskPassFor(null);
+      await load();
+      onChanged();
+    } catch (e: any) {
+      const body = e?.response?.data;
+      setErr(typeof body === 'string' ? body : e?.message || 'Could not accept the invitation');
+      throw e;
     }
   };
 
@@ -105,7 +110,7 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
                     {item.m} of {item.n} signatures.
                     {item.needsSwitch
                       ? ` Belongs to wallet ${item.walletName}; switch to it to accept.`
-                      : ' Accepting contributes one key from the account you choose.'}
+                      : ' Accepting creates a dedicated account and shares only its extended public key.'}
                   </p>
                 </>
               ) : (
@@ -121,20 +126,9 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
             </div>
             {item.kind === 'invite' && !item.needsSwitch && (
               <div className="flex items-center gap-2">
-                <select
-                  value={account ?? ''}
-                  onChange={(e) => setAccount(Number(e.target.value))}
-                  className="px-2 py-2 rounded-lg bg-background border border-border text-sm focus:outline-none focus:border-primary"
-                >
-                  {accounts.map((a) => (
-                    <option key={a.accountNumber} value={a.accountNumber}>
-                      {a.accountName}
-                    </option>
-                  ))}
-                </select>
                 <button
                   type="button"
-                  onClick={() => act(item, false)}
+                  onClick={() => decline(item)}
                   disabled={busyId === item.tempId}
                   className="px-3 py-2 rounded-lg border border-border hover:bg-muted/30 text-sm disabled:opacity-50"
                 >
@@ -142,8 +136,8 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
                 </button>
                 <button
                   type="button"
-                  onClick={() => act(item, true)}
-                  disabled={busyId === item.tempId || account === null}
+                  onClick={() => setAskPassFor(item.tempId)}
+                  disabled={busyId === item.tempId}
                   className="px-3 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm disabled:opacity-50 inline-flex items-center gap-2"
                 >
                   {busyId === item.tempId && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -154,6 +148,16 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
           </div>
         </div>
       ))}
+
+      <PassphraseModal
+        isOpen={askPassFor !== null}
+        title="Join the shared wallet"
+        description="Your wallet passphrase creates this wallet's dedicated account. Only the account's extended public key is shared with cosigners."
+        submitLabel="Accept invitation"
+        busyLabel="Joining..."
+        onSubmit={(pass) => accept(askPassFor!, pass)}
+        onClose={() => setAskPassFor(null)}
+      />
     </div>
   );
 };

@@ -4,11 +4,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowLeft, Check, Loader2, Users } from 'lucide-react';
-import { AccountInfo, getAccounts } from '../../../services/api';
 import {
   BisonrelayContact,
   getBisonrelayContacts,
 } from '../../../services/bisonrelayApi';
+import { PassphraseModal } from '../PassphraseModal';
 import { createMsigWallet, MsigInvitee } from '../../../services/msigApi';
 
 const displayNick = (c: BisonrelayContact): string =>
@@ -16,8 +16,9 @@ const displayNick = (c: BisonrelayContact): string =>
 
 type Step = 'scheme' | 'cosigners' | 'review';
 
-// SharedWalletCreateWizard collects the scheme, the cosigners and the
-// account that supplies this wallet's key, then sends the invites.
+// SharedWalletCreateWizard collects the scheme and the cosigners, then
+// sends the invites. The wallet passphrase creates a dedicated account
+// whose extended public key is this wallet's contribution.
 export const SharedWalletCreateWizard = ({
   onClose,
   onCreated,
@@ -28,26 +29,12 @@ export const SharedWalletCreateWizard = ({
   const [step, setStep] = useState<Step>('scheme');
   const [label, setLabel] = useState('');
   const [required, setRequired] = useState(2);
-  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
-  const [account, setAccount] = useState<number | null>(null);
   const [contacts, setContacts] = useState<BisonrelayContact[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState(false);
+  const [askPass, setAskPass] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    getAccounts()
-      .then((data) => {
-        const visible = data
-          .filter((a) => a.accountName !== 'imported' && a.accountNumber < 2147483647)
-          .sort((a, b) => a.accountNumber - b.accountNumber);
-        setAccounts(visible);
-        if (visible.length > 0) setAccount(visible[0].accountNumber);
-      })
-      .catch((e) => {
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not load accounts');
-      });
     getBisonrelayContacts()
       .then(setContacts)
       .catch((e) => {
@@ -78,19 +65,17 @@ export const SharedWalletCreateWizard = ({
     });
   };
 
-  const submit = async () => {
-    if (busy || account === null) return;
-    setBusy(true);
+  const submit = async (passphrase: string) => {
     setErr(null);
     try {
-      await createMsigWallet(label.trim(), required, account, invitees);
+      await createMsigWallet(label.trim(), required, invitees, passphrase);
+      setAskPass(false);
       onCreated();
       onClose();
     } catch (e: any) {
       const body = e?.response?.data;
       setErr(typeof body === 'string' ? body : e?.message || 'Could not send the invitations');
-    } finally {
-      setBusy(false);
+      throw e;
     }
   };
 
@@ -137,20 +122,11 @@ export const SharedWalletCreateWizard = ({
                   How many cosigners must approve each payment. You pick the participants next.
                 </p>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Your key comes from</label>
-                <select
-                  value={account ?? ''}
-                  onChange={(e) => setAccount(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-lg bg-background border border-border focus:outline-none focus:border-primary"
-                >
-                  {accounts.map((a) => (
-                    <option key={a.accountNumber} value={a.accountNumber}>
-                      {a.accountName}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Creating the wallet adds a dedicated account to your wallet. Only that
+                account's extended public key is shared with your cosigners; your other
+                accounts stay private.
+              </p>
             </>
           )}
 
@@ -218,12 +194,6 @@ export const SharedWalletCreateWizard = ({
                   <span className="text-muted-foreground">Scheme</span>
                   <span className="font-medium">{required} of {total}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Your key</span>
-                  <span className="font-medium">
-                    {accounts.find((a) => a.accountNumber === account)?.accountName ?? account}
-                  </span>
-                </div>
                 <div>
                   <span className="text-muted-foreground">Cosigners</span>
                   <ul className="mt-1 space-y-1">
@@ -234,8 +204,9 @@ export const SharedWalletCreateWizard = ({
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Sending the invitations reserves one address from your account. The shared address
-                appears once every cosigner has confirmed; do not send funds before then.
+                Sending the invitations creates the dedicated account in your wallet.
+                Receive addresses appear once every cosigner has confirmed; do not send
+                funds before then.
               </p>
             </>
           )}
@@ -260,11 +231,9 @@ export const SharedWalletCreateWizard = ({
           {step === 'review' ? (
             <button
               type="button"
-              onClick={submit}
-              disabled={busy || account === null}
-              className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              onClick={() => setAskPass(true)}
+              className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm inline-flex items-center gap-2"
             >
-              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
               Send invitations
             </button>
           ) : (
@@ -279,6 +248,16 @@ export const SharedWalletCreateWizard = ({
           )}
         </div>
       </div>
+
+      <PassphraseModal
+        isOpen={askPass}
+        title="Create the shared wallet"
+        description="Your wallet passphrase creates this wallet's dedicated account. Only the account's extended public key is shared with cosigners."
+        submitLabel="Create and invite"
+        busyLabel="Creating..."
+        onSubmit={submit}
+        onClose={() => setAskPass(false)}
+      />
     </div>
   );
 };

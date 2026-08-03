@@ -4,11 +4,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
 import { AlertCircle, ArrowLeft, Download, Loader2, XCircle } from 'lucide-react';
-import { AddressGroups } from '../../AddressGroups';
-import { CopyButton } from '../../explorer/CopyButton';
+import { KeyEnds } from '../../AddressGroups';
 import { useBisonrelayLive } from '../../bisonrelay/BisonrelayLiveProvider';
+import { ReceiveCard } from './ReceiveCard';
 import {
   MsigDetail,
   cancelMsigRound,
@@ -180,22 +179,17 @@ export const SharedWalletDetailPage = () => {
 
       {active && rec.address ? (
         <div className="grid gap-4 lg:grid-cols-5">
-          <div className="p-6 rounded-xl bg-gradient-card border border-border/50 lg:col-span-3">
-            <p className="text-sm font-medium mb-3">Shared address</p>
-            <div className="flex items-start gap-4 flex-wrap">
-              <div className="p-3 bg-white rounded-lg">
-                <QRCodeSVG value={rec.address} size={160} level="H" />
-              </div>
-              {/* min-w matches the nowrap AddressGroups line so a narrow
-                  card wraps the address below the QR instead of clipping it. */}
-              <div className="flex-1 min-w-[21rem] space-y-2">
-                <AddressGroups value={rec.address} />
-                <CopyButton text={rec.address} />
-                <p className="text-xs text-muted-foreground">
-                  Anyone can pay in. Spending needs {rec.m} of the {rec.n} cosigners.
+          <div className="lg:col-span-3">
+            {detail.receive ? (
+              <ReceiveCard walletId={rec.tempId} receive={detail.receive} m={rec.m} n={rec.n} />
+            ) : (
+              <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
+                <p className="text-sm font-medium mb-3">Receive</p>
+                <p className="text-sm text-muted-foreground">
+                  Switch to wallet {detail.walletName} to receive into this shared wallet.
                 </p>
               </div>
-            </div>
+            )}
           </div>
 
           <div className="p-6 rounded-xl bg-gradient-card border border-border/50 lg:col-span-2">
@@ -212,7 +206,7 @@ export const SharedWalletDetailPage = () => {
                     <table className="w-full text-xs">
                       <thead className="text-muted-foreground">
                         <tr>
-                          <th className="text-left font-medium py-1">Output</th>
+                          <th className="text-left font-medium py-1">Address</th>
                           <th className="text-right font-medium py-1">Amount</th>
                           <th className="text-right font-medium py-1">Confirmations</th>
                         </tr>
@@ -220,8 +214,8 @@ export const SharedWalletDetailPage = () => {
                       <tbody>
                         {(detail.utxos ?? []).map((u) => (
                           <tr key={`${u.txid}:${u.vout}`} className="border-t border-border/50">
-                            <td className="py-1 font-mono truncate max-w-[16rem]">
-                              {u.txid.slice(0, 16)}...:{u.vout}
+                            <td className="py-1 font-mono truncate max-w-[16rem]" title={`${u.txid}:${u.vout}`}>
+                              {(u.address || u.txid).slice(0, 14)}...
                             </td>
                             <td className="py-1 text-right">{formatDcr(u.atoms)}</td>
                             <td className="py-1 text-right">{u.confirmations}</td>
@@ -242,8 +236,8 @@ export const SharedWalletDetailPage = () => {
       ) : (
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <p className="text-sm text-muted-foreground">
-            The shared address appears once every cosigner has confirmed. Do not send funds before
-            then.
+            Receive addresses appear once every cosigner has confirmed. Do not send funds
+            before then.
           </p>
         </div>
       )}
@@ -265,11 +259,15 @@ export const SharedWalletDetailPage = () => {
           <li className="flex items-center justify-between gap-3 py-2 border-b border-border/50">
             <span className="min-w-0">
               <span className="block truncate">You</span>
-              {rec.own && (
+              {rec.ownHd ? (
+                <span className="block text-xs text-muted-foreground truncate">
+                  <KeyEnds value={rec.ownHd.xpub} />
+                </span>
+              ) : rec.own ? (
                 <span className="block text-xs font-mono text-muted-foreground truncate">
                   {rec.own.pubKey.slice(0, 24)}...
                 </span>
-              )}
+              ) : null}
             </span>
             <span className="text-xs text-muted-foreground whitespace-nowrap">
               {rec.role === 'initiator' ? 'Initiator' : 'Cosigner'}
@@ -279,9 +277,15 @@ export const SharedWalletDetailPage = () => {
             <li key={p.uid} className="flex items-center justify-between gap-3 py-2 border-b border-border/50 last:border-0">
               <span className="min-w-0">
                 <span className="block truncate">{p.nick || p.uid.slice(0, 12)}</span>
-                <span className="block text-xs font-mono text-muted-foreground truncate">
-                  {p.pubkey ? `${p.pubkey.slice(0, 24)}...` : p.uid.slice(0, 16)}
-                </span>
+                {p.xpub ? (
+                  <span className="block text-xs text-muted-foreground truncate">
+                    <KeyEnds value={p.xpub} />
+                  </span>
+                ) : (
+                  <span className="block text-xs font-mono text-muted-foreground truncate">
+                    {p.pubkey ? `${p.pubkey.slice(0, 24)}...` : p.uid.slice(0, 16)}
+                  </span>
+                )}
               </span>
               <span className="text-xs text-muted-foreground whitespace-nowrap">
                 {msigPeerLabel(p.state)}
