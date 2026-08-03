@@ -3,10 +3,12 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, Check, Loader2, Users } from 'lucide-react';
 import {
   BisonrelayContact,
   getBisonrelayContacts,
+  getBisonrelayStatus,
 } from '../../../services/bisonrelayApi';
 import { PassphraseModal } from '../PassphraseModal';
 import { createMsigWallet, MsigInvitee } from '../../../services/msigApi';
@@ -35,19 +37,49 @@ export const SharedWalletCreateWizard = ({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [askPass, setAskPass] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [contactsErr, setContactsErr] = useState<string | null>(null);
+  const [brStage, setBrStage] = useState<'ready' | 'needs-setup' | 'unavailable' | null>(null);
 
   useEffect(() => {
+    getBisonrelayStatus()
+      .then((s) =>
+        setBrStage(s.stage === 'ready' ? 'ready' : s.stage === 'needs-identity' ? 'needs-setup' : 'unavailable'),
+      )
+      .catch(() => setBrStage('unavailable'));
     getBisonrelayContacts()
       .then(setContacts)
       .catch((e) => {
+        // Without a working Bison Relay this failure is expected; the
+        // greyed relay card explains what to do, so the banner only
+        // shows when the relay claims to be ready.
+        setContacts([]);
         const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not load contacts');
+        setContactsErr(typeof body === 'string' ? body : e?.message || 'Could not load contacts');
       });
   }, []);
 
   const candidates = (contacts ?? [])
     .filter((c) => c.id?.identity)
     .sort((a, b) => displayNick(a).toLowerCase().localeCompare(displayNick(b).toLowerCase()));
+  // The relay path needs a ready Bison Relay AND someone to invite.
+  const brBlocked =
+    brStage === 'needs-setup' ||
+    brStage === 'unavailable' ||
+    (brStage === 'ready' && contacts !== null && candidates.length === 0);
+  const brBlockReason =
+    brStage === 'needs-setup'
+      ? 'Set up Bison Relay first'
+      : brStage === 'unavailable'
+        ? 'Bison Relay is not connected'
+        : 'Key-exchange with a contact first';
+
+  // While the relay is unusable, manual exchange is the only workable
+  // choice; preselect it but keep the relay card visible so users learn
+  // what unlocks it.
+  useEffect(() => {
+    if (brBlocked && transport === '') setTransport('manual');
+  }, [brBlocked, transport]);
+
   const manual = transport === 'manual';
   const cleanLabels = labels.map((l) => l.trim()).filter((l) => l.length > 0);
   const labelsUnique = new Set(cleanLabels.map((l) => l.toLowerCase())).size === cleanLabels.length;
@@ -138,15 +170,29 @@ export const SharedWalletCreateWizard = ({
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button
                     type="button"
-                    onClick={() => setTransport('')}
+                    onClick={() => !brBlocked && setTransport('')}
+                    aria-disabled={brBlocked}
                     className={`px-3 py-2 rounded-lg border text-left ${
-                      !manual ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'
+                      brBlocked
+                        ? 'border-border opacity-60 cursor-not-allowed'
+                        : !manual
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border hover:bg-muted/30'
                     }`}
                   >
                     <span className="block text-sm font-medium">Bison Relay</span>
                     <span className="block text-xs text-muted-foreground mt-0.5">
                       Messages travel automatically between your contacts.
                     </span>
+                    {brBlocked && (
+                      <span className="block text-xs text-warning mt-1">
+                        {brBlockReason}
+                        {' - '}
+                        <Link to="/br" className="underline hover:text-primary">
+                          open Bison Relay
+                        </Link>
+                      </span>
+                    )}
                   </button>
                   <button
                     type="button"
@@ -307,6 +353,12 @@ export const SharedWalletCreateWizard = ({
             <div className="flex items-start gap-2 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <span>{err}</span>
+            </div>
+          )}
+          {contactsErr && brStage === 'ready' && (
+            <div className="flex items-start gap-2 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{contactsErr}</span>
             </div>
           )}
         </div>
