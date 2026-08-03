@@ -395,8 +395,10 @@ func reconcileSpent(ctx context.Context, store *Store, rec *WalletRecord, utxos 
 		}
 		if seen {
 			// The proposal's own transaction spent the inputs and is
-			// still unmined.
-			if prop.Status != ProposalBroadcast {
+			// still unmined. Seeing it locally also retires any
+			// "reported but not yet seen" caveat a broadcast notice
+			// left behind.
+			if prop.Status != ProposalBroadcast || prop.Reason != "" {
 				setStatus(txid, ProposalBroadcast, "")
 			}
 			continue
