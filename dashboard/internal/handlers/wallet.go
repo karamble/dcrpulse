@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/middleware"
+	"dcrpulse/internal/msig"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
@@ -713,6 +714,10 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	shared := msig.SharedAccounts(ctx)
+	for i := range accounts {
+		accounts[i].SharedWallet = shared[accounts[i].AccountNumber]
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(accounts)

@@ -9,6 +9,36 @@ import (
 	"testing"
 )
 
+// SharedAccounts must name every dedicated account of the active
+// wallet's registry so spend selectors can hide the key reservoirs.
+func TestSharedAccountsListsDedicatedAccounts(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob")
+
+	hd.as("alice")
+	if got := SharedAccounts(hd.ctx); len(got) != 0 {
+		t.Fatalf("accounts before any wallet: %v", got)
+	}
+
+	tempID := hd.createHD(t, 2, "alice", "bob")
+	hd.pump()
+	hd.as("bob")
+	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	hd.pump()
+
+	// The harness hands each node account number 1 for its first
+	// dedicated account.
+	hd.as("alice")
+	if got := SharedAccounts(hd.ctx); !got[1] || len(got) != 1 {
+		t.Fatalf("alice shared accounts: %v", got)
+	}
+	hd.as("bob")
+	if got := SharedAccounts(hd.ctx); !got[1] || len(got) != 1 {
+		t.Fatalf("bob shared accounts: %v", got)
+	}
+}
+
 // The restore matrix: a backup card lands on a fresh wallet built from
 // the same seed. The dedicated account is gone, so the first attempt
 // asks for the passphrase, the second recreates the account, proves it

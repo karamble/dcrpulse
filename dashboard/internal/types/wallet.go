@@ -41,6 +41,9 @@ type AccountInfo struct {
 	AccountNumber           uint32  `json:"accountNumber"`
 	AccountEncrypted        bool    `json:"accountEncrypted"`
 	AccountUnlocked         bool    `json:"accountUnlocked"`
+	// SharedWallet marks a shared wallet's dedicated key account; spend
+	// selectors hide it because it never holds direct funds.
+	SharedWallet bool `json:"sharedWallet,omitempty"`
 	// Reserved marks accounts other daemons bind to by name (mixed/unmixed/
 	// lightning/dex) or the imported bucket; the UI hides their rename action.
 	Reserved bool `json:"reserved"`

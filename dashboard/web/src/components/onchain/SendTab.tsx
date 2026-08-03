@@ -78,7 +78,7 @@ export const SendTab = () => {
     try {
       const data = await getAccounts();
       const visible = data
-        .filter((a) => a.accountName !== 'imported')
+        .filter((a) => a.accountName !== 'imported' && !a.sharedWallet)
         .sort((a, b) => a.accountNumber - b.accountNumber);
       setAccounts(visible);
       setAccountsError(null);

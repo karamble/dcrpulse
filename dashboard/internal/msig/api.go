@@ -252,6 +252,30 @@ type PendingItem struct {
 	Kind          string `json:"kind"`
 }
 
+// SharedAccounts reports the dedicated account numbers of every shared
+// wallet in the active wallet's registry, so account listings can keep
+// those key reservoirs out of spend selectors. Every record counts,
+// terminal ones included: the account never stops being a reservoir.
+// Best-effort by design; any failure reports no accounts rather than
+// breaking the listing.
+func SharedAccounts(ctx context.Context) map[uint32]bool {
+	out := make(map[uint32]bool)
+	network, err := networkSeam(ctx)
+	if err != nil {
+		return out
+	}
+	s, err := manager(network).StoreFor(activeWalletSeam())
+	if err != nil {
+		return out
+	}
+	for _, rec := range s.Wallets() {
+		if rec.HD && rec.OwnHD != nil {
+			out[rec.OwnHD.Account] = true
+		}
+	}
+	return out
+}
+
 // Pending lists open invites and deferred imports across all wallets.
 func Pending(ctx context.Context) ([]PendingItem, error) {
 	network, err := networkSeam(ctx)

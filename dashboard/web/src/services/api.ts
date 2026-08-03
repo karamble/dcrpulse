@@ -210,6 +210,9 @@ export interface AccountInfo {
   accountUnlocked: boolean;
   // Reserved accounts (mixed/unmixed/lightning/dex/imported) cannot be renamed.
   reserved?: boolean;
+  // A shared wallet's dedicated key account; spend selectors hide it because
+  // it never holds direct funds.
+  sharedWallet?: boolean;
   // Real BIP44 account index for an imported xpub account (accountNumber >= 2^31),
   // recorded at import. Absent for normal accounts (accountNumber is the index).
   bip44Index?: number;
