@@ -65,6 +65,13 @@ func (b *BisonrelayEventBus) Subscribe(buf int) (<-chan BisonrelayEvent, func())
 	}
 }
 
+// PublishBisonrelayEvent lets dashboard subsystems push an event of their
+// own to every connected browser listener. The payload reaches all open
+// sessions, so callers must keep it free of anything sensitive.
+func PublishBisonrelayEvent(evtType string, payload json.RawMessage) {
+	Bisonrelay().broadcast(BisonrelayEvent{Type: evtType, Payload: payload})
+}
+
 func (b *BisonrelayEventBus) broadcast(evt BisonrelayEvent) {
 	b.mu.RLock()
 	subs := make([]*bisonrelaySubscriber, 0, len(b.subscribers))

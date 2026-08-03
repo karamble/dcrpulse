@@ -33,6 +33,18 @@ const (
 // activated are intentionally left unjournaled so a later catch-up can
 // process them.
 func StartEngine(ctx context.Context) {
+	// Announce every persisted state change to the browser bus so open
+	// pages re-render on the engine's commit, not just on a frame's
+	// arrival. The payload carries the wallet id only.
+	notifyChange = func(walletID string) {
+		payload, err := json.Marshal(struct {
+			WalletID string `json:"walletId"`
+		}{walletID})
+		if err != nil {
+			return
+		}
+		services.PublishBisonrelayEvent("msig-state", payload)
+	}
 	ch, cancel := services.Bisonrelay().Subscribe(64)
 	go func() {
 		defer cancel()

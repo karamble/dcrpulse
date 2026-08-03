@@ -160,6 +160,34 @@ func ListSharedUTXOs(ctx context.Context, address string) ([]SharedUTXO, error) 
 	return utxos, nil
 }
 
+// MsigTxConfirmations reports whether the wallet has seen txid and with
+// how many confirmations (0 = mempool). known is false when the wallet
+// does not know the transaction at all; that is a normal answer, not an
+// error.
+func MsigTxConfirmations(ctx context.Context, txid string) (int64, bool, error) {
+	if rpc.WalletClient == nil {
+		return 0, false, fmt.Errorf("wallet RPC client not initialized")
+	}
+	param, err := json.Marshal(txid)
+	if err != nil {
+		return 0, false, err
+	}
+	raw, err := rpc.WalletClient.RawRequest(ctx, "gettransaction", []json.RawMessage{param})
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no information") {
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("gettransaction: %w", err)
+	}
+	var info struct {
+		Confirmations int64 `json:"confirmations"`
+	}
+	if err := json.Unmarshal(raw, &info); err != nil {
+		return 0, false, err
+	}
+	return info.Confirmations, true, nil
+}
+
 // MsigPrevInput hands signrawtransaction a prevout it may not be able to
 // resolve on its own (unconfirmed funding, pruned backend). The redeem
 // script is never passed: without raw private keys dcrwallet ignores it

@@ -68,6 +68,8 @@ export const ProposalList = ({
     } catch (e: any) {
       const body = e?.response?.data;
       setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+      // A rejected action usually means the card is stale; re-sync it.
+      onChanged();
     } finally {
       setBusy(null);
     }
@@ -180,7 +182,7 @@ export const ProposalList = ({
                   Cancel payment
                 </button>
               )}
-              {p.status === 'ready' && (
+              {p.role === 'initiator' && p.status === 'ready' && (
                 <button
                   type="button"
                   onClick={() => run(p.txid, () => rebroadcastMsigProposal(wallet.address!, p.txid))}

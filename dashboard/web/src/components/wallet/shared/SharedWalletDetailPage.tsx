@@ -57,9 +57,21 @@ export const SharedWalletDetailPage = () => {
     load();
   }, [load]);
 
-  useEffect(() => addListener((evt) => {
-    if (evt.type === 'msig') load();
-  }), [addListener, load]);
+  // Reload on the frame's arrival AND on the engine's commit
+  // (msig-state); the arrival event alone races the engine and would
+  // render the pre-frame state. Debounced so a burst fetches once.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const remove = addListener((evt) => {
+      if (evt.type !== 'msig' && evt.type !== 'msig-state') return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(load, 300);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      remove();
+    };
+  }, [addListener, load]);
 
   const backup = async () => {
     if (busy) return;

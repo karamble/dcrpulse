@@ -29,6 +29,7 @@ type spendHarness struct {
 	utxos      map[string][]UTXO // shared address -> unspent
 	privByPub  map[string]*secp256k1.PrivateKey
 	broadcasts []string
+	txConfs    map[string]int64 // txid -> confirmations for mined txs
 }
 
 func newSpendHarness(t *testing.T, m int, names ...string) (*spendHarness, string) {
@@ -38,6 +39,7 @@ func newSpendHarness(t *testing.T, m int, names ...string) (*spendHarness, strin
 		hsHarness: h,
 		utxos:     make(map[string][]UTXO),
 		privByPub: make(map[string]*secp256k1.PrivateKey),
+		txConfs:   make(map[string]int64),
 	}
 
 	// Capture the private key behind every derived pubkey.
@@ -55,10 +57,23 @@ func newSpendHarness(t *testing.T, m int, names ...string) (*spendHarness, strin
 		}
 	}
 
-	origList, origSign, origBroadcast := listUTXOsSeam, signSeam, broadcastSeam
+	origList, origSign, origBroadcast, origLookup := listUTXOsSeam, signSeam, broadcastSeam, txLookupSeam
 	t.Cleanup(func() {
-		listUTXOsSeam, signSeam, broadcastSeam = origList, origSign, origBroadcast
+		listUTXOsSeam, signSeam, broadcastSeam, txLookupSeam = origList, origSign, origBroadcast, origLookup
 	})
+	// The fake wallet knows a tx once it was broadcast (0 conf) or mined
+	// via txConfs.
+	txLookupSeam = func(ctx context.Context, txid string) (int64, bool, error) {
+		if conf, ok := sh.txConfs[txid]; ok {
+			return conf, true, nil
+		}
+		for _, b := range sh.broadcasts {
+			if b == txid {
+				return 0, true, nil
+			}
+		}
+		return 0, false, nil
+	}
 	listUTXOsSeam = func(ctx context.Context, address string) ([]UTXO, error) {
 		return append([]UTXO(nil), sh.utxos[address]...), nil
 	}
@@ -409,8 +424,9 @@ func TestSpendInputLocksAndSupersede(t *testing.T) {
 	}
 	sh.pump()
 
-	// The completed spend consumed the funding output; reviving the old
-	// proposal must now show it superseded.
+	// The completed spend consumed the funding output and gets mined;
+	// reviving the old proposal must now show it superseded.
+	sh.txConfs[second.TxID] = 1
 	store := sh.store("alice")
 	if err := store.UpdateProposal(tempID, first.TxID, false, func(_ *WalletRecord, p *Proposal) error {
 		p.Status = ProposalCollecting
@@ -525,5 +541,120 @@ func TestSpendSendAll(t *testing.T) {
 	}
 	if len(sh.utxos[rec.Address]) != 0 {
 		t.Fatalf("sweep left %d unspent outputs behind", len(sh.utxos[rec.Address]))
+	}
+}
+
+func TestSpendBroadcastVerifiedAndRebroadcastConverges(t *testing.T) {
+	sh, tempID := newSpendHarness(t, 2, "alice", "bob")
+	rec := sh.record("alice", tempID)
+	sh.fund(rec.Address, 500_000_000, 0)
+
+	sh.as("alice")
+	prop, err := ProposeSpend(sh.ctx, rec.Address,
+		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
+		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	sh.pump()
+	sh.as("bob")
+	if err := SignIncomingProposal(sh.ctx, rec.Address, prop.TxID, 0, []byte("pass")); err != nil {
+		t.Fatalf("bob sign: %v", err)
+	}
+	sh.pump()
+
+	// Bob's record went broadcast through a notice his wallet could
+	// verify (the tx is in the fake mempool), so no caveat is recorded.
+	got := sh.proposal(t, "bob", tempID, prop.TxID)
+	if got.Status != ProposalBroadcast || got.Reason != "" {
+		t.Fatalf("bob after verified notice: %s (%q)", got.Status, got.Reason)
+	}
+
+	// A rebroadcast click racing the automatic broadcast is a no-op, not
+	// an error.
+	sh.as("alice")
+	if err := RebroadcastProposal(sh.ctx, rec.Address, prop.TxID); err != nil {
+		t.Fatalf("rebroadcast after auto-broadcast: %v", err)
+	}
+
+	// Once mined, the sweep settles both sides to confirmed.
+	sh.txConfs[prop.TxID] = 1
+	sweepProposals(sh.ctx, sh.store("alice"))
+	sh.as("bob")
+	sweepProposals(sh.ctx, sh.store("bob"))
+	if got := sh.proposal(t, "alice", tempID, prop.TxID); got.Status != ProposalConfirmed {
+		t.Fatalf("alice after mining: %s", got.Status)
+	}
+	if got := sh.proposal(t, "bob", tempID, prop.TxID); got.Status != ProposalConfirmed {
+		t.Fatalf("bob after mining: %s", got.Status)
+	}
+}
+
+func TestSpendSignedConfirmsWhenNoticeLost(t *testing.T) {
+	sh, tempID := newSpendHarness(t, 2, "alice", "bob")
+	rec := sh.record("alice", tempID)
+	sh.fund(rec.Address, 500_000_000, 0)
+
+	sh.as("alice")
+	prop, err := ProposeSpend(sh.ctx, rec.Address,
+		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
+		[]string{sh.nodeByNick("bob").uid}, "", 0, 0, []byte("pass"))
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	sh.pump()
+	sh.as("bob")
+	if err := SignIncomingProposal(sh.ctx, rec.Address, prop.TxID, 0, []byte("pass")); err != nil {
+		t.Fatalf("bob sign: %v", err)
+	}
+	// Deliver the sig to alice (she broadcasts) but drop her notices, so
+	// bob never hears the payment went out.
+	sh.pumpTo("alice")
+	sh.queue = nil
+	if got := sh.proposal(t, "bob", tempID, prop.TxID); got.Status != ProposalSigned {
+		t.Fatalf("bob should still be waiting: %s", got.Status)
+	}
+
+	// The tx confirms on chain; bob's sweep must classify his signed
+	// record as confirmed, not superseded.
+	sh.txConfs[prop.TxID] = 1
+	sweepProposals(sh.ctx, sh.store("bob"))
+	if got := sh.proposal(t, "bob", tempID, prop.TxID); got.Status != ProposalConfirmed {
+		t.Fatalf("bob after silent confirmation: %s (%s)", got.Status, got.Reason)
+	}
+}
+
+func TestSpendNoticeForUnseenTxStaysCaveated(t *testing.T) {
+	sh, tempID := newSpendHarness(t, 2, "alice", "bob")
+	rec := sh.record("alice", tempID)
+
+	// Alice reports a broadcast bob's wallet has never seen.
+	txid := strings.Repeat("ab", 32)
+	notice := &Message{Type: TypeBroadcast, WalletID: rec.Address, TxID: txid}
+	payload, err := EncodeMessage(notice)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	mid, _ := NewID()
+	body, _ := Encode(payload, mid, time.Now().Add(time.Hour))
+	alice := sh.nodeByNick("alice")
+	sh.current = sh.nodeByNick("bob")
+	handleInbound(alice.uid, alice.nick, body, time.Now())
+
+	got := sh.proposal(t, "bob", tempID, txid)
+	if got.Status != ProposalBroadcast || got.Reason == "" {
+		t.Fatalf("unverified notice: %s (%q)", got.Status, got.Reason)
+	}
+
+	// Once the wallet sees the mined tx, the sweep upgrades the record
+	// and drops the caveat.
+	sh.txConfs[txid] = 1
+	sh.as("bob")
+	sweepProposals(sh.ctx, sh.store("bob"))
+	got = sh.proposal(t, "bob", tempID, txid)
+	if got.Status != ProposalConfirmed || got.Reason != "" {
+		t.Fatalf("after local confirmation: %s (%q)", got.Status, got.Reason)
 	}
 }

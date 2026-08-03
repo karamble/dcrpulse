@@ -46,7 +46,7 @@ func inboundSpend(ctx context.Context, m *Manager, msg *Message, frame *Frame, f
 	case TypeSigDecline:
 		inboundSigDecline(store, rec, msg, fromUID, fromNick)
 	case TypeBroadcast:
-		inboundBroadcastNotice(store, rec, msg, fromUID, fromNick)
+		inboundBroadcastNotice(ctx, store, rec, msg, fromUID, fromNick)
 	}
 }
 
@@ -236,12 +236,18 @@ func inboundSigDecline(store *Store, rec *WalletRecord, msg *Message, fromUID, f
 // inboundBroadcastNotice records that a payment went out. Members who
 // were never asked to sign (the threshold was met without them) learn of
 // the spend only here, so an unknown txid creates an informational entry
-// carrying no transaction of its own. The notice is a courtesy signal:
-// the local chain view stays authoritative.
-func inboundBroadcastNotice(store *Store, rec *WalletRecord, msg *Message, fromUID, fromNick string) {
+// carrying no transaction of its own. The notice itself is not trusted:
+// the record only turns broadcast once this wallet has seen the
+// transaction; until then the report is kept with its provenance and the
+// sweep's own lookup converges the state.
+func inboundBroadcastNotice(ctx context.Context, store *Store, rec *WalletRecord, msg *Message, fromUID, fromNick string) {
 	_, existing, known := store.Proposal(rec.TempID, msg.TxID)
 	if known && existing.Status == ProposalConfirmed {
 		return
+	}
+	var seen bool
+	if _, s, err := txLookupSeam(ctx, msg.TxID); err == nil {
+		seen = s
 	}
 	err := store.UpdateProposal(rec.TempID, msg.TxID, true, func(_ *WalletRecord, p *Proposal) error {
 		if p.Status == ProposalConfirmed {
@@ -252,13 +258,21 @@ func inboundBroadcastNotice(store *Store, rec *WalletRecord, msg *Message, fromU
 			p.FromUID = fromUID
 			p.FromNick = fromNick
 		}
-		p.Status = ProposalBroadcast
+		if seen {
+			p.Status = ProposalBroadcast
+			p.Reason = ""
+		} else {
+			if p.Status == "" {
+				p.Status = ProposalBroadcast
+			}
+			p.Reason = fmt.Sprintf("%s reported this payment broadcast; not yet seen by this wallet", fromNick)
+		}
 		return nil
 	})
 	if err != nil {
 		return
 	}
-	log.Printf("msig: %s reported payment %s broadcast", fromNick, msg.TxID[:12])
+	log.Printf("msig: %s reported payment %s broadcast (seen locally: %t)", fromNick, msg.TxID[:12], seen)
 }
 
 // sweepProposals expires hops whose deadline passed and retires
@@ -316,8 +330,27 @@ func reconcileSpent(ctx context.Context, store *Store, rec *WalletRecord) {
 	for _, u := range utxos {
 		unspent[fmt.Sprintf("%s:%d", u.TxID, u.Vout)] = true
 	}
+	setStatus := func(txid, status, reason string) {
+		if err := store.UpdateProposal(rec.TempID, txid, false, func(_ *WalletRecord, p *Proposal) error {
+			p.Status = status
+			p.Reason = reason
+			return nil
+		}); err != nil {
+			return
+		}
+		log.Printf("msig: payment %s is now %s", txid[:12], status)
+	}
 	for txid, prop := range rec.Proposals {
 		if !prop.Live() {
+			continue
+		}
+		// The wallet's own view of the proposal's transaction decides the
+		// outcome. This also settles records that carry no inputs of
+		// their own (broadcast notices for payments this member was never
+		// asked to sign) and cosigner records whose notice never arrived.
+		conf, seen, lookErr := txLookupSeam(ctx, txid)
+		if lookErr == nil && seen && conf > 0 {
+			setStatus(txid, ProposalConfirmed, "")
 			continue
 		}
 		gone := false
@@ -326,24 +359,19 @@ func reconcileSpent(ctx context.Context, store *Store, rec *WalletRecord) {
 				gone = true
 			}
 		}
-		if !gone {
+		if !gone || lookErr != nil {
+			// Nothing spent yet, or the spender cannot be attributed
+			// right now; the next sweep retries.
 			continue
 		}
-		status := ProposalSuperseded
-		reason := "another payment spent these funds first"
-		if prop.Status == ProposalBroadcast {
-			status = ProposalConfirmed
-			reason = ""
-		}
-		if err := store.UpdateProposal(rec.TempID, txid, false, func(_ *WalletRecord, p *Proposal) error {
-			p.Status = status
-			if reason != "" {
-				p.Reason = reason
+		if seen {
+			// The proposal's own transaction spent the inputs and is
+			// still unmined.
+			if prop.Status != ProposalBroadcast {
+				setStatus(txid, ProposalBroadcast, "")
 			}
-			return nil
-		}); err != nil {
 			continue
 		}
-		log.Printf("msig: payment %s is now %s", txid[:12], status)
+		setStatus(txid, ProposalSuperseded, "another payment spent these funds first")
 	}
 }

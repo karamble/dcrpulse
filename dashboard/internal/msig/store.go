@@ -283,6 +283,26 @@ func (s *Store) saveLocked() error {
 	return atomicWriteJSON(s.path, s.data)
 }
 
+// notifyChange, when set, is invoked with a record's stable id after a
+// wallet or proposal mutation persists. The engine points it at the
+// browser event bus: pages reload on the frame's arrival event before the
+// engine finishes processing it, so without a commit signal they render
+// the pre-frame state until a manual refresh.
+var notifyChange func(walletID string)
+
+func notifyRecordChanged(r *WalletRecord) {
+	if notifyChange == nil || r == nil {
+		return
+	}
+	id := r.Address
+	if id == "" {
+		id = r.TempID
+	}
+	if id != "" {
+		notifyChange(id)
+	}
+}
+
 // WalletName returns the owning dcrpulse wallet's name.
 func (s *Store) WalletName() string { return s.walletName }
 
@@ -373,7 +393,11 @@ func (s *Store) UpdateProposal(walletID, txid string, create bool, fn func(*Wall
 	now := time.Now().Unix()
 	p.UpdatedAt = now
 	r.UpdatedAt = now
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	notifyRecordChanged(r)
+	return nil
 }
 
 // Wallets returns clones of every record.
@@ -424,7 +448,11 @@ func (s *Store) PutWallet(r *WalletRecord) error {
 	r.CreatedAt = now
 	r.UpdatedAt = now
 	s.data.Wallets[r.TempID] = r
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	notifyRecordChanged(r)
+	return nil
 }
 
 // UpdateWallet mutates the record identified by tempId or address under
@@ -441,7 +469,11 @@ func (s *Store) UpdateWallet(id string, fn func(*WalletRecord) error) error {
 		return err
 	}
 	r.UpdatedAt = time.Now().Unix()
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	notifyRecordChanged(r)
+	return nil
 }
 
 // MarkProcessed journals a frame mid and reports whether it was new.

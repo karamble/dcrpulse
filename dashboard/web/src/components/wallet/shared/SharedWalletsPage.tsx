@@ -56,10 +56,20 @@ export const SharedWalletsPage = () => {
   }, [load]);
 
   // Coordination frames arrive as their own event type; chat badges are
-  // untouched by them.
-  useEffect(() => addListener((evt) => {
-    if (evt.type === 'msig') load();
-  }), [addListener, load]);
+  // untouched by them. msig-state marks the engine's commit, which the
+  // raw arrival event races.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const remove = addListener((evt) => {
+      if (evt.type !== 'msig' && evt.type !== 'msig-state') return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(load, 300);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      remove();
+    };
+  }, [addListener, load]);
 
   // Restoring re-imports the shared script and rescans from the recorded
   // creation height, so it can take a while on a large chain.

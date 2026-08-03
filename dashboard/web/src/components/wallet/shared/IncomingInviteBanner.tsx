@@ -44,9 +44,18 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
       .catch(() => undefined);
   }, [load]);
 
-  useEffect(() => addListener((evt) => {
-    if (evt.type === 'msig') load();
-  }), [addListener, load]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const remove = addListener((evt) => {
+      if (evt.type !== 'msig' && evt.type !== 'msig-state') return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(load, 300);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      remove();
+    };
+  }, [addListener, load]);
 
   const act = async (item: MsigPendingItem, accept: boolean) => {
     if (busyId || account === null) return;

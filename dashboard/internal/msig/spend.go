@@ -40,6 +40,9 @@ var (
 	broadcastSeam = func(ctx context.Context, signedTx []byte) (string, error) {
 		return services.BroadcastSignedTransaction(ctx, signedTx)
 	}
+	txLookupSeam = func(ctx context.Context, txid string) (int64, bool, error) {
+		return services.MsigTxConfirmations(ctx, txid)
+	}
 )
 
 const (
@@ -424,6 +427,11 @@ func RebroadcastProposal(ctx context.Context, walletID, txid string) error {
 	_, prop, ok := store.Proposal(rec.TempID, txid)
 	if !ok {
 		return fmt.Errorf("unknown proposal")
+	}
+	// A click can race the automatic broadcast; converging on an already
+	// sent payment is success, not an error.
+	if prop.Status == ProposalBroadcast || prop.Status == ProposalConfirmed {
+		return nil
 	}
 	if prop.Status != ProposalReady {
 		return fmt.Errorf("this payment is not waiting to be broadcast")

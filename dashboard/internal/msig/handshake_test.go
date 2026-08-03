@@ -157,6 +157,25 @@ func (h *hsHarness) pump() {
 	}
 }
 
+// pumpTo delivers only the frames addressed to nick, including ones
+// enqueued during delivery; everything else stays queued so a caller can
+// drop it to simulate lost frames.
+func (h *hsHarness) pumpTo(nick string) {
+	target := h.nodeByNick(nick)
+	for i := 0; i < len(h.queue); {
+		f := h.queue[i]
+		if f.to != target.uid {
+			i++
+			continue
+		}
+		h.queue = append(h.queue[:i], h.queue[i+1:]...)
+		prev := h.current
+		h.current = target
+		handleInbound(f.from.uid, f.from.nick, f.body, time.Now())
+		h.current = prev
+	}
+}
+
 func (h *hsHarness) record(nick, id string) *WalletRecord {
 	rec, ok := h.store(nick).Wallet(id)
 	if !ok {

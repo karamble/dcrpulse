@@ -1007,7 +1007,10 @@ export type BisonrelayEventType =
   | 'store-order-status'
   // Shared-wallet coordination frames. brclientd keeps them out of chat
   // and publishes them under this type instead.
-  | 'msig';
+  | 'msig'
+  // Emitted by the dashboard's own msig engine after it persists a state
+  // change, so pages re-render on the commit rather than the arrival.
+  | 'msig-state';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;
