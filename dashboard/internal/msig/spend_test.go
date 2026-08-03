@@ -433,7 +433,12 @@ func TestSpendInputLocksAndSupersede(t *testing.T) {
 	sh.queue = nil
 
 	// The single funding output is claimed, so a second proposal cannot
-	// take it.
+	// take it, and the window listing marks it committed.
+	if utxos, uerr := WindowUTXOs(sh.ctx, tempID); uerr != nil {
+		t.Fatalf("window utxos: %v", uerr)
+	} else if len(utxos) == 0 || !utxos[0].Locked {
+		t.Fatalf("claimed output not marked locked: %+v", utxos)
+	}
 	if _, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address, Atoms: 50_000_000}},
 		false,
@@ -444,6 +449,11 @@ func TestSpendInputLocksAndSupersede(t *testing.T) {
 	// Aborting releases the claim.
 	if err := AbortProposal(sh.ctx, tempID, first.TxID); err != nil {
 		t.Fatalf("abort: %v", err)
+	}
+	if utxos, uerr := WindowUTXOs(sh.ctx, tempID); uerr != nil {
+		t.Fatalf("window utxos after abort: %v", uerr)
+	} else if len(utxos) == 0 || utxos[0].Locked {
+		t.Fatalf("aborted claim still marked locked: %+v", utxos)
 	}
 	second, err := ProposeSpend(sh.ctx, tempID,
 		[]Recipient{{Address: rec.Address, Atoms: 50_000_000}},

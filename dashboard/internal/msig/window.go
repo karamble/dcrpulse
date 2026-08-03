@@ -504,5 +504,13 @@ func WindowUTXOs(ctx context.Context, id string) ([]UTXO, error) {
 	if rec == nil || !rec.HD {
 		return nil, fmt.Errorf("unknown HD shared wallet %s", id)
 	}
-	return listWindowUTXOs(ctx, store, rec)
+	utxos, err := listWindowUTXOs(ctx, store, rec)
+	if err != nil {
+		return nil, err
+	}
+	locked := lockedInputs(rec, "")
+	for i := range utxos {
+		utxos[i].Locked = locked[fmt.Sprintf("%s:%d", utxos[i].TxID, utxos[i].Vout)]
+	}
+	return utxos, nil
 }

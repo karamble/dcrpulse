@@ -36,6 +36,9 @@ type UTXO struct {
 	Atoms         int64
 	Address       string
 	Confirmations int64
+	// Locked marks an output a live proposal has already claimed, so
+	// displays can say the funds are committed rather than spendable.
+	Locked bool
 }
 
 // Recipient is one payment output of a proposal.

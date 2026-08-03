@@ -115,6 +115,7 @@ type SharedUTXO struct {
 	Atoms         int64  `json:"atoms"`
 	Confirmations int64  `json:"confirmations"`
 	Address       string `json:"address"`
+	Locked        bool   `json:"locked,omitempty"`
 }
 
 // ListSharedUTXOs returns every unspent output paying the given shared

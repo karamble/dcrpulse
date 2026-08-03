@@ -202,6 +202,16 @@ export const SharedWalletDetailPage = () => {
                   {(detail.utxos ?? []).length} unspent output
                   {(detail.utxos ?? []).length === 1 ? '' : 's'}
                 </p>
+                {(detail.utxos ?? []).some((u) => u.locked) && (
+                  <p className="text-xs text-warning mt-1">
+                    {formatDcr(
+                      (detail.utxos ?? [])
+                        .filter((u) => u.locked)
+                        .reduce((sum, u) => sum + u.atoms, 0),
+                    )}{' '}
+                    DCR committed to pending payments
+                  </p>
+                )}
                 {(detail.utxos ?? []).length > 0 && (
                   <div className="mt-4 overflow-x-auto">
                     <table className="w-full text-xs">
@@ -215,8 +225,20 @@ export const SharedWalletDetailPage = () => {
                       <tbody>
                         {(detail.utxos ?? []).map((u) => (
                           <tr key={`${u.txid}:${u.vout}`} className="border-t border-border/50">
-                            <td className="py-1 font-mono truncate max-w-[16rem]" title={`${u.txid}:${u.vout}`}>
-                              {(u.address || u.txid).slice(0, 14)}...
+                            <td className="py-1 max-w-[16rem]" title={`${u.txid}:${u.vout}`}>
+                              <span className="flex items-center gap-2 min-w-0">
+                                <span className="font-mono truncate">
+                                  {(u.address || u.txid).slice(0, 14)}...
+                                </span>
+                                {u.locked && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded-full border border-warning/40 bg-warning/10 text-warning text-[10px] font-semibold whitespace-nowrap"
+                                    title="Reserved by a pending payment"
+                                  >
+                                    committed
+                                  </span>
+                                )}
+                              </span>
                             </td>
                             <td className="py-1 text-right">{formatDcr(u.atoms)}</td>
                             <td className="py-1 text-right">{u.confirmations}</td>

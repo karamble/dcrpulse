@@ -98,6 +98,7 @@ export interface MsigUTXO {
   atoms: number;
   confirmations: number;
   address?: string;
+  locked?: boolean;
 }
 
 export interface MsigReceive {
