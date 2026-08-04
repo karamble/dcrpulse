@@ -17,7 +17,8 @@ import (
 	"dcrpulse/internal/types"
 )
 
-// MsigWalletsHandler lists the active wallet's shared-wallet records.
+// MsigWalletsHandler lists the active wallet's shared-wallet records
+// with a best-effort balance for each active one.
 func MsigWalletsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -26,11 +27,40 @@ func MsigWalletsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	type walletEntry struct {
+		*msig.WalletRecord
+		BalanceAtoms *int64 `json:"balanceAtoms,omitempty"`
+	}
+	entries := make([]walletEntry, 0, len(wallets))
+	for _, rec := range wallets {
+		entry := walletEntry{WalletRecord: rec}
+		if rec.Address != "" && rec.Status == msig.StatusActive {
+			var total int64
+			known := false
+			if rec.HD {
+				if utxos, uerr := msig.WindowUTXOs(ctx, rec.TempID); uerr == nil {
+					for _, u := range utxos {
+						total += u.Atoms
+					}
+					known = true
+				}
+			} else if utxos, uerr := services.ListSharedUTXOs(ctx, []string{rec.Address}); uerr == nil {
+				for _, u := range utxos {
+					total += u.Atoms
+				}
+				known = true
+			}
+			if known {
+				entry.BalanceAtoms = &total
+			}
+		}
+		entries = append(entries, entry)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(struct {
-		WalletName string               `json:"walletName"`
-		Wallets    []*msig.WalletRecord `json:"wallets"`
-	}{walletName, wallets})
+		WalletName string        `json:"walletName"`
+		Wallets    []walletEntry `json:"wallets"`
+	}{walletName, entries})
 }
 
 // MsigInviteHandler starts a shared wallet round.

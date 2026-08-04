@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 import { Link } from 'react-router-dom';
 import { AlertCircle, Loader2, Mail, Plus, RefreshCw, Upload, Users, X } from 'lucide-react';
 import { useBisonrelayLive } from '../../bisonrelay/BisonrelayLiveProvider';
@@ -32,6 +33,11 @@ const statusTone = (status: string): string => {
   }
 };
 
+const formatDcr = (atoms: number): string => (atoms / 1e8).toFixed(8);
+
+const hasPendingApproval = (wlt: MsigWallet): boolean =>
+  Object.values(wlt.proposals ?? {}).some((p) => p.status === 'incoming');
+
 // SharedWalletsPage lists this wallet's multisig wallets and hosts the
 // create wizard plus the incoming-invitation banners.
 export const SharedWalletsPage = () => {
@@ -60,9 +66,7 @@ export const SharedWalletsPage = () => {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useVisiblePoll(load, 30_000);
 
   // Coordination frames arrive as their own event type; chat badges are
   // untouched by them. msig-state marks the engine's commit, which the
@@ -242,8 +246,14 @@ export const SharedWalletsPage = () => {
             <Link
               key={wlt.tempId}
               to={`/wallet/shared/${encodeURIComponent(wlt.tempId)}`}
-              className="p-6 rounded-xl bg-gradient-card border border-border/50 hover:border-primary/40 transition-colors"
+              className="relative p-6 rounded-xl bg-gradient-card border border-border/50 hover:border-primary/40 transition-colors"
             >
+              {hasPendingApproval(wlt) && (
+                <span
+                  className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-background"
+                  aria-label="A payment needs your approval"
+                />
+              )}
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-semibold truncate">{wlt.label}</p>
@@ -251,6 +261,9 @@ export const SharedWalletsPage = () => {
                     {wlt.m} of {wlt.n} signatures
                     {wlt.role === 'cosigner' && ' - you are a cosigner'}
                   </p>
+                  {wlt.balanceAtoms !== undefined && (
+                    <p className="mt-1 text-sm font-medium">{formatDcr(wlt.balanceAtoms)} DCR</p>
+                  )}
                 </div>
                 <span className={`px-2 py-1 rounded-full border text-[10px] font-semibold whitespace-nowrap ${statusTone(wlt.status)}`}>
                   {msigStatusLabel(wlt.status)}

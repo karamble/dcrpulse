@@ -89,6 +89,7 @@ export interface MsigWallet {
   createdAt: number;
   updatedAt: number;
   proposals?: Record<string, MsigProposal>;
+  balanceAtoms?: number;
 }
 
 export interface MsigUTXO {
