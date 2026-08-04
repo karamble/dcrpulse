@@ -175,6 +175,7 @@ func Start(cfg Config) {
 		enabled = v
 	}
 	if !enabled {
+		mcpLog.Infof("MCP server not started: disabled. Turn it on under Settings > AI Agents.")
 		return
 	}
 	// The same precondition the settings route enforces: without a dashboard

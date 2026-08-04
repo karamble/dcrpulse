@@ -46,13 +46,21 @@ service:
 | `MCP_BIND` | `127.0.0.1` | Interface the listener binds to. |
 | `MCP_PORT` | `8090` | Listener port. |
 
-The bundled `docker-compose.yml` sets `MCP_ENABLE=true` and `MCP_BIND=0.0.0.0` on the
-dashboard container, and publishes the port to the host loopback only:
+The agent server ships off. The bundled `docker-compose.yml` sets
+`MCP_ENABLE=${MCP_ENABLE:-false}` and `MCP_BIND=0.0.0.0` on the dashboard container,
+and publishes the port to the host loopback only:
 
 ```yaml
 ports:
-  - "127.0.0.1:8090:8090"   # MCP listener, localhost only
+  - "${MCP_AGENTS_HOST:-127.0.0.1}:${MCP_AGENTS_PORT:-8090}:8090"
 ```
+
+Turning it on under Settings -> AI Agents is the normal path, and that choice is
+remembered and overrides `MCP_ENABLE` from then on. Setting `MCP_ENABLE=true` in
+`.env` only matters on an install where the toggle has never been used. If you are
+upgrading from a build that shipped `MCP_ENABLE=true` and you never touched the
+toggle, your listener will stay down after the upgrade until you do one of those two
+things; the startup log says so.
 
 Security: the MCP port grants programmatic control of your wallet (within the limits
 you set). Keep it on localhost. Expose it beyond this machine only behind an

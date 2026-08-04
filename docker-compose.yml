@@ -224,7 +224,7 @@ services:
       - DCRDEX_RPC_USER=${DCRDEX_RPC_USER:-dcrdex}
       - DCRDEX_RPC_PASS=${DCRDEX_RPC_PASS:-dcrdexpass}
       - DCRDEX_WS_PORT=5758
-      - MCP_ENABLE=true
+      - MCP_ENABLE=${MCP_ENABLE:-false}
       - MCP_BIND=0.0.0.0
       - MCP_AGENT_OUTBOX_DIR=/agent-outbox
     depends_on:
