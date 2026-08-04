@@ -146,7 +146,7 @@ func TestMessageHDForms(t *testing.T) {
 	valid := []*Message{
 		{Type: TypeInvite, Ver: ProtoHD, TempID: "00aabbcc", Label: "team", M: 2, N: 3,
 			Network: "mainnet", Xpub: xp[0]},
-		{Type: TypeAccept, Ver: ProtoHD, TempID: "00aabbcc", Xpub: xp[1]},
+		{Type: TypeAccept, Ver: ProtoHD, TempID: "00aabbcc", Xpub: xp[1], Attest: "c2ln"},
 		{Type: TypeRoster, Ver: ProtoHD, TempID: "00aabbcc", Label: "team", M: 2, N: 3,
 			Network: "mainnet", Xpubs: xp, Address: "DcSharedAddr"},
 	}
@@ -230,7 +230,7 @@ func TestHDFramesFailV1Rules(t *testing.T) {
 	hdFrames := []*Message{
 		{Type: TypeInvite, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 2,
 			Network: "mainnet", Xpub: xp[0]},
-		{Type: TypeAccept, Ver: ProtoHD, TempID: "00aabbcc", Xpub: xp[1]},
+		{Type: TypeAccept, Ver: ProtoHD, TempID: "00aabbcc", Xpub: xp[1], Attest: "c2ln"},
 		{Type: TypeRoster, Ver: ProtoHD, TempID: "00aabbcc", Label: "t", M: 2, N: 2,
 			Network: "mainnet", Xpubs: xp, Address: "DcSharedAddr"},
 	}

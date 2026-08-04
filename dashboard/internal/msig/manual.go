@@ -128,8 +128,13 @@ func manualFrameStale(rec *WalletRecord, it *OutboxItem) bool {
 			return true
 		}
 		return p.Status == ProposalConfirmed
+	case TypeReady:
+		// The attestation set's arrival proves the initiator received
+		// this cosigner's confirmation.
+		return rec.Terminal() || len(rec.Attests) > 0 ||
+			rec.Status == StatusPendingImport || rec.Status == StatusActive
 	}
-	// ready, decline, sig_decline, invite_cancel: nothing ever comes
+	// attest_set, decline, sig_decline, invite_cancel: nothing ever comes
 	// back to prove delivery; the user retires them.
 	return false
 }

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, Download, Loader2, XCircle } from 'lucide-react';
 import { KeyEnds } from '../../AddressGroups';
+import { ConfirmRosterCard } from './ConfirmRosterCard';
 import { useBisonrelayLive } from '../../bisonrelay/BisonrelayLiveProvider';
 import { CoordinationCard } from './CoordinationCard';
 import { ReceiveCard } from './ReceiveCard';
@@ -256,11 +257,13 @@ export const SharedWalletDetailPage = () => {
             )}
           </div>
         </div>
+      ) : rec.status === 'reviewing' || rec.status === 'confirming' ? (
+        <ConfirmRosterCard rec={rec} onDone={load} />
       ) : (
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
           <p className="text-sm text-muted-foreground">
-            Receive addresses appear once every cosigner has confirmed. Do not send funds
-            before then.
+            Receive addresses appear once every cosigner has confirmed their key. Do not
+            send funds before then.
           </p>
         </div>
       )}

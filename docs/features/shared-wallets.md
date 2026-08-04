@@ -170,8 +170,11 @@ rejection. The roster's optional `peers` list carries one
 `{uid, nick, xpub}` tuple per invitee so every cosigner learns the full
 membership, not only the initiator it heard the invite from. The
 tuples are initiator-asserted routing hints and never key material:
-funds stay bound to the xpubs, signatures verify per key, and a wrong
-identity mapping can only misroute a signing request, never move money.
+funds stay bound to the xpubs and signatures verify per key, so a wrong
+identity mapping cannot redirect a payment. It can still misrepresent
+who is in the wallet, which is why the roster is not enough on its own
+and every participant signs a cosigner attestation before the wallet can
+receive funds (see "Cosigner attestation" below).
 Receivers ignore tuples for keys outside the roster; on the manual
 transport they discard the sender-local ids entirely and mint their
 own. Rosters without the field remain valid (older builds). Schemes are capped at 8 participants — the network itself
@@ -190,25 +193,61 @@ The initiator is the hub. Cosigners need a Bison Relay connection to the
 initiator only, not to each other.
 
 1. The initiator creates its dedicated account, records the round and
-   sends `invite` with the account's xpub to each participant.
+   sends `invite` with the account's xpub to each participant. The
+   invite also names who else is being invited, so an invitee can see
+   the membership it is being asked to join.
 2. A participant answers `accept` with its own freshly created account's
-   xpub, or `decline`. The account is created only on acceptance, so
-   declining costs nothing. An xpub already present in the round fails
-   it: two participants on one key would collapse the threshold.
-3. Once every participant has accepted, the initiator sorts the xpub
-   set, derives the wallet id, imports the initial gap windows of both
-   branches, syncs its own branch indices and sends `roster` to
-   everyone.
+   xpub and a signature proving it holds that key, or `decline`. The
+   account is created only on acceptance, so declining costs nothing. An
+   xpub already present in the round fails it: two participants on one
+   key would collapse the threshold. An accept without the proof fails
+   the round rather than settling on a key nobody demonstrably has.
+3. Once every participant has accepted, the initiator sorts the xpub set
+   and derives the wallet id, then stops. Nothing is imported or
+   announced until the initiator reviews the cosigners and signs the key
+   set, which needs the wallet passphrase and therefore a person. That
+   signature releases the `roster`, which carries it.
 4. Each cosigner independently verifies the roster: the m, n, network
    and label must match the invite; its own xpub and the initiator's
-   must be present; and the wallet id must re-derive byte-identically
-   from the xpub set. Any mismatch fails the round permanently. On
-   success it records the peer tuples, imports its own windows and
-   answers `ready`. A settled wallet accepts a byte-identical roster
-   again purely to fill in missing peer identities; membership itself
-   never changes after activation.
-5. The wallet is active for a cosigner once it has imported; for the
-   initiator once every `ready` has arrived.
+   must be present; the wallet id must re-derive byte-identically from
+   the xpub set; and the initiator's signature over it must check out.
+   Any mismatch fails the round permanently. On success it records the
+   peer tuples and stops, waiting for its own holder to confirm the
+   cosigners and sign, which sends `ready` with that signature.
+5. When every `ready` has arrived the initiator is active and fans out
+   `attest_set`, the collected signatures. A cosigner verifies the set
+   against its own roster digest, requiring one valid signature per key,
+   and only then imports its windows and becomes active.
+
+A settled wallet accepts a byte-identical roster again purely to fill in
+missing peer identities and to re-answer a lost `ready`; membership
+itself never changes after activation.
+
+### Cosigner attestation
+
+Step 2's proof and steps 3 to 5's signatures are the same primitive:
+each participant signs with child (0,0) of its own account xpub, the one
+key every other participant can derive from the roster alone. Signatures
+are dcrwallet `signmessage` compact signatures, so `dcrctl verifymessage`
+checks them out of band. The signed string covers the network, the round,
+the threshold, the derived address and the key set in canonical order.
+The identity tuples are deliberately outside it: signing an
+initiator-asserted claim about who holds a key would launder it into
+something that looks verified.
+
+The guarantee is exactly this: **every key in the roster is held by
+someone who signed off on this exact key set.** That closes a roster
+seeded with a key nobody holds, a roster that lifts a third party's
+published xpub without their involvement, a split view where different
+cosigners are shown different key sets, and tampering by a courier or
+relay holding no key in the roster.
+
+It does **not** prove the holders are distinct people, and it does not
+close a roster whose other slots are keys the initiator controls
+outright — those sign happily. Only confirming a cosigner's key with
+that person, over a channel that does not pass through the initiator,
+closes that one. The confirmation step exists to prompt exactly that,
+and the wallet hands out no receive address until it is done.
 
 A decline, a cancel or an expiry fails the round. Restarting means a new
 round with a new tempId and a new dedicated account; accounts are never

@@ -6,12 +6,15 @@ package msig
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/decred/dcrd/hdkeychain/v3"
 
 	"dcrpulse/internal/types"
@@ -51,9 +54,42 @@ func newHDHarness(t *testing.T, names ...string) *hdHarness {
 	}
 
 	origCreate, origXpub, origSync, origAccounts := createAccountSeam, accountXpubSeam, syncBranchSeam, accountsSeam
+	origSign := signMessageSeam
 	t.Cleanup(func() {
 		createAccountSeam, accountXpubSeam, syncBranchSeam, accountsSeam = origCreate, origXpub, origSync, origAccounts
+		signMessageSeam = origSign
 	})
+	// Only the signing half is faked. Verification runs the real code, so a
+	// forged or misdirected attestation fails these tests the way it would
+	// fail in production.
+	signMessageSeam = func(ctx context.Context, account uint32, address, message string, passphrase []byte) (string, error) {
+		if len(passphrase) == 0 {
+			return "", fmt.Errorf("wallet passphrase required")
+		}
+		cur := h.current
+		key := hd.masters[cur.uid]
+		var err error
+		for _, step := range []uint32{44, 42, account} {
+			if key, err = key.ChildBIP32Std(hdkeychain.HardenedKeyStart + step); err != nil {
+				return "", err
+			}
+		}
+		for _, step := range []uint32{attestBranch, attestIndex} {
+			if key, err = key.Child(step); err != nil {
+				return "", err
+			}
+		}
+		priv, err := key.SerializedPrivKey()
+		if err != nil {
+			return "", err
+		}
+		hash, err := signedMessageHash(message)
+		if err != nil {
+			return "", err
+		}
+		sig := ecdsa.SignCompact(secp256k1.PrivKeyFromBytes(priv), hash, true)
+		return base64.StdEncoding.EncodeToString(sig), nil
+	}
 	createAccountSeam = func(ctx context.Context, name string, passphrase []byte) (uint32, error) {
 		if len(passphrase) == 0 {
 			return 0, fmt.Errorf("wallet passphrase required")
@@ -104,6 +140,40 @@ func (hd *hdHarness) createHD(t *testing.T, m int, initiator string, invitees ..
 	return rec.TempID
 }
 
+// settle drives the two human checkpoints the ceremony now has: the initiator
+// signs off on the assembled key set, and every cosigner signs off on the
+// roster it received. Nothing reaches active without both.
+func (hd *hdHarness) settle(t *testing.T, tempID, initiator string, cosigners ...string) {
+	t.Helper()
+	hd.pump()
+	hd.as(initiator)
+	if err := ActivateRound(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("%s activate: %v", initiator, err)
+	}
+	hd.pump()
+	for _, nick := range cosigners {
+		hd.as(nick)
+		if err := ConfirmRoster(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+			t.Fatalf("%s confirm: %v", nick, err)
+		}
+		hd.pump()
+	}
+	hd.pump()
+}
+
+// acceptAll accepts the invite on every named cosigner.
+func (hd *hdHarness) acceptAll(t *testing.T, tempID string, cosigners ...string) {
+	t.Helper()
+	hd.pump()
+	for _, nick := range cosigners {
+		hd.as(nick)
+		if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+			t.Fatalf("%s accept: %v", nick, err)
+		}
+	}
+	hd.pump()
+}
+
 func TestHandshakeHDTwoOfTwo(t *testing.T) {
 	hd := newHDHarness(t, "alice", "bob")
 	tempID := hd.createHD(t, 2, "alice", "bob")
@@ -113,7 +183,7 @@ func TestHandshakeHDTwoOfTwo(t *testing.T) {
 	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
 		t.Fatalf("bob accept: %v", err)
 	}
-	hd.pump()
+	hd.settle(t, tempID, "alice", "bob")
 
 	alice := hd.record("alice", tempID)
 	bob := hd.record("bob", tempID)
@@ -230,7 +300,7 @@ func TestHandshakeHDResumePendingImport(t *testing.T) {
 	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	hd.pump()
+	hd.settle(t, tempID, "alice", "bob")
 
 	// Rewind bob to a verified-but-unimported roster, as if the import
 	// had been deferred by a wallet switch, and let the sweep resume it.
@@ -265,7 +335,7 @@ func TestHandshakeHDWindowCatchUp(t *testing.T) {
 	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	hd.pump()
+	hd.settle(t, tempID, "alice", "bob")
 
 	// Advancing the receive cursor widens the window; the active-record
 	// resume case must top the imports up.
@@ -293,13 +363,8 @@ func TestHandshakeHDTwoOfThree(t *testing.T) {
 	hd := newHDHarness(t, "alice", "bob", "carol")
 	tempID := hd.createHD(t, 2, "alice", "bob", "carol")
 	hd.pump()
-	for _, nick := range []string{"bob", "carol"} {
-		hd.as(nick)
-		if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
-			t.Fatalf("%s accept: %v", nick, err)
-		}
-		hd.pump()
-	}
+	hd.acceptAll(t, tempID, "bob", "carol")
+	hd.settle(t, tempID, "alice", "bob", "carol")
 	alice := hd.record("alice", tempID)
 	if alice.Status != StatusActive || len(alice.Xpubs) != 3 {
 		t.Fatalf("alice: %s (%s), %d xpubs", alice.Status, alice.FailReason, len(alice.Xpubs))
@@ -372,7 +437,7 @@ func TestHandshakeHDReplayAbsorbed(t *testing.T) {
 		t.Fatalf("expected one queued accept, got %d", len(hd.queue))
 	}
 	replay := hd.queue[0]
-	hd.pump()
+	hd.settle(t, tempID, "alice", "bob")
 
 	if rec := hd.record("alice", tempID); rec.Status != StatusActive {
 		t.Fatalf("round not active: %s", rec.Status)
@@ -410,13 +475,8 @@ func TestHDRosterCarriesPeers(t *testing.T) {
 	hd := newHDHarness(t, "alice", "bob", "carol")
 	tempID := hd.createHD(t, 2, "alice", "bob", "carol")
 	hd.pump()
-	for _, nick := range []string{"bob", "carol"} {
-		hd.as(nick)
-		if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
-			t.Fatalf("%s accept: %v", nick, err)
-		}
-		hd.pump()
-	}
+	hd.acceptAll(t, tempID, "bob", "carol")
+	hd.settle(t, tempID, "alice", "bob", "carol")
 
 	carolX := hd.record("carol", tempID).OwnHD.Xpub
 	bob := hd.record("bob", tempID)
@@ -486,11 +546,21 @@ func TestActivationSurvivesLostReady(t *testing.T) {
 		t.Fatalf("accept: %v", err)
 	}
 	hd.pumpTo("alice")
+	hd.as("alice")
+	if err := ActivateRound(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
 	hd.pumpTo("bob")
-	// Bob is active and his ready sits queued; lose it.
+	hd.as("bob")
+	if err := ConfirmRoster(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	// Bob has confirmed and his ready sits queued; lose it.
 	hd.queue = nil
-	if got := hd.record("bob", tempID); got.Status != StatusActive {
-		t.Fatalf("bob after roster: %s", got.Status)
+	// Bob cannot be active yet: the attestation set only follows alice's
+	// own activation, which the lost ready is holding up.
+	if got := hd.record("bob", tempID); got.Status != StatusAttested {
+		t.Fatalf("bob after confirming: %s", got.Status)
 	}
 	alice := hd.record("alice", tempID)
 	if alice.Status != StatusActivating {
@@ -519,6 +589,11 @@ func TestActivationSurvivesLostReady(t *testing.T) {
 	hd.pumpTo("alice")
 	if got := hd.record("alice", tempID); got.Status != StatusActive {
 		t.Fatalf("alice after re-announce: %s (%s)", got.Status, got.FailReason)
+	}
+	// The attestation set rides the same recovery, so bob finishes too.
+	hd.pump()
+	if got := hd.record("bob", tempID); got.Status != StatusActive {
+		t.Fatalf("bob after re-announce: %s (%s)", got.Status, got.FailReason)
 	}
 }
 

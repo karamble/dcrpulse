@@ -74,7 +74,7 @@ export const ReceiveCard = ({
           </div>
           <p className="text-xs text-muted-foreground">
             Every address belongs to this wallet; a fresh one per payer keeps deposits
-            apart. Spending needs {m} of the {n} cosigners.
+            apart. Spending needs {m} of the {n} cosigner keys confirmed at setup.
           </p>
           {notice && (
             <p className="text-xs text-warning flex items-start gap-1">

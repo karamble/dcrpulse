@@ -6,6 +6,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -30,10 +32,17 @@ func MsigWalletsHandler(w http.ResponseWriter, r *http.Request) {
 	type walletEntry struct {
 		*msig.WalletRecord
 		BalanceAtoms *int64 `json:"balanceAtoms,omitempty"`
+		// KeySetFingerprint hashes the signed roster digest, so every
+		// node of the same wallet renders the same value.
+		KeySetFingerprint string `json:"keySetFingerprint,omitempty"`
 	}
 	entries := make([]walletEntry, 0, len(wallets))
 	for _, rec := range wallets {
 		entry := walletEntry{WalletRecord: rec}
+		if rec.RosterDigest != "" {
+			sum := sha256.Sum256([]byte(rec.RosterDigest))
+			entry.KeySetFingerprint = hex.EncodeToString(sum[:4])
+		}
 		if rec.Address != "" && rec.Status == msig.StatusActive {
 			var total int64
 			known := false
@@ -95,6 +104,45 @@ func MsigInviteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // MsigAcceptHandler accepts an incoming invite.
+// MsigActivateHandler is the initiator's checkpoint: every cosigner's key is
+// in, and signing the assembled key set is what releases the roster.
+func MsigActivateHandler(w http.ResponseWriter, r *http.Request) {
+	msigPassphraseAction(w, r, msig.ActivateRound)
+}
+
+// MsigConfirmHandler is the cosigner's checkpoint: the roster verified, and
+// signing it is the user saying they checked who holds the keys.
+func MsigConfirmHandler(w http.ResponseWriter, r *http.Request) {
+	msigPassphraseAction(w, r, msig.ConfirmRoster)
+}
+
+// msigPassphraseAction runs one id-and-passphrase shared-wallet action. The
+// passphrase is lifted out of the decoded body and the field cleared, so it is
+// never left sitting in a struct the handler still holds.
+func msigPassphraseAction(w http.ResponseWriter, r *http.Request, action func(context.Context, string, []byte) error) {
+	if rejectWatchOnly(w, r) {
+		return
+	}
+	var req types.MsigActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Passphrase) > 1024 {
+		http.Error(w, "Passphrase too long", http.StatusBadRequest)
+		return
+	}
+	passphrase := []byte(req.Passphrase)
+	req.Passphrase = ""
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	if err := action(ctx, req.ID, passphrase); err != nil {
+		msigPassphraseError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func MsigAcceptHandler(w http.ResponseWriter, r *http.Request) {
 	if rejectWatchOnly(w, r) {
 		return

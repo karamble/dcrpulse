@@ -546,6 +546,8 @@ func main() {
 	api.HandleFunc("/msig/wallets", handlers.MsigWalletsHandler).Methods("GET")
 	api.HandleFunc("/msig/wallets/invite", handlers.MsigInviteHandler).Methods("POST")
 	api.HandleFunc("/msig/wallets/accept", handlers.MsigAcceptHandler).Methods("POST")
+	api.HandleFunc("/msig/wallets/activate", handlers.MsigActivateHandler).Methods("POST")
+	api.HandleFunc("/msig/wallets/confirm", handlers.MsigConfirmHandler).Methods("POST")
 	api.HandleFunc("/msig/wallets/decline", handlers.MsigDeclineHandler).Methods("POST")
 	api.HandleFunc("/msig/wallets/cancel", handlers.MsigCancelHandler).Methods("POST")
 	api.HandleFunc("/msig/wallets/detail", handlers.MsigDetailHandler).Methods("GET")

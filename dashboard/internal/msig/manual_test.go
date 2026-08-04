@@ -89,14 +89,30 @@ func manualHandshake(t *testing.T, hd *hdHarness, initiator, cosigner string) st
 	if res := importAs(t, hd, initiator, accept.Body, tempID, initRec.Peers[0].UID, ""); res.Outcome != "processed" {
 		t.Fatalf("accept import outcome: %s", res.Outcome)
 	}
+	// The initiator signs off on the assembled key set; only then is there
+	// a roster to hand over.
+	hd.as(initiator)
+	if err := ActivateRound(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
 	roster := exportOne(t, hd, initiator, tempID, TypeRoster)
 	coRec := hd.record(cosigner, tempID)
 	if res := importAs(t, hd, cosigner, roster.Body, tempID, coRec.InitiatorUID, ""); res.Outcome != "processed" {
 		t.Fatalf("roster import outcome: %s", res.Outcome)
 	}
+	// The cosigner signs off on the roster it received.
+	hd.as(cosigner)
+	if err := ConfirmRoster(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
 	ready := exportOne(t, hd, cosigner, tempID, TypeReady)
 	if res := importAs(t, hd, initiator, ready.Body, tempID, initRec.Peers[0].UID, ""); res.Outcome != "processed" {
 		t.Fatalf("ready import outcome: %s", res.Outcome)
+	}
+	// The set of signatures is what releases the cosigner to import.
+	attests := exportOne(t, hd, initiator, tempID, TypeAttestSet)
+	if res := importAs(t, hd, cosigner, attests.Body, tempID, coRec.InitiatorUID, ""); res.Outcome != "processed" {
+		t.Fatalf("attestation set import outcome: %s", res.Outcome)
 	}
 	if len(hd.queue) != 0 {
 		t.Fatalf("manual handshake touched the BR transport")
@@ -297,6 +313,9 @@ func TestManualImportWrongActiveWallet(t *testing.T) {
 	// Importing while a wallet WITHOUT the record is active must refuse
 	// loudly instead of routing into whichever store the router finds.
 	hd.as("bob")
+	// Any still-pending frame will do; the attestation set is user-retired,
+	// so one is always on hand after a completed handshake.
+	hd.as("alice")
 	frames, err := ManualOutbox(hd.ctx, tempID)
 	if err != nil {
 		t.Fatal(err)
@@ -304,6 +323,9 @@ func TestManualImportWrongActiveWallet(t *testing.T) {
 	var anyFrame ManualFrame
 	for _, f := range frames {
 		anyFrame = f
+	}
+	if anyFrame.Body == "" {
+		t.Fatal("no frame left to import")
 	}
 	coRec := hd.record("bob", tempID)
 	hd.as("carol")
@@ -394,6 +416,10 @@ func TestManualWrongAttribution(t *testing.T) {
 	importAs(t, hd, "alice", bobAccept.Body, tempID, peerCarol, "")
 	importAs(t, hd, "alice", carolAccept.Body, tempID, peerBob, "")
 
+	hd.as("alice")
+	if err := ActivateRound(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
 	alice := hd.record("alice", tempID)
 	if alice.Status != StatusActivating && alice.Status != StatusActive {
 		t.Fatalf("misattributed round did not activate: %s (%s)", alice.Status, alice.FailReason)
@@ -533,6 +559,10 @@ func TestManualRosterMintsLocalPeers(t *testing.T) {
 		t.Fatalf("carol accept import: %s", res.Outcome)
 	}
 
+	hd.as("alice")
+	if err := ActivateRound(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
 	roster := exportAll(t, hd, "alice", tempID, TypeRoster)[0]
 	for _, nick := range []string{"bob", "carol"} {
 		co := hd.record(nick, tempID)

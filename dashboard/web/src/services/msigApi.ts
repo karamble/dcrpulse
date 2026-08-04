@@ -10,8 +10,19 @@ export interface MsigPeer {
   pubkey?: string;
   xpub?: string;
   state: string;
+  // Present once this peer's signature over the roster has been verified.
+  // Only ever set after the check passed, so its presence is the fact.
+  attestSig?: string;
   lastSeenTs?: number;
   reason?: string;
+}
+
+// MsigRosterPeer is one identity the initiator asserts. It is a claim about
+// who holds a key, never a proof, and the UI has to say so.
+export interface MsigRosterPeer {
+  uid?: string;
+  nick?: string;
+  xpub?: string;
 }
 
 export interface MsigProposalInput {
@@ -90,6 +101,7 @@ export interface MsigWallet {
   updatedAt: number;
   proposals?: Record<string, MsigProposal>;
   balanceAtoms?: number;
+  keySetFingerprint?: string;
 }
 
 export interface MsigUTXO {
@@ -126,7 +138,8 @@ export interface MsigPendingItem {
   status: string;
   initiatorNick?: string;
   needsSwitch: boolean;
-  kind: 'invite' | 'resume';
+  kind: 'invite' | 'resume' | 'activate' | 'confirm';
+  proposedPeers?: MsigRosterPeer[];
 }
 
 export interface MsigInvitee {
@@ -215,6 +228,18 @@ export const msigFrameTypeLabel = (type: string): string => {
 
 export const acceptMsigInvite = async (id: string, passphrase: string): Promise<void> => {
   await api.post('/msig/wallets/accept', { id, passphrase });
+};
+
+// The initiator signs off on the assembled key set. Nothing is announced and
+// no address exists until this runs.
+export const activateMsigRound = async (id: string, passphrase: string): Promise<void> => {
+  await api.post('/msig/wallets/activate', { id, passphrase });
+};
+
+// A cosigner signs off on the roster it received. The receive address only
+// appears once every cosigner has done this.
+export const confirmMsigRoster = async (id: string, passphrase: string): Promise<void> => {
+  await api.post('/msig/wallets/confirm', { id, passphrase });
 };
 
 export const freshMsigAddress = async (id: string): Promise<MsigReceive> => {
@@ -345,6 +370,8 @@ export const msigStatusLabel = (status: string): string => {
   switch (status) {
     case 'inviting':
       return 'Waiting for cosigners';
+    case 'reviewing':
+      return 'Review the cosigners';
     case 'activating':
       return 'Activating';
     case 'active':
@@ -353,6 +380,10 @@ export const msigStatusLabel = (status: string): string => {
       return 'Invitation received';
     case 'accepted':
       return 'Waiting for the roster';
+    case 'confirming':
+      return 'Confirm the cosigners';
+    case 'attested':
+      return 'Waiting for the other cosigners';
     case 'pending_import':
       return 'Switch wallet to finish';
     case 'declined':
@@ -373,7 +404,7 @@ export const msigPeerLabel = (state: string): string => {
     case 'roster_sent':
       return 'Roster sent';
     case 'ready':
-      return 'Ready';
+      return 'Key confirmed';
     case 'declined':
       return 'Declined';
     default:

@@ -250,6 +250,11 @@ type PendingItem struct {
 	InitiatorNick string `json:"initiatorNick,omitempty"`
 	NeedsSwitch   bool   `json:"needsSwitch"`
 	Kind          string `json:"kind"`
+
+	// ProposedPeers is who the initiator says the other cosigners are, so
+	// an invitee sees the membership before it accepts. Initiator-asserted
+	// and unverified: the UI must present it as a claim, not a fact.
+	ProposedPeers []RosterPeer `json:"proposedPeers,omitempty"`
 }
 
 // SharedAccounts reports the dedicated account numbers of every shared
@@ -297,6 +302,14 @@ func Pending(ctx context.Context) ([]PendingItem, error) {
 				kind = "invite"
 			case StatusPendingImport:
 				kind = "resume"
+			case StatusReviewing:
+				// Every key is in; the initiator has to look at the
+				// cosigners and sign off before anything is announced.
+				kind = "activate"
+			case StatusConfirming:
+				// The roster verified; the cosigner has to confirm who
+				// holds the keys before the wallet can receive funds.
+				kind = "confirm"
 			default:
 				continue
 			}
@@ -312,6 +325,9 @@ func Pending(ctx context.Context) ([]PendingItem, error) {
 			}
 			if len(rec.Peers) > 0 {
 				item.InitiatorNick = rec.Peers[0].Nick
+			}
+			if kind == "invite" {
+				item.ProposedPeers = rec.ProposedPeers
 			}
 			items = append(items, item)
 		}

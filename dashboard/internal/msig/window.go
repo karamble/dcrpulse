@@ -19,6 +19,7 @@ var (
 	createAccountSeam  = services.CreateAccount
 	accountXpubSeam    = services.GetAccountExtendedPubKey
 	syncBranchSeam     = services.SyncAccountAddressIndex
+	signMessageSeam    = services.SignMsigMessage
 	accountsSeam       = services.FetchAllAccounts
 	listUTXOsMultiSeam = func(ctx context.Context, addresses []string) ([]UTXO, error) {
 		rows, err := services.ListSharedUTXOs(ctx, addresses)

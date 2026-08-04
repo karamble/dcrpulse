@@ -6,6 +6,7 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -294,6 +295,60 @@ func WalletTipHeight(ctx context.Context) (int64, error) {
 // cursor for one account branch. Shared-wallet restore runs this before
 // validateaddress so a seed-restored wallet recognizes its own key even
 // though the address never appeared on-chain as P2PKH.
+// SignMsigMessage signs one message with the key behind address, which must
+// belong to the given account. Shared wallets use it to attest to a roster:
+// the signature proves the account's holder signed off on a key set, and any
+// other participant can check it against the account's xpub alone.
+//
+// Same per-account unlock discipline as SignMsigTransaction: dcrwallet encrypts
+// per account, so a wallet-wide unlock would leave this key unusable.
+func SignMsigMessage(ctx context.Context, account uint32, address, message string, passphrase []byte) (string, error) {
+	if rpc.WalletGrpcClient == nil {
+		return "", fmt.Errorf("wallet gRPC client not initialized")
+	}
+	defer func() {
+		for i := range passphrase {
+			passphrase[i] = 0
+		}
+	}()
+
+	beginUnlockedOp()
+	defer endUnlockedOp()
+
+	didUnlock, err := unlockAccountForSpend(ctx, account, passphrase)
+	if err != nil {
+		return "", err
+	}
+	if didUnlock {
+		defer func() {
+			relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := rpc.WalletGrpcClient.LockAccount(relockCtx, &walletrpc.LockAccountRequest{AccountNumber: account}); err != nil {
+				log.Printf("SignMsigMessage: lock account %d: %v", account, err)
+			}
+		}()
+	}
+
+	resp, err := rpc.WalletGrpcClient.SignMessages(ctx, &walletrpc.SignMessagesRequest{
+		Messages: []*walletrpc.SignMessagesRequest_Message{{Address: address, Message: message}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("SignMessages: %w", err)
+	}
+	replies := resp.GetReplies()
+	if len(replies) != 1 {
+		return "", fmt.Errorf("SignMessages returned %d replies, want 1", len(replies))
+	}
+	if e := replies[0].GetError(); e != "" {
+		return "", fmt.Errorf("sign %s: %s", address, e)
+	}
+	sig := replies[0].GetSignature()
+	if len(sig) == 0 {
+		return "", fmt.Errorf("wallet returned an empty signature for %s", address)
+	}
+	return base64.StdEncoding.EncodeToString(sig), nil
+}
+
 func SyncAccountAddressIndex(ctx context.Context, accountName string, branch, index uint32) error {
 	if rpc.WalletClient == nil {
 		return fmt.Errorf("wallet RPC client not initialized")

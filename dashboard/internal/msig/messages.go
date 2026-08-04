@@ -24,6 +24,10 @@ const (
 	TypeSig          = "sig"
 	TypeSigDecline   = "sig_decline"
 	TypeBroadcast    = "broadcast"
+	// TypeAttestSet closes the handshake: the initiator fans out every
+	// cosigner's signature over the settled roster, and no cosigner activates
+	// until it holds a valid one for each key. See attest.go.
+	TypeAttestSet = "attest_set"
 )
 
 // Payload field caps.
@@ -37,6 +41,9 @@ const (
 	maxAddressLen   = 100
 	pubKeyHexLen    = 66
 	txidHexLen      = 64
+	// maxAttestLen bounds a base64 65-byte compact signature with room to
+	// spare; anything longer is not one.
+	maxAttestLen = 120
 )
 
 // ErrUnknownType marks a structurally valid message of a type this build
@@ -76,11 +83,20 @@ type Message struct {
 	Reason   string   `json:"reason,omitempty"`
 	SigsHave int      `json:"sigsHave,omitempty"`
 
-	// Peers optionally rides the roster so every cosigner learns who
-	// holds which key, not just the initiator. Routing hints only: the
-	// mapping is initiator-asserted and never guards funds, which stay
-	// bound to the xpubs.
+	// Peers rides the invite and the roster so every cosigner learns who
+	// is said to hold which key, not just the initiator. Routing hints
+	// only: the mapping is initiator-asserted and never guards funds,
+	// which stay bound to the xpubs. On an invite the xpubs are absent -
+	// nobody has accepted yet - and it is purely what the invitee is
+	// shown before deciding.
 	Peers []RosterPeer `json:"peers,omitempty"`
+
+	// Attest carries one signature: proof of possession on an accept, the
+	// initiator's roster commitment on a roster, a cosigner's on a ready.
+	Attest string `json:"attest,omitempty"`
+
+	// Attests carries the full set on an attest_set.
+	Attests []RosterAttest `json:"attests,omitempty"`
 }
 
 // RosterPeer names one participant of a settled roster.
@@ -88,6 +104,13 @@ type RosterPeer struct {
 	UID  string `json:"uid,omitempty"`
 	Nick string `json:"nick,omitempty"`
 	Xpub string `json:"xpub"`
+}
+
+// RosterAttest is one participant's signature over the roster, bound to the
+// key that made it rather than to any claim about who holds that key.
+type RosterAttest struct {
+	Xpub string `json:"xpub"`
+	Sig  string `json:"sig"`
 }
 
 // ManualTTL is the envelope lifetime for hand-carried frames: long
@@ -204,6 +227,38 @@ func validXpubField(s string) error {
 	return ParseXpubAnyNet(s)
 }
 
+// validAttestField bounds an attestation signature. Empty is rejected by the
+// callers that require one; the shape check lives here.
+func validAttestField(s string) error {
+	if len(s) > maxAttestLen {
+		return fmt.Errorf("malformed attestation")
+	}
+	return nil
+}
+
+// validPeerTuples checks the identity hints on an invite or a roster. withXpubs
+// is false on an invite, where no key has been offered yet.
+func validPeerTuples(peers []RosterPeer, withXpubs bool) error {
+	if len(peers) > MaxPubKeys {
+		return fmt.Errorf("too many peer entries")
+	}
+	for i, p := range peers {
+		if withXpubs && p.Xpub == "" {
+			return fmt.Errorf("peer %d missing xpub", i)
+		}
+		if !withXpubs && p.Xpub != "" {
+			return fmt.Errorf("peer %d carries a key before anyone accepted", i)
+		}
+		if len(p.Nick) > MaxLabelLen {
+			return fmt.Errorf("peer %d nick too long", i)
+		}
+		if len(p.UID) > 64 || (p.UID != "" && !isLowerHex(p.UID)) {
+			return fmt.Errorf("peer %d malformed uid", i)
+		}
+	}
+	return nil
+}
+
 // ValidateMessage enforces the per-type field requirements.
 func ValidateMessage(m *Message) error {
 	if m.Type == "" {
@@ -240,6 +295,13 @@ func ValidateMessage(m *Message) error {
 			if err := validXpubField(m.Xpub); err != nil {
 				return fmt.Errorf("invite: %v", err)
 			}
+			// The invite's peer list is who the initiator says it is
+			// inviting. No key has been offered yet, so the entries carry
+			// no xpub; they exist so the invitee can see the membership it
+			// is being asked to join.
+			if err := validPeerTuples(m.Peers, false); err != nil {
+				return fmt.Errorf("invite: %v", err)
+			}
 		} else if !validPubKey(m.PubKey) {
 			return fmt.Errorf("invite: malformed pubkey")
 		}
@@ -253,6 +315,15 @@ func ValidateMessage(m *Message) error {
 		}
 		if ver == ProtoHD {
 			if err := validXpubField(m.Xpub); err != nil {
+				return fmt.Errorf("accept: %v", err)
+			}
+			// Proof of possession: the key is proven held before it ever
+			// reaches a roster, so a round can never settle on a key nobody
+			// has. Mandatory, so there is no unattested path to fall back to.
+			if m.Attest == "" {
+				return fmt.Errorf("accept: missing proof of possession")
+			}
+			if err := validAttestField(m.Attest); err != nil {
 				return fmt.Errorf("accept: %v", err)
 			}
 		} else if !validPubKey(m.PubKey) {
@@ -283,19 +354,11 @@ func ValidateMessage(m *Message) error {
 			if err := ValidateXpubRoster(m.Xpubs, m.N); err != nil {
 				return fmt.Errorf("roster: %v", err)
 			}
-			if len(m.Peers) > MaxPubKeys {
-				return fmt.Errorf("roster: too many peer entries")
+			if err := validPeerTuples(m.Peers, true); err != nil {
+				return fmt.Errorf("roster: %v", err)
 			}
-			for i, p := range m.Peers {
-				if p.Xpub == "" {
-					return fmt.Errorf("roster: peer %d missing xpub", i)
-				}
-				if len(p.Nick) > MaxLabelLen {
-					return fmt.Errorf("roster: peer %d nick too long", i)
-				}
-				if len(p.UID) > 64 || (p.UID != "" && !isLowerHex(p.UID)) {
-					return fmt.Errorf("roster: peer %d malformed uid", i)
-				}
+			if err := validAttestField(m.Attest); err != nil {
+				return fmt.Errorf("roster: %v", err)
 			}
 		} else {
 			if len(m.PubKeys) != m.N {
@@ -324,6 +387,30 @@ func ValidateMessage(m *Message) error {
 		}
 		if !validWalletID(m.WalletID) {
 			return fmt.Errorf("ready: missing walletId")
+		}
+		if err := validAttestField(m.Attest); err != nil {
+			return fmt.Errorf("ready: %v", err)
+		}
+	case TypeAttestSet:
+		if !validTempID(m.TempID) {
+			return fmt.Errorf("attest_set: malformed tempId")
+		}
+		if !validWalletID(m.WalletID) {
+			return fmt.Errorf("attest_set: missing walletId")
+		}
+		if len(m.Attests) == 0 || len(m.Attests) > MaxPubKeys {
+			return fmt.Errorf("attest_set: expected between 1 and %d attestations", MaxPubKeys)
+		}
+		for i, a := range m.Attests {
+			if err := validXpubField(a.Xpub); err != nil {
+				return fmt.Errorf("attest_set: entry %d: %v", i, err)
+			}
+			if a.Sig == "" {
+				return fmt.Errorf("attest_set: entry %d missing signature", i)
+			}
+			if err := validAttestField(a.Sig); err != nil {
+				return fmt.Errorf("attest_set: entry %d: %v", i, err)
+			}
 		}
 	case TypeSignReq, TypeSig:
 		if !validWalletID(m.WalletID) {

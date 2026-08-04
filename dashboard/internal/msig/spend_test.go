@@ -82,14 +82,8 @@ func newSpendHarness(t *testing.T, m int, names ...string) (*spendHarness, strin
 	// Run the HD handshake to an active wallet.
 	cosigners := names[1:]
 	tempID := hd.createHD(t, m, names[0], cosigners...)
-	hd.pump()
-	for _, nick := range cosigners {
-		hd.as(nick)
-		if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
-			t.Fatalf("%s accept: %v", nick, err)
-		}
-		hd.pump()
-	}
+	hd.acceptAll(t, tempID, cosigners...)
+	hd.settle(t, tempID, names[0], cosigners...)
 	rec := hd.record(names[0], tempID)
 	if rec.Status != StatusActive {
 		t.Fatalf("setup: wallet not active: %s (%s)", rec.Status, rec.FailReason)

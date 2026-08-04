@@ -54,7 +54,7 @@ func TestRestoreBackupCardOnFreshSeed(t *testing.T) {
 	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	hd.pump()
+	hd.settle(t, tempID, "alice", "bob")
 
 	hd.as("alice")
 	card, err := ExportBackupCard(hd.ctx, tempID)
@@ -124,7 +124,7 @@ func TestRestoreBackupCardWrongSeed(t *testing.T) {
 	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	hd.pump()
+	hd.settle(t, tempID, "alice", "bob")
 
 	hd.as("alice")
 	card, err := ExportBackupCard(hd.ctx, tempID)
@@ -156,7 +156,7 @@ func TestRestoreBackupCardLocatesExistingAccount(t *testing.T) {
 	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	hd.pump()
+	hd.settle(t, tempID, "alice", "bob")
 
 	hd.as("alice")
 	card, err := ExportBackupCard(hd.ctx, tempID)

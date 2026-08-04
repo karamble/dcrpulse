@@ -251,6 +251,10 @@ func reannounceRosters(ctx context.Context) {
 				log.Printf("msig: roster to %s: %v", p.Nick, err)
 			}
 		}
+		// A cosigner cannot finish without the attestation set, so a lost
+		// one is re-sent alongside the roster. Both re-sends read stored
+		// signatures and never need the passphrase again.
+		fanOutAttestSet(s, rec)
 	}
 }
 
@@ -287,7 +291,11 @@ func expireStaleRounds(s *Store) {
 		// hold funds - a record for an on-chain wallet must never fail
 		// by clock. Lost readies are recovered by re-announcing the
 		// roster, which active cosigners answer with a fresh ready.
-		case StatusInviting, StatusInvited, StatusAccepted:
+		// Reviewing, confirming and attested are safe to expire for the
+		// same reason: nothing is imported until the attestations land,
+		// so no address has been handed out yet.
+		case StatusInviting, StatusInvited, StatusAccepted,
+			StatusReviewing, StatusConfirming, StatusAttested:
 			if rec.CreatedAt > 0 && rec.CreatedAt < cutoff {
 				failRound(s, rec.TempID, "invite round expired")
 			}

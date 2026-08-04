@@ -49,16 +49,23 @@ const (
 	RoleCosigner  = "cosigner"
 )
 
-// Wallet record statuses. Initiators move inviting, activating, active.
-// Cosigners move invited, accepted, pending_import, active; pending_import
-// holds a fully verified roster whose script import waits for the owning
-// wallet to become the active one.
+// Wallet record statuses. Initiators move inviting, reviewing, activating,
+// active. Cosigners move invited, accepted, confirming, attested,
+// pending_import, active; pending_import holds a fully verified roster whose
+// script import waits for the owning wallet to become the active one.
+//
+// Reviewing and confirming are the two human checkpoints: every key is in, but
+// nobody signs off on the key set until its holder has looked at it. See
+// attest.go for why that step cannot be automated away.
 const (
 	StatusInviting      = "inviting"
+	StatusReviewing     = "reviewing"
 	StatusActivating    = "activating"
 	StatusActive        = "active"
 	StatusInvited       = "invited"
 	StatusAccepted      = "accepted"
+	StatusConfirming    = "confirming"
+	StatusAttested      = "attested"
 	StatusPendingImport = "pending_import"
 	StatusDeclined      = "declined"
 	StatusFailed        = "failed"
@@ -127,11 +134,14 @@ type CursorState struct {
 
 // Peer is one cosigner as seen from this node.
 type Peer struct {
-	UID        string `json:"uid"`
-	Nick       string `json:"nick"`
-	PubKey     string `json:"pubkey,omitempty"`
-	Xpub       string `json:"xpub,omitempty"`
-	State      string `json:"state"`
+	UID    string `json:"uid"`
+	Nick   string `json:"nick"`
+	PubKey string `json:"pubkey,omitempty"`
+	Xpub   string `json:"xpub,omitempty"`
+	State  string `json:"state"`
+	// AttestSig is this peer's verified signature over the roster, stored
+	// only once it checked out against the peer's own key.
+	AttestSig  string `json:"attestSig,omitempty"`
 	LastSeenTs int64  `json:"lastSeenTs,omitempty"`
 	Reason     string `json:"reason,omitempty"`
 }
@@ -241,6 +251,21 @@ type WalletRecord struct {
 	OwnHD *OwnHDKey    `json:"ownHd,omitempty"`
 	Ext   *CursorState `json:"ext,omitempty"`
 	Int   *CursorState `json:"int,omitempty"`
+
+	// Cosigner attestations over the settled roster (see attest.go).
+	// RosterDigest is the exact string this node signed, kept so a re-send
+	// never needs the passphrase again. Attests is the verified set; it is
+	// only ever written after every signature checked out, so its presence
+	// is what the UI reads as "these keys are confirmed".
+	RosterDigest string         `json:"rosterDigest,omitempty"`
+	OwnAttest    string         `json:"ownAttest,omitempty"`
+	Attests      []RosterAttest `json:"attests,omitempty"`
+
+	// ProposedPeers is who the initiator said it was inviting, captured
+	// from the invite so the invitee can see the membership before
+	// accepting. Unverified by construction, and kept apart from Peers so
+	// it can never be mistaken for a settled roster.
+	ProposedPeers []RosterPeer `json:"proposedPeers,omitempty"`
 
 	Transport string `json:"transport,omitempty"`
 
@@ -363,6 +388,8 @@ func cloneRecord(r *WalletRecord) *WalletRecord {
 		c.Peers[i] = &pc
 	}
 	c.Xpubs = append([]string(nil), r.Xpubs...)
+	c.Attests = append([]RosterAttest(nil), r.Attests...)
+	c.ProposedPeers = append([]RosterPeer(nil), r.ProposedPeers...)
 	if r.OwnHD != nil {
 		hc := *r.OwnHD
 		c.OwnHD = &hc

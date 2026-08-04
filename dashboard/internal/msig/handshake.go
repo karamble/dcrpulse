@@ -199,7 +199,7 @@ func dispatchInbound(msg *Message, frame *Frame, fromUID, fromNick string, now t
 	switch msg.Type {
 	case TypeInvite:
 		inboundInvite(ctx, m, msg, frame, fromUID, fromNick, network, now, imported)
-	case TypeAccept, TypeDecline, TypeRoster, TypeReady, TypeInviteCancel:
+	case TypeAccept, TypeDecline, TypeRoster, TypeReady, TypeInviteCancel, TypeAttestSet:
 		inboundHandshake(ctx, m, msg, frame, fromUID, fromNick, now)
 	case TypeSignReq, TypeSig, TypeSigDecline, TypeBroadcast:
 		inboundSpend(ctx, m, msg, frame, fromUID, fromNick, now)
@@ -241,6 +241,9 @@ func inboundInvite(ctx context.Context, m *Manager, msg *Message, frame *Frame, 
 		HD: true, Transport: transport,
 		Role: RoleCosigner, Status: StatusInvited, InitiatorUID: fromUID,
 		Peers: []*Peer{{UID: fromUID, Nick: fromNick, Xpub: msg.Xpub, State: PeerAccepted, LastSeenTs: now.Unix()}},
+		// Who the initiator says the other cosigners are. Shown to the
+		// invitee before it accepts, and never treated as more than a claim.
+		ProposedPeers: append([]RosterPeer(nil), msg.Peers...),
 	}
 	if err := store.PutWallet(rec); err != nil {
 		log.Printf("msig: store invite: %v", err)
@@ -258,7 +261,7 @@ func inboundHandshake(ctx context.Context, m *Manager, msg *Message, frame *Fram
 	switch msg.Type {
 	case TypeAccept, TypeDecline, TypeReady:
 		match = func(r *WalletRecord) bool { return r.Role == RoleInitiator }
-	case TypeRoster, TypeInviteCancel:
+	case TypeRoster, TypeInviteCancel, TypeAttestSet:
 		match = func(r *WalletRecord) bool {
 			return r.Role == RoleCosigner && r.InitiatorUID == fromUID
 		}
@@ -287,6 +290,8 @@ func inboundHandshake(ctx context.Context, m *Manager, msg *Message, frame *Fram
 		inboundReady(store, rec, msg, fromUID, now)
 	case TypeInviteCancel:
 		inboundCancel(store, rec, fromUID)
+	case TypeAttestSet:
+		inboundAttestSet(ctx, store, rec, msg, fromUID)
 	}
 }
 
@@ -333,8 +338,27 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 		log.Printf("msig: ready for %s names the wrong address", rec.TempID)
 		return
 	}
-	if rec.peerByUID(fromUID) == nil {
+	peer := rec.peerByUID(fromUID)
+	if peer == nil {
 		return
+	}
+	// A ready is a cosigner saying it confirmed the key set, so it has to
+	// carry the signature that proves it. Crediting one without would let a
+	// wallet go active on a roster somebody never actually signed off on.
+	if rec.HD {
+		params, err := paramsForNetwork(rec.Network)
+		if err != nil {
+			log.Printf("msig: %v", err)
+			return
+		}
+		if msg.Attest == "" {
+			failRound(store, rec.TempID, fmt.Sprintf("%s confirmed without signing the cosigner list; ask them to upgrade dcrpulse", peer.Nick))
+			return
+		}
+		if err := VerifyAttest(peer.Xpub, rec.RosterDigest, msg.Attest, params); err != nil {
+			failRound(store, rec.TempID, fmt.Sprintf("%s's signature over the cosigner list is not valid: %v", peer.Nick, err))
+			return
+		}
 	}
 	err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
 		p := r.peerByUID(fromUID)
@@ -342,6 +366,7 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 			return fmt.Errorf("unknown peer")
 		}
 		p.State = PeerReady
+		p.AttestSig = msg.Attest
 		p.LastSeenTs = now.Unix()
 		allReady := true
 		for _, q := range r.Peers {
@@ -351,6 +376,7 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 		}
 		if allReady && r.Status == StatusActivating {
 			r.Status = StatusActive
+			r.Attests = collectAttests(r)
 		}
 		return nil
 	})
@@ -358,8 +384,45 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 		log.Printf("msig: %v", err)
 		return
 	}
-	if updated, ok := store.Wallet(rec.TempID); ok && updated.Status == StatusActive && rec.Status != StatusActive {
-		log.Printf("msig: shared wallet %q active at %s", updated.Label, updated.Address)
+	updated, ok := store.Wallet(rec.TempID)
+	if !ok || updated.Status != StatusActive || rec.Status == StatusActive {
+		return
+	}
+	log.Printf("msig: shared wallet %q active at %s", updated.Label, updated.Address)
+	// Everyone signed; hand each cosigner the full set so they can finish.
+	fanOutAttestSet(store, updated)
+}
+
+// collectAttests gathers the verified signatures into roster order. Only
+// signatures that already passed verification are ever stored, so this reads
+// them rather than re-checking.
+func collectAttests(r *WalletRecord) []RosterAttest {
+	out := make([]RosterAttest, 0, len(r.Xpubs))
+	if r.OwnHD != nil && r.OwnAttest != "" {
+		out = append(out, RosterAttest{Xpub: r.OwnHD.Xpub, Sig: r.OwnAttest})
+	}
+	for _, p := range r.Peers {
+		if p.Xpub != "" && p.AttestSig != "" {
+			out = append(out, RosterAttest{Xpub: p.Xpub, Sig: p.AttestSig})
+		}
+	}
+	return out
+}
+
+// fanOutAttestSet sends every cosigner the collected attestations, which is
+// what releases them to import the ladder.
+func fanOutAttestSet(store *Store, rec *WalletRecord) {
+	if len(rec.Attests) == 0 {
+		return
+	}
+	msg := &Message{
+		Type: TypeAttestSet, TempID: rec.TempID, WalletID: rec.Address,
+		Attests: rec.Attests,
+	}
+	for _, p := range rec.Peers {
+		if err := sendFrame(store, p.UID, msg, ""); err != nil {
+			log.Printf("msig: attestation set to %s: %v", p.Nick, err)
+		}
 	}
 }
 
@@ -398,7 +461,7 @@ func ResumePending(ctx context.Context) {
 		}
 		switch rec.Status {
 		case StatusInviting:
-			maybeActivateInitiatorHD(ctx, store, rec.TempID)
+			maybeReviewInitiatorHD(ctx, store, rec.TempID)
 		case StatusPendingImport:
 			completeCosignerImportHD(ctx, store, rec.TempID)
 		case StatusActive:

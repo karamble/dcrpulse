@@ -112,6 +112,21 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
                       ? ` Belongs to wallet ${item.walletName}; switch to it to accept.`
                       : ' Accepting creates a dedicated account and shares only its extended public key.'}
                   </p>
+                  {/* Who the sender says the other cosigners are. The sender
+                      supplies these names, so they are a claim and nothing
+                      more; the real check comes before the wallet can be
+                      funded. Showing them here at least lets an invitee spot a
+                      participant they never agreed to. */}
+                  {(item.proposedPeers?.length ?? 0) > 0 && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Says the cosigners are:{' '}
+                      <span className="text-foreground">
+                        {item.proposedPeers?.map((p) => p.nick || 'unnamed').join(', ')}
+                      </span>
+                      . You will check every cosigner's key before this wallet can receive
+                      funds.
+                    </p>
+                  )}
                 </>
               ) : (
                 <>
