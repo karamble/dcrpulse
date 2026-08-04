@@ -660,6 +660,14 @@ func main() {
 	if strings.TrimSpace(os.Getenv("DASHBOARD_ALLOWED_HOSTS")) == "*" {
 		log.Println("WARNING: DASHBOARD_ALLOWED_HOSTS=* accepts any Host header")
 	}
+	// The listener always binds every interface inside the container; which
+	// interface the port reaches on the host is Docker's decision, so compose
+	// hands the value over rather than the process trying to observe it.
+	if bind := strings.TrimSpace(os.Getenv("DASHBOARD_HOST_BIND")); bind != "" &&
+		bind != "127.0.0.1" && bind != "localhost" && bind != "::1" && !auth.Enabled() {
+		log.Printf("WARNING: the dashboard is published on %s with no app password set; "+
+			"anyone who can reach this port can use the wallet API", bind)
+	}
 	// ReadHeaderTimeout bounds the header-read phase to defeat Slowloris. Read
 	// and Write timeouts are intentionally left unset so long-lived streams
 	// (WebSocket rescan/events, SSE progress) and large BR file uploads are not

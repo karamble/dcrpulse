@@ -338,9 +338,16 @@ The dashboard runs the Go backend and serves the embedded frontend on a single p
 ### `PORT`
 **Description**: Port the dashboard listens on inside the container.
 
-**Default**: `8080` (set in `docker-compose.yml`, published to the host as `8080:8080`)
+**Default**: `8080` (set in `docker-compose.yml`, published to the host as `${DASHBOARD_HOST_BIND:-127.0.0.1}:${DASHBOARD_PORT:-8080}:8080`)
 
-Access the UI at `http://<host>:8080`.
+Access the UI at `http://127.0.0.1:8080` on the machine running the stack.
+
+### `DASHBOARD_HOST_BIND` / `DASHBOARD_PORT`
+**Description**: Host interface and port the UI is published on.
+
+**Default**: `127.0.0.1` and `8080` - loopback only, so the UI is not reachable from the LAN.
+
+Set `DASHBOARD_HOST_BIND=0.0.0.0` to reach the dashboard from another device, but enable the app password first: the API drives the wallet, speaks plain HTTP, and has no other gate. An SSH tunnel or a TLS reverse proxy is the better answer. The dashboard logs a warning at startup when it is published beyond loopback with no password set.
 
 The dashboard receives the RPC host/port/user/pass/cert values for every daemon as environment variables (see the per-daemon wiring tables above). The full set in `docker-compose.yml` is:
 
@@ -457,7 +464,7 @@ DCRWALLET_GAP_LIMIT=100
 
 | Service | Port | Bind | Protocol | Notes |
 |---|---|---|---|---|
-| dashboard | 8080 | host | HTTP | Web UI and API (the only externally served app) |
+| dashboard | 8080 | `${DASHBOARD_HOST_BIND}` (default `127.0.0.1`) | HTTP | Web UI and API (the only externally served app) |
 | dcrd | 9108 | `${DCRD_P2P_HOST_BIND}` (default `0.0.0.0`) | P2P | Peer connections |
 | dcrd | 9109 | `127.0.0.1` | RPC | JSON-RPC (localhost only) |
 | dcrwallet | 9110 | `127.0.0.1` | RPC | JSON-RPC (localhost only) |
@@ -470,12 +477,9 @@ DCRWALLET_GAP_LIMIT=100
 | tor | 9050 | internal | SOCKS | Tor proxy, no host port |
 | tor | 9051 | internal | control | Tor control, no host port |
 
-To change the externally exposed UI port, edit the dashboard `ports:` mapping:
-```yaml
-services:
-  dashboard:
-    ports:
-      - "9000:8080"   # Access the UI on host port 9000
+To change the exposed UI port, set `DASHBOARD_PORT` in `.env` rather than editing the mapping, so the loopback bind is preserved:
+```
+DASHBOARD_PORT=9000
 ```
 
 ---

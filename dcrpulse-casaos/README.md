@@ -63,9 +63,14 @@ One of the key features of this CasaOS implementation is its **secure network is
 3. **dashboard** (`dcrpulse_internal` network only):
    - **Completely isolated from internet** - cannot make outbound connections
    - Only communicates with dcrd and dcrwallet via internal network
-   - Only port 8080 exposed to local network for web UI access
+   - Port 8080 published on the host's loopback interface only
 
 This architecture follows CasaOS best practices (similar to the Dify app) and provides defense-in-depth security.
+
+The dashboard drives the wallet and its app password is off until you set it, so
+the UI is deliberately not published to the LAN. Reach it from another device
+over an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 user@your-casaos-ip`) or a TLS
+reverse proxy, and enable the app password under Settings before you do.
 
 ## Files
 
@@ -141,7 +146,7 @@ For local testing before submission:
    docker exec dcrpulse-dashboard nc -zv dcrd 9109
    docker exec dcrpulse-dashboard nc -zv dcrwallet 9110
    ```
-5. **Access Web UI**: Navigate to `http://your-casaos-ip:8080`
+5. **Access Web UI**: Navigate to `http://127.0.0.1:8080` on the CasaOS machine, or tunnel to it (`ssh -L 8080:127.0.0.1:8080 user@your-casaos-ip`)
 6. **Test wallet functions**: Create/import wallet, generate addresses, etc.
 7. **Test explorer functions**: Browse blocks, search transactions, view mempool
 
@@ -174,7 +179,7 @@ All data is stored in `/DATA/AppData/dcrpulse/`:
 | Auth | `${APP_SEED}` for RPC | Hardcoded `casaos:casaos` |
 | Variables | `$TOR_PROXY_IP`, `$APP_SEED` | `$PUID`, `$PGID`, `$TZ` |
 | Assets | Local files in repo | jsDelivr CDN URLs |
-| Port Exposure | Via app_proxy | Direct port 8080 |
+| Port Exposure | Via app_proxy | Direct port 8080, loopback only |
 
 ## Troubleshooting
 

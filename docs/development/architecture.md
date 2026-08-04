@@ -821,7 +821,8 @@ never locks the user out.
 - Only the dashboard's port is published to the host by default
 
 **Port Exposure**:
-- 8080: dashboard UI + API (published to host)
+- 8080: dashboard UI + API (bound to 127.0.0.1 on the host by default;
+  `DASHBOARD_HOST_BIND` widens it)
 - 9108: dcrd P2P (published; bind address configurable, for peers)
 - 9109: dcrd RPC (bound to 127.0.0.1 on the host)
 - 9110 / 9111: dcrwallet RPC / gRPC (bound to 127.0.0.1 on the host)

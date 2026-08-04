@@ -777,15 +777,17 @@ make start
 
 ### Customize Ports
 
-By default the dashboard is published on host port 8080. To change it, edit
-`docker-compose.yml`:
+By default the dashboard is published on `127.0.0.1:8080` - loopback only, so it
+is reachable from the machine running the stack and not from the LAN. To change
+the port, set it in `.env`:
 
-```yaml
-services:
-  dashboard:
-    ports:
-      - "8000:8080"  # Serve the dashboard on host port 8000 instead
 ```
+DASHBOARD_PORT=8000
+```
+
+To reach the UI from another device, prefer an SSH tunnel or a TLS reverse proxy.
+`DASHBOARD_HOST_BIND=0.0.0.0` publishes it to the LAN, but the API drives the
+wallet over plain HTTP, so enable the app password under Settings first.
 
 ### Transaction Indexing
 

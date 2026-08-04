@@ -51,7 +51,8 @@ func ConfigureInlineScriptHashes(hashes ...string) {
 
 // trustProxyHeaders reports whether X-Forwarded-Host should be honored when
 // resolving the request's external host. Set TRUSTED_PROXY=true in compose
-// files that run the dashboard behind a reverse proxy (Umbrel, CasaOS).
+// files that run the dashboard behind a reverse proxy; Umbrel does, through
+// its app_proxy. CasaOS publishes the port directly and must not set it.
 func trustProxyHeaders() bool {
 	return strings.EqualFold(os.Getenv("TRUSTED_PROXY"), "true")
 }
