@@ -35,6 +35,7 @@ import {
   getAccounts,
 } from '../../services/api';
 import { getBisonrelayContacts, BisonrelayContact } from '../../services/bisonrelayApi';
+import { AgentAllowedIPs } from './AgentAllowedIPs';
 import { AgentSpendGrant } from './AgentSpendGrant';
 import { ConfigSection, domainLabel } from './ConfigSection';
 import { McpHelpModal } from './McpHelpModal';
@@ -272,7 +273,7 @@ export const AgentsSection = () => {
     return <div className="text-muted-foreground">Loading...</div>;
   }
 
-  const activeIds = new Set(settings.sessions.map((s) => s.agentId));
+  const sessionByAgent = new Map(settings.sessions.map((s) => [s.agentId, s]));
   const grantable = settings.domains.filter((d) => d !== 'node');
 
   return (
@@ -535,7 +536,8 @@ export const AgentsSection = () => {
         ) : (
           <div className="space-y-3">
             {settings.agents.map((a) => {
-              const connected = activeIds.has(a.id);
+              const session = sessionByAgent.get(a.id);
+              const connected = !!session;
               const granted = new Set(a.domains);
               return (
                 <div
@@ -563,6 +565,14 @@ export const AgentsSection = () => {
                               }`}
                             />
                             {connected ? 'Connected' : 'Idle'}
+                          </span>
+                        )}
+                        {connected && session?.remote && (
+                          <span
+                            className="text-xs font-mono text-muted-foreground truncate"
+                            title="Observed remote address of this connection"
+                          >
+                            from {session.remote}
                           </span>
                         )}
                       </div>
@@ -654,6 +664,13 @@ export const AgentsSection = () => {
                       })}
                     </div>
                   </ConfigSection>
+
+                  <AgentAllowedIPs
+                    agentId={a.id}
+                    allowedIps={a.allowedIps ?? []}
+                    lastDenied={a.lastDenied}
+                    onChanged={refresh}
+                  />
 
                   <AgentSpendGrant
                     agentId={a.id}

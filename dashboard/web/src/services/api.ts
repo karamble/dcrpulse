@@ -1505,6 +1505,8 @@ export interface MCPAgent {
   id: string;
   name: string;
   domains: string[];
+  allowedIps: string[];
+  lastDenied?: { ip: string; at: string };
   createdAt: string;
   blocked: boolean;
 }
@@ -1615,6 +1617,12 @@ export const revokeMCPToken = async (id: string): Promise<void> => {
 
 export const setMCPAgentDomains = async (id: string, domains: string[]): Promise<void> => {
   await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/domains`, { domains });
+};
+
+// setMCPAgentAllowedIPs replaces the source-IP allowlist enforced on an
+// agent's connections (single IPs or CIDR ranges; empty = any address).
+export const setMCPAgentAllowedIPs = async (id: string, ips: string[]): Promise<void> => {
+  await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/ips`, { ips });
 };
 
 // setMCPGrant authorizes an agent to spend: the passphrase is verified and held

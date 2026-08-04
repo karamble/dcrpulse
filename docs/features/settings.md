@@ -303,6 +303,7 @@ in a new tab.
 - **[Wallet Dashboard](wallet-dashboard.md)** - account balances, transactions, and staking
 - **[Wallet Setup](../guides/wallet-operations.md)** - initial wallet configuration
 - **[Staking Guide](staking-guide.md)** - tickets, VSPs, and governance
+- **[AI Agents (MCP)](ai-agents-mcp.md)** - agent tokens, capability grants, spend limits, and per-agent allowed IPs
 
 ---
 

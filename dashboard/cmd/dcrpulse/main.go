@@ -392,6 +392,7 @@ func main() {
 	api.Handle("/settings/mcp/tokens", auth.RequireAppPassword(http.HandlerFunc(handlers.CreateMCPTokenHandler))).Methods("POST")
 	api.Handle("/settings/mcp/tokens/{id}", auth.RequireAppPassword(http.HandlerFunc(handlers.RevokeMCPTokenHandler))).Methods("DELETE")
 	api.Handle("/settings/mcp/agents/{id}/domains", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPAgentDomainsHandler))).Methods("POST")
+	api.Handle("/settings/mcp/agents/{id}/ips", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPAgentAllowedIPsHandler))).Methods("POST")
 	api.Handle("/settings/mcp/agents/{id}/grant", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPGrantHandler))).Methods("POST")
 	api.Handle("/settings/mcp/agents/{id}/grant", auth.RequireAppPassword(http.HandlerFunc(handlers.RevokeMCPGrantHandler))).Methods("DELETE")
 	api.Handle("/settings/mcp/agents/{id}/unblock", auth.RequireAppPassword(http.HandlerFunc(handlers.UnblockMCPAgentHandler))).Methods("POST")

@@ -67,6 +67,16 @@ func SetAgentDomains(id string, domains []string) (bool, error) {
 	return true, saveAgents()
 }
 
+// SetAgentAllowedIPs replaces (and persists) the source-IP allowlist enforced
+// on an agent's requests. Entries must already be canonical (ParseAllowedIPs);
+// an empty list clears the restriction. Returns false if no such agent existed.
+func SetAgentAllowedIPs(id string, ips []string) (bool, error) {
+	if !reg.setAllowedIPs(id, ips) {
+		return false, nil
+	}
+	return true, saveAgents()
+}
+
 // ListAgents returns the agent roster (without tokens) for the dashboard UI.
 func ListAgents() []AgentInfo { return reg.list() }
 

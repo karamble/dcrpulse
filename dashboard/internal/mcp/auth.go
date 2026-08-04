@@ -34,12 +34,14 @@ const defaultDomain = "node"
 // fields are atomic: both are read on every request (and the domain set on
 // every tool call) while the settings API mutates them.
 type agent struct {
-	id        string
-	name      string
-	hash      [32]byte
-	domains   atomic.Pointer[map[string]bool] // granted domains; defaults to {node}
-	createdAt time.Time
-	blocked   atomic.Bool // tripwire: set when the agent attempts to exceed its grant
+	id         string
+	name       string
+	hash       [32]byte
+	domains    atomic.Pointer[map[string]bool] // granted domains; defaults to {node}
+	createdAt  time.Time
+	blocked    atomic.Bool                   // tripwire: set when the agent attempts to exceed its grant
+	allowedIPs atomic.Pointer[ipAllowlist]   // source-IP restriction; nil = any address
+	lastDenied atomic.Pointer[DeniedAttempt] // latest allowed-IP denial; cleared on success
 }
 
 func (a *agent) allows(domain string) bool {
@@ -66,11 +68,13 @@ func (a *agent) setDomainMap(m map[string]bool) { a.domains.Store(&m) }
 // AgentInfo is the dashboard-facing view of an agent identity. It never
 // includes the token (only its hash is stored, and not exposed here).
 type AgentInfo struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Domains   []string  `json:"domains"`
-	CreatedAt time.Time `json:"createdAt"`
-	Blocked   bool      `json:"blocked"`
+	ID         string         `json:"id"`
+	Name       string         `json:"name"`
+	Domains    []string       `json:"domains"`
+	AllowedIPs []string       `json:"allowedIps"`
+	LastDenied *DeniedAttempt `json:"lastDenied,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt"`
+	Blocked    bool           `json:"blocked"`
 }
 
 // Session is a recently-active agent connection, surfaced to the dashboard so the
@@ -99,13 +103,13 @@ func newRegistry() *registry {
 // addToken registers a named bearer token, storing only its hash. New agents
 // start with only the default ("node") domain.
 func (r *registry) addToken(id, name, token string) {
-	r.addAgentRecord(id, name, sha256.Sum256([]byte(token)), []string{defaultDomain}, time.Now(), false)
+	r.addAgentRecord(id, name, sha256.Sum256([]byte(token)), []string{defaultDomain}, nil, time.Now(), false)
 }
 
 // addAgentRecord installs an agent from an already-hashed token. Used by the
 // persistence layer to restore the roster on startup (including a persisted
 // blocked state) and by addToken/create. The node domain is always implied.
-func (r *registry) addAgentRecord(id, name string, hash [32]byte, domains []string, createdAt time.Time, blocked bool) {
+func (r *registry) addAgentRecord(id, name string, hash [32]byte, domains, allowedIPs []string, createdAt time.Time, blocked bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a := &agent{
@@ -115,6 +119,7 @@ func (r *registry) addAgentRecord(id, name string, hash [32]byte, domains []stri
 		createdAt: createdAt,
 	}
 	a.setDomainMap(domainSet(domains))
+	a.setIPAllowlist(allowedIPs)
 	a.blocked.Store(blocked)
 	r.agents[id] = a
 }
@@ -131,7 +136,7 @@ func (r *registry) create(name string) (id, token string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	r.addAgentRecord(id, name, sha256.Sum256([]byte(raw)), []string{defaultDomain}, time.Now(), false)
+	r.addAgentRecord(id, name, sha256.Sum256([]byte(raw)), []string{defaultDomain}, nil, time.Now(), false)
 	return id, raw, nil
 }
 
@@ -220,11 +225,13 @@ func (r *registry) list() []AgentInfo {
 	out := make([]AgentInfo, 0, len(r.agents))
 	for _, a := range r.agents {
 		out = append(out, AgentInfo{
-			ID:        a.id,
-			Name:      a.name,
-			Domains:   sortedDomains(a.domainMap()),
-			CreatedAt: a.createdAt,
-			Blocked:   a.blocked.Load(),
+			ID:         a.id,
+			Name:       a.name,
+			Domains:    sortedDomains(a.domainMap()),
+			AllowedIPs: a.allowedIPEntries(),
+			LastDenied: a.lastDenied.Load(),
+			CreatedAt:  a.createdAt,
+			Blocked:    a.blocked.Load(),
 		})
 	}
 	r.mu.Unlock()
@@ -356,6 +363,20 @@ func (r *registry) authMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		if !a.remoteAllowed(req.RemoteAddr) {
+			// Byte-identical to the bad-token response above so a caller from
+			// a non-allowed address cannot learn that the token is valid
+			// (which the distinct blocked message below would reveal). Logged
+			// regardless of the activity-log toggle, and remembered so the
+			// settings UI can show the operator the address to allow.
+			a.recordDenied(req.RemoteAddr, time.Now())
+			mcpLog.Warnf("Agent %s denied: remote address %s is not in its allowed-IP list",
+				sanitizeLogField(a.name), sanitizeLogField(req.RemoteAddr))
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		a.lastDenied.Store(nil)
 		if a.blocked.Load() {
 			http.Error(w, "agent blocked: a spend-limit violation revoked this token; the user must unblock it in the dashboard", http.StatusForbidden)
 			return

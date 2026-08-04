@@ -18,12 +18,13 @@ const envAgentID = "env"
 // persistedAgent is the on-disk shape of an agent identity. Only the token's
 // SHA-256 hash is stored (hex), never the plaintext token.
 type persistedAgent struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	TokenHash string    `json:"tokenHash"`
-	Domains   []string  `json:"domains"`
-	CreatedAt time.Time `json:"createdAt"`
-	Blocked   bool      `json:"blocked,omitempty"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	TokenHash  string    `json:"tokenHash"`
+	Domains    []string  `json:"domains"`
+	AllowedIPs []string  `json:"allowedIps,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
+	Blocked    bool      `json:"blocked,omitempty"`
 }
 
 // snapshot captures the current roster for persistence, excluding the ephemeral
@@ -37,12 +38,13 @@ func (r *registry) snapshot() []persistedAgent {
 			continue
 		}
 		out = append(out, persistedAgent{
-			ID:        a.id,
-			Name:      a.name,
-			TokenHash: hex.EncodeToString(a.hash[:]),
-			Domains:   sortedDomains(a.domainMap()),
-			CreatedAt: a.createdAt,
-			Blocked:   a.blocked.Load(),
+			ID:         a.id,
+			Name:       a.name,
+			TokenHash:  hex.EncodeToString(a.hash[:]),
+			Domains:    sortedDomains(a.domainMap()),
+			AllowedIPs: a.allowedIPEntries(),
+			CreatedAt:  a.createdAt,
+			Blocked:    a.blocked.Load(),
 		})
 	}
 	return out
@@ -67,7 +69,7 @@ func loadAgents() error {
 		}
 		var hash [32]byte
 		copy(hash[:], raw)
-		reg.addAgentRecord(rec.ID, rec.Name, hash, rec.Domains, rec.CreatedAt, rec.Blocked)
+		reg.addAgentRecord(rec.ID, rec.Name, hash, rec.Domains, rec.AllowedIPs, rec.CreatedAt, rec.Blocked)
 	}
 	return nil
 }

@@ -13,10 +13,13 @@ The MCP server runs in-process inside the dashboard and reuses the same code pat
 as the web UI, so an agent sees the same data and can perform the same actions you
 can, subject to the access you grant it.
 
-The security model has four layers:
+The security model has five layers:
 
 - **Per-agent tokens.** Each agent has its own named bearer token. Only a SHA-256
   hash is stored; the plaintext is shown once.
+- **Allowed IP addresses.** Each agent's token can optionally be pinned to specific
+  source IPs or CIDR ranges; a request from anywhere else is answered exactly like
+  a bad token and logged.
 - **Capability domains.** A new agent can use only the `node` domain. You grant
   other domains (wallet, staking, etc.) per agent in the dashboard.
 - **Spend grants.** Moving funds additionally requires an account-scoped grant with
@@ -93,6 +96,37 @@ Some carry extra risk or move funds and are separate tiers you enable deliberate
 - `wallet.broadcast` - publish an already-signed transaction. It needs no spend grant
   or passphrase: a human signs the transaction on a hardware wallet first, so the
   signature is the authorization and the agent only relays the bytes.
+
+### Allowed IP addresses (optional)
+
+Each agent card has an **Allowed IP addresses** list: single IPs or CIDR ranges
+(IPv4 or IPv6), one per line. When the list is empty (the default) the agent may
+connect from any address; when set, every request is checked against the
+connection's source address after the token verifies. Changes apply immediately,
+including to an agent that is already connected.
+
+A request from a non-allowed address is answered with a generic `401 unauthorized`,
+deliberately indistinguishable from a wrong token so a probe cannot confirm that a
+stolen token is valid. Every such denial is written to the dashboard log with the
+agent name and the observed address, regardless of the activity-log toggle.
+
+Caveats:
+
+- The check uses the connection's real source address; forwarding headers such as
+  `X-Forwarded-For` are deliberately ignored (they are forgeable). Behind a reverse
+  proxy every request appears to come from the proxy - allowlist the proxy address
+  and restrict real clients at the proxy itself.
+- Under Docker, an agent on the host machine usually appears as the bridge gateway
+  (for example `172.17.0.1`), not `127.0.0.1`. Connect once and use the address
+  shown next to **Connected** on the agent card.
+- When a restricted agent is denied, the Allowed IP addresses section shows the
+  most recent attempt ("An agent using this token was denied from ...") with an
+  **Allow this IP** button - the one-click fix when you don't know which address
+  the server sees. The notice is in-memory only and clears on the agent's next
+  successful request; the agent itself still sees only the generic 401.
+- The `MCP_TOKEN` environment bootstrap agent is re-created at every start and is
+  never persisted, so a list set on it lasts only until restart - treat it as
+  unrestricted and prefer created agents when pinning IPs.
 
 ## Spend grants
 
@@ -333,6 +367,8 @@ automating):
 - `POST /api/settings/mcp/tokens`, `DELETE /api/settings/mcp/tokens/{id}` - create
   (returns the plaintext once) / revoke an agent.
 - `POST /api/settings/mcp/agents/{id}/domains` - set granted domains.
+- `POST /api/settings/mcp/agents/{id}/ips` - set the source-IP allowlist (single IPs
+  or CIDR ranges; an empty list allows any address).
 - `POST` / `DELETE /api/settings/mcp/agents/{id}/grant` - set / clear a spend grant.
 - `POST /api/settings/mcp/agents/{id}/unblock` - clear a tripwire/freeze block.
 - `POST /api/settings/mcp/freeze-all` - revoke all grants and block all tokens.
@@ -343,6 +379,11 @@ automating):
 
 - **HTTP 401** - missing or wrong bearer token. Check the `Authorization: Bearer
   mcp_...` header.
+- **HTTP 401 with a token you know is right** - the agent's allowed-IP list does not
+  match the request's source address (the denial deliberately reads like a bad
+  token; the dashboard log names the agent and the observed address). Behind Docker
+  or a proxy the observed address is the bridge or proxy IP - allow the address
+  shown next to **Connected**, or clear the list.
 - **HTTP 403, "agent blocked"** - the agent tripped a cap or was frozen. Unblock it in
   Settings -> AI Agents and grant a fresh spend capability.
 - **A tool returns "no spend grant" or "no write grant"** - the agent has no grant.

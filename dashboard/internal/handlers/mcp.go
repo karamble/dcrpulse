@@ -218,6 +218,36 @@ func SetMCPAgentDomainsHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SetMCPAgentAllowedIPsHandler replaces the source-IP allowlist enforced on an
+// agent's requests. Entries are single IPs or CIDR prefixes (IPv4 or IPv6); an
+// invalid entry rejects the whole request by name, and an empty list clears
+// the restriction.
+func SetMCPAgentAllowedIPsHandler(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(mux.Vars(r)["id"])
+	var req struct {
+		IPs []string `json:"ips"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	ips, err := mcp.ParseAllowedIPs(req.IPs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ok, err := mcp.SetAgentAllowedIPs(id, ips)
+	if err != nil {
+		http.Error(w, "failed to update agent allowed IPs", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "agent not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // SetMCPGrantHandler grants an agent an account-scoped spend capability. The
 // user supplies the wallet passphrase here; it is verified once, then held in
 // memory on the agent's behalf (never persisted, never sent to the agent).
