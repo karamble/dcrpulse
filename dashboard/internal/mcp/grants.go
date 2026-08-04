@@ -351,6 +351,20 @@ func (s *grantStore) authorizeActionPass(agentID, scope string, now time.Time) (
 	return append([]byte(nil), g.passphrase...), nil
 }
 
+// authorizeActionGated is authorizeAction plus the operator-approval gate, for
+// writes that arm an autonomous spender (DEX bond auto-renewal, Lightning
+// autopilot). No amount is reserved because none is known at call time, so the
+// approval is the last human checkpoint before the armed component starts
+// moving funds on its own.
+func (s *grantStore) authorizeActionGated(ctx context.Context, agentID, scope, action string, now time.Time) error {
+	// authorizeAction releases s.mu before returning; gateApproval must not be
+	// reached holding it (a "freeze" reply revokes the grant, which takes s.mu).
+	if err := s.authorizeAction(agentID, scope, now); err != nil {
+		return err
+	}
+	return gateApproval(ctx, agentID, action)
+}
+
 // authorizeLightning checks the lightning scope, reserves amountAtoms against
 // the (shared) daily cap, and (when BR oversight is on) blocks for the
 // operator's approval. No passphrase is returned: dcrlnd is unlocked separately.
@@ -379,18 +393,67 @@ func (s *grantStore) reserveLightning(agentID string, amountAtoms int64, now tim
 	return g.reserveLocked(amountAtoms, now)
 }
 
+// authorizeVSPFees checks the staking scope and both fee accounts, reserves a
+// worst-case fee ceiling against the caps, and (when BR oversight is on) blocks
+// for the operator's approval. The real cost of a VSP fee run is only knowable
+// afterwards, so the caller reserves the ceiling here and refunds the unused
+// part once the run settles. Returns a private copy of the passphrase.
+func (s *grantStore) authorizeVSPFees(ctx context.Context, agentID string, account, changeAccount uint32, feeCeilingAtoms int64, action string, now time.Time) ([]byte, error) {
+	pass, err := s.reserveVSPFees(agentID, account, changeAccount, feeCeilingAtoms, now)
+	if err != nil {
+		return nil, err
+	}
+	if err := gateApproval(ctx, agentID, action); err != nil {
+		s.refund(agentID, feeCeilingAtoms)
+		zero(pass)
+		return nil, err
+	}
+	return pass, nil
+}
+
+// reserveVSPFees performs the locked validation and reservation for a VSP fee
+// run, returning a private copy of the passphrase. A zero ceiling (nothing to
+// pay for) still requires the scope and both accounts.
+func (s *grantStore) reserveVSPFees(agentID string, account, changeAccount uint32, feeCeilingAtoms int64, now time.Time) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, err := s.currentLocked(agentID, now)
+	if err != nil {
+		if errors.Is(err, errNoGrant) {
+			return nil, noScopeGrant(scopeStaking)
+		}
+		return nil, err
+	}
+	if !g.writeScopes[scopeStaking] {
+		return nil, scopeDenied(scopeStaking)
+	}
+	// The fee leaves the fee account and the change lands in the change
+	// account, so both must be covered by the grant.
+	if !g.accounts[account] || !g.accounts[changeAccount] {
+		return nil, errAccountNotGranted
+	}
+	if feeCeilingAtoms < 0 {
+		return nil, errBadAmount
+	}
+	if feeCeilingAtoms > 0 {
+		if err := g.reserveLocked(feeCeilingAtoms, now); err != nil {
+			return nil, err
+		}
+	}
+	return append([]byte(nil), g.passphrase...), nil
+}
+
 // authorizeSpendScoped checks the given fund scope and, when amountAtoms>0
 // (DCR-denominated), reserves it against the shared daily cap. Non-DCR moves
 // (other DEX assets) pass 0 and are scope-gated only - the DCR cap cannot bound
-// a non-DCR amount. Used by dex.spend tools. No wallet passphrase (the DEX is
-// unlocked separately). Call refund if a reserved spend then fails.
-func (s *grantStore) authorizeSpendScoped(ctx context.Context, agentID, scope string, amountAtoms int64, now time.Time) error {
+// a non-DCR amount. No wallet passphrase (the DEX and dcrlnd are unlocked
+// separately). The action describes the spend in the operator's approval
+// message, so it comes from the caller rather than being fixed here: the same
+// reservation serves DEX moves and paid Bison Relay downloads. Call refund if a
+// reserved spend then fails.
+func (s *grantStore) authorizeSpendScoped(ctx context.Context, agentID, scope string, amountAtoms int64, action string, now time.Time) error {
 	if err := s.reserveSpendScoped(agentID, scope, amountAtoms, now); err != nil {
 		return err
-	}
-	action := "make a DEX spend"
-	if amountAtoms > 0 {
-		action = fmt.Sprintf("make a DEX spend of %s", dcrAmountStr(amountAtoms))
 	}
 	if err := gateApproval(ctx, agentID, action); err != nil {
 		if amountAtoms > 0 {

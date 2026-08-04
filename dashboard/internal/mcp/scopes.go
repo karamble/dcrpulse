@@ -28,8 +28,8 @@ const (
 
 // WriteScope is one grantable write/action capability. The dashboard renders the
 // catalog as a checklist; the grant handler validates requests against it; tools
-// gate on Key via grants.authorizeAction / authorizeActionPass / authorizeLightning
-// / authorizeSpendScoped.
+// gate on Key via grants.authorizeAction / authorizeActionGated / authorizeActionPass
+// / authorizeLightning / authorizeSpendScoped / authorizeVSPFees.
 type WriteScope struct {
 	Key       string `json:"key"`
 	Label     string `json:"label"`
@@ -49,7 +49,7 @@ var writeScopeCatalog = []WriteScope{
 	{scopeBRAdmin, "Bison Relay group admin", "bisonrelay", false, false, true},
 	{scopeTimestamp, "Timestamp write", "timestamp", false, false, false},
 	{scopeTor, "Tor control", "tor", false, false, false},
-	{scopeStaking, "Staking actions", "staking", true, false, false},
+	{scopeStaking, "Staking actions", "staking", true, true, false},
 	{scopePrivacy, "Mixer control", "privacy", true, false, false},
 	{scopeWalletBroadcast, "Broadcast pre-signed transactions", "wallet", false, false, false},
 }

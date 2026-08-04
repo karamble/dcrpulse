@@ -361,9 +361,19 @@ var lightningTools = []toolDef{
 			return map[string]any{"removed": true}, nil
 		}),
 	agentTool("lightning", "ln_autopilot_set",
-		"Enable or disable Lightning autopilot (automatic channel management). Requires a spend grant with Lightning enabled.",
+		"Enable or disable Lightning autopilot (automatic channel management). Requires a spend grant with Lightning enabled; enabling also needs the user's approval when Bison Relay oversight is on.",
 		func(ctx context.Context, a *agent, in lnAutopilotSetInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
+			// Autopilot opens funded channels on its own, so arming it is gated
+			// on the operator's approval. Switching it off is not: an approval
+			// timeout must never keep a running autopilot alive.
+			var err error
+			if in.Active {
+				err = grants.authorizeActionGated(ctx, a.id, scopeLightning,
+					"enable Lightning autopilot (it opens funded channels automatically)", time.Now())
+			} else {
+				err = grants.authorizeAction(a.id, scopeLightning, time.Now())
+			}
+			if err != nil {
 				recordSpend(a, "ln_autopilot_set", 0, 0, "", "denied", err.Error())
 				return nil, err
 			}

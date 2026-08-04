@@ -19,7 +19,7 @@ func TestGrantScopedRejectsNegative(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{PerTxAtoms: dcrAtoms, DailyAtoms: dcrAtoms, WriteScopes: []string{scopeDexSpend}}, now)
-	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, -1, now); err != errBadAmount {
+	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, -1, "", now); err != errBadAmount {
 		t.Fatalf("negative scoped amount: want errBadAmount, got %v", err)
 	}
 	// The reservation must not have run.
@@ -250,19 +250,91 @@ func TestGrantSpendScopedCapAndScope(t *testing.T) {
 	s := newGrantStore()
 	now := time.Now()
 	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, WriteScopes: []string{scopeDexSpend}}, now)
-	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 6*dcrAtoms, now); err != errPerTxExceeded {
+	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 6*dcrAtoms, "", now); err != errPerTxExceeded {
 		t.Fatalf("over per-tx: want errPerTxExceeded, got %v", err)
 	}
-	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 4*dcrAtoms, now); err != nil {
+	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 4*dcrAtoms, "", now); err != nil {
 		t.Fatalf("DCR move within cap: want ok, got %v", err)
 	}
 	// A non-DCR move (amount 0) is scope-gated only, not cap-reserved.
-	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 0, now); err != nil {
+	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 0, "", now); err != nil {
 		t.Fatalf("non-DCR scoped move: want ok, got %v", err)
 	}
 	// Without the scope, denied even for a non-DCR move.
 	s.set("a", GrantSpec{PerTxAtoms: dcrAtoms, DailyAtoms: dcrAtoms, WriteScopes: []string{scopeDex}}, now)
-	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 0, now); err == nil {
+	if err := s.authorizeSpendScoped(context.Background(), "a", scopeDexSpend, 0, "", now); err == nil {
 		t.Fatal("dex.spend without scope: want denial, got nil")
+	}
+}
+
+func TestGrantActionGated(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	s.set("a", GrantSpec{WriteScopes: []string{scopeDex}}, now)
+	if err := s.authorizeActionGated(context.Background(), "a", scopeDexSpend, "arm it", now); err == nil {
+		t.Fatal("arming without scope: want denial, got nil")
+	}
+	s.set("a", GrantSpec{WriteScopes: []string{scopeDexSpend}}, now)
+	if err := s.authorizeActionGated(context.Background(), "a", scopeDexSpend, "arm it", now); err != nil {
+		t.Fatalf("arming with scope: want ok, got %v", err)
+	}
+}
+
+func TestGrantVSPFees(t *testing.T) {
+	s := newGrantStore()
+	now := time.Now()
+	full := GrantSpec{
+		Accounts:    []uint32{0, 1},
+		PerTxAtoms:  5 * dcrAtoms,
+		DailyAtoms:  5 * dcrAtoms,
+		Passphrase:  []byte("secret"),
+		WriteScopes: []string{scopeStaking},
+	}
+
+	// The scope alone is not enough: the fee comes out of an account.
+	s.set("a", GrantSpec{PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("secret"), WriteScopes: []string{scopeStaking}}, now)
+	if _, err := s.authorizeVSPFees(context.Background(), "a", 0, 0, dcrAtoms, "", now); err != errAccountNotGranted {
+		t.Fatalf("ungranted fee account: want errAccountNotGranted, got %v", err)
+	}
+
+	// An account the grant covers is not enough if the change account escapes it.
+	s.set("a", full, now)
+	if _, err := s.authorizeVSPFees(context.Background(), "a", 0, 7, dcrAtoms, "", now); err != errAccountNotGranted {
+		t.Fatalf("ungranted change account: want errAccountNotGranted, got %v", err)
+	}
+
+	// Without the staking scope the accounts do not help.
+	s.set("a", GrantSpec{Accounts: []uint32{0, 1}, PerTxAtoms: 5 * dcrAtoms, DailyAtoms: 5 * dcrAtoms, Passphrase: []byte("secret")}, now)
+	if _, err := s.authorizeVSPFees(context.Background(), "a", 0, 1, dcrAtoms, "", now); err == nil {
+		t.Fatal("VSP fees without scope: want denial, got nil")
+	}
+
+	// A ceiling over the per-transaction cap is refused and reserves nothing.
+	s.set("a", full, now)
+	if _, err := s.authorizeVSPFees(context.Background(), "a", 0, 1, 6*dcrAtoms, "", now); err != errPerTxExceeded {
+		t.Fatalf("ceiling over per-tx: want errPerTxExceeded, got %v", err)
+	}
+	if got := s.byAgent["a"].spentAtoms; got != 0 {
+		t.Fatalf("refused ceiling reserved %d atoms, want 0", got)
+	}
+
+	// Within the caps: the passphrase comes back and the ceiling is reserved.
+	pass, err := s.authorizeVSPFees(context.Background(), "a", 0, 1, 4*dcrAtoms, "", now)
+	if err != nil || string(pass) != "secret" {
+		t.Fatalf("VSP fees within caps: want passphrase copy, got %q err=%v", pass, err)
+	}
+	if got := s.byAgent["a"].spentAtoms; got != 4*dcrAtoms {
+		t.Fatalf("reserved %d atoms, want %d", got, 4*dcrAtoms)
+	}
+
+	// Nothing to pay for still authorizes, without touching the budget. A fresh
+	// store because re-granting deliberately carries the spend window over.
+	s2 := newGrantStore()
+	s2.set("a", full, now)
+	if _, err := s2.authorizeVSPFees(context.Background(), "a", 0, 1, 0, "", now); err != nil {
+		t.Fatalf("zero ceiling: want ok, got %v", err)
+	}
+	if got := s2.byAgent["a"].spentAtoms; got != 0 {
+		t.Fatalf("zero ceiling reserved %d atoms, want 0", got)
 	}
 }

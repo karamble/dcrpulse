@@ -73,6 +73,14 @@ func dexAtomsToInt64(v uint64) (int64, error) {
 	return int64(v), nil
 }
 
+// dexSpendAction describes a dex.spend move in the operator's approval message.
+func dexSpendAction(amountAtoms int64) string {
+	if amountAtoms > 0 {
+		return fmt.Sprintf("make a DEX spend of %s", dcrAmountStr(amountAtoms))
+	}
+	return "make a DEX spend"
+}
+
 type dexHostInput struct {
 	Host string `json:"host" jsonschema:"DEX server host"`
 }
@@ -809,7 +817,7 @@ var dexTools = []toolDef{
 				return nil, err
 			}
 			amountDCR := dcrutil.Amount(outlay).ToCoin()
-			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDex, outlay, time.Now()); err != nil {
+			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDex, outlay, dexSpendAction(outlay), time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -867,11 +875,18 @@ var dexTools = []toolDef{
 			return map[string]any{"orderId": in.OrderID, "ok": true}, nil
 		}),
 	agentTool("dex", "dex_set_bond_options",
-		"Update a DEX account's auto-bond options (target tier, max bonded, bond asset, penalty comps). Omit a field to leave it unchanged; targetTier 0 disables auto-renewal. Requires a spend grant with DEX trading enabled and the DEX unlocked.",
+		"Update a DEX account's auto-bond options (target tier, max bonded, bond asset, penalty comps). Omit a field to leave it unchanged; targetTier 0 disables auto-renewal. Requires a spend grant with DEX send/post-bond enabled and the DEX unlocked, and the user's approval when Bison Relay oversight is on.",
 		func(ctx context.Context, a *agent, in dexSetBondOptionsInput) (any, error) {
 			// Auto-renewal posts bonds on its own, so this belongs with the
-			// explicit bond scope rather than with plain trading.
-			if err := grants.authorizeAction(a.id, scopeDexSpend, time.Now()); err != nil {
+			// explicit bond scope rather than with plain trading. The bonds it
+			// posts never pass a cap check, so the operator approves the arming
+			// instead; every call gates, including a disarm, because the options
+			// interact and a partial rule is harder to reason about.
+			action := fmt.Sprintf("update DEX auto-bond options on %s", in.Host)
+			if in.TargetTier != nil {
+				action = fmt.Sprintf("set the DEX auto-bond target tier on %s to %d", in.Host, *in.TargetTier)
+			}
+			if err := grants.authorizeActionGated(ctx, a.id, scopeDexSpend, action, time.Now()); err != nil {
 				recordSpend(a, "dex_set_bond_options", 0, 0, in.Host, "denied", err.Error())
 				return nil, err
 			}
@@ -1162,7 +1177,7 @@ var dexTools = []toolDef{
 			} else if in.Value <= 0 {
 				return nil, fmt.Errorf("value must be positive")
 			}
-			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, time.Now()); err != nil {
+			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, dexSpendAction(capAtoms), time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "dex_send", 0, amountDCR, target, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -1208,7 +1223,7 @@ var dexTools = []toolDef{
 			}
 			capAtoms := int64(in.Bond)
 			amountDCR := dcrutil.Amount(capAtoms).ToCoin()
-			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, time.Now()); err != nil {
+			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, dexSpendAction(capAtoms), time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {

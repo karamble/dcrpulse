@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"os"
@@ -399,7 +400,7 @@ type brShopOrderCommentInput struct {
 type brContentGetInput struct {
 	UID          string `json:"uid" jsonschema:"contact hex UID hosting the shared file"`
 	FID          string `json:"fid" jsonschema:"shared-file id (from a page download embed)"`
-	MaxCostAtoms uint64 `json:"maxCostAtoms,omitempty" jsonschema:"max atoms to pay per chunk; 0 (default) accepts only free files. Any nonzero cost is paid by brclientd/dcrlnd directly and is NOT bounded by the agent's MCP spend caps."`
+	MaxCostAtoms uint64 `json:"maxCostAtoms,omitempty" jsonschema:"maximum total atoms the download may cost; 0 (default) accepts only free files. A nonzero ceiling is paid over Lightning and needs the lightning write scope; the whole ceiling is reserved against the spend caps and is not refunded."`
 }
 
 type brFidInput struct {
@@ -1527,17 +1528,38 @@ var bisonrelayTools = []toolDef{
 			return res, nil
 		}),
 	agentTool("bisonrelay", "br_content_get",
-		"Start downloading a shared file advertised by a Bison Relay page download embed (e.g. a purchased digital product). maxCostAtoms defaults to 0 (free files only); any per-chunk cost is paid by brclientd/dcrlnd directly and is NOT bounded by the agent's MCP spend caps. Track progress with br_downloads. Requires a grant with Bison Relay write enabled.",
+		"Start downloading a shared file advertised by a Bison Relay page download embed (e.g. a purchased digital product). maxCostAtoms defaults to 0 (free files only). A paid download spends over Lightning, so it additionally requires the Lightning scope and reserves the whole ceiling against the per-transaction and daily caps. Track progress with br_downloads. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brContentGetInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
 				recordSpend(a, "br_content_get", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
+			// maxCostAtoms is the ceiling brclientd auto-approves the whole
+			// file against, so it bounds what dcrlnd pays the peer. Reserve it
+			// like any other Lightning spend; the download is fire-and-forget,
+			// so there is no settlement to refund the unused part from.
+			if in.MaxCostAtoms > math.MaxInt64 {
+				return nil, fmt.Errorf("maxCostAtoms is out of range")
+			}
+			capAtoms := int64(in.MaxCostAtoms)
+			capDCR := dcrutil.Amount(capAtoms).ToCoin()
+			if capAtoms > 0 {
+				action := fmt.Sprintf("pay up to %s to download a Bison Relay file from %s", dcrAmountStr(capAtoms), in.UID)
+				if err := grants.authorizeSpendScoped(ctx, a.id, scopeLightning, capAtoms, action, time.Now()); err != nil {
+					if tripwire(a.id, err) {
+						recordSpend(a, "br_content_get", 0, capDCR, in.UID, "blocked", "spend-limit violation: grant revoked and token blocked")
+					} else {
+						recordSpend(a, "br_content_get", 0, capDCR, in.UID, "denied", err.Error())
+					}
+					return nil, err
+				}
+			}
 			if err := rpc.BrclientdContentGet(ctx, in.UID, in.FID, in.MaxCostAtoms); err != nil {
-				recordSpend(a, "br_content_get", 0, 0, in.UID, "error", err.Error())
+				grants.refund(a.id, capAtoms)
+				recordSpend(a, "br_content_get", 0, capDCR, in.UID, "error", err.Error())
 				return nil, err
 			}
-			recordSpend(a, "br_content_get", 0, 0, in.UID, "ok", in.FID)
+			recordSpend(a, "br_content_get", 0, capDCR, in.UID, "ok", in.FID)
 			return map[string]any{"uid": in.UID, "fid": in.FID, "started": true}, nil
 		}),
 	agentTool("bisonrelay", "br_download_cancel",

@@ -7,6 +7,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/decred/dcrd/dcrutil/v4"
@@ -14,6 +16,185 @@ import (
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 )
+
+// normVSPHost canonicalizes a VSP host for comparison: the public registry and
+// the wallet's used-VSP history both store it without a scheme.
+func normVSPHost(h string) string {
+	h = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(h), "https://"), "http://")
+	return strings.ToLower(strings.TrimSuffix(h, "/"))
+}
+
+// resolveKnownVSP requires an agent-named VSP to be one this wallet has already
+// used or one the public registry lists, with a matching pubkey. The VSP names
+// the address its fee is paid to, so an unconstrained host lets an agent choose
+// where wallet funds land. The dashboard's own UI paths stay unrestricted.
+func resolveKnownVSP(ctx context.Context, host, pubkey string) (*types.VSPInfo, error) {
+	want := normVSPHost(host)
+	if want == "" {
+		return nil, fmt.Errorf("vspHost is required (see staking_vsps)")
+	}
+	match := func(list []types.VSPInfo) *types.VSPInfo {
+		for i := range list {
+			if normVSPHost(list[i].Host) == want {
+				return &list[i]
+			}
+		}
+		return nil
+	}
+	// The used list first: it needs no outbound request, and a VSP this wallet
+	// already pays is the common case. A lookup failure (or a disabled registry
+	// listing, which returns no entries) just leaves that set empty.
+	used, _ := services.GetUsedVSPs(ctx)
+	found := match(used)
+	if found == nil {
+		registry, _ := services.ListVSPs(ctx)
+		found = match(registry)
+	}
+	if found == nil {
+		return nil, fmt.Errorf("vspHost %q is not a VSP this wallet has used or a public registry entry: pick one from staking_used_vsps or staking_vsps", host)
+	}
+	if found.PubKey != "" && found.PubKey != pubkey {
+		return nil, fmt.Errorf("vspPubkey does not match the known key for %q", host)
+	}
+	return found, nil
+}
+
+// vspFeeCandidates reports the tickets a maintenance run may pay a fee for and
+// the sum of their ticket prices, which is what a VSP fee is a percentage of.
+// Each ticket carries its own price, which matters when older tickets were
+// bought at a very different price than today's.
+func vspFeeCandidates(tickets []types.TicketRecord, unmanaged bool) (int, float64) {
+	var count int
+	var priceDCR float64
+	for _, t := range tickets {
+		var candidate bool
+		if unmanaged {
+			// Tickets no VSP is tracking at all.
+			candidate = t.FeeStatus == "" &&
+				(t.Status == "UNMINED" || t.Status == "IMMATURE" || t.Status == "LIVE")
+		} else {
+			// Errored fees are what the sync retries; unpaid ones are counted
+			// too so the ceiling errs high and the refund gives the rest back.
+			candidate = t.FeeStatus == "ERRORED" || t.FeeStatus == "UNPAID"
+		}
+		if !candidate {
+			continue
+		}
+		count++
+		priceDCR += t.TicketPrice
+	}
+	return count, priceDCR
+}
+
+// vspMaintenanceRun gates, meters and settles one VSP ticket-maintenance write.
+// The wallet RPCs behind these tools report no amounts, so the worst-case fee is
+// reserved up front and the share belonging to tickets the run did not resolve
+// is refunded afterwards, the same shape ln_pay uses for its routing fee.
+func vspMaintenanceRun(ctx context.Context, a *agent, tool string, in vspTicketMaintenanceInput, unmanaged bool,
+	work func(context.Context, uint32, []byte) (*types.SyncFailedVSPTicketsResponse, error)) (any, error) {
+	if in.VSPHost == "" || in.VSPPubkey == "" {
+		return nil, fmt.Errorf("vspHost and vspPubkey are required (see staking_vsps)")
+	}
+	changeAccount := in.ChangeAccount
+	if changeAccount == 0 {
+		changeAccount = in.Account
+	}
+	// Reject an ungranted agent before any wallet or network work, so the gate
+	// stays first and a call without a grant cannot probe the VSP lists.
+	if err := grants.precheckScope(a.id, scopeStaking, time.Now()); err != nil {
+		recordSpend(a, tool, in.Account, 0, in.VSPHost, "denied", err.Error())
+		return nil, err
+	}
+	// The fee leaves one account and the change lands in the other.
+	for _, acct := range []uint32{in.Account, changeAccount} {
+		if err := grants.precheckAccount(a.id, acct, time.Now()); err != nil {
+			recordSpend(a, tool, acct, 0, in.VSPHost, "denied", err.Error())
+			return nil, err
+		}
+	}
+	vsp, err := resolveKnownVSP(ctx, in.VSPHost, in.VSPPubkey)
+	if err != nil {
+		recordSpend(a, tool, in.Account, 0, in.VSPHost, "denied", err.Error())
+		return nil, err
+	}
+	// Take the higher of the listed and the live-advertised fee, so a host
+	// cannot shrink the ceiling it is measured against by advertising low.
+	feePct := vsp.FeePercentage
+	if live, lerr := services.GetVSPInfo(ctx, in.VSPHost); lerr == nil && live != nil && live.FeePercentage > feePct {
+		feePct = live.FeePercentage
+	}
+	tickets, err := services.ListTickets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ticket list unavailable: %w", err)
+	}
+	count, priceDCR := vspFeeCandidates(tickets, unmanaged)
+	if count > 0 && feePct <= 0 {
+		err := fmt.Errorf("could not determine the fee %q charges, so the cost cannot be bounded", in.VSPHost)
+		recordSpend(a, tool, in.Account, 0, in.VSPHost, "denied", err.Error())
+		return nil, err
+	}
+	ceiling, err := dcrutil.NewAmount(priceDCR * feePct / 100)
+	if err != nil {
+		return nil, fmt.Errorf("fee ceiling is out of range: %w", err)
+	}
+	ceilingAtoms := int64(ceiling)
+	noun := "failed"
+	if unmanaged {
+		noun = "untracked"
+	}
+	action := fmt.Sprintf("pay up to %s in VSP fees for %d %s ticket(s) at %s",
+		dcrAmountStr(ceilingAtoms), count, noun, in.VSPHost)
+	pass, err := grants.authorizeVSPFees(ctx, a.id, in.Account, changeAccount, ceilingAtoms, action, time.Now())
+	if err != nil {
+		if tripwire(a.id, err) {
+			recordSpend(a, tool, in.Account, ceiling.ToCoin(), in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")
+		} else {
+			recordSpend(a, tool, in.Account, ceiling.ToCoin(), in.VSPHost, "denied", err.Error())
+		}
+		return nil, err
+	}
+	defer zero(pass)
+
+	summary, workErr := work(ctx, changeAccount, pass)
+
+	// The run pays per ticket as it goes, so even a failure part-way through may
+	// have spent. Settle against what is still outstanding instead of assuming
+	// either extreme: refund the ceiling's share of the tickets it did not
+	// resolve and leave the rest counted.
+	charged, resolved, settled := ceilingAtoms, 0, false
+	if after, lerr := services.ListTickets(ctx); lerr == nil {
+		remaining, remainingPrice := vspFeeCandidates(after, unmanaged)
+		if unused, uerr := dcrutil.NewAmount(remainingPrice * feePct / 100); uerr == nil {
+			refund := int64(unused)
+			if refund > ceilingAtoms {
+				refund = ceilingAtoms
+			}
+			grants.refund(a.id, refund)
+			charged = ceilingAtoms - refund
+			if resolved = count - remaining; resolved < 0 {
+				resolved = 0
+			}
+			settled = true
+		}
+	}
+	chargedDCR := dcrutil.Amount(charged).ToCoin()
+	if workErr != nil {
+		detail := workErr.Error()
+		if !settled {
+			// Nothing to reconcile against and fees may already have moved, so
+			// the reservation stands rather than handing back headroom.
+			detail += " (fees could not be reconciled; the full ceiling stays counted against the daily cap)"
+		}
+		recordSpend(a, tool, in.Account, chargedDCR, in.VSPHost, "error", detail)
+		return nil, workErr
+	}
+	detail := fmt.Sprintf("%d ticket(s) processed", resolved)
+	if !settled {
+		detail = "ticket count unavailable; the full ceiling stays counted against the daily cap"
+	}
+	recordSpend(a, tool, in.Account, chargedDCR, in.VSPHost, "ok", detail)
+	return summary, nil
+}
 
 // purchaseInput parameterizes staking_purchase.
 type purchaseInput struct {
@@ -110,6 +291,13 @@ var stakingTools = []toolDef{
 				recordSpend(a, "staking_purchase", srcAccount, 0, in.VSPHost, "denied", err.Error())
 				return nil, err
 			}
+			// A completed purchase records the VSP in the wallet's used list, so
+			// an unconstrained host here would let an agent seed that list and
+			// launder its own host into the maintenance tools' allowlist.
+			if _, err := resolveKnownVSP(ctx, in.VSPHost, in.VSPPubkey); err != nil {
+				recordSpend(a, "staking_purchase", srcAccount, 0, in.VSPHost, "denied", err.Error())
+				return nil, err
+			}
 			info, err := services.FetchStakingInfo()
 			if err != nil {
 				return nil, fmt.Errorf("ticket price unavailable: %w", err)
@@ -118,8 +306,16 @@ var stakingTools = []toolDef{
 			if err != nil {
 				return nil, err
 			}
+			perTicketAtoms := int64(perTicket)
+			// Bound before multiplying: a large numTickets overflows int64 and
+			// wraps to a small positive total that clears the caps, while the
+			// full count still reaches the wallet, which buys as many tickets as
+			// the balance affords rather than failing.
+			if perTicketAtoms > 0 && int64(in.NumTickets) > math.MaxInt64/perTicketAtoms {
+				return nil, fmt.Errorf("numTickets is too large for the current ticket price")
+			}
 			costDCR := info.TicketPrice * float64(in.NumTickets)
-			totalAtoms := int64(perTicket) * int64(in.NumTickets)
+			totalAtoms := perTicketAtoms * int64(in.NumTickets)
 			// Ticket purchases have no recipient address; the allowlist is skipped.
 			pass, err := grants.authorize(ctx, a.id, srcAccount, totalAtoms, "", time.Now())
 			if err != nil {
@@ -154,6 +350,12 @@ var stakingTools = []toolDef{
 				recordSpend(a, "staking_autobuyer_save_settings", in.Account, 0, in.VSPHost, "denied", err.Error())
 				return nil, err
 			}
+			// The autobuyer pays this host's fee on every ticket it buys, so it
+			// is constrained the same way an explicit purchase is.
+			if _, err := resolveKnownVSP(ctx, in.VSPHost, in.VSPPubkey); err != nil {
+				recordSpend(a, "staking_autobuyer_save_settings", in.Account, 0, in.VSPHost, "denied", err.Error())
+				return nil, err
+			}
 			s := types.AutobuyerSettings{
 				Account:           in.Account,
 				VspHost:           in.VSPHost,
@@ -179,51 +381,19 @@ var stakingTools = []toolDef{
 			return map[string]any{"ok": true}, nil
 		}),
 	agentTool("staking", "staking_sync_failed_vsp_tickets",
-		"Retry VSP fee payments for the wallet's failed tickets. Requires a staking grant; signs with the held passphrase.",
+		"Retry VSP fee payments for the wallet's failed tickets. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase.",
 		func(ctx context.Context, a *agent, in vspTicketMaintenanceInput) (any, error) {
-			if in.VSPHost == "" || in.VSPPubkey == "" {
-				return nil, fmt.Errorf("vspHost and vspPubkey are required (see staking_vsps)")
-			}
-			changeAccount := in.ChangeAccount
-			if changeAccount == 0 {
-				changeAccount = in.Account
-			}
-			pass, err := grants.authorizeActionPass(a.id, scopeStaking, time.Now())
-			if err != nil {
-				recordSpend(a, "staking_sync_failed_vsp_tickets", in.Account, 0, in.VSPHost, "denied", err.Error())
-				return nil, err
-			}
-			defer zero(pass)
-			summary, err := services.SyncFailedVSPTickets(ctx, in.VSPHost, in.VSPPubkey, in.Account, changeAccount, pass)
-			if err != nil {
-				recordSpend(a, "staking_sync_failed_vsp_tickets", in.Account, 0, in.VSPHost, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "staking_sync_failed_vsp_tickets", in.Account, 0, in.VSPHost, "ok", "")
-			return summary, nil
+			return vspMaintenanceRun(ctx, a, "staking_sync_failed_vsp_tickets", in, false,
+				func(ctx context.Context, changeAccount uint32, pass []byte) (*types.SyncFailedVSPTicketsResponse, error) {
+					return services.SyncFailedVSPTickets(ctx, in.VSPHost, in.VSPPubkey, in.Account, changeAccount, pass)
+				})
 		}),
 	agentTool("staking", "staking_process_unmanaged_vsp_tickets",
-		"Re-associate the wallet's untracked tickets with a VSP. Requires a staking grant; signs with the held passphrase.",
+		"Re-associate the wallet's untracked tickets with a VSP. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase.",
 		func(ctx context.Context, a *agent, in vspTicketMaintenanceInput) (any, error) {
-			if in.VSPHost == "" || in.VSPPubkey == "" {
-				return nil, fmt.Errorf("vspHost and vspPubkey are required (see staking_vsps)")
-			}
-			changeAccount := in.ChangeAccount
-			if changeAccount == 0 {
-				changeAccount = in.Account
-			}
-			pass, err := grants.authorizeActionPass(a.id, scopeStaking, time.Now())
-			if err != nil {
-				recordSpend(a, "staking_process_unmanaged_vsp_tickets", in.Account, 0, in.VSPHost, "denied", err.Error())
-				return nil, err
-			}
-			defer zero(pass)
-			summary, err := services.ProcessUnmanagedVSPTickets(ctx, in.VSPHost, in.VSPPubkey, in.Account, changeAccount, pass)
-			if err != nil {
-				recordSpend(a, "staking_process_unmanaged_vsp_tickets", in.Account, 0, in.VSPHost, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "staking_process_unmanaged_vsp_tickets", in.Account, 0, in.VSPHost, "ok", "")
-			return summary, nil
+			return vspMaintenanceRun(ctx, a, "staking_process_unmanaged_vsp_tickets", in, true,
+				func(ctx context.Context, changeAccount uint32, pass []byte) (*types.SyncFailedVSPTicketsResponse, error) {
+					return services.ProcessUnmanagedVSPTickets(ctx, in.VSPHost, in.VSPPubkey, in.Account, changeAccount, pass)
+				})
 		}),
 }

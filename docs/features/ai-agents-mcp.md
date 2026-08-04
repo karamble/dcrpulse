@@ -92,6 +92,11 @@ Write scopes: `governance`, `lightning`, `dex`, `dex.spend`, `bisonrelay`,
 Some carry extra risk or move funds and are separate tiers you enable deliberately:
 
 - `dex.spend` - withdrawals and bond posting on the DEX (moves funds).
+- `staking` - ticket purchase and VSP fee maintenance (moves funds, so caps are
+  required). The fee tools also need the grant to cover the accounts the fee and its
+  change come from, and the VSP must be one this wallet has already used or a public
+  registry entry: the VSP names the address its fee is paid to, so an agent may not
+  point the wallet at a host of its own choosing.
 - `bisonrelay.admin` - destructive group-chat and room administration.
 - `wallet.broadcast` - publish an already-signed transaction. It needs no spend grant
   or passphrase: a human signs the transaction on a hardware wallet first, so the
@@ -145,8 +150,16 @@ memory and used on the agent's behalf. It is never persisted, never sent to the
 agent, and is wiped on dashboard restart, so grants must be re-created after a
 restart.
 
-Fund-moving tools include `wallet_send`, `staking_purchase`, `ln_pay`,
-`ln_open_channel`, the `dex.spend` send/post-bond tools, and `br_tip_user`.
+Fund-moving tools include `wallet_send`, `staking_purchase`,
+`staking_sync_failed_vsp_tickets`, `staking_process_unmanaged_vsp_tickets`, `ln_pay`,
+`ln_open_channel`, the `dex.spend` send/post-bond tools, `br_tip_user`, and
+`br_content_get` with a nonzero `maxCostAtoms`.
+
+Where a tool's real cost is only knowable afterwards, the worst case is reserved up
+front and the unused part is returned once it settles: `ln_pay` does this with the
+routing fee, and the VSP fee tools with the per-ticket fee. A paid `br_content_get`
+is the exception, because the download runs in the background with no completion
+signal, so the whole authorized ceiling stays counted.
 
 ## Safety controls
 
@@ -178,7 +191,12 @@ session; changing the toggle requires the app password.
 
 When enabled (Settings -> AI Agents -> Bison Relay oversight: toggle on and pick a
 contact), every fund move must be approved by you over a Bison Relay direct message
-before it executes. The dashboard DMs the selected contact:
+before it executes. The same applies to the two actions that arm a component which
+then spends on its own: `dex_set_bond_options` (DEX bond auto-renewal) and enabling
+Lightning autopilot. Neither moves funds in the call itself, so the approval is the
+last checkpoint before the daemon starts posting bonds or opening channels. Turning
+autopilot back off is not gated, so a timed-out approval can never keep a running
+autopilot alive. The dashboard DMs the selected contact:
 
 ```
 dcrpulse approval [a1b2]: agent "trader" wants to send 0.50000000 DCR to Dsxxx.
