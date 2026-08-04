@@ -146,6 +146,39 @@ var (
 	downloadIDRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 )
 
+// brInlineMIMEs are the only content types the dashboard will echo back for
+// bytes a Bison Relay peer supplied. They mirror ALLOWED_IMAGE_MIMES in the
+// feed's embed parser: raster formats the UI renders in an <img>. SVG is
+// excluded because it scripts.
+var brInlineMIMEs = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/gif":  true,
+	"image/webp": true,
+}
+
+// serveBRBytesHeaders picks the content type for peer-supplied bytes. The type
+// a peer declares (directly, or through a filename extension) decides how the
+// browser treats the response, so an allowlisted image keeps its type and
+// renders inline while everything else becomes an opaque download. Without this
+// a peer can have the dashboard serve HTML or JavaScript from its own origin,
+// which script-src 'self' then happily executes. Content-Disposition alone is
+// not enough: browsers ignore it for subresource loads, so the type is the
+// control and the disposition and sandbox policy are belt and braces.
+func serveBRBytesHeaders(w http.ResponseWriter, declared string) {
+	ctype := "application/octet-stream"
+	if mt, _, err := mime.ParseMediaType(strings.TrimSpace(declared)); err == nil && brInlineMIMEs[mt] {
+		ctype = mt
+	}
+	h := w.Header()
+	h.Set("Content-Type", ctype)
+	if ctype == "application/octet-stream" {
+		// No filename parameter: these names come from the peer.
+		h.Set("Content-Disposition", "attachment")
+	}
+	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+}
+
 // BisonrelayEmbedHandler serves an inline embed file that BR's clientdb has
 // already extracted from a PM body and persisted at
 // <brclientd-data>/<network>/db/embeds/<contact_short>/<filename>. The
@@ -170,6 +203,10 @@ func BisonrelayEmbedHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// The extension here was derived from the sender's declared type when BR
+	// persisted the embed, so set the type ourselves rather than letting
+	// ServeFile infer it. ServeFile leaves an already-set type alone.
+	serveBRBytesHeaders(w, mime.TypeByExtension(filepath.Ext(filename)))
 	http.ServeFile(w, r, candidate)
 }
 
@@ -228,6 +265,9 @@ func BisonrelayDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// The sender chose this filename, so its extension must not decide how the
+	// browser treats the bytes; an image still previews, anything else saves.
+	serveBRBytesHeaders(w, mime.TypeByExtension(filepath.Ext(filename)))
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	http.ServeFile(w, r, candidate)
 }
@@ -1902,10 +1942,11 @@ func BisonrelayContentFileHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(body), resp.StatusCode)
 		return
 	}
-	for _, h := range []string{"Content-Type", "Content-Disposition", "Content-Length"} {
-		if v := resp.Header.Get(h); v != "" {
-			w.Header().Set(h, v)
-		}
+	// brclientd derives both the type and an "inline" disposition from the
+	// sending peer's filename, so neither is forwarded; only the length is.
+	serveBRBytesHeaders(w, resp.Header.Get("Content-Type"))
+	if v := resp.Header.Get("Content-Length"); v != "" {
+		w.Header().Set("Content-Length", v)
 	}
 	_, _ = io.Copy(w, resp.Body)
 }
@@ -1947,7 +1988,10 @@ func BisonrelayPostsEmbedDataHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(body), resp.StatusCode)
 		return
 	}
-	for _, h := range []string{"Content-Type", "Content-Length", "Cache-Control"} {
+	// The type brclientd reports is the post author's own "type=" field, so it
+	// picks how the browser treats the bytes only if it names a known image.
+	serveBRBytesHeaders(w, resp.Header.Get("Content-Type"))
+	for _, h := range []string{"Content-Length", "Cache-Control"} {
 		if v := resp.Header.Get(h); v != "" {
 			w.Header().Set(h, v)
 		}
@@ -2402,10 +2446,7 @@ func BisonrelayStoreFileGetHandler(w http.ResponseWriter, r *http.Request) {
 		brWriteErr(w, err)
 		return
 	}
-	if ctype == "" {
-		ctype = "application/octet-stream"
-	}
-	w.Header().Set("Content-Type", ctype)
+	serveBRBytesHeaders(w, ctype)
 	_, _ = w.Write(data)
 }
 

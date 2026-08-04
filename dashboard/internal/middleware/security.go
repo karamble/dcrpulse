@@ -29,7 +29,7 @@ func buildCSP(scriptHashes []string) string {
 		"style-src 'self' 'unsafe-inline'; " +
 		"img-src 'self' data: blob:; " +
 		"font-src 'self'; " +
-		"connect-src 'self' ws: wss:; " +
+		"connect-src 'self'; " +
 		"frame-ancestors 'self'; " +
 		"base-uri 'self'; " +
 		"form-action 'self'"

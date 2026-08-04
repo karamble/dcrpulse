@@ -44,6 +44,13 @@ func initMDRenderer() {
 	// enough for BR posts in the absence of a better policy).
 	mdPolicy = bluemonday.StrictPolicy()
 	mdPolicy.AllowStandardURLs()
+	// AllowStandardURLs permits relative links, which for posts and comments
+	// means a peer can link to any dashboard path and have it open in the
+	// current tab (fully-qualified links get target=_blank, relative ones do
+	// not). Nothing renders these with an in-app link handler, so absolute
+	// http/https/mailto links are the whole of what they need. Pages are the
+	// exception and keep relative links; see mdPagePolicy below.
+	mdPolicy.AllowRelativeURLs(false)
 	mdPolicy.AllowElements(
 		"h1", "h2", "h3", "h4", "h5", "h6",
 		"p", "br", "hr",
