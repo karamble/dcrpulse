@@ -22,35 +22,49 @@ func brMCPJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// brMCPDenied is the listener's most recent allowed-IP denial, passed
+// through verbatim (only ever present on replies from brclientd).
+type brMCPDenied struct {
+	IP string `json:"ip"`
+	At string `json:"at"`
+}
+
 // brMCPSettingsWire mirrors brclientd's mcpclient.json shape. The listener
 // address is not here - it is brclientd startup config (mcplisten), not a
 // runtime setting.
 type brMCPSettingsWire struct {
-	Enabled             bool     `json:"enabled"`
-	Token               string   `json:"token"`
-	Mode                string   `json:"mode"`
-	PerCallCapAtoms     int64    `json:"per_call_cap_atoms"`
-	PerDayCapAtoms      int64    `json:"per_day_cap_atoms"`
-	AllowedBots         []string `json:"allowed_bots"`
-	ApprovalTimeoutSecs int      `json:"approval_timeout_secs"`
-	TipWaitSecs         int      `json:"tip_wait_secs"`
+	Enabled             bool         `json:"enabled"`
+	Token               string       `json:"token"`
+	Mode                string       `json:"mode"`
+	PerCallCapAtoms     int64        `json:"per_call_cap_atoms"`
+	PerDayCapAtoms      int64        `json:"per_day_cap_atoms"`
+	AllowedBots         []string     `json:"allowed_bots"`
+	AllowedIPs          []string     `json:"allowed_ips"`
+	ApprovalTimeoutSecs int          `json:"approval_timeout_secs"`
+	TipWaitSecs         int          `json:"tip_wait_secs"`
+	LastDenied          *brMCPDenied `json:"last_denied,omitempty"`
 }
 
 // brMCPSettingsView is the DCR-denominated frontend shape.
 type brMCPSettingsView struct {
-	Enabled             bool     `json:"enabled"`
-	Token               string   `json:"token"`
-	Mode                string   `json:"mode"`
-	PerCallCapDcr       float64  `json:"perCallCapDcr"`
-	PerDayCapDcr        float64  `json:"perDayCapDcr"`
-	AllowedBots         []string `json:"allowedBots"`
-	ApprovalTimeoutSecs int      `json:"approvalTimeoutSecs"`
-	TipWaitSecs         int      `json:"tipWaitSecs"`
+	Enabled             bool         `json:"enabled"`
+	Token               string       `json:"token"`
+	Mode                string       `json:"mode"`
+	PerCallCapDcr       float64      `json:"perCallCapDcr"`
+	PerDayCapDcr        float64      `json:"perDayCapDcr"`
+	AllowedBots         []string     `json:"allowedBots"`
+	AllowedIPs          []string     `json:"allowedIps"`
+	ApprovalTimeoutSecs int          `json:"approvalTimeoutSecs"`
+	TipWaitSecs         int          `json:"tipWaitSecs"`
+	LastDenied          *brMCPDenied `json:"lastDenied,omitempty"`
 }
 
 func brMCPSettingsToView(w brMCPSettingsWire) brMCPSettingsView {
 	if w.AllowedBots == nil {
 		w.AllowedBots = []string{}
+	}
+	if w.AllowedIPs == nil {
+		w.AllowedIPs = []string{}
 	}
 	return brMCPSettingsView{
 		Enabled:             w.Enabled,
@@ -59,8 +73,10 @@ func brMCPSettingsToView(w brMCPSettingsWire) brMCPSettingsView {
 		PerCallCapDcr:       dcrutil.Amount(w.PerCallCapAtoms).ToCoin(),
 		PerDayCapDcr:        dcrutil.Amount(w.PerDayCapAtoms).ToCoin(),
 		AllowedBots:         w.AllowedBots,
+		AllowedIPs:          w.AllowedIPs,
 		ApprovalTimeoutSecs: w.ApprovalTimeoutSecs,
 		TipWaitSecs:         w.TipWaitSecs,
+		LastDenied:          w.LastDenied,
 	}
 }
 
@@ -102,6 +118,7 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			PerCallCapAtoms:     int64(perCall),
 			PerDayCapAtoms:      int64(perDay),
 			AllowedBots:         view.AllowedBots,
+			AllowedIPs:          view.AllowedIPs,
 			ApprovalTimeoutSecs: view.ApprovalTimeoutSecs,
 			TipWaitSecs:         view.TipWaitSecs,
 		}

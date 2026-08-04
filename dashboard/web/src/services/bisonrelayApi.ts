@@ -1858,8 +1858,10 @@ export interface BrMcpSettings {
   perCallCapDcr: number;
   perDayCapDcr: number;
   allowedBots: string[];
+  allowedIps: string[];
   approvalTimeoutSecs: number;
   tipWaitSecs: number;
+  lastDenied?: { ip: string; at: string };
 }
 
 export interface BrMcpPendingPayment {

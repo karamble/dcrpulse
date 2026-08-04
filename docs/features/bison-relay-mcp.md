@@ -31,12 +31,30 @@ Settings -> Bison Relay -> AI Agent Access:
      never pay.
    - Mode: approval (every payment waits for your yes/no) or autopay
      (payments under the caps settle unattended).
-4. Optionally set the approval and tip-wait timeouts.
+4. Optionally restrict where the token may be used from under **Allowed IP
+   addresses** (single IPs or CIDR ranges; empty means any address).
+5. Optionally set the approval and tip-wait timeouts.
 
 The listener is loopback by default. To reach it from another device set
 `MCP_BRIDGE_HOST=0.0.0.0` (and, if needed, `MCP_BRIDGE_PORT`) in your .env -
 but it speaks plain HTTP behind the bearer token, so prefer an SSH tunnel or
-a TLS reverse proxy. Nothing binds or answers until you enable it here.
+a TLS reverse proxy, and pin the token to the caller's address with the
+allowed-IP list. Nothing binds or answers until you enable it here.
+
+### Allowed IP addresses (optional)
+
+When the list is set, every request is checked against the connection's
+source address after the token verifies; a request from anywhere else is
+answered with a generic 401 indistinguishable from a bad token (deliberate:
+it does not confirm token validity) and logged by brclientd. Forwarding
+headers such as `X-Forwarded-For` are deliberately ignored - behind a
+reverse proxy allowlist the proxy and restrict real clients there. Under
+Docker an agent on the host usually appears as the bridge gateway (for
+example `172.17.0.1`), not `127.0.0.1`: when a restricted agent is denied,
+the section shows the most recent attempt ("An agent using this token was
+denied from ...") with an **Allow this IP** button - the one-click fix when
+you don't know which address the listener sees. The notice is in-memory
+only and clears on the agent's next successful request.
 
 ## Connecting an agent
 

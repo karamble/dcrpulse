@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Copy, HelpCircle, Loader2, Radio, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, Copy, HelpCircle, Loader2, Radio, RefreshCw } from 'lucide-react';
 import {
   BrMcpPendingPayment,
   BrMcpSettings,
@@ -41,6 +41,7 @@ export const BrMcpSection = () => {
     todayDcr: 0,
   });
   const [newBot, setNewBot] = useState('');
+  const [newIp, setNewIp] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -67,11 +68,19 @@ export const BrMcpSection = () => {
     }
   }, []);
 
+  // Settings ride the poll too so a denied connection attempt surfaces while
+  // the page is open; refreshSettings only seeds the draft when null, so
+  // in-progress edits are never clobbered.
+  const refreshAll = useCallback(() => {
+    refreshLive();
+    refreshSettings();
+  }, [refreshLive, refreshSettings]);
+
   useEffect(() => {
     refreshSettings();
   }, [refreshSettings]);
 
-  useVisiblePoll(refreshLive, 5000, { enabled: !!settings?.enabled });
+  useVisiblePoll(refreshAll, 5000, { enabled: !!settings?.enabled });
 
   const apply = async (next: BrMcpSettings) => {
     setBusy(true);
@@ -132,6 +141,24 @@ export const BrMcpSection = () => {
     if (!UID_RE.test(uid) || draft.allowedBots.includes(uid)) return;
     setDraft({ ...draft, allowedBots: [...draft.allowedBots, uid] });
     setNewBot('');
+  };
+
+  // Loose client gate only; brclientd validates the entries and its error
+  // names the offending one.
+  const addIp = () => {
+    const ip = newIp.trim();
+    if (!ip || draft.allowedIps.includes(ip)) return;
+    setDraft({ ...draft, allowedIps: [...draft.allowedIps, ip] });
+    setNewIp('');
+  };
+
+  const allowDenied = () => {
+    const ip = settings.lastDenied?.ip;
+    if (!ip) return;
+    apply({
+      ...draft,
+      allowedIps: draft.allowedIps.includes(ip) ? draft.allowedIps : [...draft.allowedIps, ip],
+    });
   };
 
   return (
@@ -310,6 +337,71 @@ export const BrMcpSection = () => {
               type="button"
               onClick={() =>
                 setDraft({ ...draft, allowedBots: draft.allowedBots.filter((x) => x !== b) })
+              }
+              className="text-muted-foreground hover:text-destructive"
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        <span className="text-xs text-muted-foreground block">
+          Allowed IP addresses (single IPs or CIDR ranges, IPv4 or IPv6; empty = any address).
+          Behind Docker or a reverse proxy the listener sees the bridge or proxy address, not
+          the agent's own.
+        </span>
+        {settings.lastDenied && (
+          <div className="flex items-center justify-between gap-3 p-2 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning">
+            <span className="min-w-0">
+              <AlertTriangle className="h-3.5 w-3.5 inline mr-1.5 align-text-bottom" />
+              An agent using this token was denied from{' '}
+              <code className="font-mono">{settings.lastDenied.ip}</code> at{' '}
+              {new Date(settings.lastDenied.at).toLocaleString()}.
+            </span>
+            <button
+              type="button"
+              onClick={allowDenied}
+              disabled={busy}
+              className="shrink-0 px-2.5 py-1 rounded-md bg-warning/20 text-warning text-[11px] font-semibold hover:bg-warning/30 disabled:opacity-50"
+            >
+              Allow this IP
+            </button>
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            value={newIp}
+            onChange={(e) => setNewIp(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addIp();
+              }
+            }}
+            placeholder="IP or CIDR"
+            className="flex-1 px-2 py-1.5 rounded-lg bg-background border border-border text-sm font-mono"
+          />
+          <button
+            type="button"
+            onClick={addIp}
+            disabled={!newIp.trim()}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-muted/20 hover:bg-muted/30 disabled:opacity-50"
+          >
+            Add
+          </button>
+        </div>
+        {draft.allowedIps.map((ip) => (
+          <div
+            key={ip}
+            className="flex items-center gap-2 p-2 rounded-lg bg-muted/10 border border-border/50 text-xs"
+          >
+            <code className="font-mono truncate flex-1">{ip}</code>
+            <button
+              type="button"
+              onClick={() =>
+                setDraft({ ...draft, allowedIps: draft.allowedIps.filter((x) => x !== ip) })
               }
               className="text-muted-foreground hover:text-destructive"
             >
