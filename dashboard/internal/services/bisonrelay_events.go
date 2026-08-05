@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"dcrpulse/internal/alerts"
 	"dcrpulse/internal/rpc"
 )
 
@@ -189,6 +190,7 @@ func StartBrclientdNotifs(ctx context.Context) {
 					bus.broadcast(BisonrelayEvent{Type: evt.Type, Payload: evt.Payload})
 				}
 				backoff = minBackoff
+				alerts.Resolve("br_disconnected", "")
 			})
 			forced := attemptCtx.Err() != nil
 			cancel()
@@ -202,6 +204,7 @@ func StartBrclientdNotifs(ctx context.Context) {
 			}
 			if err != nil {
 				log.Printf("brclientd notifications stream: %v (reconnecting in %s)", err, backoff)
+				alerts.Raise("br_disconnected", "", err.Error())
 			}
 			select {
 			case <-ctx.Done():

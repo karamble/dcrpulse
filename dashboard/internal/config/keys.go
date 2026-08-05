@@ -41,6 +41,11 @@ const (
 	// custom themes are persisted here.
 	KeyThemeStore = "theme_store"
 
+	// KeyAlertsSettings holds the alerts-center per-category opt-outs
+	// ({"schema":1,"disabled":[...]}). Absent or empty means every category
+	// is enabled.
+	KeyAlertsSettings = "alerts_settings"
+
 	// KeySelectedWallet records the active wallet's name across restarts.
 	// Empty or absent means no wallet is selected (the UI shows the wallet
 	// list). dcrwallet serves one wallet per process, so the active wallet is

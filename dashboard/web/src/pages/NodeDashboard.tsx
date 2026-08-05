@@ -13,6 +13,7 @@ import { BlockchainInfo } from '../components/BlockchainInfo';
 import { PeersList } from '../components/PeersList';
 import { StakingStats } from '../components/StakingStats';
 import { MempoolActivity } from '../components/MempoolActivity';
+import { RecentAlertsCard } from '../components/alerts/RecentAlertsCard';
 import { TicketPoolCard } from '../components/TicketPoolCard';
 import { getDashboardData, DashboardData } from '../services/api';
 import { useVisiblePoll } from '../hooks/useVisiblePoll';
@@ -206,6 +207,8 @@ export const NodeDashboard = () => {
         <MempoolActivity data={data?.mempoolInfo} />
         <PeersList peers={data?.peers} />
       </div>
+
+      <RecentAlertsCard />
     </div>
   );
 };

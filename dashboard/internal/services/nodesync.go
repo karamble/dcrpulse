@@ -76,12 +76,14 @@ func broadcastNodeSync(snap NodeSyncSnapshot) {
 // it to subscribers.
 func RefreshNodeSync() {
 	if rpc.DcrdClient == nil {
+		nodeAlertsUnreachable("dcrd RPC client not initialized")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	ci, err := rpc.DcrdClient.GetBlockChainInfo(ctx)
 	if err != nil {
+		nodeAlertsUnreachable(err.Error())
 		return
 	}
 
@@ -128,6 +130,7 @@ func RefreshNodeSync() {
 	nodeSyncSnap = snap
 	nodeSyncMu.Unlock()
 	broadcastNodeSync(snap)
+	nodeAlertsHealthy(ci.Blocks)
 }
 
 // TriggerNodeSyncRefresh requests a refresh (non-blocking, coalesced). Called

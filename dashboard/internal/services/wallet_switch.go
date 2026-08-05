@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"time"
 
+	"dcrpulse/internal/alerts"
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 )
@@ -88,6 +89,11 @@ func SwitchWallet(ctx context.Context, name, publicPass string) error {
 // control pointer); these clients reconnect best-effort and each service's
 // status machine resolves the rest (needs-unlock / needs-setup / syncing).
 func reconnectStackServices(ctx context.Context, name string) {
+	// Per-wallet daemon conditions from the previous wallet no longer apply,
+	// and event watchers must reseed on the new wallet's state instead of
+	// flooding its history as "new".
+	alerts.ResolveCategories(alerts.CategoryLightning, alerts.CategoryDex, alerts.CategoryBisonrelay)
+	resetAlertWatcherBaselines()
 	rpc.ClearDcrdexAppPass()
 	if ActiveWalletIsWatchOnly(ctx) {
 		// Watch-only wallets have no dcrlnd / DEX / Bison Relay daemons, so don't

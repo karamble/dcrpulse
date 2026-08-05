@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"dcrpulse/internal/alerts"
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/handlers"
@@ -36,6 +38,15 @@ var embeddedFiles embed.FS
 var inlineScriptRe = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
 
 func main() {
+	// Alerts fanout: nudge every open session over the BR event bus so the
+	// pill refetches without a socket of its own. The payload is deliberately
+	// empty (the bus reaches all sessions); clients refetch over
+	// authenticated HTTP.
+	alerts.SetNotify(func() {
+		services.PublishBisonrelayEvent("alerts", json.RawMessage("{}"))
+	})
+	services.StartDiskAlerts(context.Background())
+
 	// Load dcrd configuration from environment variables
 	dcrdConfig := rpc.Config{
 		RPCHost:     getEnv("DCRD_RPC_HOST", "localhost"),
@@ -47,13 +58,19 @@ func main() {
 
 	// Try to initialize dcrd RPC client if credentials are provided
 	if dcrdConfig.RPCUser != "" && dcrdConfig.RPCPassword != "" {
+		dcrdConnected := true
 		if err := rpc.InitDcrdClient(dcrdConfig); err != nil {
+			dcrdConnected = false
 			log.Printf("Warning: Could not connect to dcrd on startup: %v", err)
 			log.Println("RPC connection can be configured via API")
-		} else {
-			// Seed + push dcrd sync progress, refreshed on block-connected
-			// notifications (websocket) instead of a fixed poll interval.
-			services.StartNodeSync(context.Background())
+		}
+		// Seed + push dcrd sync progress, refreshed on block-connected
+		// notifications (websocket) instead of a fixed poll interval. Runs
+		// even when the initial connect failed: its safety ticker keeps
+		// evaluating the node alert conditions (dcrd_unreachable) while dcrd
+		// is down, and RefreshNodeSync tolerates a nil client.
+		services.StartNodeSync(context.Background())
+		if dcrdConnected {
 			if err := rpc.InitDcrdNotifyClient(dcrdConfig, services.TriggerNodeSyncRefresh); err != nil {
 				log.Printf("Warning: dcrd notification client unavailable (progress falls back to timer): %v", err)
 			}
@@ -103,6 +120,8 @@ func main() {
 			// Re-lock accounts left unlocked by a subsystem that is no longer
 			// running, which a restart would otherwise leave open indefinitely.
 			services.StartAccountLockMonitor(context.Background())
+			services.StartTransactionWatcher(context.Background())
+			services.StartTicketWatcher(context.Background())
 		}
 	} else {
 		log.Println("No gRPC certificate provided. Streaming features disabled.")
@@ -123,6 +142,7 @@ func main() {
 	if err := rpc.InitDcrlndClient(dcrlndCfg); err != nil {
 		log.Printf("Warning: dcrlnd init: %v", err)
 	}
+	services.StartLightningWatcher(context.Background())
 
 	// brclientd clientrpc config. The cert pair is owned by brclientd and
 	// mounted read-only into this container; lazy init means the dashboard
@@ -149,6 +169,7 @@ func main() {
 		WSPort:     getEnv("DCRDEX_WS_PORT", "5758"),
 		WSCertPath: config.DcrdexWSCert(activeWallet),
 	})
+	services.StartDexWatcher(context.Background())
 
 	// Tail dcrwallet's log file for mixer-relevant entries; pushes them into
 	// the same ring buffer the /wallet/privacy/events WebSocket reads from.
@@ -326,6 +347,12 @@ func main() {
 	api.HandleFunc("/wallet/settings/logs", handlers.GetLogsHandler).Methods("GET")
 	api.HandleFunc("/themes", handlers.GetThemesHandler).Methods("GET")
 	api.HandleFunc("/themes", handlers.SaveThemesHandler).Methods("POST")
+	api.HandleFunc("/alerts", handlers.ListAlertsHandler).Methods("GET")
+	api.HandleFunc("/alerts/summary", handlers.AlertsSummaryHandler).Methods("GET")
+	api.HandleFunc("/alerts/read-all", handlers.MarkAllAlertsReadHandler).Methods("POST")
+	api.HandleFunc("/alerts/settings", handlers.GetAlertsSettingsHandler).Methods("GET")
+	api.HandleFunc("/alerts/settings", handlers.SaveAlertsSettingsHandler).Methods("POST")
+	api.HandleFunc("/alerts/{id}/read", handlers.MarkAlertReadHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records", handlers.ListTimestampsHandler).Methods("GET")
 	api.HandleFunc("/timestamp/records", handlers.CreateTimestampHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records/{digest}", handlers.GetTimestampHandler).Methods("GET")

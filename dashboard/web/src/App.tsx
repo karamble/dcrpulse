@@ -8,6 +8,7 @@ import { ComponentType, Suspense, lazy, useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { ExternalLinkGuard } from './components/ExternalLinkGuard';
+import { AlertsPill } from './components/alerts/AlertsPill';
 import { ThemeProvider } from './services/themes/ThemeProvider';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
@@ -93,6 +94,8 @@ const ExportTab = lazyRoute(() => import('./components/onchain/ExportTab'), (m) 
 const OfflineSigningTab = lazyRoute(() => import('./components/onchain/OfflineSigningTab'), (m) => m.OfflineSigningTab);
 const SharedWalletsPage = lazyRoute(() => import('./components/wallet/shared/SharedWalletsPage'), (m) => m.SharedWalletsPage);
 const SharedWalletDetailPage = lazyRoute(() => import('./components/wallet/shared/SharedWalletDetailPage'), (m) => m.SharedWalletDetailPage);
+const AlertsPage = lazyRoute(() => import('./pages/AlertsPage'), (m) => m.AlertsPage);
+const AlertsSection = lazyRoute(() => import('./components/settings/AlertsSection'), (m) => m.AlertsSection);
 
 const RouteFallback = () => (
   <div className="min-h-[40vh] flex items-center justify-center">
@@ -210,6 +213,7 @@ function AppContent() {
                 <Route path="themes" element={<ThemesSection />} />
                 <Route path="security" element={<SecuritySection />} />
                 <Route path="tor" element={<TorSection />} />
+                <Route path="alerts" element={<AlertsSection />} />
               </Route>
               <Route path="transactions" element={<OnChainTransactions />}>
                 <Route index element={<OnChainTransactionsIndex />} />
@@ -227,6 +231,7 @@ function AppContent() {
             <Route path="/explorer/mempool" element={<MempoolView />} />
             <Route path="/explorer/verify-timestamp" element={<VerifyTimestampPage />} />
             <Route path="/treasury" element={<GovernanceDashboard />} />
+            <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/br" element={<BisonrelayPage />} />
             <Route path="/dex" element={<DexPage />} />
           </Routes>
@@ -242,6 +247,7 @@ function AppContent() {
         />
       </div>
       <ExternalLinkGuard />
+      <AlertsPill />
     </div>
   );
 }

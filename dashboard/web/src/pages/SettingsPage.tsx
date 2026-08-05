@@ -11,6 +11,7 @@ const tabs = [
   { path: 'logs', label: 'Logs' },
   { path: 'themes', label: 'Themes' },
   { path: 'security', label: 'Security' },
+  { path: 'alerts', label: 'Alerts' },
   { path: 'about', label: 'About' },
 ];
 

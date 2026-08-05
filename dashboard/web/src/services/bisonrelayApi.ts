@@ -1010,7 +1010,10 @@ export type BisonrelayEventType =
   | 'msig'
   // Emitted by the dashboard's own msig engine after it persists a state
   // change, so pages re-render on the commit rather than the arrival.
-  | 'msig-state';
+  | 'msig-state'
+  // Emitted by the alerts engine after any change to the pill summary; the
+  // payload is empty by design and listeners refetch over HTTP.
+  | 'alerts';
 
 export interface BisonrelayLiveEvent {
   type: BisonrelayEventType;

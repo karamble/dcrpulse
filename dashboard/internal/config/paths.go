@@ -67,6 +67,12 @@ func TimestampArchivePath() string {
 	return filepath.Join(AppDataDir, "timestamps.json")
 }
 
+// AlertsPath is the persisted alerts ring. Global (not per-wallet): alerts
+// concern the whole stack, so history must survive wallet switches.
+func AlertsPath() string {
+	return filepath.Join(AppDataDir, "alerts.json")
+}
+
 // WalletDir is one wallet's directory.
 func WalletDir(network, walletName string) string {
 	return filepath.Join(WalletsDir(network), walletName)

@@ -1474,5 +1474,61 @@ export const subscribeVoteTrickleEvents = (
   };
 };
 
+// Alerts center. The summary is a dedicated lightweight endpoint (not part of
+// /wallet/status, which fails while dcrd is down or in IBD, exactly when
+// critical alerts fire).
+export interface AlertsSummary {
+  unread: number;
+  active: number;
+  severity: '' | 'info' | 'warning' | 'critical';
+}
+
+export interface AlertEntry {
+  id: string;
+  kind: 'event' | 'condition';
+  category: string;
+  severity: 'info' | 'warning' | 'critical';
+  code: string;
+  scope?: string;
+  title: string;
+  detail?: string;
+  createdAt: string;
+  read: boolean;
+  active?: boolean;
+  resolvedAt?: string;
+}
+
+export interface AlertsSettings {
+  schema: number;
+  disabled: string[];
+}
+
+export const getAlertsSummary = async (): Promise<AlertsSummary> => {
+  const response = await api.get<AlertsSummary>('/alerts/summary');
+  return response.data;
+};
+
+export const getAlerts = async (): Promise<AlertEntry[]> => {
+  const response = await api.get<{ entries: AlertEntry[] }>('/alerts');
+  return response.data.entries ?? [];
+};
+
+export const markAlertRead = async (id: string): Promise<void> => {
+  await api.post(`/alerts/${id}/read`);
+};
+
+export const markAllAlertsRead = async (): Promise<void> => {
+  await api.post('/alerts/read-all');
+};
+
+export const getAlertsSettings = async (): Promise<AlertsSettings> => {
+  const response = await api.get<AlertsSettings>('/alerts/settings');
+  return response.data;
+};
+
+export const saveAlertsSettings = async (settings: AlertsSettings): Promise<void> => {
+  await api.post('/alerts/settings', settings);
+};
+
 export default api;
 
