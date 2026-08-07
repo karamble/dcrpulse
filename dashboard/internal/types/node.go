@@ -60,13 +60,16 @@ type Peer struct {
 	Tor        bool   `json:"tor"`
 }
 
+// SupplyInfo carries DCR amounts converted from atoms with dcrutil, so the
+// browser formats them rather than deriving them. An amount dcrd could not
+// supply is omitted rather than sent as a placeholder.
 type SupplyInfo struct {
-	CirculatingSupply string  `json:"circulatingSupply"`
-	StakedSupply      string  `json:"stakedSupply"`
-	StakedPercent     float64 `json:"stakedPercent"`
-	ExchangeRate      string  `json:"exchangeRate"`
-	TreasurySize      string  `json:"treasurySize"`
-	MixedPercent      string  `json:"mixedPercent"`
+	CirculatingSupply *float64 `json:"circulatingSupply,omitempty"`
+	StakedSupply      *float64 `json:"stakedSupply,omitempty"`
+	StakedPercent     float64  `json:"stakedPercent"`
+	ExchangeRate      string   `json:"exchangeRate"`
+	TreasurySize      *float64 `json:"treasurySize,omitempty"`
+	MixedPercent      string   `json:"mixedPercent"`
 }
 
 type StakingInfo struct {

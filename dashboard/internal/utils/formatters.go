@@ -65,55 +65,44 @@ func ExtractDcrdVersion(subver string) string {
 	return "unknown"
 }
 
-// FormatDCRAmount formats a DCR amount with commas and appropriate precision
-func FormatDCRAmount(amount float64) string {
-	// Format with 0 decimal places for large amounts
-	intAmount := int64(amount)
-	return AddCommas(intAmount)
-}
-
-// FormatDCRAmountWithDecimals formats a DCR amount with commas and specified decimal places
-func FormatDCRAmountWithDecimals(amount float64, decimals int) string {
-	// Split into integer and decimal parts
-	intPart := int64(amount)
-	decimalPart := amount - float64(intPart)
-
-	// Format integer part with commas
-	intStr := AddCommas(intPart)
-
-	// Format decimal part
-	format := fmt.Sprintf("%%.%df", decimals)
-	fullStr := fmt.Sprintf(format, decimalPart)
-
-	// Extract just the decimal part (after the "0.")
-	decimalStr := fullStr[2:] // Skip "0."
-
-	return fmt.Sprintf("%s.%s", intStr, decimalStr)
-}
-
 // FormatNumber formats a number with thousands separators
 func FormatNumber(n int64) string {
-	if n < 1000 {
-		return fmt.Sprintf("%d", n)
-	}
-	return AddCommas(n)
+	return addCommas(n)
 }
 
-// AddCommas adds comma separators to a number
-func AddCommas(n int64) string {
-	str := fmt.Sprintf("%d", n)
-	if len(str) <= 3 {
-		return str
+// addCommas groups a number's digits in threes. The sign is held aside so it
+// does not occupy a digit position and push a separator to the front.
+func addCommas(n int64) string {
+	sign := ""
+	if n < 0 {
+		sign = "-"
 	}
 
-	var result string
-	for i, digit := range str {
-		if i > 0 && (len(str)-i)%3 == 0 {
-			result += ","
+	// Build from the least significant digit so grouping needs no length math.
+	// Negation is done per digit to stay correct at math.MinInt64, whose
+	// magnitude has no positive counterpart.
+	var digits []byte
+	for {
+		d := n % 10
+		if d < 0 {
+			d = -d
 		}
-		result += string(digit)
+		digits = append(digits, byte('0'+d))
+		n /= 10
+		if n == 0 {
+			break
+		}
 	}
-	return result
+
+	var b strings.Builder
+	b.WriteString(sign)
+	for i := len(digits) - 1; i >= 0; i-- {
+		b.WriteByte(digits[i])
+		if i > 0 && i%3 == 0 {
+			b.WriteByte(',')
+		}
+	}
+	return b.String()
 }
 
 // FormatHashrate formats hashrate to a human-readable string

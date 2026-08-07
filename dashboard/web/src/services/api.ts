@@ -93,12 +93,14 @@ export interface Peer {
   tor: boolean;
 }
 
+// Amounts are DCR, converted from atoms by the backend. A figure dcrd could
+// not supply is absent rather than zero.
 export interface SupplyInfo {
-  circulatingSupply: string;
-  stakedSupply: string;
+  circulatingSupply?: number;
+  stakedSupply?: number;
   stakedPercent: number;
   exchangeRate: string;
-  treasurySize: string;
+  treasurySize?: number;
   mixedPercent: string;
 }
 

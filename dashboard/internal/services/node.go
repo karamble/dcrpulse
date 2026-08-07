@@ -19,6 +19,8 @@ import (
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 	"dcrpulse/internal/utils"
+
+	"github.com/decred/dcrd/dcrutil/v4"
 )
 
 var (
@@ -327,10 +329,9 @@ func FetchSupplyInfo() (*types.SupplyInfo, error) {
 	ctx := context.Background()
 
 	// Get real circulating supply from dcrd - direct RPC method
-	circulatingSupply := "N/A"
-	stakedSupply := "N/A"
+	// Nil means dcrd could not supply the figure, which is distinct from zero.
+	var circulatingSupply, stakedSupply, treasuryBalance *float64
 	stakedPercent := float64(0)
-	treasuryBalance := "N/A"
 
 	// Check if node is fully synced before calling TicketPoolValue
 	chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(ctx)
@@ -338,9 +339,8 @@ func FetchSupplyInfo() (*types.SupplyInfo, error) {
 
 	coinSupply, err := rpc.DcrdClient.GetCoinSupply(ctx)
 	if err == nil && coinSupply > 0 {
-		// Convert atoms to DCR and format with commas
 		coinSupplyDCR := coinSupply.ToCoin()
-		circulatingSupply = utils.FormatDCRAmount(coinSupplyDCR)
+		circulatingSupply = &coinSupplyDCR
 
 		// Calculate staked supply from ticket pool
 		// Only call GetTicketPoolValue if node is fully synced to avoid nil pointer panic during initial sync
@@ -348,7 +348,7 @@ func FetchSupplyInfo() (*types.SupplyInfo, error) {
 			ticketPoolValue, err := rpc.DcrdClient.GetTicketPoolValue(ctx)
 			if err == nil && ticketPoolValue > 0 {
 				lockedDCR := ticketPoolValue.ToCoin()
-				stakedSupply = utils.FormatDCRAmount(lockedDCR)
+				stakedSupply = &lockedDCR
 
 				if coinSupplyDCR > 0 {
 					stakedPercent = (lockedDCR / coinSupplyDCR) * 100
@@ -361,10 +361,9 @@ func FetchSupplyInfo() (*types.SupplyInfo, error) {
 	// Pass nil for hash (gets latest) and false for verbose
 	treasuryBalanceResult, err := rpc.DcrdClient.GetTreasuryBalance(ctx, nil, false)
 	if err == nil && treasuryBalanceResult.Balance > 0 {
-		// Balance is in atoms (uint64), convert to DCR by dividing by 1e8
-		treasuryBalanceDCR := float64(treasuryBalanceResult.Balance) / 1e8
-		// Format with 2 decimal places and commas
-		treasuryBalance = utils.FormatDCRAmountWithDecimals(treasuryBalanceDCR, 2)
+		// Balance is atoms; dcrutil holds the authoritative AtomsPerCoin.
+		treasuryDCR := dcrutil.Amount(treasuryBalanceResult.Balance).ToCoin()
+		treasuryBalance = &treasuryDCR
 	}
 
 	return &types.SupplyInfo{

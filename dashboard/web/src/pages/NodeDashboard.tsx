@@ -25,6 +25,16 @@ interface NodeSync {
   syncMessage: string;
 }
 
+// The backend sends DCR amounts as numbers, so grouping and precision are
+// decided here. An absent amount is one dcrd could not supply.
+const dcr = (amount: number | undefined, digits = 0) =>
+  amount === undefined || amount === null
+    ? 'N/A'
+    : amount.toLocaleString(undefined, {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      });
+
 export const NodeDashboard = () => {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,7 +149,7 @@ export const NodeDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           title="Circulating Supply"
-          value={data ? (data.supplyInfo?.circulatingSupply || 'N/A') : 'Loading...'}
+          value={data ? dcr(data.supplyInfo?.circulatingSupply) : 'Loading...'}
           subtitle="DCR of 21 million"
           icon={Coins}
           trend={{ value: "Max Supply: 21M DCR", isPositive: true }}
@@ -168,7 +178,7 @@ export const NodeDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           title="Treasury Balance"
-          value={data ? (data.supplyInfo?.treasurySize || 'N/A') : 'Loading...'}
+          value={data ? dcr(data.supplyInfo?.treasurySize, 2) : 'Loading...'}
           subtitle={
             <>
               DCR in treasury
@@ -180,7 +190,7 @@ export const NodeDashboard = () => {
         />
         <MetricCard
           title="Supply Staked"
-          value={data ? (data.supplyInfo?.stakedSupply || 'N/A') : 'Loading...'}
+          value={data ? dcr(data.supplyInfo?.stakedSupply) : 'Loading...'}
           subtitle="DCR - Stakeholders Rule"
           icon={Lock}
           trend={data?.supplyInfo?.stakedPercent ? { 
