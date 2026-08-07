@@ -106,9 +106,32 @@ func (c *BrclientdWSClient) Reconnect() {
 // Run dials brclientd and keeps the connection alive with reconnect
 // backoff. Blocks until ctx is done. Re-subscribes registered streams on
 // every successful reconnect.
+const (
+	wsMinBackoff = time.Second
+	wsMaxBackoff = 30 * time.Second
+	// A connection that lasted this long counts as healthy, so the next drop
+	// starts over from wsMinBackoff rather than inheriting the delay earned by
+	// whatever went wrong at startup.
+	wsHealthyFor = 30 * time.Second
+)
+
+// nextBackoff returns the delay to wait after a connection that lasted
+// connectedFor, given the delay currently in force. A healthy connection resets
+// the sequence; otherwise it doubles, clamped after doubling so the ceiling is
+// not overshot.
+func nextBackoff(current, connectedFor time.Duration) time.Duration {
+	if connectedFor >= wsHealthyFor {
+		return wsMinBackoff
+	}
+	next := current * 2
+	if next > wsMaxBackoff {
+		next = wsMaxBackoff
+	}
+	return next
+}
+
 func (c *BrclientdWSClient) Run(ctx context.Context) error {
-	backoff := time.Second
-	const maxBackoff = 30 * time.Second
+	backoff := wsMinBackoff
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -123,15 +146,20 @@ func (c *BrclientdWSClient) Run(ctx context.Context) error {
 				return ctx.Err()
 			}
 		}
-		if err := c.dialAndServe(ctx); err != nil && !errors.Is(err, context.Canceled) {
+
+		started := time.Now()
+		err := c.dialAndServe(ctx)
+		connectedFor := time.Since(started)
+		if err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("brclientd-ws: %v (reconnect in %s)", err, backoff)
 		}
+		if connectedFor >= wsHealthyFor {
+			backoff = wsMinBackoff
+		}
+
 		select {
 		case <-time.After(backoff):
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
+			backoff = nextBackoff(backoff, connectedFor)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -231,13 +259,16 @@ func (c *BrclientdWSClient) readLoop(conn *websocket.Conn) error {
 		}
 		id := idAsString(msg.ID)
 		if id != "" {
+			// Look up and remove in one critical section. Split across two,
+			// failAllPending can close the channel in between and the send
+			// below then panics on a closed channel.
 			c.mu.Lock()
 			pendingCh, hasPending := c.pending[id]
+			if hasPending {
+				delete(c.pending, id)
+			}
 			c.mu.Unlock()
 			if hasPending {
-				c.mu.Lock()
-				delete(c.pending, id)
-				c.mu.Unlock()
 				select {
 				case pendingCh <- msg:
 				default:
@@ -262,6 +293,12 @@ func (c *BrclientdWSClient) readLoop(conn *websocket.Conn) error {
 		if len(payload) == 0 {
 			continue
 		}
+		// Called on the read goroutine, so a callback MUST NOT call back into
+		// this client. Call blocks for a response that only this loop can
+		// demultiplex, so re-entering here deadlocks the socket permanently:
+		// no read is in flight for the read deadline to fire, the ping loop
+		// keeps the peer happy, and Reconnect cannot wake a loop that is not
+		// sitting in ReadMessage. Do slow or client-calling work elsewhere.
 		sub.onEvent(payload)
 	}
 }
