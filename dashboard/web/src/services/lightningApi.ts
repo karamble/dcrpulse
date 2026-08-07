@@ -100,6 +100,8 @@ export interface LightningChannel {
   // String on the wire: the value exceeds Number.MAX_SAFE_INTEGER, so parsing
   // it as a number silently corrupts the low bits.
   channelId?: string;
+  // channelId decomposed as fundingHeightxTxIndexxOutput, the form explorers use.
+  shortChannelId?: string;
   remotePubkey: string;
   remoteAlias?: string;
   capacity: number;

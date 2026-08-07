@@ -32,7 +32,20 @@ import (
 	"github.com/decred/dcrlnd/lnrpc/routerrpc"
 	"github.com/decred/dcrlnd/lnrpc/verrpc"
 	"github.com/decred/dcrlnd/lnrpc/wtclientrpc"
+	"github.com/decred/dcrlnd/lnwire"
 )
+
+// shortChanID renders a short channel ID in the fundingHeightxTxIndexxOutput
+// form explorers and lncli use. The decomposition comes from lnwire rather than
+// hand-rolled shifts so the bit layout has one definition, upstream's. Returns
+// "" for a zero ID, which is what a channel carries until it confirms.
+func shortChanID(id uint64) string {
+	if id == 0 {
+		return ""
+	}
+	s := lnwire.NewShortChanIDFromInt(id)
+	return fmt.Sprintf("%dx%dx%d", s.BlockHeight, s.TxIndex, s.TxPosition)
+}
 
 const (
 	// LightningAccountName is the dcrwallet account dedicated to LN
@@ -449,6 +462,7 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 				Status:         types.ChannelStatusOpen,
 				ChannelPoint:   c.GetChannelPoint(),
 				ChannelID:      c.GetChanId(),
+				ShortChannelID: shortChanID(c.GetChanId()),
 				RemotePubkey:   c.GetRemotePubkey(),
 				Capacity:       c.GetCapacity(),
 				LocalBalance:   c.GetLocalBalance(),
@@ -501,6 +515,7 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 				Status:         types.ChannelStatusClosed,
 				ChannelPoint:   c.GetChannelPoint(),
 				ChannelID:      c.GetChanId(),
+				ShortChannelID: shortChanID(c.GetChanId()),
 				RemotePubkey:   c.GetRemotePubkey(),
 				Capacity:       c.GetCapacity(),
 				CloseType:      c.GetCloseType().String(),

@@ -41,6 +41,7 @@ const fieldsForStatus = (c: LightningChannel): Array<[string, React.ReactNode]> 
     return [
       ...common,
       ['Channel ID', String(c.channelId ?? '')],
+      ...(c.shortChannelId ? [['Short ID', c.shortChannelId] as [string, string]] : []),
       ['Local balance', fmtDcr(c.localBalance)],
       ['Remote balance', fmtDcr(c.remoteBalance)],
       ['Commit fee', fmtDcr(c.commitFee)],

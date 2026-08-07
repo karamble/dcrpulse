@@ -113,7 +113,11 @@ type LightningChannel struct {
 	// runs past JavaScript's 2^53 safe integer, so as a JSON number the browser
 	// rounds away the low bits, which is where vout lives. dcrlnd serializes it
 	// as a string for the same reason.
-	ChannelID      uint64 `json:"channelId,string,omitempty"`
+	ChannelID uint64 `json:"channelId,string,omitempty"`
+	// ShortChannelID is ChannelID decomposed into the fundingHeightxTxIndexxOutput
+	// form explorers and lncli use. Empty until the channel confirms and gets an
+	// ID at all.
+	ShortChannelID string `json:"shortChannelId,omitempty"`
 	RemotePubkey   string `json:"remotePubkey"`
 	RemoteAlias    string `json:"remoteAlias,omitempty"`
 	Capacity       int64  `json:"capacity"`
