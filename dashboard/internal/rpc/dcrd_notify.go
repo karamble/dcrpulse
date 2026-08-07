@@ -32,15 +32,19 @@ func InitDcrdNotifyClient(config Config, onBlock func()) error {
 		}
 	}
 
+	// Closes over the local, not the package var: the callback runs on a
+	// goroutine rpcclient starts, and only Connect below starts it.
+	var client *rpcclient.Client
+
 	ntfnHandlers := &rpcclient.NotificationHandlers{
 		OnClientConnected: func() {
 			// Fires on the initial connect and on every reconnect; (re)register
 			// for block notifications so the subscription survives dcrd restarts.
-			if DcrdNotifyClient != nil {
-				if err := DcrdNotifyClient.NotifyBlocks(context.Background()); err != nil {
-					log.Printf("dcrd notify: NotifyBlocks failed: %v", err)
-				}
+			if err := client.NotifyBlocks(context.Background()); err != nil {
+				log.Printf("dcrd notify: NotifyBlocks failed: %v", err)
+				return
 			}
+			log.Println("dcrd notify: subscribed to block notifications")
 		},
 		OnBlockConnected: func(_ []byte, _ [][]byte) {
 			if onBlock != nil {
@@ -57,12 +61,22 @@ func InitDcrdNotifyClient(config Config, onBlock func()) error {
 		HTTPPostMode: false, // websocket mode is required for notifications
 		DisableTLS:   config.RPCCert == "",
 		Certificates: certs,
+		// Connect separately below. New would otherwise dial and fire
+		// OnClientConnected before returning, so the callback could run before
+		// the client it needs is assigned.
+		DisableConnectOnNew: true,
 	}
 
-	DcrdNotifyClient, err = rpcclient.New(connCfg, ntfnHandlers)
+	client, err = rpcclient.New(connCfg, ntfnHandlers)
 	if err != nil {
 		return fmt.Errorf("failed to create dcrd notify client: %v", err)
 	}
-	log.Println("dcrd notification client connected (block-connected push)")
+	DcrdNotifyClient = client
+
+	// Not retrying: a failed dial is reported to the caller, which warns and
+	// falls back to the sync timer. Retrying here would block startup.
+	if err := client.Connect(context.Background(), false); err != nil {
+		return fmt.Errorf("failed to connect dcrd notify client: %v", err)
+	}
 	return nil
 }
