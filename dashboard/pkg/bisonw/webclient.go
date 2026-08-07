@@ -323,13 +323,17 @@ func (c *WebClient) WalletSettings(ctx context.Context, appPass string, assetID 
 
 // ReconfigureWallet replaces the asset wallet's stored configuration and
 // reconnects it. Webserver-only route; cfg replaces the settings wholesale.
-// newWalletPW is omitted so bisonw keeps the current wallet password.
-func (c *WebClient) ReconfigureWallet(ctx context.Context, appPass string, assetID uint32, walletType string, cfg map[string]string) error {
+// An empty newWalletPW leaves the stored wallet password alone.
+func (c *WebClient) ReconfigureWallet(ctx context.Context, appPass string, assetID uint32, walletType string, cfg map[string]string, newWalletPW string) error {
 	body := map[string]any{
 		"assetID":    assetID,
 		"walletType": walletType,
 		"config":     cfg,
 		"appPW":      appPass,
+	}
+	// The key must be absent, not null: bisonw fails to unmarshal a null here.
+	if newWalletPW != "" {
+		body["newWalletPW"] = newWalletPW
 	}
 	return c.call(ctx, http.MethodPost, "/api/reconfigurewallet", appPass, body, nil)
 }

@@ -7,6 +7,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -340,6 +341,77 @@ func dexDCRWalletCfg() (bisonw.DCRWalletRPCConfig, error) {
 // ensureDexWalletSettings pushes the dcrwalletRPC settings to bisonw when its
 // stored copy differs from this deployment. Best effort; failures are logged
 // and retried on the next unlock.
+// ErrDexLockedForPassphrase asks the caller to unlock DCRDEX first. bisonw
+// stores the wallet passphrase, and updating it needs the app password, so
+// rotating with DCRDEX locked would leave the two out of step.
+var ErrDexLockedForPassphrase = errors.New("unlock DCRDEX before changing the wallet passphrase, so its stored wallet password can be updated too")
+
+// ErrDexWalletPassphraseStale reports that the wallet passphrase was changed but
+// bisonw still holds the previous one. Not recoverable by retrying the change:
+// the wallet passphrase has already moved on.
+var ErrDexWalletPassphraseStale = errors.New("the wallet passphrase was changed, but the DCRDEX wallet still holds the previous one and must be reconfigured")
+
+// dexWalletPassphraseGate reports whether a wallet passphrase change may go
+// ahead. Called before the change, which cannot be undone. Only one state
+// blocks: bisonw holds a DCR wallet but is locked, so the new passphrase could
+// not be handed to it afterwards.
+func dexWalletPassphraseGate(ctx context.Context) error {
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		return nil // not deployed here
+	}
+	has, err := client.HasWallet(ctx, bisonw.AssetDCR)
+	if err != nil {
+		// bisonw is unreachable, so whether a wallet exists is unknown. Blocking
+		// a wallet operation on an optional daemon that is down is too strict.
+		log.Printf("dcrdex: could not check for a dcr wallet before the passphrase change: %v", err)
+		return nil
+	}
+	if !has {
+		return nil
+	}
+	if _, unlocked := rpc.DcrdexAppPass(); !unlocked {
+		return ErrDexLockedForPassphrase
+	}
+	return nil
+}
+
+// syncDexWalletPassphrase hands bisonw the new wallet passphrase. Runs after a
+// successful change; the gate above has already established that DCRDEX is
+// unlocked if it holds a wallet.
+func syncDexWalletPassphrase(ctx context.Context, newPass string) error {
+	client, err := rpc.DcrdexClient()
+	if err != nil {
+		return nil
+	}
+	has, err := client.HasWallet(ctx, bisonw.AssetDCR)
+	if err != nil || !has {
+		return nil
+	}
+	appPass, unlocked := rpc.DcrdexAppPass()
+	if !unlocked {
+		return ErrDexWalletPassphraseStale
+	}
+	web, err := rpc.DcrdexWebClient()
+	if err != nil {
+		return ErrDexWalletPassphraseStale
+	}
+	// Reconfiguring replaces the config wholesale, so carry the stored one over
+	// untouched and change only the password.
+	stored, err := web.WalletSettings(ctx, appPass, bisonw.AssetDCR)
+	if err != nil {
+		// The error can carry the response body, which holds credentials.
+		log.Print("dcrdex: could not read dcr wallet settings; see the bisonw log")
+		return ErrDexWalletPassphraseStale
+	}
+	if err := web.ReconfigureWallet(ctx, appPass, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, stored, newPass); err != nil {
+		log.Printf("dcrdex: update dcr wallet password: %v", err)
+		return ErrDexWalletPassphraseStale
+	}
+	log.Print("dcrdex: dcr wallet password updated")
+	return nil
+}
+
 func ensureDexWalletSettings(appPass string) {
 	want, err := dexDCRWalletCfg()
 	if err != nil {
@@ -401,7 +473,7 @@ func ensureDexWalletSettings(appPass string) {
 	sort.Strings(drifted)
 	// Log key names only; the values are credentials.
 	log.Printf("dcrdex: dcr wallet settings are stale (%s), updating", strings.Join(drifted, ", "))
-	if err := web.ReconfigureWallet(ctx, appPass, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, merged); err != nil {
+	if err := web.ReconfigureWallet(ctx, appPass, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, merged, ""); err != nil {
 		log.Printf("dcrdex: update dcr wallet settings: %v", err)
 		return
 	}

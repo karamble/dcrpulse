@@ -207,6 +207,13 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
+	// Before anything irreversible: bisonw stores this passphrase too, and
+	// handing it the new one needs DCRDEX unlocked.
+	if err := dexWalletPassphraseGate(ctx); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+
 	if err := services.ChangePrivatePassphrase(ctx, oldPass, newPass); err != nil {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
@@ -224,6 +231,14 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("ChangePrivatePassphrase failed: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
+		return
+	}
+
+	// The passphrase has already changed at this point, so a failure here is
+	// reported rather than retried: bisonw is left holding the previous one.
+	if err := syncDexWalletPassphrase(ctx, req.NewPassphrase); err != nil {
+		log.Printf("ChangePrivatePassphrase: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
