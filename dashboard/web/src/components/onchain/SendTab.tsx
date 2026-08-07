@@ -8,6 +8,7 @@ import {
   constructTransaction,
   getAccounts,
   getAutobuyerStatus,
+  getPurchaseStatus,
   getNextAddress,
   getPrivacyStatus,
   validateAddress,
@@ -64,6 +65,9 @@ export const SendTab = () => {
   // A regular send conflicts with the running mixer/autobuyer (both spend the
   // wallet's UTXOs), so block sending while either is active. Mirrors Decrediton.
   const [spendBlocked, setSpendBlocked] = useState(false);
+  // A purchase cannot be stopped, only waited out, so the banner has to say
+  // which of the two situations the user is in.
+  const [spendBlockReason, setSpendBlockReason] = useState<'busy' | 'purchase'>('busy');
   // Privacy config drives the source-account filter: when mixing is set up the
   // unmixed (change) account is receive-only and must not be spent from.
   const [privacy, setPrivacy] = useState<PrivacyStatus | null>(null);
@@ -94,16 +98,19 @@ export const SendTab = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Poll mixer/autobuyer state so the send block clears once the user stops
-  // them. 15s suffices for a precautionary banner, and returning to the tab
+  // Poll mixer/autobuyer/purchase state so the send block clears once they
+  // finish. 15s suffices for a precautionary banner, and returning to the tab
   // refreshes immediately.
   const checkSpendBlock = async () => {
-    const [priv, ab] = await Promise.all([
+    const [priv, ab, purchase] = await Promise.all([
       getPrivacyStatus().catch(() => null),
       getAutobuyerStatus().catch(() => null),
+      getPurchaseStatus().catch(() => null),
     ]);
     setPrivacy(priv);
-    setSpendBlocked(!!priv?.mixerRunning || !!ab?.running);
+    const busy = !!priv?.mixerRunning || !!ab?.running;
+    setSpendBlocked(busy || !!purchase?.inProgress);
+    setSpendBlockReason(busy ? 'busy' : 'purchase');
   };
   useVisiblePoll(checkSpendBlock, 15000);
 
@@ -551,8 +558,9 @@ export const SendTab = () => {
         <div className="flex items-start gap-2 p-4 rounded-lg bg-warning/10 border border-warning/30 text-sm text-warning">
           <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
           <span>
-            Stop the privacy mixer or ticket autobuyer (on the Privacy / Staking tabs) before
-            sending a transaction.
+            {spendBlockReason === 'purchase'
+              ? 'A ticket purchase is in progress. Sending is blocked until it finishes.'
+              : 'Stop the privacy mixer or ticket autobuyer (on the Privacy / Staking tabs) before sending a transaction.'}
           </span>
         </div>
       )}

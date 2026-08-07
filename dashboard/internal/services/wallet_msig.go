@@ -220,11 +220,11 @@ type MsigPrevInput struct {
 // ignored because dcrwallet reports partially signed multisig inputs as
 // complete by design.
 func SignMsigTransaction(ctx context.Context, rawTxHex string, prevInputs []MsigPrevInput, account uint32, passphrase []byte) (string, error) {
+	if err := spendGuard(); err != nil {
+		return "", err
+	}
 	if rpc.WalletClient == nil || rpc.WalletGrpcClient == nil {
 		return "", fmt.Errorf("wallet RPC clients not initialized")
-	}
-	if IsMixerRunning() || IsAutobuyerRunning() {
-		return "", ErrSpendWhileMixing
 	}
 	defer func() {
 		for i := range passphrase {

@@ -1724,12 +1724,30 @@ func DecodeRawTransaction(ctx context.Context, txBytes []byte) (*pb.DecodedTrans
 // Decrediton, which blocks the Send tab while either is active.
 var ErrSpendWhileMixing = fmt.Errorf("stop the privacy mixer or ticket autobuyer before sending a transaction")
 
+// ErrSpendWhilePurchasing is the ticket-purchase case, kept separate because the
+// advice differs: a purchase cannot be stopped, only waited out.
+var ErrSpendWhilePurchasing = fmt.Errorf("wait for the ticket purchase to finish before sending a transaction")
+
+// spendGuard reports why a spend must not run right now, or nil. The mixer, the
+// autobuyer and a ticket purchase all draw the same UTXOs. A purchase pauses the
+// mixer for its own duration, so checking the mixer alone leaves that whole
+// window open.
+func spendGuard() error {
+	if IsMixerRunning() || IsAutobuyerRunning() {
+		return ErrSpendWhileMixing
+	}
+	if IsTicketPurchaseInProgress() {
+		return ErrSpendWhilePurchasing
+	}
+	return nil
+}
+
 func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsignedTxBytes []byte, passphrase []byte) (string, error) {
+	if err := spendGuard(); err != nil {
+		return "", err
+	}
 	if rpc.WalletGrpcClient == nil {
 		return "", fmt.Errorf("wallet gRPC client not initialized")
-	}
-	if IsMixerRunning() || IsAutobuyerRunning() {
-		return "", ErrSpendWhileMixing
 	}
 	defer func() {
 		for i := range passphrase {

@@ -1287,7 +1287,8 @@ func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
 		switch {
-		case errors.Is(err, services.ErrSpendWhileMixing):
+		case errors.Is(err, services.ErrSpendWhileMixing),
+			errors.Is(err, services.ErrSpendWhilePurchasing):
 			http.Error(w, msg, http.StatusConflict)
 		case strings.Contains(lower, "watching only"), strings.Contains(lower, "watchingonly"):
 			http.Error(w, "This account is watch-only — cannot sign", http.StatusBadRequest)
