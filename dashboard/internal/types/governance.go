@@ -19,11 +19,19 @@ type AgendaChoice struct {
 	Progress float64 `json:"progress"`
 }
 
-// Agenda is one currently-tracked consensus rule change vote.
+// Agenda is one consensus rule change vote.
 type Agenda struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
 	Status      string `json:"status"`
+	// VoteVersion is the stake version this agenda belongs to. The same
+	// agenda sits at different versions on different networks, so it is
+	// carried rather than assumed.
+	VoteVersion uint32 `json:"voteVersion"`
+	// VoteStartHeight and VoteEndHeight bound the agenda's own voting
+	// window, derived from Since. Zero when it cannot be derived.
+	VoteStartHeight int64 `json:"voteStartHeight"`
+	VoteEndHeight   int64 `json:"voteEndHeight"`
 	// StartTime and ExpireTime are unix seconds: when voting on this agenda
 	// may begin, and when the attempt expires.
 	StartTime  int64 `json:"startTime"`
@@ -44,14 +52,43 @@ type Agenda struct {
 // something while an agenda is actually being voted on. VoteInProgress says
 // whether that is the case.
 type ConsensusVoteInfo struct {
-	VoteVersion       uint32   `json:"voteVersion"`
-	VoteInProgress    bool     `json:"voteInProgress"`
-	Quorum            uint32   `json:"quorum"`
-	TotalVotes        uint32   `json:"totalVotes"`
-	CurrentHeight     int64    `json:"currentHeight"`
-	WindowStartHeight int64    `json:"windowStartHeight"`
-	WindowEndHeight   int64    `json:"windowEndHeight"`
-	Agendas           []Agenda `json:"agendas"`
+	CurrentVoteVersion uint32   `json:"currentVoteVersion"`
+	VoteInProgress     bool     `json:"voteInProgress"`
+	Quorum             uint32   `json:"quorum"`
+	TotalVotes         uint32   `json:"totalVotes"`
+	CurrentHeight      int64    `json:"currentHeight"`
+	WindowStartHeight  int64    `json:"windowStartHeight"`
+	WindowEndHeight    int64    `json:"windowEndHeight"`
+	Agendas            []Agenda `json:"agendas"`
+}
+
+// AgendaVotes is one agenda's tally over its own voting window, reconstructed
+// from the vote bits recorded in those blocks. dcrd reports per-choice counts
+// only while an agenda is being voted on, so this is the only way to show the
+// result of a vote that has already settled.
+type AgendaVotes struct {
+	AgendaID        string `json:"agendaId"`
+	VoteVersion     uint32 `json:"voteVersion"`
+	VoteStartHeight int64  `json:"voteStartHeight"`
+	VoteEndHeight   int64  `json:"voteEndHeight"`
+	Yes             int64  `json:"yes"`
+	No              int64  `json:"no"`
+	Abstain         int64  `json:"abstain"`
+	TotalVotes      int64  `json:"totalVotes"`
+	// Unmatched counts votes whose bits match no declared choice. They are
+	// included in Abstain, mirroring how dcrd's own reporting path treats
+	// them, and surfaced separately so an unexpected value is visible.
+	Unmatched int64 `json:"unmatched"`
+	// ApprovalRating is yes as a percentage of non-abstain votes, the figure
+	// consensus judges. YesShare is yes over every vote cast including
+	// abstentions.
+	ApprovalRating float64 `json:"approvalRating"`
+	YesShare       float64 `json:"yesShare"`
+	Quorum         int64   `json:"quorum"`
+	QuorumMet      bool    `json:"quorumMet"`
+	// Complete is false while the window is still open, so the tally is a
+	// running total rather than a final result.
+	Complete bool `json:"complete"`
 }
 
 // SetAgendaChoiceRequest is the body for the agenda set endpoint.

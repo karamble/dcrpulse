@@ -19,8 +19,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// GetAgendasHandler returns the current stake version's consensus agendas,
-// its voting window, and the wallet's current choice per agenda.
+// GetAgendasHandler returns every consensus agenda across all stake versions,
+// the current voting window, and the wallet's current choice per agenda.
 func GetAgendasHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -32,6 +32,30 @@ func GetAgendasHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(agendas)
+}
+
+// GetAgendaVotesHandler returns one agenda's vote tally over its own voting
+// window. The window is read from the chain rather than the request, so the
+// fetch is detached from the caller: a client that navigates away must not
+// cancel a computation whose result is shared through the cache.
+func GetAgendaVotesHandler(w http.ResponseWriter, r *http.Request) {
+	agendaID := mux.Vars(r)["id"]
+	if agendaID == "" {
+		http.Error(w, "agenda id required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	votes, err := services.AgendaVoteHistory(ctx, agendaID)
+	if err != nil {
+		log.Printf("AgendaVoteHistory %s: %v", agendaID, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(votes)
 }
 
 // SetAgendaChoiceHandler updates one agenda's vote preference.

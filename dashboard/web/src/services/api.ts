@@ -1188,6 +1188,11 @@ export interface Agenda {
   id: string;
   description: string;
   status: string;
+  // The stake version this agenda belongs to, and the blocks it was voted
+  // over. The heights are zero when they cannot be derived.
+  voteVersion: number;
+  voteStartHeight: number;
+  voteEndHeight: number;
   // Unix seconds: when voting may begin and when the attempt expires.
   startTime: number;
   expireTime: number;
@@ -1202,8 +1207,27 @@ export interface Agenda {
 // quorum, totalVotes and the window describe the rule-change interval around
 // the current tip, not any agenda's historic vote, so they only mean something
 // while voteInProgress is true.
-export interface ConsensusVoteInfo {
+export interface AgendaVotes {
+  agendaId: string;
   voteVersion: number;
+  voteStartHeight: number;
+  voteEndHeight: number;
+  yes: number;
+  no: number;
+  abstain: number;
+  totalVotes: number;
+  unmatched: number;
+  // approvalRating is yes over non-abstain votes, the figure consensus judges.
+  // yesShare is yes over every vote cast. Both are already percentages.
+  approvalRating: number;
+  yesShare: number;
+  quorum: number;
+  quorumMet: boolean;
+  complete: boolean;
+}
+
+export interface ConsensusVoteInfo {
+  currentVoteVersion: number;
   voteInProgress: boolean;
   quorum: number;
   totalVotes: number;
@@ -1280,6 +1304,13 @@ export interface CastVoteResult {
 export const getAgendas = async (): Promise<ConsensusVoteInfo | null> => {
   const response = await api.get<ConsensusVoteInfo>('/wallet/governance/agendas');
   return response.data ?? null;
+};
+
+export const getAgendaVotes = async (agendaID: string): Promise<AgendaVotes> => {
+  const response = await api.get<AgendaVotes>(
+    `/wallet/governance/agendas/${encodeURIComponent(agendaID)}/votes`,
+  );
+  return response.data;
 };
 
 export const setAgendaChoice = async (

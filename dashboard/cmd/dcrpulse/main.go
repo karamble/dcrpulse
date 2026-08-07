@@ -371,6 +371,7 @@ func main() {
 	api.HandleFunc("/tor/control", handlers.GetTorControlHandler).Methods("GET")
 	api.HandleFunc("/tor/newidentity", handlers.TorNewIdentityHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/agendas", handlers.GetAgendasHandler).Methods("GET")
+	api.HandleFunc("/wallet/governance/agendas/{id}/votes", handlers.GetAgendaVotesHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/agendas/set", handlers.SetAgendaChoiceHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/treasury/keys", handlers.GetTreasuryKeyPoliciesHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/treasury/keys/set", handlers.SetTreasuryKeyPolicyHandler).Methods("POST")
