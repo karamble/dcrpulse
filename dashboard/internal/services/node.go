@@ -21,6 +21,7 @@ import (
 	"dcrpulse/internal/utils"
 
 	"github.com/decred/dcrd/dcrutil/v4"
+	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
 )
 
 var (
@@ -30,57 +31,179 @@ var (
 	syncMutex   sync.Mutex
 )
 
+// chainSnapshot fetches each value that more than one dashboard section needs at
+// most once, so a poll no longer issues four getblockchaininfo calls and two
+// each of getpeerinfo, getcoinsupply and getticketpoolvalue. Lazy rather than
+// prefetched: a section that never asks never pays, which keeps the standalone
+// endpoints as cheap as they were. The sync.Once also makes it safe for the
+// sections to read it concurrently.
+type chainSnapshot struct {
+	chainOnce sync.Once
+	chainInfo *chainjson.GetBlockChainInfoResult
+	chainErr  error
+
+	peerOnce sync.Once
+	peerInfo []chainjson.GetPeerInfoResult
+	peerErr  error
+
+	supplyOnce sync.Once
+	coinSupply dcrutil.Amount
+	supplyErr  error
+
+	poolOnce  sync.Once
+	poolValue dcrutil.Amount
+	poolErr   error
+}
+
+func (s *chainSnapshot) blockChainInfo(ctx context.Context) (*chainjson.GetBlockChainInfoResult, error) {
+	s.chainOnce.Do(func() { s.chainInfo, s.chainErr = rpc.DcrdClient.GetBlockChainInfo(ctx) })
+	return s.chainInfo, s.chainErr
+}
+
+func (s *chainSnapshot) peers(ctx context.Context) ([]chainjson.GetPeerInfoResult, error) {
+	s.peerOnce.Do(func() { s.peerInfo, s.peerErr = rpc.DcrdClient.GetPeerInfo(ctx) })
+	return s.peerInfo, s.peerErr
+}
+
+func (s *chainSnapshot) supply(ctx context.Context) (dcrutil.Amount, error) {
+	s.supplyOnce.Do(func() { s.coinSupply, s.supplyErr = rpc.DcrdClient.GetCoinSupply(ctx) })
+	return s.coinSupply, s.supplyErr
+}
+
+func (s *chainSnapshot) ticketPoolValue(ctx context.Context) (dcrutil.Amount, error) {
+	s.poolOnce.Do(func() { s.poolValue, s.poolErr = rpc.DcrdClient.GetTicketPoolValue(ctx) })
+	return s.poolValue, s.poolErr
+}
+
+// FetchDashboardData assembles the dashboard payload. The seven sections do not
+// depend on each other, so they run concurrently and each one degrades on its
+// own: a section that fails is named in Degraded and left zeroed rather than
+// blanking the whole page. Only a total failure is still an error.
 func FetchDashboardData() (*types.DashboardData, error) {
-	nodeStatus, err := FetchNodeStatus()
-	if err != nil {
-		return nil, err
+	ctx := context.Background()
+	snap := &chainSnapshot{}
+
+	var (
+		nodeStatus     *types.NodeStatus
+		blockchainInfo *types.BlockchainInfo
+		networkInfo    *types.NetworkInfo
+		peers          []types.Peer
+		supplyInfo     *types.SupplyInfo
+		stakingInfo    *types.StakingInfo
+		mempoolInfo    *types.MempoolInfo
+
+		mu       sync.Mutex
+		degraded []string
+		firstErr error
+	)
+
+	// Sections are recorded in a fixed order below, so Degraded stays stable
+	// across polls regardless of which goroutine finishes first.
+	section := func(name string, fn func() error) func() {
+		return func() {
+			if err := fn(); err != nil {
+				mu.Lock()
+				degraded = append(degraded, name)
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				log.Printf("Warning: dashboard section %q failed: %v", name, err)
+			}
+		}
 	}
 
-	blockchainInfo, err := FetchBlockchainInfo()
-	if err != nil {
-		return nil, err
+	work := []struct {
+		name string
+		run  func()
+	}{
+		{"nodeStatus", section("nodeStatus", func() (err error) {
+			nodeStatus, err = fetchNodeStatus(ctx, snap)
+			return
+		})},
+		{"blockchainInfo", section("blockchainInfo", func() (err error) {
+			blockchainInfo, err = fetchBlockchainInfo(ctx, snap)
+			return
+		})},
+		{"networkInfo", section("networkInfo", func() (err error) {
+			networkInfo, err = fetchNetworkInfo(ctx, snap)
+			return
+		})},
+		{"peers", section("peers", func() (err error) {
+			peers, err = fetchPeers(ctx, snap)
+			return
+		})},
+		{"supplyInfo", section("supplyInfo", func() (err error) {
+			supplyInfo, err = fetchSupplyInfo(ctx, snap)
+			return
+		})},
+		{"stakingInfo", section("stakingInfo", func() (err error) {
+			stakingInfo, err = fetchStakingInfo(ctx, snap)
+			return
+		})},
+		{"mempoolInfo", section("mempoolInfo", func() (err error) {
+			mempoolInfo, err = fetchMempoolInfo(ctx, snap)
+			return
+		})},
 	}
 
-	networkInfo, err := FetchNetworkInfo()
-	if err != nil {
-		return nil, err
+	var wg sync.WaitGroup
+	for _, w := range work {
+		wg.Add(1)
+		go func(run func()) {
+			defer wg.Done()
+			run()
+		}(w.run)
+	}
+	wg.Wait()
+
+	// Nothing came back: dcrd is down or unreachable, which stays an error
+	// rather than a payload of seven empty sections.
+	if len(degraded) == len(work) {
+		return nil, firstErr
 	}
 
-	peers, err := FetchPeers()
-	if err != nil {
-		return nil, err
+	data := &types.DashboardData{
+		Peers:      peers,
+		LastUpdate: time.Now(),
+	}
+	if nodeStatus != nil {
+		data.NodeStatus = *nodeStatus
+	}
+	if blockchainInfo != nil {
+		data.BlockchainInfo = *blockchainInfo
+	}
+	if networkInfo != nil {
+		data.NetworkInfo = *networkInfo
+	}
+	if supplyInfo != nil {
+		data.SupplyInfo = *supplyInfo
+	}
+	if stakingInfo != nil {
+		data.StakingInfo = *stakingInfo
+	}
+	if mempoolInfo != nil {
+		data.MempoolInfo = *mempoolInfo
 	}
 
-	supplyInfo, err := FetchSupplyInfo()
-	if err != nil {
-		return nil, err
+	// Report in the fixed order above, not completion order.
+	for _, w := range work {
+		for _, d := range degraded {
+			if d == w.name {
+				data.Degraded = append(data.Degraded, w.name)
+				break
+			}
+		}
 	}
 
-	stakingInfo, err := FetchStakingInfo()
-	if err != nil {
-		return nil, err
-	}
-
-	mempoolInfo, err := FetchMempoolInfo()
-	if err != nil {
-		return nil, err
-	}
-
-	return &types.DashboardData{
-		NodeStatus:     *nodeStatus,
-		BlockchainInfo: *blockchainInfo,
-		NetworkInfo:    *networkInfo,
-		Peers:          peers,
-		SupplyInfo:     *supplyInfo,
-		StakingInfo:    *stakingInfo,
-		MempoolInfo:    *mempoolInfo,
-		LastUpdate:     time.Now(),
-	}, nil
+	return data, nil
 }
 
 func FetchNodeStatus() (*types.NodeStatus, error) {
-	ctx := context.Background()
+	return fetchNodeStatus(context.Background(), &chainSnapshot{})
+}
 
+func fetchNodeStatus(ctx context.Context, snap *chainSnapshot) (*types.NodeStatus, error) {
 	// Get version info using version command
 	versionInfo, err := rpc.DcrdClient.Version(ctx)
 	if err != nil {
@@ -88,7 +211,7 @@ func FetchNodeStatus() (*types.NodeStatus, error) {
 	}
 
 	// Get blockchain info for accurate sync status
-	chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(ctx)
+	chainInfo, err := snap.blockChainInfo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +299,11 @@ func FetchNodeStatus() (*types.NodeStatus, error) {
 }
 
 func FetchBlockchainInfo() (*types.BlockchainInfo, error) {
-	ctx := context.Background()
-	info, err := rpc.DcrdClient.GetBlockChainInfo(ctx)
+	return fetchBlockchainInfo(context.Background(), &chainSnapshot{})
+}
+
+func fetchBlockchainInfo(ctx context.Context, snap *chainSnapshot) (*types.BlockchainInfo, error) {
+	info, err := snap.blockChainInfo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -231,11 +357,13 @@ func FetchBlockchainInfo() (*types.BlockchainInfo, error) {
 }
 
 func FetchNetworkInfo() (*types.NetworkInfo, error) {
-	ctx := context.Background()
+	return fetchNetworkInfo(context.Background(), &chainSnapshot{})
+}
 
+func fetchNetworkInfo(ctx context.Context, snap *chainSnapshot) (*types.NetworkInfo, error) {
 	// Get peer count
 	peerCount := 0
-	peerInfo, err := rpc.DcrdClient.GetPeerInfo(ctx)
+	peerInfo, err := snap.peers(ctx)
 	if err == nil {
 		peerCount = len(peerInfo)
 	}
@@ -259,8 +387,11 @@ func FetchNetworkInfo() (*types.NetworkInfo, error) {
 }
 
 func FetchPeers() ([]types.Peer, error) {
-	ctx := context.Background()
-	peerInfo, err := rpc.DcrdClient.GetPeerInfo(ctx)
+	return fetchPeers(context.Background(), &chainSnapshot{})
+}
+
+func fetchPeers(ctx context.Context, snap *chainSnapshot) ([]types.Peer, error) {
+	peerInfo, err := snap.peers(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -325,18 +456,20 @@ func FetchPeers() ([]types.Peer, error) {
 // formatDuration formats a duration in seconds to a human-readable string
 
 func FetchSupplyInfo() (*types.SupplyInfo, error) {
-	ctx := context.Background()
+	return fetchSupplyInfo(context.Background(), &chainSnapshot{})
+}
 
+func fetchSupplyInfo(ctx context.Context, snap *chainSnapshot) (*types.SupplyInfo, error) {
 	// Get real circulating supply from dcrd - direct RPC method
 	// Nil means dcrd could not supply the figure, which is distinct from zero.
 	var circulatingSupply, stakedSupply, treasuryBalance *float64
 	stakedPercent := float64(0)
 
 	// Check if node is fully synced before calling TicketPoolValue
-	chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(ctx)
+	chainInfo, err := snap.blockChainInfo(ctx)
 	isSynced := err == nil && !chainInfo.InitialBlockDownload
 
-	coinSupply, err := rpc.DcrdClient.GetCoinSupply(ctx)
+	coinSupply, err := snap.supply(ctx)
 	if err == nil && coinSupply > 0 {
 		coinSupplyDCR := coinSupply.ToCoin()
 		circulatingSupply = &coinSupplyDCR
@@ -344,7 +477,7 @@ func FetchSupplyInfo() (*types.SupplyInfo, error) {
 		// Calculate staked supply from ticket pool
 		// Only call GetTicketPoolValue if node is fully synced to avoid nil pointer panic during initial sync
 		if isSynced {
-			ticketPoolValue, err := rpc.DcrdClient.GetTicketPoolValue(ctx)
+			ticketPoolValue, err := snap.ticketPoolValue(ctx)
 			if err == nil && ticketPoolValue > 0 {
 				lockedDCR := ticketPoolValue.ToCoin()
 				stakedSupply = &lockedDCR
@@ -376,10 +509,12 @@ func FetchSupplyInfo() (*types.SupplyInfo, error) {
 }
 
 func FetchStakingInfo() (*types.StakingInfo, error) {
-	ctx := context.Background()
+	return fetchStakingInfo(context.Background(), &chainSnapshot{})
+}
 
+func fetchStakingInfo(ctx context.Context, snap *chainSnapshot) (*types.StakingInfo, error) {
 	// Check if node is fully synced before calling TicketPoolValue
-	chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(ctx)
+	chainInfo, err := snap.blockChainInfo(ctx)
 	isSynced := err == nil && !chainInfo.InitialBlockDownload
 
 	// Get stake difficulty (ticket price) - using RawRequest to get current price
@@ -426,7 +561,7 @@ func FetchStakingInfo() (*types.StakingInfo, error) {
 	// Only call GetTicketPoolValue if node is fully synced to avoid nil pointer panic during initial sync
 	lockedDCR := float64(0)
 	if isSynced {
-		poolValue, err := rpc.DcrdClient.GetTicketPoolValue(ctx)
+		poolValue, err := snap.ticketPoolValue(ctx)
 		if err == nil {
 			lockedDCR = poolValue.ToCoin()
 		}
@@ -435,7 +570,7 @@ func FetchStakingInfo() (*types.StakingInfo, error) {
 	// Get total coin supply for participation rate calculation - direct RPC method
 	// Returns dcrutil.Amount which needs to be converted to float64 DCR
 	participationRate := float64(0)
-	coinSupply, err := rpc.DcrdClient.GetCoinSupply(ctx)
+	coinSupply, err := snap.supply(ctx)
 	if err == nil && coinSupply > 0 {
 		// Calculate participation rate as percentage of total supply
 		coinSupplyDCR := coinSupply.ToCoin()
@@ -458,8 +593,10 @@ func FetchStakingInfo() (*types.StakingInfo, error) {
 }
 
 func FetchMempoolInfo() (*types.MempoolInfo, error) {
-	ctx := context.Background()
+	return fetchMempoolInfo(context.Background(), &chainSnapshot{})
+}
 
+func fetchMempoolInfo(ctx context.Context, _ *chainSnapshot) (*types.MempoolInfo, error) {
 	// Use getmempoolinfo RPC to get actual mempool statistics
 	result, err := rpc.DcrdClient.RawRequest(ctx, "getmempoolinfo", []json.RawMessage{})
 	if err != nil {

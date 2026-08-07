@@ -25,6 +25,17 @@ interface NodeSync {
   syncMessage: string;
 }
 
+// Names for the section keys the backend reports in `degraded`.
+const SECTION_LABELS: Record<string, string> = {
+  nodeStatus: 'node status',
+  blockchainInfo: 'blockchain',
+  networkInfo: 'network',
+  peers: 'peers',
+  supplyInfo: 'supply',
+  stakingInfo: 'staking',
+  mempoolInfo: 'mempool',
+};
+
 // The backend sends DCR amounts as numbers, so grouping and precision are
 // decided here. An absent amount is one dcrd could not supply.
 const dcr = (amount: number | undefined, digits = 0) =>
@@ -118,6 +129,12 @@ export const NodeDashboard = () => {
     };
   }, []);
 
+  // A degraded section came back zeroed, so it renders as unavailable rather
+  // than as a reading of zero.
+  const stale = (section: string) => data?.degraded?.includes(section) ?? false;
+  const metric = (section: string, value: string | number): string | number =>
+    !data ? 'Loading...' : stale(section) ? 'Unavailable' : value;
+
   return (
     <div className="space-y-6">
       {/* Error Message */}
@@ -126,6 +143,17 @@ export const NodeDashboard = () => {
           <p className="text-red-500 font-medium">{error}</p>
         </div>
       )}
+
+      {/* Partial failure: the rest of the page is still live */}
+      {data?.degraded?.length ? (
+        <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <p className="text-amber-500 font-medium">
+            Some data could not be read from the node:{' '}
+            {data.degraded.map((s) => SECTION_LABELS[s] ?? s).join(', ')}. The rest of this
+            page is current.
+          </p>
+        </div>
+      ) : null}
 
       {/* Loading State */}
       {loading && !data && (
@@ -136,7 +164,7 @@ export const NodeDashboard = () => {
       )}
 
       {/* Node Status */}
-      {data && (
+      {data && !stale('nodeStatus') && (
         <NodeStatus
           status={(nodeSync?.status ?? data.nodeStatus.status) as any}
           syncProgress={nodeSync?.syncProgress ?? data.nodeStatus.syncProgress}
@@ -149,26 +177,28 @@ export const NodeDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           title="Circulating Supply"
-          value={data ? dcr(data.supplyInfo?.circulatingSupply) : 'Loading...'}
+          value={metric('supplyInfo', dcr(data?.supplyInfo?.circulatingSupply))}
           subtitle="DCR of 21 million"
           icon={Coins}
           trend={{ value: "Max Supply: 21M DCR", isPositive: true }}
         />
         <MetricCard
           title="Network Peers"
-          value={data ? (data.networkInfo?.peerCount ?? 'N/A') : 'Loading...'}
+          // peerCount comes from the same RPC as the peers section, so a peer
+          // failure means this count is not a real zero.
+          value={metric('peers', data?.networkInfo?.peerCount ?? 'N/A')}
           subtitle="Connected nodes"
           icon={Users}
         />
         <MetricCard
           title="Block Height"
-          value={data ? (data.blockchainInfo?.blockHeight?.toLocaleString() || 'N/A') : 'Loading...'}
+          value={metric('blockchainInfo', data?.blockchainInfo?.blockHeight?.toLocaleString() || 'N/A')}
           subtitle="Latest block"
           icon={Layers}
         />
         <MetricCard
           title="Network Hashrate"
-          value={data ? (data.networkInfo?.hashrate || 'N/A') : 'Loading...'}
+          value={metric('networkInfo', data?.networkInfo?.hashrate || 'N/A')}
           subtitle="Total network power"
           icon={TrendingUp}
         />
@@ -178,7 +208,7 @@ export const NodeDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           title="Treasury Balance"
-          value={data ? dcr(data.supplyInfo?.treasurySize, 2) : 'Loading...'}
+          value={metric('supplyInfo', dcr(data?.supplyInfo?.treasurySize, 2))}
           subtitle={
             <>
               DCR in treasury
@@ -190,32 +220,32 @@ export const NodeDashboard = () => {
         />
         <MetricCard
           title="Supply Staked"
-          value={data ? dcr(data.supplyInfo?.stakedSupply) : 'Loading...'}
+          value={metric('supplyInfo', dcr(data?.supplyInfo?.stakedSupply))}
           subtitle="DCR - Stakeholders Rule"
           icon={Lock}
-          trend={data?.supplyInfo?.stakedPercent ? { 
-            value: `${data.supplyInfo.stakedPercent.toFixed(1)}% of supply`, 
-            isPositive: true 
+          trend={!stale('supplyInfo') && data?.supplyInfo?.stakedPercent ? {
+            value: `${data.supplyInfo.stakedPercent.toFixed(1)}% of supply`,
+            isPositive: true
           } : undefined}
         />
         <div className="md:col-span-2">
-          <TicketPoolCard 
-            data={data?.stakingInfo} 
-            currentBlockHeight={data?.blockchainInfo?.blockHeight}
+          <TicketPoolCard
+            data={stale('stakingInfo') ? undefined : data?.stakingInfo}
+            currentBlockHeight={stale('blockchainInfo') ? undefined : data?.blockchainInfo?.blockHeight}
           />
         </div>
       </div>
 
       {/* Details Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <BlockchainInfo data={data?.blockchainInfo} />
-        <StakingStats data={data?.stakingInfo} />
+        <BlockchainInfo data={stale('blockchainInfo') ? undefined : data?.blockchainInfo} />
+        <StakingStats data={stale('stakingInfo') ? undefined : data?.stakingInfo} />
       </div>
 
       {/* Mempool Activity & Peers */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MempoolActivity data={data?.mempoolInfo} />
-        <PeersList peers={data?.peers} />
+        <MempoolActivity data={stale('mempoolInfo') ? undefined : data?.mempoolInfo} />
+        <PeersList peers={stale('peers') ? undefined : data?.peers} />
       </div>
 
       <RecentAlertsCard />

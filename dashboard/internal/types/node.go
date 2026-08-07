@@ -16,6 +16,9 @@ type DashboardData struct {
 	StakingInfo    StakingInfo    `json:"stakingInfo"`
 	MempoolInfo    MempoolInfo    `json:"mempoolInfo"`
 	LastUpdate     time.Time      `json:"lastUpdate"`
+	// Degraded names the sections that failed this poll and are therefore
+	// zeroed, so the UI can show them as unavailable rather than as real zeros.
+	Degraded []string `json:"degraded,omitempty"`
 }
 
 type NodeStatus struct {

@@ -140,6 +140,9 @@ export interface DashboardData {
   stakingInfo: StakingInfo;
   mempoolInfo: MempoolInfo;
   lastUpdate: string;
+  // Sections that failed this poll and came back zeroed, so a card can say
+  // unavailable instead of rendering a zero as if it were a reading.
+  degraded?: string[];
 }
 
 // API functions
