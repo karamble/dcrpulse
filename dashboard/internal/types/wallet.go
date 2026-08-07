@@ -87,13 +87,6 @@ type TransactionListResponse struct {
 	Total        int           `json:"total"`
 }
 
-type Address struct {
-	Address string `json:"address"`
-	Account string `json:"account"`
-	Used    bool   `json:"used"`
-	Path    string `json:"path"` // BIP44 path
-}
-
 type ImportXpubRequest struct {
 	Xpub        string `json:"xpub"`
 	AccountName string `json:"accountName"`

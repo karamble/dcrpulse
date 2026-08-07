@@ -228,11 +228,6 @@ func Bip44IndexInUse(ctx context.Context, index uint32) (string, bool) {
 	return "", false
 }
 
-func FetchWalletDashboardData() (*types.WalletDashboardData, error) {
-	ctx := context.Background()
-	return FetchWalletDashboardDataWithContext(ctx)
-}
-
 func FetchWalletDashboardDataWithContext(ctx context.Context) (*types.WalletDashboardData, error) {
 	walletStatus, err := FetchWalletStatus()
 	if err != nil {
@@ -261,13 +256,15 @@ func FetchWalletDashboardDataWithContext(ctx context.Context) (*types.WalletDash
 	accountsChan := make(chan accountsResult, 1)
 	stakingChan := make(chan stakingResult, 1)
 
+	bal := &walletBalances{}
+
 	go func() {
-		info, err := FetchAccountInfoWithContext(ctx)
+		info, err := fetchAccountInfo(ctx, bal)
 		accountChan <- accountResult{info, err}
 	}()
 
 	go func() {
-		accts, err := FetchAllAccounts(ctx)
+		accts, err := fetchAllAccounts(ctx, bal)
 		accountsChan <- accountsResult{accts, err}
 	}()
 
@@ -319,55 +316,55 @@ func FetchWalletDashboardDataWithContext(ctx context.Context) (*types.WalletDash
 	}, nil
 }
 
-func FetchAccountInfo() (*types.AccountInfo, error) {
-	return FetchAccountInfoWithContext(context.Background())
+// getbalance returns one point-in-time view of the whole wallet:
+//
+//	{"balances":[{account info},...], "blockhash":"...",
+//	 "totallockedbytickets": X, "totalspendable": Y, "cumulativetotal": Z}
+type accountBalance struct {
+	AccountName             string  `json:"accountname"`
+	ImmatureCoinbaseRewards float64 `json:"immaturecoinbaserewards"`
+	ImmatureStakeGeneration float64 `json:"immaturestakegeneration"`
+	LockedByTickets         float64 `json:"lockedbytickets"`
+	Spendable               float64 `json:"spendable"`
+	Total                   float64 `json:"total"`
+	Unconfirmed             float64 `json:"unconfirmed"`
+	VotingAuthority         float64 `json:"votingauthority"`
 }
 
-func FetchAccountInfoWithContext(ctx context.Context) (*types.AccountInfo, error) {
-	// Get balance using getbalance (no arguments for all accounts)
-	result, err := rpc.WalletClient.RawRequest(ctx, "getbalance", []json.RawMessage{})
+type balanceResponse struct {
+	Balances             []accountBalance `json:"balances"`
+	BlockHash            string           `json:"blockhash"`
+	TotalLockedByTickets float64          `json:"totallockedbytickets"`
+	TotalSpendable       float64          `json:"totalspendable"`
+	CumulativeTotal      float64          `json:"cumulativetotal"`
+}
+
+// walletBalances fetches getbalance once, so the wallet-wide totals and the
+// per-account list are read from the same block.
+type walletBalances struct {
+	once sync.Once
+	resp balanceResponse
+	err  error
+}
+
+func (w *walletBalances) get(ctx context.Context) (balanceResponse, error) {
+	w.once.Do(func() {
+		result, rerr := rpc.WalletClient.RawRequest(ctx, "getbalance", []json.RawMessage{})
+		if rerr != nil {
+			w.err = rerr
+			return
+		}
+		if uerr := json.Unmarshal(result, &w.resp); uerr != nil {
+			w.err = fmt.Errorf("unmarshal balance response: %w", uerr)
+		}
+	})
+	return w.resp, w.err
+}
+
+func fetchAccountInfo(ctx context.Context, bal *walletBalances) (*types.AccountInfo, error) {
+	balanceResp, err := bal.get(ctx)
 	if err != nil {
 		log.Printf("Warning: Failed to get balance: %v", err)
-		return &types.AccountInfo{
-			AccountName:        "Total",
-			TotalBalance:       0,
-			SpendableBalance:   0,
-			ImmatureBalance:    0,
-			UnconfirmedBalance: 0,
-			LockedByTickets:    0,
-			AccountNumber:      0,
-		}, nil
-	}
-
-	// Parse the full balance response structure
-	// getbalance returns: {
-	//   "balances":[{account info},...],
-	//   "blockhash":"...",
-	//   "totallockedbytickets": X,
-	//   "totalspendable": Y,
-	//   "cumulativetotal": Z
-	// }
-	type AccountBalance struct {
-		AccountName             string  `json:"accountname"`
-		ImmatureCoinbaseRewards float64 `json:"immaturecoinbaserewards"`
-		ImmatureStakeGeneration float64 `json:"immaturestakegeneration"`
-		LockedByTickets         float64 `json:"lockedbytickets"`
-		Spendable               float64 `json:"spendable"`
-		Total                   float64 `json:"total"`
-		Unconfirmed             float64 `json:"unconfirmed"`
-		VotingAuthority         float64 `json:"votingauthority"`
-	}
-	type BalanceResponse struct {
-		Balances             []AccountBalance `json:"balances"`
-		BlockHash            string           `json:"blockhash"`
-		TotalLockedByTickets float64          `json:"totallockedbytickets"`
-		TotalSpendable       float64          `json:"totalspendable"`
-		CumulativeTotal      float64          `json:"cumulativetotal"`
-	}
-
-	var balanceResp BalanceResponse
-	if err := json.Unmarshal(result, &balanceResp); err != nil {
-		log.Printf("Warning: Failed to unmarshal balance response: %v", err)
 		return &types.AccountInfo{
 			AccountName:        "Total",
 			TotalBalance:       0,
@@ -410,32 +407,13 @@ func FetchAccountInfoWithContext(ctx context.Context) (*types.AccountInfo, error
 }
 
 func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
-	// Get all accounts and their balances using getbalance RPC
-	result, err := rpc.WalletClient.RawRequest(ctx, "getbalance", []json.RawMessage{})
+	return fetchAllAccounts(ctx, &walletBalances{})
+}
+
+func fetchAllAccounts(ctx context.Context, bal *walletBalances) ([]types.AccountInfo, error) {
+	balanceResp, err := bal.get(ctx)
 	if err != nil {
 		log.Printf("Warning: Failed to get accounts: %v", err)
-		return []types.AccountInfo{}, nil
-	}
-
-	// Parse the balance response structure
-	type AccountBalance struct {
-		AccountName             string  `json:"accountname"`
-		ImmatureCoinbaseRewards float64 `json:"immaturecoinbaserewards"`
-		ImmatureStakeGeneration float64 `json:"immaturestakegeneration"`
-		LockedByTickets         float64 `json:"lockedbytickets"`
-		Spendable               float64 `json:"spendable"`
-		Total                   float64 `json:"total"`
-		Unconfirmed             float64 `json:"unconfirmed"`
-		VotingAuthority         float64 `json:"votingauthority"`
-	}
-	type BalanceResponse struct {
-		Balances  []AccountBalance `json:"balances"`
-		BlockHash string           `json:"blockhash"`
-	}
-
-	var balanceResp BalanceResponse
-	if err := json.Unmarshal(result, &balanceResp); err != nil {
-		log.Printf("Warning: Failed to unmarshal accounts: %v", err)
 		return []types.AccountInfo{}, nil
 	}
 
@@ -949,56 +927,6 @@ func SetupPrivacyAccounts(ctx context.Context, passphrase []byte) (mixed uint32,
 	}
 
 	return mixed, change, nil
-}
-
-// Old FetchTransactions functions removed - replaced by ListTransactions
-
-func FetchAddresses() ([]types.Address, error) {
-	return FetchAddressesWithContext(context.Background())
-}
-
-func FetchAddressesWithContext(ctx context.Context) ([]types.Address, error) {
-	// List addresses via raw RPC - only return addresses with funds (not empty)
-	// This prevents returning 40k+ empty addresses
-	result, err := rpc.WalletClient.RawRequest(ctx, "listreceivedbyaddress", []json.RawMessage{
-		json.RawMessage(`0`),     // minconf
-		json.RawMessage(`false`), // include empty = false (only show addresses with funds)
-	})
-	if err != nil {
-		log.Printf("Warning: Failed to list addresses: %v", err)
-		return []types.Address{}, nil
-	}
-
-	// Parse the result
-	var rawAddrList []map[string]interface{}
-	if err := json.Unmarshal(result, &rawAddrList); err != nil {
-		log.Printf("Warning: Failed to unmarshal addresses: %v", err)
-		return []types.Address{}, nil
-	}
-
-	// Limit to 100 addresses max to prevent huge payloads
-	maxAddresses := 100
-	if len(rawAddrList) > maxAddresses {
-		log.Printf("Warning: Wallet has %d addresses with funds, limiting to %d", len(rawAddrList), maxAddresses)
-		rawAddrList = rawAddrList[:maxAddresses]
-	}
-
-	addresses := make([]types.Address, 0, len(rawAddrList))
-	for _, addr := range rawAddrList {
-		address, _ := addr["address"].(string)
-		account, _ := addr["account"].(string)
-		amount, _ := addr["amount"].(float64)
-
-		addresses = append(addresses, types.Address{
-			Address: address,
-			Account: account,
-			Used:    amount > 0, // Has received funds
-			Path:    "",         // Would need to query separately
-		})
-	}
-
-	log.Printf("Returning %d addresses with funds", len(addresses))
-	return addresses, nil
 }
 
 func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, error) {

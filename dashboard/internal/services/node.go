@@ -31,12 +31,9 @@ var (
 	syncMutex   sync.Mutex
 )
 
-// chainSnapshot fetches each value that more than one dashboard section needs at
-// most once, so a poll no longer issues four getblockchaininfo calls and two
-// each of getpeerinfo, getcoinsupply and getticketpoolvalue. Lazy rather than
-// prefetched: a section that never asks never pays, which keeps the standalone
-// endpoints as cheap as they were. The sync.Once also makes it safe for the
-// sections to read it concurrently.
+// chainSnapshot fetches each value shared by several dashboard sections once
+// per poll. Lazy, so a caller only pays for what it reads; the sync.Once makes
+// it safe for the sections to share one concurrently.
 type chainSnapshot struct {
 	chainOnce sync.Once
 	chainInfo *chainjson.GetBlockChainInfoResult
@@ -75,10 +72,9 @@ func (s *chainSnapshot) ticketPoolValue(ctx context.Context) (dcrutil.Amount, er
 	return s.poolValue, s.poolErr
 }
 
-// FetchDashboardData assembles the dashboard payload. The seven sections do not
-// depend on each other, so they run concurrently and each one degrades on its
-// own: a section that fails is named in Degraded and left zeroed rather than
-// blanking the whole page. Only a total failure is still an error.
+// FetchDashboardData assembles the dashboard payload. The sections are
+// independent, so they run concurrently; one that fails is named in Degraded
+// and left zeroed. Only a total failure returns an error.
 func FetchDashboardData() (*types.DashboardData, error) {
 	ctx := context.Background()
 	snap := &chainSnapshot{}
@@ -157,8 +153,7 @@ func FetchDashboardData() (*types.DashboardData, error) {
 	}
 	wg.Wait()
 
-	// Nothing came back: dcrd is down or unreachable, which stays an error
-	// rather than a payload of seven empty sections.
+	// Every section failed, so dcrd is down or unreachable.
 	if len(degraded) == len(work) {
 		return nil, firstErr
 	}
@@ -356,10 +351,6 @@ func fetchBlockchainInfo(ctx context.Context, snap *chainSnapshot) (*types.Block
 	}, nil
 }
 
-func FetchNetworkInfo() (*types.NetworkInfo, error) {
-	return fetchNetworkInfo(context.Background(), &chainSnapshot{})
-}
-
 func fetchNetworkInfo(ctx context.Context, snap *chainSnapshot) (*types.NetworkInfo, error) {
 	// Get peer count
 	peerCount := 0
@@ -455,10 +446,6 @@ func fetchPeers(ctx context.Context, snap *chainSnapshot) ([]types.Peer, error) 
 
 // formatDuration formats a duration in seconds to a human-readable string
 
-func FetchSupplyInfo() (*types.SupplyInfo, error) {
-	return fetchSupplyInfo(context.Background(), &chainSnapshot{})
-}
-
 func fetchSupplyInfo(ctx context.Context, snap *chainSnapshot) (*types.SupplyInfo, error) {
 	// Get real circulating supply from dcrd - direct RPC method
 	// Nil means dcrd could not supply the figure, which is distinct from zero.
@@ -506,10 +493,6 @@ func fetchSupplyInfo(ctx context.Context, snap *chainSnapshot) (*types.SupplyInf
 		TreasurySize:      treasuryBalance,
 		MixedPercent:      "N/A", // Requires mixer statistics
 	}, nil
-}
-
-func FetchStakingInfo() (*types.StakingInfo, error) {
-	return fetchStakingInfo(context.Background(), &chainSnapshot{})
 }
 
 func fetchStakingInfo(ctx context.Context, snap *chainSnapshot) (*types.StakingInfo, error) {
@@ -590,10 +573,6 @@ func fetchStakingInfo(ctx context.Context, snap *chainSnapshot) (*types.StakingI
 		Missed:            0, // Would need missedtickets command
 		Revoked:           0, // Would need block analysis
 	}, nil
-}
-
-func FetchMempoolInfo() (*types.MempoolInfo, error) {
-	return fetchMempoolInfo(context.Background(), &chainSnapshot{})
 }
 
 func fetchMempoolInfo(ctx context.Context, _ *chainSnapshot) (*types.MempoolInfo, error) {
