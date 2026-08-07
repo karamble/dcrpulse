@@ -230,9 +230,9 @@ func BrclientdSendFile(ctx context.Context, user, filename, mime string, body io
 		return nil, fmt.Errorf("brclientd /files/send: %w", err)
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	respBody, err := readBrclientdBody(resp, "/files/send", 1<<20)
 	if err != nil {
-		return nil, fmt.Errorf("read send-file response: %w", err)
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("brclientd /files/send: HTTP %d: %s", resp.StatusCode, respBody)
@@ -265,9 +265,9 @@ func BrclientdContacts(ctx context.Context) (json.RawMessage, error) {
 		return nil, fmt.Errorf("brclientd /contacts: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	body, err := readBrclientdBody(resp, "/contacts", 4<<20)
 	if err != nil {
-		return nil, fmt.Errorf("read contacts: %w", err)
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("brclientd /contacts: HTTP %d: %s", resp.StatusCode, body)
@@ -298,9 +298,9 @@ func BrclientdMsigHistory(ctx context.Context, uidHex string, limit int, since i
 		return nil, fmt.Errorf("brclientd /msig/history: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	body, err := readBrclientdBody(resp, "/msig/history", 16<<20)
 	if err != nil {
-		return nil, fmt.Errorf("read msig history: %w", err)
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("brclientd /msig/history: HTTP %d: %s", resp.StatusCode, body)
@@ -686,9 +686,9 @@ func BrclientdCreatePost(ctx context.Context, post, descr string) (json.RawMessa
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("brclientd /posts/new: HTTP %d: %s", resp.StatusCode, body)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := readBrclientdBody(resp, "/posts/new", 1<<20)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, err
 	}
 	return json.RawMessage(body), nil
 }
@@ -749,9 +749,9 @@ func BrclientdShareFile(ctx context.Context, filename, mime string, body io.Read
 		return nil, fmt.Errorf("brclientd /shared-files/add: %w", err)
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	respBody, err := readBrclientdBody(resp, "/shared-files/add", 1<<20)
 	if err != nil {
-		return nil, fmt.Errorf("read share-file response: %w", err)
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("brclientd /shared-files/add: HTTP %d: %s", resp.StatusCode, respBody)
@@ -987,7 +987,10 @@ func BrclientdUploadStoreFile(ctx context.Context, relPath, filename, mime strin
 		return nil, fmt.Errorf("brclientd /store/files/upload: %w", err)
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	respBody, err := readBrclientdBody(resp, "/store/files/upload", 1<<20)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("brclientd /store/files/upload: HTTP %d: %s", resp.StatusCode, respBody)
 	}
@@ -1026,7 +1029,10 @@ func BrclientdGetStoreFile(ctx context.Context, path string) ([]byte, string, er
 		return nil, "", fmt.Errorf("brclientd /store/files/get: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
+	body, err := readBrclientdBody(resp, "/store/files/get", 256<<20)
+	if err != nil {
+		return nil, "", err
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("brclientd /store/files/get: HTTP %d: %s", resp.StatusCode, body)
 	}
@@ -1468,9 +1474,9 @@ func brclientdGetRaw(ctx context.Context, path string, query map[string]string) 
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("brclientd %s: HTTP %d: %s", path, resp.StatusCode, body)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	body, err := readBrclientdBody(resp, path, 8<<20)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, err
 	}
 	return json.RawMessage(body), nil
 }
@@ -1604,13 +1610,44 @@ func brclientdPostJSONRaw(ctx context.Context, path string, body any) (json.RawM
 	if err != nil {
 		return nil, err
 	}
-	return brclientdDoPostJSONRaw(ctx, cli, path, body)
+	return brclientdDoPostJSONRaw(ctx, cli, path, body, brclientdControlRespLimit)
 }
+
+// readBrclientdBody reads a response body bounded to limit. An oversized
+// SUCCESS body is an error rather than a silent truncation, which would surface
+// later as a confusing JSON parse failure. An oversized error body is truncated,
+// since it only becomes text in an error message.
+func readBrclientdBody(resp *http.Response, path string, limit int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("brclientd %s: read body: %w", path, err)
+	}
+	if int64(len(body)) > limit {
+		if resp.StatusCode == http.StatusOK {
+			return nil, fmt.Errorf("brclientd %s: response exceeds %d bytes", path, limit)
+		}
+		body = body[:limit]
+	}
+	return body, nil
+}
+
+const (
+	// brclientdControlRespLimit bounds the control endpoints, which all return
+	// small JSON summaries.
+	brclientdControlRespLimit = 1 << 20 // 1 MiB
+
+	// brclientdPageRespLimit bounds a page fetch. Bison Relay only fulfils a
+	// resource reply that fits one message payload, 1 MiB on the current
+	// protocol version and 10 MiB on the next, so this cannot reject a page a
+	// peer could legitimately serve.
+	brclientdPageRespLimit = 16 << 20 // 16 MiB
+)
 
 // brclientdDoPostJSONRaw issues the POST with a caller-supplied client so the
 // caller can pick a timeout policy that fits the endpoint (e.g. the no-deadline
-// pages client for an unbounded /pages/fetch transfer).
-func brclientdDoPostJSONRaw(ctx context.Context, cli *http.Client, path string, body any) (json.RawMessage, error) {
+// pages client for an unbounded /pages/fetch transfer). limit bounds the
+// response body.
+func brclientdDoPostJSONRaw(ctx context.Context, cli *http.Client, path string, body any, limit int64) (json.RawMessage, error) {
 	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
 		return nil, errors.New("brclientd: status host/port not configured")
 	}
@@ -1633,9 +1670,9 @@ func brclientdDoPostJSONRaw(ctx context.Context, cli *http.Client, path string, 
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("brclientd %s: HTTP %d: %s", path, resp.StatusCode, buf)
 	}
-	out, err := io.ReadAll(resp.Body)
+	out, err := readBrclientdBody(resp, path, limit)
 	if err != nil {
-		return nil, fmt.Errorf("brclientd %s: read body: %w", path, err)
+		return nil, err
 	}
 	return out, nil
 }
@@ -1649,7 +1686,7 @@ func BrclientdPagesFetch(ctx context.Context, body any) (json.RawMessage, error)
 	if err != nil {
 		return nil, err
 	}
-	return brclientdDoPostJSONRaw(ctx, cli, "/pages/fetch", body)
+	return brclientdDoPostJSONRaw(ctx, cli, "/pages/fetch", body, brclientdPageRespLimit)
 }
 
 // BrclientdPagesLocalList lists the markdown pages this node hosts.
@@ -1707,9 +1744,9 @@ func BrclientdHistoryPM(ctx context.Context, uid string, page, pageSize int) (js
 		return nil, fmt.Errorf("brclientd /history/pm: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	body, err := readBrclientdBody(resp, "/history/pm", 4<<20)
 	if err != nil {
-		return nil, fmt.Errorf("read history: %w", err)
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("brclientd /history/pm: HTTP %d: %s", resp.StatusCode, body)
