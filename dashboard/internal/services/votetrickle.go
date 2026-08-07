@@ -38,11 +38,8 @@ var (
 	vtRuns     = map[string]*vtRunState{} // keyed by proposal token; running + finished-not-dismissed
 	vtStarting = map[string]bool{}        // tokens whose votes are being signed (guards the slow start)
 
-	vtEventsMu sync.Mutex
-	vtEvents   []types.VoteTrickleEvent
-
-	vtSubsMu      sync.Mutex
-	vtSubscribers []chan types.VoteTrickleEvent
+	vtLog = eventRing[types.VoteTrickleEvent]{max: voteTrickleEventBufferSize}
+	vtBus eventBus[types.VoteTrickleEvent]
 )
 
 // vtRunState holds one proposal's trickle run. Immutable fields are set once at
@@ -80,55 +77,21 @@ func IsVoteTrickleRunning() bool {
 
 // LastVoteTrickleEvents returns up to n most-recent events, oldest first.
 func LastVoteTrickleEvents(n int) []types.VoteTrickleEvent {
-	vtEventsMu.Lock()
-	defer vtEventsMu.Unlock()
-	if n <= 0 || n > len(vtEvents) {
-		n = len(vtEvents)
-	}
-	out := make([]types.VoteTrickleEvent, n)
-	copy(out, vtEvents[len(vtEvents)-n:])
-	return out
+	return vtLog.last(n)
 }
 
 // SubscribeVoteTrickleEvents returns a channel receiving every future event plus
 // a cleanup func to call when the subscriber detaches.
 func SubscribeVoteTrickleEvents() (<-chan types.VoteTrickleEvent, func()) {
-	ch := make(chan types.VoteTrickleEvent, 32)
-	vtSubsMu.Lock()
-	vtSubscribers = append(vtSubscribers, ch)
-	vtSubsMu.Unlock()
-	return ch, func() {
-		vtSubsMu.Lock()
-		defer vtSubsMu.Unlock()
-		for i, sub := range vtSubscribers {
-			if sub == ch {
-				vtSubscribers = append(vtSubscribers[:i], vtSubscribers[i+1:]...)
-				close(ch)
-				return
-			}
-		}
-	}
+	return vtBus.subscribe(32)
 }
 
 func recordVoteTrickleEvent(token, level, kind, msg, ticket string) {
 	ev := types.VoteTrickleEvent{
 		Timestamp: time.Now().UTC(), Token: token, Level: level, Kind: kind, Message: msg, Ticket: ticket,
 	}
-	vtEventsMu.Lock()
-	vtEvents = append(vtEvents, ev)
-	if len(vtEvents) > voteTrickleEventBufferSize {
-		vtEvents = vtEvents[len(vtEvents)-voteTrickleEventBufferSize:]
-	}
-	vtEventsMu.Unlock()
-
-	vtSubsMu.Lock()
-	for _, sub := range vtSubscribers {
-		select {
-		case sub <- ev:
-		default:
-		}
-	}
-	vtSubsMu.Unlock()
+	vtLog.add(ev)
+	vtBus.publish(ev)
 }
 
 // VoteTrickleWorkersSnapshot returns the live status of every trickle run

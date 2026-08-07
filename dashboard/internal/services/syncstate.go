@@ -45,10 +45,9 @@ type SyncSnapshot struct {
 }
 
 var (
-	syncMu     sync.RWMutex
-	syncSnap   = SyncSnapshot{Phase: SyncPhaseUnknown}
-	syncSubsMu sync.Mutex
-	syncSubs   []chan SyncSnapshot
+	syncMu   sync.RWMutex
+	syncSnap = SyncSnapshot{Phase: SyncPhaseUnknown}
+	syncBus  eventBus[SyncSnapshot]
 )
 
 // GetSyncSnapshot returns a copy of the current snapshot.
@@ -60,21 +59,7 @@ func GetSyncSnapshot() SyncSnapshot {
 
 // SubscribeSyncEvents returns a channel that receives every snapshot update and a cleanup func.
 func SubscribeSyncEvents() (<-chan SyncSnapshot, func()) {
-	ch := make(chan SyncSnapshot, 8)
-	syncSubsMu.Lock()
-	syncSubs = append(syncSubs, ch)
-	syncSubsMu.Unlock()
-	return ch, func() {
-		syncSubsMu.Lock()
-		defer syncSubsMu.Unlock()
-		for i, sub := range syncSubs {
-			if sub == ch {
-				syncSubs = append(syncSubs[:i], syncSubs[i+1:]...)
-				close(ch)
-				return
-			}
-		}
-	}
+	return syncBus.subscribe(8)
 }
 
 // ApplyRpcSyncNotification updates the snapshot from one RpcSync response.
@@ -227,12 +212,5 @@ func MarkSyncDisconnected(reason string) {
 }
 
 func broadcastSyncSnapshot(snap SyncSnapshot) {
-	syncSubsMu.Lock()
-	for _, sub := range syncSubs {
-		select {
-		case sub <- snap:
-		default:
-		}
-	}
-	syncSubsMu.Unlock()
+	syncBus.publish(snap)
 }

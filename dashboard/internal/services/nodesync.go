@@ -29,8 +29,7 @@ type NodeSyncSnapshot struct {
 var (
 	nodeSyncMu    sync.RWMutex
 	nodeSyncSnap  NodeSyncSnapshot
-	nodeSubsMu    sync.Mutex
-	nodeSubs      []chan NodeSyncSnapshot
+	nodeBus       eventBus[NodeSyncSnapshot]
 	nodeRefreshCh = make(chan struct{}, 1)
 )
 
@@ -44,32 +43,11 @@ func GetNodeSyncSnapshot() NodeSyncSnapshot {
 // SubscribeNodeSyncEvents returns a channel that receives every snapshot update
 // and a cleanup func.
 func SubscribeNodeSyncEvents() (<-chan NodeSyncSnapshot, func()) {
-	ch := make(chan NodeSyncSnapshot, 8)
-	nodeSubsMu.Lock()
-	nodeSubs = append(nodeSubs, ch)
-	nodeSubsMu.Unlock()
-	return ch, func() {
-		nodeSubsMu.Lock()
-		defer nodeSubsMu.Unlock()
-		for i, sub := range nodeSubs {
-			if sub == ch {
-				nodeSubs = append(nodeSubs[:i], nodeSubs[i+1:]...)
-				close(ch)
-				return
-			}
-		}
-	}
+	return nodeBus.subscribe(8)
 }
 
 func broadcastNodeSync(snap NodeSyncSnapshot) {
-	nodeSubsMu.Lock()
-	for _, sub := range nodeSubs {
-		select {
-		case sub <- snap:
-		default:
-		}
-	}
-	nodeSubsMu.Unlock()
+	nodeBus.publish(snap)
 }
 
 // RefreshNodeSync recomputes the snapshot from getblockchaininfo and broadcasts

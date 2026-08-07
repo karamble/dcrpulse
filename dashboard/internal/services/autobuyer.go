@@ -30,11 +30,8 @@ var (
 	autobuyerLastErr string
 	autobuyerActive  *types.AutobuyerSettings
 
-	autobuyerEventsMu sync.Mutex
-	autobuyerEvents   []types.AutobuyerEvent
-
-	autobuyerSubsMu      sync.Mutex
-	autobuyerSubscribers []chan types.AutobuyerEvent
+	autobuyerLog = eventRing[types.AutobuyerEvent]{max: autobuyerEventBufferSize}
+	autobuyerBus eventBus[types.AutobuyerEvent]
 )
 
 // IsAutobuyerRunning reports whether the supervisor currently owns a stream.
@@ -65,54 +62,20 @@ func AutobuyerActiveSettings() *types.AutobuyerSettings {
 
 // LastAutobuyerEvents returns up to n most-recent events, oldest first.
 func LastAutobuyerEvents(n int) []types.AutobuyerEvent {
-	autobuyerEventsMu.Lock()
-	defer autobuyerEventsMu.Unlock()
-	if n <= 0 || n > len(autobuyerEvents) {
-		n = len(autobuyerEvents)
-	}
-	out := make([]types.AutobuyerEvent, n)
-	copy(out, autobuyerEvents[len(autobuyerEvents)-n:])
-	return out
+	return autobuyerLog.last(n)
 }
 
 // SubscribeAutobuyerEvents returns a channel receiving every future event plus
 // a cleanup func to call when the subscriber detaches.
 func SubscribeAutobuyerEvents() (<-chan types.AutobuyerEvent, func()) {
-	ch := make(chan types.AutobuyerEvent, 32)
-	autobuyerSubsMu.Lock()
-	autobuyerSubscribers = append(autobuyerSubscribers, ch)
-	autobuyerSubsMu.Unlock()
-	return ch, func() {
-		autobuyerSubsMu.Lock()
-		defer autobuyerSubsMu.Unlock()
-		for i, sub := range autobuyerSubscribers {
-			if sub == ch {
-				autobuyerSubscribers = append(autobuyerSubscribers[:i], autobuyerSubscribers[i+1:]...)
-				close(ch)
-				return
-			}
-		}
-	}
+	return autobuyerBus.subscribe(32)
 }
 
 func recordAutobuyerEvent(level, msg string) {
 	ev := types.AutobuyerEvent{Timestamp: time.Now().UTC(), Level: level, Message: msg}
 
-	autobuyerEventsMu.Lock()
-	autobuyerEvents = append(autobuyerEvents, ev)
-	if len(autobuyerEvents) > autobuyerEventBufferSize {
-		autobuyerEvents = autobuyerEvents[len(autobuyerEvents)-autobuyerEventBufferSize:]
-	}
-	autobuyerEventsMu.Unlock()
-
-	autobuyerSubsMu.Lock()
-	for _, sub := range autobuyerSubscribers {
-		select {
-		case sub <- ev:
-		default:
-		}
-	}
-	autobuyerSubsMu.Unlock()
+	autobuyerLog.add(ev)
+	autobuyerBus.publish(ev)
 }
 
 // StartAutobuyer launches the ticket-autobuyer goroutine.

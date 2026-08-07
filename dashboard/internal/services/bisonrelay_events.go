@@ -23,13 +23,8 @@ type BisonrelayEvent struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-type bisonrelaySubscriber struct {
-	ch chan BisonrelayEvent
-}
-
 type BisonrelayEventBus struct {
-	mu          sync.RWMutex
-	subscribers map[*bisonrelaySubscriber]struct{}
+	bus eventBus[BisonrelayEvent]
 }
 
 var (
@@ -41,9 +36,7 @@ var (
 // and the brclientd stream consumers both register through it.
 func Bisonrelay() *BisonrelayEventBus {
 	bisonrelayBusOnce.Do(func() {
-		bisonrelayBus = &BisonrelayEventBus{
-			subscribers: make(map[*bisonrelaySubscriber]struct{}),
-		}
+		bisonrelayBus = &BisonrelayEventBus{}
 	})
 	return bisonrelayBus
 }
@@ -54,24 +47,7 @@ func (b *BisonrelayEventBus) Subscribe(buf int) (<-chan BisonrelayEvent, func())
 	if buf <= 0 {
 		buf = 32
 	}
-	s := &bisonrelaySubscriber{ch: make(chan BisonrelayEvent, buf)}
-	b.mu.Lock()
-	b.subscribers[s] = struct{}{}
-	b.mu.Unlock()
-	return s.ch, func() {
-		b.mu.Lock()
-		defer b.mu.Unlock()
-		// The close must happen under the same lock broadcast holds, or a
-		// send already past the map lookup lands on a closed channel and
-		// panics. A second cancel must not close a closed channel either;
-		// the slice-based sibling buses get that free because their removal
-		// loop simply finds nothing, but the map needs it spelled out.
-		if _, ok := b.subscribers[s]; !ok {
-			return
-		}
-		delete(b.subscribers, s)
-		close(s.ch)
-	}
+	return b.bus.subscribe(buf)
 }
 
 // PublishBisonrelayEvent lets dashboard subsystems push an event of their
@@ -81,24 +57,8 @@ func PublishBisonrelayEvent(evtType string, payload json.RawMessage) {
 	Bisonrelay().broadcast(BisonrelayEvent{Type: evtType, Payload: payload})
 }
 
-// broadcast delivers to every subscriber with the read lock held, which is what
-// keeps a concurrent cancel from closing a channel mid-send. Nothing that can
-// block or take another lock may run inside the loop: the sends are
-// non-blocking, so the critical section stays bounded, and a stalled log write
-// would otherwise pin the bus and wedge every unsubscribe behind it. That is
-// why a full buffer only bumps a counter here and reports after the unlock.
 func (b *BisonrelayEventBus) broadcast(evt BisonrelayEvent) {
-	dropped := 0
-	b.mu.RLock()
-	for s := range b.subscribers {
-		select {
-		case s.ch <- evt:
-		default:
-			dropped++
-		}
-	}
-	b.mu.RUnlock()
-	if dropped > 0 {
+	if dropped := b.bus.publish(evt); dropped > 0 {
 		log.Printf("br event bus: subscriber buffer full, dropping %s (%d subscribers)", evt.Type, dropped)
 	}
 }

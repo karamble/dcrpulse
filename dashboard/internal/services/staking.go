@@ -353,11 +353,8 @@ func endTicketPurchase() {
 const purchaseEventBufferSize = 200
 
 var (
-	purchaseEventsMu sync.Mutex
-	purchaseEvents   []types.PurchaseEvent
-
-	purchaseSubsMu      sync.Mutex
-	purchaseSubscribers []chan types.PurchaseEvent
+	purchaseLog = eventRing[types.PurchaseEvent]{max: purchaseEventBufferSize}
+	purchaseBus eventBus[types.PurchaseEvent]
 
 	purchaseResultMu    sync.Mutex
 	purchaseLastErr     string
@@ -392,55 +389,21 @@ func PurchaseStatusSnapshot() types.PurchaseStatus {
 // A reconnecting WebSocket replays these, so a page reload during a long mixed
 // purchase still receives the terminal "done"/"error" event.
 func LastPurchaseEvents(n int) []types.PurchaseEvent {
-	purchaseEventsMu.Lock()
-	defer purchaseEventsMu.Unlock()
-	if n <= 0 || n > len(purchaseEvents) {
-		n = len(purchaseEvents)
-	}
-	out := make([]types.PurchaseEvent, n)
-	copy(out, purchaseEvents[len(purchaseEvents)-n:])
-	return out
+	return purchaseLog.last(n)
 }
 
 // SubscribePurchaseEvents returns a channel receiving every future purchase
 // event plus a cleanup func to call when the subscriber detaches.
 func SubscribePurchaseEvents() (<-chan types.PurchaseEvent, func()) {
-	ch := make(chan types.PurchaseEvent, 32)
-	purchaseSubsMu.Lock()
-	purchaseSubscribers = append(purchaseSubscribers, ch)
-	purchaseSubsMu.Unlock()
-	return ch, func() {
-		purchaseSubsMu.Lock()
-		defer purchaseSubsMu.Unlock()
-		for i, sub := range purchaseSubscribers {
-			if sub == ch {
-				purchaseSubscribers = append(purchaseSubscribers[:i], purchaseSubscribers[i+1:]...)
-				close(ch)
-				return
-			}
-		}
-	}
+	return purchaseBus.subscribe(32)
 }
 
 func emitPurchaseEvent(ev types.PurchaseEvent) {
 	if ev.Timestamp.IsZero() {
 		ev.Timestamp = time.Now().UTC()
 	}
-	purchaseEventsMu.Lock()
-	purchaseEvents = append(purchaseEvents, ev)
-	if len(purchaseEvents) > purchaseEventBufferSize {
-		purchaseEvents = purchaseEvents[len(purchaseEvents)-purchaseEventBufferSize:]
-	}
-	purchaseEventsMu.Unlock()
-
-	purchaseSubsMu.Lock()
-	for _, sub := range purchaseSubscribers {
-		select {
-		case sub <- ev:
-		default:
-		}
-	}
-	purchaseSubsMu.Unlock()
+	purchaseLog.add(ev)
+	purchaseBus.publish(ev)
 }
 
 func recordPurchaseEvent(level, msg string) {

@@ -54,12 +54,11 @@ type MixerEvent struct {
 const mixerEventBufferSize = 200
 
 var (
-	mixerMu          sync.Mutex
-	mixerCancel      context.CancelFunc
-	mixerLastErr     string
-	mixerEvents      []MixerEvent
-	mixerSubsMu      sync.Mutex
-	mixerSubscribers []chan MixerEvent
+	mixerMu      sync.Mutex
+	mixerCancel  context.CancelFunc
+	mixerLastErr string
+	mixerLog     = eventRing[MixerEvent]{max: mixerEventBufferSize}
+	mixerBus     eventBus[MixerEvent]
 )
 
 // IsMixerRunning reports whether the mixer goroutine currently holds a stream.
@@ -91,54 +90,19 @@ func LastMixerError() string {
 
 // LastMixerEvents returns up to n most-recent events, oldest first.
 func LastMixerEvents(n int) []MixerEvent {
-	mixerMu.Lock()
-	defer mixerMu.Unlock()
-	if n <= 0 || n > len(mixerEvents) {
-		n = len(mixerEvents)
-	}
-	out := make([]MixerEvent, n)
-	copy(out, mixerEvents[len(mixerEvents)-n:])
-	return out
+	return mixerLog.last(n)
 }
 
 // SubscribeMixerEvents returns a channel that receives every future mixer
 // event plus a cleanup func to call when the subscriber goes away.
 func SubscribeMixerEvents() (<-chan MixerEvent, func()) {
-	ch := make(chan MixerEvent, 32)
-	mixerSubsMu.Lock()
-	mixerSubscribers = append(mixerSubscribers, ch)
-	mixerSubsMu.Unlock()
-	return ch, func() {
-		mixerSubsMu.Lock()
-		defer mixerSubsMu.Unlock()
-		for i, sub := range mixerSubscribers {
-			if sub == ch {
-				mixerSubscribers = append(mixerSubscribers[:i], mixerSubscribers[i+1:]...)
-				close(ch)
-				return
-			}
-		}
-	}
+	return mixerBus.subscribe(32)
 }
 
 func recordMixerEvent(level, msg string) {
 	ev := MixerEvent{Timestamp: time.Now().UTC(), Level: level, Message: msg}
-
-	mixerMu.Lock()
-	mixerEvents = append(mixerEvents, ev)
-	if len(mixerEvents) > mixerEventBufferSize {
-		mixerEvents = mixerEvents[len(mixerEvents)-mixerEventBufferSize:]
-	}
-	mixerMu.Unlock()
-
-	mixerSubsMu.Lock()
-	for _, sub := range mixerSubscribers {
-		select {
-		case sub <- ev:
-		default:
-		}
-	}
-	mixerSubsMu.Unlock()
+	mixerLog.add(ev)
+	mixerBus.publish(ev)
 }
 
 func setMixerErr(msg string) {
