@@ -19,8 +19,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// GetAgendasHandler returns the list of currently-tracked consensus
-// agendas joined with the wallet's current choice per agenda.
+// GetAgendasHandler returns the current stake version's consensus agendas,
+// its voting window, and the wallet's current choice per agenda.
 func GetAgendasHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()

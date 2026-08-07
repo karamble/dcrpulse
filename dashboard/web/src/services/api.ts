@@ -1178,16 +1178,39 @@ export interface AgendaChoice {
   description: string;
   isAbstain: boolean;
   isNo: boolean;
+  // Tally for this choice. Only filled while the agenda is 'started';
+  // progress is a 0..1 fraction of votes cast, not a percentage.
+  count: number;
+  progress: number;
 }
 
 export interface Agenda {
   id: string;
   description: string;
   status: string;
-  startHeight: number;
-  expireHeight: number;
+  // Unix seconds: when voting may begin and when the attempt expires.
+  startTime: number;
+  expireTime: number;
+  // Block height at which the agenda entered its current state.
+  since: number;
+  // 0..1 fraction, only filled while the agenda is 'started'.
+  quorumProgress: number;
   choices: AgendaChoice[];
   currentChoice: string;
+}
+
+// quorum, totalVotes and the window describe the rule-change interval around
+// the current tip, not any agenda's historic vote, so they only mean something
+// while voteInProgress is true.
+export interface ConsensusVoteInfo {
+  voteVersion: number;
+  voteInProgress: boolean;
+  quorum: number;
+  totalVotes: number;
+  currentHeight: number;
+  windowStartHeight: number;
+  windowEndHeight: number;
+  agendas: Agenda[];
 }
 
 export interface TreasuryKeyPolicy {
@@ -1254,9 +1277,9 @@ export interface CastVoteResult {
   errors?: string[];
 }
 
-export const getAgendas = async (): Promise<Agenda[]> => {
-  const response = await api.get<Agenda[]>('/wallet/governance/agendas');
-  return response.data ?? [];
+export const getAgendas = async (): Promise<ConsensusVoteInfo | null> => {
+  const response = await api.get<ConsensusVoteInfo>('/wallet/governance/agendas');
+  return response.data ?? null;
 };
 
 export const setAgendaChoice = async (

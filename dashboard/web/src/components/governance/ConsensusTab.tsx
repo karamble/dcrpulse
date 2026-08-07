@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
-import { Agenda, getAgendas, setAgendaChoice } from '../../services/api';
+import { ConsensusVoteInfo, getAgendas, setAgendaChoice } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
@@ -25,17 +25,21 @@ const statusColor = (status: string) => {
   }
 };
 
+const pct = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
+
 export const ConsensusTab = () => {
-  const [agendas, setAgendas] = useState<Agenda[]>([]);
+  const [voteInfo, setVoteInfo] = useState<ConsensusVoteInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<{ agendaID: string; choiceID: string } | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  const agendas = voteInfo?.agendas ?? [];
+
   const load = async () => {
     setError(null);
     try {
-      setAgendas(await getAgendas());
+      setVoteInfo(await getAgendas());
     } catch (err: any) {
       const body = err?.response?.data;
       setError(typeof body === 'string' ? body : err?.message || 'Failed to load agendas');
@@ -94,6 +98,35 @@ export const ConsensusTab = () => {
           {feedback}
         </div>
       )}
+      {voteInfo && (
+        <div className="px-4 py-3 rounded-xl bg-muted/10 border border-border/50 text-xs text-muted-foreground flex flex-wrap gap-x-6 gap-y-1">
+          <span>
+            Vote version <span className="text-foreground font-medium">{voteInfo.voteVersion}</span>
+          </span>
+          {/* The interval and its vote count belong to the tip, not to any
+              settled agenda, so they are only shown while a vote is running. */}
+          {voteInfo.voteInProgress ? (
+            <>
+              <span>
+                Voting interval{' '}
+                <span className="text-foreground font-medium">
+                  {voteInfo.windowStartHeight.toLocaleString()}
+                </span>
+                {' to '}
+                <span className="text-foreground font-medium">
+                  {voteInfo.windowEndHeight.toLocaleString()}
+                </span>
+              </span>
+              <span>
+                {voteInfo.totalVotes.toLocaleString()} votes cast, quorum{' '}
+                {voteInfo.quorum.toLocaleString()}
+              </span>
+            </>
+          ) : (
+            <span>No rule change is being voted on right now.</span>
+          )}
+        </div>
+      )}
       {agendas.map((a) => (
         <div
           key={a.id}
@@ -108,6 +141,27 @@ export const ConsensusTab = () => {
               {a.status}
             </span>
           </div>
+          {a.status !== 'started' && a.since > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {a.status === 'active' ? 'In force since block ' : 'Settled at block '}
+              <span className="text-foreground font-medium">{a.since.toLocaleString()}</span>
+            </p>
+          )}
+          {/* dcrd only tallies votes while an agenda is being voted on. */}
+          {a.status === 'started' && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Quorum progress</span>
+                <span className="text-foreground font-medium">{pct(a.quorumProgress)}</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-muted/20 overflow-hidden">
+                <div
+                  className="h-full bg-info"
+                  style={{ width: `${Math.min(a.quorumProgress * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {a.choices.map((c) => {
               const isCurrent = a.currentChoice === c.id;
@@ -127,6 +181,11 @@ export const ConsensusTab = () => {
                 >
                   <div className="font-medium">{c.id}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">{c.description}</div>
+                  {a.status === 'started' && (
+                    <div className="text-xs text-foreground mt-1 font-medium">
+                      {c.count.toLocaleString()} votes ({pct(c.progress)})
+                    </div>
+                  )}
                   {isCurrent && <div className="text-xs text-primary mt-1">current choice</div>}
                 </button>
               );

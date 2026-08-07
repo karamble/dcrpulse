@@ -12,17 +12,46 @@ type AgendaChoice struct {
 	Description string `json:"description"`
 	IsAbstain   bool   `json:"isAbstain"`
 	IsNo        bool   `json:"isNo"`
+	// Count and Progress are the running tally for this choice. dcrd only
+	// fills them while the agenda is "started"; they are zero otherwise.
+	// Progress is a 0..1 fraction of the votes cast, not a percentage.
+	Count    uint32  `json:"count"`
+	Progress float64 `json:"progress"`
 }
 
 // Agenda is one currently-tracked consensus rule change vote.
 type Agenda struct {
-	ID            string         `json:"id"`
-	Description   string         `json:"description"`
-	Status        string         `json:"status"`
-	StartHeight   int64          `json:"startHeight"`
-	ExpireHeight  int64          `json:"expireHeight"`
-	Choices       []AgendaChoice `json:"choices"`
-	CurrentChoice string         `json:"currentChoice"`
+	ID          string `json:"id"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	// StartTime and ExpireTime are unix seconds: when voting on this agenda
+	// may begin, and when the attempt expires.
+	StartTime  int64 `json:"startTime"`
+	ExpireTime int64 `json:"expireTime"`
+	// Since is the block height at which the agenda entered its current
+	// state, so a settled agenda can say when it activated or failed.
+	Since int64 `json:"since"`
+	// QuorumProgress is a 0..1 fraction, filled only while "started".
+	QuorumProgress float64        `json:"quorumProgress"`
+	Choices        []AgendaChoice `json:"choices"`
+	CurrentChoice  string         `json:"currentChoice"`
+}
+
+// ConsensusVoteInfo is the agenda set for one stake version.
+//
+// Quorum, TotalVotes and the window describe the rule-change interval around
+// the current tip, not any particular agenda's historic vote, so they only mean
+// something while an agenda is actually being voted on. VoteInProgress says
+// whether that is the case.
+type ConsensusVoteInfo struct {
+	VoteVersion       uint32   `json:"voteVersion"`
+	VoteInProgress    bool     `json:"voteInProgress"`
+	Quorum            uint32   `json:"quorum"`
+	TotalVotes        uint32   `json:"totalVotes"`
+	CurrentHeight     int64    `json:"currentHeight"`
+	WindowStartHeight int64    `json:"windowStartHeight"`
+	WindowEndHeight   int64    `json:"windowEndHeight"`
+	Agendas           []Agenda `json:"agendas"`
 }
 
 // SetAgendaChoiceRequest is the body for the agenda set endpoint.

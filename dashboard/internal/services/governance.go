@@ -7,9 +7,10 @@ package services
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,56 +20,65 @@ import (
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/dcrjson/v4"
+	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
 )
 
 // ---- Consensus agendas -----------------------------------------------------
 
+// voteVersionsNewestFirst returns every stake version the network defines
+// deployments for, highest first. dcrd answers getvoteinfo for exactly one
+// version and rejects anything it has no deployments for, and no RPC reports
+// which versions a node accepts, so the set has to come from chaincfg.
+func voteVersionsNewestFirst(params *chaincfg.Params) []uint32 {
+	versions := make([]uint32, 0, len(params.Deployments))
+	for v := range params.Deployments {
+		versions = append(versions, v)
+	}
+	sort.Slice(versions, func(i, j int) bool { return versions[i] > versions[j] })
+	return versions
+}
+
+// fetchVoteInfo returns the agenda set for the newest stake version this build
+// knows that the connected dcrd also recognises. Stepping down covers a node
+// older than this build; a node newer than the pinned chaincfg would leave us
+// one version behind until that dependency moves, which is bounded and visible
+// in the reported vote version.
+func fetchVoteInfo(ctx context.Context, params *chaincfg.Params) (*chainjson.GetVoteInfoResult, error) {
+	versions := voteVersionsNewestFirst(params)
+	for _, v := range versions {
+		vi, err := rpc.DcrdClient.GetVoteInfo(ctx, v)
+		if err == nil {
+			return vi, nil
+		}
+		var rpcErr *dcrjson.RPCError
+		if errors.As(err, &rpcErr) && rpcErr.Code == dcrjson.ErrRPCInvalidParameter {
+			continue
+		}
+		return nil, fmt.Errorf("getvoteinfo %d: %w", v, err)
+	}
+	return nil, fmt.Errorf("no stake version recognised by dcrd, tried %v", versions)
+}
+
 // ListAgendas combines dcrd getvoteinfo (active agendas + choice
 // definitions) with the wallet's current VoteChoices to populate
 // CurrentChoice per agenda.
-func ListAgendas(ctx context.Context) ([]types.Agenda, error) {
+func ListAgendas(ctx context.Context) (*types.ConsensusVoteInfo, error) {
 	if rpc.DcrdClient == nil || rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("rpc clients not initialized")
 	}
 
-	// dcrd getvoteinfo expects the current stake version. We always pass
-	// the latest defined version: dcrd handles "future" versions by
-	// returning the most recent live deployment. v7 covers the Phase 1
-	// agendas (changesubsidysplit, blake3pow, maxtreasuryspend). Hardcode
-	// for now; revisit on next consensus upgrade.
-	const stakeVersion = 9
-	rawVI, err := rpc.DcrdClient.RawRequest(ctx, "getvoteinfo", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf("%d", stakeVersion)),
-	})
+	params, err := chainParams(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getvoteinfo: %w", err)
+		return nil, err
 	}
-	var vi struct {
-		Currentheight int64 `json:"currentheight"`
-		Agendas       []struct {
-			ID             string  `json:"id"`
-			Description    string  `json:"description"`
-			Mask           uint64  `json:"mask"`
-			Starttime      int64   `json:"starttime"`
-			Expiretime     int64   `json:"expiretime"`
-			Status         string  `json:"status"`
-			Quorumprogress float64 `json:"quorumprogress"`
-			Choices        []struct {
-				ID          string  `json:"id"`
-				Description string  `json:"description"`
-				Bits        uint16  `json:"bits"`
-				Isabstain   bool    `json:"isabstain"`
-				Isno        bool    `json:"isno"`
-				Count       uint32  `json:"count"`
-				Progress    float64 `json:"progress"`
-			} `json:"choices"`
-		} `json:"agendas"`
-	}
-	if err := json.Unmarshal(rawVI, &vi); err != nil {
-		return nil, fmt.Errorf("decode getvoteinfo: %w", err)
+	vi, err := fetchVoteInfo(ctx, params)
+	if err != nil {
+		return nil, err
 	}
 
-	// Current choices from the wallet.
+	// Current choices from the wallet. Keyed by agenda ID, so the stake
+	// version we happened to query cannot desync them.
 	current := map[string]string{}
 	if vc, err := rpc.VotingClient.VoteChoices(ctx, &pb.VoteChoicesRequest{}); err == nil {
 		for _, c := range vc.GetChoices() {
@@ -78,26 +88,58 @@ func ListAgendas(ctx context.Context) ([]types.Agenda, error) {
 		log.Printf("VoteChoices: %v", err)
 	}
 
+	// getvoteinfo reports no history once an agenda has settled, but
+	// getblockchaininfo carries the height each one entered its current state,
+	// so a finished agenda can still say when it activated or failed.
+	since := map[string]int64{}
+	if bci, err := rpc.DcrdClient.GetBlockChainInfo(ctx); err == nil {
+		for id, d := range bci.Deployments {
+			since[id] = d.Since
+		}
+	} else {
+		log.Printf("GetBlockChainInfo for agenda history: %v", err)
+	}
+
+	voteInProgress := false
 	out := make([]types.Agenda, 0, len(vi.Agendas))
 	for _, a := range vi.Agendas {
+		if a.Status == "started" {
+			voteInProgress = true
+		}
 		choices := make([]types.AgendaChoice, 0, len(a.Choices))
 		for _, c := range a.Choices {
 			choices = append(choices, types.AgendaChoice{
 				ID:          c.ID,
 				Description: c.Description,
-				IsAbstain:   c.Isabstain,
-				IsNo:        c.Isno,
+				IsAbstain:   c.IsAbstain,
+				IsNo:        c.IsNo,
+				Count:       c.Count,
+				Progress:    c.Progress,
 			})
 		}
 		out = append(out, types.Agenda{
-			ID:            a.ID,
-			Description:   a.Description,
-			Status:        a.Status,
-			Choices:       choices,
-			CurrentChoice: current[a.ID],
+			ID:             a.ID,
+			Description:    a.Description,
+			Status:         a.Status,
+			StartTime:      int64(a.StartTime),
+			ExpireTime:     int64(a.ExpireTime),
+			Since:          since[a.ID],
+			QuorumProgress: a.QuorumProgress,
+			Choices:        choices,
+			CurrentChoice:  current[a.ID],
 		})
 	}
-	return out, nil
+
+	return &types.ConsensusVoteInfo{
+		VoteVersion:       vi.VoteVersion,
+		VoteInProgress:    voteInProgress,
+		Quorum:            vi.Quorum,
+		TotalVotes:        vi.TotalVotes,
+		CurrentHeight:     vi.CurrentHeight,
+		WindowStartHeight: vi.StartHeight,
+		WindowEndHeight:   vi.EndHeight,
+		Agendas:           out,
+	}, nil
 }
 
 // SetAgendaChoice updates one agenda's vote preference. The wallet is
