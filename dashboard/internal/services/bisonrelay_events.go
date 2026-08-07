@@ -60,8 +60,16 @@ func (b *BisonrelayEventBus) Subscribe(buf int) (<-chan BisonrelayEvent, func())
 	b.mu.Unlock()
 	return s.ch, func() {
 		b.mu.Lock()
+		defer b.mu.Unlock()
+		// The close must happen under the same lock broadcast holds, or a
+		// send already past the map lookup lands on a closed channel and
+		// panics. A second cancel must not close a closed channel either;
+		// the slice-based sibling buses get that free because their removal
+		// loop simply finds nothing, but the map needs it spelled out.
+		if _, ok := b.subscribers[s]; !ok {
+			return
+		}
 		delete(b.subscribers, s)
-		b.mu.Unlock()
 		close(s.ch)
 	}
 }
@@ -73,19 +81,25 @@ func PublishBisonrelayEvent(evtType string, payload json.RawMessage) {
 	Bisonrelay().broadcast(BisonrelayEvent{Type: evtType, Payload: payload})
 }
 
+// broadcast delivers to every subscriber with the read lock held, which is what
+// keeps a concurrent cancel from closing a channel mid-send. Nothing that can
+// block or take another lock may run inside the loop: the sends are
+// non-blocking, so the critical section stays bounded, and a stalled log write
+// would otherwise pin the bus and wedge every unsubscribe behind it. That is
+// why a full buffer only bumps a counter here and reports after the unlock.
 func (b *BisonrelayEventBus) broadcast(evt BisonrelayEvent) {
+	dropped := 0
 	b.mu.RLock()
-	subs := make([]*bisonrelaySubscriber, 0, len(b.subscribers))
 	for s := range b.subscribers {
-		subs = append(subs, s)
-	}
-	b.mu.RUnlock()
-	for _, s := range subs {
 		select {
 		case s.ch <- evt:
 		default:
-			log.Printf("br event bus: subscriber buffer full, dropping %s", evt.Type)
+			dropped++
 		}
+	}
+	b.mu.RUnlock()
+	if dropped > 0 {
+		log.Printf("br event bus: subscriber buffer full, dropping %s (%d subscribers)", evt.Type, dropped)
 	}
 }
 
