@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
+import { convQty, convRate, fmtAmt, fmtPrice, isMarketBuy, orderQty } from './dexFormat';
 import { isCancellable, orderStatusString, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { orderStepIndex, StepBar } from './dexSteps';
 import { DexOrderDetail } from './DexOrderDetail';
@@ -120,6 +120,10 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                   : o.type === 'limit'
                     ? convQty(o.quantity, baseConv)
                     : null;
+                // A market buy is denominated in the quote asset, so it must not
+                // be divided by the base factor or labelled with the base unit.
+                const amt = orderQty(o.quantity, o.type, o.sell, baseConv, quoteConv,
+                  mk?.base || '', (mk?.quote || '').split('.')[0]);
                 const stepIdx = orderStepIndex(o.matches);
                 return (
                   <tr
@@ -133,7 +137,12 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                     <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
                       {o.rate > 0 ? fmtPrice(convRate(o.rate, baseConv, quoteConv), mk?.quote || '') : 'market'}
                     </td>
-                    <td className="px-2 py-2 text-right font-mono tabular-nums">{fmtAmt(convQty(o.quantity, baseConv), 4)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums">
+                      {fmtAmt(amt.amount, 4)}
+                      {isMarketBuy(o.type, o.sell) && (
+                        <span className="ml-1 text-muted-foreground/60">{amt.symbol}</span>
+                      )}
+                    </td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
                       {recvAmt != null ? `${fmtAmt(recvAmt, 4)} ${recvSym}` : '-'}
                     </td>

@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { convQty, convRate, fmtAge, fmtAmt, fmtPrice } from './dexFormat';
+import { convQty, convRate, fmtAge, fmtAmt, fmtPrice, isMarketBuy, orderQty } from './dexFormat';
 import { isCancellable, orderStatusString, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { DexOrderDetail } from './DexOrderDetail';
 import { useSecondTick } from './useSecondTick';
@@ -83,7 +83,13 @@ export const DexUserOrdersPanel = ({ orders, market, preview, onCancel }: Props)
             const open = expanded.has(o.id);
             const price = o.rate > 0 ? fmtPrice(convRate(o.rate, baseConv, quoteConv), market.quote) : 'market';
             const filledPct = o.quantity > 0 ? Math.round((o.filled / o.quantity) * 100) : 0;
+            // settled sums per-match BASE atoms while a market buy's quantity is
+            // quote, so a percentage of one over the other is meaningless. Show
+            // the settled amount in base for those instead.
             const settledPct = o.quantity > 0 ? Math.round((o.settled / o.quantity) * 100) : 0;
+            const mktBuy = isMarketBuy(o.type, o.sell);
+            const amt = orderQty(o.quantity, o.type, o.sell, baseConv, quoteConv,
+              market.base, (market.quote || '').split('.')[0]);
             return (
               <div key={o.id}>
                 <button
@@ -93,8 +99,8 @@ export const DexUserOrdersPanel = ({ orders, market, preview, onCancel }: Props)
                 >
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${o.sell ? 'bg-destructive' : 'bg-success'}`} />
                   <span className={`font-medium ${o.sell ? 'text-destructive' : 'text-success'}`}>{o.sell ? 'Sell' : 'Buy'}</span>
-                  <span className="font-mono tabular-nums">{fmtAmt(convQty(o.quantity, baseConv), 4)}</span>
-                  <span className="text-muted-foreground/60">{market.base}</span>
+                  <span className="font-mono tabular-nums">{fmtAmt(amt.amount, 4)}</span>
+                  <span className="text-muted-foreground/60">{amt.symbol}</span>
                   <span className="text-muted-foreground">@</span>
                   <span className="font-mono tabular-nums">{price}</span>
                   <span className="ml-auto text-muted-foreground">{orderStatusString(o)}</span>
@@ -105,7 +111,11 @@ export const DexUserOrdersPanel = ({ orders, market, preview, onCancel }: Props)
                     <Datum label="Type">{o.type}</Datum>
                     <Datum label="Age">{fmtAge(o.submitTime || o.stamp)}</Datum>
                     <Datum label="Filled">{filledPct}%</Datum>
-                    <Datum label="Settled">{settledPct}%</Datum>
+                    <Datum label="Settled">
+                      {mktBuy
+                        ? `${fmtAmt(convQty(o.settled, baseConv), 4)} ${market.base}`
+                        : `${settledPct}%`}
+                    </Datum>
                     <div className="flex gap-2 pt-1.5">
                       {!preview && isCancellable(o) && (
                         <button

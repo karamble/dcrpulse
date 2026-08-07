@@ -18,7 +18,7 @@ import {
   type DexOrder,
   type DexOrderFull,
 } from '../../services/dcrdexApi';
-import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
+import { convQty, convRate, fmtAmt, fmtPrice, isMarketBuy, orderQty } from './dexFormat';
 import { dexCoinExplorer } from './dexExplorers';
 import { stepIndex, StepBar } from './dexSteps';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
@@ -245,10 +245,15 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
   const baseSym = market?.base || order.marketName.split('_')[0]?.toUpperCase() || '';
   const quoteSym = market?.quote || order.marketName.split('_')[1]?.toUpperCase() || '';
 
-  const qty = convQty(order.quantity, baseConv);
+  // A market buy's quantity and filled are quote-denominated; everything else
+  // is base. Matches are always base, which is why settled cannot be shown as a
+  // percentage of a market buy's quantity.
+  const mktBuy = isMarketBuy(order.type, order.sell);
+  const qtyDisp = orderQty(order.quantity, order.type, order.sell, baseConv, quoteConv, baseSym, quoteSym);
   const price = order.rate ? convRate(order.rate, baseConv, quoteConv) : 0;
   const filledPct = order.quantity > 0 ? Math.round((order.filled / order.quantity) * 100) : 0;
   const settledPct = order.quantity > 0 ? Math.round((order.settled / order.quantity) * 100) : 0;
+  const settledBase = convQty(order.settled, baseConv);
 
   // Prefer the fetched (confs-bearing) matches; fall back to the list order's
   // matches adapted to the rich shape until the fetch resolves.
@@ -294,7 +299,7 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Field label="Quantity">{fmtAmt(qty, 8)} {baseSym}</Field>
+          <Field label="Quantity">{fmtAmt(qtyDisp.amount, 8)} {qtyDisp.symbol}</Field>
           {order.rate > 0 && <Field label="Price">{fmtPrice(price, quoteSym)} {quoteSym}</Field>}
           <Field label="Submitted">{order.submitTime ? toYMDTime(new Date(order.submitTime)) : '-'}</Field>
           <Field label="Order ID">{order.id}</Field>
@@ -302,7 +307,11 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Bar label="Filled" pct={filledPct} tint="bg-primary" />
-          <Bar label="Settled" pct={settledPct} tint="bg-success" />
+          {mktBuy ? (
+            <Field label="Settled">{fmtAmt(settledBase, 8)} {baseSym}</Field>
+          ) : (
+            <Bar label="Settled" pct={settledPct} tint="bg-success" />
+          )}
         </div>
       </div>
 

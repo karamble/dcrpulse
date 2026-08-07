@@ -62,9 +62,30 @@ export const usdRateFor = (symbol: string, rates: Record<string, number> | null)
 // the base/quote conversion factors.
 export const RateEncodingFactor = 1e8;
 
-// convQty converts an atomic base quantity to conventional units.
-export const convQty = (atomic: number, baseConvFactor: number): number =>
-  baseConvFactor > 0 ? atomic / baseConvFactor : 0;
+// convQty converts an atomic quantity to conventional units.
+export const convQty = (atomic: number, convFactor: number): number =>
+  convFactor > 0 ? atomic / convFactor : 0;
+
+// isMarketBuy mirrors bisonw's OrderUtil.isMarketBuy. dcrdex denominates these
+// orders' quantity and filled in the QUOTE asset; every other order is in base.
+export const isMarketBuy = (type: string, sell: boolean): boolean => type === 'market' && !sell;
+
+// orderQty returns an order quantity in conventional units with the symbol it is
+// actually denominated in, so a market buy is not divided by the base factor and
+// labelled with the base unit. Mirrors bisonw's markets.ts, which picks the quote
+// asset's unitInfo and symbol for these orders.
+export const orderQty = (
+  atomic: number,
+  type: string,
+  sell: boolean,
+  baseConvFactor: number,
+  quoteConvFactor: number,
+  baseSym: string,
+  quoteSym: string,
+): { amount: number; symbol: string } =>
+  isMarketBuy(type, sell)
+    ? { amount: convQty(atomic, quoteConvFactor), symbol: quoteSym }
+    : { amount: convQty(atomic, baseConvFactor), symbol: baseSym };
 
 // convRate converts an atomic message-rate to a conventional price.
 export const convRate = (msgRate: number, baseConvFactor: number, quoteConvFactor: number): number => {

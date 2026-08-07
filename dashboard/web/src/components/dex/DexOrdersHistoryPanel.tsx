@@ -13,7 +13,7 @@ import {
   type DexOrder,
   type DexOrderFilter,
 } from '../../services/dcrdexApi';
-import { convQty, convRate, fmtAmt, fmtPrice } from './dexFormat';
+import { convRate, fmtAmt, fmtPrice, isMarketBuy, orderQty } from './dexFormat';
 import { DexOrderDetail } from './DexOrderDetail';
 import { useDexCancel } from './DexCancelOrder';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
@@ -215,7 +215,16 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
                     <td className="px-2 py-2">
                       <Pill kind="type">{o.type}</Pill>
                     </td>
-                    <td className="px-2 py-2 text-right font-mono tabular-nums">{fmtAmt(convQty(o.quantity, baseConv), 4)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums">
+                      {fmtAmt(
+                        orderQty(o.quantity, o.type, o.sell, baseConv, quoteConv,
+                          mk?.base || '', (mk?.quote || '').split('.')[0]).amount, 4)}
+                      {isMarketBuy(o.type, o.sell) && (
+                        <span className="ml-1 text-muted-foreground/60">
+                          {(mk?.quote || '').split('.')[0]}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
                       {o.rate > 0 ? fmtPrice(convRate(o.rate, baseConv, quoteConv), mk?.quote || '') : 'market'}
                     </td>
