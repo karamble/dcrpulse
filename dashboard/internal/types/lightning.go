@@ -107,9 +107,13 @@ const (
 // apply to a particular status (e.g. CSV delay on a closed channel)
 // are zero-valued; the frontend renders status-dependent subsets.
 type LightningChannel struct {
-	Status         string `json:"status"`
-	ChannelPoint   string `json:"channelPoint"`
-	ChannelID      uint64 `json:"channelId,omitempty"`
+	Status       string `json:"status"`
+	ChannelPoint string `json:"channelPoint"`
+	// Sent as a string: a short channel ID packs height<<40|txidx<<16|vout and
+	// runs past JavaScript's 2^53 safe integer, so as a JSON number the browser
+	// rounds away the low bits, which is where vout lives. dcrlnd serializes it
+	// as a string for the same reason.
+	ChannelID      uint64 `json:"channelId,string,omitempty"`
 	RemotePubkey   string `json:"remotePubkey"`
 	RemoteAlias    string `json:"remoteAlias,omitempty"`
 	Capacity       int64  `json:"capacity"`
@@ -394,7 +398,7 @@ type LightningNodePolicy struct {
 
 // LightningNodeChannel is one channel involving the queried node.
 type LightningNodeChannel struct {
-	ChannelID   uint64               `json:"channelId"`
+	ChannelID   uint64               `json:"channelId,string"` // string for the reason on LightningChannel.ChannelID
 	ChanPoint   string               `json:"chanPoint"`
 	Capacity    int64                `json:"capacity"`
 	LastUpdate  uint32               `json:"lastUpdate"`

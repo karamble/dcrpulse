@@ -97,7 +97,9 @@ export type ChannelStatus =
 export interface LightningChannel {
   status: ChannelStatus;
   channelPoint: string;
-  channelId?: number;
+  // String on the wire: the value exceeds Number.MAX_SAFE_INTEGER, so parsing
+  // it as a number silently corrupts the low bits.
+  channelId?: string;
   remotePubkey: string;
   remoteAlias?: string;
   capacity: number;
@@ -536,7 +538,7 @@ export interface LightningNodePolicy {
 }
 
 export interface LightningNodeChannel {
-  channelId: number;
+  channelId: string;
   chanPoint: string;
   capacity: number;
   lastUpdate: number;
