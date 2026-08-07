@@ -61,20 +61,27 @@ type TransactionDetail struct {
 
 // TSpendVotingInfo contains voting data for a treasury spend transaction
 type TSpendVotingInfo struct {
-	VotingStartBlock int64     `json:"votingStartBlock"` // When voting started
-	VotingEndBlock   int64     `json:"votingEndBlock"`   // When tspend was mined (or expiry)
-	YesVotes         int       `json:"yesVotes"`         // Number of yes votes
-	NoVotes          int       `json:"noVotes"`          // Number of no votes
-	EligibleVotes    int       `json:"eligibleVotes"`    // Total possible votes in period
-	VotesCast        int       `json:"votesCast"`        // Total votes cast
-	QuorumRequired   int       `json:"quorumRequired"`   // Minimum votes needed
-	ApprovalRate     float64   `json:"approvalRate"`     // Yes / (Yes + No)
-	TurnoutRate      float64   `json:"turnoutRate"`      // VotesCast / EligibleVotes
-	QuorumAchieved   bool      `json:"quorumAchieved"`
-	VotingComplete   bool      `json:"votingComplete"`
-	InMempool        bool      `json:"inMempool"`
-	VotingStartTime  time.Time `json:"votingStartTime"`
-	VotingEndTime    time.Time `json:"votingEndTime"`
+	VotingStartBlock int64   `json:"votingStartBlock"` // First block of the voting window
+	VotingEndBlock   int64   `json:"votingEndBlock"`   // Last block of the voting window
+	YesVotes         int64   `json:"yesVotes"`         // Number of yes votes
+	NoVotes          int64   `json:"noVotes"`          // Number of no votes
+	EligibleVotes    int64   `json:"eligibleVotes"`    // Total possible votes over the whole window
+	VotesCast        int64   `json:"votesCast"`        // Total votes cast
+	QuorumRequired   int64   `json:"quorumRequired"`   // Minimum votes needed
+	ApprovalRate     float64 `json:"approvalRate"`     // Yes / (Yes + No)
+	TurnoutRate      float64 `json:"turnoutRate"`      // VotesCast / EligibleVotes
+	// RequiredApprovalPct is the yes share consensus demands, from the network's
+	// TreasuryVoteRequired ratio rather than a hardcoded figure.
+	RequiredApprovalPct float64   `json:"requiredApprovalPct"`
+	QuorumAchieved      bool      `json:"quorumAchieved"`
+	Approved            bool      `json:"approved"`
+	VotingComplete      bool      `json:"votingComplete"`
+	InMempool           bool      `json:"inMempool"`
+	VotingStartTime     time.Time `json:"votingStartTime"`
+	VotingEndTime       time.Time `json:"votingEndTime"`
+	// VotingEndEstimated marks VotingEndTime as projected from the current tip
+	// because the window has not closed yet.
+	VotingEndEstimated bool `json:"votingEndEstimated"`
 }
 
 // TxInput represents a transaction input

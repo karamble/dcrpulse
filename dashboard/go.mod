@@ -6,12 +6,14 @@ toolchain go1.26.5
 
 require (
 	decred.org/dcrwallet/v5 v5.0.2
+	github.com/decred/dcrd/blockchain/standalone/v2 v2.2.2
 	github.com/decred/dcrd/chaincfg/chainhash v1.0.5
 	github.com/decred/dcrd/chaincfg/v3 v3.3.0
 	github.com/decred/dcrd/dcrec v1.0.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
 	github.com/decred/dcrd/dcrutil/v4 v4.0.3
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.3
+	github.com/decred/dcrd/rpc/jsonrpc/types/v4 v4.4.0
 	github.com/decred/dcrd/rpcclient/v8 v8.1.0
 	github.com/decred/dcrd/txscript/v4 v4.1.2
 	github.com/decred/dcrd/wire v1.7.2
@@ -51,7 +53,6 @@ require (
 	github.com/decred/dcrd/addrmgr/v3 v3.0.0 // indirect
 	github.com/decred/dcrd/bech32 v1.1.4 // indirect
 	github.com/decred/dcrd/blockchain/stake/v5 v5.0.2 // indirect
-	github.com/decred/dcrd/blockchain/standalone/v2 v2.2.2 // indirect
 	github.com/decred/dcrd/certgen v1.2.0 // indirect
 	github.com/decred/dcrd/chaincfg v1.5.2 // indirect
 	github.com/decred/dcrd/connmgr v1.1.1 // indirect
@@ -68,7 +69,6 @@ require (
 	github.com/decred/dcrd/math/uint256 v1.0.2 // indirect
 	github.com/decred/dcrd/mixing v0.6.0 // indirect
 	github.com/decred/dcrd/peer/v3 v3.2.0 // indirect
-	github.com/decred/dcrd/rpc/jsonrpc/types/v4 v4.4.0 // indirect
 	github.com/decred/dcrtest/dcrdtest v1.0.1-0.20251125155744-84fc45da4d58 // indirect
 	github.com/decred/lightning-onion/v4 v4.0.2-0.20251215192853-9ddf49d1f20d // indirect
 	github.com/decred/slog v1.2.0 // indirect

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"dcrpulse/internal/services"
@@ -115,29 +114,4 @@ func GetMempoolTSpendsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tspends)
-}
-
-// GetVoteParsingProgressHandler returns current vote counting progress for a tspend
-func GetVoteParsingProgressHandler(w http.ResponseWriter, r *http.Request) {
-	// Get txhash from URL path
-	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) < 2 {
-		http.Error(w, "Transaction hash required", http.StatusBadRequest)
-		return
-	}
-	txHash := parts[len(parts)-2] // Get hash before /progress
-
-	progress, exists := services.GetVoteParsingProgress(txHash)
-	if !exists {
-		// No progress found - might be already cached or not started
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"isParsing": false,
-			"message":   "No active parsing job",
-		})
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(progress)
 }

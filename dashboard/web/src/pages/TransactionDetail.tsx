@@ -2,10 +2,10 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowRightLeft, ChevronLeft, FileJson, Ticket, CheckCircle, XCircle, Coins, Landmark, Loader2 } from 'lucide-react';
-import { getTransaction, getVoteParsingProgress, TransactionDetail as TransactionDetailType, VoteParsingProgress } from '../services/explorerApi';
+import { ArrowRightLeft, ChevronLeft, FileJson, Ticket, CheckCircle, XCircle, Coins, Landmark } from 'lucide-react';
+import { getTransaction, TransactionDetail as TransactionDetailType } from '../services/explorerApi';
 import { CopyButton } from '../components/explorer/CopyButton';
 import { TimeAgo } from '../components/explorer/TimeAgo';
 import { InputOutputList } from '../components/explorer/InputOutputList';
@@ -18,63 +18,10 @@ export const TransactionDetail = () => {
   const [error, setError] = useState('');
   const [showRawJson, setShowRawJson] = useState(false);
   const [showRawHex, setShowRawHex] = useState(false);
-  const [voteProgress, setVoteProgress] = useState<VoteParsingProgress | null>(null);
-  const [isPolling, setIsPolling] = useState(false);
-  const hasRefreshedForComplete = useRef(false);
 
   useEffect(() => {
     fetchTransaction();
-    hasRefreshedForComplete.current = false; // Reset on txhash change
   }, [txhash]);
-
-  // Poll for vote parsing progress
-  useEffect(() => {
-    if (!tx || tx.type !== 'tspend' || !txhash) return;
-    
-    // If voting is complete, no need to poll (regardless of vote count)
-    if (tx.votingInfo?.votingComplete) {
-      setIsPolling(false);
-      return;
-    }
-
-    // If we already refreshed after completion, don't poll again
-    if (hasRefreshedForComplete.current) {
-      setIsPolling(false);
-      return;
-    }
-
-    // Start polling
-    setIsPolling(true);
-    const pollProgress = async () => {
-      try {
-        const progress = await getVoteParsingProgress(txhash);
-        setVoteProgress(progress);
-
-        // If parsing is complete, refresh transaction data once and stop polling
-        if (!progress.isParsing && !hasRefreshedForComplete.current) {
-          setIsPolling(false);
-          hasRefreshedForComplete.current = true;
-          // Refresh transaction to get final vote data
-          setTimeout(() => {
-            fetchTransaction();
-          }, 500);
-        }
-      } catch (err) {
-        console.error('Error fetching vote progress:', err);
-      }
-    };
-
-    // Initial poll
-    pollProgress();
-
-    // Set up polling interval
-    const pollInterval = setInterval(pollProgress, 2000); // Poll every 2 seconds
-
-    return () => {
-      clearInterval(pollInterval);
-      setIsPolling(false);
-    };
-  }, [tx?.votingInfo?.votingComplete, txhash]);
 
   const fetchTransaction = async () => {
     if (!txhash) return;
@@ -369,88 +316,45 @@ export const TransactionDetail = () => {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">Treasury Spend Approval</h2>
                 <div className="flex items-center gap-2">
-                  {isPolling && voteProgress?.isParsing ? (
-                    <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-500/10 text-blue-500 flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Counting Votes...
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    tx.votingInfo.votingComplete ? 'bg-blue-500/10 text-blue-500' : 'bg-yellow-500/10 text-yellow-500'
+                  }`}>
+                    {tx.votingInfo.votingComplete ? 'Voting Complete' : 'Ongoing Vote'}
+                  </span>
+                  {tx.votingInfo.votingComplete && tx.votingInfo.votesCast > 0 && (
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      tx.votingInfo.approved ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+                    }`}>
+                      {tx.votingInfo.approved ? 'Approved' : 'Rejected'}
                     </span>
-                  ) : (
-                    <>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        tx.votingInfo.votingComplete ? 'bg-blue-500/10 text-blue-500' : 'bg-yellow-500/10 text-yellow-500'
-                      }`}>
-                        {tx.votingInfo.votingComplete ? 'Voting Complete' : 'Ongoing Vote'}
-                      </span>
-                      {tx.votingInfo.votingComplete && tx.votingInfo.votesCast > 0 && (
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          tx.votingInfo.approvalRate >= 75 ? 'bg-green-500/10 text-green-500' :
-                          tx.votingInfo.approvalRate >= 50 ? 'bg-yellow-500/10 text-yellow-500' :
-                          'bg-red-500/10 text-red-500'
-                        }`}>
-                          {tx.votingInfo.approvalRate >= 75 ? 'Fast Approval' :
-                           tx.votingInfo.approvalRate >= 50 ? 'Approval' : 'Rejected'}
-                        </span>
-                      )}
-                    </>
                   )}
                 </div>
               </div>
 
-              {/* Vote Counting Progress */}
-              {isPolling && voteProgress?.isParsing && (
-                <div className="mb-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-muted-foreground">Scanning blocks for votes...</span>
-                    <span className="text-sm font-semibold">{voteProgress.progress.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full bg-muted/20 rounded-full h-3 overflow-hidden mb-2">
-                    <div 
-                      className="h-full bg-blue-500 transition-all duration-500"
-                      style={{ width: `${voteProgress.progress}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Block {voteProgress.currentBlock.toLocaleString()} of {(voteProgress.currentBlock + voteProgress.totalBlocks - Math.floor(voteProgress.totalBlocks * voteProgress.progress / 100)).toLocaleString()}</span>
-                    {voteProgress.estimatedTime > 0 && (
-                      <span>~{voteProgress.estimatedTime}s remaining</span>
-                    )}
-                  </div>
-                  <div className="mt-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
-                    <p className="text-sm">
-                      <span className="font-semibold">Current Results:</span>{' '}
-                      <span className="text-green-500">{voteProgress.yesVotes.toLocaleString()} Yes</span>
-                      {' | '}
-                      <span className="text-red-500">{voteProgress.noVotes.toLocaleString()} No</span>
-                      <span className="text-muted-foreground ml-2">(Still counting...)</span>
-                    </p>
-                  </div>
-                </div>
-              )}
-
               {/* Approval Progress Bar - Only show when we have vote data */}
-              {(!isPolling || !voteProgress?.isParsing) && tx.votingInfo.votesCast > 0 && (
+              {tx.votingInfo.votesCast > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-muted-foreground">Approval Rate</span>
                     <span className="text-lg font-semibold">{tx.votingInfo.approvalRate.toFixed(1)}%</span>
                   </div>
                   <div className="w-full bg-muted/20 rounded-full h-4 overflow-hidden">
-                    <div 
+                    <div
                       className={`h-full transition-all ${
-                        tx.votingInfo.approvalRate >= 75 ? 'bg-green-500' :
-                        tx.votingInfo.approvalRate >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                        tx.votingInfo.approvalRate >= tx.votingInfo.requiredApprovalPct ? 'bg-green-500' : 'bg-red-500'
                       }`}
                       style={{ width: `${tx.votingInfo.approvalRate}%` }}
                     />
                   </div>
                   <p className="text-sm text-muted-foreground mt-2">
                     {tx.votingInfo.approvalRate.toFixed(1)}% approval of {tx.votingInfo.votesCast.toLocaleString()} votes
+                    {' · needs '}{tx.votingInfo.requiredApprovalPct.toFixed(0)}% to pass
                   </p>
                 </div>
               )}
 
               {/* Quorum Status - Only show when we have vote data */}
-              {(!isPolling || !voteProgress?.isParsing) && tx.votingInfo.votesCast > 0 && (
+              {tx.votingInfo.votesCast > 0 && (
                 <div className="p-3 rounded-lg bg-background/50 mb-4">
                   <p className="text-sm">
                     <span className={tx.votingInfo.quorumAchieved ? 'text-green-500' : 'text-yellow-500'}>
@@ -463,7 +367,7 @@ export const TransactionDetail = () => {
             </div>
 
             {/* Voting Statistics - Only show when we have valid vote data */}
-            {(!isPolling || !voteProgress?.isParsing) && tx.votingInfo.votesCast > 0 && (
+            {tx.votingInfo.votesCast > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Yes Votes */}
                 <div className="p-4 rounded-lg bg-background/50">
@@ -511,6 +415,7 @@ export const TransactionDetail = () => {
                     {tx.votingInfo.votingComplete ? 'Voting Ended' : 'Voting Ends'}
                   </p>
                   <p className="text-sm font-semibold">
+                    {tx.votingInfo.votingEndEstimated && '~'}
                     <TimeAgo timestamp={tx.votingInfo.votingEndTime} showFull />
                   </p>
                 </div>

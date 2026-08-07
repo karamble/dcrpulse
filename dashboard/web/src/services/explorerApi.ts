@@ -63,22 +63,14 @@ export interface TSpendVotingInfo {
   quorumRequired: number;
   approvalRate: number;
   turnoutRate: number;
+  requiredApprovalPct: number;
   quorumAchieved: boolean;
+  approved: boolean;
   votingComplete: boolean;
   inMempool: boolean;
   votingStartTime: string;
   votingEndTime: string;
-}
-
-export interface VoteParsingProgress {
-  isParsing: boolean;
-  progress: number;      // 0-100
-  currentBlock: number;
-  totalBlocks: number;
-  yesVotes: number;
-  noVotes: number;
-  estimatedTime: number; // Seconds remaining
-  message: string;
+  votingEndEstimated: boolean;
 }
 
 export interface TxInput {
@@ -195,14 +187,6 @@ export async function getAddressInfo(address: string): Promise<AddressInfo> {
   const response = await authFetch(`${API_BASE_URL}/explorer/address/${address}`);
   if (!response.ok) {
     throw new Error('Failed to fetch address information');
-  }
-  return response.json();
-}
-
-export async function getVoteParsingProgress(txhash: string): Promise<VoteParsingProgress> {
-  const response = await authFetch(`${API_BASE_URL}/treasury/votes/${txhash}/progress`);
-  if (!response.ok) {
-    throw new Error('Failed to fetch vote parsing progress');
   }
   return response.json();
 }

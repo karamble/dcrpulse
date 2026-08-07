@@ -618,7 +618,6 @@ func main() {
 	api.HandleFunc("/treasury/scan-progress", handlers.GetTSpendScanProgressHandler).Methods("GET")
 	api.HandleFunc("/treasury/scan-results", handlers.GetTSpendScanResultsHandler).Methods("GET")
 	api.HandleFunc("/treasury/mempool", handlers.GetMempoolTSpendsHandler).Methods("GET")
-	api.HandleFunc("/treasury/votes/{txhash}/progress", handlers.GetVoteParsingProgressHandler).Methods("GET")
 
 	// Serve embedded static files for frontend
 	distFS, err := fs.Sub(embeddedFiles, "web/dist")

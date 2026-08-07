@@ -11,6 +11,8 @@ import (
 	"sync"
 
 	"dcrpulse/internal/rpc"
+
+	"github.com/decred/dcrd/chaincfg/v3"
 )
 
 var (
@@ -48,4 +50,25 @@ func CurrentNetwork(ctx context.Context) (string, error) {
 		networkVal = chain
 	}
 	return networkVal, nil
+}
+
+// chainParams returns dcrd's consensus parameters for the connected network, so
+// callers read protocol constants from chaincfg rather than hardcoding mainnet
+// values.
+func chainParams(ctx context.Context) (*chaincfg.Params, error) {
+	net, err := CurrentNetwork(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch net {
+	case "mainnet":
+		return chaincfg.MainNetParams(), nil
+	case "testnet":
+		return chaincfg.TestNet3Params(), nil
+	case "simnet":
+		return chaincfg.SimNetParams(), nil
+	case "regnet":
+		return chaincfg.RegNetParams(), nil
+	}
+	return nil, fmt.Errorf("unknown network %q", net)
 }
