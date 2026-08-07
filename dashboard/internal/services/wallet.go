@@ -1829,6 +1829,12 @@ func ChangePrivatePassphrase(ctx context.Context, oldPass, newPass []byte) error
 		return fmt.Errorf("wallet gRPC client not initialized")
 	}
 
+	// dcrwallet unlocks each account to re-encrypt it, so hold off the lock
+	// sweep: it locks accounts it sees unlocked, and one landing mid-fan-out
+	// makes the rest fail with "account must be unlocked".
+	beginUnlockedOp()
+	defer endUnlockedOp()
+
 	if _, err := rpc.WalletGrpcClient.ChangePassphrase(ctx, &pb.ChangePassphraseRequest{
 		Key:           pb.ChangePassphraseRequest_PRIVATE,
 		OldPassphrase: oldPass,
