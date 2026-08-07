@@ -25,7 +25,8 @@ import {
   YAxis,
 } from 'recharts';
 import { getAllTSpends, getTreasuryStats, TSpendRecord } from '../../services/treasuryStorage';
-import { BalanceSample, getTreasuryBalanceHistory, getTreasuryInfo } from '../../services/treasuryApi';
+import { BalanceSample } from '../../services/treasuryApi';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const dcr = (v: number) =>
   v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -122,29 +123,31 @@ const balanceAtTime = (series: BalanceSample[], cutoff: number): number => {
 const balanceAtYearEnd = (series: BalanceSample[], year: number): number =>
   balanceAtTime(series, Date.UTC(year + 1, 0, 1) / 1000);
 
-export const TreasuryStats = () => {
+interface TreasuryStatsProps {
+  balance: number | null;
+  series: BalanceSample[];
+  // Bumped when a scan or snapshot sync writes new TSpends to localStorage.
+  refreshKey?: number;
+}
+
+// balance and series come from GovernanceDashboard's shared treasury poll.
+export const TreasuryStats = ({ balance, series, refreshKey = 0 }: TreasuryStatsProps) => {
   const [tspends, setTspends] = useState<TSpendRecord[]>(() => getAllTSpends());
   const [stats, setStats] = useState(() => getTreasuryStats());
-  const [balance, setBalance] = useState<number | null>(null);
-  const [series, setSeries] = useState<BalanceSample[]>([]);
   // 'all' shows the per-year flow chart; a year shows that year's monthly view.
   const [flowYear, setFlowYear] = useState('all');
 
+  // localStorage only, no network: the shared poll on the page supplies the
+  // balance and the series.
+  const refreshLocal = () => {
+    setTspends(getAllTSpends());
+    setStats(getTreasuryStats());
+  };
   useEffect(() => {
-    const refreshLocal = () => {
-      setTspends(getAllTSpends());
-      setStats(getTreasuryStats());
-    };
     refreshLocal();
-    getTreasuryInfo()
-      .then((i) => setBalance(i.balance))
-      .catch(() => {});
-    getTreasuryBalanceHistory()
-      .then(setSeries)
-      .catch(() => {});
-    const id = window.setInterval(refreshLocal, 30000);
-    return () => window.clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
+  useVisiblePoll(refreshLocal, 30000, { immediate: false });
 
   const largest = useMemo(() => tspends.reduce((m, t) => Math.max(m, t.amount), 0), [tspends]);
   const thisYearSpent = useMemo(() => {

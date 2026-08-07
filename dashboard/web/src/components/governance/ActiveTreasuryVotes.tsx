@@ -2,9 +2,8 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
 import { CheckCircle2, Vote } from 'lucide-react';
-import { getTreasuryInfo, TSpend } from '../../services/treasuryApi';
+import { TSpend } from '../../services/treasuryApi';
 
 const dcr = (v: number) =>
   v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -52,21 +51,14 @@ const VoteRow = ({ t }: { t: TSpend }) => {
   );
 };
 
-export const ActiveTreasuryVotes = () => {
-  const [active, setActive] = useState<TSpend[]>([]);
-  const [loaded, setLoaded] = useState(false);
+interface ActiveTreasuryVotesProps {
+  active: TSpend[];
+  loaded: boolean;
+}
 
-  useEffect(() => {
-    const load = () => {
-      getTreasuryInfo()
-        .then((i) => setActive(i.activeTSpends ?? []))
-        .catch(() => {})
-        .finally(() => setLoaded(true));
-    };
-    load();
-    const id = window.setInterval(load, 60000);
-    return () => window.clearInterval(id);
-  }, []);
+// Fed by GovernanceDashboard's shared treasury poll: four cards used to fetch
+// the same endpoint on their own timers.
+export const ActiveTreasuryVotes = ({ active, loaded }: ActiveTreasuryVotesProps) => {
 
   return (
     <div className="p-6 rounded-xl bg-gradient-card border border-border/50">

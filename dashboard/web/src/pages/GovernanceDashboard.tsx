@@ -10,6 +10,13 @@ import { TreasuryPaymentsCard } from '../components/governance/TreasuryPaymentsC
 import { TSpendScanProgress } from '../components/governance/TSpendScanProgress';
 import { TreasuryStats } from '../components/governance/TreasuryStats';
 import { ActiveTreasuryVotes } from '../components/governance/ActiveTreasuryVotes';
+import { useVisiblePoll } from '../hooks/useVisiblePoll';
+import {
+  BalanceSample,
+  getTreasuryBalanceHistory,
+  getTreasuryInfo,
+  TSpend,
+} from '../services/treasuryApi';
 import { 
   triggerTSpendScan, 
   getTSpendScanProgress,
@@ -31,6 +38,27 @@ export const GovernanceDashboard = () => {
   const [scanProgress, setScanProgress] = useState<ScanProgressType | null>(null);
   const [lastScanStatus, setLastScanStatus] = useState(getScanStatus());
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // One treasury fetch for the whole page. Each card used to poll this same
+  // endpoint on its own timer, including in background tabs.
+  const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null);
+  const [activeTSpends, setActiveTSpends] = useState<TSpend[]>([]);
+  const [treasuryLoaded, setTreasuryLoaded] = useState(false);
+  const [balanceSeries, setBalanceSeries] = useState<BalanceSample[]>([]);
+
+  useVisiblePoll(() => {
+    getTreasuryInfo()
+      .then((i) => {
+        setTreasuryBalance(i.balance);
+        setActiveTSpends(i.activeTSpends ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setTreasuryLoaded(true));
+  }, 60000);
+
+  useEffect(() => {
+    getTreasuryBalanceHistory().then(setBalanceSeries).catch(() => {});
+  }, []);
 
   // Sync with historical snapshot on first load
   useEffect(() => {
@@ -232,8 +260,12 @@ export const GovernanceDashboard = () => {
   return (
     <div className="space-y-6">
         {/* Statistics, charts + active votes (top) */}
-        <TreasuryStats key={`stats-${refreshTrigger}`} />
-        <ActiveTreasuryVotes />
+        <TreasuryStats
+          balance={treasuryBalance}
+          series={balanceSeries}
+          refreshKey={refreshTrigger}
+        />
+        <ActiveTreasuryVotes active={activeTSpends} loaded={treasuryLoaded} />
 
         {/* Historical Scan Section */}
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
@@ -284,9 +316,9 @@ export const GovernanceDashboard = () => {
         )}
 
         {/* Treasury Cards */}
-        <div key={refreshTrigger} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <TreasuryValueCard />
-          <TreasuryPaymentsCard />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <TreasuryValueCard balance={treasuryBalance} series={balanceSeries} />
+          <TreasuryPaymentsCard refreshKey={refreshTrigger} />
         </div>
       </div>
   );

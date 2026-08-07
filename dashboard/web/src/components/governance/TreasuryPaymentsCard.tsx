@@ -11,7 +11,6 @@ import {
   Upload,
   Trash2
 } from 'lucide-react';
-import { getTreasuryInfo } from '../../services/treasuryApi';
 import { 
   getTreasuryStats, 
   exportTreasuryData,
@@ -21,51 +20,28 @@ import {
   TSpendRecord
 } from '../../services/treasuryStorage';
 
-export const TreasuryPaymentsCard = () => {
-  const [loading, setLoading] = useState(true);
-  const [localStats, setLocalStats] = useState(() => {
-    const stats = getTreasuryStats();
-    console.log('💳 TreasuryPaymentsCard initial state:', stats);
-    return stats;
-  });
-  const [storedTSpends, setStoredTSpends] = useState<TSpendRecord[]>(() => {
-    const tspends = getAllTSpends();
-    console.log('💳 TreasuryPaymentsCard initial TSpends:', tspends.length);
-    return tspends;
-  });
+interface TreasuryPaymentsCardProps {
+  // Bumped when a scan or snapshot sync writes new TSpends to localStorage.
+  refreshKey?: number;
+}
+
+export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardProps) => {
+  const [localStats, setLocalStats] = useState(() => getTreasuryStats());
+  const [storedTSpends, setStoredTSpends] = useState<TSpendRecord[]>(() => getAllTSpends());
   const [importText, setImportText] = useState('');
   const [showImport, setShowImport] = useState(false);
 
-  const fetchData = async () => {
-    try {
-      console.log('💳 TreasuryPaymentsCard fetching data...');
-      setLoading(true);
-      await getTreasuryInfo();
-
-      // Refresh stored TSpends from localStorage
-      const freshTSpends = getAllTSpends();
-      const freshStats = getTreasuryStats();
-      console.log('💳 TreasuryPaymentsCard refreshed:', freshStats, `${freshTSpends.length} TSpends`);
-      setStoredTSpends(freshTSpends);
-      setLocalStats(freshStats);
-      setLoading(false);
-    } catch (err) {
-      console.error('Failed to fetch treasury info:', err);
-      setLoading(false);
-    }
+  // This card renders only localStorage-backed data. It used to await
+  // getTreasuryInfo() every 60s and discard the response.
+  const fetchData = () => {
+    setStoredTSpends(getAllTSpends());
+    setLocalStats(getTreasuryStats());
   };
 
   useEffect(() => {
-    console.log('💳 TreasuryPaymentsCard mounted');
     fetchData();
-
-    // Auto-refresh every 60 seconds
-    const interval = setInterval(fetchData, 60000);
-    return () => {
-      console.log('💳 TreasuryPaymentsCard unmounted');
-      clearInterval(interval);
-    };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   const handleExport = () => {
     const data = exportTreasuryData();
@@ -234,14 +210,7 @@ export const TreasuryPaymentsCard = () => {
         </div>
       )}
 
-      {/* Loading State */}
-      {loading ? (
-        <div className="text-center py-8">
-          <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-          <p className="mt-2 text-sm text-muted-foreground">Loading payments...</p>
-        </div>
-      ) : (
-        <>
+      <>
           {/* Stored TSpends from localStorage */}
           {storedTSpends && storedTSpends.length > 0 && (
             <div>
@@ -282,8 +251,7 @@ export const TreasuryPaymentsCard = () => {
               <p className="text-sm mt-1">Treasury spends will appear here when detected or scanned</p>
             </div>
           )}
-        </>
-      )}
+      </>
     </div>
   );
 };

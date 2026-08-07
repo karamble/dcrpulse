@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Landmark } from 'lucide-react';
 import { Area, AreaChart, ResponsiveContainer } from 'recharts';
-import { BalanceSample, getTreasuryBalanceHistory, getTreasuryInfo } from '../../services/treasuryApi';
+import { BalanceSample } from '../../services/treasuryApi';
 import { getBisonrelayRates } from '../../services/bisonrelayApi';
 
 const usdCompact = (v: number) =>
@@ -31,26 +31,20 @@ const ago = (rfc3339: string): string => {
   return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
 };
 
-export const TreasuryValueCard = () => {
-  const [balance, setBalance] = useState<number | null>(null);
+interface TreasuryValueCardProps {
+  balance: number | null;
+  series: BalanceSample[];
+}
+
+// balance and series come from GovernanceDashboard's shared treasury poll; the
+// USD rate is this card's own concern.
+export const TreasuryValueCard = ({ balance, series }: TreasuryValueCardProps) => {
   const [rate, setRate] = useState<{ usd: number; source: string; at: string } | null>(null);
-  const [series, setSeries] = useState<BalanceSample[]>([]);
 
   useEffect(() => {
-    const load = () => {
-      getTreasuryInfo()
-        .then((i) => setBalance(i.balance))
-        .catch(() => {});
-      getBisonrelayRates()
-        .then((r) => setRate({ usd: r.dcr_usd, source: r.source, at: r.updated_at }))
-        .catch(() => {});
-    };
-    load();
-    getTreasuryBalanceHistory()
-      .then(setSeries)
+    getBisonrelayRates()
+      .then((r) => setRate({ usd: r.dcr_usd, source: r.source, at: r.updated_at }))
       .catch(() => {});
-    const id = window.setInterval(load, 60000);
-    return () => window.clearInterval(id);
   }, []);
 
   const hasRate = !!rate && rate.usd > 0;
