@@ -30,7 +30,6 @@ import (
 const (
 	politeiaBaseURL           = "https://proposals.decred.org/api"
 	politeiaTimeout           = 30 * time.Second
-	politeiaCastTimeout       = 60 * time.Second
 	politeiaSignMessagesChunk = 100
 
 	// ProposalsRefreshCooldown is how long the manual proposals refresh stays
@@ -91,7 +90,10 @@ var (
 	piCachedLists   = map[string]piListCacheEntry{} // keyed by status bucket
 	piCachedDetails = map[string]piDetailCacheEntry{}
 	piPreparedVotes = map[string]piPreparedVote{}
-	piHTTPClient    = &http.Client{Timeout: politeiaTimeout, Transport: ExternalTransport()}
+	// No client Timeout: it would bound the whole request-response cycle and
+	// override a longer context, so a batch ballot could never outlive it.
+	// piPost is the only user and sets its own per-call deadline.
+	piHTTPClient = &http.Client{Transport: ExternalTransport()}
 
 	// piListFetchMu single-flights cold list fetches so concurrent readers on
 	// an empty bucket trigger one upstream fetch, not one each. piListFailAt is
@@ -878,7 +880,10 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 	}
 
 	var resp piCastBallotResponse
-	if err := piPost(ctx, "/ticketvote/v1/castballot", piCastBallotRequest{Votes: votes}, &resp); err != nil {
+	// Timeout 0: the handler's budget bounds this. The request carries one
+	// signed vote per eligible ticket, so a fixed cap here cuts a large ballot
+	// mid-cast with no receipts recorded.
+	if err := piPost(ctx, "/ticketvote/v1/castballot", piCastBallotRequest{Votes: votes}, &resp, 0); err != nil {
 		return nil, fmt.Errorf("castballot: %w", err)
 	}
 	for _, r := range resp.Receipts {
@@ -1036,7 +1041,7 @@ type piVoteOption struct {
 
 func piInventory(ctx context.Context) (piInventoryResp, error) {
 	var out piInventoryResp
-	err := piPost(ctx, "/ticketvote/v1/inventory", struct{}{}, &out)
+	err := piPost(ctx, "/ticketvote/v1/inventory", struct{}{}, &out, politeiaTimeout)
 	return out, err
 }
 
@@ -1064,7 +1069,7 @@ func piRecordsBatch(ctx context.Context, tokens []string, filenames []string) (m
 		})
 	}
 	var resp piRecordsResp
-	if err := piPost(ctx, "/records/v1/records", body, &resp); err != nil {
+	if err := piPost(ctx, "/records/v1/records", body, &resp, politeiaTimeout); err != nil {
 		return nil, err
 	}
 	return resp.Records, nil
@@ -1075,7 +1080,7 @@ func piSummariesBatch(ctx context.Context, tokens []string) (map[string]piSummar
 		Tokens []string `json:"tokens"`
 	}{Tokens: tokens}
 	var resp piSummariesResp
-	if err := piPost(ctx, "/ticketvote/v1/summaries", body, &resp); err != nil {
+	if err := piPost(ctx, "/ticketvote/v1/summaries", body, &resp, politeiaTimeout); err != nil {
 		return nil, err
 	}
 	return resp.Summaries, nil
@@ -1086,7 +1091,7 @@ func piVoteDetails(ctx context.Context, token string) (*piVoteDetailsResp, error
 		Token string `json:"token"`
 	}{Token: token}
 	var resp piVoteDetailsResp
-	if err := piPost(ctx, "/ticketvote/v1/details", body, &resp); err != nil {
+	if err := piPost(ctx, "/ticketvote/v1/details", body, &resp, politeiaTimeout); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -1099,7 +1104,7 @@ func piResults(ctx context.Context, token string) ([]piCastVote, error) {
 		Token string `json:"token"`
 	}{Token: token}
 	var resp piResultsResp
-	if err := piPost(ctx, "/ticketvote/v1/results", body, &resp); err != nil {
+	if err := piPost(ctx, "/ticketvote/v1/results", body, &resp, politeiaTimeout); err != nil {
 		return nil, err
 	}
 	return resp.Votes, nil
@@ -1112,20 +1117,26 @@ func piComments(ctx context.Context, token string) ([]piComment, error) {
 		Token string `json:"token"`
 	}{Token: token}
 	var resp piCommentsResp
-	if err := piPost(ctx, "/comments/v1/comments", body, &resp); err != nil {
+	if err := piPost(ctx, "/comments/v1/comments", body, &resp, politeiaTimeout); err != nil {
 		return nil, err
 	}
 	return resp.Comments, nil
 }
 
-func piPost(ctx context.Context, path string, body any, out any) error {
+// piPost issues a Politeia POST. A positive timeout bounds this call; zero
+// leaves it to the caller's context, which the batch ballot needs since its
+// size scales with the wallet's ticket count.
+func piPost(ctx context.Context, path string, body any, out any, timeout time.Duration) error {
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
-	rctx, cancel := context.WithTimeout(ctx, politeiaTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(rctx, http.MethodPost, politeiaBaseURL+path, bytes.NewReader(buf))
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, politeiaBaseURL+path, bytes.NewReader(buf))
 	if err != nil {
 		return err
 	}

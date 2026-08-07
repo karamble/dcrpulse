@@ -291,7 +291,7 @@ func trickleOneVote(ctx context.Context, st *vtRunState, vote piBallotVote, at t
 			}
 		}
 		var resp piCastBallotResponse
-		if err := piPost(ctx, "/ticketvote/v1/castballot", piCastBallotRequest{Votes: []piBallotVote{vote}}, &resp); err != nil {
+		if err := piPost(ctx, "/ticketvote/v1/castballot", piCastBallotRequest{Votes: []piBallotVote{vote}}, &resp, politeiaTimeout); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
