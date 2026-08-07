@@ -220,9 +220,10 @@ func FetchBlockchainInfo() (*types.BlockchainInfo, error) {
 	}
 
 	return &types.BlockchainInfo{
-		BlockHeight:  info.Blocks,
-		BlockHash:    bestBlockHash.String(),
-		Difficulty:   float64(info.Difficulty),
+		BlockHeight: info.Blocks,
+		BlockHash:   bestBlockHash.String(),
+		// Difficulty is the packed nBits target; DifficultyRatio is the readable one.
+		Difficulty:   info.DifficultyRatio,
 		ChainSize:    0, // Would need to calculate from disk usage
 		BlockTime:    blockTime,
 		RecentBlocks: recentBlocks,
@@ -239,16 +240,14 @@ func FetchNetworkInfo() (*types.NetworkInfo, error) {
 		peerCount = len(peerInfo)
 	}
 
-	// Get network difficulty and calculate hashrate - direct RPC method
+	// dcrd measures work over recent blocks; deriving this from difficulty
+	// instead assumes blocks arrive exactly on target. Returns 0, not an error.
 	hashrateStr := "N/A"
 	networkHashPS := float64(0)
 
-	difficulty, err := rpc.DcrdClient.GetDifficulty(ctx)
-	if err == nil && difficulty > 0 {
-		// Calculate network hashrate from difficulty
-		// Formula: hashrate = difficulty * 2^32 / target_block_time
-		// For Decred, target block time is 5 minutes = 300 seconds
-		networkHashPS = difficulty * math.Pow(2, 32) / 300
+	hashPS, err := rpc.DcrdClient.GetNetworkHashPS(ctx)
+	if err == nil && hashPS > 0 {
+		networkHashPS = float64(hashPS)
 		hashrateStr = utils.FormatHashrate(networkHashPS)
 	}
 
