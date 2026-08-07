@@ -5,7 +5,7 @@ import {
   AccountInfo,
   PrivacyStatus,
   PurchaseEvent,
-  StakingInfo,
+  WalletStakingInfo,
   VSPInfo,
   getAccounts,
   getPrivacyStatus,
@@ -23,7 +23,7 @@ const formatDcr = (v: number): string => v.toFixed(8);
 interface PurchaseTicketFormProps {
   // Ticket price / pool snapshot, polled by PurchaseTab so the parent and the
   // form share one wallet-dashboard fetch.
-  staking: StakingInfo | null;
+  staking: WalletStakingInfo | null;
 }
 
 export const PurchaseTicketForm = ({ staking }: PurchaseTicketFormProps) => {

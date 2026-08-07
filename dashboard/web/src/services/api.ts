@@ -261,7 +261,10 @@ export interface WalletAddress {
   path: string;
 }
 
-export interface StakingInfo {
+// WalletStakingInfo mirrors Go's types.WalletStakingInfo (/api/wallet/dashboard).
+// Distinct from StakingInfo above, which is network-wide staking data from
+// /api/dashboard; the two share five field names but are not interchangeable.
+export interface WalletStakingInfo {
   blockHeight: number;
   difficulty: number;
   totalSubsidy: number;
@@ -291,7 +294,7 @@ export interface WalletDashboardData {
   walletStatus: WalletStatus;
   accountInfo: AccountInfo;
   accounts: AccountInfo[];
-  stakingInfo?: StakingInfo;
+  stakingInfo?: WalletStakingInfo;
   lastUpdate: string;
 }
 
