@@ -112,17 +112,19 @@ func main() {
 	if grpcConfig.GrpcCert != "" {
 		if err := rpc.InitWalletGrpcClient(grpcConfig); err != nil {
 			log.Printf("Warning: Could not connect to dcrwallet gRPC on startup: %v", err)
-			log.Println("Streaming features will be unavailable")
-		} else {
-			// Supervise RpcSync from dcrd. Resumes automatically when the
-			// wallet is loaded, reconnects with backoff if the stream dies.
-			go superviseRpcSync(context.Background())
-			// Re-lock accounts left unlocked by a subsystem that is no longer
-			// running, which a restart would otherwise leave open indefinitely.
-			services.StartAccountLockMonitor(context.Background())
-			services.StartTransactionWatcher(context.Background())
-			services.StartTicketWatcher(context.Background())
+			log.Println("Streaming features will attach once it connects")
 		}
+		// Started even when the dial failed: each tolerates a nil client and
+		// picks one up when a wallet switch re-dials.
+		//
+		// Supervise RpcSync from dcrd. Resumes automatically when the
+		// wallet is loaded, reconnects with backoff if the stream dies.
+		go superviseRpcSync(context.Background())
+		// Re-lock accounts left unlocked by a subsystem that is no longer
+		// running, which a restart would otherwise leave open indefinitely.
+		services.StartAccountLockMonitor(context.Background())
+		services.StartTransactionWatcher(context.Background())
+		services.StartTicketWatcher(context.Background())
 	} else {
 		log.Println("No gRPC certificate provided. Streaming features disabled.")
 	}
