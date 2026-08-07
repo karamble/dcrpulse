@@ -12,7 +12,9 @@ import (
 	"log"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,7 +24,6 @@ import (
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"golang.org/x/sync/errgroup"
 )
 
 func FetchWalletStatus() (*types.WalletStatus, error) {
@@ -1795,6 +1796,26 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 	return hash.String(), nil
 }
 
+// PartialPassphraseChangeError reports that the wallet passphrase was changed
+// but the listed accounts kept the previous one. The wallet-wide change cannot
+// be rolled back, so this is a state the user has to know about: those accounts
+// cannot be unlocked for spending with either passphrase until they are updated.
+type PartialPassphraseChangeError struct {
+	Accounts []uint32
+	Err      error
+}
+
+func (e *PartialPassphraseChangeError) Error() string {
+	nums := make([]string, len(e.Accounts))
+	for i, a := range e.Accounts {
+		nums[i] = strconv.FormatUint(uint64(a), 10)
+	}
+	return fmt.Sprintf("the wallet passphrase was changed, but account(s) %s still use the previous one "+
+		"and cannot be spent from until updated: %v", strings.Join(nums, ", "), e.Err)
+}
+
+func (e *PartialPassphraseChangeError) Unwrap() error { return e.Err }
+
 // ChangePrivatePassphrase rotates the wallet's private (signing)
 // passphrase and every account's per-account passphrase. Mirrors
 // Decrediton's app/actions/ControlActions.js:187-232: wallet-wide
@@ -1821,23 +1842,47 @@ func ChangePrivatePassphrase(ctx context.Context, oldPass, newPass []byte) error
 		return fmt.Errorf("list accounts: %w", err)
 	}
 
-	g, gctx := errgroup.WithContext(ctx)
+	// Skip imported (2^31 - 1) and xpub-imported (>= 2^31) accounts.
+	targets := make([]uint32, 0, len(acctsResp.GetAccounts()))
 	for _, a := range acctsResp.GetAccounts() {
-		a := a
-		// Skip imported (2^31 - 1) and xpub-imported (>= 2^31) accounts.
-		if a.GetAccountNumber() >= 2147483647 {
-			continue
+		if a.GetAccountNumber() < 2147483647 {
+			targets = append(targets, a.GetAccountNumber())
 		}
-		g.Go(func() error {
-			_, perr := rpc.WalletGrpcClient.SetAccountPassphrase(gctx, &pb.SetAccountPassphraseRequest{
-				AccountNumber:        a.GetAccountNumber(),
+	}
+
+	// Every account is attempted even if one fails. The wallet-wide change above
+	// has already happened and cannot be undone, so cancelling the rest would
+	// leave more accounts holding the old passphrase than necessary. Matches
+	// Decrediton's Promise.all, which also lets every call finish.
+	errs := make([]error, len(targets))
+	var wg sync.WaitGroup
+	for i, acct := range targets {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = rpc.WalletGrpcClient.SetAccountPassphrase(ctx, &pb.SetAccountPassphraseRequest{
+				AccountNumber:        acct,
 				AccountPassphrase:    oldPass,
 				NewAccountPassphrase: newPass,
 			})
-			return perr
-		})
+		}()
 	}
-	return g.Wait()
+	wg.Wait()
+
+	var failed []uint32
+	var firstErr error
+	for i, err := range errs {
+		if err != nil {
+			failed = append(failed, targets[i])
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	if len(failed) > 0 {
+		return &PartialPassphraseChangeError{Accounts: failed, Err: firstErr}
+	}
+	return nil
 }
 
 // DiscoverUsage unlocks the wallet and runs dcrwallet's DiscoverUsage gRPC to

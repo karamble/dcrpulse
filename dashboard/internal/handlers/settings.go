@@ -7,6 +7,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -209,7 +210,14 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	if err := services.ChangePrivatePassphrase(ctx, oldPass, newPass); err != nil {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
+		var partial *services.PartialPassphraseChangeError
 		switch {
+		// Must precede the passphrase case: this message contains the word, and
+		// reporting it as a wrong passphrase would send the user to retry with
+		// the old one when the change has in fact already happened.
+		case errors.As(err, &partial):
+			log.Printf("ChangePrivatePassphrase partial: %v", err)
+			http.Error(w, msg, http.StatusInternalServerError)
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
