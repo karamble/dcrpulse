@@ -18,6 +18,7 @@ import (
 	"dcrpulse/internal/types"
 	"dcrpulse/internal/utils"
 
+	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrutil/v4"
 	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
 )
@@ -48,6 +49,10 @@ type chainSnapshot struct {
 	poolOnce  sync.Once
 	poolValue dcrutil.Amount
 	poolErr   error
+
+	headerOnce sync.Once
+	bestHdr    *chainjson.GetBlockHeaderVerboseResult
+	headerErr  error
 }
 
 func (s *chainSnapshot) blockChainInfo(ctx context.Context) (*chainjson.GetBlockChainInfoResult, error) {
@@ -68,6 +73,24 @@ func (s *chainSnapshot) supply(ctx context.Context) (dcrutil.Amount, error) {
 func (s *chainSnapshot) ticketPoolValue(ctx context.Context) (dcrutil.Amount, error) {
 	s.poolOnce.Do(func() { s.poolValue, s.poolErr = rpc.DcrdClient.GetTicketPoolValue(ctx) })
 	return s.poolValue, s.poolErr
+}
+
+// bestHeader returns the best block's header.
+func (s *chainSnapshot) bestHeader(ctx context.Context) (*chainjson.GetBlockHeaderVerboseResult, error) {
+	s.headerOnce.Do(func() {
+		info, err := s.blockChainInfo(ctx)
+		if err != nil {
+			s.headerErr = err
+			return
+		}
+		hash, err := chainhash.NewHashFromStr(info.BestBlockHash)
+		if err != nil {
+			s.headerErr = fmt.Errorf("best block hash %q: %w", info.BestBlockHash, err)
+			return
+		}
+		s.bestHdr, s.headerErr = rpc.DcrdClient.GetBlockHeaderVerbose(ctx, hash)
+	})
+	return s.bestHdr, s.headerErr
 }
 
 // FetchDashboardData assembles the dashboard payload. The sections are
@@ -528,13 +551,11 @@ func fetchStakingInfo(ctx context.Context, snap *chainSnapshot) (*types.StakingI
 		}
 	}
 
-	// Get live tickets from pool - direct RPC method
-	// LiveTickets returns []*chainhash.Hash directly
-	liveTickets, err := rpc.DcrdClient.LiveTickets(ctx)
+	// PoolSize is the live ticket count; the pool itself is tens of
+	// thousands of hashes.
 	poolSize := uint32(0)
-	if err == nil && liveTickets != nil {
-		// Count the actual number of live tickets
-		poolSize = uint32(len(liveTickets))
+	if header, err := snap.bestHeader(ctx); err == nil {
+		poolSize = header.PoolSize
 	}
 
 	// Get ticket pool value (total locked DCR) - direct RPC method
