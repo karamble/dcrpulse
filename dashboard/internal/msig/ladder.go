@@ -85,19 +85,18 @@ func ParseXpub(s string, params *chaincfg.Params) (*hdkeychain.ExtendedKey, erro
 // record's network.
 func ParseXpubAnyNet(s string) error {
 	var lastErr error
-	for _, network := range []string{"mainnet", "testnet3", "simnet"} {
-		params, err := paramsForNetwork(network)
-		if err != nil {
-			continue
-		}
+	// Iterate the parameters themselves rather than network names: a name
+	// this package does not recognise would simply be skipped.
+	for _, params := range []*chaincfg.Params{
+		chaincfg.MainNetParams(),
+		chaincfg.TestNet3Params(),
+		chaincfg.SimNetParams(),
+	} {
 		if _, err := ParseXpub(s, params); err == nil {
 			return nil
 		} else {
 			lastErr = err
 		}
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("malformed extended public key")
 	}
 	return lastErr
 }

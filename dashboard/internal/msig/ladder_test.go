@@ -255,6 +255,13 @@ func TestParseXpubRejections(t *testing.T) {
 	if err := ParseXpubAnyNet(sim); err != nil {
 		t.Fatalf("any-net rejected a valid simnet xpub: %v", err)
 	}
+	test3 := testXpub(t, "alice", 1, chaincfg.TestNet3Params())
+	if _, err := ParseXpub(test3, mainnet); err == nil {
+		t.Fatalf("testnet xpub accepted under mainnet params")
+	}
+	if err := ParseXpubAnyNet(test3); err != nil {
+		t.Fatalf("any-net rejected a valid testnet xpub: %v", err)
+	}
 	if err := ParseXpubAnyNet("nonsense"); err == nil {
 		t.Fatalf("any-net accepted garbage")
 	}
