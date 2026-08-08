@@ -10,8 +10,9 @@ import {
   lnFeeLimitAtoms,
   streamLnPayment,
 } from '../../services/lightningApi';
+import { formatDcrTrimmed, toDcr } from '../../utils/amounts';
 
-const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
+const fmtDcr = formatDcrTrimmed;
 
 // LnPayChip renders an lnpay://<bolt11> link found in BR page/post content as a
 // pay chip with an explicit confirm - matching how bruig/brclient turn an
@@ -50,7 +51,7 @@ export const LnPayChip = ({ invoice }: { invoice: string }) => {
     let cancelled = false;
     getBisonrelayRates()
       .then((r) => {
-        if (!cancelled && r.dcr_usd > 0) setUsd((decoded.numAtoms / 1e8) * r.dcr_usd);
+        if (!cancelled && r.dcr_usd > 0) setUsd(toDcr(decoded.numAtoms) * r.dcr_usd);
       })
       .catch(() => {
         /* USD is best-effort */

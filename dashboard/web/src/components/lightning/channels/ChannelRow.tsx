@@ -1,7 +1,8 @@
 import { ChevronRight } from 'lucide-react';
 import { LightningChannel } from '../../../services/lightningApi';
+import { formatDcr } from '../../../utils/amounts';
 
-const fmtDcr = (atoms?: number) => ((atoms || 0) / 1e8).toFixed(8);
+const fmtDcr = (atoms?: number) => formatDcr(atoms || 0);
 const truncate = (s: string, n = 10) =>
   s.length > 2 * n + 3 ? `${s.slice(0, n)}…${s.slice(-n)}` : s;
 

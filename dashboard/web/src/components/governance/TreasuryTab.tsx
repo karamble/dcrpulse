@@ -15,6 +15,7 @@ import {
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { formatDcr } from '../../utils/amounts';
 
 const POLICIES = ['yes', 'no', 'abstain'] as const;
 type Policy = (typeof POLICIES)[number];
@@ -201,7 +202,7 @@ export const TreasuryTab = () => {
             {(t.amount || t.expiry) && (
               <div className="text-xs text-muted-foreground space-x-3">
                 {t.amount ? (
-                  <span>amount: {(t.amount / 1e8).toFixed(2)} DCR</span>
+                  <span>amount: {formatDcr(t.amount, 2)} DCR</span>
                 ) : null}
                 {t.expiry ? <span>expires at block {t.expiry.toLocaleString()}</span> : null}
               </div>

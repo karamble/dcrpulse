@@ -20,8 +20,8 @@ import {
 } from '../../../services/msigApi';
 import { ProposalComposePanel } from './ProposalComposePanel';
 import { ProposalList } from './ProposalList';
+import { formatDcr } from '../../../utils/amounts';
 
-const formatDcr = (atoms: number): string => (atoms / 1e8).toFixed(8);
 
 const downloadJson = (data: unknown, filename: string) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

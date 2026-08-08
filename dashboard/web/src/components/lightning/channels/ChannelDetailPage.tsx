@@ -6,8 +6,9 @@ import {
   getLightningChannels,
 } from '../../../services/lightningApi';
 import { CloseChannelModal } from './CloseChannelModal';
+import { formatDcr } from '../../../utils/amounts';
 
-const fmtDcr = (atoms?: number) => ((atoms || 0) / 1e8).toFixed(8) + ' DCR';
+const fmtDcr = (atoms?: number) => formatDcr(atoms || 0) + ' DCR';
 
 const fundingTxid = (channelPoint: string): string => {
   const colon = channelPoint.indexOf(':');

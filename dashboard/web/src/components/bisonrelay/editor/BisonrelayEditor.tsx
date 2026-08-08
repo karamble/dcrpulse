@@ -45,6 +45,7 @@ import { SharedFilePickerModal } from './SharedFilePickerModal';
 import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './ImageAttachModal';
 import { PageLinkPickerModal } from './PageLinkPickerModal';
 import { blobToDataB64 } from './imageCompress';
+import { formatDcrTrimmed } from '../../../utils/amounts';
 
 // MAX_INLINE_BYTES is the per-attachment ceiling for inline embeds. Files
 // above this should use the "Link to shared content" flow instead (which
@@ -629,8 +630,7 @@ const SizeIndicator = ({
 // Embed download costs are in atoms (1 DCR = 1e8), not the milli-atoms used
 // for payment/tip records.
 function formatCost(atoms: number): string {
-  const dcr = atoms / 1e8;
-  return `${dcr.toFixed(8).replace(/\.?0+$/, '')} DCR`;
+  return `${formatDcrTrimmed(atoms)} DCR`;
 }
 
 function formatBytes(n: number): string {
@@ -763,7 +763,7 @@ const PreviewPageSegments = ({ segments }: { segments: BisonrelayPageSegment[] }
       }
       if (seg.kind === 'embed' && seg.download) {
         const label = seg.filename || seg.name || 'file';
-        const price = seg.cost ? `${(seg.cost / 1e8).toFixed(8).replace(/\.?0+$/, '')} DCR` : 'free';
+        const price = seg.cost ? `${formatDcrTrimmed(seg.cost)} DCR` : 'free';
         return (
           <div
             key={i}

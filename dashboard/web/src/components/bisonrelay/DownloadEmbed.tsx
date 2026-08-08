@@ -19,6 +19,7 @@ import {
 } from '../../services/lightningApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { ImageViewerModal } from './ImageViewerModal';
+import { formatDcrTrimmed, toDcr } from '../../utils/amounts';
 
 // DownloadEmbedSeg is the subset of a BR embed segment a file-transfer embed
 // needs. Both BisonrelayPostBodySegment and BisonrelayPageSegment satisfy it,
@@ -36,8 +37,7 @@ export interface DownloadEmbedSeg {
 // formatDcrFromAtoms renders an atom amount as a trimmed DCR string. BR
 // shared-file / embed costs are in atoms (1 DCR = 1e8), distinct from the
 // milli-atoms used for payment and tip records.
-export const formatDcrFromAtoms = (atoms: number): string =>
-  (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
+export const formatDcrFromAtoms = formatDcrTrimmed;
 
 export const formatDownloadBytes = (n: number): string => {
   if (!n) return '';
@@ -100,7 +100,7 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
     getBisonrelayRates()
       .then((r) => {
         if (!cancelled && r.dcr_usd > 0) {
-          setUsd({ amount: (cost / 1e8) * r.dcr_usd, source: r.source, updatedAt: r.updated_at });
+          setUsd({ amount: toDcr(cost) * r.dcr_usd, source: r.source, updatedAt: r.updated_at });
         }
       })
       .catch(() => {

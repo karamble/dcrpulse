@@ -9,11 +9,11 @@ import {
 } from '../../services/api';
 import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
+import { formatDcr } from '../../utils/amounts';
 
 const MAX_DCR = 21_000_000;
 const CONSTRUCT_DEBOUNCE_MS = 500;
 
-const formatDcr = (atoms: number): string => (atoms / 1e8).toFixed(8);
 
 const validateAmount = (raw: string): string | null => {
   const trimmed = raw.trim();

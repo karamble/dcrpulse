@@ -28,6 +28,7 @@ import {
   unshareBisonrelayFile,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { formatDcrTrimmed, toDcr } from '../../utils/amounts';
 
 type Section = 'add' | 'shared' | 'downloads';
 
@@ -60,9 +61,8 @@ const formatBytes = (n: number): string => {
 // payment/tip records.
 const formatDCR = (atoms: number): string => {
   if (!atoms) return 'Free';
-  const dcr = atoms / 1e8;
-  if (dcr < 0.0001) return `${atoms} atoms`;
-  return `${dcr.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} DCR`;
+  if (toDcr(atoms) < 0.0001) return `${atoms} atoms`;
+  return `${formatDcrTrimmed(atoms)} DCR`;
 };
 
 export const BisonrelayFiles = () => {

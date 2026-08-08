@@ -16,8 +16,8 @@ import {
   rejectMsigProposal,
   signMsigProposal,
 } from '../../../services/msigApi';
+import { formatDcr } from '../../../utils/amounts';
 
-const formatDcr = (atoms: number): string => (atoms / 1e8).toFixed(8);
 
 const tone = (status: string): string => {
   switch (status) {

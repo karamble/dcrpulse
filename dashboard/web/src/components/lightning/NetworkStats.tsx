@@ -28,10 +28,10 @@ import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 import { OnionIcon } from './OnionIcon';
 import { ScoreMeter } from './ScoreMeter';
 import { StatusPill } from './StatusPill';
+import { formatDcr } from '../../utils/amounts';
 
 const MAX_TOP_NODES = 50;
 
-const atomsToDcr = (atoms: number) => (atoms / 1e8).toFixed(8);
 const truncate = (s: string, n = 10) =>
   s.length > 2 * n + 3 ? `${s.slice(0, n)}...${s.slice(-n)}` : s;
 
@@ -178,17 +178,17 @@ export const NetworkStats = () => {
         <StatCard
           icon={<Wallet className="h-3.5 w-3.5" />}
           label="Total capacity"
-          value={`${atomsToDcr(info.totalNetworkCapacity)} DCR`}
+          value={`${formatDcr(info.totalNetworkCapacity)} DCR`}
         />
         <StatCard
           icon={<Sigma className="h-3.5 w-3.5" />}
           label="Avg channel size"
-          value={`${atomsToDcr(info.avgChannelSize)} DCR`}
+          value={`${formatDcr(info.avgChannelSize)} DCR`}
         />
         <StatCard
           icon={<Layers className="h-3.5 w-3.5" />}
           label="Median channel size"
-          value={`${atomsToDcr(info.medianChannelSize)} DCR`}
+          value={`${formatDcr(info.medianChannelSize)} DCR`}
         />
         <StatCard
           icon={<GitBranch className="h-3.5 w-3.5" />}
@@ -198,12 +198,12 @@ export const NetworkStats = () => {
         <StatCard
           icon={<ArrowDownToLine className="h-3.5 w-3.5" />}
           label="Smallest channel"
-          value={`${atomsToDcr(info.minChannelSize)} DCR`}
+          value={`${formatDcr(info.minChannelSize)} DCR`}
         />
         <StatCard
           icon={<ArrowUpToLine className="h-3.5 w-3.5" />}
           label="Largest channel"
-          value={`${atomsToDcr(info.maxChannelSize)} DCR`}
+          value={`${formatDcr(info.maxChannelSize)} DCR`}
         />
         <StatCard
           icon={<GitBranch className="h-3.5 w-3.5" />}
@@ -250,7 +250,7 @@ export const NetworkStats = () => {
                       {agg && (
                         <div
                           className="mt-1 max-w-[160px]"
-                          title={`Your channel — Local ${atomsToDcr(agg.local)} DCR / Remote ${atomsToDcr(agg.remote)} DCR`}
+                          title={`Your channel — Local ${formatDcr(agg.local)} DCR / Remote ${formatDcr(agg.remote)} DCR`}
                         >
                           <div className="h-1 rounded-full bg-muted/30 overflow-hidden">
                             <div
@@ -261,9 +261,9 @@ export const NetworkStats = () => {
                             />
                           </div>
                           <div className="mt-0.5 flex justify-between text-[10px] font-normal text-muted-foreground">
-                            <span>{(agg.local / 1e8).toFixed(3)}</span>
+                            <span>{formatDcr(agg.local, 3)}</span>
                             {!agg.anyOpen && <span className="text-warning">pending</span>}
-                            <span>{(agg.remote / 1e8).toFixed(3)}</span>
+                            <span>{formatDcr(agg.remote, 3)}</span>
                           </div>
                         </div>
                       )}
@@ -284,7 +284,7 @@ export const NetworkStats = () => {
                     )}
                     <td className="px-2 py-2 text-right">{n.numChannels.toLocaleString()}</td>
                     <td className="px-2 py-2 text-right font-mono text-xs">
-                      {atomsToDcr(n.capacityAtoms)}
+                      {formatDcr(n.capacityAtoms)}
                     </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {(n.address || !n.onionAddress) && (

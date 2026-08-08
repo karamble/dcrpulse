@@ -32,12 +32,12 @@ import {
   getAccounts,
 } from '../../services/api';
 import { AddressGroups } from '../AddressGroups';
+import { formatDcr } from '../../utils/amounts';
 
 const MAX_DCR = 21_000_000;
 // Above 1 DCR a fee is almost certainly a mistake; we soft-warn (non-blocking).
 const HIGH_FEE_ATOMS = 100_000_000;
 
-const formatDcr = (atoms: number): string => (atoms / 1e8).toFixed(8);
 
 const validateAmount = (raw: string): string | null => {
   const trimmed = raw.trim();

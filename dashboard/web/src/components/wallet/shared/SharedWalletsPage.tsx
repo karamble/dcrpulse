@@ -18,6 +18,7 @@ import {
 import { PassphraseModal } from '../PassphraseModal';
 import { IncomingInviteBanner } from './IncomingInviteBanner';
 import { SharedWalletCreateWizard } from './SharedWalletCreateWizard';
+import { formatDcr } from '../../../utils/amounts';
 
 const statusTone = (status: string): string => {
   switch (status) {
@@ -33,7 +34,6 @@ const statusTone = (status: string): string => {
   }
 };
 
-const formatDcr = (atoms: number): string => (atoms / 1e8).toFixed(8);
 
 const hasPendingApproval = (wlt: MsigWallet): boolean =>
   Object.values(wlt.proposals ?? {}).some((p) => p.status === 'incoming');

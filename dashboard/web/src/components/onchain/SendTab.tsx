@@ -16,12 +16,12 @@ import {
 import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { formatDcr } from '../../utils/amounts';
 
 const MAX_DCR = 21_000_000;
 const VALIDATE_DEBOUNCE_MS = 400;
 const CONSTRUCT_DEBOUNCE_MS = 500;
 
-const formatDcr = (atoms: number): string => (atoms / 1e8).toFixed(8);
 
 const validateAmount = (raw: string): string | null => {
   const trimmed = raw.trim();

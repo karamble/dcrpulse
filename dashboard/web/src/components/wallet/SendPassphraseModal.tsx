@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, Lock, X } from 'lucide-react';
 import { signPublishTransaction } from '../../services/api';
+import { formatDcr } from '../../utils/amounts';
 
 interface SendPassphraseModalProps {
   isOpen: boolean;
@@ -14,7 +15,6 @@ interface SendPassphraseModalProps {
   onWatchOnly: (message: string) => void;
 }
 
-const formatDcr = (atoms: number): string => (atoms / 1e8).toFixed(8);
 
 export const SendPassphraseModal = ({
   isOpen,
