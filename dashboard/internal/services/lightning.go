@@ -1098,6 +1098,15 @@ func lightningGraphNodes(ctx context.Context) ([]types.TopLightningNode, error) 
 	return out, nil
 }
 
+// dropLightningGraphSnapshot discards the cached graph. The snapshot is
+// process-wide while the network it describes belongs to one wallet, and
+// node search is where a peer gets picked to open a channel with.
+func dropLightningGraphSnapshot() {
+	describeGraphMu.Lock()
+	describeGraphData, describeGraphTime = nil, time.Time{}
+	describeGraphMu.Unlock()
+}
+
 // GetTopLightningNodes returns the top-n nodes by total channel capacity.
 // n is capped at the number of nodes in the graph.
 func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode, error) {

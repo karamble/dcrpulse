@@ -94,6 +94,7 @@ func reconnectStackServices(ctx context.Context, name string) {
 	alerts.ResolveCategories(alerts.CategoryLightning, alerts.CategoryDex, alerts.CategoryBisonrelay)
 	resetAlertWatcherBaselines()
 	rpc.ClearDcrdexAppPass()
+	dropLightningGraphSnapshot()
 	if ActiveWalletIsWatchOnly(ctx) {
 		// Watch-only wallets have no dcrlnd / DEX / Bison Relay daemons, so don't
 		// repoint those clients at per-wallet certs that never exist. Still drop
