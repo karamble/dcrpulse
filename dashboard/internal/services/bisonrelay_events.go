@@ -212,7 +212,7 @@ func runStream(
 	// separate goroutine below does the calling.
 	acks := newAckTracker()
 
-	cancel, err := ws.Subscribe(method, struct{}{}, func(payload json.RawMessage) {
+	cancel := ws.Subscribe(method, struct{}{}, func(payload json.RawMessage) {
 		bus.broadcast(BisonrelayEvent{Type: evType, Payload: payload})
 		if p, ok := ackParams(payload); ok {
 			if seq, ok := sequenceIDOf(p); ok {
@@ -220,10 +220,6 @@ func runStream(
 			}
 		}
 	})
-	if err != nil {
-		brelLog.Warnf("br %s subscribe: %v", evType, err)
-		return
-	}
 	defer cancel()
 
 	for {

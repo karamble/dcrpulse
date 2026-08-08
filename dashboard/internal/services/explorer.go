@@ -509,12 +509,9 @@ func detectSearchType(query string) string {
 	}
 
 	// Transaction hash or block hash (64 hex characters)
-	if len(query) == 64 {
-		// Check if it's valid hex
-		if _, err := strconv.ParseUint(query, 16, 64); err == nil || isHex(query) {
-			// Try as transaction first, then block
-			return "tx_hash"
-		}
+	if len(query) == 64 && isHex(query) {
+		// Try as transaction first, then block
+		return "tx_hash"
 	}
 
 	// Decred address (starts with D)

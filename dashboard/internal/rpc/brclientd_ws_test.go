@@ -172,7 +172,7 @@ func TestPendingCallsSurviveConcurrentTeardown(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c.failAllPending(nil)
+			c.failAllPending()
 		}()
 	}
 	wg.Wait()

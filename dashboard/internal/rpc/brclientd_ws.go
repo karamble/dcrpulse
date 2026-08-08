@@ -200,7 +200,7 @@ func (c *BrclientdWSClient) dialAndServe(ctx context.Context) error {
 		c.conn = nil
 		c.mu.Unlock()
 		conn.Close()
-		c.failAllPending(errors.New("connection closed"))
+		c.failAllPending()
 	}()
 
 	pingStop := make(chan struct{})
@@ -302,7 +302,7 @@ func (c *BrclientdWSClient) readLoop(conn *websocket.Conn) error {
 	}
 }
 
-func (c *BrclientdWSClient) failAllPending(err error) {
+func (c *BrclientdWSClient) failAllPending() {
 	c.mu.Lock()
 	for id, ch := range c.pending {
 		close(ch)
@@ -351,7 +351,7 @@ func (c *BrclientdWSClient) Call(ctx context.Context, method string, params, res
 // event delivered on the stream; cancellation runs the returned func.
 // The subscription is replayed automatically on every reconnect, and
 // queued for the next reconnect if the WS is not connected yet.
-func (c *BrclientdWSClient) Subscribe(method string, params any, onEvent func(json.RawMessage)) (cancel func(), err error) {
+func (c *BrclientdWSClient) Subscribe(method string, params any, onEvent func(json.RawMessage)) (cancel func()) {
 	s := &subscription{method: method, params: params, onEvent: onEvent}
 	c.subMu.Lock()
 	c.subscribers = append(c.subscribers, s)
@@ -381,7 +381,7 @@ func (c *BrclientdWSClient) Subscribe(method string, params any, onEvent func(js
 			delete(c.streamsByMethod, s.suffixedMethod)
 			c.mu.Unlock()
 		}
-	}, nil
+	}
 }
 
 func (c *BrclientdWSClient) openStream(s *subscription) error {
