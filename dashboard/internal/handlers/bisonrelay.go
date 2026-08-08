@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"mime"
 	"net/http"
 	"os"
@@ -21,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
@@ -1228,9 +1228,14 @@ func BisonrelayManageAddHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid cost_dcr", http.StatusBadRequest)
 			return
 		}
-		// BR shared-file costs are in atoms (1 DCR = 1e8), not the milli-atoms
-		// used for payment/tip records.
-		costAtoms = uint64(math.Round(costDCR * 1e8))
+		// BR shared-file costs are in atoms, not the milli-atoms used for
+		// payment/tip records.
+		atoms, aerr := dcrutil.NewAmount(costDCR)
+		if aerr != nil {
+			http.Error(w, "invalid cost_dcr", http.StatusBadRequest)
+			return
+		}
+		costAtoms = uint64(atoms)
 	}
 	targetUID := strings.TrimSpace(r.FormValue("target_uid"))
 	descr := strings.TrimSpace(r.FormValue("descr"))

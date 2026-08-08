@@ -24,6 +24,8 @@ import (
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 
+	"github.com/decred/dcrd/dcrutil/v4"
+
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 
 	"github.com/gorilla/websocket"
@@ -1140,7 +1142,7 @@ func ValidateAddressHandler(w http.ResponseWriter, r *http.Request) {
 
 // maxTxAtoms is the total DCR supply in atoms; no single amount or transaction
 // total can legitimately exceed it.
-const maxTxAtoms = 2_100_000_000_000_000
+const maxTxAtoms = int64(dcrutil.MaxAmount)
 
 // resolveTxOutputs normalizes and validates a construct request into the list of
 // recipients to pay. It accepts either the Outputs slice or the legacy single

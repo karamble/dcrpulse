@@ -14,6 +14,7 @@ import (
 	"dcrpulse/internal/types"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
+	"github.com/decred/dcrd/dcrutil/v4"
 )
 
 // LoadAutobuyerSettings reads the autobuyer config from the per-wallet
@@ -79,8 +80,13 @@ func SaveAutobuyerSettings(ctx context.Context, s *types.AutobuyerSettings) erro
 		return fmt.Errorf("resolve account: %w", err)
 	}
 
+	balanceAtoms, err := dcrutil.NewAmount(s.BalanceToMaintain)
+	if err != nil {
+		return fmt.Errorf("balance to maintain: %w", err)
+	}
+
 	if err := wc.SetAutobuyerSettings(&config.AutobuyerSettings{
-		BalanceToMaintain: int64(s.BalanceToMaintain * 1e8),
+		BalanceToMaintain: int64(balanceAtoms),
 		Account:           accountName,
 		MaxFeePercentage:  10,
 	}); err != nil {

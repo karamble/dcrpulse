@@ -16,6 +16,7 @@ import (
 	"dcrpulse/internal/types"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
+	"github.com/decred/dcrd/dcrutil/v4"
 )
 
 const (
@@ -213,7 +214,13 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceA
 		}
 	}
 
-	balanceAtoms := int64(settings.BalanceToMaintain * 1e8)
+	balanceAtoms, err := dcrutil.NewAmount(settings.BalanceToMaintain)
+	if err != nil {
+		msg := fmt.Sprintf("invalid balance to maintain %v: %v", settings.BalanceToMaintain, err)
+		recordAutobuyerEvent("error", msg)
+		setAutobuyerErr(msg)
+		return
+	}
 	// Do not set Passphrase. A non-empty passphrase makes dcrwallet unlock the
 	// whole wallet (the RunTicketBuyer handler and ticketbuyer.Run/buy), and the
 	// ticketbuyer's own unlock uses a nil lock channel that is never relocked
@@ -224,7 +231,7 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceA
 	req := &pb.RunTicketBuyerRequest{
 		Account:           sourceAccount,
 		VotingAccount:     sourceAccount,
-		BalanceToMaintain: balanceAtoms,
+		BalanceToMaintain: int64(balanceAtoms),
 		VspHost:           "https://" + strings.TrimPrefix(strings.TrimPrefix(settings.VspHost, "https://"), "http://"),
 		VspPubkey:         settings.VspPubkey,
 		Limit:             1,
