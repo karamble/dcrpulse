@@ -697,8 +697,28 @@ func analyzeMempoolTransactions(ctx context.Context) (tickets, votes, revocation
 	return tickets, votes, revocations, regular - coinjoins, coinjoins
 }
 
-// isCoinJoinMempoolTx reports whether a transaction looks like a CoinJoin:
-// three or more inputs, and three or more outputs sharing one value.
+// looksLikeCoinJoin reports whether a transaction looks like a CoinJoin: three
+// or more inputs, and three or more outputs sharing one value.
+func looksLikeCoinJoin(numInputs int, values []float64) bool {
+	if numInputs < 3 || len(values) < 3 {
+		return false
+	}
+	buckets := make(map[dcrutil.Amount]int, len(values))
+	for _, v := range values {
+		atoms, err := dcrutil.NewAmount(v)
+		if err != nil {
+			continue
+		}
+		buckets[atoms]++
+		if buckets[atoms] >= 3 {
+			return true
+		}
+	}
+	return false
+}
+
+// isCoinJoinMempoolTx reports whether a mempool transaction looks like a
+// CoinJoin.
 func isCoinJoinMempoolTx(ctx context.Context, txHash string) bool {
 	result, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
 		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
@@ -717,19 +737,9 @@ func isCoinJoinMempoolTx(ctx context.Context, txHash string) bool {
 	if err := json.Unmarshal(result, &tx); err != nil {
 		return false
 	}
-	if len(tx.Vin) < 3 || len(tx.Vout) < 3 {
-		return false
+	values := make([]float64, len(tx.Vout))
+	for i, vout := range tx.Vout {
+		values[i] = vout.Value
 	}
-
-	values := make(map[int64]int, len(tx.Vout))
-	for _, vout := range tx.Vout {
-		values[int64(vout.Value*1e8)]++
-	}
-	for _, n := range values {
-		if n >= 3 {
-			return true
-		}
-	}
-
-	return false
+	return looksLikeCoinJoin(len(tx.Vin), values)
 }

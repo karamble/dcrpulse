@@ -651,26 +651,16 @@ func categorizeTransaction(vin []interface{}, vout []interface{}) string {
 		}
 	}
 
-	// Check if it's a CoinJoin transaction
-	// Heuristic: 3+ inputs, 3+ outputs, 3+ outputs with matching values
-	if len(vin) >= 3 && len(vout) >= 3 {
-		// Count output values (rounded to avoid floating point issues)
-		outputValues := make(map[int64]int)
-		for _, v := range vout {
-			if voutMap, ok := v.(map[string]interface{}); ok {
-				if value, ok := voutMap["value"].(float64); ok {
-					rounded := int64(value * 1e8) // Convert to atoms
-					outputValues[rounded]++
-				}
+	values := make([]float64, 0, len(vout))
+	for _, v := range vout {
+		if voutMap, ok := v.(map[string]interface{}); ok {
+			if value, ok := voutMap["value"].(float64); ok {
+				values = append(values, value)
 			}
 		}
-
-		// If we have 3+ outputs with the same value, likely a CoinJoin
-		for _, count := range outputValues {
-			if count >= 3 {
-				return "coinjoin"
-			}
-		}
+	}
+	if looksLikeCoinJoin(len(vin), values) {
+		return "coinjoin"
 	}
 
 	return "regular"
@@ -741,22 +731,12 @@ func categorizeTransactionTyped(vin []struct {
 		}
 	}
 
-	// Check if it's a CoinJoin transaction
-	// Heuristic: 3+ inputs, 3+ outputs, 3+ outputs with matching values
-	if len(vin) >= 3 && len(vout) >= 3 {
-		// Count output values (rounded to avoid floating point issues)
-		outputValues := make(map[int64]int)
-		for _, v := range vout {
-			rounded := int64(v.Value * 1e8) // Convert to atoms
-			outputValues[rounded]++
-		}
-
-		// If we have 3+ outputs with the same value, likely a CoinJoin
-		for _, count := range outputValues {
-			if count >= 3 {
-				return "coinjoin"
-			}
-		}
+	values := make([]float64, len(vout))
+	for i, v := range vout {
+		values[i] = v.Value
+	}
+	if looksLikeCoinJoin(len(vin), values) {
+		return "coinjoin"
 	}
 
 	return "regular"
