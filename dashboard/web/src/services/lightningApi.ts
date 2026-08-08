@@ -1,4 +1,5 @@
 import api from './api';
+import { subscribeJSON, SubscribeOpts } from './socket';
 
 export type LightningStage =
   | 'unavailable'
@@ -253,29 +254,14 @@ export const getLightningNetwork = async (top = 10): Promise<LightningNetworkPan
   return data;
 };
 
-// subscribeLightningChannelEvents — opens a same-origin WebSocket to
-// /api/wallet/ln/channel-events. Returns a cleanup function. The
-// onEvent callback receives every dcrlnd ChannelEventUpdate.
+// subscribeLightningChannelEvents streams every dcrlnd ChannelEventUpdate.
+// The stream replays nothing on connect, so a caller that cares about what it
+// missed should refetch from onOpen.
 export const subscribeLightningChannelEvents = (
   onEvent: (ev: ChannelEvent) => void,
-): (() => void) => {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${proto}//${window.location.host}/api/wallet/ln/channel-events`;
-  let ws: WebSocket | null = new WebSocket(url);
-  ws.onmessage = (msg) => {
-    try {
-      onEvent(JSON.parse(msg.data) as ChannelEvent);
-    } catch {
-      // ignore non-JSON frames
-    }
-  };
-  return () => {
-    if (ws) {
-      ws.close();
-      ws = null;
-    }
-  };
-};
+  opts?: SubscribeOpts,
+): (() => void) =>
+  subscribeJSON<ChannelEvent>('/api/wallet/ln/channel-events', onEvent, opts);
 
 // ---- Send tab --------------------------------------------------------------
 
@@ -479,36 +465,13 @@ export const cancelLnInvoice = async (paymentHash: string): Promise<void> => {
   await api.post('/wallet/ln/invoices/cancel', { paymentHash });
 };
 
-// subscribeLnInvoiceEvents opens a WebSocket to /wallet/ln/invoice-events
-// and invokes onSnapshot for every invoice snapshot dcrlnd emits. Returns
-// a cleanup that closes the socket. Mirrors Decrediton's subscribeToInvoices.
+// subscribeLnInvoiceEvents streams each invoice snapshot dcrlnd emits. Like
+// the channel stream it replays nothing, so callers refetch from onOpen.
 export const subscribeLnInvoiceEvents = (
   onSnapshot: (inv: LightningInvoice) => void,
-  onClose?: () => void,
-): (() => void) => {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${proto}//${window.location.host}/api/wallet/ln/invoice-events`;
-  let ws: WebSocket | null = new WebSocket(url);
-  ws.onmessage = (msg) => {
-    try {
-      const frame = JSON.parse(msg.data);
-      if (frame && typeof frame.error === 'string') return;
-      onSnapshot(frame as LightningInvoice);
-    } catch {
-      // ignore non-JSON frames
-    }
-  };
-  ws.onclose = () => {
-    ws = null;
-    onClose?.();
-  };
-  return () => {
-    if (ws) {
-      ws.close();
-      ws = null;
-    }
-  };
-};
+  opts?: SubscribeOpts,
+): (() => void) =>
+  subscribeJSON<LightningInvoice>('/api/wallet/ln/invoice-events', onSnapshot, opts);
 
 // ---- Advanced tab ---------------------------------------------------------
 

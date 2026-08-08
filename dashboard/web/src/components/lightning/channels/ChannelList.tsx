@@ -45,9 +45,31 @@ export const ChannelList = () => {
   };
 
   useEffect(() => {
+    // Trailing debounce: a peer flapping emits a burst of events, and each one
+    // otherwise costs a full channel list fetch.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const reload = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(load, 500);
+    };
     load();
-    const unsubscribe = subscribeLightningChannelEvents(() => load());
-    return unsubscribe;
+    // The stream replays nothing, so anything that happened while it was down
+    // is only picked up by refetching once it is back. The first connect is
+    // already covered by the load above.
+    let firstOpen = true;
+    const unsubscribe = subscribeLightningChannelEvents(reload, {
+      onOpen: () => {
+        if (firstOpen) {
+          firstOpen = false;
+          return;
+        }
+        reload();
+      },
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   const visible = channels.filter((c) => matchesFilter(c.status, filter));

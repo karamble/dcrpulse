@@ -70,16 +70,38 @@ export const ReceiveTab = () => {
   const cleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     let cancelled = false;
-    listLnInvoices()
-      .then((r) => {
-        if (!cancelled) setInvoices(r.invoices || []);
-      })
-      .catch(() => {
-        /* keep prior */
-      });
-    cleanupRef.current = subscribeLnInvoiceEvents(upsert);
+    const refresh = () => {
+      listLnInvoices()
+        .then((r) => {
+          if (!cancelled) setInvoices(r.invoices || []);
+        })
+        .catch(() => {
+          /* keep prior */
+        });
+    };
+    // Trailing debounce so a reconnect burst costs one fetch.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const reload = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(refresh, 500);
+    };
+    refresh();
+    // The stream replays nothing on connect, so without this an invoice that
+    // settled while it was down stays displayed as open forever. The first
+    // connect is already covered by the refresh above.
+    let firstOpen = true;
+    cleanupRef.current = subscribeLnInvoiceEvents(upsert, {
+      onOpen: () => {
+        if (firstOpen) {
+          firstOpen = false;
+          return;
+        }
+        reload();
+      },
+    });
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
       cleanupRef.current?.();
       cleanupRef.current = null;
     };
