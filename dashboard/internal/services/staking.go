@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -270,12 +271,40 @@ var vspHTTPClient = &http.Client{
 	},
 }
 
+// vspBaseURL normalises a VSP address to an https base the request path can be
+// appended to. VSP communication is https only, so the scheme is forced even
+// when a http:// address was supplied.
+func vspBaseURL(host string) (string, error) {
+	// Strip the scheme before trimming slashes, or a bare "https://" trims to
+	// "https:" and is then read as the host.
+	host = strings.TrimSpace(host)
+	host = strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	host = strings.TrimRight(host, "/")
+	if host == "" {
+		return "", fmt.Errorf("vsp address must include a host")
+	}
+	// The request path is appended to this address, so a query or fragment
+	// would take the path with it.
+	if strings.ContainsAny(host, "?#") {
+		return "", fmt.Errorf("vsp address must not contain a query or fragment")
+	}
+	base := "https://" + host
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", fmt.Errorf("invalid vsp address: %w", err)
+	}
+	if u.Hostname() == "" {
+		return "", fmt.Errorf("vsp address must include a host")
+	}
+	return base, nil
+}
+
 // GetVSPInfo probes a single VSP host's /api/v3/vspinfo for its pubkey + fee.
 func GetVSPInfo(ctx context.Context, host string) (*types.VSPInfo, error) {
-	// VSP communication is https only; force the scheme even if a http:// host
-	// was supplied.
-	host = strings.TrimRight(host, "/")
-	host = "https://" + strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	host, err := vspBaseURL(host)
+	if err != nil {
+		return nil, err
+	}
 	rctx, cancel := context.WithTimeout(ctx, vspProbeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(rctx, http.MethodGet, host+vspInfoPathV3, nil)
