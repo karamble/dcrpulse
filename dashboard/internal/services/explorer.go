@@ -16,39 +16,6 @@ import (
 	"dcrpulse/internal/types"
 )
 
-// FetchRecentBlocks gets the last N blocks
-func FetchRecentBlocks(ctx context.Context, count int) ([]types.BlockSummary, error) {
-	if count <= 0 {
-		count = 10
-	}
-	if count > 50 {
-		count = 50 // Limit to 50 blocks
-	}
-
-	// Get current block count
-	height, err := rpc.DcrdClient.GetBlockCount(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get block count: %w", err)
-	}
-
-	blocks := make([]types.BlockSummary, 0, count)
-	startHeight := height - int64(count) + 1
-	if startHeight < 0 {
-		startHeight = 0
-	}
-
-	for h := height; h >= startHeight; h-- {
-		block, err := FetchBlockSummaryByHeight(ctx, h)
-		if err != nil {
-			nodeLog.Warnf("Failed to fetch block %d: %v", h, err)
-			continue
-		}
-		blocks = append(blocks, *block)
-	}
-
-	return blocks, nil
-}
-
 // FetchRecentBlocksPaginated gets blocks with pagination
 func FetchRecentBlocksPaginated(ctx context.Context, page int, pageSize int) (*types.PaginatedBlocksResponse, error) {
 	if page <= 0 {
@@ -116,56 +83,42 @@ func FetchBlockSummaryByHeight(ctx context.Context, height int64) (*types.BlockS
 		return nil, fmt.Errorf("failed to get block hash: %w", err)
 	}
 
-	// Get block header
-	result, err := rpc.DcrdClient.RawRequest(ctx, "getblockheader", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, hash.String())),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get block header: %w", err)
-	}
-
-	var header struct {
-		Hash          string  `json:"hash"`
-		Confirmations int64   `json:"confirmations"`
-		Height        int64   `json:"height"`
-		Time          int64   `json:"time"`
-		PreviousHash  string  `json:"previousblockhash"`
-		Difficulty    float64 `json:"difficulty"`
-	}
-
-	if err := json.Unmarshal(result, &header); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal block header: %w", err)
-	}
-
-	// Get full block to count transactions
+	// The verbose block carries every field a summary needs, so it answers on
+	// its own. verbosetx stays off: a count does not need the transactions
+	// themselves, and a listing page asks for up to a hundred of these.
 	blockResult, err := rpc.DcrdClient.RawRequest(ctx, "getblock", []json.RawMessage{
 		json.RawMessage(fmt.Sprintf(`"%s"`, hash.String())),
+		json.RawMessage(`true`),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block: %w", err)
 	}
 
 	var block struct {
-		Tx   []string `json:"tx"`
-		STx  []string `json:"stx"`
-		Size int64    `json:"size"`
+		Hash          string   `json:"hash"`
+		Confirmations int64    `json:"confirmations"`
+		Height        int64    `json:"height"`
+		Time          int64    `json:"time"`
+		PreviousHash  string   `json:"previousblockhash"`
+		Difficulty    float64  `json:"difficulty"`
+		Size          int64    `json:"size"`
+		Tx            []string `json:"tx"`
+		STx           []string `json:"stx"`
 	}
 
 	if err := json.Unmarshal(blockResult, &block); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
 	}
 
-	txCount := len(block.Tx) + len(block.STx)
-
 	return &types.BlockSummary{
-		Height:        header.Height,
-		Hash:          header.Hash,
-		PreviousHash:  header.PreviousHash,
-		Timestamp:     time.Unix(header.Time, 0),
-		Confirmations: header.Confirmations,
-		TxCount:       txCount,
+		Height:        block.Height,
+		Hash:          block.Hash,
+		PreviousHash:  block.PreviousHash,
+		Timestamp:     time.Unix(block.Time, 0),
+		Confirmations: block.Confirmations,
+		TxCount:       len(block.Tx) + len(block.STx),
 		Size:          block.Size,
-		Difficulty:    header.Difficulty,
+		Difficulty:    block.Difficulty,
 	}, nil
 }
 
