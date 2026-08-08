@@ -69,7 +69,7 @@ const saveStorage = (storage: TreasuryStorageData): void => {
     // Verify it was saved correctly
     const verification = localStorage.getItem(STORAGE_KEY);
     if (!verification) {
-      console.error('⚠️ STORAGE VERIFICATION FAILED: Data was not persisted to localStorage!');
+      console.error('Storage verification failed: data was not persisted to localStorage');
     }
   } catch (error) {
     console.error('Failed to save treasury data:', error);
@@ -250,63 +250,6 @@ export const saveScanStatus = (status: ScanStatus): void => {
   }
 };
 
-// Debug function to check localStorage state (can be called from browser console)
-export const debugTreasuryStorage = () => {
-  console.log('=== TREASURY STORAGE DEBUG ===');
-  
-  // Check if localStorage is available
-  try {
-    const testKey = '__localStorage_test__';
-    localStorage.setItem(testKey, 'test');
-    localStorage.removeItem(testKey);
-    console.log('✓ localStorage is available');
-  } catch (e) {
-    console.error('❌ localStorage is NOT available:', e);
-    return;
-  }
-  
-  // Check treasury data
-  const rawData = localStorage.getItem(STORAGE_KEY);
-  console.log('Raw data exists:', !!rawData);
-  console.log('Raw data size:', rawData ? `${(rawData.length / 1024).toFixed(2)} KB` : '0 KB');
-  
-  if (rawData) {
-    try {
-      const parsed = JSON.parse(rawData);
-      console.log('Parsed successfully:', {
-        version: parsed.version,
-        tspends: parsed.tspends?.length || 0,
-        totalSpent: parsed.totalSpent,
-        lastSyncHeight: parsed.lastSyncHeight,
-      });
-      
-      if (parsed.tspends && parsed.tspends.length > 0) {
-        console.log('First TSpend:', parsed.tspends[0]);
-        console.log('Last TSpend:', parsed.tspends[parsed.tspends.length - 1]);
-      }
-    } catch (e) {
-      console.error('Failed to parse data:', e);
-    }
-  }
-  
-  // Check scan status
-  const scanStatus = localStorage.getItem(SCAN_STATUS_KEY);
-  console.log('Scan status exists:', !!scanStatus);
-  if (scanStatus) {
-    console.log('Scan status:', JSON.parse(scanStatus));
-  }
-  
-  // List all localStorage keys
-  console.log('All localStorage keys:', Object.keys(localStorage));
-  
-  console.log('=== END DEBUG ===');
-};
-
-// Make it globally accessible for browser console debugging
-if (typeof window !== 'undefined') {
-  (window as any).debugTreasuryStorage = debugTreasuryStorage;
-}
-
 // Load and sync with the historical TSpend snapshot
 export const syncWithSnapshot = async (): Promise<{ success: boolean; synced: number; error?: string }> => {
   try {
@@ -340,7 +283,7 @@ export const syncWithSnapshot = async (): Promise<{ success: boolean; synced: nu
     return { success: true, synced: syncedCount };
     
   } catch (error) {
-    console.error('❌ Failed to sync with snapshot:', error);
+    console.error('Failed to sync with snapshot:', error);
     return { 
       success: false, 
       synced: 0, 
@@ -348,4 +291,3 @@ export const syncWithSnapshot = async (): Promise<{ success: boolean; synced: nu
     };
   }
 };
-
