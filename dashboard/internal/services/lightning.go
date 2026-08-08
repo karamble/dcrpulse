@@ -866,13 +866,7 @@ func reversedHex(b []byte) string {
 	for i, v := range b {
 		rev[len(b)-1-i] = v
 	}
-	const hexdig = "0123456789abcdef"
-	out := make([]byte, len(rev)*2)
-	for i, v := range rev {
-		out[i*2] = hexdig[v>>4]
-		out[i*2+1] = hexdig[v&0x0f]
-	}
-	return string(out)
+	return hex.EncodeToString(rev)
 }
 
 // fundingTxConfProgress returns (currentConfs, requiredConfs) for a
@@ -1166,13 +1160,7 @@ func DecodeLightningInvoice(ctx context.Context, payReq string) (*types.Lightnin
 		CltvExpiry:   resp.GetCltvExpiry(),
 	}
 	if pa := resp.GetPaymentAddr(); len(pa) > 0 {
-		const hexdig = "0123456789abcdef"
-		buf := make([]byte, len(pa)*2)
-		for i, b := range pa {
-			buf[i*2] = hexdig[b>>4]
-			buf[i*2+1] = hexdig[b&0x0f]
-		}
-		out.PaymentAddr = string(buf)
+		out.PaymentAddr = hex.EncodeToString(pa)
 	}
 	return out, nil
 }
@@ -1357,13 +1345,7 @@ func invoiceToType(inv *lnrpc.Invoice) types.LightningInvoice {
 	if inv == nil {
 		return types.LightningInvoice{}
 	}
-	rh := inv.GetRHash()
-	const hexdig = "0123456789abcdef"
-	rHashHex := make([]byte, len(rh)*2)
-	for i, b := range rh {
-		rHashHex[i*2] = hexdig[b>>4]
-		rHashHex[i*2+1] = hexdig[b&0x0f]
-	}
+	rHashHex := hex.EncodeToString(inv.GetRHash())
 	now := time.Now().Unix()
 	state := inv.GetState()
 	expiry := inv.GetExpiry()
@@ -1387,7 +1369,7 @@ func invoiceToType(inv *lnrpc.Invoice) types.LightningInvoice {
 	}
 	return types.LightningInvoice{
 		Memo:           inv.GetMemo(),
-		RHashHex:       string(rHashHex),
+		RHashHex:       rHashHex,
 		PaymentRequest: inv.GetPaymentRequest(),
 		ValueAtoms:     inv.GetValue(),
 		AmtPaidAtoms:   inv.GetAmtPaidAtoms(),
@@ -1428,16 +1410,10 @@ func AddLightningInvoice(ctx context.Context, req *types.LightningAddInvoiceRequ
 	if err != nil {
 		// Fall back to a minimal record so the user still sees the
 		// payment request even if the second roundtrip fails.
-		const hexdig = "0123456789abcdef"
-		rh := resp.GetRHash()
-		rHashHex := make([]byte, len(rh)*2)
-		for i, b := range rh {
-			rHashHex[i*2] = hexdig[b>>4]
-			rHashHex[i*2+1] = hexdig[b&0x0f]
-		}
+		rHashHex := hex.EncodeToString(resp.GetRHash())
 		return &types.LightningInvoice{
 			Memo:           req.Memo,
-			RHashHex:       string(rHashHex),
+			RHashHex:       rHashHex,
 			PaymentRequest: resp.GetPaymentRequest(),
 			ValueAtoms:     req.ValueAtoms,
 			CreationDate:   time.Now().Unix(),
@@ -1604,16 +1580,9 @@ func ListLightningWatchtowers(ctx context.Context) (*types.LightningWatchtowerLi
 	out := &types.LightningWatchtowerList{
 		Towers: make([]types.LightningWatchtower, 0, len(resp.GetTowers())),
 	}
-	const hexdig = "0123456789abcdef"
 	for _, t := range resp.GetTowers() {
-		pk := t.GetPubkey()
-		pkHex := make([]byte, len(pk)*2)
-		for i, b := range pk {
-			pkHex[i*2] = hexdig[b>>4]
-			pkHex[i*2+1] = hexdig[b&0x0f]
-		}
 		out.Towers = append(out.Towers, types.LightningWatchtower{
-			PubKeyHex:              string(pkHex),
+			PubKeyHex:              hex.EncodeToString(t.GetPubkey()),
 			Addresses:              t.GetAddresses(),
 			NumSessions:            t.GetNumSessions(),
 			ActiveSessionCandidate: t.GetActiveSessionCandidate(),
