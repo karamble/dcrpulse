@@ -1467,7 +1467,9 @@ type bwOrder struct {
 
 // dexHistMatch/dexHistOrder mirror the bisonw myorders JSON (string enums) the
 // dashboard DexOrder/DexMatch types consume.
-type dexHistMatch struct {
+// dexMatch and dexOrder are one shape over two coin renderings: history
+// carries the coin id as a string, the richer view carries asset and confs.
+type dexMatch[C any] struct {
 	MatchID       string `json:"matchID"`
 	Status        string `json:"status"`
 	Revoked       bool   `json:"revoked"`
@@ -1475,34 +1477,38 @@ type dexHistMatch struct {
 	Qty           uint64 `json:"qty"`
 	Side          string `json:"side"`
 	FeeRate       uint64 `json:"feeRate"`
-	Swap          string `json:"swap,omitempty"`
-	CounterSwap   string `json:"counterSwap,omitempty"`
-	Redeem        string `json:"redeem,omitempty"`
-	CounterRedeem string `json:"counterRedeem,omitempty"`
-	Refund        string `json:"refund,omitempty"`
+	Swap          C      `json:"swap,omitempty"`
+	CounterSwap   C      `json:"counterSwap,omitempty"`
+	Redeem        C      `json:"redeem,omitempty"`
+	CounterRedeem C      `json:"counterRedeem,omitempty"`
+	Refund        C      `json:"refund,omitempty"`
 	Stamp         uint64 `json:"stamp"`
 	IsCancel      bool   `json:"isCancel"`
 }
-type dexHistOrder struct {
-	Host        string          `json:"host"`
-	MarketName  string          `json:"marketName"`
-	BaseID      uint32          `json:"baseID"`
-	QuoteID     uint32          `json:"quoteID"`
-	ID          string          `json:"id"`
-	Type        string          `json:"type"`
-	Sell        bool            `json:"sell"`
-	Stamp       uint64          `json:"stamp"`
-	SubmitTime  uint64          `json:"submitTime"`
-	Rate        uint64          `json:"rate,omitempty"`
-	Quantity    uint64          `json:"quantity"`
-	Filled      uint64          `json:"filled"`
-	Settled     uint64          `json:"settled"`
-	Status      string          `json:"status"`
-	Cancelling  bool            `json:"cancelling,omitempty"`
-	Canceled    bool            `json:"canceled,omitempty"`
-	TimeInForce string          `json:"tif,omitempty"`
-	Matches     []*dexHistMatch `json:"matches,omitempty"`
+
+type dexOrder[C any] struct {
+	Host        string         `json:"host"`
+	MarketName  string         `json:"marketName"`
+	BaseID      uint32         `json:"baseID"`
+	QuoteID     uint32         `json:"quoteID"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"`
+	Sell        bool           `json:"sell"`
+	Stamp       uint64         `json:"stamp"`
+	SubmitTime  uint64         `json:"submitTime"`
+	Rate        uint64         `json:"rate,omitempty"`
+	Quantity    uint64         `json:"quantity"`
+	Filled      uint64         `json:"filled"`
+	Settled     uint64         `json:"settled"`
+	Status      string         `json:"status"`
+	Cancelling  bool           `json:"cancelling,omitempty"`
+	Canceled    bool           `json:"canceled,omitempty"`
+	TimeInForce string         `json:"tif,omitempty"`
+	Matches     []*dexMatch[C] `json:"matches,omitempty"`
 }
+
+type dexHistMatch = dexMatch[string]
+type dexHistOrder = dexOrder[string]
 
 // Enum -> string maps mirroring dcrdex's order/match String() methods
 // (dex/order status.go, order.go, match.go), so the normalized history matches
@@ -1526,14 +1532,14 @@ func bwCoinString(c *bwCoin) string {
 // normalizeDexHistOrder maps a webserver core.Order into the myorders shape,
 // mirroring rpcserver parseCoreOrder/parseMatches (settled = matched value past
 // the redeem step; cancelling cleared once executed).
-func normalizeDexHistOrder(o *bwOrder) *dexHistOrder {
-	matches := make([]*dexHistMatch, 0, len(o.Matches))
+func normalizeDexOrder[C any](o *bwOrder, coin func(*bwCoin) C) *dexOrder[C] {
+	matches := make([]*dexMatch[C], 0, len(o.Matches))
 	var settled uint64
 	for _, m := range o.Matches {
 		if (m.Side == 0 && m.Status >= 3) || (m.Side != 0 && m.Status >= 4) {
 			settled += m.Qty
 		}
-		matches = append(matches, &dexHistMatch{
+		matches = append(matches, &dexMatch[C]{
 			MatchID:       m.MatchID,
 			Status:        dexMatchStatusNames[m.Status],
 			Revoked:       m.Revoked,
@@ -1541,11 +1547,11 @@ func normalizeDexHistOrder(o *bwOrder) *dexHistOrder {
 			Qty:           m.Qty,
 			Side:          dexMatchSideNames[m.Side],
 			FeeRate:       m.FeeRate,
-			Swap:          bwCoinString(m.Swap),
-			CounterSwap:   bwCoinString(m.CounterSwap),
-			Redeem:        bwCoinString(m.Redeem),
-			CounterRedeem: bwCoinString(m.CounterRedeem),
-			Refund:        bwCoinString(m.Refund),
+			Swap:          coin(m.Swap),
+			CounterSwap:   coin(m.CounterSwap),
+			Redeem:        coin(m.Redeem),
+			CounterRedeem: coin(m.CounterRedeem),
+			Refund:        coin(m.Refund),
 			Stamp:         m.Stamp,
 			IsCancel:      m.IsCancel,
 		})
@@ -1554,7 +1560,7 @@ func normalizeDexHistOrder(o *bwOrder) *dexHistOrder {
 	if o.Status >= 3 {
 		cancelling = false
 	}
-	return &dexHistOrder{
+	return &dexOrder[C]{
 		Host:        o.Host,
 		MarketName:  o.MarketID,
 		BaseID:      o.BaseID,
@@ -1574,6 +1580,10 @@ func normalizeDexHistOrder(o *bwOrder) *dexHistOrder {
 		TimeInForce: dexTifNames[o.TimeInForce],
 		Matches:     matches,
 	}
+}
+
+func normalizeDexHistOrder(o *bwOrder) *dexHistOrder {
+	return normalizeDexOrder(o, bwCoinString)
 }
 
 // GetDcrdexOrdersHandler returns the user's full order history, including
@@ -1649,42 +1659,8 @@ type dexFullCoin struct {
 	AssetID  uint32   `json:"assetID"`
 	Confs    *bwConfs `json:"confs,omitempty"`
 }
-type dexFullMatch struct {
-	MatchID       string       `json:"matchID"`
-	Status        string       `json:"status"`
-	Revoked       bool         `json:"revoked"`
-	Rate          uint64       `json:"rate"`
-	Qty           uint64       `json:"qty"`
-	Side          string       `json:"side"`
-	FeeRate       uint64       `json:"feeRate"`
-	Swap          *dexFullCoin `json:"swap,omitempty"`
-	CounterSwap   *dexFullCoin `json:"counterSwap,omitempty"`
-	Redeem        *dexFullCoin `json:"redeem,omitempty"`
-	CounterRedeem *dexFullCoin `json:"counterRedeem,omitempty"`
-	Refund        *dexFullCoin `json:"refund,omitempty"`
-	Stamp         uint64       `json:"stamp"`
-	IsCancel      bool         `json:"isCancel"`
-}
-type dexFullOrder struct {
-	Host        string          `json:"host"`
-	MarketName  string          `json:"marketName"`
-	BaseID      uint32          `json:"baseID"`
-	QuoteID     uint32          `json:"quoteID"`
-	ID          string          `json:"id"`
-	Type        string          `json:"type"`
-	Sell        bool            `json:"sell"`
-	Stamp       uint64          `json:"stamp"`
-	SubmitTime  uint64          `json:"submitTime"`
-	Rate        uint64          `json:"rate,omitempty"`
-	Quantity    uint64          `json:"quantity"`
-	Filled      uint64          `json:"filled"`
-	Settled     uint64          `json:"settled"`
-	Status      string          `json:"status"`
-	Cancelling  bool            `json:"cancelling,omitempty"`
-	Canceled    bool            `json:"canceled,omitempty"`
-	TimeInForce string          `json:"tif,omitempty"`
-	Matches     []*dexFullMatch `json:"matches,omitempty"`
-}
+type dexFullMatch = dexMatch[*dexFullCoin]
+type dexFullOrder = dexOrder[*dexFullCoin]
 
 func fullCoin(c *bwCoin) *dexFullCoin {
 	if c == nil || c.StringID == "" {
@@ -1697,53 +1673,7 @@ func fullCoin(c *bwCoin) *dexFullCoin {
 // shape, mirroring rpcserver parseCoreOrder/parseMatches but preserving each
 // coin's asset and confirmation counts.
 func normalizeDexFullOrder(o *bwOrder) *dexFullOrder {
-	matches := make([]*dexFullMatch, 0, len(o.Matches))
-	var settled uint64
-	for _, m := range o.Matches {
-		if (m.Side == 0 && m.Status >= 3) || (m.Side != 0 && m.Status >= 4) {
-			settled += m.Qty
-		}
-		matches = append(matches, &dexFullMatch{
-			MatchID:       m.MatchID,
-			Status:        dexMatchStatusNames[m.Status],
-			Revoked:       m.Revoked,
-			Rate:          m.Rate,
-			Qty:           m.Qty,
-			Side:          dexMatchSideNames[m.Side],
-			FeeRate:       m.FeeRate,
-			Swap:          fullCoin(m.Swap),
-			CounterSwap:   fullCoin(m.CounterSwap),
-			Redeem:        fullCoin(m.Redeem),
-			CounterRedeem: fullCoin(m.CounterRedeem),
-			Refund:        fullCoin(m.Refund),
-			Stamp:         m.Stamp,
-			IsCancel:      m.IsCancel,
-		})
-	}
-	cancelling := o.Cancelling
-	if o.Status >= 3 {
-		cancelling = false
-	}
-	return &dexFullOrder{
-		Host:        o.Host,
-		MarketName:  o.MarketID,
-		BaseID:      o.BaseID,
-		QuoteID:     o.QuoteID,
-		ID:          o.ID,
-		Type:        dexOrderTypeNames[o.Type],
-		Sell:        o.Sell,
-		Stamp:       o.Stamp,
-		SubmitTime:  o.SubmitTime,
-		Rate:        o.Rate,
-		Quantity:    o.Qty,
-		Filled:      o.Filled,
-		Settled:     settled,
-		Status:      dexOrderStatusNames[o.Status],
-		Cancelling:  cancelling,
-		Canceled:    o.Canceled,
-		TimeInForce: dexTifNames[o.TimeInForce],
-		Matches:     matches,
-	}
+	return normalizeDexOrder(o, fullCoin)
 }
 
 // GetDcrdexSingleOrderHandler returns one order with live swap-coin confirmation
