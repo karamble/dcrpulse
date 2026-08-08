@@ -47,6 +47,7 @@ import { PageLinkPickerModal } from './PageLinkPickerModal';
 import { blobToDataB64 } from './imageCompress';
 import { formatAtomsTrimmed } from '../../../utils/amounts';
 import { formatBytes } from '../../../utils/bytes';
+import { apiError } from '../../../utils/apiError';
 
 // MAX_INLINE_BYTES is the per-attachment ceiling for inline embeds. Files
 // above this should use the "Link to shared content" flow instead (which
@@ -679,8 +680,7 @@ const PreviewPane = ({
         }
       } catch (e: any) {
         if (cancelled) return;
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not render preview');
+        setErr(apiError(e, 'Could not render preview'));
       } finally {
         if (!cancelled) setLoading(false);
       }

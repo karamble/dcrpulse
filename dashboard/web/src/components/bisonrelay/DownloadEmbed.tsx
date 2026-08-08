@@ -20,6 +20,7 @@ import {
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { ImageViewerModal } from './ImageViewerModal';
 import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 // DownloadEmbedSeg is the subset of a BR embed segment a file-transfer embed
 // needs. Both BisonrelayPostBodySegment and BisonrelayPageSegment satisfy it,
@@ -181,8 +182,7 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
     try {
       await startBisonrelayContentGet(uid, fid, maxCostAtoms);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not start download');
+      setErr(apiError(e, 'Could not start download'));
       setPhase('error');
     }
   };

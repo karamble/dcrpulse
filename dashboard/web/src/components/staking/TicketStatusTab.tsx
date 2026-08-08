@@ -27,6 +27,7 @@ import {
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VSPSelect } from './VSPSelect';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 const ACTIVE_STATES = new Set<TicketRecord['status']>(['UNMINED', 'IMMATURE', 'LIVE']);
 
@@ -253,8 +254,7 @@ export const TicketStatusTab = () => {
       // Refresh the ticket list immediately so it reflects the new fee status.
       await load();
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Sync failed';
+      const msg = apiError(err, 'Sync failed');
       throw new Error(msg);
     } finally {
       setSyncing(false);
@@ -278,8 +278,7 @@ export const TicketStatusTab = () => {
       // Refresh the ticket list immediately so re-tracked tickets leave Untracked.
       await load();
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Failed to process tickets';
+      const msg = apiError(err, 'Failed to process tickets');
       throw new Error(msg);
     } finally {
       setProcessing(false);

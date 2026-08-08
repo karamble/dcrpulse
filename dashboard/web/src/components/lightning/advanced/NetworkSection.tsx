@@ -7,6 +7,7 @@ import {
   queryLnNode,
   queryLnRoutes,
 } from '../../../services/lightningApi';
+import { apiError } from '../../../utils/apiError';
 
 const atomsPerDcr = 1e8;
 const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
@@ -44,8 +45,7 @@ const QueryNodePanel = () => {
       .catch((err: any) => {
         if (cancelled) return;
         setInfo(null);
-        const body = err?.response?.data;
-        setError(typeof body === 'string' ? body : err?.message || 'Query failed');
+        setError(apiError(err, 'Query failed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -148,8 +148,7 @@ const QueryRoutesPanel = () => {
       const r = await queryLnRoutes(pubkey.trim(), amtAtoms);
       setResult(r);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Query failed');
+      setError(apiError(err, 'Query failed'));
     } finally {
       setBusy(false);
     }

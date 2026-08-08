@@ -6,6 +6,7 @@ import {
   setupLightning,
   unlockLightning,
 } from '../../../services/lightningApi';
+import { apiError } from '../../../utils/apiError';
 
 type Step = 'disclaimer' | 'passphrase' | 'running' | 'done';
 
@@ -129,8 +130,7 @@ export const LightningSetupWizard = ({ needsSetup, onReady }: Props) => {
       // retries UnlockWallet during the dcrlnd boot window. It is cleared
       // when the component unmounts on transition to the LN Overview.
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Operation failed');
+      setError(apiError(err, 'Operation failed'));
       setStep('passphrase');
     } finally {
       setSubmitting(false);

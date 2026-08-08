@@ -10,6 +10,7 @@ import { getDexWalletTxs, type DexWalletState, type DexWalletTx } from '../../se
 import { dexCoinExplorer } from './dexExplorers';
 import { fmtAmt } from './dexFormat';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
+import { apiError } from '../../utils/apiError';
 
 // Transaction type labels (decred.org/dcrdex/client/asset TransactionType).
 const TX_TYPES: Record<number, string> = {
@@ -83,7 +84,7 @@ export const DexWalletTxHistory = ({ wallet }: { wallet: DexWalletState }) => {
         if (batch.length < PAGE) setDone(true);
         setErr(null);
       } catch (e: any) {
-        setErr(e?.response?.data || e?.message || 'Failed to load transactions');
+        setErr(apiError(e, 'Failed to load transactions'));
       } finally {
         setLoading(false);
       }

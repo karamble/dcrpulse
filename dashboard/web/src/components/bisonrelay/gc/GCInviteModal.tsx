@@ -10,6 +10,7 @@ import {
   getBisonrelayContacts,
   inviteToBisonrelayGC,
 } from '../../../services/bisonrelayApi';
+import { apiError } from '../../../utils/apiError';
 
 const displayNick = (c: BisonrelayContact): string =>
   c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
@@ -35,8 +36,7 @@ export const GCInviteModal = ({
     getBisonrelayContacts()
       .then(setContacts)
       .catch((e) => {
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not load contacts');
+        setErr(apiError(e, 'Could not load contacts'));
       });
   }, []);
 
@@ -70,8 +70,7 @@ export const GCInviteModal = ({
       try {
         await inviteToBisonrelayGC(gc.id, uid);
       } catch (e: any) {
-        const body = e?.response?.data;
-        const msg = typeof body === 'string' ? body : e?.message || 'invite failed';
+        const msg = apiError(e, 'invite failed');
         failed.push(`${uid.slice(0, 8)}…: ${msg}`);
       }
     }

@@ -17,6 +17,7 @@ import {
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VSPSelect } from './VSPSelect';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 const formatDcr = (v: number): string => v.toFixed(8);
 
@@ -172,8 +173,7 @@ export const PurchaseTicketForm = ({ staking }: PurchaseTicketFormProps) => {
       }
       setSuccess(resp.ticketHashes);
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Purchase failed';
+      const msg = apiError(err, 'Purchase failed');
       throw new Error(msg);
     }
   };

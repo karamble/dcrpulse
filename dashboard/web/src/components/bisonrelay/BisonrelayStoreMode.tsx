@@ -10,6 +10,7 @@ import {
   getBisonrelayStoreTemplates,
   setBisonrelayStoreMode,
 } from '../../services/bisonrelayApi';
+import { apiError } from '../../utils/apiError';
 
 // BisonrelayStoreModePanel switches this node between three mutually exclusive
 // resource-hosting modes: off (serve nothing), static pages, and a simplestore
@@ -52,7 +53,7 @@ export const BisonrelayStoreModePanel = ({
         setErr(null);
         onModeChange?.(m);
       })
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Could not load hosting mode'));
+      .catch((e: any) => setErr(apiError(e, 'Could not load hosting mode')));
     refreshExists();
     // onModeChange is a stable callback from the host; run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,7 +70,7 @@ export const BisonrelayStoreModePanel = ({
       onModeChange?.(m);
       refreshExists();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Could not switch hosting mode');
+      setErr(apiError(e, 'Could not switch hosting mode'));
     } finally {
       setSaving(false);
     }

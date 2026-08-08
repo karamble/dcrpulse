@@ -8,6 +8,7 @@ import { dexAccountState, getDexAccount, postDexBond, setDexBondOptions, type De
 import { fmtAmt } from './dexFormat';
 import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
 import { startVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 const Card = ({ title, children }: { title: React.ReactNode; children: React.ReactNode }) => (
   <div className="p-4 rounded-xl bg-gradient-card border border-border/50 space-y-2">
@@ -146,7 +147,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
           setSeeded(true);
         }
       })
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Failed to load account'));
+      .catch((e: any) => setErr(apiError(e, 'Failed to load account')));
   };
   useEffect(() => {
     return startVisiblePoll(refresh, 60000);
@@ -169,7 +170,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
       });
       refresh();
     } catch (e: any) {
-      setActionErr(e?.response?.data || e?.message || 'Failed to update bond options');
+      setActionErr(apiError(e, 'Failed to update bond options'));
     } finally {
       setBusy(false);
     }
@@ -184,7 +185,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
       setConfirming(false);
       refresh();
     } catch (e: any) {
-      setActionErr(e?.response?.data || e?.message || 'Bond posting failed');
+      setActionErr(apiError(e, 'Bond posting failed'));
     } finally {
       setBusy(false);
     }

@@ -20,6 +20,7 @@ import { DexOrderForm as DexOrderFormBase } from './DexOrderForm';
 import { useDexCancel } from './DexCancelOrder';
 import { useDexAccount } from './useDexAccount';
 import { mockMarkets, mockBook, mockStats, mockCandles, mockOrders } from './dexMockData';
+import { apiError } from '../../utils/apiError';
 
 const HOST = 'dex.decred.org:7232';
 const EMPTY_BOOK = { buys: [], sells: [], recentMatches: [] };
@@ -121,7 +122,7 @@ export const DexMarketView = ({ preview = false }: { preview?: boolean }) => {
         // by the server banner; the error screen is for the nothing-to-render
         // case only.
         if (marketsRef.current.length) return;
-        setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load markets');
+        setLoadErr(apiError(e, 'Failed to load markets'));
       });
   }, [seedSpots]);
 

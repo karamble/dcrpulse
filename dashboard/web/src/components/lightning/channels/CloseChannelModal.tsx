@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, AlertTriangle, X } from 'lucide-react';
 import { LightningChannel, closeLightningChannel } from '../../../services/lightningApi';
+import { apiError } from '../../../utils/apiError';
 
 interface Props {
   channel: LightningChannel;
@@ -20,8 +21,7 @@ export const CloseChannelModal = ({ channel, onClose, onClosed }: Props) => {
       await closeLightningChannel(channel.channelPoint, force);
       onClosed();
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Close failed');
+      setError(apiError(err, 'Close failed'));
     } finally {
       setSubmitting(false);
     }

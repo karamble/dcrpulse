@@ -11,6 +11,7 @@ import {
   inviteToRTDTSession,
   joinRTDTSession,
 } from '../../../services/bisonrelayApi';
+import { apiError } from '../../../utils/apiError';
 
 const displayNick = (c: BisonrelayContact): string =>
   c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
@@ -36,8 +37,7 @@ export const NewRoomModal = ({
     getBisonrelayContacts()
       .then(setContacts)
       .catch((e) => {
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not load contacts');
+        setErr(apiError(e, 'Could not load contacts'));
       });
   }, []);
 
@@ -68,8 +68,7 @@ export const NewRoomModal = ({
         try {
           await inviteToRTDTSession(sess.rv, Array.from(selectedUids), true);
         } catch (e: any) {
-          const body = e?.response?.data;
-          setErr(`Created, but invite failed: ${typeof body === 'string' ? body : e?.message}`);
+          setErr(`Created, but invite failed: ${apiError(e, '')}`);
         }
       }
       try {
@@ -79,8 +78,7 @@ export const NewRoomModal = ({
       }
       onJoined(sess.rv);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Create failed');
+      setErr(apiError(e, 'Create failed'));
       setBusy(false);
     }
   };

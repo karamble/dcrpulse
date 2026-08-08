@@ -8,6 +8,7 @@ import { generateSeed, createNamedWallet, importXpub, listWallets } from '../ser
 import { KeyEnds } from './AddressGroups';
 import { AccountExportPicker, SelectedAccountEntry } from './AccountExportPicker';
 import { SeedEntry } from './wallet/SeedEntry';
+import { apiError } from '../utils/apiError';
 
 interface WalletSetupProps {
   // onComplete replaces the default redirect to /wallet (used when embedded in
@@ -239,10 +240,9 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
             const res = await importXpub(en.dpub, en.editedName || `account-${en.account}`, en.account, true);
             if (!res.success) throw new Error(res.message || 'import failed');
           } catch (impErr: any) {
-            const body = impErr?.response?.data;
             console.error('post-create account import failed:', impErr);
             setImportNote(
-              `Account "${en.editedName}": ${typeof body === 'string' ? body : impErr?.message || 'import failed'}`,
+              `Account "${en.editedName}": ${apiError(impErr, 'import failed')}`,
             );
             await new Promise((r) => setTimeout(r, 1500));
           }
@@ -263,7 +263,7 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
         setStep(failureStep);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create wallet. Please try again.');
+      setError(apiError(err, 'Failed to create wallet. Please try again.'));
       setStep(failureStep);
       console.error(err);
     }

@@ -75,6 +75,7 @@ import { RequestLiquidityModal } from '../lightning/channels/RequestLiquidityMod
 import { setBrNotifPrefs, useBrNotifPrefs } from './brNotifPrefs';
 import { BrMcpSection } from '../settings/BrMcpSection';
 import { startVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 // ---- Section routing --------------------------------------------------------
 
@@ -164,7 +165,7 @@ const AvatarControl = ({ nick }: { nick: string }) => {
       await setBisonrelayAvatar(b64);
       setAvatar(b64);
     } catch (e2: any) {
-      setErr(e2?.response?.data || e2?.message || 'Could not update avatar.');
+      setErr(apiError(e2, 'Could not update avatar.'));
     } finally {
       setBusy(false);
     }
@@ -177,7 +178,7 @@ const AvatarControl = ({ nick }: { nick: string }) => {
       await setBisonrelayAvatar('');
       setAvatar('');
     } catch (e2: any) {
-      setErr(e2?.response?.data || e2?.message || 'Could not clear avatar.');
+      setErr(apiError(e2, 'Could not clear avatar.'));
     } finally {
       setBusy(false);
     }
@@ -268,8 +269,7 @@ const AccountCard = () => {
       await subscribeAllBisonrelayPosts();
       setSubResult('Post subscriptions requested for all contacts.');
     } catch (e: any) {
-      const body = e?.response?.data;
-      setSubErr(typeof body === 'string' ? body : e?.message || 'Subscribe failed');
+      setSubErr(apiError(e, 'Subscribe failed'));
     } finally {
       setSubBusy(false);
     }
@@ -449,8 +449,7 @@ const SessionsCard = () => {
           'Each reset completes in the background once that contact comes online.',
       );
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Reset failed');
+      setErr(apiError(e, 'Reset failed'));
     } finally {
       setBusy(null);
     }
@@ -531,8 +530,7 @@ const KXListCard = () => {
       setKxs(await getBisonrelayKXList());
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load key exchanges');
+      setErr(apiError(e, 'Could not load key exchanges'));
     } finally {
       setBusy(false);
     }
@@ -548,8 +546,7 @@ const KXListCard = () => {
         prev.filter((m) => !(m.mediator === mediator && m.target === target)),
       );
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Cancel failed');
+      setErr(apiError(e, 'Cancel failed'));
     }
   };
 
@@ -727,8 +724,7 @@ const BehaviorCard = () => {
       setIgnoreDraft(r.saved.idleRemoveIgnore.join('\n'));
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load behavior settings');
+      setErr(apiError(e, 'Could not load behavior settings'));
     }
   }, []);
 
@@ -742,8 +738,7 @@ const BehaviorCard = () => {
         await setBisonrelayBehaviorSettings(update);
         await refresh();
       } catch (e: any) {
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not save setting');
+        setErr(apiError(e, 'Could not save setting'));
       }
     },
     [refresh],
@@ -868,8 +863,7 @@ const AdvancedCard = () => {
       setEffective(r.effective);
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load advanced settings');
+      setErr(apiError(e, 'Could not load advanced settings'));
     }
   }, []);
 
@@ -883,8 +877,7 @@ const AdvancedCard = () => {
         await setBisonrelayBehaviorSettings(update);
         await refresh();
       } catch (e: any) {
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not save setting');
+        setErr(apiError(e, 'Could not save setting'));
       }
     },
     [refresh],
@@ -1044,8 +1037,7 @@ const ConnectionCard = () => {
       setState(await getBisonrelayConnection());
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load connection state');
+      setErr(apiError(e, 'Could not load connection state'));
     }
   }, []);
 
@@ -1062,8 +1054,7 @@ const ConnectionCard = () => {
       await setBisonrelayConnection(!state.online);
       await refresh();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not change connection');
+      setErr(apiError(e, 'Could not change connection'));
     } finally {
       setBusy(false);
     }
@@ -1205,8 +1196,7 @@ const FiltersCard = () => {
       setFilters(await getBisonrelayFilters());
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load filters');
+      setErr(apiError(e, 'Could not load filters'));
     }
   }, []);
 
@@ -1253,8 +1243,7 @@ const FiltersCard = () => {
       setSample('');
       await refresh();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setFormErr(typeof body === 'string' ? body : e?.message || 'Could not save filter');
+      setFormErr(apiError(e, 'Could not save filter'));
     } finally {
       setBusy(false);
     }
@@ -1267,8 +1256,7 @@ const FiltersCard = () => {
       await deleteBisonrelayFilter(id);
       await refresh();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not delete filter');
+      setErr(apiError(e, 'Could not delete filter'));
     } finally {
       setBusy(false);
     }
@@ -1609,10 +1597,9 @@ const BackupCard = () => {
       applyStatus(await prepareBisonrelayBackup());
       startPolling();
     } catch (err: any) {
-      const body = err?.response?.data;
       applyStatus({
         state: 'error',
-        error: typeof body === 'string' ? body : err?.message || 'Backup preparation failed',
+        error: apiError(err, 'Backup preparation failed'),
       });
     } finally {
       if (aliveRef.current) setBusy(false);

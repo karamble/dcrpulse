@@ -40,6 +40,7 @@ import { InstantCallModal } from './realtime/InstantCallModal';
 import { InviteToRoomModal } from './realtime/InviteToRoomModal';
 import { NewRoomModal } from './realtime/NewRoomModal';
 import { shallowEqual } from '../../utils/shallowEqual';
+import { apiError } from '../../utils/apiError';
 
 const readHashRoom = (): string | null => {
   const h = window.location.hash.replace(/^#/, '');
@@ -108,8 +109,7 @@ const RoomList = ({ onOpen }: { onOpen: (rv: string) => void }) => {
       setSessions(await listRTDTSessions());
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not list sessions');
+      setErr(apiError(e, 'Could not list sessions'));
     }
   }, []);
 
@@ -129,8 +129,7 @@ const RoomList = ({ onOpen }: { onOpen: (rv: string) => void }) => {
       await joinRTDTSession(rv);
       onOpen(rv);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Join failed');
+      setErr(apiError(e, 'Join failed'));
     } finally {
       setBusy(false);
     }
@@ -456,8 +455,7 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
       // 2-hour default ban; bruig uses the same default.
       await kickRTDTPeer(rv, peerID, 7200);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Kick failed');
+      setErr(apiError(e, 'Kick failed'));
     } finally {
       setBusyAdmin(null);
     }
@@ -469,8 +467,7 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
     try {
       await rotateRTDTCookies(rv);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Rotate failed');
+      setErr(apiError(e, 'Rotate failed'));
     } finally {
       setBusyAdmin(null);
     }
@@ -909,8 +906,7 @@ const RTDTChatPanel = ({
       ]);
       setDraft('');
     } catch (err: any) {
-      const body = err?.response?.data;
-      setChatErr(typeof body === 'string' ? body : err?.message || 'Send failed');
+      setChatErr(apiError(err, 'Send failed'));
     } finally {
       setSending(false);
     }

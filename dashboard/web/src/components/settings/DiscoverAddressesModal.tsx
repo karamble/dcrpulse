@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, Search, X } from 'lucide-react';
+import { apiError } from '../../utils/apiError';
 
 interface DiscoverAddressesModalProps {
   isOpen: boolean;
@@ -49,8 +50,7 @@ export const DiscoverAddressesModal = ({
     try {
       await onSubmit(passphrase, gapLimit);
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Discovery failed';
+      const msg = apiError(err, 'Discovery failed');
       setError(msg);
     } finally {
       setSubmitting(false);

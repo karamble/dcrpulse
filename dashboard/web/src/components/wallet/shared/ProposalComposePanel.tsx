@@ -7,6 +7,7 @@ import { AlertCircle, Loader2, Send } from 'lucide-react';
 import { PassphraseModal } from '../PassphraseModal';
 import { MsigWallet, proposeMsigSpend } from '../../../services/msigApi';
 import { parseDcrAmount } from '../../../utils/amounts';
+import { apiError } from '../../../utils/apiError';
 
 const TTL_CHOICES = [
   { label: '1 hour', secs: 3600 },
@@ -76,8 +77,7 @@ export const ProposalComposePanel = ({
       setAskPass(false);
       onProposed();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not create the payment');
+      setErr(apiError(e, 'Could not create the payment'));
       throw e;
     } finally {
       setBusy(false);

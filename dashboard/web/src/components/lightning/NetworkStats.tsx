@@ -29,6 +29,7 @@ import { OnionIcon } from './OnionIcon';
 import { ScoreMeter } from './ScoreMeter';
 import { StatusPill } from './StatusPill';
 import { formatAtoms } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 const MAX_TOP_NODES = 50;
 
@@ -98,8 +99,7 @@ export const NetworkStats = () => {
       setPanel(p);
       setError(null);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to load network stats');
+      setError(apiError(err, 'Failed to load network stats'));
     } finally {
       setLoading(false);
       setFetching(false);

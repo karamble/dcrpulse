@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, Hash, ListOrdered } from 'lucide-react';
 import api, { decodeSeed } from '../../services/api';
+import { apiError } from '../../utils/apiError';
 
 // Wordlist is fetched once from /api/wallet/seed-words, which sources from
 // dcrwallet's pgpwordlist package (upstream source of truth).
@@ -176,8 +177,7 @@ export const SeedEntry = ({ onValidSeedHex, onInvalid }: Props) => {
         onValidSeedHex(resp.seedHex);
         setError(null);
       } catch (err: any) {
-        const body = err?.response?.data;
-        const msg = typeof body === 'string' ? body : err?.message || 'Invalid seed';
+        const msg = apiError(err, 'Invalid seed');
         setError(msg);
         onInvalid();
       }

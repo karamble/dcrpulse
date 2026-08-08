@@ -58,6 +58,7 @@ import {
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { ContactGroupModal } from './BisonrelayContactGroupModals';
+import { apiError } from '../../utils/apiError';
 import { TipModal } from './TipModal';
 import { formatAtomsTrimmed } from '../../utils/amounts';
 import { formatBytes as formatBytesPretty } from '../../utils/bytes';
@@ -400,8 +401,7 @@ const RenameModal = ({
       await renameBisonrelayContact(uid, trimmed);
       onSuccess(trimmed);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Rename failed');
+      setErr(apiError(e, 'Rename failed'));
     } finally {
       setSubmitting(false);
     }
@@ -588,8 +588,7 @@ export const ContentListModal = ({
       setFiles(list);
     });
     listBisonrelayUserContent(uid).catch((e: any) => {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not request content list');
+      setErr(apiError(e, 'Could not request content list'));
     });
     return unsubscribe;
   }, [addListener, uid]);
@@ -748,8 +747,7 @@ const ContentFileRow = ({
     try {
       await startBisonrelayContentGet(uid, file.file_id, maxCostAtoms);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not start download');
+      setErr(apiError(e, 'Could not start download'));
       setPhase('error');
     }
   };
@@ -898,8 +896,7 @@ const PostsListModal = ({
     try {
       await fetchBisonrelayUserPost(uid, post.id);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not request post');
+      setErr(apiError(e, 'Could not request post'));
       setInflight((prev) => {
         if (!prev.has(post.id)) return prev;
         const next = new Set(prev);
@@ -949,8 +946,7 @@ const PostsListModal = ({
       }
     });
     listBisonrelayUserPosts(uid).catch((e: any) => {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not request post list');
+      setErr(apiError(e, 'Could not request post list'));
     });
     return unsubscribe;
   }, [addListener, uid]);
@@ -1088,8 +1084,7 @@ const ContactPickerModal = ({
       onClose();
       onSuccess?.();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+      setErr(apiError(e, 'Action failed'));
     } finally {
       setSubmitting(false);
     }
@@ -1222,8 +1217,7 @@ export const ConfirmActionModal = ({
       onClose();
       onSuccess?.();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+      setErr(apiError(e, 'Action failed'));
     } finally {
       setSubmitting(false);
     }

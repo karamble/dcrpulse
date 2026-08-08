@@ -11,6 +11,7 @@ import {
 import { EditorEmbed } from './brEmbedBuilder';
 import { formatAtomsTrimmed } from '../../../utils/amounts';
 import { formatBytes } from '../../../utils/bytes';
+import { apiError } from '../../../utils/apiError';
 
 interface Props {
   onClose: () => void;
@@ -39,8 +40,7 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
         setFiles(list);
       })
       .catch((e: any) => {
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not load shared files');
+        setErr(apiError(e, 'Could not load shared files'));
       });
   }, []);
 

@@ -16,6 +16,7 @@ import {
 } from '../../services/bisonrelayApi';
 import { refreshTheme } from '../../services/bisonrelayStoreTheme';
 import { downscaleImageFile } from './storeImage';
+import { apiError } from '../../utils/apiError';
 
 const emptyProduct = (): BisonrelayStoreProduct => ({
   title: '',
@@ -43,7 +44,7 @@ export const BisonrelayStoreProducts = () => {
         setProducts(p);
         setErr(null);
       })
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Could not load products'));
+      .catch((e: any) => setErr(apiError(e, 'Could not load products')));
   };
   useEffect(load, []);
 
@@ -67,7 +68,7 @@ export const BisonrelayStoreProducts = () => {
       setProducts(ps);
       await refreshTheme(ps);
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Save failed');
+      setErr(apiError(e, 'Save failed'));
     } finally {
       setSaving(false);
     }
@@ -81,7 +82,7 @@ export const BisonrelayStoreProducts = () => {
       setProducts(ps);
       await refreshTheme(ps);
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Delete failed');
+      setErr(apiError(e, 'Delete failed'));
     }
   };
 
@@ -212,7 +213,7 @@ const ProductForm = ({
       const stored = await uploadBisonrelayStoreFile(value.sendfilename ?? '', file);
       set({ sendfilename: stored });
     } catch (e: any) {
-      setUploadErr(e?.response?.data || e?.message || 'Upload failed');
+      setUploadErr(apiError(e, 'Upload failed'));
     } finally {
       setUploading(false);
     }
@@ -244,7 +245,7 @@ const ProductForm = ({
       setCoverBust(Date.now());
       onAssetsChanged();
     } catch (e: any) {
-      setCoverErr(e?.response?.data || e?.message || 'Cover upload failed');
+      setCoverErr(apiError(e, 'Cover upload failed'));
     } finally {
       setCoverBusy(false);
     }
@@ -270,7 +271,7 @@ const ProductForm = ({
       setCoverBust(Date.now());
       onAssetsChanged();
     } catch (e: any) {
-      setCoverErr(e?.response?.data || e?.message || 'Could not set cover');
+      setCoverErr(apiError(e, 'Could not set cover'));
     } finally {
       setCoverBusy(false);
     }

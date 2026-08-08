@@ -17,6 +17,7 @@ import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 const VALIDATE_DEBOUNCE_MS = 400;
 const CONSTRUCT_DEBOUNCE_MS = 500;
@@ -183,8 +184,7 @@ export const SendTab = () => {
         setAddrCheck({ state: 'valid', isMine: true });
       } catch (err: any) {
         if (cancelled) return;
-        const body = err?.response?.data;
-        const msg = typeof body === 'string' ? body : err?.message || 'Failed to derive destination address';
+        const msg = apiError(err, 'Failed to derive destination address');
         setDeriveError(msg);
         setRecipient('');
         setAddrCheck({ state: 'invalid', message: msg });
@@ -223,8 +223,7 @@ export const SendTab = () => {
         });
         setConstruct(resp);
       } catch (err: any) {
-        const body = err?.response?.data;
-        const msg = typeof body === 'string' ? body : err?.message || 'Failed to construct transaction';
+        const msg = apiError(err, 'Failed to construct transaction');
         setConstructError(msg);
         setConstruct(null);
       } finally {

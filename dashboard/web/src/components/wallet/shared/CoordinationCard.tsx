@@ -16,6 +16,7 @@ import {
   markMsigDelivered,
   msigFrameTypeLabel,
 } from '../../../services/msigApi';
+import { apiError } from '../../../utils/apiError';
 
 // A frame small enough for one scannable QR; larger ones use the file.
 const qrLimit = 1800;
@@ -84,8 +85,7 @@ export const CoordinationCard = ({
       await markMsigDelivered(wallet.tempId, f.mid, f.toUid);
       await load();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not update the message');
+      setErr(apiError(e, 'Could not update the message'));
     }
   };
 
@@ -119,8 +119,7 @@ export const CoordinationCard = ({
       await load();
       onChanged();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not import the message');
+      setErr(apiError(e, 'Could not import the message'));
     } finally {
       setBusy(false);
     }

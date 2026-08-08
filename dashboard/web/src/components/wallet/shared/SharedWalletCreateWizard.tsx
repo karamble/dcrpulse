@@ -12,6 +12,7 @@ import {
 } from '../../../services/bisonrelayApi';
 import { PassphraseModal } from '../PassphraseModal';
 import { createMsigWallet, MsigInvitee } from '../../../services/msigApi';
+import { apiError } from '../../../utils/apiError';
 
 const displayNick = (c: BisonrelayContact): string =>
   c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
@@ -53,8 +54,7 @@ export const SharedWalletCreateWizard = ({
         // greyed relay card explains what to do, so the banner only
         // shows when the relay claims to be ready.
         setContacts([]);
-        const body = e?.response?.data;
-        setContactsErr(typeof body === 'string' ? body : e?.message || 'Could not load contacts');
+        setContactsErr(apiError(e, 'Could not load contacts'));
       });
   }, []);
 
@@ -116,8 +116,7 @@ export const SharedWalletCreateWizard = ({
       onCreated();
       onClose();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not send the invitations');
+      setErr(apiError(e, 'Could not send the invitations'));
       throw e;
     }
   };

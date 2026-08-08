@@ -15,6 +15,7 @@ import {
 import { useDexRefreshOnNotes } from './DexLiveProvider';
 import { convQty, convRate, fmtAmt, fmtPrice, fmtUsd } from './dexFormat';
 import { dexCoinExplorer } from './dexExplorers';
+import { apiError } from '../../utils/apiError';
 
 type AssetInfo = (assetID: number) => { symbol: string; convFactor: number };
 
@@ -257,7 +258,7 @@ export const DexMMRunLogs = ({
         // A paged fetch that returns only the refID echo (or nothing) is the end.
         if (refID !== undefined && logs.length <= 1) setDone(true);
       } catch (e: any) {
-        setErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load run logs');
+        setErr(apiError(e, 'Failed to load run logs'));
       } finally {
         setLoading(false);
       }

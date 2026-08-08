@@ -25,6 +25,7 @@ import {
 import { VoteModal } from './VoteModal';
 import { useWalletReady } from '../../hooks/useWalletReady';
 import { VoteResultsBar } from './VoteResultsBar';
+import { apiError } from '../../utils/apiError';
 
 const POLITEIA_BASE = 'https://proposals.decred.org/record';
 
@@ -155,8 +156,7 @@ export const ProposalDetailPage = () => {
       setFetchedAt(r.fetchedAt);
       setRefreshAvailableAt(r.refreshAvailableAt);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to load proposal');
+      setError(apiError(err, 'Failed to load proposal'));
     } finally {
       setLoading(false);
     }

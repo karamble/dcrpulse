@@ -8,6 +8,7 @@ import {
   subscribeLightningChannelEvents,
 } from '../../../services/lightningApi';
 import { ChannelRow } from './ChannelRow';
+import { apiError } from '../../../utils/apiError';
 
 type Filter = 'all' | 'open' | 'pending' | 'closed';
 
@@ -37,8 +38,7 @@ export const ChannelList = () => {
       const r = await getLightningChannels();
       setChannels(r.channels || []);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to load channels');
+      setError(apiError(err, 'Failed to load channels'));
     } finally {
       setLoading(false);
     }

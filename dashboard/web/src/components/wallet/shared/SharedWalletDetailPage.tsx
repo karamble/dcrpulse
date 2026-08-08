@@ -21,6 +21,7 @@ import {
 import { ProposalComposePanel } from './ProposalComposePanel';
 import { ProposalList } from './ProposalList';
 import { formatAtoms } from '../../../utils/amounts';
+import { apiError } from '../../../utils/apiError';
 
 
 const downloadJson = (data: unknown, filename: string) => {
@@ -49,8 +50,7 @@ export const SharedWalletDetailPage = () => {
       setDetail(await getMsigDetail(id));
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load this shared wallet');
+      setErr(apiError(e, 'Could not load this shared wallet'));
     }
   }, [id]);
 
@@ -81,8 +81,7 @@ export const SharedWalletDetailPage = () => {
       const card = await getMsigBackup(id);
       downloadJson(card, `shared-wallet-${detail?.record.label || id}.json`);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not export the backup');
+      setErr(apiError(e, 'Could not export the backup'));
     } finally {
       setBusy(false);
     }
@@ -95,8 +94,7 @@ export const SharedWalletDetailPage = () => {
       await cancelMsigRound(id);
       await load();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not cancel');
+      setErr(apiError(e, 'Could not cancel'));
     } finally {
       setBusy(false);
     }

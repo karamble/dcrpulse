@@ -6,9 +6,10 @@ import { useCallback, useState } from 'react';
 import { AlertCircle, X } from 'lucide-react';
 import { cancelDexOrder, type DexMarket, type DexOrder } from '../../services/dcrdexApi';
 import { convQty, fmtAmt } from './dexFormat';
+import { apiError } from '../../utils/apiError';
 
 const serverMsg = (e: any): string =>
-  (typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Cancel failed';
+  apiError(e, 'Cancel failed');
 
 interface ModalProps {
   order: DexOrder;

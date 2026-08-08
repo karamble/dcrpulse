@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Lock, X } from 'lucide-react';
+import { apiError } from '../../utils/apiError';
 
 interface PassphraseModalProps {
   isOpen: boolean;
@@ -47,8 +48,7 @@ export const PassphraseModal = ({
     try {
       await onSubmit(passphrase);
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Operation failed';
+      const msg = apiError(err, 'Operation failed');
       setError(msg);
     } finally {
       setSubmitting(false);

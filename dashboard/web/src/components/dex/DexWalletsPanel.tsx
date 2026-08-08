@@ -11,6 +11,7 @@ import { DexWalletDetail } from './DexWalletDetail';
 import { DexAddWallet } from './DexAddWallet';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 const statusDot = (w: DexWalletState) => {
   if (w.disabled || !w.running) return 'bg-muted-foreground/40';
@@ -35,7 +36,7 @@ export const DexWalletsPanel = () => {
         setErr(null);
         setSelected((cur) => (cur != null && w.some((x) => x.assetID === cur) ? cur : w[0]?.assetID ?? null));
       })
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Failed to load wallets'));
+      .catch((e: any) => setErr(apiError(e, 'Failed to load wallets')));
   };
 
   useEffect(() => {

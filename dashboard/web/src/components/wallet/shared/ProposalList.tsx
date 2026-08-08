@@ -17,6 +17,7 @@ import {
   signMsigProposal,
 } from '../../../services/msigApi';
 import { formatAtoms } from '../../../utils/amounts';
+import { apiError } from '../../../utils/apiError';
 
 
 const tone = (status: string): string => {
@@ -66,8 +67,7 @@ export const ProposalList = ({
       await fn();
       onChanged();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+      setErr(apiError(e, 'Action failed'));
       // A rejected action usually means the card is stale; re-sync it.
       onChanged();
     } finally {
@@ -81,8 +81,7 @@ export const ProposalList = ({
       setAskPassFor(null);
       onChanged();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not approve');
+      setErr(apiError(e, 'Could not approve'));
       throw e;
     }
   };

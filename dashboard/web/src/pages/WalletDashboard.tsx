@@ -19,6 +19,7 @@ import { getWalletDashboard, WalletDashboardData, triggerRescan, getSyncProgress
 import { useWalletReady } from '../hooks/useWalletReady';
 import { useVisiblePoll } from '../hooks/useVisiblePoll';
 import { shallowEqual } from '../utils/shallowEqual';
+import { apiError } from '../utils/apiError';
 
 export const WalletDashboard = () => {
   const [walletExists, setWalletExists] = useState<boolean | null>(null);
@@ -103,8 +104,7 @@ export const WalletDashboard = () => {
       // Reload the page to initialize everything with opened wallet
       window.location.reload();
     } catch (err: any) {
-      const errorMsg = err.response?.data?.message || err.message || 'Failed to open wallet';
-      setPassphraseError(errorMsg);
+      setPassphraseError(apiError(err, 'Failed to open wallet'));
     } finally {
       setIsOpeningWallet(false);
     }
@@ -133,7 +133,7 @@ export const WalletDashboard = () => {
             try {
               await openWallet({ publicPassphrase: '' });
             } catch (err: any) {
-              const errorMsg = err.response?.data?.message || err.message || '';
+              const errorMsg = apiError(err, '');
 
               // Check if error is due to wrong passphrase
               if (errorMsg.includes('passphrase') || errorMsg.includes('invalid') || errorMsg.includes('incorrect')) {
@@ -236,7 +236,7 @@ export const WalletDashboard = () => {
       // WebSocket stream will automatically detect and show rescan progress
     } catch (err: any) {
       console.error('Error triggering rescan:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to trigger rescan');
+      setError(apiError(err, 'Failed to trigger rescan'));
       setIsPreparingRescan(false); // Clear preparing state on error
     }
   };

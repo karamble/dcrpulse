@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { AlertCircle, KeyRound, ShieldCheck } from 'lucide-react';
 import { initDex, unlockDex } from '../../services/dcrdexApi';
+import { apiError } from '../../utils/apiError';
 
 interface DexSetupWizardProps {
   mode: 'needs-init' | 'needs-unlock';
@@ -40,8 +41,7 @@ export const DexSetupWizard = ({ mode, onReady }: DexSetupWizardProps) => {
       }
       onReady();
     } catch (e2: any) {
-      const body = e2?.response?.data;
-      setErr((typeof body === 'string' && body.trim()) || e2?.message || 'Request failed');
+      setErr(apiError(e2, 'Request failed'));
       setBusy(false);
     }
   };

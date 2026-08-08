@@ -28,6 +28,7 @@ import { useDexRefreshOnNotes } from './DexLiveProvider';
 import { CoinIcon } from './CoinIcon';
 import { DexWalletSend } from './DexWalletSend';
 import { DexWalletTxHistory } from './DexWalletTxHistory';
+import { apiError } from '../../utils/apiError';
 
 const Card = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <div className="p-4 rounded-xl bg-gradient-card border border-border/50 space-y-2">
@@ -175,7 +176,7 @@ export const DexWalletDetail = ({
       setAddr(a);
       setAddrUsed(false);
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Failed to generate address');
+      setErr(apiError(e, 'Failed to generate address'));
     } finally {
       setGenerating(false);
     }
@@ -188,7 +189,7 @@ export const DexWalletDetail = ({
       await fn();
       onChanged();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Action failed');
+      setErr(apiError(e, 'Action failed'));
     } finally {
       setBusy(false);
     }

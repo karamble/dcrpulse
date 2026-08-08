@@ -29,6 +29,7 @@ import {
   getLightningStatus,
 } from '../../services/lightningApi';
 import { BisonrelayDisclaimer } from './BisonrelayDisclaimer';
+import { apiError } from '../../utils/apiError';
 
 const DISCLAIMER_ACCEPTED_KEY = 'dcrpulse.br.disclaimer-accepted';
 
@@ -127,8 +128,7 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
     try {
       await setupBisonrelay(nick.trim(), fullName.trim());
     } catch (err: any) {
-      const body = err?.response?.data;
-      setSubmitErr(typeof body === 'string' ? body : err?.message || 'Setup failed');
+      setSubmitErr(apiError(err, 'Setup failed'));
     } finally {
       setSubmitting(false);
     }
@@ -144,8 +144,7 @@ export const BisonrelaySetupWizard = ({ onReady }: Props) => {
       // status polling above picks the daemon back up automatically.
       setRestoreStaged(true);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setRestoreErr(typeof body === 'string' ? body : err?.message || 'Restore failed');
+      setRestoreErr(apiError(err, 'Restore failed'));
     } finally {
       setRestoring(false);
     }

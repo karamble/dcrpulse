@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Edit2, X } from 'lucide-react';
 import { renameAccount } from '../../services/api';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   isOpen: boolean;
@@ -60,8 +61,7 @@ export const RenameAccountModal = ({
       await renameAccount(accountNumber, trimmedName);
       onSuccess(trimmedName);
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Failed to rename';
+      const msg = apiError(err, 'Failed to rename');
       setError(msg);
     } finally {
       setSubmitting(false);

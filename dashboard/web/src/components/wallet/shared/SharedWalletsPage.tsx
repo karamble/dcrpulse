@@ -19,6 +19,7 @@ import { PassphraseModal } from '../PassphraseModal';
 import { IncomingInviteBanner } from './IncomingInviteBanner';
 import { SharedWalletCreateWizard } from './SharedWalletCreateWizard';
 import { formatAtoms } from '../../../utils/amounts';
+import { apiError } from '../../../utils/apiError';
 
 const statusTone = (status: string): string => {
   switch (status) {
@@ -60,8 +61,7 @@ export const SharedWalletsPage = () => {
       setWallets(list);
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load shared wallets');
+      setErr(apiError(e, 'Could not load shared wallets'));
       setWallets([]);
     }
   }, []);
@@ -99,12 +99,7 @@ export const SharedWalletsPage = () => {
         setRestoreCard(JSON.parse(await file.text()));
         return;
       }
-      const body = e?.response?.data;
-      setErr(
-        typeof body === 'string'
-          ? body
-          : e?.message || 'Could not restore from that file',
-      );
+      setErr(apiError(e, 'Could not restore from that file'));
     }
   };
 
@@ -114,8 +109,7 @@ export const SharedWalletsPage = () => {
       setRestoreCard(null);
       await load();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not restore from that file');
+      setErr(apiError(e, 'Could not restore from that file'));
       throw e;
     }
   };
@@ -138,9 +132,8 @@ export const SharedWalletsPage = () => {
       closeImport();
       await load();
     } catch (e: any) {
-      const body = e?.response?.data;
       setImportErr(
-        typeof body === 'string' ? body : e?.message || 'Could not import the invitation',
+        apiError(e, 'Could not import the invitation'),
       );
     } finally {
       setImportBusy(false);
@@ -154,8 +147,7 @@ export const SharedWalletsPage = () => {
       await refreshMsig();
       await load();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Refresh failed');
+      setErr(apiError(e, 'Refresh failed'));
     } finally {
       setRefreshing(false);
     }

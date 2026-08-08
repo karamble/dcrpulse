@@ -10,6 +10,7 @@ import { createTimestamp, type TimestampRecord } from '../../services/timestampA
 import { StatusBadge } from './StatusBadge';
 import { StageList, type Stage, type StageState } from './StageList';
 import { fmtBytes, shortHash } from './util';
+import { apiError } from '../../utils/apiError';
 
 type Phase = 'idle' | 'hashing' | 'ready' | 'submitting' | 'done' | 'error';
 
@@ -99,11 +100,7 @@ export const StampView = ({ onStamped }: Props) => {
         setDuplicate(err.response.data.record as TimestampRecord);
         setPhase('ready');
       } else {
-        setError(
-          (typeof err?.response?.data === 'string' && err.response.data) ||
-            err?.message ||
-            'submission failed',
-        );
+        setError(apiError(err, 'submission failed'));
         setPhase('error');
       }
     }

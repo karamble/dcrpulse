@@ -10,6 +10,7 @@ import {
 import { InvoiceRow } from './InvoiceRow';
 import { InvoiceDetailsModal } from './InvoiceDetailsModal';
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
+import { apiError } from '../../../utils/apiError';
 
 const atomsPerDcr = 1e8;
 const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
@@ -120,8 +121,7 @@ export const ReceiveTab = () => {
       setMemo('');
       setValueAtoms(0);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setCreateError(typeof body === 'string' ? body : err?.message || 'Create failed');
+      setCreateError(apiError(err, 'Create failed'));
     } finally {
       setCreating(false);
     }

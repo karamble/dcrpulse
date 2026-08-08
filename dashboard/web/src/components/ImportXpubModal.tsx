@@ -8,6 +8,7 @@ import { importXpub, getAccounts } from '../services/api';
 import { useWalletReady } from '../hooks/useWalletReady';
 import { KeyEnds } from './AddressGroups';
 import { AccountExportPicker, SelectedAccountEntry } from './AccountExportPicker';
+import { apiError } from '../utils/apiError';
 
 // Reserved system accounts that other daemons / dcrwallet bind to by name and
 // must never be reused for an imported xpub. Mirrors services.IsReservedAccountName.
@@ -101,8 +102,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
         status[en.account] = 'imported';
         imported++;
       } catch (err: any) {
-        const body = err?.response?.data;
-        status[en.account] = typeof body === 'string' ? body : err?.message || 'failed';
+        status[en.account] = apiError(err, 'failed');
       }
       setQueue({ ...status });
       if (i < fileSelected.length - 1) {
@@ -175,8 +175,7 @@ export const ImportXpubModal = ({ isOpen, onClose, onSuccess }: ImportXpubModalP
       }
     } catch (err: any) {
       console.error('Error importing xpub:', err);
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : body?.message || err?.message || 'Failed to import xpub';
+      const msg = apiError(err, 'Failed to import xpub');
       setError(msg);
     } finally {
       setLoading(false);

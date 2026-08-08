@@ -30,6 +30,7 @@ import {
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
 import { formatBytes } from '../../utils/bytes';
+import { apiError } from '../../utils/apiError';
 
 type Section = 'add' | 'shared' | 'downloads';
 
@@ -147,8 +148,7 @@ const AddContentView = ({ onShared }: { onShared: () => void }) => {
       setDescr('');
       onShared();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Share failed');
+      setErr(apiError(e, 'Share failed'));
     } finally {
       setSubmitting(false);
     }
@@ -295,8 +295,7 @@ const SharedListView = () => {
       setItems(list);
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load shared files');
+      setErr(apiError(e, 'Could not load shared files'));
     }
   }, []);
 
@@ -311,8 +310,7 @@ const SharedListView = () => {
       await unshareBisonrelayFile(fid);
       await reload();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Unshare failed');
+      setErr(apiError(e, 'Unshare failed'));
     } finally {
       setRemoving(null);
     }
@@ -412,8 +410,7 @@ const DownloadsView = () => {
       setProgress({}); // server snapshot now authoritative
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load downloads');
+      setErr(apiError(e, 'Could not load downloads'));
     }
   }, []);
 
@@ -441,8 +438,7 @@ const DownloadsView = () => {
       await cancelBisonrelayDownload(fid);
       await reload();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Cancel failed');
+      setErr(apiError(e, 'Cancel failed'));
     } finally {
       setCancelling(null);
     }
@@ -462,8 +458,7 @@ const DownloadsView = () => {
       setItems((prev) => (prev ? prev.filter((x) => !(x.fid === it.fid && x.uid === it.uid)) : prev));
       await reload();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Delete failed');
+      setErr(apiError(e, 'Delete failed'));
     } finally {
       setDeleting(null);
     }

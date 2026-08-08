@@ -8,6 +8,7 @@ import { listTimestamps, refreshTimestamps, exportUrl, type TimestampRecord } fr
 import { StatusBadge } from './StatusBadge';
 import { fromUnix, shortHash } from './util';
 import { toYMDTime } from '../../utils/date';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   onOpen: (digest: string) => void;
@@ -29,7 +30,7 @@ export const LibraryView = ({ onOpen, reloadKey }: Props) => {
       const data = await listTimestamps({ q: q.trim() || undefined, status: status || undefined, sort });
       setRecords(data);
     } catch (e: any) {
-      setError((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'failed to load archive');
+      setError(apiError(e, 'failed to load archive'));
     } finally {
       setLoading(false);
     }

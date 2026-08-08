@@ -8,6 +8,7 @@ import {
 } from '../../../services/lightningApi';
 import { SearchForNodesModal } from './SearchForNodesModal';
 import { parseDcrAmount } from '../../../utils/amounts';
+import { apiError } from '../../../utils/apiError';
 
 interface Props {
   onChannelOpened: () => void;
@@ -100,8 +101,7 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
       setPushDcr('');
       onChannelOpened();
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to open channel');
+      setError(apiError(err, 'Failed to open channel'));
     } finally {
       setSubmitting(false);
     }

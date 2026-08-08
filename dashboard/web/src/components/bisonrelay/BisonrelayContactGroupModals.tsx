@@ -13,6 +13,7 @@ import {
   setBisonrelayContactGroupSettings,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { apiError } from '../../utils/apiError';
 
 const inputCls =
   'w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm focus:outline-none focus:border-primary/50';
@@ -22,8 +23,7 @@ const mutedBtnCls =
   'px-3 py-1.5 rounded-lg bg-muted/30 border border-border text-xs font-semibold hover:bg-muted/50';
 
 const errMsg = (e: any): string => {
-  const body = e?.response?.data;
-  return typeof body === 'string' ? body : e?.message || 'Action failed';
+  return apiError(e, 'Action failed');
 };
 
 // ContactGroupModal moves a single contact (keyed by uid, never by nick)

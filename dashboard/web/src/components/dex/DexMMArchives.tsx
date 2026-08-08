@@ -8,6 +8,7 @@ import { AlertCircle, ChevronLeft, ChevronRight, History } from 'lucide-react';
 import { getMMArchivedRuns, type DexMarket, type MMArchivedRun } from '../../services/dcrdexApi';
 import { fmtUsd } from './dexFormat';
 import { DexMMRunLogs } from './DexMMRunLogs';
+import { apiError } from '../../utils/apiError';
 
 type AssetInfo = (assetID: number) => { symbol: string; convFactor: number };
 
@@ -33,7 +34,7 @@ export const DexMMArchives = ({
         setRuns([...r].sort((a, b) => b.startTime - a.startTime));
         setErr(null);
       })
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Failed to load run history'));
+      .catch((e: any) => setErr(apiError(e, 'Failed to load run history')));
   }, []);
 
   const marketOf = (r: MMArchivedRun) =>

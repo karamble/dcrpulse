@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { updateMMCexConfig } from '../../services/dcrdexApi';
 import { CEX_DISPLAY, CexIcon, SUPPORTED_CEXES } from './CexIcon';
+import { apiError } from '../../utils/apiError';
 
 // DexMMCexConfigForm stores a centralized-exchange API key/secret for the arb
 // bots. v1.0.6 supports Binance and BinanceUS. Credentials persist in bisonw's
@@ -30,7 +31,7 @@ export const DexMMCexConfigForm = ({ onSaved }: { onSaved: () => void }) => {
       setApiSecret('');
       onSaved();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Failed to save CEX credentials');
+      setErr(apiError(e, 'Failed to save CEX credentials'));
     } finally {
       setBusy(false);
     }

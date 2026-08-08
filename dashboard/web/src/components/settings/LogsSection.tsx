@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, RefreshCw, ScrollText } from 'lucide-react';
 import { LogComponent, getLogs } from '../../services/api';
+import { apiError } from '../../utils/apiError';
 
 const components: { value: LogComponent; label: string }[] = [
   { value: 'dcrwallet', label: 'dcrwallet' },
@@ -44,8 +45,7 @@ export const LogsSection = () => {
       setData(r.lines);
       setShownLines(500);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to load logs');
+      setError(apiError(err, 'Failed to load logs'));
     } finally {
       setLoading(false);
     }

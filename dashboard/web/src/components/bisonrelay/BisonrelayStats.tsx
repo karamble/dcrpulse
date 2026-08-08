@@ -58,6 +58,7 @@ import {
 import { avatarDataUrl } from './bisonrelayAvatar';
 import { ConfirmActionModal } from './BisonrelayUserSubNav';
 import { formatBytes } from '../../utils/bytes';
+import { apiError } from '../../utils/apiError';
 
 type Section = 'overview' | 'payments' | 'network' | 'contacts' | 'content';
 
@@ -150,8 +151,7 @@ const usePolledStats = <T,>(loader: () => Promise<T>): {
       // expected to be unresponsive while a backup holds the clientdb
       // lock. Only a failed initial load surfaces the error banner.
       if (dataRef.current !== null) return;
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load stats');
+      setErr(apiError(e, 'Could not load stats'));
     }
   }, [loader]);
 

@@ -11,6 +11,7 @@ import {
   BlockedGCReinvite,
 } from '../../../services/bisonrelayApi';
 import { useBisonrelayLive } from '../BisonrelayLiveProvider';
+import { apiError } from '../../../utils/apiError';
 
 interface PendingGCInvite {
   iid: number;
@@ -66,8 +67,7 @@ export const IncomingGCInvitesBanner = ({
         setBlocked(blocked_reinvites);
       })
       .catch((e: any) => {
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not load invites');
+        setErr(apiError(e, 'Could not load invites'));
       });
   }, []);
 
@@ -136,8 +136,7 @@ export const IncomingGCInvitesBanner = ({
       dismiss(inv.iid);
       onAccepted();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Accept failed');
+      setErr(apiError(e, 'Accept failed'));
     } finally {
       setBusyIID(null);
     }
@@ -153,8 +152,7 @@ export const IncomingGCInvitesBanner = ({
       setLeftHints((prev) => [...prev.filter((x) => x.gcid !== b.gcid), b]);
       onAccepted();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Leave failed');
+      setErr(apiError(e, 'Leave failed'));
     } finally {
       setBusyGCID(null);
     }

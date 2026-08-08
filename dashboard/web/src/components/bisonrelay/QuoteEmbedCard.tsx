@@ -11,6 +11,7 @@ import {
   getBisonrelayPostBody,
 } from '../../services/bisonrelayApi';
 import { isImageMime, parseEmbeds } from './embedParser';
+import { apiError } from '../../utils/apiError';
 
 // QuoteEmbedCard renders a quote-by-reference embed
 // (--embed[type=quote,from=,post=]--, docs/features/bison-relay-quote-embed.md)
@@ -145,8 +146,7 @@ export const QuoteEmbedCard = ({
       // delivered request that never answers (author offline, or the
       // author blocked us - indistinguishable on BR by design) stays in
       // the requested state instead.
-      const body = e?.response?.data;
-      setFetchErr(typeof body === 'string' ? body : e?.message || 'Could not request the post');
+      setFetchErr(apiError(e, 'Could not request the post'));
       setFetchState('idle');
     }
   };

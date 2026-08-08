@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { AlertCircle, Loader2, Users, X } from 'lucide-react';
 import { BisonrelayGC, createBisonrelayGC } from '../../../services/bisonrelayApi';
+import { apiError } from '../../../utils/apiError';
 
 // CreateGCModal creates a new GC with the caller as owner. The GC name is
 // immutable per BR (the local alias can be changed via /alias later), so
@@ -30,8 +31,7 @@ export const CreateGCModal = ({
       const gc = await createBisonrelayGC(trimmed);
       onCreated(gc);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Create failed');
+      setErr(apiError(e, 'Create failed'));
       setBusy(false);
     }
   };

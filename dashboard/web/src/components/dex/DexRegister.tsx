@@ -26,6 +26,7 @@ import { DexWalletConfigForm } from './DexWalletConfigForm';
 import { fmtAmt } from './dexFormat';
 import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
 import { startVisiblePoll, useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 interface DexRegisterProps {
   host: string;
@@ -66,7 +67,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
         })
         .catch((e: any) => {
           if (!cancelled)
-            setLoadErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to load DEX config');
+            setLoadErr(apiError(e, 'Failed to load DEX config'));
         });
     // After a seed restore the client has no record of this server; discover the
     // account first. If it already has a live bond, skip straight to trading.
@@ -261,7 +262,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
       setWpass('');
       await refreshWallets();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Wallet creation failed');
+      setErr(apiError(e, 'Wallet creation failed'));
     } finally {
       setBusy(false);
     }
@@ -276,7 +277,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
       // the broadcast (or a pre-broadcast error) and then hands off to trading.
       setSubmitting(true);
     } catch (e: any) {
-      setErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Bond posting failed');
+      setErr(apiError(e, 'Bond posting failed'));
       setBusy(false);
       setConfirming(false);
     }

@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, KeyRound, X } from 'lucide-react';
+import { apiError } from '../../utils/apiError';
 
 interface ChangePassphraseModalProps {
   isOpen: boolean;
@@ -47,8 +48,7 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
     try {
       await onSubmit(oldPass, newPass);
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Failed to change passphrase';
+      const msg = apiError(err, 'Failed to change passphrase');
       setError(msg);
     } finally {
       setSubmitting(false);

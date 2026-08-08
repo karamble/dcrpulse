@@ -58,6 +58,7 @@ import {
   ratchetHealth,
   relativeTime,
 } from './BisonrelayStats';
+import { apiError } from '../../utils/apiError';
 
 const healthMeta: Record<RatchetHealth, { label: string; cls: string }> = {
   green: { label: 'Active', cls: 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' },
@@ -195,8 +196,7 @@ export const UserProfileView = ({
       line: `Requesting invoice for ${dcrAmount} DCR to tip ${nick}...`,
     });
     tipBisonrelayContact(uid, dcrAmount).catch((e: any) => {
-      const body = e?.response?.data;
-      const msg = typeof body === 'string' ? body : e?.message || 'Tip failed';
+      const msg = apiError(e, 'Tip failed');
       setTipStatus({
         state: 'failed',
         line: `Tip attempt of ${dcrAmount} DCR failed due to ${msg}. Given up on attempting to tip.`,

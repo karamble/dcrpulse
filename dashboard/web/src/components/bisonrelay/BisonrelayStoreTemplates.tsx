@@ -13,6 +13,7 @@ import {
   saveBisonrelayStoreTemplate,
 } from '../../services/bisonrelayApi';
 import { identityToHex } from '../../utils/identity';
+import { apiError } from '../../utils/apiError';
 
 // BisonrelayStoreTemplates is a plain code editor for the storefront's Go
 // templates (*.tmpl). Saving writes the file; the store live-reloads, so the
@@ -30,7 +31,7 @@ export const BisonrelayStoreTemplates = () => {
   const loadList = () => {
     getBisonrelayStoreTemplates()
       .then(setList)
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Could not load templates'));
+      .catch((e: any) => setErr(apiError(e, 'Could not load templates')));
   };
   useEffect(loadList, []);
   useEffect(() => {
@@ -47,7 +48,7 @@ export const BisonrelayStoreTemplates = () => {
       setContent(text);
       setDirty(false);
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Could not open template');
+      setErr(apiError(e, 'Could not open template'));
     }
   };
 
@@ -68,7 +69,7 @@ export const BisonrelayStoreTemplates = () => {
       setDirty(false);
       loadList();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Save failed');
+      setErr(apiError(e, 'Save failed'));
     } finally {
       setSaving(false);
     }
@@ -84,7 +85,7 @@ export const BisonrelayStoreTemplates = () => {
       }
       loadList();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Delete failed');
+      setErr(apiError(e, 'Delete failed'));
     }
   };
 

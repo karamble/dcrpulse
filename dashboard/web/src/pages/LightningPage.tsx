@@ -11,6 +11,7 @@ import { useWalletReady } from '../hooks/useWalletReady';
 import { useVisiblePoll } from '../hooks/useVisiblePoll';
 import { WalletSyncGate } from '../components/common/WalletSyncGate';
 import { WatchOnlyGate } from '../components/common/WatchOnlyGate';
+import { apiError } from '../utils/apiError';
 
 export const LightningPage = () => {
   const [status, setStatus] = useState<LightningStatus | null>(null);
@@ -23,8 +24,7 @@ export const LightningPage = () => {
       setStatus(s);
       setError(null);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to load Lightning status');
+      setError(apiError(err, 'Failed to load Lightning status'));
     }
   };
 

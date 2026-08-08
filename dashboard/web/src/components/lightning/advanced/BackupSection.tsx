@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, Download, Loader2, Upload } from 'lucide-react';
 import { getLnChannelBackup, verifyLnChannelBackup } from '../../../services/lightningApi';
+import { apiError } from '../../../utils/apiError';
 
 // Decodes a base64 string back into a binary Blob suitable for download.
 const base64ToBlob = (b64: string): Blob => {
@@ -48,8 +49,7 @@ export const BackupSection = () => {
       URL.revokeObjectURL(url);
       setExportResult({ numChannels: r.numChannels });
     } catch (err: any) {
-      const body = err?.response?.data;
-      setExportError(typeof body === 'string' ? body : err?.message || 'Export failed');
+      setExportError(apiError(err, 'Export failed'));
     } finally {
       setExporting(false);
     }
@@ -69,8 +69,7 @@ export const BackupSection = () => {
       const r = await verifyLnChannelBackup(b64);
       setVerifyResult(r);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setVerifyResult({ ok: false, error: typeof body === 'string' ? body : err?.message || 'Verify failed' });
+      setVerifyResult({ ok: false, error: apiError(err, 'Verify failed') });
     } finally {
       setVerifying(false);
     }

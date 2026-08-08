@@ -7,6 +7,7 @@ import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { createDexAssetWallet, type DexAsset, type DexWalletDefinition } from '../../services/dcrdexApi';
 import { CoinIcon } from './CoinIcon';
 import { DexWalletConfigForm } from './DexWalletConfigForm';
+import { apiError } from '../../utils/apiError';
 
 interface Creatable {
   id: number;
@@ -69,7 +70,7 @@ export const DexAddWallet = ({ catalog, existingIDs, onCreated, onCancel }: Prop
       await createDexAssetWallet(sel.id, def.type, config, def.seeded ? '' : walletPass);
       onCreated();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Wallet creation failed');
+      setErr(apiError(e, 'Wallet creation failed'));
       setBusy(false);
     }
   };

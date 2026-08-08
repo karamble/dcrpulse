@@ -10,6 +10,7 @@ import {
   getBisonrelayContacts,
   joinRTDTSession,
 } from '../../../services/bisonrelayApi';
+import { apiError } from '../../../utils/apiError';
 
 const displayNick = (c: BisonrelayContact): string =>
   c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
@@ -37,8 +38,7 @@ export const InstantCallModal = ({
         setLoadErr(null);
       })
       .catch((e) => {
-        const body = e?.response?.data;
-        setLoadErr(typeof body === 'string' ? body : e?.message || 'Could not load contacts');
+        setLoadErr(apiError(e, 'Could not load contacts'));
       });
   }, []);
 
@@ -60,8 +60,7 @@ export const InstantCallModal = ({
       }
       onJoined(sess.rv);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Call failed');
+      setErr(apiError(e, 'Call failed'));
       setBusy(false);
     }
   };

@@ -8,6 +8,7 @@ import { AlertCircle, ExternalLink, Filter, Loader2, RefreshCw, ShieldOff } from
 import { Proposal, getProposals, refreshProposals } from '../../services/api';
 import { VoteResultsBar } from './VoteResultsBar';
 import { VoteTrickleCard } from './VoteTrickleCard';
+import { apiError } from '../../utils/apiError';
 
 // Status tabs, mirroring Decrediton. There is no "all" bucket: each tab fetches
 // only its own status from the backend on demand (fetching every status at once
@@ -84,8 +85,7 @@ export const ProposalsTab = () => {
         if (err?.response?.status === 503) {
           setDisabled(true);
         } else {
-          const body = err?.response?.data;
-          setError(typeof body === 'string' ? body : err?.message || 'Failed to load proposals');
+          setError(apiError(err, 'Failed to load proposals'));
         }
       } finally {
         if (!cancelled) setLoading(false);

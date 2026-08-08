@@ -38,6 +38,7 @@ import {
   upgradeBisonrelayGCVersion,
 } from '../../../services/bisonrelayApi';
 import { ConfirmActionModal } from '../BisonrelayUserSubNav';
+import { apiError } from '../../../utils/apiError';
 
 // GroupSubNav is the per-group sliding sidebar (mirror of
 // BisonrelayUserSubNav for contacts). Admin-only actions are gated on
@@ -84,8 +85,7 @@ export const GroupSubNav = ({
       })
       .catch((e: any) => {
         if (cancelled) return;
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not load group');
+        setErr(apiError(e, 'Could not load group'));
       });
     return () => {
       cancelled = true;
@@ -273,8 +273,7 @@ export const GroupSubNav = ({
                   try {
                     await resendBisonrelayGCList(detail.id);
                   } catch (e: any) {
-                    const body = e?.response?.data;
-                    setErr(typeof body === 'string' ? body : e?.message || 'Resend failed');
+                    setErr(apiError(e, 'Resend failed'));
                   }
                 }}
               />
@@ -525,8 +524,7 @@ const PromptModal = ({
       await onConfirm(val);
       onClose();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+      setErr(apiError(e, 'Action failed'));
       setBusy(false);
     }
   };
@@ -616,8 +614,7 @@ const ConfirmModal = ({
       await onConfirm();
       onClose();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Action failed');
+      setErr(apiError(e, 'Action failed'));
       setBusy(false);
     }
   };

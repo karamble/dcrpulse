@@ -3,6 +3,7 @@ import { toYMDTime } from '../../../utils/date';
 import { CheckCircle2, Copy, X } from 'lucide-react';
 import type { LightningInvoice } from '../../../services/lightningApi';
 import { cancelLnInvoice } from '../../../services/lightningApi';
+import { apiError } from '../../../utils/apiError';
 
 const atomsPerDcr = 1e8;
 const fmtDcr = (atoms: number) => (atoms / atomsPerDcr).toFixed(8) + ' DCR';
@@ -51,8 +52,7 @@ export const InvoiceDetailsModal = ({ invoice, onClose, onCanceled }: Props) => 
       await cancelLnInvoice(invoice.rHashHex);
       onCanceled?.();
     } catch (err: any) {
-      const body = err?.response?.data;
-      setCancelError(typeof body === 'string' ? body : err?.message || 'Cancel failed');
+      setCancelError(apiError(err, 'Cancel failed'));
     } finally {
       setCanceling(false);
     }

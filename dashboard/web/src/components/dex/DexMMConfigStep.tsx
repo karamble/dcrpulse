@@ -29,6 +29,7 @@ import {
   type PlacementRow,
   type QuickDraft,
 } from './dexMMConfig';
+import { apiError } from '../../utils/apiError';
 
 const inputCls =
   'px-2.5 py-1.5 rounded-lg bg-background border border-border text-sm font-mono focus:outline-none focus:border-primary';
@@ -189,7 +190,7 @@ export const DexMMConfigStep = ({
     try {
       await onSave(cfg);
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Failed to save bot config');
+      setErr(apiError(e, 'Failed to save bot config'));
       setBusy(false);
     }
   };
@@ -202,7 +203,7 @@ export const DexMMConfigStep = ({
     try {
       await onSaveAndStart(cfg);
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Failed to save bot config');
+      setErr(apiError(e, 'Failed to save bot config'));
       setBusy(false);
     }
   };

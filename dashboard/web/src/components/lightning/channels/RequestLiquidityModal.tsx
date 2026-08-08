@@ -16,6 +16,7 @@ import {
 } from '../../../services/lightningApi';
 import { fmtDcr } from '../StatCard';
 import { parseDcrAmount } from '../../../utils/amounts';
+import { apiError } from '../../../utils/apiError';
 
 interface Props {
   onClose: () => void;
@@ -84,8 +85,7 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
       setEstimate(est);
       setStep('confirm');
     } catch (e: any) {
-      const body = e?.response?.data;
-      setError(typeof body === 'string' ? body : e?.message || 'Estimate failed');
+      setError(apiError(e, 'Estimate failed'));
     } finally {
       setSubmitting(false);
     }
@@ -106,8 +106,7 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
       setResult(res);
       onSuccess?.(res.channelPoint);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setError(typeof body === 'string' ? body : e?.message || 'Request failed');
+      setError(apiError(e, 'Request failed'));
     } finally {
       setSubmitting(false);
     }

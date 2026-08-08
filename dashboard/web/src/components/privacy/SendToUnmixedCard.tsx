@@ -10,6 +10,7 @@ import {
 import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
 import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 const CONSTRUCT_DEBOUNCE_MS = 500;
 
@@ -78,8 +79,7 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
         setDestAddress(r.address);
       } catch (err: any) {
         if (cancelled) return;
-        const body = err?.response?.data;
-        setDeriveError(typeof body === 'string' ? body : err?.message || 'Failed to derive unmixed address');
+        setDeriveError(apiError(err, 'Failed to derive unmixed address'));
       }
     })();
     return () => {
@@ -116,8 +116,7 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
         });
         setConstruct(resp);
       } catch (err: any) {
-        const body = err?.response?.data;
-        setConstructError(typeof body === 'string' ? body : err?.message || 'Failed to construct transaction');
+        setConstructError(apiError(err, 'Failed to construct transaction'));
         setConstruct(null);
       } finally {
         setConstructing(false);

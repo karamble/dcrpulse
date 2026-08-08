@@ -12,6 +12,7 @@ import { DecodedPayRequest } from './DecodedPayRequest';
 import { PaymentRow } from './PaymentRow';
 import { PaymentDetailsModal } from './PaymentDetailsModal';
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
+import { apiError } from '../../../utils/apiError';
 
 type Filter = 'all' | 'confirmed' | 'pending' | 'failed';
 
@@ -56,11 +57,7 @@ export const SendTab = () => {
         .catch((err: any) => {
           if (cancelled) return;
           setDecoded(null);
-          const msg =
-            typeof err?.response?.data === 'string'
-              ? err.response.data
-              : err?.message || 'Invalid invoice';
-          setDecodeError(msg);
+          setDecodeError(apiError(err, 'Invalid invoice'));
         })
         .finally(() => {
           if (!cancelled) setDecoding(false);

@@ -12,6 +12,7 @@ import {
   declineMsigInvite,
   getMsigPending,
 } from '../../../services/msigApi';
+import { apiError } from '../../../utils/apiError';
 
 // IncomingInviteBanner surfaces shared-wallet invitations waiting for an
 // answer, plus rosters that need a wallet switch to finish importing.
@@ -58,8 +59,7 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
       await load();
       onChanged();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not answer the invitation');
+      setErr(apiError(e, 'Could not answer the invitation'));
     } finally {
       setBusyId(null);
     }
@@ -73,8 +73,7 @@ export const IncomingInviteBanner = ({ onChanged }: { onChanged: () => void }) =
       await load();
       onChanged();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not accept the invitation');
+      setErr(apiError(e, 'Could not accept the invitation'));
       throw e;
     }
   };

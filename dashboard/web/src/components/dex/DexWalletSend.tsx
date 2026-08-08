@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle } from 'lucide-react';
 import { sendDexWallet, estimateDexSendFee, type DexWalletState, type DexAssetInfo, type DexSendFee } from '../../services/dcrdexApi';
 import { fmtAmt } from './dexFormat';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   wallet: DexWalletState;
@@ -68,7 +69,7 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
       setConfirming(false);
       onSent();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Send failed');
+      setErr(apiError(e, 'Send failed'));
       setConfirming(false);
     } finally {
       setBusy(false);

@@ -14,6 +14,7 @@ import {
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 const statusColor = (status: string) => {
   switch (status) {
@@ -243,8 +244,7 @@ export const ConsensusTab = () => {
     try {
       setVoteInfo(await getAgendas());
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to load agendas');
+      setError(apiError(err, 'Failed to load agendas'));
     } finally {
       setLoading(false);
     }
@@ -260,8 +260,7 @@ export const ConsensusTab = () => {
       setPending(null);
       await load();
     } catch (err: any) {
-      const body = err?.response?.data;
-      throw new Error(typeof body === 'string' ? body : err?.message || 'Failed to set choice');
+      throw new Error(apiError(err, 'Failed to set choice'));
     }
   };
 

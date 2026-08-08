@@ -29,6 +29,7 @@ import { DexMMWizard } from './DexMMWizard';
 import { DexMMFundingDialog } from './DexMMFundingDialog';
 import { DexMMCexConfigForm } from './DexMMCexConfigForm';
 import { botTypeOf, cexMarketFor, needsCex } from './dexMMConfig';
+import { apiError } from '../../utils/apiError';
 
 const HOST = 'dex.decred.org:7232';
 
@@ -104,7 +105,7 @@ export const DexMMPanel = () => {
       await fn();
       refresh();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Action failed');
+      setErr(apiError(e, 'Action failed'));
     } finally {
       setBusyKey(null);
     }
@@ -128,7 +129,7 @@ export const DexMMPanel = () => {
       refresh();
       setStartBot(null);
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Action failed');
+      setErr(apiError(e, 'Action failed'));
     } finally {
       setStartBusy(false);
     }

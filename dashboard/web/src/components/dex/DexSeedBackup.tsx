@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { AlertCircle, AlertTriangle, Check, Copy } from 'lucide-react';
 import { exportDexSeed, markDexSeedBackedUp } from '../../services/dcrdexApi';
+import { apiError } from '../../utils/apiError';
 
 // DexSeedBackup is the guided app-seed backup flow: reveal the 15-word seed
 // (re-entering the app password), have the user confirm they have written it
@@ -43,7 +44,7 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
       setVerifying(false);
       setAppPass('');
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Failed to export seed');
+      setErr(apiError(e, 'Failed to export seed'));
     } finally {
       setBusy(false);
     }
@@ -76,7 +77,7 @@ export const DexSeedBackup = ({ onDone }: { onDone?: () => void }) => {
       await markDexSeedBackedUp();
       onDone?.();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Failed to record backup');
+      setErr(apiError(e, 'Failed to record backup'));
       setBusy(false);
     }
   };

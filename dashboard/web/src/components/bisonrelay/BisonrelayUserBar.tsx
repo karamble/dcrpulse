@@ -13,6 +13,7 @@ import { AuthorAvatar } from './AuthorAvatar';
 import { TipModal } from './TipModal';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { apiError } from '../../utils/apiError';
 
 const navigateTo = (hash: string): void => {
   window.location.hash = hash;
@@ -80,8 +81,7 @@ export const BisonrelayUserBar = ({
       line: `Requesting invoice for ${dcrAmount} DCR to tip ${nick}...`,
     });
     tipBisonrelayContact(uid, dcrAmount).catch((e: any) => {
-      const body = e?.response?.data;
-      const msg = typeof body === 'string' ? body : e?.message || 'Tip failed';
+      const msg = apiError(e, 'Tip failed');
       setTipStatus({ state: 'failed', line: `Tip of ${dcrAmount} DCR failed: ${msg}` });
     });
   };

@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, FolderOpen, Loader2 } from 'lucide-react';
 import { AccountExportEntry, parseAccountExport } from '../services/api';
 import { KeyEnds } from './AddressGroups';
+import { apiError } from '../utils/apiError';
 
 // AccountExportPicker loads a device account-export file (accounts.dcr from a
 // Foundation Passport's SD card) and lets the user pick which accounts to
@@ -87,8 +88,7 @@ export const AccountExportPicker = ({ onSelectionChange, disabled, newWallet }: 
       setNames(nms);
       emit(parsed, chk, nms);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Could not read the file');
+      setError(apiError(err, 'Could not read the file'));
       setEntries(null);
       emit(null, {}, {});
     } finally {

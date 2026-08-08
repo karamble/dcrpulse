@@ -72,6 +72,7 @@ import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { TipModal } from './TipModal';
 import { UserProfileView } from './BisonrelayUserProfile';
 import { identityToHex } from '../../utils/identity';
+import { apiError } from '../../utils/apiError';
 
 type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail' | 'user';
 
@@ -195,8 +196,7 @@ export const BisonrelayFeed = () => {
       }
       setAvatars(map);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setPostsErr(typeof body === 'string' ? body : e?.message || 'Could not load posts');
+      setPostsErr(apiError(e, 'Could not load posts'));
     }
   }, []);
 
@@ -484,8 +484,7 @@ const SubscriptionsView = () => {
       setContacts(list);
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load contacts');
+      setErr(apiError(e, 'Could not load contacts'));
     }
   }, []);
 
@@ -529,9 +528,8 @@ const SubscriptionsView = () => {
       }
       // Live posts-subscribed / posts-unsubscribed event triggers reload.
     } catch (e: any) {
-      const body = e?.response?.data;
       const verb = currentlySubscribed ? 'Unsubscribe' : 'Subscribe';
-      setErr(typeof body === 'string' ? body : e?.message || `${verb} failed`);
+      setErr(apiError(e, `${verb} failed`));
     } finally {
       setBusyUid(null);
     }
@@ -673,10 +671,9 @@ const NewPostView = ({
         try {
           await relayBisonrelayPost(pendingQuote.uid, pendingQuote.pid);
         } catch (re: any) {
-          const relayBody = re?.response?.data;
           throw new Error(
             'Could not relay the quoted post: ' +
-              (typeof relayBody === 'string' ? relayBody : re?.message || 'relay failed') +
+              apiError(re, 'relay failed') +
               '. Uncheck the relay option to publish without it.',
           );
         }
@@ -690,8 +687,7 @@ const NewPostView = ({
       await refreshFeed();
       navigateTo(`feed/post/${summ.author_id}/${summ.id}`);
     } catch (e: any) {
-      const respBody = e?.response?.data;
-      setErr(typeof respBody === 'string' ? respBody : e?.message || 'Could not publish post');
+      setErr(apiError(e, 'Could not publish post'));
       setSubmitting(false);
     }
   };
@@ -845,8 +841,7 @@ const PostDetailView = ({
       setRelayCount(stats.subscribers_count);
       setRelayState('confirm');
     } catch (e: any) {
-      const body = e?.response?.data;
-      setRelayErr(typeof body === 'string' ? body : e?.message || 'Could not load subscribers');
+      setRelayErr(apiError(e, 'Could not load subscribers'));
     }
   };
 
@@ -857,8 +852,7 @@ const PostDetailView = ({
       await relayBisonrelayPost(uid, pid);
       setRelayState('done');
     } catch (e: any) {
-      const body = e?.response?.data;
-      setRelayErr(typeof body === 'string' ? body : e?.message || 'Relay failed');
+      setRelayErr(apiError(e, 'Relay failed'));
       setRelayState('confirm');
     }
   };
@@ -871,8 +865,7 @@ const PostDetailView = ({
       line: `Requesting invoice for ${dcrAmount} DCR to tip ${authorNick}...`,
     });
     tipBisonrelayContact(uid, dcrAmount).catch((e: any) => {
-      const body = e?.response?.data;
-      const msg = typeof body === 'string' ? body : e?.message || 'Tip failed';
+      const msg = apiError(e, 'Tip failed');
       setTipStatus({
         state: 'failed',
         line: `Tip attempt of ${dcrAmount} DCR failed due to ${msg}. Given up on attempting to tip.`,
@@ -887,8 +880,7 @@ const PostDetailView = ({
       const b = await getBisonrelayPostBody(uid, pid);
       setBody(b);
     } catch (e: any) {
-      const respBody = e?.response?.data;
-      setErr(typeof respBody === 'string' ? respBody : e?.message || 'Could not load post body');
+      setErr(apiError(e, 'Could not load post body'));
     } finally {
       setLoading(false);
     }
@@ -1334,8 +1326,7 @@ const PostComments = ({
       setComments(list);
       setErr(null);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Could not load comments');
+      setErr(apiError(e, 'Could not load comments'));
     }
   }, [authorId, pid]);
 
@@ -1397,8 +1388,7 @@ const PostComments = ({
           return updated;
         });
       } catch (e: any) {
-        const body = e?.response?.data;
-        const msg = typeof body === 'string' ? body : e?.message || 'Comment failed';
+        const msg = apiError(e, 'Comment failed');
         setComments((prev) => {
           if (!prev) return prev;
           const idx = prev.findIndex((c) => c.commentKey === commentKey);

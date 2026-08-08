@@ -17,6 +17,7 @@ import { convRate, fmtAmt, fmtPrice, isMarketBuy, orderQty } from './dexFormat';
 import { DexOrderDetail } from './DexOrderDetail';
 import { useDexCancel } from './DexCancelOrder';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
+import { apiError } from '../../utils/apiError';
 
 const PAGE = 50;
 const STATUS_OPTIONS = ['epoch', 'booked', 'executed', 'canceled', 'revoked'];
@@ -72,7 +73,7 @@ export const DexOrdersHistoryPanel = ({ host }: { host: string }) => {
         setMore(o.length === PAGE);
         setErr(null);
       })
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Failed to load orders'));
+      .catch((e: any) => setErr(apiError(e, 'Failed to load orders')));
   }, [buildFilter]);
 
   useEffect(() => {

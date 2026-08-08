@@ -78,6 +78,7 @@ import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { AuthorAvatar } from './AuthorAvatar';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
+import { apiError } from '../../utils/apiError';
 import { CreateGCModal } from './gc/CreateGCModal';
 import { GCInviteModal } from './gc/GCInviteModal';
 import { GroupSubNav } from './gc/GroupSubNav';
@@ -426,8 +427,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           ? subscribeBisonrelayPosts(uid)
           : unsubscribeBisonrelayPosts(uid);
       apiCall.catch((err: any) => {
-        const body = err?.response?.data;
-        const msg = typeof body === 'string' ? body : err?.message || 'Request failed';
+        const msg = apiError(err, 'Request failed');
         const failVerb = kind === 'subscribe' ? 'Subscribe' : 'Unsubscribe';
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.subKey === subKey);
@@ -466,8 +466,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       ];
     });
     tipBisonrelayContact(recipientUid, dcrAmount).catch((err: any) => {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Tip failed';
+      const msg = apiError(err, 'Tip failed');
       setMessages((prev) => {
         const idx = prev.findIndex((m) => m.tipKey === tipKey);
         if (idx === -1) return prev;
@@ -1139,8 +1138,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       setAttachErr(null);
       return true;
     } catch (err: any) {
-      const body = err?.response?.data;
-      setMessagesErr(typeof body === 'string' ? body : err?.message || 'Send failed');
+      setMessagesErr(apiError(err, 'Send failed'));
       return false;
     } finally {
       setSending(false);
@@ -2357,8 +2355,7 @@ const SuggestedKXCard = ({
       await onAccept(targetUid, targetNick);
       setState('accepted');
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Accept failed');
+      setErr(apiError(e, 'Accept failed'));
       setState('error');
     }
   };
@@ -2506,8 +2503,7 @@ const JoinDecredPulseModal = ({
       await joinDecredPulse();
       setPhase('waiting');
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Request failed');
+      setErr(apiError(e, 'Request failed'));
       setPhase('error');
     }
   };

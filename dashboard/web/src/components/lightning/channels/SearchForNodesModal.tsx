@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { NodeMatch, searchLightningNodes } from '../../../services/lightningApi';
+import { apiError } from '../../../utils/apiError';
 
 interface Props {
   onClose: () => void;
@@ -21,8 +22,7 @@ export const SearchForNodesModal = ({ onClose, onPick }: Props) => {
         const r = await searchLightningNodes(query);
         setMatches(r.matches);
       } catch (err: any) {
-        const body = err?.response?.data;
-        setError(typeof body === 'string' ? body : err?.message || 'Search failed');
+        setError(apiError(err, 'Search failed'));
       } finally {
         setLoading(false);
       }

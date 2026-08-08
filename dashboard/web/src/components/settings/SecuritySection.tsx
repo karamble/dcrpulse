@@ -10,6 +10,7 @@ import {
   disableAppPassword,
 } from '../../services/auth';
 import { useAuth } from '../auth/AuthGate';
+import { apiError } from '../../utils/apiError';
 
 const inputClass =
   'w-full px-4 py-3 rounded-lg bg-background border border-border/60 focus:border-primary outline-none';
@@ -47,7 +48,7 @@ export const SecuritySection = () => {
       setMsg('App password enabled.');
       await refresh();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Failed to enable.');
+      setErr(apiError(e, 'Failed to enable.'));
     } finally {
       setBusy(false);
     }

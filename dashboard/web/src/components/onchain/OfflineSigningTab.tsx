@@ -33,6 +33,7 @@ import {
 } from '../../services/api';
 import { AddressGroups } from '../AddressGroups';
 import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 // Above 1 DCR a fee is almost certainly a mistake; we soft-warn (non-blocking).
 const HIGH_FEE_ATOMS = 100_000_000;
@@ -159,8 +160,7 @@ const ExportUnsignedPanel = () => {
       );
       setConstruct(resp);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setBuildError(typeof body === 'string' ? body : err?.message || 'Failed to build transaction');
+      setBuildError(apiError(err, 'Failed to build transaction'));
     } finally {
       setBuilding(false);
     }
@@ -424,8 +424,7 @@ const ImportSignedPanel = () => {
       }
       setPreview(await decodeSignedTransaction(input));
     } catch (err: any) {
-      const body = err?.response?.data;
-      setDecodeError(typeof body === 'string' ? body : err?.message || 'Could not decode transaction');
+      setDecodeError(apiError(err, 'Could not decode transaction'));
     } finally {
       setDecoding(false);
     }
@@ -439,8 +438,7 @@ const ImportSignedPanel = () => {
       const resp = await broadcastSignedTransaction({ signedTx: preview.txHex });
       setResult({ txHash: resp.txHash, alreadyBroadcast: !!resp.alreadyBroadcast });
     } catch (err: any) {
-      const body = err?.response?.data;
-      setBroadcastError(typeof body === 'string' ? body : err?.message || 'Broadcast failed');
+      setBroadcastError(apiError(err, 'Broadcast failed'));
     } finally {
       setBroadcasting(false);
     }
@@ -681,8 +679,7 @@ const DeviceBalancePanel = () => {
     fetchDeviceBalance()
       .then(setData)
       .catch((err: any) => {
-        const body = err?.response?.data;
-        setError(typeof body === 'string' ? body : err?.message || 'Failed to build the balance update');
+        setError(apiError(err, 'Failed to build the balance update'));
         setData(null);
       })
       .finally(() => setLoading(false));

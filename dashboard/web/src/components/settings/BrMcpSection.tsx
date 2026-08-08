@@ -16,6 +16,7 @@ import {
 } from '../../services/bisonrelayApi';
 import { McpHelpModal } from './McpHelpModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 const UID_RE = /^[0-9a-f]{64}$/i;
 
@@ -90,8 +91,7 @@ export const BrMcpSection = () => {
       setSettings(applied);
       setDraft(applied);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Save failed');
+      setError(apiError(err, 'Save failed'));
     } finally {
       setBusy(false);
     }

@@ -13,6 +13,7 @@ import { DexSettingsPanel } from './DexSettingsPanel';
 import { DexMMPanel } from './DexMMPanel';
 import { DexNotifications } from './DexNotifications';
 import { DexServerBanner } from './DexServerBanner';
+import { apiError } from '../../utils/apiError';
 
 // The canonical mainnet DEX server.
 const HOST = 'dex.decred.org:7232';
@@ -46,7 +47,7 @@ export const DexShell = ({ initialTab = 'trade', onLocked }: { initialTab?: DexT
       await lockDex();
       onLocked?.();
     } catch (e: any) {
-      setLockErr(e?.response?.data || e?.message || 'Failed to lock');
+      setLockErr(apiError(e, 'Failed to lock'));
     } finally {
       setLocking(false);
     }

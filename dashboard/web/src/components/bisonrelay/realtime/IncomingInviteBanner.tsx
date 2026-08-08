@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Phone, PhoneOff } from 'lucide-react';
 import { acceptRTDTSession, joinRTDTSession } from '../../../services/bisonrelayApi';
 import { useBisonrelayLive } from '../BisonrelayLiveProvider';
+import { apiError } from '../../../utils/apiError';
 
 interface PendingInvite {
   inviter: string;
@@ -73,8 +74,7 @@ export const IncomingInviteBanner = ({
       try {
         await joinRTDTSession(inv.sessRV);
       } catch (e: any) {
-        const body = e?.response?.data;
-        const msg = typeof body === 'string' ? body : e?.message || '';
+        const msg = apiError(e, '');
         // BR auto-joins instant calls on accept, in which case /join
         // returns an "already pending" style error. Only suppress THAT
         // kind of error; anything else is a real problem the user
@@ -86,8 +86,7 @@ export const IncomingInviteBanner = ({
       dismiss(inv.sessRV);
       onAccepted(inv.sessRV);
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Accept failed');
+      setErr(apiError(e, 'Accept failed'));
     } finally {
       setBusyRV(null);
     }

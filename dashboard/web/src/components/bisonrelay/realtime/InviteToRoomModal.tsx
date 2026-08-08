@@ -10,6 +10,7 @@ import {
   getBisonrelayContacts,
   inviteToRTDTSession,
 } from '../../../services/bisonrelayApi';
+import { apiError } from '../../../utils/apiError';
 
 const displayNick = (c: BisonrelayContact): string =>
   c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
@@ -35,8 +36,7 @@ export const InviteToRoomModal = ({
     getBisonrelayContacts()
       .then(setContacts)
       .catch((e) => {
-        const body = e?.response?.data;
-        setErr(typeof body === 'string' ? body : e?.message || 'Could not load contacts');
+        setErr(apiError(e, 'Could not load contacts'));
       });
   }, []);
 
@@ -69,8 +69,7 @@ export const InviteToRoomModal = ({
       await inviteToRTDTSession(session.rv, Array.from(selectedUids), true);
       onInvited();
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Invite failed');
+      setErr(apiError(e, 'Invite failed'));
       setBusy(false);
     }
   };

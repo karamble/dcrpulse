@@ -6,6 +6,7 @@ import { AddressGroups } from '../AddressGroups';
 import { CopyButton } from '../explorer/CopyButton';
 import { useWalletReady } from '../../hooks/useWalletReady';
 import { validateDcrAmount } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 
 const buildBip21Uri = (address: string, amount: string): string => {
@@ -62,11 +63,7 @@ export const ReceiveTab = () => {
       const resp = await getNextAddress(selectedAccount);
       setAddress(resp.address);
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.toString?.() ||
-        err?.message ||
-        'Failed to generate address';
-      setGenerateError(msg);
+      setGenerateError(apiError(err, 'Failed to generate address'));
       setAddress(null);
     } finally {
       setGenerating(false);

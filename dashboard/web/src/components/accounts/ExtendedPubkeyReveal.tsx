@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { getAccountExtendedPubKey } from '../../services/api';
 import { CopyButton } from '../explorer/CopyButton';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   accountNumber: number;
@@ -21,8 +22,7 @@ export const ExtendedPubkeyReveal = ({ accountNumber, disabled }: Props) => {
       const value = await getAccountExtendedPubKey(accountNumber);
       setXpub(value);
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Failed to fetch xpub';
+      const msg = apiError(err, 'Failed to fetch xpub');
       setError(msg);
     } finally {
       setLoading(false);

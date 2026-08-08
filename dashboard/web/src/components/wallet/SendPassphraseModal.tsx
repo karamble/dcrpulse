@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertCircle, Lock, X } from 'lucide-react';
 import { signPublishTransaction } from '../../services/api';
 import { formatAtoms } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 interface SendPassphraseModalProps {
   isOpen: boolean;
@@ -51,8 +52,7 @@ export const SendPassphraseModal = ({
       onSuccess(resp.txHash);
     } catch (err: any) {
       const status = err?.response?.status;
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Failed to send';
+      const msg = apiError(err, 'Failed to send');
       if (status === 400 && /watch-?only/i.test(msg)) {
         setPassphrase('');
         onWatchOnly(msg);

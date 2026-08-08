@@ -11,6 +11,7 @@ import {
 import { getTorSettings } from '../../../services/tor/client';
 import { OnionIcon } from '../OnionIcon';
 import { ScoreMeter } from '../ScoreMeter';
+import { apiError } from '../../../utils/apiError';
 
 const truncate = (s: string, n = 10) =>
   s.length > 2 * n + 3 ? `${s.slice(0, n)}...${s.slice(-n)}` : s;
@@ -74,8 +75,7 @@ export const AutopilotSwitch = () => {
       await setLightningAutopilot(!active);
       setActive(!active);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Toggle failed');
+      setError(apiError(err, 'Toggle failed'));
     } finally {
       setBusy(false);
     }

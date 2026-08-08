@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { AlertCircle, Wallet } from 'lucide-react';
 import { createDexWallet } from '../../services/dcrdexApi';
+import { apiError } from '../../utils/apiError';
 
 interface DexWalletSetupProps {
   onReady: () => void;
@@ -28,8 +29,7 @@ export const DexWalletSetup = ({ onReady }: DexWalletSetupProps) => {
       await createDexWallet(pass);
       onReady();
     } catch (e2: any) {
-      const body = e2?.response?.data;
-      setErr((typeof body === 'string' && body.trim()) || e2?.message || 'Request failed');
+      setErr(apiError(e2, 'Request failed'));
       setBusy(false);
     }
   };

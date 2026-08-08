@@ -11,6 +11,7 @@ import {
   getVoteEligibility,
   startVoteTrickle,
 } from '../../services/api';
+import { apiError } from '../../utils/apiError';
 
 interface VoteModalProps {
   isOpen: boolean;
@@ -63,8 +64,7 @@ export const VoteModal = ({ isOpen, token, onClose, onVoted }: VoteModalProps) =
         if (e.currentChoice) setSelected(e.currentChoice);
       } catch (err: any) {
         if (cancelled) return;
-        const body = err?.response?.data;
-        setEligError(typeof body === 'string' ? body : err?.message || 'Failed to check eligibility');
+        setEligError(apiError(err, 'Failed to check eligibility'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -107,12 +107,7 @@ export const VoteModal = ({ isOpen, token, onClose, onVoted }: VoteModalProps) =
       setPassphrase('');
       await onVoted();
     } catch (err: any) {
-      const body = err?.response?.data;
-      setCastError(
-        typeof body === 'string'
-          ? body
-          : err?.message || (trickle ? 'Failed to start trickle' : 'Vote cast failed')
-      );
+      setCastError(apiError(err, trickle ? 'Failed to start trickle' : 'Vote cast failed'));
     } finally {
       setCasting(false);
     }

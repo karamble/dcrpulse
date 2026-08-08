@@ -17,6 +17,7 @@ import {
 } from '../../services/dcrdexApi';
 import { fmtAmt, fmtPrice } from './dexFormat';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
+import { apiError } from '../../utils/apiError';
 
 // RateEncodingFactor mirrors bisonw's OrderUtil.RateEncodingFactor: the DEX
 // message rate is the conventional price scaled by 1e8 and adjusted by the
@@ -25,7 +26,7 @@ import { useDexRefreshOnNotes } from './DexLiveProvider';
 const RateEncodingFactor = 1e8;
 
 const serverMsg = (e: any): string =>
-  (typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Request failed';
+  apiError(e, 'Request failed');
 
 interface DexOrderFormProps {
   host: string;

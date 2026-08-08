@@ -36,6 +36,7 @@ import {
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { VSPSelect } from './VSPSelect';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 const MAX_EVENTS = 200;
 
@@ -186,8 +187,7 @@ export const AutobuyerTab = () => {
       setFeedback({ kind: 'info', text: 'Settings saved.' });
       await refreshStatus();
     } catch (err: any) {
-      const body = err?.response?.data;
-      setFeedback({ kind: 'error', text: typeof body === 'string' ? body : err?.message || 'Save failed' });
+      setFeedback({ kind: 'error', text: apiError(err, 'Save failed') });
     } finally {
       setBusy(false);
     }
@@ -202,8 +202,7 @@ export const AutobuyerTab = () => {
       setFeedback({ kind: 'info', text: 'Autobuyer started.' });
       await refreshStatus();
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Start failed';
+      const msg = apiError(err, 'Start failed');
       throw new Error(msg);
     }
   };

@@ -12,6 +12,7 @@ import {
   setBisonrelayStoreOrderStatus,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
+import { apiError } from '../../utils/apiError';
 
 const STATUSES = ['placed', 'paid', 'shipped', 'completed', 'canceled'];
 
@@ -46,7 +47,7 @@ export const BisonrelayStoreOrders = () => {
         setOrders(o);
         setErr(null);
       })
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Could not load orders'));
+      .catch((e: any) => setErr(apiError(e, 'Could not load orders')));
   }, []);
   useEffect(() => {
     load();
@@ -74,7 +75,7 @@ export const BisonrelayStoreOrders = () => {
       setDraft((d) => ({ ...d, [key]: '' }));
       load();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Could not send comment');
+      setErr(apiError(e, 'Could not send comment'));
     } finally {
       setBusy(null);
     }
@@ -88,7 +89,7 @@ export const BisonrelayStoreOrders = () => {
       await setBisonrelayStoreOrderStatus(o.user, o.id, status);
       load();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Could not update status');
+      setErr(apiError(e, 'Could not update status'));
     } finally {
       setBusy(null);
     }

@@ -13,6 +13,7 @@ import {
   type WalletInfo,
 } from '../services/api';
 import { WalletSetup } from '../components/WalletSetup';
+import { apiError } from '../utils/apiError';
 
 interface WalletSelectionProps {
   // embedded is true when shown from an open wallet (the "Switch wallet"
@@ -65,7 +66,7 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
         setPassphrase('');
         return;
       }
-      setError(err?.response?.data?.message || 'Failed to open wallet.');
+      setError(apiError(err, 'Failed to open wallet.'));
     }
   };
 
@@ -77,7 +78,7 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
       setRenameValue('');
       load();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to rename wallet.');
+      setError(apiError(err, 'Failed to rename wallet.'));
     }
   };
 
@@ -88,7 +89,7 @@ export const WalletSelection = ({ embedded = false }: WalletSelectionProps) => {
       setDeleting(null);
       load();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to delete wallet.');
+      setError(apiError(err, 'Failed to delete wallet.'));
     }
   };
 

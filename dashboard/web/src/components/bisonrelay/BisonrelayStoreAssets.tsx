@@ -14,6 +14,7 @@ import {
 } from '../../services/bisonrelayApi';
 import { applyStoreTheme, refreshTheme } from '../../services/bisonrelayStoreTheme';
 import { downscaleImageFile } from './storeImage';
+import { apiError } from '../../utils/apiError';
 
 const fmtSize = (n: number): string => {
   if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
@@ -38,7 +39,7 @@ export const BisonrelayStoreAssets = () => {
         setFiles(f);
         setErr(null);
       })
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Could not load files'));
+      .catch((e: any) => setErr(apiError(e, 'Could not load files')));
   };
   useEffect(load, []);
 
@@ -62,7 +63,7 @@ export const BisonrelayStoreAssets = () => {
       try {
         await uploadBisonrelayStoreFile(path, file);
       } catch (e: any) {
-        const msg = String(e?.response?.data || e?.message || '');
+        const msg = String(apiError(e, ''));
         // brclientd refuses to clobber an existing file unless overwrite is set;
         // confirm before replacing.
         if (msg.includes('already exists') && window.confirm(`${path} already exists. Overwrite it?`)) {
@@ -73,7 +74,7 @@ export const BisonrelayStoreAssets = () => {
       }
       await afterChange();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Upload failed');
+      setErr(apiError(e, 'Upload failed'));
     } finally {
       setBusy(null);
     }
@@ -87,7 +88,7 @@ export const BisonrelayStoreAssets = () => {
       await uploadBisonrelayStoreFile('banner.jpg', jpg, true);
       await afterChange();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Banner upload failed');
+      setErr(apiError(e, 'Banner upload failed'));
     } finally {
       setBusy(null);
     }
@@ -100,7 +101,7 @@ export const BisonrelayStoreAssets = () => {
       await deleteBisonrelayStoreFile(path);
       await afterChange();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Delete failed');
+      setErr(apiError(e, 'Delete failed'));
     } finally {
       setBusy(null);
     }
@@ -113,7 +114,7 @@ export const BisonrelayStoreAssets = () => {
       await applyStoreTheme(await getBisonrelayStoreProducts());
       load();
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Could not apply theme');
+      setErr(apiError(e, 'Could not apply theme'));
     } finally {
       setBusy(null);
     }

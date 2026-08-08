@@ -7,6 +7,7 @@ import {
   removeLnWatchtower,
 } from '../../../services/lightningApi';
 import { StatusPill } from '../StatusPill';
+import { apiError } from '../../../utils/apiError';
 
 const trunc = (s: string, head = 12, tail = 8) =>
   s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
@@ -31,8 +32,7 @@ export const WatchtowersSection = () => {
       setTowers(towers || []);
       setListError(null);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setListError(typeof body === 'string' ? body : err?.message || 'List failed');
+      setListError(apiError(err, 'List failed'));
     } finally {
       setLoading(false);
     }
@@ -52,8 +52,7 @@ export const WatchtowersSection = () => {
       setAddress('');
       refresh();
     } catch (err: any) {
-      const body = err?.response?.data;
-      setAddError(typeof body === 'string' ? body : err?.message || 'Add failed');
+      setAddError(apiError(err, 'Add failed'));
     } finally {
       setAdding(false);
     }

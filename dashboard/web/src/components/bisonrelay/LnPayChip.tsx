@@ -11,6 +11,7 @@ import {
   streamLnPayment,
 } from '../../services/lightningApi';
 import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 const fmtDcr = formatAtomsTrimmed;
 
@@ -36,8 +37,7 @@ export const LnPayChip = ({ invoice }: { invoice: string }) => {
       })
       .catch((e: any) => {
         if (!cancelled) {
-          const body = e?.response?.data;
-          setDecodeErr(typeof body === 'string' ? body : e?.message || 'Could not decode invoice');
+          setDecodeErr(apiError(e, 'Could not decode invoice'));
         }
       });
     return () => {

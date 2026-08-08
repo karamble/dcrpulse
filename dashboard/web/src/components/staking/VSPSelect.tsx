@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ChevronDown, Plus, Server } from 'lucide-react';
 import { ListVSPsResponse, VSPInfo, getVSPInfo, listVSPs } from '../../services/api';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   network: 'mainnet' | 'testnet';
@@ -107,8 +108,7 @@ export const VSPSelect = ({ network, value, onChange }: Props) => {
       setInput('');
       setOpen(false);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setProbeError(typeof body === 'string' ? body : err?.message || 'VSP probe failed');
+      setProbeError(apiError(err, 'VSP probe failed'));
     } finally {
       setProbing(false);
     }

@@ -22,6 +22,7 @@ import {
 import { NetworkStats } from './NetworkStats';
 import { StatCard, fmtDcr } from './StatCard';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { apiError } from '../../utils/apiError';
 
 export const OverviewTab = () => {
   const [info, setInfo] = useState<LightningInfo | null>(null);
@@ -42,8 +43,7 @@ export const OverviewTab = () => {
       setBalance(b);
       setActivity(a);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to load Lightning data');
+      setError(apiError(err, 'Failed to load Lightning data'));
     } finally {
       setLoading(false);
     }

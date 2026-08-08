@@ -8,6 +8,7 @@ import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { AddressGroups } from '../../AddressGroups';
 import { CopyButton } from '../../explorer/CopyButton';
 import { MsigReceive, freshMsigAddress } from '../../../services/msigApi';
+import { apiError } from '../../../utils/apiError';
 
 // ReceiveCard shows the shared wallet's current receive address and
 // mints the next one on demand. The ladder refuses to run more than a
@@ -39,8 +40,7 @@ export const ReceiveCard = ({
     try {
       setCurrent(await freshMsigAddress(walletId));
     } catch (e: any) {
-      const body = e?.response?.data;
-      setNotice(typeof body === 'string' ? body : e?.message || 'Could not generate an address');
+      setNotice(apiError(e, 'Could not generate an address'));
     } finally {
       setBusy(false);
     }

@@ -10,6 +10,7 @@ import { verifyTimestamp, type VerifyResponse } from '../../services/timestampAp
 import { StageList, type Stage, type StageState } from './StageList';
 import { fromUnix, shortHash } from './util';
 import { toYMDTime } from '../../utils/date';
+import { apiError } from '../../utils/apiError';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -90,7 +91,7 @@ export const VerifyView = () => {
     try {
       setResult(await verifyTimestamp(clean));
     } catch (e: any) {
-      setError((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'verification failed');
+      setError(apiError(e, 'verification failed'));
     } finally {
       setBusy(false);
     }

@@ -11,6 +11,7 @@ import {
   saveSettings,
   setMixerDebug,
 } from '../../services/api';
+import { apiError } from '../../utils/apiError';
 
 const defaultExternal: ExternalRequestSettings = {
   vspListing: true,
@@ -92,10 +93,9 @@ export const PrivacySection = () => {
       await saveSettings({ global: { externalRequests: next, decredPulseBotUrl: botUrl.trim() } });
       setFeedback({ kind: 'info', text: 'Preferences saved.' });
     } catch (err: any) {
-      const body = err?.response?.data;
       setFeedback({
         kind: 'error',
-        text: typeof body === 'string' ? body : err?.message || 'Failed to save preferences',
+        text: apiError(err, 'Failed to save preferences'),
       });
     } finally {
       setExternalBusy(false);
@@ -116,10 +116,9 @@ export const PrivacySection = () => {
       setBotUrl(v === '' ? defaultBotUrl : v);
       setFeedback({ kind: 'info', text: v === '' ? 'Reset to default.' : 'Saved - bot reachable.' });
     } catch (err: any) {
-      const body = err?.response?.data;
       setFeedback({
         kind: 'error',
-        text: typeof body === 'string' ? body : err?.message || 'Failed to save preferences',
+        text: apiError(err, 'Failed to save preferences'),
       });
     } finally {
       setExternalBusy(false);

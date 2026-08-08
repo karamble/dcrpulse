@@ -41,6 +41,7 @@ import { DownloadEmbed } from './DownloadEmbed';
 import { LnPayChip } from './LnPayChip';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { identityToHex } from '../../utils/identity';
+import { apiError } from '../../utils/apiError';
 
 const navigateTo = (hash: string): void => {
   window.location.hash = hash;
@@ -196,7 +197,7 @@ const VisitContactsView = () => {
         setContacts(withId);
         setErr(null);
       })
-      .catch((e: any) => setErr(e?.response?.data || e?.message || 'Could not load contacts'));
+      .catch((e: any) => setErr(apiError(e, 'Could not load contacts')));
   }, []);
 
   return (
@@ -290,7 +291,7 @@ const MyPagesView = ({ ownId }: { ownId: string }) => {
       refresh();
       window.alert(`Blog index rebuilt from ${n} article${n === 1 ? '' : 's'}.`);
     } catch (e: any) {
-      setErr(e?.response?.data || e?.message || 'Could not rebuild blog index');
+      setErr(apiError(e, 'Could not rebuild blog index'));
     } finally {
       setRebuilding(false);
     }
@@ -571,8 +572,7 @@ const PageView = ({
       }
       return { ...target, sessionId: res.session_id, parentPage: res.page_id };
     } catch (e: any) {
-      const body = e?.response?.data;
-      setErr(typeof body === 'string' ? body : e?.message || 'Fetch failed');
+      setErr(apiError(e, 'Fetch failed'));
       setPage(null);
       setSegments([]);
       return target;
@@ -667,8 +667,7 @@ const PageView = ({
         }
         return null;
       } catch (e: any) {
-        const body = e?.response?.data;
-        return typeof body === 'string' ? body : e?.message || 'Form submit failed';
+        return apiError(e, 'Form submit failed');
       }
     },
     [history, cursor, applyAsync],

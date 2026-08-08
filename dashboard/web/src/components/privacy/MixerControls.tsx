@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertCircle, Play, Square } from 'lucide-react';
 import { startMixer, stopMixer } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   running: boolean;
@@ -30,8 +31,7 @@ export const MixerControls = ({ running, autobuyerRunning, onChanged }: Props) =
       await stopMixer();
       onChanged();
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to stop');
+      setError(apiError(err, 'Failed to stop'));
     } finally {
       setStopping(false);
     }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, Lock, Plus, X } from 'lucide-react';
 import { createAccount } from '../../services/api';
+import { apiError } from '../../utils/apiError';
 
 interface Props {
   isOpen: boolean;
@@ -51,8 +52,7 @@ export const CreateAccountModal = ({ isOpen, onClose, onSuccess }: Props) => {
       onSuccess(resp.accountNumber, trimmedName);
       reset();
     } catch (err: any) {
-      const body = err?.response?.data;
-      const msg = typeof body === 'string' ? body : err?.message || 'Failed to create account';
+      const msg = apiError(err, 'Failed to create account');
       setError(msg);
     } finally {
       setSubmitting(false);

@@ -8,6 +8,7 @@ import { stopMMBot, type DexMarket, type MMBotStatus } from '../../services/dcrd
 import { useMMRefresh } from './DexLiveProvider';
 import { DexMMActivity, type AssetInfo } from './DexMMActivity';
 import { DexMMRunLogs } from './DexMMRunLogs';
+import { apiError } from '../../utils/apiError';
 
 // DexMMRunningCard is the trade view's right-sidebar card shown in place of the
 // order form when a market-maker bot is running on the selected market. Manual
@@ -37,7 +38,7 @@ export const DexMMRunningCard = ({
       await stopMMBot(bot.config.host, bot.config.baseID, bot.config.quoteID);
       refreshMM();
     } catch (e: any) {
-      setErr((typeof e?.response?.data === 'string' && e.response.data) || e?.message || 'Failed to stop bot');
+      setErr(apiError(e, 'Failed to stop bot'));
     } finally {
       setStopping(false);
     }

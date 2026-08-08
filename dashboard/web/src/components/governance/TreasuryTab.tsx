@@ -16,6 +16,7 @@ import {
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { formatAtoms } from '../../utils/amounts';
+import { apiError } from '../../utils/apiError';
 
 const POLICIES = ['yes', 'no', 'abstain'] as const;
 type Policy = (typeof POLICIES)[number];
@@ -53,8 +54,7 @@ export const TreasuryTab = () => {
       const k = await getTreasuryKeyPolicies();
       setKeys(k);
     } catch (err: any) {
-      const body = err?.response?.data;
-      setError(typeof body === 'string' ? body : err?.message || 'Failed to load treasury policies');
+      setError(apiError(err, 'Failed to load treasury policies'));
     } finally {
       setLoading(false);
     }
@@ -87,8 +87,7 @@ export const TreasuryTab = () => {
       setPending(null);
       await load();
     } catch (err: any) {
-      const body = err?.response?.data;
-      throw new Error(typeof body === 'string' ? body : err?.message || 'Failed to set policy');
+      throw new Error(apiError(err, 'Failed to set policy'));
     }
   };
 
