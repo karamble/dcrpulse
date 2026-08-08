@@ -74,9 +74,9 @@ func dataPushOverhead(n int) int {
 }
 
 func estSigScriptLen(m, redeemLen int) int {
-	// m worst-case DER signatures with hash type byte, one push opcode
-	// each, then the redeem script push.
-	return m*74 + dataPushOverhead(redeemLen) + redeemLen
+	// OP_0 for the dummy CHECKMULTISIG pops, m worst-case DER signatures
+	// with hash type byte, one push opcode each, then the redeem script push.
+	return 1 + m*74 + dataPushOverhead(redeemLen) + redeemLen
 }
 
 // EstimateSize returns the worst-case serialized size of tx once every

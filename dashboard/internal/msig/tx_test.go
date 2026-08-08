@@ -341,6 +341,40 @@ func TestEstimateSizeCoversActual(t *testing.T) {
 	}
 }
 
+// TestEstSigScriptLenExact pins the estimate to the exact length of a
+// worst-case redeemed signature script. TestEstimateSizeCoversActual asserts
+// only an inequality, which real signatures satisfy with room to spare, so it
+// cannot see a one-byte error in the formula itself.
+func TestEstSigScriptLenExact(t *testing.T) {
+	tests := []struct{ m, n int }{
+		{1, 1}, // redeem 37, one-byte push
+		{2, 2}, // redeem 71, one-byte push
+		{2, 7}, // redeem 241, two-byte push
+		{2, 8}, // redeem 275, three-byte push, the MaxPubKeys cap
+	}
+
+	for _, test := range tests {
+		w := newTestWallet(t, test.m, test.n)
+
+		// The shape a signer emits: the CHECKMULTISIG dummy, m maximum
+		// DER signatures each with a hash type byte, then the redeem push.
+		b := txscript.NewScriptBuilder().AddOp(txscript.OP_0)
+		for range test.m {
+			b.AddData(make([]byte, 73))
+		}
+		b.AddData(w.redeem)
+		script, err := b.Script()
+		if err != nil {
+			t.Fatalf("%d-of-%d: build script: %v", test.m, test.n, err)
+		}
+
+		if got := estSigScriptLen(test.m, len(w.redeem)); got != len(script) {
+			t.Errorf("%d-of-%d: estSigScriptLen = %d, want %d (redeem %d)",
+				test.m, test.n, got, len(script), len(w.redeem))
+		}
+	}
+}
+
 func TestBuildSpendFeeAndChange(t *testing.T) {
 	w := newTestWallet(t, 2, 3)
 	funding := w.fundingTx(100_000_000)
