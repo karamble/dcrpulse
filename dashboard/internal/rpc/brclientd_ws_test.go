@@ -187,6 +187,90 @@ func TestPendingCallsSurviveConcurrentTeardown(t *testing.T) {
 	}
 }
 
+// drainRequests reads and discards everything the client sends, so a send in
+// the test never blocks on a full socket buffer.
+func drainRequests(conn *websocket.Conn) {
+	for {
+		var m map[string]any
+		if err := conn.ReadJSON(&m); err != nil {
+			return
+		}
+	}
+}
+
+// subscriptionOf returns the subscription Subscribe registered, which the tests
+// need to drive openStream the way a reconnect does.
+func subscriptionOf(t *testing.T, c *BrclientdWSClient) *subscription {
+	t.Helper()
+	c.subMu.RLock()
+	defer c.subMu.RUnlock()
+	if len(c.subscribers) == 0 {
+		t.Fatal("Subscribe registered nothing")
+	}
+	return c.subscribers[0]
+}
+
+// A reconnect re-opens every subscription it still believes is live. If a
+// cancel lands between that check and the map insert, the cancelled
+// subscription is put back into the routing table and stays there until the
+// next disconnect clears it.
+func TestOpenStreamSkipsCancelledSubscription(t *testing.T) {
+	clientConn, serverConn := wsPair(t)
+	c := testClient(clientConn)
+	go drainRequests(serverConn)
+
+	cancel := c.Subscribe("Test.Stream", struct{}{}, func(json.RawMessage) {})
+	s := subscriptionOf(t, c)
+	cancel()
+
+	// What the reconnect loop does, losing the race with the cancel above.
+	if err := c.openStream(s); err != nil {
+		t.Fatalf("openStream: %v", err)
+	}
+
+	c.mu.Lock()
+	left := len(c.streamsByMethod)
+	c.mu.Unlock()
+	if left != 0 {
+		t.Errorf("a cancelled subscription was routed again: %d entries left", left)
+	}
+}
+
+// s.suffixedMethod is written by the reconnect loop and read by whoever cancels
+// the subscription. Nothing tested Subscribe against a reconnect before, which
+// is why -race never had the chance to flag the unsynchronised pair.
+func TestSubscribeCancelRacesReconnect(t *testing.T) {
+	// Deliberately not connected. openStream still names the stream and files it
+	// under that name before it discovers there is no socket, which is the write
+	// under test, and skipping the WriteJSON syscall keeps the two loops running
+	// at similar speed - with a real socket the cancel loop finishes long before
+	// the sends do and the accesses never overlap.
+	c := testClient(nil)
+
+	cancel := c.Subscribe("Test.Stream", struct{}{}, func(json.RawMessage) {})
+	s := subscriptionOf(t, c)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < 5000; i++ {
+			_ = c.openStream(s)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < 5000; i++ {
+			cancel()
+		}
+	}()
+	close(start)
+	wg.Wait()
+}
+
 // A Call whose response never arrives must give up on its context rather than
 // blocking for the life of the process.
 func TestCallHonoursContextDeadline(t *testing.T) {

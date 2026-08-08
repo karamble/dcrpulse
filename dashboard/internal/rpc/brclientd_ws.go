@@ -376,20 +376,26 @@ func (c *BrclientdWSClient) Subscribe(method string, params any, onEvent func(js
 			}
 		}
 		c.subMu.Unlock()
+		c.mu.Lock()
 		if s.suffixedMethod != "" {
-			c.mu.Lock()
 			delete(c.streamsByMethod, s.suffixedMethod)
-			c.mu.Unlock()
 		}
+		c.mu.Unlock()
 	}
 }
 
 func (c *BrclientdWSClient) openStream(s *subscription) error {
 	streamID := c.nextStreamID.Add(1)
 	suffixed := fmt.Sprintf("%s[%.8x]", s.method, streamID)
-	s.suffixedMethod = suffixed
 
+	// Name and map entry under one lock: the reconnect loop writes them while a
+	// cancelling caller reads them, and cancel sets its flag before it locks.
 	c.mu.Lock()
+	if s.cancelled.Load() {
+		c.mu.Unlock()
+		return nil
+	}
+	s.suffixedMethod = suffixed
 	c.streamsByMethod[suffixed] = s
 	c.mu.Unlock()
 
