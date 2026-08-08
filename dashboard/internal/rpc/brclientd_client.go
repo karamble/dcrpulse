@@ -1564,56 +1564,42 @@ func BrclientdStatus(ctx context.Context) (*BrclientdStatusResult, error) {
 	return &result, nil
 }
 
-// brclientdClient returns the cached HTTP client, building it lazily on the
-// first call. Rebuilt on demand if the cert pair appears after dashboard
-// startup, mirroring the dcrlnd pattern.
-func brclientdClient() (*http.Client, error) {
+// brclientdBuild returns the cached client, building it lazily so the cert
+// pair may appear after dashboard startup. Zero durations mean no bound,
+// matching http.Client.
+func brclientdBuild(cache **http.Client, timeout, headerTimeout time.Duration) (*http.Client, error) {
 	brclientdClientMu.Lock()
 	defer brclientdClientMu.Unlock()
-	if brclientdHTTPClient != nil {
-		return brclientdHTTPClient, nil
+	if *cache != nil {
+		return *cache, nil
 	}
 	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
 	if err != nil {
 		rpccLog.Warnf("brclientd certs not yet available: %v (will retry on next call)", err)
 		return nil, err
 	}
-	brclientdHTTPClient = &http.Client{
+	*cache = &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig:       tlsCfg,
-			ResponseHeaderTimeout: 60 * time.Second,
+			ResponseHeaderTimeout: headerTimeout,
 		},
-		// Most calls return well under a second. PaymentsService.TipUser
-		// can legitimately take ~10s on the first call after startup
-		// (BR waits for tipAttemptsRunning) and a few seconds on each
-		// attempt thereafter while it fetches+pays an invoice. 90s is
-		// the worst-case ceiling we want to surface to the user.
-		Timeout: 90 * time.Second,
+		Timeout: timeout,
 	}
-	return brclientdHTTPClient, nil
+	return *cache, nil
+}
+
+func brclientdClient() (*http.Client, error) {
+	// Most calls return well under a second. PaymentsService.TipUser can
+	// legitimately take ~10s on the first call after startup and a few seconds
+	// per attempt thereafter; 90s is the worst-case ceiling to surface.
+	return brclientdBuild(&brclientdHTTPClient, 90*time.Second, 60*time.Second)
 }
 
 // brclientdStreamClient is the variant for transfers whose body can outlast
 // the 90s ceiling of the shared client (backup tarballs). Only the response
 // headers are deadlined; the body streams for as long as it takes.
 func brclientdStreamClient() (*http.Client, error) {
-	brclientdClientMu.Lock()
-	defer brclientdClientMu.Unlock()
-	if brclientdStreamHTTPClient != nil {
-		return brclientdStreamHTTPClient, nil
-	}
-	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
-	if err != nil {
-		rpccLog.Warnf("brclientd certs not yet available: %v (will retry on next call)", err)
-		return nil, err
-	}
-	brclientdStreamHTTPClient = &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig:       tlsCfg,
-			ResponseHeaderTimeout: 60 * time.Second,
-		},
-	}
-	return brclientdStreamHTTPClient, nil
+	return brclientdBuild(&brclientdStreamHTTPClient, 0, 60*time.Second)
 }
 
 // brclientdBackupClient is the variant for /backup: brclientd builds the
@@ -1621,23 +1607,7 @@ func brclientdStreamClient() (*http.Client, error) {
 // must cover the whole build (up to 5 GiB of state), not just a roundtrip.
 // Callers bound total time through the request context instead.
 func brclientdBackupClient() (*http.Client, error) {
-	brclientdClientMu.Lock()
-	defer brclientdClientMu.Unlock()
-	if brclientdBackupHTTPClient != nil {
-		return brclientdBackupHTTPClient, nil
-	}
-	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
-	if err != nil {
-		rpccLog.Warnf("brclientd certs not yet available: %v (will retry on next call)", err)
-		return nil, err
-	}
-	brclientdBackupHTTPClient = &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig:       tlsCfg,
-			ResponseHeaderTimeout: 15 * time.Minute,
-		},
-	}
-	return brclientdBackupHTTPClient, nil
+	return brclientdBuild(&brclientdBackupHTTPClient, 0, 15*time.Minute)
 }
 
 // brclientdPagesClient is the variant for /pages/fetch. A page fetched over the
@@ -1647,22 +1617,7 @@ func brclientdBackupClient() (*http.Client, error) {
 // Total time is bounded by the request context (the originating connection)
 // instead, so a navigated-away fetch is cancelled rather than timed out.
 func brclientdPagesClient() (*http.Client, error) {
-	brclientdClientMu.Lock()
-	defer brclientdClientMu.Unlock()
-	if brclientdPagesHTTPClient != nil {
-		return brclientdPagesHTTPClient, nil
-	}
-	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
-	if err != nil {
-		rpccLog.Warnf("brclientd certs not yet available: %v (will retry on next call)", err)
-		return nil, err
-	}
-	brclientdPagesHTTPClient = &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsCfg,
-		},
-	}
-	return brclientdPagesHTTPClient, nil
+	return brclientdBuild(&brclientdPagesHTTPClient, 0, 0)
 }
 
 // BrclientdWSDialer returns a gorilla-websocket-compatible dialer plus the
