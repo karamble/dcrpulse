@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ExternalLink, Filter, Loader2, RefreshCw, ShieldOff } from 'lucide-react';
-import { Proposal, getProposals, refreshProposals } from '../../services/api';
+import { Proposal, getProposals, refreshProposals, loadMoreProposals } from '../../services/api';
 import { VoteResultsBar } from './VoteResultsBar';
 import { VoteTrickleCard } from './VoteTrickleCard';
 import { apiError } from '../../utils/apiError';
@@ -59,6 +59,9 @@ export const ProposalsTab = () => {
   const [refreshAvailableAt, setRefreshAvailableAt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(false);
@@ -73,6 +76,8 @@ export const ProposalsTab = () => {
     setLoading(true);
     setProposals([]);
     setError(null);
+    setHasMore(false);
+    setLoadMoreError(null);
     (async () => {
       try {
         const r = await getProposals(filter);
@@ -80,6 +85,7 @@ export const ProposalsTab = () => {
         setProposals(r.proposals);
         setFetchedAt(r.fetchedAt);
         setRefreshAvailableAt(r.refreshAvailableAt);
+        setHasMore(!!r.hasMore);
       } catch (err: any) {
         if (cancelled) return;
         if (err?.response?.status === 503) {
@@ -105,6 +111,20 @@ export const ProposalsTab = () => {
   const cooldownRemaining = refreshAvailableAt - now;
   const canRefresh = !refreshing && cooldownRemaining <= 0;
 
+  const handleLoadMore = async () => {
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const r = await loadMoreProposals(filter);
+      setProposals(r.proposals);
+      setHasMore(!!r.hasMore);
+    } catch (err: any) {
+      setLoadMoreError(apiError(err, 'Failed to load more proposals'));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
     setRefreshError(null);
@@ -113,6 +133,7 @@ export const ProposalsTab = () => {
       setProposals(r.proposals);
       setFetchedAt(r.fetchedAt);
       setRefreshAvailableAt(r.refreshAvailableAt);
+      setHasMore(!!r.hasMore);
     } catch (err: any) {
       const status = err?.response?.status;
       const data = err?.response?.data;
@@ -274,6 +295,20 @@ export const ProposalsTab = () => {
               </div>
             </Link>
           ))}
+          {hasMore && (
+            <button
+              type="button"
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="w-full py-2 rounded-lg border border-border/50 bg-muted/10 text-sm text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
+              {loadingMore ? 'Loading more proposals...' : 'Load more proposals'}
+            </button>
+          )}
+          {loadMoreError && (
+            <div className="text-sm text-destructive">{loadMoreError}</div>
+          )}
         </div>
       )}
     </div>

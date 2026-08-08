@@ -1288,6 +1288,7 @@ export interface ProposalsResponse {
   proposals: Proposal[];
   fetchedAt: number;
   refreshAvailableAt: number;
+  hasMore: boolean;
 }
 
 // getProposals returns the cached proposals envelope. The backend caches the
@@ -1307,6 +1308,17 @@ export const getProposals = async (status: string): Promise<ProposalsResponse> =
 export const refreshProposals = async (status: string): Promise<ProposalsResponse> => {
   const response = await api.post<ProposalsResponse>(
     '/wallet/governance/proposals/refresh',
+    undefined,
+    { params: { status }, timeout: 65 * 1000 },
+  );
+  return response.data;
+};
+
+// loadMoreProposals appends the next Politeia inventory page for each of the
+// bucket's vote statuses; the reply carries the full merged list.
+export const loadMoreProposals = async (status: string): Promise<ProposalsResponse> => {
+  const response = await api.post<ProposalsResponse>(
+    '/wallet/governance/proposals/load-more',
     undefined,
     { params: { status }, timeout: 65 * 1000 },
   );
