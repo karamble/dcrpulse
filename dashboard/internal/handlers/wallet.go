@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"dcrpulse/internal/middleware"
@@ -29,14 +28,6 @@ import (
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 
 	"github.com/gorilla/websocket"
-)
-
-// Global rescan stream management
-var (
-	activeRescanStream   pb.WalletService_RescanClient
-	activeRescanMutex    sync.RWMutex
-	rescanStreamChannels []chan *pb.RescanResponse
-	rescanChannelsMutex  sync.Mutex
 )
 
 // StartWalletRescan exposes the gRPC rescan starter to subsystems that
@@ -69,11 +60,6 @@ func startRescanViaGrpc(beginHeight int32) {
 
 	wlltLog.Info("gRPC rescan stream started - broadcasting progress updates")
 
-	// Store active stream
-	activeRescanMutex.Lock()
-	activeRescanStream = stream
-	activeRescanMutex.Unlock()
-
 	// Receive and broadcast progress updates
 	for {
 		update, err := stream.Recv()
@@ -90,58 +76,11 @@ func startRescanViaGrpc(beginHeight int32) {
 		// WebSocket fan-out below) see consistent rescan state.
 		services.MarkRescanProgress(update.RescannedThrough)
 
-		// Broadcast to all listening WebSocket clients (legacy channel —
-		// SyncSnapshot subscribers get the same data via the new path).
-		rescanChannelsMutex.Lock()
-		for _, ch := range rescanStreamChannels {
-			select {
-			case ch <- update:
-			default:
-				// Channel full, skip
-			}
-		}
-		rescanChannelsMutex.Unlock()
-
 		wlltLog.Debugf("Rescan progress: block %d", update.RescannedThrough)
 	}
 
-	// Clear active stream
-	activeRescanMutex.Lock()
-	activeRescanStream = nil
-	activeRescanMutex.Unlock()
-
-	// Notify all listeners that stream ended
-	rescanChannelsMutex.Lock()
-	for _, ch := range rescanStreamChannels {
-		close(ch)
-	}
-	rescanStreamChannels = nil
-	rescanChannelsMutex.Unlock()
-
 	services.MarkRescanFinished()
 	wlltLog.Info("Rescan completed - all transactions imported")
-}
-
-// subscribeToRescanUpdates creates a channel that receives rescan progress updates
-func subscribeToRescanUpdates() chan *pb.RescanResponse {
-	ch := make(chan *pb.RescanResponse, 10)
-	rescanChannelsMutex.Lock()
-	rescanStreamChannels = append(rescanStreamChannels, ch)
-	rescanChannelsMutex.Unlock()
-	return ch
-}
-
-// unsubscribeFromRescanUpdates removes a channel from receiving updates
-func unsubscribeFromRescanUpdates(ch chan *pb.RescanResponse) {
-	rescanChannelsMutex.Lock()
-	defer rescanChannelsMutex.Unlock()
-
-	for i, c := range rescanStreamChannels {
-		if c == ch {
-			rescanStreamChannels = append(rescanStreamChannels[:i], rescanStreamChannels[i+1:]...)
-			break
-		}
-	}
 }
 
 // Pending rescan tracking is now in services package
@@ -543,57 +482,6 @@ func ExportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	w.Write(buf.Bytes())
-}
-
-func StreamRescanProgressHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		wlltLog.Errorf("Failed to upgrade to WebSocket: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	// Initial snapshot.
-	if err := conn.WriteJSON(snapshotPayload(services.GetSyncSnapshot())); err != nil {
-		return
-	}
-
-	ch, unsubscribe := services.SubscribeSyncEvents()
-	defer unsubscribe()
-
-	notify := make(chan struct{})
-	go func() {
-		defer close(notify)
-		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
-				return
-			}
-		}
-	}()
-
-	keepAlive := time.NewTicker(15 * time.Second)
-	defer keepAlive.Stop()
-
-	for {
-		select {
-		case snap, ok := <-ch:
-			if !ok {
-				return
-			}
-			if err := conn.WriteJSON(snapshotPayload(snap)); err != nil {
-				return
-			}
-		case <-keepAlive.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		case <-notify:
-			return
-		}
-	}
 }
 
 // snapshotPayload renders a SyncSnapshot as the WebSocket / sync-progress JSON.

@@ -266,7 +266,6 @@ func main() {
 	api.HandleFunc("/dcrdex/assets", handlers.GetDcrdexAssetsHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/wallet/create", handlers.CreateDcrdexAssetWalletHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/txs", handlers.GetDcrdexWalletTxsHandler).Methods("GET")
-	api.HandleFunc("/dcrdex/wallet/tx", handlers.GetDcrdexWalletTxHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/wallet/send", handlers.SendDcrdexWalletHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/txfee", handlers.EstimateDcrdexSendFeeHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/open", handlers.OpenDcrdexWalletHandler).Methods("POST")
@@ -617,7 +616,6 @@ func main() {
 	api.HandleFunc("/wallet/sync-progress", handlers.GetSyncProgressHandler).Methods("GET")
 
 	// WebSocket streaming routes (log-based monitoring, does not start rescans)
-	api.HandleFunc("/wallet/stream-rescan-progress", handlers.StreamRescanProgressHandler).Methods("GET")
 	api.HandleFunc("/wallet/grpc/stream-rescan", handlers.StreamRescanGrpcHandler).Methods("GET")
 
 	// Explorer routes
@@ -637,7 +635,6 @@ func main() {
 			http.HandlerFunc(handlers.TriggerTSpendScanHandler))).Methods("POST")
 	api.HandleFunc("/treasury/scan-progress", handlers.GetTSpendScanProgressHandler).Methods("GET")
 	api.HandleFunc("/treasury/scan-results", handlers.GetTSpendScanResultsHandler).Methods("GET")
-	api.HandleFunc("/treasury/mempool", handlers.GetMempoolTSpendsHandler).Methods("GET")
 
 	// Serve embedded static files for frontend
 	distFS, err := fs.Sub(embeddedFiles, "web/dist")

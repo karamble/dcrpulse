@@ -100,17 +100,3 @@ func GetTSpendScanResultsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMempoolTSpendsHandler returns active tspends currently in mempool
-func GetMempoolTSpendsHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	tspends, err := services.GetMempoolTSpends(ctx)
-	if err != nil {
-		govnLog.Errorf("Error fetching mempool tspends: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tspends)
-}

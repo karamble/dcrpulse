@@ -99,10 +99,6 @@ func getTreasuryBalance(ctx context.Context) (float64, error) {
 }
 
 // GetMempoolTSpends retrieves active tspends from mempool with voting info
-func GetMempoolTSpends(ctx context.Context) ([]types.TSpend, error) {
-	return scanMempoolForTSpends(ctx)
-}
-
 // scanMempoolForTSpends scans the mempool for active treasury spend transactions
 func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 	if rpc.DcrdClient == nil {

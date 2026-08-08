@@ -2288,38 +2288,6 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 
 // GetDcrdexWalletTxHandler returns a single wallet transaction. Query: assetID,
 // txID.
-func GetDcrdexWalletTxHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	assetID, err := strconv.ParseUint(r.URL.Query().Get("assetID"), 10, 32)
-	if err != nil {
-		http.Error(w, "assetID is required", http.StatusBadRequest)
-		return
-	}
-	txID := r.URL.Query().Get("txID")
-	if txID == "" {
-		http.Error(w, "txID is required", http.StatusBadRequest)
-		return
-	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-	defer cancel()
-	raw, err := client.WalletTx(ctx, uint32(assetID), txID)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	var t rawWalletTx
-	if err := json.Unmarshal(raw, &t); err != nil {
-		http.Error(w, "decode tx: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	json.NewEncoder(w).Encode(convWalletTx(uint32(assetID), t))
-}
-
 // SendDcrdexWalletHandler sends a conventional amount of an asset to an address.
 // The amount is converted to atoms in the backend. Spends real funds; requires
 // the DEX session unlocked.
