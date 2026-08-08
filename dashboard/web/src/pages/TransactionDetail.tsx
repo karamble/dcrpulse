@@ -358,7 +358,7 @@ export const TransactionDetail = () => {
                 <div className="p-3 rounded-lg bg-background/50 mb-4">
                   <p className="text-sm">
                     <span className={tx.votingInfo.quorumAchieved ? 'text-green-500' : 'text-yellow-500'}>
-                      {tx.votingInfo.quorumAchieved ? '✓ Quorum achieved' : '⚠ Quorum not yet reached'}
+                      {tx.votingInfo.quorumAchieved ? 'Quorum achieved' : 'Quorum not yet reached'}
                     </span>
                     {' '}({tx.votingInfo.votesCast.toLocaleString()} of {tx.votingInfo.quorumRequired.toLocaleString()} needed votes)
                   </p>

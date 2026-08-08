@@ -63,19 +63,15 @@ export const GovernanceDashboard = () => {
   // Sync with historical snapshot on first load
   useEffect(() => {
     const initializeData = async () => {
-      console.log('📍 GovernanceDashboard mounted, initializing data...');
-      
       // First, sync with the historical snapshot if needed
       const snapshotResult = await syncWithSnapshot();
       if (snapshotResult.success && snapshotResult.synced > 0) {
-        console.log(`✓ Loaded ${snapshotResult.synced} historical TSpends from snapshot`);
         setRefreshTrigger(prev => prev + 1);
       } else if (snapshotResult.success && snapshotResult.synced === 0) {
-        console.log('✓ Snapshot sync skipped (data already present)');
         // Still trigger a refresh to ensure UI displays existing data
         setRefreshTrigger(prev => prev + 1);
       } else if (!snapshotResult.success) {
-        console.warn('⚠️ Failed to sync with snapshot:', snapshotResult.error);
+        console.warn('Failed to sync with snapshot:', snapshotResult.error);
       }
     };
 
@@ -94,7 +90,6 @@ export const GovernanceDashboard = () => {
         // so if the browser was closed for a while, we need to fetch ALL scan results
         // from the backend and compare with localStorage to catch any missed TSpends
         if (progress.isScanning || progress.tspendFound > 0) {
-          console.log('Syncing scan results from backend...');
           try {
             const allResults = await getTSpendScanResults();
             if (allResults && allResults.length > 0) {
@@ -110,7 +105,6 @@ export const GovernanceDashboard = () => {
               
               const addedCount = saveTSpends(records);
               if (addedCount > 0) {
-                console.log(`Synced ${addedCount} TSpends that were found while browser was closed`);
                 setRefreshTrigger(prev => prev + 1);
               }
             }
@@ -165,7 +159,6 @@ export const GovernanceDashboard = () => {
 
           // Final sync: Fetch all scan results to ensure nothing was missed
           try {
-            console.log('Scan completed. Performing final sync...');
             const allResults = await getTSpendScanResults();
             if (allResults && allResults.length > 0) {
               const records: TSpendRecord[] = allResults.map(t => ({
@@ -178,10 +171,7 @@ export const GovernanceDashboard = () => {
                 detectedAt: new Date().toISOString(),
               }));
               
-              const addedCount = saveTSpends(records);
-              if (addedCount > 0) {
-                console.log(`Final sync added ${addedCount} TSpends`);
-              }
+              saveTSpends(records);
             }
           } catch (syncError) {
             console.error('Failed to perform final sync:', syncError);
@@ -303,7 +293,7 @@ export const GovernanceDashboard = () => {
             <div className="mt-4 pt-4 border-t border-border/50 text-sm text-muted-foreground">
               <div className="flex items-center gap-4">
                 <span>
-                  {lastScanStatus.failedBlocks ? '! Last scan incomplete: ' : '✓ Last scanned: '}
+                  {lastScanStatus.failedBlocks ? 'Last scan incomplete: ' : 'Last scanned: '}
                   {formatDate(lastScanStatus.lastScanDate)}
                 </span>
                 <span>Height: {lastScanStatus.lastScanHeight.toLocaleString()}</span>
