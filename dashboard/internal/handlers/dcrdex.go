@@ -199,9 +199,8 @@ func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -236,9 +235,8 @@ func UnlockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -290,14 +288,8 @@ func CreateDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "walletPass is required", http.StatusBadRequest)
 		return
 	}
-	appPass, ok := rpc.DcrdexAppPass()
+	appPass, client, ok := dexAuthClient(w)
 	if !ok {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return
-	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
@@ -517,9 +509,8 @@ type DcrdexWalletInfo struct {
 // (in DCR) and deposit address, so the user can fund it before posting a bond.
 func GetDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -560,9 +551,8 @@ func GetDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 // GetDcrdexExchangesHandler returns the known/registered DEX servers (raw).
 func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -676,9 +666,8 @@ type DexWalletState struct {
 // (in conventional units), so the Wallets tab can show the funding picture.
 func GetDcrdexWalletsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -806,9 +795,8 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -928,14 +916,8 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	appPass, ok := rpc.DcrdexAppPass()
+	appPass, client, ok := dexAuthClient(w)
 	if !ok {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return
-	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 
@@ -1099,9 +1081,8 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	// Allow the DEX server ample time to answer the one-shot getdexconfig
@@ -1274,14 +1255,8 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and bond are required", http.StatusBadRequest)
 		return
 	}
-	appPass, ok := rpc.DcrdexAppPass()
+	appPass, client, ok := dexAuthClient(w)
 	if !ok {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return
-	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	host := req.Host
@@ -1328,9 +1303,8 @@ func PostDcrdexBondStatusHandler(w http.ResponseWriter, r *http.Request) {
 // dashboard supplies the pinned TLS + auth to bisonw. The RPC server does not
 // stream notifications; those are relayed separately by DcrdexNotifyWSHandler.
 func DcrdexWSHandler(w http.ResponseWriter, r *http.Request) {
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	relayBisonwWS(w, r, client)
@@ -1397,9 +1371,8 @@ func relayBisonwWS(w http.ResponseWriter, r *http.Request, client *bisonw.Client
 // optionally filtered to the `host` query parameter.
 func GetDcrdexMyOrdersHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -1708,9 +1681,8 @@ func CancelDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "orderID is required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -1742,14 +1714,8 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and qty are required", http.StatusBadRequest)
 		return
 	}
-	appPass, ok := rpc.DcrdexAppPass()
+	appPass, client, ok := dexAuthClient(w)
 	if !ok {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return
-	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
@@ -1880,14 +1846,8 @@ func CreateDcrdexAssetWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID and walletType are required", http.StatusBadRequest)
 		return
 	}
-	appPass, ok := rpc.DcrdexAppPass()
+	appPass, client, ok := dexAuthClient(w)
 	if !ok {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return
-	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
@@ -2105,9 +2065,8 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	num, _ := strconv.Atoi(r.URL.Query().Get("n"))
 	refID := r.URL.Query().Get("refID")
 	past := r.URL.Query().Get("past") == "true"
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
@@ -2209,14 +2168,8 @@ func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID, value and address are required", http.StatusBadRequest)
 		return
 	}
-	appPass, ok := rpc.DcrdexAppPass()
+	appPass, client, ok := dexAuthClient(w)
 	if !ok {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return
-	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
@@ -2307,14 +2260,8 @@ func OpenDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	appPass, ok := rpc.DcrdexAppPass()
+	appPass, client, ok := dexAuthClient(w)
 	if !ok {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return
-	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -2335,9 +2282,8 @@ func CloseDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	assetID := req.AssetID
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -2357,9 +2303,8 @@ func ToggleDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -2379,9 +2324,8 @@ func RescanDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -2401,9 +2345,8 @@ func GetDcrdexWalletPeersHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -2419,9 +2362,8 @@ func AddDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID and address are required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -2441,9 +2383,8 @@ func RemoveDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID and address are required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -2464,9 +2405,8 @@ func GetDcrdexNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(r.URL.Query().Get("n")); err == nil && v > 0 {
 		n = v
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -2519,9 +2459,8 @@ func ExportDcrdexSeedHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
 		return
 	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	client, ok := dexClient(w)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -2560,14 +2499,8 @@ func DiscoverDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	appPass, ok := rpc.DcrdexAppPass()
+	appPass, client, ok := dexAuthClient(w)
 	if !ok {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return
-	}
-	client, err := rpc.DcrdexClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
