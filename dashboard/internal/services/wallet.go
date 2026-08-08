@@ -1005,8 +1005,12 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 	}
 
 	// Fetch dcrd getblocksubsidy for the next block (current PoS reward).
-	// chaincfg.MainNetParams SubsidyReductionInterval is 6144.
-	const subsidyReductionInterval int64 = 6144
+	var subsidyReductionInterval int64
+	if params, perr := chainParams(ctx); perr == nil {
+		subsidyReductionInterval = params.SubsidyReductionInterval
+	} else {
+		wlltLog.Warnf("Failed to get chain params for subsidy interval: %v", perr)
+	}
 	stakingInfo.SubsidyReductionInterval = subsidyReductionInterval
 	if rpc.DcrdClient != nil {
 		chainHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
@@ -1036,7 +1040,9 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 					stakingInfo.BlockSubsidyPoS = float64(subsidy.PoS) / 1e8
 					stakingInfo.BlockSubsidyPoW = float64(subsidy.PoW) / 1e8
 					stakingInfo.BlockSubsidyTreasury = float64(subsidy.Developer) / 1e8
-					stakingInfo.BlocksUntilSubsidyReduction = subsidyReductionInterval - (chainHeight % subsidyReductionInterval)
+					if subsidyReductionInterval > 0 {
+						stakingInfo.BlocksUntilSubsidyReduction = subsidyReductionInterval - (chainHeight % subsidyReductionInterval)
+					}
 				}
 			}
 		}
@@ -1053,6 +1059,12 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 	}
 	if count > 10000 {
 		count = 10000 // Cap at 10000 for performance
+	}
+
+	// A vote's returned stake and reward mature over CoinbaseMaturity blocks.
+	var voteMaturity int64 = 256
+	if params, err := chainParams(ctx); err == nil {
+		voteMaturity = int64(params.CoinbaseMaturity)
 	}
 
 	// Get current chain height for maturity calculations
@@ -1216,18 +1228,16 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				netAmount = -fee
 			}
 
-			// Vote maturity: a vote's returned stake + reward matures over 256
-			// blocks before it is spendable. A vote spans multiple listtransactions
-			// entries, so it lands here rather than the single-entry branches below;
-			// compute maturity here too or the row is stuck at "Voted (Maturing)".
+			// A vote spans multiple listtransactions entries, so maturity is
+			// computed here too or the row sticks at "Voted (Maturing)".
 			var isTicketMature bool = false
 			var blocksUntilSpendable int64 = 0
 			if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
 				blocksPassed := currentHeight - blockHeight
-				if blocksPassed >= 256 {
+				if blocksPassed >= voteMaturity {
 					isTicketMature = true
 				} else {
-					blocksUntilSpendable = 256 - blocksPassed
+					blocksUntilSpendable = voteMaturity - blocksPassed
 				}
 			}
 
@@ -1279,17 +1289,16 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 					blockHeight = currentHeight - rpcTx.Confirmations + 1
 				}
 
-				// Vote maturity: 256 blocks required before funds are spendable
 				var isTicketMature bool = false
 				var blocksUntilSpendable int64 = 0
 				if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
 					blocksPassed := currentHeight - blockHeight
-					if blocksPassed >= 256 {
+					if blocksPassed >= voteMaturity {
 						isTicketMature = true
 						blocksUntilSpendable = 0
 					} else {
 						isTicketMature = false
-						blocksUntilSpendable = 256 - blocksPassed
+						blocksUntilSpendable = voteMaturity - blocksPassed
 					}
 				}
 
@@ -1324,12 +1333,12 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 			var blocksUntilSpendable int64 = 0
 			if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
 				blocksPassed := currentHeight - blockHeight
-				if blocksPassed >= 256 {
+				if blocksPassed >= voteMaturity {
 					isTicketMature = true
 					blocksUntilSpendable = 0
 				} else {
 					isTicketMature = false
-					blocksUntilSpendable = 256 - blocksPassed
+					blocksUntilSpendable = voteMaturity - blocksPassed
 				}
 			}
 
