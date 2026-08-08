@@ -23,6 +23,7 @@ import (
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/dcrutil/v4"
 )
 
 func FetchWalletStatus() (*types.WalletStatus, error) {
@@ -1036,10 +1037,10 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 					wlltLog.Warnf("Failed to unmarshal block subsidy: %v", err)
 				} else {
 					stakingInfo.BlockSubsidyHeight = nextHeight
-					stakingInfo.BlockSubsidyTotal = float64(subsidy.Total) / 1e8
-					stakingInfo.BlockSubsidyPoS = float64(subsidy.PoS) / 1e8
-					stakingInfo.BlockSubsidyPoW = float64(subsidy.PoW) / 1e8
-					stakingInfo.BlockSubsidyTreasury = float64(subsidy.Developer) / 1e8
+					stakingInfo.BlockSubsidyTotal = dcrutil.Amount(subsidy.Total).ToCoin()
+					stakingInfo.BlockSubsidyPoS = dcrutil.Amount(subsidy.PoS).ToCoin()
+					stakingInfo.BlockSubsidyPoW = dcrutil.Amount(subsidy.PoW).ToCoin()
+					stakingInfo.BlockSubsidyTreasury = dcrutil.Amount(subsidy.Developer).ToCoin()
 					if subsidyReductionInterval > 0 {
 						stakingInfo.BlocksUntilSubsidyReduction = subsidyReductionInterval - (chainHeight % subsidyReductionInterval)
 					}

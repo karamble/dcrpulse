@@ -26,6 +26,7 @@ import (
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/dcrutil/v4"
 )
 
 const (
@@ -746,7 +747,7 @@ func ticketRecordFromResponse(r *pb.GetTicketsResponse) types.TicketRecord {
 				break
 			}
 		}
-		out.TicketPrice = float64(priceAtoms) / 1e8
+		out.TicketPrice = dcrutil.Amount(priceAtoms).ToCoin()
 	}
 	if s := td.GetSpender(); s != nil {
 		if h, herr := chainhash.NewHash(s.GetHash()); herr == nil {
@@ -760,7 +761,7 @@ func ticketRecordFromResponse(r *pb.GetTicketsResponse) types.TicketRecord {
 			for _, c := range s.GetCredits() {
 				spenderCredit += c.GetAmount()
 			}
-			reward := float64(spenderCredit)/1e8 - out.TicketPrice
+			reward := dcrutil.Amount(spenderCredit).ToCoin() - out.TicketPrice
 			if reward < 0 {
 				reward = 0
 			}

@@ -18,6 +18,7 @@ import (
 	"github.com/decred/dcrd/blockchain/standalone/v2"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/dcrutil/v4"
 	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
 )
 
@@ -94,9 +95,7 @@ func getTreasuryBalance(ctx context.Context) (float64, error) {
 		return 0, fmt.Errorf("failed to get treasury balance: %w", err)
 	}
 
-	// Convert atoms to DCR
-	balanceDCR := float64(treasuryBalance.Balance) / 1e8
-	return balanceDCR, nil
+	return dcrutil.Amount(treasuryBalance.Balance).ToCoin(), nil
 }
 
 // GetMempoolTSpends retrieves active tspends from mempool with voting info
@@ -241,7 +240,7 @@ func balanceSampleAt(ctx context.Context, h int64) (*types.BalanceSample, error)
 	return &types.BalanceSample{
 		Height:  h,
 		Time:    hdr.Time,
-		Balance: float64(bal.Balance) / 1e8,
+		Balance: dcrutil.Amount(bal.Balance).ToCoin(),
 	}, nil
 }
 

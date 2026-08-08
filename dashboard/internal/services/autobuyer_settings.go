@@ -56,7 +56,7 @@ func LoadAutobuyerSettings(ctx context.Context) (*types.AutobuyerSettings, error
 		Account:           accountNum,
 		VspHost:           host,
 		VspPubkey:         pubkey,
-		BalanceToMaintain: float64(raw.BalanceToMaintain) / 1e8,
+		BalanceToMaintain: dcrutil.Amount(raw.BalanceToMaintain).ToCoin(),
 	}, nil
 }
 
