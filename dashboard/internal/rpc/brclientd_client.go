@@ -811,11 +811,12 @@ func BrclientdContentFile(ctx context.Context, uidHex, fidHex string) (*http.Res
 	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
 		return nil, errors.New("brclientd: status host/port not configured")
 	}
-	url := fmt.Sprintf("https://%s:%s/content/file?fid=%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, fidHex)
+	endpoint := fmt.Sprintf("https://%s:%s/content/file?fid=%s",
+		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(fidHex))
 	if uidHex != "" {
-		url += "&uid=" + uidHex
+		endpoint += "&uid=" + url.QueryEscape(uidHex)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -837,9 +838,9 @@ func BrclientdPostEmbedData(ctx context.Context, uidHex, pidHex string, index in
 	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
 		return nil, errors.New("brclientd: status host/port not configured")
 	}
-	url := fmt.Sprintf("https://%s:%s/posts/embed-data?uid=%s&pid=%s&index=%d",
-		BrclientdCfg.Host, BrclientdCfg.StatusPort, uidHex, pidHex, index)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	endpoint := fmt.Sprintf("https://%s:%s/posts/embed-data?uid=%s&pid=%s&index=%d",
+		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(uidHex), url.QueryEscape(pidHex), index)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -1452,15 +1453,15 @@ func brclientdGetRaw(ctx context.Context, path string, query map[string]string) 
 	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
 		return nil, errors.New("brclientd: status host/port not configured")
 	}
-	url := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
+	endpoint := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
 	if len(query) > 0 {
-		sep := "?"
+		vals := url.Values{}
 		for k, v := range query {
-			url += sep + k + "=" + v
-			sep = "&"
+			vals.Set(k, v)
 		}
+		endpoint += "?" + vals.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -1732,9 +1733,9 @@ func BrclientdHistoryPM(ctx context.Context, uid string, page, pageSize int) (js
 	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
 		return nil, errors.New("brclientd: status host/port not configured")
 	}
-	url := fmt.Sprintf("https://%s:%s/history/pm?uid=%s&page=%d&page_size=%d",
-		BrclientdCfg.Host, BrclientdCfg.StatusPort, uid, page, pageSize)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	endpoint := fmt.Sprintf("https://%s:%s/history/pm?uid=%s&page=%d&page_size=%d",
+		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(uid), page, pageSize)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build history request: %w", err)
 	}
