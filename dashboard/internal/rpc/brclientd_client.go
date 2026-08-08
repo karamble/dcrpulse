@@ -1524,7 +1524,7 @@ func BrclientdPagesImportEmbed(ctx context.Context, body any) (json.RawMessage, 
 	if err != nil {
 		return nil, err
 	}
-	return brclientdDoPostJSONRaw(ctx, cli, "/pages/local/import-embed", body)
+	return brclientdDoPostJSONRaw(ctx, cli, "/pages/local/import-embed", body, brclientdControlRespLimit)
 }
 
 // BrclientdAcceptInvite hands a previously-shared OOB invite blob to

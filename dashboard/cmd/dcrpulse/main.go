@@ -760,7 +760,7 @@ func main() {
 	// Load the saved agent roster first so the Settings -> Agents panel can
 	// manage tokens even while the listener is disabled.
 	if err := mcp.LoadPersisted(); err != nil {
-		log.Printf("MCP: load saved agents: %v", err)
+		dcrlog.MCPS.Warnf("load saved agents: %v", err)
 	}
 	mcp.Start(mcp.ConfigFromEnv())
 

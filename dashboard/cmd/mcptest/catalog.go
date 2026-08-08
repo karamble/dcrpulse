@@ -175,12 +175,6 @@ var catalog = []spec{
 	rd("treasury", "treasury_balance_history"),
 	rd("treasury", "treasury_scan_progress"),
 	rd("treasury", "treasury_scan_results"),
-	rdArgs("treasury", "treasury_vote_progress", func(d *discovered) (map[string]any, bool) {
-		if d.txid == "" {
-			return nil, false
-		}
-		return map[string]any{"txHash": d.txid}, true
-	}),
 
 	// lightning
 	rd("lightning", "lightning_info"),

@@ -140,7 +140,6 @@ var goldenReadOnlyTools = []string{
 	"treasury_scan_progress",
 	"treasury_scan_results",
 	"treasury_scan_start",
-	"treasury_vote_progress",
 	"wallet_accounts",
 	"wallet_addresses",
 	"wallet_construct_transaction",
