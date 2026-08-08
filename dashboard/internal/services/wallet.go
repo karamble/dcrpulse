@@ -1486,35 +1486,11 @@ func isCoinJoinTransaction(ctx context.Context, txHash string) bool {
 		return false
 	}
 
-	wlltLog.Debugf("Analyzing tx %s: %d inputs, %d outputs", txHash, len(tx.Vin), len(tx.Vout))
-
-	if len(tx.Vin) < 3 {
-		wlltLog.Debugf("TX %s: not enough inputs (%d < 3)", txHash, len(tx.Vin))
-		return false
+	values := make([]float64, len(tx.Vout))
+	for i, vout := range tx.Vout {
+		values[i] = vout.Value
 	}
-
-	if len(tx.Vout) < 3 {
-		wlltLog.Debugf("TX %s: not enough outputs (%d < 3)", txHash, len(tx.Vout))
-		return false
-	}
-
-	outputValues := make(map[float64]int)
-	for _, vout := range tx.Vout {
-		rounded := float64(int64(vout.Value*100000000)) / 100000000
-		outputValues[rounded]++
-	}
-
-	wlltLog.Debugf("TX %s: output value distribution: %v", txHash, outputValues)
-
-	for value, count := range outputValues {
-		if count >= 3 {
-			wlltLog.Debugf("TX %s: IDENTIFIED AS COINJOIN - %d outputs with value %.8f", txHash, count, value)
-			return true
-		}
-	}
-
-	wlltLog.Debugf("TX %s: not a CoinJoin (no 3+ matching output values)", txHash)
-	return false
+	return looksLikeCoinJoin(len(tx.Vin), values)
 }
 
 // isVSPFeeTransaction detects VSP fees by 6-block timing after ticket purchase (validated pattern)
