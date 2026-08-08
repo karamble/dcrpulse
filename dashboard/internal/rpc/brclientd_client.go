@@ -64,10 +64,25 @@ func InitBrclientdConfig(cfg BrclientdConfig) {
 	brclientdClientMu.Lock()
 	defer brclientdClientMu.Unlock()
 	BrclientdCfg = cfg
-	brclientdHTTPClient = nil
-	brclientdStreamHTTPClient = nil
-	brclientdBackupHTTPClient = nil
-	brclientdPagesHTTPClient = nil
+	dropBrclientdClients()
+}
+
+// dropBrclientdClients releases the cached clients so the next call rebuilds
+// them against the current certs. Callers hold brclientdClientMu. Closing idle
+// connections first strands nothing on the old chain; a connection carrying a
+// request is left alone.
+func dropBrclientdClients() {
+	for _, c := range []**http.Client{
+		&brclientdHTTPClient,
+		&brclientdStreamHTTPClient,
+		&brclientdBackupHTTPClient,
+		&brclientdPagesHTTPClient,
+	} {
+		if *c != nil {
+			(*c).CloseIdleConnections()
+			*c = nil
+		}
+	}
 }
 
 // brclientdConfig returns a consistent copy of the connection settings. The cert
@@ -86,10 +101,7 @@ func UpdateBrclientdCerts(serverCertPath, clientCertPath, clientKeyPath string) 
 	BrclientdCfg.ServerCertPath = serverCertPath
 	BrclientdCfg.ClientCertPath = clientCertPath
 	BrclientdCfg.ClientKeyPath = clientKeyPath
-	brclientdHTTPClient = nil
-	brclientdStreamHTTPClient = nil
-	brclientdBackupHTTPClient = nil
-	brclientdPagesHTTPClient = nil
+	dropBrclientdClients()
 	brclientdClientMu.Unlock()
 	// Drop the live WS so it redials and rebuilds TLS with the new cert
 	// immediately instead of waiting for its current socket to die.
