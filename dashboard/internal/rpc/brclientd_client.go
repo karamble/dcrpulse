@@ -180,15 +180,12 @@ type BrclientdSendFileResult struct {
 // BrclientdSendFile uploads a file to brclientd's /files/send mTLS endpoint,
 // which persists the bytes under UploadDir and dispatches them to BR's
 // SendFile RPC. user can be a nick / alias / hex UID.
-func BrclientdSendFile(ctx context.Context, user, filename, mime string, body io.Reader) (*BrclientdSendFileResult, error) {
-	// brclientd's c.SendFile blocks synchronously on per-chunk relay acks, so the
-	// response header can be delayed well past the default client's 60s header
-	// deadline for a large/slow transfer. Use the shared no-deadline client (also
-	// used for page fetch); the request context bounds it instead.
-	cli, err := brclientdPagesClient()
-	if err != nil {
-		return nil, err
-	}
+// brclientdUpload posts a multipart form of the given fields plus one file
+// part. cli is a parameter because a slow endpoint needs the no-deadline
+// client; the request context bounds it instead.
+func brclientdUpload(ctx context.Context, cli *http.Client, path string, fields [][2]string,
+	filename, mime string, body io.Reader) (json.RawMessage, error) {
+
 	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
 		return nil, errors.New("brclientd: status host/port not configured")
 	}
@@ -198,9 +195,11 @@ func BrclientdSendFile(ctx context.Context, user, filename, mime string, body io
 	go func() {
 		defer pw.Close()
 		defer mp.Close()
-		if err := mp.WriteField("user", user); err != nil {
-			pw.CloseWithError(err)
-			return
+		for _, f := range fields {
+			if err := mp.WriteField(f[0], f[1]); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
 		}
 		hdr := textproto.MIMEHeader{}
 		hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
@@ -218,23 +217,40 @@ func BrclientdSendFile(ctx context.Context, user, filename, mime string, body io
 		}
 	}()
 
-	url := fmt.Sprintf("https://%s:%s/files/send", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, pr)
+	endpoint := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, pr)
 	if err != nil {
-		return nil, fmt.Errorf("build send-file request: %w", err)
+		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", mp.FormDataContentType())
 	resp, err := cli.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("brclientd /files/send: %w", err)
+		return nil, fmt.Errorf("brclientd %s: %w", path, err)
 	}
 	defer resp.Body.Close()
-	respBody, err := readBrclientdBody(resp, "/files/send", 1<<20)
+	respBody, err := readBrclientdBody(resp, path, 1<<20)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("brclientd /files/send: HTTP %d: %s", resp.StatusCode, respBody)
+		return nil, fmt.Errorf("brclientd %s: HTTP %d: %s", path, resp.StatusCode, respBody)
+	}
+	return json.RawMessage(respBody), nil
+}
+
+func BrclientdSendFile(ctx context.Context, user, filename, mime string, body io.Reader) (*BrclientdSendFileResult, error) {
+	// brclientd's c.SendFile blocks synchronously on per-chunk relay acks, so the
+	// response header can be delayed well past the default client's 60s header
+	// deadline for a large/slow transfer. Use the shared no-deadline client (also
+	// used for page fetch); the request context bounds it instead.
+	cli, err := brclientdPagesClient()
+	if err != nil {
+		return nil, err
+	}
+	respBody, err := brclientdUpload(ctx, cli, "/files/send",
+		[][2]string{{"user", user}}, filename, mime, body)
+	if err != nil {
+		return nil, err
 	}
 	var result BrclientdSendFileResult
 	if err := json.Unmarshal(respBody, &result); err != nil {
@@ -609,55 +625,14 @@ func BrclientdShareFile(ctx context.Context, filename, mime string, body io.Read
 	if err != nil {
 		return nil, err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
+	fields := [][2]string{{"cost_atoms", strconv.FormatUint(costAtoms, 10)}}
+	if targetUIDHex != "" {
+		fields = append(fields, [2]string{"target_uid", targetUIDHex})
 	}
-	pr, pw := io.Pipe()
-	mp := multipart.NewWriter(pw)
-	go func() {
-		defer pw.Close()
-		defer mp.Close()
-		_ = mp.WriteField("cost_atoms", fmt.Sprintf("%d", costAtoms))
-		if targetUIDHex != "" {
-			_ = mp.WriteField("target_uid", targetUIDHex)
-		}
-		if descr != "" {
-			_ = mp.WriteField("descr", descr)
-		}
-		hdr := textproto.MIMEHeader{}
-		hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
-		if mime != "" {
-			hdr.Set("Content-Type", mime)
-		}
-		part, err := mp.CreatePart(hdr)
-		if err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-		if _, err := io.Copy(part, body); err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-	}()
-	url := fmt.Sprintf("https://%s:%s/shared-files/add", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, pr)
-	if err != nil {
-		return nil, fmt.Errorf("build share-file request: %w", err)
+	if descr != "" {
+		fields = append(fields, [2]string{"descr", descr})
 	}
-	req.Header.Set("Content-Type", mp.FormDataContentType())
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /shared-files/add: %w", err)
-	}
-	defer resp.Body.Close()
-	respBody, err := readBrclientdBody(resp, "/shared-files/add", 1<<20)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("brclientd /shared-files/add: HTTP %d: %s", resp.StatusCode, respBody)
-	}
-	return json.RawMessage(respBody), nil
+	return brclientdUpload(ctx, cli, "/shared-files/add", fields, filename, mime, body)
 }
 
 // BrclientdUnshareFile revokes a share. targetUIDHex empty removes the
@@ -849,54 +824,14 @@ func BrclientdUploadStoreFile(ctx context.Context, relPath, filename, mime strin
 	if err != nil {
 		return nil, err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
+	var fields [][2]string
+	if relPath != "" {
+		fields = append(fields, [2]string{"path", relPath})
 	}
-	pr, pw := io.Pipe()
-	mp := multipart.NewWriter(pw)
-	go func() {
-		defer pw.Close()
-		defer mp.Close()
-		if relPath != "" {
-			_ = mp.WriteField("path", relPath)
-		}
-		if overwrite {
-			_ = mp.WriteField("overwrite", "true")
-		}
-		hdr := textproto.MIMEHeader{}
-		hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
-		if mime != "" {
-			hdr.Set("Content-Type", mime)
-		}
-		part, err := mp.CreatePart(hdr)
-		if err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-		if _, err := io.Copy(part, body); err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-	}()
-	url := fmt.Sprintf("https://%s:%s/store/files/upload", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, pr)
-	if err != nil {
-		return nil, fmt.Errorf("build upload request: %w", err)
+	if overwrite {
+		fields = append(fields, [2]string{"overwrite", "true"})
 	}
-	req.Header.Set("Content-Type", mp.FormDataContentType())
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /store/files/upload: %w", err)
-	}
-	defer resp.Body.Close()
-	respBody, err := readBrclientdBody(resp, "/store/files/upload", 1<<20)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("brclientd /store/files/upload: HTTP %d: %s", resp.StatusCode, respBody)
-	}
-	return json.RawMessage(respBody), nil
+	return brclientdUpload(ctx, cli, "/store/files/upload", fields, filename, mime, body)
 }
 
 // BrclientdListStoreFiles lists the user-managed media files under the store dir
