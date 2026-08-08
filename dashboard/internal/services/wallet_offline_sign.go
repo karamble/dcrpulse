@@ -162,20 +162,7 @@ func encodeSignRequest(sr *signRequest) []byte {
 // hdChainParams maps the wallet's network to the chaincfg params hdkeychain
 // needs to parse an extended public key.
 func hdChainParams(ctx context.Context) (*chaincfg.Params, error) {
-	network, err := CurrentNetwork(ctx)
-	if err != nil {
-		return nil, err
-	}
-	switch network {
-	case "mainnet":
-		return chaincfg.MainNetParams(), nil
-	case "testnet":
-		return chaincfg.TestNet3Params(), nil
-	case "simnet":
-		return chaincfg.SimNetParams(), nil
-	default:
-		return nil, fmt.Errorf("unknown network %q", network)
-	}
+	return chainParams(ctx)
 }
 
 // accountFingerprint computes the device-checked wrong-wallet marker: the

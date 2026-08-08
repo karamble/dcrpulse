@@ -15,7 +15,6 @@ import (
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/decred/dcrd/wire"
 
@@ -404,20 +403,9 @@ type exportChainParams struct {
 }
 
 func loadExportChainParams(ctx context.Context) (exportChainParams, error) {
-	network, err := CurrentNetwork(ctx)
+	p, err := chainParams(ctx)
 	if err != nil {
 		return exportChainParams{}, err
-	}
-	var p *chaincfg.Params
-	switch network {
-	case "mainnet":
-		p = chaincfg.MainNetParams()
-	case "testnet":
-		p = chaincfg.TestNet3Params()
-	case "simnet":
-		p = chaincfg.SimNetParams()
-	default:
-		return exportChainParams{}, fmt.Errorf("unknown network %q", network)
 	}
 	return exportChainParams{
 		ticketMaturity:     int32(p.TicketMaturity),

@@ -246,20 +246,9 @@ func SetAgendaChoice(ctx context.Context, agendaID, choiceID string, passphrase 
 // app/constants/decred.js:75-78 where the second mainnet key sits
 // commented out.
 func sanctionedPiKeys(ctx context.Context) ([]string, error) {
-	network, err := CurrentNetwork(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
 		return nil, err
-	}
-	var params *chaincfg.Params
-	switch network {
-	case "mainnet":
-		params = chaincfg.MainNetParams()
-	case "testnet":
-		params = chaincfg.TestNet3Params()
-	case "simnet":
-		params = chaincfg.SimNetParams()
-	default:
-		return nil, fmt.Errorf("unsupported network %q", network)
 	}
 	if len(params.PiKeys) == 0 {
 		return nil, nil

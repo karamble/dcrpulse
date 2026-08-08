@@ -25,7 +25,6 @@ import (
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/dcrutil/v4"
 )
 
@@ -687,19 +686,8 @@ func ListTickets(ctx context.Context) ([]types.TicketRecord, error) {
 // blocks a ticket must age before it becomes live), or 0 if the network can't
 // be resolved so callers can skip the annotation.
 func currentTicketMaturity(ctx context.Context) int32 {
-	network, err := CurrentNetwork(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
-		return 0
-	}
-	var params *chaincfg.Params
-	switch network {
-	case "mainnet":
-		params = chaincfg.MainNetParams()
-	case "testnet":
-		params = chaincfg.TestNet3Params()
-	case "simnet":
-		params = chaincfg.SimNetParams()
-	default:
 		return 0
 	}
 	return int32(params.TicketMaturity)
