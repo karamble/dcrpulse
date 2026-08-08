@@ -409,7 +409,13 @@ func MsigProposeHandler(w http.ResponseWriter, r *http.Request) {
 	passphrase := []byte(req.Passphrase)
 	req.Passphrase = ""
 	recipients := make([]msig.Recipient, 0, len(req.Recipients))
+	var total int64
 	for _, rc := range req.Recipients {
+		total += rc.AmountAtoms
+		if rc.AmountAtoms > maxTxAtoms || total > maxTxAtoms {
+			http.Error(w, "amount exceeds the total supply", http.StatusBadRequest)
+			return
+		}
 		recipients = append(recipients, msig.Recipient{Address: rc.Address, Atoms: rc.AmountAtoms})
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)

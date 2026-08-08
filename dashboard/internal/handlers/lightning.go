@@ -239,6 +239,10 @@ func LightningOpenChannelHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "localAtoms must be positive", http.StatusBadRequest)
 		return
 	}
+	if req.LocalAtoms > maxTxAtoms || req.PushAtoms > maxTxAtoms {
+		http.Error(w, "amount exceeds the total supply", http.StatusBadRequest)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	resp, err := services.OpenLightningChannel(ctx, &req)
