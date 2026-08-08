@@ -247,31 +247,7 @@ func BrclientdSendFile(ctx context.Context, user, filename, mime string, body io
 // brclientd's /contacts endpoint. Returns the raw JSON envelope so the
 // dashboard does not need to keep types in sync with BR's AddressBookEntry.
 func BrclientdContacts(ctx context.Context) (json.RawMessage, error) {
-	cli, err := brclientdClient()
-	if err != nil {
-		return nil, err
-	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
-	}
-	url := fmt.Sprintf("https://%s:%s/contacts", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build contacts request: %w", err)
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /contacts: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := readBrclientdBody(resp, "/contacts", 4<<20)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("brclientd /contacts: HTTP %d: %s", resp.StatusCode, body)
-	}
-	return body, nil
+	return brclientdGetRawLimit(ctx, "/contacts", nil, 4<<20)
 }
 
 // BrclientdMsigHistory returns the shared-wallet coordination frames
@@ -279,32 +255,11 @@ func BrclientdContacts(ctx context.Context) (json.RawMessage, error) {
 // directions, oldest first. The msig engine uses it as the replay source
 // after downtime; live frames ride the notification stream.
 func BrclientdMsigHistory(ctx context.Context, uidHex string, limit int, since int64) (json.RawMessage, error) {
-	cli, err := brclientdClient()
-	if err != nil {
-		return nil, err
-	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
-	}
-	endpoint := fmt.Sprintf("https://%s:%s/msig/history?uid=%s&limit=%d&since=%d",
-		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(uidHex), limit, since)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build msig history request: %w", err)
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /msig/history: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := readBrclientdBody(resp, "/msig/history", 16<<20)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("brclientd /msig/history: HTTP %d: %s", resp.StatusCode, body)
-	}
-	return body, nil
+	return brclientdGetRawLimit(ctx, "/msig/history", map[string]string{
+		"uid":   uidHex,
+		"limit": strconv.Itoa(limit),
+		"since": strconv.FormatInt(since, 10),
+	}, 16<<20)
 }
 
 // BrclientdSendPM sends a private message through brclientd's /messages/send
@@ -347,30 +302,7 @@ func BrclientdWriteNewInvite(ctx context.Context) (*BrclientdInviteResult, error
 // brclientd's /invites/redeem-key bridge endpoint which clientrpc itself
 // does not expose.
 func BrclientdRedeemPaidInviteKey(ctx context.Context, key string) error {
-	cli, err := brclientdClient()
-	if err != nil {
-		return err
-	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return errors.New("brclientd: status host/port not configured")
-	}
-	url := fmt.Sprintf("https://%s:%s/invites/redeem-key", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	payload, _ := json.Marshal(map[string]string{"key": key})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := cli.Do(req)
-	if err != nil {
-		return fmt.Errorf("brclientd /invites/redeem-key: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return fmt.Errorf("brclientd /invites/redeem-key: HTTP %d: %s", resp.StatusCode, body)
-	}
-	return nil
+	return brclientdPostJSON(ctx, "/invites/redeem-key", map[string]string{"key": key})
 }
 
 // BrclientdRenameContact sets the local NickAlias on a contact. uidHex is
@@ -656,40 +588,10 @@ func BrclientdFetchPost(ctx context.Context, uidHex, pidHex string) error {
 // BrclientdCreatePost authors a new post and shares it with our existing
 // subscribers. Returns the new post's summary JSON envelope.
 func BrclientdCreatePost(ctx context.Context, post, descr string) (json.RawMessage, error) {
-	cli, err := brclientdClient()
-	if err != nil {
-		return nil, err
-	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
-	}
-	url := fmt.Sprintf("https://%s:%s/posts/new", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	payload, err := json.Marshal(map[string]string{
+	return brclientdPostJSONRaw(ctx, "/posts/new", map[string]string{
 		"post":  post,
 		"descr": descr,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("marshal payload: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /posts/new: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("brclientd /posts/new: HTTP %d: %s", resp.StatusCode, body)
-	}
-	body, err := readBrclientdBody(resp, "/posts/new", 1<<20)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(body), nil
 }
 
 // BrclientdSharedFiles returns the list of files the local user has shared.
@@ -1319,41 +1221,19 @@ func BrclientdPostComments(ctx context.Context, uidHex, pidHex string) (json.Raw
 // BrclientdPostComment publishes a new comment on a remote user's post.
 // Returns the comment identifier on success.
 func BrclientdPostComment(ctx context.Context, uidHex, pidHex, comment, parent string) (string, error) {
-	cli, err := brclientdClient()
-	if err != nil {
-		return "", err
-	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return "", errors.New("brclientd: status host/port not configured")
-	}
-	url := fmt.Sprintf("https://%s:%s/posts/comment", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	payload, err := json.Marshal(map[string]string{
+	raw, err := brclientdPostJSONRaw(ctx, "/posts/comment", map[string]string{
 		"uid":     uidHex,
 		"pid":     pidHex,
 		"comment": comment,
 		"parent":  parent,
 	})
 	if err != nil {
-		return "", fmt.Errorf("marshal payload: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := cli.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("brclientd /posts/comment: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return "", fmt.Errorf("brclientd /posts/comment: HTTP %d: %s", resp.StatusCode, body)
+		return "", err
 	}
 	var out struct {
 		Identifier string `json:"identifier"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.Unmarshal(raw, &out); err != nil {
 		return "", fmt.Errorf("decode response: %w", err)
 	}
 	return out.Identifier, nil
@@ -1398,37 +1278,11 @@ func BrclientdPostHearts(ctx context.Context, uidHex, pidHex string) (json.RawMe
 
 // BrclientdPostHeart toggles the local identity's heart on a remote post.
 func BrclientdPostHeart(ctx context.Context, uidHex, pidHex string, heart bool) error {
-	cli, err := brclientdClient()
-	if err != nil {
-		return err
-	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return errors.New("brclientd: status host/port not configured")
-	}
-	url := fmt.Sprintf("https://%s:%s/posts/heart", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	payload, err := json.Marshal(map[string]any{
+	return brclientdPostJSON(ctx, "/posts/heart", map[string]any{
 		"uid":   uidHex,
 		"pid":   pidHex,
 		"heart": heart,
 	})
-	if err != nil {
-		return fmt.Errorf("marshal payload: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := cli.Do(req)
-	if err != nil {
-		return fmt.Errorf("brclientd /posts/heart: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return fmt.Errorf("brclientd /posts/heart: HTTP %d: %s", resp.StatusCode, body)
-	}
-	return nil
 }
 
 // BrclientdPostBody fetches the full PostMetadata for a single post.
@@ -1446,6 +1300,12 @@ func BrclientdPostBody(ctx context.Context, uidHex, pidHex string) (json.RawMess
 // the response body as a json.RawMessage. Mirrors brclientdPostJSON but
 // for GET-shaped endpoints.
 func brclientdGetRaw(ctx context.Context, path string, query map[string]string) (json.RawMessage, error) {
+	return brclientdGetRawLimit(ctx, path, query, 8<<20)
+}
+
+// brclientdGetRawLimit is brclientdGetRaw with an explicit body bound, for
+// endpoints whose replies are much smaller or much larger than the default.
+func brclientdGetRawLimit(ctx context.Context, path string, query map[string]string, limit int64) (json.RawMessage, error) {
 	cli, err := brclientdClient()
 	if err != nil {
 		return nil, err
@@ -1474,7 +1334,7 @@ func brclientdGetRaw(ctx context.Context, path string, query map[string]string) 
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("brclientd %s: HTTP %d: %s", path, resp.StatusCode, body)
 	}
-	body, err := readBrclientdBody(resp, path, 8<<20)
+	body, err := readBrclientdBody(resp, path, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1726,61 +1586,23 @@ func BrclientdAcceptInvite(ctx context.Context, inviteBytesB64 string) (json.Raw
 // dashboard does not cache messages locally - brclientd's BR clientdb is
 // the source of truth and this is a passthrough.
 func BrclientdHistoryPM(ctx context.Context, uid string, page, pageSize int) (json.RawMessage, error) {
-	cli, err := brclientdClient()
-	if err != nil {
-		return nil, err
-	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
-	}
-	endpoint := fmt.Sprintf("https://%s:%s/history/pm?uid=%s&page=%d&page_size=%d",
-		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(uid), page, pageSize)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build history request: %w", err)
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /history/pm: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := readBrclientdBody(resp, "/history/pm", 4<<20)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("brclientd /history/pm: HTTP %d: %s", resp.StatusCode, body)
-	}
-	return body, nil
+	return brclientdGetRawLimit(ctx, "/history/pm", map[string]string{
+		"uid":       uid,
+		"page":      strconv.Itoa(page),
+		"page_size": strconv.Itoa(pageSize),
+	}, 4<<20)
 }
 
 // BrclientdStatus calls brclientd's /status HTTP endpoint over mTLS and
 // returns the parsed snapshot. The status server is on a separate port
 // (default 7677) from clientrpc; both reuse the same cert triplet.
 func BrclientdStatus(ctx context.Context) (*BrclientdStatusResult, error) {
-	cli, err := brclientdClient()
+	raw, err := brclientdGetRaw(ctx, "/status", nil)
 	if err != nil {
 		return nil, err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
-	}
-	url := fmt.Sprintf("https://%s:%s/status", BrclientdCfg.Host, BrclientdCfg.StatusPort)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build status request: %w", err)
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brclientd /status: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("brclientd /status: HTTP %d: %s", resp.StatusCode, body)
-	}
 	var result BrclientdStatusResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, fmt.Errorf("decode status: %w", err)
 	}
 	return &result, nil
