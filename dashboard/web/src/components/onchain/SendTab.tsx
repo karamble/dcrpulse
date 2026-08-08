@@ -16,22 +16,12 @@ import {
 import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
-import { formatDcr } from '../../utils/amounts';
+import { formatDcr, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
 
-const MAX_DCR = 21_000_000;
 const VALIDATE_DEBOUNCE_MS = 400;
 const CONSTRUCT_DEBOUNCE_MS = 500;
 
 
-const validateAmount = (raw: string): string | null => {
-  const trimmed = raw.trim();
-  if (!trimmed) return 'Amount required';
-  if (!/^\d*\.?\d{0,8}$/.test(trimmed)) return 'Use a positive number with up to 8 decimals';
-  const n = Number(trimmed);
-  if (!Number.isFinite(n) || n <= 0) return 'Amount must be positive';
-  if (n > MAX_DCR) return `Amount must be at most ${MAX_DCR.toLocaleString()} DCR`;
-  return null;
-};
 
 type AddressCheck =
   | { state: 'idle' }
@@ -137,8 +127,8 @@ export const SendTab = () => {
     setConstructError(null);
   }, [sourceAccounts, sourceAccount]);
 
-  const amountError = sendAll ? null : validateAmount(amount);
-  const amountAtoms = sendAll ? 0 : Math.round(parseFloat(amount || '0') * 1e8);
+  const amountError = sendAll ? null : validateDcrAmount(amount);
+  const amountAtoms = sendAll ? 0 : parseDcrAmount(amount).atoms;
 
   useEffect(() => {
     if (mode !== 'external') return;

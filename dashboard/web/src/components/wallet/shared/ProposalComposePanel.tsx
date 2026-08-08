@@ -6,18 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, Send } from 'lucide-react';
 import { PassphraseModal } from '../PassphraseModal';
 import { MsigWallet, proposeMsigSpend } from '../../../services/msigApi';
-
-const MAX_ATOMS = 2_100_000_000_000_000;
-
-const parseAmount = (raw: string): { atoms: number; error: string | null } => {
-  const trimmed = raw.trim();
-  if (!trimmed) return { atoms: 0, error: 'Enter an amount' };
-  if (!/^\d*\.?\d{0,8}$/.test(trimmed)) return { atoms: 0, error: 'Up to 8 decimal places' };
-  const atoms = Math.round(Number(trimmed) * 1e8);
-  if (!Number.isFinite(atoms) || atoms <= 0) return { atoms: 0, error: 'Enter an amount above zero' };
-  if (atoms > MAX_ATOMS) return { atoms: 0, error: 'Amount is too large' };
-  return { atoms, error: null };
-};
+import { parseDcrAmount } from '../../../utils/amounts';
 
 const TTL_CHOICES = [
   { label: '1 hour', secs: 3600 },
@@ -57,7 +46,7 @@ export const ProposalComposePanel = ({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const parsed = useMemo(() => parseAmount(amount), [amount]);
+  const parsed = useMemo(() => parseDcrAmount(amount), [amount]);
   const manual = wallet.transport === 'manual';
   const needed = wallet.m - 1;
   const enough = queue.length >= needed;

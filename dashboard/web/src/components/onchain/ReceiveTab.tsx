@@ -5,8 +5,8 @@ import { AccountInfo, getAccounts, getNextAddress } from '../../services/api';
 import { AddressGroups } from '../AddressGroups';
 import { CopyButton } from '../explorer/CopyButton';
 import { useWalletReady } from '../../hooks/useWalletReady';
+import { validateDcrAmount } from '../../utils/amounts';
 
-const MAX_DCR = 21_000_000;
 
 const buildBip21Uri = (address: string, amount: string): string => {
   const trimmed = amount.trim();
@@ -16,15 +16,6 @@ const buildBip21Uri = (address: string, amount: string): string => {
   return `decred:${address}?amount=${trimmed}`;
 };
 
-const validateAmount = (raw: string): string | null => {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (!/^\d*\.?\d{0,8}$/.test(trimmed)) return 'Use a positive number with up to 8 decimals';
-  const n = Number(trimmed);
-  if (!Number.isFinite(n) || n < 0) return 'Amount must be zero or positive';
-  if (n > MAX_DCR) return `Amount must be at most ${MAX_DCR.toLocaleString()} DCR`;
-  return null;
-};
 
 export const ReceiveTab = () => {
   const { isWatchOnly } = useWalletReady();
@@ -61,7 +52,7 @@ export const ReceiveTab = () => {
     };
   }, []);
 
-  const amountError = useMemo(() => validateAmount(amount), [amount]);
+  const amountError = useMemo(() => validateDcrAmount(amount, { optional: true, allowZero: true }), [amount]);
 
   const handleGenerate = async () => {
     if (selectedAccount === null || generating) return;

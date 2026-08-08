@@ -15,17 +15,12 @@ import {
   requestLiquidityChannel,
 } from '../../../services/lightningApi';
 import { fmtDcr } from '../StatCard';
+import { parseDcrAmount } from '../../../utils/amounts';
 
 interface Props {
   onClose: () => void;
   onSuccess?: (channelPoint: string) => void;
 }
-
-const dcrToAtoms = (dcr: string): number => {
-  const n = Number(dcr);
-  if (!isFinite(n) || n <= 0) return 0;
-  return Math.round(n * 1e8);
-};
 
 const humanizeSeconds = (s: number): string => {
   if (s >= 86400) {
@@ -74,7 +69,8 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
       .catch(() => {});
   }, []);
 
-  const chanSizeAtoms = dcrToAtoms(amountDcr);
+  const amount = parseDcrAmount(amountDcr);
+  const chanSizeAtoms = amount.atoms;
 
   const runEstimate = async () => {
     setSubmitting(true);
@@ -176,6 +172,9 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
                 disabled={submitting}
                 className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary disabled:opacity-50"
               />
+              {amountDcr && amount.error && (
+                <p className="mt-1 text-xs text-destructive">{amount.error}</p>
+              )}
             </div>
             <button
               type="button"
@@ -228,7 +227,7 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
               </button>
               <button
                 onClick={runEstimate}
-                disabled={submitting || chanSizeAtoms < 1000}
+                disabled={submitting || !!amount.error || chanSizeAtoms < 1000}
                 className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

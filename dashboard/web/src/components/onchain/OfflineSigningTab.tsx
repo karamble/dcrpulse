@@ -32,22 +32,12 @@ import {
   getAccounts,
 } from '../../services/api';
 import { AddressGroups } from '../AddressGroups';
-import { formatDcr } from '../../utils/amounts';
+import { formatDcr, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
 
-const MAX_DCR = 21_000_000;
 // Above 1 DCR a fee is almost certainly a mistake; we soft-warn (non-blocking).
 const HIGH_FEE_ATOMS = 100_000_000;
 
 
-const validateAmount = (raw: string): string | null => {
-  const trimmed = raw.trim();
-  if (!trimmed) return 'Amount required';
-  if (!/^\d*\.?\d{0,8}$/.test(trimmed)) return 'Use a positive number with up to 8 decimals';
-  const n = Number(trimmed);
-  if (!Number.isFinite(n) || n <= 0) return 'Amount must be positive';
-  if (n > MAX_DCR) return `Amount must be at most ${MAX_DCR.toLocaleString()} DCR`;
-  return null;
-};
 
 const base64ToBytes = (b64: string) => {
   const bin = atob(b64);
@@ -144,11 +134,11 @@ const ExportUnsignedPanel = () => {
     invalidate();
   };
 
-  const amountAtomsOf = (raw: string) => Math.round(parseFloat(raw || '0') * 1e8);
+  const amountAtomsOf = (raw: string) => parseDcrAmount(raw).atoms;
   const recipientTotalAtoms = sendAll ? 0 : outputs.reduce((s, o) => s + amountAtomsOf(o.amount), 0);
   const formReady =
     sourceAccount !== null &&
-    outputs.every((o) => o.recipient.trim() !== '' && (sendAll || (!validateAmount(o.amount) && amountAtomsOf(o.amount) > 0)));
+    outputs.every((o) => o.recipient.trim() !== '' && (sendAll || (!validateDcrAmount(o.amount) && amountAtomsOf(o.amount) > 0)));
 
   const onBuild = async () => {
     if (sourceAccount === null) return;
@@ -240,7 +230,7 @@ const ExportUnsignedPanel = () => {
 
             <div className="space-y-3">
               {outputs.map((o, i) => {
-                const amountError = sendAll || !o.amount ? null : validateAmount(o.amount);
+                const amountError = sendAll || !o.amount ? null : validateDcrAmount(o.amount);
                 return (
                   <div key={i} className="space-y-2">
                     <div className="flex items-start gap-2">

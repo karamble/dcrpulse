@@ -7,16 +7,11 @@ import {
   openLightningChannel,
 } from '../../../services/lightningApi';
 import { SearchForNodesModal } from './SearchForNodesModal';
+import { parseDcrAmount } from '../../../utils/amounts';
 
 interface Props {
   onChannelOpened: () => void;
 }
-
-const dcrToAtoms = (dcr: string): number => {
-  const n = Number(dcr);
-  if (!isFinite(n) || n <= 0) return 0;
-  return Math.round(n * 1e8);
-};
 
 const isValidPubkeyHex = (s: string) => /^[0-9a-fA-F]{66}$/.test(s);
 const isValidPeerURI = (s: string) => {
@@ -74,12 +69,16 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
     return () => window.removeEventListener('mousedown', close);
   }, [presetsOpen]);
 
-  const localAtoms = dcrToAtoms(localDcr);
-  const pushAtoms = pushDcr ? dcrToAtoms(pushDcr) : 0;
+  const local = parseDcrAmount(localDcr);
+  const push = parseDcrAmount(pushDcr, { optional: true, allowZero: true });
+  const localAtoms = local.atoms;
+  const pushAtoms = push.atoms;
   const isBrHubPreset = presets.some((p) => p.uri === peerUri.trim());
   const canSubmit =
     !submitting &&
     isValidPeerURI(peerUri.trim()) &&
+    !local.error &&
+    !push.error &&
     localAtoms > 0 &&
     pushAtoms < localAtoms;
 
@@ -226,6 +225,9 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
               disabled={submitting}
               className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
             />
+            {localDcr && local.error && (
+              <p className="mt-1 text-xs text-destructive">{local.error}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm text-muted-foreground mb-1">Push amount (DCR, optional)</label>
@@ -238,6 +240,9 @@ export const OpenChannelForm = ({ onChannelOpened }: Props) => {
               disabled={submitting}
               className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
             />
+            {pushDcr && push.error && (
+              <p className="mt-1 text-xs text-destructive">{push.error}</p>
+            )}
           </div>
         </div>
 
