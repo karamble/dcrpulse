@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -205,7 +204,7 @@ func lightningWriteErr(w http.ResponseWriter, label string, err error) {
 		defer cancel()
 		http.Error(w, services.DaemonStartupHint(ctx, services.LogComponentDcrlnd).Message, http.StatusServiceUnavailable)
 	default:
-		log.Printf("%s failed: %v", label, err)
+		lghtLog.Errorf("%s failed: %v", label, err)
 		http.Error(w, msg, http.StatusInternalServerError)
 	}
 }
@@ -372,7 +371,7 @@ func LightningChannelEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("LightningChannelEventsHandler upgrade: %v", err)
+		lghtLog.Errorf("LightningChannelEventsHandler upgrade: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -382,7 +381,7 @@ func LightningChannelEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	events, err := services.SubscribeLightningChannelEvents(ctx)
 	if err != nil {
-		log.Printf("SubscribeLightningChannelEvents: %v", err)
+		lghtLog.Errorf("SubscribeLightningChannelEvents: %v", err)
 		_ = conn.WriteJSON(map[string]string{"error": err.Error()})
 		return
 	}
@@ -436,7 +435,7 @@ func LightningNetworkHandler(w http.ResponseWriter, r *http.Request) {
 	if top, terr := services.GetTopLightningNodes(ctx, topN); terr == nil {
 		out.TopNodes = top
 	} else {
-		log.Printf("GetTopLightningNodes (best-effort): %v", terr)
+		lghtLog.Warnf("GetTopLightningNodes (best-effort): %v", terr)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -486,7 +485,7 @@ func LightningSendPaymentHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("LightningSendPaymentHandler upgrade: %v", err)
+		lghtLog.Errorf("LightningSendPaymentHandler upgrade: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -616,7 +615,7 @@ func LightningInvoiceEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("LightningInvoiceEventsHandler upgrade: %v", err)
+		lghtLog.Errorf("LightningInvoiceEventsHandler upgrade: %v", err)
 		return
 	}
 	defer conn.Close()

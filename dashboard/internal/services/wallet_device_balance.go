@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"math"
 	"sort"
 	"time"
@@ -79,7 +78,7 @@ func deviceBalanceRate(ctx context.Context) float64 {
 	defer cancel()
 	rate, err := deviceRates.KrakenUSD(rctx, "dcr")
 	if err != nil {
-		log.Printf("WARN: device balance without exchange rate: %v", err)
+		wlltLog.Warnf("Device balance without exchange rate: %v", err)
 		return 0
 	}
 	return rate
@@ -115,7 +114,7 @@ func BuildDeviceBalance(ctx context.Context) (*types.DeviceBalanceExport, error)
 		if ferr != nil {
 			// An account the device cannot match is useless in the payload;
 			// skipping it keeps the rest of the export working.
-			log.Printf("WARN: device balance skips account %q: %v", a.AccountName, ferr)
+			wlltLog.Warnf("Device balance skips account %q: %v", a.AccountName, ferr)
 			continue
 		}
 		entries = append(entries, deviceBalanceAccount{fp: fp, atoms: uint64(a.TotalBalance)})

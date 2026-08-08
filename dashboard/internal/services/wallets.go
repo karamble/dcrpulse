@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -84,12 +83,12 @@ func SeedActiveWallet() {
 	}
 	cfg, err := config.LoadGlobalCfg()
 	if err != nil {
-		log.Printf("Seed active wallet: load global config: %v", err)
+		wlltLog.Warnf("Seed active wallet: load global config: %v", err)
 		return
 	}
 	var name string
 	if _, err := cfg.Get(config.KeySelectedWallet, &name); err != nil {
-		log.Printf("Seed active wallet: read selection: %v", err)
+		wlltLog.Warnf("Seed active wallet: read selection: %v", err)
 	}
 	if name != "" {
 		setActiveWalletName(name)
@@ -98,7 +97,7 @@ func SeedActiveWallet() {
 	if legacyWalletExists() {
 		setActiveWalletName(config.DefaultWalletName)
 		if err := persistSelectedWallet(config.DefaultWalletName); err != nil {
-			log.Printf("Seed active wallet: persist default: %v", err)
+			wlltLog.Errorf("Seed active wallet: persist default: %v", err)
 		}
 	}
 }
@@ -110,22 +109,22 @@ func SeedActiveWallet() {
 func reconcileSelectedWallet(name string) {
 	cfg, err := config.LoadGlobalCfg()
 	if err != nil {
-		log.Printf("Seed active wallet: load global config: %v", err)
+		wlltLog.Warnf("Seed active wallet: load global config: %v", err)
 		return
 	}
 	var cur string
 	if _, err := cfg.Get(config.KeySelectedWallet, &cur); err != nil {
-		log.Printf("Seed active wallet: read selection: %v", err)
+		wlltLog.Warnf("Seed active wallet: read selection: %v", err)
 	}
 	if cur == name {
 		return
 	}
 	if err := cfg.Set(config.KeySelectedWallet, name); err != nil {
-		log.Printf("Seed active wallet: heal selection: %v", err)
+		wlltLog.Warnf("Seed active wallet: heal selection: %v", err)
 		return
 	}
 	if err := cfg.Save(); err != nil {
-		log.Printf("Seed active wallet: persist healed selection: %v", err)
+		wlltLog.Errorf("Seed active wallet: persist healed selection: %v", err)
 	}
 }
 

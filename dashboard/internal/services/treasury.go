@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -51,14 +50,14 @@ func FetchTreasuryInfo(ctx context.Context) (*types.TreasuryInfo, error) {
 	// Get current treasury balance
 	balance, err := getTreasuryBalance(ctx)
 	if err != nil {
-		log.Printf("Warning: Failed to get treasury balance: %v", err)
+		govnLog.Warnf("Failed to get treasury balance: %v", err)
 		balance = 0
 	}
 
 	// Scan mempool for active TSpends (pending votes)
 	activeTSpends, err := scanMempoolForTSpends(ctx)
 	if err != nil {
-		log.Printf("Warning: Failed to scan mempool for TSpends: %v", err)
+		govnLog.Warnf("Failed to scan mempool for TSpends: %v", err)
 		activeTSpends = []types.TSpend{}
 	}
 	// Ensure activeTSpends is never nil
@@ -121,7 +120,7 @@ func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 	var tspends []types.TSpend
 	currentHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
 	if err != nil {
-		log.Printf("Warning: Failed to get current height: %v", err)
+		govnLog.Warnf("Failed to get current height: %v", err)
 		currentHeight = 0
 	}
 
@@ -130,7 +129,7 @@ func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 		// Get transaction details
 		tx, err := getTransaction(ctx, txHash)
 		if err != nil {
-			log.Printf("Warning: Failed to get transaction %s: %v", txHash, err)
+			govnLog.Warnf("Failed to get transaction %s: %v", txHash, err)
 			continue
 		}
 
@@ -153,7 +152,7 @@ func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 		}
 		tally, err := tspendVoteTally(ctx, nil, hashes)
 		if err != nil {
-			log.Printf("Warning: gettreasuryspendvotes: %v", err)
+			govnLog.Warnf("Gettreasuryspendvotes: %v", err)
 		} else {
 			for i := range tspends {
 				if v, ok := tally[tspends[i].TxHash]; ok {
@@ -204,7 +203,7 @@ func TreasuryBalanceHistory(ctx context.Context) ([]types.BalanceSample, error) 
 	for h := int64(TreasuryActivationHeight); h <= tip; h += balanceSampleStride {
 		s, err := balanceSampleAt(ctx, h)
 		if err != nil {
-			log.Printf("Warning: treasury balance sample at %d: %v", h, err)
+			govnLog.Warnf("Treasury balance sample at %d: %v", h, err)
 			continue
 		}
 		out = append(out, *s)
@@ -426,7 +425,7 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 
 	currentHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
 	if err != nil {
-		log.Printf("Error getting block count for scan: %v", err)
+		govnLog.Errorf("Error getting block count for scan: %v", err)
 		scanMutex.Lock()
 		isScanRunning = false
 		scanMutex.Unlock()
@@ -449,7 +448,7 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 		firstTVI += TreasuryVoteInterval - rem
 	}
 
-	log.Printf("Starting historical TSpend scan from block %d to %d (TVI stride %d)", firstTVI, currentHeight, TreasuryVoteInterval)
+	govnLog.Infof("Starting historical TSpend scan from block %d to %d (TVI stride %d)", firstTVI, currentHeight, TreasuryVoteInterval)
 
 	for h := firstTVI; h <= currentHeight; h += TreasuryVoteInterval {
 		// Update progress
@@ -459,7 +458,7 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 
 		blockHash, err := rpc.DcrdClient.GetBlockHash(ctx, h)
 		if err != nil {
-			log.Printf("Warning: Failed to get block hash at height %d: %v", h, err)
+			govnLog.Warnf("Failed to get block hash at height %d: %v", h, err)
 			continue
 		}
 
@@ -495,7 +494,7 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 					scanResults = append(scanResults, *history)
 					newTSpendBuffer = append(newTSpendBuffer, *history)
 					tspendFoundCount++
-					log.Printf("TSpend found at height %d: %s (amount: %.2f DCR)", block.Height, history.TxHash, history.Amount)
+					govnLog.Infof("TSpend found at height %d: %s (amount: %.2f DCR)", block.Height, history.TxHash, history.Amount)
 					scanMutex.Unlock()
 				}
 			}
@@ -506,7 +505,7 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 	isScanRunning = false
 	scanMutex.Unlock()
 
-	log.Printf("Historical TSpend scan complete. Found %d TSpends", tspendFoundCount)
+	govnLog.Infof("Historical TSpend scan complete. Found %d TSpends", tspendFoundCount)
 }
 
 // GetScanProgress returns the current scan progress

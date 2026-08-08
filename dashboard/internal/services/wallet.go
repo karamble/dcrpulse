@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"sort"
 	"strconv"
@@ -276,35 +275,35 @@ func FetchWalletDashboardDataWithContext(ctx context.Context) (*types.WalletDash
 	select {
 	case res := <-accountChan:
 		if res.err != nil {
-			log.Printf("Warning: Failed to fetch account info: %v", res.err)
+			wlltLog.Warnf("Failed to fetch account info: %v", res.err)
 		} else {
 			accountInfo = res.data
 		}
 	case <-ctx.Done():
-		log.Printf("Warning: Account info fetch cancelled: %v", ctx.Err())
+		wlltLog.Warnf("Account info fetch cancelled: %v", ctx.Err())
 	}
 
 	select {
 	case res := <-accountsChan:
 		if res.err != nil {
-			log.Printf("Warning: Failed to fetch accounts: %v", res.err)
+			wlltLog.Warnf("Failed to fetch accounts: %v", res.err)
 		} else {
 			accounts = res.data
 		}
 	case <-ctx.Done():
-		log.Printf("Warning: Accounts fetch cancelled: %v", ctx.Err())
+		wlltLog.Warnf("Accounts fetch cancelled: %v", ctx.Err())
 	}
 
 	select {
 	case res := <-stakingChan:
 		if res.err != nil {
-			log.Printf("Warning: Failed to fetch staking info: %v", res.err)
+			wlltLog.Warnf("Failed to fetch staking info: %v", res.err)
 			// Staking info is optional - continue without it
 		} else {
 			stakingInfo = res.data
 		}
 	case <-ctx.Done():
-		log.Printf("Warning: Staking info fetch cancelled: %v", ctx.Err())
+		wlltLog.Warnf("Staking info fetch cancelled: %v", ctx.Err())
 	}
 
 	return &types.WalletDashboardData{
@@ -364,7 +363,7 @@ func (w *walletBalances) get(ctx context.Context) (balanceResponse, error) {
 func fetchAccountInfo(ctx context.Context, bal *walletBalances) (*types.AccountInfo, error) {
 	balanceResp, err := bal.get(ctx)
 	if err != nil {
-		log.Printf("Warning: Failed to get balance: %v", err)
+		wlltLog.Warnf("Failed to get balance: %v", err)
 		return &types.AccountInfo{
 			AccountName:        "Total",
 			TotalBalance:       0,
@@ -413,7 +412,7 @@ func FetchAllAccounts(ctx context.Context) ([]types.AccountInfo, error) {
 func fetchAllAccounts(ctx context.Context, bal *walletBalances) ([]types.AccountInfo, error) {
 	balanceResp, err := bal.get(ctx)
 	if err != nil {
-		log.Printf("Warning: Failed to get accounts: %v", err)
+		wlltLog.Warnf("Failed to get accounts: %v", err)
 		return []types.AccountInfo{}, nil
 	}
 
@@ -424,7 +423,7 @@ func fetchAllAccounts(ctx context.Context, bal *walletBalances) ([]types.Account
 	unlocked := map[string]bool{}
 	if rpc.WalletGrpcClient != nil {
 		if acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{}); err != nil {
-			log.Printf("Warning: gRPC Accounts call failed, account numbers will be 0: %v", err)
+			wlltLog.Warnf("GRPC Accounts call failed, account numbers will be 0: %v", err)
 		} else {
 			for _, a := range acctsResp.Accounts {
 				numbers[a.AccountName] = a.AccountNumber
@@ -620,7 +619,7 @@ func unlockAllAccountsForSpend(ctx context.Context, passphrase []byte) ([]uint32
 			// rather than abort, so the accounts that do unlock (including each
 			// ticket's commitment account) can still sign for the VSP. A
 			// genuinely wrong passphrase fails every account, handled below.
-			log.Printf("unlockAllAccountsForSpend: skipping account %q (%d): %v", a.AccountName, a.AccountNumber, err)
+			wlltLog.Warnf("unlockAllAccountsForSpend: skipping account %q (%d): %v", a.AccountName, a.AccountNumber, err)
 			continue
 		}
 		succeeded++
@@ -648,7 +647,7 @@ func vspTicketCommitAccounts(ctx context.Context) map[uint32]bool {
 	}
 	resp, err := rpc.WalletGrpcClient.GetTrackedVSPTickets(ctx, &pb.GetTrackedVSPTicketsRequest{})
 	if err != nil {
-		log.Printf("vspTicketCommitAccounts: GetTrackedVSPTickets: %v", err)
+		wlltLog.Warnf("vspTicketCommitAccounts: GetTrackedVSPTickets: %v", err)
 		return out
 	}
 	for _, v := range resp.GetVsps() {
@@ -684,7 +683,7 @@ func relockAccountsAfterVSP(unlocked []uint32) {
 			continue
 		}
 		if _, err := rpc.WalletGrpcClient.LockAccount(ctx, &pb.LockAccountRequest{AccountNumber: acct}); err != nil {
-			log.Printf("relockAccountsAfterVSP: lock account %d: %v", acct, err)
+			wlltLog.Errorf("relockAccountsAfterVSP: lock account %d: %v", acct, err)
 		}
 	}
 }
@@ -786,10 +785,10 @@ func sweepLockableAccounts(ctx context.Context) {
 			continue
 		}
 		if _, err := rpc.WalletGrpcClient.LockAccount(sweepCtx, &pb.LockAccountRequest{AccountNumber: a.AccountNumber}); err != nil {
-			log.Printf("account lock monitor: lock account %d: %v", a.AccountNumber, err)
+			wlltLog.Errorf("account lock monitor: lock account %d: %v", a.AccountNumber, err)
 			continue
 		}
-		log.Printf("account lock monitor: locked unused account %d", a.AccountNumber)
+		wlltLog.Infof("account lock monitor: locked unused account %d", a.AccountNumber)
 	}
 }
 
@@ -935,7 +934,7 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 	// Fetch getstakeinfo
 	stakeInfoResult, err := rpc.WalletClient.RawRequest(ctx, "getstakeinfo", []json.RawMessage{})
 	if err != nil {
-		log.Printf("Warning: Failed to get stake info: %v", err)
+		wlltLog.Warnf("Failed to get stake info: %v", err)
 		return nil, err
 	}
 
@@ -955,7 +954,7 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 
 	var stakeInfo StakeInfoResponse
 	if err := json.Unmarshal(stakeInfoResult, &stakeInfo); err != nil {
-		log.Printf("Warning: Failed to unmarshal stake info: %v", err)
+		wlltLog.Warnf("Failed to unmarshal stake info: %v", err)
 		return nil, err
 	}
 
@@ -974,7 +973,7 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 	// Fetch estimatestakediff
 	estimateResult, err := rpc.WalletClient.RawRequest(ctx, "estimatestakediff", []json.RawMessage{})
 	if err != nil {
-		log.Printf("Warning: Failed to estimate stake diff: %v", err)
+		wlltLog.Warnf("Failed to estimate stake diff: %v", err)
 	} else {
 		type EstimateResponse struct {
 			Min      float64 `json:"min"`
@@ -992,7 +991,7 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 	// Fetch getstakedifficulty
 	difficultyResult, err := rpc.WalletClient.RawRequest(ctx, "getstakedifficulty", []json.RawMessage{})
 	if err != nil {
-		log.Printf("Warning: Failed to get stake difficulty: %v", err)
+		wlltLog.Warnf("Failed to get stake difficulty: %v", err)
 	} else {
 		type DifficultyResponse struct {
 			Current float64 `json:"current"`
@@ -1012,7 +1011,7 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 	if rpc.DcrdClient != nil {
 		chainHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
 		if err != nil {
-			log.Printf("Warning: Failed to get chain height for block subsidy: %v", err)
+			wlltLog.Warnf("Failed to get chain height for block subsidy: %v", err)
 		} else {
 			nextHeight := chainHeight + 1
 			subsidyResult, err := rpc.DcrdClient.RawRequest(ctx, "getblocksubsidy", []json.RawMessage{
@@ -1020,7 +1019,7 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 				json.RawMessage("5"),
 			})
 			if err != nil {
-				log.Printf("Warning: Failed to get block subsidy: %v", err)
+				wlltLog.Warnf("Failed to get block subsidy: %v", err)
 			} else {
 				type SubsidyResponse struct {
 					Developer int64 `json:"developer"`
@@ -1030,7 +1029,7 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 				}
 				var subsidy SubsidyResponse
 				if err := json.Unmarshal(subsidyResult, &subsidy); err != nil {
-					log.Printf("Warning: Failed to unmarshal block subsidy: %v", err)
+					wlltLog.Warnf("Failed to unmarshal block subsidy: %v", err)
 				} else {
 					stakingInfo.BlockSubsidyHeight = nextHeight
 					stakingInfo.BlockSubsidyTotal = float64(subsidy.Total) / 1e8
@@ -1155,11 +1154,11 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				var err error
 				netAmount, err = getTransactionNetAmount(ctx, rpcTx.TxID)
 				if err != nil {
-					log.Printf("Warning: Could not get net amount for CoinJoin %s: %v, skipping", rpcTx.TxID[:12], err)
+					wlltLog.Warnf("Could not get net amount for CoinJoin %s: %v, skipping", rpcTx.TxID[:12], err)
 					processed[rpcTx.TxID] = true
 					continue
 				}
-				log.Printf("CoinJoin %s: wallet net amount = %.8f DCR", rpcTx.TxID[:12], netAmount)
+				wlltLog.Debugf("CoinJoin %s: wallet net amount = %.8f DCR", rpcTx.TxID[:12], netAmount)
 			} else {
 				// Non-CoinJoin: sum entries (already wallet-filtered)
 				for _, idx := range group.Entries {
@@ -1173,7 +1172,7 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				for acc := range accountsInvolved {
 					accounts = append(accounts, acc)
 				}
-				log.Printf("TX %s involves multiple accounts: %v", rpcTx.TxID[:12], accounts)
+				wlltLog.Debugf("TX %s involves multiple accounts: %v", rpcTx.TxID[:12], accounts)
 			}
 
 			var blockHeight int64 = 0
@@ -1457,7 +1456,7 @@ func voteStakebaseReward(ctx context.Context, txHash string) (float64, bool) {
 		json.RawMessage("1"),
 	})
 	if err != nil {
-		log.Printf("Vote reward lookup failed for %s: getrawtransaction error: %v", txHash, err)
+		wlltLog.Warnf("Vote reward lookup failed for %s: getrawtransaction error: %v", txHash, err)
 		return 0, false
 	}
 
@@ -1469,7 +1468,7 @@ func voteStakebaseReward(ctx context.Context, txHash string) (float64, bool) {
 	}
 
 	if err := json.Unmarshal(rawTxResult, &tx); err != nil {
-		log.Printf("Vote reward lookup failed for %s: unmarshal error: %v", txHash, err)
+		wlltLog.Warnf("Vote reward lookup failed for %s: unmarshal error: %v", txHash, err)
 		return 0, false
 	}
 
@@ -1483,7 +1482,7 @@ func voteStakebaseReward(ctx context.Context, txHash string) (float64, bool) {
 // isCoinJoinTransaction detects CoinJoin by analyzing tx structure (3+ inputs/outputs, matching amounts)
 func isCoinJoinTransaction(ctx context.Context, txHash string) bool {
 	if rpc.DcrdClient == nil {
-		log.Printf("CoinJoin check skipped for %s: no dcrd connection", txHash)
+		wlltLog.Debugf("CoinJoin check skipped for %s: no dcrd connection", txHash)
 		return false
 	}
 
@@ -1492,7 +1491,7 @@ func isCoinJoinTransaction(ctx context.Context, txHash string) bool {
 		json.RawMessage("1"),
 	})
 	if err != nil {
-		log.Printf("CoinJoin check failed for %s: getrawtransaction error: %v", txHash, err)
+		wlltLog.Warnf("CoinJoin check failed for %s: getrawtransaction error: %v", txHash, err)
 		return false
 	}
 
@@ -1506,19 +1505,19 @@ func isCoinJoinTransaction(ctx context.Context, txHash string) bool {
 	}
 
 	if err := json.Unmarshal(rawTxResult, &tx); err != nil {
-		log.Printf("CoinJoin check failed for %s: unmarshal error: %v", txHash, err)
+		wlltLog.Warnf("CoinJoin check failed for %s: unmarshal error: %v", txHash, err)
 		return false
 	}
 
-	log.Printf("Analyzing tx %s: %d inputs, %d outputs", txHash, len(tx.Vin), len(tx.Vout))
+	wlltLog.Debugf("Analyzing tx %s: %d inputs, %d outputs", txHash, len(tx.Vin), len(tx.Vout))
 
 	if len(tx.Vin) < 3 {
-		log.Printf("TX %s: not enough inputs (%d < 3)", txHash, len(tx.Vin))
+		wlltLog.Debugf("TX %s: not enough inputs (%d < 3)", txHash, len(tx.Vin))
 		return false
 	}
 
 	if len(tx.Vout) < 3 {
-		log.Printf("TX %s: not enough outputs (%d < 3)", txHash, len(tx.Vout))
+		wlltLog.Debugf("TX %s: not enough outputs (%d < 3)", txHash, len(tx.Vout))
 		return false
 	}
 
@@ -1528,16 +1527,16 @@ func isCoinJoinTransaction(ctx context.Context, txHash string) bool {
 		outputValues[rounded]++
 	}
 
-	log.Printf("TX %s: output value distribution: %v", txHash, outputValues)
+	wlltLog.Debugf("TX %s: output value distribution: %v", txHash, outputValues)
 
 	for value, count := range outputValues {
 		if count >= 3 {
-			log.Printf("TX %s: IDENTIFIED AS COINJOIN - %d outputs with value %.8f", txHash, count, value)
+			wlltLog.Debugf("TX %s: IDENTIFIED AS COINJOIN - %d outputs with value %.8f", txHash, count, value)
 			return true
 		}
 	}
 
-	log.Printf("TX %s: not a CoinJoin (no 3+ matching output values)", txHash)
+	wlltLog.Debugf("TX %s: not a CoinJoin (no 3+ matching output values)", txHash)
 	return false
 }
 
@@ -1565,7 +1564,7 @@ func isVSPFeeTransaction(tx types.Transaction, allTransactions []types.Transacti
 		}
 
 		if tx.BlockHeight-otherTx.BlockHeight == 6 {
-			log.Printf("VSP FEE DETECTED: %s (block %d) is fee for ticket %s (block %d)",
+			wlltLog.Debugf("VSP FEE DETECTED: %s (block %d) is fee for ticket %s (block %d)",
 				tx.TxID[:12], tx.BlockHeight, otherTx.TxID[:12], otherTx.BlockHeight)
 			return true, otherTx.TxID
 		}
@@ -1700,7 +1699,7 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 			relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if _, err := rpc.WalletGrpcClient.LockAccount(relockCtx, &pb.LockAccountRequest{AccountNumber: sourceAccount}); err != nil {
-				log.Printf("SignAndPublishTransaction: lock account %d: %v", sourceAccount, err)
+				wlltLog.Errorf("SignAndPublishTransaction: lock account %d: %v", sourceAccount, err)
 			}
 		}()
 	}
@@ -1843,7 +1842,7 @@ func DiscoverUsage(ctx context.Context, passphrase []byte, gapLimit uint32) erro
 		lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer lockCancel()
 		if _, err := rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{}); err != nil {
-			log.Printf("DiscoverUsage: lock wallet: %v", err)
+			wlltLog.Errorf("DiscoverUsage: lock wallet: %v", err)
 		}
 	}()
 

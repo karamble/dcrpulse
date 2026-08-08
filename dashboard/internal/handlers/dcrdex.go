@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"net/http"
 	"os"
@@ -218,12 +217,12 @@ func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	rpc.SetDcrdexAppPass(req.AppPass)
 	go ensureDexWalletSettings(req.AppPass)
 	if err := setDcrdexInitialized(); err != nil {
-		log.Printf("dcrdex: persist initialized flag: %v", err)
+		dexcLog.Errorf("persist initialized flag: %v", err)
 	}
 	// A restored seed is already backed up by definition; a freshly generated one
 	// is not, so the unlock nag prompts the user to back it up.
 	if err := setDcrdexSeedBackedUp(req.Seed != ""); err != nil {
-		log.Printf("dcrdex: persist seed-backed-up flag: %v", err)
+		dexcLog.Errorf("persist seed-backed-up flag: %v", err)
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
@@ -364,7 +363,7 @@ func dexWalletPassphraseGate(ctx context.Context) error {
 	if err != nil {
 		// bisonw is unreachable, so whether a wallet exists is unknown. Blocking
 		// a wallet operation on an optional daemon that is down is too strict.
-		log.Printf("dcrdex: could not check for a dcr wallet before the passphrase change: %v", err)
+		dexcLog.Warnf("could not check for a dcr wallet before the passphrase change: %v", err)
 		return nil
 	}
 	if !has {
@@ -401,21 +400,21 @@ func syncDexWalletPassphrase(ctx context.Context, newPass string) error {
 	stored, err := web.WalletSettings(ctx, appPass, bisonw.AssetDCR)
 	if err != nil {
 		// The error can carry the response body, which holds credentials.
-		log.Print("dcrdex: could not read dcr wallet settings; see the bisonw log")
+		dexcLog.Warn("could not read dcr wallet settings; see the bisonw log")
 		return ErrDexWalletPassphraseStale
 	}
 	if err := web.ReconfigureWallet(ctx, appPass, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, stored, newPass); err != nil {
-		log.Printf("dcrdex: update dcr wallet password: %v", err)
+		dexcLog.Errorf("update dcr wallet password: %v", err)
 		return ErrDexWalletPassphraseStale
 	}
-	log.Print("dcrdex: dcr wallet password updated")
+	dexcLog.Info("dcr wallet password updated")
 	return nil
 }
 
 func ensureDexWalletSettings(appPass string) {
 	want, err := dexDCRWalletCfg()
 	if err != nil {
-		log.Printf("dcrdex: check dcr wallet settings: %v", err)
+		dexcLog.Warnf("check dcr wallet settings: %v", err)
 		return
 	}
 	// Runs after the handler returns, so it needs its own context.
@@ -424,19 +423,19 @@ func ensureDexWalletSettings(appPass string) {
 
 	// Only push credentials the dashboard's own connection proves work.
 	if ready, reason := services.WalletReady(ctx); !ready {
-		log.Printf("dcrdex: skip dcr wallet settings check: %s", reason)
+		dexcLog.Infof("skip dcr wallet settings check: %s", reason)
 		return
 	}
 
 	client, err := rpc.DcrdexClient()
 	if err != nil {
-		log.Printf("dcrdex: check dcr wallet settings: %v", err)
+		dexcLog.Warnf("check dcr wallet settings: %v", err)
 		return
 	}
 	// Nothing to reconcile until the wallet has been created.
 	has, err := client.HasWallet(ctx, bisonw.AssetDCR)
 	if err != nil {
-		log.Printf("dcrdex: check dcr wallet settings: %v", err)
+		dexcLog.Warnf("check dcr wallet settings: %v", err)
 		return
 	}
 	if !has {
@@ -444,13 +443,13 @@ func ensureDexWalletSettings(appPass string) {
 	}
 	web, err := rpc.DcrdexWebClient()
 	if err != nil {
-		log.Printf("dcrdex: check dcr wallet settings: %v", err)
+		dexcLog.Warnf("check dcr wallet settings: %v", err)
 		return
 	}
 	stored, err := web.WalletSettings(ctx, appPass, bisonw.AssetDCR)
 	if err != nil {
 		// The error can carry the response body, which holds credentials.
-		log.Print("dcrdex: could not read dcr wallet settings; see the bisonw log")
+		dexcLog.Warn("could not read dcr wallet settings; see the bisonw log")
 		return
 	}
 
@@ -472,12 +471,12 @@ func ensureDexWalletSettings(appPass string) {
 	}
 	sort.Strings(drifted)
 	// Log key names only; the values are credentials.
-	log.Printf("dcrdex: dcr wallet settings are stale (%s), updating", strings.Join(drifted, ", "))
+	dexcLog.Errorf("dcr wallet settings are stale (%s), updating", strings.Join(drifted, ", "))
 	if err := web.ReconfigureWallet(ctx, appPass, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, merged, ""); err != nil {
-		log.Printf("dcrdex: update dcr wallet settings: %v", err)
+		dexcLog.Errorf("update dcr wallet settings: %v", err)
 		return
 	}
-	log.Print("dcrdex: dcr wallet settings updated")
+	dexcLog.Info("dcr wallet settings updated")
 }
 
 // ensureDexAccount makes sure the dedicated `dex` account exists in dcrwallet,
@@ -1303,7 +1302,7 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		if _, err := client.PostBond(ctx, params); err != nil {
-			log.Printf("DCRDEX PostBond(%s) failed: %v", host, err)
+			dexcLog.Errorf("DCRDEX PostBond(%s) failed: %v", host, err)
 			setBondSubmit(host, bondSubmitState{Phase: "error", Error: err.Error()})
 			return
 		}
@@ -1363,7 +1362,7 @@ func relayBisonwWS(w http.ResponseWriter, r *http.Request, client *bisonw.Client
 	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
 	front, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("dcrdex ws upgrade: %v", err)
+		dexcLog.Errorf("dcrdex ws upgrade: %v", err)
 		return
 	}
 	defer front.Close()

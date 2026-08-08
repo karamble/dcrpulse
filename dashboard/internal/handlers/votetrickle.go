@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -73,7 +72,7 @@ func StartVoteTrickleHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "already running"):
 			http.Error(w, msg, http.StatusConflict)
 		default:
-			log.Printf("StartVoteTrickle failed: %v", err)
+			stkeLog.Errorf("StartVoteTrickle failed: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return
@@ -108,7 +107,7 @@ func StreamVoteTrickleEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade votetrickle-events WebSocket: %v", err)
+		stkeLog.Errorf("Failed to upgrade votetrickle-events WebSocket: %v", err)
 		return
 	}
 	defer conn.Close()

@@ -7,7 +7,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -36,7 +35,7 @@ func ListVSPsHandler(w http.ResponseWriter, r *http.Request) {
 	if envelope.RegistryEnabled {
 		vsps, err := services.ListVSPs(ctx)
 		if err != nil {
-			log.Printf("ListVSPs failed: %v", err)
+			stkeLog.Errorf("ListVSPs failed: %v", err)
 			envelope.RegistryError = err.Error()
 		} else if vsps != nil {
 			envelope.VSPs = vsps
@@ -44,7 +43,7 @@ func ListVSPsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if used, err := services.GetUsedVSPs(ctx); err != nil {
-		log.Printf("GetUsedVSPs failed: %v", err)
+		stkeLog.Errorf("GetUsedVSPs failed: %v", err)
 	} else if used != nil {
 		envelope.UsedVSPs = used
 	}
@@ -64,7 +63,7 @@ func VSPInfoHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	info, err := services.GetVSPInfo(ctx, host)
 	if err != nil {
-		log.Printf("GetVSPInfo(%s) failed: %v", host, err)
+		stkeLog.Errorf("GetVSPInfo(%s) failed: %v", host, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -114,7 +113,7 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
-			log.Printf("StartPurchaseWorker failed: %v", err)
+			stkeLog.Errorf("StartPurchaseWorker failed: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -139,7 +138,7 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "insufficient"):
 			http.Error(w, msg, http.StatusBadRequest)
 		default:
-			log.Printf("PurchaseTickets failed: %v", err)
+			stkeLog.Errorf("PurchaseTickets failed: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return
@@ -163,7 +162,7 @@ func StreamPurchaseEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade purchase-events WebSocket: %v", err)
+		stkeLog.Errorf("Failed to upgrade purchase-events WebSocket: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -208,7 +207,7 @@ func ListTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	tickets, err := services.ListTickets(ctx)
 	if err != nil {
-		log.Printf("ListTickets failed: %v", err)
+		stkeLog.Errorf("ListTickets failed: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -231,7 +230,7 @@ func GetAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	settings, err := services.LoadAutobuyerSettings(ctx)
 	if err != nil {
-		log.Printf("LoadAutobuyerSettings: %v", err)
+		stkeLog.Errorf("LoadAutobuyerSettings: %v", err)
 		http.Error(w, "failed to load settings", http.StatusInternalServerError)
 		return
 	}
@@ -261,7 +260,7 @@ func SaveAutobuyerSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	saveCtx, saveCancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer saveCancel()
 	if err := services.SaveAutobuyerSettings(saveCtx, &s); err != nil {
-		log.Printf("SaveAutobuyerSettings: %v", err)
+		stkeLog.Errorf("SaveAutobuyerSettings: %v", err)
 		http.Error(w, "failed to save settings", http.StatusInternalServerError)
 		return
 	}
@@ -308,7 +307,7 @@ func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "already running"):
 			http.Error(w, msg, http.StatusConflict)
 		default:
-			log.Printf("StartAutobuyer failed: %v", err)
+			stkeLog.Errorf("StartAutobuyer failed: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return
@@ -329,7 +328,7 @@ func StreamAutobuyerEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade autobuyer-events WebSocket: %v", err)
+		stkeLog.Errorf("Failed to upgrade autobuyer-events WebSocket: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -402,7 +401,7 @@ func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
-			log.Printf("SyncFailedVSPTickets failed: %v", err)
+			stkeLog.Errorf("SyncFailedVSPTickets failed: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return
@@ -445,7 +444,7 @@ func ProcessUnmanagedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
-			log.Printf("ProcessUnmanagedVSPTickets failed: %v", err)
+			stkeLog.Errorf("ProcessUnmanagedVSPTickets failed: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return

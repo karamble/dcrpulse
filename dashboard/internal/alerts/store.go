@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -49,16 +48,16 @@ func (e *engine) saveLocked() {
 	af := alertsFile{SchemaVersion: storeSchemaVersion, Entries: e.entries}
 	data, err := json.MarshalIndent(af, "", "  ")
 	if err != nil {
-		log.Printf("alerts: encode: %v", err)
+		alrtLog.Errorf("encode: %v", err)
 		return
 	}
 	path := config.AlertsPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		log.Printf("alerts: create dir: %v", err)
+		alrtLog.Errorf("create dir: %v", err)
 		return
 	}
 	if err := atomicWriteJSON(path, data); err != nil {
-		log.Printf("alerts: save: %v", err)
+		alrtLog.Errorf("save: %v", err)
 	}
 }
 

@@ -7,7 +7,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
@@ -45,7 +44,7 @@ func WalletExistsHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := services.CheckWalletExists(ctx)
 	if err != nil {
-		log.Printf("Error checking wallet existence: %v", err)
+		wlltLog.Errorf("Error checking wallet existence: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -84,7 +83,7 @@ func GenerateSeedHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := services.GenerateSeed(ctx, req.SeedLength)
 	if err != nil {
-		log.Printf("Error generating seed: %v", err)
+		wlltLog.Errorf("Error generating seed: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -164,7 +163,7 @@ func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := services.CreateNewWallet(ctx, req.PublicPassphrase, req.PrivatePassphrase, req.SeedHex, req.DiscoverAccounts)
 	if err != nil {
-		log.Printf("Error creating wallet: %v", err)
+		wlltLog.Errorf("Error creating wallet: %v", err)
 		resp := types.CreateWalletResponse{
 			Success: false,
 			Message: err.Error(),
@@ -199,7 +198,7 @@ func OpenWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := services.OpenWallet(ctx, req.PublicPassphrase)
 	if err != nil {
-		log.Printf("Error opening wallet: %v", err)
+		wlltLog.Errorf("Error opening wallet: %v", err)
 		resp := types.OpenWalletResponse{
 			Success: false,
 			Message: err.Error(),

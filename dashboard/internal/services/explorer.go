@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -41,7 +40,7 @@ func FetchRecentBlocks(ctx context.Context, count int) ([]types.BlockSummary, er
 	for h := height; h >= startHeight; h-- {
 		block, err := FetchBlockSummaryByHeight(ctx, h)
 		if err != nil {
-			log.Printf("Warning: Failed to fetch block %d: %v", h, err)
+			nodeLog.Warnf("Failed to fetch block %d: %v", h, err)
 			continue
 		}
 		blocks = append(blocks, *block)
@@ -94,7 +93,7 @@ func FetchRecentBlocksPaginated(ctx context.Context, page int, pageSize int) (*t
 	for h := startHeight; h >= endHeight; h-- {
 		block, err := FetchBlockSummaryByHeight(ctx, h)
 		if err != nil {
-			log.Printf("Warning: Failed to fetch block %d: %v", h, err)
+			nodeLog.Warnf("Failed to fetch block %d: %v", h, err)
 			continue
 		}
 		blocks = append(blocks, *block)
@@ -226,13 +225,13 @@ func FetchBlockByHash(ctx context.Context, hash string) (*types.BlockDetail, err
 			json.RawMessage(`1`), // verbose = 1 for decoded JSON
 		})
 		if err != nil {
-			log.Printf("Warning: failed to fetch transaction %s: %v", txID, err)
+			nodeLog.Warnf("Failed to fetch transaction %s: %v", txID, err)
 			continue
 		}
 
 		var txData map[string]interface{}
 		if err := json.Unmarshal(txResult, &txData); err != nil {
-			log.Printf("Warning: failed to unmarshal transaction %s: %v", txID, err)
+			nodeLog.Warnf("Failed to unmarshal transaction %s: %v", txID, err)
 			continue
 		}
 
@@ -249,13 +248,13 @@ func FetchBlockByHash(ctx context.Context, hash string) (*types.BlockDetail, err
 			json.RawMessage(`1`), // verbose = 1 for decoded JSON
 		})
 		if err != nil {
-			log.Printf("Warning: failed to fetch stake transaction %s: %v", txID, err)
+			nodeLog.Warnf("Failed to fetch stake transaction %s: %v", txID, err)
 			continue
 		}
 
 		var txData map[string]interface{}
 		if err := json.Unmarshal(txResult, &txData); err != nil {
-			log.Printf("Warning: failed to unmarshal stake transaction %s: %v", txID, err)
+			nodeLog.Warnf("Failed to unmarshal stake transaction %s: %v", txID, err)
 			continue
 		}
 
@@ -419,7 +418,7 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 		if vInfo, err := GetTSpendVotingInfo(ctx, rawTx.Txid, rawTx.BlockHeight, rawTx.Expiry, inMempool); err == nil {
 			votingInfo = vInfo
 		} else {
-			log.Printf("Warning: Could not get voting info for tspend %s: %v", rawTx.Txid, err)
+			nodeLog.Warnf("Could not get voting info for tspend %s: %v", rawTx.Txid, err)
 		}
 	}
 
@@ -890,7 +889,7 @@ func FetchAddressInfo(ctx context.Context, address string) (*types.AddressInfo, 
 		jsonStr(address),
 	})
 	if err != nil {
-		log.Printf("Warning: Failed to check address existence: %v", err)
+		nodeLog.Warnf("Failed to check address existence: %v", err)
 	} else {
 		var exists bool
 		if err := json.Unmarshal(existsResult, &exists); err == nil {
@@ -903,7 +902,7 @@ func FetchAddressInfo(ctx context.Context, address string) (*types.AddressInfo, 
 		jsonStr(address),
 	})
 	if err != nil {
-		log.Printf("Warning: Failed to get tickets for address: %v", err)
+		nodeLog.Warnf("Failed to get tickets for address: %v", err)
 	} else {
 		var ticketsResp struct {
 			Tickets []string `json:"tickets"`
@@ -960,7 +959,7 @@ func FetchMempoolTransactions(ctx context.Context) (*types.MempoolTransactions, 
 	for _, txHash := range txHashes {
 		tx, err := FetchTransaction(ctx, txHash)
 		if err != nil {
-			log.Printf("Warning: Failed to fetch mempool transaction %s: %v", txHash, err)
+			nodeLog.Warnf("Failed to fetch mempool transaction %s: %v", txHash, err)
 			continue
 		}
 

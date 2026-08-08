@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -1797,7 +1796,7 @@ func brclientdClient() (*http.Client, error) {
 	}
 	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
 	if err != nil {
-		log.Printf("brclientd certs not yet available: %v (will retry on next call)", err)
+		rpccLog.Warnf("brclientd certs not yet available: %v (will retry on next call)", err)
 		return nil, err
 	}
 	brclientdHTTPClient = &http.Client{
@@ -1826,7 +1825,7 @@ func brclientdStreamClient() (*http.Client, error) {
 	}
 	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
 	if err != nil {
-		log.Printf("brclientd certs not yet available: %v (will retry on next call)", err)
+		rpccLog.Warnf("brclientd certs not yet available: %v (will retry on next call)", err)
 		return nil, err
 	}
 	brclientdStreamHTTPClient = &http.Client{
@@ -1850,7 +1849,7 @@ func brclientdBackupClient() (*http.Client, error) {
 	}
 	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
 	if err != nil {
-		log.Printf("brclientd certs not yet available: %v (will retry on next call)", err)
+		rpccLog.Warnf("brclientd certs not yet available: %v (will retry on next call)", err)
 		return nil, err
 	}
 	brclientdBackupHTTPClient = &http.Client{
@@ -1876,7 +1875,7 @@ func brclientdPagesClient() (*http.Client, error) {
 	}
 	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
 	if err != nil {
-		log.Printf("brclientd certs not yet available: %v (will retry on next call)", err)
+		rpccLog.Warnf("brclientd certs not yet available: %v (will retry on next call)", err)
 		return nil, err
 	}
 	brclientdPagesHTTPClient = &http.Client{

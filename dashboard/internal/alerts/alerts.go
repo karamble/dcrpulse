@@ -12,7 +12,6 @@ package alerts
 import (
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"sync"
 	"time"
@@ -143,7 +142,7 @@ func get() *engine {
 		if err != nil {
 			// Operate on an empty in-memory ring rather than disabling
 			// alerting; the next successful save rewrites the file.
-			log.Printf("alerts: load: %v", err)
+			alrtLog.Warnf("load: %v", err)
 		}
 		eng.entries = entries
 		eng.loadDisabledLocked()
@@ -157,7 +156,7 @@ func get() *engine {
 func (e *engine) loadDisabledLocked() {
 	gc, err := config.LoadGlobalCfg()
 	if err != nil {
-		log.Printf("alerts: load settings: %v", err)
+		alrtLog.Warnf("load settings: %v", err)
 		return
 	}
 	var s SettingsData
@@ -221,7 +220,7 @@ func Emit(code, detail, dedupeKey string) {
 	e := get()
 	ce, ok := catalog[code]
 	if !ok || ce.Kind != KindEvent {
-		log.Printf("alerts: emit unknown event code %q", code)
+		alrtLog.Errorf("emit unknown event code %q", code)
 		return
 	}
 	e.mu.Lock()
@@ -243,7 +242,7 @@ func Emit(code, detail, dedupeKey string) {
 	e.appendLocked(en)
 	e.saveLocked()
 	e.mu.Unlock()
-	log.Printf("alerts: emit %s", code)
+	alrtLog.Infof("emit %s", code)
 	e.fire()
 }
 
@@ -266,7 +265,7 @@ func raise(code, scope, detail string, sevOverride Severity) {
 	e := get()
 	ce, ok := catalog[code]
 	if !ok || ce.Kind != KindCondition {
-		log.Printf("alerts: raise unknown condition code %q", code)
+		alrtLog.Errorf("raise unknown condition code %q", code)
 		return
 	}
 	sev := ce.Severity
@@ -311,7 +310,7 @@ func raise(code, scope, detail string, sevOverride Severity) {
 	}
 	e.mu.Unlock()
 	if changed {
-		log.Printf("alerts: raise %s", codeScope(code, scope))
+		alrtLog.Infof("raise %s", codeScope(code, scope))
 		e.fire()
 	}
 }
@@ -341,7 +340,7 @@ func Resolve(code, scope string) {
 	}
 	e.saveLocked()
 	e.mu.Unlock()
-	log.Printf("alerts: resolve %s (%s)", codeScope(code, scope), dur.Round(time.Second))
+	alrtLog.Infof("resolve %s (%s)", codeScope(code, scope), dur.Round(time.Second))
 	e.fire()
 }
 

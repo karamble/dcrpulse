@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -267,7 +266,7 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 			defer wg.Done()
 			defer func() { <-sem }()
 			if recs, err := piRecordsBatch(ctx, chunk, piListFilenames); err != nil {
-				log.Printf("politeia records batch: %v", err)
+				govnLog.Warnf("politeia records batch: %v", err)
 			} else {
 				piMu.Lock()
 				for k, v := range recs {
@@ -276,7 +275,7 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 				piMu.Unlock()
 			}
 			if sums, err := piSummariesBatch(ctx, chunk); err != nil {
-				log.Printf("politeia summaries batch: %v", err)
+				govnLog.Warnf("politeia summaries batch: %v", err)
 			} else {
 				piMu.Lock()
 				for k, v := range sums {
@@ -406,7 +405,7 @@ func fillProposalDetailComments(ctx context.Context, token string, entry piDetai
 	defer cancel()
 	commentsOK := false
 	if cmts, err := piComments(cctx, token); err != nil {
-		log.Printf("politeia comments %s: %v", token, err)
+		govnLog.Warnf("politeia comments %s: %v", token, err)
 	} else {
 		detail.Comments = commentsFromPi(cmts)
 		commentsOK = true
@@ -485,7 +484,7 @@ func fetchAndCacheProposalDetail(ctx context.Context, token string) (*types.Prop
 	// Comments are a best-effort enrichment: a failure here must not block
 	// the proposal view.
 	if cmts, err := piComments(ctx, token); err != nil {
-		log.Printf("politeia comments %s: %v", token, err)
+		govnLog.Warnf("politeia comments %s: %v", token, err)
 	} else {
 		out.Comments = commentsFromPi(cmts)
 	}
@@ -565,13 +564,13 @@ func PrepareProposalVote(ctx context.Context, token string) (*types.VoteEligibil
 	// local fast-path. Mirrors Decrediton getVoteOption (assumes a uniform bit
 	// across the wallet's tickets).
 	if votes, err := piResults(ctx, token); err != nil {
-		log.Printf("politeia results %s: %v", token, err)
+		govnLog.Warnf("politeia results %s: %v", token, err)
 	} else if choice, count := walletVoteChoice(addrs, votes, options); choice != "" {
 		out.AlreadyVoted = true
 		out.CurrentChoice = choice
 		out.VotedTicketCount = count
 		if err := persistLocalPoliteiaVote(ctx, token, choice, count); err != nil {
-			log.Printf("persist politeia vote: %v", err)
+			govnLog.Errorf("persist politeia vote: %v", err)
 		}
 		return out, nil
 	}
@@ -897,7 +896,7 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 
 	if result.Cast > 0 {
 		if err := persistLocalPoliteiaVote(ctx, req.Token, req.VoteOption, result.Cast); err != nil {
-			log.Printf("persist politeia vote: %v", err)
+			govnLog.Errorf("persist politeia vote: %v", err)
 		}
 	}
 	bumpCachedVoteTally(ctx, req.Token, req.VoteOption, result.Cast)

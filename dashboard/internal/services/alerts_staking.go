@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 	"time"
 
@@ -83,7 +82,7 @@ func diffTicketAlerts(ctx context.Context) {
 	defer cancel()
 	stream, err := client.GetTickets(listCtx, &pb.GetTicketsRequest{})
 	if err != nil {
-		log.Printf("alerts: ticket watcher: %v", err)
+		alrtLog.Warnf("ticket watcher: %v", err)
 		return
 	}
 	next := make(map[string]string, 64)
@@ -95,7 +94,7 @@ func diffTicketAlerts(ctx context.Context) {
 		if err != nil {
 			// A partial listing must never become the baseline: missing
 			// hashes would re-emit as "purchased" on the next pass.
-			log.Printf("alerts: ticket watcher: %v", err)
+			alrtLog.Warnf("ticket watcher: %v", err)
 			return
 		}
 		rec := ticketRecordFromResponse(resp)

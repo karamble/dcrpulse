@@ -7,7 +7,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -28,7 +27,7 @@ func ListWalletsHandler(w http.ResponseWriter, r *http.Request) {
 
 	wallets, err := services.ListWallets(ctx)
 	if err != nil {
-		log.Printf("Error listing wallets: %v", err)
+		wlltLog.Errorf("Error listing wallets: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -55,7 +54,7 @@ func SelectWalletHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := services.SwitchWallet(ctx, req.Name, req.PublicPassphrase); err != nil {
-		log.Printf("Error selecting wallet %q: %v", req.Name, err)
+		wlltLog.Errorf("Error selecting wallet %q: %v", req.Name, err)
 		status := http.StatusInternalServerError
 		// A passphrase mismatch surfaces from OpenWallet; report it as a 401 so
 		// the UI can prompt again (mirrors OpenWalletHandler).
@@ -76,7 +75,7 @@ func CloseWalletHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := services.CloseActiveWallet(ctx); err != nil {
-		log.Printf("Error closing wallet: %v", err)
+		wlltLog.Errorf("Error closing wallet: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -118,7 +117,7 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := services.CreateNamedWatchOnlyWallet(ctx, name, req.PublicPassphrase, strings.TrimSpace(req.ExtendedPubKey), req.AccountIndex); err != nil {
-			log.Printf("Error creating watch-only wallet %q: %v", name, err)
+			wlltLog.Errorf("Error creating watch-only wallet %q: %v", name, err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(types.CreateWalletResponse{Success: false, Message: err.Error()})
@@ -139,7 +138,7 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := services.CreateNamedWallet(ctx, name, req.PublicPassphrase, req.PrivatePassphrase, req.SeedHex, req.DiscoverAccounts); err != nil {
-		log.Printf("Error creating wallet %q: %v", name, err)
+		wlltLog.Errorf("Error creating wallet %q: %v", name, err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(types.CreateWalletResponse{Success: false, Message: err.Error()})
@@ -165,7 +164,7 @@ func RenameWalletHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := services.RenameWallet(ctx, req.From, req.To); err != nil {
-		log.Printf("Error renaming wallet %q -> %q: %v", req.From, req.To, err)
+		wlltLog.Errorf("Error renaming wallet %q -> %q: %v", req.From, req.To, err)
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -188,7 +187,7 @@ func DeleteWalletHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := services.DeleteWallet(ctx, req.Name); err != nil {
-		log.Printf("Error deleting wallet %q: %v", req.Name, err)
+		wlltLog.Errorf("Error deleting wallet %q: %v", req.Name, err)
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}

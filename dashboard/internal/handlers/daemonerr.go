@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"time"
 
@@ -25,7 +24,7 @@ func respondDaemonError(w http.ResponseWriter, r *http.Request, component servic
 		defer cancel()
 		hint := services.DaemonStartupHint(ctx, component)
 		if hint.Detail != "" {
-			log.Printf("%s unreachable (%s): %s", component, hint.State, hint.Detail)
+			settLog.Warnf("%s unreachable (%s): %s", component, hint.State, hint.Detail)
 		}
 		http.Error(w, hint.Message, http.StatusServiceUnavailable)
 		return

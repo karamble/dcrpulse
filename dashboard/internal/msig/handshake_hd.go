@@ -7,7 +7,6 @@ package msig
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 )
@@ -148,10 +147,10 @@ func CreateSharedWalletHD(ctx context.Context, label string, m int, invitees []I
 	}
 	for _, p := range invitees {
 		if err := sendFrame(store, p.UID, msg, tempID); err != nil {
-			log.Printf("msig: invite to %s: %v", p.Nick, err)
+			msigLog.Warnf("invite to %s: %v", p.Nick, err)
 		}
 	}
-	log.Printf("msig: HD round %q (%d-of-%d) started, %d invitations sent", label, m, n, len(invitees))
+	msigLog.Infof("HD round %q (%d-of-%d) started, %d invitations sent", label, m, n, len(invitees))
 	rec, _ = store.Wallet(tempID)
 	return rec, nil
 }
@@ -243,11 +242,11 @@ func inboundAcceptHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 	}
 	peer := rec.peerByUID(fromUID)
 	if peer == nil {
-		log.Printf("msig: accept for %s from a non-invited uid", rec.TempID)
+		msigLog.Warnf("accept for %s from a non-invited uid", rec.TempID)
 		return
 	}
 	if msg.Ver != ProtoHD || msg.Xpub == "" {
-		log.Printf("msig: %s answered an HD round with a v1 accept; peer must upgrade", peer.Nick)
+		msigLog.Warnf("%s answered an HD round with a v1 accept; peer must upgrade", peer.Nick)
 		return
 	}
 	// The accept must prove the offered key is held. A build that cannot
@@ -256,7 +255,7 @@ func inboundAcceptHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 	// tolerated legacy path would just become the way to avoid attestation.
 	params, err := paramsForNetwork(rec.Network)
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	if msg.Attest == "" {
@@ -273,7 +272,7 @@ func inboundAcceptHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 	// second acceptance to the wrong person must not overwrite the key
 	// they really delivered.
 	if peer.Xpub != "" && peer.Xpub != msg.Xpub {
-		log.Printf("msig: %s already delivered a different key for %s; frame ignored", peer.Nick, rec.TempID)
+		msigLog.Warnf("%s already delivered a different key for %s; frame ignored", peer.Nick, rec.TempID)
 		return
 	}
 	dup := rec.OwnHD != nil && msg.Xpub == rec.OwnHD.Xpub
@@ -297,7 +296,7 @@ func inboundAcceptHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 		return nil
 	})
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	maybeReviewInitiatorHD(ctx, store, rec.TempID)
@@ -318,12 +317,12 @@ func maybeReviewInitiatorHD(ctx context.Context, store *Store, tempID string) {
 		}
 	}
 	if store.WalletName() != activeWalletSeam() {
-		log.Printf("msig: round %q complete; switch to wallet %q to activate it", rec.Label, store.WalletName())
+		msigLog.Infof("round %q complete; switch to wallet %q to activate it", rec.Label, store.WalletName())
 		return
 	}
 	params, err := paramsForNetwork(rec.Network)
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	xpubs := make([]string, 0, rec.N)
@@ -334,7 +333,7 @@ func maybeReviewInitiatorHD(ctx context.Context, store *Store, tempID string) {
 	xpubs = SortXpubs(xpubs)
 	walletID, err := WalletIDForRoster(rec.M, xpubs, params)
 	if err != nil {
-		log.Printf("msig: derive wallet id: %v", err)
+		msigLog.Errorf("derive wallet id: %v", err)
 		return
 	}
 	if err := store.UpdateWallet(tempID, func(r *WalletRecord) error {
@@ -347,10 +346,10 @@ func maybeReviewInitiatorHD(ctx context.Context, store *Store, tempID string) {
 		r.Status = StatusReviewing
 		return nil
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
-	log.Printf("msig: HD round %q has every key; review the cosigners and activate it", rec.Label)
+	msigLog.Infof("HD round %q has every key; review the cosigners and activate it", rec.Label)
 }
 
 // ActivateRound is the initiator's checkpoint. Every key is in and the address
@@ -404,10 +403,10 @@ func ActivateRound(ctx context.Context, id string, passphrase []byte) error {
 	msg := rosterMessage(rec)
 	for _, p := range rec.Peers {
 		if err := sendFrame(store, p.UID, msg, ""); err != nil {
-			log.Printf("msig: roster to %s: %v", p.Nick, err)
+			msigLog.Warnf("roster to %s: %v", p.Nick, err)
 		}
 	}
-	log.Printf("msig: HD shared wallet %q activating at %s", rec.Label, rec.Address)
+	msigLog.Infof("HD shared wallet %q activating at %s", rec.Label, rec.Address)
 	return nil
 }
 
@@ -449,7 +448,7 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 			if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
 				return mergeRosterPeers(r, msg)
 			}); err != nil {
-				log.Printf("msig: %v", err)
+				msigLog.Error(err)
 			}
 			// The stored signature rides the repeat: a ready without one
 			// reads as a cosigner that never confirmed, and would fail
@@ -457,7 +456,7 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 			if err := sendFrame(store, rec.InitiatorUID, &Message{
 				Type: TypeReady, TempID: rec.TempID, WalletID: rec.Address, Attest: rec.OwnAttest,
 			}, ""); err != nil {
-				log.Printf("msig: ready: %v", err)
+				msigLog.Warnf("ready: %v", err)
 			}
 		}
 		return
@@ -468,9 +467,9 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 			r.FailReason = reason
 			return nil
 		}); err != nil {
-			log.Printf("msig: %v", err)
+			msigLog.Error(err)
 		}
-		log.Printf("msig: roster for %q rejected: %s", rec.Label, reason)
+		msigLog.Warnf("roster for %q rejected: %s", rec.Label, reason)
 	}
 	if msg.Ver != ProtoHD || len(msg.Xpubs) == 0 {
 		fail("the initiator sent a non-HD roster for an HD round")
@@ -535,10 +534,10 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 		}
 		return mergeRosterPeers(r, msg)
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
-	log.Printf("msig: roster for %q verified; confirm the cosigners to finish joining", rec.Label)
+	msigLog.Infof("roster for %q verified; confirm the cosigners to finish joining", rec.Label)
 }
 
 // ConfirmRoster is the cosigner's checkpoint. The roster verified, but a
@@ -583,7 +582,7 @@ func ConfirmRoster(ctx context.Context, id string, passphrase []byte) error {
 	}, ""); err != nil {
 		return err
 	}
-	log.Printf("msig: confirmed the cosigners for %q; waiting for the others", rec.Label)
+	msigLog.Infof("confirmed the cosigners for %q; waiting for the others", rec.Label)
 	// An attestation set that arrived early is acted on now, never before.
 	maybeCompleteAttested(ctx, store, rec.TempID)
 	return nil
@@ -605,7 +604,7 @@ func maybeCompleteAttested(ctx context.Context, store *Store, tempID string) {
 		r.Status = StatusPendingImport
 		return nil
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	completeCosignerImportHD(ctx, store, tempID)
@@ -623,12 +622,12 @@ func inboundAttestSet(ctx context.Context, store *Store, rec *WalletRecord, msg 
 		return
 	}
 	if msg.WalletID != rec.Address {
-		log.Printf("msig: attestation set for %q names the wrong address", rec.Label)
+		msigLog.Warnf("attestation set for %q names the wrong address", rec.Label)
 		return
 	}
 	params, err := paramsForNetwork(rec.Network)
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	if err := VerifyRosterAttests(rec, msg.Attests, params); err != nil {
@@ -644,7 +643,7 @@ func inboundAttestSet(ctx context.Context, store *Store, rec *WalletRecord, msg 
 		}
 		return nil
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	// Arriving before this node has confirmed is fine and expected; the set is
@@ -717,16 +716,16 @@ func completeCosignerImportHD(ctx context.Context, store *Store, tempID string) 
 		return
 	}
 	if store.WalletName() != activeWalletSeam() {
-		log.Printf("msig: shared wallet %q waits for wallet %q to import its ladder", rec.Label, store.WalletName())
+		msigLog.Infof("shared wallet %q waits for wallet %q to import its ladder", rec.Label, store.WalletName())
 		return
 	}
 	if err := ensureWindowImported(ctx, store, tempID); err != nil {
-		log.Printf("msig: ladder import deferred: %v", err)
+		msigLog.Warnf("ladder import deferred: %v", err)
 		return
 	}
 	tip, err := tipHeightSeam(ctx)
 	if err != nil {
-		log.Printf("msig: tip height: %v", err)
+		msigLog.Warnf("tip height: %v", err)
 		return
 	}
 	err = store.UpdateWallet(tempID, func(r *WalletRecord) error {
@@ -735,7 +734,7 @@ func completeCosignerImportHD(ctx context.Context, store *Store, tempID string) 
 		return nil
 	})
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	rec, _ = store.Wallet(tempID)
@@ -743,7 +742,7 @@ func completeCosignerImportHD(ctx context.Context, store *Store, tempID string) 
 	// signature that made this import possible in the first place. A lost
 	// ready is recovered by the roster re-announce, which answers with the
 	// stored signature rather than a bare frame.
-	log.Printf("msig: HD shared wallet %q active at %s", rec.Label, rec.Address)
+	msigLog.Infof("HD shared wallet %q active at %s", rec.Label, rec.Address)
 }
 
 func zero(b []byte) {

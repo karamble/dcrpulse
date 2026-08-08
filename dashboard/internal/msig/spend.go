@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"time"
 
 	"decred.org/dcrwallet/v5/wallet/txrules"
@@ -311,14 +310,14 @@ func advanceProposal(store *Store, walletID, txid string) {
 			p.Reason = "no cosigner left to ask"
 			return nil
 		}); err != nil {
-			log.Printf("msig: %v", err)
+			msigLog.Error(err)
 		}
-		log.Printf("msig: proposal %s ran out of cosigners", txid[:12])
+		msigLog.Warnf("proposal %s ran out of cosigners", txid[:12])
 		return
 	}
 	mid, err := NewID()
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	// A manual request carries the long hand-carried lifetime and no hop
@@ -340,12 +339,12 @@ func advanceProposal(store *Store, walletID, txid string) {
 	}
 	payload, err := EncodeMessage(msg)
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	body, err := Encode(payload, mid, expiry)
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	err = store.UpdateProposal(walletID, txid, false, func(_ *WalletRecord, p *Proposal) error {
@@ -367,18 +366,18 @@ func advanceProposal(store *Store, walletID, txid string) {
 		MID: mid, ToUID: next.UID, Body: body, State: OutboxSending, Ts: time.Now().Unix(),
 		Manual: manual, Type: TypeSignReq, RecID: rec.TempID, TxID: txid,
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	if manual {
 		if fresh, ok := store.Wallet(rec.TempID); ok {
 			notifyRecordChanged(fresh)
 		}
-		log.Printf("msig: proposal %s waiting for hand-over to %s (%d/%d signatures)", txid[:12], next.Nick, prop.SigCount, rec.M)
+		msigLog.Infof("proposal %s waiting for hand-over to %s (%d/%d signatures)", txid[:12], next.Nick, prop.SigCount, rec.M)
 		return
 	}
 	deliverOutbox(store, mid, next.UID, body)
-	log.Printf("msig: proposal %s sent to %s (%d/%d signatures)", txid[:12], next.Nick, prop.SigCount, rec.M)
+	msigLog.Infof("proposal %s sent to %s (%d/%d signatures)", txid[:12], next.Nick, prop.SigCount, rec.M)
 }
 
 func broadcastProposal(store *Store, walletID, txid string) {
@@ -390,38 +389,38 @@ func broadcastProposal(store *Store, walletID, txid string) {
 		p.Status = ProposalReady
 		return nil
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	if store.WalletName() != activeWalletSeam() {
-		log.Printf("msig: proposal %s ready; switch to wallet %q to broadcast", txid[:12], store.WalletName())
+		msigLog.Infof("proposal %s ready; switch to wallet %q to broadcast", txid[:12], store.WalletName())
 		return
 	}
 	raw, err := hex.DecodeString(prop.RawTx)
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), walletCallTimeout)
 	defer cancel()
 	sent, err := broadcastSeam(ctx, raw)
 	if err != nil {
-		log.Printf("msig: broadcast of %s deferred: %v", txid[:12], err)
+		msigLog.Warnf("broadcast of %s deferred: %v", txid[:12], err)
 		return
 	}
 	if err := store.UpdateProposal(walletID, txid, false, func(_ *WalletRecord, p *Proposal) error {
 		p.Status = ProposalBroadcast
 		return nil
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 	}
 	notice := &Message{Type: TypeBroadcast, WalletID: rec.Address, TxID: txid}
 	for _, p := range rec.Peers {
 		if err := sendFrame(store, p.UID, notice, ""); err != nil {
-			log.Printf("msig: broadcast notice: %v", err)
+			msigLog.Warnf("broadcast notice: %v", err)
 		}
 	}
-	log.Printf("msig: proposal %s broadcast as %s", txid[:12], sent)
+	msigLog.Infof("proposal %s broadcast as %s", txid[:12], sent)
 }
 
 // RebroadcastProposal retries a fully signed proposal whose broadcast

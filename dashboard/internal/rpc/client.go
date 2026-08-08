@@ -10,7 +10,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -98,12 +97,12 @@ func InitDcrdClient(config Config) error {
 	var err error
 
 	if config.RPCCert != "" {
-		log.Printf("Reading TLS certificate from: %s", config.RPCCert)
+		rpccLog.Debugf("Reading TLS certificate from: %s", config.RPCCert)
 		certs, err = ioutil.ReadFile(config.RPCCert)
 		if err != nil {
 			return fmt.Errorf("failed to read RPC certificate: %v", err)
 		}
-		log.Printf("Successfully loaded TLS certificate (%d bytes)", len(certs))
+		rpccLog.Debugf("Successfully loaded TLS certificate (%d bytes)", len(certs))
 	}
 
 	connCfg := &rpcclient.ConnConfig{
@@ -129,9 +128,9 @@ func InitDcrdClient(config Config) error {
 	}
 
 	if config.RPCCert == "" {
-		log.Println("WARNING: dcrd RPC connection is NOT using TLS; the RPC username, password, and all traffic are sent in cleartext. Set DCRD_RPC_CERT to enable TLS.")
+		rpccLog.Warn("dcrd RPC connection is NOT using TLS; the RPC username, password, and all traffic are sent in cleartext. Set DCRD_RPC_CERT to enable TLS.")
 	} else {
-		log.Println("Successfully connected to dcrd RPC with TLS")
+		rpccLog.Info("Successfully connected to dcrd RPC with TLS")
 	}
 	return nil
 }
@@ -146,12 +145,12 @@ func InitWalletClient(config Config) error {
 	var err error
 
 	if config.RPCCert != "" {
-		log.Printf("Reading wallet TLS certificate from: %s", config.RPCCert)
+		rpccLog.Debugf("Reading wallet TLS certificate from: %s", config.RPCCert)
 		certs, err = ioutil.ReadFile(config.RPCCert)
 		if err != nil {
 			return fmt.Errorf("failed to read wallet RPC certificate: %v", err)
 		}
-		log.Printf("Successfully loaded wallet TLS certificate (%d bytes)", len(certs))
+		rpccLog.Debugf("Successfully loaded wallet TLS certificate (%d bytes)", len(certs))
 	}
 
 	connCfg := &rpcclient.ConnConfig{
@@ -174,12 +173,12 @@ func InitWalletClient(config Config) error {
 	_, err = WalletClient.GetInfo(ctx)
 	if err != nil {
 		// Wallet might be locked or not initialized, but connection is OK
-		log.Printf("Wallet RPC connected but getinfo failed (may be locked): %v", err)
+		rpccLog.Warnf("Wallet RPC connected but getinfo failed (may be locked): %v", err)
 	}
 	if config.RPCCert == "" {
-		log.Println("WARNING: dcrwallet RPC connection is NOT using TLS; the RPC username, password, and all traffic are sent in cleartext. Set DCRWALLET_RPC_CERT to enable TLS.")
+		rpccLog.Warn("dcrwallet RPC connection is NOT using TLS; the RPC username, password, and all traffic are sent in cleartext. Set DCRWALLET_RPC_CERT to enable TLS.")
 	} else if err == nil {
-		log.Println("Successfully connected to dcrwallet RPC with TLS")
+		rpccLog.Info("Successfully connected to dcrwallet RPC with TLS")
 	}
 
 	return nil
@@ -225,7 +224,7 @@ func dialWalletGrpc(config GrpcConfig) error {
 
 	// Dial the gRPC server (non-blocking)
 	target := fmt.Sprintf("%s:%s", config.GrpcHost, config.GrpcPort)
-	log.Printf("Connecting to dcrwallet gRPC at %s with mutual TLS (non-blocking)", target)
+	rpccLog.Infof("Connecting to dcrwallet gRPC at %s with mutual TLS (non-blocking)", target)
 
 	conn, err := grpc.Dial(
 		target,
@@ -244,7 +243,7 @@ func dialWalletGrpc(config GrpcConfig) error {
 	TicketBuyerClient = pb.NewTicketBuyerServiceClient(conn)
 	VotingClient = pb.NewVotingServiceClient(conn)
 
-	log.Println("dcrwallet gRPC clients initialized with mutual TLS authentication")
+	rpccLog.Info("dcrwallet gRPC clients initialized with mutual TLS authentication")
 	return nil
 }
 
@@ -288,6 +287,6 @@ func WaitForWalletDaemon(ctx context.Context) error {
 func CloseGrpcConnection() {
 	if WalletGrpcConn != nil {
 		WalletGrpcConn.Close()
-		log.Println("gRPC connection closed")
+		rpccLog.Info("gRPC connection closed")
 	}
 }

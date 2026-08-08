@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"sort"
@@ -128,12 +127,12 @@ func rememberVSPUsed(ctx context.Context, host, pubkey string) {
 	}
 	network, err := CurrentNetwork(ctx)
 	if err != nil || network == "" {
-		log.Printf("rememberVSPUsed: skipping, network not resolved: %v", err)
+		stkeLog.Warnf("rememberVSPUsed: skipping, network not resolved: %v", err)
 		return
 	}
 	wc, err := config.LoadWalletCfg(network, CurrentWalletName())
 	if err != nil {
-		log.Printf("rememberVSPUsed: load wallet cfg: %v", err)
+		stkeLog.Warnf("rememberVSPUsed: load wallet cfg: %v", err)
 		return
 	}
 	meta := config.VSPMetadata{
@@ -152,11 +151,11 @@ func rememberVSPUsed(ctx context.Context, host, pubkey string) {
 		}
 	}
 	if err := wc.UpsertUsedVSP(meta); err != nil {
-		log.Printf("rememberVSPUsed: upsert: %v", err)
+		stkeLog.Warnf("rememberVSPUsed: upsert: %v", err)
 		return
 	}
 	if err := wc.Save(); err != nil {
-		log.Printf("rememberVSPUsed: save: %v", err)
+		stkeLog.Warnf("rememberVSPUsed: save: %v", err)
 	}
 }
 
@@ -533,7 +532,7 @@ func purchaseTicketsCore(ctx context.Context, account, numTickets uint32, vspHos
 		mixerMixed, mixerChange := mixing.Mixed, mixing.Change
 		defer func() {
 			if err := StartMixer(mixerPass, mixerMixed, privacyMixedAccountBranch, mixerChange); err != nil {
-				log.Printf("restart mixer after ticket purchase: %v", err)
+				stkeLog.Warnf("restart mixer after ticket purchase: %v", err)
 			}
 		}()
 	}
@@ -548,7 +547,7 @@ func purchaseTicketsCore(ctx context.Context, account, numTickets uint32, vspHos
 		return nil, err
 	}
 	if didUnlock {
-		defer relockAccount(sourceAccount, func(msg string) { log.Printf("ticket purchase: %s", msg) })
+		defer relockAccount(sourceAccount, func(msg string) { stkeLog.Infof("ticket purchase: %s", msg) })
 	}
 
 	// Do not set Passphrase. The source account is already unlocked per-account
@@ -753,7 +752,7 @@ func fetchFeeStatusMap(ctx context.Context) map[string]string {
 			FeeStatus: fs.enum,
 		})
 		if err != nil {
-			log.Printf("GetVSPTicketsByFeeStatus(%s): %v", fs.name, err)
+			stkeLog.Warnf("GetVSPTicketsByFeeStatus(%s): %v", fs.name, err)
 			continue
 		}
 		for _, raw := range resp.GetTicketsHashes() {

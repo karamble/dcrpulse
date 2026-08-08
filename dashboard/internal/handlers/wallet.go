@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -51,7 +50,7 @@ func StartWalletRescan(beginHeight int64) {
 // startRescanViaGrpc initiates a blockchain rescan using gRPC and broadcasts progress
 func startRescanViaGrpc(beginHeight int32) {
 	if rpc.WalletGrpcClient == nil {
-		log.Println("❌ Cannot start gRPC rescan: gRPC client not initialized")
+		wlltLog.Error("Cannot start gRPC rescan: gRPC client not initialized")
 		return
 	}
 
@@ -62,11 +61,11 @@ func startRescanViaGrpc(beginHeight int32) {
 
 	stream, err := rpc.WalletGrpcClient.Rescan(ctx, req)
 	if err != nil {
-		log.Printf("❌ Failed to start gRPC rescan: %v", err)
+		wlltLog.Errorf("Failed to start gRPC rescan: %v", err)
 		return
 	}
 
-	log.Println("✅ gRPC rescan stream started - broadcasting progress updates")
+	wlltLog.Info("gRPC rescan stream started - broadcasting progress updates")
 
 	// Store active stream
 	activeRescanMutex.Lock()
@@ -77,11 +76,11 @@ func startRescanViaGrpc(beginHeight int32) {
 	for {
 		update, err := stream.Recv()
 		if err == io.EOF {
-			log.Println("✅ gRPC rescan stream completed")
+			wlltLog.Info("gRPC rescan stream completed")
 			break
 		}
 		if err != nil {
-			log.Printf("❌ gRPC rescan stream error: %v", err)
+			wlltLog.Errorf("gRPC rescan stream error: %v", err)
 			break
 		}
 
@@ -101,7 +100,7 @@ func startRescanViaGrpc(beginHeight int32) {
 		}
 		rescanChannelsMutex.Unlock()
 
-		log.Printf("📊 Rescan progress: block %d", update.RescannedThrough)
+		wlltLog.Debugf("Rescan progress: block %d", update.RescannedThrough)
 	}
 
 	// Clear active stream
@@ -118,7 +117,7 @@ func startRescanViaGrpc(beginHeight int32) {
 	rescanChannelsMutex.Unlock()
 
 	services.MarkRescanFinished()
-	log.Println("✅ Rescan completed - all transactions imported")
+	wlltLog.Info("Rescan completed - all transactions imported")
 }
 
 // subscribeToRescanUpdates creates a channel that receives rescan progress updates
@@ -174,7 +173,7 @@ func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	status, err := services.FetchWalletStatus()
 	if err != nil {
-		log.Printf("Error fetching wallet status: %v", err)
+		wlltLog.Errorf("Error fetching wallet status: %v", err)
 		respondDaemonError(w, r, services.LogComponentDcrwallet, err)
 		return
 	}
@@ -230,7 +229,7 @@ func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
 	select {
 	case res := <-resultChan:
 		if res.err != nil {
-			log.Printf("Error fetching wallet dashboard data: %v", res.err)
+			wlltLog.Errorf("Error fetching wallet dashboard data: %v", res.err)
 			// Return partial data if available
 			if res.data != nil {
 				w.Header().Set("Content-Type", "application/json")
@@ -243,7 +242,7 @@ func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(res.data)
 	case <-ctx.Done():
-		log.Printf("Wallet dashboard request timed out")
+		wlltLog.Warn("Wallet dashboard request timed out")
 		http.Error(w, "Wallet dashboard request timed out - wallet may be rescanning", http.StatusRequestTimeout)
 	}
 }
@@ -340,7 +339,7 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Import the xpub asynchronously
 	// We run it in a goroutine and return immediately so the frontend doesn't timeout
-	log.Printf("Starting xpub import for account: %s", accountName)
+	wlltLog.Infof("Starting xpub import for account: %s", accountName)
 
 	// Start the import in a goroutine
 	// WebSocket stream will automatically detect and show rescan progress
@@ -354,13 +353,13 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		xpubParam, _ := json.Marshal(req.Xpub)
 		params := []json.RawMessage{acctParam, xpubParam}
 
-		log.Printf("Step 1/3: Importing xpub for account '%s'", accountName)
+		wlltLog.Infof("Step 1/3: Importing xpub for account '%s'", accountName)
 		result, err := rpc.WalletClient.RawRequest(ctx, "importxpub", params)
 		if err != nil {
-			log.Printf("Failed to import xpub: %v", err)
+			wlltLog.Errorf("Failed to import xpub: %v", err)
 			return
 		}
-		log.Printf("Xpub import completed: %v", string(result))
+		wlltLog.Infof("Xpub import completed: %v", string(result))
 
 		// If the user supplied a BIP44 account index, record it so offline signing
 		// derives against the right account on the device. The imported account's
@@ -371,7 +370,7 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 				for _, a := range accts {
 					if strings.EqualFold(a.AccountName, accountName) {
 						if serr := services.SetXpubAccountIndex(ctx, a.AccountNumber, *req.AccountIndex); serr != nil {
-							log.Printf("Failed to record BIP44 index for account %q: %v", accountName, serr)
+							wlltLog.Warnf("Failed to record BIP44 index for account %q: %v", accountName, serr)
 						}
 						break
 					}
@@ -380,20 +379,20 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Step 2: Discover address usage
-		log.Printf("Step 2/3: Discovering address usage across blockchain...")
+		wlltLog.Info("Step 2/3: Discovering address usage across blockchain...")
 		_, err = rpc.WalletClient.RawRequest(ctx, "discoverusage", nil)
 		if err != nil {
-			log.Printf("Failed to discover address usage: %v", err)
+			wlltLog.Errorf("Failed to discover address usage: %v", err)
 			return
 		}
-		log.Printf("Address discovery completed - wallet database updated")
+		wlltLog.Info("Address discovery completed - wallet database updated")
 
 		// Step 3: Wait for wallet to be ready, then rescan from block 0 via gRPC
-		log.Printf("Step 3/3: Waiting 5 seconds for wallet to load transaction filter...")
+		wlltLog.Info("Step 3/3: Waiting 5 seconds for wallet to load transaction filter...")
 		time.Sleep(5 * time.Second)
 
 		// Start gRPC rescan from genesis
-		log.Printf("Starting gRPC rescan from block 0...")
+		wlltLog.Info("Starting gRPC rescan from block 0...")
 		startRescanViaGrpc(0)
 	}()
 
@@ -422,7 +421,7 @@ func RescanWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Start rescan in a goroutine - it's a long-running operation
 	// The gRPC Rescan() method will stream progress updates that the WebSocket handler can forward
-	log.Printf("Starting wallet rescan from block %d via gRPC", req.BeginHeight)
+	wlltLog.Infof("Starting wallet rescan from block %d via gRPC", req.BeginHeight)
 
 	go func() {
 		ctx := context.Background()
@@ -433,20 +432,20 @@ func RescanWalletHandler(w http.ResponseWriter, r *http.Request) {
 		// discovery is intentionally not requested: it needs the seed's cointype
 		// private key, which a watch-only wallet does not have, and a seeded wallet
 		// only discovers accounts during the restore wizard.
-		log.Printf("Step 1/2: Discovering address usage across blockchain for all accounts...")
+		wlltLog.Info("Step 1/2: Discovering address usage across blockchain for all accounts...")
 		_, err := rpc.WalletClient.RawRequest(ctx, "discoverusage", nil)
 		if err != nil {
-			log.Printf("Failed to discover address usage: %v", err)
+			wlltLog.Errorf("Failed to discover address usage: %v", err)
 			return
 		}
-		log.Printf("Address discovery completed - wallet database updated")
+		wlltLog.Info("Address discovery completed - wallet database updated")
 
 		// Step 2: Wait for wallet to load transaction filter
-		log.Printf("Step 2/2: Waiting 5 seconds for wallet to load transaction filter...")
+		wlltLog.Info("Step 2/2: Waiting 5 seconds for wallet to load transaction filter...")
 		time.Sleep(5 * time.Second)
 
 		// Step 3: Start rescan via gRPC - this provides a progress stream
-		log.Printf("Starting gRPC rescan from block %d...", req.BeginHeight)
+		wlltLog.Infof("Starting gRPC rescan from block %d...", req.BeginHeight)
 		startRescanViaGrpc(int32(req.BeginHeight))
 	}()
 
@@ -497,7 +496,7 @@ func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	// Fetch transactions
 	transactions, err := services.ListTransactions(ctx, count, from)
 	if err != nil {
-		log.Printf("Error listing transactions: %v", err)
+		wlltLog.Errorf("Error listing transactions: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -533,7 +532,7 @@ func ExportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var buf bytes.Buffer
 	if err := services.ExportWalletCSV(ctx, &buf, typ); err != nil {
-		log.Printf("Error exporting %s CSV: %v", typ, err)
+		wlltLog.Errorf("Error exporting %s CSV: %v", typ, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -550,7 +549,7 @@ func StreamRescanProgressHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade to WebSocket: %v", err)
+		wlltLog.Errorf("Failed to upgrade to WebSocket: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -778,7 +777,7 @@ func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "already"):
 			http.Error(w, "An account with that name already exists", http.StatusConflict)
 		default:
-			log.Printf("CreateAccount failed: %v", err)
+			wlltLog.Errorf("CreateAccount failed: %v", err)
 			http.Error(w, "create account failed", http.StatusInternalServerError)
 		}
 		return
@@ -842,7 +841,7 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "not found"):
 			http.Error(w, "account not found", http.StatusNotFound)
 		default:
-			log.Printf("RenameAccount failed: %v", err)
+			wlltLog.Errorf("RenameAccount failed: %v", err)
 			http.Error(w, "rename failed", http.StatusInternalServerError)
 		}
 		return
@@ -926,7 +925,7 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
-			log.Printf("PrivacySetup failed: %v", err)
+			wlltLog.Errorf("PrivacySetup failed: %v", err)
 			http.Error(w, "privacy setup failed", http.StatusInternalServerError)
 		}
 		return
@@ -996,7 +995,7 @@ func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 			return
 		}
-		log.Printf("StartMixer failed: %v", err)
+		wlltLog.Errorf("StartMixer failed: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1027,7 +1026,7 @@ func MixerDebugHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	if err := services.SetMixerDebug(ctx, req.Enabled); err != nil {
-		log.Printf("SetMixerDebug failed: %v", err)
+		wlltLog.Errorf("SetMixerDebug failed: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1041,7 +1040,7 @@ func StreamMixerEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade mixer-events WebSocket: %v", err)
+		wlltLog.Errorf("Failed to upgrade mixer-events WebSocket: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -1106,7 +1105,7 @@ func GetAccountExtendedPubKeyHandler(w http.ResponseWriter, r *http.Request) {
 
 	xpub, err := services.GetAccountExtendedPubKey(ctx, accountNum)
 	if err != nil {
-		log.Printf("GetAccountExtendedPubKey failed: %v", err)
+		wlltLog.Errorf("GetAccountExtendedPubKey failed: %v", err)
 		http.Error(w, "failed to fetch extended pubkey", http.StatusInternalServerError)
 		return
 	}
@@ -1209,14 +1208,14 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 
 	cResp, err := services.ConstructTransaction(ctx, req.SourceAccount, recipients, req.SendAll)
 	if err != nil {
-		log.Printf("ConstructTransaction failed: %v", err)
+		wlltLog.Errorf("ConstructTransaction failed: %v", err)
 		http.Error(w, fmt.Sprintf("construct failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	decoded, err := services.DecodeRawTransaction(ctx, cResp.UnsignedTransaction)
 	if err != nil {
-		log.Printf("DecodeRawTransaction failed: %v", err)
+		wlltLog.Errorf("DecodeRawTransaction failed: %v", err)
 		http.Error(w, fmt.Sprintf("decode failed: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -1295,7 +1294,7 @@ func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
-			log.Printf("SignAndPublishTransaction failed: %v", err)
+			wlltLog.Errorf("SignAndPublishTransaction failed: %v", err)
 			http.Error(w, "sign/publish failed", http.StatusInternalServerError)
 		}
 		return
@@ -1322,7 +1321,7 @@ func NextAddressHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	addr, err := services.GetNextAddress(ctx, uint32(accountU64))
 	if err != nil {
-		log.Printf("NextAddress RPC failed: %v", err)
+		wlltLog.Errorf("NextAddress RPC failed: %v", err)
 		http.Error(w, fmt.Sprintf("failed to derive address: %v", err), http.StatusInternalServerError)
 		return
 	}

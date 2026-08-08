@@ -7,7 +7,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"dcrpulse/internal/alerts"
@@ -51,7 +50,7 @@ func StartTransactionWatcher(ctx context.Context) {
 				return
 			}
 			if err != nil {
-				log.Printf("alerts: transaction watcher: %v (retrying in %s)", err, backoff)
+				alrtLog.Warnf("transaction watcher: %v (retrying in %s)", err, backoff)
 			}
 			select {
 			case <-ctx.Done():

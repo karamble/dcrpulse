@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
@@ -131,7 +130,7 @@ func ListAgendas(ctx context.Context) (*types.ConsensusVoteInfo, error) {
 			current[c.GetAgendaId()] = c.GetChoiceId()
 		}
 	} else {
-		log.Printf("VoteChoices: %v", err)
+		govnLog.Warnf("VoteChoices: %v", err)
 	}
 
 	// getvoteinfo reports no history once an agenda has settled, but
@@ -143,7 +142,7 @@ func ListAgendas(ctx context.Context) (*types.ConsensusVoteInfo, error) {
 			since[id] = d.Since
 		}
 	} else {
-		log.Printf("GetBlockChainInfo for agenda history: %v", err)
+		govnLog.Warnf("GetBlockChainInfo for agenda history: %v", err)
 	}
 
 	var (
@@ -284,7 +283,7 @@ func ListTreasuryKeyPolicies(ctx context.Context) ([]types.TreasuryKeyPolicy, er
 				stored[hex.EncodeToString(p.GetKey())] = p.GetPolicy()
 			}
 		} else {
-			log.Printf("TreasuryPolicies: %v", err)
+			govnLog.Warnf("TreasuryPolicies: %v", err)
 		}
 	}
 
@@ -387,17 +386,17 @@ func SetTSpendPolicyForHash(ctx context.Context, hashHex, policy string, passphr
 func syncVoteChoicesToVSP(ctx context.Context) {
 	network, err := CurrentNetwork(ctx)
 	if err != nil {
-		log.Printf("VSP sync: resolve network: %v", err)
+		govnLog.Warnf("VSP sync: resolve network: %v", err)
 		return
 	}
 	wc, err := config.LoadWalletCfg(network, CurrentWalletName())
 	if err != nil {
-		log.Printf("VSP sync: load wallet cfg: %v", err)
+		govnLog.Warnf("VSP sync: load wallet cfg: %v", err)
 		return
 	}
 	used, err := wc.UsedVSPs()
 	if err != nil {
-		log.Printf("VSP sync: list used VSPs: %v", err)
+		govnLog.Warnf("VSP sync: list used VSPs: %v", err)
 		return
 	}
 	if len(used) == 0 {
@@ -416,7 +415,7 @@ func syncVoteChoicesToVSP(ctx context.Context) {
 		})
 		cancel()
 		if err != nil {
-			log.Printf("VSP sync %s: %v", host, err)
+			govnLog.Warnf("VSP sync %s: %v", host, err)
 		}
 	}
 }
@@ -451,7 +450,7 @@ func lockAfterVote() {
 	// A failed lock leaves the wallet's keys usable, so say so rather than
 	// dropping it.
 	if _, err := rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{}); err != nil {
-		log.Printf("lock wallet after vote: %v", err)
+		govnLog.Errorf("lock wallet after vote: %v", err)
 	}
 }
 

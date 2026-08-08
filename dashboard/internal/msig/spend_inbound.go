@@ -7,7 +7,6 @@ package msig
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/decred/dcrd/txscript/v4/stdscript"
@@ -22,17 +21,17 @@ func inboundSpend(ctx context.Context, m *Manager, msg *Message, frame *Frame, f
 		return r.Address == msg.WalletID
 	})
 	if rec == nil {
-		log.Printf("msig: %s frame for unknown shared wallet from %s, left for catch-up", msg.Type, fromNick)
+		msigLog.Warnf("%s frame for unknown shared wallet from %s, left for catch-up", msg.Type, fromNick)
 		return
 	}
 	// Only members speak the spend protocol.
 	if rec.peerByUID(fromUID) == nil {
-		log.Printf("msig: %s frame from a non-member for %q", msg.Type, rec.Label)
+		msigLog.Warnf("%s frame from a non-member for %q", msg.Type, rec.Label)
 		return
 	}
 	fresh, err := store.MarkProcessed(frame.MID, now)
 	if err != nil {
-		log.Printf("msig: journal: %v", err)
+		msigLog.Warnf("journal: %v", err)
 		return
 	}
 	if !fresh {
@@ -56,11 +55,11 @@ func inboundSpend(ctx context.Context, m *Manager, msg *Message, frame *Frame, f
 // instead of waiting out the deadline.
 func inboundSignReq(ctx context.Context, store *Store, rec *WalletRecord, msg *Message, fromUID, fromNick string, now time.Time) {
 	autoDecline := func(reason string) {
-		log.Printf("msig: declining payment request %s for %q: %s", msg.TxID[:12], rec.Label, reason)
+		msigLog.Warnf("declining payment request %s for %q: %s", msg.TxID[:12], rec.Label, reason)
 		if err := sendFrame(store, fromUID, &Message{
 			Type: TypeSigDecline, WalletID: rec.Address, TxID: msg.TxID, Reason: reason,
 		}, ""); err != nil {
-			log.Printf("msig: %v", err)
+			msigLog.Error(err)
 		}
 	}
 	if rec.Status != StatusActive {
@@ -141,7 +140,7 @@ func inboundSignReq(ctx context.Context, store *Store, rec *WalletRecord, msg *M
 	if err != nil {
 		return
 	}
-	log.Printf("msig: payment request %s received for %q from %s", msg.TxID[:12], rec.Label, fromNick)
+	msigLog.Infof("payment request %s received for %q from %s", msg.TxID[:12], rec.Label, fromNick)
 }
 
 // describeTx renders a transaction into the reviewable shape, resolving
@@ -200,21 +199,21 @@ func inboundSig(store *Store, rec *WalletRecord, msg *Message, fromUID string) {
 	}
 	tx, err := DecodeTxHex(msg.RawTx)
 	if err != nil {
-		log.Printf("msig: signature frame for %s could not be decoded", msg.TxID[:12])
+		msigLog.Warnf("signature frame for %s could not be decoded", msg.TxID[:12])
 		return
 	}
 	resolve, err := resolverForInputs(rec, prop.Inputs)
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	signers, err := VerifyProposalUpdateHD(tx, msg.TxID, resolve)
 	if err != nil {
-		log.Printf("msig: rejecting returned transaction for %s: %v", msg.TxID[:12], err)
+		msigLog.Warnf("rejecting returned transaction for %s: %v", msg.TxID[:12], err)
 		return
 	}
 	if len(signers) <= prop.SigCount {
-		log.Printf("msig: returned transaction for %s adds no signature", msg.TxID[:12])
+		msigLog.Warnf("returned transaction for %s adds no signature", msg.TxID[:12])
 		return
 	}
 	err = store.UpdateProposal(rec.TempID, msg.TxID, false, func(_ *WalletRecord, p *Proposal) error {
@@ -254,7 +253,7 @@ func inboundSigDecline(store *Store, rec *WalletRecord, msg *Message, fromUID, f
 	if err != nil {
 		return
 	}
-	log.Printf("msig: %s declined payment %s", fromNick, msg.TxID[:12])
+	msigLog.Infof("%s declined payment %s", fromNick, msg.TxID[:12])
 	advanceProposal(store, rec.TempID, msg.TxID)
 }
 
@@ -297,7 +296,7 @@ func inboundBroadcastNotice(ctx context.Context, store *Store, rec *WalletRecord
 	if err != nil {
 		return
 	}
-	log.Printf("msig: %s reported payment %s broadcast (seen locally: %t)", fromNick, msg.TxID[:12], seen)
+	msigLog.Infof("%s reported payment %s broadcast (seen locally: %t)", fromNick, msg.TxID[:12], seen)
 }
 
 // sweepProposals expires hops whose deadline passed and retires
@@ -321,7 +320,7 @@ func sweepProposals(ctx context.Context, store *Store) {
 					continue
 				}
 				if timedOut {
-					log.Printf("msig: payment %s timed out at a cosigner; moving on", txid[:12])
+					msigLog.Warnf("payment %s timed out at a cosigner; moving on", txid[:12])
 					advanceProposal(store, rec.TempID, txid)
 				}
 			}
@@ -367,7 +366,7 @@ func reconcileSpent(ctx context.Context, store *Store, rec *WalletRecord, utxos 
 		}); err != nil {
 			return
 		}
-		log.Printf("msig: payment %s is now %s", txid[:12], status)
+		msigLog.Infof("payment %s is now %s", txid[:12], status)
 	}
 	for txid, prop := range rec.Proposals {
 		if !prop.Live() {

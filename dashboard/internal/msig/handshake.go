@@ -7,7 +7,6 @@ package msig
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/decred/dcrd/chaincfg/v3"
@@ -95,11 +94,11 @@ func deliverOutbox(store *Store, mid, toUID, body string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := sendPMSeam(ctx, toUID, body); err != nil {
-		log.Printf("msig: send to %s deferred: %v", shortUID(toUID), err)
+		msigLog.Warnf("send to %s deferred: %v", shortUID(toUID), err)
 		return
 	}
 	if err := store.MarkOutboxSent(mid, toUID); err != nil {
-		log.Printf("msig: mark outbox sent: %v", err)
+		msigLog.Errorf("mark outbox sent: %v", err)
 	}
 }
 
@@ -178,7 +177,7 @@ func CancelRound(ctx context.Context, id string) error {
 		// Keep fanning out past a failed peer like every other fan-out;
 		// stopping early would leave later peers waiting on a dead round.
 		if err := sendFrame(store, p.UID, cancel, ""); err != nil {
-			log.Printf("msig: cancel to %s: %v", p.Nick, err)
+			msigLog.Warnf("cancel to %s: %v", p.Nick, err)
 		}
 	}
 	return nil
@@ -192,7 +191,7 @@ func dispatchInbound(msg *Message, frame *Frame, fromUID, fromNick string, now t
 	defer cancel()
 	network, err := networkSeam(ctx)
 	if err != nil {
-		log.Printf("msig: network unavailable, frame %s left for catch-up: %v", frame.MID, err)
+		msigLog.Warnf("network unavailable, frame %s left for catch-up: %v", frame.MID, err)
 		return
 	}
 	m := manager(network)
@@ -209,27 +208,27 @@ func dispatchInbound(msg *Message, frame *Frame, fromUID, fromNick string, now t
 func inboundInvite(ctx context.Context, m *Manager, msg *Message, frame *Frame, fromUID, fromNick, network string, now time.Time, imported bool) {
 	store, err := m.StoreFor(activeWalletSeam())
 	if err != nil {
-		log.Printf("msig: open store: %v", err)
+		msigLog.Errorf("open store: %v", err)
 		return
 	}
 	fresh, err := store.MarkProcessed(frame.MID, now)
 	if err != nil {
-		log.Printf("msig: journal: %v", err)
+		msigLog.Warnf("journal: %v", err)
 		return
 	}
 	if !fresh {
 		return
 	}
 	if msg.Network != network {
-		log.Printf("msig: dropping cross-network invite from %s (%s)", fromNick, msg.Network)
+		msigLog.Warnf("dropping cross-network invite from %s (%s)", fromNick, msg.Network)
 		return
 	}
 	if msg.Ver != ProtoHD {
-		log.Printf("msig: dropping pre-HD invite from %s; the peer must upgrade", fromNick)
+		msigLog.Warnf("dropping pre-HD invite from %s; the peer must upgrade", fromNick)
 		return
 	}
 	if _, exists := store.Wallet(msg.TempID); exists {
-		log.Printf("msig: duplicate invite round %s from %s", msg.TempID, fromNick)
+		msigLog.Warnf("duplicate invite round %s from %s", msg.TempID, fromNick)
 		return
 	}
 	transport := ""
@@ -246,10 +245,10 @@ func inboundInvite(ctx context.Context, m *Manager, msg *Message, frame *Frame, 
 		ProposedPeers: append([]RosterPeer(nil), msg.Peers...),
 	}
 	if err := store.PutWallet(rec); err != nil {
-		log.Printf("msig: store invite: %v", err)
+		msigLog.Errorf("store invite: %v", err)
 		return
 	}
-	log.Printf("msig: invite %q (%d-of-%d) received from %s", msg.Label, msg.M, msg.N, fromNick)
+	msigLog.Infof("invite %q (%d-of-%d) received from %s", msg.Label, msg.M, msg.N, fromNick)
 }
 
 func inboundHandshake(ctx context.Context, m *Manager, msg *Message, frame *Frame, fromUID, fromNick string, now time.Time) {
@@ -268,12 +267,12 @@ func inboundHandshake(ctx context.Context, m *Manager, msg *Message, frame *Fram
 	}
 	store, rec := m.Route(msg.TempID, match)
 	if rec == nil {
-		log.Printf("msig: %s frame for unknown round %s from %s, left for catch-up", msg.Type, msg.TempID, fromNick)
+		msigLog.Warnf("%s frame for unknown round %s from %s, left for catch-up", msg.Type, msg.TempID, fromNick)
 		return
 	}
 	fresh, err := store.MarkProcessed(frame.MID, now)
 	if err != nil {
-		log.Printf("msig: journal: %v", err)
+		msigLog.Warnf("journal: %v", err)
 		return
 	}
 	if !fresh {
@@ -301,9 +300,9 @@ func failRound(store *Store, tempID, reason string) {
 		r.FailReason = reason
 		return nil
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 	}
-	log.Printf("msig: round %s failed: %s", tempID, reason)
+	msigLog.Warnf("round %s failed: %s", tempID, reason)
 }
 
 func inboundDecline(store *Store, rec *WalletRecord, msg *Message, fromUID, fromNick string) {
@@ -322,9 +321,9 @@ func inboundDecline(store *Store, rec *WalletRecord, msg *Message, fromUID, from
 		r.FailReason = "declined by " + fromNick
 		return nil
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 	}
-	log.Printf("msig: round %s declined by %s", rec.TempID, fromNick)
+	msigLog.Infof("round %s declined by %s", rec.TempID, fromNick)
 }
 
 func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string, now time.Time) {
@@ -335,7 +334,7 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 		return
 	}
 	if msg.WalletID != rec.Address {
-		log.Printf("msig: ready for %s names the wrong address", rec.TempID)
+		msigLog.Warnf("ready for %s names the wrong address", rec.TempID)
 		return
 	}
 	peer := rec.peerByUID(fromUID)
@@ -348,7 +347,7 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 	if rec.HD {
 		params, err := paramsForNetwork(rec.Network)
 		if err != nil {
-			log.Printf("msig: %v", err)
+			msigLog.Error(err)
 			return
 		}
 		if msg.Attest == "" {
@@ -381,14 +380,14 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 		return nil
 	})
 	if err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 		return
 	}
 	updated, ok := store.Wallet(rec.TempID)
 	if !ok || updated.Status != StatusActive || rec.Status == StatusActive {
 		return
 	}
-	log.Printf("msig: shared wallet %q active at %s", updated.Label, updated.Address)
+	msigLog.Infof("shared wallet %q active at %s", updated.Label, updated.Address)
 	// Everyone signed; hand each cosigner the full set so they can finish.
 	fanOutAttestSet(store, updated)
 }
@@ -421,7 +420,7 @@ func fanOutAttestSet(store *Store, rec *WalletRecord) {
 	}
 	for _, p := range rec.Peers {
 		if err := sendFrame(store, p.UID, msg, ""); err != nil {
-			log.Printf("msig: attestation set to %s: %v", p.Nick, err)
+			msigLog.Warnf("attestation set to %s: %v", p.Nick, err)
 		}
 	}
 }
@@ -438,7 +437,7 @@ func inboundCancel(store *Store, rec *WalletRecord, fromUID string) {
 		r.FailReason = "cancelled by the initiator"
 		return nil
 	}); err != nil {
-		log.Printf("msig: %v", err)
+		msigLog.Error(err)
 	}
 }
 
@@ -466,7 +465,7 @@ func ResumePending(ctx context.Context) {
 			completeCosignerImportHD(ctx, store, rec.TempID)
 		case StatusActive:
 			if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
-				log.Printf("msig: window catch-up for %q: %v", rec.Label, err)
+				msigLog.Warnf("window catch-up for %q: %v", rec.Label, err)
 			}
 		}
 	}

@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -278,7 +277,7 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceA
 }
 
 func setAutobuyerErr(msg string) {
-	log.Printf("autobuyer: %s", msg)
+	stkeLog.Infof("autobuyer: %s", msg)
 	autobuyerMu.Lock()
 	autobuyerLastErr = msg
 	autobuyerMu.Unlock()
@@ -298,7 +297,7 @@ func pollAutobuyerTickets(ctx context.Context, done chan<- struct{}) {
 		tickets, err := ListTickets(listCtx)
 		if err != nil {
 			if ctx.Err() == nil {
-				log.Printf("autobuyer poll: %v", err)
+				stkeLog.Warnf("autobuyer poll: %v", err)
 			}
 			return
 		}

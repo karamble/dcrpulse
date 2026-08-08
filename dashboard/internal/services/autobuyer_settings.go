@@ -7,7 +7,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"dcrpulse/internal/config"
@@ -40,7 +39,7 @@ func LoadAutobuyerSettings(ctx context.Context) (*types.AutobuyerSettings, error
 
 	accountNum, err := resolveAccountNumber(ctx, raw.Account)
 	if err != nil {
-		log.Printf("autobuyer settings: account %q no longer resolves: %v", raw.Account, err)
+		stkeLog.Warnf("autobuyer settings: account %q no longer resolves: %v", raw.Account, err)
 		return nil, nil
 	}
 

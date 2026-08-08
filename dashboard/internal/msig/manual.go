@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 )
@@ -56,7 +55,7 @@ func ManualOutbox(ctx context.Context, id string) ([]ManualFrame, error) {
 		}
 		if manualFrameStale(rec, it) {
 			if err := store.MarkOutboxSent(it.MID, it.ToUID); err != nil {
-				log.Printf("msig: retire manual frame: %v", err)
+				msigLog.Warnf("retire manual frame: %v", err)
 			}
 			continue
 		}

@@ -6,7 +6,6 @@ package services
 
 import (
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,7 +69,7 @@ func tailWalletLog() {
 			info, _ := f.Stat()
 			lastSize = info.Size()
 			_, _ = f.Seek(0, io.SeekEnd)
-			log.Printf("Tailing dcrwallet log %s (starting at offset %d)", openPath, lastSize)
+			wlltLog.Infof("Tailing dcrwallet log %s (starting at offset %d)", openPath, lastSize)
 		}
 
 		info, err := f.Stat()

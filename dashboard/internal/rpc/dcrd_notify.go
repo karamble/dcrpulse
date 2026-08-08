@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 
 	"github.com/decred/dcrd/rpcclient/v8"
 )
@@ -41,10 +40,10 @@ func InitDcrdNotifyClient(config Config, onBlock func()) error {
 			// Fires on the initial connect and on every reconnect; (re)register
 			// for block notifications so the subscription survives dcrd restarts.
 			if err := client.NotifyBlocks(context.Background()); err != nil {
-				log.Printf("dcrd notify: NotifyBlocks failed: %v", err)
+				rpccLog.Warnf("dcrd notify: NotifyBlocks failed: %v", err)
 				return
 			}
-			log.Println("dcrd notify: subscribed to block notifications")
+			rpccLog.Info("dcrd notify: subscribed to block notifications")
 		},
 		OnBlockConnected: func(_ []byte, _ [][]byte) {
 			if onBlock != nil {

@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"log"
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
@@ -254,7 +253,7 @@ func BuildSignRequest(ctx context.Context, sourceAccount uint32, outputs []types
 	if fp, err := accountFingerprint(ctx, sourceAccount); err == nil {
 		sr.accountFp = fp
 	} else {
-		log.Printf("WARN: sign request without account fingerprint: %v", err)
+		wlltLog.Warnf("Sign request without account fingerprint: %v", err)
 	}
 
 	var inputsTotal int64

@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 
@@ -90,11 +89,11 @@ func InitDcrlndClient(cfg DcrlndConfig) error {
 	// endpoint reports the right stage to the UI in the meantime.
 	tlsCreds, err := loadDcrlndTLSCreds(cfg.TLSCertPath, cfg.GrpcHost)
 	if err != nil {
-		log.Printf("dcrlnd cert not yet available at %s: %v (will retry on demand)", cfg.TLSCertPath, err)
+		rpccLog.Warnf("dcrlnd cert not yet available at %s: %v (will retry on demand)", cfg.TLSCertPath, err)
 		return nil
 	}
 
-	log.Printf("Connecting to dcrlnd gRPC at %s with TLS pinning", target)
+	rpccLog.Infof("Connecting to dcrlnd gRPC at %s with TLS pinning", target)
 	conn, err := grpc.Dial(
 		target,
 		grpc.WithTransportCredentials(tlsCreds),
@@ -113,7 +112,7 @@ func InitDcrlndClient(cfg DcrlndConfig) error {
 	InvoicesClient = invoicesrpc.NewInvoicesClient(conn)
 	WatchtowerClient = wtclientrpc.NewWatchtowerClientClient(conn)
 
-	log.Println("dcrlnd gRPC clients initialised")
+	rpccLog.Info("dcrlnd gRPC clients initialised")
 	return nil
 }
 
@@ -211,6 +210,6 @@ func (m macaroonCreds) RequireTransportSecurity() bool { return true }
 func CloseDcrlndConnection() {
 	if DcrlndGrpcConn != nil {
 		_ = DcrlndGrpcConn.Close()
-		log.Println("dcrlnd gRPC connection closed")
+		rpccLog.Info("dcrlnd gRPC connection closed")
 	}
 }

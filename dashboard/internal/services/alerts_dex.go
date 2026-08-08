@@ -7,7 +7,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
@@ -48,7 +47,7 @@ func StartDexWatcher(ctx context.Context) {
 			}
 			if err != nil {
 				alerts.Raise("dex_unreachable", "", err.Error())
-				log.Printf("alerts: dex watcher: %v (retrying in %s)", err, backoff)
+				alrtLog.Warnf("dex watcher: %v (retrying in %s)", err, backoff)
 			}
 			select {
 			case <-ctx.Done():

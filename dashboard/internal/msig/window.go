@@ -7,7 +7,6 @@ package msig
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 
@@ -37,7 +36,7 @@ var (
 	// an already-confirmed funding (observation-class) schedule it, since
 	// importscript with rescan=false only watches future transactions.
 	rescanSeam = func(beginHeight int64) {
-		log.Printf("msig: rescan from %d requested but no rescanner is wired", beginHeight)
+		msigLog.Errorf("rescan from %d requested but no rescanner is wired", beginHeight)
 	}
 )
 
@@ -232,7 +231,7 @@ func ensureWindowImported(ctx context.Context, store *Store, tempID string) erro
 		}
 	}
 	if imported {
-		log.Printf("msig: %q ladder imported through ext %d / int %d", rec.Label,
+		msigLog.Infof("%q ladder imported through ext %d / int %d", rec.Label,
 			windowEnd(rec.Ext, GapExt), windowEnd(rec.Int, GapInt))
 	}
 	return nil
@@ -450,7 +449,7 @@ func observeUsage(ctx context.Context, store *Store, rec *WalletRecord, utxos []
 		return
 	}
 	if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
-		log.Printf("msig: window top-up for %q: %v", rec.Label, err)
+		msigLog.Warnf("window top-up for %q: %v", rec.Label, err)
 		return
 	}
 	// Usage at or beyond the previously imported edge means a peer
@@ -461,7 +460,7 @@ func observeUsage(ctx context.Context, store *Store, rec *WalletRecord, utxos []
 		if from < 0 {
 			from = 0
 		}
-		log.Printf("msig: %q used indices beyond the imported window; rescanning from %d", rec.Label, from)
+		msigLog.Warnf("%q used indices beyond the imported window; rescanning from %d", rec.Label, from)
 		rescanSeam(from)
 	}
 }

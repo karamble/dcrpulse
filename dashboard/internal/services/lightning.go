@@ -7,7 +7,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -268,7 +267,7 @@ func LightningStatus(ctx context.Context) types.LightningStatus {
 		out.Stage = "unavailable"
 		out.Message = DaemonStartupHint(ctx, LogComponentDcrlnd).Message
 	default:
-		log.Printf("LightningStatus: GetInfo: %v", err)
+		lghtLog.Warnf("LightningStatus: GetInfo: %v", err)
 		out.Stage = "needs-unlock"
 	}
 	return out
@@ -386,7 +385,7 @@ func GetLightningActivity(ctx context.Context) (*types.LightningActivity, error)
 			})
 		}
 	} else {
-		log.Printf("ListInvoices: %v", err)
+		lghtLog.Warnf("ListInvoices: %v", err)
 	}
 
 	payResp, err := client.ListPayments(ctx, &lnrpc.ListPaymentsRequest{
@@ -402,7 +401,7 @@ func GetLightningActivity(ctx context.Context) (*types.LightningActivity, error)
 			})
 		}
 	} else {
-		log.Printf("ListPayments: %v", err)
+		lghtLog.Warnf("ListPayments: %v", err)
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
@@ -484,7 +483,7 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 			})
 		}
 	} else {
-		log.Printf("ListChannels: %v", err)
+		lghtLog.Warnf("ListChannels: %v", err)
 	}
 
 	pendResp, err := client.PendingChannels(ctx, &lnrpc.PendingChannelsRequest{})
@@ -510,7 +509,7 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 			out.Channels = append(out.Channels, pendingChannelRow(p.GetChannel(), types.ChannelStatusPendingWaitClose, p.GetClosingTxid(), p.GetLimboBalance()))
 		}
 	} else {
-		log.Printf("PendingChannels: %v", err)
+		lghtLog.Warnf("PendingChannels: %v", err)
 	}
 
 	closedResp, err := client.ClosedChannels(ctx, &lnrpc.ClosedChannelsRequest{})
@@ -530,7 +529,7 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 			})
 		}
 	} else {
-		log.Printf("ClosedChannels: %v", err)
+		lghtLog.Warnf("ClosedChannels: %v", err)
 	}
 
 	// One client for the whole loop: re-reading the global per channel would

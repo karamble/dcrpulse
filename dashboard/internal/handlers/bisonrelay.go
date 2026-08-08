@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"mime"
 	"net/http"
@@ -95,7 +94,7 @@ func BisonrelayEventsHandler(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("BisonrelayEventsHandler upgrade: %v", err)
+		brelLog.Errorf("BisonrelayEventsHandler upgrade: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -2160,7 +2159,7 @@ func runBrBackupPrepare(gen int64, oldPath string) {
 }
 
 func failBrBackup(gen int64, msg string) {
-	log.Printf("BR backup prepare failed: %s", msg)
+	brelLog.Errorf("BR backup prepare failed: %s", msg)
 	brBackupMu.Lock()
 	if gen == brBackupGen {
 		brBackupState = "error"

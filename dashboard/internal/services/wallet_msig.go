@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -244,7 +243,7 @@ func SignMsigTransaction(ctx context.Context, rawTxHex string, prevInputs []Msig
 			relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if _, err := rpc.WalletGrpcClient.LockAccount(relockCtx, &walletrpc.LockAccountRequest{AccountNumber: account}); err != nil {
-				log.Printf("SignMsigTransaction: lock account %d: %v", account, err)
+				wlltLog.Errorf("SignMsigTransaction: lock account %d: %v", account, err)
 			}
 		}()
 	}
@@ -273,7 +272,7 @@ func SignMsigTransaction(ctx context.Context, rawTxHex string, prevInputs []Msig
 		return "", err
 	}
 	for _, e := range res.Errors {
-		log.Printf("SignMsigTransaction: input %s:%d: %s", e.TxID, e.Vout, e.Error)
+		wlltLog.Warnf("SignMsigTransaction: input %s:%d: %s", e.TxID, e.Vout, e.Error)
 	}
 	if res.Hex == "" {
 		return "", fmt.Errorf("signrawtransaction returned no transaction")
@@ -324,7 +323,7 @@ func SignMsigMessage(ctx context.Context, account uint32, address, message strin
 			relockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if _, err := rpc.WalletGrpcClient.LockAccount(relockCtx, &walletrpc.LockAccountRequest{AccountNumber: account}); err != nil {
-				log.Printf("SignMsigMessage: lock account %d: %v", account, err)
+				wlltLog.Errorf("SignMsigMessage: lock account %d: %v", account, err)
 			}
 		}()
 	}

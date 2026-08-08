@@ -6,7 +6,6 @@ package timestamp
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 )
@@ -48,7 +47,7 @@ func RefreshAnchors(ctx context.Context) {
 	}
 	store, err := Archive()
 	if err != nil {
-		log.Printf("timestamp worker: open archive: %v", err)
+		tstpLog.Errorf("worker: open archive: %v", err)
 		return
 	}
 	digests := store.PendingDigests()
@@ -59,7 +58,7 @@ func RefreshAnchors(ctx context.Context) {
 	for _, batch := range chunkStrings(digests, verifyBatchSize) {
 		results, err := Verify(ctx, id, batch)
 		if err != nil {
-			log.Printf("timestamp worker: verify batch: %v", err)
+			tstpLog.Warnf("worker: verify batch: %v", err)
 			continue
 		}
 		for digest, res := range results {
@@ -101,7 +100,7 @@ func ApplyResult(store *Store, digest string, res DigestResult) {
 		return nil
 	})
 	if err != nil && err != ErrNotFound {
-		log.Printf("timestamp worker: update %s: %v", digest, err)
+		tstpLog.Warnf("worker: update %s: %v", digest, err)
 	}
 }
 

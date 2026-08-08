@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -114,7 +113,7 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 		return fmt.Errorf("invalid seed hex: %w", err)
 	}
 
-	log.Printf("Creating wallet with seed length: %d bytes", len(seedBytes))
+	wlltLog.Infof("Creating wallet with seed length: %d bytes", len(seedBytes))
 
 	// Claim dcrwallet's RpcSync slot for the restore discovery BEFORE CreateWallet
 	// opens the wallet (which unblocks the sync supervisor). runDiscoveryRpcSync
@@ -157,7 +156,7 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 		}
 	}
 
-	log.Println("Wallet created and opened successfully")
+	wlltLog.Info("Wallet created and opened successfully")
 
 	// For restored wallets, kick a one-time RpcSync with DiscoverAccounts=true
 	// so dcrwallet scans the chain for addresses derived from the seed. The
@@ -191,7 +190,7 @@ func CreateWatchOnlyWallet(ctx context.Context, publicPass, xpub string) error {
 		return fmt.Errorf("failed to create watching-only wallet: %w", err)
 	}
 
-	log.Println("Watching-only wallet created and opened successfully")
+	wlltLog.Info("Watching-only wallet created and opened successfully")
 	return nil
 }
 
@@ -205,7 +204,7 @@ func runDiscoveryRpcSync(privatePass string) {
 	if rpc.DcrdConfig.RPCCert != "" {
 		c, err := os.ReadFile(rpc.DcrdConfig.RPCCert)
 		if err != nil {
-			log.Printf("Discovery RPC sync: failed to read dcrd cert: %v", err)
+			wlltLog.Warnf("Discovery RPC sync: failed to read dcrd cert: %v", err)
 			return
 		}
 		cert = c
@@ -229,19 +228,19 @@ func runDiscoveryRpcSync(privatePass string) {
 	defer cancelSync()
 	stream, err := rpc.WalletLoaderClient.RpcSync(syncCtx, req)
 	if err != nil {
-		log.Printf("Discovery RPC sync: failed to start: %v", err)
+		wlltLog.Warnf("Discovery RPC sync: failed to start: %v", err)
 		return
 	}
-	log.Printf("Discovery RPC sync started against %s", networkAddr)
+	wlltLog.Infof("Discovery RPC sync started against %s", networkAddr)
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
-			log.Printf("Discovery RPC sync stream ended: %v", err)
+			wlltLog.Warnf("Discovery RPC sync stream ended: %v", err)
 			break
 		}
 		ApplyRpcSyncNotification(resp)
 		if resp.Synced {
-			log.Println("Discovery RPC sync reached SYNCED; finalizing account passphrases")
+			wlltLog.Info("Discovery RPC sync reached SYNCED; finalizing account passphrases")
 			cancelSync()
 			break
 		}
@@ -254,7 +253,7 @@ func runDiscoveryRpcSync(privatePass string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := ensureAllAccountsEncrypted(ctx, []byte(privatePass)); err != nil {
-		log.Printf("Discovery RPC sync: set account passphrases: %v", err)
+		wlltLog.Errorf("Discovery RPC sync: set account passphrases: %v", err)
 	}
 }
 
@@ -267,11 +266,11 @@ func OpenWallet(ctx context.Context, publicPass string) error {
 	// First check if wallet is already loaded to avoid unnecessary open attempts
 	loaded, err := CheckWalletLoaded(ctx)
 	if err == nil && loaded {
-		log.Println("Wallet is already loaded and ready")
+		wlltLog.Info("Wallet is already loaded and ready")
 		return nil
 	}
 
-	log.Println("Opening wallet...")
+	wlltLog.Info("Opening wallet...")
 
 	req := &pb.OpenWalletRequest{
 		PublicPassphrase: []byte(publicPass),
@@ -281,12 +280,12 @@ func OpenWallet(ctx context.Context, publicPass string) error {
 	if err != nil {
 		// Check if wallet is already opened
 		if strings.Contains(err.Error(), "already opened") {
-			log.Println("Wallet already opened")
+			wlltLog.Info("Wallet already opened")
 		} else {
 			return fmt.Errorf("failed to open wallet: %w", err)
 		}
 	} else {
-		log.Println("Wallet opened successfully")
+		wlltLog.Info("Wallet opened successfully")
 		// dcrwallet authoritatively reports watching-only here; cache it for the
 		// active wallet so it survives restarts that skip this open path.
 		cacheWatchOnly(ctx, resp.GetWatchingOnly())
@@ -319,11 +318,11 @@ func cacheWatchOnly(ctx context.Context, watching bool) {
 		return
 	}
 	if err := cfg.Set(config.KeyIsWatchOnly, watching); err != nil {
-		log.Printf("watch-only flag: set failed for %s: %v", name, err)
+		wlltLog.Errorf("watch-only flag: set failed for %s: %v", name, err)
 		return
 	}
 	if err := cfg.Save(); err != nil {
-		log.Printf("watch-only flag: save failed for %s: %v", name, err)
+		wlltLog.Errorf("watch-only flag: save failed for %s: %v", name, err)
 	}
 }
 
@@ -356,13 +355,13 @@ func EnsureRpcSync(ctx context.Context) error {
 	stream, err := rpc.WalletLoaderClient.RpcSync(ctx, req)
 	if err != nil {
 		if strings.Contains(err.Error(), "already") {
-			log.Println("RPC sync already running in dcrwallet — will resync on next opportunity")
+			wlltLog.Info("RPC sync already running in dcrwallet — will resync on next opportunity")
 			return nil
 		}
 		return fmt.Errorf("open RpcSync stream: %w", err)
 	}
 
-	log.Printf("RPC sync stream open to dcrd at %s", networkAddr)
+	wlltLog.Infof("RPC sync stream open to dcrd at %s", networkAddr)
 
 	for {
 		resp, err := stream.Recv()
@@ -379,7 +378,7 @@ func CloseWallet(ctx context.Context) error {
 		return fmt.Errorf("wallet loader client not initialized")
 	}
 
-	log.Println("Closing wallet...")
+	wlltLog.Info("Closing wallet...")
 
 	req := &pb.CloseWalletRequest{}
 	_, err := rpc.WalletLoaderClient.CloseWallet(ctx, req)
@@ -387,7 +386,7 @@ func CloseWallet(ctx context.Context) error {
 		return fmt.Errorf("failed to close wallet: %w", err)
 	}
 
-	log.Println("Wallet closed successfully")
+	wlltLog.Info("Wallet closed successfully")
 	return nil
 }
 
@@ -423,7 +422,7 @@ func OpenWalletWithRetry(publicPass string, maxRetries int) error {
 		}
 
 		if i < maxRetries-1 {
-			log.Printf("Failed to open wallet (attempt %d/%d): %v, retrying...", i+1, maxRetries, err)
+			wlltLog.Warnf("Failed to open wallet (attempt %d/%d): %v, retrying...", i+1, maxRetries, err)
 			time.Sleep(2 * time.Second)
 		} else {
 			return fmt.Errorf("failed to open wallet after %d attempts: %w", maxRetries, err)

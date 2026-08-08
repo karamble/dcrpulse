@@ -6,7 +6,6 @@ package services
 
 import (
 	"bytes"
-	"log"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -98,7 +97,7 @@ func renderPageMarkdownHTML(src string) string {
 	mdRendererOnce.Do(initMDRenderer)
 	var buf bytes.Buffer
 	if err := mdMD.Convert([]byte(src), &buf); err != nil {
-		log.Printf("page markdown render: %v", err)
+		settLog.Warnf("page markdown render: %v", err)
 		return ""
 	}
 	return string(mdPagePolicy.SanitizeBytes(buf.Bytes()))
@@ -116,7 +115,7 @@ func RenderMarkdownHTML(src string) string {
 	mdRendererOnce.Do(initMDRenderer)
 	var buf bytes.Buffer
 	if err := mdMD.Convert([]byte(src), &buf); err != nil {
-		log.Printf("markdown render: %v", err)
+		settLog.Warnf("markdown render: %v", err)
 		return ""
 	}
 	return string(mdPolicy.SanitizeBytes(buf.Bytes()))

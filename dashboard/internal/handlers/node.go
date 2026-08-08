@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
@@ -26,7 +25,7 @@ func GetDashboardDataHandler(w http.ResponseWriter, r *http.Request) {
 
 	data, err := services.FetchDashboardData()
 	if err != nil {
-		log.Printf("Error fetching dashboard data: %v", err)
+		nodeLog.Errorf("Error fetching dashboard data: %v", err)
 		respondDaemonError(w, r, services.LogComponentDcrd, err)
 		return
 	}
@@ -44,7 +43,7 @@ func GetNodeStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	status, err := services.FetchNodeStatus()
 	if err != nil {
-		log.Printf("Error fetching node status: %v", err)
+		nodeLog.Errorf("Error fetching node status: %v", err)
 		respondDaemonError(w, r, services.LogComponentDcrd, err)
 		return
 	}
@@ -60,7 +59,7 @@ func StreamNodeSyncHandler(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade node-sync WebSocket: %v", err)
+		nodeLog.Errorf("Failed to upgrade node-sync WebSocket: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -113,7 +112,7 @@ func GetBlockchainInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	info, err := services.FetchBlockchainInfo()
 	if err != nil {
-		log.Printf("Error fetching blockchain info: %v", err)
+		nodeLog.Errorf("Error fetching blockchain info: %v", err)
 		respondDaemonError(w, r, services.LogComponentDcrd, err)
 		return
 	}
@@ -131,7 +130,7 @@ func GetPeersHandler(w http.ResponseWriter, r *http.Request) {
 
 	peers, err := services.FetchPeers()
 	if err != nil {
-		log.Printf("Error fetching peers: %v", err)
+		nodeLog.Errorf("Error fetching peers: %v", err)
 		respondDaemonError(w, r, services.LogComponentDcrd, err)
 		return
 	}

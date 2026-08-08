@@ -7,7 +7,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"sync"
 	"time"
 
@@ -59,7 +58,7 @@ func PublishBisonrelayEvent(evtType string, payload json.RawMessage) {
 
 func (b *BisonrelayEventBus) broadcast(evt BisonrelayEvent) {
 	if dropped := b.bus.publish(evt); dropped > 0 {
-		log.Printf("br event bus: subscriber buffer full, dropping %s (%d subscribers)", evt.Type, dropped)
+		brelLog.Warnf("br event bus: subscriber buffer full, dropping %s (%d subscribers)", evt.Type, dropped)
 	}
 }
 
@@ -76,7 +75,7 @@ func StartBisonrelayStreams(ctx context.Context) {
 	ws := rpc.BrclientdWS()
 	go func() {
 		if err := ws.Run(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("brclientd-ws run exited: %v", err)
+			brelLog.Warnf("brclientd-ws run exited: %v", err)
 		}
 	}()
 	// PM and GC messages are delivered via brclientd's in-process /notifications
@@ -177,7 +176,7 @@ func StartBrclientdNotifs(ctx context.Context) {
 				continue
 			}
 			if err != nil {
-				log.Printf("brclientd notifications stream: %v (reconnecting in %s)", err, backoff)
+				brelLog.Warnf("brclientd notifications stream: %v (reconnecting in %s)", err, backoff)
 				alerts.Raise("br_disconnected", "", err.Error())
 			}
 			select {
@@ -222,7 +221,7 @@ func runStream(
 		}
 	})
 	if err != nil {
-		log.Printf("br %s subscribe: %v", evType, err)
+		brelLog.Warnf("br %s subscribe: %v", evType, err)
 		return
 	}
 	defer cancel()
@@ -246,7 +245,7 @@ func runStream(
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("br %s ack %d: %v", evType, seq, err)
+			brelLog.Warnf("br %s ack %d: %v", evType, seq, err)
 			continue
 		}
 		acks.confirm(seq)

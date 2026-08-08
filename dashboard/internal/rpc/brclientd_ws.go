@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"strconv"
 	"sync"
@@ -151,7 +150,7 @@ func (c *BrclientdWSClient) Run(ctx context.Context) error {
 		err := c.dialAndServe(ctx)
 		connectedFor := time.Since(started)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("brclientd-ws: %v (reconnect in %s)", err, backoff)
+			rpccLog.Warnf("brclientd-ws: %v (reconnect in %s)", err, backoff)
 		}
 		if connectedFor >= wsHealthyFor {
 			backoff = wsMinBackoff
@@ -221,7 +220,7 @@ func (c *BrclientdWSClient) dialAndServe(ctx context.Context) error {
 		}
 	}()
 
-	log.Printf("brclientd-ws: connected to %s", u.String())
+	rpccLog.Infof("brclientd-ws: connected to %s", u.String())
 
 	c.subMu.RLock()
 	subs := make([]*subscription, 0, len(c.subscribers))
@@ -230,7 +229,7 @@ func (c *BrclientdWSClient) dialAndServe(ctx context.Context) error {
 	for _, s := range subs {
 		if !s.cancelled.Load() {
 			if err := c.openStream(s); err != nil {
-				log.Printf("brclientd-ws: re-subscribe %s: %v", s.method, err)
+				rpccLog.Warnf("brclientd-ws: re-subscribe %s: %v", s.method, err)
 			}
 		}
 	}
@@ -254,7 +253,7 @@ func (c *BrclientdWSClient) readLoop(conn *websocket.Conn) error {
 		}
 		var msg inboundMsg
 		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("brclientd-ws: decode: %v", err)
+			rpccLog.Warnf("brclientd-ws: decode: %v", err)
 			continue
 		}
 		id := idAsString(msg.ID)
@@ -286,7 +285,7 @@ func (c *BrclientdWSClient) readLoop(conn *websocket.Conn) error {
 			continue
 		}
 		if msg.Error != nil {
-			log.Printf("brclientd-ws stream %s: code %d: %s", sub.method, msg.Error.Code, msg.Error.Message)
+			rpccLog.Warnf("brclientd-ws stream %s: code %d: %s", sub.method, msg.Error.Code, msg.Error.Message)
 			continue
 		}
 		payload := msg.Params
@@ -363,7 +362,7 @@ func (c *BrclientdWSClient) Subscribe(method string, params any, onEvent func(js
 	c.mu.Unlock()
 	if connected {
 		if err := c.openStream(s); err != nil {
-			log.Printf("brclientd-ws: open stream %s: %v (will retry on reconnect)", method, err)
+			rpccLog.Warnf("brclientd-ws: open stream %s: %v (will retry on reconnect)", method, err)
 		}
 	}
 

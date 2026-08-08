@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -118,7 +117,7 @@ func BroadcastSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(low, "missing") || strings.Contains(low, "orphan") || strings.Contains(low, "spent"):
 			http.Error(w, err.Error(), http.StatusConflict)
 		default:
-			log.Printf("BroadcastSignedTransaction failed: %v", err)
+			wlltLog.Errorf("BroadcastSignedTransaction failed: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return

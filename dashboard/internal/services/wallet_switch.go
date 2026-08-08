@@ -7,7 +7,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"time"
@@ -58,7 +57,7 @@ func SwitchWallet(ctx context.Context, name, publicPass string) error {
 	// Clean unload of the current wallet before its daemon is killed.
 	closeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	if err := CloseWallet(closeCtx); err != nil {
-		log.Printf("Switch wallet: close current (continuing): %v", err)
+		wlltLog.Warnf("Switch wallet: close current (continuing): %v", err)
 	}
 	cancel()
 
@@ -118,7 +117,7 @@ func CloseActiveWallet(ctx context.Context) error {
 
 	closeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	if err := CloseWallet(closeCtx); err != nil {
-		log.Printf("Close active wallet (continuing): %v", err)
+		wlltLog.Warnf("Close active wallet (continuing): %v", err)
 	}
 	cancel()
 
@@ -173,12 +172,12 @@ func CreateNamedWatchOnlyWallet(ctx context.Context, name, publicPass, xpub stri
 	// supervisor's sync, then tag the per-wallet config. dcrwallet reports
 	// WatchingOnly=true, so the OpenWallet capture reconfirms it on every open.
 	if err := OpenWallet(ctx, publicPass); err != nil {
-		log.Printf("Watch-only create: ensure open: %v", err)
+		wlltLog.Warnf("Watch-only create: ensure open: %v", err)
 	}
 	cacheWatchOnly(ctx, true)
 	if accountIndex != nil {
 		if err := SetXpubAccountIndex(ctx, 0, *accountIndex); err != nil {
-			log.Printf("Watch-only create: record account index %d: %v", *accountIndex, err)
+			wlltLog.Warnf("Watch-only create: record account index %d: %v", *accountIndex, err)
 		}
 	}
 	finishWalletCreate(ctx, network, name)
@@ -208,7 +207,7 @@ func newWalletSlot(ctx context.Context, name string) (string, error) {
 func switchDaemonToNewWallet(ctx context.Context, name, network string) error {
 	closeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	if err := CloseWallet(closeCtx); err != nil {
-		log.Printf("Create wallet: close current (continuing): %v", err)
+		wlltLog.Warnf("Create wallet: close current (continuing): %v", err)
 	}
 	cancel()
 
@@ -272,7 +271,7 @@ func RenameWallet(ctx context.Context, from, to string) error {
 	// Best-effort rename of the dashboard-side config directory.
 	if walletDirExists(config.WalletDir(network, from)) {
 		if err := os.Rename(config.WalletDir(network, from), config.WalletDir(network, to)); err != nil {
-			log.Printf("Rename wallet: config dir (data already renamed): %v", err)
+			wlltLog.Warnf("Rename wallet: config dir (data already renamed): %v", err)
 		}
 	}
 	return nil
@@ -306,11 +305,11 @@ func DeleteWallet(ctx context.Context, name string) error {
 	if err := os.RemoveAll(dataDir); err != nil {
 		return fmt.Errorf("remove wallet data: %w", err)
 	}
-	log.Printf("Permanently deleted wallet %q (%s)", name, dataDir)
+	wlltLog.Infof("Permanently deleted wallet %q (%s)", name, dataDir)
 
 	// Remove the dashboard-side config directory (metadata only).
 	if err := os.RemoveAll(config.WalletDir(network, name)); err != nil {
-		log.Printf("Delete wallet: remove config dir: %v", err)
+		wlltLog.Warnf("Delete wallet: remove config dir: %v", err)
 	}
 	return nil
 }
@@ -336,14 +335,14 @@ func waitForSupervisor(ctx context.Context, name string) error {
 func touchLastAccess(network, name string) {
 	cfg, err := config.LoadWalletCfg(network, name)
 	if err != nil {
-		log.Printf("Touch last access: load cfg: %v", err)
+		wlltLog.Warnf("Touch last access: load cfg: %v", err)
 		return
 	}
 	if err := cfg.SetLastAccess(time.Now().Unix()); err != nil {
-		log.Printf("Touch last access: set: %v", err)
+		wlltLog.Warnf("Touch last access: set: %v", err)
 		return
 	}
 	if err := cfg.Save(); err != nil {
-		log.Printf("Touch last access: save: %v", err)
+		wlltLog.Warnf("Touch last access: save: %v", err)
 	}
 }

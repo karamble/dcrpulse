@@ -143,6 +143,7 @@ services:
       - ${APP_DATA_DIR}/tor:/app-data/tor:ro
     environment:
       PORT: 8735
+      DCRPULSE_LOG_LEVEL: ${DCRPULSE_LOG_LEVEL:-info}
       TOR_PROXY_IP: tor
       TOR_PROXY_PORT: 9050
       TOR_CONTROL_PORT: 9051

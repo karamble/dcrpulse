@@ -8,9 +8,9 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -23,12 +23,15 @@ import (
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/handlers"
+	dcrlog "dcrpulse/internal/log"
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/msig"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/timestamp"
 )
+
+var dcrpLog = dcrlog.DCRP
 
 //go:embed web/dist
 var embeddedFiles embed.FS
@@ -38,6 +41,20 @@ var embeddedFiles embed.FS
 var inlineScriptRe = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
 
 func main() {
+	// Open the dashboard's rotated log file before anything else logs.
+	// Subsystem loggers keep writing to stdout without it, so a failure only
+	// costs the file copy and must not stop a wallet dashboard from booting.
+	if err := dcrlog.InitRotator(config.DashboardLogPath()); err != nil {
+		fmt.Fprintf(os.Stderr, "dashboard log file unavailable: %v\n", err)
+	}
+	if err := dcrlog.SetDebugLevel(getEnv("DCRPULSE_LOG_LEVEL", "info")); err != nil {
+		fmt.Fprintf(os.Stderr, "DCRPULSE_LOG_LEVEL: %v\n", err)
+		os.Exit(1)
+	}
+	// Anything reaching for the standard logger, net/http included, still
+	// lands in the file.
+	dcrlog.RedirectStdLog(dcrlog.DCRP)
+
 	// Alerts fanout: nudge every open session over the BR event bus so the
 	// pill refetches without a socket of its own. The payload is deliberately
 	// empty (the bus reaches all sessions); clients refetch over
@@ -61,8 +78,8 @@ func main() {
 		dcrdConnected := true
 		if err := rpc.InitDcrdClient(dcrdConfig); err != nil {
 			dcrdConnected = false
-			log.Printf("Warning: Could not connect to dcrd on startup: %v", err)
-			log.Println("RPC connection can be configured via API")
+			dcrpLog.Warnf("Could not connect to dcrd on startup: %v", err)
+			dcrpLog.Warn("RPC connection can be configured via API")
 		}
 		// Seed + push dcrd sync progress, refreshed on block-connected
 		// notifications (websocket) instead of a fixed poll interval. Runs
@@ -72,11 +89,11 @@ func main() {
 		services.StartNodeSync(context.Background())
 		if dcrdConnected {
 			if err := rpc.InitDcrdNotifyClient(dcrdConfig, services.TriggerNodeSyncRefresh); err != nil {
-				log.Printf("Warning: dcrd notification client unavailable (progress falls back to timer): %v", err)
+				dcrpLog.Warnf("dcrd notification client unavailable (progress falls back to timer): %v", err)
 			}
 		}
 	} else {
-		log.Println("No dcrd RPC credentials provided. Use /api/connect endpoint to configure.")
+		dcrpLog.Info("No dcrd RPC credentials provided. Use /api/connect endpoint to configure.")
 	}
 
 	// Load dcrwallet configuration from environment variables
@@ -91,11 +108,11 @@ func main() {
 	// Try to initialize wallet RPC client if credentials are provided
 	if walletConfig.RPCUser != "" && walletConfig.RPCPassword != "" {
 		if err := rpc.InitWalletClient(walletConfig); err != nil {
-			log.Printf("Warning: Could not connect to dcrwallet on startup: %v", err)
-			log.Println("Wallet features will be unavailable")
+			dcrpLog.Warnf("Could not connect to dcrwallet on startup: %v", err)
+			dcrpLog.Warn("Wallet features will be unavailable")
 		}
 	} else {
-		log.Println("No dcrwallet RPC credentials provided. Wallet features disabled.")
+		dcrpLog.Info("No dcrwallet RPC credentials provided. Wallet features disabled.")
 	}
 
 	// Initialize wallet gRPC client for streaming
@@ -111,8 +128,8 @@ func main() {
 
 	if grpcConfig.GrpcCert != "" {
 		if err := rpc.InitWalletGrpcClient(grpcConfig); err != nil {
-			log.Printf("Warning: Could not connect to dcrwallet gRPC on startup: %v", err)
-			log.Println("Streaming features will attach once it connects")
+			dcrpLog.Warnf("Could not connect to dcrwallet gRPC on startup: %v", err)
+			dcrpLog.Warn("Streaming features will attach once it connects")
 		}
 		// Started even when the dial failed: each tolerates a nil client and
 		// picks one up when a wallet switch re-dials.
@@ -126,7 +143,7 @@ func main() {
 		services.StartTransactionWatcher(context.Background())
 		services.StartTicketWatcher(context.Background())
 	} else {
-		log.Println("No gRPC certificate provided. Streaming features disabled.")
+		dcrpLog.Info("No gRPC certificate provided. Streaming features disabled.")
 	}
 
 	// Best-effort dcrlnd connection. dcrlnd may still be locked or
@@ -142,7 +159,7 @@ func main() {
 		MacaroonPath: config.DcrlndMacaroon(activeWallet),
 	}
 	if err := rpc.InitDcrlndClient(dcrlndCfg); err != nil {
-		log.Printf("Warning: dcrlnd init: %v", err)
+		dcrpLog.Warnf("dcrlnd init: %v", err)
 	}
 	services.StartLightningWatcher(context.Background())
 
@@ -197,7 +214,7 @@ func main() {
 
 	// Load the optional dashboard app-password gate (off unless configured).
 	if err := auth.Init(); err != nil {
-		log.Printf("Warning: could not load app-password config (auth disabled): %v", err)
+		dcrpLog.Warnf("could not load app-password config (auth disabled): %v", err)
 	}
 
 	// Setup router
@@ -625,8 +642,8 @@ func main() {
 	// Serve embedded static files for frontend
 	distFS, err := fs.Sub(embeddedFiles, "web/dist")
 	if err != nil {
-		log.Printf("Warning: Could not load embedded frontend files: %v", err)
-		log.Println("Frontend will not be available. This is expected in development mode.")
+		dcrpLog.Warnf("Could not load embedded frontend files: %v", err)
+		dcrpLog.Warn("Frontend will not be available. This is expected in development mode.")
 	} else {
 		// Allow the inline scripts shipped in index.html (the pre-mount theme
 		// loader) under the strict script-src 'self' CSP by hashing them at
@@ -639,7 +656,7 @@ func main() {
 			}
 			middleware.ConfigureInlineScriptHashes(hashes...)
 		} else {
-			log.Printf("Warning: Could not hash inline frontend scripts for CSP: %v", rerr)
+			dcrpLog.Warnf("Could not hash inline frontend scripts for CSP: %v", rerr)
 		}
 
 		staticSrv := newStaticServer(distFS)
@@ -681,22 +698,22 @@ func main() {
 	port := getEnv("PORT", "8080")
 	address := fmt.Sprintf(":%s", port)
 
-	log.Printf("Starting dcrpulse Dashboard server on %s", address)
-	log.Println("Node endpoints: /api/dashboard, /api/node/*, /api/blockchain/*, /api/network/*")
-	log.Println("Wallet endpoints: /api/wallet/status, /api/wallet/dashboard, /api/wallet/importxpub")
-	log.Println("Wallet gRPC endpoints: /api/wallet/grpc/stream-rescan (real-time streaming)")
-	log.Println("Explorer endpoints: /api/explorer/search, /api/explorer/blocks/*, /api/explorer/transactions/*")
-	log.Println("Treasury endpoints: /api/treasury/info, /api/treasury/scan-history, /api/treasury/scan-progress")
-	log.Println("Frontend: Embedded static files served at /")
+	dcrpLog.Infof("Starting dcrpulse Dashboard server on %s", address)
+	dcrpLog.Info("Node endpoints: /api/dashboard, /api/node/*, /api/blockchain/*, /api/network/*")
+	dcrpLog.Info("Wallet endpoints: /api/wallet/status, /api/wallet/dashboard, /api/wallet/importxpub")
+	dcrpLog.Info("Wallet gRPC endpoints: /api/wallet/grpc/stream-rescan (real-time streaming)")
+	dcrpLog.Info("Explorer endpoints: /api/explorer/search, /api/explorer/blocks/*, /api/explorer/transactions/*")
+	dcrpLog.Info("Treasury endpoints: /api/treasury/info, /api/treasury/scan-history, /api/treasury/scan-progress")
+	dcrpLog.Info("Frontend: Embedded static files served at /")
 	if strings.TrimSpace(os.Getenv("DASHBOARD_ALLOWED_HOSTS")) == "*" {
-		log.Println("WARNING: DASHBOARD_ALLOWED_HOSTS=* accepts any Host header")
+		dcrpLog.Warn("DASHBOARD_ALLOWED_HOSTS=* accepts any Host header")
 	}
 	// The listener always binds every interface inside the container; which
 	// interface the port reaches on the host is Docker's decision, so compose
 	// hands the value over rather than the process trying to observe it.
 	if bind := strings.TrimSpace(os.Getenv("DASHBOARD_HOST_BIND")); bind != "" &&
 		bind != "127.0.0.1" && bind != "localhost" && bind != "::1" && !auth.Enabled() {
-		log.Printf("WARNING: the dashboard is published on %s with no app password set; "+
+		dcrpLog.Warnf("the dashboard is published on %s with no app password set; "+
 			"anyone who can reach this port can use the wallet API", bind)
 	}
 	// ReadHeaderTimeout bounds the header-read phase to defeat Slowloris. Read
@@ -706,13 +723,22 @@ func main() {
 	// The host check wraps the router rather than joining r.Use: mux only runs
 	// root middleware on a matched route, and a dev build without the embedded
 	// frontend has no catch-all to match.
+	// ErrorLog gets its own subsystem: an exposed deployment collects a steady
+	// drip of scanner handshake failures that should be silenceable on their
+	// own.
 	srv := &http.Server{
 		Addr:              address,
 		Handler:           middleware.RequireAllowedHost(r),
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		ErrorLog:          dcrlog.StdErrorLogger(dcrlog.HTTP),
 	}
-	log.Fatal(srv.ListenAndServe())
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		dcrpLog.Errorf("HTTP server: %v", err)
+		// os.Exit skips deferred calls, so the rotator is closed by hand.
+		dcrlog.CloseRotator()
+		os.Exit(1)
+	}
 }
 
 func getEnv(key, defaultValue string) string {
@@ -764,10 +790,10 @@ func superviseRpcSync(ctx context.Context) {
 		}
 
 		if firstStart {
-			log.Println("RPC sync resumed on startup")
+			dcrpLog.Info("RPC sync resumed on startup")
 			firstStart = false
 		} else {
-			log.Println("Reconnecting RPC sync to dcrd")
+			dcrpLog.Info("Reconnecting RPC sync to dcrd")
 		}
 
 		// Run on a per-attempt cancellable context so PauseSync can interrupt
@@ -781,7 +807,7 @@ func superviseRpcSync(ctx context.Context) {
 		}
 		if err != nil {
 			services.MarkSyncDisconnected(err.Error())
-			log.Printf("RPC sync error (will retry in %v): %v", backoff, err)
+			dcrpLog.Warnf("RPC sync error (will retry in %v): %v", backoff, err)
 		}
 
 		select {

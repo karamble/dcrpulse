@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -26,7 +25,7 @@ func GetAgendasHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	agendas, err := services.ListAgendas(ctx)
 	if err != nil {
-		log.Printf("ListAgendas: %v", err)
+		govnLog.Errorf("ListAgendas: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -50,7 +49,7 @@ func GetAgendaVotesHandler(w http.ResponseWriter, r *http.Request) {
 
 	votes, err := services.AgendaVoteHistory(ctx, agendaID)
 	if err != nil {
-		log.Printf("AgendaVoteHistory %s: %v", agendaID, err)
+		govnLog.Errorf("AgendaVoteHistory %s: %v", agendaID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -91,7 +90,7 @@ func GetTreasuryKeyPoliciesHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	policies, err := services.ListTreasuryKeyPolicies(ctx)
 	if err != nil {
-		log.Printf("ListTreasuryKeyPolicies: %v", err)
+		govnLog.Errorf("ListTreasuryKeyPolicies: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -132,7 +131,7 @@ func GetTSpendPoliciesHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	policies, err := services.ListTSpendPolicies(ctx)
 	if err != nil {
-		log.Printf("ListTSpendPolicies: %v", err)
+		govnLog.Errorf("ListTSpendPolicies: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -206,7 +205,7 @@ func GetProposalsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		log.Printf("ListProposals: %v", err)
+		govnLog.Errorf("ListProposals: %v", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -237,7 +236,7 @@ func RefreshProposalsHandler(w http.ResponseWriter, r *http.Request) {
 			writeProposalsResponse(w, http.StatusTooManyRequests, proposals, fetchedAt)
 			return
 		}
-		log.Printf("RefreshProposals: %v", err)
+		govnLog.Errorf("RefreshProposals: %v", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -277,7 +276,7 @@ func GetProposalDetailHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		log.Printf("GetProposalDetail(%s): %v", token, err)
+		govnLog.Errorf("GetProposalDetail(%s): %v", token, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -305,7 +304,7 @@ func RefreshProposalDetailHandler(w http.ResponseWriter, r *http.Request) {
 			writeProposalDetailResponse(w, http.StatusTooManyRequests, detail, fetchedAt)
 			return
 		}
-		log.Printf("RefreshProposalDetail(%s): %v", token, err)
+		govnLog.Errorf("RefreshProposalDetail(%s): %v", token, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -330,7 +329,7 @@ func PrepareProposalVoteHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		log.Printf("PrepareProposalVote(%s): %v", token, err)
+		govnLog.Errorf("PrepareProposalVote(%s): %v", token, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -394,7 +393,7 @@ func writePassphraseAwareError(w http.ResponseWriter, label string, err error) {
 	case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 		http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 	default:
-		log.Printf("%s failed: %v", label, err)
+		govnLog.Errorf("%s failed: %v", label, err)
 		http.Error(w, msg, http.StatusInternalServerError)
 	}
 }

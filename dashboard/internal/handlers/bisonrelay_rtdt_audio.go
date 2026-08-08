@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"regexp"
 	"sync"
@@ -38,20 +37,20 @@ var rtdtRVValid = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 func BisonrelayRTDTAudioHandler(w http.ResponseWriter, r *http.Request) {
 	rv := mux.Vars(r)["rv"]
 	if rv == "" {
-		log.Printf("RTDT audio: missing rv in path %s", r.URL.Path)
+		brelLog.Warnf("RTDT audio: missing rv in path %s", r.URL.Path)
 		http.Error(w, "missing session rv", http.StatusBadRequest)
 		return
 	}
 	if !rtdtRVValid.MatchString(rv) {
-		log.Printf("RTDT audio: rejecting malformed rv %q", rv)
+		brelLog.Warnf("RTDT audio: rejecting malformed rv %q", rv)
 		http.Error(w, "invalid session rv", http.StatusBadRequest)
 		return
 	}
-	log.Printf("RTDT audio: upgrade request rv=%s origin=%q", rv, r.Header.Get("Origin"))
+	brelLog.Infof("RTDT audio: upgrade request rv=%s origin=%q", rv, r.Header.Get("Origin"))
 
 	tlsCfg, baseURL, err := rpc.BrclientdWSDialer()
 	if err != nil {
-		log.Printf("RTDT audio: dialer config: %v", err)
+		brelLog.Errorf("RTDT audio: dialer config: %v", err)
 		http.Error(w, "brclientd dialer: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -68,24 +67,24 @@ func BisonrelayRTDTAudioHandler(w http.ResponseWriter, r *http.Request) {
 	upstream, resp, err := dialer.Dial(upstreamURL, nil)
 	if err != nil {
 		if resp != nil {
-			log.Printf("RTDT audio: brclientd dial rv=%s HTTP %d", rv, resp.StatusCode)
+			brelLog.Errorf("RTDT audio: brclientd dial rv=%s HTTP %d", rv, resp.StatusCode)
 			http.Error(w, "brclientd /rtdt/audio: "+resp.Status, resp.StatusCode)
 			return
 		}
-		log.Printf("RTDT audio: brclientd dial rv=%s err=%v", rv, err)
+		brelLog.Errorf("RTDT audio: brclientd dial rv=%s err=%v", rv, err)
 		http.Error(w, "brclientd dial: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer upstream.Close()
-	log.Printf("RTDT audio: upstream WS open rv=%s", rv)
+	brelLog.Infof("RTDT audio: upstream WS open rv=%s", rv)
 
 	browser, err := rtdtAudioBrowserUpgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("RTDT audio: browser upgrade rv=%s err=%v", rv, err)
+		brelLog.Errorf("RTDT audio: browser upgrade rv=%s err=%v", rv, err)
 		return
 	}
 	defer browser.Close()
-	log.Printf("RTDT audio: browser WS upgraded rv=%s", rv)
+	brelLog.Infof("RTDT audio: browser WS upgraded rv=%s", rv)
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()

@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 
 	"dcrpulse/internal/config"
@@ -68,7 +67,7 @@ func SaveThemesHandler(w http.ResponseWriter, r *http.Request) {
 
 	gc, err := config.LoadGlobalCfg()
 	if err != nil {
-		log.Printf("themes save: load global cfg: %v", err)
+		settLog.Errorf("themes save: load global cfg: %v", err)
 		http.Error(w, "failed to load themes", http.StatusInternalServerError)
 		return
 	}
@@ -77,7 +76,7 @@ func SaveThemesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := gc.Save(); err != nil {
-		log.Printf("themes save: save global cfg: %v", err)
+		settLog.Errorf("themes save: save global cfg: %v", err)
 		http.Error(w, "failed to save themes", http.StatusInternalServerError)
 		return
 	}

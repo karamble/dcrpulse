@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -106,7 +105,7 @@ func recordMixerEvent(level, msg string) {
 }
 
 func setMixerErr(msg string) {
-	log.Printf("mixer: %s", msg)
+	wlltLog.Infof("mixer: %s", msg)
 	mixerMu.Lock()
 	mixerLastErr = msg
 	mixerMu.Unlock()
@@ -195,7 +194,7 @@ func runMixer(ctx context.Context, mixedAccount, mixedBranch, changeAccount uint
 	stream, err := rpc.AccountMixerClient.RunAccountMixer(ctx, req)
 	if err != nil {
 		msg := fmt.Sprintf("RunAccountMixer call failed: %v", err)
-		log.Printf("❌ %s", msg)
+		wlltLog.Errorf("%s", msg)
 		mixerMu.Lock()
 		mixerLastErr = err.Error()
 		mixerMu.Unlock()

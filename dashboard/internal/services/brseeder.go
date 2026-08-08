@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -111,9 +110,9 @@ func refreshBrseederOnce() {
 			brseederMu.Lock()
 			brseederCache = append([]types.PeerPreset{}, brseederFallback...)
 			brseederMu.Unlock()
-			log.Printf("brseeder unreachable on first fetch, using hardcoded fallback: %v", err)
+			brelLog.Warnf("brseeder unreachable on first fetch, using hardcoded fallback: %v", err)
 		} else {
-			log.Printf("brseeder refresh failed (keeping previous cache): %v", err)
+			brelLog.Warnf("brseeder refresh failed (keeping previous cache): %v", err)
 		}
 		return
 	}

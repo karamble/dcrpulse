@@ -5,7 +5,6 @@
 package handlers
 
 import (
-	"log"
 	"net/http"
 	"time"
 
@@ -25,12 +24,12 @@ func StreamRescanGrpcHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade to WebSocket: %v", err)
+		wlltLog.Errorf("Failed to upgrade to WebSocket: %v", err)
 		return
 	}
 	defer conn.Close()
 
-	log.Println("🔌 WebSocket: Client connected for sync state stream")
+	wlltLog.Info("WebSocket: Client connected for sync state stream")
 
 	if err := conn.WriteJSON(snapshotPayload(services.GetSyncSnapshot())); err != nil {
 		return

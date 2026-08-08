@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -22,7 +21,7 @@ func GetTreasuryInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	info, err := services.FetchTreasuryInfo(ctx)
 	if err != nil {
-		log.Printf("Error fetching treasury info: %v", err)
+		govnLog.Errorf("Error fetching treasury info: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -39,7 +38,7 @@ func GetTreasuryBalanceHistoryHandler(w http.ResponseWriter, r *http.Request) {
 
 	series, err := services.TreasuryBalanceHistory(ctx)
 	if err != nil {
-		log.Printf("Error fetching treasury balance history: %v", err)
+		govnLog.Errorf("Error fetching treasury balance history: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -67,7 +66,7 @@ func TriggerTSpendScanHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := services.TriggerHistoricalScan(req.StartHeight)
 	if err != nil {
-		log.Printf("Error triggering TSpend scan: %v", err)
+		govnLog.Errorf("Error triggering TSpend scan: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -83,7 +82,7 @@ func TriggerTSpendScanHandler(w http.ResponseWriter, r *http.Request) {
 func GetTSpendScanProgressHandler(w http.ResponseWriter, r *http.Request) {
 	progress, err := services.GetScanProgress()
 	if err != nil {
-		log.Printf("Error getting scan progress: %v", err)
+		govnLog.Errorf("Error getting scan progress: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -107,7 +106,7 @@ func GetMempoolTSpendsHandler(w http.ResponseWriter, r *http.Request) {
 
 	tspends, err := services.GetMempoolTSpends(ctx)
 	if err != nil {
-		log.Printf("Error fetching mempool tspends: %v", err)
+		govnLog.Errorf("Error fetching mempool tspends: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"net"
 	"os"
@@ -104,7 +103,7 @@ func FetchDashboardData() (*types.DashboardData, error) {
 					firstErr = err
 				}
 				mu.Unlock()
-				log.Printf("Warning: dashboard section %q failed: %v", name, err)
+				nodeLog.Warnf("Dashboard section %q failed: %v", name, err)
 			}
 		}
 	}
@@ -212,7 +211,7 @@ func fetchNodeStatus(ctx context.Context, snap *chainSnapshot) (*types.NodeStatu
 	}
 
 	// Debug logging
-	log.Printf("Blockchain sync status - InitialBlockDownload: %v, Blocks: %d, Headers: %d, SyncHeight: %d, VerificationProgress: %f",
+	nodeLog.Debugf("Blockchain sync status - InitialBlockDownload: %v, Blocks: %d, Headers: %d, SyncHeight: %d, VerificationProgress: %f",
 		chainInfo.InitialBlockDownload, chainInfo.Blocks, chainInfo.Headers, chainInfo.SyncHeight, chainInfo.VerificationProgress)
 
 	// Calculate sync progress based on actual blockchain sync
@@ -323,13 +322,13 @@ func fetchBlockchainInfo(ctx context.Context, snap *chainSnapshot) (*types.Block
 	for i := int64(0); i < 3 && currentHeight-i >= 0; i++ {
 		blockHash, err := rpc.DcrdClient.GetBlockHash(ctx, currentHeight-i)
 		if err != nil {
-			log.Printf("Warning: Failed to get block hash for height %d: %v", currentHeight-i, err)
+			nodeLog.Warnf("Failed to get block hash for height %d: %v", currentHeight-i, err)
 			continue
 		}
 
 		header, err := rpc.DcrdClient.GetBlockHeader(ctx, blockHash)
 		if err != nil {
-			log.Printf("Warning: Failed to get block header for hash %s: %v", blockHash.String(), err)
+			nodeLog.Warnf("Failed to get block header for hash %s: %v", blockHash.String(), err)
 			continue
 		}
 
@@ -579,7 +578,7 @@ func fetchMempoolInfo(ctx context.Context, _ *chainSnapshot) (*types.MempoolInfo
 	// Use getmempoolinfo RPC to get actual mempool statistics
 	result, err := rpc.DcrdClient.RawRequest(ctx, "getmempoolinfo", []json.RawMessage{})
 	if err != nil {
-		log.Printf("Warning: Failed to get mempool info: %v", err)
+		nodeLog.Warnf("Failed to get mempool info: %v", err)
 		// If mempool query fails (e.g., during sync), return empty mempool
 		return &types.MempoolInfo{
 			Size:           0,
@@ -602,7 +601,7 @@ func fetchMempoolInfo(ctx context.Context, _ *chainSnapshot) (*types.MempoolInfo
 
 	var mempoolResp MempoolInfoResponse
 	if err := json.Unmarshal(result, &mempoolResp); err != nil {
-		log.Printf("Warning: Failed to unmarshal mempool info: %v", err)
+		nodeLog.Warnf("Failed to unmarshal mempool info: %v", err)
 		return &types.MempoolInfo{
 			Size:           0,
 			Bytes:          0,
@@ -637,7 +636,7 @@ func analyzeMempoolTransactions(ctx context.Context) (tickets, votes, revocation
 	// Get current stake difficulty (ticket price)
 	stakeDiff := getStakeDifficulty(ctx)
 	if stakeDiff <= 0 {
-		log.Printf("Warning: Could not get stake difficulty, falling back to transaction counting")
+		nodeLog.Warn("Could not get stake difficulty, falling back to transaction counting")
 		t, v, r, reg := analyzeMempoolTransactionsLegacy(ctx)
 		return t, v, r, reg, 0
 	}
@@ -645,13 +644,13 @@ func analyzeMempoolTransactions(ctx context.Context) (tickets, votes, revocation
 	// Get all transaction hashes from mempool
 	result, err := rpc.DcrdClient.RawRequest(ctx, "getrawmempool", []json.RawMessage{})
 	if err != nil {
-		log.Printf("Warning: Failed to get raw mempool: %v", err)
+		nodeLog.Warnf("Failed to get raw mempool: %v", err)
 		return 0, 0, 0, 0, 0
 	}
 
 	var txHashes []string
 	if err := json.Unmarshal(result, &txHashes); err != nil {
-		log.Printf("Warning: Failed to unmarshal mempool hashes: %v", err)
+		nodeLog.Warnf("Failed to unmarshal mempool hashes: %v", err)
 		return 0, 0, 0, 0, 0
 	}
 
@@ -695,7 +694,7 @@ func analyzeMempoolTransactions(ctx context.Context) (tickets, votes, revocation
 func getStakeDifficulty(ctx context.Context) float64 {
 	result, err := rpc.DcrdClient.RawRequest(ctx, "getstakedifficulty", []json.RawMessage{})
 	if err != nil {
-		log.Printf("Warning: Failed to get stake difficulty: %v", err)
+		nodeLog.Warnf("Failed to get stake difficulty: %v", err)
 		return 0
 	}
 
@@ -703,7 +702,7 @@ func getStakeDifficulty(ctx context.Context) float64 {
 		Current float64 `json:"current"`
 	}
 	if err := json.Unmarshal(result, &diffResult); err != nil {
-		log.Printf("Warning: Failed to unmarshal stake difficulty: %v", err)
+		nodeLog.Warnf("Failed to unmarshal stake difficulty: %v", err)
 		return 0
 	}
 

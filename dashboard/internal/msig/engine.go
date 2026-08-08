@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"time"
 
 	"dcrpulse/internal/rpc"
@@ -79,7 +78,7 @@ func StartEngine(ctx context.Context) {
 			CatchUpAllContacts(cctx)
 		}
 	}()
-	log.Printf("msig engine: listening for coordination frames")
+	msigLog.Info("engine: listening for coordination frames")
 }
 
 func handleFrameEvent(payload json.RawMessage, now time.Time) {
@@ -89,7 +88,7 @@ func handleFrameEvent(payload json.RawMessage, now time.Time) {
 		Message  string `json:"message"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
-		log.Printf("msig: malformed event payload: %v", err)
+		msigLog.Warnf("malformed event payload: %v", err)
 		return
 	}
 	handleInbound(p.From, p.FromNick, p.Message, now)
@@ -119,13 +118,13 @@ func handleFrame(fromUID, fromNick, body string, now time.Time, imported bool) {
 	case errors.Is(err, ErrNotEnvelope):
 		return
 	case errors.Is(err, ErrExpired):
-		log.Printf("msig: dropping expired frame from %s", peer)
+		msigLog.Warnf("dropping expired frame from %s", peer)
 		return
 	case errors.Is(err, ErrUnsupportedVersion):
-		log.Printf("msig: ignoring frame of unsupported version from %s", peer)
+		msigLog.Warnf("ignoring frame of unsupported version from %s", peer)
 		return
 	case err != nil:
-		log.Printf("msig: dropping malformed frame from %s: %v", peer, err)
+		msigLog.Warnf("dropping malformed frame from %s: %v", peer, err)
 		return
 	}
 	msg, err := DecodeMessage(frame.Payload)
@@ -134,7 +133,7 @@ func handleFrame(fromUID, fromNick, body string, now time.Time, imported bool) {
 		return
 	}
 	if err != nil {
-		log.Printf("msig: dropping invalid frame %s from %s: %v", frame.MID, peer, err)
+		msigLog.Warnf("dropping invalid frame %s from %s: %v", frame.MID, peer, err)
 		return
 	}
 	dispatchInbound(msg, frame, fromUID, fromNick, now, imported)
@@ -157,11 +156,11 @@ func journalUnknownType(msg *Message, frame *Frame, peer string, now time.Time) 
 	if id != "" {
 		if store, rec := manager(network).Route(id, nil); rec != nil {
 			if _, err := store.MarkProcessed(frame.MID, now); err != nil {
-				log.Printf("msig: journal: %v", err)
+				msigLog.Warnf("journal: %v", err)
 			}
 		}
 	}
-	log.Printf("msig: ignoring frame %s of unknown type %q from %s", frame.MID, msg.Type, peer)
+	msigLog.Warnf("ignoring frame %s of unknown type %q from %s", frame.MID, msg.Type, peer)
 }
 
 func sweepLoop(ctx context.Context) {
@@ -214,7 +213,7 @@ func sweepManualOutbox(s *Store) {
 		}
 		if manualFrameStale(rec, it) {
 			if err := s.MarkOutboxSent(it.MID, it.ToUID); err != nil {
-				log.Printf("msig: retire manual frame: %v", err)
+				msigLog.Warnf("retire manual frame: %v", err)
 			}
 		}
 	}
@@ -248,7 +247,7 @@ func reannounceRosters(ctx context.Context) {
 		msg := rosterMessage(rec)
 		for _, p := range rec.Peers {
 			if err := sendFrame(s, p.UID, msg, ""); err != nil {
-				log.Printf("msig: roster to %s: %v", p.Nick, err)
+				msigLog.Warnf("roster to %s: %v", p.Nick, err)
 			}
 		}
 		// A cosigner cannot finish without the attestation set, so a lost
@@ -270,7 +269,7 @@ func resendOutbox(s *Store) {
 		// arrival; retire it instead of retrying it every sweep forever.
 		if _, err := Parse(it.Body, now); errors.Is(err, ErrExpired) {
 			if merr := s.MarkOutboxSent(it.MID, it.ToUID); merr != nil {
-				log.Printf("msig: retire expired frame: %v", merr)
+				msigLog.Warnf("retire expired frame: %v", merr)
 			}
 			continue
 		}
@@ -352,7 +351,7 @@ func CatchUpAllContacts(ctx context.Context) {
 		} `json:"entries"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
-		log.Printf("msig: parse contacts: %v", err)
+		msigLog.Warnf("parse contacts: %v", err)
 		return
 	}
 	since := time.Now().Add(-roundExpiry).Unix()

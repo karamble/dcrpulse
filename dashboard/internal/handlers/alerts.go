@@ -7,7 +7,6 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 
 	"dcrpulse/internal/alerts"
@@ -38,7 +37,7 @@ func MarkAlertReadHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "alert not found", http.StatusNotFound)
 			return
 		}
-		log.Printf("alerts: mark read: %v", err)
+		alrtLog.Errorf("mark read: %v", err)
 		http.Error(w, "failed to update alert", http.StatusInternalServerError)
 		return
 	}
@@ -70,7 +69,7 @@ func SaveAlertsSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid alerts settings", http.StatusBadRequest)
 			return
 		}
-		log.Printf("alerts: save settings: %v", err)
+		alrtLog.Errorf("save settings: %v", err)
 		http.Error(w, "failed to save alerts settings", http.StatusInternalServerError)
 		return
 	}

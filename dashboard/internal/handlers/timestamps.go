@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -31,7 +30,7 @@ func reqCtx(r *http.Request, d time.Duration) (context.Context, context.CancelFu
 func timestampArchive(w http.ResponseWriter) (*timestamp.Store, bool) {
 	store, err := timestamp.Archive()
 	if err != nil {
-		log.Printf("timestamp: open archive: %v", err)
+		tstpLog.Errorf("open archive: %v", err)
 		http.Error(w, "failed to open timestamp archive", http.StatusInternalServerError)
 		return nil, false
 	}
@@ -94,7 +93,7 @@ func CreateTimestampHandler(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		log.Printf("timestamp: create %s: %v", digest, err)
+		tstpLog.Errorf("create %s: %v", digest, err)
 		http.Error(w, "failed to save record", http.StatusInternalServerError)
 		return
 	}

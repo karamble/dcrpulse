@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -94,13 +93,13 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Wallet != nil {
 		network, err := services.CurrentNetwork(ctx)
 		if err != nil {
-			log.Printf("settings save: network lookup: %v", err)
+			settLog.Errorf("settings save: network lookup: %v", err)
 			http.Error(w, "network not available", http.StatusServiceUnavailable)
 			return
 		}
 		wc, err := config.LoadWalletCfg(network, services.CurrentWalletName())
 		if err != nil {
-			log.Printf("settings save: load wallet cfg: %v", err)
+			settLog.Errorf("settings save: load wallet cfg: %v", err)
 			http.Error(w, "failed to load settings", http.StatusInternalServerError)
 			return
 		}
@@ -117,7 +116,7 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := wc.Save(); err != nil {
-			log.Printf("settings save: save wallet cfg: %v", err)
+			settLog.Errorf("settings save: save wallet cfg: %v", err)
 			http.Error(w, "failed to save settings", http.StatusInternalServerError)
 			return
 		}
@@ -126,7 +125,7 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Global != nil {
 		gc, err := config.LoadGlobalCfg()
 		if err != nil {
-			log.Printf("settings save: load global cfg: %v", err)
+			settLog.Errorf("settings save: load global cfg: %v", err)
 			http.Error(w, "failed to load global settings", http.StatusInternalServerError)
 			return
 		}
@@ -164,7 +163,7 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := gc.Save(); err != nil {
-			log.Printf("settings save: save global cfg: %v", err)
+			settLog.Errorf("settings save: save global cfg: %v", err)
 			http.Error(w, "failed to save global settings", http.StatusInternalServerError)
 			return
 		}
@@ -223,12 +222,12 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 		// reporting it as a wrong passphrase would send the user to retry with
 		// the old one when the change has in fact already happened.
 		case errors.As(err, &partial):
-			log.Printf("ChangePrivatePassphrase partial: %v", err)
+			settLog.Errorf("ChangePrivatePassphrase partial: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
-			log.Printf("ChangePrivatePassphrase failed: %v", err)
+			settLog.Errorf("ChangePrivatePassphrase failed: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return
@@ -237,7 +236,7 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	// The passphrase has already changed at this point, so a failure here is
 	// reported rather than retried: bisonw is left holding the previous one.
 	if err := syncDexWalletPassphrase(ctx, req.NewPassphrase); err != nil {
-		log.Printf("ChangePrivatePassphrase: %v", err)
+		settLog.Errorf("ChangePrivatePassphrase: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -264,7 +263,12 @@ func GetLogsHandler(w http.ResponseWriter, r *http.Request) {
 
 	out, err := services.TailLog(ctx, services.LogComponent(component), lines)
 	if err != nil {
-		log.Printf("TailLog(%s): %v", component, err)
+		// Reading our own log must not grow it on every failed poll.
+		if services.LogComponent(component) == services.LogComponentDcrpulse {
+			settLog.Debugf("TailLog(%s): %v", component, err)
+		} else {
+			settLog.Errorf("TailLog(%s): %v", component, err)
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -321,7 +325,7 @@ func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
-			log.Printf("DiscoverUsage failed: %v", err)
+			settLog.Errorf("DiscoverUsage failed: %v", err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return

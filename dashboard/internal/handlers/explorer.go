@@ -7,7 +7,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -30,7 +29,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 
 	result, err := services.UniversalSearch(ctx, query)
 	if err != nil {
-		log.Printf("Search error: %v", err)
+		nodeLog.Errorf("Search error: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -67,7 +66,7 @@ func GetRecentBlocksHandler(w http.ResponseWriter, r *http.Request) {
 
 	response, err := services.FetchRecentBlocksPaginated(ctx, page, pageSize)
 	if err != nil {
-		log.Printf("Error fetching recent blocks: %v", err)
+		nodeLog.Errorf("Error fetching recent blocks: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -92,7 +91,7 @@ func GetBlockByHeightHandler(w http.ResponseWriter, r *http.Request) {
 
 	block, err := services.FetchBlockByHeight(ctx, height)
 	if err != nil {
-		log.Printf("Error fetching block %d: %v", height, err)
+		nodeLog.Errorf("Error fetching block %d: %v", height, err)
 		http.Error(w, "Block not found", http.StatusNotFound)
 		return
 	}
@@ -116,7 +115,7 @@ func GetBlockByHashHandler(w http.ResponseWriter, r *http.Request) {
 
 	block, err := services.FetchBlockByHash(ctx, hash)
 	if err != nil {
-		log.Printf("Error fetching block %s: %v", hash, err)
+		nodeLog.Errorf("Error fetching block %s: %v", hash, err)
 		http.Error(w, "Block not found", http.StatusNotFound)
 		return
 	}
@@ -140,7 +139,7 @@ func GetTransactionHandler(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := services.FetchTransaction(ctx, txHash)
 	if err != nil {
-		log.Printf("Error fetching transaction %s: %v", txHash, err)
+		nodeLog.Errorf("Error fetching transaction %s: %v", txHash, err)
 		http.Error(w, "Transaction not found", http.StatusNotFound)
 		return
 	}
@@ -164,7 +163,7 @@ func GetAddressHandler(w http.ResponseWriter, r *http.Request) {
 
 	info, err := services.FetchAddressInfo(ctx, address)
 	if err != nil {
-		log.Printf("Error fetching address info for %s: %v", address, err)
+		nodeLog.Errorf("Error fetching address info for %s: %v", address, err)
 		http.Error(w, "Failed to fetch address information", http.StatusInternalServerError)
 		return
 	}
@@ -180,7 +179,7 @@ func GetMempoolTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	mempool, err := services.FetchMempoolTransactions(ctx)
 	if err != nil {
-		log.Printf("Error fetching mempool transactions: %v", err)
+		nodeLog.Errorf("Error fetching mempool transactions: %v", err)
 		http.Error(w, "Failed to fetch mempool transactions", http.StatusInternalServerError)
 		return
 	}
