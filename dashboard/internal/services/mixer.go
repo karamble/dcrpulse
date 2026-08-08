@@ -136,11 +136,10 @@ func StartMixer(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint
 	// the run; dcrwallet's wallet-wide Unlock (driven by the passphrase in
 	// RunAccountMixerRequest) does NOT unlock per-account-encrypted accounts.
 	// Mirrors Decrediton's unlockAcctAndExecFn(changeAccount, leaveUnlock=true).
+	// The shared path also migrates a legacy account to per-account encryption
+	// and retries, which a raw UnlockAccount would fail.
 	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err := rpc.WalletGrpcClient.UnlockAccount(unlockCtx, &pb.UnlockAccountRequest{
-		Passphrase:    passphrase,
-		AccountNumber: changeAccount,
-	})
+	_, err := unlockAccountForSpend(unlockCtx, changeAccount, passphrase)
 	unlockCancel()
 	if err != nil {
 		cancel()
