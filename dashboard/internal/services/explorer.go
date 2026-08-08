@@ -182,82 +182,50 @@ func FetchBlockByHeight(ctx context.Context, height int64) (*types.BlockDetail, 
 
 // FetchBlockByHash gets detailed block info by hash
 func FetchBlockByHash(ctx context.Context, hash string) (*types.BlockDetail, error) {
-	// Get full block with verbose transactions
-	// getblock takes: blockhash, verbose (bool), verbosetx (bool)
+	// verbose=true + verbosetx=true returns every tx's full vin/vout inline
+	// (rawtx/rawstx), so no per-transaction getrawtransaction call is needed.
+	// dcrd sends either the txid arrays or the inline ones, never both.
 	result, err := rpc.DcrdClient.RawRequest(ctx, "getblock", []json.RawMessage{
 		jsonStr(hash),
-		json.RawMessage(`true`), // verbose = true (returns JSON instead of hex)
+		json.RawMessage(`true`),
+		json.RawMessage(`true`),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block: %w", err)
 	}
 
+	return blockDetailFromVerbose(result)
+}
+
+// blockDetailFromVerbose builds the block view from a getblock reply that was
+// asked for its transactions inline.
+func blockDetailFromVerbose(result json.RawMessage) (*types.BlockDetail, error) {
 	var rawBlock struct {
-		Hash          string   `json:"hash"`
-		Confirmations int64    `json:"confirmations"`
-		Height        int64    `json:"height"`
-		Version       int32    `json:"version"`
-		MerkleRoot    string   `json:"merkleroot"`
-		StakeRoot     string   `json:"stakeroot"`
-		Time          int64    `json:"time"`
-		Nonce         uint32   `json:"nonce"`
-		VoteBits      uint16   `json:"votebits"`
-		PreviousHash  string   `json:"previousblockhash"`
-		NextHash      string   `json:"nextblockhash"`
-		Difficulty    float64  `json:"difficulty"`
-		StakeVersion  uint32   `json:"stakeversion"`
-		Size          int64    `json:"size"`
-		Tx            []string `json:"tx"`  // Transaction IDs
-		STx           []string `json:"stx"` // Stake transaction IDs
+		Hash          string                   `json:"hash"`
+		Confirmations int64                    `json:"confirmations"`
+		Height        int64                    `json:"height"`
+		Version       int32                    `json:"version"`
+		MerkleRoot    string                   `json:"merkleroot"`
+		StakeRoot     string                   `json:"stakeroot"`
+		Time          int64                    `json:"time"`
+		Nonce         uint32                   `json:"nonce"`
+		VoteBits      uint16                   `json:"votebits"`
+		PreviousHash  string                   `json:"previousblockhash"`
+		NextHash      string                   `json:"nextblockhash"`
+		Difficulty    float64                  `json:"difficulty"`
+		StakeVersion  uint32                   `json:"stakeversion"`
+		Size          int64                    `json:"size"`
+		RawTx         []map[string]interface{} `json:"rawtx"`
+		RawSTx        []map[string]interface{} `json:"rawstx"`
 	}
 
 	if err := json.Unmarshal(result, &rawBlock); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
 	}
 
-	// Fetch full transaction details for each transaction ID
-	transactions := make([]types.TransactionSummary, 0, len(rawBlock.Tx)+len(rawBlock.STx))
-
-	// Process regular transactions
-	for _, txID := range rawBlock.Tx {
-		txResult, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
-			json.RawMessage(fmt.Sprintf(`"%s"`, txID)),
-			json.RawMessage(`1`), // verbose = 1 for decoded JSON
-		})
-		if err != nil {
-			nodeLog.Warnf("Failed to fetch transaction %s: %v", txID, err)
-			continue
-		}
-
-		var txData map[string]interface{}
-		if err := json.Unmarshal(txResult, &txData); err != nil {
-			nodeLog.Warnf("Failed to unmarshal transaction %s: %v", txID, err)
-			continue
-		}
-
-		txSummary := extractTransactionSummary(txData, rawBlock.Height, rawBlock.Hash, rawBlock.Time, rawBlock.Confirmations)
-		if txSummary != nil {
-			transactions = append(transactions, *txSummary)
-		}
-	}
-
-	// Process stake transactions
-	for _, txID := range rawBlock.STx {
-		txResult, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
-			json.RawMessage(fmt.Sprintf(`"%s"`, txID)),
-			json.RawMessage(`1`), // verbose = 1 for decoded JSON
-		})
-		if err != nil {
-			nodeLog.Warnf("Failed to fetch stake transaction %s: %v", txID, err)
-			continue
-		}
-
-		var txData map[string]interface{}
-		if err := json.Unmarshal(txResult, &txData); err != nil {
-			nodeLog.Warnf("Failed to unmarshal stake transaction %s: %v", txID, err)
-			continue
-		}
-
+	txCount := len(rawBlock.RawTx) + len(rawBlock.RawSTx)
+	transactions := make([]types.TransactionSummary, 0, txCount)
+	for _, txData := range append(rawBlock.RawTx, rawBlock.RawSTx...) {
 		txSummary := extractTransactionSummary(txData, rawBlock.Height, rawBlock.Hash, rawBlock.Time, rawBlock.Confirmations)
 		if txSummary != nil {
 			transactions = append(transactions, *txSummary)
@@ -271,7 +239,7 @@ func FetchBlockByHash(ctx context.Context, hash string) (*types.BlockDetail, err
 			PreviousHash:  rawBlock.PreviousHash,
 			Timestamp:     time.Unix(rawBlock.Time, 0),
 			Confirmations: rawBlock.Confirmations,
-			TxCount:       len(rawBlock.Tx) + len(rawBlock.STx),
+			TxCount:       txCount,
 			Size:          rawBlock.Size,
 			Difficulty:    rawBlock.Difficulty,
 		},
