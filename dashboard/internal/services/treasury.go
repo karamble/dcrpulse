@@ -31,6 +31,11 @@ const (
 	// contain a TSpend and the historical scan can stride by it. Mainnet-
 	// specific, like TreasuryActivationHeight.
 	TreasuryVoteInterval = 288
+
+	// A block dropped from the scan leaves a permanent hole in the treasury
+	// history, so retry it. A full scan reads only ~1,900 blocks.
+	scanBlockAttempts   = 3
+	scanBlockRetryDelay = 500 * time.Millisecond
 )
 
 // Global scan state
@@ -407,6 +412,62 @@ func TriggerHistoricalScan(startHeight int64) error {
 	return nil
 }
 
+// scanBlock is the part of a verbose getblock reply the historical scan reads.
+type scanBlock struct {
+	Hash   string                   `json:"hash"`
+	Height int64                    `json:"height"`
+	Time   int64                    `json:"time"`
+	RawTx  []map[string]interface{} `json:"rawtx"`
+	RawSTx []map[string]interface{} `json:"rawstx"`
+}
+
+// readScanBlock fetches one block for the historical scan.
+func readScanBlock(ctx context.Context, height int64) (*scanBlock, error) {
+	blockHash, err := rpc.DcrdClient.GetBlockHash(ctx, height)
+	if err != nil {
+		return nil, fmt.Errorf("get block hash: %w", err)
+	}
+
+	// verbose=true + verbosetx=true returns every tx's full vin/vout inline
+	// (rawtx/rawstx), so no per-transaction getrawtransaction call is needed.
+	blockResult, err := rpc.DcrdClient.RawRequest(ctx, "getblock", []json.RawMessage{
+		json.RawMessage(fmt.Sprintf(`"%s"`, blockHash.String())),
+		json.RawMessage("true"),
+		json.RawMessage("true"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getblock %s: %w", blockHash, err)
+	}
+
+	var block scanBlock
+	if err := json.Unmarshal(blockResult, &block); err != nil {
+		return nil, fmt.Errorf("decode block %s: %w", blockHash, err)
+	}
+	return &block, nil
+}
+
+// readScanBlockRetry retries readScanBlock, so that a transient dcrd failure
+// does not silently cost the scan a block.
+func readScanBlockRetry(ctx context.Context, height int64) (*scanBlock, error) {
+	var err error
+	for attempt := 1; attempt <= scanBlockAttempts; attempt++ {
+		var block *scanBlock
+		if block, err = readScanBlock(ctx, height); err == nil {
+			return block, nil
+		}
+		govnLog.Warnf("Failed to read block %d (attempt %d/%d): %v", height, attempt, scanBlockAttempts, err)
+
+		if attempt < scanBlockAttempts {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(scanBlockRetryDelay):
+			}
+		}
+	}
+	return nil, err
+}
+
 // scanHistoricalTSpendsBackground performs the historical scan in the background
 func scanHistoricalTSpendsBackground(startHeight int64) {
 	ctx := context.Background()
@@ -444,32 +505,9 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 		currentScanHeight = h
 		scanMutex.Unlock()
 
-		blockHash, err := rpc.DcrdClient.GetBlockHash(ctx, h)
+		block, err := readScanBlockRetry(ctx, h)
 		if err != nil {
-			govnLog.Warnf("Failed to get block hash at height %d: %v", h, err)
-			continue
-		}
-
-		// verbose=true + verbosetx=true returns every tx's full vin/vout inline
-		// (rawtx/rawstx), so no per-transaction getrawtransaction call is needed.
-		blockResult, err := rpc.DcrdClient.RawRequest(ctx, "getblock", []json.RawMessage{
-			json.RawMessage(fmt.Sprintf(`"%s"`, blockHash.String())),
-			json.RawMessage("true"),
-			json.RawMessage("true"),
-		})
-		if err != nil {
-			continue
-		}
-
-		var block struct {
-			Hash   string                   `json:"hash"`
-			Height int64                    `json:"height"`
-			Time   int64                    `json:"time"`
-			RawTx  []map[string]interface{} `json:"rawtx"`
-			RawSTx []map[string]interface{} `json:"rawstx"`
-		}
-
-		if err := json.Unmarshal(blockResult, &block); err != nil {
+			govnLog.Errorf("Dropping block %d from the scan after %d attempts: %v", h, scanBlockAttempts, err)
 			continue
 		}
 
