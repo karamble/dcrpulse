@@ -57,11 +57,15 @@ export const AddressBookmarksCard = () => {
     setCopied(false);
   };
 
-  const handleCopyExport = () => {
+  const handleCopyExport = async () => {
     const json = exportBookmarks();
-    navigator.clipboard.writeText(json);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(json);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy bookmarks:', err);
+    }
   };
 
   const handleImport = () => {

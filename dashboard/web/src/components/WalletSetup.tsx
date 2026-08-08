@@ -147,10 +147,17 @@ export const WalletSetup = ({ onComplete, onCancel }: WalletSetupProps = {}) => 
     }
   };
 
-  const copySeedToClipboard = () => {
-    navigator.clipboard.writeText(seedMnemonic);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copySeedToClipboard = async () => {
+    // Only flag success if the write actually happened: over a non-secure
+    // context navigator.clipboard is undefined, and claiming the seed was
+    // copied when it was not is the worst place to be wrong.
+    try {
+      await navigator.clipboard.writeText(seedMnemonic);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy the seed:', err);
+    }
   };
 
   const getPassphraseStrength = (pass: string): { strength: string; color: string; width: string } => {
