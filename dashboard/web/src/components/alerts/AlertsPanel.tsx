@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { AlertEntry, getAlerts, markAlertRead, markAllAlertsRead } from '../../services/api';
@@ -27,23 +27,24 @@ export const AlertsPanel = ({ onClose }: { onClose: () => void }) => {
   const navigate = useNavigate();
   const { addListener } = useBisonrelayLive();
 
-  const load = () =>
-    getAlerts()
-      .then((all) => setEntries(pickPanelEntries(all)))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const load = useCallback(
+    () =>
+      getAlerts()
+        .then((all) => setEntries(pickPanelEntries(all)))
+        .catch(() => {})
+        .finally(() => setLoading(false)),
+    [],
+  );
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   useEffect(() => {
     return addListener((evt) => {
       if (evt.type === 'alerts') void load();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addListener]);
+  }, [addListener, load]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
