@@ -21,8 +21,10 @@ require (
 	github.com/decred/dcrlnd v0.8.2-0.20260504180059-d11b48570880
 	github.com/decred/dcrlnlpd v0.0.0-20240916120255-786dc5d52075
 	github.com/decred/go-socks v1.1.0
+	github.com/decred/slog v1.2.0
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.1
+	github.com/jrick/logrotate v1.1.2
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/crypto v0.51.0
@@ -70,7 +72,6 @@ require (
 	github.com/decred/dcrd/peer/v3 v3.2.0 // indirect
 	github.com/decred/dcrtest/dcrdtest v1.0.1-0.20251125155744-84fc45da4d58 // indirect
 	github.com/decred/lightning-onion/v4 v4.0.2-0.20251215192853-9ddf49d1f20d // indirect
-	github.com/decred/slog v1.2.0 // indirect
 	github.com/decred/vspd/client/v4 v4.0.2 // indirect
 	github.com/decred/vspd/types/v3 v3.0.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -101,7 +102,6 @@ require (
 	github.com/jessevdk/go-flags v1.6.1 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/jrick/bitset v1.0.0 // indirect
-	github.com/jrick/logrotate v1.1.2 // indirect
 	github.com/jrick/wsrpc/v2 v2.3.8 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect

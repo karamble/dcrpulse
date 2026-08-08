@@ -73,6 +73,13 @@ func AlertsPath() string {
 	return filepath.Join(AppDataDir, "alerts.json")
 }
 
+// DashboardLogPath is the dashboard's own rotated log file. It is not
+// network-scoped: the active network is derived from dcrd over RPC, which is
+// unreachable when the rotator opens at startup.
+func DashboardLogPath() string {
+	return filepath.Join(AppDataDir, "logs", "dcrpulse.log")
+}
+
 // WalletDir is one wallet's directory.
 func WalletDir(network, walletName string) string {
 	return filepath.Join(WalletsDir(network), walletName)
