@@ -2287,7 +2287,12 @@ type dexWalletAction struct {
 // shared error writer. No content type is set, matching what these handlers
 // have always sent.
 func dexProxyJSON(w http.ResponseWriter, call func() (json.RawMessage, error)) {
-	dexProxyJSON(w, func() (json.RawMessage, error) { return call() })
+	raw, err := call()
+	if err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	w.Write(raw)
 }
 
 func dexWalletActionBody(r *http.Request) (dexWalletAction, error) {
