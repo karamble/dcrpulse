@@ -70,6 +70,15 @@ func InitBrclientdConfig(cfg BrclientdConfig) {
 	brclientdPagesHTTPClient = nil
 }
 
+// brclientdConfig returns a consistent copy of the connection settings. The cert
+// paths are rewritten on a wallet switch, so anything outside the cached clients
+// must take a snapshot rather than copy the global.
+func brclientdConfig() BrclientdConfig {
+	brclientdClientMu.Lock()
+	defer brclientdClientMu.Unlock()
+	return BrclientdCfg
+}
+
 // UpdateBrclientdCerts repoints brclientd at a different wallet's identity certs
 // and forces the HTTP client to rebuild on next use. Used on a wallet switch.
 func UpdateBrclientdCerts(serverCertPath, clientCertPath, clientKeyPath string) {
@@ -1649,14 +1658,15 @@ func brclientdPagesClient() (*http.Client, error) {
 // pinned mTLS chain. The RTDT audio proxy uses this to bridge browser <->
 // brclientd binary frames without re-implementing cert pinning.
 func BrclientdWSDialer() (tlsCfg *tls.Config, baseURL string, err error) {
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
+	cfg := brclientdConfig()
+	if cfg.Host == "" || cfg.StatusPort == "" {
 		return nil, "", errors.New("brclientd: status host/port not configured")
 	}
-	tlsCfg, err = loadBrclientdTLS(BrclientdCfg)
+	tlsCfg, err = loadBrclientdTLS(cfg)
 	if err != nil {
 		return nil, "", err
 	}
-	baseURL = fmt.Sprintf("wss://%s:%s", BrclientdCfg.Host, BrclientdCfg.StatusPort)
+	baseURL = fmt.Sprintf("wss://%s:%s", cfg.Host, cfg.StatusPort)
 	return tlsCfg, baseURL, nil
 }
 

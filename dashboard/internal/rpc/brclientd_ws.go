@@ -166,14 +166,17 @@ func (c *BrclientdWSClient) Run(ctx context.Context) error {
 }
 
 func (c *BrclientdWSClient) dialAndServe(ctx context.Context) error {
-	if BrclientdCfg.Host == "" || BrclientdCfg.Port == "" {
+	// One snapshot, so the host dialled and the certs pinned come from the same
+	// read even if a wallet switch lands mid-redial.
+	cfg := brclientdConfig()
+	if cfg.Host == "" || cfg.Port == "" {
 		return errors.New("brclientd: host/port not configured")
 	}
-	tlsCfg, err := loadBrclientdTLS(BrclientdCfg)
+	tlsCfg, err := loadBrclientdTLS(cfg)
 	if err != nil {
 		return err
 	}
-	u := url.URL{Scheme: "wss", Host: BrclientdCfg.Host + ":" + BrclientdCfg.Port, Path: "/ws"}
+	u := url.URL{Scheme: "wss", Host: cfg.Host + ":" + cfg.Port, Path: "/ws"}
 	dialer := &websocket.Dialer{
 		TLSClientConfig:  tlsCfg,
 		HandshakeTimeout: 10 * time.Second,
