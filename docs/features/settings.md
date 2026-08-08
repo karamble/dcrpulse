@@ -164,14 +164,16 @@ DEX (bisonw), Bison Relay (brclientd), and the dashboard itself.
 
 ## Logs Tab
 
-A read-only viewer that tails the log file of any one daemon. It does not
-interpret the logs; it tails the file written by the selected container under
-`/app-data/<component>/logs/`.
+A read-only viewer that tails one log file at a time. It does not interpret the
+logs; it tails the file written by the selected container under
+`/app-data/<component>/logs/`. The exceptions are `tor`, which writes straight
+to `/app-data/tor/tor.log`, and `dcrpulse`, the dashboard's own log at
+`/dashboard-data/logs/dcrpulse.log` (10 MB rotation, 3 compressed rolls).
 
 ### Controls
 
-- **Component** - choose which daemon's log to read: dcrwallet, dcrd, dcrlnd,
-  brclientd, or dcrdex.
+- **Component** - choose which log to read: dcrwallet, dcrd, dcrlnd, brclientd,
+  dcrdex, tor, or dcrpulse.
 - **Line count** - tail the last 200, 500, 1000, or 2000 lines (default 500).
 - **Refresh** - re-fetch the current selection.
 
@@ -348,6 +350,10 @@ in a new tab.
    `/app-data/<component>/logs/`.
 2. Try a different component or a smaller line count.
 3. Click **Refresh** to re-fetch.
+
+Set `DCRPULSE_LOG_LEVEL` to raise the dashboard's own verbosity, either as a
+bare level (`debug`) or with per-subsystem overrides (`info,MSIG=debug`), then
+restart the dashboard.
 
 ### Tor Stuck on "Applying..."
 

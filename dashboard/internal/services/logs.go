@@ -7,10 +7,12 @@ package services
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"dcrpulse/internal/config"
 )
@@ -25,6 +27,7 @@ const (
 	LogComponentBrclientd LogComponent = "brclientd"
 	LogComponentDcrdex    LogComponent = "dcrdex"
 	LogComponentTor       LogComponent = "tor"
+	LogComponentDcrpulse  LogComponent = "dcrpulse"
 )
 
 const (
@@ -56,6 +59,10 @@ func logPath(component LogComponent, network, wallet string) (string, error) {
 		// The tor sidecar has no network or wallet dimension; torrc logs
 		// straight into its DataDirectory volume.
 		return filepath.Join(logsRoot, "tor", "tor.log"), nil
+	case LogComponentDcrpulse:
+		// The dashboard's own log, on its data volume rather than under
+		// logsRoot, and like tor with no network or wallet dimension.
+		return config.DashboardLogPath(), nil
 	default:
 		return "", fmt.Errorf("unknown log component: %q", component)
 	}
@@ -82,6 +89,16 @@ func TailLog(ctx context.Context, component LogComponent, lines int) ([]string, 
 		return nil, err
 	}
 	f, err := os.Open(path)
+	if os.IsNotExist(err) && component == LogComponentDcrpulse {
+		// We write this one ourselves, so a read can land inside the
+		// rotator's rename-and-recreate window.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+		f, err = os.Open(path)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
@@ -98,7 +115,9 @@ func TailLog(ctx context.Context, component LogComponent, lines int) ([]string, 
 		ring[count%lines] = scanner.Text()
 		count++
 	}
-	if err := scanner.Err(); err != nil {
+	// A single over-long line must not cost the whole tail: return what was
+	// read up to it rather than failing the file.
+	if err := scanner.Err(); err != nil && !errors.Is(err, bufio.ErrTooLong) {
 		return nil, fmt.Errorf("scan %s: %w", path, err)
 	}
 

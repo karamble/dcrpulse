@@ -13,6 +13,7 @@ const components: { value: LogComponent; label: string }[] = [
   { value: 'brclientd', label: 'brclientd' },
   { value: 'dcrdex', label: 'dcrdex' },
   { value: 'tor', label: 'tor' },
+  { value: 'dcrpulse', label: 'dcrpulse' },
 ];
 
 const lineOptions = [200, 500, 1000, 2000];
@@ -111,9 +112,16 @@ export const LogsSection = () => {
       <p className="text-xs text-muted-foreground">
         Read-only tail of the {component} log file under{' '}
         <span className="font-mono">
-          {component === 'tor' ? '/app-data/tor/tor.log' : `/app-data/${component}/logs/`}
+          {component === 'tor'
+            ? '/app-data/tor/tor.log'
+            : component === 'dcrpulse'
+              ? '/dashboard-data/logs/dcrpulse.log'
+              : `/app-data/${component}/logs/`}
         </span>
-        . Logs are written by the {component} container; the dashboard does not interpret them.
+        .{' '}
+        {component === 'dcrpulse'
+          ? "This is the dashboard's own log, rotated at 10 MB over 3 compressed rolls."
+          : `Logs are written by the ${component} container; the dashboard does not interpret them.`}
       </p>
 
       {error && (
