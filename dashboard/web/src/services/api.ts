@@ -168,11 +168,6 @@ export const getPeers = async (): Promise<Peer[]> => {
   return response.data;
 };
 
-export const checkHealth = async (): Promise<any> => {
-  const response = await api.get('/health');
-  return response.data;
-};
-
 export interface HealthStatus {
   status: string;
   rpcConnected: boolean;

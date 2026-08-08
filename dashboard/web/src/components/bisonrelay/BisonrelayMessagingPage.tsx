@@ -2900,7 +2900,7 @@ const MessageBody = ({
   const trimmed = body.trim();
   const sent = trimmed.match(SENT_FILE_RE);
   if (sent) {
-    return <SentFileChip filename={sent[1]} fileid={sent[2] ?? ''} />;
+    return <SentFileChip filename={sent[1]} />;
   }
   // A leading quote block renders as an inset panel instead of its raw
   // "> **nick:**" wire form; the reply below it uses the normal pipeline.
@@ -2980,7 +2980,7 @@ const MessageBodySegments = ({
   );
 };
 
-const SentFileChip = ({ filename }: { filename: string; fileid: string }) => {
+const SentFileChip = ({ filename }: { filename: string }) => {
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 rounded border border-border/40 bg-background/40">
       <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
