@@ -5,6 +5,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -93,18 +94,7 @@ func BisonrelayGCDetailHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCInviteHandler invites a contact to a GC.
 func BisonrelayGCInviteHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
-		UID string `json:"uid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdGCInvite(r.Context(), gcid, req.UID) })
+	gcMemberAction(w, r, rpc.BrclientdGCInvite)
 }
 
 // BisonrelayGCMessageHandler sends a GC message. JSON body shape mirrors
@@ -193,6 +183,12 @@ func BisonrelayGCClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCPartHandler leaves a GC (non-owner action).
 func BisonrelayGCPartHandler(w http.ResponseWriter, r *http.Request) {
+	gcReasonAction(w, r, rpc.BrclientdGCPart)
+}
+
+// gcReasonAction runs one GC action with an optional {reason} body; a missing
+// body is deliberately tolerated.
+func gcReasonAction(w http.ResponseWriter, r *http.Request, act func(ctx context.Context, gcid, reason string) error) {
 	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
@@ -201,20 +197,12 @@ func BisonrelayGCPartHandler(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	brDo204(w, func() error { return rpc.BrclientdGCPart(r.Context(), gcid, req.Reason) })
+	brDo204(w, func() error { return act(r.Context(), gcid, req.Reason) })
 }
 
 // BisonrelayGCKillHandler dissolves a GC (owner-only).
 func BisonrelayGCKillHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
-		Reason string `json:"reason"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	brDo204(w, func() error { return rpc.BrclientdGCKill(r.Context(), gcid, req.Reason) })
+	gcReasonAction(w, r, rpc.BrclientdGCKill)
 }
 
 // BisonrelayGCKickHandler kicks a member (admin action).
@@ -234,8 +222,8 @@ func BisonrelayGCKickHandler(w http.ResponseWriter, r *http.Request) {
 	brDo204(w, func() error { return rpc.BrclientdGCKick(r.Context(), gcid, req.UID, req.Reason) })
 }
 
-// BisonrelayGCBlockHandler client-side blocks a member.
-func BisonrelayGCBlockHandler(w http.ResponseWriter, r *http.Request) {
+// gcMemberAction decodes {uid} and runs one member-scoped GC action.
+func gcMemberAction(w http.ResponseWriter, r *http.Request, action func(ctx context.Context, gcid, uid string) error) {
 	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
@@ -247,23 +235,17 @@ func BisonrelayGCBlockHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	brDo204(w, func() error { return rpc.BrclientdGCBlock(r.Context(), gcid, req.UID) })
+	brDo204(w, func() error { return action(r.Context(), gcid, req.UID) })
+}
+
+// BisonrelayGCBlockHandler client-side blocks a member.
+func BisonrelayGCBlockHandler(w http.ResponseWriter, r *http.Request) {
+	gcMemberAction(w, r, rpc.BrclientdGCBlock)
 }
 
 // BisonrelayGCUnblockHandler removes a member from the local block list.
 func BisonrelayGCUnblockHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
-	if !ok {
-		return
-	}
-	var req struct {
-		UID string `json:"uid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdGCUnblock(r.Context(), gcid, req.UID) })
+	gcMemberAction(w, r, rpc.BrclientdGCUnblock)
 }
 
 // BisonrelayGCAdminsHandler replaces the ExtraAdmins list (v1+ only).

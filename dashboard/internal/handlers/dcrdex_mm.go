@@ -153,12 +153,12 @@ func GetDcrdexMMArchivedRunsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(runs)
 }
 
-// UpdateDcrdexMMBotConfigHandler persists (and validates) a bot config. The
-// request body is a bisonw mm.BotConfig built by the frontend and forwarded
-// verbatim.
-func UpdateDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
+// mmConfigUpdate posts a raw config body; the limit differs per member
+// because a bot config carries markets while CEX credentials are small.
+func mmConfigUpdate(w http.ResponseWriter, r *http.Request, limit int64,
+	act func(ctx context.Context, client *bisonw.WebClient, appPass string, body []byte) error) {
 	w.Header().Set("Content-Type", "application/json")
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(r.Body, limit))
 	if err != nil || len(body) == 0 {
 		http.Error(w, "config is required", http.StatusBadRequest)
 		return
@@ -169,15 +169,26 @@ func UpdateDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := client.UpdateBotConfig(ctx, appPass, body); err != nil {
+	if err := act(ctx, client, appPass, body); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// RemoveDcrdexMMBotConfigHandler deletes a stored bot config.
-func RemoveDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
+// UpdateDcrdexMMBotConfigHandler persists (and validates) a bot config. The
+// request body is a bisonw mm.BotConfig built by the frontend and forwarded
+// verbatim.
+func UpdateDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
+	mmConfigUpdate(w, r, 1<<20, func(ctx context.Context, client *bisonw.WebClient, appPass string, body []byte) error {
+		return client.UpdateBotConfig(ctx, appPass, body)
+	})
+}
+
+// mmMarketAction decodes a {host, baseID, quoteID} action; the members differ
+// only in the webclient call.
+func mmMarketAction(w http.ResponseWriter, r *http.Request,
+	act func(ctx context.Context, client *bisonw.WebClient, appPass, host string, baseID, quoteID uint32) error) {
 	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		Host    string `json:"host"`
@@ -194,33 +205,26 @@ func RemoveDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := client.RemoveBotConfig(ctx, appPass, req.Host, req.BaseID, req.QuoteID); err != nil {
+	if err := act(ctx, client, appPass, req.Host, req.BaseID, req.QuoteID); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
+// RemoveDcrdexMMBotConfigHandler deletes a stored bot config.
+func RemoveDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
+	mmMarketAction(w, r, func(ctx context.Context, client *bisonw.WebClient, appPass, host string, baseID, quoteID uint32) error {
+		return client.RemoveBotConfig(ctx, appPass, host, baseID, quoteID)
+	})
+}
+
 // UpdateDcrdexMMCexConfigHandler stores CEX API credentials. The request body is
 // a bisonw mm.CEXConfig {name, apiKey, apiSecret}.
 func UpdateDcrdexMMCexConfigHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
-	if err != nil || len(body) == 0 {
-		http.Error(w, "config is required", http.StatusBadRequest)
-		return
-	}
-	client, appPass, ok := mmWebClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := client.UpdateCEXConfig(ctx, appPass, body); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	mmConfigUpdate(w, r, 1<<16, func(ctx context.Context, client *bisonw.WebClient, appPass string, body []byte) error {
+		return client.UpdateCEXConfig(ctx, appPass, body)
+	})
 }
 
 // StartDcrdexMMBotHandler starts a configured bot. The request body is a bisonw
@@ -248,25 +252,7 @@ func StartDcrdexMMBotHandler(w http.ResponseWriter, r *http.Request) {
 
 // StopDcrdexMMBotHandler stops a running bot on the given market.
 func StopDcrdexMMBotHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	var req struct {
-		Host    string `json:"host"`
-		BaseID  uint32 `json:"baseID"`
-		QuoteID uint32 `json:"quoteID"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" {
-		http.Error(w, "host is required", http.StatusBadRequest)
-		return
-	}
-	client, appPass, ok := mmWebClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := client.StopBot(ctx, appPass, req.Host, req.BaseID, req.QuoteID); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	mmMarketAction(w, r, func(ctx context.Context, client *bisonw.WebClient, appPass, host string, baseID, quoteID uint32) error {
+		return client.StopBot(ctx, appPass, host, baseID, quoteID)
+	})
 }

@@ -2297,6 +2297,15 @@ func CloseDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 // ToggleDcrdexWalletHandler enables or disables a wallet.
 func ToggleDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
+	dexWalletExec(w, r, func(ctx context.Context, client *bisonw.Client, req dexWalletAction) error {
+		return client.ToggleWalletStatus(ctx, req.AssetID, req.Disable)
+	})
+}
+
+// dexWalletExec is the shared body of the simple wallet actions, which differ
+// only in the bisonw call.
+func dexWalletExec(w http.ResponseWriter, r *http.Request,
+	act func(ctx context.Context, client *bisonw.Client, req dexWalletAction) error) {
 	w.Header().Set("Content-Type", "application/json")
 	req, err := dexWalletActionBody(r)
 	if err != nil {
@@ -2309,7 +2318,7 @@ func ToggleDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := client.ToggleWalletStatus(ctx, req.AssetID, req.Disable); err != nil {
+	if err := act(ctx, client, req); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
@@ -2318,23 +2327,9 @@ func ToggleDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 // RescanDcrdexWalletHandler triggers a wallet rescan.
 func RescanDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	req, err := dexWalletActionBody(r)
-	if err != nil {
-		http.Error(w, "assetID is required", http.StatusBadRequest)
-		return
-	}
-	client, ok := dexClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := client.RescanWallet(ctx, req.AssetID, req.Force); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexWalletExec(w, r, func(ctx context.Context, client *bisonw.Client, req dexWalletAction) error {
+		return client.RescanWallet(ctx, req.AssetID, req.Force)
+	})
 }
 
 // GetDcrdexWalletPeersHandler returns a wallet's peers (raw). Query: assetID.
@@ -2354,8 +2349,9 @@ func GetDcrdexWalletPeersHandler(w http.ResponseWriter, r *http.Request) {
 	dexProxyJSON(w, func() (json.RawMessage, error) { return client.WalletPeers(ctx, uint32(assetID)) })
 }
 
-// AddDcrdexWalletPeerHandler adds a persistent peer to a wallet.
-func AddDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
+// dexWalletPeerExec is the shared body of the peer add/remove pair.
+func dexWalletPeerExec(w http.ResponseWriter, r *http.Request,
+	act func(ctx context.Context, client *bisonw.Client, assetID uint32, addr string) error) {
 	w.Header().Set("Content-Type", "application/json")
 	req, err := dexWalletActionBody(r)
 	if err != nil || req.Address == "" {
@@ -2368,32 +2364,25 @@ func AddDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := client.AddWalletPeer(ctx, req.AssetID, req.Address); err != nil {
+	if err := act(ctx, client, req.AssetID, req.Address); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
+// AddDcrdexWalletPeerHandler adds a persistent peer to a wallet.
+func AddDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
+	dexWalletPeerExec(w, r, func(ctx context.Context, client *bisonw.Client, assetID uint32, addr string) error {
+		return client.AddWalletPeer(ctx, assetID, addr)
+	})
+}
+
 // RemoveDcrdexWalletPeerHandler removes a persistent peer from a wallet.
 func RemoveDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	req, err := dexWalletActionBody(r)
-	if err != nil || req.Address == "" {
-		http.Error(w, "assetID and address are required", http.StatusBadRequest)
-		return
-	}
-	client, ok := dexClient(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := client.RemoveWalletPeer(ctx, req.AssetID, req.Address); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	dexWalletPeerExec(w, r, func(ctx context.Context, client *bisonw.Client, assetID uint32, addr string) error {
+		return client.RemoveWalletPeer(ctx, assetID, addr)
+	})
 }
 
 // GetDcrdexNotificationsHandler returns up to `n` recent bisonw notifications

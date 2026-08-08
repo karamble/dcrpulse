@@ -86,16 +86,9 @@ func SetAgendaChoiceHandler(w http.ResponseWriter, r *http.Request) {
 
 // GetTreasuryKeyPoliciesHandler returns wallet-wide PI-key policies.
 func GetTreasuryKeyPoliciesHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	policies, err := services.ListTreasuryKeyPolicies(ctx)
-	if err != nil {
-		govnLog.Errorf("ListTreasuryKeyPolicies: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(policies)
+	treasuryPolicies(w, r, "ListTreasuryKeyPolicies", func(ctx context.Context) (any, error) {
+		return services.ListTreasuryKeyPolicies(ctx)
+	})
 }
 
 // SetTreasuryKeyPolicyHandler updates one PI-key policy.
@@ -125,18 +118,25 @@ func SetTreasuryKeyPolicyHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GetTSpendPoliciesHandler returns the per-TSpend policies.
-func GetTSpendPoliciesHandler(w http.ResponseWriter, r *http.Request) {
+// treasuryPolicies is the shared body of the two policy list reads.
+func treasuryPolicies(w http.ResponseWriter, r *http.Request, label string, list func(ctx context.Context) (any, error)) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	policies, err := services.ListTSpendPolicies(ctx)
+	policies, err := list(ctx)
 	if err != nil {
-		govnLog.Errorf("ListTSpendPolicies: %v", err)
+		govnLog.Errorf("%s: %v", label, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(policies)
+}
+
+// GetTSpendPoliciesHandler returns the per-TSpend policies.
+func GetTSpendPoliciesHandler(w http.ResponseWriter, r *http.Request) {
+	treasuryPolicies(w, r, "ListTSpendPolicies", func(ctx context.Context) (any, error) {
+		return services.ListTSpendPolicies(ctx)
+	})
 }
 
 // SetTSpendPolicyHandler updates one TSpend's policy.

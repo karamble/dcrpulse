@@ -753,19 +753,7 @@ func BisonrelayContactSuggestKXHandler(w http.ResponseWriter, r *http.Request) {
 // {mediator, target}. The mediator is asked to forward a reset request to
 // the target on our behalf.
 func BisonrelayContactTransResetHandler(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Mediator string `json:"mediator"`
-		Target   string `json:"target"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if req.Mediator == "" || req.Target == "" {
-		http.Error(w, "mediator and target are required", http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdTransReset(r.Context(), req.Mediator, req.Target) })
+	brMediatedAction(w, r, rpc.BrclientdTransReset)
 }
 
 // BisonrelayContactSubscribePostsHandler proxies the brclientd subscribe-
@@ -1556,8 +1544,8 @@ func safeStoreMediaPath(p string) bool {
 	return !strings.HasSuffix(lower, ".tmpl") && !strings.HasSuffix(lower, ".tmp")
 }
 
-// BisonrelayPagesLocalFileHandler proxies the raw markdown of one hosted page.
-func BisonrelayPagesLocalFileHandler(w http.ResponseWriter, r *http.Request) {
+// brNamedFile validates a ?name= path and proxies one named-file read.
+func brNamedFile(w http.ResponseWriter, r *http.Request, read func(ctx context.Context, name string) (json.RawMessage, error)) {
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if name == "" {
 		http.Error(w, "name query param is required", http.StatusBadRequest)
@@ -1567,12 +1555,16 @@ func BisonrelayPagesLocalFileHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
-	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdPagesLocalFile(r.Context(), name) })
+	brProxyJSON(w, func() (json.RawMessage, error) { return read(r.Context(), name) })
 }
 
-// BisonrelayPagesLocalSaveHandler creates or overwrites one hosted page.
-// Body: {name, content}.
-func BisonrelayPagesLocalSaveHandler(w http.ResponseWriter, r *http.Request) {
+// BisonrelayPagesLocalFileHandler proxies the raw markdown of one hosted page.
+func BisonrelayPagesLocalFileHandler(w http.ResponseWriter, r *http.Request) {
+	brNamedFile(w, r, rpc.BrclientdPagesLocalFile)
+}
+
+// brNamedSave decodes a {name, content} body and runs one named-file save.
+func brNamedSave(w http.ResponseWriter, r *http.Request, save func(ctx context.Context, body any) error) {
 	var req struct {
 		Name    string `json:"name"`
 		Content string `json:"content"`
@@ -1585,7 +1577,13 @@ func BisonrelayPagesLocalSaveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
-	brDo204(w, func() error { return rpc.BrclientdPagesLocalSave(r.Context(), req) })
+	brDo204(w, func() error { return save(r.Context(), req) })
+}
+
+// BisonrelayPagesLocalSaveHandler creates or overwrites one hosted page.
+// Body: {name, content}.
+func BisonrelayPagesLocalSaveHandler(w http.ResponseWriter, r *http.Request) {
+	brNamedSave(w, r, rpc.BrclientdPagesLocalSave)
 }
 
 // BisonrelayPagesLocalDeleteHandler removes one hosted page. Body: {name}.
@@ -2018,33 +2016,12 @@ func BisonrelayStoreTemplatesHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayStoreTemplateFileHandler returns one template's content. Query:
 // name.
 func BisonrelayStoreTemplateFileHandler(w http.ResponseWriter, r *http.Request) {
-	name := strings.TrimSpace(r.URL.Query().Get("name"))
-	if name == "" {
-		http.Error(w, "name query param is required", http.StatusBadRequest)
-		return
-	}
-	if !safeBRPath(name) {
-		http.Error(w, "invalid name", http.StatusBadRequest)
-		return
-	}
-	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStoreTemplateFile(r.Context(), name) })
+	brNamedFile(w, r, rpc.BrclientdStoreTemplateFile)
 }
 
 // BisonrelayStoreTemplateSaveHandler writes a template. Body: {name, content}.
 func BisonrelayStoreTemplateSaveHandler(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name    string `json:"name"`
-		Content string `json:"content"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if !safeBRPath(strings.TrimSpace(req.Name)) {
-		http.Error(w, "invalid name", http.StatusBadRequest)
-		return
-	}
-	brDo204(w, func() error { return rpc.BrclientdSaveStoreTemplate(r.Context(), req) })
+	brNamedSave(w, r, rpc.BrclientdSaveStoreTemplate)
 }
 
 // BisonrelayStoreTemplateDeleteHandler removes a template. Body: {name}.
@@ -2199,9 +2176,8 @@ func BisonrelayContactTipHandler(w http.ResponseWriter, r *http.Request) {
 	brDo204(w, func() error { return rpc.BrclientdTipUser(r.Context(), req.UID, req.DCRAmount, req.MaxAttempts) })
 }
 
-// BisonrelayContactAcceptSuggestionHandler accepts an inbound KX
-// suggestion: asks the mediator to introduce us to the target.
-func BisonrelayContactAcceptSuggestionHandler(w http.ResponseWriter, r *http.Request) {
+// brMediatedAction decodes a {mediator, target} pair and runs one KX action.
+func brMediatedAction(w http.ResponseWriter, r *http.Request, act func(ctx context.Context, mediator, target string) error) {
 	var req struct {
 		Mediator string `json:"mediator"`
 		Target   string `json:"target"`
@@ -2214,7 +2190,13 @@ func BisonrelayContactAcceptSuggestionHandler(w http.ResponseWriter, r *http.Req
 		http.Error(w, "mediator and target are required", http.StatusBadRequest)
 		return
 	}
-	brDo204(w, func() error { return rpc.BrclientdAcceptSuggestion(r.Context(), req.Mediator, req.Target) })
+	brDo204(w, func() error { return act(r.Context(), req.Mediator, req.Target) })
+}
+
+// BisonrelayContactAcceptSuggestionHandler accepts an inbound KX
+// suggestion: asks the mediator to introduce us to the target.
+func BisonrelayContactAcceptSuggestionHandler(w http.ResponseWriter, r *http.Request) {
+	brMediatedAction(w, r, rpc.BrclientdAcceptSuggestion)
 }
 
 // decodeBisonrelayUIDBody parses {uid: "<hex>"} from the request body.

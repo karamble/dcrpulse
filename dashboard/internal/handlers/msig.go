@@ -169,6 +169,13 @@ func MsigAcceptHandler(w http.ResponseWriter, r *http.Request) {
 
 // MsigDeclineHandler declines an incoming invite.
 func MsigDeclineHandler(w http.ResponseWriter, r *http.Request) {
+	msigIDAction(w, r, func(ctx context.Context, req types.MsigActionRequest) error {
+		return msig.DeclineInvite(ctx, req.ID, req.Reason)
+	})
+}
+
+// msigIDAction decodes an {id} action and answers 204 on success.
+func msigIDAction(w http.ResponseWriter, r *http.Request, act func(ctx context.Context, req types.MsigActionRequest) error) {
 	var req types.MsigActionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -176,7 +183,7 @@ func MsigDeclineHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := msig.DeclineInvite(ctx, req.ID, req.Reason); err != nil {
+	if err := act(ctx, req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -185,18 +192,9 @@ func MsigDeclineHandler(w http.ResponseWriter, r *http.Request) {
 
 // MsigCancelHandler withdraws a round this wallet initiated.
 func MsigCancelHandler(w http.ResponseWriter, r *http.Request) {
-	var req types.MsigActionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := msig.CancelRound(ctx, req.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	msigIDAction(w, r, func(ctx context.Context, req types.MsigActionRequest) error {
+		return msig.CancelRound(ctx, req.ID)
+	})
 }
 
 // MsigDetailHandler returns one record with live balance data when the
@@ -457,6 +455,14 @@ func MsigSignHandler(w http.ResponseWriter, r *http.Request) {
 
 // MsigRejectHandler declines an incoming payment request.
 func MsigRejectHandler(w http.ResponseWriter, r *http.Request) {
+	msigProposalAction(w, r, func(ctx context.Context, req types.MsigProposalActionRequest) error {
+		return msig.RejectIncomingProposal(ctx, req.WalletID, req.TxID, req.Reason)
+	})
+}
+
+// msigProposalAction decodes a {walletId, txId} action and answers 204 on
+// success; the members differ only in the msig call.
+func msigProposalAction(w http.ResponseWriter, r *http.Request, act func(ctx context.Context, req types.MsigProposalActionRequest) error) {
 	var req types.MsigProposalActionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.WalletID == "" || req.TxID == "" {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -464,7 +470,7 @@ func MsigRejectHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := msig.RejectIncomingProposal(ctx, req.WalletID, req.TxID, req.Reason); err != nil {
+	if err := act(ctx, req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -473,18 +479,9 @@ func MsigRejectHandler(w http.ResponseWriter, r *http.Request) {
 
 // MsigAbortHandler cancels a payment this wallet proposed.
 func MsigAbortHandler(w http.ResponseWriter, r *http.Request) {
-	var req types.MsigProposalActionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.WalletID == "" || req.TxID == "" {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := msig.AbortProposal(ctx, req.WalletID, req.TxID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	msigProposalAction(w, r, func(ctx context.Context, req types.MsigProposalActionRequest) error {
+		return msig.AbortProposal(ctx, req.WalletID, req.TxID)
+	})
 }
 
 // MsigRebroadcastHandler retries a fully signed payment.

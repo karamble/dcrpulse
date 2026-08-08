@@ -211,17 +211,24 @@ func lightningWriteErr(w http.ResponseWriter, label string, err error) {
 
 // ---- Channels (Phase 4: Decrediton parity) --------------------------------
 
-// LightningChannelsHandler — merged list of open/pending/closed channels.
-func LightningChannelsHandler(w http.ResponseWriter, r *http.Request) {
+// lightningList is the shared body of the three 15-second list reads.
+func lightningList(w http.ResponseWriter, r *http.Request, label string, list func(ctx context.Context) (any, error)) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	resp, err := services.ListLightningChannels(ctx)
+	resp, err := list(ctx)
 	if err != nil {
-		lightningWriteErr(w, "ListLightningChannels", err)
+		lightningWriteErr(w, label, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// LightningChannelsHandler — merged list of open/pending/closed channels.
+func LightningChannelsHandler(w http.ResponseWriter, r *http.Request) {
+	lightningList(w, r, "ListLightningChannels", func(ctx context.Context) (any, error) {
+		return services.ListLightningChannels(ctx)
+	})
 }
 
 // LightningOpenChannelHandler — ConnectPeer + OpenChannelSync.
@@ -571,15 +578,9 @@ func timeFrom(ctx context.Context, d time.Duration) time.Time {
 // LightningPaymentsHandler returns the wallet's payment history for the
 // Send tab's lower list. Mirrors Decrediton's listLatestPayments.
 func LightningPaymentsHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	resp, err := services.ListLightningPayments(ctx)
-	if err != nil {
-		lightningWriteErr(w, "ListLightningPayments", err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	lightningList(w, r, "ListLightningPayments", func(ctx context.Context) (any, error) {
+		return services.ListLightningPayments(ctx)
+	})
 }
 
 // ---- Receive tab -----------------------------------------------------------
@@ -614,15 +615,9 @@ func LightningAddInvoiceHandler(w http.ResponseWriter, r *http.Request) {
 // LightningInvoicesHandler returns the wallet's invoice history for the
 // Receive tab's lower list.
 func LightningInvoicesHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	resp, err := services.ListLightningInvoices(ctx)
-	if err != nil {
-		lightningWriteErr(w, "ListLightningInvoices", err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	lightningList(w, r, "ListLightningInvoices", func(ctx context.Context) (any, error) {
+		return services.ListLightningInvoices(ctx)
+	})
 }
 
 // LightningInvoiceEventsHandler is a WebSocket endpoint that forwards

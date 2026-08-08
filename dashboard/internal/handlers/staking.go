@@ -372,8 +372,10 @@ func StreamAutobuyerEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// SyncFailedVSPTicketsHandler retries VSP fee payments for failed tickets.
-func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
+// vspTicketRepair is the shared body of the two VSP repair actions, which
+// differ only in the service call.
+func vspTicketRepair(w http.ResponseWriter, r *http.Request, label string,
+	repair func(context.Context, string, string, uint32, uint32, []byte) (*types.SyncFailedVSPTicketsResponse, error)) {
 	var req types.SyncFailedVSPTicketsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -398,7 +400,7 @@ func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
-	summary, err := services.SyncFailedVSPTickets(ctx, req.VspHost, req.VspPubkey, req.Account, req.ChangeAccount, passphrase)
+	summary, err := repair(ctx, req.VspHost, req.VspPubkey, req.Account, req.ChangeAccount, passphrase)
 	if err != nil {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
@@ -406,7 +408,7 @@ func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
 		default:
-			stkeLog.Errorf("SyncFailedVSPTickets failed: %v", err)
+			stkeLog.Errorf("%s failed: %v", label, err)
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 		return
@@ -415,45 +417,12 @@ func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(summary)
 }
 
+// SyncFailedVSPTicketsHandler retries VSP fee payments for failed tickets.
+func SyncFailedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
+	vspTicketRepair(w, r, "SyncFailedVSPTickets", services.SyncFailedVSPTickets)
+}
+
 // ProcessUnmanagedVSPTicketsHandler re-associates untracked tickets with a VSP.
 func ProcessUnmanagedVSPTicketsHandler(w http.ResponseWriter, r *http.Request) {
-	var req types.SyncFailedVSPTicketsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if req.Passphrase == "" {
-		http.Error(w, "passphrase required", http.StatusBadRequest)
-		return
-	}
-	if req.VspHost == "" || req.VspPubkey == "" {
-		http.Error(w, "vspHost and vspPubkey required", http.StatusBadRequest)
-		return
-	}
-
-	passphrase := []byte(req.Passphrase)
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
-
-	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
-	defer cancel()
-
-	summary, err := services.ProcessUnmanagedVSPTickets(ctx, req.VspHost, req.VspPubkey, req.Account, req.ChangeAccount, passphrase)
-	if err != nil {
-		msg := err.Error()
-		lower := strings.ToLower(msg)
-		switch {
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
-			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
-		default:
-			stkeLog.Errorf("ProcessUnmanagedVSPTickets failed: %v", err)
-			http.Error(w, msg, http.StatusInternalServerError)
-		}
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(summary)
+	vspTicketRepair(w, r, "ProcessUnmanagedVSPTickets", services.ProcessUnmanagedVSPTickets)
 }
