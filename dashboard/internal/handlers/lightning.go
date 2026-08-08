@@ -396,9 +396,24 @@ func LightningChannelEventsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	for ev := range events {
-		if err := conn.WriteJSON(ev); err != nil {
-			return
+	// A quiet node emits nothing for hours, and a half-open connection never
+	// reports itself, so the browser needs traffic to notice the stream died.
+	keepAlive := time.NewTicker(15 * time.Second)
+	defer keepAlive.Stop()
+
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(ev); err != nil {
+				return
+			}
+		case <-keepAlive.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -638,9 +653,24 @@ func LightningInvoiceEventsHandler(w http.ResponseWriter, r *http.Request) {
 		_ = conn.WriteJSON(map[string]string{"error": err.Error()})
 		return
 	}
-	for ev := range events {
-		if err := conn.WriteJSON(ev); err != nil {
-			return
+	// A quiet node emits nothing for hours, and a half-open connection never
+	// reports itself, so the browser needs traffic to notice the stream died.
+	keepAlive := time.NewTicker(15 * time.Second)
+	defer keepAlive.Stop()
+
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(ev); err != nil {
+				return
+			}
+		case <-keepAlive.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
