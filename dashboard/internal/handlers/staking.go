@@ -7,6 +7,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -62,6 +63,10 @@ func VSPInfoHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	info, err := services.GetVSPInfo(ctx, host)
+	if errors.Is(err, services.ErrVSPAddress) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		stkeLog.Errorf("GetVSPInfo(%s) failed: %v", host, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -271,6 +272,11 @@ var vspHTTPClient = &http.Client{
 	},
 }
 
+// ErrVSPAddress marks an address the caller supplied that cannot be probed, as
+// opposed to a probe that was made and failed. The two deserve different
+// answers: one is the caller's to fix.
+var ErrVSPAddress = errors.New("invalid vsp address")
+
 // vspBaseURL normalises a VSP address to an https base the request path can be
 // appended to. VSP communication is https only, so the scheme is forced even
 // when a http:// address was supplied.
@@ -281,20 +287,20 @@ func vspBaseURL(host string) (string, error) {
 	host = strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
 	host = strings.TrimRight(host, "/")
 	if host == "" {
-		return "", fmt.Errorf("vsp address must include a host")
+		return "", fmt.Errorf("%w: must include a host", ErrVSPAddress)
 	}
 	// The request path is appended to this address, so a query or fragment
 	// would take the path with it.
 	if strings.ContainsAny(host, "?#") {
-		return "", fmt.Errorf("vsp address must not contain a query or fragment")
+		return "", fmt.Errorf("%w: must not contain a query or fragment", ErrVSPAddress)
 	}
 	base := "https://" + host
 	u, err := url.Parse(base)
 	if err != nil {
-		return "", fmt.Errorf("invalid vsp address: %w", err)
+		return "", fmt.Errorf("%w: %v", ErrVSPAddress, err)
 	}
 	if u.Hostname() == "" {
-		return "", fmt.Errorf("vsp address must include a host")
+		return "", fmt.Errorf("%w: must include a host", ErrVSPAddress)
 	}
 	return base, nil
 }
