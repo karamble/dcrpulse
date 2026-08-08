@@ -1020,6 +1020,64 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 }
 
 // ListTransactions fetches recent wallet transactions
+// listTxEntry is one listtransactions result row.
+type listTxEntry struct {
+	Account         string   `json:"account"`
+	Address         string   `json:"address"`
+	Amount          float64  `json:"amount"`
+	BlockHash       string   `json:"blockhash"`
+	BlockTime       int64    `json:"blocktime"`
+	Category        string   `json:"category"`
+	Confirmations   int64    `json:"confirmations"`
+	Fee             float64  `json:"fee"`
+	Generated       bool     `json:"generated"`
+	Time            int64    `json:"time"`
+	TimeReceived    int64    `json:"timereceived"`
+	TxID            string   `json:"txid"`
+	TxType          string   `json:"txtype"`
+	Vout            uint32   `json:"vout"`
+	WalletConflicts []string `json:"walletconflicts"`
+}
+
+// walletTxRow builds the list row every branch shares, computing the block
+// height and the vote maturity so a split vote entry cannot stick at
+// "Voted (Maturing)".
+func walletTxRow(rpcTx listTxEntry, isMixed bool, currentHeight, voteMaturity int64) types.Transaction {
+	var blockHeight int64
+	if currentHeight > 0 && rpcTx.Confirmations > 0 {
+		blockHeight = currentHeight - rpcTx.Confirmations + 1
+	}
+	var isTicketMature bool
+	var blocksUntilSpendable int64
+	if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
+		blocksPassed := currentHeight - blockHeight
+		if blocksPassed >= voteMaturity {
+			isTicketMature = true
+		} else {
+			blocksUntilSpendable = voteMaturity - blocksPassed
+		}
+	}
+	return types.Transaction{
+		TxID:                 rpcTx.TxID,
+		Amount:               rpcTx.Amount,
+		Fee:                  rpcTx.Fee,
+		Confirmations:        rpcTx.Confirmations,
+		BlockHash:            rpcTx.BlockHash,
+		BlockTime:            rpcTx.BlockTime,
+		Time:                 time.Unix(rpcTx.Time, 0),
+		Category:             rpcTx.Category,
+		TxType:               rpcTx.TxType,
+		Address:              rpcTx.Address,
+		Account:              rpcTx.Account,
+		Vout:                 rpcTx.Vout,
+		Generated:            rpcTx.Generated,
+		IsMixed:              isMixed,
+		BlockHeight:          blockHeight,
+		IsTicketMature:       isTicketMature,
+		BlocksUntilSpendable: blocksUntilSpendable,
+	}
+}
+
 func ListTransactions(ctx context.Context, count, from int) (*types.TransactionListResponse, error) {
 	// Default parameters
 	if count <= 0 {
@@ -1056,23 +1114,7 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 	}
 
 	// Parse the response
-	var rpcTransactions []struct {
-		Account         string   `json:"account"`
-		Address         string   `json:"address"`
-		Amount          float64  `json:"amount"`
-		BlockHash       string   `json:"blockhash"`
-		BlockTime       int64    `json:"blocktime"`
-		Category        string   `json:"category"`
-		Confirmations   int64    `json:"confirmations"`
-		Fee             float64  `json:"fee"`
-		Generated       bool     `json:"generated"`
-		Time            int64    `json:"time"`
-		TimeReceived    int64    `json:"timereceived"`
-		TxID            string   `json:"txid"`
-		TxType          string   `json:"txtype"`
-		Vout            uint32   `json:"vout"`
-		WalletConflicts []string `json:"walletconflicts"`
-	}
+	var rpcTransactions []listTxEntry
 
 	if err := json.Unmarshal(result, &rpcTransactions); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal transactions: %w", err)
@@ -1155,11 +1197,6 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				wlltLog.Debugf("TX %s involves multiple accounts: %v", rpcTx.TxID[:12], accounts)
 			}
 
-			var blockHeight int64 = 0
-			if currentHeight > 0 && rpcTx.Confirmations > 0 {
-				blockHeight = currentHeight - rpcTx.Confirmations + 1
-			}
-
 			// Determine category from net amount for regular txs. The net
 			// is compared against half an atom rather than exact zero:
 			// float summation across multi-output transfers can leave
@@ -1196,38 +1233,16 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				netAmount = -fee
 			}
 
-			// A vote spans multiple listtransactions entries, so maturity is
-			// computed here too or the row sticks at "Voted (Maturing)".
-			var isTicketMature bool = false
-			var blocksUntilSpendable int64 = 0
-			if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
-				blocksPassed := currentHeight - blockHeight
-				if blocksPassed >= voteMaturity {
-					isTicketMature = true
-				} else {
-					blocksUntilSpendable = voteMaturity - blocksPassed
-				}
-			}
-
-			tx := types.Transaction{
-				TxID:                 rpcTx.TxID,
-				Amount:               netAmount,
-				Fee:                  fee,
-				Confirmations:        rpcTx.Confirmations,
-				BlockHash:            rpcTx.BlockHash,
-				BlockTime:            rpcTx.BlockTime,
-				Time:                 time.Unix(rpcTx.Time, 0),
-				Category:             category,
-				TxType:               rpcTx.TxType,
-				Address:              "",
-				Account:              accountName,
-				Vout:                 0,
-				Generated:            false,
-				IsMixed:              isMixed,
-				BlockHeight:          blockHeight,
-				IsTicketMature:       isTicketMature,
-				BlocksUntilSpendable: blocksUntilSpendable,
-			}
+			// The group collapses to one row: net amount, derived category and
+			// fee replace the entry's own, and per-output fields are cleared.
+			tx := walletTxRow(rpcTx, isMixed, currentHeight, voteMaturity)
+			tx.Amount = netAmount
+			tx.Fee = fee
+			tx.Category = category
+			tx.Address = ""
+			tx.Account = accountName
+			tx.Vout = 0
+			tx.Generated = false
 			transactions = append(transactions, tx)
 			processed[rpcTx.TxID] = true
 			continue
@@ -1252,83 +1267,11 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 					existing.Address = rpcTx.Address
 				}
 			} else {
-				var blockHeight int64 = 0
-				if currentHeight > 0 && rpcTx.Confirmations > 0 {
-					blockHeight = currentHeight - rpcTx.Confirmations + 1
-				}
-
-				var isTicketMature bool = false
-				var blocksUntilSpendable int64 = 0
-				if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
-					blocksPassed := currentHeight - blockHeight
-					if blocksPassed >= voteMaturity {
-						isTicketMature = true
-						blocksUntilSpendable = 0
-					} else {
-						isTicketMature = false
-						blocksUntilSpendable = voteMaturity - blocksPassed
-					}
-				}
-
-				tx := &types.Transaction{
-					TxID:                 rpcTx.TxID,
-					Amount:               rpcTx.Amount,
-					Fee:                  rpcTx.Fee,
-					Confirmations:        rpcTx.Confirmations,
-					BlockHash:            rpcTx.BlockHash,
-					BlockTime:            rpcTx.BlockTime,
-					Time:                 time.Unix(rpcTx.Time, 0),
-					Category:             rpcTx.Category,
-					TxType:               rpcTx.TxType,
-					Address:              rpcTx.Address,
-					Account:              rpcTx.Account,
-					Vout:                 rpcTx.Vout,
-					Generated:            rpcTx.Generated,
-					IsMixed:              isMixed,
-					BlockHeight:          blockHeight,
-					IsTicketMature:       isTicketMature,
-					BlocksUntilSpendable: blocksUntilSpendable,
-				}
-				txGroups[groupKey] = tx
+				tx := walletTxRow(rpcTx, isMixed, currentHeight, voteMaturity)
+				txGroups[groupKey] = &tx
 			}
 		} else {
-			var blockHeight int64 = 0
-			if currentHeight > 0 && rpcTx.Confirmations > 0 {
-				blockHeight = currentHeight - rpcTx.Confirmations + 1
-			}
-
-			var isTicketMature bool = false
-			var blocksUntilSpendable int64 = 0
-			if rpcTx.TxType == "vote" && blockHeight > 0 && currentHeight > 0 {
-				blocksPassed := currentHeight - blockHeight
-				if blocksPassed >= voteMaturity {
-					isTicketMature = true
-					blocksUntilSpendable = 0
-				} else {
-					isTicketMature = false
-					blocksUntilSpendable = voteMaturity - blocksPassed
-				}
-			}
-
-			tx := types.Transaction{
-				TxID:                 rpcTx.TxID,
-				Amount:               rpcTx.Amount,
-				Fee:                  rpcTx.Fee,
-				Confirmations:        rpcTx.Confirmations,
-				BlockHash:            rpcTx.BlockHash,
-				BlockTime:            rpcTx.BlockTime,
-				Time:                 time.Unix(rpcTx.Time, 0),
-				Category:             rpcTx.Category,
-				TxType:               rpcTx.TxType,
-				Address:              rpcTx.Address,
-				Account:              rpcTx.Account,
-				Vout:                 rpcTx.Vout,
-				Generated:            rpcTx.Generated,
-				IsMixed:              isMixed,
-				BlockHeight:          blockHeight,
-				IsTicketMature:       isTicketMature,
-				BlocksUntilSpendable: blocksUntilSpendable,
-			}
+			tx := walletTxRow(rpcTx, isMixed, currentHeight, voteMaturity)
 			transactions = append(transactions, tx)
 		}
 
