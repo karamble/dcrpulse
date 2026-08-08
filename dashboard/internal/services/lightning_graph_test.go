@@ -6,6 +6,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -70,6 +71,147 @@ func testGraph() *lnrpc.ChannelGraph {
 			{Node1Pub: "02aa", Node2Pub: "02bb", Capacity: 300},
 			{Node1Pub: "02aa", Node2Pub: "03cc", Capacity: 200},
 		},
+	}
+}
+
+// The search box debounces at 250ms and fires again when the modal opens, so
+// typing a four-letter alias used to cost five full graph dumps. All of them
+// are answered from the one snapshot the network panel already holds.
+func TestSearchLightningNodesReusesTheGraphCache(t *testing.T) {
+	resetGraphCache(t)
+	f := &fakeGraphClient{graph: testGraph()}
+	withFakeGraph(t, f)
+
+	if _, err := GetTopLightningNodes(context.Background(), 10); err != nil {
+		t.Fatalf("GetTopLightningNodes: %v", err)
+	}
+	for _, q := range []string{"h", "hu", "hub", "hub0"} {
+		if _, err := SearchLightningNodes(context.Background(), q); err != nil {
+			t.Fatalf("SearchLightningNodes(%q): %v", q, err)
+		}
+	}
+
+	if f.calls != 1 {
+		t.Errorf("DescribeGraph called %d times, want 1", f.calls)
+	}
+}
+
+// The modal's opening request is the one that warms the panel, not the other
+// way round, so the order the two arrive in must not matter.
+func TestSearchLightningNodesFillsTheCacheForTopNodes(t *testing.T) {
+	resetGraphCache(t)
+	f := &fakeGraphClient{graph: testGraph()}
+	withFakeGraph(t, f)
+
+	if _, err := SearchLightningNodes(context.Background(), ""); err != nil {
+		t.Fatalf("SearchLightningNodes: %v", err)
+	}
+	top, err := GetTopLightningNodes(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetTopLightningNodes: %v", err)
+	}
+
+	if f.calls != 1 {
+		t.Errorf("DescribeGraph called %d times, want 1", f.calls)
+	}
+	if len(top) != 3 {
+		t.Errorf("top nodes = %d, want 3", len(top))
+	}
+}
+
+func TestSearchLightningNodesRefetchesAfterTTL(t *testing.T) {
+	resetGraphCache(t)
+	f := &fakeGraphClient{graph: testGraph()}
+	withFakeGraph(t, f)
+
+	if _, err := SearchLightningNodes(context.Background(), "hub"); err != nil {
+		t.Fatalf("first search: %v", err)
+	}
+	expireGraphCache(t)
+	if _, err := SearchLightningNodes(context.Background(), "hub"); err != nil {
+		t.Fatalf("second search: %v", err)
+	}
+
+	if f.calls != 2 {
+		t.Errorf("DescribeGraph called %d times, want 2", f.calls)
+	}
+}
+
+func TestSearchLightningNodesMatches(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"empty query returns every node", "", []string{"02aa", "02bb", "03cc"}},
+		{"alias substring", "hub", []string{"02aa"}},
+		{"alias match ignores case", "HUB", []string{"02aa"}},
+		{"pubkey substring", "02b", []string{"02bb"}},
+		{"surrounding whitespace is trimmed", "  relay  ", []string{"02bb"}},
+		{"no match", "zzz", nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGraphCache(t)
+			f := &fakeGraphClient{graph: testGraph()}
+			withFakeGraph(t, f)
+
+			got, err := SearchLightningNodes(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("SearchLightningNodes: %v", err)
+			}
+			// The modal maps over this directly, so it must never be null.
+			if got.Matches == nil {
+				t.Fatal("Matches is nil, want an empty slice")
+			}
+			if len(got.Matches) != len(tc.want) {
+				t.Fatalf("got %d matches, want %d: %+v", len(got.Matches), len(tc.want), got.Matches)
+			}
+			for i, pubkey := range tc.want {
+				if got.Matches[i].Pubkey != pubkey {
+					t.Errorf("match %d = %q, want %q", i, got.Matches[i].Pubkey, pubkey)
+				}
+			}
+		})
+	}
+}
+
+// Results follow the snapshot's order, largest capacity first, so the cap drops
+// the smallest nodes rather than whichever ones the daemon happened to list
+// last.
+func TestSearchLightningNodesRanksByCapacity(t *testing.T) {
+	resetGraphCache(t)
+	// Capacity ascends with the graph order, so ranking by capacity is the
+	// reverse of the order the daemon lists them in. A test built the other way
+	// round would pass whether or not the snapshot is consulted.
+	graph := &lnrpc.ChannelGraph{}
+	for i := 0; i < 60; i++ {
+		pubkey := fmt.Sprintf("02%04d", i)
+		graph.Nodes = append(graph.Nodes, &lnrpc.LightningNode{PubKey: pubkey, Alias: "node"})
+		graph.Edges = append(graph.Edges, &lnrpc.ChannelEdge{
+			Node1Pub: pubkey,
+			Capacity: int64(i + 1),
+		})
+	}
+	f := &fakeGraphClient{graph: graph}
+	withFakeGraph(t, f)
+
+	got, err := SearchLightningNodes(context.Background(), "node")
+	if err != nil {
+		t.Fatalf("SearchLightningNodes: %v", err)
+	}
+
+	if len(got.Matches) != 50 {
+		t.Fatalf("got %d matches, want the cap of 50", len(got.Matches))
+	}
+	if got.Matches[0].Pubkey != "020059" {
+		t.Errorf("first match = %q, want the largest node 020059", got.Matches[0].Pubkey)
+	}
+	for _, m := range got.Matches {
+		if m.Pubkey < "020010" {
+			t.Errorf("%q is among the ten smallest and should have been cut", m.Pubkey)
+		}
 	}
 }
 

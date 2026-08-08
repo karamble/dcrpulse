@@ -761,33 +761,29 @@ func GetLightningAutopilotScores(ctx context.Context, pubkeys []string, ignoreLo
 	return out, nil
 }
 
-// SearchLightningNodes queries dcrlnd's DescribeGraph and filters
-// client-side by substring match against alias + pubkey. Capped at 50.
-// Until the channel graph syncs (i.e. the wallet has a connected peer
-// gossiping to it) DescribeGraph returns an empty list; that's the
-// expected behaviour and the UI renders the empty state.
+// SearchLightningNodes filters the graph snapshot by substring match
+// against alias + pubkey, largest capacity first, capped at 50. Until
+// the channel graph syncs (i.e. the wallet has a connected peer
+// gossiping to it) the snapshot is empty; that's the expected behaviour
+// and the UI renders the empty state.
 func SearchLightningNodes(ctx context.Context, query string) (*types.NodeSearchResponse, error) {
-	client := rpc.LightningClient
-	if client == nil {
-		return nil, fmt.Errorf("dcrlnd not available")
-	}
-	resp, err := client.DescribeGraph(ctx, &lnrpc.ChannelGraphRequest{IncludeUnannounced: false})
+	nodes, err := lightningGraphNodes(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("DescribeGraph: %w", err)
+		return nil, err
 	}
 	out := &types.NodeSearchResponse{Matches: []types.NodeMatch{}}
 	q := strings.ToLower(strings.TrimSpace(query))
-	for _, n := range resp.GetNodes() {
+	for _, n := range nodes {
 		if q != "" {
-			if !strings.Contains(strings.ToLower(n.GetAlias()), q) &&
-				!strings.Contains(strings.ToLower(n.GetPubKey()), q) {
+			if !strings.Contains(strings.ToLower(n.Alias), q) &&
+				!strings.Contains(strings.ToLower(n.Pubkey), q) {
 				continue
 			}
 		}
 		out.Matches = append(out.Matches, types.NodeMatch{
-			Pubkey: n.GetPubKey(),
-			Alias:  n.GetAlias(),
-			Color:  n.GetColor(),
+			Pubkey: n.Pubkey,
+			Alias:  n.Alias,
+			Color:  n.Color,
 		})
 		if len(out.Matches) >= 50 {
 			break
@@ -1004,17 +1000,21 @@ var (
 	describeGraphFillTimeout = 30 * time.Second
 )
 
-// GetTopLightningNodes returns the top-n nodes by total channel
-// capacity. n is capped at len(cached). On cache miss, walks
-// DescribeGraph once: edge has node1/node2 pubkeys + capacity, so each
-// edge contributes its capacity to BOTH endpoints' totals and counts
-// as one channel for each.
-func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode, error) {
+// lightningGraphNodes returns the per-node aggregate derived from
+// DescribeGraph, refreshing it when older than describeGraphTTL. On a
+// miss it walks the graph once: an edge carries node1/node2 pubkeys and
+// a capacity, so each edge adds its capacity to BOTH endpoints' totals
+// and counts as one channel for each.
+//
+// The returned slice is shared and read-only: a refresh replaces it
+// wholesale, so a slice already handed out stays valid, but writing
+// through one corrupts every other reader's view.
+func lightningGraphNodes(ctx context.Context) ([]types.TopLightningNode, error) {
 	describeGraphMu.Lock()
 	defer describeGraphMu.Unlock()
 
 	if time.Since(describeGraphTime) < describeGraphTTL && describeGraphData != nil {
-		return takeTopN(describeGraphData, n), nil
+		return describeGraphData, nil
 	}
 
 	client := rpc.LightningClient
@@ -1095,7 +1095,17 @@ func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode,
 
 	describeGraphData = out
 	describeGraphTime = time.Now()
-	return takeTopN(out, n), nil
+	return out, nil
+}
+
+// GetTopLightningNodes returns the top-n nodes by total channel capacity.
+// n is capped at the number of nodes in the graph.
+func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode, error) {
+	nodes, err := lightningGraphNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return takeTopN(nodes, n), nil
 }
 
 func takeTopN(in []types.TopLightningNode, n int) []types.TopLightningNode {
