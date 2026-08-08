@@ -567,12 +567,7 @@ func GetDcrdexExchangesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	raw, err := client.Exchanges(ctx)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Write(raw)
+	dexProxyJSON(w, func() (json.RawMessage, error) { return client.Exchanges(ctx) })
 }
 
 // atomsToConv converts an atomic amount to conventional units using the asset's
@@ -1409,12 +1404,7 @@ func GetDcrdexMyOrdersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	raw, err := client.MyOrders(ctx, r.URL.Query().Get("host"))
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Write(raw)
+	dexProxyJSON(w, func() (json.RawMessage, error) { return client.MyOrders(ctx, r.URL.Query().Get("host")) })
 }
 
 // bwCoin/bwMatch/bwOrder mirror the core.Order JSON the webserver /api/orders
@@ -1814,12 +1804,9 @@ func PreDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	raw, err := client.PreOrder(ctx, appPass, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Write(raw)
+	dexProxyJSON(w, func() (json.RawMessage, error) {
+		return client.PreOrder(ctx, appPass, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
+	})
 }
 
 // MaxDcrdexBuyHandler returns the largest buy order fundable at the given rate on
@@ -1842,12 +1829,9 @@ func MaxDcrdexBuyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	raw, err := client.MaxBuy(ctx, appPass, req.Host, req.Base, req.Quote, req.Rate)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Write(raw)
+	dexProxyJSON(w, func() (json.RawMessage, error) {
+		return client.MaxBuy(ctx, appPass, req.Host, req.Base, req.Quote, req.Rate)
+	})
 }
 
 // MaxDcrdexSellHandler returns the largest sell order fundable on the market,
@@ -1869,12 +1853,7 @@ func MaxDcrdexSellHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	raw, err := client.MaxSell(ctx, appPass, req.Host, req.Base, req.Quote)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Write(raw)
+	dexProxyJSON(w, func() (json.RawMessage, error) { return client.MaxSell(ctx, appPass, req.Host, req.Base, req.Quote) })
 }
 
 // GetDcrdexAssetsHandler serves the embedded DCRDEX supported-asset catalog
@@ -2304,6 +2283,13 @@ type dexWalletAction struct {
 	Address string `json:"address"`
 }
 
+// dexProxyJSON forwards a bisonw reply verbatim, mapping a failure through the
+// shared error writer. No content type is set, matching what these handlers
+// have always sent.
+func dexProxyJSON(w http.ResponseWriter, call func() (json.RawMessage, error)) {
+	dexProxyJSON(w, func() (json.RawMessage, error) { return call() })
+}
+
 func dexWalletActionBody(r *http.Request) (dexWalletAction, error) {
 	var req dexWalletAction
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -2419,12 +2405,7 @@ func GetDcrdexWalletPeersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	raw, err := client.WalletPeers(ctx, uint32(assetID))
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Write(raw)
+	dexProxyJSON(w, func() (json.RawMessage, error) { return client.WalletPeers(ctx, uint32(assetID)) })
 }
 
 // AddDcrdexWalletPeerHandler adds a persistent peer to a wallet.
@@ -2487,12 +2468,7 @@ func GetDcrdexNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	raw, err := client.Notifications(ctx, n)
-	if err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	w.Write(raw)
+	dexProxyJSON(w, func() (json.RawMessage, error) { return client.Notifications(ctx, n) })
 }
 
 // dexRateCache caches Kraken USD rates across requests.
