@@ -140,10 +140,33 @@ var (
 	embedFilenameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 	downloadNickRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 	downloadFileRe  = regexp.MustCompile(`^[A-Za-z0-9._ -]+$`)
-	// fid/uid are zkidentity.ShortID hex strings (32 bytes); a cheap first gate
-	// before proxying a delete to brclientd.
-	downloadIDRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+	// uid, pid, fid, gcid and rv are all zkidentity.ShortID hex strings, which
+	// brclientd decodes as exactly 32 bytes. Checking here means a malformed
+	// value is refused rather than forwarded into a request URL and left for
+	// the daemon to reject.
+	brIDRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 )
+
+// brID reads a Bison Relay identifier, answering false and writing a 400 when
+// it is not one. name appears in the error, so callers pass the parameter's
+// own name.
+func brID(w http.ResponseWriter, value, name string) (string, bool) {
+	v := strings.TrimSpace(value)
+	if !brIDRe.MatchString(v) {
+		http.Error(w, "invalid "+name, http.StatusBadRequest)
+		return "", false
+	}
+	return v, true
+}
+
+// brIDOpt is brID for a parameter the endpoint treats as optional: an omitted
+// value passes, a malformed one still does not.
+func brIDOpt(w http.ResponseWriter, value, name string) (string, bool) {
+	if strings.TrimSpace(value) == "" {
+		return "", true
+	}
+	return brID(w, value, name)
+}
 
 // brInlineMIMEs are the only content types the dashboard will echo back for
 // bytes a Bison Relay peer supplied. They mirror ALLOWED_IMAGE_MIMES in the
@@ -419,9 +442,8 @@ func BisonrelayConnectionHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayTipAttemptsHandler returns the tracked tip attempts to one
 // contact.
 func BisonrelayTipAttemptsHandler(w http.ResponseWriter, r *http.Request) {
-	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
-	if uid == "" {
-		http.Error(w, "uid query param is required", http.StatusBadRequest)
+	uid, ok := brID(w, r.URL.Query().Get("uid"), "uid")
+	if !ok {
 		return
 	}
 	body, err := rpc.BrclientdTipAttempts(r.Context(), uid)
@@ -448,7 +470,10 @@ func BisonrelayRunningTipsHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayRTDTMessagesHandler returns the chat messages tracked for a
 // live RTDT session.
 func BisonrelayRTDTMessagesHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	raw, err := rpc.BrclientdRTDTMessages(r.Context(), rv)
 	if err != nil {
 		brWriteErr(w, err)
@@ -460,7 +485,10 @@ func BisonrelayRTDTMessagesHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTChatHandler sends a text message into a live RTDT session.
 func BisonrelayRTDTChatHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	var req struct {
 		Message string `json:"message"`
 	}
@@ -976,10 +1004,12 @@ func BisonrelayContactFetchPostHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayPostCommentsHandler returns the comment list for a post.
 func BisonrelayPostCommentsHandler(w http.ResponseWriter, r *http.Request) {
-	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
-	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
-	if uid == "" || pid == "" {
-		http.Error(w, "uid and pid query params are required", http.StatusBadRequest)
+	uid, ok := brID(w, r.URL.Query().Get("uid"), "uid")
+	if !ok {
+		return
+	}
+	pid, ok := brID(w, r.URL.Query().Get("pid"), "pid")
+	if !ok {
 		return
 	}
 	body, err := rpc.BrclientdPostComments(r.Context(), uid, pid)
@@ -1072,9 +1102,8 @@ func BisonrelayPostCommentHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayPostReceiveReceiptsHandler returns the receive receipts for one
 // of the local user's own posts.
 func BisonrelayPostReceiveReceiptsHandler(w http.ResponseWriter, r *http.Request) {
-	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
-	if pid == "" {
-		http.Error(w, "pid query param is required", http.StatusBadRequest)
+	pid, ok := brID(w, r.URL.Query().Get("pid"), "pid")
+	if !ok {
 		return
 	}
 	body, err := rpc.BrclientdPostReceiveReceipts(r.Context(), pid)
@@ -1112,9 +1141,8 @@ func BisonrelayPostRelayHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayPostCommentReceiptsHandler returns the receive receipts for the
 // comments on one of the local user's own posts, grouped by status id.
 func BisonrelayPostCommentReceiptsHandler(w http.ResponseWriter, r *http.Request) {
-	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
-	if pid == "" {
-		http.Error(w, "pid query param is required", http.StatusBadRequest)
+	pid, ok := brID(w, r.URL.Query().Get("pid"), "pid")
+	if !ok {
 		return
 	}
 	body, err := rpc.BrclientdPostCommentReceipts(r.Context(), pid)
@@ -1129,10 +1157,12 @@ func BisonrelayPostCommentReceiptsHandler(w http.ResponseWriter, r *http.Request
 // BisonrelayPostHeartsHandler returns the current heart count + my-own
 // state for a single post.
 func BisonrelayPostHeartsHandler(w http.ResponseWriter, r *http.Request) {
-	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
-	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
-	if uid == "" || pid == "" {
-		http.Error(w, "uid and pid query params are required", http.StatusBadRequest)
+	uid, ok := brID(w, r.URL.Query().Get("uid"), "uid")
+	if !ok {
+		return
+	}
+	pid, ok := brID(w, r.URL.Query().Get("pid"), "pid")
+	if !ok {
 		return
 	}
 	body, err := rpc.BrclientdPostHearts(r.Context(), uid, pid)
@@ -1287,11 +1317,11 @@ func BisonrelayManageDeleteDownloadHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !downloadIDRe.MatchString(req.FID) {
+	if !brIDRe.MatchString(req.FID) {
 		http.Error(w, "invalid fid", http.StatusBadRequest)
 		return
 	}
-	if req.UID != "" && !downloadIDRe.MatchString(req.UID) {
+	if req.UID != "" && !brIDRe.MatchString(req.UID) {
 		http.Error(w, "invalid uid", http.StatusBadRequest)
 		return
 	}
@@ -1409,7 +1439,10 @@ func BisonrelayRTDTCreateInstantHandler(w http.ResponseWriter, r *http.Request) 
 
 // BisonrelayRTDTInviteHandler invites users to an existing session.
 func BisonrelayRTDTInviteHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	var req struct {
 		UIDs        []string `json:"uids"`
 		AsPublisher bool     `json:"as_publisher"`
@@ -1427,7 +1460,10 @@ func BisonrelayRTDTInviteHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTAcceptHandler accepts a pending invite.
 func BisonrelayRTDTAcceptHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	var req struct {
 		Inviter     string `json:"inviter"`
 		AsPublisher bool   `json:"as_publisher"`
@@ -1445,7 +1481,10 @@ func BisonrelayRTDTAcceptHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTJoinHandler joins the live audio for a session.
 func BisonrelayRTDTJoinHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	if err := rpc.BrclientdRTDTJoin(r.Context(), rv); err != nil {
 		brWriteErr(w, err)
 		return
@@ -1455,7 +1494,10 @@ func BisonrelayRTDTJoinHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTLeaveHandler leaves a session.
 func BisonrelayRTDTLeaveHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	if err := rpc.BrclientdRTDTLeave(r.Context(), rv); err != nil {
 		brWriteErr(w, err)
 		return
@@ -1465,7 +1507,10 @@ func BisonrelayRTDTLeaveHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTDissolveHandler dissolves a session (owner).
 func BisonrelayRTDTDissolveHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	if err := rpc.BrclientdRTDTDissolve(r.Context(), rv); err != nil {
 		brWriteErr(w, err)
 		return
@@ -1475,7 +1520,10 @@ func BisonrelayRTDTDissolveHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTKickHandler kicks a peer from the live session.
 func BisonrelayRTDTKickHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	var req struct {
 		PeerID     uint32 `json:"peer_id"`
 		BanSeconds int64  `json:"ban_seconds"`
@@ -1493,7 +1541,10 @@ func BisonrelayRTDTKickHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTRemoveHandler removes a member from the session metadata.
 func BisonrelayRTDTRemoveHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	var req struct {
 		UID    string `json:"uid"`
 		Reason string `json:"reason"`
@@ -1511,7 +1562,10 @@ func BisonrelayRTDTRemoveHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTRotateCookiesHandler invalidates current appointment cookies.
 func BisonrelayRTDTRotateCookiesHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		return
+	}
 	if err := rpc.BrclientdRTDTRotateCookies(r.Context(), rv); err != nil {
 		brWriteErr(w, err)
 		return
@@ -1601,10 +1655,12 @@ func BisonrelayPostsFeedHandler(w http.ResponseWriter, r *http.Request) {
 // segment to sanitized HTML. Returns {title, markdown, segments, attributes}
 // where segments interleave rendered text and raw embed metadata.
 func BisonrelayPostBodyHandler(w http.ResponseWriter, r *http.Request) {
-	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
-	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
-	if uid == "" || pid == "" {
-		http.Error(w, "uid and pid query params are required", http.StatusBadRequest)
+	uid, ok := brID(w, r.URL.Query().Get("uid"), "uid")
+	if !ok {
+		return
+	}
+	pid, ok := brID(w, r.URL.Query().Get("pid"), "pid")
+	if !ok {
 		return
 	}
 	body, err := rpc.BrclientdPostBody(r.Context(), uid, pid)
@@ -1924,10 +1980,12 @@ func BisonrelayContentGetHandler(w http.ResponseWriter, r *http.Request) {
 // Query: fid (required), uid (optional). Returns 404 until the download is
 // complete. The brclientd side serves only files from its download records.
 func BisonrelayContentFileHandler(w http.ResponseWriter, r *http.Request) {
-	fid := strings.TrimSpace(r.URL.Query().Get("fid"))
-	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
-	if fid == "" {
-		http.Error(w, "fid query param is required", http.StatusBadRequest)
+	fid, ok := brID(w, r.URL.Query().Get("fid"), "fid")
+	if !ok {
+		return
+	}
+	uid, ok := brIDOpt(w, r.URL.Query().Get("uid"), "uid")
+	if !ok {
 		return
 	}
 	resp, err := rpc.BrclientdContentFile(r.Context(), uid, fid)
@@ -1961,10 +2019,12 @@ const maxEmbedServeBytes = 16 << 20
 // (optional, default 0). Cache-Control is forwarded because posts are
 // immutable and brclientd marks the bytes long-lived.
 func BisonrelayPostsEmbedDataHandler(w http.ResponseWriter, r *http.Request) {
-	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
-	pid := strings.TrimSpace(r.URL.Query().Get("pid"))
-	if uid == "" || pid == "" {
-		http.Error(w, "uid and pid query params are required", http.StatusBadRequest)
+	uid, ok := brID(w, r.URL.Query().Get("uid"), "uid")
+	if !ok {
+		return
+	}
+	pid, ok := brID(w, r.URL.Query().Get("pid"), "pid")
+	if !ok {
 		return
 	}
 	index := 0
@@ -2610,11 +2670,7 @@ func decodeBisonrelayUIDBody(w http.ResponseWriter, r *http.Request) (string, bo
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return "", false
 	}
-	if req.UID == "" {
-		http.Error(w, "uid is required", http.StatusBadRequest)
-		return "", false
-	}
-	return req.UID, true
+	return brID(w, req.UID, "uid")
 }
 
 // maxInlineEmbedBytes is the size cap (in decoded bytes) for an inline

@@ -7,7 +7,6 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"regexp"
 	"sync"
 	"time"
 
@@ -24,26 +23,16 @@ var rtdtAudioBrowserUpgrader = websocket.Upgrader{
 	CheckOrigin:     middleware.SameOriginWS,
 }
 
-// rtdtRVValid bounds the session rv to a URL-path-safe token before it is
-// interpolated into the brclientd upstream URL. brclientd rv values are
-// hex/base32-style tokens, so this rejects any path or query metacharacter.
-var rtdtRVValid = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
-
 // BisonrelayRTDTAudioHandler bridges a browser WebSocket to brclientd's
 // /rtdt/sessions/{rv}/audio. Binary frames are forwarded blindly in
 // both directions; the wire framing is owned by brclientd + the browser.
 // Ping/pong is handled on each leg independently so a slow consumer on
 // one side doesn't keep the other alive.
 func BisonrelayRTDTAudioHandler(w http.ResponseWriter, r *http.Request) {
-	rv := mux.Vars(r)["rv"]
-	if rv == "" {
-		brelLog.Warnf("RTDT audio: missing rv in path %s", r.URL.Path)
-		http.Error(w, "missing session rv", http.StatusBadRequest)
-		return
-	}
-	if !rtdtRVValid.MatchString(rv) {
-		brelLog.Warnf("RTDT audio: rejecting malformed rv %q", rv)
-		http.Error(w, "invalid session rv", http.StatusBadRequest)
+	// The rv is interpolated into the brclientd upstream URL below.
+	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	if !ok {
+		brelLog.Warnf("RTDT audio: rejecting malformed rv in path %s", r.URL.Path)
 		return
 	}
 	brelLog.Infof("RTDT audio: upgrade request rv=%s origin=%q", rv, r.Header.Get("Origin"))
