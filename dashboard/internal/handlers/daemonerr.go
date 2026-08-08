@@ -69,3 +69,13 @@ func brProxyJSON(w http.ResponseWriter, call func() (json.RawMessage, error)) {
 func brWriteErr(w http.ResponseWriter, err error) {
 	respondUpstreamError(w, services.LogComponentBrclientd, err)
 }
+
+// brDo204 runs a brclientd action and answers 204 on success, mapping a
+// failure through the shared error writer.
+func brDo204(w http.ResponseWriter, call func() error) {
+	if err := call(); err != nil {
+		brWriteErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

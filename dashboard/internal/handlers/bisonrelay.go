@@ -80,11 +80,7 @@ func BisonrelaySetAvatarHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdSetAvatar(r.Context(), req.Avatar); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdSetAvatar(r.Context(), req.Avatar) })
 }
 
 // BisonrelayEventsHandler upgrades to WebSocket and streams live PM / KX /
@@ -359,11 +355,7 @@ func BisonrelayContactRenameHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uid and new_nick are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdRenameContact(r.Context(), req.UID, req.NewNick); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRenameContact(r.Context(), req.UID, req.NewNick) })
 }
 
 // BisonrelayContactKXResetHandler proxies brclientd's /contacts/kx-reset.
@@ -373,11 +365,7 @@ func BisonrelayContactKXResetHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdKXReset(r.Context(), uid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdKXReset(r.Context(), uid) })
 }
 
 // BisonrelayContactResetAllHandler proxies brclientd's /contacts/reset-all,
@@ -464,11 +452,7 @@ func BisonrelayRTDTChatHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdRTDTChat(r.Context(), rv, req.Message); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRTDTChat(r.Context(), rv, req.Message) })
 }
 
 // BisonrelayKXSearchesHandler proxies brclientd's outstanding KX searches.
@@ -527,20 +511,12 @@ func BisonrelayDeleteNotificationHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdDeleteNotification(r.Context(), req.ID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdDeleteNotification(r.Context(), req.ID) })
 }
 
 // BisonrelayClearNotificationsHandler removes all BR notification-bell entries.
 func BisonrelayClearNotificationsHandler(w http.ResponseWriter, r *http.Request) {
-	if err := rpc.BrclientdClearNotifications(r.Context()); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdClearNotifications(r.Context()) })
 }
 
 // BisonrelayBehaviorSettingsHandler proxies brclientd's /settings/behavior: GET
@@ -606,21 +582,13 @@ func BisonrelayFilterDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdDeleteFilter(r.Context(), req.ID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdDeleteFilter(r.Context(), req.ID) })
 }
 
 // BisonrelaySubscribeAllPostsHandler proxies brclientd's
 // /posts/subscribe-all, subscribing to the posts of every KX'd contact.
 func BisonrelaySubscribeAllPostsHandler(w http.ResponseWriter, r *http.Request) {
-	if err := rpc.BrclientdSubscribeAllPosts(r.Context()); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdSubscribeAllPosts(r.Context()) })
 }
 
 // BisonrelayKXListHandler proxies brclientd's /kx/list diagnostic (in-flight
@@ -636,11 +604,7 @@ func BisonrelayContactHandshakeHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdHandshake(r.Context(), uid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdHandshake(r.Context(), uid) })
 }
 
 // BisonrelayContactBlockHandler proxies brclientd's /contacts/block. Blocks
@@ -650,11 +614,7 @@ func BisonrelayContactBlockHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdBlockContact(r.Context(), uid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdBlockContact(r.Context(), uid) })
 }
 
 // BisonrelayBlockedContactsHandler proxies brclientd's /contacts/blocked. GET
@@ -683,11 +643,7 @@ func BisonrelayClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdClearPMHistory(r.Context(), uid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdClearPMHistory(r.Context(), uid) })
 }
 
 // BisonrelayContactGroupsHandler proxies brclientd's /contacts/groups. GET
@@ -711,11 +667,7 @@ func BisonrelayContactGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdContactGroupCreate(r.Context(), req.Name) })
 		return
 	}
-	if err := rpc.BrclientdContactGroupAction(r.Context(), req.Action, req.ID, req.Name); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdContactGroupAction(r.Context(), req.Action, req.ID, req.Name) })
 }
 
 // BisonrelayContactGroupAssignHandler proxies brclientd's
@@ -734,11 +686,7 @@ func BisonrelayContactGroupAssignHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "uid is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdContactGroupAssign(r.Context(), req.UID, req.Group, req.Pinned); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdContactGroupAssign(r.Context(), req.UID, req.Group, req.Pinned) })
 }
 
 // BisonrelayContactGroupSettingsHandler proxies brclientd's
@@ -751,11 +699,7 @@ func BisonrelayContactGroupSettingsHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdContactGroupSettings(r.Context(), req.AutoArchiveDays); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdContactGroupSettings(r.Context(), req.AutoArchiveDays) })
 }
 
 // BisonrelayClearPayStatsHandler proxies brclientd's /stats/payments/clear.
@@ -766,11 +710,7 @@ func BisonrelayClearPayStatsHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdClearPayStats(r.Context(), uid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdClearPayStats(r.Context(), uid) })
 }
 
 // BisonrelayContactIgnoreHandler proxies brclientd's /contacts/ignore. Body:
@@ -788,11 +728,7 @@ func BisonrelayContactIgnoreHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uid is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdIgnoreContact(r.Context(), req.UID, req.Ignore); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdIgnoreContact(r.Context(), req.UID, req.Ignore) })
 }
 
 // BisonrelayContactSuggestKXHandler proxies /contacts/suggest-kx. Body:
@@ -810,11 +746,7 @@ func BisonrelayContactSuggestKXHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invitee and target are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdSuggestKX(r.Context(), req.Invitee, req.Target); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdSuggestKX(r.Context(), req.Invitee, req.Target) })
 }
 
 // BisonrelayContactTransResetHandler proxies /contacts/trans-reset. Body:
@@ -833,11 +765,7 @@ func BisonrelayContactTransResetHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "mediator and target are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdTransReset(r.Context(), req.Mediator, req.Target); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdTransReset(r.Context(), req.Mediator, req.Target) })
 }
 
 // BisonrelayContactSubscribePostsHandler proxies the brclientd subscribe-
@@ -848,11 +776,7 @@ func BisonrelayContactSubscribePostsHandler(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdSubscribePosts(r.Context(), uid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdSubscribePosts(r.Context(), uid) })
 }
 
 // BisonrelayContactUnsubscribePostsHandler proxies the brclientd
@@ -862,11 +786,7 @@ func BisonrelayContactUnsubscribePostsHandler(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdUnsubscribePosts(r.Context(), uid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdUnsubscribePosts(r.Context(), uid) })
 }
 
 // BisonrelayContactListPostsHandler proxies the brclientd list-posts
@@ -877,11 +797,7 @@ func BisonrelayContactListPostsHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdListUserPosts(r.Context(), uid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdListUserPosts(r.Context(), uid) })
 }
 
 // BisonrelayContactFetchPostHandler proxies the brclientd fetch-post
@@ -899,11 +815,7 @@ func BisonrelayContactFetchPostHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uid and pid are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdFetchPost(r.Context(), req.UID, req.PID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdFetchPost(r.Context(), req.UID, req.PID) })
 }
 
 // BisonrelayPostCommentsHandler returns the comment list for a post.
@@ -1029,11 +941,7 @@ func BisonrelayPostRelayHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uid and pid are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdRelayPost(r.Context(), req.UID, req.PID, req.ToUID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRelayPost(r.Context(), req.UID, req.PID, req.ToUID) })
 }
 
 // BisonrelayPostCommentReceiptsHandler returns the receive receipts for the
@@ -1075,11 +983,7 @@ func BisonrelayPostHeartHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uid and pid are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdPostHeart(r.Context(), req.UID, req.PID, req.Heart); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdPostHeart(r.Context(), req.UID, req.PID, req.Heart) })
 }
 
 // BisonrelaySharedFilesHandler proxies brclientd's /shared-files list.
@@ -1146,11 +1050,7 @@ func BisonrelayManageUnshareHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fid is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdUnshareFile(r.Context(), req.FID, req.TargetUID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdUnshareFile(r.Context(), req.FID, req.TargetUID) })
 }
 
 // BisonrelayManageDownloadsHandler returns the flat downloads list.
@@ -1171,11 +1071,7 @@ func BisonrelayManageCancelDownloadHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "fid is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdCancelDownload(r.Context(), req.FID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdCancelDownload(r.Context(), req.FID) })
 }
 
 // BisonrelayManageDeleteDownloadHandler deletes a completed received download's
@@ -1200,11 +1096,7 @@ func BisonrelayManageDeleteDownloadHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid uid", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdDeleteDownload(r.Context(), req.FID, req.UID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdDeleteDownload(r.Context(), req.FID, req.UID) })
 }
 
 // BisonrelayStatsOverviewHandler proxies brclientd's /stats/overview.
@@ -1280,11 +1172,7 @@ func BisonrelayRTDTInviteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdRTDTInvite(r.Context(), rv, req.UIDs, req.AsPublisher); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRTDTInvite(r.Context(), rv, req.UIDs, req.AsPublisher) })
 }
 
 // BisonrelayRTDTAcceptHandler accepts a pending invite.
@@ -1301,11 +1189,7 @@ func BisonrelayRTDTAcceptHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdRTDTAccept(r.Context(), rv, req.Inviter, req.AsPublisher); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRTDTAccept(r.Context(), rv, req.Inviter, req.AsPublisher) })
 }
 
 // BisonrelayRTDTJoinHandler joins the live audio for a session.
@@ -1314,11 +1198,7 @@ func BisonrelayRTDTJoinHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdRTDTJoin(r.Context(), rv); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRTDTJoin(r.Context(), rv) })
 }
 
 // BisonrelayRTDTLeaveHandler leaves a session.
@@ -1327,11 +1207,7 @@ func BisonrelayRTDTLeaveHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdRTDTLeave(r.Context(), rv); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRTDTLeave(r.Context(), rv) })
 }
 
 // BisonrelayRTDTDissolveHandler dissolves a session (owner).
@@ -1340,11 +1216,7 @@ func BisonrelayRTDTDissolveHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdRTDTDissolve(r.Context(), rv); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRTDTDissolve(r.Context(), rv) })
 }
 
 // BisonrelayRTDTKickHandler kicks a peer from the live session.
@@ -1361,11 +1233,7 @@ func BisonrelayRTDTKickHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdRTDTKick(r.Context(), rv, req.PeerID, req.BanSeconds); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRTDTKick(r.Context(), rv, req.PeerID, req.BanSeconds) })
 }
 
 // BisonrelayRTDTRemoveHandler removes a member from the session metadata.
@@ -1382,11 +1250,7 @@ func BisonrelayRTDTRemoveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdRTDTRemove(r.Context(), rv, req.UID, req.Reason); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRTDTRemove(r.Context(), rv, req.UID, req.Reason) })
 }
 
 // BisonrelayRTDTRotateCookiesHandler invalidates current appointment cookies.
@@ -1395,11 +1259,7 @@ func BisonrelayRTDTRotateCookiesHandler(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdRTDTRotateCookies(r.Context(), rv); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRTDTRotateCookies(r.Context(), rv) })
 }
 
 // BisonrelayPostsRenderHandler renders a draft post body server-side so
@@ -1725,11 +1585,7 @@ func BisonrelayPagesLocalSaveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdPagesLocalSave(r.Context(), req); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdPagesLocalSave(r.Context(), req) })
 }
 
 // BisonrelayPagesLocalDeleteHandler removes one hosted page. Body: {name}.
@@ -1745,11 +1601,7 @@ func BisonrelayPagesLocalDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdPagesLocalDelete(r.Context(), req); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdPagesLocalDelete(r.Context(), req) })
 }
 
 // BisonrelayContentGetHandler initiates a download of a shared file (FID) that
@@ -1773,11 +1625,7 @@ func BisonrelayContentGetHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uid and fid are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdContentGet(r.Context(), req.UID, req.FID, req.MaxCostAtoms); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdContentGet(r.Context(), req.UID, req.FID, req.MaxCostAtoms) })
 }
 
 // BisonrelayContentFileHandler streams the bytes of a downloaded shared file
@@ -2080,11 +1928,7 @@ func BisonrelayRestoreBackupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer part.Close()
-	if err := rpc.BrclientdRestoreBackup(r.Context(), part); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdRestoreBackup(r.Context(), part) })
 }
 
 // BisonrelayRatesHandler proxies brclientd's /rates (DCR/USD + BTC/USD, with
@@ -2121,11 +1965,7 @@ func BisonrelayStoreProductsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdSaveStoreProduct(r.Context(), req); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdSaveStoreProduct(r.Context(), req) })
 }
 
 // BisonrelayStoreProductDeleteHandler removes a storefront product. Body: {sku}.
@@ -2141,11 +1981,7 @@ func BisonrelayStoreProductDeleteHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "sku is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdDeleteStoreProduct(r.Context(), req.SKU); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdDeleteStoreProduct(r.Context(), req.SKU) })
 }
 
 // BisonrelayStoreOrdersHandler proxies brclientd's /store/orders (the full
@@ -2170,11 +2006,7 @@ func BisonrelayStoreOrderStatusHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uid and status are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdSetStoreOrderStatus(r.Context(), req.UID, req.ID, req.Status); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdSetStoreOrderStatus(r.Context(), req.UID, req.ID, req.Status) })
 }
 
 // BisonrelayStoreTemplatesHandler proxies brclientd's /store/templates (the
@@ -2212,11 +2044,7 @@ func BisonrelayStoreTemplateSaveHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdSaveStoreTemplate(r.Context(), req); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdSaveStoreTemplate(r.Context(), req) })
 }
 
 // BisonrelayStoreTemplateDeleteHandler removes a template. Body: {name}.
@@ -2232,11 +2060,7 @@ func BisonrelayStoreTemplateDeleteHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdDeleteStoreTemplate(r.Context(), req.Name); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdDeleteStoreTemplate(r.Context(), req.Name) })
 }
 
 // BisonrelayStoreFilesListHandler proxies brclientd's /store/files/list (the
@@ -2281,11 +2105,7 @@ func BisonrelayStoreFileDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdDeleteStoreFile(r.Context(), p); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdDeleteStoreFile(r.Context(), p) })
 }
 
 // BisonrelayStoreOrderCommentHandler appends a merchant comment to an order
@@ -2304,11 +2124,7 @@ func BisonrelayStoreOrderCommentHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "uid and comment are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdAddStoreOrderComment(r.Context(), req.UID, req.ID, req.Comment); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdAddStoreOrderComment(r.Context(), req.UID, req.ID, req.Comment) })
 }
 
 // BisonrelayStoreFileUploadHandler proxies a multipart upload to brclientd's
@@ -2351,11 +2167,7 @@ func BisonrelayContactListContentHandler(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdListUserContent(r.Context(), uid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdListUserContent(r.Context(), uid) })
 }
 
 // BisonrelayContactTipHandler proxies PaymentsService.TipUser. Body:
@@ -2384,11 +2196,7 @@ func BisonrelayContactTipHandler(w http.ResponseWriter, r *http.Request) {
 	if req.MaxAttempts <= 0 {
 		req.MaxAttempts = 1
 	}
-	if err := rpc.BrclientdTipUser(r.Context(), req.UID, req.DCRAmount, req.MaxAttempts); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdTipUser(r.Context(), req.UID, req.DCRAmount, req.MaxAttempts) })
 }
 
 // BisonrelayContactAcceptSuggestionHandler accepts an inbound KX
@@ -2406,11 +2214,7 @@ func BisonrelayContactAcceptSuggestionHandler(w http.ResponseWriter, r *http.Req
 		http.Error(w, "mediator and target are required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdAcceptSuggestion(r.Context(), req.Mediator, req.Target); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdAcceptSuggestion(r.Context(), req.Mediator, req.Target) })
 }
 
 // decodeBisonrelayUIDBody parses {uid: "<hex>"} from the request body.
@@ -2613,9 +2417,5 @@ func BisonrelaySetupHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nick is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdCreateIdentity(r.Context(), req.Nick, req.Name); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdCreateIdentity(r.Context(), req.Nick, req.Name) })
 }

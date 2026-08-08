@@ -192,11 +192,7 @@ func BisonrelayMCPResolvePendingHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "id is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdMCPResolvePending(r.Context(), req.ID, req.Approve); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdMCPResolvePending(r.Context(), req.ID, req.Approve) })
 }
 
 // BisonrelayMCPSpendHandler returns the spend log and the rolling-day total.

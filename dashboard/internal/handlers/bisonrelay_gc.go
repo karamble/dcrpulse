@@ -73,11 +73,7 @@ func BisonrelayGCInvitesAcceptHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "iid is required", http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdGCInvitesAccept(r.Context(), req.IID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCInvitesAccept(r.Context(), req.IID) })
 }
 
 // BisonrelayGCDetailHandler returns the full GC record including members + blocklist.
@@ -108,11 +104,7 @@ func BisonrelayGCInviteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdGCInvite(r.Context(), gcid, req.UID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCInvite(r.Context(), gcid, req.UID) })
 }
 
 // BisonrelayGCMessageHandler sends a GC message. JSON body shape mirrors
@@ -196,11 +188,7 @@ func BisonrelayGCClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rpc.BrclientdGCClearHistory(r.Context(), gcid); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCClearHistory(r.Context(), gcid) })
 }
 
 // BisonrelayGCPartHandler leaves a GC (non-owner action).
@@ -213,11 +201,7 @@ func BisonrelayGCPartHandler(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	if err := rpc.BrclientdGCPart(r.Context(), gcid, req.Reason); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCPart(r.Context(), gcid, req.Reason) })
 }
 
 // BisonrelayGCKillHandler dissolves a GC (owner-only).
@@ -230,11 +214,7 @@ func BisonrelayGCKillHandler(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	if err := rpc.BrclientdGCKill(r.Context(), gcid, req.Reason); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCKill(r.Context(), gcid, req.Reason) })
 }
 
 // BisonrelayGCKickHandler kicks a member (admin action).
@@ -251,11 +231,7 @@ func BisonrelayGCKickHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdGCKick(r.Context(), gcid, req.UID, req.Reason); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCKick(r.Context(), gcid, req.UID, req.Reason) })
 }
 
 // BisonrelayGCBlockHandler client-side blocks a member.
@@ -271,11 +247,7 @@ func BisonrelayGCBlockHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdGCBlock(r.Context(), gcid, req.UID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCBlock(r.Context(), gcid, req.UID) })
 }
 
 // BisonrelayGCUnblockHandler removes a member from the local block list.
@@ -291,11 +263,7 @@ func BisonrelayGCUnblockHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdGCUnblock(r.Context(), gcid, req.UID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCUnblock(r.Context(), gcid, req.UID) })
 }
 
 // BisonrelayGCAdminsHandler replaces the ExtraAdmins list (v1+ only).
@@ -312,11 +280,7 @@ func BisonrelayGCAdminsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdGCModifyAdmins(r.Context(), gcid, req.ExtraAdmins, req.Reason); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCModifyAdmins(r.Context(), gcid, req.ExtraAdmins, req.Reason) })
 }
 
 // BisonrelayGCOwnerHandler swaps the GC owner (Members[0]).
@@ -333,11 +297,7 @@ func BisonrelayGCOwnerHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdGCModifyOwner(r.Context(), gcid, req.NewOwner, req.Reason); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCModifyOwner(r.Context(), gcid, req.NewOwner, req.Reason) })
 }
 
 // BisonrelayGCUpgradeHandler bumps the GC protocol version (one-way).
@@ -353,11 +313,7 @@ func BisonrelayGCUpgradeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdGCUpgrade(r.Context(), gcid, req.NewVersion); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCUpgrade(r.Context(), gcid, req.NewVersion) })
 }
 
 // BisonrelayGCAliasHandler sets the local alias for a GC (DB-only).
@@ -373,11 +329,7 @@ func BisonrelayGCAliasHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := rpc.BrclientdGCAlias(r.Context(), gcid, req.Alias); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCAlias(r.Context(), gcid, req.Alias) })
 }
 
 // BisonrelayGCResendListHandler resends the GC member list to one or all members.
@@ -390,9 +342,5 @@ func BisonrelayGCResendListHandler(w http.ResponseWriter, r *http.Request) {
 		UID string `json:"uid"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	if err := rpc.BrclientdGCResendList(r.Context(), gcid, req.UID); err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	brDo204(w, func() error { return rpc.BrclientdGCResendList(r.Context(), gcid, req.UID) })
 }
