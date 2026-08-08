@@ -47,6 +47,8 @@ var (
 	tspendFoundCount  int
 	scanResults       []types.TSpendHistory
 	newTSpendBuffer   []types.TSpendHistory // Buffer for TSpends found since last progress check
+	scanFailedCount   int                   // Blocks the last scan could not read
+	scanSafeHeight    int64                 // Height a later scan may resume above
 )
 
 // FetchTreasuryInfo gets current treasury status including balance and active TSpends
@@ -406,10 +408,31 @@ func TriggerHistoricalScan(startHeight int64) error {
 	tspendFoundCount = 0
 	scanResults = []types.TSpendHistory{}
 	newTSpendBuffer = []types.TSpendHistory{}
+	scanFailedCount = 0
+	scanSafeHeight = 0
 	scanMutex.Unlock()
 
 	go scanHistoricalTSpendsBackground(startHeight)
 	return nil
+}
+
+// safeResumeHeight returns the height a later scan may safely resume above. A
+// block that could not be read has to be revisited, so the watermark stops
+// below the first such block no matter how many later ones succeeded.
+func safeResumeHeight(lastScanned int64, failed []int64) int64 {
+	first, found := int64(0), false
+	for _, h := range failed {
+		if !found || h < first {
+			first, found = h, true
+		}
+	}
+	if !found {
+		return lastScanned
+	}
+	if first < 1 {
+		return 0
+	}
+	return first - 1
 }
 
 // scanBlock is the part of a verbose getblock reply the historical scan reads.
@@ -477,6 +500,9 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 		govnLog.Errorf("Error getting block count for scan: %v", err)
 		scanMutex.Lock()
 		isScanRunning = false
+		// No block was reached, so hold the resume point below the start
+		// rather than let the client advance over unscanned ground.
+		scanSafeHeight = safeResumeHeight(startHeight, []int64{startHeight})
 		scanMutex.Unlock()
 		return
 	}
@@ -499,6 +525,8 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 
 	govnLog.Infof("Starting historical TSpend scan from block %d to %d (TVI stride %d)", firstTVI, currentHeight, TreasuryVoteInterval)
 
+	var failedHeights []int64
+
 	for h := firstTVI; h <= currentHeight; h += TreasuryVoteInterval {
 		// Update progress
 		scanMutex.Lock()
@@ -508,6 +536,7 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 		block, err := readScanBlockRetry(ctx, h)
 		if err != nil {
 			govnLog.Errorf("Dropping block %d from the scan after %d attempts: %v", h, scanBlockAttempts, err)
+			failedHeights = append(failedHeights, h)
 			continue
 		}
 
@@ -529,9 +558,17 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 
 	scanMutex.Lock()
 	isScanRunning = false
+	scanFailedCount = len(failedHeights)
+	scanSafeHeight = safeResumeHeight(currentScanHeight, failedHeights)
+	found, safeHeight := tspendFoundCount, scanSafeHeight
 	scanMutex.Unlock()
 
-	govnLog.Infof("Historical TSpend scan complete. Found %d TSpends", tspendFoundCount)
+	if len(failedHeights) > 0 {
+		govnLog.Warnf("Historical TSpend scan finished with %d unread block(s), first at %d. Found %d TSpends; resume height held at %d",
+			len(failedHeights), failedHeights[0], found, safeHeight)
+		return
+	}
+	govnLog.Infof("Historical TSpend scan complete. Found %d TSpends", found)
 }
 
 // GetScanProgress returns the current scan progress
@@ -546,9 +583,13 @@ func GetScanProgress() (*types.TSpendScanProgress, error) {
 
 	message := "Scanning blockchain for treasury spends..."
 	if !isScanRunning {
-		if tspendFoundCount > 0 {
+		switch {
+		case scanFailedCount > 0:
+			message = fmt.Sprintf("Scan incomplete: %d block(s) could not be read. Found %d treasury spends so far; scan again to cover the rest",
+				scanFailedCount, tspendFoundCount)
+		case tspendFoundCount > 0:
 			message = fmt.Sprintf("Scan complete. Found %d treasury spends", tspendFoundCount)
-		} else {
+		default:
 			message = "No scan in progress"
 		}
 	}
@@ -566,6 +607,8 @@ func GetScanProgress() (*types.TSpendScanProgress, error) {
 		TSpendFound:   tspendFoundCount,
 		NewTSpends:    newTSpends,
 		Message:       message,
+		FailedBlocks:  scanFailedCount,
+		SafeHeight:    scanSafeHeight,
 	}, nil
 }
 

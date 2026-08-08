@@ -53,6 +53,8 @@ export interface TSpendScanProgress {
   tspendFound: number;
   newTSpends: TSpendHistory[];
   message: string;
+  failedBlocks?: number;
+  safeHeight?: number;
 }
 
 // Fetch current treasury information

@@ -58,4 +58,6 @@ type TSpendScanProgress struct {
 	TSpendFound   int             `json:"tspendFound"` // Count of TSpends found so far
 	NewTSpends    []TSpendHistory `json:"newTSpends"`  // TSpends found since last progress check
 	Message       string          `json:"message"`
+	FailedBlocks  int             `json:"failedBlocks,omitempty"` // Blocks the scan could not read
+	SafeHeight    int64           `json:"safeHeight,omitempty"`   // Height a later scan may resume above
 }

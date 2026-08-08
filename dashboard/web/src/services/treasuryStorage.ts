@@ -27,6 +27,7 @@ export interface ScanStatus {
   lastScanDate: string;
   lastScanHeight: number;
   totalTSpendsFound: number;
+  failedBlocks?: number;
 }
 
 // Initialize storage if it doesn't exist

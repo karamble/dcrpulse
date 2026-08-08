@@ -187,14 +187,20 @@ export const GovernanceDashboard = () => {
             console.error('Failed to perform final sync:', syncError);
           }
 
-          // Update lastSyncHeight to the final scanned height
-          updateLastSyncHeight(progress.currentHeight);
+          // Resume above the last height the scan actually read. A block it
+          // could not read holds the watermark below itself, so the next scan
+          // covers the gap instead of stepping over it for good.
+          const resumeHeight = progress.safeHeight && progress.safeHeight > 0
+            ? progress.safeHeight
+            : progress.currentHeight;
+          updateLastSyncHeight(resumeHeight);
 
           // Save scan completion status
           saveScanStatus({
             lastScanDate: new Date().toISOString(),
-            lastScanHeight: progress.currentHeight,
+            lastScanHeight: resumeHeight,
             totalTSpendsFound: progress.tspendFound,
+            failedBlocks: progress.failedBlocks,
           });
           setLastScanStatus(getScanStatus());
 
@@ -296,9 +302,17 @@ export const GovernanceDashboard = () => {
           {lastScanStatus && !isScanning && (
             <div className="mt-4 pt-4 border-t border-border/50 text-sm text-muted-foreground">
               <div className="flex items-center gap-4">
-                <span>✓ Last scanned: {formatDate(lastScanStatus.lastScanDate)}</span>
+                <span>
+                  {lastScanStatus.failedBlocks ? '! Last scan incomplete: ' : '✓ Last scanned: '}
+                  {formatDate(lastScanStatus.lastScanDate)}
+                </span>
                 <span>Height: {lastScanStatus.lastScanHeight.toLocaleString()}</span>
                 <span>Found: {lastScanStatus.totalTSpendsFound} TSpends</span>
+                {lastScanStatus.failedBlocks ? (
+                  <span className="text-yellow-500">
+                    {lastScanStatus.failedBlocks} block(s) unread, scan again to cover them
+                  </span>
+                ) : null}
               </div>
             </div>
           )}
