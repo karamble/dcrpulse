@@ -113,7 +113,14 @@ export const PurchaseTicketForm = ({ staking }: PurchaseTicketFormProps) => {
           setError(ev.message);
         }
       },
-      (err) => console.error('Purchase events WebSocket error:', err),
+      {
+        // The stream replays its recent history on every connect, so start
+        // from empty or a reconnect appends a second copy of the log. The
+        // replay also carries the terminal event, which is what releases the
+        // form after a purchase finished while the stream was down.
+        onOpen: () => setEvents([]),
+        onError: (err) => console.error('Purchase events WebSocket error:', err),
+      },
     );
   }, []);
 

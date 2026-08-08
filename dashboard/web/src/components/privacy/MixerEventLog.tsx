@@ -29,7 +29,12 @@ export const MixerEventLog = () => {
           return next;
         });
       },
-      (err) => console.error('Mixer events WebSocket error:', err),
+      {
+        // The stream replays its recent history on every connect, so start
+        // from empty or a reconnect appends a second copy of the log.
+        onOpen: () => setEvents([]),
+        onError: (err) => console.error('Mixer events WebSocket error:', err),
+      },
     );
     return cleanup;
   }, []);

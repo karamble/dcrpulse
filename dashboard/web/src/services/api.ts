@@ -4,6 +4,8 @@
 
 import axios from 'axios';
 
+import { subscribeJSON, SubscribeOpts } from './socket';
+
 const API_BASE_URL = '/api';
 
 const api = axios.create({
@@ -410,29 +412,8 @@ export const stopMixer = async (): Promise<void> => {
 
 export const subscribeMixerEvents = (
   onEvent: (e: MixerEvent) => void,
-  onError?: (e: Error) => void,
-  onClose?: () => void,
-): (() => void) => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/api/wallet/privacy/events`;
-  const ws = new WebSocket(wsUrl);
-
-  ws.onmessage = (event) => {
-    try {
-      onEvent(JSON.parse(event.data) as MixerEvent);
-    } catch (err) {
-      onError?.(new Error('Failed to parse mixer event'));
-    }
-  };
-  ws.onerror = () => onError?.(new Error('Mixer events WebSocket error'));
-  ws.onclose = () => onClose?.();
-
-  return () => {
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close();
-    }
-  };
-};
+  opts?: SubscribeOpts,
+): (() => void) => subscribeJSON<MixerEvent>('/api/wallet/privacy/events', onEvent, opts);
 
 export const getNextAddress = async (account: number): Promise<NextAddressResponse> => {
   const response = await api.get<NextAddressResponse>('/wallet/next-address', {
@@ -950,29 +931,8 @@ export const getPurchaseStatus = async (): Promise<PurchaseStatus> => {
 // Mirrors subscribeAutobuyerEvents.
 export const subscribePurchaseEvents = (
   onEvent: (e: PurchaseEvent) => void,
-  onError?: (e: Error) => void,
-  onClose?: () => void,
-): (() => void) => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/api/wallet/staking/purchase/events`;
-  const ws = new WebSocket(wsUrl);
-
-  ws.onmessage = (event) => {
-    try {
-      onEvent(JSON.parse(event.data) as PurchaseEvent);
-    } catch (err) {
-      onError?.(new Error('Failed to parse purchase event'));
-    }
-  };
-  ws.onerror = () => onError?.(new Error('Purchase events WebSocket error'));
-  ws.onclose = () => onClose?.();
-
-  return () => {
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close();
-    }
-  };
-};
+  opts?: SubscribeOpts,
+): (() => void) => subscribeJSON<PurchaseEvent>('/api/wallet/staking/purchase/events', onEvent, opts);
 
 export type TicketLifecycleStatus =
   | 'UNKNOWN'
@@ -1162,29 +1122,8 @@ export const discoverAddresses = async (
 
 export const subscribeAutobuyerEvents = (
   onEvent: (e: AutobuyerEvent) => void,
-  onError?: (e: Error) => void,
-  onClose?: () => void,
-): (() => void) => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/api/wallet/staking/autobuyer/events`;
-  const ws = new WebSocket(wsUrl);
-
-  ws.onmessage = (event) => {
-    try {
-      onEvent(JSON.parse(event.data) as AutobuyerEvent);
-    } catch (err) {
-      onError?.(new Error('Failed to parse autobuyer event'));
-    }
-  };
-  ws.onerror = () => onError?.(new Error('Autobuyer events WebSocket error'));
-  ws.onclose = () => onClose?.();
-
-  return () => {
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close();
-    }
-  };
-};
+  opts?: SubscribeOpts,
+): (() => void) => subscribeJSON<AutobuyerEvent>('/api/wallet/staking/autobuyer/events', onEvent, opts);
 
 // ---- Governance ----------------------------------------------------------
 
@@ -1519,29 +1458,8 @@ export const stopVoteTrickle = async (token: string): Promise<void> => {
 
 export const subscribeVoteTrickleEvents = (
   onEvent: (e: VoteTrickleEvent) => void,
-  onError?: (e: Error) => void,
-  onClose?: () => void,
-): (() => void) => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/api/wallet/governance/votetrickle/events`;
-  const ws = new WebSocket(wsUrl);
-
-  ws.onmessage = (event) => {
-    try {
-      onEvent(JSON.parse(event.data) as VoteTrickleEvent);
-    } catch (err) {
-      onError?.(new Error('Failed to parse vote-trickle event'));
-    }
-  };
-  ws.onerror = () => onError?.(new Error('Vote-trickle events WebSocket error'));
-  ws.onclose = () => onClose?.();
-
-  return () => {
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close();
-    }
-  };
-};
+  opts?: SubscribeOpts,
+): (() => void) => subscribeJSON<VoteTrickleEvent>('/api/wallet/governance/votetrickle/events', onEvent, opts);
 
 // Alerts center. The summary is a dedicated lightweight endpoint (not part of
 // /wallet/status, which fails while dcrd is down or in IBD, exactly when

@@ -84,7 +84,12 @@ export const VoteTrickleCard = () => {
           return { ...prev, [tok]: arr };
         });
       },
-      (err) => console.error('Vote-trickle events WebSocket error:', err),
+      {
+        // The stream replays its recent history on every connect, so start
+        // from empty or a reconnect appends a second copy of the log.
+        onOpen: () => setEventsByToken({}),
+        onError: (err) => console.error('Vote-trickle events WebSocket error:', err),
+      },
     );
     return cleanup;
   }, []);
