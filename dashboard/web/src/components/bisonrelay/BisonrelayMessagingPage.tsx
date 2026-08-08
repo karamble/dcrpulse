@@ -1029,7 +1029,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         }
       }
     });
-  }, [addListener, refreshContacts]);
+  }, [addListener, refreshContacts, refreshGCs]);
 
   // handleSend performs the actual send for the composer; it resolves true
   // when the message went out (the composer then clears its draft) and false
