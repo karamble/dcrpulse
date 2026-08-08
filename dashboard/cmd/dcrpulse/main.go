@@ -295,10 +295,7 @@ func main() {
 	// Node/dcrd routes
 	api.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")
 	api.HandleFunc("/dashboard", handlers.GetDashboardDataHandler).Methods("GET")
-	api.HandleFunc("/node/status", handlers.GetNodeStatusHandler).Methods("GET")
 	api.HandleFunc("/node/sync/stream", handlers.StreamNodeSyncHandler).Methods("GET")
-	api.HandleFunc("/blockchain/info", handlers.GetBlockchainInfoHandler).Methods("GET")
-	api.HandleFunc("/network/peers", handlers.GetPeersHandler).Methods("GET")
 
 	// Multi-wallet routes. select/create/delete relaunch the dcrwallet daemon,
 	// so they are rate limited like other daemon-cycling endpoints.

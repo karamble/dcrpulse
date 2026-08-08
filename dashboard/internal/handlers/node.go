@@ -34,24 +34,6 @@ func GetDashboardDataHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
-// GetNodeStatusHandler handles requests for node status
-func GetNodeStatusHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.DcrdClient == nil {
-		http.Error(w, "RPC client not initialized", http.StatusServiceUnavailable)
-		return
-	}
-
-	status, err := services.FetchNodeStatus()
-	if err != nil {
-		nodeLog.Errorf("Error fetching node status: %v", err)
-		respondDaemonError(w, r, services.LogComponentDcrd, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
-}
-
 // StreamNodeSyncHandler streams dcrd sync-progress snapshots over a WebSocket,
 // pushed on each block-connected notification instead of the 30s poll. Mirrors
 // the wallet's StreamRescanProgressHandler.
@@ -101,42 +83,6 @@ func StreamNodeSyncHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-}
-
-// GetBlockchainInfoHandler handles requests for blockchain information
-func GetBlockchainInfoHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.DcrdClient == nil {
-		http.Error(w, "RPC client not initialized", http.StatusServiceUnavailable)
-		return
-	}
-
-	info, err := services.FetchBlockchainInfo()
-	if err != nil {
-		nodeLog.Errorf("Error fetching blockchain info: %v", err)
-		respondDaemonError(w, r, services.LogComponentDcrd, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(info)
-}
-
-// GetPeersHandler handles requests for peer information
-func GetPeersHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.DcrdClient == nil {
-		http.Error(w, "RPC client not initialized", http.StatusServiceUnavailable)
-		return
-	}
-
-	peers, err := services.FetchPeers()
-	if err != nil {
-		nodeLog.Errorf("Error fetching peers: %v", err)
-		respondDaemonError(w, r, services.LogComponentDcrd, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(peers)
 }
 
 // HealthCheckHandler handles health check requests

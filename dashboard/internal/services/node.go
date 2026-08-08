@@ -215,10 +215,6 @@ func FetchDashboardData() (*types.DashboardData, error) {
 	return data, nil
 }
 
-func FetchNodeStatus() (*types.NodeStatus, error) {
-	return fetchNodeStatus(context.Background(), &chainSnapshot{})
-}
-
 func fetchNodeStatus(ctx context.Context, snap *chainSnapshot) (*types.NodeStatus, error) {
 	// Get version info using version command
 	versionInfo, err := rpc.DcrdClient.Version(ctx)
@@ -314,10 +310,6 @@ func fetchNodeStatus(ctx context.Context, snap *chainSnapshot) (*types.NodeStatu
 	}, nil
 }
 
-func FetchBlockchainInfo() (*types.BlockchainInfo, error) {
-	return fetchBlockchainInfo(context.Background(), &chainSnapshot{})
-}
-
 func fetchBlockchainInfo(ctx context.Context, snap *chainSnapshot) (*types.BlockchainInfo, error) {
 	info, err := snap.blockChainInfo(ctx)
 	if err != nil {
@@ -396,10 +388,6 @@ func fetchNetworkInfo(ctx context.Context, snap *chainSnapshot) (*types.NetworkI
 		Hashrate:      hashrateStr,
 		NetworkHashPS: networkHashPS,
 	}, nil
-}
-
-func FetchPeers() ([]types.Peer, error) {
-	return fetchPeers(context.Background(), &chainSnapshot{})
 }
 
 func fetchPeers(ctx context.Context, snap *chainSnapshot) ([]types.Peer, error) {
