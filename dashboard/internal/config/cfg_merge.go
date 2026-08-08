@@ -41,11 +41,15 @@ func readRawJSON(path string) (map[string]json.RawMessage, error) {
 
 // mergeSave rewrites path with the document currently on disk, overlaid with
 // the keys this instance staged: those present in raw are written, those absent
-// were deleted. Keys another writer added meanwhile are left alone. Returns the
-// merged document so the caller can adopt it.
+// were deleted. entries overlays individual members of object-valued keys, so
+// two writers adding different members do not overwrite each other. Keys
+// another writer added meanwhile are left alone. Returns the merged document so
+// the caller can adopt it.
 //
 // Callers must hold cfgWriteMu.
-func mergeSave(path string, raw map[string]json.RawMessage, dirty map[string]bool) (map[string]json.RawMessage, error) {
+func mergeSave(path string, raw map[string]json.RawMessage, dirty map[string]bool,
+	entries map[string]map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create config dir: %w", err)
 	}
@@ -59,6 +63,22 @@ func mergeSave(path string, raw map[string]json.RawMessage, dirty map[string]boo
 		} else {
 			delete(merged, key)
 		}
+	}
+	for key, members := range entries {
+		obj := map[string]json.RawMessage{}
+		if cur, ok := merged[key]; ok {
+			if err := json.Unmarshal(cur, &obj); err != nil {
+				return nil, fmt.Errorf("decode %q in %s: %w", key, path, err)
+			}
+		}
+		for name, v := range members {
+			obj[name] = v
+		}
+		enc, err := json.Marshal(obj)
+		if err != nil {
+			return nil, fmt.Errorf("encode %q: %w", key, err)
+		}
+		merged[key] = enc
 	}
 	data, err := json.MarshalIndent(merged, "", "  ")
 	if err != nil {

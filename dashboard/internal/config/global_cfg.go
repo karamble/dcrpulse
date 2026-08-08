@@ -93,7 +93,8 @@ func (c *GlobalCfg) Save() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	merged, err := mergeSave(c.path, c.raw, c.dirty)
+	// No entry staging: the global document has no incrementally merged maps.
+	merged, err := mergeSave(c.path, c.raw, c.dirty, nil)
 	if err != nil {
 		return err
 	}

@@ -20,6 +20,10 @@ type WalletCfg struct {
 	path  string
 	raw   map[string]json.RawMessage
 	dirty map[string]bool // keys this instance wrote, flushed by Save
+	// entries holds single members staged into object-valued keys, kept
+	// apart from dirty so Save merges them rather than writing the whole
+	// object over another writer's members.
+	entries map[string]map[string]json.RawMessage
 }
 
 // LoadWalletCfg reads the per-wallet config.json. An absent or empty
@@ -33,7 +37,12 @@ func loadWalletCfgAt(path string) (*WalletCfg, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &WalletCfg{path: path, raw: raw, dirty: map[string]bool{}}, nil
+	return &WalletCfg{
+		path:    path,
+		raw:     raw,
+		dirty:   map[string]bool{},
+		entries: map[string]map[string]json.RawMessage{},
+	}, nil
 }
 
 // Path returns the on-disk file path.
@@ -71,6 +80,7 @@ func (c *WalletCfg) Set(key string, value any) error {
 	defer c.mu.Unlock()
 	c.raw[key] = enc
 	c.dirty[key] = true
+	delete(c.entries, key) // a whole-key write replaces staged members
 	return nil
 }
 
@@ -80,6 +90,39 @@ func (c *WalletCfg) Delete(key string) {
 	defer c.mu.Unlock()
 	delete(c.raw, key)
 	c.dirty[key] = true
+	delete(c.entries, key)
+}
+
+// setMapEntry stages one member of an object-valued key. Save merges it into
+// whatever the file holds, so a writer adding a different member concurrently
+// keeps it; staging the whole object would overwrite theirs.
+func (c *WalletCfg) setMapEntry(key, member string, value any) error {
+	enc, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encode %q: %w", member, err)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Keep the in-memory document readable by this instance before Save.
+	obj := map[string]json.RawMessage{}
+	if cur, ok := c.raw[key]; ok {
+		if err := json.Unmarshal(cur, &obj); err != nil {
+			return fmt.Errorf("decode %q: %w", key, err)
+		}
+	}
+	obj[member] = enc
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return fmt.Errorf("encode %q: %w", key, err)
+	}
+	c.raw[key] = merged
+
+	if c.entries[key] == nil {
+		c.entries[key] = map[string]json.RawMessage{}
+	}
+	c.entries[key][member] = enc
+	return nil
 }
 
 // Save merges this instance's writes into the document on disk and rewrites
@@ -91,12 +134,13 @@ func (c *WalletCfg) Save() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	merged, err := mergeSave(c.path, c.raw, c.dirty)
+	merged, err := mergeSave(c.path, c.raw, c.dirty, c.entries)
 	if err != nil {
 		return err
 	}
 	c.raw = merged
 	c.dirty = map[string]bool{}
+	c.entries = map[string]map[string]json.RawMessage{}
 	return nil
 }
 
@@ -193,15 +237,7 @@ func (c *WalletCfg) UsedVSPs() (map[string]VSPMetadata, error) {
 
 // UpsertUsedVSP merges meta into the used_vsps map under meta.Host.
 func (c *WalletCfg) UpsertUsedVSP(meta VSPMetadata) error {
-	m, err := c.UsedVSPs()
-	if err != nil {
-		return err
-	}
-	if m == nil {
-		m = map[string]VSPMetadata{}
-	}
-	m[meta.Host] = meta
-	return c.Set(KeyUsedVSPs, m)
+	return c.setMapEntry(KeyUsedVSPs, meta.Host, meta)
 }
 
 // PoliteiaVotes returns the per-wallet cache of Politeia vote choices.
@@ -234,26 +270,10 @@ func (c *WalletCfg) PoliteiaVoteCounts() (map[string]int, error) {
 
 // UpsertPoliteiaVote records the vote choice and ticket count for a token.
 func (c *WalletCfg) UpsertPoliteiaVote(token, choice string, count int) error {
-	m, err := c.PoliteiaVotes()
-	if err != nil {
+	if err := c.setMapEntry(KeyPoliteiaVotes, token, choice); err != nil {
 		return err
 	}
-	if m == nil {
-		m = map[string]string{}
-	}
-	m[token] = choice
-	if err := c.Set(KeyPoliteiaVotes, m); err != nil {
-		return err
-	}
-	cm, err := c.PoliteiaVoteCounts()
-	if err != nil {
-		return err
-	}
-	if cm == nil {
-		cm = map[string]int{}
-	}
-	cm[token] = count
-	return c.Set(KeyPoliteiaVoteCounts, cm)
+	return c.setMapEntry(KeyPoliteiaVoteCounts, token, count)
 }
 
 // SetLastAccess records a unix-seconds timestamp under last_access.

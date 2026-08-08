@@ -5,7 +5,9 @@
 package config
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -187,5 +189,190 @@ func TestWalletCfgUnknownKeysSurviveConcurrentWrite(t *testing.T) {
 	}
 	if acct["host"] != "dex.example.com" {
 		t.Fatalf("unknown key mangled: %v", acct)
+	}
+}
+
+// UpsertUsedVSP and UpsertPoliteiaVote add one entry to a map-valued key. Two
+// writers touching different entries must not drop each other's, which merging
+// whole keys alone does not give: both would write their own copy of the map.
+func TestWalletCfgUpsertMergesEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+
+	bg, err := loadWalletCfgAt(path)
+	if err != nil {
+		t.Fatalf("load bg: %v", err)
+	}
+	ui, err := loadWalletCfgAt(path)
+	if err != nil {
+		t.Fatalf("load ui: %v", err)
+	}
+
+	if err := bg.UpsertUsedVSP(VSPMetadata{Host: "vsp-a.example.com", LastUsed: 1}); err != nil {
+		t.Fatalf("upsert a: %v", err)
+	}
+	if err := bg.Save(); err != nil {
+		t.Fatalf("save bg: %v", err)
+	}
+	if err := ui.UpsertUsedVSP(VSPMetadata{Host: "vsp-b.example.com", LastUsed: 2}); err != nil {
+		t.Fatalf("upsert b: %v", err)
+	}
+	if err := ui.Save(); err != nil {
+		t.Fatalf("save ui: %v", err)
+	}
+
+	reread, err := loadWalletCfgAt(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	used, err := reread.UsedVSPs()
+	if err != nil {
+		t.Fatalf("used vsps: %v", err)
+	}
+	if len(used) != 2 {
+		t.Fatalf("used_vsps has %d entries, want 2: %v", len(used), used)
+	}
+	if used["vsp-a.example.com"].LastUsed != 1 || used["vsp-b.example.com"].LastUsed != 2 {
+		t.Fatalf("entries mangled: %v", used)
+	}
+}
+
+func TestWalletCfgUpsertPoliteiaVoteMergesEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+
+	first, err := loadWalletCfgAt(path)
+	if err != nil {
+		t.Fatalf("load first: %v", err)
+	}
+	second, err := loadWalletCfgAt(path)
+	if err != nil {
+		t.Fatalf("load second: %v", err)
+	}
+
+	if err := first.UpsertPoliteiaVote("token-a", "yes", 3); err != nil {
+		t.Fatalf("upsert a: %v", err)
+	}
+	if err := first.Save(); err != nil {
+		t.Fatalf("save first: %v", err)
+	}
+	if err := second.UpsertPoliteiaVote("token-b", "no", 5); err != nil {
+		t.Fatalf("upsert b: %v", err)
+	}
+	if err := second.Save(); err != nil {
+		t.Fatalf("save second: %v", err)
+	}
+
+	reread, err := loadWalletCfgAt(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	votes, err := reread.PoliteiaVotes()
+	if err != nil {
+		t.Fatalf("votes: %v", err)
+	}
+	counts, err := reread.PoliteiaVoteCounts()
+	if err != nil {
+		t.Fatalf("counts: %v", err)
+	}
+	if votes["token-a"] != "yes" || votes["token-b"] != "no" {
+		t.Fatalf("votes lost an entry: %v", votes)
+	}
+	if counts["token-a"] != 3 || counts["token-b"] != 5 {
+		t.Fatalf("counts lost an entry: %v", counts)
+	}
+}
+
+// A whole-key write must beat entries staged for that key, so replacing a map
+// wholesale is not undone by a stale entry.
+func TestWalletCfgSetSupersedesStagedEntry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+
+	c, err := loadWalletCfgAt(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := c.UpsertUsedVSP(VSPMetadata{Host: "stale.example.com"}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := c.Set(KeyUsedVSPs, map[string]VSPMetadata{
+		"fresh.example.com": {Host: "fresh.example.com"},
+	}); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	reread, err := loadWalletCfgAt(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	used, err := reread.UsedVSPs()
+	if err != nil {
+		t.Fatalf("used vsps: %v", err)
+	}
+	if len(used) != 1 || used["fresh.example.com"].Host != "fresh.example.com" {
+		t.Fatalf("whole-key set did not supersede the staged entry: %v", used)
+	}
+}
+
+// The tests above interleave saves by hand. This one runs the writers for
+// real, which is what the package-level mutex exists for; run with -race.
+func TestConcurrentWritersKeepEveryKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+
+	const writers = 16
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+
+	for i := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, err := loadWalletCfgAt(path)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if err := c.Set(fmt.Sprintf("key_%02d", i), i); err != nil {
+				errs <- err
+				return
+			}
+			if err := c.UpsertUsedVSP(VSPMetadata{
+				Host: fmt.Sprintf("vsp-%02d.example.com", i), LastUsed: int64(i),
+			}); err != nil {
+				errs <- err
+				return
+			}
+			if err := c.Save(); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("writer: %v", err)
+	}
+
+	reread, err := loadWalletCfgAt(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	for i := range writers {
+		var got int
+		key := fmt.Sprintf("key_%02d", i)
+		if ok, err := reread.Get(key, &got); err != nil || !ok {
+			t.Fatalf("%s missing (ok=%v err=%v)", key, ok, err)
+		}
+		if got != i {
+			t.Fatalf("%s = %d, want %d", key, got, i)
+		}
+	}
+	used, err := reread.UsedVSPs()
+	if err != nil {
+		t.Fatalf("used vsps: %v", err)
+	}
+	if len(used) != writers {
+		t.Fatalf("used_vsps has %d entries, want %d", len(used), writers)
 	}
 }
