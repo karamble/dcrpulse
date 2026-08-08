@@ -62,10 +62,39 @@ func SubscribeSyncEvents() (<-chan SyncSnapshot, func()) {
 	return syncBus.subscribe(8)
 }
 
+// rescanBaseHeight reads the chain height a rescan's progress is measured
+// against. It runs unlocked because the call can take seconds and every reader
+// of the snapshot would otherwise wait behind it; callers store the result
+// under syncMu.
+func rescanBaseHeight() int64 {
+	if rpc.DcrdClient == nil {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	h, err := rpc.DcrdClient.GetBlockCount(ctx)
+	if err != nil {
+		return 0
+	}
+	return h
+}
+
 // ApplyRpcSyncNotification updates the snapshot from one RpcSync response.
 func ApplyRpcSyncNotification(resp *pb.RpcSyncResponse) {
 	if resp == nil {
 		return
+	}
+
+	// A starting rescan needs a chain height to measure against. Fetch it
+	// before locking; a value that turns out to be unneeded is discarded.
+	var rescanBase int64
+	if resp.NotificationType == pb.SyncNotificationType_RESCAN_STARTED {
+		syncMu.RLock()
+		need := syncSnap.RescanFrom == 0
+		syncMu.RUnlock()
+		if need {
+			rescanBase = rescanBaseHeight()
+		}
 	}
 
 	syncMu.Lock()
@@ -128,12 +157,8 @@ func ApplyRpcSyncNotification(resp *pb.RpcSyncResponse) {
 		syncSnap.Phase = SyncPhaseRescanning
 		syncSnap.RescanThrough = 0
 		syncSnap.RescanProgressPc = 0
-		if syncSnap.RescanFrom == 0 && rpc.DcrdClient != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			if h, err := rpc.DcrdClient.GetBlockCount(ctx); err == nil {
-				syncSnap.RescanFrom = h
-			}
-			cancel()
+		if syncSnap.RescanFrom == 0 && rescanBase > 0 {
+			syncSnap.RescanFrom = rescanBase
 		}
 	case pb.SyncNotificationType_RESCAN_PROGRESS:
 		syncSnap.Phase = SyncPhaseRescanning
@@ -165,16 +190,21 @@ func ApplyRpcSyncNotification(resp *pb.RpcSyncResponse) {
 
 // MarkRescanProgress updates the snapshot from a user-initiated WalletService.Rescan stream.
 func MarkRescanProgress(rescannedThrough int32) {
+	// Same as above: resolve the denominator before taking the lock.
+	syncMu.RLock()
+	need := syncSnap.RescanFrom == 0
+	syncMu.RUnlock()
+	var rescanBase int64
+	if need {
+		rescanBase = rescanBaseHeight()
+	}
+
 	syncMu.Lock()
 	syncSnap.Phase = SyncPhaseRescanning
 	syncSnap.RescanThrough = rescannedThrough
 	syncSnap.LastNotification = time.Now().UTC()
-	if syncSnap.RescanFrom == 0 && rpc.DcrdClient != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		if h, err := rpc.DcrdClient.GetBlockCount(ctx); err == nil {
-			syncSnap.RescanFrom = h
-		}
-		cancel()
+	if syncSnap.RescanFrom == 0 && rescanBase > 0 {
+		syncSnap.RescanFrom = rescanBase
 	}
 	if syncSnap.RescanFrom > 0 {
 		pct := float64(syncSnap.RescanThrough) / float64(syncSnap.RescanFrom) * 100
