@@ -211,9 +211,10 @@ func lightningWriteErr(w http.ResponseWriter, label string, err error) {
 
 // ---- Channels (Phase 4: Decrediton parity) --------------------------------
 
-// lightningList is the shared body of the three 15-second list reads.
-func lightningList(w http.ResponseWriter, r *http.Request, label string, list func(ctx context.Context) (any, error)) {
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+// lightningList is the shared body of the simple list reads. The timeout is a
+// parameter because the read handlers deliberately use different tiers.
+func lightningList(w http.ResponseWriter, r *http.Request, timeout time.Duration, label string, list func(ctx context.Context) (any, error)) {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	resp, err := list(ctx)
 	if err != nil {
@@ -226,7 +227,7 @@ func lightningList(w http.ResponseWriter, r *http.Request, label string, list fu
 
 // LightningChannelsHandler — merged list of open/pending/closed channels.
 func LightningChannelsHandler(w http.ResponseWriter, r *http.Request) {
-	lightningList(w, r, "ListLightningChannels", func(ctx context.Context) (any, error) {
+	lightningList(w, r, 15*time.Second, "ListLightningChannels", func(ctx context.Context) (any, error) {
 		return services.ListLightningChannels(ctx)
 	})
 }
@@ -294,15 +295,9 @@ func LightningPeerPresetsHandler(w http.ResponseWriter, r *http.Request) {
 
 // LightningAutopilotStatusHandler — current autopilot active flag.
 func LightningAutopilotStatusHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	resp, err := services.GetLightningAutopilotStatus(ctx)
-	if err != nil {
-		lightningWriteErr(w, "GetLightningAutopilotStatus", err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	lightningList(w, r, 5*time.Second, "GetLightningAutopilotStatus", func(ctx context.Context) (any, error) {
+		return services.GetLightningAutopilotStatus(ctx)
+	})
 }
 
 // LightningAutopilotSetHandler — toggle autopilot.
@@ -578,7 +573,7 @@ func timeFrom(ctx context.Context, d time.Duration) time.Time {
 // LightningPaymentsHandler returns the wallet's payment history for the
 // Send tab's lower list. Mirrors Decrediton's listLatestPayments.
 func LightningPaymentsHandler(w http.ResponseWriter, r *http.Request) {
-	lightningList(w, r, "ListLightningPayments", func(ctx context.Context) (any, error) {
+	lightningList(w, r, 15*time.Second, "ListLightningPayments", func(ctx context.Context) (any, error) {
 		return services.ListLightningPayments(ctx)
 	})
 }
@@ -615,7 +610,7 @@ func LightningAddInvoiceHandler(w http.ResponseWriter, r *http.Request) {
 // LightningInvoicesHandler returns the wallet's invoice history for the
 // Receive tab's lower list.
 func LightningInvoicesHandler(w http.ResponseWriter, r *http.Request) {
-	lightningList(w, r, "ListLightningInvoices", func(ctx context.Context) (any, error) {
+	lightningList(w, r, 15*time.Second, "ListLightningInvoices", func(ctx context.Context) (any, error) {
 		return services.ListLightningInvoices(ctx)
 	})
 }
@@ -731,15 +726,9 @@ func LightningBackupVerifyHandler(w http.ResponseWriter, r *http.Request) {
 
 // LightningWatchtowersHandler lists registered watchtowers.
 func LightningWatchtowersHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	resp, err := services.ListLightningWatchtowers(ctx)
-	if err != nil {
-		lightningWriteErr(w, "ListLightningWatchtowers", err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	lightningList(w, r, 10*time.Second, "ListLightningWatchtowers", func(ctx context.Context) (any, error) {
+		return services.ListLightningWatchtowers(ctx)
+	})
 }
 
 // LightningWatchtowerAddHandler registers a new watchtower.
