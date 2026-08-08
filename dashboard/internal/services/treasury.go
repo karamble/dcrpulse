@@ -103,18 +103,11 @@ func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 		return nil, fmt.Errorf("dcrd client not available")
 	}
 
-	// Get raw mempool with verbose=true
-	result, err := rpc.DcrdClient.RawRequest(ctx, "getrawmempool", []json.RawMessage{
-		json.RawMessage("true"), // verbose
-	})
+	// dcrd filters the mempool by transaction type, so ask it for the treasury
+	// spends rather than fetching every entry to classify it here.
+	hashes, err := rpc.DcrdClient.GetRawMempool(ctx, chainjson.GRMTSpend)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mempool: %w", err)
-	}
-
-	// Parse mempool response
-	var mempoolMap map[string]interface{}
-	if err := json.Unmarshal(result, &mempoolMap); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal mempool: %w", err)
 	}
 
 	var tspends []types.TSpend
@@ -124,21 +117,16 @@ func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 		currentHeight = 0
 	}
 
-	// Check each transaction
-	for txHash := range mempoolMap {
-		// Get transaction details
-		tx, err := getTransaction(ctx, txHash)
+	for _, hash := range hashes {
+		tx, err := getTransaction(ctx, hash.String())
 		if err != nil {
-			govnLog.Warnf("Failed to get transaction %s: %v", txHash, err)
+			govnLog.Warnf("Failed to get transaction %s: %v", hash, err)
 			continue
 		}
 
-		// Check if it's a treasury spend
-		if isTreasurySpend(tx) {
-			tspend := extractTSpendInfo(tx, currentHeight)
-			if tspend != nil {
-				tspends = append(tspends, *tspend)
-			}
+		tspend := extractTSpendInfo(tx, currentHeight)
+		if tspend != nil {
+			tspends = append(tspends, *tspend)
 		}
 	}
 
