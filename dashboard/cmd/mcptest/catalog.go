@@ -172,7 +172,6 @@ var catalog = []spec{
 
 	// treasury
 	rd("treasury", "treasury_info"),
-	rd("treasury", "treasury_mempool_tspends"),
 	rd("treasury", "treasury_balance_history"),
 	rd("treasury", "treasury_scan_progress"),
 	rd("treasury", "treasury_scan_results"),

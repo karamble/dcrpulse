@@ -137,7 +137,6 @@ var goldenReadOnlyTools = []string{
 	"tor_status",
 	"treasury_balance_history",
 	"treasury_info",
-	"treasury_mempool_tspends",
 	"treasury_scan_progress",
 	"treasury_scan_results",
 	"treasury_scan_start",
