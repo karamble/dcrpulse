@@ -153,21 +153,6 @@ export const getDashboardData = async (): Promise<DashboardData> => {
   return response.data;
 };
 
-export const getNodeStatus = async (): Promise<NodeStatus> => {
-  const response = await api.get<NodeStatus>('/node/status');
-  return response.data;
-};
-
-export const getBlockchainInfo = async (): Promise<BlockchainInfo> => {
-  const response = await api.get<BlockchainInfo>('/blockchain/info');
-  return response.data;
-};
-
-export const getPeers = async (): Promise<Peer[]> => {
-  const response = await api.get<Peer[]>('/network/peers');
-  return response.data;
-};
-
 export interface HealthStatus {
   status: string;
   rpcConnected: boolean;
