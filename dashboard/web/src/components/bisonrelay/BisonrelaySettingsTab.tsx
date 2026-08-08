@@ -64,10 +64,10 @@ import {
   PolicyTile,
   SectionCard,
   backupBtnCls,
-  formatBytes,
   formatDCR,
   relativeTime,
 } from './BisonrelayStats';
+import { formatBytes } from '../../utils/bytes';
 import { avatarDataUrl } from './bisonrelayAvatar';
 import { BR_TEXT_SCALES, BrTextScale, setBrTextScale, useBrTextScale } from './brTextScale';
 import { ChannelList } from '../lightning/channels/ChannelList';

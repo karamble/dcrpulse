@@ -5,19 +5,13 @@
 import { Activity, Database, Ticket, CheckCircle, XCircle, ArrowRightLeft, Shuffle, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { MempoolInfo } from '../services/api';
+import { formatBytes } from '../utils/bytes';
 
 interface MempoolActivityProps {
   data?: MempoolInfo;
 }
 
 export const MempoolActivity = ({ data }: MempoolActivityProps) => {
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
-
   const hasStakingTxs = data && (data.tickets > 0 || data.votes > 0 || data.revocations > 0);
   const hasAnyActivity = data && (hasStakingTxs || data.regularTxs > 0 || data.coinJoinTxs > 0);
 

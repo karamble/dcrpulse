@@ -208,14 +208,3 @@ export function isImageMime(mime?: string): boolean {
   return ALLOWED_IMAGE_MIMES.has((mime || '').toLowerCase().trim());
 }
 
-export function formatBytes(n: number): string {
-  if (!n) return '0 B';
-  const units = ['B', 'KiB', 'MiB', 'GiB'];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
-}

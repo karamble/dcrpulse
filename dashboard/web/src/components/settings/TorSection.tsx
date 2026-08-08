@@ -15,6 +15,7 @@ import {
   torNewIdentity,
 } from '../../services/tor/client';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { formatBytes } from '../../utils/bytes';
 
 interface ToggleProps {
   label: string;
@@ -45,17 +46,6 @@ const Toggle = ({ label, description, checked, disabled, onChange }: ToggleProps
   </div>
 );
 
-const formatBytes = (n: number): string => {
-  if (!n || n < 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let v = n;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-};
 
 const Stat = ({ label, value }: { label: string; value: string }) => (
   <div className="p-3 rounded-lg bg-muted/10 border border-border/50">

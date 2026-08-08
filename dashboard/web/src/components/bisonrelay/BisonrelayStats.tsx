@@ -57,6 +57,7 @@ import {
 } from '../../services/bisonrelayApi';
 import { avatarDataUrl } from './bisonrelayAvatar';
 import { ConfirmActionModal } from './BisonrelayUserSubNav';
+import { formatBytes } from '../../utils/bytes';
 
 type Section = 'overview' | 'payments' | 'network' | 'contacts' | 'content';
 
@@ -88,17 +89,6 @@ export const formatDCR = (matoms: number, digits = 4): string => {
   return dcr.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '');
 };
 
-export const formatBytes = (n: number): string => {
-  if (!n) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
-};
 
 const formatNs = (ns: number): string => {
   if (!ns) return '–';

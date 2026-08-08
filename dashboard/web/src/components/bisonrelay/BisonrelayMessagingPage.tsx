@@ -56,10 +56,10 @@ import {
   buildDownloadTag,
   downloadFileUrl,
   embedFileUrl,
-  formatBytes,
   isImageMime,
   parseEmbeds,
 } from './embedParser';
+import { formatBytes } from '../../utils/bytes';
 import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
 import { linkifyChatText } from './chatLinkify';
 import { splitLnInvoices } from './lnpayParse';

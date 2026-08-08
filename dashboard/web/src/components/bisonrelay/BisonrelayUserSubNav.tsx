@@ -60,6 +60,7 @@ import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { ContactGroupModal } from './BisonrelayContactGroupModals';
 import { TipModal } from './TipModal';
 import { formatDcrTrimmed } from '../../utils/amounts';
+import { formatBytes as formatBytesPretty } from '../../utils/bytes';
 
 // Layout + action ordering mirrors bruig's chat_side_menu / user_context_menu
 // (companyzero/bisonrelay, ISC). "User Profile" is collapsed into the header
@@ -861,17 +862,6 @@ const ContentFileRow = ({
   );
 };
 
-function formatBytesPretty(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-  let v = bytes;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-}
 
 const PostsListModal = ({
   nick,

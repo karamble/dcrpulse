@@ -46,6 +46,7 @@ import { ImageAttachModal, ImageAttachResult, isCompressibleImage } from './Imag
 import { PageLinkPickerModal } from './PageLinkPickerModal';
 import { blobToDataB64 } from './imageCompress';
 import { formatDcrTrimmed } from '../../../utils/amounts';
+import { formatBytes } from '../../../utils/bytes';
 
 // MAX_INLINE_BYTES is the per-attachment ceiling for inline embeds. Files
 // above this should use the "Link to shared content" flow instead (which
@@ -633,17 +634,6 @@ function formatCost(atoms: number): string {
   return `${formatDcrTrimmed(atoms)} DCR`;
 }
 
-function formatBytes(n: number): string {
-  if (!n) return '0 B';
-  const units = ['B', 'KiB', 'MiB', 'GiB'];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-}
 
 // -----------------------------------------------------------------
 // Preview tab

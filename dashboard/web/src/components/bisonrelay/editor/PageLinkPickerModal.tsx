@@ -8,6 +8,7 @@ import {
   BisonrelayLocalPage,
   listBisonrelayLocalPages,
 } from '../../../services/bisonrelayApi';
+import { formatBytes } from '../../../utils/bytes';
 
 interface Props {
   onClose: () => void;
@@ -152,14 +153,3 @@ export const PageLinkPickerModal = ({ onClose, onSubmit }: Props) => {
   );
 };
 
-function formatBytes(n: number): string {
-  if (!n) return '0 B';
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-}

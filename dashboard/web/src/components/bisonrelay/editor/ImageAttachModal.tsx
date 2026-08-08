@@ -4,7 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { AlertCircle, Image as ImageIcon, Loader2, X } from 'lucide-react';
-import { formatBytes, isImageMime } from '../embedParser';
+import { isImageMime } from '../embedParser';
+import { formatBytes } from '../../../utils/bytes';
 import { CompressResult, blobToDataB64, compressImageToJpeg } from './imageCompress';
 
 export interface ImageAttachResult {

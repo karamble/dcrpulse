@@ -29,6 +29,7 @@ import {
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { formatDcrTrimmed, toDcr } from '../../utils/amounts';
+import { formatBytes } from '../../utils/bytes';
 
 type Section = 'add' | 'shared' | 'downloads';
 
@@ -45,17 +46,6 @@ const navigateTo = (hash: string): void => {
   window.location.hash = hash;
 };
 
-const formatBytes = (n: number): string => {
-  if (!n) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
-};
 
 // Shared-file costs are in atoms (1 DCR = 1e8), not the milli-atoms used for
 // payment/tip records.

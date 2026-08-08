@@ -4,7 +4,8 @@
 
 import { Download, FileText } from 'lucide-react';
 import { DownloadEmbed } from './DownloadEmbed';
-import { EmbedSegment, embedFileUrl, formatBytes, isImageMime } from './embedParser';
+import { EmbedSegment, embedFileUrl, isImageMime } from './embedParser';
+import { formatBytes } from '../../utils/bytes';
 import { QuoteEmbedCard } from './QuoteEmbedCard';
 
 // ImageViewerOpenFn opens the shared image lightbox. Callers supply their own
