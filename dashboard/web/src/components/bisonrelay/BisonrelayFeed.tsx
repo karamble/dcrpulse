@@ -71,6 +71,7 @@ import { DownloadEmbed } from './DownloadEmbed';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { TipModal } from './TipModal';
 import { UserProfileView } from './BisonrelayUserProfile';
+import { identityToHex } from '../../utils/identity';
 
 type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail' | 'user';
 
@@ -115,21 +116,6 @@ const persistSeenMap = (m: Record<string, number>): void => {
     localStorage.setItem(FEED_SEEN_STORAGE, JSON.stringify(m));
   } catch {
     /* ignore */
-  }
-};
-
-// brclientd's /public-identity returns the identity base64-encoded while the
-// posts feed keys authors by hex; convert so own-post checks match.
-const identityB64ToHex = (b64: string): string => {
-  try {
-    const bin = atob(b64);
-    let hex = '';
-    for (let i = 0; i < bin.length; i++) {
-      hex += bin.charCodeAt(i).toString(16).padStart(2, '0');
-    }
-    return hex;
-  } catch {
-    return '';
   }
 };
 
@@ -204,7 +190,7 @@ export const BisonrelayFeed = () => {
       // comments and atom/seen rows would always fall back to the initial
       // circle; merge the identity avatar under the hex uid the feed keys by.
       if (identity?.identity && identity.avatar) {
-        const hex = identityB64ToHex(identity.identity);
+        const hex = identityToHex(identity.identity);
         if (hex) map[hex] = identity.avatar;
       }
       setAvatars(map);
@@ -232,7 +218,7 @@ export const BisonrelayFeed = () => {
   useEffect(() => {
     getBisonrelayIdentity()
       .then((id) => {
-        if (id.identity) setOwnUid(identityB64ToHex(id.identity));
+        if (id.identity) setOwnUid(identityToHex(id.identity));
       })
       .catch(() => {
         /* leave ownUid empty; Your Posts view will show an empty list */

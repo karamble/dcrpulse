@@ -12,18 +12,7 @@ import {
   getBisonrelayStoreTemplateFile,
   saveBisonrelayStoreTemplate,
 } from '../../services/bisonrelayApi';
-
-// toHex converts the base64 own-identity to the hex uid the Pages viewer uses.
-const toHex = (b64: string): string => {
-  try {
-    const bin = atob(b64);
-    let h = '';
-    for (let i = 0; i < bin.length; i += 1) h += bin.charCodeAt(i).toString(16).padStart(2, '0');
-    return h;
-  } catch {
-    return '';
-  }
-};
+import { identityToHex } from '../../utils/identity';
 
 // BisonrelayStoreTemplates is a plain code editor for the storefront's Go
 // templates (*.tmpl). Saving writes the file; the store live-reloads, so the
@@ -46,7 +35,7 @@ export const BisonrelayStoreTemplates = () => {
   useEffect(loadList, []);
   useEffect(() => {
     getBisonrelayIdentity()
-      .then((id) => setOwnHex(toHex(id.identity ?? '')))
+      .then((id) => setOwnHex(identityToHex(id.identity ?? '')))
       .catch(() => {});
   }, []);
 

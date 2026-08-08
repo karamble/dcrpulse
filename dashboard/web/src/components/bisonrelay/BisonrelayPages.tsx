@@ -40,30 +40,14 @@ import { BR_PROSE_CLASSES } from './bisonrelayProse';
 import { DownloadEmbed } from './DownloadEmbed';
 import { LnPayChip } from './LnPayChip';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
+import { identityToHex } from '../../utils/identity';
 
 const navigateTo = (hash: string): void => {
   window.location.hash = hash;
 };
 
-// toHexId normalizes a BR identity to 64-char hex. /br/identity returns the
-// local identity base64-encoded, which contains '/' and breaks the '/'-
-// delimited page hash; contacts are already hex. Hex is URL/hash-safe and is
-// the form brclientd's /pages/fetch expects.
-const toHexId = (s: string): string => {
-  if (/^[0-9a-f]{64}$/i.test(s)) return s;
-  try {
-    const bin = atob(s);
-    if (bin.length !== 32) return s;
-    let hex = '';
-    for (let i = 0; i < bin.length; i++) {
-      hex += bin.charCodeAt(i).toString(16).padStart(2, '0');
-    }
-    return hex;
-  } catch {
-    return s;
-  }
-};
-
+// The page hash is '/'-delimited, so the base64 identity cannot go in it; hex
+// is safe and is what brclientd's /pages/fetch expects.
 type View =
   | { kind: 'mine' }
   | { kind: 'new' }
@@ -110,7 +94,7 @@ export const BisonrelayPages = () => {
 
   useEffect(() => {
     getBisonrelayIdentity()
-      .then((id) => setOwnId(toHexId(id.identity ?? '')))
+      .then((id) => setOwnId(identityToHex(id.identity ?? '')))
       .catch(() => {
         /* identity unavailable; "view my page" stays disabled */
       });
