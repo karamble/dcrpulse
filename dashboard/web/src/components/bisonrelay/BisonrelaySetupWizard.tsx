@@ -612,7 +612,7 @@ function deriveSteps(
   if (graphReached && stage !== 'ready') {
     if (hubChannelPendingOutbound) {
       graphDetail =
-        'Your channel to the Bison Relay hub is still confirming on-chain. It needs three confirmations before Lightning can use it.';
+        'Your channel to the Bison Relay hub is still confirming on-chain. It needs a few confirmations before Lightning can use it.';
       graphRawDetail = walletErr || undefined;
     } else if (!graphSynced) {
       graphDetail =

@@ -493,10 +493,9 @@ func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error
 			// Enrich with funding-tx confirmation progress. dcrwallet
 			// already has the funding tx in its local index (we
 			// broadcast it from the lightning account), so reading its
-			// confirmation count is a cheap hash-keyed lookup. The
-			// required count is derived from capacity (dcrlnd never
-			// populates ConfirmationHeight on pending-open channels).
-			row.CurrentConfs, row.RequiredConfs = fundingTxConfProgress(ctx, row.ChannelPoint, row.Capacity, row.RemoteBalance)
+			// confirmation count is a cheap hash-keyed lookup.
+			pushed := fundingPushProxy(row.Initiator, row.LocalBalance, row.RemoteBalance)
+			row.CurrentConfs, row.RequiredConfs = fundingTxConfProgress(ctx, row.ChannelPoint, row.Capacity, pushed)
 			out.Channels = append(out.Channels, row)
 		}
 		for _, p := range pendResp.GetPendingClosingChannels() {
@@ -916,14 +915,31 @@ func fundingTxConfProgress(ctx context.Context, channelPoint string, capacity, p
 	return current, required
 }
 
+// fundingPushProxy returns the amount dcrlnd folds into the confirmation
+// requirement alongside the capacity: whatever was pushed to the side that
+// accepted the channel. When the peer opened it we accepted, so that is our
+// own balance; when we opened it they accepted, so it is theirs.
+func fundingPushProxy(localInitiated bool, localBalance, remoteBalance int64) int64 {
+	if localInitiated {
+		return remoteBalance
+	}
+	return localBalance
+}
+
 // requiredConfsForCapacity mirrors dcrlnd's NumRequiredConfs
 // (server.go:1192): a channel is considered open after a confirmation
 // count that scales linearly from 3 to 6 with channel size, with wumbo
 // channels requiring the max. dcrlnd does not expose this per-channel
 // over RPC, so we recompute it for pending-channel progress UX. pushAmt
-// is the amount pushed to the remote (the remote's opening balance);
-// dcrlnd folds it into the stake. The milli-atom scaling dcrlnd applies
+// is the amount pushed to whichever side accepted the channel, which
+// dcrlnd folds into the stake. The milli-atom scaling dcrlnd applies
 // cancels in the ratio, so we work in atoms directly.
+//
+// Only the accepting side runs this. For a channel we opened, dcrlnd takes
+// the peer's MinAcceptDepth off the wire (funding/manager.go:1665) and
+// exposes it nowhere, so our number there predicts what a peer running
+// stock lnd or dcrlnd would have chosen. A peer configured otherwise opens
+// sooner than we say and the count simply completes early.
 func requiredConfsForCapacity(capacity, pushAmt int64) int32 {
 	const (
 		minConf = 3
