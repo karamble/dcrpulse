@@ -971,38 +971,19 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 	stakingInfo.PoolSize = stakeInfo.PoolSize
 	stakingInfo.AllMempoolTix = stakeInfo.AllMempoolTix
 
-	// Fetch estimatestakediff
-	estimateResult, err := rpc.WalletClient.RawRequest(ctx, "estimatestakediff", []json.RawMessage{})
-	if err != nil {
+	if estimate, err := rpc.WalletClient.EstimateStakeDiff(ctx, nil); err != nil {
 		wlltLog.Warnf("Failed to estimate stake diff: %v", err)
 	} else {
-		type EstimateResponse struct {
-			Min      float64 `json:"min"`
-			Max      float64 `json:"max"`
-			Expected float64 `json:"expected"`
-		}
-		var estimate EstimateResponse
-		if err := json.Unmarshal(estimateResult, &estimate); err == nil {
-			stakingInfo.EstimatedMin = estimate.Min
-			stakingInfo.EstimatedMax = estimate.Max
-			stakingInfo.EstimatedExpected = estimate.Expected
-		}
+		stakingInfo.EstimatedMin = estimate.Min
+		stakingInfo.EstimatedMax = estimate.Max
+		stakingInfo.EstimatedExpected = estimate.Expected
 	}
 
-	// Fetch getstakedifficulty
-	difficultyResult, err := rpc.WalletClient.RawRequest(ctx, "getstakedifficulty", []json.RawMessage{})
-	if err != nil {
+	if difficulty, err := rpc.WalletClient.GetStakeDifficulty(ctx); err != nil {
 		wlltLog.Warnf("Failed to get stake difficulty: %v", err)
 	} else {
-		type DifficultyResponse struct {
-			Current float64 `json:"current"`
-			Next    float64 `json:"next"`
-		}
-		var difficulty DifficultyResponse
-		if err := json.Unmarshal(difficultyResult, &difficulty); err == nil {
-			stakingInfo.CurrentDifficulty = difficulty.Current
-			stakingInfo.NextDifficulty = difficulty.Next
-		}
+		stakingInfo.CurrentDifficulty = difficulty.CurrentStakeDifficulty
+		stakingInfo.NextDifficulty = difficulty.NextStakeDifficulty
 	}
 
 	// Fetch dcrd getblocksubsidy for the next block (current PoS reward).
@@ -1019,31 +1000,17 @@ func FetchWalletStakingInfo(ctx context.Context) (*types.WalletStakingInfo, erro
 			wlltLog.Warnf("Failed to get chain height for block subsidy: %v", err)
 		} else {
 			nextHeight := chainHeight + 1
-			subsidyResult, err := rpc.DcrdClient.RawRequest(ctx, "getblocksubsidy", []json.RawMessage{
-				json.RawMessage(fmt.Sprintf("%d", nextHeight)),
-				json.RawMessage("5"),
-			})
+			subsidy, err := rpc.DcrdClient.GetBlockSubsidy(ctx, nextHeight, 5)
 			if err != nil {
 				wlltLog.Warnf("Failed to get block subsidy: %v", err)
 			} else {
-				type SubsidyResponse struct {
-					Developer int64 `json:"developer"`
-					PoS       int64 `json:"pos"`
-					PoW       int64 `json:"pow"`
-					Total     int64 `json:"total"`
-				}
-				var subsidy SubsidyResponse
-				if err := json.Unmarshal(subsidyResult, &subsidy); err != nil {
-					wlltLog.Warnf("Failed to unmarshal block subsidy: %v", err)
-				} else {
-					stakingInfo.BlockSubsidyHeight = nextHeight
-					stakingInfo.BlockSubsidyTotal = dcrutil.Amount(subsidy.Total).ToCoin()
-					stakingInfo.BlockSubsidyPoS = dcrutil.Amount(subsidy.PoS).ToCoin()
-					stakingInfo.BlockSubsidyPoW = dcrutil.Amount(subsidy.PoW).ToCoin()
-					stakingInfo.BlockSubsidyTreasury = dcrutil.Amount(subsidy.Developer).ToCoin()
-					if subsidyReductionInterval > 0 {
-						stakingInfo.BlocksUntilSubsidyReduction = subsidyReductionInterval - (chainHeight % subsidyReductionInterval)
-					}
+				stakingInfo.BlockSubsidyHeight = nextHeight
+				stakingInfo.BlockSubsidyTotal = dcrutil.Amount(subsidy.Total).ToCoin()
+				stakingInfo.BlockSubsidyPoS = dcrutil.Amount(subsidy.PoS).ToCoin()
+				stakingInfo.BlockSubsidyPoW = dcrutil.Amount(subsidy.PoW).ToCoin()
+				stakingInfo.BlockSubsidyTreasury = dcrutil.Amount(subsidy.Developer).ToCoin()
+				if subsidyReductionInterval > 0 {
+					stakingInfo.BlocksUntilSubsidyReduction = subsidyReductionInterval - (chainHeight % subsidyReductionInterval)
 				}
 			}
 		}

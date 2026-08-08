@@ -521,34 +521,19 @@ func fetchStakingInfo(ctx context.Context, snap *chainSnapshot) (*types.StakingI
 	chainInfo, err := snap.blockChainInfo(ctx)
 	isSynced := err == nil && !chainInfo.InitialBlockDownload
 
-	// Get stake difficulty (ticket price) - using RawRequest to get current price
+	// Get stake difficulty (ticket price)
 	ticketPrice := float64(0)
 	nextTicketPrice := float64(0)
 
-	result, err := rpc.DcrdClient.RawRequest(ctx, "getstakedifficulty", []json.RawMessage{})
+	diff, err := rpc.DcrdClient.GetStakeDifficulty(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stake difficulty: %v", err)
 	}
-
-	var diffResult struct {
-		Current float64 `json:"current"`
-		Next    float64 `json:"next"`
-	}
-	if err := json.Unmarshal(result, &diffResult); err == nil {
-		ticketPrice = diffResult.Current
-	}
+	ticketPrice = diff.CurrentStakeDifficulty
 
 	// Get estimated next ticket price based on current pool size
-	estimateResult, err := rpc.DcrdClient.RawRequest(ctx, "estimatestakediff", []json.RawMessage{})
-	if err == nil {
-		var estimateData struct {
-			Min      float64 `json:"min"`
-			Max      float64 `json:"max"`
-			Expected float64 `json:"expected"`
-		}
-		if err := json.Unmarshal(estimateResult, &estimateData); err == nil {
-			nextTicketPrice = estimateData.Expected
-		}
+	if estimate, err := rpc.DcrdClient.EstimateStakeDiff(ctx, nil); err == nil {
+		nextTicketPrice = estimate.Expected
 	}
 
 	// PoolSize is the live ticket count; the pool itself is tens of
