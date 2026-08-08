@@ -6,9 +6,7 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -18,31 +16,24 @@ import (
 // a map of raw JSON values so unknown keys (Decrediton internals such as
 // theme, dex_account, etc.) round-trip unchanged on save.
 type WalletCfg struct {
-	mu   sync.Mutex
-	path string
-	raw  map[string]json.RawMessage
+	mu    sync.Mutex
+	path  string
+	raw   map[string]json.RawMessage
+	dirty map[string]bool // keys this instance wrote, flushed by Save
 }
 
 // LoadWalletCfg reads the per-wallet config.json. An absent or empty
 // file yields an empty config; the file is created lazily on first Save.
 func LoadWalletCfg(network, walletName string) (*WalletCfg, error) {
-	p := WalletCfgPath(network, walletName)
-	c := &WalletCfg{path: p, raw: map[string]json.RawMessage{}}
+	return loadWalletCfgAt(WalletCfgPath(network, walletName))
+}
 
-	data, err := os.ReadFile(p)
+func loadWalletCfgAt(path string) (*WalletCfg, error) {
+	raw, err := readRawJSON(path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return c, nil
-		}
-		return nil, fmt.Errorf("read wallet config %s: %w", p, err)
+		return nil, err
 	}
-	if len(data) == 0 {
-		return c, nil
-	}
-	if err := json.Unmarshal(data, &c.raw); err != nil {
-		return nil, fmt.Errorf("parse wallet config %s: %w", p, err)
-	}
-	return c, nil
+	return &WalletCfg{path: path, raw: raw, dirty: map[string]bool{}}, nil
 }
 
 // Path returns the on-disk file path.
@@ -79,6 +70,7 @@ func (c *WalletCfg) Set(key string, value any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.raw[key] = enc
+	c.dirty[key] = true
 	return nil
 }
 
@@ -87,22 +79,25 @@ func (c *WalletCfg) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.raw, key)
+	c.dirty[key] = true
 }
 
-// Save atomically rewrites the entire document via temp file + rename.
-// Unknown keys preserved by Load are kept verbatim.
+// Save merges this instance's writes into the document on disk and rewrites
+// it atomically. Keys another writer added since Load are kept, as are unknown
+// keys preserved by Load.
 func (c *WalletCfg) Save() error {
+	cfgWriteMu.Lock()
+	defer cfgWriteMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	dir := filepath.Dir(c.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
-	data, err := json.MarshalIndent(c.raw, "", "  ")
+
+	merged, err := mergeSave(c.path, c.raw, c.dirty)
 	if err != nil {
-		return fmt.Errorf("encode wallet config: %w", err)
+		return err
 	}
-	return atomicWriteJSON(c.path, data)
+	c.raw = merged
+	c.dirty = map[string]bool{}
+	return nil
 }
 
 // atomicWriteJSON writes data to path via temp file + rename, mode 0600.

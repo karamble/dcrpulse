@@ -6,11 +6,6 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"sync"
 )
 
@@ -18,27 +13,23 @@ import (
 // (active wallet name, currency display preference, etc.); Phase 1 ships
 // the load/save scaffolding but no keys are written yet.
 type GlobalCfg struct {
-	mu  sync.Mutex
-	raw map[string]json.RawMessage
+	mu    sync.Mutex
+	path  string
+	raw   map[string]json.RawMessage
+	dirty map[string]bool // keys this instance wrote, flushed by Save
 }
 
 // LoadGlobalCfg reads /dashboard-data/config.json. Absent file → empty doc.
 func LoadGlobalCfg() (*GlobalCfg, error) {
-	c := &GlobalCfg{raw: map[string]json.RawMessage{}}
-	data, err := os.ReadFile(GlobalCfgPath())
+	return loadGlobalCfgAt(GlobalCfgPath())
+}
+
+func loadGlobalCfgAt(path string) (*GlobalCfg, error) {
+	raw, err := readRawJSON(path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return c, nil
-		}
-		return nil, fmt.Errorf("read global config: %w", err)
+		return nil, err
 	}
-	if len(data) == 0 {
-		return c, nil
-	}
-	if err := json.Unmarshal(data, &c.raw); err != nil {
-		return nil, fmt.Errorf("parse global config: %w", err)
-	}
-	return c, nil
+	return &GlobalCfg{path: path, raw: raw, dirty: map[string]bool{}}, nil
 }
 
 // Get / Set / Has follow the same convention as WalletCfg.
@@ -63,6 +54,7 @@ func (c *GlobalCfg) Set(key string, value any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.raw[key] = enc
+	c.dirty[key] = true
 	return nil
 }
 
@@ -93,16 +85,19 @@ func (c *GlobalCfg) SetAllowedExternalRequests(m map[string]bool) error {
 	return c.Set(KeyAllowedExternalRequests, m)
 }
 
-// Save atomically rewrites the global config.
+// Save merges this instance's writes into the global config on disk and
+// rewrites it atomically. Keys another writer added since Load are kept.
 func (c *GlobalCfg) Save() error {
+	cfgWriteMu.Lock()
+	defer cfgWriteMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(GlobalCfgPath()), 0o700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(c.raw, "", "  ")
+
+	merged, err := mergeSave(c.path, c.raw, c.dirty)
 	if err != nil {
 		return err
 	}
-	return atomicWriteJSON(GlobalCfgPath(), data)
+	c.raw = merged
+	c.dirty = map[string]bool{}
+	return nil
 }
