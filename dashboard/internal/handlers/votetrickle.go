@@ -47,11 +47,7 @@ func StartVoteTrickleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	passphrase := []byte(req.Passphrase)
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer zeroBytes(passphrase)
 
 	// Signing every eligible ticket up front can take a while; allow for it.
 	// (The worker itself then runs detached in the background.)

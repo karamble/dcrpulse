@@ -295,7 +295,9 @@ func CreateDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	if err := ensureDexAccount(ctx, []byte(req.WalletPass)); err != nil {
+	walletPass := []byte(req.WalletPass)
+	defer zeroBytes(walletPass)
+	if err := ensureDexAccount(ctx, walletPass); err != nil {
 		http.Error(w, "dex account: "+err.Error(), http.StatusBadGateway)
 		return
 	}

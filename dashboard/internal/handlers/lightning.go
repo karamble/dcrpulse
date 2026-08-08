@@ -60,11 +60,7 @@ func LightningSetupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	passphrase := []byte(req.Passphrase)
 	req.Passphrase = ""
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer zeroBytes(passphrase)
 
 	setupCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -133,11 +129,7 @@ func LightningUnlockHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	passphrase := []byte(req.Passphrase)
 	req.Passphrase = ""
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer zeroBytes(passphrase)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()

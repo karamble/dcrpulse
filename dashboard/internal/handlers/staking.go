@@ -100,11 +100,7 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	passphrase := []byte(req.Passphrase)
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer zeroBytes(passphrase)
 
 	// A privacy/mixed purchase must CSPP-mix the split transaction before the
 	// ticket can be bought, which only happens every ~10 minutes, far longer
@@ -296,11 +292,7 @@ func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	passphrase := []byte(req.Passphrase)
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer zeroBytes(passphrase)
 
 	settings := req.AutobuyerSettings
 	if err := services.StartAutobuyer(&settings, passphrase); err != nil {
@@ -391,11 +383,7 @@ func vspTicketRepair(w http.ResponseWriter, r *http.Request, label string,
 	}
 
 	passphrase := []byte(req.Passphrase)
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer zeroBytes(passphrase)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()

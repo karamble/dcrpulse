@@ -72,12 +72,12 @@ func SetAgendaChoiceHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "passphrase required", http.StatusBadRequest)
 		return
 	}
-	pass := zeroOnReturn([]byte(req.Passphrase))
-	defer pass.zero()
+	pass := []byte(req.Passphrase)
+	defer zeroBytes(pass)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := services.SetAgendaChoice(ctx, req.AgendaID, req.ChoiceID, pass.b); err != nil {
+	if err := services.SetAgendaChoice(ctx, req.AgendaID, req.ChoiceID, pass); err != nil {
 		writePassphraseAwareError(w, "SetAgendaChoice", err)
 		return
 	}
@@ -106,12 +106,12 @@ func SetTreasuryKeyPolicyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "passphrase required", http.StatusBadRequest)
 		return
 	}
-	pass := zeroOnReturn([]byte(req.Passphrase))
-	defer pass.zero()
+	pass := []byte(req.Passphrase)
+	defer zeroBytes(pass)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := services.SetTreasuryKeyPolicy(ctx, req.Key, req.Policy, pass.b); err != nil {
+	if err := services.SetTreasuryKeyPolicy(ctx, req.Key, req.Policy, pass); err != nil {
 		writePassphraseAwareError(w, "SetTreasuryKeyPolicy", err)
 		return
 	}
@@ -154,12 +154,12 @@ func SetTSpendPolicyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "passphrase required", http.StatusBadRequest)
 		return
 	}
-	pass := zeroOnReturn([]byte(req.Passphrase))
-	defer pass.zero()
+	pass := []byte(req.Passphrase)
+	defer zeroBytes(pass)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := services.SetTSpendPolicyForHash(ctx, req.Hash, req.Policy, pass.b); err != nil {
+	if err := services.SetTSpendPolicyForHash(ctx, req.Hash, req.Policy, pass); err != nil {
 		writePassphraseAwareError(w, "SetTSpendPolicy", err)
 		return
 	}
@@ -352,12 +352,12 @@ func CastPoliteiaVoteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "passphrase required", http.StatusBadRequest)
 		return
 	}
-	pass := zeroOnReturn([]byte(req.Passphrase))
-	defer pass.zero()
+	pass := []byte(req.Passphrase)
+	defer zeroBytes(pass)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
-	result, err := services.CastPoliteiaVote(ctx, req, pass.b)
+	result, err := services.CastPoliteiaVote(ctx, req, pass)
 	if err != nil {
 		if errors.Is(err, services.ErrPoliteiaDisabled) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -371,20 +371,6 @@ func CastPoliteiaVoteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- shared local helpers --------------------------------------------------
-
-type passphraseBuf struct {
-	b []byte
-}
-
-func (p passphraseBuf) zero() {
-	for i := range p.b {
-		p.b[i] = 0
-	}
-}
-
-func zeroOnReturn(b []byte) passphraseBuf {
-	return passphraseBuf{b: b}
-}
 
 func writePassphraseAwareError(w http.ResponseWriter, label string, err error) {
 	msg := err.Error()

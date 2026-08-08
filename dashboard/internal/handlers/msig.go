@@ -87,6 +87,7 @@ func MsigInviteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 	invitees := make([]msig.InviteePeer, 0, len(req.Invitees))
 	for _, p := range req.Invitees {
@@ -133,6 +134,7 @@ func msigPassphraseAction(w http.ResponseWriter, r *http.Request, action func(co
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
@@ -157,6 +159,7 @@ func MsigAcceptHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
@@ -405,6 +408,7 @@ func MsigProposeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 	recipients := make([]msig.Recipient, 0, len(req.Recipients))
 	var total int64
@@ -443,6 +447,7 @@ func MsigSignHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
@@ -518,6 +523,7 @@ func MsigRestoreHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 	// The window imports return quickly; the history rescan runs
 	// deferred, so the handler does not block on it.

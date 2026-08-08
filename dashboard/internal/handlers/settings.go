@@ -194,14 +194,8 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 
 	oldPass := []byte(req.OldPassphrase)
 	newPass := []byte(req.NewPassphrase)
-	defer func() {
-		for i := range oldPass {
-			oldPass[i] = 0
-		}
-		for i := range newPass {
-			newPass[i] = 0
-		}
-	}()
+	defer zeroBytes(oldPass)
+	defer zeroBytes(newPass)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
@@ -300,11 +294,7 @@ func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	passphrase := []byte(req.Passphrase)
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer zeroBytes(passphrase)
 
 	// Persist the gap limit as a preference so the modal pre-fills it
 	// next time. The actual scan value is taken from req.GapLimit.

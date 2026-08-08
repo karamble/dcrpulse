@@ -652,6 +652,7 @@ func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -802,6 +803,7 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -865,6 +867,7 @@ func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -1166,6 +1169,7 @@ func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
+	defer zeroBytes(passphrase)
 	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
