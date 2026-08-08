@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { toYMDTime } from '../../utils/date';
+import { timeAgo, toYMDTime } from '../../utils/date';
 
 interface TimeAgoProps {
   timestamp: string;
@@ -10,16 +10,6 @@ interface TimeAgoProps {
 }
 
 export const TimeAgo = ({ timestamp, showFull = false }: TimeAgoProps) => {
-  const formatTimeAgo = (ts: string) => {
-    const date = new Date(ts);
-    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-    
-    if (seconds < 60) return `${seconds}s ago`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
-  };
-
   const formatFull = (ts: string) => {
     const date = new Date(ts);
     return toYMDTime(date);
@@ -35,7 +25,7 @@ export const TimeAgo = ({ timestamp, showFull = false }: TimeAgoProps) => {
 
   return (
     <span className="text-muted-foreground" title={formatFull(timestamp)}>
-      {formatTimeAgo(timestamp)}
+      {timeAgo(timestamp)}
     </span>
   );
 };

@@ -9,6 +9,7 @@ import { Pagination } from '../components/explorer/Pagination';
 import { getRecentBlocksPaginated, BlockSummary } from '../services/explorerApi';
 import { useNavigate } from 'react-router-dom';
 import { startVisiblePoll } from '../hooks/useVisiblePoll';
+import { timeAgo } from '../utils/date';
 
 export const ExplorerLanding = () => {
   const [recentBlocks, setRecentBlocks] = useState<BlockSummary[]>([]);
@@ -49,16 +50,6 @@ export const ExplorerLanding = () => {
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const formatTimeAgo = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-    
-    if (seconds < 60) return `${seconds}s ago`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
   };
 
   const formatHash = (hash: string) => {
@@ -135,7 +126,7 @@ export const ExplorerLanding = () => {
                         {formatHash(block.hash)}
                       </td>
                       <td className="py-3 px-4 text-sm text-muted-foreground">
-                        {formatTimeAgo(block.timestamp)}
+                        {timeAgo(block.timestamp)}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <span className="inline-flex items-center gap-1">

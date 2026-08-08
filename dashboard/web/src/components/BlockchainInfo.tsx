@@ -5,22 +5,13 @@
 import { Blocks } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { BlockchainInfo as BlockchainInfoType } from '../services/api';
+import { timeAgo } from '../utils/date';
 
 interface BlockchainInfoProps {
   data?: BlockchainInfoType;
 }
 
 export const BlockchainInfo = ({ data }: BlockchainInfoProps) => {
-  const formatTimeAgo = (timestamp: number) => {
-    const now = Date.now() / 1000; // Convert to seconds
-    const diff = now - timestamp;
-    
-    if (diff < 60) return `${Math.floor(diff)}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
-  };
-
   return (
     <div className="p-6 rounded-xl bg-gradient-card border border-border/50 hover:border-primary/20 transition duration-300 group">
       <div className="flex items-center gap-3 mb-6">
@@ -55,7 +46,7 @@ export const BlockchainInfo = ({ data }: BlockchainInfoProps) => {
                 </div>
               </div>
               <div className="text-xs text-muted-foreground">
-                {formatTimeAgo(block.timestamp)}
+                {timeAgo(block.timestamp * 1000)}
               </div>
             </Link>
           ))
