@@ -28,6 +28,26 @@ var ticketAlertState struct {
 	lastDiffHeight int64
 }
 
+// shouldDiffAt reports whether a snapshot at this height still needs a diff.
+func shouldDiffAt(height int64) bool {
+	st := &ticketAlertState
+	st.Lock()
+	defer st.Unlock()
+	return height > st.lastDiffHeight
+}
+
+// markDiffedAt records a completed diff. Only a completed listing advances the
+// height, so a failed one is retried by the next snapshot instead of waiting
+// for a new block.
+func markDiffedAt(height int64) {
+	st := &ticketAlertState
+	st.Lock()
+	defer st.Unlock()
+	if height > st.lastDiffHeight {
+		st.lastDiffHeight = height
+	}
+}
+
 func resetTicketAlertBaseline() {
 	st := &ticketAlertState
 	st.Lock()
@@ -57,33 +77,30 @@ func StartTicketWatcher(ctx context.Context) {
 				if snap.Status != "running" || SyncPaused() || RestoreDiscoveryActive() {
 					continue
 				}
-				st := &ticketAlertState
-				st.Lock()
-				skip := snap.Blocks <= st.lastDiffHeight
-				if !skip {
-					st.lastDiffHeight = snap.Blocks
-				}
-				st.Unlock()
-				if skip {
+				if !shouldDiffAt(snap.Blocks) {
 					continue
 				}
-				diffTicketAlerts(ctx)
+				if diffTicketAlerts(ctx) {
+					markDiffedAt(snap.Blocks)
+				}
 			}
 		}
 	}()
 }
 
-func diffTicketAlerts(ctx context.Context) {
+// diffTicketAlerts lists the wallet's tickets and emits what changed. Reports
+// whether a full listing was consumed; a partial one leaves the baseline alone.
+func diffTicketAlerts(ctx context.Context) bool {
 	client := rpc.WalletGrpcClient
 	if client == nil {
-		return
+		return false
 	}
 	listCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	stream, err := client.GetTickets(listCtx, &pb.GetTicketsRequest{})
 	if err != nil {
 		alrtLog.Warnf("ticket watcher: %v", err)
-		return
+		return false
 	}
 	next := make(map[string]string, 64)
 	for {
@@ -95,7 +112,7 @@ func diffTicketAlerts(ctx context.Context) {
 			// A partial listing must never become the baseline: missing
 			// hashes would re-emit as "purchased" on the next pass.
 			alrtLog.Warnf("ticket watcher: %v", err)
-			return
+			return false
 		}
 		rec := ticketRecordFromResponse(resp)
 		if rec.Hash == "" {
@@ -111,7 +128,7 @@ func diffTicketAlerts(ctx context.Context) {
 	st.primed = true
 	st.Unlock()
 	if !primed {
-		return
+		return true
 	}
 
 	for hash, status := range next {
@@ -138,6 +155,7 @@ func diffTicketAlerts(ctx context.Context) {
 		}
 		alerts.Emit(code, "Ticket "+shortTicketHash(hash), hash+"|"+status)
 	}
+	return true
 }
 
 func shortTicketHash(hash string) string {
