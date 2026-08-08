@@ -340,13 +340,7 @@ func BisonrelayDownloadsListHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayContactsHandler proxies brclientd's /contacts endpoint.
 // Returns the BR client's in-memory address book (peers with completed KX).
 func BisonrelayContactsHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdContacts(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdContacts(r.Context()) })
 }
 
 // BisonrelayContactRenameHandler proxies brclientd's /contacts/rename
@@ -398,13 +392,7 @@ func BisonrelayContactResetAllHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
-	raw, err := rpc.BrclientdResetAllRatchets(r.Context(), req.AgeDays)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(raw)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdResetAllRatchets(r.Context(), req.AgeDays) })
 }
 
 // BisonrelayConnectionHandler proxies brclientd's /connection: GET reports
@@ -414,13 +402,7 @@ func BisonrelayContactResetAllHandler(w http.ResponseWriter, r *http.Request) {
 func BisonrelayConnectionHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		raw, err := rpc.BrclientdConnectionState(r.Context())
-		if err != nil {
-			brWriteErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(raw)
+		brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdConnectionState(r.Context()) })
 	case http.MethodPost:
 		var req struct {
 			Online bool `json:"online"`
@@ -446,25 +428,13 @@ func BisonrelayTipAttemptsHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, err := rpc.BrclientdTipAttempts(r.Context(), uid)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdTipAttempts(r.Context(), uid) })
 }
 
 // BisonrelayRunningTipsHandler returns the tip attempts the daemon is
 // actively driving.
 func BisonrelayRunningTipsHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdRunningTipAttempts(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdRunningTipAttempts(r.Context()) })
 }
 
 // BisonrelayRTDTMessagesHandler returns the chat messages tracked for a
@@ -474,13 +444,7 @@ func BisonrelayRTDTMessagesHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	raw, err := rpc.BrclientdRTDTMessages(r.Context(), rv)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(raw)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdRTDTMessages(r.Context(), rv) })
 }
 
 // BisonrelayRTDTChatHandler sends a text message into a live RTDT session.
@@ -509,13 +473,7 @@ func BisonrelayRTDTChatHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayKXSearchesHandler proxies brclientd's outstanding KX searches.
 func BisonrelayKXSearchesHandler(w http.ResponseWriter, r *http.Request) {
-	raw, err := rpc.BrclientdKXSearches(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(raw)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdKXSearches(r.Context()) })
 }
 
 // BisonrelayMediateIDsHandler proxies the in-flight mediated introductions:
@@ -523,13 +481,7 @@ func BisonrelayKXSearchesHandler(w http.ResponseWriter, r *http.Request) {
 func BisonrelayMediateIDsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		raw, err := rpc.BrclientdMediateIDs(r.Context())
-		if err != nil {
-			brWriteErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(raw)
+		brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdMediateIDs(r.Context()) })
 	case http.MethodPost:
 		var req struct {
 			Mediator string `json:"mediator"`
@@ -562,13 +514,7 @@ func BisonrelayRecentNotificationsHandler(w http.ResponseWriter, r *http.Request
 			n = parsed
 		}
 	}
-	body, err := rpc.BrclientdRecentNotifications(r.Context(), n)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdRecentNotifications(r.Context(), n) })
 }
 
 // BisonrelayDeleteNotificationHandler removes a single BR notification-bell
@@ -604,13 +550,7 @@ func BisonrelayClearNotificationsHandler(w http.ResponseWriter, r *http.Request)
 func BisonrelayBehaviorSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		raw, err := rpc.BrclientdBRBehavior(r.Context())
-		if err != nil {
-			brWriteErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(raw)
+		brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdBRBehavior(r.Context()) })
 	case http.MethodPost:
 		var update map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
@@ -634,13 +574,7 @@ func BisonrelayBehaviorSettingsHandler(w http.ResponseWriter, r *http.Request) {
 func BisonrelayFiltersHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		raw, err := rpc.BrclientdListFilters(r.Context())
-		if err != nil {
-			brWriteErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(raw)
+		brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdListFilters(r.Context()) })
 	case http.MethodPost:
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if err != nil {
@@ -692,13 +626,7 @@ func BisonrelaySubscribeAllPostsHandler(w http.ResponseWriter, r *http.Request) 
 // BisonrelayKXListHandler proxies brclientd's /kx/list diagnostic (in-flight
 // key exchanges, including reset KXs).
 func BisonrelayKXListHandler(w http.ResponseWriter, r *http.Request) {
-	raw, err := rpc.BrclientdKXList(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(raw)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdKXList(r.Context()) })
 }
 
 // BisonrelayContactHandshakeHandler proxies brclientd's /contacts/handshake.
@@ -732,13 +660,7 @@ func BisonrelayContactBlockHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayBlockedContactsHandler proxies brclientd's /contacts/blocked. GET
 // returns the locally blocked users ({blocked: [{uid, blockedAt}]}).
 func BisonrelayBlockedContactsHandler(w http.ResponseWriter, r *http.Request) {
-	raw, err := rpc.BrclientdBlockedContacts(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(raw)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdBlockedContacts(r.Context()) })
 }
 
 // BisonrelayContactUnblockHandler proxies brclientd's /contacts/unblock. Body:
@@ -750,13 +672,7 @@ func BisonrelayContactUnblockHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	raw, err := rpc.BrclientdUnblockContact(r.Context(), uid)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(raw)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdUnblockContact(r.Context(), uid) })
 }
 
 // BisonrelayClearHistoryHandler proxies brclientd's /history/pm/clear. Body:
@@ -779,13 +695,7 @@ func BisonrelayClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
 // {action: "create"|"rename"|"delete", id?, name?}.
 func BisonrelayContactGroupsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		raw, err := rpc.BrclientdContactGroups(r.Context())
-		if err != nil {
-			brWriteErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(raw)
+		brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdContactGroups(r.Context()) })
 		return
 	}
 	var req struct {
@@ -798,13 +708,7 @@ func BisonrelayContactGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Action == "create" {
-		raw, err := rpc.BrclientdContactGroupCreate(r.Context(), req.Name)
-		if err != nil {
-			brWriteErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(raw)
+		brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdContactGroupCreate(r.Context(), req.Name) })
 		return
 	}
 	if err := rpc.BrclientdContactGroupAction(r.Context(), req.Action, req.ID, req.Name); err != nil {
@@ -1106,13 +1010,7 @@ func BisonrelayPostReceiveReceiptsHandler(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	body, err := rpc.BrclientdPostReceiveReceipts(r.Context(), pid)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdPostReceiveReceipts(r.Context(), pid) })
 }
 
 // BisonrelayPostRelayHandler relays a post to one user or to all of the
@@ -1145,13 +1043,7 @@ func BisonrelayPostCommentReceiptsHandler(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	body, err := rpc.BrclientdPostCommentReceipts(r.Context(), pid)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdPostCommentReceipts(r.Context(), pid) })
 }
 
 // BisonrelayPostHeartsHandler returns the current heart count + my-own
@@ -1165,13 +1057,7 @@ func BisonrelayPostHeartsHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, err := rpc.BrclientdPostHearts(r.Context(), uid, pid)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdPostHearts(r.Context(), uid, pid) })
 }
 
 // BisonrelayPostHeartHandler toggles the local identity's heart on a post.
@@ -1198,13 +1084,7 @@ func BisonrelayPostHeartHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelaySharedFilesHandler proxies brclientd's /shared-files list.
 func BisonrelaySharedFilesHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdSharedFiles(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdSharedFiles(r.Context()) })
 }
 
 // BisonrelayManageAddHandler accepts a multipart upload from the browser
@@ -1247,13 +1127,9 @@ func BisonrelayManageAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 	mime := header.Header.Get("Content-Type")
-	body, err := rpc.BrclientdShareFile(r.Context(), header.Filename, mime, file, costAtoms, targetUID, descr)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) {
+		return rpc.BrclientdShareFile(r.Context(), header.Filename, mime, file, costAtoms, targetUID, descr)
+	})
 }
 
 // BisonrelayManageUnshareHandler removes a share. Body: {fid, target_uid?}.
@@ -1279,13 +1155,7 @@ func BisonrelayManageUnshareHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayManageDownloadsHandler returns the flat downloads list.
 func BisonrelayManageDownloadsHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdListDownloads(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdListDownloads(r.Context()) })
 }
 
 // BisonrelayManageCancelDownloadHandler aborts an in-flight download.
@@ -1339,70 +1209,34 @@ func BisonrelayManageDeleteDownloadHandler(w http.ResponseWriter, r *http.Reques
 
 // BisonrelayStatsOverviewHandler proxies brclientd's /stats/overview.
 func BisonrelayStatsOverviewHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdStatsOverview(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStatsOverview(r.Context()) })
 }
 
 // BisonrelayStatsPaymentsHandler proxies brclientd's /stats/payments.
 func BisonrelayStatsPaymentsHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdStatsPayments(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStatsPayments(r.Context()) })
 }
 
 // BisonrelayStatsNetworkHandler proxies brclientd's /stats/network.
 func BisonrelayStatsNetworkHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdStatsNetwork(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStatsNetwork(r.Context()) })
 }
 
 // BisonrelayStatsContactsHandler proxies brclientd's /stats/contacts.
 func BisonrelayStatsContactsHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdStatsContacts(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStatsContacts(r.Context()) })
 }
 
 // BisonrelayStatsPostsHandler proxies brclientd's /stats/posts.
 func BisonrelayStatsPostsHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdStatsPosts(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStatsPosts(r.Context()) })
 }
 
 // ---- RTDT realtime-voice control plane ----------------------------------
 
 // BisonrelayRTDTListHandler returns the list of RTDT sessions.
 func BisonrelayRTDTListHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdRTDTList(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdRTDTList(r.Context()) })
 }
 
 // BisonrelayRTDTCreateHandler creates a fresh session.
@@ -1415,13 +1249,9 @@ func BisonrelayRTDTCreateHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	body, err := rpc.BrclientdRTDTCreate(r.Context(), req.Size, req.Description)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) {
+		return rpc.BrclientdRTDTCreate(r.Context(), req.Size, req.Description)
+	})
 }
 
 // BisonrelayRTDTCreateInstantHandler creates an instant call.
@@ -1433,13 +1263,7 @@ func BisonrelayRTDTCreateInstantHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	body, err := rpc.BrclientdRTDTCreateInstant(r.Context(), req.UIDs)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdRTDTCreateInstant(r.Context(), req.UIDs) })
 }
 
 // BisonrelayRTDTInviteHandler invites users to an existing session.
@@ -1634,25 +1458,13 @@ func BisonrelayPostsNewHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "post body is required", http.StatusBadRequest)
 		return
 	}
-	body, err := rpc.BrclientdCreatePost(r.Context(), req.Post, req.Descr)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdCreatePost(r.Context(), req.Post, req.Descr) })
 }
 
 // BisonrelayPostsFeedHandler returns the local list of all received posts
 // (summaries). Pure passthrough to brclientd's /posts/feed.
 func BisonrelayPostsFeedHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdPostsFeed(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdPostsFeed(r.Context()) })
 }
 
 // BisonrelayPostBodyHandler fetches a single post's full body, splits it
@@ -1849,13 +1661,7 @@ func brFormString(v any) string {
 // BisonrelayPagesLocalListHandler proxies the list of markdown pages this
 // node hosts.
 func BisonrelayPagesLocalListHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdPagesLocalList(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdPagesLocalList(r.Context()) })
 }
 
 // safeBRPath reports whether a brclientd-bound page/template/store name or path
@@ -1901,13 +1707,7 @@ func BisonrelayPagesLocalFileHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
-	body, err := rpc.BrclientdPagesLocalFile(r.Context(), name)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdPagesLocalFile(r.Context(), name) })
 }
 
 // BisonrelayPagesLocalSaveHandler creates or overwrites one hosted page.
@@ -2290,13 +2090,7 @@ func BisonrelayRestoreBackupHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayRatesHandler proxies brclientd's /rates (DCR/USD + BTC/USD, with
 // the source that produced them and a last-updated stamp).
 func BisonrelayRatesHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdRates(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdRates(r.Context()) })
 }
 
 // BisonrelayStoreModeHandler proxies brclientd's /store/mode. GET returns the
@@ -2304,13 +2098,7 @@ func BisonrelayRatesHandler(w http.ResponseWriter, r *http.Request) {
 // pay_type, account, ship_charge}).
 func BisonrelayStoreModeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		body, err := rpc.BrclientdStoreMode(r.Context())
-		if err != nil {
-			brWriteErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
+		brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStoreMode(r.Context()) })
 		return
 	}
 	var req map[string]any
@@ -2318,26 +2106,14 @@ func BisonrelayStoreModeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	body, err := rpc.BrclientdSetStoreMode(r.Context(), req)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdSetStoreMode(r.Context(), req) })
 }
 
 // BisonrelayStoreProductsHandler proxies brclientd's /store/products: GET lists
 // the catalog, POST upserts a product.
 func BisonrelayStoreProductsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		body, err := rpc.BrclientdStoreProducts(r.Context())
-		if err != nil {
-			brWriteErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
+		brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStoreProducts(r.Context()) })
 		return
 	}
 	var req map[string]any
@@ -2375,13 +2151,7 @@ func BisonrelayStoreProductDeleteHandler(w http.ResponseWriter, r *http.Request)
 // BisonrelayStoreOrdersHandler proxies brclientd's /store/orders (the full
 // order list, newest first).
 func BisonrelayStoreOrdersHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdStoreOrders(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStoreOrders(r.Context()) })
 }
 
 // BisonrelayStoreOrderStatusHandler updates one order's status. Body:
@@ -2410,13 +2180,7 @@ func BisonrelayStoreOrderStatusHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayStoreTemplatesHandler proxies brclientd's /store/templates (the
 // list of storefront *.tmpl files).
 func BisonrelayStoreTemplatesHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdStoreTemplates(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStoreTemplates(r.Context()) })
 }
 
 // BisonrelayStoreTemplateFileHandler returns one template's content. Query:
@@ -2431,13 +2195,7 @@ func BisonrelayStoreTemplateFileHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
-	body, err := rpc.BrclientdStoreTemplateFile(r.Context(), name)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdStoreTemplateFile(r.Context(), name) })
 }
 
 // BisonrelayStoreTemplateSaveHandler writes a template. Body: {name, content}.
@@ -2484,13 +2242,7 @@ func BisonrelayStoreTemplateDeleteHandler(w http.ResponseWriter, r *http.Request
 // BisonrelayStoreFilesListHandler proxies brclientd's /store/files/list (the
 // user-managed media files under the store dir: covers, banner, downloads).
 func BisonrelayStoreFilesListHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := rpc.BrclientdListStoreFiles(r.Context())
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdListStoreFiles(r.Context()) })
 }
 
 // BisonrelayStoreFileGetHandler streams one store file (image preview or
@@ -2587,13 +2339,9 @@ func BisonrelayStoreFileUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mime := header.Header.Get("Content-Type")
-	body, err := rpc.BrclientdUploadStoreFile(r.Context(), relPath, header.Filename, mime, overwrite, file)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) {
+		return rpc.BrclientdUploadStoreFile(r.Context(), relPath, header.Filename, mime, overwrite, file)
+	})
 }
 
 // BisonrelayContactListContentHandler proxies the brclientd list-content
@@ -2810,13 +2558,7 @@ func BisonrelayInviteAcceptHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := rpc.BrclientdAcceptInvite(r.Context(), value)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdAcceptInvite(r.Context(), value) })
 }
 
 // BisonrelayMessagesHandler proxies brclientd's /history/pm endpoint. Query
@@ -2842,13 +2584,7 @@ func BisonrelayMessagesHandler(w http.ResponseWriter, r *http.Request) {
 			pageSize = n
 		}
 	}
-	body, err := rpc.BrclientdHistoryPM(r.Context(), contact, page, pageSize)
-	if err != nil {
-		brWriteErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdHistoryPM(r.Context(), contact, page, pageSize) })
 }
 
 // BisonrelaySetupHandler proxies a nick/name pair to brclientd's pre-setup

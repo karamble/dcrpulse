@@ -6,6 +6,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -51,6 +52,18 @@ func respondUpstreamError(w http.ResponseWriter, component services.LogComponent
 // so the many bisonw / brclientd handler call sites need no extra import.
 func dexWriteErr(w http.ResponseWriter, err error) {
 	respondUpstreamError(w, services.LogComponentDcrdex, err)
+}
+
+// brProxyJSON forwards a brclientd reply verbatim, mapping a failure through
+// the shared error writer.
+func brProxyJSON(w http.ResponseWriter, call func() (json.RawMessage, error)) {
+	raw, err := call()
+	if err != nil {
+		brWriteErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
 }
 
 func brWriteErr(w http.ResponseWriter, err error) {
