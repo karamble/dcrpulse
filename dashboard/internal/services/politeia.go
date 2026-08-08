@@ -251,6 +251,10 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 	// the detail view.
 	records := map[string]piRecord{}
 	summaries := map[string]piSummary{}
+	// partial records any chunk failing. Its tokens would otherwise enrich from a
+	// zero value - a record gives a name-less proposal, a summary an "unknown"
+	// one - and the list cache has no TTL, so that survives until a manual refresh.
+	partial := false
 	var piMu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 6)
@@ -267,6 +271,9 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 			defer func() { <-sem }()
 			if recs, err := piRecordsBatch(ctx, chunk, piListFilenames); err != nil {
 				govnLog.Warnf("politeia records batch: %v", err)
+				piMu.Lock()
+				partial = true
+				piMu.Unlock()
 			} else {
 				piMu.Lock()
 				for k, v := range recs {
@@ -276,6 +283,9 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 			}
 			if sums, err := piSummariesBatch(ctx, chunk); err != nil {
 				govnLog.Warnf("politeia summaries batch: %v", err)
+				piMu.Lock()
+				partial = true
+				piMu.Unlock()
 			} else {
 				piMu.Lock()
 				for k, v := range sums {
@@ -292,6 +302,12 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 	// touching the cache so the next request retries.
 	if err := ctx.Err(); err != nil {
 		return nil, time.Time{}, fmt.Errorf("politeia fetch incomplete: %w", err)
+	}
+	// piPost gives each request its own timeout, so a chunk can fail while the
+	// parent context stays healthy and the check above sees nothing. Callers
+	// negative-cache this for piListNegativeTTL, so retrying cannot spin.
+	if partial {
+		return nil, time.Time{}, fmt.Errorf("politeia enrichment incomplete for %d proposals", len(tokens))
 	}
 	if len(summaries) == 0 {
 		return nil, time.Time{}, fmt.Errorf("politeia enrichment returned no summaries for %d proposals", len(tokens))
@@ -1208,7 +1224,7 @@ func proposalFromRecordAndSummary(token string, rec piRecord, sum piSummary) typ
 	}
 	proposal := types.Proposal{
 		Token:      token,
-		Name:       proposalName(rec),
+		Name:       proposalName(token, rec),
 		Username:   rec.Username,
 		Status:     summaryStatusToBucket(statusName),
 		VoteStatus: statusName,
@@ -1257,7 +1273,7 @@ func summaryStatusToBucket(status string) string {
 	return status
 }
 
-func proposalName(rec piRecord) string {
+func proposalName(token string, rec piRecord) string {
 	for _, f := range rec.Files {
 		if f.Name == "proposalmetadata.json" {
 			raw, err := base64.StdEncoding.DecodeString(f.Payload)
@@ -1272,7 +1288,12 @@ func proposalName(rec piRecord) string {
 			}
 		}
 	}
-	return rec.CensorshipRecord.Token
+	// The caller's token, not the record's: a record that failed to load has an
+	// empty one, and a name-less proposal would be cached under it.
+	if rec.CensorshipRecord.Token != "" {
+		return rec.CensorshipRecord.Token
+	}
+	return token
 }
 
 // commentsFromPi maps Politeia comments to the frontend shape, sorted oldest
