@@ -2365,25 +2365,26 @@ func EstimateDcrdexSendFeeHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// dexWalletActionAsset decodes a {assetID} body for simple wallet actions.
-func dexWalletActionAsset(r *http.Request) (uint32, error) {
-	var req struct {
-		AssetID uint32 `json:"assetID"`
-		Force   bool   `json:"force"`
-		Disable bool   `json:"disable"`
-		Address string `json:"address"`
-	}
+// dexWalletAction is the body every simple wallet action posts. Each handler
+// reads the fields it needs.
+type dexWalletAction struct {
+	AssetID uint32 `json:"assetID"`
+	Force   bool   `json:"force"`
+	Disable bool   `json:"disable"`
+	Address string `json:"address"`
+}
+
+func dexWalletActionBody(r *http.Request) (dexWalletAction, error) {
+	var req dexWalletAction
 	err := json.NewDecoder(r.Body).Decode(&req)
-	return req.AssetID, err
+	return req, err
 }
 
 // OpenDcrdexWalletHandler unlocks a wallet. Requires the DEX session unlocked.
 func OpenDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var req struct {
-		AssetID uint32 `json:"assetID"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := dexWalletActionBody(r)
+	if err != nil {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
@@ -2409,11 +2410,12 @@ func OpenDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 // CloseDcrdexWalletHandler locks a wallet.
 func CloseDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	assetID, err := dexWalletActionAsset(r)
+	req, err := dexWalletActionBody(r)
 	if err != nil {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
+	assetID := req.AssetID
 	client, err := rpc.DcrdexClient()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -2431,11 +2433,8 @@ func CloseDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 // ToggleDcrdexWalletHandler enables or disables a wallet.
 func ToggleDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var req struct {
-		AssetID uint32 `json:"assetID"`
-		Disable bool   `json:"disable"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := dexWalletActionBody(r)
+	if err != nil {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
@@ -2456,11 +2455,8 @@ func ToggleDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 // RescanDcrdexWalletHandler triggers a wallet rescan.
 func RescanDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var req struct {
-		AssetID uint32 `json:"assetID"`
-		Force   bool   `json:"force"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := dexWalletActionBody(r)
+	if err != nil {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
@@ -2504,11 +2500,8 @@ func GetDcrdexWalletPeersHandler(w http.ResponseWriter, r *http.Request) {
 // AddDcrdexWalletPeerHandler adds a persistent peer to a wallet.
 func AddDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var req struct {
-		AssetID uint32 `json:"assetID"`
-		Address string `json:"address"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Address == "" {
+	req, err := dexWalletActionBody(r)
+	if err != nil || req.Address == "" {
 		http.Error(w, "assetID and address are required", http.StatusBadRequest)
 		return
 	}
@@ -2529,11 +2522,8 @@ func AddDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 // RemoveDcrdexWalletPeerHandler removes a persistent peer from a wallet.
 func RemoveDcrdexWalletPeerHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var req struct {
-		AssetID uint32 `json:"assetID"`
-		Address string `json:"address"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Address == "" {
+	req, err := dexWalletActionBody(r)
+	if err != nil || req.Address == "" {
 		http.Error(w, "assetID and address are required", http.StatusBadRequest)
 		return
 	}
