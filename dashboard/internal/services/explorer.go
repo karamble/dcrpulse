@@ -607,55 +607,57 @@ func extractTransactionSummary(txData interface{}, blockHeight int64, blockHash 
 	}
 }
 
+// classifyScriptType maps one output's script type to a transaction kind, or
+// "" when it says nothing. Callers apply it per output so the first output that
+// matches decides, which is what both decode shapes did separately.
+func classifyScriptType(scriptType string) string {
+	switch {
+	case strings.Contains(scriptType, "treasurygen"):
+		return "tspend"
+	case strings.Contains(scriptType, "treasurybase"), strings.Contains(scriptType, "treasuryadd"):
+		return "treasurybase"
+	case strings.Contains(scriptType, "stakesubmission"):
+		return "ticket"
+	case strings.Contains(scriptType, "stakegen"):
+		return "vote"
+	case strings.Contains(scriptType, "stakerevoke"):
+		return "revocation"
+	}
+	return ""
+}
+
 func categorizeTransaction(vin []interface{}, vout []interface{}) string {
-	// Check for stakebase (vote)
+	// dcrd emits a different key set per input class, so presence of the key
+	// is the test, not its value.
 	if len(vin) > 0 {
 		if vinMap, ok := vin[0].(map[string]interface{}); ok {
-			if _, hasStakebase := vinMap["stakebase"]; hasStakebase {
+			if _, has := vinMap["stakebase"]; has {
 				return "vote"
 			}
-			if _, hasCoinbase := vinMap["coinbase"]; hasCoinbase {
+			if _, has := vinMap["coinbase"]; has {
 				return "coinbase"
-			}
-		}
-	}
-
-	// Check outputs for treasury and stake transaction types
-	for _, v := range vout {
-		if voutMap, ok := v.(map[string]interface{}); ok {
-			if scriptPubKey, ok := voutMap["scriptPubKey"].(map[string]interface{}); ok {
-				if scriptType, ok := scriptPubKey["type"].(string); ok {
-					// Treasury transactions
-					if strings.Contains(scriptType, "treasurygen") {
-						return "tspend"
-					}
-					if strings.Contains(scriptType, "treasurybase") || strings.Contains(scriptType, "treasuryadd") {
-						return "treasurybase"
-					}
-
-					// Stake transactions
-					if strings.Contains(scriptType, "stakesubmission") {
-						return "ticket"
-					}
-					if strings.Contains(scriptType, "stakegen") {
-						return "vote"
-					}
-					if strings.Contains(scriptType, "stakerevoke") {
-						return "revocation"
-					}
-				}
 			}
 		}
 	}
 
 	values := make([]float64, 0, len(vout))
 	for _, v := range vout {
-		if voutMap, ok := v.(map[string]interface{}); ok {
-			if value, ok := voutMap["value"].(float64); ok {
-				values = append(values, value)
+		voutMap, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if scriptPubKey, ok := voutMap["scriptPubKey"].(map[string]interface{}); ok {
+			if scriptType, ok := scriptPubKey["type"].(string); ok {
+				if kind := classifyScriptType(scriptType); kind != "" {
+					return kind
+				}
 			}
 		}
+		if value, ok := voutMap["value"].(float64); ok {
+			values = append(values, value)
+		}
 	}
+
 	if looksLikeCoinJoin(len(vin), values) {
 		return "coinjoin"
 	}
@@ -704,27 +706,9 @@ func categorizeTransactionTyped(vin []struct {
 		}
 	}
 
-	// Check outputs for treasury and stake transaction types
 	for _, v := range vout {
-		scriptType := v.ScriptPubKey.Type
-
-		// Treasury transactions
-		if strings.Contains(scriptType, "treasurygen") {
-			return "tspend"
-		}
-		if strings.Contains(scriptType, "treasurybase") || strings.Contains(scriptType, "treasuryadd") {
-			return "treasurybase"
-		}
-
-		// Stake transactions
-		if strings.Contains(scriptType, "stakesubmission") {
-			return "ticket"
-		}
-		if strings.Contains(scriptType, "stakegen") {
-			return "vote"
-		}
-		if strings.Contains(scriptType, "stakerevoke") {
-			return "revocation"
+		if kind := classifyScriptType(v.ScriptPubKey.Type); kind != "" {
+			return kind
 		}
 	}
 
