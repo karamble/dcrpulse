@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"dcrpulse/internal/fsutil"
+
 	"dcrpulse/internal/config"
 )
 
@@ -651,27 +653,7 @@ func atomicWriteJSON(path string, doc any) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*.json")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	_, werr := tmp.Write(raw)
-	cerr := tmp.Close()
-	if werr == nil {
-		werr = cerr
-	}
-	if werr == nil {
-		werr = os.Chmod(tmpName, 0o600)
-	}
-	if werr == nil {
-		werr = os.Rename(tmpName, path)
-	}
-	if werr != nil {
-		os.Remove(tmpName)
-		return werr
-	}
-	return nil
+	return fsutil.AtomicWriteJSON(path, raw)
 }
 
 // Manager opens and caches the per-wallet stores of one network and

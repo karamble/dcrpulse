@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"dcrpulse/internal/fsutil"
+
 	"dcrpulse/internal/config"
 )
 
@@ -56,36 +58,7 @@ func (e *engine) saveLocked() {
 		alrtLog.Errorf("create dir: %v", err)
 		return
 	}
-	if err := atomicWriteJSON(path, data); err != nil {
+	if err := fsutil.AtomicWriteJSON(path, data); err != nil {
 		alrtLog.Errorf("save: %v", err)
 	}
-}
-
-// atomicWriteJSON writes data to path via temp file + rename, mode 0600. Mirrors
-// config.atomicWriteJSON (kept local so this package stays self-contained).
-func atomicWriteJSON(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".tmp-*.json")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return fmt.Errorf("write temp: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("close temp: %w", err)
-	}
-	if err := os.Chmod(tmpName, 0o600); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("chmod temp: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("rename: %w", err)
-	}
-	return nil
 }

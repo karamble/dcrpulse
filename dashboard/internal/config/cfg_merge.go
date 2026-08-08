@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"dcrpulse/internal/fsutil"
 )
 
 // cfgWriteMu serializes the read-modify-write of every config document.
@@ -84,7 +86,7 @@ func mergeSave(path string, raw map[string]json.RawMessage, dirty map[string]boo
 	if err != nil {
 		return nil, fmt.Errorf("encode config %s: %w", path, err)
 	}
-	if err := atomicWriteJSON(path, data); err != nil {
+	if err := fsutil.AtomicWriteJSON(path, data); err != nil {
 		return nil, err
 	}
 	return merged, nil
