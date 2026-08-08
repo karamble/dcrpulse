@@ -648,26 +648,22 @@ func analyzeMempoolTransactions(ctx context.Context) (tickets, votes, revocation
 		return len(hashes)
 	}
 
-	total := mempoolCount(chainjson.GRMAll)
-	if total == 0 {
-		return 0, 0, 0, 0, 0
-	}
 	tickets = mempoolCount(chainjson.GRMTickets)
 	votes = mempoolCount(chainjson.GRMVotes)
 	revocations = mempoolCount(chainjson.GRMRevocations)
 
-	// Whatever the staking types do not claim. Treasury transactions land here
-	// too, which is where the previous per-transaction pass also counted them.
-	other := total - tickets - votes - revocations
-	if other <= 0 {
-		return tickets, votes, revocations, 0, 0
-	}
-
+	// Each count is the daemon's own, so a treasury transaction is neither a
+	// staking one nor a regular one and is simply not among these. The card
+	// therefore does not account for every transaction the mempool holds.
 	regularHashes, err := rpc.DcrdClient.GetRawMempool(ctx, chainjson.GRMRegular)
 	if err != nil {
 		nodeLog.Warnf("Failed to read the regular mempool: %v", err)
-		return tickets, votes, revocations, other, 0
+		return tickets, votes, revocations, 0, 0
 	}
+	regular = len(regularHashes)
+
+	// CoinJoins are a subset of the regular transactions and the one thing
+	// dcrd cannot label, so only those are still read one by one.
 	if len(regularHashes) > maxCoinJoinScan {
 		regularHashes = regularHashes[:maxCoinJoinScan]
 	}
@@ -676,11 +672,8 @@ func analyzeMempoolTransactions(ctx context.Context) (tickets, votes, revocation
 			coinjoins++
 		}
 	}
-	if coinjoins > other {
-		coinjoins = other
-	}
 
-	return tickets, votes, revocations, other - coinjoins, coinjoins
+	return tickets, votes, revocations, regular - coinjoins, coinjoins
 }
 
 // isCoinJoinMempoolTx reports whether a transaction looks like a CoinJoin:
