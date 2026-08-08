@@ -168,7 +168,7 @@ func SetTSpendPolicyHandler(w http.ResponseWriter, r *http.Request) {
 
 // writeProposalsResponse encodes the proposals envelope (list + last-fetch time
 // + when a manual refresh is next allowed) at the given status.
-func writeProposalsResponse(w http.ResponseWriter, status int, proposals []types.Proposal, fetchedAt time.Time) {
+func writeProposalsResponse(w http.ResponseWriter, status int, proposals []types.Proposal, fetchedAt time.Time, hasMore bool) {
 	if proposals == nil {
 		proposals = []types.Proposal{}
 	}
@@ -183,6 +183,7 @@ func writeProposalsResponse(w http.ResponseWriter, status int, proposals []types
 		Proposals:          proposals,
 		FetchedAt:          fetched,
 		RefreshAvailableAt: refreshAt,
+		HasMore:            hasMore,
 	})
 }
 
@@ -209,7 +210,7 @@ func GetProposalsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt)
+	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket))
 }
 
 // RefreshProposalsHandler forces a Politeia re-fetch, subject to the refresh
@@ -233,14 +234,41 @@ func RefreshProposalsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, services.ErrProposalsRefreshCoolingDown) {
-			writeProposalsResponse(w, http.StatusTooManyRequests, proposals, fetchedAt)
+			writeProposalsResponse(w, http.StatusTooManyRequests, proposals, fetchedAt, services.ProposalsHaveMore(bucket))
 			return
 		}
 		govnLog.Errorf("RefreshProposals: %v", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt)
+	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket))
+}
+
+// LoadMoreProposalsHandler appends the next inventory page of each of the
+// bucket's vote statuses to the cached list. Politeia serves at most one page
+// per status, so without this the list silently ends at the first page.
+func LoadMoreProposalsHandler(w http.ResponseWriter, r *http.Request) {
+	bucket := strings.TrimSpace(r.URL.Query().Get("status"))
+	if bucket == "" {
+		bucket = "voting"
+	}
+	if !services.IsProposalBucket(bucket) {
+		http.Error(w, "unknown proposal status", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), services.ProposalsFetchTimeout)
+	defer cancel()
+	proposals, fetchedAt, err := services.LoadMoreProposals(ctx, bucket)
+	if err != nil {
+		if errors.Is(err, services.ErrPoliteiaDisabled) {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		govnLog.Errorf("LoadMoreProposals: %v", err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeProposalsResponse(w, http.StatusOK, proposals, fetchedAt, services.ProposalsHaveMore(bucket))
 }
 
 // writeProposalDetailResponse encodes the proposal-detail envelope (record +

@@ -219,3 +219,139 @@ func TestCompleteFetchIsCached(t *testing.T) {
 		t.Error("a complete fetch was not cached")
 	}
 }
+
+// pagedInventoryRouter serves a policy page size of 3 and an inventory where
+// "approved" spans two pages (a1-a3, then a4-a5), "rejected" is short on page
+// one and "ineligible" is empty - so the finished bucket starts with more to
+// load and ends exhausted after one load-more.
+func pagedInventoryRouter(t *testing.T, pages *[]string) {
+	t.Helper()
+	piRouter(t, map[string]http.HandlerFunc{
+		"/api/ticketvote/v1/policy": func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"inventorypagesize":3}`))
+		},
+		"/api/ticketvote/v1/inventory": func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				Status int `json:"status"`
+				Page   int `json:"page"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			*pages = append(*pages, fmt.Sprintf("s%d-p%d", req.Status, req.Page))
+			switch {
+			case req.Status == 0:
+				_, _ = w.Write([]byte(`{"vetted":{"approved":["a1","a2","a3"],"rejected":["r1"],"ineligible":[]},"bestblock":100}`))
+			case req.Status == 5 && req.Page == 2:
+				_, _ = w.Write([]byte(`{"vetted":{"approved":["a4","a5"]},"bestblock":100}`))
+			default:
+				http.Error(w, "unexpected page request "+fmt.Sprint(req), http.StatusBadRequest)
+			}
+		},
+		"/api/ticketvote/v1/summaries": piSummariesHandler(""),
+		"/api/records/v1/records":      piRecordsHandler(""),
+	})
+}
+
+// Politeia's no-argument inventory returns one page per status and ignores the
+// page argument without a status, so the cold load must mark full-page statuses
+// as having more and a later load must page each unexhausted status by itself.
+func TestLoadMoreProposalsPagesEachStatus(t *testing.T) {
+	resetPiListCache(t)
+	prevSize := piPageSize
+	piPageSize = 0
+	t.Cleanup(func() { piPageSize = prevSize })
+	var pages []string
+	pagedInventoryRouter(t, &pages)
+
+	list, _, err := fetchAndCacheProposals(context.Background(), "finished")
+	if err != nil {
+		t.Fatalf("cold load: %v", err)
+	}
+	if len(list) != 4 {
+		t.Fatalf("cold load: got %d proposals, want 4", len(list))
+	}
+	if !ProposalsHaveMore("finished") {
+		t.Fatal("a full approved page must leave the bucket with more to load")
+	}
+
+	merged, _, err := LoadMoreProposals(context.Background(), "finished")
+	if err != nil {
+		t.Fatalf("load more: %v", err)
+	}
+	if len(merged) != 6 {
+		t.Fatalf("after load more: got %d proposals, want 6", len(merged))
+	}
+	if ProposalsHaveMore("finished") {
+		t.Fatal("a short second page must exhaust the bucket")
+	}
+
+	// Exactly one paged request, for approved (enum 5) page 2: rejected and
+	// ineligible were short on page one and must not be asked again.
+	var paged []string
+	for _, p := range pages {
+		if p != "s0-p0" {
+			paged = append(paged, p)
+		}
+	}
+	if len(paged) != 1 || paged[0] != "s5-p2" {
+		t.Fatalf("paged requests = %v, want exactly [s5-p2]", paged)
+	}
+
+	// Idempotent once exhausted: no new requests, same list.
+	before := len(pages)
+	again, _, err := LoadMoreProposals(context.Background(), "finished")
+	if err != nil || len(again) != 6 {
+		t.Fatalf("exhausted load more: len=%d err=%v", len(again), err)
+	}
+	if len(pages) != before {
+		t.Fatalf("an exhausted bucket still hit the inventory: %v", pages[before:])
+	}
+}
+
+// A failed page fetch must leave the cached list and cursors untouched so the
+// next attempt retries the same page.
+func TestLoadMoreFailureLeavesCacheUntouched(t *testing.T) {
+	resetPiListCache(t)
+	prevSize := piPageSize
+	piPageSize = 0
+	t.Cleanup(func() { piPageSize = prevSize })
+	fail := false
+	piRouter(t, map[string]http.HandlerFunc{
+		"/api/ticketvote/v1/policy": func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"inventorypagesize":3}`))
+		},
+		"/api/ticketvote/v1/inventory": func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				Status int `json:"status"`
+				Page   int `json:"page"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if req.Status == 0 {
+				_, _ = w.Write([]byte(`{"vetted":{"approved":["a1","a2","a3"]},"bestblock":100}`))
+				return
+			}
+			if fail {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write([]byte(`{"vetted":{"approved":["a4"]},"bestblock":100}`))
+		},
+		"/api/ticketvote/v1/summaries": piSummariesHandler(""),
+		"/api/records/v1/records":      piRecordsHandler(""),
+	})
+
+	if _, _, err := fetchAndCacheProposals(context.Background(), "finished"); err != nil {
+		t.Fatalf("cold load: %v", err)
+	}
+	fail = true
+	if _, _, err := LoadMoreProposals(context.Background(), "finished"); err == nil {
+		t.Fatal("a failed page fetch was reported as success")
+	}
+	if !ProposalsHaveMore("finished") {
+		t.Fatal("the failed page must stay loadable")
+	}
+	fail = false
+	merged, _, err := LoadMoreProposals(context.Background(), "finished")
+	if err != nil || len(merged) != 4 {
+		t.Fatalf("retry: len=%d err=%v", len(merged), err)
+	}
+}

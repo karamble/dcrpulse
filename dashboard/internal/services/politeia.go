@@ -111,10 +111,25 @@ var (
 	voteSignMu sync.Mutex
 )
 
-// piListCacheEntry is one status bucket's cached proposal list + fetch time.
+// piListCacheEntry is one status bucket's cached proposal list + fetch time,
+// plus the paging cursors: Politeia's inventory returns at most one page per
+// vote status, so each status carries the next page to request and whether a
+// short page has ended it.
 type piListCacheEntry struct {
-	list []types.Proposal
-	at   time.Time
+	list      []types.Proposal
+	at        time.Time
+	nextPage  map[string]int
+	exhausted map[string]bool
+}
+
+// hasMore reports whether any of the bucket's statuses still has pages left.
+func (e piListCacheEntry) hasMore(bucket string) bool {
+	for _, st := range bucketStatuses(bucket) {
+		if !e.exhausted[st] {
+			return true
+		}
+	}
+	return false
 }
 
 type piDetailCacheEntry struct {
@@ -219,30 +234,119 @@ func RefreshProposals(ctx context.Context, bucket string) ([]types.Proposal, tim
 	return out, at, nil
 }
 
+// ProposalsHaveMore reports whether the bucket's cached list has inventory
+// pages left to load. False for an uncached bucket: the cold load answers that.
+func ProposalsHaveMore(bucket string) bool {
+	piCacheMu.RLock()
+	defer piCacheMu.RUnlock()
+	e, ok := piCachedLists[bucket]
+	return ok && e.hasMore(bucket)
+}
+
+// LoadMoreProposals fetches the next inventory page for each of the bucket's
+// statuses that still has one, enriches only the new tokens, and appends them
+// to the cached list. Unlike a refresh it never discards what is already
+// cached, and a failure leaves the cache untouched for a retry.
+func LoadMoreProposals(_ context.Context, bucket string) ([]types.Proposal, time.Time, error) {
+	if !PoliteiaEnabled() {
+		return nil, time.Time{}, ErrPoliteiaDisabled
+	}
+	// Serialized with the cold fetch and refresh so two callers cannot page
+	// the same bucket concurrently.
+	piListFetchMu.Lock()
+	defer piListFetchMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), ProposalsFetchTimeout)
+	defer cancel()
+
+	piCacheMu.RLock()
+	entry, ok := piCachedLists[bucket]
+	piCacheMu.RUnlock()
+	if !ok {
+		return fetchAndCacheProposals(ctx, bucket)
+	}
+	if !entry.hasMore(bucket) {
+		return entry.list, entry.at, nil
+	}
+
+	seen := make(map[string]bool, len(entry.list))
+	for _, p := range entry.list {
+		seen[p.Token] = true
+	}
+
+	pageSize := piInventoryPageSize(ctx)
+	nextPage := map[string]int{}
+	exhausted := map[string]bool{}
+	for st, p := range entry.nextPage {
+		nextPage[st] = p
+	}
+	for st, x := range entry.exhausted {
+		exhausted[st] = x
+	}
+
+	var newTokens []string
+	for _, st := range bucketStatuses(bucket) {
+		if exhausted[st] {
+			continue
+		}
+		inv, err := piInventoryPage(ctx, st, nextPage[st])
+		if err != nil {
+			return nil, time.Time{}, fmt.Errorf("inventory page %d of %s: %w", nextPage[st], st, err)
+		}
+		toks := inv.Vetted[st]
+		if len(toks) < pageSize {
+			exhausted[st] = true
+		}
+		nextPage[st]++
+		for _, t := range toks {
+			if !seen[t] {
+				seen[t] = true
+				newTokens = append(newTokens, t)
+			}
+		}
+	}
+
+	now := time.Now()
+	if len(newTokens) == 0 {
+		piCacheMu.Lock()
+		entry.nextPage, entry.exhausted = nextPage, exhausted
+		piCachedLists[bucket] = entry
+		piCacheMu.Unlock()
+		return entry.list, entry.at, nil
+	}
+
+	out, prewarm, err := enrichProposalTokens(ctx, newTokens)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	merged := append(append([]types.Proposal{}, entry.list...), out...)
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].EndBlock > merged[j].EndBlock
+	})
+
+	piCacheMu.Lock()
+	piCachedLists[bucket] = piListCacheEntry{list: merged, at: entry.at, nextPage: nextPage, exhausted: exhausted}
+	for t, d := range prewarm {
+		// A fuller cached detail keeps its comments; only light entries land.
+		if prev, ok := piCachedDetails[t]; !ok || !prev.commentsLoaded {
+			piCachedDetails[t] = piDetailCacheEntry{detail: d, at: now, commentsLoaded: false}
+		}
+	}
+	piCacheMu.Unlock()
+
+	return merged, entry.at, nil
+}
+
 // fetchAndCacheProposals fetches the full proposal list from Politeia and
 // stores it in the in-process cache. piCachedList/piCachedAt are written ONLY
 // on success, so a failed fetch leaves the cache (and the refresh cooldown
 // anchor) untouched. Capped at ProposalsFetchTimeout.
-func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal, time.Time, error) {
-	// Decouple from the caller's request context: a cold fetch populates the
-	// shared in-process cache, so a client that disconnects mid-fetch (common
-	// on mobile) must not cancel it and leave the cache empty or partial.
-	ctx, cancel := context.WithTimeout(context.Background(), ProposalsFetchTimeout)
-	defer cancel()
-
-	inv, err := piInventory(ctx)
-	if err != nil {
-		return nil, time.Time{}, err
-	}
-	tokens := tokensForBucket(inv, bucket)
-	if len(tokens) == 0 {
-		now := time.Now()
-		piCacheMu.Lock()
-		piCachedLists[bucket] = piListCacheEntry{list: []types.Proposal{}, at: now}
-		piCacheMu.Unlock()
-		return []types.Proposal{}, now, nil
-	}
-
+// enrichProposalTokens fetches metadata records and vote summaries for tokens
+// in bounded-concurrency chunks and builds the list rows plus their light
+// detail prewarm. Any failed chunk fails the whole call: a zero-value record or
+// summary would otherwise be cached as a name-less or "unknown" proposal.
+func enrichProposalTokens(ctx context.Context, tokens []string) ([]types.Proposal, map[string]*types.ProposalDetail, error) {
 	// Enrich each 5-token chunk (metadata-only record + vote summary) with
 	// bounded concurrency. 5 tokens is Politeia's per-request records limit
 	// (Decrediton's proposallistpagesize); running the chunks in parallel turns
@@ -301,16 +405,16 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 	// would poison the list with name-less "invalid" proposals. Bail without
 	// touching the cache so the next request retries.
 	if err := ctx.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("politeia fetch incomplete: %w", err)
+		return nil, nil, fmt.Errorf("politeia fetch incomplete: %w", err)
 	}
 	// piPost gives each request its own timeout, so a chunk can fail while the
 	// parent context stays healthy and the check above sees nothing. Callers
 	// negative-cache this for piListNegativeTTL, so retrying cannot spin.
 	if partial {
-		return nil, time.Time{}, fmt.Errorf("politeia enrichment incomplete for %d proposals", len(tokens))
+		return nil, nil, fmt.Errorf("politeia enrichment incomplete for %d proposals", len(tokens))
 	}
 	if len(summaries) == 0 {
-		return nil, time.Time{}, fmt.Errorf("politeia enrichment returned no summaries for %d proposals", len(tokens))
+		return nil, nil, fmt.Errorf("politeia enrichment returned no summaries for %d proposals", len(tokens))
 	}
 
 	// Local cache of "you voted X" choices so the UI can show the
@@ -339,13 +443,53 @@ func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal,
 		}
 	}
 
+	return out, prewarm, nil
+}
+
+func fetchAndCacheProposals(_ context.Context, bucket string) ([]types.Proposal, time.Time, error) {
+	// Decouple from the caller's request context: a cold fetch populates the
+	// shared in-process cache, so a client that disconnects mid-fetch (common
+	// on mobile) must not cancel it and leave the cache empty or partial.
+	ctx, cancel := context.WithTimeout(context.Background(), ProposalsFetchTimeout)
+	defer cancel()
+
+	inv, err := piInventory(ctx)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	tokens := tokensForBucket(inv, bucket)
+
+	// Politeia's no-argument inventory returns exactly one page per status, so
+	// a full page means more pages exist. The cursors start every status at
+	// page two and end it as soon as a page comes back short.
+	pageSize := piInventoryPageSize(ctx)
+	nextPage := map[string]int{}
+	exhausted := map[string]bool{}
+	for _, st := range bucketStatuses(bucket) {
+		nextPage[st] = 2
+		exhausted[st] = len(inv.Vetted[st]) < pageSize
+	}
+
+	if len(tokens) == 0 {
+		now := time.Now()
+		piCacheMu.Lock()
+		piCachedLists[bucket] = piListCacheEntry{list: []types.Proposal{}, at: now, nextPage: nextPage, exhausted: exhausted}
+		piCacheMu.Unlock()
+		return []types.Proposal{}, now, nil
+	}
+
+	out, prewarm, err := enrichProposalTokens(ctx, tokens)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].EndBlock > out[j].EndBlock
 	})
 
 	now := time.Now()
 	piCacheMu.Lock()
-	piCachedLists[bucket] = piListCacheEntry{list: out, at: now}
+	piCachedLists[bucket] = piListCacheEntry{list: out, at: now, nextPage: nextPage, exhausted: exhausted}
 	for t, d := range prewarm {
 		// Preserve a fuller existing entry's comments/HTML across a list
 		// refresh; only description/tally/options are refreshed from the new
@@ -1058,6 +1202,54 @@ func piInventory(ctx context.Context) (piInventoryResp, error) {
 	var out piInventoryResp
 	err := piPost(ctx, "/ticketvote/v1/inventory", struct{}{}, &out, politeiaTimeout)
 	return out, err
+}
+
+// piVoteStatusEnum maps the inventory's status names to the ticketvote wire
+// enum. The paged inventory call needs the number; the reply keys stay names.
+var piVoteStatusEnum = map[string]int{
+	"unauthorized": 1,
+	"authorized":   2,
+	"started":      3,
+	"approved":     5,
+	"rejected":     6,
+	"ineligible":   7,
+}
+
+// piInventoryPage requests one page of one vote status. Politeia ignores the
+// page argument unless a status is sent with it, which is why the no-argument
+// call above can only ever see page one.
+func piInventoryPage(ctx context.Context, status string, page int) (piInventoryResp, error) {
+	body := struct {
+		Status int `json:"status"`
+		Page   int `json:"page"`
+	}{Status: piVoteStatusEnum[status], Page: page}
+	var out piInventoryResp
+	err := piPost(ctx, "/ticketvote/v1/inventory", body, &out, politeiaTimeout)
+	return out, err
+}
+
+var (
+	piPageSizeMu sync.Mutex
+	piPageSize   int
+)
+
+// piInventoryPageSize reads the inventory page size from the ticketvote policy
+// route, once per process. Upstream deprecates the hardcoded constant in favour
+// of this route; 20 is the documented value if the call fails.
+func piInventoryPageSize(ctx context.Context) int {
+	piPageSizeMu.Lock()
+	defer piPageSizeMu.Unlock()
+	if piPageSize > 0 {
+		return piPageSize
+	}
+	var out struct {
+		InventoryPageSize int `json:"inventorypagesize"`
+	}
+	if err := piPost(ctx, "/ticketvote/v1/policy", struct{}{}, &out, politeiaTimeout); err != nil || out.InventoryPageSize <= 0 {
+		return 20
+	}
+	piPageSize = out.InventoryPageSize
+	return piPageSize
 }
 
 // piListFilenames are the small metadata files needed to render the proposals

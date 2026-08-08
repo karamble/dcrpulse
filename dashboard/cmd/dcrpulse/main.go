@@ -396,6 +396,7 @@ func main() {
 	api.HandleFunc("/wallet/governance/proposals/{token}", handlers.GetProposalDetailHandler).Methods("GET")
 	api.HandleFunc("/wallet/governance/proposals/cast-vote", handlers.CastPoliteiaVoteHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/proposals/refresh", handlers.RefreshProposalsHandler).Methods("POST")
+	api.HandleFunc("/wallet/governance/proposals/load-more", handlers.LoadMoreProposalsHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/votetrickle/start", handlers.StartVoteTrickleHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/votetrickle/stop", handlers.StopVoteTrickleHandler).Methods("POST")
 	api.HandleFunc("/wallet/governance/votetrickle/status", handlers.VoteTrickleStatusHandler).Methods("GET")

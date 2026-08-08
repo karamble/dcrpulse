@@ -214,6 +214,7 @@ type ProposalsResponse struct {
 	Proposals          []Proposal `json:"proposals"`
 	FetchedAt          int64      `json:"fetchedAt"`
 	RefreshAvailableAt int64      `json:"refreshAvailableAt"`
+	HasMore            bool       `json:"hasMore"`
 }
 
 // ProposalDetailResponse is the envelope for the proposal-detail endpoint: the
