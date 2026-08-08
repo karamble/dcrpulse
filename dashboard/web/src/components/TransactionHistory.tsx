@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toYMD } from '../utils/date';
 import { Link } from 'react-router-dom';
 import { getWalletTransactions, WalletTransaction } from '../services/api';
@@ -153,8 +153,10 @@ export const TransactionHistory = () => {
     return `${txid.substring(0, 8)}...${txid.substring(txid.length - 8)}`;
   };
 
-  // Calculate CoinJoin statistics for display card
-  const getCoinJoinStats = () => {
+  // The list grows with every page loaded, and both of these walk all of it, so
+  // without memoising them a keystroke in the search box re-filters and
+  // re-reduces the whole history.
+  const coinJoinStats = useMemo(() => {
     const coinjoins = transactions.filter(tx => tx.category === 'coinjoin');
     if (coinjoins.length === 0) {
       return null;
@@ -171,39 +173,39 @@ export const TransactionHistory = () => {
       maxFee,
       avgFee
     };
-  };
+  }, [transactions]);
 
-  const coinJoinStats = getCoinJoinStats();
-  
-  const getTxTimestampMs = (tx: WalletTransaction): number => {
-    return tx.blockTime ? tx.blockTime * 1000 : new Date(tx.time).getTime();
-  };
+  const filteredTransactions = useMemo(() => {
+    const getTxTimestampMs = (tx: WalletTransaction): number => {
+      return tx.blockTime ? tx.blockTime * 1000 : new Date(tx.time).getTime();
+    };
 
-  const dateStartMs = dateStart ? new Date(dateStart).getTime() : null;
-  const dateEndMs = dateEnd ? new Date(dateEnd).getTime() + 86400000 - 1 : null;
-  const searchLower = searchText.trim().toLowerCase();
+    const dateStartMs = dateStart ? new Date(dateStart).getTime() : null;
+    const dateEndMs = dateEnd ? new Date(dateEnd).getTime() + 86400000 - 1 : null;
+    const searchLower = searchText.trim().toLowerCase();
 
-  const filteredTransactions = transactions.filter(tx => {
-    if (filterCategory !== 'all') {
-      if (filterCategory === 'send') {
-        if (!((tx.category === 'send' && tx.txType === 'regular') || tx.category === 'vspfee')) return false;
-      } else if (filterCategory === 'receive' && tx.category !== 'receive') return false;
-      else if (filterCategory === 'coinjoin' && tx.category !== 'coinjoin') return false;
-      else if (filterCategory === 'ticket' && tx.txType !== 'ticket') return false;
-      else if (filterCategory === 'vote' && tx.txType !== 'vote') return false;
-    }
-    if (dateStartMs !== null || dateEndMs !== null) {
-      const ts = getTxTimestampMs(tx);
-      if (dateStartMs !== null && ts < dateStartMs) return false;
-      if (dateEndMs !== null && ts > dateEndMs) return false;
-    }
-    if (searchLower) {
-      const txidMatch = tx.txid.toLowerCase().includes(searchLower);
-      const addrMatch = tx.address ? tx.address.toLowerCase().includes(searchLower) : false;
-      if (!txidMatch && !addrMatch) return false;
-    }
-    return true;
-  });
+    return transactions.filter(tx => {
+      if (filterCategory !== 'all') {
+        if (filterCategory === 'send') {
+          if (!((tx.category === 'send' && tx.txType === 'regular') || tx.category === 'vspfee')) return false;
+        } else if (filterCategory === 'receive' && tx.category !== 'receive') return false;
+        else if (filterCategory === 'coinjoin' && tx.category !== 'coinjoin') return false;
+        else if (filterCategory === 'ticket' && tx.txType !== 'ticket') return false;
+        else if (filterCategory === 'vote' && tx.txType !== 'vote') return false;
+      }
+      if (dateStartMs !== null || dateEndMs !== null) {
+        const ts = getTxTimestampMs(tx);
+        if (dateStartMs !== null && ts < dateStartMs) return false;
+        if (dateEndMs !== null && ts > dateEndMs) return false;
+      }
+      if (searchLower) {
+        const txidMatch = tx.txid.toLowerCase().includes(searchLower);
+        const addrMatch = tx.address ? tx.address.toLowerCase().includes(searchLower) : false;
+        if (!txidMatch && !addrMatch) return false;
+      }
+      return true;
+    });
+  }, [transactions, filterCategory, searchText, dateStart, dateEnd]);
 
   const displayedTransactions = filteredTransactions.slice(0, visibleCount);
   const hasMoreVisible = filteredTransactions.length > visibleCount;
