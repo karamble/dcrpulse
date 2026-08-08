@@ -98,5 +98,3 @@ func GetTSpendScanResultsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
 }
-
-// GetMempoolTSpendsHandler returns active tspends currently in mempool

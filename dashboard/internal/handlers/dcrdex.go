@@ -2195,8 +2195,6 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
-// GetDcrdexWalletTxHandler returns a single wallet transaction. Query: assetID,
-// txID.
 // SendDcrdexWalletHandler sends a conventional amount of an asset to an address.
 // The amount is converted to atoms in the backend. Spends real funds; requires
 // the DEX session unlocked.
