@@ -41,6 +41,7 @@ import {
   newEmbedId,
   placeholderFor,
 } from './editor';
+import { BrSidebar, navigateTo } from './BrSidebar';
 import {
   BisonrelayContact,
   BisonrelayLiveEvent,
@@ -148,10 +149,6 @@ const readHashRoute = (): { section: Section; target: FeedTarget | null } => {
   return { section: 'list', target: null };
 };
 
-const navigateTo = (hash: string): void => {
-  window.location.hash = hash;
-};
-
 export const BisonrelayFeed = () => {
   const [route, setRoute] = useState(readHashRoute);
   const [posts, setPosts] = useState<BisonrelayPostSummary[] | null>(null);
@@ -224,7 +221,6 @@ export const BisonrelayFeed = () => {
         /* leave ownUid empty; Your Posts view will show an empty list */
       });
   }, []);
-
 
   useEffect(() => {
     const onHashChange = () => setRoute(readHashRoute());
@@ -334,33 +330,13 @@ const sidebarItems: { id: Section; label: string; hash: string; icon: typeof Rss
 ];
 
 const FeedSidebar = ({ active }: { active: Section }) => (
-  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card border border-border/50 p-2 md:self-start">
-    <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible">
-      {sidebarItems.map((item) => {
-        // Treat the post-detail and user-profile views as belonging to the
-        // list section so the "Feed" entry stays highlighted inside them.
-        const isActive =
-          item.id === active ||
-          (item.id === 'list' && (active === 'detail' || active === 'user'));
-        const Icon = item.icon;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => navigateTo(item.hash)}
-            className={`shrink-0 whitespace-nowrap md:w-full px-3 py-2 rounded-md text-sm flex items-center gap-2 text-left transition-colors ${
-              isActive
-                ? 'bg-primary/20 text-primary font-semibold'
-                : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'
-            }`}
-          >
-            <Icon className="h-4 w-4 shrink-0" />
-            <span>{item.label}</span>
-          </button>
-        );
-      })}
-    </nav>
-  </aside>
+  // The post-detail and user-profile views belong to the list section, so the
+  // "Feed" entry stays highlighted inside them.
+  <BrSidebar
+    items={sidebarItems}
+    active={active}
+    isActive={(id, a) => id === a || (id === 'list' && (a === 'detail' || a === 'user'))}
+  />
 );
 
 const PostsListView = ({

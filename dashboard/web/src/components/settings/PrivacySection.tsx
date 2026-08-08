@@ -12,6 +12,7 @@ import {
   setMixerDebug,
 } from '../../services/api';
 import { apiError } from '../../utils/apiError';
+import { Toggle } from './Toggle';
 
 const defaultExternal: ExternalRequestSettings = {
   vspListing: true,
@@ -20,35 +21,6 @@ const defaultExternal: ExternalRequestSettings = {
 };
 
 const defaultBotUrl = 'https://brulse.decredcommunity.org';
-
-interface ToggleProps {
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (next: boolean) => void;
-}
-
-const Toggle = ({ label, description, checked, disabled, onChange }: ToggleProps) => (
-  <div className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
-    <div>
-      <span className="font-medium block">{label}</span>
-      <span className="text-sm text-muted-foreground block">{description}</span>
-    </div>
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      disabled={disabled}
-      className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-        checked
-          ? 'bg-success/20 text-success hover:bg-success/30'
-          : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-      } disabled:opacity-50 disabled:cursor-wait`}
-    >
-      {checked ? 'On' : 'Off'}
-    </button>
-  </div>
-);
 
 export const PrivacySection = () => {
   const [external, setExternal] = useState<ExternalRequestSettings>(defaultExternal);

@@ -42,10 +42,7 @@ import { LnPayChip } from './LnPayChip';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { identityToHex } from '../../utils/identity';
 import { apiError } from '../../utils/apiError';
-
-const navigateTo = (hash: string): void => {
-  window.location.hash = hash;
-};
+import { navigateTo } from './BrSidebar';
 
 // The page hash is '/'-delimited, so the base64 identity cannot go in it; hex
 // is safe and is what brclientd's /pages/fetch expects.

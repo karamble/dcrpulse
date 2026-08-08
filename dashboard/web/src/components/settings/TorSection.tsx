@@ -16,36 +16,7 @@ import {
 } from '../../services/tor/client';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { formatBytes } from '../../utils/bytes';
-
-interface ToggleProps {
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (next: boolean) => void;
-}
-
-const Toggle = ({ label, description, checked, disabled, onChange }: ToggleProps) => (
-  <div className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
-    <div>
-      <span className="font-medium block">{label}</span>
-      <span className="text-sm text-muted-foreground block">{description}</span>
-    </div>
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      disabled={disabled}
-      className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-        checked
-          ? 'bg-success/20 text-success hover:bg-success/30'
-          : 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-      } disabled:opacity-50 disabled:cursor-wait`}
-    >
-      {checked ? 'On' : 'Off'}
-    </button>
-  </div>
-);
-
+import { Toggle } from './Toggle';
 
 const Stat = ({ label, value }: { label: string; value: string }) => (
   <div className="p-3 rounded-lg bg-muted/10 border border-border/50">

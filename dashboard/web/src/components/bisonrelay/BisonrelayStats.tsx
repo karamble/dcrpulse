@@ -58,6 +58,7 @@ import {
 import { avatarDataUrl } from './bisonrelayAvatar';
 import { ConfirmActionModal } from './BisonrelayUserSubNav';
 import { formatBytes } from '../../utils/bytes';
+import { BrSidebar } from './BrSidebar';
 import { apiError } from '../../utils/apiError';
 
 type Section = 'overview' | 'payments' | 'network' | 'contacts' | 'content';
@@ -73,10 +74,6 @@ const readHashSection = (): Section => {
   return 'overview';
 };
 
-const navigateTo = (hash: string): void => {
-  window.location.hash = hash;
-};
-
 // ---- formatting helpers --------------------------------------------------
 
 // clientdb records payment totals in milli-atoms (1 DCR = 1e11 matoms); see
@@ -89,7 +86,6 @@ export const formatDCR = (matoms: number, digits = 4): string => {
   if (Math.abs(dcr) < 0.0001) return `${matoms} matoms`;
   return dcr.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '');
 };
-
 
 const formatNs = (ns: number): string => {
   if (!ns) return '–';
@@ -309,29 +305,7 @@ const sidebarItems: { id: Section; label: string; hash: string; icon: ComponentT
 ];
 
 const StatsSidebar = ({ active }: { active: Section }) => (
-  <aside className="md:w-44 shrink-0 rounded-xl bg-gradient-card border border-border/50 p-2 md:self-start">
-    <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible">
-      {sidebarItems.map((item) => {
-        const isActive = item.id === active;
-        const Icon = item.icon;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => navigateTo(item.hash)}
-            className={`shrink-0 whitespace-nowrap md:w-full px-3 py-2 rounded-md text-sm flex items-center gap-2 text-left transition-colors ${
-              isActive
-                ? 'bg-primary/20 text-primary font-semibold'
-                : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'
-            }`}
-          >
-            <Icon className="h-4 w-4 shrink-0" />
-            <span>{item.label}</span>
-          </button>
-        );
-      })}
-    </nav>
-  </aside>
+  <BrSidebar items={sidebarItems} active={active} />
 );
 
 // ---- shared layout pieces ------------------------------------------------
