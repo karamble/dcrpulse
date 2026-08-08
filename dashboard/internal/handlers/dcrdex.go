@@ -1954,9 +1954,20 @@ var (
 	dexTxIDSet    map[string]struct{}
 	dexUnminedTxs []DexWalletTx
 	dexTxIDAt     time.Time
+	// dexTxIDHeight is the wallet tip as of the last scan; the next scan
+	// resumes just below it instead of walking the whole history again.
+	// dexTxIDClient is the client the cache was built against - a wallet
+	// switch swaps it, and the old wallet's txids must not scope the new one.
+	dexTxIDHeight int32
+	dexTxIDClient pb.WalletServiceClient
 )
 
-const dexTxIDTTL = 30 * time.Second
+const (
+	dexTxIDTTL = 30 * time.Second
+	// dexTxIDReorgDepth is how far below the last tip a rescan starts, so a
+	// shallow reorg is re-attributed. Mirrors bisonw's own blockQueryBuffer.
+	dexTxIDReorgDepth = 3
+)
 
 // dexAccountTxIDs returns the txids in the dcrwallet "dex" account via
 // listtransactions (account-scoped). fresh forces a recompute (used on first-page
@@ -1965,6 +1976,10 @@ const dexTxIDTTL = 30 * time.Second
 func dexAccountTxIDs(ctx context.Context, fresh bool) (map[string]struct{}, []DexWalletTx, error) {
 	dexTxIDMu.Lock()
 	defer dexTxIDMu.Unlock()
+	if rpc.WalletGrpcClient != dexTxIDClient {
+		dexTxIDSet, dexUnminedTxs, dexTxIDAt, dexTxIDHeight = nil, nil, time.Time{}, 0
+		dexTxIDClient = rpc.WalletGrpcClient
+	}
 	if !fresh && dexTxIDSet != nil && time.Since(dexTxIDAt) < dexTxIDTTL {
 		return dexTxIDSet, dexUnminedTxs, nil
 	}
@@ -1988,9 +2003,28 @@ func dexAccountTxIDs(ctx context.Context, fresh bool) (map[string]struct{}, []De
 		}
 	}
 	if !found {
+		// The account may appear later; dexTxIDHeight stays 0 so the first
+		// scan after that is a full one.
 		set := map[string]struct{}{}
 		dexTxIDSet, dexUnminedTxs, dexTxIDAt = set, nil, time.Now()
 		return set, nil, nil
+	}
+
+	// Read the tip before streaming so a block landing mid-stream falls inside
+	// the next scan's overlap rather than being skipped.
+	best, err := rpc.WalletGrpcClient.BestBlock(ctx, &pb.BestBlockRequest{})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Resume just below the last scanned tip: txids never leave an account, so
+	// the set only grows, and the overlap re-attributes a shallow reorg. A tx
+	// that conflicts away leaves a stale entry, which is harmless - the set
+	// only selects which bisonw history rows are shown, and a vanished tx has
+	// no row. Cold caches scan the whole history once.
+	var start int32
+	if dexTxIDSet != nil && dexTxIDHeight > dexTxIDReorgDepth {
+		start = dexTxIDHeight - dexTxIDReorgDepth
 	}
 
 	// Stream the wallet's transactions (only the wallet's own, across all
@@ -1999,13 +2033,16 @@ func dexAccountTxIDs(ctx context.Context, fresh bool) (map[string]struct{}, []De
 	// posts, swaps and deposits to the dex account; the net of the two also
 	// sizes the unmined txs for the pending rows.
 	stream, err := rpc.WalletGrpcClient.GetTransactions(ctx, &pb.GetTransactionsRequest{
-		StartingBlockHeight: 0,
+		StartingBlockHeight: start,
 		EndingBlockHeight:   -1,
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 	set := map[string]struct{}{}
+	for txid := range dexTxIDSet {
+		set[txid] = struct{}{}
+	}
 	var pending []DexWalletTx
 	add := func(details []*pb.TransactionDetails, unmined bool) {
 		for _, t := range details {
@@ -2051,6 +2088,7 @@ func dexAccountTxIDs(ctx context.Context, fresh bool) (map[string]struct{}, []De
 		add(resp.GetUnminedTransactions(), true)
 	}
 	dexTxIDSet, dexUnminedTxs, dexTxIDAt = set, pending, time.Now()
+	dexTxIDHeight = int32(best.GetHeight())
 	return set, pending, nil
 }
 
