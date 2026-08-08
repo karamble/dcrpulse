@@ -998,6 +998,10 @@ var (
 	describeGraphData []types.TopLightningNode // sorted by capacity desc
 	describeGraphTime time.Time
 	describeGraphTTL  = 10 * time.Minute
+
+	// Matches the longest deadline any caller gives us, so the shared fetch
+	// never gets less time than it has today.
+	describeGraphFillTimeout = 30 * time.Second
 )
 
 // GetTopLightningNodes returns the top-n nodes by total channel
@@ -1017,9 +1021,14 @@ func GetTopLightningNodes(ctx context.Context, n int) ([]types.TopLightningNode,
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
-	graph, err := client.DescribeGraph(ctx, &lnrpc.ChannelGraphRequest{IncludeUnannounced: false})
+	// The fetch is shared, so a caller that walks away must not cancel it out
+	// from under the ones still waiting on it.
+	fillCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), describeGraphFillTimeout)
+	defer cancel()
+	graph, err := client.DescribeGraph(fillCtx, &lnrpc.ChannelGraphRequest{IncludeUnannounced: false})
 	if err != nil {
-		// Keep previous cache if it exists; surface the fresh error.
+		// A failed refresh leaves describeGraphTime untouched, so the next
+		// caller refetches rather than serving data of unknown age.
 		return nil, fmt.Errorf("DescribeGraph: %w", err)
 	}
 
