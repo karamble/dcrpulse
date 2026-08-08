@@ -9,7 +9,7 @@ import {
 } from '../../services/api';
 import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
-import { formatDcr, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
+import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
 
 const CONSTRUCT_DEBOUNCE_MS = 500;
 
@@ -237,19 +237,19 @@ export const SendToUnmixedCard = ({ changeAccount }: Props) => {
             <>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Network fee</span>
-                <span>{formatDcr(construct.feeAtoms)} DCR</span>
+                <span>{formatAtoms(construct.feeAtoms)} DCR</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">UTXO value used</span>
-                <span>{formatDcr(construct.inputsTotalAtoms)} DCR</span>
+                <span>{formatAtoms(construct.inputsTotalAtoms)} DCR</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Change returned</span>
-                <span>{formatDcr(construct.changeAtoms)} DCR</span>
+                <span>{formatAtoms(construct.changeAtoms)} DCR</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Total debited</span>
-                <span className="font-semibold">{formatDcr(construct.totalDebitedAtoms)} DCR</span>
+                <span className="font-semibold">{formatAtoms(construct.totalDebitedAtoms)} DCR</span>
               </div>
             </>
           ) : null}

@@ -10,9 +10,9 @@ import {
   lnFeeLimitAtoms,
   streamLnPayment,
 } from '../../services/lightningApi';
-import { formatDcrTrimmed, toDcr } from '../../utils/amounts';
+import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
 
-const fmtDcr = formatDcrTrimmed;
+const fmtDcr = formatAtomsTrimmed;
 
 // LnPayChip renders an lnpay://<bolt11> link found in BR page/post content as a
 // pay chip with an explicit confirm - matching how bruig/brclient turn an

@@ -16,7 +16,7 @@ import {
 import { nextAddressCache } from '../../services/nextAddressCache';
 import { SendPassphraseModal } from '../wallet/SendPassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
-import { formatDcr, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
+import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
 
 const VALIDATE_DEBOUNCE_MS = 400;
 const CONSTRUCT_DEBOUNCE_MS = 500;
@@ -507,26 +507,26 @@ export const SendTab = () => {
                 <span className="text-muted-foreground">Amount to recipient</span>
                 <span>
                   {sendAll
-                    ? `${formatDcr(construct.outputsTotalAtoms)} DCR`
-                    : `${formatDcr(amountAtoms)} DCR`}
+                    ? `${formatAtoms(construct.outputsTotalAtoms)} DCR`
+                    : `${formatAtoms(amountAtoms)} DCR`}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Network fee</span>
-                <span>{formatDcr(construct.feeAtoms)} DCR</span>
+                <span>{formatAtoms(construct.feeAtoms)} DCR</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">UTXO value used</span>
-                <span>{formatDcr(construct.inputsTotalAtoms)} DCR</span>
+                <span>{formatAtoms(construct.inputsTotalAtoms)} DCR</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Change returned</span>
-                <span>{formatDcr(construct.changeAtoms)} DCR</span>
+                <span>{formatAtoms(construct.changeAtoms)} DCR</span>
               </div>
               <div className="flex justify-between pt-2 border-t border-border/50">
                 <span className="text-muted-foreground">Total debited</span>
                 <span className="font-semibold">
-                  {formatDcr(construct.totalDebitedAtoms)} DCR
+                  {formatAtoms(construct.totalDebitedAtoms)} DCR
                 </span>
               </div>
               <div className="text-xs text-muted-foreground pt-1">

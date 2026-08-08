@@ -32,7 +32,7 @@ import {
   getAccounts,
 } from '../../services/api';
 import { AddressGroups } from '../AddressGroups';
-import { formatDcr, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
+import { formatAtoms, parseDcrAmount, validateDcrAmount } from '../../utils/amounts';
 
 // Above 1 DCR a fee is almost certainly a mistake; we soft-warn (non-blocking).
 const HIGH_FEE_ATOMS = 100_000_000;
@@ -305,19 +305,19 @@ const ExportUnsignedPanel = () => {
                   <span className="text-muted-foreground">
                     {outputs.length > 1 ? 'Amount to recipients' : 'Amount to recipient'}
                   </span>
-                  <span>{formatDcr(sendAll ? construct.outputsTotalAtoms : recipientTotalAtoms)} DCR</span>
+                  <span>{formatAtoms(sendAll ? construct.outputsTotalAtoms : recipientTotalAtoms)} DCR</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Network fee</span>
-                  <span>{formatDcr(construct.feeAtoms)} DCR</span>
+                  <span>{formatAtoms(construct.feeAtoms)} DCR</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Change returned</span>
-                  <span>{formatDcr(construct.changeAtoms)} DCR</span>
+                  <span>{formatAtoms(construct.changeAtoms)} DCR</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t border-border/50">
                   <span className="text-muted-foreground">Total debited</span>
-                  <span className="font-semibold">{formatDcr(construct.totalDebitedAtoms)} DCR</span>
+                  <span className="font-semibold">{formatAtoms(construct.totalDebitedAtoms)} DCR</span>
                 </div>
                 {construct.accountFp && (
                   <div className="flex justify-between">
@@ -606,7 +606,7 @@ const ImportSignedPanel = () => {
                         </span>
                       )}
                     </span>
-                    <span className="shrink-0">{formatDcr(o.amountAtoms)} DCR</span>
+                    <span className="shrink-0">{formatAtoms(o.amountAtoms)} DCR</span>
                   </div>
                 ))}
               </div>
@@ -614,11 +614,11 @@ const ImportSignedPanel = () => {
             <div className="space-y-2 text-sm pt-2 border-t border-border/50">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Leaving wallet (external)</span>
-                <span className="font-semibold">{formatDcr(externalTotal)} DCR</span>
+                <span className="font-semibold">{formatAtoms(externalTotal)} DCR</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Network fee</span>
-                <span>{preview.feeKnown ? `${formatDcr(preview.feeAtoms)} DCR` : 'unknown'}</span>
+                <span>{preview.feeKnown ? `${formatAtoms(preview.feeAtoms)} DCR` : 'unknown'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Size</span>
@@ -630,7 +630,7 @@ const ImportSignedPanel = () => {
           {highFee && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm text-warning">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>This fee is unusually high ({formatDcr(preview.feeAtoms)} DCR). Double-check before broadcasting.</span>
+              <span>This fee is unusually high ({formatAtoms(preview.feeAtoms)} DCR). Double-check before broadcasting.</span>
             </div>
           )}
           {!preview.feeKnown && (
@@ -738,7 +738,7 @@ const DeviceBalancePanel = () => {
                   <span className="font-mono">{a.fp}</span>
                   <span className="text-muted-foreground truncate"> · {a.name}</span>
                 </div>
-                <span className="shrink-0">{formatDcr(a.atoms)} DCR</span>
+                <span className="shrink-0">{formatAtoms(a.atoms)} DCR</span>
               </div>
             ))}
             <div className="flex justify-between pt-2 border-t border-border/50">

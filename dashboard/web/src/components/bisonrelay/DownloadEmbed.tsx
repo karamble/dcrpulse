@@ -19,7 +19,7 @@ import {
 } from '../../services/lightningApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { ImageViewerModal } from './ImageViewerModal';
-import { formatDcrTrimmed, toDcr } from '../../utils/amounts';
+import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
 
 // DownloadEmbedSeg is the subset of a BR embed segment a file-transfer embed
 // needs. Both BisonrelayPostBodySegment and BisonrelayPageSegment satisfy it,
@@ -31,13 +31,10 @@ export interface DownloadEmbedSeg {
   mime?: string;
   alt?: string;
   size?: number;
+  // Costs are in atoms, distinct from the milli-atoms used for payment and
+  // tip records.
   cost?: number;
 }
-
-// formatDcrFromAtoms renders an atom amount as a trimmed DCR string. BR
-// shared-file / embed costs are in atoms (1 DCR = 1e8), distinct from the
-// milli-atoms used for payment and tip records.
-export const formatDcrFromAtoms = formatDcrTrimmed;
 
 export const formatDownloadBytes = (n: number): string => {
   if (!n) return '';
@@ -115,7 +112,7 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
   const usdSuffix = usd
     ? ` (~$${usd.amount < 0.01 ? usd.amount.toFixed(4) : usd.amount.toFixed(2)})`
     : '';
-  const costLabel = `${formatDcrFromAtoms(cost)} DCR${usdSuffix}`;
+  const costLabel = `${formatAtomsTrimmed(cost)} DCR${usdSuffix}`;
   const usdTitle = usd
     ? `USD via ${usd.source || 'unknown'}${usd.updatedAt ? `, updated ${toYMDTime(new Date(usd.updatedAt))}` : ''}`
     : undefined;
@@ -274,11 +271,11 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
           <div className="break-words">
             The sender charges{' '}
             <span className="font-semibold text-foreground">
-              {formatDcrFromAtoms(realCost)} DCR
+              {formatAtomsTrimmed(realCost)} DCR
             </span>{' '}
             for <span className="font-mono">{filename}</span>
             {cost > 0
-              ? `, the post advertised ${formatDcrFromAtoms(cost)} DCR.`
+              ? `, the post advertised ${formatAtomsTrimmed(cost)} DCR.`
               : ', the post advertised it as free.'}{' '}
             Pay the actual price?
           </div>

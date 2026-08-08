@@ -9,7 +9,7 @@ import {
   getBisonrelaySharedFiles,
 } from '../../../services/bisonrelayApi';
 import { EditorEmbed } from './brEmbedBuilder';
-import { formatDcrTrimmed } from '../../../utils/amounts';
+import { formatAtomsTrimmed } from '../../../utils/amounts';
 import { formatBytes } from '../../../utils/bytes';
 
 interface Props {
@@ -20,7 +20,7 @@ interface Props {
 // formatShareCost renders an atom amount as a trimmed DCR string. BR
 // shared-file costs are in atoms (1 DCR = 1e8), distinct from the
 // milli-atoms of payment records.
-const formatShareCost = formatDcrTrimmed;
+const formatShareCost = formatAtomsTrimmed;
 
 // SharedFilePickerModal is the second toolbar button in the BR editor.
 // Two-step modal: list our shared files -> confirm -> return the embed-shape

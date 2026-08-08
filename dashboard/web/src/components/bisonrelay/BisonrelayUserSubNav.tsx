@@ -59,7 +59,7 @@ import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { ContactGroupModal } from './BisonrelayContactGroupModals';
 import { TipModal } from './TipModal';
-import { formatDcrTrimmed } from '../../utils/amounts';
+import { formatAtomsTrimmed } from '../../utils/amounts';
 import { formatBytes as formatBytesPretty } from '../../utils/bytes';
 
 // Layout + action ordering mirrors bruig's chat_side_menu / user_context_menu
@@ -658,7 +658,7 @@ export const ContentListModal = ({
 // formatContentCost renders an atom amount as a trimmed DCR string. BR
 // shared-file costs are in atoms (1 DCR = 1e8), distinct from the
 // milli-atoms of payment records.
-const formatContentCost = formatDcrTrimmed;
+const formatContentCost = formatAtomsTrimmed;
 
 // ContentFileRow renders one entry of a contact's shared-file list with the
 // listed cost and a download action. The listed cost (from the contact's own

@@ -28,7 +28,7 @@ import {
   unshareBisonrelayFile,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
-import { formatDcrTrimmed, toDcr } from '../../utils/amounts';
+import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
 import { formatBytes } from '../../utils/bytes';
 
 type Section = 'add' | 'shared' | 'downloads';
@@ -52,7 +52,7 @@ const navigateTo = (hash: string): void => {
 const formatDCR = (atoms: number): string => {
   if (!atoms) return 'Free';
   if (toDcr(atoms) < 0.0001) return `${atoms} atoms`;
-  return `${formatDcrTrimmed(atoms)} DCR`;
+  return `${formatAtomsTrimmed(atoms)} DCR`;
 };
 
 export const BisonrelayFiles = () => {

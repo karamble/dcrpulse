@@ -18,7 +18,7 @@ import {
 import { PassphraseModal } from '../PassphraseModal';
 import { IncomingInviteBanner } from './IncomingInviteBanner';
 import { SharedWalletCreateWizard } from './SharedWalletCreateWizard';
-import { formatDcr } from '../../../utils/amounts';
+import { formatAtoms } from '../../../utils/amounts';
 
 const statusTone = (status: string): string => {
   switch (status) {
@@ -262,7 +262,7 @@ export const SharedWalletsPage = () => {
                     {wlt.role === 'cosigner' && ' - you are a cosigner'}
                   </p>
                   {wlt.balanceAtoms !== undefined && (
-                    <p className="mt-1 text-sm font-medium">{formatDcr(wlt.balanceAtoms)} DCR</p>
+                    <p className="mt-1 text-sm font-medium">{formatAtoms(wlt.balanceAtoms)} DCR</p>
                   )}
                 </div>
                 <span className={`px-2 py-1 rounded-full border text-[10px] font-semibold whitespace-nowrap ${statusTone(wlt.status)}`}>

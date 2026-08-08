@@ -20,7 +20,7 @@ import {
 } from '../../../services/msigApi';
 import { ProposalComposePanel } from './ProposalComposePanel';
 import { ProposalList } from './ProposalList';
-import { formatDcr } from '../../../utils/amounts';
+import { formatAtoms } from '../../../utils/amounts';
 
 
 const downloadJson = (data: unknown, filename: string) => {
@@ -198,14 +198,14 @@ export const SharedWalletDetailPage = () => {
             <p className="text-sm font-medium mb-3">Funds</p>
             {detail.isActiveWallet ? (
               <>
-                <p className="text-3xl font-bold">{formatDcr(detail.balanceAtoms)} DCR</p>
+                <p className="text-3xl font-bold">{formatAtoms(detail.balanceAtoms)} DCR</p>
                 <p className="text-sm text-muted-foreground mt-1">
                   {(detail.utxos ?? []).length} unspent output
                   {(detail.utxos ?? []).length === 1 ? '' : 's'}
                 </p>
                 {(detail.utxos ?? []).some((u) => u.locked) && (
                   <p className="text-xs text-warning mt-1">
-                    {formatDcr(
+                    {formatAtoms(
                       (detail.utxos ?? [])
                         .filter((u) => u.locked)
                         .reduce((sum, u) => sum + u.atoms, 0),
@@ -241,7 +241,7 @@ export const SharedWalletDetailPage = () => {
                                 )}
                               </span>
                             </td>
-                            <td className="py-1 text-right">{formatDcr(u.atoms)}</td>
+                            <td className="py-1 text-right">{formatAtoms(u.atoms)}</td>
                             <td className="py-1 text-right">{u.confirmations}</td>
                           </tr>
                         ))}

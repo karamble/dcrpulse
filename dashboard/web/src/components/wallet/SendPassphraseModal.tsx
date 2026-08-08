@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, Lock, X } from 'lucide-react';
 import { signPublishTransaction } from '../../services/api';
-import { formatDcr } from '../../utils/amounts';
+import { formatAtoms } from '../../utils/amounts';
 
 interface SendPassphraseModalProps {
   isOpen: boolean;
@@ -92,15 +92,15 @@ export const SendPassphraseModal = ({
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Amount</span>
-              <span className="font-semibold">{formatDcr(amountAtoms)} DCR</span>
+              <span className="font-semibold">{formatAtoms(amountAtoms)} DCR</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Network fee</span>
-              <span>{formatDcr(feeAtoms)} DCR</span>
+              <span>{formatAtoms(feeAtoms)} DCR</span>
             </div>
             <div className="flex justify-between text-sm pt-2 border-t border-border/50">
               <span className="text-muted-foreground">Total</span>
-              <span className="font-semibold">{formatDcr(totalAtoms)} DCR</span>
+              <span className="font-semibold">{formatAtoms(totalAtoms)} DCR</span>
             </div>
           </div>
 

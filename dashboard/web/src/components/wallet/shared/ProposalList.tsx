@@ -16,7 +16,7 @@ import {
   rejectMsigProposal,
   signMsigProposal,
 } from '../../../services/msigApi';
-import { formatDcr } from '../../../utils/amounts';
+import { formatAtoms } from '../../../utils/amounts';
 
 
 const tone = (status: string): string => {
@@ -103,11 +103,11 @@ export const ProposalList = ({
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <p className="font-semibold">
-                  {formatDcr(total)} DCR
+                  {formatAtoms(total)} DCR
                   {p.role === 'cosigner' && p.fromNick ? ` requested by ${p.fromNick}` : ''}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {p.sigCount} of {wallet.m} signatures - fee {formatDcr(p.feeAtoms)} DCR
+                  {p.sigCount} of {wallet.m} signatures - fee {formatAtoms(p.feeAtoms)} DCR
                 </p>
                 {p.note && <p className="text-sm mt-1">{p.note}</p>}
               </div>
@@ -121,7 +121,7 @@ export const ProposalList = ({
                 {payments.map((o, i) => (
                   <li key={`${o.address}-${i}`} className="flex justify-between gap-3">
                     <span className="font-mono truncate">{o.address || 'unrecognized output'}</span>
-                    <span className="whitespace-nowrap">{formatDcr(o.atoms)} DCR</span>
+                    <span className="whitespace-nowrap">{formatAtoms(o.atoms)} DCR</span>
                   </li>
                 ))}
               </ul>

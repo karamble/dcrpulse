@@ -23,7 +23,8 @@ import {
 } from '../../services/bisonrelayApi';
 import { AuthorAvatar } from './AuthorAvatar';
 import { FeedCardQuote } from './QuoteEmbedCard';
-import { formatDcrFromAtoms, formatDownloadBytes } from './DownloadEmbed';
+import { formatDownloadBytes } from './DownloadEmbed';
+import { formatAtomsTrimmed } from '../../utils/amounts';
 
 export const relativeTime = (ts: number): string => {
   if (!ts) return '';
@@ -83,7 +84,7 @@ const PaidEmbedChip = ({ embed }: { embed: BisonrelayPostEmbedMeta }) => {
   const isImg = isImageMime(embed.mime);
   const meta = [
     embed.size ? formatDownloadBytes(embed.size) : '',
-    embed.cost && embed.cost > 0 ? `${formatDcrFromAtoms(embed.cost)} DCR` : 'free',
+    embed.cost && embed.cost > 0 ? `${formatAtomsTrimmed(embed.cost)} DCR` : 'free',
   ]
     .filter(Boolean)
     .join(' · ');
