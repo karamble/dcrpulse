@@ -788,6 +788,27 @@ type DexAccount struct {
 	PendingBonds       []DexPendingBond `json:"pendingBonds"`
 }
 
+// dexBondOffer is one entry of a DEX server's bondAssets map.
+type dexBondOffer struct {
+	ID    uint32 `json:"id"`
+	Confs uint32 `json:"confs"`
+	Amt   uint64 `json:"amount"`
+}
+
+// resolveBondAsset picks the bond asset for display and per-tier amounts.
+// bisonw treats bondAssetID as configured only while maintenance is on
+// (targetTier >= 1); an unset id persists as zero, Bitcoin's real id.
+func resolveBondAsset(targetTier uint64, bondAssetID uint32, offered map[string]dexBondOffer) (string, dexBondOffer) {
+	sym := ""
+	if targetTier > 0 {
+		sym = dexassets.Symbol(bondAssetID)
+	}
+	if _, ok := offered[sym]; !ok {
+		sym = "dcr"
+	}
+	return sym, offered[sym]
+}
+
 // GetDcrdexAccountHandler returns the account state (tier, reputation, bonds)
 // for the DEX server given in the `host` query parameter.
 func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
@@ -809,20 +830,16 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var xcs map[string]struct {
-		Host             string `json:"host"`
-		AcctID           string `json:"acctID"`
-		ConnectionStatus int    `json:"connectionStatus"`
-		ViewOnly         bool   `json:"viewOnly"`
-		Disabled         bool   `json:"disabled"`
-		BondExpiry       uint64 `json:"bondExpiry"`
-		PenaltyThreshold uint32 `json:"penaltyThreshold"`
-		MaxScore         uint32 `json:"maxScore"`
-		BondAssets       map[string]struct {
-			ID    uint32 `json:"id"`
-			Confs uint32 `json:"confs"`
-			Amt   uint64 `json:"amount"`
-		} `json:"bondAssets"`
-		Auth struct {
+		Host             string                  `json:"host"`
+		AcctID           string                  `json:"acctID"`
+		ConnectionStatus int                     `json:"connectionStatus"`
+		ViewOnly         bool                    `json:"viewOnly"`
+		Disabled         bool                    `json:"disabled"`
+		BondExpiry       uint64                  `json:"bondExpiry"`
+		PenaltyThreshold uint32                  `json:"penaltyThreshold"`
+		MaxScore         uint32                  `json:"maxScore"`
+		BondAssets       map[string]dexBondOffer `json:"bondAssets"`
+		Auth             struct {
 			Rep struct {
 				BondedTier int64  `json:"bondedTier"`
 				Penalties  uint16 `json:"penalties"`
@@ -865,14 +882,7 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	sort.Slice(bondAssets, func(i, j int) bool { return bondAssets[i].Symbol < bondAssets[j].Symbol })
-	// Per-tier bond is denominated in the account's own bond asset, not always DCR.
-	// BondAssetID is 0 for BTC and also 0 when unset, so fall back to the DCR bond
-	// asset only when that id is not actually offered by the server.
-	bondSym := dexassets.Symbol(xc.Auth.BondAssetID)
-	if _, ok := xc.BondAssets[bondSym]; !ok {
-		bondSym = "dcr"
-	}
-	perTier := xc.BondAssets[bondSym]
+	bondSym, perTier := resolveBondAsset(xc.Auth.TargetTier, xc.Auth.BondAssetID, xc.BondAssets)
 	json.NewEncoder(w).Encode(DexAccount{
 		Host:               host,
 		AcctID:             xc.AcctID,
@@ -887,12 +897,12 @@ func GetDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		Score:              xc.Auth.Rep.Score,
 		PenaltyThreshold:   xc.PenaltyThreshold,
 		MaxScore:           xc.MaxScore,
-		BondAssetID:        xc.Auth.BondAssetID,
+		BondAssetID:        perTier.ID,
 		BondAssetSymbol:    strings.ToUpper(bondSym),
 		BondExpiryDays:     int(xc.BondExpiry / 86400),
 		BondPerTierAtoms:   perTier.Amt,
 		BondPerTierConv:    atomsToConv(perTier.Amt, dexassets.ConvFactor(perTier.ID)),
-		MaxBondedDcr:       atomsToConv(xc.Auth.MaxBondedAmt, dexassets.ConvFactor(xc.Auth.BondAssetID)),
+		MaxBondedDcr:       atomsToConv(xc.Auth.MaxBondedAmt, dexassets.ConvFactor(perTier.ID)),
 		PenaltyComps:       xc.Auth.PenaltyComps,
 		BondsPendingRefund: len(xc.Auth.ExpiredBonds),
 		BondAssets:         bondAssets,
@@ -1099,18 +1109,14 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var xc struct {
-		Host             string   `json:"host"`
-		AcctID           string   `json:"acctID"`
-		ConnectionStatus int      `json:"connectionStatus"`
-		BondExpiry       uint64   `json:"bondExpiry"`
-		BinSizes         []string `json:"binSizes"`
-		CandleDurs       []string `json:"candleDurs"`
-		BondAssets       map[string]struct {
-			ID    uint32 `json:"id"`
-			Confs uint32 `json:"confs"`
-			Amt   uint64 `json:"amount"`
-		} `json:"bondAssets"`
-		Markets map[string]struct {
+		Host             string                  `json:"host"`
+		AcctID           string                  `json:"acctID"`
+		ConnectionStatus int                     `json:"connectionStatus"`
+		BondExpiry       uint64                  `json:"bondExpiry"`
+		BinSizes         []string                `json:"binSizes"`
+		CandleDurs       []string                `json:"candleDurs"`
+		BondAssets       map[string]dexBondOffer `json:"bondAssets"`
+		Markets          map[string]struct {
 			BaseSymbol  string   `json:"basesymbol"`
 			QuoteSymbol string   `json:"quotesymbol"`
 			BaseID      uint32   `json:"baseid"`
