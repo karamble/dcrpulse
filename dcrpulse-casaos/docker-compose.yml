@@ -191,8 +191,6 @@ services:
       DCRWALLET_RPC_CERT: /app-data/dcrd/rpc.cert
       DCRLND_HOST: dcrlnd
       DCRLND_GRPC_PORT: 10009
-      DCRLND_TLS_CERT: /app-data/dcrlnd/tls.cert
-      DCRLND_MACAROON: /app-data/dcrlnd/admin.macaroon
     volumes:
       - type: bind
         source: /DATA/AppData/$AppID/dcrd

@@ -161,8 +161,6 @@ services:
       DCRWALLET_RPC_CERT: /app-data/dcrd/rpc.cert
       DCRLND_HOST: dcrlnd
       DCRLND_GRPC_PORT: 10009
-      DCRLND_TLS_CERT: /app-data/dcrlnd/tls.cert
-      DCRLND_MACAROON: /app-data/dcrlnd/admin.macaroon
       BRCLIENTD_HOST: brclientd
       BRCLIENTD_PORT: 7676
       BRCLIENTD_STATUS_PORT: 7677
@@ -171,9 +169,7 @@ services:
       DCRDEX_RPC_PORT: 5757
       DCRDEX_RPC_USER: ${APP_SEED}
       DCRDEX_RPC_PASS: ${APP_SEED}
-      DCRDEX_RPC_CERT: /app-data/dcrdex/rpc.cert
       DCRDEX_WS_PORT: 5758
-      DCRDEX_WS_CERT: /app-data/dcrdex/web.cert
     depends_on:
       init:
         condition: service_completed_successfully
