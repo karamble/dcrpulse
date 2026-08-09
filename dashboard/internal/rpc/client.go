@@ -9,7 +9,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -98,7 +97,7 @@ func InitDcrdClient(config Config) error {
 
 	if config.RPCCert != "" {
 		rpccLog.Debugf("Reading TLS certificate from: %s", config.RPCCert)
-		certs, err = ioutil.ReadFile(config.RPCCert)
+		certs, err = os.ReadFile(config.RPCCert)
 		if err != nil {
 			return fmt.Errorf("failed to read RPC certificate: %v", err)
 		}
@@ -146,7 +145,7 @@ func InitWalletClient(config Config) error {
 
 	if config.RPCCert != "" {
 		rpccLog.Debugf("Reading wallet TLS certificate from: %s", config.RPCCert)
-		certs, err = ioutil.ReadFile(config.RPCCert)
+		certs, err = os.ReadFile(config.RPCCert)
 		if err != nil {
 			return fmt.Errorf("failed to read wallet RPC certificate: %v", err)
 		}

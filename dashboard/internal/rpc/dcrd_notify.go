@@ -7,7 +7,7 @@ package rpc
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"github.com/decred/dcrd/rpcclient/v8"
 )
@@ -25,7 +25,7 @@ func InitDcrdNotifyClient(config Config, onBlock func()) error {
 	var certs []byte
 	var err error
 	if config.RPCCert != "" {
-		certs, err = ioutil.ReadFile(config.RPCCert)
+		certs, err = os.ReadFile(config.RPCCert)
 		if err != nil {
 			return fmt.Errorf("failed to read RPC certificate: %v", err)
 		}
