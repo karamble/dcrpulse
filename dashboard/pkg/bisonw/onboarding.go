@@ -199,7 +199,7 @@ type PostBondParams struct {
 	AppPass      string
 	Host         string
 	Bond         uint64
-	AssetID      uint32 // 0 defaults to AssetDCR (42)
+	AssetID      uint32 // BIP-44 id; 0 is Bitcoin
 	MaintainTier *bool
 	Cert         string
 }
@@ -207,11 +207,7 @@ type PostBondParams struct {
 // PostBond posts a fidelity bond to register/maintain a DEX account. The raw
 // result holds the bond id and required confirmations.
 func (c *Client) PostBond(ctx context.Context, p PostBondParams) (json.RawMessage, error) {
-	asset := p.AssetID
-	if asset == 0 {
-		asset = AssetDCR
-	}
-	args := []string{p.Host, strconv.FormatUint(p.Bond, 10), strconv.FormatUint(uint64(asset), 10)}
+	args := []string{p.Host, strconv.FormatUint(p.Bond, 10), strconv.FormatUint(uint64(p.AssetID), 10)}
 	if p.MaintainTier != nil || p.Cert != "" {
 		maintain := "true"
 		if p.MaintainTier != nil && !*p.MaintainTier {

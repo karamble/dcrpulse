@@ -1254,10 +1254,10 @@ func setBondSubmit(host string, s bondSubmitState) {
 func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req struct {
-		Host         string `json:"host"`
-		Bond         uint64 `json:"bond"`
-		AssetID      uint32 `json:"assetID,omitempty"`
-		MaintainTier *bool  `json:"maintainTier,omitempty"`
+		Host         string  `json:"host"`
+		Bond         uint64  `json:"bond"`
+		AssetID      *uint32 `json:"assetID,omitempty"`
+		MaintainTier *bool   `json:"maintainTier,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Host == "" || req.Bond == 0 {
 		http.Error(w, "host and bond are required", http.StatusBadRequest)
@@ -1267,12 +1267,17 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// An omitted assetID means DCR; an explicit 0 is Bitcoin's real BIP-44 id.
+	assetID := bisonw.AssetDCR
+	if req.AssetID != nil {
+		assetID = *req.AssetID
+	}
 	host := req.Host
 	params := bisonw.PostBondParams{
 		AppPass:      appPass,
 		Host:         host,
 		Bond:         req.Bond,
-		AssetID:      req.AssetID,
+		AssetID:      assetID,
 		MaintainTier: req.MaintainTier,
 	}
 	setBondSubmit(host, bondSubmitState{Phase: "submitting"})
