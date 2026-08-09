@@ -130,18 +130,6 @@ func BrclientdVersion(ctx context.Context) (*BrclientdVersionResult, error) {
 	return &result, nil
 }
 
-// BrclientdStatusResult is the wire shape served by brclientd's /status
-// endpoint. Mirrors the JSON the daemon writes verbatim so the dashboard's
-// /api/br/status handler can pass it through.
-type BrclientdStatusResult struct {
-	Stage           string `json:"stage"`
-	Nick            string `json:"nick,omitempty"`
-	ServerNode      string `json:"serverNode,omitempty"`
-	RecommendedPeer string `json:"recommendedPeer,omitempty"`
-	WalletCheckErr  string `json:"walletCheckErr,omitempty"`
-	LastUpdated     string `json:"lastUpdated"`
-}
-
 // BrclientdUserPublicIdentity reads brclientd's /public-identity status
 // endpoint and returns the raw JSON. Used by the dashboard to confirm the BR
 // client core is operational and to render the local user's pubkey + nick on
@@ -1550,18 +1538,11 @@ func BrclientdHistoryPM(ctx context.Context, uid string, page, pageSize int) (js
 }
 
 // BrclientdStatus calls brclientd's /status HTTP endpoint over mTLS and
-// returns the parsed snapshot. The status server is on a separate port
-// (default 7677) from clientrpc; both reuse the same cert triplet.
-func BrclientdStatus(ctx context.Context) (*BrclientdStatusResult, error) {
-	raw, err := brclientdGetRaw(ctx, "/status", nil)
-	if err != nil {
-		return nil, err
-	}
-	var result BrclientdStatusResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("decode status: %w", err)
-	}
-	return &result, nil
+// returns the daemon's JSON verbatim, so a field a newer daemon adds
+// survives the proxy. The status server is on a separate port (default
+// 7677) from clientrpc; both reuse the same cert triplet.
+func BrclientdStatus(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/status", nil)
 }
 
 // brclientdBuild returns the cached client, building it lazily so the cert

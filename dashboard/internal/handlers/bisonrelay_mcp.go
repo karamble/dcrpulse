@@ -80,6 +80,29 @@ func brMCPSettingsToView(w brMCPSettingsWire) brMCPSettingsView {
 	}
 }
 
+// mergeOwnedMCPSettings overlays the dashboard-owned settings keys onto the
+// daemon's current settings JSON, so a field a newer brclientd stores
+// survives the save; last_denied is reply-only and never posted back.
+func mergeOwnedMCPSettings(current json.RawMessage, wire brMCPSettingsWire) (map[string]json.RawMessage, error) {
+	merged := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(current, &merged); err != nil {
+		return nil, err
+	}
+	delete(merged, "last_denied")
+	ownedJSON, err := json.Marshal(wire)
+	if err != nil {
+		return nil, err
+	}
+	var owned map[string]json.RawMessage
+	if err := json.Unmarshal(ownedJSON, &owned); err != nil {
+		return nil, err
+	}
+	for k, v := range owned {
+		merged[k] = v
+	}
+	return merged, nil
+}
+
 // BisonrelayMCPSettingsHandler round-trips the BR-MCP client settings.
 func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -122,7 +145,19 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			ApprovalTimeoutSecs: view.ApprovalTimeoutSecs,
 			TipWaitSecs:         view.TipWaitSecs,
 		}
-		raw, err := rpc.BrclientdMCPApplySettings(r.Context(), wire)
+		// Merge over the daemon's current settings rather than replacing them,
+		// failing closed if the current copy cannot be read.
+		current, err := rpc.BrclientdMCPSettings(r.Context())
+		if err != nil {
+			brWriteErr(w, err)
+			return
+		}
+		merged, err := mergeOwnedMCPSettings(current, wire)
+		if err != nil {
+			http.Error(w, "parse settings: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		raw, err := rpc.BrclientdMCPApplySettings(r.Context(), merged)
 		if err != nil {
 			brWriteErr(w, err)
 			return

@@ -53,7 +53,7 @@ func BisonrelayStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(status)
+	_, _ = w.Write(status)
 }
 
 // BisonrelayIdentityHandler returns brclientd's local BR identity payload
