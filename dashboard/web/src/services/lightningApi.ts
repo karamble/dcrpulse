@@ -301,7 +301,6 @@ export interface LightningPayment {
   status: LightningPaymentStatus;
   paymentPreimage?: string;
   paymentRequest?: string;
-  description?: string;
   failureReason?: string;
   htlcs?: LightningHTLC[];
 }

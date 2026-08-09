@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toYMDTime } from '../../../utils/date';
 import { CheckCircle2, Copy, X } from 'lucide-react';
+import { decodeLnPayReq } from '../../../services/lightningApi';
 import type { LightningPayment } from '../../../services/lightningApi';
 
 const atomsPerDcr = 1e8;
@@ -19,6 +20,23 @@ interface Props {
 
 export const PaymentDetailsModal = ({ payment, onClose }: Props) => {
   const [copied, setCopied] = useState<string | null>(null);
+  const [description, setDescription] = useState('');
+
+  // The payment rows carry no memo; it lives inside the stored payment
+  // request, so decode it here, best-effort.
+  useEffect(() => {
+    setDescription('');
+    if (!payment.paymentRequest) return;
+    let cancelled = false;
+    decodeLnPayReq(payment.paymentRequest)
+      .then((d) => {
+        if (!cancelled && d.description) setDescription(d.description);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [payment.paymentHash, payment.paymentRequest]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -117,7 +135,7 @@ export const PaymentDetailsModal = ({ payment, onClose }: Props) => {
               mono
             />
           )}
-          {payment.description && <Field label="Description" value={payment.description} />}
+          {description && <Field label="Description" value={description} />}
           {payment.paymentPreimage && (
             <Field
               label="Preimage"

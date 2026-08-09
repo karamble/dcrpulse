@@ -103,7 +103,6 @@ export const SendTab = () => {
       creationDate: Math.floor(Date.now() / 1000),
       status: 'pending',
       paymentRequest: payReq.trim(),
-      description: decoded.description,
     });
     cleanupRef.current = streamLnPayment(
       {
@@ -157,8 +156,7 @@ export const SendTab = () => {
     const q = search.trim().toLowerCase();
     const out = items.filter((p) => {
       if (filter !== 'all' && p.status !== filter) return false;
-      if (q && !p.paymentHash.toLowerCase().includes(q) &&
-        !(p.description || '').toLowerCase().includes(q)) {
+      if (q && !p.paymentHash.toLowerCase().includes(q)) {
         return false;
       }
       return true;

@@ -291,7 +291,6 @@ type LightningPayment struct {
 	Status          string          `json:"status"` // confirmed | failed | pending
 	PaymentPreimage string          `json:"paymentPreimage,omitempty"`
 	PaymentRequest  string          `json:"paymentRequest,omitempty"`
-	Description     string          `json:"description,omitempty"`
 	FailureReason   string          `json:"failureReason,omitempty"`
 	HTLCs           []LightningHTLC `json:"htlcs,omitempty"`
 }
