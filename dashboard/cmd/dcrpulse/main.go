@@ -75,9 +75,7 @@ func main() {
 
 	// Try to initialize dcrd RPC client if credentials are provided
 	if dcrdConfig.RPCUser != "" && dcrdConfig.RPCPassword != "" {
-		dcrdConnected := true
 		if err := rpc.InitDcrdClient(dcrdConfig); err != nil {
-			dcrdConnected = false
 			dcrpLog.Warnf("Could not connect to dcrd on startup: %v", err)
 			dcrpLog.Warn("RPC connection can be configured via API")
 		}
@@ -87,11 +85,18 @@ func main() {
 		// evaluating the node alert conditions (dcrd_unreachable) while dcrd
 		// is down, and RefreshNodeSync tolerates a nil client.
 		services.StartNodeSync(context.Background())
-		if dcrdConnected {
-			if err := rpc.InitDcrdNotifyClient(dcrdConfig, services.TriggerNodeSyncRefresh); err != nil {
+		// The client dials with retry, but it cannot be built at all until dcrd
+		// has written its RPC cert, so keep trying to create it.
+		go func() {
+			for {
+				err := rpc.InitDcrdNotifyClient(dcrdConfig, services.TriggerNodeSyncRefresh)
+				if err == nil {
+					return
+				}
 				dcrpLog.Warnf("dcrd notification client unavailable (progress falls back to timer): %v", err)
+				time.Sleep(30 * time.Second)
 			}
-		}
+		}()
 	} else {
 		dcrpLog.Info("No dcrd RPC credentials provided. Use /api/connect endpoint to configure.")
 	}

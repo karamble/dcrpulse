@@ -23,6 +23,8 @@ interface NodeSync {
   syncProgress: number;
   syncPhase: string;
   syncMessage: string;
+  startupNote?: string;
+  startupLog?: string;
 }
 
 // Names for the section keys the backend reports in `degraded`.
@@ -63,7 +65,14 @@ export const NodeDashboard = () => {
       // The 30s poll is authoritative for recovery: if it reports the node is no
       // longer syncing, drop any stale live sync frame so a missed/transient
       // WebSocket update cannot keep the progress bar pinned at 100% until a reload.
-      if (dashboardData.nodeStatus.status !== 'syncing') setNodeSync(null);
+      // A degraded section comes back zeroed, not "not syncing", so it does not
+      // outrank the live frame.
+      if (
+        !dashboardData.degraded?.includes('nodeStatus') &&
+        dashboardData.nodeStatus.status !== 'syncing'
+      ) {
+        setNodeSync(null);
+      }
     } catch (err: any) {
       console.error('Error fetching dashboard data:', err);
       if (err.response?.status === 503) {
@@ -135,10 +144,16 @@ export const NodeDashboard = () => {
   const metric = (section: string, value: string | number): string | number =>
     !data ? 'Loading...' : stale(section) ? 'Unavailable' : value;
 
+  // The live frame leads, since the poll 503s while dcrd is not serving. When
+  // the WebSocket cannot connect, that 503 body is the same startup explanation.
+  const node = nodeSync ?? data?.nodeStatus;
+  const nodeStage = node?.status || (error && !data ? 'starting' : '');
+  const nodeDown = nodeStage === 'starting' || nodeStage === 'upgrading';
+
   return (
     <div className="space-y-6">
-      {/* Error Message */}
-      {error && (
+      {/* Error Message. Suppressed while the node card carries the same text. */}
+      {error && !nodeDown && (
         <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
           <p className="text-red-500 font-medium">{error}</p>
         </div>
@@ -163,90 +178,105 @@ export const NodeDashboard = () => {
         </div>
       )}
 
-      {/* Node Status */}
-      {data && !stale('nodeStatus') && (
+      {/* Node Status. Always rendered: the sync bar matters most in the states
+          that used to unmount this card. */}
+      {nodeStage && (
         <NodeStatus
-          status={(nodeSync?.status ?? data.nodeStatus.status) as any}
-          syncProgress={nodeSync?.syncProgress ?? data.nodeStatus.syncProgress}
-          version={data.nodeStatus.version}
-          syncMessage={nodeSync?.syncMessage ?? data.nodeStatus.syncMessage}
+          status={nodeStage}
+          syncProgress={node?.syncProgress ?? 0}
+          version={stale('nodeStatus') ? undefined : data?.nodeStatus.version}
+          syncMessage={node?.syncMessage || 'Starting up'}
+          startupNote={nodeSync?.startupNote ?? (error && !data ? error : undefined)}
+          startupLog={nodeSync?.startupLog}
         />
       )}
 
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          title="Circulating Supply"
-          value={metric('supplyInfo', dcr(data?.supplyInfo?.circulatingSupply))}
-          subtitle="DCR of 21 million"
-          icon={Coins}
-          trend={{ value: "Max Supply: 21M DCR", isPositive: true }}
-        />
-        <MetricCard
-          title="Network Peers"
-          // peerCount comes from the same RPC as the peers section, so a peer
-          // failure means this count is not a real zero.
-          value={metric('peers', data?.networkInfo?.peerCount ?? 'N/A')}
-          subtitle="Connected nodes"
-          icon={Users}
-        />
-        <MetricCard
-          title="Block Height"
-          value={metric('blockchainInfo', data?.blockchainInfo?.blockHeight?.toLocaleString() || 'N/A')}
-          subtitle="Latest block"
-          icon={Layers}
-        />
-        <MetricCard
-          title="Network Hashrate"
-          value={metric('networkInfo', data?.networkInfo?.hashrate || 'N/A')}
-          subtitle="Total network power"
-          icon={TrendingUp}
-        />
-      </div>
+      {/* Nothing behind these cards while dcrd is not serving, so explain the
+          wait instead of rendering a grid of unavailable readings. */}
+      {nodeDown && (
+        <p className="text-sm text-muted-foreground">
+          Node data will appear once dcrd finishes starting and answers RPC.
+        </p>
+      )}
 
-      {/* Additional Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          title="Treasury Balance"
-          value={metric('supplyInfo', dcr(data?.supplyInfo?.treasurySize, 2))}
-          subtitle={
-            <>
-              DCR in treasury
-              <br />
-              Self-funded from block reward
-            </>
-          }
-          icon={Wallet}
-        />
-        <MetricCard
-          title="Supply Staked"
-          value={metric('supplyInfo', dcr(data?.supplyInfo?.stakedSupply))}
-          subtitle="DCR - Stakeholders Rule"
-          icon={Lock}
-          trend={!stale('supplyInfo') && data?.supplyInfo?.stakedPercent ? {
-            value: `${data.supplyInfo.stakedPercent.toFixed(1)}% of supply`,
-            isPositive: true
-          } : undefined}
-        />
-        <div className="md:col-span-2">
-          <TicketPoolCard
-            data={stale('stakingInfo') ? undefined : data?.stakingInfo}
-            currentBlockHeight={stale('blockchainInfo') ? undefined : data?.blockchainInfo?.blockHeight}
-          />
-        </div>
-      </div>
+      {!nodeDown && (
+        <>
+          {/* Metrics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <MetricCard
+              title="Circulating Supply"
+              value={metric('supplyInfo', dcr(data?.supplyInfo?.circulatingSupply))}
+              subtitle="DCR of 21 million"
+              icon={Coins}
+              trend={{ value: "Max Supply: 21M DCR", isPositive: true }}
+            />
+            <MetricCard
+              title="Network Peers"
+              // peerCount comes from the same RPC as the peers section, so a peer
+              // failure means this count is not a real zero.
+              value={metric('peers', data?.networkInfo?.peerCount ?? 'N/A')}
+              subtitle="Connected nodes"
+              icon={Users}
+            />
+            <MetricCard
+              title="Block Height"
+              value={metric('blockchainInfo', data?.blockchainInfo?.blockHeight?.toLocaleString() || 'N/A')}
+              subtitle="Latest block"
+              icon={Layers}
+            />
+            <MetricCard
+              title="Network Hashrate"
+              value={metric('networkInfo', data?.networkInfo?.hashrate || 'N/A')}
+              subtitle="Total network power"
+              icon={TrendingUp}
+            />
+          </div>
 
-      {/* Details Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <BlockchainInfo data={stale('blockchainInfo') ? undefined : data?.blockchainInfo} />
-        <StakingStats data={stale('stakingInfo') ? undefined : data?.stakingInfo} />
-      </div>
+          {/* Additional Metrics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <MetricCard
+              title="Treasury Balance"
+              value={metric('supplyInfo', dcr(data?.supplyInfo?.treasurySize, 2))}
+              subtitle={
+                <>
+                  DCR in treasury
+                  <br />
+                  Self-funded from block reward
+                </>
+              }
+              icon={Wallet}
+            />
+            <MetricCard
+              title="Supply Staked"
+              value={metric('supplyInfo', dcr(data?.supplyInfo?.stakedSupply))}
+              subtitle="DCR - Stakeholders Rule"
+              icon={Lock}
+              trend={!stale('supplyInfo') && data?.supplyInfo?.stakedPercent ? {
+                value: `${data.supplyInfo.stakedPercent.toFixed(1)}% of supply`,
+                isPositive: true
+              } : undefined}
+            />
+            <div className="md:col-span-2">
+              <TicketPoolCard
+                data={stale('stakingInfo') ? undefined : data?.stakingInfo}
+                currentBlockHeight={stale('blockchainInfo') ? undefined : data?.blockchainInfo?.blockHeight}
+              />
+            </div>
+          </div>
 
-      {/* Mempool Activity & Peers */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MempoolActivity data={stale('mempoolInfo') ? undefined : data?.mempoolInfo} />
-        <PeersList peers={stale('peers') ? undefined : data?.peers} />
-      </div>
+          {/* Details Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <BlockchainInfo data={stale('blockchainInfo') ? undefined : data?.blockchainInfo} />
+            <StakingStats data={stale('stakingInfo') ? undefined : data?.stakingInfo} />
+          </div>
+
+          {/* Mempool Activity & Peers */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <MempoolActivity data={stale('mempoolInfo') ? undefined : data?.mempoolInfo} />
+            <PeersList peers={stale('peers') ? undefined : data?.peers} />
+          </div>
+        </>
+      )}
 
       <RecentAlertsCard />
     </div>

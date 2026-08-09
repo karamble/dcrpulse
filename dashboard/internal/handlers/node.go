@@ -5,6 +5,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -19,7 +20,12 @@ import (
 // GetDashboardDataHandler handles requests for complete dashboard data
 func GetDashboardDataHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.DcrdClient == nil {
-		http.Error(w, "RPC client not initialized", http.StatusServiceUnavailable)
+		// Usually a first boot where dcrd has not written its RPC cert yet, so
+		// give the startup explanation rather than a configuration error.
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		http.Error(w, services.DaemonStartupHint(ctx, services.LogComponentDcrd).Message,
+			http.StatusServiceUnavailable)
 		return
 	}
 

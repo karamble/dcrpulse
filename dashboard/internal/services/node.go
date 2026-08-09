@@ -23,13 +23,6 @@ import (
 	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
 )
 
-var (
-	// Track previous sync values to calculate delta
-	prevHeaders int64
-	prevBlocks  int64
-	syncMutex   sync.Mutex
-)
-
 // chainSnapshot fetches each value shared by several dashboard sections once
 // per poll. Lazy, so a caller only pays for what it reads; the sync.Once makes
 // it safe for the sections to share one concurrently.
@@ -111,7 +104,6 @@ func FetchDashboardData() (*types.DashboardData, error) {
 
 		mu       sync.Mutex
 		degraded []string
-		firstErr error
 	)
 
 	// Sections are recorded in a fixed order below, so Degraded stays stable
@@ -121,9 +113,6 @@ func FetchDashboardData() (*types.DashboardData, error) {
 			if err := fn(); err != nil {
 				mu.Lock()
 				degraded = append(degraded, name)
-				if firstErr == nil {
-					firstErr = err
-				}
 				mu.Unlock()
 				nodeLog.Warnf("Dashboard section %q failed: %v", name, err)
 			}
@@ -174,9 +163,11 @@ func FetchDashboardData() (*types.DashboardData, error) {
 	}
 	wg.Wait()
 
-	// Every section failed, so dcrd is down or unreachable.
-	if len(degraded) == len(work) {
-		return nil, firstErr
+	// getblockchaininfo backs four of the seven sections, so a transport failure
+	// there means dcrd is not serving at all: report it as a daemon error rather
+	// than a page of zeroed sections. Memoized, so this costs no extra RPC.
+	if _, err := snap.blockChainInfo(ctx); err != nil && IsDaemonUnreachable(err) {
+		return nil, err
 	}
 
 	data := &types.DashboardData{
@@ -232,81 +223,13 @@ func fetchNodeStatus(ctx context.Context, snap *chainSnapshot) (*types.NodeStatu
 	nodeLog.Debugf("Blockchain sync status - InitialBlockDownload: %v, Blocks: %d, Headers: %d, SyncHeight: %d, VerificationProgress: %f",
 		chainInfo.InitialBlockDownload, chainInfo.Blocks, chainInfo.Headers, chainInfo.SyncHeight, chainInfo.VerificationProgress)
 
-	// Calculate sync progress based on actual blockchain sync
-	var syncProgress float64
-	var status string
-	var syncPhase string
-	var syncMessage string
-
-	// Thread-safe access to previous values
-	syncMutex.Lock()
-	currentHeaders := chainInfo.Headers
-	currentBlocks := chainInfo.Blocks
-	deltaHeaders := currentHeaders - prevHeaders
-	deltaBlocks := currentBlocks - prevBlocks
-	prevHeaders = currentHeaders
-	prevBlocks = currentBlocks
-	syncMutex.Unlock()
-
-	if chainInfo.InitialBlockDownload {
-		// Node is still syncing
-		status = "syncing"
-
-		// Determine sync phase: headers or blocks
-		if chainInfo.Blocks == 0 && chainInfo.Headers > 0 {
-			// Syncing headers
-			syncPhase = "headers"
-			if chainInfo.SyncHeight > 0 {
-				syncProgress = (float64(chainInfo.Headers) / float64(chainInfo.SyncHeight)) * 100
-			}
-			if deltaHeaders > 0 {
-				syncMessage = fmt.Sprintf("Processed %s headers in the last 30 seconds", utils.FormatNumber(deltaHeaders))
-			} else {
-				syncMessage = "Syncing headers..."
-			}
-		} else if chainInfo.Blocks > 0 {
-			// Syncing blocks
-			syncPhase = "blocks"
-			if chainInfo.SyncHeight > 0 {
-				syncProgress = (float64(chainInfo.Blocks) / float64(chainInfo.SyncHeight)) * 100
-			}
-			if deltaBlocks > 0 {
-				syncMessage = fmt.Sprintf("Processed %s blocks in the last 30 seconds", utils.FormatNumber(deltaBlocks))
-			} else {
-				syncMessage = "Syncing blocks..."
-			}
-		} else {
-			// Initial state
-			syncPhase = "starting"
-			syncMessage = "Starting sync..."
-			syncProgress = 0
-		}
-
-		// Use verification progress if available and more accurate
-		if chainInfo.VerificationProgress > 0 {
-			syncProgress = chainInfo.VerificationProgress * 100
-		}
-	} else {
-		// Node is fully synced
-		status = "running"
-		syncProgress = 100.0
-		syncPhase = "synced"
-		syncMessage = "Fully synced"
-	}
-
-	// Ensure progress is between 0 and 100
-	if syncProgress > 100 {
-		syncProgress = 100
-	} else if syncProgress < 0 {
-		syncProgress = 0
-	}
-
+	s := syncFromChainInfo(chainInfo)
 	return &types.NodeStatus{
-		Status:       status,
-		SyncProgress: syncProgress,
+		Status:       s.Status,
+		SyncProgress: s.SyncProgress,
 		Version:      fmt.Sprintf("v%d.%d.%d", versionInfo["dcrd"].Major, versionInfo["dcrd"].Minor, versionInfo["dcrd"].Patch),
-		SyncPhase:    syncPhase,
-		SyncMessage:  syncMessage,
+		SyncPhase:    s.SyncPhase,
+		SyncMessage:  s.SyncMessage,
 	}, nil
 }
 

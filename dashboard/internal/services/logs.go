@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,10 @@ const (
 const (
 	logsRoot   = "/app-data"
 	maxLogTail = 5000
+
+	// tailBytesPerLine budgets the seek window per requested line, set above the
+	// p99 daemon log line so the tail is served without re-reading a rolled log.
+	tailBytesPerLine = 256
 )
 
 // logPath resolves the on-disk log file for a component. Each daemon
@@ -104,10 +109,26 @@ func TailLog(ctx context.Context, component LogComponent, lines int) ([]string, 
 	}
 	defer f.Close()
 
+	// Start near the end rather than at byte 0: dcrd rolls at 10 MB, and the
+	// startup hint tails this file on a timer while the node is unreachable.
+	seeked := false
+	if window := int64(lines) * tailBytesPerLine; window > 0 {
+		if st, serr := f.Stat(); serr == nil && st.Size() > window {
+			if _, serr := f.Seek(st.Size()-window, io.SeekStart); serr == nil {
+				seeked = true
+			}
+		}
+	}
+
 	// Scan into a ring buffer of size `lines`.
 	scanner := bufio.NewScanner(f)
 	// dcrwallet/dcrd lines can be long; raise the default 64 KB buffer.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	// A seek lands mid-line, so the first token is a partial line.
+	if seeked {
+		scanner.Scan()
+	}
 
 	ring := make([]string, lines)
 	count := 0

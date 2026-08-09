@@ -6,13 +6,23 @@ import { Activity, AlertCircle, Loader2 } from 'lucide-react';
 import { InsecureRpcWarning } from './InsecureRpcWarning';
 
 interface NodeStatusProps {
-  status: 'running' | 'syncing' | 'stopped' | string;
+  status: 'running' | 'syncing' | 'connecting' | 'starting' | 'upgrading' | 'error' | string;
   syncProgress?: number;
   version?: string;
   syncMessage?: string;
+  // Set while dcrd is not serving: why the wait, and the dcrd log line behind it.
+  startupNote?: string;
+  startupLog?: string;
 }
 
-export const NodeStatus = ({ status, syncProgress = 0, version, syncMessage }: NodeStatusProps) => {
+export const NodeStatus = ({
+  status,
+  syncProgress = 0,
+  version,
+  syncMessage,
+  startupNote,
+  startupLog,
+}: NodeStatusProps) => {
   const getStatusConfig = () => {
     switch (status) {
       case 'running':
@@ -31,10 +41,34 @@ export const NodeStatus = ({ status, syncProgress = 0, version, syncMessage }: N
           bgColor: 'bg-warning/10',
           borderColor: 'border-warning/20',
         };
-      case 'stopped':
+      case 'connecting':
+        return {
+          icon: Loader2,
+          label: 'Connecting',
+          color: 'text-warning',
+          bgColor: 'bg-warning/10',
+          borderColor: 'border-warning/20',
+        };
+      case 'starting':
+        return {
+          icon: Loader2,
+          label: 'Starting',
+          color: 'text-warning',
+          bgColor: 'bg-warning/10',
+          borderColor: 'border-warning/20',
+        };
+      case 'upgrading':
+        return {
+          icon: Loader2,
+          label: 'Upgrading Database',
+          color: 'text-warning',
+          bgColor: 'bg-warning/10',
+          borderColor: 'border-warning/20',
+        };
+      case 'error':
         return {
           icon: AlertCircle,
-          label: 'Stopped',
+          label: 'Unavailable',
           color: 'text-red-500',
           bgColor: 'bg-red-500/10',
           borderColor: 'border-red-500/20',
@@ -52,17 +86,21 @@ export const NodeStatus = ({ status, syncProgress = 0, version, syncMessage }: N
 
   const config = getStatusConfig();
   const StatusIcon = config.icon;
+  const busy = status === 'syncing' || status === 'connecting' || status === 'starting' || status === 'upgrading';
+  // Only a syncing node has a real numerator and denominator; anything else
+  // would be an invented percentage, so the bar runs indeterminate instead.
+  const determinate = status === 'syncing' && syncProgress > 0;
 
   return (
     <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className={`p-3 rounded-xl ${config.bgColor} border ${config.borderColor}`}>
-            <StatusIcon className={`h-6 w-6 ${config.color} ${status === 'syncing' ? 'animate-spin' : ''}`} />
+            <StatusIcon className={`h-6 w-6 ${config.color} ${busy ? 'animate-spin' : ''}`} />
           </div>
           <div>
             <h3 className="text-lg font-semibold">Node Status</h3>
-            <p className="text-sm text-muted-foreground">Decred {version || ''}</p>
+            <p className="text-sm text-muted-foreground">{version ? `Decred ${version}` : 'Decred node'}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -75,20 +113,34 @@ export const NodeStatus = ({ status, syncProgress = 0, version, syncMessage }: N
         </div>
       </div>
       
-      {status === 'syncing' && (
+      {busy && (
         <div className="mt-6 space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground font-medium">{syncMessage || 'Blockchain Sync Progress'}</span>
-            <span className="font-bold text-lg">{syncProgress.toFixed(1)}%</span>
+            {determinate && <span className="font-bold text-lg">{syncProgress.toFixed(1)}%</span>}
           </div>
           <div className="relative h-3 bg-muted rounded-full overflow-hidden border border-border/50">
-            <div 
-              className="h-full bg-gradient-primary transition-all duration-500 ease-out relative overflow-hidden"
-              style={{ width: `${syncProgress}%` }}
+            <div
+              className={`h-full bg-gradient-primary relative overflow-hidden ${
+                determinate ? 'transition-all duration-500 ease-out' : 'animate-pulse'
+              }`}
+              style={{ width: determinate ? `${syncProgress}%` : '33%' }}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
             </div>
           </div>
+        </div>
+      )}
+
+      {(startupNote || startupLog) && (
+        <div className="mt-4 space-y-2">
+          {startupNote && <p className="text-sm text-muted-foreground">{startupNote}</p>}
+          {startupLog && (
+            <div>
+              <p className="text-xs text-muted-foreground/70">Last dcrd log entry</p>
+              <p className="text-xs font-mono text-muted-foreground/70 truncate">{startupLog}</p>
+            </div>
+          )}
         </div>
       )}
     </div>

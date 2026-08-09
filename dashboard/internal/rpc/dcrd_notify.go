@@ -72,10 +72,12 @@ func InitDcrdNotifyClient(config Config, onBlock func()) error {
 	}
 	DcrdNotifyClient = client
 
-	// Not retrying: a failed dial is reported to the caller, which warns and
-	// falls back to the sync timer. Retrying here would block startup.
-	if err := client.Connect(context.Background(), false); err != nil {
-		return fmt.Errorf("failed to connect dcrd notify client: %v", err)
-	}
+	// On a cold stack start dcrd is not listening for minutes, so retry. Connect
+	// blocks while it backs off, hence the goroutine.
+	go func() {
+		if err := client.Connect(context.Background(), true); err != nil {
+			rpccLog.Warnf("dcrd notify: gave up connecting: %v", err)
+		}
+	}()
 	return nil
 }
