@@ -633,7 +633,7 @@ var catalog = []spec{
 		return map[string]any{"chanSizeDcr": 0.01, "approvedFeeDcr": 0.001}
 	}),
 
-	// dex writes (gated; dex_send/dex_post_bond validate amount before the grant check)
+	// dex writes (gated; dex_post_bond validates the amount before the grant check)
 	sp("dex", "dex_set_bond_options", "no spend grant", "", func(*discovered) map[string]any {
 		return map[string]any{"host": "dex.decred.org:7232"}
 	}),
@@ -669,9 +669,6 @@ var catalog = []spec{
 	}),
 	sp("dex", "dex_mm_stop", "no spend grant", "", func(*discovered) map[string]any {
 		return map[string]any{"host": "dex.decred.org:7232", "baseId": 42, "quoteId": 0}
-	}),
-	sp("dex", "dex_send", "no spend grant", "", func(*discovered) map[string]any {
-		return map[string]any{"assetId": 42, "value": 0.001, "address": phAddr}
 	}),
 	sp("dex", "dex_post_bond", "no spend grant", "", func(*discovered) map[string]any {
 		return map[string]any{"host": "dex.decred.org:7232", "bond": 1}

@@ -237,20 +237,14 @@ type dexMMStopInput struct {
 	QuoteID uint32 `json:"quoteId" jsonschema:"quote asset id"`
 }
 
-type dexSendInput struct {
-	AssetID uint32  `json:"assetId" jsonschema:"asset id to send"`
-	Value   float64 `json:"value" jsonschema:"amount in conventional units"`
-	Address string  `json:"address" jsonschema:"destination address"`
-}
-
 type dexPostBondInput struct {
 	Host         string `json:"host" jsonschema:"DEX server host"`
 	Bond         uint64 `json:"bond" jsonschema:"bond amount in DCR atoms"`
 	MaintainTier *bool  `json:"maintainTier,omitempty" jsonschema:"maintain the resulting tier with auto-renewal"`
 }
 
-// dexLocked is the actionable error returned when a DEX read or write needs the
-// in-memory app password but the DEX session is locked.
+// dexLocked is the actionable error returned when a DEX read or write needs a
+// bisonw webserver session but the DEX is locked.
 func dexLocked() error {
 	return fmt.Errorf("DEX is locked; ask the user to unlock it in the dashboard")
 }
@@ -534,60 +528,55 @@ var dexTools = []toolDef{
 	readTool("dex", "dex_preorder",
 		"Get the pre-order estimate (swap/redeem fee estimates and order options) for a prospective order. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexPreOrderInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			return c.PreOrder(ctx, appPass, in.Host, in.IsLimit, in.Sell, in.Base, in.Quote, in.Qty, in.Rate, in.TifNow, in.Options)
+			return c.PreOrder(ctx, in.Host, in.IsLimit, in.Sell, in.Base, in.Quote, in.Qty, in.Rate, in.TifNow, in.Options)
 		}),
 	readTool("dex", "dex_max_buy",
 		"Get the largest buy order fundable at the given rate on a market, with fee estimates. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexMaxBuyInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			return c.MaxBuy(ctx, appPass, in.Host, in.Base, in.Quote, in.Rate)
+			return c.MaxBuy(ctx, in.Host, in.Base, in.Quote, in.Rate)
 		}),
 	readTool("dex", "dex_max_sell",
 		"Get the largest sell order fundable on a market, with fee estimates. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexMaxSellInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			return c.MaxSell(ctx, appPass, in.Host, in.Base, in.Quote)
+			return c.MaxSell(ctx, in.Host, in.Base, in.Quote)
 		}),
 	readTool("dex", "dex_order",
 		"Get a single order by its hex id, including live swap-coin confirmation counts. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexOrderInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			return c.Order(ctx, appPass, in.ID)
+			return c.Order(ctx, in.ID)
 		}),
 	readTool("dex", "dex_orders_history",
 		"Get the user's full order history, including canceled/executed/revoked orders, with optional status/market filters and pagination. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexOrdersHistoryInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
@@ -611,7 +600,7 @@ var dexTools = []toolDef{
 			if in.BaseID != 0 || in.QuoteID != 0 {
 				filter["market"] = map[string]any{"baseID": in.BaseID, "quoteID": in.QuoteID}
 			}
-			return c.Orders(ctx, appPass, filter)
+			return c.Orders(ctx, filter)
 		}),
 	readTool("dex", "dex_assets",
 		"Get the DCRDEX supported-asset catalog (wallet definitions and config-option schemas).",
@@ -675,15 +664,14 @@ var dexTools = []toolDef{
 	readTool("dex", "dex_deposit_address",
 		"Get a fresh deposit address for a DEX wallet by asset id. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexAssetInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			addr, err := c.NewDepositAddress(ctx, appPass, in.AssetID)
+			addr, err := c.NewDepositAddress(ctx, in.AssetID)
 			if err != nil {
 				return nil, err
 			}
@@ -692,15 +680,14 @@ var dexTools = []toolDef{
 	readTool("dex", "dex_address_used",
 		"Check whether a DEX wallet address has already received funds, to avoid address reuse. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexAddressUsedInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			used, err := c.AddressUsed(ctx, appPass, in.AssetID, in.Address)
+			used, err := c.AddressUsed(ctx, in.AssetID, in.Address)
 			if err != nil {
 				return nil, err
 			}
@@ -709,8 +696,7 @@ var dexTools = []toolDef{
 	readTool("dex", "dex_estimate_send_fee",
 		"Estimate the network fee to send an amount of an asset to an address, and validate the address. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexEstimateSendFeeInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
@@ -718,7 +704,7 @@ var dexTools = []toolDef{
 				return nil, err
 			}
 			atoms := dexConvToAtoms(in.Value, in.AssetID)
-			txFee, validAddr, err := c.EstimateSendTxFee(ctx, appPass, in.AssetID, in.Address, atoms, in.Subtract, false)
+			txFee, validAddr, err := c.EstimateSendTxFee(ctx, in.AssetID, in.Address, atoms, in.Subtract, false)
 			if err != nil {
 				return nil, err
 			}
@@ -745,34 +731,31 @@ var dexTools = []toolDef{
 	readTool("dex", "dex_mm_status",
 		"Get the market-making status (bots and CEX state). Requires the DEX unlocked.",
 		func(ctx context.Context, _ emptyInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			return c.MMStatus(ctx, appPass)
+			return c.MMStatus(ctx)
 		}),
 	readTool("dex", "dex_mm_market_report",
 		"Get the market report (oracle prices and fiat rates) for a market. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexMarketInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			return c.MarketReport(ctx, appPass, in.Host, in.BaseID, in.QuoteID)
+			return c.MarketReport(ctx, in.Host, in.BaseID, in.QuoteID)
 		}),
 	readTool("dex", "dex_mm_run_logs",
 		"Get a market-maker run's event log (DEX/CEX orders, deposits, withdrawals) and overview. Requires the DEX unlocked.",
 		func(ctx context.Context, in dexMMRunLogsInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
@@ -787,20 +770,19 @@ var dexTools = []toolDef{
 			if in.RefID != 0 {
 				refID = &in.RefID
 			}
-			return c.RunLogs(ctx, appPass, in.Host, in.BaseID, in.QuoteID, in.StartTime, n, refID)
+			return c.RunLogs(ctx, in.Host, in.BaseID, in.QuoteID, in.StartTime, n, refID)
 		}),
 	readTool("dex", "dex_mm_archived_runs",
 		"Get the market-maker run history (past runs, newest first). Requires the DEX unlocked.",
 		func(ctx context.Context, _ emptyInput) (any, error) {
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
 			}
 			c, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			return c.ArchivedRuns(ctx, appPass)
+			return c.ArchivedRuns(ctx)
 		}),
 	agentTool("dex", "dex_place_order",
 		"Place a DCRDEX trade order. Requires a spend grant with DEX trading enabled and the DEX unlocked. Quantity and rate are in atomic units.",
@@ -825,29 +807,18 @@ var dexTools = []toolDef{
 				}
 				return nil, err
 			}
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				grants.refund(a.id, outlay)
 				err := dexLocked()
 				recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
 			}
-			client, err := rpc.DcrdexClient()
+			client, err := rpc.DcrdexWebClient()
 			if err != nil {
 				grants.refund(a.id, outlay)
 				return nil, err
 			}
-			raw, err := client.Trade(ctx, bisonw.TradeParams{
-				AppPass: appPass,
-				Host:    in.Host,
-				IsLimit: in.IsLimit,
-				Sell:    in.Sell,
-				Base:    in.Base,
-				Quote:   in.Quote,
-				Qty:     in.Qty,
-				Rate:    in.Rate,
-				TifNow:  in.TifNow,
-			})
+			raw, err := client.Trade(ctx, in.Host, in.IsLimit, in.Sell, in.Base, in.Quote, in.Qty, in.Rate, in.TifNow, nil)
 			if err != nil {
 				grants.refund(a.id, outlay)
 				recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "error", err.Error())
@@ -890,7 +861,7 @@ var dexTools = []toolDef{
 				recordSpend(a, "dex_set_bond_options", 0, 0, in.Host, "denied", err.Error())
 				return nil, err
 			}
-			if _, ok := rpc.DcrdexAppPass(); !ok {
+			if !rpc.DcrdexUnlocked() {
 				err := dexLocked()
 				recordSpend(a, "dex_set_bond_options", 0, 0, in.Host, "error", err.Error())
 				return nil, err
@@ -928,17 +899,16 @@ var dexTools = []toolDef{
 				recordSpend(a, "dex_wallet_open", 0, 0, target, "denied", err.Error())
 				return nil, err
 			}
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				err := dexLocked()
 				recordSpend(a, "dex_wallet_open", 0, 0, target, "error", err.Error())
 				return nil, err
 			}
-			client, err := rpc.DcrdexClient()
+			client, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			if err := client.OpenWallet(ctx, appPass, in.AssetID); err != nil {
+			if err := client.OpenWallet(ctx, in.AssetID); err != nil {
 				recordSpend(a, "dex_wallet_open", 0, 0, target, "error", err.Error())
 				return nil, err
 			}
@@ -1045,17 +1015,16 @@ var dexTools = []toolDef{
 				recordSpend(a, "dex_discover_account", 0, 0, in.Host, "denied", err.Error())
 				return nil, err
 			}
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				err := dexLocked()
 				recordSpend(a, "dex_discover_account", 0, 0, in.Host, "error", err.Error())
 				return nil, err
 			}
-			client, err := rpc.DcrdexClient()
+			client, err := rpc.DcrdexWebClient()
 			if err != nil {
 				return nil, err
 			}
-			paid, err := client.DiscoverAccount(ctx, appPass, in.Host, "")
+			paid, err := client.DiscoverAccount(ctx, in.Host, "")
 			if err != nil {
 				recordSpend(a, "dex_discover_account", 0, 0, in.Host, "error", err.Error())
 				return nil, err
@@ -1070,8 +1039,7 @@ var dexTools = []toolDef{
 				recordSpend(a, "dex_mm_update_config", 0, 0, "", "denied", err.Error())
 				return nil, err
 			}
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				err := dexLocked()
 				recordSpend(a, "dex_mm_update_config", 0, 0, "", "error", err.Error())
 				return nil, err
@@ -1080,7 +1048,7 @@ var dexTools = []toolDef{
 			if err != nil {
 				return nil, err
 			}
-			if err := client.UpdateBotConfig(ctx, appPass, []byte(in.Config)); err != nil {
+			if err := client.UpdateBotConfig(ctx, []byte(in.Config)); err != nil {
 				recordSpend(a, "dex_mm_update_config", 0, 0, "", "error", err.Error())
 				return nil, err
 			}
@@ -1094,8 +1062,7 @@ var dexTools = []toolDef{
 				recordSpend(a, "dex_mm_remove_config", 0, 0, in.Host, "denied", err.Error())
 				return nil, err
 			}
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				err := dexLocked()
 				recordSpend(a, "dex_mm_remove_config", 0, 0, in.Host, "error", err.Error())
 				return nil, err
@@ -1104,7 +1071,7 @@ var dexTools = []toolDef{
 			if err != nil {
 				return nil, err
 			}
-			if err := client.RemoveBotConfig(ctx, appPass, in.Host, in.BaseID, in.QuoteID); err != nil {
+			if err := client.RemoveBotConfig(ctx, in.Host, in.BaseID, in.QuoteID); err != nil {
 				recordSpend(a, "dex_mm_remove_config", 0, 0, in.Host, "error", err.Error())
 				return nil, err
 			}
@@ -1118,8 +1085,7 @@ var dexTools = []toolDef{
 				recordSpend(a, "dex_mm_update_cex_config", 0, 0, "", "denied", err.Error())
 				return nil, err
 			}
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				err := dexLocked()
 				recordSpend(a, "dex_mm_update_cex_config", 0, 0, "", "error", err.Error())
 				return nil, err
@@ -1128,7 +1094,7 @@ var dexTools = []toolDef{
 			if err != nil {
 				return nil, err
 			}
-			if err := client.UpdateCEXConfig(ctx, appPass, []byte(in.Config)); err != nil {
+			if err := client.UpdateCEXConfig(ctx, []byte(in.Config)); err != nil {
 				recordSpend(a, "dex_mm_update_cex_config", 0, 0, "", "error", err.Error())
 				return nil, err
 			}
@@ -1142,8 +1108,7 @@ var dexTools = []toolDef{
 				recordSpend(a, "dex_mm_stop", 0, 0, in.Host, "denied", err.Error())
 				return nil, err
 			}
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				err := dexLocked()
 				recordSpend(a, "dex_mm_stop", 0, 0, in.Host, "error", err.Error())
 				return nil, err
@@ -1152,66 +1117,12 @@ var dexTools = []toolDef{
 			if err != nil {
 				return nil, err
 			}
-			if err := client.StopBot(ctx, appPass, in.Host, in.BaseID, in.QuoteID); err != nil {
+			if err := client.StopBot(ctx, in.Host, in.BaseID, in.QuoteID); err != nil {
 				recordSpend(a, "dex_mm_stop", 0, 0, in.Host, "error", err.Error())
 				return nil, err
 			}
 			recordSpend(a, "dex_mm_stop", 0, 0, in.Host, "ok", "")
 			return map[string]bool{"ok": true}, nil
-		}),
-	agentTool("dex", "dex_send",
-		"Send an amount of an asset from a DEX wallet to an address. Requires a spend grant with DEX send/post-bond enabled and the DEX unlocked. For Decred the amount counts against the grant's DCR daily cap; non-DCR assets cannot be DCR-capped.",
-		func(ctx context.Context, a *agent, in dexSendInput) (any, error) {
-			target := in.Address
-			// Only Decred (asset 42) draws on the DCR spend budget; other assets are
-			// scope-gated only (the DCR cap cannot bound a non-DCR amount).
-			var capAtoms int64
-			var amountDCR float64
-			if in.AssetID == bisonw.AssetDCR {
-				amt, err := dcrutil.NewAmount(in.Value)
-				if err != nil || int64(amt) <= 0 {
-					return nil, fmt.Errorf("value must be positive")
-				}
-				capAtoms = int64(amt)
-				amountDCR = amt.ToCoin()
-			} else if in.Value <= 0 {
-				return nil, fmt.Errorf("value must be positive")
-			}
-			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, dexSpendAction(capAtoms), time.Now()); err != nil {
-				if tripwire(a.id, err) {
-					recordSpend(a, "dex_send", 0, amountDCR, target, "blocked", "spend-limit violation: grant revoked and token blocked")
-				} else {
-					recordSpend(a, "dex_send", 0, amountDCR, target, "denied", err.Error())
-				}
-				return nil, err
-			}
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
-				if capAtoms > 0 {
-					grants.refund(a.id, capAtoms)
-				}
-				err := dexLocked()
-				recordSpend(a, "dex_send", 0, amountDCR, target, "error", err.Error())
-				return nil, err
-			}
-			client, err := rpc.DcrdexClient()
-			if err != nil {
-				if capAtoms > 0 {
-					grants.refund(a.id, capAtoms)
-				}
-				return nil, err
-			}
-			sendAtoms := dexConvToAtoms(in.Value, in.AssetID)
-			coin, err := client.Send(ctx, appPass, in.AssetID, sendAtoms, in.Address)
-			if err != nil {
-				if capAtoms > 0 {
-					grants.refund(a.id, capAtoms)
-				}
-				recordSpend(a, "dex_send", 0, amountDCR, target, "error", err.Error())
-				return nil, err
-			}
-			recordSpend(a, "dex_send", 0, amountDCR, target, "ok", coin)
-			return map[string]string{"coin": coin}, nil
 		}),
 	agentTool("dex", "dex_post_bond",
 		"Post a fidelity bond (in DCR) to register or maintain a DEX account. Requires a spend grant with DEX send/post-bond enabled and the DEX unlocked. The bond counts against the grant's DCR daily cap.",
@@ -1231,30 +1142,23 @@ var dexTools = []toolDef{
 				}
 				return nil, err
 			}
-			appPass, ok := rpc.DcrdexAppPass()
-			if !ok {
+			if !rpc.DcrdexUnlocked() {
 				grants.refund(a.id, capAtoms)
 				err := dexLocked()
 				recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
 			}
-			client, err := rpc.DcrdexClient()
+			client, err := rpc.DcrdexWebClient()
 			if err != nil {
 				grants.refund(a.id, capAtoms)
 				return nil, err
 			}
-			raw, err := client.PostBond(ctx, bisonw.PostBondParams{
-				AppPass:      appPass,
-				Host:         in.Host,
-				Bond:         in.Bond,
-				MaintainTier: in.MaintainTier,
-			})
-			if err != nil {
+			if err := client.PostBond(ctx, in.Host, "", in.Bond, bisonw.AssetDCR, in.MaintainTier); err != nil {
 				grants.refund(a.id, capAtoms)
 				recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
 			}
 			recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "ok", "")
-			return raw, nil
+			return map[string]bool{"ok": true}, nil
 		}),
 }
