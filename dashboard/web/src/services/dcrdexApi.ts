@@ -298,7 +298,8 @@ export interface DexOrder {
   quantity: number;
   filled: number;
   settled: number;
-  rate: number;
+  // Atomic message-rate; absent for market orders (upstream omits the zero).
+  rate?: number;
   cancelling?: boolean;
   canceled?: boolean;
   tif?: string;

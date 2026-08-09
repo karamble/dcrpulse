@@ -114,7 +114,7 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                 // price to size against, so the amount is shown as '-'.
                 const recvSym = o.sell ? (mk?.quote || '').split('.')[0] : mk?.base || '';
                 const recvAmt = o.sell
-                  ? o.rate > 0
+                  ? o.rate
                     ? convQty(o.quantity, baseConv) * convRate(o.rate, baseConv, quoteConv)
                     : null
                   : o.type === 'limit'
@@ -135,7 +135,7 @@ export const DexOrdersPanel = ({ orders, markets, preview, onCancel }: Props) =>
                     <td className="px-2 py-2"><Pill kind={o.sell ? 'sell' : 'buy'}>{o.sell ? 'Sell' : 'Buy'}</Pill></td>
                     <td className="px-2 py-2"><Pill kind="type">{o.type}</Pill></td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
-                      {o.rate > 0 ? fmtPrice(convRate(o.rate, baseConv, quoteConv), mk?.quote || '') : 'market'}
+                      {o.rate ? fmtPrice(convRate(o.rate, baseConv, quoteConv), mk?.quote || '') : 'market'}
                     </td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums">
                       {fmtAmt(amt.amount, 4)}

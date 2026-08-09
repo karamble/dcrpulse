@@ -300,7 +300,7 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Field label="Quantity">{fmtAmt(qtyDisp.amount, 8)} {qtyDisp.symbol}</Field>
-          {order.rate > 0 && <Field label="Price">{fmtPrice(price, quoteSym)} {quoteSym}</Field>}
+          {price > 0 && <Field label="Price">{fmtPrice(price, quoteSym)} {quoteSym}</Field>}
           <Field label="Submitted">{order.submitTime ? toYMDTime(new Date(order.submitTime)) : '-'}</Field>
           <Field label="Order ID">{order.id}</Field>
         </div>

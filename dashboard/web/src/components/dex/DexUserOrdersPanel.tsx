@@ -81,7 +81,7 @@ export const DexUserOrdersPanel = ({ orders, market, preview, onCancel }: Props)
         <div className="divide-y divide-border/40 max-h-[220px] overflow-y-auto">
           {rows.map((o) => {
             const open = expanded.has(o.id);
-            const price = o.rate > 0 ? fmtPrice(convRate(o.rate, baseConv, quoteConv), market.quote) : 'market';
+            const price = o.rate ? fmtPrice(convRate(o.rate, baseConv, quoteConv), market.quote) : 'market';
             const filledPct = o.quantity > 0 ? Math.round((o.filled / o.quantity) * 100) : 0;
             // settled sums per-match BASE atoms while a market buy's quantity is
             // quote, so a percentage of one over the other is meaningless. Show
