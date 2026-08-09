@@ -159,7 +159,9 @@ func Parse(text string, now time.Time) (*Frame, error) {
 		return nil, fmt.Errorf("payload exceeds %d bytes", MaxPayload)
 	}
 	return &Frame{MID: mid, Exp: expT, Payload: payload}, nil
-} // Reencode re-frames an existing envelope with a fresh expiry, keeping
+}
+
+// Reencode re-frames an existing envelope with a fresh expiry, keeping
 // the mid and payload byte-identical. Manual exports use it so a blob is
 // always valid for its full lifetime from the moment it is handed over;
 // the unchanged mid keeps receiver journals deduplicating correctly no

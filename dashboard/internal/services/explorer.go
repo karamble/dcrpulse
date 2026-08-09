@@ -403,21 +403,6 @@ func UniversalSearch(ctx context.Context, query string) (*types.SearchResult, er
 			Error: "Transaction or block not found",
 		}, nil
 
-	case "block_hash":
-		block, err := FetchBlockByHash(ctx, query)
-		if err != nil {
-			return &types.SearchResult{
-				Type:  "block",
-				Found: false,
-				Error: "Block not found",
-			}, nil
-		}
-		return &types.SearchResult{
-			Type:  "block",
-			Found: true,
-			Data:  block,
-		}, nil
-
 	case "address":
 		info, err := FetchAddressInfo(ctx, query)
 		if err != nil {
