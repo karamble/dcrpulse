@@ -1064,8 +1064,16 @@ export const saveSettings = async (e: SettingsEnvelope): Promise<void> => {
   await api.post('/wallet/settings', e);
 };
 
-export const changePassphrase = async (oldPassphrase: string, newPassphrase: string): Promise<void> => {
-  await api.post('/wallet/settings/change-passphrase', { oldPassphrase, newPassphrase });
+export const changePassphrase = async (
+  oldPassphrase: string,
+  newPassphrase: string,
+  dexAppPass?: string
+): Promise<void> => {
+  await api.post('/wallet/settings/change-passphrase', {
+    oldPassphrase,
+    newPassphrase,
+    dexAppPass: dexAppPass || undefined,
+  });
 };
 
 export type LogComponent =

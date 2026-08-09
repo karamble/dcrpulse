@@ -23,8 +23,8 @@ export const WalletSection = () => {
       .catch(() => {});
   }, []);
 
-  const handleChangePassphrase = async (oldPass: string, newPass: string) => {
-    await changePassphrase(oldPass, newPass);
+  const handleChangePassphrase = async (oldPass: string, newPass: string, dexAppPass?: string) => {
+    await changePassphrase(oldPass, newPass, dexAppPass);
     setPassModalOpen(false);
     setFeedback('Private passphrase changed.');
   };

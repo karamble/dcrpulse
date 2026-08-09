@@ -187,7 +187,7 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "new passphrase must be at least 8 characters", http.StatusBadRequest)
 		return
 	}
-	if len(req.OldPassphrase) > 1024 || len(req.NewPassphrase) > 1024 {
+	if len(req.OldPassphrase) > 1024 || len(req.NewPassphrase) > 1024 || len(req.DexAppPass) > 1024 {
 		http.Error(w, "passphrase too long", http.StatusBadRequest)
 		return
 	}
@@ -201,10 +201,19 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// Before anything irreversible: bisonw stores this passphrase too, and
-	// handing it the new one needs DCRDEX unlocked.
-	if err := dexWalletPassphraseGate(ctx); err != nil {
+	// handing it the new one needs a DCRDEX session, either the user's own or
+	// one opened here with the supplied app password.
+	didLogin, err := dexWalletPassphraseGate(ctx, req.DexAppPass)
+	if err != nil {
+		if errors.Is(err, ErrDexWrongAppPassword) {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
+	}
+	if didLogin {
+		defer dexPassphraseLogout()
 	}
 
 	if err := services.ChangePrivatePassphrase(ctx, oldPass, newPass); err != nil {

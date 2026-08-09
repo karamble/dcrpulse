@@ -35,9 +35,11 @@ type SettingsEnvelope struct {
 }
 
 // ChangePassphraseRequest is the body for /api/wallet/settings/change-passphrase.
+// DexAppPass authorizes handing the new passphrase to DCRDEX when it is locked.
 type ChangePassphraseRequest struct {
 	OldPassphrase string `json:"oldPassphrase"`
 	NewPassphrase string `json:"newPassphrase"`
+	DexAppPass    string `json:"dexAppPass,omitempty"`
 }
 
 // DiscoverUsageRequest is the body for /api/wallet/settings/discover-addresses.

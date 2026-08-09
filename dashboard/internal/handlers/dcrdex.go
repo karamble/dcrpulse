@@ -356,29 +356,62 @@ var ErrDexLockedForPassphrase = errors.New("unlock DCRDEX before changing the wa
 // the wallet passphrase has already moved on.
 var ErrDexWalletPassphraseStale = errors.New("the wallet passphrase was changed, but the DCRDEX wallet still holds the previous one and must be reconfigured")
 
+// ErrDexWrongAppPassword rejects the DCRDEX app password supplied with a
+// passphrase change. Raised before the change, so nothing has moved yet.
+var ErrDexWrongAppPassword = errors.New("wrong DCRDEX app password")
+
 // dexWalletPassphraseGate reports whether a wallet passphrase change may go
 // ahead. Called before the change, which cannot be undone. Only one state
-// blocks: bisonw holds a DCR wallet but is locked, so the new passphrase could
-// not be handed to it afterwards.
-func dexWalletPassphraseGate(ctx context.Context) error {
+// blocks: bisonw holds a DCR wallet but is locked and no app password was
+// given, so the new passphrase could not be handed to it afterwards. A
+// provided app password opens a session instead; didLogin tells the caller to
+// log back out once the sync is done. When DCRDEX is already unlocked the app
+// password is deliberately not verified: the session authorizes the sync.
+func dexWalletPassphraseGate(ctx context.Context, dexAppPass string) (didLogin bool, err error) {
 	client, err := rpc.DcrdexClient()
 	if err != nil {
-		return nil // not deployed here
+		return false, nil // not deployed here
 	}
 	has, err := client.HasWallet(ctx, bisonw.AssetDCR)
 	if err != nil {
 		// bisonw is unreachable, so whether a wallet exists is unknown. Blocking
 		// a wallet operation on an optional daemon that is down is too strict.
 		dexcLog.Warnf("could not check for a dcr wallet before the passphrase change: %v", err)
-		return nil
+		return false, nil
 	}
 	if !has {
-		return nil
+		return false, nil
 	}
-	if !rpc.DcrdexUnlocked() {
-		return ErrDexLockedForPassphrase
+	if rpc.DcrdexUnlocked() {
+		return false, nil
 	}
-	return nil
+	if dexAppPass == "" {
+		return false, ErrDexLockedForPassphrase
+	}
+	web, err := rpc.DcrdexWebClient()
+	if err != nil {
+		return false, ErrDexLockedForPassphrase
+	}
+	if err := web.Login(ctx, dexAppPass); err != nil {
+		dexcLog.Warnf("DCRDEX login for the passphrase change failed: %v", err)
+		return false, ErrDexWrongAppPassword
+	}
+	return true, nil
+}
+
+// dexPassphraseLogout closes the session dexWalletPassphraseGate opened, so a
+// passphrase change never leaves DCRDEX more unlocked than the user had it.
+// Runs on its own deadline: the request context may already be spent.
+func dexPassphraseLogout() {
+	web, err := rpc.DcrdexWebClient()
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := web.Logout(ctx); err != nil {
+		dexcLog.Warnf("could not log DCRDEX back out after the passphrase change: %v", err)
+	}
 }
 
 // syncDexWalletPassphrase hands bisonw the new wallet passphrase. Runs after a

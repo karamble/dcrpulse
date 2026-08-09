@@ -5,10 +5,11 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, KeyRound, X } from 'lucide-react';
 import { apiError } from '../../utils/apiError';
+import { getDexStatus } from '../../services/dcrdexApi';
 
 interface ChangePassphraseModalProps {
   isOpen: boolean;
-  onSubmit: (oldPassphrase: string, newPassphrase: string) => Promise<void>;
+  onSubmit: (oldPassphrase: string, newPassphrase: string, dexAppPass?: string) => Promise<void>;
   onClose: () => void;
 }
 
@@ -16,6 +17,8 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
   const [oldPass, setOldPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [dexAppPass, setDexAppPass] = useState('');
+  const [dexLocked, setDexLocked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,16 +27,25 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
       setOldPass('');
       setNewPass('');
       setConfirm('');
+      setDexAppPass('');
+      setDexLocked(false);
       setError(null);
       setSubmitting(false);
+      return;
     }
+    // A locked DCRDEX holds the wallet passphrase too; its app password is
+    // needed to hand over the new one. An unlocked session covers it.
+    getDexStatus()
+      .then((s) => setDexLocked(s.stage === 'needs-unlock'))
+      .catch(() => setDexLocked(false));
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const tooShort = newPass !== '' && newPass.length < 8;
   const mismatch = newPass !== '' && confirm !== '' && newPass !== confirm;
-  const canSubmit = oldPass && newPass && confirm && !tooShort && !mismatch && !submitting;
+  const canSubmit =
+    oldPass && newPass && confirm && !tooShort && !mismatch && !submitting && (!dexLocked || dexAppPass);
 
   const handleClose = () => {
     if (submitting) return;
@@ -46,7 +58,7 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(oldPass, newPass);
+      await onSubmit(oldPass, newPass, dexLocked ? dexAppPass : undefined);
     } catch (err: any) {
       const msg = apiError(err, 'Failed to change passphrase');
       setError(msg);
@@ -117,6 +129,24 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
             />
             {mismatch && <p className="text-xs text-destructive mt-1">New passphrases do not match.</p>}
           </div>
+
+          {dexLocked && (
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">DCRDEX app password</label>
+              <input
+                type="password"
+                autoComplete="off"
+                value={dexAppPass}
+                onChange={(e) => setDexAppPass(e.target.value)}
+                disabled={submitting}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                DCRDEX is locked and also stores the wallet passphrase. Providing the app password
+                propagates the change to DCRDEX; it stays locked afterwards.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 text-sm text-destructive">
