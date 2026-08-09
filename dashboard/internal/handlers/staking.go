@@ -12,11 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
-
-	"github.com/gorilla/websocket"
 )
 
 // ListVSPsHandler returns the registry + per-wallet used_vsps envelope.
@@ -158,48 +155,8 @@ func PurchaseStatusHandler(w http.ResponseWriter, r *http.Request) {
 // StreamPurchaseEventsHandler upgrades to WebSocket and streams manual ticket
 // purchase progress/result events. Mirrors StreamAutobuyerEventsHandler.
 func StreamPurchaseEventsHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		stkeLog.Errorf("Failed to upgrade purchase-events WebSocket: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	for _, ev := range services.LastPurchaseEvents(200) {
-		if err := conn.WriteJSON(ev); err != nil {
-			return
-		}
-	}
-
-	ch, unsubscribe := services.SubscribePurchaseEvents()
-	defer unsubscribe()
-
-	notify := make(chan struct{})
-	go func() {
-		defer close(notify)
-		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
-				return
-			}
-		}
-	}()
-
-	for {
-		select {
-		case ev, ok := <-ch:
-			if !ok {
-				return
-			}
-			if err := conn.WriteJSON(ev); err != nil {
-				return
-			}
-		case <-notify:
-			return
-		}
-	}
+	streamEventsWS(w, r, stkeLog, "purchase-events",
+		services.LastPurchaseEvents(200), services.SubscribePurchaseEvents)
 }
 
 // ListTicketsHandler returns every wallet ticket with status + VSP fee state.
@@ -320,48 +277,8 @@ func StopAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
 
 // StreamAutobuyerEventsHandler upgrades to WebSocket and streams events.
 func StreamAutobuyerEventsHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		stkeLog.Errorf("Failed to upgrade autobuyer-events WebSocket: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	for _, ev := range services.LastAutobuyerEvents(200) {
-		if err := conn.WriteJSON(ev); err != nil {
-			return
-		}
-	}
-
-	ch, unsubscribe := services.SubscribeAutobuyerEvents()
-	defer unsubscribe()
-
-	notify := make(chan struct{})
-	go func() {
-		defer close(notify)
-		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
-				return
-			}
-		}
-	}()
-
-	for {
-		select {
-		case ev, ok := <-ch:
-			if !ok {
-				return
-			}
-			if err := conn.WriteJSON(ev); err != nil {
-				return
-			}
-		case <-notify:
-			return
-		}
-	}
+	streamEventsWS(w, r, stkeLog, "autobuyer-events",
+		services.LastAutobuyerEvents(200), services.SubscribeAutobuyerEvents)
 }
 
 // vspTicketRepair is the shared body of the two VSP repair actions, which

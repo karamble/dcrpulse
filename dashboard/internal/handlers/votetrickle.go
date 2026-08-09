@@ -12,9 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
-
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 )
 
@@ -98,46 +95,6 @@ func VoteTrickleStatusHandler(w http.ResponseWriter, r *http.Request) {
 // StreamVoteTrickleEventsHandler upgrades to WebSocket and streams events
 // (replays the last 200, then live).
 func StreamVoteTrickleEventsHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		stkeLog.Errorf("Failed to upgrade votetrickle-events WebSocket: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	for _, ev := range services.LastVoteTrickleEvents(200) {
-		if err := conn.WriteJSON(ev); err != nil {
-			return
-		}
-	}
-
-	ch, unsubscribe := services.SubscribeVoteTrickleEvents()
-	defer unsubscribe()
-
-	notify := make(chan struct{})
-	go func() {
-		defer close(notify)
-		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
-				return
-			}
-		}
-	}()
-
-	for {
-		select {
-		case ev, ok := <-ch:
-			if !ok {
-				return
-			}
-			if err := conn.WriteJSON(ev); err != nil {
-				return
-			}
-		case <-notify:
-			return
-		}
-	}
+	streamEventsWS(w, r, stkeLog, "votetrickle-events",
+		services.LastVoteTrickleEvents(200), services.SubscribeVoteTrickleEvents)
 }

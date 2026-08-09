@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/msig"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
@@ -26,8 +25,6 @@ import (
 	"github.com/decred/dcrd/dcrutil/v4"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
-
-	"github.com/gorilla/websocket"
 )
 
 // StartWalletRescan exposes the gRPC rescan starter to subsystems that
@@ -928,48 +925,8 @@ func MixerDebugHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func StreamMixerEventsHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		wlltLog.Errorf("Failed to upgrade mixer-events WebSocket: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	for _, ev := range services.LastMixerEvents(200) {
-		if err := conn.WriteJSON(ev); err != nil {
-			return
-		}
-	}
-
-	ch, unsubscribe := services.SubscribeMixerEvents()
-	defer unsubscribe()
-
-	notify := make(chan struct{})
-	go func() {
-		defer close(notify)
-		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
-				return
-			}
-		}
-	}()
-
-	for {
-		select {
-		case ev, ok := <-ch:
-			if !ok {
-				return
-			}
-			if err := conn.WriteJSON(ev); err != nil {
-				return
-			}
-		case <-notify:
-			return
-		}
-	}
+	streamEventsWS(w, r, wlltLog, "mixer-events",
+		services.LastMixerEvents(200), services.SubscribeMixerEvents)
 }
 
 func GetAccountExtendedPubKeyHandler(w http.ResponseWriter, r *http.Request) {

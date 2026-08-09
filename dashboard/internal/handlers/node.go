@@ -10,11 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
-
-	"github.com/gorilla/websocket"
 )
 
 // GetDashboardDataHandler handles requests for complete dashboard data
@@ -44,51 +41,9 @@ func GetDashboardDataHandler(w http.ResponseWriter, r *http.Request) {
 // pushed on each block-connected notification instead of the 30s poll. Mirrors
 // the wallet's StreamRescanProgressHandler.
 func StreamNodeSyncHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		nodeLog.Errorf("Failed to upgrade node-sync WebSocket: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	if err := conn.WriteJSON(services.GetNodeSyncSnapshot()); err != nil {
-		return
-	}
-
-	ch, unsubscribe := services.SubscribeNodeSyncEvents()
-	defer unsubscribe()
-
-	notify := make(chan struct{})
-	go func() {
-		defer close(notify)
-		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
-				return
-			}
-		}
-	}()
-
-	keepAlive := time.NewTicker(15 * time.Second)
-	defer keepAlive.Stop()
-
-	for {
-		select {
-		case snap, ok := <-ch:
-			if !ok {
-				return
-			}
-			if err := conn.WriteJSON(snap); err != nil {
-				return
-			}
-		case <-keepAlive.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		case <-notify:
-			return
-		}
-	}
+	streamEventsWS(w, r, nodeLog, "node-sync",
+		[]services.NodeSyncSnapshot{services.GetNodeSyncSnapshot()},
+		services.SubscribeNodeSyncEvents)
 }
 
 // HealthCheckHandler handles health check requests
