@@ -93,7 +93,7 @@ func reconnectStackServices(ctx context.Context, name string) {
 	// flooding its history as "new".
 	alerts.ResolveCategories(alerts.CategoryLightning, alerts.CategoryDex, alerts.CategoryBisonrelay)
 	resetAlertWatcherBaselines()
-	rpc.ClearDcrdexAppPass()
+	rpc.DropDcrdexSession()
 	dropLightningGraphSnapshot()
 	if ActiveWalletIsWatchOnly(ctx) {
 		// Watch-only wallets have no dcrlnd / DEX / Bison Relay daemons, so don't
@@ -122,8 +122,8 @@ func CloseActiveWallet(ctx context.Context) error {
 	}
 	cancel()
 
-	// The previous profile's DEX session secret must not leak into the next.
-	rpc.ClearDcrdexAppPass()
+	// The previous profile's DEX session must not leak into the next.
+	rpc.DropDcrdexSession()
 	return ClearActiveWallet()
 }
 

@@ -59,7 +59,7 @@ func GetDcrdexStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	st := DcrdexStatus{Initialized: dcrdexInitialized(), SeedBackedUp: dcrdexSeedBackedUp()}
-	_, st.Unlocked = rpc.DcrdexAppPass()
+	st.Unlocked = rpc.DcrdexUnlocked()
 
 	client, err := rpc.DcrdexClient()
 	if err != nil {
@@ -90,6 +90,15 @@ func GetDcrdexStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if v.RPCServerVersion != nil {
 		st.RPCServerVer = formatSemver(v.RPCServerVersion.Major, v.RPCServerVersion.Minor, v.RPCServerVersion.Patch)
+	}
+	// A bisonw restart kills sessions server-side; verify before reporting
+	// unlocked so the UI flips to needs-unlock on the next poll.
+	if st.Unlocked {
+		if web, werr := rpc.DcrdexWebClient(); werr == nil {
+			if valid, verr := web.SessionValid(ctx); verr == nil {
+				st.Unlocked = valid
+			}
+		}
 	}
 	switch {
 	case !st.Initialized:
@@ -182,9 +191,9 @@ type dcrdexAuthRequest struct {
 	Seed    string `json:"seed,omitempty"`
 }
 
-// InitDcrdexHandler initializes the bisonw client with a user-supplied app
-// password (optionally restoring from a seed), logs in, and holds the password
-// in memory for the session. The password is never persisted.
+// InitDcrdexHandler initializes bisonw with a user-supplied app password
+// (optionally restoring from a seed) over the webserver, which also opens the
+// cookie session. bisonw keeps the password; the dashboard keeps none.
 func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if rejectWatchOnly(w, r) {
@@ -199,22 +208,18 @@ func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexClient(w)
-	if !ok {
+	web, err := rpc.DcrdexWebClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := client.Init(ctx, req.AppPass, req.Seed); err != nil {
+	if err := web.InitApp(ctx, req.AppPass, req.Seed); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
-	if _, err := client.Login(ctx, req.AppPass); err != nil {
-		dexWriteErr(w, err)
-		return
-	}
-	rpc.SetDcrdexAppPass(req.AppPass)
-	go ensureDexWalletSettings(req.AppPass)
+	go ensureDexWalletSettings()
 	if err := setDcrdexInitialized(); err != nil {
 		dexcLog.Errorf("persist initialized flag: %v", err)
 	}
@@ -226,8 +231,8 @@ func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// UnlockDcrdexHandler logs the bisonw client in with the supplied app password
-// and holds it in memory for the session (used after a restart re-locks it).
+// UnlockDcrdexHandler opens the webserver session with the supplied app
+// password; bisonw caches it server-side, the dashboard keeps none.
 func UnlockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req dcrdexAuthRequest
@@ -235,39 +240,49 @@ func UnlockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appPass is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexClient(w)
-	if !ok {
+	web, err := rpc.DcrdexWebClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if _, err := client.Login(ctx, req.AppPass); err != nil {
+	if err := web.Login(ctx, req.AppPass); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
-	rpc.SetDcrdexAppPass(req.AppPass)
 	// Reconnects the wallet in bisonw, so it runs off the response.
-	go ensureDexWalletSettings(req.AppPass)
+	go ensureDexWalletSettings()
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// LockDcrdexHandler logs the bisonw client out and forgets the in-memory app
-// password.
+// LockDcrdexHandler locks bisonw. The webserver logout also revokes every
+// session and bisonw's cached password; with no session left (dashboard
+// restarted), the password-free RPC logout still forces a real lock.
 func LockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	// Only forget the in-memory app password if bisonw actually locked. Logout
-	// refuses (and locks nothing) while any order is still active, so clearing
-	// the password regardless would leave the daemon - wallets, dex account and
-	// any running bot - unlocked behind a "locked" dashboard.
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	// Logout refuses (and locks nothing) while any order is still active; the
+	// refusal must reach the user instead of a pretend lock.
+	if web, err := rpc.DcrdexWebClient(); err == nil && web.LoggedIn() {
+		err := web.Logout(ctx)
+		if err == nil {
+			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+			return
+		}
+		if !errors.Is(err, bisonw.ErrDexLocked) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		// Session died underneath us; the RPC lock below still applies.
+	}
 	if client, err := rpc.DcrdexClient(); err == nil {
-		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-		defer cancel()
 		if err := client.Logout(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 	}
-	rpc.ClearDcrdexAppPass()
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
@@ -288,7 +303,7 @@ func CreateDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "walletPass is required", http.StatusBadRequest)
 		return
 	}
-	appPass, client, ok := dexAuthClient(w)
+	web, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
@@ -307,7 +322,7 @@ func CreateDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := client.NewDCRWallet(ctx, appPass, req.WalletPass, cfg); err != nil {
+	if err := web.NewWallet(ctx, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, cfg.ConfigMap(), req.WalletPass); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
@@ -331,9 +346,6 @@ func dexDCRWalletCfg() (bisonw.DCRWalletRPCConfig, error) {
 	return cfg, nil
 }
 
-// ensureDexWalletSettings pushes the dcrwalletRPC settings to bisonw when its
-// stored copy differs from this deployment. Best effort; failures are logged
-// and retried on the next unlock.
 // ErrDexLockedForPassphrase asks the caller to unlock DCRDEX first. bisonw
 // stores the wallet passphrase, and updating it needs the app password, so
 // rotating with DCRDEX locked would leave the two out of step.
@@ -363,7 +375,7 @@ func dexWalletPassphraseGate(ctx context.Context) error {
 	if !has {
 		return nil
 	}
-	if _, unlocked := rpc.DcrdexAppPass(); !unlocked {
+	if !rpc.DcrdexUnlocked() {
 		return ErrDexLockedForPassphrase
 	}
 	return nil
@@ -381,8 +393,7 @@ func syncDexWalletPassphrase(ctx context.Context, newPass string) error {
 	if err != nil || !has {
 		return nil
 	}
-	appPass, unlocked := rpc.DcrdexAppPass()
-	if !unlocked {
+	if !rpc.DcrdexUnlocked() {
 		return ErrDexWalletPassphraseStale
 	}
 	web, err := rpc.DcrdexWebClient()
@@ -391,13 +402,13 @@ func syncDexWalletPassphrase(ctx context.Context, newPass string) error {
 	}
 	// Reconfiguring replaces the config wholesale, so carry the stored one over
 	// untouched and change only the password.
-	stored, err := web.WalletSettings(ctx, appPass, bisonw.AssetDCR)
+	stored, err := web.WalletSettings(ctx, bisonw.AssetDCR)
 	if err != nil {
 		// The error can carry the response body, which holds credentials.
 		dexcLog.Warn("could not read dcr wallet settings; see the bisonw log")
 		return ErrDexWalletPassphraseStale
 	}
-	if err := web.ReconfigureWallet(ctx, appPass, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, stored, newPass); err != nil {
+	if err := web.ReconfigureWallet(ctx, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, stored, newPass); err != nil {
 		dexcLog.Errorf("update dcr wallet password: %v", err)
 		return ErrDexWalletPassphraseStale
 	}
@@ -405,7 +416,10 @@ func syncDexWalletPassphrase(ctx context.Context, newPass string) error {
 	return nil
 }
 
-func ensureDexWalletSettings(appPass string) {
+// ensureDexWalletSettings pushes the dcrwalletRPC settings to bisonw when its
+// stored copy differs from this deployment. Best effort; failures are logged
+// and retried on the next unlock.
+func ensureDexWalletSettings() {
 	want, err := dexDCRWalletCfg()
 	if err != nil {
 		dexcLog.Warnf("check dcr wallet settings: %v", err)
@@ -440,7 +454,7 @@ func ensureDexWalletSettings(appPass string) {
 		dexcLog.Warnf("check dcr wallet settings: %v", err)
 		return
 	}
-	stored, err := web.WalletSettings(ctx, appPass, bisonw.AssetDCR)
+	stored, err := web.WalletSettings(ctx, bisonw.AssetDCR)
 	if err != nil {
 		// The error can carry the response body, which holds credentials.
 		dexcLog.Warn("could not read dcr wallet settings; see the bisonw log")
@@ -466,7 +480,7 @@ func ensureDexWalletSettings(appPass string) {
 	sort.Strings(drifted)
 	// Log key names only; the values are credentials.
 	dexcLog.Errorf("dcr wallet settings are stale (%s), updating", strings.Join(drifted, ", "))
-	if err := web.ReconfigureWallet(ctx, appPass, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, merged, ""); err != nil {
+	if err := web.ReconfigureWallet(ctx, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, merged, ""); err != nil {
 		dexcLog.Errorf("update dcr wallet settings: %v", err)
 		return
 	}
@@ -603,13 +617,13 @@ func dexAssetID(r *http.Request) uint32 {
 // one.
 func NewDexDepositAddressHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	addr, err := client.NewDepositAddress(ctx, appPass, dexAssetID(r))
+	addr, err := client.NewDepositAddress(ctx, dexAssetID(r))
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -626,13 +640,13 @@ func DexAddressUsedHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "addr is required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	used, err := client.AddressUsed(ctx, appPass, dexAssetID(r), addr)
+	used, err := client.AddressUsed(ctx, dexAssetID(r), addr)
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -928,7 +942,11 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	appPass, client, ok := dexAuthClient(w)
+	web, ok := dexWebSession(w)
+	if !ok {
+		return
+	}
+	client, ok := dexClient(w)
 	if !ok {
 		return
 	}
@@ -955,15 +973,13 @@ func SetDcrdexBondOptionsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	// bondopts reserves funds in the bond asset, which requires that wallet to be
-	// unlocked, but the bondopts RPC carries no password (unlike trade/postbond), so
-	// unlock the bond asset wallet first via openwallet. Our DCR wallet is the
-	// dashboard's external dcrwallet, which the dashboard can lock outside bisonw, so
-	// it is not reliably open when bondopts runs. openwallet is idempotent.
+	// unlocked, but the bondopts RPC carries no password; openwallet (idempotent)
+	// unlocks it first via the webserver session.
 	unlockAsset := bondAsset
 	if unlockAsset < 0 {
 		unlockAsset = int(bisonw.AssetDCR)
 	}
-	if err := client.OpenWallet(ctx, appPass, uint32(unlockAsset)); err != nil {
+	if err := web.OpenWallet(ctx, uint32(unlockAsset)); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
@@ -1209,13 +1225,13 @@ func GetDcrdexBondsFeeBufferHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	raw, err := client.BondsFeeBuffer(ctx, appPass, uint32(assetID))
+	raw, err := client.BondsFeeBuffer(ctx, uint32(assetID))
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -1263,7 +1279,7 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and bond are required", http.StatusBadRequest)
 		return
 	}
-	appPass, client, ok := dexAuthClient(w)
+	web, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
@@ -1273,18 +1289,14 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 		assetID = *req.AssetID
 	}
 	host := req.Host
-	params := bisonw.PostBondParams{
-		AppPass:      appPass,
-		Host:         host,
-		Bond:         req.Bond,
-		AssetID:      assetID,
-		MaintainTier: req.MaintainTier,
-	}
+	bond, maintain := req.Bond, req.MaintainTier
 	setBondSubmit(host, bondSubmitState{Phase: "submitting"})
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		// bisonw's webserver cuts responses at its 2min write timeout; stay
+		// under it so a slow bond surfaces here instead of as a torn reply.
+		ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 		defer cancel()
-		if _, err := client.PostBond(ctx, params); err != nil {
+		if err := web.PostBond(ctx, host, "", bond, assetID, maintain); err != nil {
 			dexcLog.Errorf("DCRDEX PostBond(%s) failed: %v", host, err)
 			setBondSubmit(host, bondSubmitState{Phase: "error", Error: err.Error()})
 			return
@@ -1601,13 +1613,13 @@ func GetDcrdexOrdersHandler(w http.ResponseWriter, r *http.Request) {
 		filter["market"] = map[string]any{"baseID": req.Market.BaseID, "quoteID": req.Market.QuoteID}
 	}
 
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	raw, err := client.Orders(ctx, appPass, filter)
+	raw, err := client.Orders(ctx, filter)
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -1665,13 +1677,13 @@ func GetDcrdexSingleOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "id is required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	raw, err := client.Order(ctx, appPass, req.ID)
+	raw, err := client.Order(ctx, req.ID)
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -1727,28 +1739,13 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and qty are required", http.StatusBadRequest)
 		return
 	}
-	appPass, client, ok := dexAuthClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	opts := make(map[string]any, len(req.Options))
-	for k, v := range req.Options {
-		opts[k] = v
-	}
-	raw, err := client.Trade(ctx, bisonw.TradeParams{
-		AppPass: appPass,
-		Host:    req.Host,
-		IsLimit: req.IsLimit,
-		Sell:    req.Sell,
-		Base:    req.Base,
-		Quote:   req.Quote,
-		Qty:     req.Qty,
-		Rate:    req.Rate,
-		TifNow:  req.TifNow,
-		Options: opts,
-	})
+	raw, err := client.Trade(ctx, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -1777,14 +1774,14 @@ func PreDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and qty are required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	dexProxyJSON(w, func() (json.RawMessage, error) {
-		return client.PreOrder(ctx, appPass, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
+		return client.PreOrder(ctx, req.Host, req.IsLimit, req.Sell, req.Base, req.Quote, req.Qty, req.Rate, req.TifNow, req.Options)
 	})
 }
 
@@ -1802,14 +1799,14 @@ func MaxDcrdexBuyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and rate are required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	dexProxyJSON(w, func() (json.RawMessage, error) {
-		return client.MaxBuy(ctx, appPass, req.Host, req.Base, req.Quote, req.Rate)
+		return client.MaxBuy(ctx, req.Host, req.Base, req.Quote, req.Rate)
 	})
 }
 
@@ -1826,13 +1823,13 @@ func MaxDcrdexSellHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	dexProxyJSON(w, func() (json.RawMessage, error) { return client.MaxSell(ctx, appPass, req.Host, req.Base, req.Quote) })
+	dexProxyJSON(w, func() (json.RawMessage, error) { return client.MaxSell(ctx, req.Host, req.Base, req.Quote) })
 }
 
 // GetDcrdexAssetsHandler serves the embedded DCRDEX supported-asset catalog
@@ -1859,19 +1856,14 @@ func CreateDcrdexAssetWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID and walletType are required", http.StatusBadRequest)
 		return
 	}
-	appPass, client, ok := dexAuthClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	// bisonw's webserver cuts responses at its 2min write timeout.
+	ctx, cancel := context.WithTimeout(r.Context(), 110*time.Second)
 	defer cancel()
-	if err := client.NewWallet(ctx, bisonw.NewWalletParams{
-		AppPass:    appPass,
-		WalletPass: req.WalletPass,
-		AssetID:    req.AssetID,
-		WalletType: req.WalletType,
-		Config:     req.Config,
-	}); err != nil {
+	if err := client.NewWallet(ctx, req.AssetID, req.WalletType, req.Config, req.WalletPass); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
@@ -2206,27 +2198,33 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // SendDcrdexWalletHandler sends a conventional amount of an asset to an address.
-// The amount is converted to atoms in the backend. Spends real funds; requires
-// the DEX session unlocked.
+// The amount is converted to atoms in the backend. Spends real funds; bisonw's
+// send route refuses the session password cache, so the app password is
+// re-entered in the request body for this action.
 func SendDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		AssetID uint32  `json:"assetID"`
 		Value   float64 `json:"value"`
 		Address string  `json:"address"`
+		AppPass string  `json:"appPass"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Address == "" || req.Value <= 0 {
 		http.Error(w, "assetID, value and address are required", http.StatusBadRequest)
 		return
 	}
-	appPass, client, ok := dexAuthClient(w)
+	if req.AppPass == "" {
+		http.Error(w, "appPass is required", http.StatusBadRequest)
+		return
+	}
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
-	coin, err := client.Send(ctx, appPass, req.AssetID, atoms, req.Address)
+	coin, err := client.Send(ctx, req.AppPass, req.AssetID, atoms, req.Address, false)
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -2250,20 +2248,14 @@ func EstimateDcrdexSendFeeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID, value and address are required", http.StatusBadRequest)
 		return
 	}
-	appPass, ok := rpc.DcrdexAppPass()
+	client, ok := dexWebSession(w)
 	if !ok {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return
-	}
-	client, err := rpc.DcrdexWebClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	atoms := convToAtoms(req.Value, dexassets.ConvFactor(req.AssetID))
-	txFee, validAddr, err := client.EstimateSendTxFee(ctx, appPass, req.AssetID, req.Address, atoms, req.Subtract, false)
+	txFee, validAddr, err := client.EstimateSendTxFee(ctx, req.AssetID, req.Address, atoms, req.Subtract, false)
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -2311,13 +2303,13 @@ func OpenDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	appPass, client, ok := dexAuthClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := client.OpenWallet(ctx, appPass, req.AssetID); err != nil {
+	if err := client.OpenWallet(ctx, req.AssetID); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
@@ -2539,13 +2531,14 @@ func DiscoverDcrdexAccountHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	appPass, client, ok := dexAuthClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	// bisonw's webserver cuts responses at its 2min write timeout.
+	ctx, cancel := context.WithTimeout(r.Context(), 110*time.Second)
 	defer cancel()
-	paid, err := client.DiscoverAccount(ctx, appPass, req.Host, "")
+	paid, err := client.DiscoverAccount(ctx, req.Host, "")
 	if err != nil {
 		dexWriteErr(w, err)
 		return

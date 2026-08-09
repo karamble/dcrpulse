@@ -36,19 +36,6 @@ func (c *Client) WalletTx(ctx context.Context, assetID uint32, txID string) (jso
 	return res, err
 }
 
-// Send sends value (atomic units) of an asset to an address, returning the coin
-// id. Spends real funds; only call on explicit user action.
-func (c *Client) Send(ctx context.Context, appPass string, assetID uint32, value uint64, address string) (string, error) {
-	var coin string
-	err := c.Call(ctx, "send", []string{appPass}, []string{assetArg(assetID), strconv.FormatUint(value, 10), address}, &coin)
-	return coin, err
-}
-
-// OpenWallet unlocks a wallet for the given asset.
-func (c *Client) OpenWallet(ctx context.Context, appPass string, assetID uint32) error {
-	return c.Call(ctx, "openwallet", []string{appPass}, []string{assetArg(assetID)}, nil)
-}
-
 // CloseWallet locks a wallet for the given asset.
 func (c *Client) CloseWallet(ctx context.Context, assetID uint32) error {
 	return c.Call(ctx, "closewallet", nil, []string{assetArg(assetID)}, nil)

@@ -19,6 +19,7 @@ interface Props {
 export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
   const [address, setAddress] = useState('');
   const [amount, setAmount] = useState('');
+  const [appPass, setAppPass] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -62,14 +63,16 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
     setBusy(true);
     setErr(null);
     try {
-      const coin = await sendDexWallet(wallet.assetID, value, address.trim());
+      const coin = await sendDexWallet(wallet.assetID, value, address.trim(), appPass);
       setSent(coin);
       setAddress('');
       setAmount('');
+      setAppPass('');
       setConfirming(false);
       onSent();
     } catch (e: any) {
       setErr(apiError(e, 'Send failed'));
+      setAppPass('');
       setConfirming(false);
     } finally {
       setBusy(false);
@@ -145,18 +148,28 @@ export const DexWalletSend = ({ wallet, asset, onSent }: Props) => {
               Send {fmtAmt(value, decimals)} {wallet.symbol} to {address.slice(0, 12)}... This spends real funds and cannot be undone.
             </span>
           </div>
+          <input
+            type="password"
+            value={appPass}
+            onChange={(e) => setAppPass(e.target.value)}
+            placeholder="DCRDEX app password"
+            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground text-sm focus:outline-none focus:border-primary"
+          />
           <div className="flex gap-2">
             <button
               type="button"
               disabled={busy}
-              onClick={() => setConfirming(false)}
+              onClick={() => {
+                setConfirming(false);
+                setAppPass('');
+              }}
               className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-background/50 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !appPass}
               onClick={send}
               className="flex-1 bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90 disabled:opacity-50"
             >

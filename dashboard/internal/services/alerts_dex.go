@@ -19,8 +19,8 @@ import (
 
 // StartDexWatcher owns a backend bisonw /ws subscription for trade events
 // (the browser relay in handlers is tab-scoped, so the dashboard would
-// otherwise be blind with no DEX tab open). Runs only while the DEX app pass
-// is cached: an unlock implies bisonw is configured and initialized, so
+// otherwise be blind with no DEX tab open). Runs only while a DEX webserver
+// session is up: a session implies bisonw is configured and initialized, so
 // needs-init / needs-unlock deployments idle silently, and dial failures
 // while unlocked are the dex_unreachable condition.
 func StartDexWatcher(ctx context.Context) {
@@ -30,7 +30,7 @@ func StartDexWatcher(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			if _, unlocked := rpc.DcrdexAppPass(); !unlocked || SyncPaused() {
+			if !rpc.DcrdexUnlocked() || SyncPaused() {
 				select {
 				case <-ctx.Done():
 					return

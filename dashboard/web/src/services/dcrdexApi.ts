@@ -645,9 +645,9 @@ export const getDexWalletTxs = async (assetID: number, n = 0, refID = '', past =
 };
 
 // sendDexWallet sends a conventional amount of an asset to an address. Spends
-// real funds; only call on explicit user action.
-export const sendDexWallet = async (assetID: number, value: number, address: string): Promise<string> => {
-  const { data } = await api.post<{ coin: string }>('/dcrdex/wallet/send', { assetID, value, address });
+// real funds; bisonw demands the app password per send, so it rides the body.
+export const sendDexWallet = async (assetID: number, value: number, address: string, appPass: string): Promise<string> => {
+  const { data } = await api.post<{ coin: string }>('/dcrdex/wallet/send', { assetID, value, address, appPass });
   return data.coin;
 };
 

@@ -21,14 +21,18 @@ func dexClient(w http.ResponseWriter) (*bisonw.Client, bool) {
 	return client, true
 }
 
-// dexAuthClient gates an action that needs the unlocked session: 409 while
-// DCRDEX is locked, then 503 when the client is not up, in that order.
-func dexAuthClient(w http.ResponseWriter) (string, *bisonw.Client, bool) {
-	appPass, ok := rpc.DcrdexAppPass()
-	if !ok {
+// dexWebSession gates an action that needs the unlocked session: 409 while no
+// webserver session is up, then 503 when the web client is not up, in that
+// order.
+func dexWebSession(w http.ResponseWriter) (*bisonw.WebClient, bool) {
+	if !rpc.DcrdexUnlocked() {
 		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return "", nil, false
+		return nil, false
 	}
-	client, ok := dexClient(w)
-	return appPass, client, ok
+	web, err := rpc.DcrdexWebClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return nil, false
+	}
+	return web, true
 }

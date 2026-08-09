@@ -12,43 +12,23 @@ import (
 	"strconv"
 	"time"
 
-	"dcrpulse/internal/rpc"
 	"dcrpulse/pkg/bisonw"
 )
 
-// The market-maker handlers proxy bisonw's webserver MM API. Unlike the rest of
-// the DEX integration (which uses the RPC server), the market maker is driven
-// through the webserver so bot and CEX configuration persists in the daemon's
-// encrypted database. Each call requires the DEX app to be unlocked; the
-// in-memory app password establishes the webserver session.
-
-// mmWebClient returns the webserver client and the app password, writing the
-// appropriate HTTP error and reporting ok=false when the DEX is locked or the
-// webserver is unavailable.
-func mmWebClient(w http.ResponseWriter) (*bisonw.WebClient, string, bool) {
-	appPass, set := rpc.DcrdexAppPass()
-	if !set {
-		http.Error(w, "DCRDEX is locked", http.StatusConflict)
-		return nil, "", false
-	}
-	c, err := rpc.DcrdexWebClient()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return nil, "", false
-	}
-	return c, appPass, true
-}
+// The market-maker handlers proxy bisonw's webserver MM API, which persists
+// bot and CEX configuration in the daemon's encrypted database. Each call
+// rides the webserver cookie session established at unlock.
 
 // GetDcrdexMMStatusHandler returns the market-making status (bots + CEX state).
 func GetDcrdexMMStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	status, err := client.MMStatus(ctx, appPass)
+	status, err := client.MMStatus(ctx)
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -73,13 +53,13 @@ func GetDcrdexMMMarketReportHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host, baseID and quoteID are required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	report, err := client.MarketReport(ctx, appPass, host, uint32(baseID), uint32(quoteID))
+	report, err := client.MarketReport(ctx, host, uint32(baseID), uint32(quoteID))
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -115,13 +95,13 @@ func GetDcrdexMMRunLogsHandler(w http.ResponseWriter, r *http.Request) {
 			refID = &v
 		}
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	logs, err := client.RunLogs(ctx, appPass, host, uint32(baseID), uint32(quoteID), startTime, n, refID)
+	logs, err := client.RunLogs(ctx, host, uint32(baseID), uint32(quoteID), startTime, n, refID)
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -136,13 +116,13 @@ func GetDcrdexMMRunLogsHandler(w http.ResponseWriter, r *http.Request) {
 // (start time, market, profit), newest first, for the run-history view.
 func GetDcrdexMMArchivedRunsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	runs, err := client.ArchivedRuns(ctx, appPass)
+	runs, err := client.ArchivedRuns(ctx)
 	if err != nil {
 		dexWriteErr(w, err)
 		return
@@ -156,20 +136,20 @@ func GetDcrdexMMArchivedRunsHandler(w http.ResponseWriter, r *http.Request) {
 // mmConfigUpdate posts a raw config body; the limit differs per member
 // because a bot config carries markets while CEX credentials are small.
 func mmConfigUpdate(w http.ResponseWriter, r *http.Request, limit int64,
-	act func(ctx context.Context, client *bisonw.WebClient, appPass string, body []byte) error) {
+	act func(ctx context.Context, client *bisonw.WebClient, body []byte) error) {
 	w.Header().Set("Content-Type", "application/json")
 	body, err := io.ReadAll(io.LimitReader(r.Body, limit))
 	if err != nil || len(body) == 0 {
 		http.Error(w, "config is required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := act(ctx, client, appPass, body); err != nil {
+	if err := act(ctx, client, body); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
@@ -180,15 +160,15 @@ func mmConfigUpdate(w http.ResponseWriter, r *http.Request, limit int64,
 // request body is a bisonw mm.BotConfig built by the frontend and forwarded
 // verbatim.
 func UpdateDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
-	mmConfigUpdate(w, r, 1<<20, func(ctx context.Context, client *bisonw.WebClient, appPass string, body []byte) error {
-		return client.UpdateBotConfig(ctx, appPass, body)
+	mmConfigUpdate(w, r, 1<<20, func(ctx context.Context, client *bisonw.WebClient, body []byte) error {
+		return client.UpdateBotConfig(ctx, body)
 	})
 }
 
 // mmMarketAction decodes a {host, baseID, quoteID} action; the members differ
 // only in the webclient call.
 func mmMarketAction(w http.ResponseWriter, r *http.Request,
-	act func(ctx context.Context, client *bisonw.WebClient, appPass, host string, baseID, quoteID uint32) error) {
+	act func(ctx context.Context, client *bisonw.WebClient, host string, baseID, quoteID uint32) error) {
 	w.Header().Set("Content-Type", "application/json")
 	var req struct {
 		Host    string `json:"host"`
@@ -199,13 +179,13 @@ func mmMarketAction(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := act(ctx, client, appPass, req.Host, req.BaseID, req.QuoteID); err != nil {
+	if err := act(ctx, client, req.Host, req.BaseID, req.QuoteID); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
@@ -214,16 +194,16 @@ func mmMarketAction(w http.ResponseWriter, r *http.Request,
 
 // RemoveDcrdexMMBotConfigHandler deletes a stored bot config.
 func RemoveDcrdexMMBotConfigHandler(w http.ResponseWriter, r *http.Request) {
-	mmMarketAction(w, r, func(ctx context.Context, client *bisonw.WebClient, appPass, host string, baseID, quoteID uint32) error {
-		return client.RemoveBotConfig(ctx, appPass, host, baseID, quoteID)
+	mmMarketAction(w, r, func(ctx context.Context, client *bisonw.WebClient, host string, baseID, quoteID uint32) error {
+		return client.RemoveBotConfig(ctx, host, baseID, quoteID)
 	})
 }
 
 // UpdateDcrdexMMCexConfigHandler stores CEX API credentials. The request body is
 // a bisonw mm.CEXConfig {name, apiKey, apiSecret}.
 func UpdateDcrdexMMCexConfigHandler(w http.ResponseWriter, r *http.Request) {
-	mmConfigUpdate(w, r, 1<<16, func(ctx context.Context, client *bisonw.WebClient, appPass string, body []byte) error {
-		return client.UpdateCEXConfig(ctx, appPass, body)
+	mmConfigUpdate(w, r, 1<<16, func(ctx context.Context, client *bisonw.WebClient, body []byte) error {
+		return client.UpdateCEXConfig(ctx, body)
 	})
 }
 
@@ -237,13 +217,13 @@ func StartDcrdexMMBotHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "start config is required", http.StatusBadRequest)
 		return
 	}
-	client, appPass, ok := mmWebClient(w)
+	client, ok := dexWebSession(w)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	if err := client.StartBot(ctx, appPass, body); err != nil {
+	if err := client.StartBot(ctx, body); err != nil {
 		dexWriteErr(w, err)
 		return
 	}
@@ -252,7 +232,7 @@ func StartDcrdexMMBotHandler(w http.ResponseWriter, r *http.Request) {
 
 // StopDcrdexMMBotHandler stops a running bot on the given market.
 func StopDcrdexMMBotHandler(w http.ResponseWriter, r *http.Request) {
-	mmMarketAction(w, r, func(ctx context.Context, client *bisonw.WebClient, appPass, host string, baseID, quoteID uint32) error {
-		return client.StopBot(ctx, appPass, host, baseID, quoteID)
+	mmMarketAction(w, r, func(ctx context.Context, client *bisonw.WebClient, host string, baseID, quoteID uint32) error {
+		return client.StopBot(ctx, host, baseID, quoteID)
 	})
 }

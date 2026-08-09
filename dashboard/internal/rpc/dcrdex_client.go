@@ -137,34 +137,19 @@ func DcrdexWebClient() (*bisonw.WebClient, error) {
 	return c, nil
 }
 
-// The bisonw app password is held only in process memory for the unlocked
-// session and is never persisted to disk. It is cleared on lock and lost on
-// dashboard restart, after which the user must unlock again.
-var (
-	dcrdexAppPass    string
-	dcrdexAppPassSet bool
-	dcrdexSessionMu  sync.Mutex
-)
-
-// SetDcrdexAppPass records the app password for the unlocked session.
-func SetDcrdexAppPass(p string) {
-	dcrdexSessionMu.Lock()
-	defer dcrdexSessionMu.Unlock()
-	dcrdexAppPass = p
-	dcrdexAppPassSet = true
+// DcrdexUnlocked reports whether a bisonw webserver session is established.
+// The dashboard holds no app password; the cookie session IS the unlock state.
+func DcrdexUnlocked() bool {
+	dcrdexMu.Lock()
+	c := dcrdexWebClient
+	dcrdexMu.Unlock()
+	return c != nil && c.LoggedIn()
 }
 
-// DcrdexAppPass returns the in-memory app password and whether it is set.
-func DcrdexAppPass() (string, bool) {
-	dcrdexSessionMu.Lock()
-	defer dcrdexSessionMu.Unlock()
-	return dcrdexAppPass, dcrdexAppPassSet
-}
-
-// ClearDcrdexAppPass forgets the in-memory app password, locking the session.
-func ClearDcrdexAppPass() {
-	dcrdexSessionMu.Lock()
-	defer dcrdexSessionMu.Unlock()
-	dcrdexAppPass = ""
-	dcrdexAppPassSet = false
+// DropDcrdexSession discards the webserver client and its cookie jar, so the
+// next wallet profile starts locked instead of inheriting a session.
+func DropDcrdexSession() {
+	dcrdexMu.Lock()
+	dcrdexWebClient = nil
+	dcrdexMu.Unlock()
 }
