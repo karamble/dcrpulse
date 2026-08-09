@@ -805,12 +805,11 @@ func walletVoteChoice(owned []*pb.CommittedTicketsResponse_TicketAddress, votes 
 	return choice, count
 }
 
-// parseVoteBit parses a Politeia vote bit, which may be decimal or hex.
+// parseVoteBit parses a Politeia vote bit. The ticketvote plugin records the
+// field as hex (it rejects anything ParseUint(s, 16, 64) refuses), so a
+// decimal-first parse read the recorded hex "10" as ten.
 func parseVoteBit(s string) (uint64, error) {
-	if n, err := strconv.ParseUint(s, 10, 32); err == nil {
-		return n, nil
-	}
-	return strconv.ParseUint(s, 16, 32)
+	return strconv.ParseUint(s, 16, 64)
 }
 
 // bitForOption returns the vote bit for the option with the given id.

@@ -6,6 +6,7 @@ package services
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"dcrpulse/internal/types"
+
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
 
 // A record that failed to load carries an empty censorship token, so the name
@@ -353,5 +358,53 @@ func TestLoadMoreFailureLeavesCacheUntouched(t *testing.T) {
 	merged, _, err := LoadMoreProposals(context.Background(), "finished")
 	if err != nil || len(merged) != 4 {
 		t.Fatalf("retry: len=%d err=%v", len(merged), err)
+	}
+}
+
+// The ticketvote plugin records vote bits as hex - it rejects anything else at
+// cast time - so the reader must parse hex. A decimal-first parse read the
+// recorded "10" (bit 16, a fifth vote option) as ten.
+func TestParseVoteBitIsHex(t *testing.T) {
+	cases := []struct {
+		in   string
+		want uint64
+	}{
+		{"1", 1},
+		{"2", 2},
+		{"10", 16},
+		{"20", 32},
+		{"a", 10},
+	}
+	for _, c := range cases {
+		got, err := parseVoteBit(c.in)
+		if err != nil || got != c.want {
+			t.Errorf("parseVoteBit(%q) = %d, %v; want %d", c.in, got, err, c.want)
+		}
+	}
+	if _, err := parseVoteBit("zz"); err == nil {
+		t.Error("parseVoteBit accepted a non-hex string")
+	}
+}
+
+// End to end through walletVoteChoice: a recorded vote for a fifth option
+// (bit 16, wire "10") must attribute to that option.
+func TestWalletVoteChoiceMultiOptionBit(t *testing.T) {
+	raw := make([]byte, 32)
+	raw[0] = 7
+	owned := []*pb.CommittedTicketsResponse_TicketAddress{{Ticket: raw}}
+	ticketHex := hex.EncodeToString(reversed(raw))
+
+	votes := []piCastVote{{Ticket: ticketHex, VoteBit: "10"}}
+	options := []types.ProposalVoteOption{
+		{ID: "yes", Bit: 1},
+		{ID: "no", Bit: 2},
+		{ID: "alpha", Bit: 4},
+		{ID: "beta", Bit: 8},
+		{ID: "gamma", Bit: 16},
+	}
+
+	choice, count := walletVoteChoice(owned, votes, options)
+	if choice != "gamma" || count != 1 {
+		t.Fatalf("walletVoteChoice = (%q, %d), want (\"gamma\", 1)", choice, count)
 	}
 }
