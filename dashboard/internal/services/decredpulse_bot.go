@@ -36,6 +36,11 @@ const (
 	// powSolveCap bounds the proof-of-work search so a misbehaving or
 	// overly-difficult challenge cannot spin forever.
 	powSolveCap = 1 << 28
+	// powMaxBits is the hardest challenge worth attempting: expected work is
+	// 2^bits hashes, so anything above this cannot finish inside the caller's
+	// deadline or the cap. brulse itself allows an operator up to 32 bits,
+	// which no interactive client can serve; refuse instead of spinning.
+	powMaxBits = 26
 )
 
 // DecredPulseBotEnabled reports whether the user has the Decred Pulse bot
@@ -101,7 +106,7 @@ func RequestDecredPulseInvite(ctx context.Context, pubkeyHex string) (string, er
 	var nonce, solution string
 	if ch.PoWRequired {
 		nonce = ch.Nonce
-		solution, err = solvePoW(ch.Nonce, ch.Bits)
+		solution, err = solvePoW(ctx, ch.Nonce, ch.Bits)
 		if err != nil {
 			return "", err
 		}
@@ -206,10 +211,19 @@ func requestBotInvite(ctx context.Context, base, pubkeyHex, nonce, solution stri
 }
 
 // solvePoW finds a solution string such that sha256(nonce ":" solution) has at
-// least bits leading zero bits. It mirrors the verification in the brulse bot.
-func solvePoW(nonce string, bits uint) (string, error) {
+// least bits leading zero bits. It mirrors the verification in the brulse bot,
+// and stops at the caller's deadline rather than grinding the cap out.
+func solvePoW(ctx context.Context, nonce string, bits uint) (string, error) {
+	if bits > powMaxBits {
+		return "", fmt.Errorf("the invite bot demands an unreasonable proof-of-work (%d bits)", bits)
+	}
 	prefix := nonce + ":"
 	for i := 0; i < powSolveCap; i++ {
+		if i&0xffff == 0 {
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+		}
 		sol := strconv.Itoa(i)
 		sum := sha256.Sum256([]byte(prefix + sol))
 		if leadingZeroBits(sum[:]) >= bits {
