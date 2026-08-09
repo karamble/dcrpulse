@@ -683,6 +683,13 @@ func main() {
 				}
 			}
 
+			// A miss under assets/ is a stale or mistyped hashed URL, never
+			// an SPA route; the fallback would answer it with HTML.
+			if strings.HasPrefix(path, "/assets/") {
+				http.NotFound(w, req)
+				return
+			}
+
 			// Fallback to index.html for SPA routing
 			req.URL.Path = "/"
 			staticSrv.ServeHTTP(w, req)

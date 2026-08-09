@@ -34,6 +34,7 @@ var compressibleExts = map[string]bool{
 // ModTime, which leaves net/http without a Last-Modified to emit and revalidation
 // with nothing to compare; the synthesized ETags stand in for it.
 type staticServer struct {
+	fsys  fs.FS
 	files http.Handler
 	gz    map[string][]byte
 	etag  map[string]string
@@ -41,6 +42,7 @@ type staticServer struct {
 
 func newStaticServer(fsys fs.FS) *staticServer {
 	s := &staticServer{
+		fsys:  fsys,
 		files: http.FileServer(http.FS(fsys)),
 		gz:    make(map[string][]byte),
 		etag:  make(map[string]string),
@@ -97,6 +99,12 @@ func (s *staticServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	etag, ok := s.etag[p]
 	if !ok {
+		// Directories never serve: without this, http.FileServer would render
+		// a listing for any directory path that reached here.
+		if fi, err := fs.Stat(s.fsys, p); err == nil && fi.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
 		s.files.ServeHTTP(w, r)
 		return
 	}
