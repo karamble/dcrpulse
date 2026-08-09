@@ -174,10 +174,21 @@ while true; do
     fi
 
     TOR_REV=$(tor_field rev 0)
-    if [ "${DIR}" != "${RUNNING_DIR}" ] || [ "${TOR_REV}" != "${RUNNING_TOR_REV}" ] || [ -z "${CHILD_PID}" ]; then
+    RESET_FLAG="${DIR}/.reset-macaroons"
+    if [ "${DIR}" != "${RUNNING_DIR}" ] || [ "${TOR_REV}" != "${RUNNING_TOR_REV}" ] || [ -f "${RESET_FLAG}" ] || [ -z "${CHILD_PID}" ]; then
         if [ -n "${CHILD_PID}" ]; then
             echo "Restarting dcrlnd for wallet '${NAME}' (tor rev ${TOR_REV})"
             stop_child
+        fi
+        # The dashboard arms the flag after a passphrase rotation: the macaroon
+        # store is keyed to the old passphrase, so drop it and let the next
+        # unlock rebake everything under the new one.
+        if [ -f "${RESET_FLAG}" ]; then
+            echo "Resetting macaroons for wallet '${NAME}'"
+            rm -f "${DIR}/admin.macaroon" \
+                "${DIR}"/data/chain/decred/*/macaroons.db \
+                "${DIR}"/data/chain/decred/*/*.macaroon
+            rm -f "${RESET_FLAG}"
         fi
         LN_ACCOUNT=$(cat "${ACCOUNT_FILE}")
         echo "Starting dcrlnd for wallet '${NAME}' (dir ${DIR}, account ${LN_ACCOUNT})"

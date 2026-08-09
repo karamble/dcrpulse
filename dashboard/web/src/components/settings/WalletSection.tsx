@@ -23,9 +23,10 @@ export const WalletSection = () => {
       .catch(() => {});
   }, []);
 
+  // The modal owns its close: after a change it may continue into the
+  // Lightning re-unlock step before dismissing itself.
   const handleChangePassphrase = async (oldPass: string, newPass: string, dexAppPass?: string) => {
     await changePassphrase(oldPass, newPass, dexAppPass);
-    setPassModalOpen(false);
     setFeedback('Private passphrase changed.');
   };
 

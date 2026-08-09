@@ -236,6 +236,18 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The passphrase has changed, so dcrlnd's macaroon store is now keyed to
+	// a stale value. Arm the supervisor's reset before anything else can
+	// fail: the next dcrlnd start drops the store and the next unlock
+	// rebakes it under the new passphrase.
+	if services.LightningSetUp() {
+		if err := services.RequestLnMacaroonReset(); err != nil {
+			settLog.Errorf("ChangePrivatePassphrase: arm macaroon reset: %v", err)
+			http.Error(w, "the wallet passphrase was changed, but the Lightning macaroon reset could not be requested; repeat the change with the new passphrase as both values to retry", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	// The passphrase has already changed at this point, so a failure here is
 	// reported rather than retried: bisonw is left holding the previous one.
 	if err := syncDexWalletPassphrase(ctx, req.NewPassphrase); err != nil {

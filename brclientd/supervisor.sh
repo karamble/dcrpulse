@@ -22,6 +22,7 @@ BIN="${BRCLIENTD_BIN:-/usr/local/bin/brclientd}"
 CHILD_PID=""
 RUNNING_DIR="__none__"
 RUNNING_TOR_REV="__none__"
+RUNNING_MAC_STAMP="__none__"
 
 # Tor is toggled at runtime via the shared pointer the dashboard writes; the
 # proxy endpoint comes from env. These flags route brclientd's Bison Relay
@@ -138,7 +139,14 @@ while true; do
     fi
 
     TOR_REV=$(tor_field rev 0)
-    if [ "${APPDATA}" != "${RUNNING_DIR}" ] || [ "${TOR_REV}" != "${RUNNING_TOR_REV}" ] || [ -z "${CHILD_PID}" ]; then
+    # brclientd loads the dcrlnd macaroon once at startup, so follow the file:
+    # dcrlnd rebakes it after a passphrase rotation and the old copy is then
+    # rejected with a signature mismatch. Absent file (mid-rebake or fresh
+    # setup) does not trigger; the restart fires once the new one lands.
+    MAC_STAMP=$(stat -c %Y "${LNDIR}/admin.macaroon" 2>/dev/null || echo 0)
+    MAC_CHANGED=""
+    [ "${MAC_STAMP}" != "0" ] && [ "${MAC_STAMP}" != "${RUNNING_MAC_STAMP}" ] && MAC_CHANGED=1
+    if [ "${APPDATA}" != "${RUNNING_DIR}" ] || [ "${TOR_REV}" != "${RUNNING_TOR_REV}" ] || [ -n "${MAC_CHANGED}" ] || [ -z "${CHILD_PID}" ]; then
         if [ -n "${CHILD_PID}" ]; then
             echo "Restarting brclientd for wallet '${NAME}' (tor rev ${TOR_REV})"
             stop_child
@@ -147,6 +155,7 @@ while true; do
         launch "${APPDATA}" "${LNDIR}"
         RUNNING_DIR="${APPDATA}"
         RUNNING_TOR_REV="${TOR_REV}"
+        RUNNING_MAC_STAMP="${MAC_STAMP}"
     fi
 
     write_state "${NAME}" "${APPDATA}"

@@ -165,6 +165,24 @@ func readSentinelAccount() (uint32, bool) {
 	return uint32(n), true
 }
 
+// LightningSetUp reports whether Lightning has been set up for the active
+// wallet, i.e. the account sentinel exists.
+func LightningSetUp() bool {
+	_, ok := readSentinelAccount()
+	return ok
+}
+
+// RequestLnMacaroonReset arms the macaroon reset for the active wallet.
+// dcrlnd's macaroon store is keyed to the wallet passphrase, so after a
+// rotation it can no longer be opened. The supervisor consumes the flag:
+// it restarts dcrlnd, deletes the macaroon store and baked macaroon files,
+// and removes the flag; the next unlock rebakes them under the passphrase
+// it is given.
+func RequestLnMacaroonReset() error {
+	path := filepath.Join(filepath.Dir(sentinelPath()), ".reset-macaroons")
+	return os.WriteFile(path, []byte("1"), 0o600)
+}
+
 // InitLightningWallet bootstraps dcrlnd's own internal wallet. dcrlnd
 // keeps its own seed (separate from dcrwallet) for channel signing
 // keys and per-channel state. We don't display the seed to the user —
