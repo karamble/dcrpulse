@@ -330,8 +330,9 @@ export const ChangePassphraseModal = ({ isOpen, onSubmit, onClose }: ChangePassp
                 className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                DCRDEX is locked and also stores the wallet passphrase. Providing the app password
-                propagates the change to DCRDEX; it stays locked afterwards.
+                DCRDEX is locked and also stores the wallet passphrase. Enter the app password
+                chosen at DCRDEX setup (not the wallet passphrase) to propagate the change to
+                DCRDEX; it stays locked afterwards.
               </p>
             </div>
           )}
