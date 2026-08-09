@@ -14,6 +14,9 @@ import (
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+
+	"github.com/decred/dcrd/chaincfg/chainhash"
+	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
 )
 
 // FetchRecentBlocksPaginated gets blocks with pagination
@@ -209,58 +212,13 @@ func blockDetailFromVerbose(result json.RawMessage) (*types.BlockDetail, error) 
 
 // FetchTransaction gets detailed transaction info
 func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDetail, error) {
-	// Get raw transaction
-	result, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
-		jsonStr(txHash),
-		json.RawMessage(`1`), // verbose
-	})
+	hash, err := chainhash.NewHashFromStr(txHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transaction hash: %w", err)
+	}
+	rawTx, err := rpc.DcrdClient.GetRawTransactionVerbose(ctx, hash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
-	}
-
-	var rawTx struct {
-		Hex           string `json:"hex"`
-		Txid          string `json:"txid"`
-		Version       int32  `json:"version"`
-		LockTime      uint32 `json:"locktime"`
-		Expiry        uint32 `json:"expiry"`
-		BlockHash     string `json:"blockhash"`
-		BlockHeight   int64  `json:"blockheight"`
-		BlockIndex    uint32 `json:"blockindex"`
-		Confirmations int64  `json:"confirmations"`
-		Time          int64  `json:"time"`
-		Size          int    `json:"size"`
-		Vin           []struct {
-			Coinbase    string  `json:"coinbase,omitempty"`
-			Stakebase   string  `json:"stakebase,omitempty"`
-			Txid        string  `json:"txid,omitempty"`
-			Vout        uint32  `json:"vout"`
-			Tree        int8    `json:"tree"`
-			Sequence    uint32  `json:"sequence"`
-			AmountIn    float64 `json:"amountin"`
-			BlockHeight int64   `json:"blockheight"`
-			BlockIndex  uint32  `json:"blockindex"`
-			ScriptSig   struct {
-				Asm string `json:"asm"`
-				Hex string `json:"hex"`
-			} `json:"scriptSig,omitempty"`
-		} `json:"vin"`
-		Vout []struct {
-			Value        float64 `json:"value"`
-			N            uint32  `json:"n"`
-			Version      uint16  `json:"version"`
-			ScriptPubKey struct {
-				Asm       string   `json:"asm"`
-				Hex       string   `json:"hex"`
-				Type      string   `json:"type"`
-				ReqSigs   int      `json:"reqSigs,omitempty"`
-				Addresses []string `json:"addresses,omitempty"`
-			} `json:"scriptPubKey"`
-		} `json:"vout"`
-	}
-
-	if err := json.Unmarshal(result, &rawTx); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal transaction: %w", err)
 	}
 
 	// Convert inputs
@@ -272,12 +230,12 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 			Tree:        vin.Tree,
 			Sequence:    vin.Sequence,
 			AmountIn:    vin.AmountIn,
-			BlockHeight: vin.BlockHeight,
+			BlockHeight: int64(vin.BlockHeight),
 			BlockIndex:  vin.BlockIndex,
 			Coinbase:    vin.Coinbase,
 			Stakebase:   vin.Stakebase,
 		}
-		if vin.ScriptSig.Asm != "" {
+		if vin.ScriptSig != nil {
 			input.ScriptSig = vin.ScriptSig.Asm
 		}
 		inputs = append(inputs, input)
@@ -295,7 +253,7 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 				Asm:       vout.ScriptPubKey.Asm,
 				Hex:       vout.ScriptPubKey.Hex,
 				Type:      vout.ScriptPubKey.Type,
-				ReqSigs:   vout.ScriptPubKey.ReqSigs,
+				ReqSigs:   int(vout.ScriptPubKey.ReqSigs),
 				Addresses: vout.ScriptPubKey.Addresses,
 			},
 		}
@@ -313,11 +271,8 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 	// Categorize transaction type
 	txType := categorizeTransactionTyped(rawTx.Vin, rawTx.Vout)
 
-	// Calculate size from hex if not available
-	size := rawTx.Size
-	if size == 0 && rawTx.Hex != "" {
-		size = len(rawTx.Hex) / 2
-	}
+	// dcrd's verbose reply carries no size field; the serialized hex is the size.
+	size := len(rawTx.Hex) / 2
 
 	// Extract treasury-specific information for tspend transactions
 	var politeiaKey string
@@ -368,18 +323,7 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 }
 
 // extractPoliteiaKey extracts the politeia key from a tspend transaction's OP_RETURN output
-func extractPoliteiaKey(vout []struct {
-	Value        float64 `json:"value"`
-	N            uint32  `json:"n"`
-	Version      uint16  `json:"version"`
-	ScriptPubKey struct {
-		Asm       string   `json:"asm"`
-		Hex       string   `json:"hex"`
-		Type      string   `json:"type"`
-		ReqSigs   int      `json:"reqSigs,omitempty"`
-		Addresses []string `json:"addresses,omitempty"`
-	} `json:"scriptPubKey"`
-}) string {
+func extractPoliteiaKey(vout []chainjson.Vout) string {
 	// TSpend transactions have OP_RETURN as the first output (index 0)
 	if len(vout) == 0 {
 		return ""
@@ -551,13 +495,12 @@ func extractTransactionSummary(txData interface{}, blockHeight int64, blockHash 
 	}
 
 	txid, _ := txMap["txid"].(string)
-	size, _ := txMap["size"].(float64)
 
-	// If size is not available, calculate from hex
-	if size == 0 {
-		if hex, ok := txMap["hex"].(string); ok && hex != "" {
-			size = float64(len(hex) / 2)
-		}
+	// dcrd's verbose transactions carry no size field; the serialized hex is
+	// the size.
+	var size float64
+	if hex, ok := txMap["hex"].(string); ok {
+		size = float64(len(hex) / 2)
 	}
 
 	// Get vout to calculate total value
@@ -669,33 +612,8 @@ func categorizeTransactionFromMaps(vin []interface{}, vout []interface{}) string
 	return categorizeTransaction(vin, vout)
 }
 
-// categorizeTransactionTyped works with typed structs from RPC response
-func categorizeTransactionTyped(vin []struct {
-	Coinbase    string  `json:"coinbase,omitempty"`
-	Stakebase   string  `json:"stakebase,omitempty"`
-	Txid        string  `json:"txid,omitempty"`
-	Vout        uint32  `json:"vout"`
-	Tree        int8    `json:"tree"`
-	Sequence    uint32  `json:"sequence"`
-	AmountIn    float64 `json:"amountin"`
-	BlockHeight int64   `json:"blockheight"`
-	BlockIndex  uint32  `json:"blockindex"`
-	ScriptSig   struct {
-		Asm string `json:"asm"`
-		Hex string `json:"hex"`
-	} `json:"scriptSig,omitempty"`
-}, vout []struct {
-	Value        float64 `json:"value"`
-	N            uint32  `json:"n"`
-	Version      uint16  `json:"version"`
-	ScriptPubKey struct {
-		Asm       string   `json:"asm"`
-		Hex       string   `json:"hex"`
-		Type      string   `json:"type"`
-		ReqSigs   int      `json:"reqSigs,omitempty"`
-		Addresses []string `json:"addresses,omitempty"`
-	} `json:"scriptPubKey"`
-}) string {
+// categorizeTransactionTyped works with the daemon's own wire types.
+func categorizeTransactionTyped(vin []chainjson.Vin, vout []chainjson.Vout) string {
 	// Check for stakebase (vote) or coinbase
 	if len(vin) > 0 {
 		if vin[0].Stakebase != "" {
