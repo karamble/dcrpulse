@@ -51,6 +51,30 @@ export interface TransactionDetail extends TransactionSummary {
   politeiaKey?: string;
   recipientCount?: number;
   votingInfo?: TSpendVotingInfo;
+  // Vote (SSGen) specific fields
+  voteInfo?: SSGenVoteInfo;
+}
+
+export interface SSGenVoteInfo {
+  votedOnHash: string;
+  votedOnHeight: number;
+  blockValid: boolean;
+  voteVersion: number;
+  voteBits: number;
+  agendas?: AgendaVoteChoice[];
+  treasuryVotes?: TreasuryVoteChoice[];
+}
+
+export interface AgendaVoteChoice {
+  agendaId: string;
+  description?: string;
+  choice: string;
+  choiceDescription?: string;
+}
+
+export interface TreasuryVoteChoice {
+  tspend: string;
+  choice: string;
 }
 
 export interface TSpendVotingInfo {

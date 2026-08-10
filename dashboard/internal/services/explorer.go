@@ -5,7 +5,9 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -15,8 +17,12 @@ import (
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 
+	"github.com/decred/dcrd/blockchain/stake/v5"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/dcrutil/v4"
 	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
+	"github.com/decred/dcrd/wire"
 )
 
 // FetchRecentBlocksPaginated gets blocks with pagination
@@ -298,6 +304,15 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 		}
 	}
 
+	var voteInfo *types.SSGenVoteInfo
+	if txType == "vote" {
+		var params *chaincfg.Params
+		if p, err := chainParams(ctx); err == nil {
+			params = p
+		}
+		voteInfo = ssgenVoteInfo(rawTx.Hex, params)
+	}
+
 	return &types.TransactionDetail{
 		TransactionSummary: types.TransactionSummary{
 			TxID:          rawTx.Txid,
@@ -319,7 +334,75 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 		PoliteiaKey:    politeiaKey,
 		RecipientCount: recipientCount,
 		VotingInfo:     votingInfo,
+		VoteInfo:       voteInfo,
 	}, nil
+}
+
+// ssgenVoteInfo decodes a vote transaction's content from its serialized hex:
+// the voted-on block, the validity bit, the agenda choices for the vote's
+// version, and any treasury spend votes. params may be nil, which skips the
+// agenda mapping. Returns nil for anything that is not a valid vote.
+func ssgenVoteInfo(txHex string, params *chaincfg.Params) *types.SSGenVoteInfo {
+	raw, err := hex.DecodeString(txHex)
+	if err != nil {
+		return nil
+	}
+	var mtx wire.MsgTx
+	if err := mtx.Deserialize(bytes.NewReader(raw)); err != nil {
+		return nil
+	}
+	tvotes, err := stake.CheckSSGenVotes(&mtx)
+	if err != nil {
+		return nil
+	}
+	votedHash, votedHeight := stake.SSGenBlockVotedOn(&mtx)
+	bits := stake.SSGenVoteBits(&mtx)
+	info := &types.SSGenVoteInfo{
+		VotedOnHash:   votedHash.String(),
+		VotedOnHeight: votedHeight,
+		BlockValid:    dcrutil.IsFlagSet16(bits, dcrutil.BlockValid),
+		VoteVersion:   stake.SSGenVersion(&mtx),
+		VoteBits:      bits,
+	}
+	if params != nil {
+		for i := range params.Deployments[info.VoteVersion] {
+			vote := &params.Deployments[info.VoteVersion][i].Vote
+			choice := vote.VoteIndex(bits)
+			if choice < 0 {
+				// Bits matching no defined choice count as abstain,
+				// same as the tally reporting path.
+				for k := range vote.Choices {
+					if vote.Choices[k].IsAbstain {
+						choice = k
+						break
+					}
+				}
+			}
+			if choice < 0 {
+				continue
+			}
+			info.Agendas = append(info.Agendas, types.AgendaVoteChoice{
+				AgendaID:          vote.Id,
+				Description:       vote.Description,
+				Choice:            vote.Choices[choice].Id,
+				ChoiceDescription: vote.Choices[choice].Description,
+			})
+		}
+	}
+	for _, tv := range tvotes {
+		choice := "invalid"
+		switch tv.Vote {
+		case stake.TreasuryVoteYes:
+			choice = "yes"
+		case stake.TreasuryVoteNo:
+			choice = "no"
+		}
+		info.TreasuryVotes = append(info.TreasuryVotes, types.TreasuryVoteChoice{
+			TSpend: tv.Hash.String(),
+			Choice: choice,
+		})
+	}
+	return info
 }
 
 // extractPoliteiaKey extracts the politeia key from a tspend transaction's OP_RETURN output

@@ -125,6 +125,14 @@ export const TransactionDetail = () => {
     );
   }
 
+  const voteInfo = tx.type === 'vote' ? tx.voteInfo : undefined;
+  const voteChoiceColor = (choice: string) =>
+    choice === 'yes'
+      ? 'bg-success/10 text-success border-success/20'
+      : choice === 'no'
+        ? 'bg-red-500/10 text-red-500 border-red-500/20'
+        : 'bg-muted/20 text-muted-foreground border-border/50';
+
   return (
     <div className="space-y-6">
         {/* Header */}
@@ -167,6 +175,101 @@ export const TransactionDetail = () => {
             <CopyButton text={tx.txid} label="Copy" />
           </div>
         </div>
+
+        {/* Vote Details */}
+        {voteInfo && (
+          <div className="p-6 rounded-xl bg-gradient-card border border-success/30 bg-success/5">
+            <div className="flex items-center gap-2 mb-6">
+              <CheckCircle className="h-5 w-5 text-success" />
+              <h2 className="text-xl font-semibold">Vote Details</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Voted Block</p>
+                <button
+                  onClick={() => navigate(`/explorer/block/${voteInfo.votedOnHeight}`)}
+                  className="text-primary hover:underline font-medium"
+                >
+                  #{voteInfo.votedOnHeight.toLocaleString()}
+                </button>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="font-mono text-xs text-muted-foreground break-all">{voteInfo.votedOnHash}</p>
+                  <CopyButton text={voteInfo.votedOnHash} label="Copy" />
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Block Approval</p>
+                <span
+                  className={`inline-flex items-center px-3 py-1 rounded-lg border text-sm font-medium ${
+                    voteInfo.blockValid
+                      ? 'bg-success/10 text-success border-success/20'
+                      : 'bg-red-500/10 text-red-500 border-red-500/20'
+                  }`}
+                >
+                  {voteInfo.blockValid ? 'Approved previous block' : 'Disapproved previous block'}
+                </span>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Vote Version</p>
+                <p className="font-medium">{voteInfo.voteVersion}</p>
+              </div>
+            </div>
+
+            {voteInfo.agendas && voteInfo.agendas.length > 0 && (
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">Agenda Choices</p>
+                <div className="space-y-2">
+                  {voteInfo.agendas.map((a) => (
+                    <div
+                      key={a.agendaId}
+                      className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border/50 bg-muted/10"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium">{a.agendaId}</p>
+                        {a.description && (
+                          <p className="text-xs text-muted-foreground mt-0.5">{a.description}</p>
+                        )}
+                      </div>
+                      <span
+                        className={`shrink-0 inline-flex items-center px-3 py-1 rounded-lg border text-sm font-medium ${voteChoiceColor(a.choice)}`}
+                        title={a.choiceDescription}
+                      >
+                        {a.choice}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {voteInfo.treasuryVotes && voteInfo.treasuryVotes.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm text-muted-foreground mb-2">Treasury Spend Votes</p>
+                <div className="space-y-2">
+                  {voteInfo.treasuryVotes.map((tv) => (
+                    <div
+                      key={tv.tspend}
+                      className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border/50 bg-muted/10"
+                    >
+                      <button
+                        onClick={() => navigate(`/explorer/tx/${tv.tspend}`)}
+                        className="font-mono text-xs text-primary hover:underline break-all text-left"
+                      >
+                        {tv.tspend}
+                      </button>
+                      <span
+                        className={`shrink-0 inline-flex items-center px-3 py-1 rounded-lg border text-sm font-medium ${voteChoiceColor(tv.choice)}`}
+                      >
+                        {tv.choice}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Transaction Information */}
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50">

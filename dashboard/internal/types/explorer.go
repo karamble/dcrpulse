@@ -57,6 +57,34 @@ type TransactionDetail struct {
 	PoliteiaKey    string            `json:"politeiaKey,omitempty"`    // Politeia key from OP_RETURN
 	RecipientCount int               `json:"recipientCount,omitempty"` // Number of treasury payout recipients
 	VotingInfo     *TSpendVotingInfo `json:"votingInfo,omitempty"`     // Voting data for tspend transactions
+	// Vote (SSGen) specific fields
+	VoteInfo *SSGenVoteInfo `json:"voteInfo,omitempty"`
+}
+
+// SSGenVoteInfo is the decoded content of a vote (SSGen) transaction: the
+// block it voted on, the validity vote, and the agenda and treasury choices.
+type SSGenVoteInfo struct {
+	VotedOnHash   string               `json:"votedOnHash"`
+	VotedOnHeight uint32               `json:"votedOnHeight"`
+	BlockValid    bool                 `json:"blockValid"`
+	VoteVersion   uint32               `json:"voteVersion"`
+	VoteBits      uint16               `json:"voteBits"`
+	Agendas       []AgendaVoteChoice   `json:"agendas,omitempty"`
+	TreasuryVotes []TreasuryVoteChoice `json:"treasuryVotes,omitempty"`
+}
+
+// AgendaVoteChoice is one consensus agenda's decoded choice within a vote.
+type AgendaVoteChoice struct {
+	AgendaID          string `json:"agendaId"`
+	Description       string `json:"description,omitempty"`
+	Choice            string `json:"choice"`
+	ChoiceDescription string `json:"choiceDescription,omitempty"`
+}
+
+// TreasuryVoteChoice is one treasury spend vote carried by a vote transaction.
+type TreasuryVoteChoice struct {
+	TSpend string `json:"tspend"`
+	Choice string `json:"choice"`
 }
 
 // TSpendVotingInfo contains voting data for a treasury spend transaction

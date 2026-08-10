@@ -127,6 +127,21 @@ Opened by clicking any transaction or following a transaction link. The URL is `
 ### Transaction ID
 The full txid with a copy button.
 
+### Vote Details (votes only)
+For a vote (SSGen), a card between the transaction ID and the transaction
+information decodes what the ticket voted for:
+- **Voted Block** - the block the vote was cast on, height (clickable) and hash
+- **Block Approval** - whether the vote approved or disapproved the previous
+  block's regular transactions
+- **Vote Version** and, for every consensus agenda defined at that version, the
+  **agenda choice** the vote carried (yes / no / abstain); vote bits matching no
+  defined choice display as abstain, matching how tallies count them
+- **Treasury Spend Votes** - when the vote carries DCP-0006 treasury votes,
+  each treasury spend hash (clickable) with its yes / no choice
+
+The decode runs on the transaction bytes the page already fetches; no extra
+node queries are made.
+
 ### Transaction Information
 A grid of fields:
 - **Block** - clickable block number, or **Mempool** if not yet mined
