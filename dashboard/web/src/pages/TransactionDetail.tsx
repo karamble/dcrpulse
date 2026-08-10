@@ -9,6 +9,7 @@ import { getTransaction, TransactionDetail as TransactionDetailType } from '../s
 import { CopyButton } from '../components/explorer/CopyButton';
 import { TimeAgo } from '../components/explorer/TimeAgo';
 import { InputOutputList } from '../components/explorer/InputOutputList';
+import { TSpendApprovalCard } from '../components/governance/TSpendApprovalCard';
 
 export const TransactionDetail = () => {
   const { txhash } = useParams<{ txhash: string }>();
@@ -415,135 +416,13 @@ export const TransactionDetail = () => {
         {/* Treasury Spend Approval/Voting */}
         {tx.type === 'tspend' && tx.votingInfo && (
           <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold">Treasury Spend Approval</h2>
-                <div className="flex items-center gap-2">
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    tx.votingInfo.votingComplete ? 'bg-blue-500/10 text-blue-500' : 'bg-yellow-500/10 text-yellow-500'
-                  }`}>
-                    {tx.votingInfo.votingComplete ? 'Voting Complete' : 'Ongoing Vote'}
-                  </span>
-                  {tx.votingInfo.votingComplete && tx.votingInfo.votesCast > 0 && (
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      tx.votingInfo.approved ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
-                    }`}>
-                      {tx.votingInfo.approved ? 'Approved' : 'Rejected'}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Approval Progress Bar - Only show when we have vote data */}
-              {tx.votingInfo.votesCast > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-muted-foreground">Approval Rate</span>
-                    <span className="text-lg font-semibold">{tx.votingInfo.approvalRate.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full bg-muted/20 rounded-full h-4 overflow-hidden">
-                    <div
-                      className={`h-full transition-all ${
-                        tx.votingInfo.approvalRate >= tx.votingInfo.requiredApprovalPct ? 'bg-green-500' : 'bg-red-500'
-                      }`}
-                      style={{ width: `${tx.votingInfo.approvalRate}%` }}
-                    />
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    {tx.votingInfo.approvalRate.toFixed(1)}% approval of {tx.votingInfo.votesCast.toLocaleString()} votes
-                    {' · needs '}{tx.votingInfo.requiredApprovalPct.toFixed(0)}% to pass
-                  </p>
-                </div>
-              )}
-
-              {/* Quorum Status - Only show when we have vote data */}
-              {tx.votingInfo.votesCast > 0 && (
-                <div className="p-3 rounded-lg bg-background/50 mb-4">
-                  <p className="text-sm">
-                    <span className={tx.votingInfo.quorumAchieved ? 'text-green-500' : 'text-yellow-500'}>
-                      {tx.votingInfo.quorumAchieved ? 'Quorum achieved' : 'Quorum not yet reached'}
-                    </span>
-                    {' '}({tx.votingInfo.votesCast.toLocaleString()} of {tx.votingInfo.quorumRequired.toLocaleString()} needed votes)
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Voting Statistics - Only show when we have valid vote data */}
-            {tx.votingInfo.votesCast > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Yes Votes */}
-                <div className="p-4 rounded-lg bg-background/50">
-                  <p className="text-sm text-muted-foreground mb-2">Yes Votes</p>
-                  <p className="text-lg font-semibold text-green-500">
-                    {tx.votingInfo.yesVotes.toLocaleString()} votes ({((tx.votingInfo.yesVotes / tx.votingInfo.votesCast) * 100).toFixed(1)}%)
-                  </p>
-                </div>
-
-                {/* No Votes */}
-                <div className="p-4 rounded-lg bg-background/50">
-                  <p className="text-sm text-muted-foreground mb-2">No Votes</p>
-                  <p className="text-lg font-semibold text-red-500">
-                    {tx.votingInfo.noVotes.toLocaleString()} votes ({((tx.votingInfo.noVotes / tx.votingInfo.votesCast) * 100).toFixed(1)}%)
-                  </p>
-                </div>
-
-                {/* Eligible Votes */}
-                <div className="p-4 rounded-lg bg-background/50">
-                  <p className="text-sm text-muted-foreground mb-2">Eligible Votes</p>
-                  <p className="text-lg font-semibold">
-                    {tx.votingInfo.eligibleVotes.toLocaleString()}
-                  </p>
-                </div>
-
-                {/* Votes Cast / Turnout */}
-                <div className="p-4 rounded-lg bg-background/50">
-                  <p className="text-sm text-muted-foreground mb-2">Votes Cast</p>
-                  <p className="text-lg font-semibold">
-                    {tx.votingInfo.votesCast.toLocaleString()} ({tx.votingInfo.turnoutRate.toFixed(1)}% turnout)
-                  </p>
-                </div>
-
-                {/* Voting Started */}
-                <div className="p-4 rounded-lg bg-background/50">
-                  <p className="text-sm text-muted-foreground mb-2">Voting Started</p>
-                  <p className="text-sm font-semibold">
-                    <TimeAgo timestamp={tx.votingInfo.votingStartTime} showFull />
-                  </p>
-                </div>
-
-                {/* Voting Ended */}
-                <div className="p-4 rounded-lg bg-background/50">
-                  <p className="text-sm text-muted-foreground mb-2">
-                    {tx.votingInfo.votingComplete ? 'Voting Ended' : 'Voting Ends'}
-                  </p>
-                  <p className="text-sm font-semibold">
-                    {tx.votingInfo.votingEndEstimated && '~'}
-                    <TimeAgo timestamp={tx.votingInfo.votingEndTime} showFull />
-                  </p>
-                </div>
-
-                {/* Voting Period */}
-                <div className="p-4 rounded-lg bg-background/50 md:col-span-2">
-                  <p className="text-sm text-muted-foreground mb-2">Voting Period</p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => navigate(`/explorer/block/${tx.votingInfo?.votingStartBlock}`)}
-                      className="text-sm font-semibold hover:text-primary transition-colors"
-                    >
-                      {tx.votingInfo.votingStartBlock.toLocaleString()}
-                    </button>
-                    <span className="text-muted-foreground">-</span>
-                    <button
-                      onClick={() => navigate(`/explorer/block/${tx.votingInfo?.votingEndBlock}`)}
-                      className="text-sm font-semibold hover:text-primary transition-colors"
-                    >
-                      {tx.votingInfo.votingEndBlock.toLocaleString()}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            <h2 className="text-xl font-semibold mb-4">Treasury Spend Approval</h2>
+            <TSpendApprovalCard
+              yesVotes={tx.votingInfo.yesVotes}
+              noVotes={tx.votingInfo.noVotes}
+              votingInfo={tx.votingInfo}
+              defaultExpanded
+            />
           </div>
         )}
 
