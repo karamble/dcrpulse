@@ -1102,6 +1102,10 @@ var (
 const (
 	dexCfgTTL    = 5 * time.Minute  // config (markets, bond reqs) is near-static
 	dexCfgErrTTL = 30 * time.Second // brief negative cache so a down/banning server is not hammered
+
+	// bisonw's RPC server cannot write a response past its 10s WriteTimeout,
+	// so patience beyond that only lengthens the hold on the per-host lock.
+	dexCfgFetchTimeout = 15 * time.Second
 )
 
 // cachedDEXConfig fetches a host's getdexconfig at most once per host per TTL,
@@ -1127,7 +1131,11 @@ func cachedDEXConfig(ctx context.Context, client *bisonw.Client, host string) (j
 			return nil, e.err
 		}
 	}
-	raw, err := client.GetDEXConfig(ctx, host, "")
+	// The fetch is shared, so a caller that walks away must not cancel it out
+	// from under the ones still waiting on it.
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dexCfgFetchTimeout)
+	defer cancel()
+	raw, err := client.GetDEXConfig(fetchCtx, host, "")
 	e.raw, e.err, e.at = raw, err, time.Now()
 	return raw, err
 }
@@ -1146,10 +1154,9 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Allow the DEX server ample time to answer the one-shot getdexconfig
-	// (slow/cold servers can take a while); the result is cached so this long
-	// wait happens at most once per host per TTL.
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	// Covers the exchanges probe plus a full wait on the shared config fetch;
+	// bisonw cannot answer past its own 10s response write timeout anyway.
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	raw, err := dexConfigRaw(ctx, client, host)
 	if err != nil {
