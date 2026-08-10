@@ -42,9 +42,11 @@ const pctOf = (percent: number) => `${percent.toFixed(1)}%`;
 // is worth deferring until the card is actually looked at.
 const AgendaCard = ({
   agenda,
+  quorum,
   onChoose,
 }: {
   agenda: Agenda;
+  quorum: number;
   onChoose: (agendaID: string, choiceID: string) => void;
 }) => {
   const [votes, setVotes] = useState<AgendaVotes | null>(null);
@@ -89,6 +91,39 @@ const AgendaCard = ({
   const votable = agenda.status === 'defined' || agenda.status === 'started';
   const tally = votes;
   const showTally = live || tally !== null;
+
+  // dcrd tallies the current voting interval live; shape it like the
+  // reconstructed history so one block renders both.
+  const liveTally = useMemo((): AgendaVotes | null => {
+    if (!live) return null;
+    let yes = 0;
+    let no = 0;
+    let abstain = 0;
+    for (const c of agenda.choices) {
+      if (c.isAbstain) abstain += c.count;
+      else if (c.isNo) no += c.count;
+      else yes += c.count;
+    }
+    const totalVotes = yes + no + abstain;
+    const nonAbstain = yes + no;
+    return {
+      agendaId: agenda.id,
+      voteVersion: agenda.voteVersion,
+      voteStartHeight: 0,
+      voteEndHeight: 0,
+      yes,
+      no,
+      abstain,
+      totalVotes,
+      unmatched: 0,
+      approvalRating: nonAbstain > 0 ? (100 * yes) / nonAbstain : 0,
+      yesShare: totalVotes > 0 ? (100 * yes) / totalVotes : 0,
+      quorum,
+      quorumMet: nonAbstain >= quorum,
+      complete: false,
+    };
+  }, [live, agenda, quorum]);
+  const shown = live ? liveTally : tally;
 
   const choiceCount = (choiceID: string): { count: number; share: number } | null => {
     if (live) {
@@ -154,39 +189,39 @@ const AgendaCard = ({
         </div>
       )}
 
-      {!live && tally && (
+      {shown && shown.totalVotes > 0 && (
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>
               Approval{' '}
               <span
                 className={
-                  tally.approvalRating >= 75 ? 'text-success font-medium' : 'text-destructive font-medium'
+                  shown.approvalRating >= 75 ? 'text-success font-medium' : 'text-destructive font-medium'
                 }
               >
-                {pctOf(tally.approvalRating)}
+                {pctOf(shown.approvalRating)}
               </span>
               {' of yes and no votes'}
             </span>
             <span>
-              {tally.quorumMet ? 'quorum met' : 'quorum not met'} (
-              {(tally.yes + tally.no).toLocaleString()} of {tally.quorum.toLocaleString()})
+              {shown.quorumMet ? 'quorum met' : 'quorum not met'} (
+              {(shown.yes + shown.no).toLocaleString()} of {shown.quorum.toLocaleString()})
             </span>
           </div>
           {/* yes / no / abstain split across every vote cast */}
           <div className="h-2 w-full rounded-full bg-muted/20 overflow-hidden flex">
             <div
               className="h-full bg-success"
-              style={{ width: `${(100 * tally.yes) / tally.totalVotes}%` }}
+              style={{ width: `${(100 * shown.yes) / shown.totalVotes}%` }}
             />
             <div
               className="h-full bg-destructive"
-              style={{ width: `${(100 * tally.no) / tally.totalVotes}%` }}
+              style={{ width: `${(100 * shown.no) / shown.totalVotes}%` }}
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            {tally.totalVotes.toLocaleString()} votes cast, {pctOf(tally.yesShare)} yes overall
-            {!tally.complete && ' (still counting)'}
+            {shown.totalVotes.toLocaleString()} votes cast, {pctOf(shown.yesShare)} yes overall
+            {!shown.complete && ' (still counting)'}
           </p>
         </div>
       )}
@@ -344,6 +379,7 @@ export const ConsensusTab = () => {
             <AgendaCard
               key={a.id}
               agenda={a}
+              quorum={voteInfo?.quorum ?? 0}
               onChoose={(agendaID, choiceID) => {
                 setFeedback(null);
                 setPending({ agendaID, choiceID });
