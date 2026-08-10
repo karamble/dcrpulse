@@ -20,7 +20,8 @@ import (
 // The grammar is cloned from the brmcp wire: anchored whole-body match,
 // restricted base64 alphabet so a body can never smuggle a second frame,
 // and unknown k=v header keys tolerated for forward compatibility. Frames
-// are single part; every payload is far below the Bison Relay PM floor.
+// are single part; every payload is far below the Bison Relay PM floor
+// (1 MiB of payload on a V0 server, per bisonrelay's rpc size versions).
 
 const (
 	// WireVersion is the envelope version this codec emits.

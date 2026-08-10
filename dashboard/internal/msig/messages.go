@@ -36,8 +36,9 @@ const (
 	MaxLabelLen  = 64
 	MaxReasonLen = 200
 	MaxNoteLen   = 200
-	// MaxRawTxHex comfortably fits a 30-input 15-of-15 transaction.
-	MaxRawTxHex     = 400_000
+	// MaxRawTxHex matches dcrd's 100 KB standard-transaction ceiling; the
+	// largest buildable spend (8-of-8 at MaxInputs) stays under a third of it.
+	MaxRawTxHex     = 200_000
 	maxScriptHexLen = 2048
 	maxAddressLen   = 100
 	pubKeyHexLen    = 66

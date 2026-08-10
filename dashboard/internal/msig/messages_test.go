@@ -273,3 +273,43 @@ func TestClampReasonSplitRuneRoundtrip(t *testing.T) {
 		}
 	}
 }
+
+// The size caps must stay ordered: a maximal sign_req message has to fit one
+// frame, and a maximal frame has to clear the parse guard and the Bison Relay
+// payload floor. A cap bump that inverts any of these fails here.
+func TestSizeCapCouplings(t *testing.T) {
+	msg := &Message{
+		Type:     TypeSignReq,
+		WalletID: strings.Repeat("D", 35),
+		TxID:     strings.Repeat("ab", 32),
+		RawTx:    strings.Repeat("ab", MaxRawTxHex/2),
+		Note:     strings.Repeat("n", MaxNoteLen),
+		SigsHave: MaxPubKeys - 1,
+	}
+	payload, err := EncodeMessage(msg)
+	if err != nil {
+		t.Fatalf("maximal sign_req rejected: %v", err)
+	}
+	if len(payload) > MaxPayload {
+		t.Fatalf("maximal sign_req payload %d exceeds MaxPayload %d", len(payload), MaxPayload)
+	}
+
+	body, err := Encode(make([]byte, MaxPayload), "0011223344556677", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("maximal frame rejected: %v", err)
+	}
+	if len(body) > maxBody {
+		t.Fatalf("maximal frame body %d exceeds maxBody %d", len(body), maxBody)
+	}
+	// bisonrelay guarantees 1 MiB of PM payload on a V0 server; the frame
+	// must stay under it with room to spare.
+	if len(body) > 1<<20 {
+		t.Fatalf("maximal frame body %d exceeds the Bison Relay payload floor", len(body))
+	}
+
+	over := &Message{Type: TypeSignReq, WalletID: "Dc", TxID: strings.Repeat("ab", 32),
+		RawTx: strings.Repeat("ab", MaxRawTxHex/2) + "ab"}
+	if err := ValidateMessage(over); err == nil {
+		t.Fatalf("rawTx one step over the cap validated")
+	}
+}
