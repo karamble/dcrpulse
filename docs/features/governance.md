@@ -56,13 +56,14 @@ For every agenda in the deployment:
 - **Description** - a plain-language summary of the rule change.
 - **Status badge** - the agenda's stage in the deployment:
   - **defined** - declared but not yet open for voting
-  - **started** / **active** - voting is open
+  - **started** - voting is open
   - **lockedin** - the threshold was met and the change is queued to activate
+  - **active** - the change passed and is in force
   - **failed** - the agenda did not pass
 
 **Setting your vote choice**
 
-Each agenda lists its available choices (for example **abstain**, **yes**, **no**) as selectable cards. The choice your wallet is currently set to is marked **current choice**.
+Each agenda lists its available choices (for example **abstain**, **yes**, **no**) as selectable cards. The choice your wallet is currently set to is marked **current choice**. Choices are selectable only while the agenda's vote is upcoming or in progress (status **defined** or **started**); a settled agenda keeps its tallies and your recorded choice visible, but is read-only.
 
 1. Click a choice card.
 2. A **Confirm Agenda Vote Choice** passphrase modal appears.

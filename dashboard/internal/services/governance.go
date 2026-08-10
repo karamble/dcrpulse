@@ -73,6 +73,42 @@ func agendaVoteWindow(status string, since int64, params *chaincfg.Params) (star
 	return start, end, true
 }
 
+// ErrAgendaVoteSettled rejects a preference change for an agenda whose vote
+// has already concluded.
+var ErrAgendaVoteSettled = fmt.Errorf("agenda vote has settled; the choice can no longer be changed")
+
+// agendaVotable reports whether a preference may still be changed. dcrd
+// reports exactly one of defined|started|lockedin|active|failed; only the
+// first two precede or overlap the vote, so anything else fails closed.
+func agendaVotable(status string) bool {
+	return status == "defined" || status == "started"
+}
+
+// agendaStatus finds the status dcrd reports for one agenda, newest vote
+// version first.
+func agendaStatus(ctx context.Context, agendaID string) (string, error) {
+	params, err := chainParams(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, v := range voteVersionsNewestFirst(params) {
+		vi, err := rpc.DcrdClient.GetVoteInfo(ctx, v)
+		if err != nil {
+			var rpcErr *dcrjson.RPCError
+			if errors.As(err, &rpcErr) && rpcErr.Code == dcrjson.ErrRPCInvalidParameter {
+				continue
+			}
+			return "", fmt.Errorf("getvoteinfo %d: %w", v, err)
+		}
+		for _, a := range vi.Agendas {
+			if a.ID == agendaID {
+				return a.Status, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("unknown agenda %q", agendaID)
+}
+
 // agendaTally counts vote bits for one agenda. Votes whose bits match no
 // declared choice are reported as abstain, matching dcrd's own reporting path,
 // and counted separately so an unexpected number stays visible.
@@ -220,12 +256,23 @@ func SetAgendaChoice(ctx context.Context, agendaID, choiceID string, passphrase 
 	if rpc.WalletGrpcClient == nil {
 		return fmt.Errorf("wallet gRPC unavailable")
 	}
+	if rpc.DcrdClient == nil {
+		return fmt.Errorf("rpc clients not initialized")
+	}
+	// A settled agenda is rejected before the wallet is ever unlocked.
+	status, err := agendaStatus(ctx, agendaID)
+	if err != nil {
+		return err
+	}
+	if !agendaVotable(status) {
+		return fmt.Errorf("%w (status %q)", ErrAgendaVoteSettled, status)
+	}
 	if err := unlockForVote(ctx, passphrase); err != nil {
 		return err
 	}
 	defer lockAfterVote()
 
-	_, err := rpc.VotingClient.SetVoteChoices(ctx, &pb.SetVoteChoicesRequest{
+	_, err = rpc.VotingClient.SetVoteChoices(ctx, &pb.SetVoteChoicesRequest{
 		Choices: []*pb.SetVoteChoicesRequest_Choice{{
 			AgendaId: agendaID,
 			ChoiceId: choiceID,

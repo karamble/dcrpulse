@@ -234,6 +234,28 @@ func TestAgendaVoteWindow(t *testing.T) {
 	}
 }
 
+// Only an agenda whose vote is upcoming or in progress may have its preference
+// changed; anything unrecognised must fail safe to not-votable.
+func TestAgendaVotable(t *testing.T) {
+	tests := []struct {
+		status string
+		want   bool
+	}{
+		{"defined", true},
+		{"started", true},
+		{"lockedin", false},
+		{"active", false},
+		{"failed", false},
+		{"invalid", false},
+		{"", false},
+	}
+	for _, tc := range tests {
+		if got := agendaVotable(tc.status); got != tc.want {
+			t.Errorf("agendaVotable(%q) = %v, want %v", tc.status, got, tc.want)
+		}
+	}
+}
+
 // Every network anchors its windows on its own StakeValidationHeight and
 // interval, so the derivation must track params rather than mainnet numbers.
 func TestAgendaVoteWindowUsesNetworkParams(t *testing.T) {

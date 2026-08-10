@@ -78,6 +78,10 @@ func SetAgendaChoiceHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if err := services.SetAgendaChoice(ctx, req.AgendaID, req.ChoiceID, pass); err != nil {
+		if errors.Is(err, services.ErrAgendaVoteSettled) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		writePassphraseAwareError(w, "SetAgendaChoice", err)
 		return
 	}

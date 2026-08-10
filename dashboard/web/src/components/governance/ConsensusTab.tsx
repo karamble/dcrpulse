@@ -84,6 +84,9 @@ const AgendaCard = ({
   // A live vote carries its counts inline from getvoteinfo; a settled one uses
   // the reconstructed tally. Either way the same markup renders it.
   const live = agenda.status === 'started';
+  // A preference can only be changed before the vote settles; a settled
+  // agenda keeps its card as a read-only record.
+  const votable = agenda.status === 'defined' || agenda.status === 'started';
   const tally = votes;
   const showTally = live || tally !== null;
 
@@ -196,11 +199,14 @@ const AgendaCard = ({
             <button
               key={c.id}
               type="button"
+              disabled={!votable}
               onClick={() => onChoose(agenda.id, c.id)}
               className={`p-3 rounded-lg border text-left text-sm transition-colors ${
                 isCurrent
                   ? 'border-primary/40 bg-primary/10 text-foreground'
-                  : 'border-border/50 bg-muted/10 hover:bg-muted/20'
+                  : votable
+                    ? 'border-border/50 bg-muted/10 hover:bg-muted/20'
+                    : 'border-border/50 bg-muted/10'
               }`}
             >
               <div className="font-medium">{c.id}</div>
