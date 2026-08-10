@@ -535,6 +535,10 @@ func MsigRestoreHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
+		if errors.Is(err, msig.ErrRestoreAccountGap) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		msigPassphraseError(w, err)
 		return
 	}

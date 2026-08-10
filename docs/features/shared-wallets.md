@@ -353,6 +353,16 @@ one deferred rescan bounded by the recorded creation height recovers the
 history. Cursors on a stale card only widen the initial window; later
 usage is rediscovered from the chain.
 
+Sequential recreation is bounded by dcrwallet's unused-account gap
+limit: the wallet refuses a new account while the last 10 accounts have
+no transaction history, and a dedicated shared-wallet account never
+gains history of its own (funds live on the imported script addresses).
+A card whose account number lies more than 10 past the wallet's last
+account is therefore refused up front, before the passphrase is asked
+for. Recover the seed's used accounts first — a full seed restore with
+account discovery — and import the card again; restoring other backup
+cards does not help, because their accounts stay unused too.
+
 ### Recovering without dcrpulse
 
 The card plus the seed are sufficient to recover funds with generic

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -63,6 +64,17 @@ const backupCardVersion = 2
 // and recreating it needs one.
 var ErrRestoreNeedsPassphrase = fmt.Errorf("the wallet passphrase is needed to recreate this shared wallet's account")
 
+// assumedAccountGapLimit mirrors dcrwallet's DefaultAccountGapLimit: the
+// wallet refuses a new account while this many trailing accounts have no
+// transaction history. The value is config-only upstream and cannot be
+// queried over RPC, so the stock default is assumed.
+const assumedAccountGapLimit = 10
+
+// ErrRestoreAccountGap reports a restore the wallet is guaranteed to
+// refuse: reaching the card's account would require creating more
+// consecutive unused accounts than the wallet allows.
+var ErrRestoreAccountGap = fmt.Errorf("the wallet refuses to create that many unused accounts in a row")
+
 // ExportBackupCard builds the backup card for one shared wallet.
 func ExportBackupCard(ctx context.Context, id string) (*BackupCard, error) {
 	rec, walletName, _, err := Detail(ctx, id)
@@ -87,7 +99,8 @@ func ExportBackupCard(ctx context.Context, id string) (*BackupCard, error) {
 // match an account of this wallet — located by scanning every account,
 // which also survives renames and renumbering. Only when no account
 // matches are accounts created sequentially up to the card's number,
-// which needs the wallet passphrase. The ladder windows are re-imported
+// which needs the wallet passphrase and is bounded by the wallet's
+// unused-account gap limit. The ladder windows are re-imported
 // and one deferred rescan bounded by the creation height recovers the
 // history.
 func ImportBackupCard(ctx context.Context, card *BackupCard, passphrase []byte) (*WalletRecord, error) {
@@ -149,6 +162,17 @@ func ImportBackupCard(ctx context.Context, card *BackupCard, passphrase []byte) 
 	}
 	account, err := locateAccountByXpub(ctx, rec.OwnHD.Xpub)
 	if err != nil {
+		// Preflight before demanding a passphrase: every account created on
+		// the way up is unused, so a target more than the gap limit past the
+		// wallet's last account is guaranteed to be refused.
+		highest, herr := highestNormalAccount(ctx)
+		if herr != nil {
+			return nil, herr
+		}
+		if rec.OwnHD.Account > highest+assumedAccountGapLimit {
+			return nil, fmt.Errorf("%w: the backup needs account %d but this wallet's accounts end at %d; recover the seed's used accounts first (a full seed restore with account discovery), then retry",
+				ErrRestoreAccountGap, rec.OwnHD.Account, highest)
+		}
 		if len(passphrase) == 0 {
 			return nil, ErrRestoreNeedsPassphrase
 		}
@@ -205,25 +229,39 @@ func locateAccountByXpub(ctx context.Context, xpub string) (uint32, error) {
 	return 0, fmt.Errorf("no account of this wallet holds the backup's key")
 }
 
+// highestNormalAccount reports the wallet's highest BIP44 account
+// number, ignoring the imported and xpub-imported ranges.
+func highestNormalAccount(ctx context.Context) (uint32, error) {
+	accounts, err := accountsSeam(ctx)
+	if err != nil {
+		return 0, err
+	}
+	highest := uint32(0)
+	for _, a := range accounts {
+		if a.AccountNumber < 1<<31 && a.AccountNumber > highest {
+			highest = a.AccountNumber
+		}
+	}
+	return highest, nil
+}
+
 // recreateAccountTo creates accounts sequentially until the card's
 // account number exists, then proves the seed by xpub equality.
 func recreateAccountTo(ctx context.Context, own *OwnHDKey, passphrase []byte) (uint32, error) {
 	for i := 0; i < int(own.Account)+1; i++ {
-		accounts, err := accountsSeam(ctx)
+		highest, err := highestNormalAccount(ctx)
 		if err != nil {
 			return 0, err
-		}
-		highest := uint32(0)
-		for _, a := range accounts {
-			if a.AccountNumber < 1<<31 && a.AccountNumber > highest {
-				highest = a.AccountNumber
-			}
 		}
 		if highest >= own.Account {
 			break
 		}
 		name := fmt.Sprintf("shared-restored-%d", highest+1)
 		if _, err := createAccountSeam(ctx, name, passphrase); err != nil {
+			if strings.Contains(err.Error(), "no transaction history") {
+				return 0, fmt.Errorf("%w: recreate account %d: %v; recover the seed's used accounts first, then retry",
+					ErrRestoreAccountGap, highest+1, err)
+			}
 			return 0, fmt.Errorf("recreate account %d: %v", highest+1, err)
 		}
 	}

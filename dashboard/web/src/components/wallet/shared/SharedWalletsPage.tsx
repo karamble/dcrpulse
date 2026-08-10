@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useVisiblePoll } from '../../../hooks/useVisiblePoll';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Loader2, Mail, Plus, RefreshCw, Upload, Users, X } from 'lucide-react';
+import { AlertCircle, Info, Loader2, Mail, Plus, RefreshCw, Upload, Users, X } from 'lucide-react';
 import { useBisonrelayLive } from '../../bisonrelay/BisonrelayLiveProvider';
 import {
   MsigWallet,
@@ -17,6 +17,7 @@ import {
 } from '../../../services/msigApi';
 import { PassphraseModal } from '../PassphraseModal';
 import { IncomingInviteBanner } from './IncomingInviteBanner';
+import { SharedWalletsHelpModal } from './SharedWalletsHelpModal';
 import { SharedWalletCreateWizard } from './SharedWalletCreateWizard';
 import { formatAtoms } from '../../../utils/amounts';
 import { apiError } from '../../../utils/apiError';
@@ -47,6 +48,7 @@ export const SharedWalletsPage = () => {
   const [wizard, setWizard] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [restoreCard, setRestoreCard] = useState<unknown>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importText, setImportText] = useState('');
   const [fromLabel, setFromLabel] = useState('');
@@ -157,7 +159,18 @@ export const SharedWalletsPage = () => {
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold">Shared wallets</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">Shared wallets</h1>
+            <button
+              type="button"
+              onClick={() => setShowHelp(true)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="About shared wallets"
+              title="About shared wallets"
+            >
+              <Info className="h-4 w-4" />
+            </button>
+          </div>
           <p className="text-sm text-muted-foreground mt-1">
             Multisig wallets you run together with Bison Relay contacts. Each payment needs
             approval from enough cosigners before it can be broadcast.
@@ -279,6 +292,8 @@ export const SharedWalletsPage = () => {
       {wizard && (
         <SharedWalletCreateWizard onClose={() => setWizard(false)} onCreated={load} />
       )}
+
+      {showHelp && <SharedWalletsHelpModal onClose={() => setShowHelp(false)} />}
 
       {importing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

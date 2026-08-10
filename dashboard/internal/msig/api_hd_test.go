@@ -5,6 +5,9 @@
 package msig
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -179,5 +182,64 @@ func TestRestoreBackupCardLocatesExistingAccount(t *testing.T) {
 	}
 	if rec.OwnHD.Account != card.Record.OwnHD.Account {
 		t.Fatalf("account relocation mismatch: %d != %d", rec.OwnHD.Account, card.Record.OwnHD.Account)
+	}
+}
+
+// A card whose account sits more than the wallet's unused-account gap
+// limit past the last local account is refused before any passphrase is
+// demanded, and a wallet-side gap refusal mid-recreation surfaces the
+// same typed error.
+func TestRestoreBackupCardAccountGap(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob", "restorer")
+	hd.masters[hd.nodeByNick("restorer").uid] = hd.masters[hd.nodeByNick("alice").uid]
+
+	tempID := hd.createHD(t, 2, "alice", "bob")
+	hd.pump()
+	hd.as("bob")
+	if err := AcceptInviteHD(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	hd.settle(t, tempID, "alice", "bob")
+
+	hd.as("alice")
+	card, err := ExportBackupCard(hd.ctx, tempID)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	origRescan := rescanSeam
+	t.Cleanup(func() { rescanSeam = origRescan })
+	rescanSeam = func(int64) {}
+
+	// The restorer only holds account 0, so account 11 is one past the
+	// assumed gap limit and must be refused before the passphrase demand.
+	forge := func(account uint32) *BackupCard {
+		c := *card
+		c.Record = cloneRecord(card.Record)
+		c.Record.OwnHD.Account = account
+		return &c
+	}
+	hd.as("restorer")
+	_, err = ImportBackupCard(hd.ctx, forge(assumedAccountGapLimit+1), nil)
+	if !errors.Is(err, ErrRestoreAccountGap) {
+		t.Fatalf("expected the account-gap refusal, got %v", err)
+	}
+
+	// Exactly at the limit the preflight stays quiet and the passphrase
+	// demand comes first.
+	if _, err := ImportBackupCard(hd.ctx, forge(assumedAccountGapLimit), nil); err != ErrRestoreNeedsPassphrase {
+		t.Fatalf("expected passphrase demand at the boundary, got %v", err)
+	}
+
+	// A wallet that refuses account creation with its gap error mid-loop
+	// maps to the same sentinel.
+	origCreate := createAccountSeam
+	t.Cleanup(func() { createAccountSeam = origCreate })
+	createAccountSeam = func(ctx context.Context, name string, passphrase []byte) (uint32, error) {
+		return 0, fmt.Errorf("last 10 accounts have no transaction history")
+	}
+	_, err = ImportBackupCard(hd.ctx, card, []byte("wallet-pass"))
+	if !errors.Is(err, ErrRestoreAccountGap) {
+		t.Fatalf("expected the gap sentinel from recreation, got %v", err)
 	}
 }
