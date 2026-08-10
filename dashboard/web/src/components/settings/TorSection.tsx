@@ -244,6 +244,16 @@ export const TorSection = () => {
             <div className="font-mono text-sm break-all">{status.onionAddress}</div>
           </div>
         )}
+
+        {status?.lnOnionAddress && (
+          <div className="p-3 rounded-lg bg-muted/10 border border-border/50">
+            <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
+              Lightning onion address{' '}
+              {settings.lnOnion ? '(active)' : '(available - enable the toggle above to advertise it)'}
+            </div>
+            <div className="font-mono text-sm break-all">{status.lnOnionAddress}</div>
+          </div>
+        )}
       </div>
 
       {/* Daemon routing */}

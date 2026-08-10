@@ -31,6 +31,7 @@ type TorStatus struct {
 	Settings       TorSettings      `json:"settings"`
 	ProxyReachable bool             `json:"proxyReachable"`
 	OnionAddress   string           `json:"onionAddress,omitempty"`
+	LnOnionAddress string           `json:"lnOnionAddress,omitempty"`
 	Daemons        []TorDaemonState `json:"daemons"`
 }
 

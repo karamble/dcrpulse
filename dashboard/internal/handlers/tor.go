@@ -39,7 +39,7 @@ func SetTorHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetTorStatusHandler returns proxy reachability, per-daemon routing state, and
-// the dcrd onion address.
+// the dcrd and lightning onion addresses.
 func GetTorStatusHandler(w http.ResponseWriter, r *http.Request) {
 	torWriteJSON(w, services.TorStatusSnapshot())
 }

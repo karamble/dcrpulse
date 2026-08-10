@@ -43,8 +43,9 @@ const (
 	DcrdDataRoot = "/app-data/dcrd"
 
 	// TorDataDir is where the Tor sidecar's data volume is mounted read-only in
-	// dcrd and the dashboard so they can read the dcrd onion hostname and the
-	// control auth cookie. Nested under /app-data like the other service volumes.
+	// the daemon containers and the dashboard so they can read the onion
+	// hostnames and the control auth cookie. Nested under /app-data like the
+	// other service volumes.
 	TorDataDir = "/app-data/tor"
 )
 

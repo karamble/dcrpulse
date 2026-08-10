@@ -24,6 +24,7 @@ export interface TorStatus {
   settings: TorSettings;
   proxyReachable: boolean;
   onionAddress: string;
+  lnOnionAddress?: string;
   daemons: TorDaemonState[];
 }
 

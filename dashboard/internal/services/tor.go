@@ -88,10 +88,10 @@ func TorProxyReachable() bool {
 	return true
 }
 
-// DcrdOnionAddress returns the dcrd hidden-service hostname, or "" when the
+// onionHostname returns a tor hidden service's hostname, or "" when the
 // onion has not been created or is unreadable.
-func DcrdOnionAddress() string {
-	data, err := os.ReadFile(filepath.Join(config.TorDataDir, "dcrd-hs", "hostname"))
+func onionHostname(hsDir string) string {
+	data, err := os.ReadFile(filepath.Join(config.TorDataDir, hsDir, "hostname"))
 	if err != nil {
 		return ""
 	}
@@ -144,7 +144,8 @@ func TorStatusSnapshot() types.TorStatus {
 	return types.TorStatus{
 		Settings:       ReadTorSettings(),
 		ProxyReachable: TorProxyReachable(),
-		OnionAddress:   DcrdOnionAddress(),
+		OnionAddress:   onionHostname("dcrd-hs"),
+		LnOnionAddress: onionHostname("dcrlnd-hs"),
 		Daemons:        TorDaemonStates(),
 	}
 }
