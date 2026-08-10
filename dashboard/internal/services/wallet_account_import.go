@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
@@ -117,7 +118,7 @@ func parseAccountExport(data []byte, params *chaincfg.Params) ([]types.AccountEx
 			return nil, fmt.Errorf("entry %d (account %d): file contains a PRIVATE key, refusing", i, acct)
 		}
 		if len(name) > 50 {
-			name = name[:50]
+			name = strings.ToValidUTF8(name[:50], "")
 		}
 		entries = append(entries, types.AccountExportEntry{
 			Account: uint32(acct),

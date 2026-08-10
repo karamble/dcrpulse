@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -45,6 +46,16 @@ const (
 	// spare; anything longer is not one.
 	maxAttestLen = 120
 )
+
+// clampReason bounds a user-typed decline reason. The byte cut may split a
+// multibyte character; the invalid tail must go, or the receiver's decode
+// expands it past MaxReasonLen and drops the whole frame as invalid.
+func clampReason(reason string) string {
+	if len(reason) > MaxReasonLen {
+		reason = strings.ToValidUTF8(reason[:MaxReasonLen], "")
+	}
+	return reason
+}
 
 // ErrUnknownType marks a structurally valid message of a type this build
 // does not know. Receivers journal the mid and ignore it so the protocol

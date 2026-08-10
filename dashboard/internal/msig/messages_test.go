@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
@@ -240,6 +241,35 @@ func TestHDFramesFailV1Rules(t *testing.T) {
 		}
 		if err := validateV1Rules(m); err == nil {
 			t.Fatalf("%s frame passes v1 rules; old builds would journal it as processed", m.Type)
+		}
+	}
+}
+
+// A decline reason whose byte cut splits a multibyte character must still
+// survive the encode/decode roundtrip: without dropping the invalid tail,
+// the receiver's decode expands it past MaxReasonLen and the frame is
+// dropped as invalid.
+func TestClampReasonSplitRuneRoundtrip(t *testing.T) {
+	raw := strings.Repeat("a", 198) + strings.Repeat("世", 5)
+	reason := clampReason(raw)
+	if !utf8.ValidString(reason) {
+		t.Fatalf("clamped reason is not valid UTF-8")
+	}
+	txid := strings.Repeat("ab", 32)
+	for _, m := range []*Message{
+		{Type: TypeDecline, TempID: "00aabbcc", Reason: reason},
+		{Type: TypeSigDecline, WalletID: "DcSharedAddr", TxID: txid, Reason: reason},
+	} {
+		payload, err := EncodeMessage(m)
+		if err != nil {
+			t.Fatalf("%s: encode: %v", m.Type, err)
+		}
+		back, err := DecodeMessage(payload)
+		if err != nil {
+			t.Fatalf("%s: decode: %v", m.Type, err)
+		}
+		if back.Reason != reason {
+			t.Fatalf("%s: reason did not roundtrip", m.Type)
 		}
 	}
 }

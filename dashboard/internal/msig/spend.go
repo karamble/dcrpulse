@@ -572,9 +572,7 @@ func RejectIncomingProposal(ctx context.Context, walletID, txid, reason string) 
 	if prop.Status != ProposalIncoming {
 		return fmt.Errorf("this payment request is no longer open")
 	}
-	if len(reason) > MaxReasonLen {
-		reason = reason[:MaxReasonLen]
-	}
+	reason = clampReason(reason)
 	err = store.UpdateProposal(rec.TempID, txid, false, func(_ *WalletRecord, p *Proposal) error {
 		p.Status = ProposalDeclined
 		p.Reason = reason

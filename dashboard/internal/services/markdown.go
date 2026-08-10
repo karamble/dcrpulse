@@ -500,6 +500,10 @@ func BRQuoteSnippet(main string, max int) string {
 		cut := text[:max]
 		if i := strings.LastIndex(cut, " "); i > max/2 {
 			cut = cut[:i]
+		} else {
+			// No word boundary to cut at: the byte cut may have split a
+			// multibyte character, so drop the partial tail.
+			cut = strings.ToValidUTF8(cut, "")
 		}
 		text = cut + "..."
 	}

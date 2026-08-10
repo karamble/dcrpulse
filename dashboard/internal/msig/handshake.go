@@ -130,9 +130,7 @@ func DeclineInvite(ctx context.Context, id, reason string) error {
 	if rec.Status != StatusInvited {
 		return fmt.Errorf("invite is not pending")
 	}
-	if len(reason) > MaxReasonLen {
-		reason = reason[:MaxReasonLen]
-	}
+	reason = clampReason(reason)
 	err = store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
 		r.Status = StatusDeclined
 		r.FailReason = "declined locally"
