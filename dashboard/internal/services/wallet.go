@@ -5,10 +5,12 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strconv"
@@ -24,6 +26,7 @@ import (
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrutil/v4"
+	"github.com/decred/dcrd/wire"
 )
 
 func FetchWalletStatus() (*types.WalletStatus, error) {
@@ -1120,6 +1123,15 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 		return nil, fmt.Errorf("failed to unmarshal transactions: %w", err)
 	}
 
+	// One wallet stream over the listed range replaces the old lookup per
+	// transaction: the raw bytes carry the CoinJoin shape and the stakebase
+	// reward, the credits and debits carry the wallet's net position.
+	facts, ferr := listTxFactsFor(ctx, listTxMinHeight(rpcTransactions, currentHeight))
+	if ferr != nil {
+		wlltLog.Warnf("Transaction facts stream unavailable, rows degrade: %v", ferr)
+		facts = map[string]listTxFacts{}
+	}
+
 	// Group by txid - multiple entries indicate CoinJoin or ticket with change
 	type TxGroup struct {
 		Entries []int
@@ -1137,8 +1149,6 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 		txMap[rpcTx.TxID].Entries = append(txMap[rpcTx.TxID].Entries, i)
 	}
 
-	// Process transactions - use gettransaction for accurate net amounts on multi-entry txs
-	txGroups := make(map[string]*types.Transaction)
 	transactions := make([]types.Transaction, 0)
 	processed := make(map[string]bool)
 
@@ -1153,7 +1163,7 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 		if len(group.Entries) > 1 {
 			isMixed := false
 			if rpcTx.TxType == "regular" {
-				isMixed = isCoinJoinTransaction(ctx, rpcTx.TxID)
+				isMixed = facts[rpcTx.TxID].mixed
 			}
 
 			var netAmount float64
@@ -1171,16 +1181,10 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 				}
 			}
 
-			// CoinJoin: use gettransaction (listtransactions includes other participants)
+			// CoinJoin: the wallet's own net position (the listing rows
+			// include other participants' outputs).
 			if isMixed {
-				var err error
-				netAmount, err = getTransactionNetAmount(ctx, rpcTx.TxID)
-				if err != nil {
-					wlltLog.Warnf("Could not get net amount for CoinJoin %s: %v, skipping", rpcTx.TxID[:12], err)
-					processed[rpcTx.TxID] = true
-					continue
-				}
-				wlltLog.Debugf("CoinJoin %s: wallet net amount = %.8f DCR", rpcTx.TxID[:12], netAmount)
+				netAmount = facts[rpcTx.TxID].netDCR
 			} else {
 				// Non-CoinJoin: sum entries (already wallet-filtered)
 				for _, idx := range group.Entries {
@@ -1250,45 +1254,20 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 
 		isMixed := false
 		if rpcTx.TxType == "regular" {
-			isMixed = isCoinJoinTransaction(ctx, rpcTx.TxID)
+			isMixed = facts[rpcTx.TxID].mixed
 		}
 
-		txGroupKey := func(txid, category string) string {
-			return fmt.Sprintf("%s-%s", txid, category)
-		}
-
-		// Group receive transactions with same txid
-		if rpcTx.Category == "receive" {
-			groupKey := txGroupKey(rpcTx.TxID, rpcTx.Category)
-
-			if existing, exists := txGroups[groupKey]; exists {
-				existing.Amount += rpcTx.Amount
-				if existing.Address == "" && rpcTx.Address != "" {
-					existing.Address = rpcTx.Address
-				}
-			} else {
-				tx := walletTxRow(rpcTx, isMixed, currentHeight, voteMaturity)
-				txGroups[groupKey] = &tx
-			}
-		} else {
-			tx := walletTxRow(rpcTx, isMixed, currentHeight, voteMaturity)
-			transactions = append(transactions, tx)
-		}
-
+		tx := walletTxRow(rpcTx, isMixed, currentHeight, voteMaturity)
+		transactions = append(transactions, tx)
 		processed[rpcTx.TxID] = true
-	}
-
-	// Add grouped receives to main list
-	for _, tx := range txGroups {
-		transactions = append(transactions, *tx)
 	}
 
 	// A vote's listtransactions net cancels to ~0; show the stakebase reward
 	// read directly from the vote transaction instead.
 	for i := range transactions {
 		if transactions[i].TxType == "vote" {
-			if reward, ok := voteStakebaseReward(ctx, transactions[i].TxID); ok {
-				transactions[i].Amount = reward
+			if f, ok := facts[transactions[i].TxID]; ok && f.hasReward {
+				transactions[i].Amount = f.voteReward
 			}
 		}
 	}
@@ -1337,103 +1316,106 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 	}, nil
 }
 
-// getTransactionNetAmount returns wallet's net position (credits - debits) using gettransaction
-func getTransactionNetAmount(ctx context.Context, txHash string) (float64, error) {
-	if rpc.WalletClient == nil {
-		return 0, fmt.Errorf("wallet client not available")
-	}
-
-	result, err := rpc.WalletClient.RawRequest(ctx, "gettransaction", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
-	})
-	if err != nil {
-		return 0, fmt.Errorf("gettransaction failed: %w", err)
-	}
-
-	var txInfo struct {
-		Amount float64 `json:"amount"`
-		Fee    float64 `json:"fee"`
-	}
-
-	if err := json.Unmarshal(result, &txInfo); err != nil {
-		return 0, fmt.Errorf("failed to parse gettransaction: %w", err)
-	}
-
-	return txInfo.Amount, nil
+// listTxFacts carries what listtransactions cannot supply for a row: the
+// CoinJoin verdict, the wallet's net position, and a vote's stakebase reward.
+type listTxFacts struct {
+	mixed      bool
+	netDCR     float64
+	voteReward float64
+	hasReward  bool
 }
 
-// voteStakebaseReward returns a vote (SSGen) transaction's stakebase input value,
-// which is the staking reward returned to the ticket. The first input of a vote
-// is the stakebase; its amountin is the reward, read directly from dcrd. Returns
-// false when dcrd is unavailable or the tx is not a vote.
-func voteStakebaseReward(ctx context.Context, txHash string) (float64, bool) {
-	if rpc.DcrdClient == nil {
-		return 0, false
+// listTxMinHeight returns the lowest mined block height among the listed
+// entries, or 0 (whole history) when none is derivable.
+func listTxMinHeight(entries []listTxEntry, currentHeight int64) int32 {
+	if currentHeight <= 0 {
+		return 0
 	}
-
-	rawTxResult, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
-		json.RawMessage("1"),
-	})
-	if err != nil {
-		wlltLog.Warnf("Vote reward lookup failed for %s: getrawtransaction error: %v", txHash, err)
-		return 0, false
+	min := int32(0)
+	for _, e := range entries {
+		if e.Confirmations <= 0 {
+			continue
+		}
+		h := int32(currentHeight - e.Confirmations + 1)
+		if h > 0 && (min == 0 || h < min) {
+			min = h
+		}
 	}
-
-	var tx struct {
-		Vin []struct {
-			Stakebase string  `json:"stakebase,omitempty"`
-			AmountIn  float64 `json:"amountin"`
-		} `json:"vin"`
-	}
-
-	if err := json.Unmarshal(rawTxResult, &tx); err != nil {
-		wlltLog.Warnf("Vote reward lookup failed for %s: unmarshal error: %v", txHash, err)
-		return 0, false
-	}
-
-	if len(tx.Vin) == 0 || tx.Vin[0].Stakebase == "" {
-		return 0, false
-	}
-
-	return tx.Vin[0].AmountIn, true
+	return min
 }
 
-// isCoinJoinTransaction detects CoinJoin by analyzing tx structure (3+ inputs/outputs, matching amounts)
-func isCoinJoinTransaction(ctx context.Context, txHash string) bool {
-	if rpc.DcrdClient == nil {
-		wlltLog.Debugf("CoinJoin check skipped for %s: no dcrd connection", txHash)
-		return false
+// listTxFactsFor streams the wallet's own view of the listed range once,
+// mined and unmined, replacing the old lookup per transaction.
+func listTxFactsFor(ctx context.Context, minHeight int32) (map[string]listTxFacts, error) {
+	client := rpc.WalletGrpcClient
+	if client == nil {
+		return nil, fmt.Errorf("dcrwallet gRPC not available")
 	}
-
-	rawTxResult, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
-		json.RawMessage("1"),
+	stream, err := client.GetTransactions(ctx, &pb.GetTransactionsRequest{
+		StartingBlockHeight: minHeight,
+		EndingBlockHeight:   -1,
 	})
 	if err != nil {
-		wlltLog.Warnf("CoinJoin check failed for %s: getrawtransaction error: %v", txHash, err)
-		return false
+		return nil, err
 	}
+	facts := make(map[string]listTxFacts)
+	add := func(details []*pb.TransactionDetails) {
+		for _, t := range details {
+			if txid, f, ok := deriveListTxFacts(t); ok {
+				facts[txid] = f
+			}
+		}
+	}
+	for {
+		resp, rerr := stream.Recv()
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return nil, rerr
+		}
+		if mb := resp.GetMinedTransactions(); mb != nil {
+			add(mb.GetTransactions())
+		}
+		add(resp.GetUnminedTransactions())
+	}
+	return facts, nil
+}
 
-	var tx struct {
-		Vin []struct {
-			Txid string `json:"txid,omitempty"`
-		} `json:"vin"`
-		Vout []struct {
-			Value float64 `json:"value"`
-		} `json:"vout"`
+// deriveListTxFacts computes one transaction's facts from the streamed record:
+// the raw bytes give the input count, output values and stakebase reward, and
+// credits minus debits reproduce gettransaction's net amount exactly.
+func deriveListTxFacts(t *pb.TransactionDetails) (string, listTxFacts, bool) {
+	var mtx wire.MsgTx
+	if err := mtx.Deserialize(bytes.NewReader(t.GetTransaction())); err != nil {
+		return "", listTxFacts{}, false
 	}
-
-	if err := json.Unmarshal(rawTxResult, &tx); err != nil {
-		wlltLog.Warnf("CoinJoin check failed for %s: unmarshal error: %v", txHash, err)
-		return false
+	txid := ""
+	if h, err := chainhash.NewHash(t.GetHash()); err == nil {
+		txid = h.String()
+	} else {
+		txid = hex.EncodeToString(t.GetHash())
 	}
-
-	values := make([]float64, len(tx.Vout))
-	for i, vout := range tx.Vout {
-		values[i] = vout.Value
+	values := make([]float64, len(mtx.TxOut))
+	for i, out := range mtx.TxOut {
+		values[i] = dcrutil.Amount(out.Value).ToCoin()
 	}
-	return looksLikeCoinJoin(len(tx.Vin), values)
+	var net int64
+	for _, c := range t.GetCredits() {
+		net += c.GetAmount()
+	}
+	for _, d := range t.GetDebits() {
+		net -= d.GetPreviousAmount()
+	}
+	f := listTxFacts{
+		mixed:  looksLikeCoinJoin(len(mtx.TxIn), values),
+		netDCR: dcrutil.Amount(net).ToCoin(),
+	}
+	if t.GetTransactionType() == pb.TransactionDetails_VOTE && len(mtx.TxIn) > 0 {
+		f.voteReward = dcrutil.Amount(mtx.TxIn[0].ValueIn).ToCoin()
+		f.hasReward = true
+	}
+	return txid, f, true
 }
 
 // isVSPFeeTransaction detects VSP fees by 6-block timing after ticket purchase (validated pattern)
