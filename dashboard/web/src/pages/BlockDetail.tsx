@@ -18,32 +18,34 @@ export const BlockDetail = () => {
   const [showRawJson, setShowRawJson] = useState(false);
 
   useEffect(() => {
-    fetchBlock();
-  }, [heightOrHash]);
-
-  const fetchBlock = async () => {
     if (!heightOrHash) return;
-
+    let cancelled = false;
     setLoading(true);
     setError('');
-
-    try {
-      // For now, assume it's a height (we can enhance this later to handle hashes)
-      const height = parseInt(heightOrHash);
-      if (isNaN(height)) {
-        setError('Invalid block height');
-        setLoading(false);
-        return;
-      }
-
-      const blockData = await getBlockByHeight(height);
-      setBlock(blockData);
+    // For now, assume it's a height (we can enhance this later to handle hashes)
+    const height = parseInt(heightOrHash);
+    if (isNaN(height)) {
+      setError('Invalid block height');
       setLoading(false);
-    } catch (err) {
-      setError('Block not found');
-      setLoading(false);
+      return;
     }
-  };
+    getBlockByHeight(height)
+      .then((blockData) => {
+        if (!cancelled) {
+          setBlock(blockData);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError('Block not found');
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [heightOrHash]);
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;

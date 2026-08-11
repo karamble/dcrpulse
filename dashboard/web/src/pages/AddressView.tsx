@@ -17,24 +17,27 @@ export const AddressView = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (address) {
-      fetchAddressInfo();
-    }
+    if (!address) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getAddressInfo(address)
+      .then((data) => {
+        if (!cancelled) setInfo(data);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to fetch address info:', err);
+          setError('Failed to load address information');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [address]);
-
-  const fetchAddressInfo = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getAddressInfo(address!);
-      setInfo(data);
-    } catch (err) {
-      console.error('Failed to fetch address info:', err);
-      setError('Failed to load address information');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (loading) {
     return (

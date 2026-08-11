@@ -21,24 +21,27 @@ export const TransactionDetail = () => {
   const [showRawHex, setShowRawHex] = useState(false);
 
   useEffect(() => {
-    fetchTransaction();
-  }, [txhash]);
-
-  const fetchTransaction = async () => {
     if (!txhash) return;
-
+    let cancelled = false;
     setLoading(true);
     setError('');
-
-    try {
-      const txData = await getTransaction(txhash);
-      setTx(txData);
-      setLoading(false);
-    } catch (err) {
-      setError('Transaction not found');
-      setLoading(false);
-    }
-  };
+    getTransaction(txhash)
+      .then((txData) => {
+        if (!cancelled) {
+          setTx(txData);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError('Transaction not found');
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [txhash]);
 
   const getTxTypeIcon = (type: string) => {
     switch (type) {
