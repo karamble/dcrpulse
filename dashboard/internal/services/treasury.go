@@ -119,13 +119,13 @@ func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 	}
 
 	for _, hash := range hashes {
-		tx, err := getTransaction(ctx, hash.String())
+		tx, err := rpc.DcrdClient.GetRawTransactionVerbose(ctx, hash)
 		if err != nil {
 			govnLog.Warnf("Failed to get transaction %s: %v", hash, err)
 			continue
 		}
 
-		tspend := extractTSpendInfo(tx, currentHeight)
+		tspend := extractTSpendInfo(*tx, currentHeight)
 		if tspend != nil {
 			tspends = append(tspends, *tspend)
 		}
@@ -239,72 +239,19 @@ func balanceSampleAt(ctx context.Context, h int64) (*types.BalanceSample, error)
 	}, nil
 }
 
-// getTransaction retrieves transaction details
-func getTransaction(ctx context.Context, txHash string) (map[string]interface{}, error) {
-	result, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
-		json.RawMessage("1"), // verbose
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var tx map[string]interface{}
-	if err := json.Unmarshal(result, &tx); err != nil {
-		return nil, err
-	}
-
-	return tx, nil
-}
-
 // isTreasurySpend checks if a transaction is a treasury spend (not treasurybase)
-func isTreasurySpend(tx map[string]interface{}) bool {
-	// Method 1: Check for "treasuryspend" field in vin (MOST RELIABLE)
-	// Real TSpend transactions have this special field instead of txid/vout
-	vin, ok := tx["vin"].([]interface{})
-	if ok && len(vin) > 0 {
-		for _, v := range vin {
-			vinMap, ok := v.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			// Check if this input has a "treasuryspend" field
-			if _, hasTreasurySpend := vinMap["treasuryspend"]; hasTreasurySpend {
-				return true
-			}
+func isTreasurySpend(tx chainjson.TxRawResult) bool {
+	// A real TSpend carries the treasuryspend field on its input.
+	for _, vin := range tx.Vin {
+		if vin.TreasurySpend != "" {
+			return true
 		}
 	}
 
-	// Method 2: Check for treasurygen output type (SECONDARY CHECK)
-	// TSpend transactions have "treasurygen-pubkeyhash" or similar in output
-	vout, ok := tx["vout"].([]interface{})
-	if ok && len(vout) > 0 {
-		for _, v := range vout {
-			voutMap, ok := v.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			scriptPubKey, ok := voutMap["scriptPubKey"].(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			scriptType, ok := scriptPubKey["type"].(string)
-			if !ok {
-				continue
-			}
-
-			// TSpend transactions have "treasurygen" in the output type
-			// Can be "treasurygen-pubkeyhash", "treasurygen-scripthash", etc.
-			if strings.Contains(strings.ToLower(scriptType), "treasurygen") {
-				// Additional validation: must be version 3
-				version, _ := tx["version"].(float64)
-				if version == 3 {
-					return true
-				}
-			}
+	// Secondary check: a treasurygen output type on a version 3 transaction.
+	for _, vout := range tx.Vout {
+		if strings.Contains(strings.ToLower(vout.ScriptPubKey.Type), "treasurygen") && tx.Version == 3 {
+			return true
 		}
 	}
 
@@ -312,34 +259,22 @@ func isTreasurySpend(tx map[string]interface{}) bool {
 }
 
 // extractTSpendInfo extracts TSpend information from a transaction
-func extractTSpendInfo(tx map[string]interface{}, currentHeight int64) *types.TSpend {
-	txid, _ := tx["txid"].(string)
-	expiry, _ := tx["expiry"].(float64)
-
-	// Calculate amount from outputs
+func extractTSpendInfo(tx chainjson.TxRawResult, currentHeight int64) *types.TSpend {
+	// Sum the outputs; the last address-bearing output names the payee.
 	amount := 0.0
 	payee := ""
-	vout, _ := tx["vout"].([]interface{})
-	for _, v := range vout {
-		voutMap, _ := v.(map[string]interface{})
-		value, _ := voutMap["value"].(float64)
-		amount += value
-
-		// Try to get payee address
-		if scriptPubKey, ok := voutMap["scriptPubKey"].(map[string]interface{}); ok {
-			if addresses, ok := scriptPubKey["addresses"].([]interface{}); ok && len(addresses) > 0 {
-				if addr, ok := addresses[0].(string); ok {
-					payee = addr
-				}
-			}
+	for _, vout := range tx.Vout {
+		amount += vout.Value
+		if len(vout.ScriptPubKey.Addresses) > 0 {
+			payee = vout.ScriptPubKey.Addresses[0]
 		}
 	}
 
-	expiryHeight := int64(expiry)
+	expiryHeight := int64(tx.Expiry)
 	blocksRemaining := expiryHeight - currentHeight
 
 	return &types.TSpend{
-		TxHash:          txid,
+		TxHash:          tx.Txid,
 		Amount:          amount,
 		Payee:           payee,
 		ExpiryHeight:    expiryHeight,
@@ -351,30 +286,19 @@ func extractTSpendInfo(tx map[string]interface{}, currentHeight int64) *types.TS
 }
 
 // extractTSpendHistory extracts historical TSpend information
-func extractTSpendHistory(tx map[string]interface{}, blockHeight int64, blockHash string, blockTime int64) *types.TSpendHistory {
-	txid, _ := tx["txid"].(string)
-
-	// Calculate amount from outputs
+func extractTSpendHistory(tx chainjson.TxRawResult, blockHeight int64, blockHash string, blockTime int64) *types.TSpendHistory {
+	// Sum the outputs; the last address-bearing output names the payee.
 	amount := 0.0
 	payee := ""
-	vout, _ := tx["vout"].([]interface{})
-	for _, v := range vout {
-		voutMap, _ := v.(map[string]interface{})
-		value, _ := voutMap["value"].(float64)
-		amount += value
-
-		// Try to get payee address
-		if scriptPubKey, ok := voutMap["scriptPubKey"].(map[string]interface{}); ok {
-			if addresses, ok := scriptPubKey["addresses"].([]interface{}); ok && len(addresses) > 0 {
-				if addr, ok := addresses[0].(string); ok {
-					payee = addr
-				}
-			}
+	for _, vout := range tx.Vout {
+		amount += vout.Value
+		if len(vout.ScriptPubKey.Addresses) > 0 {
+			payee = vout.ScriptPubKey.Addresses[0]
 		}
 	}
 
 	return &types.TSpendHistory{
-		TxHash:      txid,
+		TxHash:      tx.Txid,
 		Amount:      amount,
 		Payee:       payee,
 		BlockHeight: blockHeight,
@@ -429,46 +353,28 @@ func safeResumeHeight(lastScanned int64, failed []int64) int64 {
 	return first - 1
 }
 
-// scanBlock is the part of a verbose getblock reply the historical scan reads.
-type scanBlock struct {
-	Hash   string                   `json:"hash"`
-	Height int64                    `json:"height"`
-	Time   int64                    `json:"time"`
-	RawTx  []map[string]interface{} `json:"rawtx"`
-	RawSTx []map[string]interface{} `json:"rawstx"`
-}
-
 // readScanBlock fetches one block for the historical scan.
-func readScanBlock(ctx context.Context, height int64) (*scanBlock, error) {
+func readScanBlock(ctx context.Context, height int64) (*chainjson.GetBlockVerboseResult, error) {
 	blockHash, err := rpc.DcrdClient.GetBlockHash(ctx, height)
 	if err != nil {
 		return nil, fmt.Errorf("get block hash: %w", err)
 	}
 
-	// verbose=true + verbosetx=true returns every tx's full vin/vout inline
-	// (rawtx/rawstx), so no per-transaction getrawtransaction call is needed.
-	blockResult, err := rpc.DcrdClient.RawRequest(ctx, "getblock", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, blockHash.String())),
-		json.RawMessage("true"),
-		json.RawMessage("true"),
-	})
+	// verboseTx=true returns every tx's full vin/vout inline (rawtx/rawstx),
+	// so no per-transaction getrawtransaction call is needed.
+	block, err := rpc.DcrdClient.GetBlockVerbose(ctx, blockHash, true)
 	if err != nil {
 		return nil, fmt.Errorf("getblock %s: %w", blockHash, err)
 	}
-
-	var block scanBlock
-	if err := json.Unmarshal(blockResult, &block); err != nil {
-		return nil, fmt.Errorf("decode block %s: %w", blockHash, err)
-	}
-	return &block, nil
+	return block, nil
 }
 
 // readScanBlockRetry retries readScanBlock, so that a transient dcrd failure
 // does not silently cost the scan a block.
-func readScanBlockRetry(ctx context.Context, height int64) (*scanBlock, error) {
+func readScanBlockRetry(ctx context.Context, height int64) (*chainjson.GetBlockVerboseResult, error) {
 	var err error
 	for attempt := 1; attempt <= scanBlockAttempts; attempt++ {
-		var block *scanBlock
+		var block *chainjson.GetBlockVerboseResult
 		if block, err = readScanBlock(ctx, height); err == nil {
 			return block, nil
 		}
