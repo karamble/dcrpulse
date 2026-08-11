@@ -64,7 +64,7 @@ var (
 	// watchtower-client registrations. Reachable post-unlock.
 	WatchtowerClient wtclientrpc.WatchtowerClientClient
 
-	// DcrlndGrpcConn is the underlying connection, kept for shutdown.
+	// DcrlndGrpcConn is the underlying connection, kept for cleanup.
 	DcrlndGrpcConn *grpc.ClientConn
 
 	// DcrlndCfg is the resolved config used for late-binding macaroon
@@ -205,11 +205,3 @@ func (m macaroonCreds) GetRequestMetadata(ctx context.Context, _ ...string) (map
 }
 
 func (m macaroonCreds) RequireTransportSecurity() bool { return true }
-
-// CloseDcrlndConnection closes the dcrlnd gRPC connection.
-func CloseDcrlndConnection() {
-	if DcrlndGrpcConn != nil {
-		_ = DcrlndGrpcConn.Close()
-		rpccLog.Info("dcrlnd gRPC connection closed")
-	}
-}

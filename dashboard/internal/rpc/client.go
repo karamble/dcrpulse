@@ -281,11 +281,3 @@ func WaitForWalletDaemon(ctx context.Context) error {
 		}
 	}
 }
-
-// CloseGrpcConnection closes the gRPC connection
-func CloseGrpcConnection() {
-	if WalletGrpcConn != nil {
-		WalletGrpcConn.Close()
-		rpccLog.Info("gRPC connection closed")
-	}
-}
