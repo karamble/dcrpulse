@@ -43,9 +43,6 @@ func loadWalletCfgAt(path string) (*WalletCfg, error) {
 	}, nil
 }
 
-// Path returns the on-disk file path.
-func (c *WalletCfg) Path() string { return c.path }
-
 // Has reports whether key is present in the document.
 func (c *WalletCfg) Has(key string) bool {
 	c.mu.Lock()
