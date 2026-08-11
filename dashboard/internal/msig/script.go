@@ -97,13 +97,3 @@ func P2SHAddress(script []byte, params *chaincfg.Params) (string, error) {
 	}
 	return addr.String(), nil
 }
-
-// ContainsPubKey reports whether pubKey is one of keys.
-func ContainsPubKey(pubKey []byte, keys [][]byte) bool {
-	for _, k := range keys {
-		if bytes.Equal(k, pubKey) {
-			return true
-		}
-	}
-	return false
-}

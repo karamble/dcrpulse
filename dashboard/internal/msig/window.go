@@ -159,13 +159,6 @@ func cursorFor(rec *WalletRecord, branch uint32) *CursorState {
 	return rec.Ext
 }
 
-func gapFor(branch uint32) uint32 {
-	if branch == BranchInternal {
-		return GapInt
-	}
-	return GapExt
-}
-
 // ensureWindowImported imports every ladder script both branches need to
 // reach their windows (cursor + gap, and past any observed use), then
 // syncs the wallet's own branch indices so signing at any imported index

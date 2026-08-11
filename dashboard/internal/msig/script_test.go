@@ -74,7 +74,14 @@ func TestMultiSigScriptCanonical(t *testing.T) {
 		if !bytes.Equal(pk, sorted[i]) {
 			t.Fatalf("extracted key %d does not match sorted roster", i)
 		}
-		if !ContainsPubKey(pk, pubs) {
+		found := false
+		for _, orig := range pubs {
+			if bytes.Equal(pk, orig) {
+				found = true
+				break
+			}
+		}
+		if !found {
 			t.Fatalf("extracted key %d not in original set", i)
 		}
 	}

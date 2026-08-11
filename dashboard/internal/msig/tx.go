@@ -266,24 +266,6 @@ func sigPushes(sigScript, redeemScript []byte) ([][]byte, error) {
 	return pushes[:len(pushes)-1], nil
 }
 
-// CountSigs returns the number of signatures present on a P2SH multisig
-// signature script, ignoring OP_0 placeholders. This counter is the only
-// authority for co-signing progress: dcrwallet's signrawtransaction
-// reports complete=true even for partially signed multisig inputs.
-func CountSigs(sigScript, redeemScript []byte) (int, error) {
-	pushes, err := sigPushes(sigScript, redeemScript)
-	if err != nil {
-		return 0, err
-	}
-	count := 0
-	for _, d := range pushes {
-		if len(d) > 0 {
-			count++
-		}
-	}
-	return count, nil
-}
-
 // AttributeSigs verifies every signature on input idx against the member
 // public keys and returns the members that signed, keyed by lowercase hex
 // pubkey. Any signature that fails to verify is an error: a relayed
@@ -331,35 +313,4 @@ func AttributeSigs(tx *wire.MsgTx, idx int, redeemScript []byte, memberKeys [][]
 		}
 	}
 	return signed, nil
-}
-
-// VerifyProposalUpdate checks a transaction returned by a cosigner against
-// the proposal's txid and returns the members whose signatures are present
-// on every input. The txid covers the whole transaction prefix, so the
-// single hash comparison proves inputs, outputs, lock time and expiry are
-// untouched; only signature scripts can legally differ.
-func VerifyProposalUpdate(updated *wire.MsgTx, expectedTxID string, redeemScript []byte, memberKeys [][]byte) (map[string]bool, error) {
-	if updated.TxHash().String() != expectedTxID {
-		return nil, fmt.Errorf("transaction prefix was altered: txid changed")
-	}
-	if len(updated.TxIn) == 0 {
-		return nil, fmt.Errorf("transaction has no inputs")
-	}
-	var common map[string]bool
-	for idx := range updated.TxIn {
-		signed, err := AttributeSigs(updated, idx, redeemScript, memberKeys)
-		if err != nil {
-			return nil, err
-		}
-		if common == nil {
-			common = signed
-			continue
-		}
-		for k := range common {
-			if !signed[k] {
-				delete(common, k)
-			}
-		}
-	}
-	return common, nil
 }

@@ -109,6 +109,18 @@ func (w *testWallet) sdb() sign.ScriptDB {
 	})
 }
 
+// stubResolver maps every input to the wallet's single redeem script with
+// each roster key owning itself, so attribution stays pubkey-hex-keyed.
+func (w *testWallet) stubResolver() InputResolver {
+	owner := make(map[string]string, len(w.sorted))
+	for _, pk := range w.sorted {
+		owner[hex.EncodeToString(pk)] = hex.EncodeToString(pk)
+	}
+	return func(int) ([]byte, map[string]string, error) {
+		return w.redeem, owner, nil
+	}
+}
+
 func (w *testWallet) signInput(tx *wire.MsgTx, idx, signer int) {
 	w.t.Helper()
 	prev := tx.TxIn[idx].SignatureScript
@@ -178,18 +190,18 @@ func TestPartialSignatureShapes(t *testing.T) {
 	if got := tx.TxHash().String(); got != txid {
 		t.Fatalf("txid changed after signing: %s", got)
 	}
-	count, err := CountSigs(tx.TxIn[0].SignatureScript, w.redeem)
+	signed, err := AttributeSigs(tx, 0, w.redeem, w.sorted)
 	if err != nil {
-		t.Fatalf("count: %v", err)
+		t.Fatalf("attribute: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("count after first signature: got %d, want 1", count)
+	if len(signed) != 1 {
+		t.Fatalf("count after first signature: got %d, want 1", len(signed))
 	}
 	nonEmpty, empty := pushShapes(t, tx.TxIn[0].SignatureScript)
 	if nonEmpty != 2 || empty != 0 { // sig + redeem push
 		t.Fatalf("first-signature shape: %d data pushes, %d empty", nonEmpty, empty)
 	}
-	signers, err := VerifyProposalUpdate(tx, txid, w.redeem, w.sorted)
+	signers, err := VerifyProposalUpdateHD(tx, txid, w.stubResolver())
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -200,7 +212,7 @@ func TestPartialSignatureShapes(t *testing.T) {
 	// Second signature out of roster order completes 2-of-3 with no
 	// placeholder and the script engine accepts the input.
 	w.signInput(tx, 0, 0)
-	signers, err = VerifyProposalUpdate(tx, txid, w.redeem, w.sorted)
+	signers, err = VerifyProposalUpdateHD(tx, txid, w.stubResolver())
 	if err != nil {
 		t.Fatalf("verify complete: %v", err)
 	}
@@ -224,12 +236,12 @@ func TestMergePaddingThreeOfThree(t *testing.T) {
 
 	w.signInput(tx, 0, 0)
 	w.signInput(tx, 0, 1)
-	count, err := CountSigs(tx.TxIn[0].SignatureScript, w.redeem)
+	signed, err := AttributeSigs(tx, 0, w.redeem, w.sorted)
 	if err != nil {
-		t.Fatalf("count: %v", err)
+		t.Fatalf("attribute: %v", err)
 	}
-	if count != 2 {
-		t.Fatalf("count at two of three: got %d", count)
+	if len(signed) != 2 {
+		t.Fatalf("count at two of three: got %d", len(signed))
 	}
 	// The merge pads the missing third signature with an OP_0
 	// placeholder; the input must not validate yet.
@@ -242,7 +254,7 @@ func TestMergePaddingThreeOfThree(t *testing.T) {
 	}
 
 	w.signInput(tx, 0, 2)
-	signers, err := VerifyProposalUpdate(tx, txid, w.redeem, w.sorted)
+	signers, err := VerifyProposalUpdateHD(tx, txid, w.stubResolver())
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -258,7 +270,7 @@ func TestMergePaddingThreeOfThree(t *testing.T) {
 	}
 }
 
-func TestVerifyProposalUpdateTamper(t *testing.T) {
+func TestVerifyProposalUpdateHDTamper(t *testing.T) {
 	w := newTestWallet(t, 2, 3)
 	funding := w.fundingTx(100_000_000)
 	tx := w.spendTx(funding, 99_990_000, 0)
@@ -268,7 +280,7 @@ func TestVerifyProposalUpdateTamper(t *testing.T) {
 	// Any prefix mutation changes the txid.
 	tampered := tx.Copy()
 	tampered.TxOut[0].Value++
-	if _, err := VerifyProposalUpdate(tampered, txid, w.redeem, w.sorted); err == nil {
+	if _, err := VerifyProposalUpdateHD(tampered, txid, w.stubResolver()); err == nil {
 		t.Fatalf("prefix tamper not detected")
 	}
 
@@ -289,7 +301,7 @@ func TestVerifyProposalUpdateTamper(t *testing.T) {
 		t.Fatalf("build script: %v", err)
 	}
 	foreignTx.TxIn[0].SignatureScript = foreignScript
-	if _, err := VerifyProposalUpdate(foreignTx, foreignTx.TxHash().String(), w.redeem, w.sorted); err == nil {
+	if _, err := VerifyProposalUpdateHD(foreignTx, foreignTx.TxHash().String(), w.stubResolver()); err == nil {
 		t.Fatalf("non-member signature not detected")
 	}
 
@@ -302,22 +314,23 @@ func TestVerifyProposalUpdateTamper(t *testing.T) {
 		t.Fatalf("build script: %v", err)
 	}
 	junkTx.TxIn[0].SignatureScript = junkScript
-	if _, err := VerifyProposalUpdate(junkTx, junkTx.TxHash().String(), w.redeem, w.sorted); err == nil {
+	if _, err := VerifyProposalUpdateHD(junkTx, junkTx.TxHash().String(), w.stubResolver()); err == nil {
 		t.Fatalf("junk signature not detected")
 	}
 }
 
-func TestCountSigsWrongRedeem(t *testing.T) {
+func TestAttributeSigsWrongRedeem(t *testing.T) {
 	w := newTestWallet(t, 2, 2)
 	other := newTestWallet(t, 2, 2)
 	funding := w.fundingTx(100_000_000)
 	tx := w.spendTx(funding, 99_990_000, 0)
 	w.signInput(tx, 0, 0)
-	if _, err := CountSigs(tx.TxIn[0].SignatureScript, other.redeem); err == nil {
+	if _, err := AttributeSigs(tx, 0, other.redeem, other.sorted); err == nil {
 		t.Fatalf("wrong redeem script not detected")
 	}
-	if n, err := CountSigs(nil, w.redeem); err != nil || n != 0 {
-		t.Fatalf("empty script: n=%d err=%v", n, err)
+	unsigned := w.spendTx(funding, 99_990_000, 0)
+	if signed, err := AttributeSigs(unsigned, 0, w.redeem, w.sorted); err != nil || len(signed) != 0 {
+		t.Fatalf("unsigned input: signed=%v err=%v", signed, err)
 	}
 }
 
