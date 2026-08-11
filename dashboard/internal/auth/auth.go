@@ -138,8 +138,9 @@ func Verify(password string) bool {
 	return bcrypt.CompareHashAndPassword(h, []byte(password)) == nil
 }
 
-// Change replaces the password after verifying the current one. The session
-// secret is kept, so the caller's existing session stays valid.
+// Change replaces the password after verifying the current one. A fresh session
+// secret is generated, so every other session is invalidated; the caller's own
+// session is re-issued by the change handler.
 func Change(current, next string) error {
 	if next == "" {
 		return errors.New("new password must not be empty")
@@ -151,12 +152,16 @@ func Change(current, next string) error {
 	if err != nil {
 		return err
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if err := persistLocked(enabled, h, secret, dismissed); err != nil {
+	sec := make([]byte, 32)
+	if _, err := rand.Read(sec); err != nil {
 		return err
 	}
-	hash = h
+	mu.Lock()
+	defer mu.Unlock()
+	if err := persistLocked(enabled, h, sec, dismissed); err != nil {
+		return err
+	}
+	hash, secret = h, sec
 	return nil
 }
 
