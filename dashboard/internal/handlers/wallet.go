@@ -37,8 +37,24 @@ func StartWalletRescan(beginHeight int64) {
 	go startRescanViaGrpc(int32(beginHeight))
 }
 
-// startRescanViaGrpc initiates a blockchain rescan using gRPC and broadcasts progress
+// startRescanViaGrpc runs one rescan at a time; overlapping requests coalesce
+// into a single follow-up pass from the lowest requested begin height.
 func startRescanViaGrpc(beginHeight int32) {
+	if !services.BeginRescan(int64(beginHeight)) {
+		return
+	}
+	for {
+		rescanStream(beginHeight)
+		next, again := services.EndRescan()
+		if !again {
+			return
+		}
+		beginHeight = int32(next)
+	}
+}
+
+// rescanStream initiates a blockchain rescan using gRPC and broadcasts progress
+func rescanStream(beginHeight int32) {
 	if rpc.WalletGrpcClient == nil {
 		wlltLog.Error("Cannot start gRPC rescan: gRPC client not initialized")
 		return

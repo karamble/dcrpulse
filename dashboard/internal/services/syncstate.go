@@ -229,6 +229,46 @@ func MarkRescanFinished() {
 	broadcastSyncSnapshot(snap)
 }
 
+var (
+	rescanRunMu  sync.Mutex
+	rescanBusy   bool
+	rescanFrom   int64 // begin height of the in-flight rescan
+	rescanQueued bool
+	rescanNext   int64 // lowest begin height requested while busy
+)
+
+// BeginRescan reserves the single rescan slot. Returns true if the caller should
+// run a rescan now, false if one is already in flight (the request is coalesced;
+// a lower begin height is remembered for one follow-up pass).
+func BeginRescan(from int64) bool {
+	if from < 0 {
+		from = 0
+	}
+	rescanRunMu.Lock()
+	defer rescanRunMu.Unlock()
+	if rescanBusy {
+		if from < rescanFrom && (!rescanQueued || from < rescanNext) {
+			rescanQueued, rescanNext = true, from
+		}
+		return false
+	}
+	rescanBusy, rescanFrom = true, from
+	return true
+}
+
+// EndRescan releases the slot. If a lower begin height was requested while the
+// rescan ran, returns that height and true so the caller runs one more pass.
+func EndRescan() (from int64, again bool) {
+	rescanRunMu.Lock()
+	defer rescanRunMu.Unlock()
+	if rescanQueued {
+		rescanQueued, rescanFrom = false, rescanNext
+		return rescanNext, true
+	}
+	rescanBusy = false
+	return 0, false
+}
+
 // MarkSyncDisconnected flags the snapshot as daemon-disconnected.
 func MarkSyncDisconnected(reason string) {
 	syncMu.Lock()
