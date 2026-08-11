@@ -6,7 +6,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -221,17 +220,10 @@ func balanceSampleAt(ctx context.Context, h int64) (*types.BalanceSample, error)
 	if err != nil {
 		return nil, err
 	}
-	hres, err := rpc.DcrdClient.RawRequest(ctx, "getblockheader", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, hash.String())),
-		json.RawMessage("true"),
-	})
+	hdr, err := rpc.DcrdClient.GetBlockHeaderVerbose(ctx, hash)
 	if err != nil {
 		return nil, err
 	}
-	var hdr struct {
-		Time int64 `json:"time"`
-	}
-	_ = json.Unmarshal(hres, &hdr)
 	return &types.BalanceSample{
 		Height:  h,
 		Time:    hdr.Time,
