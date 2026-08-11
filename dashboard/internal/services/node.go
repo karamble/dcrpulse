@@ -585,7 +585,7 @@ func analyzeMempoolTransactions(ctx context.Context) (tickets, votes, revocation
 		regularHashes = regularHashes[:maxCoinJoinScan]
 	}
 	for _, hash := range regularHashes {
-		if isCoinJoinMempoolTx(ctx, hash.String()) {
+		if isCoinJoinMempoolTx(ctx, hash) {
 			coinjoins++
 		}
 	}
@@ -615,22 +615,9 @@ func looksLikeCoinJoin(numInputs int, values []float64) bool {
 
 // isCoinJoinMempoolTx reports whether a mempool transaction looks like a
 // CoinJoin.
-func isCoinJoinMempoolTx(ctx context.Context, txHash string) bool {
-	result, err := rpc.DcrdClient.RawRequest(ctx, "getrawtransaction", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, txHash)),
-		json.RawMessage("1"),
-	})
+func isCoinJoinMempoolTx(ctx context.Context, txHash *chainhash.Hash) bool {
+	tx, err := rpc.DcrdClient.GetRawTransactionVerbose(ctx, txHash)
 	if err != nil {
-		return false
-	}
-
-	var tx struct {
-		Vin  []struct{} `json:"vin"`
-		Vout []struct {
-			Value float64 `json:"value"`
-		} `json:"vout"`
-	}
-	if err := json.Unmarshal(result, &tx); err != nil {
 		return false
 	}
 	values := make([]float64, len(tx.Vout))
