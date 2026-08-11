@@ -15,7 +15,6 @@ import {
 } from '../../services/api';
 import { PassphraseModal } from '../wallet/PassphraseModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
-import { formatAtoms } from '../../utils/amounts';
 import { apiError } from '../../utils/apiError';
 
 const POLICIES = ['yes', 'no', 'abstain'] as const;
@@ -161,7 +160,6 @@ export const TreasuryTab = () => {
         </div>
         <p className="text-sm text-muted-foreground">
           Per-hash policies override the matching Politeia key policy for that specific TSpend.
-          Active TSpends in the mempool show their requested amount and expiry below.
         </p>
         {tspends.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -198,14 +196,6 @@ export const TreasuryTab = () => {
                 ))}
               </div>
             </div>
-            {(t.amount || t.expiry) && (
-              <div className="text-xs text-muted-foreground space-x-3">
-                {t.amount ? (
-                  <span>amount: {formatAtoms(t.amount, 2)} DCR</span>
-                ) : null}
-                {t.expiry ? <span>expires at block {t.expiry.toLocaleString()}</span> : null}
-              </div>
-            )}
           </div>
         ))}
       </div>

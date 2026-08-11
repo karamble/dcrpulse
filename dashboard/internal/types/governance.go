@@ -112,14 +112,9 @@ type SetTreasuryKeyPolicyRequest struct {
 }
 
 // TSpendPolicy is one wallet-wide policy for a specific TSpend hash.
-// Amount, Expiry, BlockHeight are enriched from the treasury scanner
-// when the TSpend is also observed in our mempool view.
 type TSpendPolicy struct {
-	Hash        string `json:"hash"`
-	Policy      string `json:"policy"`
-	Amount      int64  `json:"amount,omitempty"`
-	Expiry      int64  `json:"expiry,omitempty"`
-	BlockHeight int64  `json:"blockHeight,omitempty"`
+	Hash   string `json:"hash"`
+	Policy string `json:"policy"`
 }
 
 // SetTSpendPolicyRequest is the body for the TSpend set endpoint.

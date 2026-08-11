@@ -1187,9 +1187,6 @@ export interface TreasuryKeyPolicy {
 export interface TSpendPolicyEntry {
   hash: string;
   policy: string;
-  amount?: number;
-  expiry?: number;
-  blockHeight?: number;
 }
 
 export interface Proposal {
