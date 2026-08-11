@@ -286,7 +286,7 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 	var votingInfo *types.TSpendVotingInfo
 
 	if txType == "tspend" {
-		politeiaKey = extractPoliteiaKey(rawTx.Vout)
+		politeiaKey = tspendPiKey(rawTx.Hex)
 		// Count recipients (exclude OP_RETURN output at index 0)
 		for _, vout := range rawTx.Vout {
 			if strings.Contains(vout.ScriptPubKey.Type, "treasurygen") {
@@ -405,33 +405,21 @@ func ssgenVoteInfo(txHex string, params *chaincfg.Params) *types.SSGenVoteInfo {
 	return info
 }
 
-// extractPoliteiaKey extracts the politeia key from a tspend transaction's OP_RETURN output
-func extractPoliteiaKey(vout []chainjson.Vout) string {
-	// TSpend transactions have OP_RETURN as the first output (index 0)
-	if len(vout) == 0 {
+// tspendPiKey extracts the Pi public key from a tspend's signature script.
+func tspendPiKey(txHex string) string {
+	raw, err := hex.DecodeString(txHex)
+	if err != nil {
 		return ""
 	}
-
-	firstOutput := vout[0]
-	if firstOutput.ScriptPubKey.Type != "nulldata" {
+	var mtx wire.MsgTx
+	if err := mtx.Deserialize(bytes.NewReader(raw)); err != nil {
 		return ""
 	}
-
-	// Parse hex: format is "6a20" + 32-byte politeia key
-	// 6a = OP_RETURN, 20 = push 32 bytes (0x20 = 32 decimal)
-	hex := firstOutput.ScriptPubKey.Hex
-	if len(hex) < 68 { // 4 (6a20) + 64 (32 bytes hex) = 68 minimum
+	_, pubKey, err := stake.CheckTSpend(&mtx)
+	if err != nil {
 		return ""
 	}
-
-	// Check for OP_RETURN prefix
-	if !strings.HasPrefix(hex, "6a20") {
-		return ""
-	}
-
-	// Extract the 32-byte politeia key (64 hex characters after "6a20")
-	politeiaKey := hex[4:68]
-	return politeiaKey
+	return hex.EncodeToString(pubKey)
 }
 
 // UniversalSearch auto-detects and searches for block/tx/address

@@ -54,7 +54,7 @@ type TransactionDetail struct {
 	Outputs  []TxOutput `json:"outputs"`
 	RawHex   string     `json:"rawHex,omitempty"`
 	// Treasury spend specific fields
-	PoliteiaKey    string            `json:"politeiaKey,omitempty"`    // Politeia key from OP_RETURN
+	PoliteiaKey    string            `json:"politeiaKey,omitempty"`    // Pi public key from TxIn[0]
 	RecipientCount int               `json:"recipientCount,omitempty"` // Number of treasury payout recipients
 	VotingInfo     *TSpendVotingInfo `json:"votingInfo,omitempty"`     // Voting data for tspend transactions
 	// Vote (SSGen) specific fields

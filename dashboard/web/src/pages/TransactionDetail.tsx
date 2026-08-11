@@ -370,10 +370,10 @@ export const TransactionDetail = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Politeia Key */}
+              {/* Pi Key */}
               {tx.politeiaKey && (
                 <div className="p-4 rounded-lg bg-background/50 md:col-span-2">
-                  <p className="text-sm text-muted-foreground mb-2">Politeia Proposal Key</p>
+                  <p className="text-sm text-muted-foreground mb-2">Pi Key</p>
                   <div className="flex items-center gap-2">
                     <p className="font-mono text-sm break-all flex-1">{tx.politeiaKey}</p>
                     <CopyButton text={tx.politeiaKey} />
