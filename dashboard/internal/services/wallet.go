@@ -1096,13 +1096,12 @@ func ListTransactions(ctx context.Context, count, from int) (*types.TransactionL
 		voteMaturity = int64(params.CoinbaseMaturity)
 	}
 
-	// Get current chain height for maturity calculations
-	var currentHeight int64 = 0
-	if rpc.DcrdClient != nil {
-		chainHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
-		if err == nil {
-			currentHeight = chainHeight
-		}
+	// The wallet's own tip. listtransactions confirmations are measured against
+	// it, so heights derived from them stay in the same frame even when the
+	// wallet lags dcrd.
+	currentHeight := int64(0)
+	if h, err := WalletTipHeight(ctx); err == nil {
+		currentHeight = h
 	}
 
 	// Call listtransactions RPC with parameters
