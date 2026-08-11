@@ -18,69 +18,6 @@ import (
 	"dcrpulse/internal/rpc"
 )
 
-// MsigOwnKey is this wallet's contribution to a shared multisig wallet: a
-// fresh external address and its derivation coordinates. The registry
-// records the coordinates so a seed-restored wallet can fast-forward its
-// address cursor and recover the key.
-type MsigOwnKey struct {
-	PubKey  string `json:"pubKey"`
-	Address string `json:"address"`
-	Account uint32 `json:"account"`
-	Branch  uint32 `json:"branch"`
-	Index   uint32 `json:"index"`
-}
-
-// DeriveMsigKey reserves the next external address of the account and
-// returns its compressed public key with derivation coordinates.
-// validateaddress is the authority for the pubkey hex and coordinates; the
-// gRPC NextAddress public_key field carries the pay-to-pubkey address
-// form, not hex.
-func DeriveMsigKey(ctx context.Context, account uint32) (*MsigOwnKey, error) {
-	if rpc.WalletClient == nil {
-		return nil, fmt.Errorf("wallet RPC client not initialized")
-	}
-	address, err := GetNextAddress(ctx, account)
-	if err != nil {
-		return nil, err
-	}
-	addrParam, err := json.Marshal(address)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := rpc.WalletClient.RawRequest(ctx, "validateaddress", []json.RawMessage{addrParam})
-	if err != nil {
-		return nil, fmt.Errorf("validateaddress: %w", err)
-	}
-	var res struct {
-		IsValid  bool    `json:"isvalid"`
-		IsMine   bool    `json:"ismine"`
-		PubKey   string  `json:"pubkey"`
-		AccountN *uint32 `json:"accountn"`
-		Branch   *uint32 `json:"branch"`
-		Index    *uint32 `json:"index"`
-	}
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return nil, err
-	}
-	if !res.IsValid || !res.IsMine {
-		return nil, fmt.Errorf("derived address %s is not recognized by the wallet", address)
-	}
-	if res.PubKey == "" || res.Branch == nil || res.Index == nil {
-		return nil, fmt.Errorf("wallet did not reveal derivation data for %s", address)
-	}
-	key := &MsigOwnKey{
-		PubKey:  res.PubKey,
-		Address: address,
-		Account: account,
-		Branch:  *res.Branch,
-		Index:   *res.Index,
-	}
-	if res.AccountN != nil {
-		key.Account = *res.AccountN
-	}
-	return key, nil
-}
-
 // ImportMsigScript registers a redeem script with the wallet so the P2SH
 // address is watched. Freshly created scripts skip the rescan (nothing to
 // find yet); a restore rescans from just before the recorded creation
