@@ -63,18 +63,6 @@ type vtRunState struct {
 	lastErr string             // guarded by vtMu
 }
 
-// IsVoteTrickleRunning reports whether any proposal is currently trickling.
-func IsVoteTrickleRunning() bool {
-	vtMu.Lock()
-	defer vtMu.Unlock()
-	for _, st := range vtRuns {
-		if !st.done {
-			return true
-		}
-	}
-	return false
-}
-
 // LastVoteTrickleEvents returns up to n most-recent events, oldest first.
 func LastVoteTrickleEvents(n int) []types.VoteTrickleEvent {
 	return vtLog.last(n)

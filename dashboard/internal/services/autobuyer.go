@@ -28,7 +28,6 @@ var (
 	autobuyerMu      sync.Mutex
 	autobuyerCancel  context.CancelFunc
 	autobuyerLastErr string
-	autobuyerActive  *types.AutobuyerSettings
 
 	autobuyerLog = eventRing[types.AutobuyerEvent]{max: autobuyerEventBufferSize}
 	autobuyerBus eventBus[types.AutobuyerEvent]
@@ -46,18 +45,6 @@ func LastAutobuyerError() string {
 	autobuyerMu.Lock()
 	defer autobuyerMu.Unlock()
 	return autobuyerLastErr
-}
-
-// AutobuyerActiveSettings returns the settings the supervisor is currently
-// running with, or nil when stopped.
-func AutobuyerActiveSettings() *types.AutobuyerSettings {
-	autobuyerMu.Lock()
-	defer autobuyerMu.Unlock()
-	if autobuyerActive == nil {
-		return nil
-	}
-	cp := *autobuyerActive
-	return &cp
 }
 
 // LastAutobuyerEvents returns up to n most-recent events, oldest first.
@@ -102,7 +89,6 @@ func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error 
 	autobuyerCancel = cancel
 	autobuyerLastErr = ""
 	sCopy := *settings
-	autobuyerActive = &sCopy
 	autobuyerMu.Unlock()
 
 	// Remember the VSP for the picker, matching Decrediton's
@@ -126,7 +112,6 @@ func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error 
 		cancel()
 		autobuyerMu.Lock()
 		autobuyerCancel = nil
-		autobuyerActive = nil
 		autobuyerLastErr = err.Error()
 		autobuyerMu.Unlock()
 		return fmt.Errorf("%s: %w", what, err)
@@ -188,7 +173,6 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceA
 	defer func() {
 		autobuyerMu.Lock()
 		autobuyerCancel = nil
-		autobuyerActive = nil
 		autobuyerMu.Unlock()
 	}()
 	// Re-lock whatever StartAutobuyer opened once the buyer stops.

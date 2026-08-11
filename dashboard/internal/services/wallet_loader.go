@@ -409,24 +409,3 @@ func CheckWalletLoaded(ctx context.Context) (bool, error) {
 
 	return true, nil
 }
-
-// OpenWalletWithRetry attempts to open wallet with retries for startup scenarios
-func OpenWalletWithRetry(publicPass string, maxRetries int) error {
-	for i := 0; i < maxRetries; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := OpenWallet(ctx, publicPass)
-		cancel()
-
-		if err == nil {
-			return nil
-		}
-
-		if i < maxRetries-1 {
-			wlltLog.Warnf("Failed to open wallet (attempt %d/%d): %v, retrying...", i+1, maxRetries, err)
-			time.Sleep(2 * time.Second)
-		} else {
-			return fmt.Errorf("failed to open wallet after %d attempts: %w", maxRetries, err)
-		}
-	}
-	return nil
-}
