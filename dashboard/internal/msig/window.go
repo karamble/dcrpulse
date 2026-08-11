@@ -174,14 +174,15 @@ func gapFor(branch uint32) uint32 {
 // importscript is idempotent, so replays re-import harmlessly. These are
 // pre-use imports: the addresses have never been revealed, so no rescan
 // is needed. Observation-class callers schedule their own rescan.
-func ensureWindowImported(ctx context.Context, store *Store, tempID string) error {
+// The bool reports whether any branch actually needed importing.
+func ensureWindowImported(ctx context.Context, store *Store, tempID string) (bool, error) {
 	rec, ok := store.Wallet(tempID)
 	if !ok || !rec.HD {
-		return fmt.Errorf("unknown HD shared wallet %s", tempID)
+		return false, fmt.Errorf("unknown HD shared wallet %s", tempID)
 	}
 	params, err := paramsForNetwork(rec.Network)
 	if err != nil {
-		return err
+		return false, err
 	}
 	type branchPlan struct {
 		branch  uint32
@@ -200,21 +201,21 @@ func ensureWindowImported(ctx context.Context, store *Store, tempID string) erro
 		}
 		entries, err := DeriveWindow(rec.M, rec.Xpubs, p.branch, p.from, p.through, params)
 		if err != nil {
-			return err
+			return false, err
 		}
 		for _, e := range entries {
 			if err := importScriptSeam(ctx, fmt.Sprintf("%x", e.Script), false, 0); err != nil {
-				return fmt.Errorf("import ladder script %d/%d: %v", e.Branch, e.Index, err)
+				return false, fmt.Errorf("import ladder script %d/%d: %v", e.Branch, e.Index, err)
 			}
 		}
 		if acctName == "" && rec.OwnHD != nil {
 			if acctName, err = accountNameByNumber(ctx, rec.OwnHD.Account); err != nil {
-				return err
+				return false, err
 			}
 		}
 		if acctName != "" {
 			if err := syncBranchSeam(ctx, acctName, p.branch, p.through); err != nil {
-				return fmt.Errorf("sync own branch %d: %v", p.branch, err)
+				return false, fmt.Errorf("sync own branch %d: %v", p.branch, err)
 			}
 		}
 		imported = true
@@ -227,14 +228,14 @@ func ensureWindowImported(ctx context.Context, store *Store, tempID string) erro
 			}
 			return nil
 		}); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if imported {
 		msigLog.Infof("%q ladder imported through ext %d / int %d", rec.Label,
 			windowEnd(rec.Ext, GapExt), windowEnd(rec.Int, GapInt))
 	}
-	return nil
+	return imported, nil
 }
 
 func cursorValue(c *CursorState) CursorState {
@@ -277,7 +278,7 @@ func AllocateReceiveAddress(ctx context.Context, id string) (string, uint32, err
 	if err != nil {
 		return "", 0, err
 	}
-	if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
+	if _, err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
 		return "", 0, err
 	}
 	rec, _ = store.Wallet(rec.TempID)
@@ -301,7 +302,7 @@ func allocateChangeIndex(ctx context.Context, store *Store, rec *WalletRecord) (
 	if err != nil {
 		return 0, "", err
 	}
-	if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
+	if _, err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
 		return 0, "", err
 	}
 	fresh, _ := store.Wallet(rec.TempID)
@@ -448,7 +449,7 @@ func observeUsage(ctx context.Context, store *Store, rec *WalletRecord, utxos []
 	}); err != nil {
 		return
 	}
-	if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
+	if _, err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
 		msigLog.Warnf("window top-up for %q: %v", rec.Label, err)
 		return
 	}

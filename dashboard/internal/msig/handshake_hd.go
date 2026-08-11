@@ -377,7 +377,7 @@ func ActivateRound(ctx context.Context, id string, passphrase []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
+	if _, err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
 		return fmt.Errorf("import the ladder: %v", err)
 	}
 	tip, err := tipHeightSeam(ctx)
@@ -719,7 +719,7 @@ func completeCosignerImportHD(ctx context.Context, store *Store, tempID string) 
 		msigLog.Infof("shared wallet %q waits for wallet %q to import its ladder", rec.Label, store.WalletName())
 		return
 	}
-	if err := ensureWindowImported(ctx, store, tempID); err != nil {
+	if _, err := ensureWindowImported(ctx, store, tempID); err != nil {
 		msigLog.Warnf("ladder import deferred: %v", err)
 		return
 	}

@@ -93,7 +93,7 @@ func inboundSignReq(ctx context.Context, store *Store, rec *WalletRecord, msg *M
 		// scanned yet (a peer ran ahead within the gap window). Top the
 		// window up, schedule the bounded rescan and retry once before
 		// burning the hop with a decline.
-		if ierr := ensureWindowImported(ctx, store, rec.TempID); ierr == nil {
+		if imp, ierr := ensureWindowImported(ctx, store, rec.TempID); ierr == nil && imp {
 			from := rec.CreatedHeight - 1
 			if from < 0 {
 				from = 0

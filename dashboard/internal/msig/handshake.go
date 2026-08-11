@@ -462,7 +462,7 @@ func ResumePending(ctx context.Context) {
 		case StatusPendingImport:
 			completeCosignerImportHD(ctx, store, rec.TempID)
 		case StatusActive:
-			if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
+			if _, err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
 				msigLog.Warnf("window catch-up for %q: %v", rec.Label, err)
 			}
 		}

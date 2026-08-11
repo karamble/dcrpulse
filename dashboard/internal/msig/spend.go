@@ -514,7 +514,7 @@ func SignIncomingProposal(ctx context.Context, walletID, txid string, passphrase
 	}
 	// The wallet only signs for child keys its address manager has seen;
 	// make sure the window (and so every input's index) is synced.
-	if err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
+	if _, err := ensureWindowImported(ctx, store, rec.TempID); err != nil {
 		return err
 	}
 	prevs, err := prevInputsFor(rec, prop.Inputs)

@@ -198,7 +198,7 @@ func ImportBackupCard(ctx context.Context, card *BackupCard, passphrase []byte) 
 	if err := store.PutWallet(restored); err != nil {
 		return nil, err
 	}
-	if err := ensureWindowImported(ctx, store, restored.TempID); err != nil {
+	if _, err := ensureWindowImported(ctx, store, restored.TempID); err != nil {
 		return nil, fmt.Errorf("the wallet could not import the ladder: %v", err)
 	}
 	scanFrom := restored.CreatedHeight - 1
