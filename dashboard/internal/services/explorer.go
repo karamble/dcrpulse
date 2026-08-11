@@ -95,28 +95,9 @@ func FetchBlockSummaryByHeight(ctx context.Context, height int64) (*types.BlockS
 	// The verbose block carries every field a summary needs, so it answers on
 	// its own. verbosetx stays off: a count does not need the transactions
 	// themselves, and a listing page asks for up to a hundred of these.
-	blockResult, err := rpc.DcrdClient.RawRequest(ctx, "getblock", []json.RawMessage{
-		json.RawMessage(fmt.Sprintf(`"%s"`, hash.String())),
-		json.RawMessage(`true`),
-	})
+	block, err := rpc.DcrdClient.GetBlockVerbose(ctx, hash, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block: %w", err)
-	}
-
-	var block struct {
-		Hash          string   `json:"hash"`
-		Confirmations int64    `json:"confirmations"`
-		Height        int64    `json:"height"`
-		Time          int64    `json:"time"`
-		PreviousHash  string   `json:"previousblockhash"`
-		Difficulty    float64  `json:"difficulty"`
-		Size          int64    `json:"size"`
-		Tx            []string `json:"tx"`
-		STx           []string `json:"stx"`
-	}
-
-	if err := json.Unmarshal(blockResult, &block); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
 	}
 
 	return &types.BlockSummary{
@@ -126,7 +107,7 @@ func FetchBlockSummaryByHeight(ctx context.Context, height int64) (*types.BlockS
 		Timestamp:     time.Unix(block.Time, 0),
 		Confirmations: block.Confirmations,
 		TxCount:       len(block.Tx) + len(block.STx),
-		Size:          block.Size,
+		Size:          int64(block.Size),
 		Difficulty:    block.Difficulty,
 	}, nil
 }
@@ -144,74 +125,50 @@ func FetchBlockByHeight(ctx context.Context, height int64) (*types.BlockDetail, 
 
 // FetchBlockByHash gets detailed block info by hash
 func FetchBlockByHash(ctx context.Context, hash string) (*types.BlockDetail, error) {
-	// verbose=true + verbosetx=true returns every tx's full vin/vout inline
-	// (rawtx/rawstx), so no per-transaction getrawtransaction call is needed.
-	// dcrd sends either the txid arrays or the inline ones, never both.
-	result, err := rpc.DcrdClient.RawRequest(ctx, "getblock", []json.RawMessage{
-		jsonStr(hash),
-		json.RawMessage(`true`),
-		json.RawMessage(`true`),
-	})
+	h, err := chainhash.NewHashFromStr(hash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid block hash: %w", err)
+	}
+
+	// verboseTx=true returns every tx's full vin/vout inline (rawtx/rawstx),
+	// so no per-transaction getrawtransaction call is needed. dcrd sends
+	// either the txid arrays or the inline ones, never both.
+	res, err := rpc.DcrdClient.GetBlockVerbose(ctx, h, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block: %w", err)
 	}
 
-	return blockDetailFromVerbose(result)
+	return blockDetailFromVerbose(res)
 }
 
 // blockDetailFromVerbose builds the block view from a getblock reply that was
 // asked for its transactions inline.
-func blockDetailFromVerbose(result json.RawMessage) (*types.BlockDetail, error) {
-	var rawBlock struct {
-		Hash          string                   `json:"hash"`
-		Confirmations int64                    `json:"confirmations"`
-		Height        int64                    `json:"height"`
-		Version       int32                    `json:"version"`
-		MerkleRoot    string                   `json:"merkleroot"`
-		StakeRoot     string                   `json:"stakeroot"`
-		Time          int64                    `json:"time"`
-		Nonce         uint32                   `json:"nonce"`
-		VoteBits      uint16                   `json:"votebits"`
-		PreviousHash  string                   `json:"previousblockhash"`
-		NextHash      string                   `json:"nextblockhash"`
-		Difficulty    float64                  `json:"difficulty"`
-		StakeVersion  uint32                   `json:"stakeversion"`
-		Size          int64                    `json:"size"`
-		RawTx         []map[string]interface{} `json:"rawtx"`
-		RawSTx        []map[string]interface{} `json:"rawstx"`
-	}
-
-	if err := json.Unmarshal(result, &rawBlock); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
-	}
-
-	txCount := len(rawBlock.RawTx) + len(rawBlock.RawSTx)
+func blockDetailFromVerbose(block *chainjson.GetBlockVerboseResult) (*types.BlockDetail, error) {
+	txCount := len(block.RawTx) + len(block.RawSTx)
 	transactions := make([]types.TransactionSummary, 0, txCount)
-	for _, txData := range append(rawBlock.RawTx, rawBlock.RawSTx...) {
-		txSummary := extractTransactionSummary(txData, rawBlock.Height, rawBlock.Hash, rawBlock.Time, rawBlock.Confirmations)
-		if txSummary != nil {
-			transactions = append(transactions, *txSummary)
-		}
+	for _, tx := range append(block.RawTx, block.RawSTx...) {
+		summary := txSummaryFromRaw(tx, block.Height, block.Hash, block.Time, block.Confirmations)
+		transactions = append(transactions, *summary)
 	}
 
 	return &types.BlockDetail{
 		BlockSummary: types.BlockSummary{
-			Height:        rawBlock.Height,
-			Hash:          rawBlock.Hash,
-			PreviousHash:  rawBlock.PreviousHash,
-			Timestamp:     time.Unix(rawBlock.Time, 0),
-			Confirmations: rawBlock.Confirmations,
+			Height:        block.Height,
+			Hash:          block.Hash,
+			PreviousHash:  block.PreviousHash,
+			Timestamp:     time.Unix(block.Time, 0),
+			Confirmations: block.Confirmations,
 			TxCount:       txCount,
-			Size:          rawBlock.Size,
-			Difficulty:    rawBlock.Difficulty,
+			Size:          int64(block.Size),
+			Difficulty:    block.Difficulty,
 		},
-		NextHash:     rawBlock.NextHash,
-		MerkleRoot:   rawBlock.MerkleRoot,
-		StakeRoot:    rawBlock.StakeRoot,
-		Version:      rawBlock.Version,
-		VoteBits:     rawBlock.VoteBits,
-		StakeVersion: rawBlock.StakeVersion,
-		Nonce:        rawBlock.Nonce,
+		NextHash:     block.NextHash,
+		MerkleRoot:   block.MerkleRoot,
+		StakeRoot:    block.StakeRoot,
+		Version:      block.Version,
+		VoteBits:     block.VoteBits,
+		StakeVersion: block.StakeVersion,
+		Nonce:        block.Nonce,
 		Transactions: transactions,
 	}, nil
 }
@@ -531,78 +488,38 @@ func isHex(s string) bool {
 	return true
 }
 
-func extractTransactionSummary(txData interface{}, blockHeight int64, blockHash string, blockTime int64, confirmations int64) *types.TransactionSummary {
-	// If txData is just a string (tx hash), return minimal info
-	if txHash, ok := txData.(string); ok {
-		return &types.TransactionSummary{
-			TxID:          txHash,
-			Type:          "unknown",
-			BlockHeight:   blockHeight,
-			BlockHash:     blockHash,
-			Timestamp:     time.Unix(blockTime, 0),
-			Confirmations: confirmations,
-		}
-	}
-
-	// If txData is a full transaction object, extract details
-	txMap, ok := txData.(map[string]interface{})
-	if !ok {
-		return nil
-	}
-
-	txid, _ := txMap["txid"].(string)
-
+// txSummaryFromRaw summarizes one inline transaction of a verbose getblock
+// reply.
+func txSummaryFromRaw(tx chainjson.TxRawResult, blockHeight int64, blockHash string, blockTime int64, confirmations int64) *types.TransactionSummary {
 	// dcrd's verbose transactions carry no size field; the serialized hex is
 	// the size.
-	var size float64
-	if hex, ok := txMap["hex"].(string); ok {
-		size = float64(len(hex) / 2)
-	}
+	size := len(tx.Hex) / 2
 
-	// Get vout to calculate total value
 	totalValue := 0.0
-	if vout, ok := txMap["vout"].([]interface{}); ok {
-		for _, v := range vout {
-			if voutMap, ok := v.(map[string]interface{}); ok {
-				if value, ok := voutMap["value"].(float64); ok {
-					totalValue += value
-				}
-			}
-		}
+	for _, vout := range tx.Vout {
+		totalValue += vout.Value
 	}
 
-	// Calculate fee
+	// A transaction without inputs has no fee to derive.
 	fee := 0.0
-	totalIn := 0.0
-	if vin, ok := txMap["vin"].([]interface{}); ok {
-		for _, v := range vin {
-			if vinMap, ok := v.(map[string]interface{}); ok {
-				if amountIn, ok := vinMap["amountin"].(float64); ok {
-					totalIn += amountIn
-				}
-			}
+	if len(tx.Vin) > 0 {
+		totalIn := 0.0
+		for _, vin := range tx.Vin {
+			totalIn += vin.AmountIn
 		}
 		fee = totalIn - totalValue
 	}
 
-	// Determine transaction type
-	txType := "regular"
-	if vin, ok := txMap["vin"].([]interface{}); ok {
-		if vout, ok := txMap["vout"].([]interface{}); ok {
-			txType = categorizeTransactionFromMaps(vin, vout)
-		}
-	}
-
 	return &types.TransactionSummary{
-		TxID:          txid,
-		Type:          txType,
+		TxID:          tx.Txid,
+		Type:          categorizeTransactionTyped(tx.Vin, tx.Vout),
 		BlockHeight:   blockHeight,
 		BlockHash:     blockHash,
 		Timestamp:     time.Unix(blockTime, 0),
 		Confirmations: confirmations,
 		TotalValue:    totalValue,
 		Fee:           fee,
-		Size:          int(size),
+		Size:          size,
 	}
 }
 
@@ -623,49 +540,6 @@ func classifyScriptType(scriptType string) string {
 		return "revocation"
 	}
 	return ""
-}
-
-func categorizeTransaction(vin []interface{}, vout []interface{}) string {
-	// dcrd emits a different key set per input class, so presence of the key
-	// is the test, not its value.
-	if len(vin) > 0 {
-		if vinMap, ok := vin[0].(map[string]interface{}); ok {
-			if _, has := vinMap["stakebase"]; has {
-				return "vote"
-			}
-			if _, has := vinMap["coinbase"]; has {
-				return "coinbase"
-			}
-		}
-	}
-
-	values := make([]float64, 0, len(vout))
-	for _, v := range vout {
-		voutMap, ok := v.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if scriptPubKey, ok := voutMap["scriptPubKey"].(map[string]interface{}); ok {
-			if scriptType, ok := scriptPubKey["type"].(string); ok {
-				if kind := classifyScriptType(scriptType); kind != "" {
-					return kind
-				}
-			}
-		}
-		if value, ok := voutMap["value"].(float64); ok {
-			values = append(values, value)
-		}
-	}
-
-	if looksLikeCoinJoin(len(vin), values) {
-		return "coinjoin"
-	}
-
-	return "regular"
-}
-
-func categorizeTransactionFromMaps(vin []interface{}, vout []interface{}) string {
-	return categorizeTransaction(vin, vout)
 }
 
 // categorizeTransactionTyped works with the daemon's own wire types.

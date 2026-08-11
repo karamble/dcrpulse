@@ -4,7 +4,11 @@
 
 package services
 
-import "testing"
+import (
+	"testing"
+
+	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
+)
 
 func TestClassifyScriptType(t *testing.T) {
 	tests := []struct{ scriptType, want string }{
@@ -24,40 +28,36 @@ func TestClassifyScriptType(t *testing.T) {
 	}
 }
 
-// dcrd emits a different key set per input class, so a regular input carries no
-// stakebase key at all. The map form must test presence, not value.
+// dcrd never emits an empty discriminator value, so a non-empty Stakebase or
+// Coinbase field is the input-class test.
 func TestCategorizeTransactionInputClass(t *testing.T) {
-	vout := []interface{}{map[string]interface{}{
-		"value":        1.0,
-		"scriptPubKey": map[string]interface{}{"type": "pubkeyhash"},
+	vout := []chainjson.Vout{{
+		Value:        1.0,
+		ScriptPubKey: chainjson.ScriptPubKeyResult{Type: "pubkeyhash"},
 	}}
 
 	tests := []struct {
 		name string
-		vin  []interface{}
+		vin  []chainjson.Vin
 		want string
 	}{{
-		name: "stakebase key present marks a vote",
-		vin:  []interface{}{map[string]interface{}{"stakebase": "00"}},
+		name: "stakebase input marks a vote",
+		vin:  []chainjson.Vin{{Stakebase: "00"}},
 		want: "vote",
 	}, {
-		name: "an empty stakebase value is still a vote",
-		vin:  []interface{}{map[string]interface{}{"stakebase": ""}},
-		want: "vote",
-	}, {
-		name: "coinbase key present marks a coinbase",
-		vin:  []interface{}{map[string]interface{}{"coinbase": "00"}},
+		name: "coinbase input marks a coinbase",
+		vin:  []chainjson.Vin{{Coinbase: "00"}},
 		want: "coinbase",
 	}, {
-		name: "neither key means an ordinary input",
-		vin:  []interface{}{map[string]interface{}{"txid": "ab"}},
+		name: "neither marks an ordinary input",
+		vin:  []chainjson.Vin{{Txid: "ab"}},
 		want: "regular",
 	}}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := categorizeTransaction(test.vin, vout); got != test.want {
-				t.Fatalf("categorizeTransaction = %q, want %q", got, test.want)
+			if got := categorizeTransactionTyped(test.vin, vout); got != test.want {
+				t.Fatalf("categorizeTransactionTyped = %q, want %q", got, test.want)
 			}
 		})
 	}
@@ -66,12 +66,12 @@ func TestCategorizeTransactionInputClass(t *testing.T) {
 // The first output that says anything decides, so an earlier stake output wins
 // over a later treasury one.
 func TestCategorizeTransactionFirstOutputWins(t *testing.T) {
-	vin := []interface{}{map[string]interface{}{"txid": "ab"}}
-	vout := []interface{}{
-		map[string]interface{}{"value": 1.0, "scriptPubKey": map[string]interface{}{"type": "stakesubmission"}},
-		map[string]interface{}{"value": 1.0, "scriptPubKey": map[string]interface{}{"type": "treasurygen"}},
+	vin := []chainjson.Vin{{Txid: "ab"}}
+	vout := []chainjson.Vout{
+		{Value: 1.0, ScriptPubKey: chainjson.ScriptPubKeyResult{Type: "stakesubmission"}},
+		{Value: 1.0, ScriptPubKey: chainjson.ScriptPubKeyResult{Type: "treasurygen"}},
 	}
-	if got := categorizeTransaction(vin, vout); got != "ticket" {
-		t.Fatalf("categorizeTransaction = %q, want ticket", got)
+	if got := categorizeTransactionTyped(vin, vout); got != "ticket" {
+		t.Fatalf("categorizeTransactionTyped = %q, want ticket", got)
 	}
 }

@@ -5,19 +5,15 @@
 package services
 
 import (
-	"encoding/json"
 	"testing"
 
 	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
 )
 
-// verboseBlock renders a getblock reply the way dcrd does when asked for its
-// transactions inline. Building it from dcrd's own result types rather than
-// hand-written JSON means a renamed field breaks the test instead of slipping
-// through.
-func verboseBlock(t *testing.T, regular, stake []chainjson.TxRawResult) json.RawMessage {
-	t.Helper()
-	raw, err := json.Marshal(chainjson.GetBlockVerboseResult{
+// verboseBlock builds a getblock reply the way dcrd shapes it when asked for
+// its transactions inline, using dcrd's own result type.
+func verboseBlock(regular, stake []chainjson.TxRawResult) *chainjson.GetBlockVerboseResult {
+	return &chainjson.GetBlockVerboseResult{
 		Hash:          "11aecd7e0afdd46253166835e4ccae46134a07000d6c55d56b8bc308d06d86da",
 		Height:        1104000,
 		Time:          1786021850,
@@ -25,11 +21,7 @@ func verboseBlock(t *testing.T, regular, stake []chainjson.TxRawResult) json.Raw
 		Size:          4096,
 		RawTx:         regular,
 		RawSTx:        stake,
-	})
-	if err != nil {
-		t.Fatalf("marshal block: %v", err)
 	}
-	return raw
 }
 
 // regularTx is an ordinary transaction: a spending input, so no stakebase key
@@ -91,7 +83,7 @@ func TestBlockDetailFromVerbose(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			block, err := blockDetailFromVerbose(verboseBlock(t, tc.regular, tc.stake))
+			block, err := blockDetailFromVerbose(verboseBlock(tc.regular, tc.stake))
 			if err != nil {
 				t.Fatalf("blockDetailFromVerbose: %v", err)
 			}
@@ -125,17 +117,12 @@ func TestBlockDetailFromVerbose(t *testing.T) {
 // arrays are read: a reply carrying only txids must not masquerade as a block
 // whose transactions were returned.
 func TestBlockDetailFromVerboseIgnoresTxidArrays(t *testing.T) {
-	raw, err := json.Marshal(chainjson.GetBlockVerboseResult{
+	block, err := blockDetailFromVerbose(&chainjson.GetBlockVerboseResult{
 		Hash:   "11aecd7e",
 		Height: 1104000,
 		Tx:     []string{"a1", "a2"},
 		STx:    []string{"b1"},
 	})
-	if err != nil {
-		t.Fatalf("marshal block: %v", err)
-	}
-
-	block, err := blockDetailFromVerbose(raw)
 	if err != nil {
 		t.Fatalf("blockDetailFromVerbose: %v", err)
 	}
