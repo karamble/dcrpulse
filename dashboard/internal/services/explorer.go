@@ -655,20 +655,15 @@ func FetchMempoolTransactions(ctx context.Context) (*types.MempoolTransactions, 
 	}
 
 	// Get raw mempool transaction hashes
-	result, err := rpc.DcrdClient.RawRequest(ctx, "getrawmempool", []json.RawMessage{})
+	hashes, err := rpc.DcrdClient.GetRawMempool(ctx, chainjson.GRMAll)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mempool: %w", err)
 	}
 
-	var txHashes []string
-	if err := json.Unmarshal(result, &txHashes); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal mempool hashes: %w", err)
-	}
-
 	// Limit to reasonable number for performance
 	maxTxs := 500
-	if len(txHashes) > maxTxs {
-		txHashes = txHashes[:maxTxs]
+	if len(hashes) > maxTxs {
+		hashes = hashes[:maxTxs]
 	}
 
 	// Get mempool info for size
@@ -685,11 +680,11 @@ func FetchMempoolTransactions(ctx context.Context) (*types.MempoolTransactions, 
 	}
 
 	// Fetch each transaction
-	transactions := make([]types.TransactionSummary, 0, len(txHashes))
-	for _, txHash := range txHashes {
-		tx, err := FetchTransaction(ctx, txHash)
+	transactions := make([]types.TransactionSummary, 0, len(hashes))
+	for _, hash := range hashes {
+		tx, err := FetchTransaction(ctx, hash.String())
 		if err != nil {
-			nodeLog.Warnf("Failed to fetch mempool transaction %s: %v", txHash, err)
+			nodeLog.Warnf("Failed to fetch mempool transaction %s: %v", hash, err)
 			continue
 		}
 
