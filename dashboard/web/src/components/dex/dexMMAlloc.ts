@@ -220,10 +220,11 @@ export const suggestedAllocation = (
 
   const baseReservesFactor = 1 + baseORF;
   const quoteReservesFactor = 1 + quoteORF;
+  // Redeem reserves scale by the counter side's lots and factor (bisonw feesAndCommit).
   const baseBookingFees =
-    baseBookingFeesPerLot * baseLots * baseReservesFactor + baseRedeemReservesPerLot * quoteLots * baseReservesFactor;
+    baseBookingFeesPerLot * baseLots * baseReservesFactor + baseRedeemReservesPerLot * quoteLots * quoteReservesFactor;
   const quoteBookingFees =
-    quoteBookingFeesPerLot * quoteLots * quoteReservesFactor + quoteRedeemReservesPerLot * baseLots * quoteReservesFactor;
+    quoteBookingFeesPerLot * quoteLots * quoteReservesFactor + quoteRedeemReservesPerLot * baseLots * baseReservesFactor;
 
   // ---- projectedAllocations (conventional component amounts) ----
   const bBook = commit.dex.base.lots * lotSizeConv;
