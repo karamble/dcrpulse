@@ -258,7 +258,7 @@ func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
 			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
-		case strings.Contains(lower, "already running"):
+		case strings.Contains(lower, "already running"), strings.Contains(lower, "mixer"):
 			http.Error(w, msg, http.StatusConflict)
 		default:
 			stkeLog.Errorf("StartAutobuyer failed: %v", err)

@@ -67,8 +67,12 @@ export const AutobuyerTab = () => {
 
   const refreshStatus = async () => {
     try {
-      const s = await getAutobuyerStatus();
+      const [s, priv] = await Promise.all([
+        getAutobuyerStatus(),
+        getPrivacyStatus().catch(() => null),
+      ]);
       setStatus(s);
+      if (priv) setPrivacy(priv);
     } catch {
       /* ignore */
     }
@@ -166,6 +170,7 @@ export const AutobuyerTab = () => {
   const balanceNum = parseFloat(balance);
   const balanceValid = !isNaN(balanceNum) && balanceNum >= 0;
   const settingsValid = vsp !== null && account !== null && balanceValid;
+  const mixerBlocked = !!privacy?.mixerRunning && !running;
 
   const buildSettings = (): AutobuyerSettings | null => {
     if (!vsp || account === null || !balanceValid) return null;
@@ -269,8 +274,8 @@ export const AutobuyerTab = () => {
               </div>
               {privacy.mixerRunning && (
                 <p className="text-xs text-muted-foreground">
-                  Starting the autobuyer stops the standalone mixer; the autobuyer mixes tickets
-                  while it runs.
+                  Stop the privacy mixer (on the Privacy tab) before starting the autobuyer; the
+                  autobuyer mixes tickets on its own while it runs.
                 </p>
               )}
             </div>
@@ -352,7 +357,8 @@ export const AutobuyerTab = () => {
           ) : (
             <button
               onClick={() => setModalOpen(true)}
-              disabled={!settingsValid || busy}
+              disabled={!settingsValid || busy || mixerBlocked}
+              title={mixerBlocked ? 'Stop the privacy mixer before starting the autobuyer' : undefined}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play className="h-4 w-4" />

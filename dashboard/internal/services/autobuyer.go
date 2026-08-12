@@ -79,6 +79,11 @@ func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error 
 	if settings.BalanceToMaintain < 0 {
 		return fmt.Errorf("balanceToMaintain must be >= 0")
 	}
+	// The autobuyer mixes inline while it runs, so the standalone continuous
+	// mixer must be stopped first (both spend the mixed account).
+	if IsMixerRunning() {
+		return fmt.Errorf("stop the account mixer before starting the ticket autobuyer")
+	}
 
 	autobuyerMu.Lock()
 	if autobuyerCancel != nil {
@@ -186,18 +191,6 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceA
 	recordAutobuyerEvent("info", fmt.Sprintf("Autobuyer starting (account=%d vsp=%s balanceToMaintain=%.8f DCR)",
 		settings.Account, settings.VspHost, settings.BalanceToMaintain))
 
-	if mixed {
-		// The autobuyer mixes inline while it runs, so the standalone continuous
-		// mixer must not run alongside it (both spend the mixed account). Stop it
-		// if running; the user can restart it from the privacy tab after stopping
-		// the autobuyer.
-		if IsMixerRunning() {
-			StopMixer()
-			WaitForMixerStop(5 * time.Second)
-			recordAutobuyerEvent("info", "Stopped the account mixer; the autobuyer mixes tickets while it runs")
-		}
-	}
-
 	balanceAtoms, err := dcrutil.NewAmount(settings.BalanceToMaintain)
 	if err != nil {
 		msg := fmt.Sprintf("invalid balance to maintain %v: %v", settings.BalanceToMaintain, err)
@@ -244,8 +237,12 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceA
 	// Ticket-poller: every autobuyerPollInterval, compare the wallet's ticket
 	// hash set to the previous snapshot and emit "purchased" events for diffs.
 	// RunTicketBuyerResponse is empty in v4, so this is how we surface activity.
+	// The poller only returns when its context ends; run it on a child context
+	// cancelled on Recv-loop exit so <-pollDone below never blocks forever.
+	pollCtx, pollCancel := context.WithCancel(ctx)
+	defer pollCancel()
 	pollDone := make(chan struct{})
-	go pollAutobuyerTickets(ctx, pollDone)
+	go pollAutobuyerTickets(pollCtx, pollDone)
 
 	// Stream Recv loop. Empty responses are expected; we only react to errors.
 	for {
@@ -264,6 +261,7 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceA
 		}
 	}
 
+	pollCancel()
 	<-pollDone
 }
 
