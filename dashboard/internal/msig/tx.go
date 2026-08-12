@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"decred.org/dcrwallet/v5/wallet/txrules"
+	"decred.org/dcrwallet/v5/wallet/txsizes"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
@@ -92,18 +93,17 @@ func EstimateSize(tx *wire.MsgTx, m, redeemLen int) int {
 	return size
 }
 
-// EstimateFullSize returns the worst-case size of a spend of numIn shared
-// inputs to numOut outputs before the transaction is built. Outputs are
-// costed at P2PKH size, the larger of the standard output kinds.
-func EstimateFullSize(numIn, numOut, m, n int) int {
-	redeemLen := redeemScriptSize(n)
-	sigLen := estSigScriptLen(m, redeemLen)
-	size := 12 // version, lock time, expiry
-	size += wire.VarIntSerializeSize(uint64(numIn)) * 2
-	size += wire.VarIntSerializeSize(uint64(numOut))
-	size += numIn * (41 + 16 + wire.VarIntSerializeSize(uint64(sigLen)) + sigLen)
-	size += numOut * 36
-	return size
+// EstimateSpendSize returns the worst-case serialized size of a spend of numIn
+// shared inputs to outputs of the given script sizes, plus one change output of
+// changeScriptSize bytes when changeScriptSize > 0. Inputs carry the worst-case
+// multisig signature script; outputs are sized exactly from their scripts.
+func EstimateSpendSize(numIn int, outputSizes []int, changeScriptSize, m, n int) int {
+	sigLen := estSigScriptLen(m, redeemScriptSize(n))
+	inSizes := make([]int, numIn)
+	for i := range inSizes {
+		inSizes[i] = sigLen
+	}
+	return txsizes.EstimateSerializeSizeFromScriptSizes(inSizes, outputSizes, changeScriptSize)
 }
 
 func paymentScript(addr string, params *chaincfg.Params) (uint16, []byte, error) {
@@ -116,8 +116,9 @@ func paymentScript(addr string, params *chaincfg.Params) (uint16, []byte, error)
 }
 
 // SelectUTXOs picks inputs covering targetAtoms plus the estimated fee,
-// largest first so the input count stays small.
-func SelectUTXOs(utxos []UTXO, targetAtoms int64, numRecipients, m, n int, relayFeePerKb dcrutil.Amount) ([]UTXO, error) {
+// largest first so the input count stays small. Outputs are costed exactly
+// from their script sizes, plus one change output of changeScriptSize bytes.
+func SelectUTXOs(utxos []UTXO, targetAtoms int64, outputSizes []int, changeScriptSize, m, n int, relayFeePerKb dcrutil.Amount) ([]UTXO, error) {
 	if relayFeePerKb == 0 {
 		relayFeePerKb = txrules.DefaultRelayFeePerKb
 	}
@@ -131,7 +132,8 @@ func SelectUTXOs(utxos []UTXO, targetAtoms int64, numRecipients, m, n int, relay
 			return nil, fmt.Errorf("spend would require more than %d inputs", MaxInputs)
 		}
 		sum += u.Atoms
-		fee := txrules.FeeForSerializeSize(relayFeePerKb, EstimateFullSize(k+1, numRecipients+1, m, n))
+		size := EstimateSpendSize(k+1, outputSizes, changeScriptSize, m, n)
+		fee := txrules.FeeForSerializeSize(relayFeePerKb, size)
 		if sum >= targetAtoms+int64(fee) {
 			return sorted[:k+1], nil
 		}

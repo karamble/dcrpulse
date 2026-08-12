@@ -452,14 +452,14 @@ func TestSelectUTXOs(t *testing.T) {
 		{TxID: "02", Vout: 0, Atoms: 500_000_000},
 		{TxID: "03", Vout: 0, Atoms: 300_000_000},
 	}
-	sel, err := SelectUTXOs(utxos, 600_000_000, 1, 2, 3, 0)
+	sel, err := SelectUTXOs(utxos, 600_000_000, []int{25}, 23, 2, 3, 0)
 	if err != nil {
 		t.Fatalf("select: %v", err)
 	}
 	if len(sel) != 2 || sel[0].Atoms != 500_000_000 || sel[1].Atoms != 300_000_000 {
 		t.Fatalf("selection: %+v", sel)
 	}
-	if _, err := SelectUTXOs(utxos, 900_000_000, 1, 2, 3, 0); err == nil {
+	if _, err := SelectUTXOs(utxos, 900_000_000, []int{25}, 23, 2, 3, 0); err == nil {
 		t.Fatalf("insufficient funds not detected")
 	}
 
@@ -467,9 +467,86 @@ func TestSelectUTXOs(t *testing.T) {
 	for i := range many {
 		many[i] = UTXO{TxID: "aa", Vout: uint32(i), Atoms: 100_000_000}
 	}
-	if _, err := SelectUTXOs(many, int64(MaxInputs)*100_000_000+50_000_000, 1, 2, 3, 0); err == nil {
+	if _, err := SelectUTXOs(many, int64(MaxInputs)*100_000_000+50_000_000, []int{25}, 23, 2, 3, 0); err == nil {
 		t.Fatalf("input cap not enforced")
 	}
+}
+
+// TestExactOutputSizing pins the pre-build fee estimates to the real
+// output scripts. A send-all estimate built the way ProposeSpend builds it
+// must equal BuildSpend's recomputed fee with zero leftover for both a
+// P2PKH and a larger P2PK recipient, and UTXO selection must account the
+// extra P2PK bytes. The p2pk and selection checks regress if outputs are
+// costed at a flat 36 bytes again (a P2PKH output is exactly 36 bytes).
+func TestExactOutputSizing(t *testing.T) {
+	const n = 3
+	w := newTestWallet(t, 2, n)
+	funding := w.fundingTx(60_000_000, 40_000_000)
+	avail := []UTXO{
+		{TxID: funding.TxHash().String(), Vout: 0, Atoms: 60_000_000},
+		{TxID: funding.TxHash().String(), Vout: 1, Atoms: 40_000_000},
+	}
+
+	priv, err := secp256k1.GeneratePrivateKey()
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	pkAddr, err := stdaddr.NewAddressPubKeyEcdsaSecp256k1V0(priv.PubKey(), w.params)
+	if err != nil {
+		t.Fatalf("p2pk address: %v", err)
+	}
+	pkhAddr := pkAddr.AddressPubKeyHash()
+
+	sendAll := func(t *testing.T, addr string) {
+		_, recScript, err := paymentScript(addr, w.params)
+		if err != nil {
+			t.Fatalf("payment script: %v", err)
+		}
+		size := EstimateSpendSize(len(avail), []int{len(recScript)}, 0, w.m, n)
+		est := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb, size))
+		var sum int64
+		for _, u := range avail {
+			sum += u.Atoms
+		}
+		tx, fee, change, err := BuildSpend(BuildSpendParams{
+			UTXOs:         avail,
+			Recipients:    []Recipient{{Address: addr, Atoms: sum - est}},
+			ChangeAddress: w.addr,
+			RedeemScript:  w.redeem,
+			ChainParams:   w.params,
+		})
+		if err != nil {
+			t.Fatalf("build send-all: %v", err)
+		}
+		if fee != est || change != 0 || len(tx.TxOut) != 1 {
+			t.Fatalf("send-all: fee=%d change=%d outs=%d, want fee=%d change=0 outs=1",
+				fee, change, len(tx.TxOut), est)
+		}
+	}
+	t.Run("p2pkh", func(t *testing.T) { sendAll(t, pkhAddr.String()) })
+	t.Run("p2pk", func(t *testing.T) { sendAll(t, pkAddr.String()) })
+
+	t.Run("selection", func(t *testing.T) {
+		// One P2PK output plus P2SH change on a 2-of-3: the exact fee for
+		// one input is 4110 atoms, a flat-36 output cost would say 4030.
+		// The first UTXO leaves a 4050 margin, so exact sizing must pull
+		// in a second input where the flat cost would stop at one.
+		_, recScript, err := paymentScript(pkAddr.String(), w.params)
+		if err != nil {
+			t.Fatalf("payment script: %v", err)
+		}
+		utxos := []UTXO{
+			{TxID: "01", Vout: 0, Atoms: 100_004_050},
+			{TxID: "02", Vout: 0, Atoms: 50_000_000},
+		}
+		sel, err := SelectUTXOs(utxos, 100_000_000, []int{len(recScript)}, 23, w.m, n, 0)
+		if err != nil {
+			t.Fatalf("select: %v", err)
+		}
+		if len(sel) != 2 {
+			t.Fatalf("selected %d input(s), want 2", len(sel))
+		}
+	})
 }
 
 func TestDecodeTxHexStrict(t *testing.T) {

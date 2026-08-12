@@ -400,7 +400,9 @@ func TestMsigLiveHDMainnet(t *testing.T) {
 		t.Fatal(err)
 	}
 	sendBack := ins[0].Atoms + ins[1].Atoms
-	fee := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb, msig.EstimateFullSize(2, 1, 2, 2)))
+	// int0 is a P2SH multisig address (23-byte script).
+	fee := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb,
+		msig.EstimateSpendSize(2, []int{23}, 0, 2, 2)))
 	tx, gotFee, change, err := msig.BuildSpend(msig.BuildSpendParams{
 		UTXOs:      ins,
 		Recipients: []msig.Recipient{{Address: int0, Atoms: sendBack - fee}},

@@ -184,8 +184,12 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 		for _, u := range avail {
 			sum += u.Atoms
 		}
-		fee := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb,
-			EstimateFullSize(len(avail), 1, rec.M, rec.N)))
+		_, recScript, err := paymentScript(recipients[0].Address, params)
+		if err != nil {
+			return nil, err
+		}
+		size := EstimateSpendSize(len(avail), []int{len(recScript)}, 0, rec.M, rec.N)
+		fee := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb, size))
 		if sum <= fee {
 			return nil, fmt.Errorf("spendable balance %v does not cover the %v fee",
 				dcrutil.Amount(sum), dcrutil.Amount(fee))
@@ -194,10 +198,21 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 		selected = avail
 	} else {
 		var target int64
+		outputSizes := make([]int, 0, len(recipients))
 		for _, r := range recipients {
 			target += r.Atoms
+			_, script, err := paymentScript(r.Address, params)
+			if err != nil {
+				return nil, err
+			}
+			outputSizes = append(outputSizes, len(script))
 		}
-		selected, err = SelectUTXOs(avail, target, len(recipients), rec.M, rec.N, 0)
+		// The fresh change address is the same P2SH size as the shared one.
+		_, changeScript, err := paymentScript(rec.Address, params)
+		if err != nil {
+			return nil, err
+		}
+		selected, err = SelectUTXOs(avail, target, outputSizes, len(changeScript), rec.M, rec.N, 0)
 		if err != nil {
 			return nil, err
 		}
