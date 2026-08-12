@@ -120,7 +120,9 @@ func OpenStore(path string) (*Store, error) {
 		err := s.saveLocked()
 		s.mu.Unlock()
 		if err != nil {
-			return nil, err
+			// Keep the in-memory client id; the next save persists it rather
+			// than disabling the archive for the whole process lifetime.
+			tstpLog.Warnf("persist client id: %v", err)
 		}
 	}
 	return s, nil
