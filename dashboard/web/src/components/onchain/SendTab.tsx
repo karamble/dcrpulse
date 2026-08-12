@@ -235,6 +235,10 @@ export const SendTab = () => {
     };
   }, [formReady, sourceAccount, recipient, amountAtoms, sendAll]);
 
+  // The confirmation dialog derives its amount from the constructed tx (outputs
+  // minus change) so it always matches what gets signed, never the live input.
+  const builtAmountAtoms = construct ? construct.outputsTotalAtoms - construct.changeAtoms : null;
+
   const handleAccountChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newSource = Number(e.target.value);
     setSourceAccount(newSource);
@@ -560,7 +564,13 @@ export const SendTab = () => {
             setTopLevelError(null);
             setModalOpen(true);
           }}
-          disabled={!construct || constructing || sourceAccount === null || spendBlocked}
+          disabled={
+            !construct ||
+            constructing ||
+            sourceAccount === null ||
+            spendBlocked ||
+            (!sendAll && builtAmountAtoms !== null && amountAtoms !== builtAmountAtoms)
+          }
           title={spendBlocked ? 'Stop the privacy mixer or ticket autobuyer first' : undefined}
           className="px-6 py-3 rounded-lg bg-gradient-primary text-white font-semibold transition inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -574,7 +584,7 @@ export const SendTab = () => {
           isOpen={modalOpen}
           sourceAccount={sourceAccount}
           recipient={recipient.trim()}
-          amountAtoms={sendAll ? construct.outputsTotalAtoms : amountAtoms}
+          amountAtoms={builtAmountAtoms ?? 0}
           feeAtoms={construct.feeAtoms}
           unsignedTxHex={construct.unsignedTxHex}
           onClose={() => setModalOpen(false)}
