@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useMemo, useState } from 'react';
-import { AlertCircle, Award, Coins, Lock, Percent, Ticket, TrendingUp, XCircle } from 'lucide-react';
+import { AlertCircle, Award, Clock, Coins, Lock, Percent, Ticket, TrendingUp, XCircle } from 'lucide-react';
 import {
   CartesianGrid,
   Line,
@@ -69,19 +69,23 @@ export const StatisticsTab = () => {
   const stats = useMemo(() => {
     const bought = tickets.length;
     const voted = tickets.filter((t) => t.status === 'VOTED');
-    const revokedOrMissed = tickets.filter((t) => t.status === 'REVOKED' || t.status === 'MISSED');
+    // Post-DCP-0009, dcrwallet reports a non-voting ticket as MISSED (called to
+    // vote, failed) or EXPIRED (never selected); REVOKED is deprecated.
+    const missed = tickets.filter((t) => t.status === 'MISSED' || t.status === 'REVOKED');
+    const expired = tickets.filter((t) => t.status === 'EXPIRED');
     const active = tickets.filter(
       (t) => t.status === 'UNMINED' || t.status === 'IMMATURE' || t.status === 'LIVE',
     );
     const totalReward = voted.reduce((s, t) => s + t.reward, 0);
     const totalCommitted = active.reduce((s, t) => s + t.ticketPrice, 0);
-    const denom = voted.length + revokedOrMissed.length;
+    const denom = voted.length + missed.length + expired.length;
     const voteSuccess = denom > 0 ? (voted.length / denom) * 100 : null;
     const avgReward = voted.length > 0 ? totalReward / voted.length : null;
     return {
       bought,
       voted: voted.length,
-      revokedOrMissed: revokedOrMissed.length,
+      missed: missed.length,
+      expired: expired.length,
       voteSuccess,
       totalReward,
       totalCommitted,
@@ -135,16 +139,23 @@ export const StatisticsTab = () => {
           tone="success"
         />
         <StatCard
-          label="Revoked + Missed"
-          value={stats.revokedOrMissed.toLocaleString()}
-          sub="Did not vote successfully"
+          label="Missed"
+          value={stats.missed.toLocaleString()}
+          sub="Called to vote, but did not"
           icon={<XCircle className="h-4 w-4 text-destructive" />}
           tone="destructive"
         />
         <StatCard
+          label="Expired"
+          value={stats.expired.toLocaleString()}
+          sub="Never selected within the ticket window"
+          icon={<Clock className="h-4 w-4 text-warning" />}
+          tone="warning"
+        />
+        <StatCard
           label="Vote Success"
           value={stats.voteSuccess === null ? '-' : `${stats.voteSuccess.toFixed(2)}%`}
-          sub="voted / (voted + revoked + missed)"
+          sub="voted / (voted + missed + expired)"
           icon={<Percent className="h-4 w-4 text-primary" />}
         />
         <StatCard
