@@ -239,18 +239,13 @@ func fetchBlockchainInfo(ctx context.Context, snap *chainSnapshot) (*types.Block
 		return nil, err
 	}
 
-	bestBlockHash, err := rpc.DcrdClient.GetBestBlockHash(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	blockHeader, err := rpc.DcrdClient.GetBlockHeader(ctx, bestBlockHash)
+	hdr, err := snap.bestHeader(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// Estimate block time (time since last block)
-	timeSinceBlock := time.Since(blockHeader.Timestamp)
+	timeSinceBlock := time.Since(time.Unix(hdr.Time, 0))
 	blockTime := fmt.Sprintf("%dm %ds", int(timeSinceBlock.Minutes()), int(timeSinceBlock.Seconds())%60)
 
 	// Fetch last 3 blocks for the recent blocks list
@@ -278,7 +273,7 @@ func fetchBlockchainInfo(ctx context.Context, snap *chainSnapshot) (*types.Block
 
 	return &types.BlockchainInfo{
 		BlockHeight: info.Blocks,
-		BlockHash:   bestBlockHash.String(),
+		BlockHash:   hdr.Hash,
 		// Difficulty is the packed nBits target; DifficultyRatio is the readable one.
 		Difficulty:   info.DifficultyRatio,
 		ChainSize:    0, // Would need to calculate from disk usage
