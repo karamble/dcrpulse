@@ -2182,6 +2182,9 @@ func GetDcrdexWalletTxsHandler(w http.ResponseWriter, r *http.Request) {
 	if want <= 0 {
 		want = 25
 	}
+	if want > 500 {
+		want = 500
+	}
 	dexSet, dexPending, err := dexAccountTxIDs(ctx, refID == "")
 	if err != nil {
 		dexWriteErr(w, err)
