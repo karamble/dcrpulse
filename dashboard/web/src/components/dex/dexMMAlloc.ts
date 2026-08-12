@@ -288,9 +288,10 @@ export const suggestedAllocation = (
 
 // autoRebalanceSettings ports bisonw v1.0.6's mm.ts autoRebalanceSettings: the
 // minimum CEX transfer for each side, floored at the CEX's own minimum withdrawal
-// and interpolated up to the free (non-DEX-reserved) balance by transferFactor.
-// All amounts are atoms. bisonw sizes this from the projected allocation, so we
-// use the suggestion's projected dex+cex totals, not the user-edited allocation.
+// and interpolated up toward the projected allocation by transferFactor. The
+// totals and result are atoms; the reserved DEX/CEX amounts are subtracted in
+// conventional units exactly as upstream does. bisonw sizes this from the
+// projected allocation, so we use the suggestion's projected dex+cex totals.
 export const autoRebalanceSettings = (
   suggested: SuggestedAllocation,
   cexMarket: { baseMinWithdraw: number; quoteMinWithdraw: number },
@@ -304,7 +305,6 @@ export const autoRebalanceSettings = (
     feeMatchesQuoteFee: boolean,
     book: number,
     cex: number,
-    factor: number,
     minWithdraw: number,
     transferFactor: number,
   ): number => {
@@ -314,9 +314,10 @@ export const autoRebalanceSettings = (
     let dexMinConv = book;
     if (feeMatchesBaseFee) dexMinConv += p.bBookingFees;
     if (feeMatchesQuoteFee) dexMinConv += p.qBookingFees;
-    const dexMin = Math.round(dexMinConv * factor);
-    const cexAtoms = Math.round(cex * factor);
-    const maxFree = Math.max(total - dexMin, total - cexAtoms, 0);
+    // bisonw v1.0.6 subtracts the reserved DEX/CEX amounts in conventional units
+    // (it does not convert them to atoms), leaving maxFree ~ total; match it so
+    // the dashboard's suggested transfer equals bisonw's own.
+    const maxFree = Math.max(total - dexMinConv, total - cex, 0);
     const max = Math.max(minWithdraw * 2, maxFree);
     return Math.round(minWithdraw + transferFactor * (max - minWithdraw));
   };
@@ -327,7 +328,6 @@ export const autoRebalanceSettings = (
       p.baseID === p.quoteFeeID,
       p.bBook,
       p.bCex,
-      p.baseFactor,
       cexMarket.baseMinWithdraw,
       baseTransferFactor,
     ),
@@ -337,7 +337,6 @@ export const autoRebalanceSettings = (
       p.quoteID === p.quoteFeeID,
       p.qBook,
       p.qCex,
-      p.quoteFactor,
       cexMarket.quoteMinWithdraw,
       quoteTransferFactor,
     ),
