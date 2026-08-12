@@ -240,8 +240,12 @@ func main() {
 	api.HandleFunc("/auth/setup", handlers.AuthSetupHandler).Methods("POST")
 	api.HandleFunc("/auth/skip-setup", handlers.AuthSkipSetupHandler).Methods("POST")
 	api.HandleFunc("/auth/logout", handlers.AuthLogoutHandler).Methods("POST")
-	api.HandleFunc("/auth/change", handlers.AuthChangeHandler).Methods("POST")
-	api.HandleFunc("/auth/disable", handlers.AuthDisableHandler).Methods("POST")
+	api.Handle("/auth/change",
+		middleware.RateLimit("auth-verify", time.Second, 5)(
+			http.HandlerFunc(handlers.AuthChangeHandler))).Methods("POST")
+	api.Handle("/auth/disable",
+		middleware.RateLimit("auth-verify", time.Second, 5)(
+			http.HandlerFunc(handlers.AuthDisableHandler))).Methods("POST")
 
 	// DCRDEX routes
 	api.HandleFunc("/dcrdex/status", handlers.GetDcrdexStatusHandler).Methods("GET")
