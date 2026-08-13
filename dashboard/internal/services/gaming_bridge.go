@@ -13,9 +13,9 @@ import (
 // Errors a game can be told about. They are deliberately unrevealing: a game
 // learns that the tunnel refused, not what else the host is carrying.
 var (
-	ErrGamingGameNotInstalled = errors.New("game is not installed")
-	ErrGamingNotAFrame        = errors.New("not a gaming frame")
-	ErrGamingWrongGame        = errors.New("frame belongs to another game")
+	ErrGamingGameNotRegistered = errors.New("game is not registered")
+	ErrGamingNotAFrame         = errors.New("not a gaming frame")
+	ErrGamingWrongGame         = errors.New("frame belongs to another game")
 )
 
 // The gaming bridge is a tunnel between registered games and Bison Relay.
@@ -168,7 +168,7 @@ func (b *GamingBus) deliverFrame(payload json.RawMessage) {
 			evt.From, len(evt.Message))
 		return
 	}
-	if !gamingGameInstalled(frame.Game) {
+	if !gamingGameRegistered(frame.Game) {
 		// A game this installation does not have. Dropping it is what
 		// makes the namespace work: a new game can appear without every
 		// existing host being taught about it.
@@ -183,10 +183,11 @@ func (b *GamingBus) deliverFrame(payload json.RawMessage) {
 	})
 }
 
-// gamingGameInstalled reports whether the user added a game. The installed list
-// is the routing table: a frame for anything else is not this host's business.
-func gamingGameInstalled(game string) bool {
-	for _, id := range ReadGamingSettings().InstalledGames {
+// gamingGameRegistered reports whether the operator added a game. The
+// registered list is the routing table: a frame for anything else is not this
+// bridge's business.
+func gamingGameRegistered(game string) bool {
+	for _, id := range ReadGamingSettings().RegisteredGames {
 		if id == game {
 			return true
 		}
@@ -201,8 +202,8 @@ func gamingGameInstalled(game string) bool {
 // use the tunnel to send chat, or to send another game's traffic - and carries
 // it no further than that.
 func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
-	if !gamingGameInstalled(game) {
-		return ErrGamingGameNotInstalled
+	if !gamingGameRegistered(game) {
+		return ErrGamingGameNotRegistered
 	}
 	parsed, ok := parseGamingFrame(frame)
 	if !ok {

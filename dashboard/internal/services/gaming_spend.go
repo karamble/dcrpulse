@@ -121,7 +121,7 @@ var (
 // GamingWalletCalls is that same set, named, so a caller outside this package
 // can stage them. A nil field is left alone.
 type GamingWalletCalls struct {
-	Account   func(ctx context.Context) (uint32, error)
+	Account   func(ctx context.Context, game string) (uint32, error)
 	Construct func(ctx context.Context, account uint32, address string, amountAtoms int64) ([]byte, error)
 	Sign      func(ctx context.Context, account uint32, unsigned, passphrase []byte) ([]byte, error)
 	Publish   func(ctx context.Context, signed []byte) (string, error)
@@ -238,44 +238,47 @@ func spentInDayLocked(log spendLog, game string, now int64) int64 {
 	return total
 }
 
-// checkSpendRequest is the policy decision that needs nothing but the request.
+// checkSpendRequest is the policy decision that needs nothing but the request,
+// and it returns the policy it decided against so the caller need not look the
+// same game up twice.
 //
-// The caller supplies the policy rather than this reading it, because the
-// bridge holds one per connected game and must not re-read a file for every
-// request a table makes. It is also what lets the whole rule be written out in
-// a test instead of sampled through whatever happens to be on disk.
-func checkSpendRequest(s types.GamingSettings, installed bool, address string, amountAtoms int64) error {
+// Whether a game is registered is read from the policy map rather than from a
+// second list, because the two are kept in step and a rule consulting whichever
+// it happens to hold is a rule that can disagree with itself.
+func checkSpendRequest(s types.GamingSettings, game, address string, amountAtoms int64) (types.GamePolicy, error) {
 	if !s.Enabled {
-		return fmt.Errorf("%w: gaming is switched off", ErrGamingSpendRefused)
+		return types.GamePolicy{}, fmt.Errorf("%w: gaming is switched off", ErrGamingSpendRefused)
 	}
-	if strings.TrimSpace(s.Account) == "" {
-		return fmt.Errorf("%w: no account is bound for games to spend from", ErrGamingSpendRefused)
+	p, registered := s.Policies[game]
+	if !registered {
+		return types.GamePolicy{}, ErrGamingGameNotRegistered
 	}
-	if !installed {
-		return ErrGamingGameNotInstalled
+	if strings.TrimSpace(p.Account) == "" {
+		return p, fmt.Errorf("%w: no account is bound for %q to spend from",
+			ErrGamingSpendRefused, game)
 	}
 	if strings.TrimSpace(address) == "" {
-		return fmt.Errorf("%w: no address to pay", ErrGamingSpendRefused)
+		return p, fmt.Errorf("%w: no address to pay", ErrGamingSpendRefused)
 	}
 	if amountAtoms <= 0 {
-		return fmt.Errorf("%w: nothing to pay", ErrGamingSpendRefused)
+		return p, fmt.Errorf("%w: nothing to pay", ErrGamingSpendRefused)
 	}
-	if s.PerTableCapAtoms > 0 && amountAtoms > s.PerTableCapAtoms {
-		return fmt.Errorf("%w: %d atoms is over the per-table cap of %d",
-			ErrGamingSpendRefused, amountAtoms, s.PerTableCapAtoms)
+	if p.PerTableCapAtoms > 0 && amountAtoms > p.PerTableCapAtoms {
+		return p, fmt.Errorf("%w: %d atoms is over %q's per-table cap of %d",
+			ErrGamingSpendRefused, amountAtoms, game, p.PerTableCapAtoms)
 	}
-	return nil
+	return p, nil
 }
 
-// checkSpendAgainstDay is the rest of the decision, once the day's total is
-// known.
-func checkSpendAgainstDay(s types.GamingSettings, amountAtoms, used int64) error {
-	if s.PerDayCapAtoms <= 0 || used+amountAtoms <= s.PerDayCapAtoms {
+// checkSpendAgainstDay is the rest of the decision, once this game's day total
+// is known.
+func checkSpendAgainstDay(p types.GamePolicy, amountAtoms, used int64) error {
+	if p.PerDayCapAtoms <= 0 || used+amountAtoms <= p.PerDayCapAtoms {
 		return nil
 	}
 	return fmt.Errorf(
 		"%w: %d atoms would pass the daily cap of %d, with %d already spent or awaiting an answer",
-		ErrGamingSpendRefused, amountAtoms, s.PerDayCapAtoms, used)
+		ErrGamingSpendRefused, amountAtoms, p.PerDayCapAtoms, used)
 }
 
 // RequestGamingSpend records a game's request, if policy will carry it.
@@ -287,7 +290,8 @@ func RequestGamingSpend(game, address string, amountAtoms int64, reason string) 
 	game = strings.ToLower(strings.TrimSpace(game))
 	address = strings.TrimSpace(address)
 
-	if err := checkSpendRequest(s, gamingGameInstalled(game), address, amountAtoms); err != nil {
+	policy, err := checkSpendRequest(s, game, address, amountAtoms)
+	if err != nil {
 		return GamingSpend{}, err
 	}
 
@@ -298,11 +302,11 @@ func RequestGamingSpend(game, address string, amountAtoms int64, reason string) 
 	log := readSpendLog()
 	expireLocked(&log, now)
 
-	if err := checkSpendAgainstDay(s, amountAtoms, spentInDayLocked(log, game, now)); err != nil {
+	if err := checkSpendAgainstDay(policy, amountAtoms, spentInDayLocked(log, game, now)); err != nil {
 		return GamingSpend{}, err
 	}
 
-	timeout := s.ApprovalTimeoutSecs
+	timeout := policy.ApprovalTimeoutSecs
 	if timeout <= 0 {
 		timeout = gamingDefaultApprovalSecs
 	}
@@ -446,7 +450,7 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 
 	// Spend outside the lock: signing and broadcasting take as long as they
 	// take, and holding the log shut meanwhile would stall every other game.
-	account, err := spendAccount(ctx)
+	account, err := spendAccount(ctx, req.Game)
 	if err != nil {
 		return req, err
 	}
@@ -490,15 +494,42 @@ func recordSpendOutcome(id string, state GamingSpendState, txid, failure string)
 	return GamingSpend{}, ErrGamingSpendNotFound
 }
 
-// gamingAccountNumber resolves the account games may spend from.
+// gamingAccountFor names the account a game may spend from.
+//
+// Split out from the wallet lookup below so the rule can be exercised: which
+// account a game's money comes from is the most consequential answer in this
+// file, and a rule that can only be checked against a live wallet is a rule
+// nobody has checked.
 //
 // Account scope is enforced here rather than by the wallet because dcrwallet's
 // accounts share one seed and one passphrase: an account is a boundary above
-// the wallet, never a cryptographic one below it.
-func gamingAccountNumber(ctx context.Context) (uint32, error) {
-	name := strings.TrimSpace(ReadGamingSettings().Account)
+// the wallet, never a cryptographic one below it. What it does buy is a
+// bankroll - what one game loses is not drawn from another's.
+func gamingAccountFor(s types.GamingSettings, game string) (string, error) {
+	p, registered := s.Policies[game]
+	if !registered {
+		// Unregistering between a request and its approval revokes, so
+		// this is the honest answer rather than a fallback to whatever
+		// account happens to be lying around.
+		return "", fmt.Errorf("%q is not a registered game", game)
+	}
+	name := strings.TrimSpace(p.Account)
 	if name == "" {
-		return 0, fmt.Errorf("no account is bound for games to spend from")
+		return "", fmt.Errorf("no account is bound for %q to spend from", game)
+	}
+	return name, nil
+}
+
+// gamingAccountNumber resolves the account one game may spend from.
+//
+// The game is named by the caller rather than read from anything global,
+// because a spend is paid out of the account the game that asked for it was
+// confined to. Resolving it globally would let one game's approval draw on
+// another game's money.
+func gamingAccountNumber(ctx context.Context, game string) (uint32, error) {
+	name, err := gamingAccountFor(ReadGamingSettings(), game)
+	if err != nil {
+		return 0, err
 	}
 	accounts, err := FetchAllAccounts(ctx)
 	if err != nil {
@@ -509,7 +540,7 @@ func gamingAccountNumber(ctx context.Context) (uint32, error) {
 			return a.AccountNumber, nil
 		}
 	}
-	return 0, fmt.Errorf("the account bound for games, %q, is not in this wallet", name)
+	return 0, fmt.Errorf("the account bound for %q, %q, is not in this wallet", game, name)
 }
 
 func newSpendID() (string, error) {

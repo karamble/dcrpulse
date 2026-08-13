@@ -101,10 +101,13 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	if buyinAtoms == 0 {
 		return GamingTable{}, fmt.Errorf("a table needs a buy-in")
 	}
-	s := ReadGamingSettings()
-	if s.PerTableCapAtoms > 0 && int64(buyinAtoms) > s.PerTableCapAtoms {
-		return GamingTable{}, fmt.Errorf("a buy-in of %d atoms is over this installation's per-table limit of %d",
-			buyinAtoms, s.PerTableCapAtoms)
+	p, registered := ReadGamingSettings().Policies[game]
+	if !registered {
+		return GamingTable{}, ErrGamingGameNotRegistered
+	}
+	if p.PerTableCapAtoms > 0 && int64(buyinAtoms) > p.PerTableCapAtoms {
+		return GamingTable{}, fmt.Errorf("a buy-in of %d atoms is over %q's per-table limit of %d",
+			buyinAtoms, game, p.PerTableCapAtoms)
 	}
 
 	tip, err := GamingChainTipNow(ctx)
