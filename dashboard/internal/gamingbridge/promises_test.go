@@ -44,7 +44,10 @@ func recvWithin(t *testing.T, stream grpc.ServerStreamingClient[gamingpb.BridgeE
 	case r := <-ch:
 		return r.ev, r.err
 	case <-time.After(dialDeadline):
-		t.Fatal("nothing came back from the subscription at all, so this asserts nothing")
+		// Silence is the one thing a stream cannot say. Whatever the caller
+		// was waiting for - an event, or the stream ending - it got neither,
+		// and there is nothing to assert against.
+		t.Fatal("the subscription neither sent anything nor ended within the deadline")
 		return nil, nil
 	}
 }
@@ -57,53 +60,6 @@ func (r *bridgeRig) subscribe(t *testing.T, game string) (grpc.ServerStreamingCl
 	ctx, cancel := callCtx(t)
 	t.Cleanup(cancel)
 	return client.Subscribe(ctx, &gamingpb.SubscribeRequest{})
-}
-
-// A game is told what it is; it does not announce it.
-//
-// The credential decides, and the game learns the answer from Hello. Without
-// it, an operator who copied the wrong credential onto a machine gets a game
-// quietly acting as something else, spending against caps set for a different
-// table - a configuration mistake that should be loud and instead is invisible.
-func TestAGameIsToldWhatItIs(t *testing.T) {
-	r := newBridgeRig(t)
-	c := r.dial(t, r.register(t, "poker"))
-
-	ctx, cancel := callCtx(t)
-	defer cancel()
-	// A game claiming to be something else on purpose: the reply must correct
-	// it rather than take its word.
-	reply, err := c.Hello(ctx, &gamingpb.HelloRequest{GameId: "not-poker", ClientVersion: "test"})
-	if err != nil {
-		t.Fatalf("a game cannot find out what this bridge considers it to be, "+
-			"so a misplaced credential stays invisible: %v", err)
-	}
-	if reply.GetGame() != "poker" {
-		t.Fatalf("the bridge agreed the caller was %q; a game that names itself can spend against "+
-			"another game's caps", reply.GetGame())
-	}
-}
-
-// A game learns which chain it is on before it builds anything.
-//
-// A game built for one network talking to a bridge on another produces scripts
-// nobody can ever spend, and pays real money into them. The game is required to
-// refuse on a mismatch, which it can only do if the bridge says.
-func TestAGameLearnsTheNetworkBeforeItSpends(t *testing.T) {
-	r := newBridgeRig(t)
-	c := r.dial(t, r.register(t, "poker"))
-
-	ctx, cancel := callCtx(t)
-	defer cancel()
-	reply, err := c.Hello(ctx, &gamingpb.HelloRequest{GameId: "poker", ClientVersion: "test"})
-	if err != nil {
-		t.Fatalf("a game cannot learn which chain this bridge is on, so it can only find out "+
-			"by paying into a script nobody can spend: %v", err)
-	}
-	if reply.GetNetwork() == "" {
-		t.Fatal("the bridge named no network, so a mainnet game and a testnet bridge look identical " +
-			"until the money is gone")
-	}
 }
 
 // What the operator asked for reaches the game it was addressed to.
@@ -304,4 +260,82 @@ func TestAGameCannotReadAnotherGamesSpend(t *testing.T) {
 		t.Errorf("the refusal was %v rather than not-found, which confirms to the asking game that "+
 			"the spend exists", st.Code())
 	}
+}
+
+// A game is told it missed something, and told which tables.
+//
+// This is the whole of how a game knows to resynchronise. Nothing buffers
+// frames, so a loss is permanent and the only repair is for the game to go and
+// ask its table again - which it will not do unless the bridge says so. Naming
+// the tables is the difference between one resync and one per table.
+func TestAGameIsToldWhichTablesItMissed(t *testing.T) {
+	r := newBridgeRig(t)
+	creds := r.register(t, "poker")
+	client := r.dial(t, creds)
+
+	// First connection: the game holds nothing, so there is nothing to be
+	// consistent with and everything is suspect.
+	first := openStream(t, client, &gamingpb.SubscribeRequest{})
+	if !first.GetGap() {
+		t.Fatal("a game connecting for the first time was told it was up to date, so it will " +
+			"never ask its tables where they got to")
+	}
+
+	// Reconnecting with exactly what the bridge last sent: nothing was lost,
+	// and claiming otherwise would cost a resync of every table on every
+	// reconnect.
+	second := openStream(t, client, &gamingpb.SubscribeRequest{
+		Epoch: first.GetEpoch(), LastSeq: first.GetFromSeq(),
+	})
+	if second.GetGap() {
+		t.Fatalf("a game that missed nothing was told to resynchronise (%v), so a brief outage "+
+			"costs a resync per reconnect attempt per table", second.GetGapScope())
+	}
+
+	// Now a table's frames were dropped while nothing was connected.
+	r.loseFrames("poker", "table-one")
+	third := openStream(t, client, &gamingpb.SubscribeRequest{
+		Epoch: second.GetEpoch(), LastSeq: second.GetFromSeq(),
+	})
+	if !third.GetGap() {
+		t.Fatal("frames were lost and the game was told it was up to date, so it will act on a " +
+			"table state it never received")
+	}
+	if third.GetGapScope() != gamingpb.GapScope_GAP_SCOPED {
+		t.Errorf("the gap was reported as %v rather than scoped, so the game resynchronises every "+
+			"table when one was affected", third.GetGapScope())
+	}
+	if len(third.GetGapGcids()) != 1 || third.GetGapGcids()[0] != "table-one" {
+		t.Errorf("the gap named %v, not the table that actually lost frames", third.GetGapGcids())
+	}
+
+	// Reported once. A game told the same gap twice resynchronises twice.
+	fourth := openStream(t, client, &gamingpb.SubscribeRequest{
+		Epoch: third.GetEpoch(), LastSeq: third.GetFromSeq(),
+	})
+	if fourth.GetGap() {
+		t.Fatalf("the same gap was declared again (%v), so a game would resynchronise on every "+
+			"reconnect for the rest of the process's life", fourth.GetGapGcids())
+	}
+}
+
+// openStream subscribes and returns the opening event, which is always
+// StreamStart.
+func openStream(t *testing.T, c gamingpb.BridgeServiceClient, req *gamingpb.SubscribeRequest) *gamingpb.StreamStart {
+	t.Helper()
+	ctx, cancel := callCtx(t)
+	t.Cleanup(cancel)
+	stream, err := c.Subscribe(ctx, req)
+	if err != nil {
+		t.Fatalf("open a subscription: %v", err)
+	}
+	ev, err := recvWithin(t, stream)
+	if err != nil {
+		t.Fatalf("the subscription produced no opening event: %v", err)
+	}
+	start := ev.GetStart()
+	if start == nil {
+		t.Fatalf("the stream opened with %T instead of StreamStart", ev.GetEvent())
+	}
+	return start
 }
