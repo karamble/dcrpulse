@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"sync"
 
 	"dcrpulse/internal/rpc"
@@ -132,7 +131,7 @@ func (b *GamingBus) broadcast(ev GamingFrameEvent) {
 		select {
 		case s.ch <- ev:
 		default:
-			log.Printf("gaming bridge: %s is not draining its frames; dropping one", s.game)
+			gameLog.Warnf("%s is not draining its frames; dropping one", s.game)
 		}
 	}
 }
@@ -157,14 +156,14 @@ func (b *GamingBus) deliverFrame(payload json.RawMessage) {
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(payload, &evt); err != nil {
-		log.Printf("gaming bridge: undecodable frame event: %v", err)
+		gameLog.Warnf("undecodable frame event: %v", err)
 		return
 	}
 	frame, ok := parseGamingFrame(evt.Message)
 	if !ok {
 		// brclientd forwards envelopes and nothing else, so reaching
 		// here means the two sides disagree about the envelope format.
-		log.Printf("gaming bridge: forwarded event from %s is not a frame (%d bytes)",
+		gameLog.Warnf("forwarded event from %s is not a frame (%d bytes)",
 			evt.From, len(evt.Message))
 		return
 	}
@@ -174,7 +173,7 @@ func (b *GamingBus) deliverFrame(payload json.RawMessage) {
 		// existing host being taught about it.
 		return
 	}
-	log.Printf("gaming bridge: delivering %q frame to %d subscriber(s)", frame.Game, b.subscribers(frame.Game))
+	gameLog.Debugf("delivering %q frame to %d subscriber(s)", frame.Game, b.subscribers(frame.Game))
 	b.broadcast(GamingFrameEvent{
 		Game:  frame.Game,
 		GCID:  evt.GCID,
