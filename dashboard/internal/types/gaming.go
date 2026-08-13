@@ -4,61 +4,95 @@
 
 package types
 
-// GamingSettings is the policy that confines the Bison Relay gaming section.
-// Games are untrusted: they run beside a wallet, dcrlnd and a BR identity, so
-// they never get wallet credentials. Everything they can spend passes through
-// this policy, and the account below is the only one they may touch.
+// GamePolicy is one registered game's confinement: what it is called, the
+// account it may spend from, and how much of it.
 //
-// Account scope is enforced here rather than in the wallet on purpose:
-// dcrwallet accounts share one seed and one unlock passphrase, so an account is
-// a policy boundary above the wallet, never a cryptographic one below it.
+// Per game rather than per installation, because the credential a game presents
+// is an identity rather than a password. A cap on a principal nobody can tell
+// apart is not a cap: with one shared budget the busy game spends the careful
+// one's allowance, and a spend one game asked for could be paid out of an
+// account it was never allowed to touch.
 //
 // Amounts are atoms; the frontend speaks DCR and converts at the handler.
-type GamingSettings struct {
-	Enabled bool `json:"enabled"`
+type GamePolicy struct {
+	// Name is the label the operator gave this game, for the interface to
+	// show. Decoration: nothing routes, resolves or authorises by it, and a
+	// game with no label is called by its id, which is the only name the
+	// wire carries.
+	Name string `json:"name,omitempty"`
 
-	// Account is the wallet account the gaming section may spend from and
-	// receive payouts into. Empty means no account is bound and nothing can
-	// be staked.
+	// Account is the wallet account this game may spend from and be paid
+	// into. Empty binds nothing and this game can stake nothing, which is
+	// what a game registered but not yet funded looks like.
+	//
+	// Account scope is enforced here rather than in the wallet on purpose:
+	// dcrwallet accounts share one seed and one unlock passphrase, so an
+	// account is a policy boundary above the wallet, never a cryptographic
+	// one below it. What it does buy is a bankroll - what is not in this
+	// account is not at stake for this game, and what one game loses is not
+	// drawn from another's.
 	Account string `json:"account"`
 
 	// PerTableCapAtoms bounds a single buy-in.
 	PerTableCapAtoms int64 `json:"perTableCapAtoms"`
 
-	// PerDayCapAtoms bounds everything staked in a rolling day.
+	// PerDayCapAtoms bounds everything this game stakes in a rolling day,
+	// counted against this game alone.
 	PerDayCapAtoms int64 `json:"perDayCapAtoms"`
 
-	// ApprovalTimeoutSecs is how long a stake waits for approval before it
-	// is abandoned.
+	// ApprovalTimeoutSecs is how long one of this game's stakes waits for a
+	// person before it is abandoned. Per game because the deadline belongs to
+	// the game's protocol rather than to the person answering: a seat closes
+	// at a block height, and an approval that lands after the table has
+	// formed buys nothing.
 	ApprovalTimeoutSecs int `json:"approvalTimeoutSecs"`
+}
 
-	// InstalledGames holds the game ids the operator registered, lowercased
+// GamingSettings is the bridge's own state: whether it runs, which games are
+// registered, and what each of them is trusted with.
+//
+// Everything that costs money is per game, in GamePolicy. What is left here is
+// the bridge itself, which is a tunnel: carrying frames needs no account and no
+// caps, so nothing global decides what anything may spend.
+//
+// There is no automatic-payment setting. Every buy-in is approved by a person
+// with the wallet passphrase, which this process never holds - so a setting
+// saying otherwise could only ever be refused, and a refusal dressed as a
+// choice is worse than no choice at all.
+type GamingSettings struct {
+	// Enabled is whether the bridge carries anything at all. It is refused
+	// unless the App Password is actively protecting the dashboard: the caps
+	// and the approvals are worth exactly as much as the certainty that the
+	// person answering is the operator.
+	Enabled bool `json:"enabled"`
+
+	// RegisteredGames holds the game ids the operator registered, lowercased
 	// and sorted. An id is the routing key in the `--gaming[game=<id>]`
-	// Bison Relay envelope, so an installation routes only the games listed
-	// here and a frame for anything else is dropped as unroutable.
+	// Bison Relay envelope, so this list is the routing table and a frame for
+	// anything else is dropped as unroutable.
 	//
 	// Any id the wire can carry may be registered. There is no catalogue: a
-	// game has to be able to appear without this build being taught its
-	// name, which is what routing on a key is for.
-	InstalledGames []string `json:"installedGames"`
+	// game has to be able to appear without this build being taught its name,
+	// which is what routing on a key is for.
+	RegisteredGames []string `json:"registeredGames"`
 
-	// GameNames maps a registered game id to the label the operator gave it,
-	// for the interface to show. It is decoration: nothing routes, resolves
-	// or authorises by it, and a game with no label is called by its id,
-	// which is the only name the wire carries.
-	GameNames map[string]string `json:"gameNames,omitempty"`
+	// Policies holds one policy per registered game, keyed by id. An entry
+	// exists for exactly the ids in RegisteredGames: registering mints one
+	// from the defaults, removing deletes it, and an unrelated write leaves
+	// every other game's untouched.
+	Policies map[string]GamePolicy `json:"policies,omitempty"`
 
-	// GameTokens maps an installed game id to its bearer token.
+	// GameTokens maps a registered game id to its bearer token.
 	//
 	// The token is the game's identity, not merely a password. A game
-	// authenticates with it, and everything the host enforces - which game
-	// a frame may be sent as, and later which account may be spent from and
-	// under what caps - is enforced against the identity it resolves to.
-	// That is why there is one per game rather than one for the section: a
-	// shared secret would make every game the same principal, and a limit
-	// on a principal nobody can tell apart is not a limit.
+	// authenticates with it, and everything the bridge enforces - which game
+	// a frame may be sent as, which account may be spent from and under what
+	// caps - is enforced against the identity it resolves to. That is why
+	// there is one per game rather than one for the section: a shared secret
+	// would make every game the same principal, and a limit on a principal
+	// nobody can tell apart is not a limit.
 	//
-	// A game never states who it is. It presents a token and the host
+	// A game never states who it is. It presents a token and the bridge
 	// decides, so a game cannot claim to be another one.
 	GameTokens map[string]string `json:"gameTokens,omitempty"`
 }
