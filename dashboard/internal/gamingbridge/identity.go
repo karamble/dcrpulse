@@ -109,6 +109,11 @@ type Allowlist struct {
 	mu sync.RWMutex
 	// byFingerprint maps a certificate's fingerprint to the game it is.
 	byFingerprint map[string]allowEntry
+
+	// onRevoke is told which game just lost its credential, so a stream it is
+	// holding can be ended rather than left running on the strength of a
+	// handshake that already happened.
+	onRevoke func(game string)
 }
 
 type allowEntry struct {
@@ -162,12 +167,26 @@ func (a *Allowlist) Resolve(fingerprint string) (string, bool) {
 // reviewed.
 func (a *Allowlist) Revoke(game string) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	for fp, e := range a.byFingerprint {
 		if e.game == game {
 			delete(a.byFingerprint, fp)
 		}
 	}
+	notify := a.onRevoke
+	a.mu.Unlock()
+
+	// Outside the lock: what this ends is a stream, and whatever is holding
+	// that stream must never end up waiting on the allowlist to release.
+	if notify != nil {
+		notify(game)
+	}
+}
+
+// OnRevoke registers what to do when a credential is withdrawn.
+func (a *Allowlist) OnRevoke(f func(game string)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.onRevoke = f
 }
 
 // pool builds the roots a handshake verifies against, from whatever is admitted

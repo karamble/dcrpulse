@@ -68,6 +68,16 @@ type gamingSubscriber struct {
 type GamingBus struct {
 	mu   sync.RWMutex
 	subs map[*gamingSubscriber]struct{}
+
+	// missedMu guards missed, which records the tables whose frames reached
+	// nobody: either the game was not connected, or it was not draining.
+	//
+	// Remembered because a loss the game is never told about is the worst
+	// kind. Nothing here buffers frames, so the only repair is for the game
+	// to resynchronise - and it can only do that for the right tables if the
+	// bridge kept the names.
+	missedMu sync.Mutex
+	missed   map[string]map[string]struct{}
 }
 
 var (
@@ -124,17 +134,61 @@ func (b *GamingBus) subscribers(game string) int {
 // Bison Relay does not guarantee delivery either.
 func (b *GamingBus) broadcast(ev GamingFrameEvent) {
 	b.mu.RLock()
-	defer b.mu.RUnlock()
+	delivered, dropped := 0, false
 	for s := range b.subs {
 		if s.game != ev.Game {
 			continue
 		}
 		select {
 		case s.ch <- ev:
+			delivered++
 		default:
+			dropped = true
 			gameLog.Warnf("%s is not draining its frames; dropping one", s.game)
 		}
 	}
+	b.mu.RUnlock()
+
+	// Nobody listening is a loss too, and the commonest one: a game runs on a
+	// machine of the person's choosing and is off more often than not.
+	if delivered == 0 || dropped {
+		b.noteMissed(ev.Game, ev.GCID)
+	}
+}
+
+// noteMissed remembers a table whose frame reached nobody.
+func (b *GamingBus) noteMissed(game, gcid string) {
+	if gcid == "" {
+		return
+	}
+	b.missedMu.Lock()
+	defer b.missedMu.Unlock()
+	if b.missed == nil {
+		b.missed = make(map[string]map[string]struct{})
+	}
+	if b.missed[game] == nil {
+		b.missed[game] = make(map[string]struct{})
+	}
+	b.missed[game][gcid] = struct{}{}
+}
+
+// TakeMissed reports the tables a game missed frames on and forgets them.
+//
+// Taken rather than read, because it is answered once, into the opening event
+// of a stream. A game told the same gap twice would resynchronise twice.
+func (b *GamingBus) TakeMissed(game string) []string {
+	b.missedMu.Lock()
+	defer b.missedMu.Unlock()
+	set := b.missed[game]
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for gcid := range set {
+		out = append(out, gcid)
+	}
+	delete(b.missed, game)
+	return out
 }
 
 // gamingFrameEvent is the notification type brclientd forwards gaming envelope

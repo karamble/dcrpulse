@@ -48,6 +48,22 @@ type Config struct {
 
 	// Allow is which credentials may connect and what each one is.
 	Allow *Allowlist
+
+	// Frames subscribes to the Bison Relay frames addressed to a game, and
+	// returns a function that unsubscribes.
+	//
+	// Injected, like everything else here, so this package goes on depending
+	// on nothing: the bridge is handed a game's traffic rather than reaching
+	// for it.
+	Frames func(game string, buf int) (<-chan Frame, func())
+
+	// TakeMissed reports the tables whose frames could not be delivered since
+	// it was last asked, and forgets them.
+	//
+	// A game learns what it missed only at the start of a stream, so this is
+	// what turns a silent loss into one table's resync instead of every
+	// table's.
+	TakeMissed func(game string) []string
 }
 
 // Server is the bridge's listener.
@@ -60,6 +76,7 @@ type Server struct {
 
 	cfg   Config
 	allow *Allowlist
+	reg   *registry
 
 	mu   sync.Mutex
 	grpc *grpc.Server
@@ -74,7 +91,13 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AppPasswordActive == nil || cfg.Enabled == nil {
 		return nil, fmt.Errorf("a bridge has to be able to ask whether it should be running")
 	}
-	return &Server{cfg: cfg, allow: cfg.Allow}, nil
+	s := &Server{cfg: cfg, allow: cfg.Allow, reg: newRegistry()}
+
+	// Withdrawing a credential has to end the stream it is holding, and the
+	// allowlist is where withdrawing happens - including when the operator
+	// does it through the console rather than through this server.
+	cfg.Allow.OnRevoke(s.reg.closeGame)
+	return s, nil
 }
 
 // live reports whether the bridge should be answering at all.
@@ -169,19 +192,17 @@ func (s *Server) Stop() {
 //
 // It is what the console reports as connected, and it is also the only honest
 // way to know a subscription has been established rather than merely asked for.
-func (s *Server) SubscriberCount(game string) int {
-	// The stream registry arrives with the fan-out; until then nothing can
-	// be holding one.
-	return 0
-}
+func (s *Server) SubscriberCount(game string) int { return s.reg.count(game) }
 
 // Deliver hands a game something that arrived for it.
 //
 // This is the only way into a game's stream, and it takes the game as an
 // argument rather than a stream, so the routing decision is made here from the
-// address on the frame - a caller that could pick the stream itself could
+// address on the request - a caller that could pick the stream itself could
 // deliver one game's traffic to another by accident.
 func (s *Server) Deliver(game string, req *gamingpb.BridgeRequest) {
-	// Nothing holds a stream until the registry arrives, so this reaches
-	// nobody yet.
+	ev := &gamingpb.BridgeEvent{Event: &gamingpb.BridgeEvent_Request{Request: req}}
+	if !s.reg.push(game, ev) {
+		gameLog.Warnf("nothing is connected as %q, so request %s reached nobody", game, req.GetRequestId())
+	}
 }
