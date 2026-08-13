@@ -571,6 +571,8 @@ func main() {
 	api.HandleFunc("/br/mcp/spend", handlers.BisonrelayMCPSpendHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/settings", handlers.BisonrelayGamingSettingsHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/gaming/games", handlers.BisonrelayGamingGamesHandler).Methods("GET")
+	api.HandleFunc("/br/gaming/table", handlers.BisonrelayGamingCreateHandler).Methods("POST")
+	api.HandleFunc("/br/gaming/invite", handlers.BisonrelayGamingInviteHandler).Methods("POST")
 	api.HandleFunc("/br/gaming/spends", handlers.BisonrelayGamingSpendsHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/spends/decide", handlers.BisonrelayGamingSpendDecideHandler).Methods("POST")
 	api.HandleFunc("/br/gaming/bridge", handlers.BisonrelayGamingBridgeInfoHandler).Methods("GET")
@@ -909,6 +911,7 @@ func startGamingBridge() {
 	// answer: a game is registered here and run on a machine of the person's
 	// choosing, so registered and connected are different questions.
 	services.SetGamingConnected(srv.SubscriberCount)
+	services.SetGamingRequest(srv.Request)
 
 	go func() {
 		gameLog.Infof("gaming bridge listening on %s", addr)

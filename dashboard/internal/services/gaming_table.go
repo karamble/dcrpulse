@@ -8,14 +8,68 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/decred/dcrd/dcrutil/v4"
 
+	"dcrpulse/internal/gamingbridge"
+	"dcrpulse/internal/gamingpb"
 	"dcrpulse/internal/rpc"
 )
+
+// ErrGamingGameNotConnected is a registered game that is not holding a stream.
+var ErrGamingGameNotConnected = gamingbridge.ErrGameNotConnected
+
+// The staged calls creating a table passes through: the height its deadline is
+// set from, and the chat the invitation is posted to. Settable for the same
+// reason as the spend seams - the order they run in is what stops a table being
+// announced that its creator never took a seat at, and a rule only exercisable
+// against a live node is one nobody has exercised. Production sets neither.
+var (
+	tableChainTip  = GamingChainTipNow
+	tableGCMessage = rpc.BrclientdGCMessage
+)
+
+// AcceptGamingInvite hands an invitation to the game that can act on it, and
+// reports the table it joined.
+//
+// The host forms no opinion about the terms beyond which game they name: what
+// they mean is the game's business, and a host that judged them would be a
+// party to a table nobody agreed to trust.
+func AcceptGamingInvite(ctx context.Context, game, invite, gcid string) (string, error) {
+	if !gamingGameRegistered(game) {
+		return "", ErrGamingGameNotRegistered
+	}
+	if gamingRequest == nil {
+		return "", ErrGamingGameNotConnected
+	}
+	// A connected game that never answers would otherwise hold the request
+	// open for as long as the person's browser waits.
+	ctx, cancel := context.WithTimeout(ctx, gamingJoinTimeout)
+	defer cancel()
+
+	reply, err := gamingRequest(ctx, game, &gamingpb.BridgeRequest{
+		Req: &gamingpb.BridgeRequest_AcceptInvite{
+			AcceptInvite: &gamingpb.AcceptInvite{Invite: invite, Gcid: gcid},
+		},
+	})
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "", fmt.Errorf("%s did not answer within %s", game, gamingJoinTimeout)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !reply.GetOk() {
+		// The game's own refusal is the useful part: it knows why the
+		// invitation was not one it could act on.
+		return "", fmt.Errorf("%s did not join: %s", game, reply.GetError())
+	}
+	return reply.GetAcceptInvite().GetSid(), nil
+}
 
 // A game has no host: an invitation is terms plus a session id, and a table
 // exists once enough peers join under the same ones. Creating one is composing
@@ -49,6 +103,11 @@ const (
 
 	gamingMinSeats = 2
 	gamingMaxSeats = 6
+
+	// gamingJoinTimeout bounds how long taking a seat may take. Joining
+	// builds an escrow, so it is the weight of the other write routes rather
+	// than of a read.
+	gamingJoinTimeout = 30 * time.Second
 )
 
 // GamingTable is a table this host has just proposed.
@@ -110,7 +169,7 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 			buyinAtoms, game, p.PerTableCapAtoms)
 	}
 
-	tip, err := GamingChainTipNow(ctx)
+	tip, err := tableChainTip(ctx)
 	if err != nil {
 		// Without a height there is no deadline every peer can check, and
 		// a table cannot be formed by guessing.
@@ -124,14 +183,19 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	until := uint32(tip.Height) + openBlocks
 	invite := gamingInviteLink(game, sid, buyinAtoms, seats, gamingRefundBlocks, until)
 
+	if _, err := AcceptGamingInvite(ctx, game, invite, gcid); err != nil {
+		return GamingTable{}, err
+	}
+
 	// Prose and the link, not a bare URL: a client that knows nothing about
 	// games must still show a person something they can act on.
 	msg := fmt.Sprintf("Table for %d at %s DCR a seat. Registration closes at block %d.\n%s",
 		seats, gamingAtomsText(buyinAtoms), until, invite)
-	if err := rpc.BrclientdGCMessage(ctx, gcid, msg, 0); err != nil {
-		return GamingTable{}, fmt.Errorf("the invitation could not be sent: %w", err)
+	table := GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid}
+	if err := tableGCMessage(ctx, gcid, msg, 0); err != nil {
+		return table, fmt.Errorf("you are seated, but the invitation could not be sent: %w", err)
 	}
-	return GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid}, nil
+	return table, nil
 }
 
 // gamingAtomsText renders atoms for a chat message, trailing zeros trimmed.

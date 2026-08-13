@@ -19,6 +19,7 @@ import {
   setGamingSettings,
 } from '../../services/gamingApi';
 import { AccountInfo, getAccounts } from '../../services/api';
+import { GamingCreateTable } from './GamingCreateTable';
 
 // blankPolicy is what an unedited card starts from. The server mints the real
 // defaults on registration; this only keeps the inputs controlled until it
@@ -57,6 +58,7 @@ export const BisonrelayGamingTab = () => {
   // last time anybody sees it.
   const [issued, setIssued] = useState<GamingCredentialMaterial | null>(null);
   const [bridge, setBridge] = useState<GamingBridgeInfo | null>(null);
+  const [newTable, setNewTable] = useState<{ id: string; label: string } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -333,6 +335,15 @@ export const BisonrelayGamingTab = () => {
                       </span>
                     )}
                     <div className="flex flex-wrap gap-2 pt-1">
+                      {g.ready && (
+                        <button
+                          type="button"
+                          onClick={() => setNewTable({ id: g.id, label: g.name })}
+                          className="px-2.5 py-1 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20"
+                        >
+                          New table
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => issueCredential(g.id)}
@@ -484,6 +495,14 @@ export const BisonrelayGamingTab = () => {
       )}
 
       <GamingSpendApprovals />
+
+      {newTable && (
+        <GamingCreateTable
+          game={newTable.id}
+          label={newTable.label}
+          onClose={() => setNewTable(null)}
+        />
+      )}
     </div>
   );
 };

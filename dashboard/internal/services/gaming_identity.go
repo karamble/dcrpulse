@@ -295,6 +295,15 @@ var gamingConnected func(game string) int
 // SetGamingConnected wires the listener's view of who is connected.
 func SetGamingConnected(f func(game string) int) { gamingConnected = f }
 
+// gamingRequest asks a connected game to do something and waits for its answer.
+// Set from main for the same reason as gamingConnected.
+var gamingRequest func(ctx context.Context, game string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error)
+
+// SetGamingRequest wires the listener's request path.
+func SetGamingRequest(f func(ctx context.Context, game string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error)) {
+	gamingRequest = f
+}
+
 func gamingGameConnected(game string) bool {
 	// No listener means nothing is connected, which is the truthful answer
 	// rather than an optimistic one.
