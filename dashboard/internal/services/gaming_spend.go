@@ -208,14 +208,22 @@ func expireLocked(log *spendLog, now int64) bool {
 	return changed
 }
 
-// spentInDayLocked totals what has actually left the wallet in the last
-// twenty-four hours, plus what is still pending.
+// spentInDayLocked totals what one game has moved out of the wallet in the last
+// twenty-four hours, plus what it still has waiting on a person.
+//
+// Per game, because the cap is. Summed across every game, one busy table
+// consumes the allowance of a game that has asked for nothing, and that game is
+// then refused for money it never spent - a limit that falls on the wrong
+// principal is not a limit on anybody.
 //
 // Pending counts. A cap that ignored outstanding requests could be walked past
 // by asking several times before anyone answered.
-func spentInDayLocked(log spendLog, now int64) int64 {
+func spentInDayLocked(log spendLog, game string, now int64) int64 {
 	var total int64
 	for _, s := range log.Spends {
+		if s.Game != game {
+			continue
+		}
 		switch s.State {
 		case GamingSpendApproved:
 			if now-s.DecidedAt < int64((24 * time.Hour).Seconds()) {
@@ -298,7 +306,7 @@ func RequestGamingSpend(game, address string, amountAtoms int64, reason string) 
 	log := readSpendLog()
 	expireLocked(&log, now)
 
-	if err := checkSpendAgainstDay(s, amountAtoms, spentInDayLocked(log, now)); err != nil {
+	if err := checkSpendAgainstDay(s, amountAtoms, spentInDayLocked(log, game, now)); err != nil {
 		return GamingSpend{}, err
 	}
 
