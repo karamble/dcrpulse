@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -134,12 +135,34 @@ func gamingGameForToken(s types.GamingSettings, token string) (string, bool) {
 	return "", false
 }
 
+// GamingStateDir is where the gaming section keeps its two files: the policy
+// saying which account games may spend from and under what caps, and the log of
+// every spend one has asked for.
+//
+// It is a value rather than the constant it starts as, and that is what makes
+// the rules below checkable. A path fixed at compile time is a path no test can
+// write, so every rule that had to read one - which game a credential belongs
+// to, what it may spend, what it has spent today - could only be exercised by
+// re-implementing it beside the real thing and asserting the copy. There was
+// one of those here and it was never once capable of failing. Production leaves
+// this alone; the bridge's own tests point it at a directory they may write.
+var GamingStateDir = config.StackControlDir()
+
+// gamingSettingsPath is the policy file. Moving it is not a rename: it holds
+// the identity registered for each game, so a bridge that looks somewhere new
+// finds no registrations and every game it knew becomes a stranger.
+func gamingSettingsPath() string { return filepath.Join(GamingStateDir, "gaming.json") }
+
+// gamingSpendLogPath is the audit trail a person reads, and the record the
+// daily cap is counted from.
+func gamingSpendLogPath() string { return filepath.Join(GamingStateDir, "gaming-spends.json") }
+
 // ReadGamingSettings returns the stored gaming policy, falling back to the
 // disabled default when the file is absent or unreadable. Read failures are
 // deliberately not surfaced as an enabled policy.
 func ReadGamingSettings() types.GamingSettings {
 	s := DefaultGamingSettings()
-	data, err := os.ReadFile(config.GamingSettingsPath())
+	data, err := os.ReadFile(gamingSettingsPath())
 	if err != nil {
 		return s
 	}
@@ -152,10 +175,27 @@ func ReadGamingSettings() types.GamingSettings {
 	return s
 }
 
-// WriteGamingSettings validates and persists the gaming policy, bumping Rev so
-// a supervisor can notice the change.
-func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) {
-	cur := ReadGamingSettings()
+// ErrGamingNeedsAppPassword is why the bridge will not switch on.
+var ErrGamingNeedsAppPassword = errors.New(
+	"set and enable an App Password before turning the gaming bridge on")
+
+// normalizeGamingSettings is the policy a write is allowed to produce, given
+// what is already stored and whether the App Password is actually protecting
+// the dashboard right now.
+//
+// appPasswordActive is an argument rather than a call into the auth package,
+// because the rule is "the bridge does not run without a human gate" and that
+// is a statement about a boolean, not about where the boolean came from. It is
+// also what lets the whole truth table be written out in a test.
+//
+// Refusing rather than quietly clamping, unlike the unbound-account rule below:
+// an operator who asked for the bridge and got it switched off with no reason
+// would go looking for a bug. The account rule can clamp because the interface
+// will not offer an account-less enable in the first place.
+func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive bool) (types.GamingSettings, error) {
+	if in.Enabled && !appPasswordActive {
+		return types.GamingSettings{}, ErrGamingNeedsAppPassword
+	}
 
 	out := types.GamingSettings{
 		Enabled:             in.Enabled,
@@ -212,19 +252,32 @@ func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) 
 	if out.Account == "" {
 		out.Enabled = false
 	}
+	return out, nil
+}
 
-	if err := os.MkdirAll(config.StackControlDir(), 0o700); err != nil {
+// WriteGamingSettings validates and persists the gaming policy, bumping Rev so
+// a reader can notice the change.
+//
+// appPasswordActive is passed in by the caller, which is what keeps this
+// package from depending on the auth package for a boolean.
+func WriteGamingSettings(in types.GamingSettings, appPasswordActive bool) (types.GamingSettings, error) {
+	out, err := normalizeGamingSettings(in, ReadGamingSettings(), appPasswordActive)
+	if err != nil {
+		return types.GamingSettings{}, err
+	}
+
+	if err := os.MkdirAll(GamingStateDir, 0o700); err != nil {
 		return out, err
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return out, err
 	}
-	tmp := config.GamingSettingsPath() + ".tmp"
+	tmp := gamingSettingsPath() + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return out, err
 	}
-	if err := os.Rename(tmp, config.GamingSettingsPath()); err != nil {
+	if err := os.Rename(tmp, gamingSettingsPath()); err != nil {
 		return out, err
 	}
 	return out, nil
