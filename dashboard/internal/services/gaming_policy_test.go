@@ -18,7 +18,7 @@ import (
 // off the whole API answers to anyone who can reach the port.
 func TestTheBridgeCannotBeTurnedOnWithoutAHumanGate(t *testing.T) {
 	bound := func() types.GamingSettings {
-		return types.GamingSettings{Enabled: true, Account: "gaming", Mode: gamingModeApproval}
+		return types.GamingSettings{Enabled: true, Account: "gaming"}
 	}
 
 	for _, tc := range []struct {

@@ -7,7 +7,6 @@ package services
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +17,6 @@ func spendPolicy() types.GamingSettings {
 	return types.GamingSettings{
 		Enabled:             true,
 		Account:             "gaming",
-		Mode:                gamingModeApproval,
 		PerTableCapAtoms:    100_000_000,
 		PerDayCapAtoms:      500_000_000,
 		ApprovalTimeoutSecs: 120,
@@ -70,19 +68,50 @@ func TestPolicyRefusesWhatItWasWrittenTo(t *testing.T) {
 	}
 }
 
-// Nothing here holds a wallet passphrase - every send route takes one from the
-// user and wipes it - so there is no way to pay without asking. Saying so beats
-// quietly behaving like approval, which would make the setting a lie.
-func TestAutomaticPaymentIsRefusedRatherThanFaked(t *testing.T) {
-	s := spendPolicy()
-	s.Mode = gamingModeAutopay
-
-	err := checkSpendRequest(s, true, "Tsaddr", 10_000_000)
-	if !errors.Is(err, ErrGamingSpendRefused) {
-		t.Fatalf("got %v, want a refusal", err)
+// Asking for money gets a person asked, and nothing else.
+//
+// This process holds no wallet passphrase, so a request that came back anything
+// but pending - or that reached the wallet at all - would mean a path existed
+// that pays a game on its own. There used to be a setting offering exactly
+// that; it could be chosen, it was stored, and then every spend was refused
+// with a message only the game saw. This asserts the property the setting
+// pretended to configure, which is the one that has to hold however the policy
+// is written.
+func TestNothingIsPaidWithoutAPerson(t *testing.T) {
+	spendSeams(t)
+	spendAccount = func(context.Context) (uint32, error) {
+		t.Fatal("asking to spend resolved an account on its own")
+		return 0, nil
 	}
-	if err == nil || !strings.Contains(err.Error(), "passphrase") {
-		t.Fatalf("the refusal should say why: %v", err)
+	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
+		t.Fatal("asking to spend built a transaction on its own")
+		return nil, nil
+	}
+	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+		t.Fatal("asking to spend reached the wallet on its own")
+		return nil, nil
+	}
+	spendPublish = func(context.Context, []byte) (string, error) {
+		t.Fatal("asking to spend put a transaction on the network on its own")
+		return "", nil
+	}
+
+	if _, err := WriteGamingSettings(types.GamingSettings{
+		Enabled: true, Account: "gaming", InstalledGames: []string{"poker"},
+		PerTableCapAtoms: 100_000_000, PerDayCapAtoms: 500_000_000,
+	}, true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
+
+	spend, err := RequestGamingSpend("poker", "Tsaddr", 10_000_000, "a seat")
+	if err != nil {
+		t.Fatalf("a spend inside every cap was refused: %v", err)
+	}
+	if spend.State != GamingSpendPending {
+		t.Fatalf("a request came back %s without anybody being asked", spend.State)
+	}
+	if spend.TxID != "" {
+		t.Fatalf("a request nobody approved has a transaction: %s", spend.TxID)
 	}
 }
 
