@@ -9,6 +9,7 @@ import (
 	"crypto/elliptic"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -76,6 +77,10 @@ type bridgeRig struct {
 	// while nothing was connected.
 	missedMu sync.Mutex
 	missed   map[string][]string
+
+	spendMu  sync.Mutex
+	spendSeq int
+	spends   map[string]*gamingpb.Spend
 }
 
 // loseFrames records that a game's table lost frames, as the fan-out would.
@@ -94,6 +99,45 @@ func (r *bridgeRig) takeMissed(game string) []string {
 	out := r.missed[game]
 	delete(r.missed, game)
 	return out
+}
+
+// requestSpend records a request the way the policy would, and refuses the
+// ones a cap would refuse.
+func (r *bridgeRig) requestSpend(game, address string, atoms int64, reason string) (*gamingpb.Spend, error) {
+	if atoms > testPerTableCap {
+		return nil, fmt.Errorf("%w: %d atoms is over %q's per-table cap of %d",
+			ErrSpendOverCap, atoms, game, testPerTableCap)
+	}
+
+	r.spendMu.Lock()
+	defer r.spendMu.Unlock()
+	r.spendSeq++
+	spend := &gamingpb.Spend{
+		Id:          fmt.Sprintf("spend-%d", r.spendSeq),
+		Game:        game,
+		Address:     address,
+		AmountAtoms: atoms,
+		Reason:      reason,
+		// Pending, and nothing else. A person has not seen it yet, and this
+		// bridge holds no passphrase with which to pay it if they had.
+		State: "pending",
+	}
+	if r.spends == nil {
+		r.spends = map[string]*gamingpb.Spend{}
+	}
+	r.spends[spend.GetId()] = spend
+	return spend, nil
+}
+
+// spendStatus answers only about the asking game's own requests.
+func (r *bridgeRig) spendStatus(game, id string) (*gamingpb.Spend, error) {
+	r.spendMu.Lock()
+	defer r.spendMu.Unlock()
+	spend, ok := r.spends[id]
+	if !ok || spend.GetGame() != game {
+		return nil, ErrSpendNotFound
+	}
+	return spend, nil
 }
 
 // newBridgeRig stands the bridge up and tears it down again.
@@ -130,6 +174,14 @@ func newBridgeRig(t *testing.T) *bridgeRig {
 			return testPerTableCap, testPerDayCap, true
 		},
 		TakeMissed: func(game string) []string { return r.takeMissed(game) },
+
+		// The money, stood in for. The cap arithmetic itself belongs to the
+		// policy and is tested where it lives; what is asserted here is that
+		// this bridge attributes a request to the game on the certificate,
+		// refuses an over-cap one in the words a cap deserves, and never
+		// hands one game another's answer.
+		RequestSpend: r.requestSpend,
+		SpendStatus:  r.spendStatus,
 	})
 	if err != nil {
 		t.Fatalf("prepare the bridge: %v", err)

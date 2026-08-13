@@ -6,6 +6,7 @@ package gamingbridge
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -221,3 +222,69 @@ func (s *Server) Respond(ctx context.Context, req *gamingpb.RespondRequest) (*ga
 
 // State is the last thing a game reported, for the console to render.
 func (s *Server) State(game string) *gamingpb.GameState { return s.reg.state(game) }
+
+// RequestSpend asks a person to pay, and returns as soon as the request is
+// recorded - never when it is paid.
+//
+// The game is the one this connection's certificate resolved to, so a game
+// cannot ask for money as another even by trying. Nothing here decides anything
+// about the amount: the caps and the account belong to the policy the operator
+// wrote, and this only carries the answer back.
+func (s *Server) RequestSpend(ctx context.Context, req *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error) {
+	if s.cfg.RequestSpend == nil {
+		return nil, errNotHere
+	}
+	spend, err := s.cfg.RequestSpend(callerGame(ctx), req.GetAddress(), req.GetAmountAtoms(), req.GetReason())
+	if err != nil {
+		return nil, spendErr(err)
+	}
+	return spend, nil
+}
+
+// SpendStatus reports what became of one of this game's own requests.
+func (s *Server) SpendStatus(ctx context.Context, req *gamingpb.SpendStatusRequest) (*gamingpb.Spend, error) {
+	if s.cfg.SpendStatus == nil {
+		return nil, errNotHere
+	}
+	spend, err := s.cfg.SpendStatus(callerGame(ctx), req.GetId())
+	if err != nil {
+		return nil, spendErr(err)
+	}
+	return spend, nil
+}
+
+// Broadcast relays a transaction the game signed itself.
+//
+// Bounded by shape rather than by intent, which is the only thing that can be
+// checked: the bridge cannot know what a game meant, and does know what a
+// transaction does.
+func (s *Server) Broadcast(ctx context.Context, req *gamingpb.BroadcastRequest) (*gamingpb.BroadcastReply, error) {
+	if s.cfg.Broadcast == nil {
+		return nil, errNotHere
+	}
+	txid, err := s.cfg.Broadcast(ctx, callerGame(ctx), req.GetRawTxHex())
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &gamingpb.BroadcastReply{Txid: txid}, nil
+}
+
+// spendErr says which kind of no this was.
+//
+// A cap is the operator's standing decision working as intended, and a game
+// told about one can wait or ask for less. Anything else is the section not
+// being set up to pay at all, which is a thing a person has to go and do - and
+// a game told it was over a limit would send them to the wrong screen.
+//
+// Not found rather than forbidden for another game's request: forbidden would
+// confirm the id is real to somebody who has no business knowing.
+func spendErr(err error) error {
+	switch {
+	case errors.Is(err, ErrSpendOverCap):
+		return status.Error(codes.ResourceExhausted, err.Error())
+	case errors.Is(err, ErrSpendNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	default:
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+}

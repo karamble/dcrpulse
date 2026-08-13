@@ -5,7 +5,10 @@
 package services
 
 import (
+	"context"
+
 	"bytes"
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"encoding/hex"
 	"testing"
 
@@ -164,4 +167,88 @@ func TestARealUnilateralSpendMustStillComeHome(t *testing.T) {
 	if outputsMayPayAnyone(txSpending(fromHex(t, realBackstopSigScript))) {
 		t.Fatal("a spend one key can make alone was allowed to pay anyone")
 	}
+}
+
+// Coin that was never this wallet's may leave, so long as all of it leaves.
+//
+// This is the shape an accusation answer takes: one bond spent, alone, straight
+// into a fresh one. The seat holding it has about fifteen minutes to send it
+// before the others may take the bond, so a bridge that refused it would cost
+// somebody real money while looking like a policy decision.
+//
+// Note what these do not exercise: walletOwns needs a wallet gRPC client and
+// answers "not mine" without one, so the not-the-wallet's half is satisfied
+// trivially here. What is under test is the arithmetic and the script class.
+func TestCoinPassingThroughIsAllowedOut(t *testing.T) {
+	tx := txSpending(unilateralSpend(t))
+	tx.TxOut = []*wire.TxOut{{Value: 990_000}}
+	decoded := scriptHashOutputs(1)
+
+	if !passesThrough(context.Background(), tx, decoded, 1_000_000) {
+		t.Fatal("a bond spent straight into another bond was refused; the seat that had to send " +
+			"it loses the bond it was answering for")
+	}
+}
+
+// Most of it leaving is not all of it leaving.
+func TestCoinPassingThroughMayNotBeSkimmed(t *testing.T) {
+	tx := txSpending(unilateralSpend(t))
+	tx.TxOut = []*wire.TxOut{{Value: 400_000}}
+	decoded := scriptHashOutputs(1)
+
+	// 600_000 atoms unaccounted for. A fee this size is not a fee.
+	if passesThrough(context.Background(), tx, decoded, 1_000_000) {
+		t.Fatal("a transaction that left 600000 atoms behind was let out; a game could hand its " +
+			"own bond to a miner a slice at a time")
+	}
+}
+
+// Coin may pass through, but only into another script - never to an address a
+// game picked, which is how it would pay itself.
+func TestCoinPassingThroughMayNotGoToAPlainAddress(t *testing.T) {
+	tx := txSpending(unilateralSpend(t))
+	tx.TxOut = []*wire.TxOut{{Value: 990_000}}
+
+	decoded := &pb.DecodedTransaction{Outputs: []*pb.DecodedTransaction_Output{{
+		ScriptClass: pb.DecodedTransaction_Output_PUB_KEY_HASH,
+		Addresses:   []string{"Dsomebodyelse"},
+	}}}
+	if passesThrough(context.Background(), tx, decoded, 1_000_000) {
+		t.Fatal("a game moved coin to a plain address of its own choosing, which is the whole " +
+			"thing this rule exists to refuse")
+	}
+}
+
+// A transaction with nothing coming in cannot conserve anything.
+//
+// The second case is the one that needs saying: nothing in and nothing out
+// balances perfectly, so the arithmetic alone would wave it through. Whatever
+// that transaction is, it is not coin passing through, and the only reason it
+// is refused is that this is checked separately.
+func TestCoinPassingThroughNeedsKnownInputs(t *testing.T) {
+	tx := txSpending(unilateralSpend(t))
+	tx.TxOut = []*wire.TxOut{{Value: 990_000}}
+	if passesThrough(context.Background(), tx, scriptHashOutputs(1), 0) {
+		t.Fatal("a transaction whose inputs are worth nothing known was let out on the strength " +
+			"of arithmetic nobody could do")
+	}
+
+	empty := txSpending(unilateralSpend(t))
+	empty.TxOut = []*wire.TxOut{{Value: 0}}
+	if passesThrough(context.Background(), empty, scriptHashOutputs(1), 0) {
+		t.Fatal("nothing in and nothing out balanced, and was let out; the fee arithmetic " +
+			"cannot be the only thing standing here")
+	}
+}
+
+// scriptHashOutputs is n outputs paying script hashes nobody here holds.
+func scriptHashOutputs(n int) *pb.DecodedTransaction {
+	out := &pb.DecodedTransaction{}
+	for i := 0; i < n; i++ {
+		out.Outputs = append(out.Outputs, &pb.DecodedTransaction_Output{
+			ScriptClass: pb.DecodedTransaction_Output_SCRIPT_HASH,
+			Addresses:   []string{"Tsomescripthash"},
+		})
+	}
+	return out
 }

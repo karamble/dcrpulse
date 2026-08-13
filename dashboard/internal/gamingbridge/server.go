@@ -7,6 +7,7 @@ package gamingbridge
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -78,12 +79,28 @@ type Config struct {
 	// SendFrame carries a frame the game built out to a table.
 	SendFrame func(ctx context.Context, game, gcid, frame string) error
 
+	// RequestSpend, SpendStatus and Broadcast are the money. They are named
+	// here and implemented elsewhere for the same reason as everything else
+	// on this struct: what a spend is allowed to be is the operator's
+	// policy, and this package is not where it lives.
+	RequestSpend func(game, address string, amountAtoms int64, reason string) (*gamingpb.Spend, error)
+	SpendStatus  func(game, id string) (*gamingpb.Spend, error)
+	Broadcast    func(ctx context.Context, game, rawTxHex string) (string, error)
+
 	// ChainTip, BlockHash and Outpoint are the chain reads a game needs to
 	// agree deadlines and find its own money.
 	ChainTip  func(ctx context.Context) (height int64, hash string, err error)
 	BlockHash func(ctx context.Context, height int64) (string, error)
 	Outpoint  func(ctx context.Context, txid string, vout uint32, includeMempool bool) (Outpoint, error)
 }
+
+// ErrSpendOverCap and ErrSpendNotFound are what the injected money functions
+// report so this package can answer with the right code without importing the
+// package that owns the policy.
+var (
+	ErrSpendOverCap  = errors.New("over a cap")
+	ErrSpendNotFound = errors.New("no such spend request")
+)
 
 // Outpoint is what a game is told about one of its outputs.
 type Outpoint struct {
