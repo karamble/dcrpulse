@@ -62,6 +62,75 @@ func (r *bridgeRig) subscribe(t *testing.T, game string) (grpc.ServerStreamingCl
 	return client.Subscribe(ctx, &gamingpb.SubscribeRequest{})
 }
 
+// A game is told what it is; it does not announce it.
+//
+// The credential decides, and the game learns the answer from Hello. Without
+// it, an operator who copied the wrong credential onto a machine gets a game
+// quietly acting as something else, spending against caps set for a different
+// table - a configuration mistake that should be loud and instead is invisible.
+func TestAGameIsToldWhatItIs(t *testing.T) {
+	r := newBridgeRig(t)
+	c := r.dial(t, r.register(t, "poker"))
+
+	ctx, cancel := callCtx(t)
+	defer cancel()
+	reply, err := c.Hello(ctx, &gamingpb.HelloRequest{ClientVersion: "test"})
+	if err != nil {
+		t.Fatalf("a game cannot find out what this bridge considers it to be, "+
+			"so a misplaced credential stays invisible: %v", err)
+	}
+	if reply.GetGame() != "poker" {
+		t.Fatalf("the bridge said the caller was %q; a game that is not told what it is cannot "+
+			"notice it was given the wrong credential", reply.GetGame())
+	}
+}
+
+// A game claiming to be something else is refused, not corrected.
+//
+// The claim is advisory and the certificate decides, so the bridge could simply
+// answer with the right name. It refuses instead, because the only way that
+// disagreement happens is a credential copied onto the wrong machine - and an
+// operator who mixed two games up needs to be told, not quietly given the
+// behaviour of whichever one they happened to copy.
+func TestAGameThatClaimsAnotherNameIsRefused(t *testing.T) {
+	r := newBridgeRig(t)
+	c := r.dial(t, r.register(t, "poker"))
+
+	ctx, cancel := callCtx(t)
+	defer cancel()
+	_, err := c.Hello(ctx, &gamingpb.HelloRequest{GameId: "not-poker", ClientVersion: "test"})
+	if err == nil {
+		t.Fatal("a game was admitted under a name its credential does not carry, so a credential " +
+			"on the wrong machine looks like a working one")
+	}
+	if st, _ := status.FromError(err); st.Code() != codes.FailedPrecondition {
+		t.Errorf("the mismatch was reported as %v, which does not tell the operator their "+
+			"configuration is wrong", st.Code())
+	}
+}
+
+// A game learns which chain it is on before it builds anything.
+//
+// A game built for one network talking to a bridge on another produces scripts
+// nobody can ever spend, and pays real money into them. The game is required to
+// refuse on a mismatch, which it can only do if the bridge says.
+func TestAGameLearnsTheNetworkBeforeItSpends(t *testing.T) {
+	r := newBridgeRig(t)
+	c := r.dial(t, r.register(t, "poker"))
+
+	ctx, cancel := callCtx(t)
+	defer cancel()
+	reply, err := c.Hello(ctx, &gamingpb.HelloRequest{GameId: "poker", ClientVersion: "test"})
+	if err != nil {
+		t.Fatalf("a game cannot learn which chain this bridge is on, so it can only find out "+
+			"by paying into a script nobody can spend: %v", err)
+	}
+	if reply.GetNetwork() == "" {
+		t.Fatal("the bridge named no network, so a mainnet game and a testnet bridge look identical " +
+			"until the money is gone")
+	}
+}
+
 // What the operator asked for reaches the game it was addressed to.
 //
 // This is the entire point of the stream. A subscription that cannot be held is
