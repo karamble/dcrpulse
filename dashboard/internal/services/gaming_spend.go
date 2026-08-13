@@ -31,7 +31,7 @@ import (
 // and whether a person said yes. That division is the whole design - policy
 // belongs where money moves, not where messages do.
 //
-// What it enforces against is the game's bearer token, which is an identity
+// What it enforces against is the game's credential, which is an identity
 // rather than a password. A shared secret would make every game one principal,
 // and a cap on a principal nobody can tell apart is not a cap.
 //
