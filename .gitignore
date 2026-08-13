@@ -55,3 +55,7 @@ tmp/
 temp/
 *.tmp
 
+# Spec Kit (per-repo tooling scaffold and feature specs, kept local)
+.specify/
+specs/
+
