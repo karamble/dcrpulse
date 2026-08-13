@@ -7,7 +7,6 @@ package services
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -157,16 +156,15 @@ func TestAnUnansweredRequestExpires(t *testing.T) {
 	}
 }
 
-// spendSeams points the spend log at a directory a test may write and puts
+// spendSeams points the gaming state at a directory a test may write and puts
 // every staged call back the way it was.
 func spendSeams(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
-	origPath, origAccount := spendLogPath, spendAccount
+	origDir, origAccount := GamingStateDir, spendAccount
 	origConstruct, origSign, origPublish := spendConstruct, spendSign, spendPublish
-	spendLogPath = func() string { return filepath.Join(dir, "gaming-spends.json") }
+	GamingStateDir = t.TempDir()
 	t.Cleanup(func() {
-		spendLogPath, spendAccount = origPath, origAccount
+		GamingStateDir, spendAccount = origDir, origAccount
 		spendConstruct, spendSign, spendPublish = origConstruct, origSign, origPublish
 	})
 }

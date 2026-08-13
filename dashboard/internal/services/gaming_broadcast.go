@@ -129,29 +129,29 @@ const scriptVersion = 0
 // without being room to abuse.
 const maxGamingTxBytes = 100 << 10
 
-// gamingPrevout is what the validator needs to know about an input's previous
+// GamingPrevout is what the validator needs to know about an input's previous
 // output: what kind of script pays it, and to whom.
-type gamingPrevout struct {
+type GamingPrevout struct {
 	Found     bool
 	Type      string
 	Addresses []string
 }
 
-func lookupGamingPrevout(ctx context.Context, op wire.OutPoint) (gamingPrevout, error) {
+func lookupGamingPrevout(ctx context.Context, op wire.OutPoint) (GamingPrevout, error) {
 	if rpc.DcrdClient == nil {
-		return gamingPrevout{}, ErrGamingChainUnavailable
+		return GamingPrevout{}, ErrGamingChainUnavailable
 	}
 	// Mempool included: a refund may well spend a deposit whose funding is
 	// still unconfirmed, and refusing on that basis would be refusing on a
 	// timing accident rather than on anything about the transaction.
 	out, err := rpc.DcrdClient.GetTxOut(ctx, &op.Hash, op.Index, 0, true)
 	if err != nil {
-		return gamingPrevout{}, fmt.Errorf("read %s:%d: %w", op.Hash, op.Index, err)
+		return GamingPrevout{}, fmt.Errorf("read %s:%d: %w", op.Hash, op.Index, err)
 	}
 	if out == nil {
-		return gamingPrevout{}, nil
+		return GamingPrevout{}, nil
 	}
-	return gamingPrevout{
+	return GamingPrevout{
 		Found:     true,
 		Type:      out.ScriptPubKey.Type,
 		Addresses: out.ScriptPubKey.Addresses,
@@ -195,7 +195,7 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 
 	// Inputs: game money only, and never the wallet's own coin.
 	for i, in := range tx.TxIn {
-		facts, err := lookupGamingPrevout(ctx, in.PreviousOutPoint)
+		facts, err := spendPrevout(ctx, in.PreviousOutPoint)
 		if err != nil {
 			return "", err
 		}

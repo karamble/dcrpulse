@@ -157,24 +157,6 @@ func TorPointerPath() string {
 	return filepath.Join(StackControlDir(), "tor.json")
 }
 
-// GamingSettingsPath is where the Bison Relay gaming section's policy lives:
-// which wallet account games may spend from, the caps on what they may stake,
-// and the identity registered for each game.
-//
-// It sits in the stack control directory with every other service's control
-// file. It had a volume of its own when a game ran here as a container that
-// mounted it; nothing runs here now, so there is nothing to keep it apart from.
-func GamingSettingsPath() string {
-	return filepath.Join(StackControlDir(), "gaming.json")
-}
-
-// GamingSpendLogPath is where every spend a game asked for is recorded, with
-// what was decided about it. It is the audit trail a person reads, and the
-// record the daily cap is counted from.
-func GamingSpendLogPath() string {
-	return filepath.Join(StackControlDir(), "gaming-spends.json")
-}
-
 // Per-service state files. Each supervisor writes the wallet it currently has
 // running to a fixed (not per-wallet) path so the dashboard can poll it during a
 // switch. dcrwallet keeps its original control/state.json location.
