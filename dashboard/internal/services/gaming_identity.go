@@ -19,6 +19,7 @@ import (
 	"github.com/decred/dcrd/certgen"
 
 	"dcrpulse/internal/gamingbridge"
+	"dcrpulse/internal/gamingpb"
 	"dcrpulse/internal/types"
 )
 
@@ -240,6 +241,16 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 			return p.PerTableCapAtoms, p.PerDayCapAtoms, strings.TrimSpace(p.Account) != ""
 		},
 
+		RequestSpend: func(game, address string, atoms int64, reason string) (*gamingpb.Spend, error) {
+			spend, err := RequestGamingSpend(game, address, atoms, reason)
+			return spendProto(spend), spendBridgeErr(err)
+		},
+		SpendStatus: func(game, id string) (*gamingpb.Spend, error) {
+			spend, err := GamingSpendFor(game, id)
+			return spendProto(spend), spendBridgeErr(err)
+		},
+		Broadcast: GamingBroadcast,
+
 		SendFrame: SendGamingFrame,
 		ChainTip: func(ctx context.Context) (int64, string, error) {
 			tip, err := GamingChainTipNow(ctx)
@@ -288,4 +299,43 @@ func gamingGameConnected(game string) bool {
 	// No listener means nothing is connected, which is the truthful answer
 	// rather than an optimistic one.
 	return gamingConnected != nil && gamingConnected(game) > 0
+}
+
+// spendProto is one spend on the wire.
+func spendProto(s GamingSpend) *gamingpb.Spend {
+	if s.ID == "" {
+		return nil
+	}
+	return &gamingpb.Spend{
+		Id:          s.ID,
+		Game:        s.Game,
+		Address:     s.Address,
+		AmountAtoms: s.AmountAtoms,
+		Reason:      s.Reason,
+		State:       string(s.State),
+		Txid:        s.TxID,
+		Error:       s.Error,
+		RequestedAt: s.RequestedAt,
+		DecidedAt:   s.DecidedAt,
+		ExpiresAt:   s.ExpiresAt,
+	}
+}
+
+// spendBridgeErr translates a refusal into the two the bridge can tell apart.
+//
+// Only these two, because they are the only two a game can do anything useful
+// with: wait and ask for less, or stop asking about an id that is not its own.
+// Everything else is the operator's to fix and reaches the game as its own
+// words.
+func spendBridgeErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrGamingSpendOverCap):
+		return fmt.Errorf("%w: %s", gamingbridge.ErrSpendOverCap, err)
+	case errors.Is(err, ErrGamingSpendNotFound):
+		return fmt.Errorf("%w: %s", gamingbridge.ErrSpendNotFound, err)
+	default:
+		return err
+	}
 }

@@ -77,6 +77,19 @@ var (
 	// ErrGamingSpendRefused is a request policy will not carry.
 	ErrGamingSpendRefused = errors.New("spend refused by policy")
 
+	// ErrGamingSpendOverCap is a spend refused for being too large, as
+	// opposed to one refused because the section is not set up to pay
+	// anything at all.
+	//
+	// It wraps ErrGamingSpendRefused, so everything that already asks "was
+	// this refused" keeps working. The distinction exists because the two
+	// deserve different answers: a cap is the operator's standing decision
+	// working exactly as intended, and a game told about one can wait and
+	// ask for less. An unbound account is something the operator has not
+	// done yet, and a game told it was over a limit would send them looking
+	// at the wrong screen.
+	ErrGamingSpendOverCap = fmt.Errorf("%w: over a cap", ErrGamingSpendRefused)
+
 	// ErrGamingSpendNotFound is an id nobody asked for, or not this game's.
 	ErrGamingSpendNotFound = errors.New("no such spend request")
 
@@ -265,7 +278,7 @@ func checkSpendRequest(s types.GamingSettings, game, address string, amountAtoms
 	}
 	if p.PerTableCapAtoms > 0 && amountAtoms > p.PerTableCapAtoms {
 		return p, fmt.Errorf("%w: %d atoms is over %q's per-table cap of %d",
-			ErrGamingSpendRefused, amountAtoms, game, p.PerTableCapAtoms)
+			ErrGamingSpendOverCap, amountAtoms, game, p.PerTableCapAtoms)
 	}
 	return p, nil
 }
@@ -278,7 +291,7 @@ func checkSpendAgainstDay(p types.GamePolicy, amountAtoms, used int64) error {
 	}
 	return fmt.Errorf(
 		"%w: %d atoms would pass the daily cap of %d, with %d already spent or awaiting an answer",
-		ErrGamingSpendRefused, amountAtoms, p.PerDayCapAtoms, used)
+		ErrGamingSpendOverCap, amountAtoms, p.PerDayCapAtoms, used)
 }
 
 // RequestGamingSpend records a game's request, if policy will carry it.
