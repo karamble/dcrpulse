@@ -1,0 +1,420 @@
+// The game <-> dcrpulse gaming bridge contract.
+//
+// The game is the gRPC CLIENT and dials the bridge over mTLS on a dedicated
+// port. Its identity is NEVER a field in any message: it is the client
+// certificate, resolved by the bridge from the verified peer. A game therefore
+// cannot assert which game it is - it presents a credential and the bridge
+// decides. One Subscribe stream carries every bridge->game push; everything the
+// game initiates is a unary call. The bridge never dials the game, so a game
+// behind NAT needs no inbound port.
+//
+// The bridge forms an opinion only on the money verbs and on routing. Frame
+// contents are opaque: what a frame means is between the players, who sign
+// their own traffic and check each other's, and a bridge that inspected
+// payloads would be adding a party nobody agreed to trust.
+//
+// This file is the contract. A game generates its own client from it; there is
+// no shared Go package, because the module path here is not fetchable. Changing
+// it is changing a published wire format - see contract_test.go.
+
+syntax = "proto3";
+
+package dcrpulse.gaming.v1;
+
+option go_package = "dcrpulse/internal/gamingpb;gamingpb";
+
+// BridgeService is served by dcrpulse on its dedicated mTLS gaming port.
+service BridgeService {
+  // ---- handshake ----
+
+  // Hello is called once, before Subscribe. It is where the two sides agree
+  // about who and what they are before anything can go wrong quietly.
+  rpc Hello(HelloRequest) returns (HelloReply);
+
+  // ---- the one bridge->game channel ----
+
+  // Subscribe is the single stream the game opens; the bridge pushes every
+  // event down it. Closing it - by revocation, by the bridge going off, or by
+  // the game leaving - ends that game's participation.
+  rpc Subscribe(SubscribeRequest) returns (stream BridgeEvent);
+
+  // Respond answers one BridgeRequest. The bridge checks that the credential
+  // on this call resolves to the game the request was addressed to.
+  rpc Respond(RespondRequest) returns (RespondReply);
+
+  // ReportState is what the console shows. It is sent unsolicited when
+  // something moves, and the bridge keeps the last one - so a game that is not
+  // running renders as it last was rather than as an error.
+  rpc ReportState(GameState) returns (ReportStateReply);
+
+  // ---- money: the bridge forms an opinion here ----
+
+  // RequestSpend records a request to pay money IN. It never spends: this
+  // process holds no wallet passphrase, so all it can do is ask a person.
+  // Checked against the calling game's own caps and account.
+  //
+  // NON-IDEMPOTENT. It must never be placed in a gRPC retry policy: a
+  // transparent retry would ask for the same stake twice.
+  rpc RequestSpend(RequestSpendRequest) returns (Spend);
+
+  // SpendStatus reports what became of one of THIS game's requests.
+  //
+  // Polling is the answer of record, not the SpendSettled push. Not being able
+  // to ask is not the same as the answer being no, and only a call the game
+  // makes itself can tell those apart.
+  rpc SpendStatus(SpendStatusRequest) returns (Spend);
+
+  // Broadcast relays a transaction the game signed itself - a matured bond, a
+  // stake past its timelock, a settlement every member signed. Bounded by
+  // shape rather than by intent: every input spends game money the wallet does
+  // not own, and unless every input required more than one signature, every
+  // output pays an address the wallet does.
+  rpc Broadcast(BroadcastRequest) returns (BroadcastReply);
+
+  // ---- frames and chain: opaque, read-only ----
+
+  // SendFrame sends one opaque protocol frame to a table's group chat. The
+  // bridge checks only that the frame is the calling game's own.
+  rpc SendFrame(SendFrameRequest) returns (SendFrameReply);
+
+  // The facts a game needs to agree deadlines and check its peers' bonds. A
+  // height is something every player can verify; a clock is each machine's
+  // opinion and nobody can be shown to have read it wrong.
+  rpc ChainTip(ChainTipRequest) returns (ChainTipReply);
+  rpc BlockHash(BlockHashRequest) returns (BlockHashReply);
+  rpc Outpoint(OutpointRequest) returns (OutpointReply);
+}
+
+// ---- handshake ----
+
+message HelloRequest {
+  // game_id is advisory. The bridge resolves identity from the credential and
+  // refuses on mismatch, so a misdelivered credential is a visible
+  // configuration error rather than a silent takeover.
+  string game_id = 1;
+
+  // game_protocol_version is the game's own wire version - the `gv=` key it
+  // stamps on frames. Recorded and displayed, never enforced: a bridge that
+  // refused an unfamiliar version would have to be taught every game.
+  uint32 game_protocol_version = 2;
+
+  string client_version = 3;
+
+  // capabilities are the pushes this game can answer. One that cannot do a
+  // thing says so, and the console stops offering it - which is how this
+  // contract grows without every game having to grow with it.
+  repeated Capability capabilities = 4;
+}
+
+enum Capability {
+  CAP_UNSPECIFIED = 0;
+  CAP_ACCEPT_INVITE = 1;
+  CAP_RECLAIM = 2;
+  CAP_SET_PAYOUT = 3;
+  CAP_SET_NAMES = 4;
+}
+
+message HelloReply {
+  // game is authoritative: the id the bridge resolved from the credential. The
+  // game learns what it is rather than asserting it.
+  string game = 1;
+
+  uint32 bridge_contract_version = 2;
+
+  // network is the chain this bridge is on. The game MUST refuse to proceed on
+  // a mismatch: a game built for one network against a bridge on another makes
+  // scripts nobody can spend and pays real money into them.
+  string network = 3;
+
+  // chain_available says whether the node is reachable yet, so a game knows
+  // before its first ChainTip rather than discovering it as an error.
+  bool chain_available = 4;
+
+  PolicySummary policy = 5;
+}
+
+// PolicySummary lets a game say "that buy-in will be refused" before asking a
+// person to try. It is a courtesy, not the enforcement - the caps are applied
+// at RequestSpend whatever the game believes.
+message PolicySummary {
+  int64 per_table_cap_atoms = 1;
+  int64 per_day_cap_atoms = 2;
+  bool account_bound = 3;
+}
+
+// ---- the stream ----
+
+message SubscribeRequest {
+  // last_seq and epoch are what the game already holds. Sent back so the
+  // bridge can tell a resumable reconnect from one that missed something.
+  uint64 last_seq = 1;
+  string epoch = 2;
+}
+
+message BridgeEvent {
+  oneof event {
+    StreamStart start = 1;
+    Frame frame = 2;
+    BridgeRequest request = 3;
+
+    // spend is a hint that a request settled, to wake a poll early. It is
+    // never the answer: the game must call SpendStatus and write that.
+    SpendSettled spend = 4;
+  }
+}
+
+// StreamStart is the first event on every stream, and the only place a gap is
+// declared.
+//
+// A game must resync when and only when gap is true. Inferring a gap from its
+// own reconnect loop is what makes a brief outage cost one resync per attempt
+// per table; stating it once means a failed dial costs nothing at all.
+message StreamStart {
+  string epoch = 1;
+  uint64 from_seq = 2;
+  bool gap = 3;
+  GapScope gap_scope = 4;
+
+  // gap_gcids names the tables actually missed, when the bridge knows. A
+  // scoped gap resyncs one table instead of all of them.
+  repeated string gap_gcids = 5;
+}
+
+enum GapScope {
+  GAP_NONE = 0;
+  GAP_SCOPED = 1;
+  GAP_ALL = 2;
+}
+
+message Frame {
+  uint64 seq = 1;
+
+  // gcid is the group chat, which for a game is the table.
+  string gcid = 2;
+
+  // from is the sender's authenticated Bison Relay uid. It comes from the
+  // ratcheted message, never from anything inside the payload, so no payload
+  // field can forge it.
+  string from = 3;
+
+  // frame is the whole envelope, exactly as it arrived.
+  string frame = 4;
+}
+
+// BridgeRequest is work the operator asked for, addressed to this game. Every
+// one is answered by Respond: these are calls whose replies the console shows,
+// not announcements.
+message BridgeRequest {
+  string request_id = 1;
+
+  // deadline_unix is advisory for reads. A Reclaim MUST be completed and
+  // broadcast regardless - the coin is coming home either way - and its
+  // outcome reported through ReportState, which is the backstop for a reply
+  // that never arrived.
+  int64 deadline_unix = 2;
+
+  oneof req {
+    AcceptInvite accept_invite = 3;
+    Reclaim reclaim = 4;
+    SetPayoutAddress set_payout = 5;
+    SetNames set_names = 6;
+    RefreshState refresh_state = 7;
+  }
+}
+
+message AcceptInvite {
+  string invite = 1;
+  string gcid = 2;
+}
+
+message Reclaim {
+  enum Kind {
+    BOND = 0;        // the standing fidelity bond
+    STAKE = 1;       // a table stake past its timelock
+    TABLE_BOND = 2;  // a forfeitable table bond past its window
+  }
+  Kind kind = 1;
+  string sid = 2;
+
+  // dest_addr is derived by the bridge from the game's own bound account. A
+  // game that chose where its refunds landed could simply choose itself.
+  string dest_addr = 3;
+
+  // outpoint names coin other than the seat's current stake - the way back for
+  // a deposit that was paid but never recorded.
+  string outpoint = 4;
+
+  // fee_atoms of 0 means the game's own default.
+  int64 fee_atoms = 5;
+}
+
+message SetPayoutAddress { string address = 1; }
+
+// SetNames is merged, not replaced: labels are cosmetic and a partial update
+// must not erase what it does not mention.
+message SetNames { map<string, string> names = 1; }
+
+message RefreshState {}
+
+message RespondRequest {
+  string request_id = 1;
+
+  // ok false carries the game's own words, which is the useful part - a
+  // refusal that says how many blocks are left on a lock is worth more than
+  // one that says no.
+  bool ok = 2;
+  string error = 3;
+
+  oneof result {
+    AcceptInviteResult accept_invite = 4;
+    ReclaimResult reclaim = 5;
+    GameState state = 6;
+  }
+}
+
+message RespondReply {}
+message AcceptInviteResult { string sid = 1; }
+message ReclaimResult { string txid = 1; }
+
+// ---- state ----
+
+// GameState is everything the console shows about one game. Sent when
+// something moves, and in answer to RefreshState.
+message GameState {
+  // request_id is set only when this answers a RefreshState.
+  string request_id = 1;
+
+  int64 reported_at = 2;
+  uint64 seq = 3;
+
+  repeated Table tables = 4;
+  Bond bond = 5;
+  repeated TableBond table_bonds = 6;
+
+  // payout_address is echoed back so the console can see a push that did not
+  // take.
+  string payout_address = 7;
+
+  string chain_err = 8;
+
+  // seed_backup_acknowledged stops the console nagging. The seed itself never
+  // crosses this bridge: it is the one secret the operator does not otherwise
+  // hold, and the game offers its own backup where the person already is.
+  bool seed_backup_acknowledged = 9;
+}
+
+message ReportStateReply {}
+
+message Table {
+  string sid = 1;
+  string gcid = 2;
+  string state = 3;
+  uint32 seats = 4;
+  int64 buyin_atoms = 5;
+  uint32 until = 6;
+  bool over = 7;
+}
+
+// Bond and TableBond carry absolute facts only. A count of blocks remaining is
+// true for one block and then quietly wrong; a maturity height stays true while
+// the game is away, and the console derives the rest from the bridge's own tip.
+message Bond {
+  string address = 1;
+  string script_hex = 2;
+  string outpoint = 3;
+  int64 min_atoms = 4;
+  int64 atoms = 5;
+  int64 matures_at = 6;
+  bool has_deposit = 7;
+  bool spent = 8;
+}
+
+message TableBond {
+  string sid = 1;
+  uint32 seat = 2;
+  string outpoint = 3;
+  string address = 4;
+  int64 atoms = 5;
+  int64 matures_at = 6;
+  bool spent = 7;
+}
+
+// ---- money ----
+
+message RequestSpendRequest {
+  string address = 1;
+  int64 amount_atoms = 2;
+
+  // reason is prose a person reads on an approval screen, so it says what the
+  // money buys and what gets it back.
+  string reason = 3;
+}
+
+message SpendStatusRequest { string id = 1; }
+
+message Spend {
+  string id = 1;
+  string game = 2;
+  string address = 3;
+  int64 amount_atoms = 4;
+  string reason = 5;
+
+  // state is pending, approved, denied, expired or failed.
+  string state = 6;
+
+  string txid = 7;
+  string error = 8;
+  int64 requested_at = 9;
+  int64 decided_at = 10;
+  int64 expires_at = 11;
+}
+
+message SpendSettled { string id = 1; }
+
+message BroadcastRequest { string raw_tx_hex = 1; }
+message BroadcastReply { string txid = 1; }
+
+// ---- frames and chain ----
+
+message SendFrameRequest {
+  string gcid = 1;
+  string frame = 2;
+}
+
+message SendFrameReply {}
+
+message ChainTipRequest {}
+
+message ChainTipReply {
+  int64 height = 1;
+  string hash = 2;
+}
+
+message BlockHashRequest { uint32 height = 1; }
+
+message BlockHashReply {
+  uint32 height = 1;
+  string hash = 2;
+}
+
+message OutpointRequest {
+  string txid = 1;
+  uint32 vout = 2;
+
+  // include_mempool is for finding coin this game has just paid, which is in
+  // no block yet. Judging somebody else's bond needs a buried output, and a
+  // game that confuses the two is trusting an unconfirmed stranger.
+  bool include_mempool = 3;
+}
+
+message OutpointReply {
+  bool found = 1;
+  int64 value_atoms = 2;
+
+  // pk_script_hex is how a game finds its own output among a transaction's
+  // vouts. Without it an approved payment is money nobody can locate.
+  string pk_script_hex = 3;
+
+  int64 confirmations = 4;
+  bool coinbase = 5;
+}

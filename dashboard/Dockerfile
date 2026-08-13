@@ -52,8 +52,6 @@ RUN chown 1000:1000 /app/dcrpulse
 # volume gets the right ownership when first mounted.
 RUN mkdir -p /dashboard-data && chown 1000:1000 /dashboard-data
 
-RUN mkdir -p /control && chown 1000:1000 /control
-
 # Pre-create /app-data/dcrlnd + /app-data/brclientd as mountpoints. The
 # dashboard binds /app-data read-only and these two subdirs on top; docker
 # needs the inner mount targets to exist before the outer mount makes
