@@ -649,6 +649,10 @@ func main() {
 			middleware.RateLimit("gaming-ui-session", time.Second, 3)(
 				http.HandlerFunc(handlers.BisonrelayGamingUISessionHandler)))).Methods("POST")
 
+	api.Handle("/br/gaming/bridge", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingBridgeInfoHandler))).Methods("GET")
+	api.Handle("/br/gaming/credential", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCredentialHandler))).Methods("POST")
+	api.Handle("/br/gaming/credential/revoke", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCredentialRevokeHandler))).Methods("POST")
+
 	api.Handle("/br/gaming/tables", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingTablesHandler))).Methods("GET")
 
 	api.Handle("/br/gaming/table-bonds", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingTableBondsHandler))).Methods("GET")
