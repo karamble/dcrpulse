@@ -1,0 +1,187 @@
+// Copyright (c) 2015-2026 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+package gamingbridge
+
+import (
+	"crypto/tls"
+	"fmt"
+	"net"
+	"sync"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
+
+	"dcrpulse/internal/gamingpb"
+)
+
+// Config is everything the bridge needs to answer a port.
+//
+// Handed in rather than read from package state: this listener is assembled in
+// one place at startup and in another by its own tests, and a dependency that
+// arrives through the constructor can be different in each without either
+// having to put anything back.
+type Config struct {
+	// Addr is where to listen. ":0" takes any free port, which is what the
+	// tests want and production never asks for.
+	Addr string
+
+	// ServerCert and ServerKey are this bridge's own identity, the pair a
+	// game pins.
+	ServerCert, ServerKey []byte
+
+	// AppPasswordActive reports whether the dashboard is behind its App
+	// Password right now.
+	//
+	// A function rather than a value, because it is asked on every call. The
+	// caps and the approval a spend waits on are worth exactly as much as
+	// the certainty that the person answering is the operator, so the bridge
+	// stops answering the moment that stops being true - not at the next
+	// restart.
+	AppPasswordActive func() bool
+
+	// Enabled reports the operator's stored intent to run the bridge.
+	Enabled func() bool
+
+	// Allow is which credentials may connect and what each one is.
+	Allow *Allowlist
+}
+
+// Server is the bridge's listener.
+//
+// It answers the contract in internal/gamingpb. Every method it does not
+// implement answers Unimplemented, which is what the embedded generated type is
+// for - and while the transport is being built that is most of them.
+type Server struct {
+	gamingpb.UnimplementedBridgeServiceServer
+
+	cfg   Config
+	allow *Allowlist
+
+	mu   sync.Mutex
+	grpc *grpc.Server
+	lis  net.Listener
+}
+
+// New prepares a bridge. It does not listen; Serve does.
+func New(cfg Config) (*Server, error) {
+	if cfg.Allow == nil {
+		return nil, fmt.Errorf("a bridge with no allowlist would answer nobody")
+	}
+	if cfg.AppPasswordActive == nil || cfg.Enabled == nil {
+		return nil, fmt.Errorf("a bridge has to be able to ask whether it should be running")
+	}
+	return &Server{cfg: cfg, allow: cfg.Allow}, nil
+}
+
+// live reports whether the bridge should be answering at all.
+//
+// Both halves, every time. The stored switch is the operator's intent and the
+// App Password is what makes an approval mean anything; a stored intent that
+// outlived the gate would leave the money routes reachable by whoever got to
+// the port first.
+func (s *Server) live() bool {
+	return s.cfg.Enabled() && s.cfg.AppPasswordActive()
+}
+
+// Serve starts listening and blocks until the bridge is stopped.
+func (s *Server) Serve() error {
+	cert, err := tls.X509KeyPair(s.cfg.ServerCert, s.cfg.ServerKey)
+	if err != nil {
+		return fmt.Errorf("load the bridge's own certificate: %w", err)
+	}
+
+	lis, err := net.Listen("tcp", s.cfg.Addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", s.cfg.Addr, err)
+	}
+
+	srv := grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(serverTLSConfig(cert, s.allow))),
+		grpc.ChainUnaryInterceptor(s.unaryIdentity),
+		grpc.ChainStreamInterceptor(s.streamIdentity),
+		// The same ceiling the browser API puts on a request body. A game
+		// is no more trusted than a browser is.
+		grpc.MaxRecvMsgSize(1<<20),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    30 * time.Second,
+			Timeout: 20 * time.Second,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			// The default here is five minutes, which would hang up on a
+			// game that pings at any sensible interval and look like a
+			// mysterious disconnect loop.
+			MinTime: 10 * time.Second,
+			// A game between subscriptions is still a client.
+			PermitWithoutStream: true,
+		}),
+	)
+	gamingpb.RegisterBridgeServiceServer(srv, s)
+
+	s.mu.Lock()
+	s.grpc, s.lis = srv, lis
+	s.mu.Unlock()
+
+	return srv.Serve(lis)
+}
+
+// Addr is where the bridge actually ended up listening, which is the only way
+// to learn it when the port was left to the operating system to choose.
+func (s *Server) Addr() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lis == nil {
+		return ""
+	}
+	return s.lis.Addr().String()
+}
+
+// Stop ends the bridge.
+//
+// Graceful first, then not. A graceful stop waits for calls in flight, and the
+// subscription stream never ends on its own - so waiting for it without a
+// deadline is waiting forever.
+func (s *Server) Stop() {
+	s.mu.Lock()
+	srv := s.grpc
+	s.grpc, s.lis = nil, nil
+	s.mu.Unlock()
+	if srv == nil {
+		return
+	}
+
+	done := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		srv.Stop()
+	}
+}
+
+// SubscriberCount is how many streams a game is holding open.
+//
+// It is what the console reports as connected, and it is also the only honest
+// way to know a subscription has been established rather than merely asked for.
+func (s *Server) SubscriberCount(game string) int {
+	// The stream registry arrives with the fan-out; until then nothing can
+	// be holding one.
+	return 0
+}
+
+// Deliver hands a game something that arrived for it.
+//
+// This is the only way into a game's stream, and it takes the game as an
+// argument rather than a stream, so the routing decision is made here from the
+// address on the frame - a caller that could pick the stream itself could
+// deliver one game's traffic to another by accident.
+func (s *Server) Deliver(game string, req *gamingpb.BridgeRequest) {
+	// Nothing holds a stream until the registry arrives, so this reaches
+	// nobody yet.
+}
