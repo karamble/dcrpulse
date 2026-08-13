@@ -9,7 +9,6 @@ import (
 	"net/http"
 
 	"dcrpulse/internal/auth"
-	"dcrpulse/internal/services"
 )
 
 // AuthStatusHandler reports the app-password state. Unauthenticated and
@@ -86,8 +85,6 @@ func AuthSkipSetupHandler(w http.ResponseWriter, r *http.Request) {
 // AuthLogoutHandler clears the session cookie.
 func AuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	auth.ClearSessionCookie(w, r)
-	// Panel tokens are not carried by the cookie and would outlive it.
-	services.RevokeAllGamingUISessions()
 	w.WriteHeader(http.StatusNoContent)
 }
 

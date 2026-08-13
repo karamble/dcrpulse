@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"net/http"
 	"regexp"
@@ -129,59 +128,6 @@ func BisonrelayGamingGamesHandler(w http.ResponseWriter, r *http.Request) {
 	gamingJSON(w, map[string]any{"games": services.GamingCatalogue()})
 }
 
-// BisonrelayGamingInviteHandler hands an accepted invitation to the game that
-// can act on it.
-//
-// This is a browser route, not a tunnel one: accepting an invitation is a
-// person's decision, taken in their own session, so it belongs behind the same
-// origin and session checks as everything else they do. The dashboard then
-// speaks to the game as the host, with that game's own token.
-//
-// It forms no opinion about the invitation beyond which game it names. What the
-// terms mean is the game's business, and a host that judged them would be a
-// party to a table nobody agreed to trust.
-func BisonrelayGamingInviteHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		Game   string `json:"game"`
-		Invite string `json:"invite"`
-		GCID   string `json:"gcid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-	req.Game = strings.ToLower(strings.TrimSpace(req.Game))
-	req.GCID = strings.ToLower(strings.TrimSpace(req.GCID))
-
-	if req.Game == "" || strings.TrimSpace(req.Invite) == "" {
-		http.Error(w, "game and invite are required", http.StatusBadRequest)
-		return
-	}
-	if !gamingGCIDRe.MatchString(req.GCID) {
-		http.Error(w, "gcid must be 64 hex characters", http.StatusBadRequest)
-		return
-	}
-
-	err := services.AcceptGamingInvite(r.Context(), req.Game, req.Invite, req.GCID)
-	switch {
-	case err == nil:
-		gamingJSON(w, map[string]any{"accepted": true})
-	case errors.Is(err, services.ErrGamingGameNotInstalled):
-		http.Error(w, "game is not added", http.StatusForbidden)
-	case errors.Is(err, services.ErrGamingGameNotRunning):
-		// Added but not up. Worth distinguishing: the user can do
-		// something about one of these and not the other.
-		http.Error(w, "game is not running", http.StatusConflict)
-	default:
-		http.Error(w, err.Error(), http.StatusBadGateway)
-	}
-}
-
 // BisonrelayGamingSpendsHandler lists what games have asked to spend, and what
 // was decided, for a person to read.
 func BisonrelayGamingSpendsHandler(w http.ResponseWriter, r *http.Request) {
@@ -241,38 +187,12 @@ func BisonrelayGamingSpendDecideHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// BisonrelayGamingIdentityBackupHandler hands a game's seed to the person
-// running the host, so a lost data volume is not a lost bond.
-//
-// A game's keys are the one thing here the host does not already hold a copy
-// of: they are derived from a seed the game generated itself and keeps in its
-// own volume. Remove that volume without this and the game's fidelity bond can
-// never be spent again, because the script names a key only that seed derives.
-//
-// It sits behind the same session as the rest of this API, and the dashboard
-// neither stores nor logs what comes back. Anyone who can call it can already
-// spend the wallet from that same session, so it grants nothing new - but a
-// secret should not be sitting in a page that is merely open, which is why
-// nothing fetches it until a person asks.
-func BisonrelayGamingIdentityBackupHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	game := strings.TrimSpace(r.URL.Query().Get("game"))
-	if game == "" {
-		http.Error(w, "game is required", http.StatusBadRequest)
-		return
-	}
-	backup, err := services.GamingIdentityBackup(r.Context(), game)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	// Nothing carrying a secret belongs in a cache nobody asked for.
-	w.Header().Set("Cache-Control", "no-store")
-	gamingJSON(w, backup)
-}
+// A game's seed is deliberately not reachable from here. It is the one secret
+// this host does not hold a copy of, and a game now runs on a machine of the
+// person's choosing rather than in a volume beside the wallet - so fetching it
+// would carry it across a network to a page a browser session can read, to
+// solve a problem the person is already standing in front of. The game offers
+// its own backup; this only reports whether they have taken it.
 
 // ---- The tunnel ----
 //
@@ -570,39 +490,5 @@ func BisonrelayGamingEventsHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	}
-}
-
-// BisonrelayGamingBundleHandler serves a game's binary, or its signature, to
-// the sandbox.
-//
-// The sandbox has no route off the host, so it cannot fetch its own binaries.
-// The host does the fetching, from a URL in its own catalogue rather than one
-// the caller supplies - a game able to name a URL could ask the host to reach
-// anything reachable from here, which is exactly what the sandbox gives up.
-//
-// The bytes are passed through unverified. The portal checks the signature,
-// because the portal is what executes them.
-func BisonrelayGamingBundleHandler(w http.ResponseWriter, r *http.Request) {
-	game := gamingCaller(r)
-	signature := r.URL.Query().Get("part") == "sig"
-	arch := r.URL.Query().Get("arch")
-
-	body, err := services.FetchGamingBundle(r.Context(), game, arch, signature)
-	if err != nil {
-		if errors.Is(err, services.ErrGamingGameNotInstalled) {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
-		http.Error(w, "fetch bundle: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer body.Close()
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	if _, err := io.Copy(w, body); err != nil {
-		// The response is already streaming, so there is no status left
-		// to change; the portal sees a short read and refuses it.
-		log.Printf("gaming bundle for %s: %v", game, err)
 	}
 }

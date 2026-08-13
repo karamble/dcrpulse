@@ -5,20 +5,15 @@
 package services
 
 import (
-	"bytes"
-	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/types"
@@ -49,8 +44,6 @@ var gamingCatalogue = []types.GamingGame{
 		Name:            "Poker",
 		Description:     "Self-custodial Decred poker. Stakes are held in per-player escrow that only the whole table can settle, and are refundable by you alone after a timeout.",
 		ProtocolVersion: 1,
-		BundleURL:       "https://github.com/vctt94/pokerbisonrelay/releases/latest/download/pokerplugin-linux-{arch}",
-		BundleSigURL:    "https://github.com/vctt94/pokerbisonrelay/releases/latest/download/pokerplugin-linux-{arch}.sig",
 	},
 }
 
@@ -187,17 +180,6 @@ func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) 
 	}
 	out.GameTokens = tokens
 
-	// A panel token that outlived an uninstall would still reach the game.
-	if !out.Enabled {
-		RevokeAllGamingUISessions()
-	} else {
-		for game := range cur.GameTokens {
-			if _, still := out.GameTokens[game]; !still {
-				RevokeGamingUISessionsFor(game)
-			}
-		}
-	}
-
 	if out.Mode != gamingModeApproval && out.Mode != gamingModeAutopay {
 		out.Mode = gamingModeApproval
 	}
@@ -231,11 +213,7 @@ func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) 
 		out.Enabled = false
 	}
 
-	// The gaming volume, not the stack's control directory. Creating the
-	// wrong one meant the write below landed on a path nothing had made -
-	// and the policy is how a game learns its own identity, so without it
-	// nothing in the sandbox can start at all.
-	if err := os.MkdirAll(config.GamingControlDir(), 0o700); err != nil {
+	if err := os.MkdirAll(config.StackControlDir(), 0o700); err != nil {
 		return out, err
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
@@ -252,129 +230,31 @@ func WriteGamingSettings(in types.GamingSettings) (types.GamingSettings, error) 
 	return out, nil
 }
 
-// GamingState is what the sandbox's portal reports about itself.
-type GamingState struct {
-	Rev     int            `json:"rev"`
-	Running map[string]int `json:"running"` // game id -> pid
-	Ports   map[string]int `json:"ports"`   // game id -> the port it listens on
-	Missing []string       `json:"missing"` // installed, but no binary present
-	Updated int64          `json:"updated"`
-}
-
-// ReadGamingState reads the sandbox's state file.
-//
-// The dashboard cannot start or inspect a container - there is no docker socket
-// and no exec anywhere in this codebase - so this file is the only way the
-// answer travels back, exactly as it is for dcrwallet, dcrlnd and the rest.
-func ReadGamingState() GamingState {
-	var st GamingState
-	blob, err := os.ReadFile(config.GamingStatePath())
-	if err != nil {
-		return GamingState{}
-	}
-	if err := json.Unmarshal(blob, &st); err != nil {
-		return GamingState{}
-	}
-	return st
-}
+// ErrGamingGameNotRunning says no game is connected under that name.
+var ErrGamingGameNotRunning = errors.New("game is not connected")
 
 // GamingCatalogue reports every known game, marked with whether the user
-// installed it and whether it is actually running.
+// registered it and whether it is connected right now.
 //
-// Installed and ready are separate answers on purpose. A game can be installed
-// and crashed, or installed with its binary never fetched, and reporting it as
-// ready would send a player to a table nothing is listening on. Ready means the
-// portal has the process up right now.
+// Registered and connected are separate answers on purpose. A game runs on a
+// machine of the person's choosing, so it can be registered here and simply not
+// running, and reporting it as ready would send a player to a table nothing is
+// listening on.
 func GamingCatalogue() []types.GamingGame {
 	installed := make(map[string]bool)
 	for _, id := range ReadGamingSettings().InstalledGames {
 		installed[id] = true
 	}
-	state := ReadGamingState()
 
 	out := make([]types.GamingGame, 0, len(gamingCatalogue))
 	for _, g := range gamingCatalogue {
 		g.Installed = installed[g.ID]
-		pid, up := state.Running[g.ID]
-		g.Ready = g.Installed && up && pid > 0
+		// Connection state arrives with the bridge listener; until then
+		// nothing is connected, which is the truthful answer.
+		g.Ready = false
 		out = append(out, g)
 	}
 	return out
-}
-
-// gamingSandboxHost is where the sandbox is reached. It is the compose service
-// name, resolved on the internal gaming network - the one network the sandbox
-// is attached to, and the only one it can reach anything on.
-const gamingSandboxHost = "gaming"
-
-// ErrGamingGameNotRunning says the sandbox has nothing listening for a game.
-var ErrGamingGameNotRunning = errors.New("game is not running")
-
-// GamingGameURL is where a running game can be driven.
-//
-// The port comes from the portal's own report rather than from anything the
-// caller supplies. The sandbox has no route out, so what it says about itself
-// is the only account there is - and a URL a caller could shape is exactly what
-// the sandbox exists to prevent.
-func GamingGameURL(id string) (string, error) {
-	return gamingGameURL(ReadGamingState(), id, gamingGameInstalled(id))
-}
-
-// gamingGameURL is the decision on its own. The state file's path is a
-// compile-time constant, so anything that reads it is unreachable from a test;
-// keeping the rule separate is what makes it checkable.
-func gamingGameURL(st GamingState, id string, installed bool) (string, error) {
-	if !installed {
-		return "", ErrGamingGameNotInstalled
-	}
-	pid, up := st.Running[id]
-	port, known := st.Ports[id]
-	if !up || pid <= 0 || !known || port <= 0 {
-		// Installed and running are different answers. A game that is
-		// added but not up has nothing listening, and pointing a player
-		// at it would fail in a way nobody could act on.
-		return "", ErrGamingGameNotRunning
-	}
-	return fmt.Sprintf("http://%s:%d", gamingSandboxHost, port), nil
-}
-
-// AcceptGamingInvite hands an accepted invitation to the game that can act on
-// it, authenticated as the host with that game's own token.
-//
-// The dashboard does not read the invitation beyond deciding which game it
-// names. What the terms mean is the game's business, and a host that formed an
-// opinion about them would be a party to a table nobody agreed to trust.
-func AcceptGamingInvite(ctx context.Context, id, invite, gcid string) error {
-	base, err := GamingGameURL(id)
-	if err != nil {
-		return err
-	}
-	token, err := gamingTokenFor(id)
-	if err != nil {
-		return err
-	}
-
-	body, err := json.Marshal(map[string]string{"invite": invite, "gcid": gcid})
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/table/join", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		return fmt.Errorf("reach %s: %w", id, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return fmt.Errorf("%s refused the invitation: %s", id, strings.TrimSpace(string(msg)))
-	}
-	return nil
 }
 
 // gamingTokenFor returns the token the host issued a game, which is the only

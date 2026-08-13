@@ -231,7 +231,6 @@ func main() {
 	gaming.Use(handlers.GamingTunnelAuth)
 	gaming.HandleFunc("/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
 	gaming.HandleFunc("/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
-	gaming.HandleFunc("/bundle", handlers.BisonrelayGamingBundleHandler).Methods("GET")
 	gaming.HandleFunc("/chain/tip", handlers.BisonrelayGamingChainTipHandler).Methods("GET")
 	gaming.HandleFunc("/chain/outpoint", handlers.BisonrelayGamingOutpointHandler).Methods("GET")
 	gaming.HandleFunc("/chain/blockhash", handlers.BisonrelayGamingBlockHashHandler).Methods("GET")
@@ -241,14 +240,6 @@ func main() {
 	gaming.HandleFunc("/chain/broadcast", handlers.BisonrelayGamingBroadcastHandler).Methods("POST")
 	gaming.HandleFunc("/spend", handlers.BisonrelayGamingSpendHandler).Methods("POST")
 	gaming.HandleFunc("/spend/status", handlers.BisonrelayGamingSpendStatusHandler).Methods("GET")
-
-	// A game's own interface. Its own subtree because the document is
-	// authenticated by the dashboard session and the calls under it by a
-	// short-lived panel token, neither of which fits /api or /gaming.
-	gameui := r.PathPrefix("/gameui").Subrouter()
-	gameui.HandleFunc("/{game}/", handlers.GameUIDocumentHandler).Methods("GET")
-	gameui.HandleFunc("/{game}/api/{rest:.*}", handlers.GameUIPreflightHandler).Methods("OPTIONS")
-	gameui.HandleFunc("/{game}/api/{rest:.*}", handlers.GameUIAPIHandler).Methods("GET", "POST")
 
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth)
@@ -585,27 +576,8 @@ func main() {
 	api.HandleFunc("/br/mcp/spend", handlers.BisonrelayMCPSpendHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/settings", handlers.BisonrelayGamingSettingsHandler).Methods("GET", "POST")
 	api.HandleFunc("/br/gaming/games", handlers.BisonrelayGamingGamesHandler).Methods("GET")
-	api.HandleFunc("/br/gaming/invite", handlers.BisonrelayGamingInviteHandler).Methods("POST")
 	api.HandleFunc("/br/gaming/spends", handlers.BisonrelayGamingSpendsHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/spends/decide", handlers.BisonrelayGamingSpendDecideHandler).Methods("POST")
-	// Fetched only when a person asks: it carries the seed a game's bond
-	// and stakes are locked to, and nothing else has a copy of it.
-	api.HandleFunc("/br/gaming/identity/backup", handlers.BisonrelayGamingIdentityBackupHandler).Methods("GET")
-
-	// Under /api so same-origin and a dashboard session are what mint one.
-	api.Handle("/br/gaming/ui/session",
-		middleware.RateLimit("gaming-ui-session", time.Second, 3)(
-			http.HandlerFunc(handlers.BisonrelayGamingUISessionHandler))).Methods("POST")
-	api.HandleFunc("/br/gaming/ui/session/refresh", handlers.BisonrelayGamingUIRefreshHandler).Methods("POST")
-	api.HandleFunc("/br/gaming/ui/session/end", handlers.BisonrelayGamingUIEndHandler).Methods("POST")
-
-	// Proposing a table, and taking back coin a game locked. Both are host
-	// actions: one sends as this identity, the other signs and broadcasts.
-	api.HandleFunc("/br/gaming/table", handlers.BisonrelayGamingCreateHandler).Methods("POST")
-	api.HandleFunc("/br/gaming/bond", handlers.BisonrelayGamingBondHandler).Methods("GET")
-	api.HandleFunc("/br/gaming/table-bonds", handlers.BisonrelayGamingTableBondsHandler).Methods("GET")
-	api.HandleFunc("/br/gaming/tables", handlers.BisonrelayGamingTablesHandler).Methods("GET")
-	api.HandleFunc("/br/gaming/reclaim", handlers.BisonrelayGamingReclaimHandler).Methods("POST")
 
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")

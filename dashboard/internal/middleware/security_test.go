@@ -5,8 +5,6 @@
 package middleware
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -137,28 +135,14 @@ func TestAnUnterminatedScriptIsNotAScript(t *testing.T) {
 	}
 }
 
-// The origin a framed page's policy has to name, because 'self' matches nothing
-// in an opaque origin.
-func TestTheExternalOriginIsNamed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/gameui/poker/", nil)
-	req.Host = "pulse.example:8080"
-
-	got := ExternalOrigin(req)
-	if got != "http://pulse.example:8080" {
-		t.Fatalf("the external origin is %q", got)
-	}
-	if strings.Contains(got, "'self'") {
-		t.Fatal("the external origin is not an origin")
-	}
-}
-
-// Framing is stated rather than inherited, so a reader does not have to deduce
-// that a game's interface is allowed to be framed here.
-func TestTheDocumentPolicyAllowsFraming(t *testing.T) {
+// Nothing is framed here any more, and a policy that still allowed it would be
+// describing a proxy this dashboard no longer runs.
+func TestTheDocumentPolicyFramesNothing(t *testing.T) {
 	policy := buildCSP(nil)
-	for _, want := range []string{"frame-src 'self'", "frame-ancestors 'self'"} {
-		if !strings.Contains(policy, want) {
-			t.Errorf("the document policy is missing %q: %s", want, policy)
-		}
+	if strings.Contains(policy, "frame-src") {
+		t.Errorf("the document policy still allows framing: %s", policy)
+	}
+	if !strings.Contains(policy, "frame-ancestors 'self'") {
+		t.Errorf("the document policy no longer says who may frame it: %s", policy)
 	}
 }

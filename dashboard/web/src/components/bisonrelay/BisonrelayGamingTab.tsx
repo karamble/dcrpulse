@@ -3,11 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
-import { GamingIdentityBackup } from './GamingIdentityBackup';
 import { GamingSpendApprovals } from './GamingSpendApprovals';
-import { useGamePanel } from './GamePanelProvider';
-import { GamingCreateTable } from './GamingCreateTable';
-import { GamingBonds } from './GamingBonds';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import {
   GamingGame,
@@ -20,17 +16,15 @@ import { AccountInfo, getAccounts } from '../../services/api';
 
 const fmtDcr = (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 8 })} DCR`;
 
-// BisonrelayGamingTab configures the bridge that stands between installed games
-// and the wallet. Games are untrusted: they run beside a wallet, dcrlnd and a
-// Bison Relay identity, so nothing here hands them credentials. They reach one
-// account, under caps, through the host.
+// BisonrelayGamingTab configures the bridge that stands between registered
+// games and the wallet. Games are untrusted and are not run here: a person runs
+// one wherever they like and it connects in, so nothing here hands it
+// credentials. It reaches one account, under caps, through the bridge.
 //
 // Account scope is enforced by this policy rather than by the wallet, because
 // dcrwallet accounts share one seed and one unlock passphrase. It is a boundary
 // above the wallet, never a cryptographic one below it.
 export const BisonrelayGamingTab = () => {
-  const panel = useGamePanel();
-  const [creating, setCreating] = useState<string | null>(null);
   const [settings, setSettings] = useState<GamingSettings | null>(null);
   const [draft, setDraft] = useState<GamingSettings | null>(null);
   const [games, setGames] = useState<GamingGame[]>([]);
@@ -291,41 +285,11 @@ export const BisonrelayGamingTab = () => {
             >
               {g.installed ? 'Remove' : 'Add'}
             </button>
-            {/* Installed and ready are different answers: a game that is added
-                but not up has nothing listening, and a Play button there would
-                send a click nowhere. */}
-            {g.installed && g.ready && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setCreating(g.id)}
-                  className="px-3 py-1.5 rounded-md text-sm font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30"
-                >
-                  New table
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { void panel.open(g.id); }}
-                  disabled={panel.opening}
-                  className="px-3 py-1.5 rounded-md text-sm font-medium bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 disabled:cursor-wait"
-                >
-                  {panel.opening ? 'Opening...' : 'Play'}
-                </button>
-              </>
-            )}
           </div>
         ))}
       </div>
 
-      {/* Only games that are actually up: the seed lives in the sandbox's
-          volume and only the game itself can read it. */}
-      <GamingBonds games={games.filter((g) => g.installed && g.ready).map((g) => g.id)} />
-
-      <GamingIdentityBackup games={games.filter((g) => g.installed && g.ready).map((g) => g.id)} />
-
       <GamingSpendApprovals />
-
-      {creating && <GamingCreateTable game={creating} onClose={() => setCreating(null)} />}
     </div>
   );
 };

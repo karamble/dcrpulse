@@ -4,15 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"strings"
 	"sync"
 
 	"dcrpulse/internal/rpc"
-	"dcrpulse/internal/types"
 )
 
 // Errors a game can be told about. They are deliberately unrevealing: a game
@@ -23,13 +18,13 @@ var (
 	ErrGamingWrongGame        = errors.New("frame belongs to another game")
 )
 
-// The gaming bridge is a tunnel between installed games and Bison Relay.
+// The gaming bridge is a tunnel between registered games and Bison Relay.
 //
-// Games are untrusted. They run beside a wallet, a dcrlnd node and a Bison
-// Relay identity, and they play for real money against strangers - so they are
-// never handed the credentials for any of it. The bridge holds brclientd's
-// client certificate and does the talking, which is the entire reason it
-// exists.
+// Games are untrusted, and they are not run here: a person runs one wherever
+// they like and it connects in. They play for real money against strangers, so
+// they are never handed the credentials for any of it. The bridge holds
+// brclientd's client certificate and does the talking, which is the entire
+// reason it exists.
 //
 // It is a tunnel and not a censor. Frames pass through whole: the bridge picks
 // out which installed game a frame is for and hands it over, forming no opinion
@@ -217,89 +212,4 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 		return ErrGamingWrongGame
 	}
 	return rpc.BrclientdGCMessage(ctx, gcid, frame, 0)
-}
-
-// maxBundleBytes bounds a game binary. A static Go binary is tens of megabytes;
-// this leaves room without letting a bad URL fill the sandbox's volume.
-const maxBundleBytes = 128 << 20
-
-// FetchGamingBundle retrieves a game's binary, or its signature, on the
-// sandbox's behalf.
-//
-// The sandbox has no route off the host, so it cannot fetch anything itself.
-// That is not a limitation to work around: it makes this the single point where
-// anything enters the sandbox, and the host can refuse a game the user never
-// installed rather than discovering afterwards what was downloaded.
-//
-// The host does not verify the signature. The portal does, because the portal
-// is what executes the binary, and the thing that runs code should be the thing
-// that checks it - if this host were compromised it still could not put
-// arbitrary code into the sandbox.
-func FetchGamingBundle(ctx context.Context, game, arch string, signature bool) (io.ReadCloser, error) {
-	if !gamingGameInstalled(game) {
-		return nil, ErrGamingGameNotInstalled
-	}
-	var entry *types.GamingGame
-	for i := range gamingCatalogue {
-		if gamingCatalogue[i].ID == game {
-			entry = &gamingCatalogue[i]
-			break
-		}
-	}
-	if entry == nil {
-		return nil, ErrGamingGameNotInstalled
-	}
-
-	// The URL comes from this build's catalogue, never from the caller. A
-	// game that could name its own URL could ask the host to fetch anything
-	// reachable from here, which is precisely what the sandbox gives up.
-	url := entry.BundleURL
-	if signature {
-		url = entry.BundleSigURL
-	}
-	if url == "" {
-		return nil, fmt.Errorf("no bundle published for %s", game)
-	}
-
-	// The sandbox says which architecture it needs, because the host cannot
-	// know it - a desktop stack runs amd64 while Umbrel is usually arm64,
-	// and a single static binary is built per platform.
-	//
-	// It is an allowlisted enum rather than free text substituted into a
-	// URL. The caller choosing part of a URL the host will fetch is exactly
-	// what the sandbox gives up, so this stays a choice between two known
-	// values.
-	if !gamingArchAllowed(arch) {
-		return nil, fmt.Errorf("unsupported architecture %q", arch)
-	}
-	url = strings.ReplaceAll(url, "{arch}", arch)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build bundle request: %w", err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch bundle: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, fmt.Errorf("bundle source returned %s", resp.Status)
-	}
-	return readCloser{Reader: io.LimitReader(resp.Body, maxBundleBytes), Closer: resp.Body}, nil
-}
-
-// gamingArchAllowed reports whether an architecture is one this host will
-// fetch a binary for.
-func gamingArchAllowed(arch string) bool {
-	switch arch {
-	case "amd64", "arm64":
-		return true
-	}
-	return false
-}
-
-type readCloser struct {
-	io.Reader
-	io.Closer
 }

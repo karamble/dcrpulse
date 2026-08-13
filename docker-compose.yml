@@ -154,35 +154,6 @@ services:
   # wallet and a Bison Relay identity. So they are sandboxed here rather than
   # trusted to behave.
   #
-  # This service mounts neither app-data nor dcrlnd-data, unlike every other
-  # service in the stack. Those hold dcrwallet's files and brclientd's client
-  # certificate, and that certificate is the credential for Bison Relay's RPC -
-  # a game able to read it would talk to the relay directly and the bridge in
-  # front of it would be decoration.
-  #
-  # gaming-net is internal, so there is no route off the host at all. The
-  # isolation is the absence of a route rather than a rule anything must honour,
-  # and the dashboard is the only other member.
-  gaming:
-    build:
-      context: ./gaming
-      args:
-        # Empty by default: a portal with no key installs nothing, which is
-        # the failure worth having.
-        GAMING_SIGNING_KEY: ${GAMING_SIGNING_KEY:-}
-    image: ghcr.io/karamble/dcrpulse-gaming:dev
-    restart: unless-stopped
-    networks:
-      - gaming-net
-    volumes:
-      - gaming-control:/control:ro
-      - gaming-data:/data
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "1.0"
-
   dcrdex:
     image: ghcr.io/karamble/dcrpulse-dcrdex:${DCRDEX_IMAGE_TAG:-dev}
     build:
@@ -225,11 +196,6 @@ services:
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/app-data/dcrdex:ro
       - ${DASHBOARD_DATA_DIR:-dashboard-data}:/dashboard-data
       - ${TOR_DATA_DIR:-tor-data}:/app-data/tor:ro
-      # The dashboard is the only writer of the gaming policy, and the only
-      # member of gaming-net besides the sandbox itself. It reads the
-      # sandbox's state read-only, the way it reads every other supervisor's.
-      - gaming-control:/control
-      - gaming-data:/gaming-data:ro
     environment:
       - PORT=8080
       - DASHBOARD_HOST_BIND=${DASHBOARD_HOST_BIND:-127.0.0.1}
@@ -268,7 +234,6 @@ services:
     restart: unless-stopped
     networks:
       - decred-network
-      - gaming-net
     deploy:
       resources:
         limits:
@@ -297,22 +262,8 @@ services:
 networks:
   decred-network:
     driver: bridge
-  # No route off the host. Attaching the gaming container to this and nothing
-  # else is what makes "games can only reach the bridge" a fact about the
-  # network rather than a rule anything has to honour.
-  gaming-net:
-    driver: bridge
-    internal: true
 
 volumes:
-  # The gaming sandbox's two volumes. They exist separately from app-data
-  # precisely so the gaming container can be given these and nothing else.
-  gaming-control:
-    name: ${GAMING_CONTROL_DIR:-dcrpulse_gaming-control}
-    driver: local
-  gaming-data:
-    name: ${GAMING_DATA_DIR:-dcrpulse_gaming-data}
-    driver: local
   app-data:
     name: ${APP_DATA_DIR:-dcrpulse_app-data}
     driver: local

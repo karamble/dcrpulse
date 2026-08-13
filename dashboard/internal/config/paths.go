@@ -27,18 +27,6 @@ const (
 	// dashboard. Holds each daemon's data plus the stack control directory.
 	AppDataRoot = "/app-data"
 
-	// GamingControlRoot is the gaming sandbox's configuration volume. The
-	// dashboard writes it; the sandbox mounts it read-only. It is separate
-	// from AppDataRoot so the sandbox can be given this and nothing else.
-	GamingControlRoot = "/control"
-
-	// GamingDataRoot is the sandbox's own volume, holding installed game
-	// binaries and the state file it reports through. The dashboard mounts
-	// it read-only to read that state - the same way it reads brclientd's.
-	// Nothing sensitive lives here; it is written by the sandbox, which is
-	// why the dashboard never writes to it.
-	GamingDataRoot = "/gaming-data"
-
 	// WalletDataRoot is dcrwallet's appdata mount, shared read-write with
 	// the dashboard. Matches WALLET_DIR in dcrwallet/docker-entrypoint.sh.
 	WalletDataRoot = "/app-data/dcrwallet"
@@ -169,51 +157,22 @@ func TorPointerPath() string {
 	return filepath.Join(StackControlDir(), "tor.json")
 }
 
-// GamingControlDir is the only directory the gaming sandbox can read.
+// GamingSettingsPath is where the Bison Relay gaming section's policy lives:
+// which wallet account games may spend from, the caps on what they may stake,
+// and the identity registered for each game.
 //
-// It is deliberately not the stack control directory every other service uses.
-// That one sits inside /app-data alongside dcrwallet's files and brclientd's
-// client certificate, and games are the one component in this stack that is not
-// trusted - a game able to read that certificate would reach Bison Relay
-// directly and the bridge in front of it would be decoration. So the gaming
-// policy lives on its own volume, mounted read-only into the sandbox and
-// containing nothing else.
-//
-// It is the volume root, not a subdirectory of it. The other services keep
-// their control files one level down because they share /app-data with a great
-// deal else; this volume holds the gaming policy and nothing else, so an extra
-// level is only somewhere for the two sides to disagree - which is what
-// happened. The sandbox reads /control/gaming.json, and the subdirectory here
-// meant the policy was written where nothing ever looked for it.
-func GamingControlDir() string {
-	return GamingControlRoot
-}
-
-// GamingSettingsPath is where the Bison Relay gaming section's confinement
-// policy lives: which wallet account games may touch, the caps on what they may
-// stake, and each installed game's bearer token. It is how a game learns its
-// own identity, so it is the sandbox's only inbound configuration.
+// It sits in the stack control directory with every other service's control
+// file. It had a volume of its own when a game ran here as a container that
+// mounted it; nothing runs here now, so there is nothing to keep it apart from.
 func GamingSettingsPath() string {
-	return filepath.Join(GamingControlDir(), "gaming.json")
+	return filepath.Join(StackControlDir(), "gaming.json")
 }
 
 // GamingSpendLogPath is where every spend a game asked for is recorded, with
-// what was decided about it.
-//
-// It lives in the stack's own control directory rather than the sandbox's,
-// because the sandbox can read that one - and one game being able to read what
-// another has been spending is exactly the sort of thing keeping games apart is
-// for.
+// what was decided about it. It is the audit trail a person reads, and the
+// record the daily cap is counted from.
 func GamingSpendLogPath() string {
 	return filepath.Join(StackControlDir(), "gaming-spends.json")
-}
-
-// GamingStatePath is where the sandbox's portal reports what is actually
-// running, the way every other supervisor reports through control-state.json.
-// Installed and running are separate answers: a game can be installed and
-// crashed, and the dashboard should say so rather than claim it is ready.
-func GamingStatePath() string {
-	return filepath.Join(GamingDataRoot, "control-state.json")
 }
 
 // Per-service state files. Each supervisor writes the wallet it currently has

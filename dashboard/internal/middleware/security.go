@@ -31,7 +31,6 @@ func buildCSP(scriptHashes []string) string {
 		"img-src 'self' data: blob:; " +
 		"font-src 'self'; " +
 		"connect-src 'self'; " +
-		"frame-src 'self'; " +
 		"frame-ancestors 'self'; " +
 		"base-uri 'self'; " +
 		"form-action 'self'"
@@ -77,29 +76,6 @@ func InlineScriptHashesFor(html []byte) []string {
 		i = bodyAt + end
 	}
 	return out
-}
-
-// ExternalOrigin is the origin a browser sees this dashboard as, for policies
-// on documents with an opaque origin where 'self' matches nothing.
-//
-// Honours X-Forwarded-* only behind a trusted proxy, which here puts a
-// caller-influenced string into a security policy.
-func ExternalOrigin(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if trustProxyHeaders() {
-		if fwd := r.Header.Get("X-Forwarded-Proto"); fwd != "" {
-			if i := strings.IndexByte(fwd, ','); i >= 0 {
-				fwd = fwd[:i]
-			}
-			if s := strings.TrimSpace(fwd); s == "http" || s == "https" {
-				scheme = s
-			}
-		}
-	}
-	return scheme + "://" + expectedHost(r)
 }
 
 var csp = buildCSP(nil)
