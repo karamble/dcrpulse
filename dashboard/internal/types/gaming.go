@@ -78,23 +78,8 @@ type GamingGame struct {
 	// Installed reports whether the user added this game.
 	Installed bool `json:"installed"`
 
-	// Ready reports whether the sandbox has this game's process running.
-	// Deliberately not the same as installed: a game can be installed and
-	// crashed, or installed with its binary never fetched.
+	// Ready reports whether the game is connected to the bridge right now.
+	// Deliberately not the same as installed: a game is registered here and
+	// run by the person elsewhere, so it can be added and not running.
 	Ready bool `json:"ready"`
-
-	// BundleURL is where the game's binary is published, and BundleSigURL
-	// its detached signature. The sandbox has no route off the host, so the
-	// host fetches both on its behalf - which also makes this the single
-	// audited point where anything enters the sandbox.
-	//
-	// {arch} is replaced with the sandbox's architecture. A game is a single
-	// static binary, so it is built per platform: desktop stacks run amd64
-	// and Umbrel is usually arm64, and serving one to the other produces a
-	// binary that cannot execute.
-	//
-	// They are not served to the browser: a URL the frontend could rewrite
-	// would be a way to ask the host to fetch something else.
-	BundleURL    string `json:"-"`
-	BundleSigURL string `json:"-"`
 }

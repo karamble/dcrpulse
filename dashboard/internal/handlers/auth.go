@@ -14,7 +14,6 @@ import (
 
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/mcp"
-	"dcrpulse/internal/services"
 )
 
 // stopAgentSurface stops the agent surface and releases the wallet passphrases
@@ -119,8 +118,6 @@ func AuthSkipSetupHandler(w http.ResponseWriter, r *http.Request) {
 // cookie just cleared, and any captured copy of it, stops verifying everywhere.
 func AuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	auth.ClearSessionCookie(w, r)
-	// Panel tokens are not carried by the cookie and would outlive it.
-	services.RevokeAllGamingUISessions()
 	if err := auth.Revoke(); err != nil {
 		// The browser lands on the login screen either way; this line is how
 		// the operator learns the old cookie is still valid.

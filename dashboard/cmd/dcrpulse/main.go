@@ -244,7 +244,6 @@ func main() {
 	gaming.Use(handlers.GamingTunnelAuth)
 	gaming.HandleFunc("/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
 	gaming.HandleFunc("/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
-	gaming.HandleFunc("/bundle", handlers.BisonrelayGamingBundleHandler).Methods("GET")
 	gaming.HandleFunc("/chain/tip", handlers.BisonrelayGamingChainTipHandler).Methods("GET")
 	gaming.HandleFunc("/chain/outpoint", handlers.BisonrelayGamingOutpointHandler).Methods("GET")
 	gaming.HandleFunc("/chain/blockhash", handlers.BisonrelayGamingBlockHashHandler).Methods("GET")
@@ -254,14 +253,6 @@ func main() {
 	gaming.HandleFunc("/chain/broadcast", handlers.BisonrelayGamingBroadcastHandler).Methods("POST")
 	gaming.HandleFunc("/spend", handlers.BisonrelayGamingSpendHandler).Methods("POST")
 	gaming.HandleFunc("/spend/status", handlers.BisonrelayGamingSpendStatusHandler).Methods("GET")
-
-	// A game's own interface. Its own subtree because the document is
-	// authenticated by the dashboard session and the calls under it by a
-	// short-lived panel token, neither of which fits /api or /gaming.
-	gameui := r.PathPrefix("/gameui").Subrouter()
-	gameui.HandleFunc("/{game}/", handlers.GameUIDocumentHandler).Methods("GET")
-	gameui.HandleFunc("/{game}/api/{rest:.*}", handlers.GameUIPreflightHandler).Methods("OPTIONS")
-	gameui.HandleFunc("/{game}/api/{rest:.*}", handlers.GameUIAPIHandler).Methods("GET", "POST")
 
 	// API routes. The body cap is Bison Relay's payload maximum on the protocol
 	// version servers ship with: the largest legitimate JSON body on this surface
@@ -644,29 +635,11 @@ func main() {
 	api.Handle("/br/mcp/spend", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPSpendHandler))).Methods("GET")
 	api.Handle("/br/gaming/settings", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSettingsHandler))).Methods("GET", "POST")
 	api.Handle("/br/gaming/games", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingGamesHandler))).Methods("GET")
-	api.Handle("/br/gaming/invite", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingInviteHandler))).Methods("POST")
 	api.Handle("/br/gaming/spends", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSpendsHandler))).Methods("GET")
 	api.Handle("/br/gaming/spends/decide", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSpendDecideHandler))).Methods("POST")
-	// Fetched only when a person asks: it carries the seed a game's bond
-	// and stakes are locked to, and nothing else has a copy of it.
-	api.Handle("/br/gaming/identity/backup", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingIdentityBackupHandler))).Methods("GET")
-
-	// Opening a panel. Under /api on purpose: same-origin and a dashboard
-	// session are what make "only this application can mint one" true, and
-	// they are the reason the token it hands out can be narrow. The password
-	// gate sits outside the limiter so a refused caller cannot spend its bucket.
-	api.Handle("/br/gaming/ui/session",
 		auth.RequireAppPassword(
 			middleware.RateLimit("gaming-ui-session", time.Second, 3)(
 				http.HandlerFunc(handlers.BisonrelayGamingUISessionHandler)))).Methods("POST")
-	api.Handle("/br/gaming/ui/session/refresh", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingUIRefreshHandler))).Methods("POST")
-	api.Handle("/br/gaming/ui/session/end", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingUIEndHandler))).Methods("POST")
-
-	// Proposing a table, and taking back coin a game locked. Both are host
-	// actions: one sends as this identity, the other signs and broadcasts.
-	api.Handle("/br/gaming/table", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCreateHandler))).Methods("POST")
-	api.Handle("/br/gaming/bond", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingBondHandler))).Methods("GET")
-	api.Handle("/br/gaming/reclaim", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingReclaimHandler))).Methods("POST")
 
 	api.Handle("/br/gaming/tables", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingTablesHandler))).Methods("GET")
 
