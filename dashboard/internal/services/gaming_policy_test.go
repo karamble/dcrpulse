@@ -18,7 +18,7 @@ import (
 // off the whole API answers to anyone who can reach the port.
 func TestTheBridgeCannotBeTurnedOnWithoutAHumanGate(t *testing.T) {
 	bound := func() types.GamingSettings {
-		return types.GamingSettings{Enabled: true, Account: "gaming"}
+		return types.GamingSettings{Enabled: true}
 	}
 
 	for _, tc := range []struct {
@@ -40,16 +40,18 @@ func TestTheBridgeCannotBeTurnedOnWithoutAHumanGate(t *testing.T) {
 		},
 		{
 			name: "switching off never needs the gate",
-			in:   types.GamingSettings{Enabled: false, Account: "gaming"}, appPass: false,
+			in:   types.GamingSettings{Enabled: false}, appPass: false,
 			wantOn: false,
 		},
 		{
-			// Not a policy choice: with no account bound there is nothing
-			// for a game to spend from, so an enabled bridge would only
-			// look active.
-			name: "enabling with no account bound",
-			in:   types.GamingSettings{Enabled: true, Account: "  "}, appPass: true,
-			wantOn: false,
+			// Routing frames needs no money, so an unfunded bridge runs
+			// and refuses every spend. The refusal names the game, which
+			// is the thing an operator can act on.
+			name: "enabling with nothing funded",
+			in: types.GamingSettings{
+				Enabled: true, RegisteredGames: []string{"poker"},
+			}, appPass: true,
+			wantOn: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -77,7 +79,7 @@ func TestTheBridgeCannotBeTurnedOnWithoutAHumanGate(t *testing.T) {
 // to switch on.
 func TestTheRefusalNamesTheAppPassword(t *testing.T) {
 	_, err := normalizeGamingSettings(
-		types.GamingSettings{Enabled: true, Account: "gaming"}, types.GamingSettings{}, false)
+		types.GamingSettings{Enabled: true}, types.GamingSettings{}, false)
 	if err == nil {
 		t.Fatal("enabling without the gate was allowed")
 	}
@@ -92,7 +94,7 @@ func TestARefusedEnableIsNotStored(t *testing.T) {
 	spendSeams(t)
 
 	if _, err := WriteGamingSettings(
-		types.GamingSettings{Enabled: true, Account: "gaming"}, false); !errors.Is(err, ErrGamingNeedsAppPassword) {
+		types.GamingSettings{Enabled: true}, false); !errors.Is(err, ErrGamingNeedsAppPassword) {
 		t.Fatalf("got %v, want a refusal", err)
 	}
 	if ReadGamingSettings().Enabled {
@@ -100,7 +102,7 @@ func TestARefusedEnableIsNotStored(t *testing.T) {
 	}
 
 	if _, err := WriteGamingSettings(
-		types.GamingSettings{Enabled: true, Account: "gaming"}, true); err != nil {
+		types.GamingSettings{Enabled: true}, true); err != nil {
 		t.Fatalf("enabling behind the gate: %v", err)
 	}
 	if !ReadGamingSettings().Enabled {

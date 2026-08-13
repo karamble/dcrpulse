@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { GamingSpendApprovals } from './GamingSpendApprovals';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import {
+  GamePolicy,
   GamingGame,
   GamingSettings,
   getGamingGames,
@@ -13,6 +14,17 @@ import {
   setGamingSettings,
 } from '../../services/gamingApi';
 import { AccountInfo, getAccounts } from '../../services/api';
+
+// blankPolicy is what an unedited card starts from. The server mints the real
+// defaults on registration; this only keeps the inputs controlled until it
+// answers.
+const blankPolicy = (): GamePolicy => ({
+  name: '',
+  account: '',
+  perTableCapDcr: 0,
+  perDayCapDcr: 0,
+  approvalTimeoutSecs: 120,
+});
 
 const fmtDcr = (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 8 })} DCR`;
 
@@ -85,8 +97,12 @@ export const BisonrelayGamingTab = () => {
     const name = newName.trim();
     apply({
       ...settings,
-      installedGames: [...settings.installedGames, id],
-      gameNames: name ? { ...(settings.gameNames ?? {}), [id]: name } : settings.gameNames,
+      registeredGames: [...settings.registeredGames, id],
+      // A policy the server has never seen mints the defaults; naming it
+      // here only carries the label the operator just typed.
+      policies: name
+        ? { ...settings.policies, [id]: { ...(settings.policies[id] ?? blankPolicy()), name } }
+        : settings.policies,
     });
     setNewGame('');
     setNewName('');
@@ -96,8 +112,15 @@ export const BisonrelayGamingTab = () => {
     if (!settings) return;
     apply({
       ...settings,
-      installedGames: settings.installedGames.filter((g) => g !== id),
+      registeredGames: settings.registeredGames.filter((g) => g !== id),
     });
+  };
+
+  // setPolicy edits one game's draft policy, leaving every other game's alone.
+  const setPolicy = (id: string, patch: Partial<GamePolicy>) => {
+    setDraft((d) =>
+      d ? { ...d, policies: { ...d.policies, [id]: { ...(d.policies[id] ?? blankPolicy()), ...patch } } } : d,
+    );
   };
 
   if (!settings || !draft) {
@@ -109,8 +132,6 @@ export const BisonrelayGamingTab = () => {
     );
   }
 
-  const boundAccount = draft.account.trim();
-
   return (
     <div className="space-y-4">
       <div>
@@ -120,8 +141,8 @@ export const BisonrelayGamingTab = () => {
         </h2>
         <p className="text-sm text-muted-foreground">
           Games are separate programs that play over Bison Relay against other people, staking real
-          funds. They never hold your wallet keys: everything they stake passes through the policy
-          below, and they can only ever touch the one account you bind here.
+          funds. They never hold your wallet keys: everything a game stakes passes through its own
+          policy below, and it can only ever touch the one account you bind for it.
         </p>
       </div>
 
@@ -136,16 +157,14 @@ export const BisonrelayGamingTab = () => {
           <span className="font-medium block">Gaming bridge</span>
           <span className="text-sm text-muted-foreground block">
             {settings.enabled
-              ? `On. Installed games may stake from ${settings.account}.`
-              : boundAccount
-                ? 'Off. No game can stake anything.'
-                : 'Off. Bind a gaming account below to enable.'}
+              ? 'On. Registered games route traffic and stake under their own policies.'
+              : 'Off. Nothing routes and nothing can be staked.'}
           </span>
         </div>
         <button
           type="button"
-          onClick={() => apply({ ...draft, enabled: !settings.enabled })}
-          disabled={busy || !boundAccount}
+          onClick={() => apply({ ...settings, enabled: !settings.enabled })}
+          disabled={busy}
           className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
             settings.enabled
               ? 'bg-success/20 text-success hover:bg-success/30'
@@ -156,75 +175,10 @@ export const BisonrelayGamingTab = () => {
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-xs space-y-1 sm:col-span-2">
-          <span className="text-muted-foreground block">
-            Gaming account - the only account games can reach
-          </span>
-          <select
-            value={draft.account}
-            onChange={(e) => setDraft({ ...draft, account: e.target.value })}
-            className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
-          >
-            <option value="">No account bound</option>
-            {accounts.map((a) => (
-              <option key={a.accountNumber} value={a.accountName}>
-                {a.accountName} ({fmtDcr(a.spendableBalance)} spendable)
-              </option>
-            ))}
-          </select>
-          <span className="text-muted-foreground block">
-            Keep this separate from your main account. Only what you move into it is ever at stake.
-          </span>
-        </label>
-
-        <div className="text-xs space-y-1">
-          <span className="text-muted-foreground block">Buy-ins</span>
-          <p className="text-muted-foreground">
-            Every buy-in asks you, with your wallet passphrase. There is no setting that pays
-            automatically - this dashboard never holds the passphrase.
-          </p>
-        </div>
-
-        <label className="text-xs space-y-1">
-          <span className="text-muted-foreground block">Approval wait (seconds)</span>
-          <input
-            type="number"
-            min={10}
-            max={600}
-            value={draft.approvalTimeoutSecs}
-            onChange={(e) =>
-              setDraft({ ...draft, approvalTimeoutSecs: Number(e.target.value) || 0 })
-            }
-            className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
-          />
-        </label>
-
-        <label className="text-xs space-y-1">
-          <span className="text-muted-foreground block">Max buy-in per table (DCR)</span>
-          <input
-            type="number"
-            min={0}
-            step="0.001"
-            value={draft.perTableCapDcr}
-            onChange={(e) => setDraft({ ...draft, perTableCapDcr: Number(e.target.value) || 0 })}
-            className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
-          />
-        </label>
-
-        <label className="text-xs space-y-1">
-          <span className="text-muted-foreground block">Max staked per day (DCR)</span>
-          <input
-            type="number"
-            min={0}
-            step="0.001"
-            value={draft.perDayCapDcr}
-            onChange={(e) => setDraft({ ...draft, perDayCapDcr: Number(e.target.value) || 0 })}
-            className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
-          />
-        </label>
-
-      </div>
+      <p className="text-xs text-muted-foreground">
+        Every buy-in asks you, with your wallet passphrase. There is no setting that pays
+        automatically - this dashboard never holds the passphrase.
+      </p>
 
       <div className="flex items-center gap-2">
         <button
@@ -288,43 +242,127 @@ export const BisonrelayGamingTab = () => {
             No games registered.
           </div>
         )}
-        {games.map((g) => (
-          <div
-            key={g.id}
-            className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50"
-          >
-            <div className="min-w-0 space-y-1">
-              <span className="font-medium block">
-                {g.name}
-                {g.name !== g.id && (
-                  <span className="text-muted-foreground font-normal font-mono text-xs"> {g.id}</span>
-                )}
-              </span>
-              <span className="text-xs text-muted-foreground block">
-                {g.ready ? 'Connected.' : 'Registered. Nothing has connected under this id yet.'}
-              </span>
-              {settings.gameTokens?.[g.id] && (
-                <div className="text-xs space-y-1 pt-1">
-                  <span className="text-muted-foreground block">
-                    Connection token - paste this into the game. It is the game's identity, not a
-                    password; removing the game revokes it.
-                  </span>
-                  <span className="font-mono text-xs break-all block">
-                    {settings.gameTokens[g.id]}
-                  </span>
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => toggleGame(g.id)}
-              disabled={busy}
-              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30 disabled:opacity-50 disabled:cursor-wait"
+        {games.map((g) => {
+          const p = draft.policies[g.id] ?? {
+            name: '',
+            account: '',
+            perTableCapDcr: 0,
+            perDayCapDcr: 0,
+            approvalTimeoutSecs: 120,
+          };
+          return (
+            <div
+              key={g.id}
+              className="space-y-3 p-3 rounded-lg bg-muted/10 border border-border/50"
             >
-              Remove
-            </button>
-          </div>
-        ))}
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 space-y-1">
+                  <span className="font-medium block">
+                    {g.name}
+                    {g.name !== g.id && (
+                      <span className="text-muted-foreground font-normal font-mono text-xs">
+                        {' '}
+                        {g.id}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs text-muted-foreground block">
+                    {g.ready ? 'Connected.' : 'Registered. Nothing has connected under this id yet.'}
+                  </span>
+                  {settings.gameTokens?.[g.id] && (
+                    <div className="text-xs space-y-1 pt-1">
+                      <span className="text-muted-foreground block">
+                        Connection token - paste this into the game. It is the game's identity, not
+                        a password; removing the game revokes it.
+                      </span>
+                      <span className="font-mono text-xs break-all block">
+                        {settings.gameTokens[g.id]}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleGame(g.id)}
+                  disabled={busy}
+                  className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30 disabled:opacity-50 disabled:cursor-wait"
+                >
+                  Remove
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-xs space-y-1 sm:col-span-2">
+                  <span className="text-muted-foreground block">
+                    Account - the only one {g.name} can reach
+                  </span>
+                  <select
+                    value={p.account}
+                    onChange={(e) => setPolicy(g.id, { account: e.target.value })}
+                    className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
+                  >
+                    <option value="">No account bound</option>
+                    {accounts.map((a) => (
+                      <option key={a.accountNumber} value={a.accountName}>
+                        {a.accountName} ({fmtDcr(a.spendableBalance)} spendable)
+                      </option>
+                    ))}
+                  </select>
+                  {p.account.trim() ? (
+                    <span className="text-muted-foreground block">
+                      Keep this separate from your main account. Only what you move into it is ever
+                      at stake for {g.name}, and what it loses is not drawn from another game's.
+                    </span>
+                  ) : (
+                    <span className="text-warning block">
+                      No account bound - {g.name} can stake nothing.
+                    </span>
+                  )}
+                </label>
+
+                <label className="text-xs space-y-1">
+                  <span className="text-muted-foreground block">Max buy-in per table (DCR)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.001"
+                    value={p.perTableCapDcr}
+                    onChange={(e) =>
+                      setPolicy(g.id, { perTableCapDcr: Number(e.target.value) || 0 })
+                    }
+                    className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
+                  />
+                </label>
+
+                <label className="text-xs space-y-1">
+                  <span className="text-muted-foreground block">Max staked per day (DCR)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.001"
+                    value={p.perDayCapDcr}
+                    onChange={(e) => setPolicy(g.id, { perDayCapDcr: Number(e.target.value) || 0 })}
+                    className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
+                  />
+                </label>
+
+                <label className="text-xs space-y-1">
+                  <span className="text-muted-foreground block">Approval wait (seconds)</span>
+                  <input
+                    type="number"
+                    min={10}
+                    max={600}
+                    value={p.approvalTimeoutSecs}
+                    onChange={(e) =>
+                      setPolicy(g.id, { approvalTimeoutSecs: Number(e.target.value) || 0 })
+                    }
+                    className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
+                  />
+                </label>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <GamingSpendApprovals />

@@ -4,19 +4,27 @@
 
 import api from './api';
 
-// The gaming section's confinement policy. Games are untrusted plugins running
-// beside a wallet, dcrlnd and a BR identity, so they never hold wallet
-// credentials: they reach one account, under these caps, through the host.
-export interface GamingSettings {
-  enabled: boolean;
-  // account is the only wallet account games may spend from or be paid into.
+// One registered game's confinement: what it is called, the account it may
+// spend from, and how much of it. Per game because the credential a game
+// presents is an identity, and a cap on a principal nobody can tell apart is
+// not a cap.
+export interface GamePolicy {
+  // name is the operator's label; blank means the game is called by its id.
+  name: string;
+  // account is blank until the operator binds one, and a game with no account
+  // bound can stake nothing.
   account: string;
   perTableCapDcr: number;
   perDayCapDcr: number;
   approvalTimeoutSecs: number;
-  installedGames: string[];
-  // gameNames is the label the operator gave each game, for display only.
-  gameNames?: Record<string, string>;
+}
+
+// The bridge's own state: whether it runs, which games are registered, and what
+// each of them is trusted with. Everything that costs money is per game.
+export interface GamingSettings {
+  enabled: boolean;
+  registeredGames: string[];
+  policies: Record<string, GamePolicy>;
   // gameTokens is what each game authenticates with - its identity, so
   // anything holding one is that game as far as the bridge is concerned. It
   // travels outward only: the server issues tokens and never reads one back.

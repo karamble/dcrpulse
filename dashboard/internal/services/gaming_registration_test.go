@@ -39,7 +39,7 @@ func TestARegisteredGameIdIsTheRoutingKeyTheWireAccepts(t *testing.T) {
 		{"poker!", "", "nor is punctuation"},
 		{"póker", "", "nor is anything outside ascii"},
 	} {
-		got, err := sanitizeInstalledGames([]string{tc.in})
+		got, err := sanitizeRegisteredGames([]string{tc.in})
 		if tc.want == "" {
 			if !errors.Is(err, ErrGamingBadGameID) {
 				t.Errorf("%q was accepted, but %s", tc.in, tc.why)
@@ -64,7 +64,7 @@ func TestAnUnroutableGameIdIsRefusedRatherThanDropped(t *testing.T) {
 	spendSeams(t)
 
 	_, err := WriteGamingSettings(types.GamingSettings{
-		Account: "gaming", InstalledGames: []string{"poker", "not a game id"},
+		RegisteredGames: []string{"poker", "not a game id"},
 	}, true)
 	if !errors.Is(err, ErrGamingBadGameID) {
 		t.Fatalf("got %v, want a refusal naming the rule", err)
@@ -72,7 +72,7 @@ func TestAnUnroutableGameIdIsRefusedRatherThanDropped(t *testing.T) {
 	if !strings.Contains(err.Error(), "not a game id") {
 		t.Errorf("the refusal does not say which id was wrong: %v", err)
 	}
-	if got := ReadGamingSettings().InstalledGames; len(got) != 0 {
+	if got := ReadGamingSettings().RegisteredGames; len(got) != 0 {
 		t.Fatalf("a refused write registered %v anyway", got)
 	}
 }
@@ -80,7 +80,7 @@ func TestAnUnroutableGameIdIsRefusedRatherThanDropped(t *testing.T) {
 // Duplicates and ordering are tidied rather than refused: nobody meant anything
 // by them, and the stored list is what the routing table is read from.
 func TestRegisteringFoldsDuplicatesAndOrders(t *testing.T) {
-	got, err := sanitizeInstalledGames([]string{"poker", "chess", "POKER", " chess "})
+	got, err := sanitizeRegisteredGames([]string{"poker", "chess", "POKER", " chess "})
 	if err != nil {
 		t.Fatalf("tidying was refused: %v", err)
 	}
@@ -96,9 +96,8 @@ func TestTheGamesListReportsOnlyWhatWasRegistered(t *testing.T) {
 	spendSeams(t)
 
 	if _, err := WriteGamingSettings(types.GamingSettings{
-		Account:        "gaming",
-		InstalledGames: []string{"backgammon", "poker"},
-		GameNames:      map[string]string{"poker": "Poker Night"},
+		RegisteredGames: []string{"backgammon", "poker"},
+		Policies:        map[string]types.GamePolicy{"poker": {Name: "Poker Night"}},
 	}, true); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -122,36 +121,5 @@ func TestTheGamesListReportsOnlyWhatWasRegistered(t *testing.T) {
 		if g.Ready {
 			t.Errorf("%s is reported connected, but nothing has connected", g.ID)
 		}
-	}
-}
-
-// A label belongs to the game it names, and dies with it.
-func TestALabelDoesNotOutliveTheGame(t *testing.T) {
-	kept := carryGameNames(
-		map[string]string{"poker": "Poker Night", "chess": "Chess"},
-		nil,
-		[]string{"poker"},
-	)
-	if kept["poker"] != "Poker Night" {
-		t.Errorf("an unrelated write lost a label: %+v", kept)
-	}
-	if _, still := kept["chess"]; still {
-		t.Error("a removed game kept its label")
-	}
-
-	// The operator's new label wins over the stored one.
-	edited := carryGameNames(
-		map[string]string{"poker": "Poker Night"},
-		map[string]string{"poker": "Friday Poker"},
-		[]string{"poker"},
-	)
-	if edited["poker"] != "Friday Poker" {
-		t.Errorf("the operator's label was ignored: %+v", edited)
-	}
-
-	// A label for a game nobody registered is not a way to register one.
-	stray := carryGameNames(nil, map[string]string{"chess": "Chess"}, []string{"poker"})
-	if _, there := stray["chess"]; there {
-		t.Error("a label created an entry for an unregistered game")
 	}
 }

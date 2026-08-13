@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -29,68 +30,79 @@ import (
 // under caps, through this policy. Storage speaks atoms; the frontend speaks
 // DCR, converted here the same way the BR-MCP handlers do.
 
+// gamePolicyView is one game's policy, DCR-denominated.
+type gamePolicyView struct {
+	Name                string  `json:"name"`
+	Account             string  `json:"account"`
+	PerTableCapDcr      float64 `json:"perTableCapDcr"`
+	PerDayCapDcr        float64 `json:"perDayCapDcr"`
+	ApprovalTimeoutSecs int     `json:"approvalTimeoutSecs"`
+}
+
 // gamingSettingsView is the DCR-denominated frontend shape.
 type gamingSettingsView struct {
-	Enabled             bool     `json:"enabled"`
-	Account             string   `json:"account"`
-	PerTableCapDcr      float64  `json:"perTableCapDcr"`
-	PerDayCapDcr        float64  `json:"perDayCapDcr"`
-	ApprovalTimeoutSecs int      `json:"approvalTimeoutSecs"`
-	InstalledGames      []string `json:"installedGames"`
-
-	// GameNames is the label the operator gave each game, for the interface
-	// to show. Decoration: nothing routes or authorises by it.
-	GameNames map[string]string `json:"gameNames"`
+	Enabled         bool                      `json:"enabled"`
+	RegisteredGames []string                  `json:"registeredGames"`
+	Policies        map[string]gamePolicyView `json:"policies"`
 
 	// GameTokens is what a game authenticates with. It is shown so the user
 	// can copy it into a game's configuration; it is the game's identity,
-	// so anything holding it is that game as far as this host is concerned.
+	// so anything holding it is that game as far as this bridge is concerned.
 	//
 	// It travels outward only. A token is issued here and never accepted
-	// back, because a game that could name its own identity could name
-	// another game's.
+	// back, because a caller that could set one could name another game's
+	// identity - and a game must not be able to choose its own either.
 	GameTokens map[string]string `json:"gameTokens"`
 }
 
 func gamingToView(s types.GamingSettings) gamingSettingsView {
-	if s.InstalledGames == nil {
-		s.InstalledGames = []string{}
+	if s.RegisteredGames == nil {
+		s.RegisteredGames = []string{}
 	}
 	if s.GameTokens == nil {
 		s.GameTokens = map[string]string{}
 	}
-	if s.GameNames == nil {
-		s.GameNames = map[string]string{}
+	policies := make(map[string]gamePolicyView, len(s.Policies))
+	for id, p := range s.Policies {
+		policies[id] = gamePolicyView{
+			Name:                p.Name,
+			Account:             p.Account,
+			PerTableCapDcr:      dcrutil.Amount(p.PerTableCapAtoms).ToCoin(),
+			PerDayCapDcr:        dcrutil.Amount(p.PerDayCapAtoms).ToCoin(),
+			ApprovalTimeoutSecs: p.ApprovalTimeoutSecs,
+		}
 	}
 	return gamingSettingsView{
-		GameTokens:          s.GameTokens,
-		GameNames:           s.GameNames,
-		Enabled:             s.Enabled,
-		Account:             s.Account,
-		PerTableCapDcr:      dcrutil.Amount(s.PerTableCapAtoms).ToCoin(),
-		PerDayCapDcr:        dcrutil.Amount(s.PerDayCapAtoms).ToCoin(),
-		ApprovalTimeoutSecs: s.ApprovalTimeoutSecs,
-		InstalledGames:      s.InstalledGames,
+		Enabled:         s.Enabled,
+		RegisteredGames: s.RegisteredGames,
+		Policies:        policies,
+		GameTokens:      s.GameTokens,
 	}
 }
 
 func gamingFromView(v gamingSettingsView) (types.GamingSettings, error) {
-	perTable, err := dcrutil.NewAmount(v.PerTableCapDcr)
-	if err != nil {
-		return types.GamingSettings{}, err
-	}
-	perDay, err := dcrutil.NewAmount(v.PerDayCapDcr)
-	if err != nil {
-		return types.GamingSettings{}, err
+	policies := make(map[string]types.GamePolicy, len(v.Policies))
+	for id, p := range v.Policies {
+		perTable, err := dcrutil.NewAmount(p.PerTableCapDcr)
+		if err != nil {
+			return types.GamingSettings{}, fmt.Errorf("%s per-table cap: %w", id, err)
+		}
+		perDay, err := dcrutil.NewAmount(p.PerDayCapDcr)
+		if err != nil {
+			return types.GamingSettings{}, fmt.Errorf("%s per-day cap: %w", id, err)
+		}
+		policies[id] = types.GamePolicy{
+			Name:                p.Name,
+			Account:             p.Account,
+			PerTableCapAtoms:    int64(perTable),
+			PerDayCapAtoms:      int64(perDay),
+			ApprovalTimeoutSecs: p.ApprovalTimeoutSecs,
+		}
 	}
 	return types.GamingSettings{
-		Enabled:             v.Enabled,
-		Account:             v.Account,
-		PerTableCapAtoms:    int64(perTable),
-		PerDayCapAtoms:      int64(perDay),
-		ApprovalTimeoutSecs: v.ApprovalTimeoutSecs,
-		InstalledGames:      v.InstalledGames,
-		GameNames:           v.GameNames,
+		Enabled:         v.Enabled,
+		RegisteredGames: v.RegisteredGames,
+		Policies:        policies,
 		// GameTokens is deliberately not read back: a token is issued
 		// here, and a caller that could set one could name another
 		// game's identity.
@@ -373,8 +385,8 @@ func BisonrelayGamingSpendHandler(w http.ResponseWriter, r *http.Request) {
 		// The reason matters: a game told only "no" cannot tell a cap
 		// it will never get under from one it could wait out.
 		http.Error(w, err.Error(), http.StatusForbidden)
-	case errors.Is(err, services.ErrGamingGameNotInstalled):
-		http.Error(w, "game is not installed", http.StatusForbidden)
+	case errors.Is(err, services.ErrGamingGameNotRegistered):
+		http.Error(w, "game is not registered", http.StatusForbidden)
 	default:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -448,7 +460,7 @@ func BisonrelayGamingSendHandler(w http.ResponseWriter, r *http.Request) {
 	switch err := services.SendGamingFrame(r.Context(), game, req.GCID, req.Frame); {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)
-	case errors.Is(err, services.ErrGamingGameNotInstalled),
+	case errors.Is(err, services.ErrGamingGameNotRegistered),
 		errors.Is(err, services.ErrGamingNotAFrame),
 		errors.Is(err, services.ErrGamingWrongGame):
 		// A game is told it was refused, and nothing about what else the

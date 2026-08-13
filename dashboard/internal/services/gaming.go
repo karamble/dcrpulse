@@ -46,18 +46,84 @@ var gamingGameIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 var ErrGamingBadGameID = errors.New(
 	"a game id is 1 to 32 characters of lowercase letters, digits, - or _, starting with a letter or digit")
 
-// DefaultGamingSettings is the disabled, unbound starting policy. It is
-// deliberately not enabled and not bound to an account: nothing can be staked
-// until the user picks the account games are confined to.
+// DefaultGamingSettings is the off, empty starting state: nothing registered
+// and nothing carried.
 func DefaultGamingSettings() types.GamingSettings {
 	return types.GamingSettings{
-		Enabled:             false,
+		Enabled:         false,
+		RegisteredGames: []string{},
+		Policies:        map[string]types.GamePolicy{},
+	}
+}
+
+// defaultGamePolicy is what a game is trusted with the moment it is registered:
+// caps that let it play, and no account, so it can do nothing at all until the
+// operator says which money is at stake.
+func defaultGamePolicy() types.GamePolicy {
+	return types.GamePolicy{
 		Account:             "",
 		PerTableCapAtoms:    gamingDefaultPerTableAtoms,
 		PerDayCapAtoms:      gamingDefaultPerDayAtoms,
 		ApprovalTimeoutSecs: gamingDefaultApprovalSecs,
-		InstalledGames:      []string{},
 	}
+}
+
+// normalizeGamePolicy clamps one game's policy into the range it may hold.
+func normalizeGamePolicy(p types.GamePolicy) types.GamePolicy {
+	p.Name = strings.TrimSpace(p.Name)
+	p.Account = strings.TrimSpace(p.Account)
+	if p.PerTableCapAtoms < 0 {
+		p.PerTableCapAtoms = 0
+	}
+	if p.PerDayCapAtoms < 0 {
+		p.PerDayCapAtoms = 0
+	}
+	// A day cap below the table cap would let a single buy-in exceed the
+	// day's budget, so raise the day cap to match rather than silently
+	// letting one table overshoot it.
+	if p.PerDayCapAtoms < p.PerTableCapAtoms {
+		p.PerDayCapAtoms = p.PerTableCapAtoms
+	}
+	if p.ApprovalTimeoutSecs < 10 {
+		p.ApprovalTimeoutSecs = 10
+	}
+	if p.ApprovalTimeoutSecs > 600 {
+		p.ApprovalTimeoutSecs = 600
+	}
+	return p
+}
+
+// carryGamePolicies keeps a policy for every game still registered, takes the
+// operator's edits for the ones they named, and mints defaults for a game just
+// added.
+//
+// The shape follows carryGameTokens for the same reason: the map is rebuilt
+// from the registered list rather than edited in place, so a policy cannot
+// outlive the game it belongs to. What differs is that a policy is the
+// operator's to write and a token is not, so a named entry wins over the stored
+// one - but only for a game that is registered. A policy for anything else is
+// dropped: registration happens through the list and nowhere else, or a write
+// could leave a funding rule for a game that routes nothing, which nobody would
+// see until money moved.
+//
+// An unnamed game keeps its stored policy. Saving one game's account must not
+// reset another's caps to the defaults, the same way saving the section must
+// not rotate a running game's token.
+func carryGamePolicies(prev, in map[string]types.GamePolicy, registered []string) map[string]types.GamePolicy {
+	out := make(map[string]types.GamePolicy, len(registered))
+	for _, id := range registered {
+		switch p, named := in[id]; {
+		case named:
+			out[id] = normalizeGamePolicy(p)
+		default:
+			if stored, ok := prev[id]; ok {
+				out[id] = normalizeGamePolicy(stored)
+				continue
+			}
+			out[id] = defaultGamePolicy()
+		}
+	}
+	return out
 }
 
 // newGamingToken mints a bearer token for a game.
@@ -90,28 +156,6 @@ func carryGameTokens(prev map[string]string, installed []string) (map[string]str
 		out[id] = tok
 	}
 	return out, nil
-}
-
-// carryGameNames keeps a label for every game still registered, taking the one
-// the operator just gave and otherwise the one already stored.
-//
-// Keyed off the registered list rather than edited in place, the same way
-// tokens are, so a label cannot outlive the game it names. Unlike a token, a
-// label is the operator's to write, so a named entry wins - but only for a game
-// that is registered, because registration happens through the list and nowhere
-// else.
-func carryGameNames(prev, in map[string]string, registered []string) map[string]string {
-	out := make(map[string]string, len(registered))
-	for _, id := range registered {
-		name := strings.TrimSpace(in[id])
-		if name == "" {
-			name = strings.TrimSpace(prev[id])
-		}
-		if name != "" {
-			out[id] = name
-		}
-	}
-	return out
 }
 
 // GamingGameToken is the token this host authenticates as a game with. It
@@ -187,8 +231,11 @@ func ReadGamingSettings() types.GamingSettings {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return DefaultGamingSettings()
 	}
-	if s.InstalledGames == nil {
-		s.InstalledGames = []string{}
+	if s.RegisteredGames == nil {
+		s.RegisteredGames = []string{}
+	}
+	if s.Policies == nil {
+		s.Policies = map[string]types.GamePolicy{}
 	}
 	return s
 }
@@ -206,69 +253,43 @@ var ErrGamingNeedsAppPassword = errors.New(
 // is a statement about a boolean, not about where the boolean came from. It is
 // also what lets the whole truth table be written out in a test.
 //
-// Refusing rather than quietly clamping, unlike the unbound-account rule below:
-// an operator who asked for the bridge and got it switched off with no reason
-// would go looking for a bug. The account rule can clamp because the interface
-// will not offer an account-less enable in the first place.
+// It refuses rather than quietly switching the bridge off: an operator who
+// asked for it and got nothing, with no reason given, would go looking for a
+// bug in the wrong place.
 func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive bool) (types.GamingSettings, error) {
 	if in.Enabled && !appPasswordActive {
 		return types.GamingSettings{}, ErrGamingNeedsAppPassword
 	}
 
-	registered, err := sanitizeInstalledGames(in.InstalledGames)
+	registered, err := sanitizeRegisteredGames(in.RegisteredGames)
 	if err != nil {
 		return types.GamingSettings{}, err
 	}
 
 	out := types.GamingSettings{
-		Enabled:             in.Enabled,
-		Account:             strings.TrimSpace(in.Account),
-		PerTableCapAtoms:    in.PerTableCapAtoms,
-		PerDayCapAtoms:      in.PerDayCapAtoms,
-		ApprovalTimeoutSecs: in.ApprovalTimeoutSecs,
-		InstalledGames:      registered,
-		GameNames:           carryGameNames(cur.GameNames, in.GameNames, registered),
-		GameTokens:          map[string]string{},
+		Enabled:         in.Enabled,
+		RegisteredGames: registered,
+		Policies:        carryGamePolicies(cur.Policies, in.Policies, registered),
 	}
 
 	// Carry tokens across for games that are still registered, and mint one
 	// for a game that has just been added. Removing a game drops its token,
 	// so removing actually revokes rather than merely hiding: a game that
 	// kept running would find its identity no longer resolves.
-	tokens, err := carryGameTokens(cur.GameTokens, out.InstalledGames)
+	tokens, err := carryGameTokens(cur.GameTokens, out.RegisteredGames)
 	if err != nil {
 		return types.GamingSettings{}, err
 	}
 	out.GameTokens = tokens
 
-	if out.PerTableCapAtoms < 0 {
-		out.PerTableCapAtoms = 0
-	}
-	if out.PerDayCapAtoms < 0 {
-		out.PerDayCapAtoms = 0
-	}
-	// A day cap below the table cap would let a single buy-in exceed the
-	// day's budget, so raise the day cap to match rather than silently
-	// letting one table overshoot it.
-	if out.PerDayCapAtoms < out.PerTableCapAtoms {
-		out.PerDayCapAtoms = out.PerTableCapAtoms
-	}
-	if out.ApprovalTimeoutSecs < 10 {
-		out.ApprovalTimeoutSecs = 10
-	}
-	if out.ApprovalTimeoutSecs > 600 {
-		out.ApprovalTimeoutSecs = 600
-	}
-	// Enabling without an account bound would leave games nothing to spend
-	// from while looking active, so refuse the combination.
-	if out.Account == "" {
-		out.Enabled = false
-	}
+	// Nothing here forces the bridge off for want of an account. Routing
+	// frames costs nothing and needs no money, so a bridge with no game
+	// funded is a bridge that carries traffic and refuses every spend - and
+	// the refusal names the game, which is the thing the operator can fix.
 	return out, nil
 }
 
-// WriteGamingSettings validates and persists the gaming policy, bumping Rev so
-// a reader can notice the change.
+// WriteGamingSettings validates and persists the gaming state.
 //
 // appPasswordActive is passed in by the caller, which is what keeps this
 // package from depending on the auth package for a boolean.
@@ -311,8 +332,8 @@ var ErrGamingGameNotRunning = errors.New("game is not connected")
 // listening on.
 func GamingGames() []types.GamingGame {
 	s := ReadGamingSettings()
-	out := make([]types.GamingGame, 0, len(s.InstalledGames))
-	for _, id := range s.InstalledGames {
+	out := make([]types.GamingGame, 0, len(s.RegisteredGames))
+	for _, id := range s.RegisteredGames {
 		out = append(out, types.GamingGame{
 			ID:   id,
 			Name: gamingDisplayName(s, id),
@@ -327,7 +348,7 @@ func GamingGames() []types.GamingGame {
 // gamingDisplayName is what to call a game in the interface: the label the
 // operator gave it, or the id, which is the only name the wire carries.
 func gamingDisplayName(s types.GamingSettings, id string) string {
-	if name := strings.TrimSpace(s.GameNames[id]); name != "" {
+	if name := strings.TrimSpace(s.Policies[id].Name); name != "" {
 		return name
 	}
 	return id
@@ -339,12 +360,12 @@ func gamingTokenFor(id string) (string, error) {
 	s := ReadGamingSettings()
 	token := s.GameTokens[id]
 	if strings.TrimSpace(token) == "" {
-		return "", ErrGamingGameNotInstalled
+		return "", ErrGamingGameNotRegistered
 	}
 	return token, nil
 }
 
-// sanitizeInstalledGames folds the ids an operator gave into the form the wire
+// sanitizeRegisteredGames folds the ids an operator gave into the form the wire
 // uses, and refuses anything the wire could not carry.
 //
 // Folding and refusing are different acts. Blank entries, duplicates, case and
@@ -353,7 +374,7 @@ func gamingTokenFor(id string) (string, error) {
 // registered, it would route nothing at all, and dropped in silence it would
 // leave an operator looking at a list that did not grow, with nothing to read
 // and a typo they cannot see. So it comes back as an error naming the rule.
-func sanitizeInstalledGames(ids []string) ([]string, error) {
+func sanitizeRegisteredGames(ids []string) ([]string, error) {
 	seen := make(map[string]bool, len(ids))
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {

@@ -13,54 +13,65 @@ import (
 	"dcrpulse/internal/types"
 )
 
+// spendPolicy is one registered, funded game.
 func spendPolicy() types.GamingSettings {
 	return types.GamingSettings{
-		Enabled:             true,
-		Account:             "gaming",
-		PerTableCapAtoms:    100_000_000,
-		PerDayCapAtoms:      500_000_000,
-		ApprovalTimeoutSecs: 120,
+		Enabled:         true,
+		RegisteredGames: []string{"poker"},
+		Policies: map[string]types.GamePolicy{"poker": {
+			Account:             "gaming",
+			PerTableCapAtoms:    100_000_000,
+			PerDayCapAtoms:      500_000_000,
+			ApprovalTimeoutSecs: 120,
+		}},
 	}
 }
 
+// withPokerPolicy returns settings whose poker policy has been edited.
+func withPokerPolicy(s types.GamingSettings, edit func(p *types.GamePolicy)) types.GamingSettings {
+	p := s.Policies["poker"]
+	edit(&p)
+	s.Policies = map[string]types.GamePolicy{"poker": p}
+	return s
+}
+
 func TestASpendWithinPolicyIsCarried(t *testing.T) {
-	if err := checkSpendRequest(spendPolicy(), true, "Tsaddr", 10_000_000); err != nil {
+	if _, err := checkSpendRequest(spendPolicy(), "poker", "Tsaddr", 10_000_000); err != nil {
 		t.Fatalf("a spend inside every cap was refused: %v", err)
 	}
 }
 
 func TestPolicyRefusesWhatItWasWrittenTo(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		settings  func(s types.GamingSettings) types.GamingSettings
-		installed bool
-		address   string
-		amount    int64
-		want      error
+		name     string
+		settings func(s types.GamingSettings) types.GamingSettings
+		game     string
+		address  string
+		amount   int64
+		want     error
 	}{
 		{"switched off", func(s types.GamingSettings) types.GamingSettings {
 			s.Enabled = false
 			return s
-		}, true, "Tsaddr", 10_000_000, ErrGamingSpendRefused},
+		}, "poker", "Tsaddr", 10_000_000, ErrGamingSpendRefused},
 		{"no account bound", func(s types.GamingSettings) types.GamingSettings {
-			s.Account = " "
+			return withPokerPolicy(s, func(p *types.GamePolicy) { p.Account = " " })
+		}, "poker", "Tsaddr", 10_000_000, ErrGamingSpendRefused},
+		{"game not registered", func(s types.GamingSettings) types.GamingSettings {
 			return s
-		}, true, "Tsaddr", 10_000_000, ErrGamingSpendRefused},
-		{"game not added", func(s types.GamingSettings) types.GamingSettings {
-			return s
-		}, false, "Tsaddr", 10_000_000, ErrGamingGameNotInstalled},
+		}, "chess", "Tsaddr", 10_000_000, ErrGamingGameNotRegistered},
 		{"nowhere to pay", func(s types.GamingSettings) types.GamingSettings {
 			return s
-		}, true, "  ", 10_000_000, ErrGamingSpendRefused},
+		}, "poker", "  ", 10_000_000, ErrGamingSpendRefused},
 		{"nothing to pay", func(s types.GamingSettings) types.GamingSettings {
 			return s
-		}, true, "Tsaddr", 0, ErrGamingSpendRefused},
+		}, "poker", "Tsaddr", 0, ErrGamingSpendRefused},
 		{"over the table cap", func(s types.GamingSettings) types.GamingSettings {
 			return s
-		}, true, "Tsaddr", 100_000_001, ErrGamingSpendRefused},
+		}, "poker", "Tsaddr", 100_000_001, ErrGamingSpendRefused},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := checkSpendRequest(tc.settings(spendPolicy()), tc.installed, tc.address, tc.amount)
+			_, err := checkSpendRequest(tc.settings(spendPolicy()), tc.game, tc.address, tc.amount)
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("got %v, want %v", err, tc.want)
 			}
@@ -79,7 +90,7 @@ func TestPolicyRefusesWhatItWasWrittenTo(t *testing.T) {
 // is written.
 func TestNothingIsPaidWithoutAPerson(t *testing.T) {
 	spendSeams(t)
-	spendAccount = func(context.Context) (uint32, error) {
+	spendAccount = func(context.Context, string) (uint32, error) {
 		t.Fatal("asking to spend resolved an account on its own")
 		return 0, nil
 	}
@@ -96,10 +107,7 @@ func TestNothingIsPaidWithoutAPerson(t *testing.T) {
 		return "", nil
 	}
 
-	if _, err := WriteGamingSettings(types.GamingSettings{
-		Enabled: true, Account: "gaming", InstalledGames: []string{"poker"},
-		PerTableCapAtoms: 100_000_000, PerDayCapAtoms: 500_000_000,
-	}, true); err != nil {
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
 		t.Fatalf("store a policy: %v", err)
 	}
 
@@ -170,15 +178,15 @@ func TestOneGamesSpendingDoesNotConsumeAnothersAllowance(t *testing.T) {
 }
 
 func TestTheDailyCapRefusesWhatWouldPassIt(t *testing.T) {
-	s := spendPolicy()
-	if err := checkSpendAgainstDay(s, 100, s.PerDayCapAtoms-100); err != nil {
+	p := spendPolicy().Policies["poker"]
+	if err := checkSpendAgainstDay(p, 100, p.PerDayCapAtoms-100); err != nil {
 		t.Fatalf("a spend that exactly reaches the cap was refused: %v", err)
 	}
-	if err := checkSpendAgainstDay(s, 101, s.PerDayCapAtoms-100); !errors.Is(err, ErrGamingSpendRefused) {
+	if err := checkSpendAgainstDay(p, 101, p.PerDayCapAtoms-100); !errors.Is(err, ErrGamingSpendRefused) {
 		t.Fatalf("got %v, want a refusal", err)
 	}
-	s.PerDayCapAtoms = 0
-	if err := checkSpendAgainstDay(s, 1<<40, 1<<40); err != nil {
+	p.PerDayCapAtoms = 0
+	if err := checkSpendAgainstDay(p, 1<<40, 1<<40); err != nil {
 		t.Fatalf("no cap should mean no refusal: %v", err)
 	}
 }
@@ -242,7 +250,7 @@ func TestAMistypedPassphraseLeavesTheRequestApprovable(t *testing.T) {
 	spendSeams(t)
 	seedPendingSpend(t, "aa11", time.Now().Unix()+300)
 
-	spendAccount = func(context.Context) (uint32, error) { return 1, nil }
+	spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
 	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
 		return []byte("unsigned"), nil
 	}
@@ -288,7 +296,7 @@ func TestAPublishFailureIsTerminal(t *testing.T) {
 	spendSeams(t)
 	seedPendingSpend(t, "bb22", time.Now().Unix()+300)
 
-	spendAccount = func(context.Context) (uint32, error) { return 1, nil }
+	spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
 	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
 		return []byte("unsigned"), nil
 	}
@@ -323,7 +331,7 @@ func TestOneApprovalRunsAtATime(t *testing.T) {
 	release := make(chan struct{})
 	published := 0
 
-	spendAccount = func(context.Context) (uint32, error) { return 1, nil }
+	spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
 	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
 		return []byte("unsigned"), nil
 	}
