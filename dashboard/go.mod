@@ -9,6 +9,7 @@ require (
 	github.com/companyzero/bisonrelay v0.2.5-0.20251216165537-8b1a3b4bd3d6
 	github.com/decred/dcrd/blockchain/stake/v5 v5.0.2
 	github.com/decred/dcrd/blockchain/standalone/v2 v2.2.2
+	github.com/decred/dcrd/certgen v1.2.0
 	github.com/decred/dcrd/chaincfg/chainhash v1.0.5
 	github.com/decred/dcrd/chaincfg/v3 v3.3.0
 	github.com/decred/dcrd/dcrec v1.0.1
@@ -61,7 +62,6 @@ require (
 	github.com/decred/dcrd v1.10.0 // indirect
 	github.com/decred/dcrd/addrmgr/v3 v3.0.0 // indirect
 	github.com/decred/dcrd/bech32 v1.1.4 // indirect
-	github.com/decred/dcrd/certgen v1.2.0 // indirect
 	github.com/decred/dcrd/chaincfg v1.5.2 // indirect
 	github.com/decred/dcrd/connmgr v1.1.1 // indirect
 	github.com/decred/dcrd/connmgr/v3 v3.1.3 // indirect
