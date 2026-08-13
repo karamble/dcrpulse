@@ -25,10 +25,33 @@ export interface GamingSettings {
   enabled: boolean;
   registeredGames: string[];
   policies: Record<string, GamePolicy>;
-  // gameTokens is what each game authenticates with - its identity, so
-  // anything holding one is that game as far as the bridge is concerned. It
-  // travels outward only: the server issues tokens and never reads one back.
-  gameTokens?: Record<string, string>;
+  // gameCredentials says which games have been issued a credential and when.
+  // Only the fingerprint travels: it is enough to tell two credentials apart
+  // and useless for connecting with. It travels outward only - the server
+  // issues credentials and never reads one back.
+  gameCredentials?: Record<string, GameCredential>;
+}
+
+export interface GameCredential {
+  fingerprint: string;
+  issuedAt: number;
+}
+
+// What an operator carries to a game, shown once and never again. The private
+// key is in this answer and in no file on the appliance.
+export interface GamingCredentialMaterial {
+  game: string;
+  certPem: string;
+  keyPem: string;
+  bridgeCertPem: string;
+  fingerprint: string;
+  issuedAt: number;
+}
+
+// What a game's connection wizard needs besides its own credential.
+export interface GamingBridgeInfo {
+  bridgeCertPem: string;
+  port: string;
 }
 
 export interface GamingGame {
@@ -55,6 +78,22 @@ export const setGamingSettings = async (s: GamingSettings): Promise<GamingSettin
 export const getGamingGames = async (): Promise<GamingGame[]> => {
   const { data } = await api.get<{ games: GamingGame[] }>('/br/gaming/games');
   return data.games ?? [];
+};
+
+export const getGamingBridgeInfo = async (): Promise<GamingBridgeInfo> => {
+  const { data } = await api.get<GamingBridgeInfo>('/br/gaming/bridge');
+  return data;
+};
+
+// Issuing replaces any credential the game already had, which is what
+// regenerating means: the old one stops working at once.
+export const issueGamingCredential = async (game: string): Promise<GamingCredentialMaterial> => {
+  const { data } = await api.post<GamingCredentialMaterial>('/br/gaming/credential', { game });
+  return data;
+};
+
+export const revokeGamingCredential = async (game: string): Promise<void> => {
+  await api.post('/br/gaming/credential/revoke', { game });
 };
 
 export type GamingSpendState = 'pending' | 'approved' | 'denied' | 'expired' | 'failed';
