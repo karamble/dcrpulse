@@ -653,6 +653,9 @@ func main() {
 			middleware.RateLimit("gaming-ui-session", time.Second, 3)(
 				http.HandlerFunc(handlers.BisonrelayGamingUISessionHandler)))).Methods("POST")
 
+	api.Handle("/br/gaming/table", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCreateHandler))).Methods("POST")
+	api.Handle("/br/gaming/invite", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingInviteHandler))).Methods("POST")
+
 	api.Handle("/br/gaming/bridge", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingBridgeInfoHandler))).Methods("GET")
 	api.Handle("/br/gaming/credential", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCredentialHandler))).Methods("POST")
 	api.Handle("/br/gaming/credential/revoke", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCredentialRevokeHandler))).Methods("POST")
@@ -1010,6 +1013,7 @@ func startGamingBridge() {
 	// answer: a game is registered here and run on a machine of the person's
 	// choosing, so registered and connected are different questions.
 	services.SetGamingConnected(srv.SubscriberCount)
+	services.SetGamingRequest(srv.Request)
 
 	go func() {
 		gameLog.Infof("gaming bridge listening on %s", addr)

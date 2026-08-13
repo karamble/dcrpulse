@@ -96,6 +96,46 @@ export const revokeGamingCredential = async (game: string): Promise<void> => {
   await api.post('/br/gaming/credential/revoke', { game });
 };
 
+// A table proposed into a group chat. The seat is taken as part of posting it.
+export interface GamingTable {
+  sid: string;
+  invite: string;
+  // until is the block height registration closes at.
+  until: number;
+  height: number;
+  gcid: string;
+}
+
+export const createGamingTable = async (
+  game: string,
+  gcid: string,
+  buyinDcr: number,
+  seats: number,
+  openBlocks: number,
+): Promise<GamingTable> => {
+  const { data } = await api.post<GamingTable>('/br/gaming/table', {
+    game,
+    gcid,
+    buyinDcr,
+    seats,
+    openBlocks,
+  });
+  return data;
+};
+
+export const acceptGamingInvite = async (
+  game: string,
+  invite: string,
+  gcid: string,
+): Promise<string> => {
+  const { data } = await api.post<{ accepted: boolean; sid: string }>('/br/gaming/invite', {
+    game,
+    invite,
+    gcid,
+  });
+  return data.sid;
+};
+
 export type GamingSpendState = 'pending' | 'approved' | 'denied' | 'expired' | 'failed';
 
 export interface GamingSpend {
