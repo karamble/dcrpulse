@@ -28,11 +28,7 @@ const (
 	// gamingDefaultPerDayAtoms is five DCR.
 	gamingDefaultPerDayAtoms = 500_000_000
 
-	gamingDefaultMaxOpenTables = 1
-	gamingDefaultApprovalSecs  = 120
-
-	gamingModeApproval = "approval"
-	gamingModeAutopay  = "autopay"
+	gamingDefaultApprovalSecs = 120
 )
 
 // gamingCatalogue is every game dcrpulse knows how to route. The id doubles as
@@ -55,10 +51,8 @@ func DefaultGamingSettings() types.GamingSettings {
 	return types.GamingSettings{
 		Enabled:             false,
 		Account:             "",
-		Mode:                gamingModeApproval,
 		PerTableCapAtoms:    gamingDefaultPerTableAtoms,
 		PerDayCapAtoms:      gamingDefaultPerDayAtoms,
-		MaxOpenTables:       gamingDefaultMaxOpenTables,
 		ApprovalTimeoutSecs: gamingDefaultApprovalSecs,
 		InstalledGames:      []string{},
 	}
@@ -200,14 +194,11 @@ func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive boo
 	out := types.GamingSettings{
 		Enabled:             in.Enabled,
 		Account:             strings.TrimSpace(in.Account),
-		Mode:                in.Mode,
 		PerTableCapAtoms:    in.PerTableCapAtoms,
 		PerDayCapAtoms:      in.PerDayCapAtoms,
-		MaxOpenTables:       in.MaxOpenTables,
 		ApprovalTimeoutSecs: in.ApprovalTimeoutSecs,
 		InstalledGames:      sanitizeInstalledGames(in.InstalledGames),
 		GameTokens:          map[string]string{},
-		Rev:                 cur.Rev + 1,
 	}
 
 	// Carry tokens across for games that are still installed, and mint one
@@ -220,9 +211,6 @@ func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive boo
 	}
 	out.GameTokens = tokens
 
-	if out.Mode != gamingModeApproval && out.Mode != gamingModeAutopay {
-		out.Mode = gamingModeApproval
-	}
 	if out.PerTableCapAtoms < 0 {
 		out.PerTableCapAtoms = 0
 	}
@@ -234,12 +222,6 @@ func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive boo
 	// letting one table overshoot it.
 	if out.PerDayCapAtoms < out.PerTableCapAtoms {
 		out.PerDayCapAtoms = out.PerTableCapAtoms
-	}
-	if out.MaxOpenTables < 1 {
-		out.MaxOpenTables = 1
-	}
-	if out.MaxOpenTables > 10 {
-		out.MaxOpenTables = 10
 	}
 	if out.ApprovalTimeoutSecs < 10 {
 		out.ApprovalTimeoutSecs = 10

@@ -22,20 +22,11 @@ type GamingSettings struct {
 	// be staked.
 	Account string `json:"account"`
 
-	// Mode is "approval" (ask before every stake) or "autopay" (stake under
-	// the caps without asking).
-	Mode string `json:"mode"`
-
 	// PerTableCapAtoms bounds a single buy-in.
 	PerTableCapAtoms int64 `json:"perTableCapAtoms"`
 
 	// PerDayCapAtoms bounds everything staked in a rolling day.
 	PerDayCapAtoms int64 `json:"perDayCapAtoms"`
-
-	// MaxOpenTables bounds how many escrows may be funded at once. Separate
-	// from the per-table cap because escrows overlap: the exposure that
-	// matters is the total outstanding, not the largest single buy-in.
-	MaxOpenTables int `json:"maxOpenTables"`
 
 	// ApprovalTimeoutSecs is how long a stake waits for approval before it
 	// is abandoned.
@@ -59,9 +50,6 @@ type GamingSettings struct {
 	// A game never states who it is. It presents a token and the host
 	// decides, so a game cannot claim to be another one.
 	GameTokens map[string]string `json:"gameTokens,omitempty"`
-
-	// Rev bumps on every write so a supervisor can notice a policy change.
-	Rev int `json:"rev"`
 }
 
 // GamingGame is one entry in the gaming catalogue.

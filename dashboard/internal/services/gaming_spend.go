@@ -35,10 +35,12 @@ import (
 // rather than a password. A shared secret would make every game one principal,
 // and a cap on a principal nobody can tell apart is not a cap.
 //
-// Nothing is spent without a person. The dashboard holds no wallet passphrase -
-// every send route takes one from the user and wipes it - so a game cannot be
-// autopaid even in principle, and the mode that says otherwise is refused
-// rather than quietly downgraded.
+// Nothing is spent without a person, and there is no setting saying otherwise.
+// The dashboard holds no wallet passphrase - every send route takes one from
+// the user and wipes it - so a game cannot be paid automatically even in
+// principle. There was a mode offering it: it could be chosen, it was stored,
+// and then every spend was refused with a message only the game ever saw. A
+// choice that can only be refused is worse than no choice at all.
 
 // GamingSpendState is what became of a request.
 type GamingSpendState string
@@ -261,16 +263,6 @@ func checkSpendRequest(s types.GamingSettings, installed bool, address string, a
 	if s.PerTableCapAtoms > 0 && amountAtoms > s.PerTableCapAtoms {
 		return fmt.Errorf("%w: %d atoms is over the per-table cap of %d",
 			ErrGamingSpendRefused, amountAtoms, s.PerTableCapAtoms)
-	}
-	if s.Mode == gamingModeAutopay {
-		// Not a policy choice, a fact: this process never holds a
-		// wallet passphrase - every send route takes one from the user
-		// and wipes it - so there is nothing here that could pay
-		// without asking. Refusing says so; treating it as approval
-		// would make the setting a lie.
-		return fmt.Errorf(
-			"%w: automatic payment needs a wallet passphrase this never holds; use approval mode",
-			ErrGamingSpendRefused)
 	}
 	return nil
 }

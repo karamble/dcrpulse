@@ -33,10 +33,8 @@ import (
 type gamingSettingsView struct {
 	Enabled             bool     `json:"enabled"`
 	Account             string   `json:"account"`
-	Mode                string   `json:"mode"`
 	PerTableCapDcr      float64  `json:"perTableCapDcr"`
 	PerDayCapDcr        float64  `json:"perDayCapDcr"`
-	MaxOpenTables       int      `json:"maxOpenTables"`
 	ApprovalTimeoutSecs int      `json:"approvalTimeoutSecs"`
 	InstalledGames      []string `json:"installedGames"`
 
@@ -57,10 +55,8 @@ func gamingToView(s types.GamingSettings) gamingSettingsView {
 		GameTokens:          s.GameTokens,
 		Enabled:             s.Enabled,
 		Account:             s.Account,
-		Mode:                s.Mode,
 		PerTableCapDcr:      dcrutil.Amount(s.PerTableCapAtoms).ToCoin(),
 		PerDayCapDcr:        dcrutil.Amount(s.PerDayCapAtoms).ToCoin(),
-		MaxOpenTables:       s.MaxOpenTables,
 		ApprovalTimeoutSecs: s.ApprovalTimeoutSecs,
 		InstalledGames:      s.InstalledGames,
 	}
@@ -78,10 +74,8 @@ func gamingFromView(v gamingSettingsView) (types.GamingSettings, error) {
 	return types.GamingSettings{
 		Enabled:             v.Enabled,
 		Account:             v.Account,
-		Mode:                v.Mode,
 		PerTableCapAtoms:    int64(perTable),
 		PerDayCapAtoms:      int64(perDay),
-		MaxOpenTables:       v.MaxOpenTables,
 		ApprovalTimeoutSecs: v.ApprovalTimeoutSecs,
 		InstalledGames:      v.InstalledGames,
 	}, nil
