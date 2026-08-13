@@ -41,6 +41,16 @@ import (
 // will fail on a slow machine for no reason.
 const dialDeadline = 10 * time.Second
 
+// What the stood-in dependencies answer. Named so an assertion can say which
+// value it expected rather than repeating a literal.
+const (
+	testNetwork     = "mainnet"
+	testTipHeight   = int64(900123)
+	testTipHash     = "0000000000000000148a2d1f1e0e3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5"
+	testPerTableCap = int64(100_000_000)
+	testPerDayCap   = int64(500_000_000)
+)
+
 // gameCreds is everything a game is ever handed.
 type gameCreds struct {
 	Game       string
@@ -108,6 +118,17 @@ func newBridgeRig(t *testing.T) *bridgeRig {
 		Enabled:           r.enabled.Load,
 		Allow:             r.allow,
 
+		// The dependencies the bridge is handed in production, stood in for
+		// here. They are supplied, never simplified: each returns what the
+		// real one would, so what is asserted below is the bridge's own
+		// behaviour rather than a stub's.
+		Network: func() (string, bool) { return testNetwork, true },
+		ChainTip: func(context.Context) (int64, string, error) {
+			return testTipHeight, testTipHash, nil
+		},
+		Policy: func(string) (int64, int64, bool) {
+			return testPerTableCap, testPerDayCap, true
+		},
 		TakeMissed: func(game string) []string { return r.takeMissed(game) },
 	})
 	if err != nil {

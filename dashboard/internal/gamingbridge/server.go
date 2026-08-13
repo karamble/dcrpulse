@@ -5,6 +5,7 @@
 package gamingbridge
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -64,6 +65,33 @@ type Config struct {
 	// what turns a silent loss into one table's resync instead of every
 	// table's.
 	TakeMissed func(game string) []string
+
+	// Network is the chain this bridge is on, which a game must be told
+	// before it builds anything: a game on the wrong network makes scripts
+	// nobody can spend and pays real money into them.
+	Network func() (string, bool)
+
+	// Policy is a game's caps, so it can say "that buy-in will be refused"
+	// before asking a person to try. A courtesy, never the enforcement.
+	Policy func(game string) (perTable, perDay int64, accountBound bool)
+
+	// SendFrame carries a frame the game built out to a table.
+	SendFrame func(ctx context.Context, game, gcid, frame string) error
+
+	// ChainTip, BlockHash and Outpoint are the chain reads a game needs to
+	// agree deadlines and find its own money.
+	ChainTip  func(ctx context.Context) (height int64, hash string, err error)
+	BlockHash func(ctx context.Context, height int64) (string, error)
+	Outpoint  func(ctx context.Context, txid string, vout uint32, includeMempool bool) (Outpoint, error)
+}
+
+// Outpoint is what a game is told about one of its outputs.
+type Outpoint struct {
+	Found         bool
+	ValueAtoms    int64
+	PkScriptHex   string
+	Confirmations int64
+	Coinbase      bool
 }
 
 // Server is the bridge's listener.
