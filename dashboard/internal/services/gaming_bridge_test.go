@@ -115,81 +115,42 @@ func TestGamingBusUnsubscribeStopsDelivery(t *testing.T) {
 	}
 }
 
-// The token is the game's identity. Everything the host enforces hangs off what
-// it resolves to, so resolution is the security boundary.
-func TestGamingGameForToken(t *testing.T) {
-	tokens, err := carryGameTokens(nil, []string{"poker", "chess"})
-	if err != nil {
-		t.Fatalf("mint tokens: %v", err)
-	}
-	s := types.GamingSettings{Enabled: true, GameTokens: tokens}
-
-	for game, tok := range tokens {
-		got, ok := gamingGameForToken(s, tok)
-		if !ok || got != game {
-			t.Fatalf("token for %s resolved to (%q, %v)", game, got, ok)
-		}
-	}
-	// One game's token must never resolve to another.
-	if got, _ := gamingGameForToken(s, tokens["poker"]); got == "chess" {
-		t.Fatal("a token resolved to the wrong game")
+// A credential survives an unrelated edit and dies with the game it identifies.
+//
+// Both halves matter. If saving the section rotated credentials, every routine
+// policy edit would cut off every connected game. If unregistering left one
+// behind, removing a game would hide it rather than revoke it, and a machine
+// still running that game would go on being admitted.
+func TestCarryGameCredentials(t *testing.T) {
+	first := map[string]types.GameCredential{
+		"poker": {Fingerprint: "poker-fp", CertPEM: "poker-cert", IssuedAt: 1},
+		"chess": {Fingerprint: "chess-fp", CertPEM: "chess-cert", IssuedAt: 2},
 	}
 
-	for _, bad := range []string{"", "wrong", tokens["poker"] + "x", tokens["poker"][:len(tokens["poker"])-1]} {
-		if _, ok := gamingGameForToken(s, bad); ok {
-			t.Errorf("token %q should not resolve", bad)
-		}
-	}
-}
-
-// A disabled section resolves nothing, so the tunnel answers as though it is
-// not there rather than admitting it exists and refusing.
-func TestDisabledSectionResolvesNoToken(t *testing.T) {
-	tokens, err := carryGameTokens(nil, []string{"poker"})
-	if err != nil {
-		t.Fatalf("mint tokens: %v", err)
-	}
-	off := types.GamingSettings{Enabled: false, GameTokens: tokens}
-	if _, ok := gamingGameForToken(off, tokens["poker"]); ok {
-		t.Fatal("a disabled gaming section must resolve no tokens")
-	}
-}
-
-// Tokens survive unrelated edits and die with the game they identify.
-func TestCarryGameTokens(t *testing.T) {
-	first, err := carryGameTokens(nil, []string{"poker"})
-	if err != nil {
-		t.Fatalf("mint: %v", err)
-	}
-	if first["poker"] == "" {
-		t.Fatal("installing a game must mint it a token")
+	kept := carryGameCredentials(first, []string{"poker", "chess"})
+	if kept["poker"] != first["poker"] || kept["chess"] != first["chess"] {
+		t.Fatalf("an unrelated settings write disturbed a credential: %+v", kept)
 	}
 
-	// An unrelated policy edit must not rotate it, or every save would cut
-	// off every running game.
-	again, err := carryGameTokens(first, []string{"poker"})
-	if err != nil {
-		t.Fatalf("carry: %v", err)
-	}
-	if again["poker"] != first["poker"] {
-		t.Fatal("a token must survive an unrelated settings write")
-	}
-
-	// Adding a game mints only the new one.
-	added, err := carryGameTokens(first, []string{"poker", "chess"})
-	if err != nil {
-		t.Fatalf("carry: %v", err)
-	}
-	if added["poker"] != first["poker"] || added["chess"] == "" || added["chess"] == added["poker"] {
-		t.Fatalf("adding a game disturbed the others: %+v", added)
-	}
-
-	// Uninstalling revokes rather than hides.
-	removed, err := carryGameTokens(added, []string{"chess"})
-	if err != nil {
-		t.Fatalf("carry: %v", err)
-	}
+	// Unregistering revokes rather than hides.
+	removed := carryGameCredentials(first, []string{"chess"})
 	if _, still := removed["poker"]; still {
-		t.Fatal("an uninstalled game must lose its token")
+		t.Fatal("an unregistered game kept its credential, so removing it only hid it")
+	}
+	if removed["chess"] != first["chess"] {
+		t.Fatal("removing one game disturbed another's credential")
+	}
+}
+
+// Registering a game does not mint it a credential.
+//
+// This is the difference from the tokens this replaced. Issuing hands the
+// operator a private key that exists nowhere else, so it has to be something
+// they asked for and were shown the result of - a credential minted quietly by
+// a settings write would be one nobody ever received.
+func TestRegisteringMintsNoCredential(t *testing.T) {
+	fresh := carryGameCredentials(nil, []string{"poker"})
+	if _, minted := fresh["poker"]; minted {
+		t.Fatal("registering a game minted a credential nobody was ever shown")
 	}
 }
