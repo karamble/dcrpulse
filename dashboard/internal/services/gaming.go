@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -31,18 +32,19 @@ const (
 	gamingDefaultApprovalSecs = 120
 )
 
-// gamingCatalogue is every game dcrpulse knows how to route. The id doubles as
-// the `game=` key in the Bison Relay wire envelope, so adding an entry here is
-// what lets an installation recognise that game's traffic at all; anything else
-// is ignored rather than surfaced.
-var gamingCatalogue = []types.GamingGame{
-	{
-		ID:              "poker",
-		Name:            "Poker",
-		Description:     "Self-custodial Decred poker. Stakes are held in per-player escrow that only the whole table can settle, and are refundable by you alone after a timeout.",
-		ProtocolVersion: 1,
-	},
-}
+// gamingGameIDRE is the routing key a game id has to be.
+//
+// It is the wire's rule rather than this build's opinion. The id becomes the
+// `game=` key in the envelope and the host part of a gaming:// invitation, so an
+// id this host accepts but the wire cannot carry is a game whose frames are
+// dropped forever with nothing anywhere to say why. It is the same expression
+// the invite chip in this repo already parses with, and the same one the game
+// on the other side writes with.
+var gamingGameIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+
+// ErrGamingBadGameID is an id the wire could not carry.
+var ErrGamingBadGameID = errors.New(
+	"a game id is 1 to 32 characters of lowercase letters, digits, - or _, starting with a letter or digit")
 
 // DefaultGamingSettings is the disabled, unbound starting policy. It is
 // deliberately not enabled and not bound to an account: nothing can be staked
@@ -88,6 +90,28 @@ func carryGameTokens(prev map[string]string, installed []string) (map[string]str
 		out[id] = tok
 	}
 	return out, nil
+}
+
+// carryGameNames keeps a label for every game still registered, taking the one
+// the operator just gave and otherwise the one already stored.
+//
+// Keyed off the registered list rather than edited in place, the same way
+// tokens are, so a label cannot outlive the game it names. Unlike a token, a
+// label is the operator's to write, so a named entry wins - but only for a game
+// that is registered, because registration happens through the list and nowhere
+// else.
+func carryGameNames(prev, in map[string]string, registered []string) map[string]string {
+	out := make(map[string]string, len(registered))
+	for _, id := range registered {
+		name := strings.TrimSpace(in[id])
+		if name == "" {
+			name = strings.TrimSpace(prev[id])
+		}
+		if name != "" {
+			out[id] = name
+		}
+	}
+	return out
 }
 
 // GamingGameToken is the token this host authenticates as a game with. It
@@ -191,20 +215,26 @@ func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive boo
 		return types.GamingSettings{}, ErrGamingNeedsAppPassword
 	}
 
+	registered, err := sanitizeInstalledGames(in.InstalledGames)
+	if err != nil {
+		return types.GamingSettings{}, err
+	}
+
 	out := types.GamingSettings{
 		Enabled:             in.Enabled,
 		Account:             strings.TrimSpace(in.Account),
 		PerTableCapAtoms:    in.PerTableCapAtoms,
 		PerDayCapAtoms:      in.PerDayCapAtoms,
 		ApprovalTimeoutSecs: in.ApprovalTimeoutSecs,
-		InstalledGames:      sanitizeInstalledGames(in.InstalledGames),
+		InstalledGames:      registered,
+		GameNames:           carryGameNames(cur.GameNames, in.GameNames, registered),
 		GameTokens:          map[string]string{},
 	}
 
-	// Carry tokens across for games that are still installed, and mint one
+	// Carry tokens across for games that are still registered, and mint one
 	// for a game that has just been added. Removing a game drops its token,
-	// so uninstalling actually revokes rather than merely hiding: a game
-	// that kept running would find its identity no longer resolves.
+	// so removing actually revokes rather than merely hiding: a game that
+	// kept running would find its identity no longer resolves.
 	tokens, err := carryGameTokens(cur.GameTokens, out.InstalledGames)
 	if err != nil {
 		return types.GamingSettings{}, err
@@ -268,28 +298,39 @@ func WriteGamingSettings(in types.GamingSettings, appPasswordActive bool) (types
 // ErrGamingGameNotRunning says no game is connected under that name.
 var ErrGamingGameNotRunning = errors.New("game is not connected")
 
-// GamingCatalogue reports every known game, marked with whether the user
-// registered it and whether it is connected right now.
+// GamingGames reports every game the operator registered, with the name they
+// gave it and whether it is connected right now.
+//
+// There is no catalogue behind this. What an installation can route is whatever
+// the operator registered, because routing on a key is the whole reason a game
+// this host has never heard of can exist at all.
 //
 // Registered and connected are separate answers on purpose. A game runs on a
 // machine of the person's choosing, so it can be registered here and simply not
 // running, and reporting it as ready would send a player to a table nothing is
 // listening on.
-func GamingCatalogue() []types.GamingGame {
-	installed := make(map[string]bool)
-	for _, id := range ReadGamingSettings().InstalledGames {
-		installed[id] = true
-	}
-
-	out := make([]types.GamingGame, 0, len(gamingCatalogue))
-	for _, g := range gamingCatalogue {
-		g.Installed = installed[g.ID]
-		// Connection state arrives with the bridge listener; until then
-		// nothing is connected, which is the truthful answer.
-		g.Ready = false
-		out = append(out, g)
+func GamingGames() []types.GamingGame {
+	s := ReadGamingSettings()
+	out := make([]types.GamingGame, 0, len(s.InstalledGames))
+	for _, id := range s.InstalledGames {
+		out = append(out, types.GamingGame{
+			ID:   id,
+			Name: gamingDisplayName(s, id),
+			// Connection state arrives with the bridge listener; until
+			// then nothing is connected, which is the truthful answer.
+			Ready: false,
+		})
 	}
 	return out
+}
+
+// gamingDisplayName is what to call a game in the interface: the label the
+// operator gave it, or the id, which is the only name the wire carries.
+func gamingDisplayName(s types.GamingSettings, id string) string {
+	if name := strings.TrimSpace(s.GameNames[id]); name != "" {
+		return name
+	}
+	return id
 }
 
 // gamingTokenFor returns the token the host issued a game, which is the only
@@ -303,23 +344,29 @@ func gamingTokenFor(id string) (string, error) {
 	return token, nil
 }
 
-// sanitizeInstalledGames drops unknown ids and duplicates, so a policy can only
-// ever name games this build knows how to route.
-func sanitizeInstalledGames(ids []string) []string {
-	known := make(map[string]bool, len(gamingCatalogue))
-	for _, g := range gamingCatalogue {
-		known[g.ID] = true
-	}
+// sanitizeInstalledGames folds the ids an operator gave into the form the wire
+// uses, and refuses anything the wire could not carry.
+//
+// Folding and refusing are different acts. Blank entries, duplicates, case and
+// surrounding space are tidying - nobody meant anything by them and nothing is
+// lost. An id that is not a routing key is a mistake with a consequence:
+// registered, it would route nothing at all, and dropped in silence it would
+// leave an operator looking at a list that did not grow, with nothing to read
+// and a typo they cannot see. So it comes back as an error naming the rule.
+func sanitizeInstalledGames(ids []string) ([]string, error) {
 	seen := make(map[string]bool, len(ids))
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
-		id = strings.TrimSpace(id)
-		if id == "" || !known[id] || seen[id] {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" || seen[id] {
 			continue
+		}
+		if !gamingGameIDRE.MatchString(id) {
+			return nil, fmt.Errorf("%w: %q is not one", ErrGamingBadGameID, id)
 		}
 		seen[id] = true
 		out = append(out, id)
 	}
 	sort.Strings(out)
-	return out
+	return out, nil
 }

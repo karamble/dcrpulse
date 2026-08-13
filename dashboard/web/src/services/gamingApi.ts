@@ -15,17 +15,22 @@ export interface GamingSettings {
   perDayCapDcr: number;
   approvalTimeoutSecs: number;
   installedGames: string[];
+  // gameNames is the label the operator gave each game, for display only.
+  gameNames?: Record<string, string>;
+  // gameTokens is what each game authenticates with - its identity, so
+  // anything holding one is that game as far as the bridge is concerned. It
+  // travels outward only: the server issues tokens and never reads one back.
+  gameTokens?: Record<string, string>;
 }
 
 export interface GamingGame {
+  // id is the routing key, and the only name the wire carries.
   id: string;
+  // name is the operator's label, or the id when they gave none.
   name: string;
-  description: string;
-  // protocolVersion is the `gv=` key in the Bison Relay wire envelope.
-  protocolVersion: number;
-  installed: boolean;
-  // ready reports whether the game's backend is reachable. A game can be
-  // installed and not ready while its service is starting or absent.
+  // ready reports whether the game is connected to the bridge right now. A
+  // game runs on a machine of the person's choosing, so it can be registered
+  // and simply not running.
   ready: boolean;
 }
 
