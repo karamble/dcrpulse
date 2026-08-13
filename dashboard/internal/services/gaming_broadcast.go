@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/decred/dcrd/txscript/v4"
@@ -246,6 +245,6 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 	if coSigned {
 		how = "co-signed, so its outputs were not checked against this wallet"
 	}
-	log.Printf("gaming: %s broadcast %s, spending %s (%s)", game, txid, strings.Join(ins, " "), how)
+	gameLog.Infof("%s broadcast %s, spending %s (%s)", game, txid, strings.Join(ins, " "), how)
 	return txid, nil
 }
