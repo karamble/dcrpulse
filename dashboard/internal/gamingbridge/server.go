@@ -122,6 +122,7 @@ type Server struct {
 	cfg   Config
 	allow *Allowlist
 	reg   *registry
+	pend  *pending
 
 	mu   sync.Mutex
 	grpc *grpc.Server
@@ -136,7 +137,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AppPasswordActive == nil || cfg.Enabled == nil {
 		return nil, fmt.Errorf("a bridge has to be able to ask whether it should be running")
 	}
-	s := &Server{cfg: cfg, allow: cfg.Allow, reg: newRegistry()}
+	s := &Server{cfg: cfg, allow: cfg.Allow, reg: newRegistry(), pend: newPending()}
 
 	// Withdrawing a credential has to end the stream it is holding, and the
 	// allowlist is where withdrawing happens - including when the operator

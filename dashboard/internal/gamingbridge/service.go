@@ -217,6 +217,9 @@ func (s *Server) Respond(ctx context.Context, req *gamingpb.RespondRequest) (*ga
 	} else {
 		gameLog.Warnf("%s could not complete request %s: %s", game, req.GetRequestId(), req.GetError())
 	}
+	// An answer nobody is waiting for is normal: a push needs no reply, and a
+	// caller that gave up has already stopped listening.
+	s.pend.fulfil(req.GetRequestId(), game, req)
 	return &gamingpb.RespondReply{}, nil
 }
 
