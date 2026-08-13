@@ -11,13 +11,8 @@ export interface GamingSettings {
   enabled: boolean;
   // account is the only wallet account games may spend from or be paid into.
   account: string;
-  mode: 'approval' | 'autopay';
   perTableCapDcr: number;
   perDayCapDcr: number;
-  // maxOpenTables bounds concurrently funded escrows. Distinct from the
-  // per-table cap because stakes overlap: total outstanding is the real
-  // exposure, not the largest single buy-in.
-  maxOpenTables: number;
   approvalTimeoutSecs: number;
   installedGames: string[];
 }

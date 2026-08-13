@@ -160,17 +160,13 @@ export const BisonrelayGamingTab = () => {
           </span>
         </label>
 
-        <label className="text-xs space-y-1">
-          <span className="text-muted-foreground block">Stake mode</span>
-          <select
-            value={draft.mode}
-            onChange={(e) => setDraft({ ...draft, mode: e.target.value as 'approval' | 'autopay' })}
-            className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
-          >
-            <option value="approval">Approval: ask me before every buy-in</option>
-            <option value="autopay">Auto: stake under the caps without asking</option>
-          </select>
-        </label>
+        <div className="text-xs space-y-1">
+          <span className="text-muted-foreground block">Buy-ins</span>
+          <p className="text-muted-foreground">
+            Every buy-in asks you, with your wallet passphrase. There is no setting that pays
+            automatically - this dashboard never holds the passphrase.
+          </p>
+        </div>
 
         <label className="text-xs space-y-1">
           <span className="text-muted-foreground block">Approval wait (seconds)</span>
@@ -210,20 +206,6 @@ export const BisonrelayGamingTab = () => {
           />
         </label>
 
-        <label className="text-xs space-y-1">
-          <span className="text-muted-foreground block">Max tables funded at once</span>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={draft.maxOpenTables}
-            onChange={(e) => setDraft({ ...draft, maxOpenTables: Number(e.target.value) || 1 })}
-            className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
-          />
-          <span className="text-muted-foreground block">
-            Stakes overlap, so this is what bounds your real exposure - not the per-table cap.
-          </span>
-        </label>
       </div>
 
       <div className="flex items-center gap-2">
