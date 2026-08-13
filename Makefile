@@ -1,4 +1,4 @@
-.PHONY: help start stop restart restart-dcrd restart-dcrwallet restart-dcrlnd restart-brclientd restart-dcrdex restart-dashboard restart-tor logs logs-dcrd logs-dcrwallet logs-dcrlnd logs-brclientd logs-dcrdex logs-dashboard logs-tor build deploy deploy-dashboard push push-dcrd push-dcrwallet push-dcrlnd push-brclientd push-dcrdex push-dashboard push-tor login clean clean-dcrd clean-dcrwallet clean-build status shell-dcrd shell-dcrwallet shell-dcrlnd shell-brclientd shell-dcrdex shell-dashboard backup backup-wallet backup-certs restore restore-wallet
+.PHONY: proto help start stop restart restart-dcrd restart-dcrwallet restart-dcrlnd restart-brclientd restart-dcrdex restart-dashboard restart-tor logs logs-dcrd logs-dcrwallet logs-dcrlnd logs-brclientd logs-dcrdex logs-dashboard logs-tor build deploy deploy-dashboard push push-dcrd push-dcrwallet push-dcrlnd push-brclientd push-dcrdex push-dashboard push-tor login clean clean-dcrd clean-dcrwallet clean-build status shell-dcrd shell-dcrwallet shell-dcrlnd shell-brclientd shell-dcrdex shell-dashboard backup backup-wallet backup-certs restore restore-wallet
 
 # Force bash shell for bash-specific syntax (needed for clean target)
 SHELL := /bin/bash
@@ -23,7 +23,7 @@ help: ## Show this help message
 
 init-volumes: ## Initialize volume directories with correct permissions
 	@echo "Initializing volume directories..."
-	@for v in app-data dcrlnd-data brclientd-data dcrdex-data tor-data dashboard-data gaming-control gaming-data; do \
+	@for v in app-data dcrlnd-data brclientd-data dcrdex-data tor-data dashboard-data; do \
 		docker volume create dcrpulse_$$v >/dev/null 2>&1 || true; \
 	done
 	@docker run --rm \
@@ -33,8 +33,6 @@ init-volumes: ## Initialize volume directories with correct permissions
 		-v dcrpulse_dcrdex-data:/v/dcrdex-data \
 		-v dcrpulse_tor-data:/v/tor-data \
 		-v dcrpulse_dashboard-data:/v/dashboard-data \
-		-v dcrpulse_gaming-control:/v/gaming-control \
-		-v dcrpulse_gaming-data:/v/gaming-data \
 		alpine sh -c "mkdir -p /v/app-data/dcrd /v/app-data/dcrwallet && chown -R 1000:1000 /v"
 	@echo "✓ Volumes initialized"
 
@@ -371,6 +369,18 @@ install-frontend: ## Install frontend dependencies
 
 install-backend: ## Install backend dependencies
 	cd dashboard && go mod download
+
+proto: ## Regenerate the gaming bridge gRPC stubs (needs protoc + the two Go plugins)
+	@command -v protoc >/dev/null || { \
+		echo "protoc not found. Install it, then:"; \
+		echo "  go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11"; \
+		echo "  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2"; \
+		exit 1; }
+	cd dashboard && protoc --proto_path=internal/gamingpb \
+		--go_out=internal/gamingpb      --go_opt=paths=source_relative \
+		--go-grpc_out=internal/gamingpb --go-grpc_opt=paths=source_relative \
+		internal/gamingpb/gaming_bridge.proto
+	@echo "Stubs regenerated. Commit them: the image has no protoc."
 
 # Wallet-specific commands
 
