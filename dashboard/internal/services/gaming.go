@@ -5,9 +5,6 @@
 package services
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/types"
@@ -97,10 +95,10 @@ func normalizeGamePolicy(p types.GamePolicy) types.GamePolicy {
 // operator's edits for the ones they named, and mints defaults for a game just
 // added.
 //
-// The shape follows carryGameTokens for the same reason: the map is rebuilt
+// The shape follows carryGameCredentials for the same reason: the map is rebuilt
 // from the registered list rather than edited in place, so a policy cannot
 // outlive the game it belongs to. What differs is that a policy is the
-// operator's to write and a token is not, so a named entry wins over the stored
+// operator's to write and a credential is not, so a named entry wins over the stored
 // one - but only for a game that is registered. A policy for anything else is
 // dropped: registration happens through the list and nowhere else, or a write
 // could leave a funding rule for a game that routes nothing, which nobody would
@@ -108,7 +106,7 @@ func normalizeGamePolicy(p types.GamePolicy) types.GamePolicy {
 //
 // An unnamed game keeps its stored policy. Saving one game's account must not
 // reset another's caps to the defaults, the same way saving the section must
-// not rotate a running game's token.
+// not rotate a connected game's credential.
 func carryGamePolicies(prev, in map[string]types.GamePolicy, registered []string) map[string]types.GamePolicy {
 	out := make(map[string]types.GamePolicy, len(registered))
 	for _, id := range registered {
@@ -126,75 +124,25 @@ func carryGamePolicies(prev, in map[string]types.GamePolicy, registered []string
 	return out
 }
 
-// newGamingToken mints a bearer token for a game.
-func newGamingToken() (string, error) {
-	var tok [16]byte
-	if _, err := rand.Read(tok[:]); err != nil {
-		return "", fmt.Errorf("generate game token: %w", err)
-	}
-	return hex.EncodeToString(tok[:]), nil
-}
-
-// carryGameTokens keeps a token for every game still installed and mints one
-// for a game that has just been added.
+// carryGameCredentials keeps the credential of every game still registered.
 //
-// A token is not rotated by an unrelated policy edit, or saving the settings
-// would cut off every running game. Removing a game drops its token, so
-// uninstalling revokes rather than hides: a game left running finds that its
-// identity no longer resolves.
-func carryGameTokens(prev map[string]string, installed []string) (map[string]string, error) {
-	out := make(map[string]string, len(installed))
-	for _, id := range installed {
-		if tok := prev[id]; tok != "" {
-			out[id] = tok
-			continue
-		}
-		tok, err := newGamingToken()
-		if err != nil {
-			return nil, err
-		}
-		out[id] = tok
-	}
-	return out, nil
-}
-
-// GamingGameToken is the token this host authenticates as a game with. It
-// authorizes spending and must never leave this process.
-func GamingGameToken(game string) (string, bool) {
-	s := ReadGamingSettings()
-	if !s.Enabled {
-		return "", false
-	}
-	tok := s.GameTokens[game]
-	return tok, tok != ""
-}
-
-// GamingGameForToken resolves a bearer token to the game it identifies.
+// Carry only: unlike the tokens this replaced, a credential is never minted
+// here. Issuing one is an explicit act the operator takes and sees the result
+// of once, because the private key goes to them and nowhere else - minting
+// silently on registration would produce a credential nobody was ever shown.
 //
-// This is the only place a game's identity is established, and everything the
-// host enforces hangs off what it returns.
-//
-// It resolves game tokens only; panel tokens are GamingUISessionFor's, and the
-// two namespaces must not overlap.
-func GamingGameForToken(token string) (string, bool) {
-	return gamingGameForToken(ReadGamingSettings(), token)
-}
-
-// gamingGameForToken is the resolution itself, without the file read.
-//
-// Comparison is constant time so a caller cannot learn a token a character at a
-// time, and a disabled section resolves nothing at all - the tunnel then
-// answers as though it is not there.
-func gamingGameForToken(s types.GamingSettings, token string) (string, bool) {
-	if token == "" || !s.Enabled {
-		return "", false
-	}
-	for game, tok := range s.GameTokens {
-		if tok != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(token)) == 1 {
-			return game, true
+// A credential is not rotated by an unrelated policy edit, or saving the
+// settings would cut off every connected game. Removing a game drops its
+// credential, so unregistering revokes rather than hides: a game left running
+// finds that its identity no longer resolves.
+func carryGameCredentials(prev map[string]types.GameCredential, registered []string) map[string]types.GameCredential {
+	out := make(map[string]types.GameCredential, len(registered))
+	for _, id := range registered {
+		if c, ok := prev[id]; ok {
+			out[id] = c
 		}
 	}
-	return "", false
+	return out
 }
 
 // GamingStateDir is where the gaming section keeps its two files: the policy
@@ -272,15 +220,11 @@ func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive boo
 		Policies:        carryGamePolicies(cur.Policies, in.Policies, registered),
 	}
 
-	// Carry tokens across for games that are still registered, and mint one
-	// for a game that has just been added. Removing a game drops its token,
-	// so removing actually revokes rather than merely hiding: a game that
-	// kept running would find its identity no longer resolves.
-	tokens, err := carryGameTokens(cur.GameTokens, out.RegisteredGames)
-	if err != nil {
-		return types.GamingSettings{}, err
-	}
-	out.GameTokens = tokens
+	// Carry credentials across for games that are still registered. Removing
+	// a game drops its credential, so removing actually revokes rather than
+	// merely hiding: a game that kept running would find its identity no
+	// longer resolves.
+	out.GameCredentials = carryGameCredentials(cur.GameCredentials, out.RegisteredGames)
 
 	// Nothing here forces the bridge off for want of an account. Routing
 	// frames costs nothing and needs no money, so a bridge with no game
@@ -294,30 +238,42 @@ func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive boo
 // appPasswordActive is passed in by the caller, which is what keeps this
 // package from depending on the auth package for a boolean.
 func WriteGamingSettings(in types.GamingSettings, appPasswordActive bool) (types.GamingSettings, error) {
+	gamingSettingsMu.Lock()
+	defer gamingSettingsMu.Unlock()
+
 	out, err := normalizeGamingSettings(in, ReadGamingSettings(), appPasswordActive)
 	if err != nil {
 		return types.GamingSettings{}, err
 	}
-
-	if err := os.MkdirAll(GamingStateDir, 0o700); err != nil {
-		return out, err
-	}
-	data, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return out, err
-	}
-	tmp := gamingSettingsPath() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return out, err
-	}
-	if err := os.Rename(tmp, gamingSettingsPath()); err != nil {
+	if err := writeGamingSettingsLocked(out); err != nil {
 		return out, err
 	}
 	return out, nil
 }
 
-// ErrGamingGameNotRunning says no game is connected under that name.
-var ErrGamingGameNotRunning = errors.New("game is not connected")
+// gamingSettingsMu serialises the read-modify-write of gaming.json.
+//
+// There are two writers now: saving the section, and issuing or revoking a
+// credential. Both read the whole file, change part of it and write it back, so
+// without this one could land between the other's read and write and lose a
+// registration or a credential.
+var gamingSettingsMu sync.Mutex
+
+// writeGamingSettingsLocked persists settings that have already been normalized.
+func writeGamingSettingsLocked(out types.GamingSettings) error {
+	if err := os.MkdirAll(GamingStateDir, 0o700); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := gamingSettingsPath() + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, gamingSettingsPath())
+}
 
 // GamingGames reports every game the operator registered, with the name they
 // gave it and whether it is connected right now.
@@ -335,11 +291,9 @@ func GamingGames() []types.GamingGame {
 	out := make([]types.GamingGame, 0, len(s.RegisteredGames))
 	for _, id := range s.RegisteredGames {
 		out = append(out, types.GamingGame{
-			ID:   id,
-			Name: gamingDisplayName(s, id),
-			// Connection state arrives with the bridge listener; until
-			// then nothing is connected, which is the truthful answer.
-			Ready: false,
+			ID:    id,
+			Name:  gamingDisplayName(s, id),
+			Ready: gamingGameConnected(id),
 		})
 	}
 	return out
@@ -352,17 +306,6 @@ func gamingDisplayName(s types.GamingSettings, id string) string {
 		return name
 	}
 	return id
-}
-
-// gamingTokenFor returns the token the host issued a game, which is the only
-// thing that game will answer to.
-func gamingTokenFor(id string) (string, error) {
-	s := ReadGamingSettings()
-	token := s.GameTokens[id]
-	if strings.TrimSpace(token) == "" {
-		return "", ErrGamingGameNotRegistered
-	}
-	return token, nil
 }
 
 // sanitizeRegisteredGames folds the ids an operator gave into the form the wire

@@ -82,19 +82,46 @@ type GamingSettings struct {
 	// every other game's untouched.
 	Policies map[string]GamePolicy `json:"policies,omitempty"`
 
-	// GameTokens maps a registered game id to its bearer token.
+	// GameCredentials maps a registered game id to the credential it
+	// authenticates with. A game with no entry has not been issued one yet
+	// and cannot connect.
 	//
-	// The token is the game's identity, not merely a password. A game
-	// authenticates with it, and everything the bridge enforces - which game
-	// a frame may be sent as, which account may be spent from and under what
-	// caps - is enforced against the identity it resolves to. That is why
-	// there is one per game rather than one for the section: a shared secret
-	// would make every game the same principal, and a limit on a principal
-	// nobody can tell apart is not a limit.
+	// The credential is the game's identity, not merely a password. Everything
+	// the bridge enforces - which game a frame may be sent as, which account
+	// may be spent from and under what caps - is enforced against the identity
+	// a connection resolves to. That is why there is one per game rather than
+	// one for the section: a shared secret would make every game the same
+	// principal, and a limit on a principal nobody can tell apart is not a
+	// limit.
 	//
-	// A game never states who it is. It presents a token and the bridge
+	// A game never states who it is. It presents a certificate and the bridge
 	// decides, so a game cannot claim to be another one.
-	GameTokens map[string]string `json:"gameTokens,omitempty"`
+	GameCredentials map[string]GameCredential `json:"gameCredentials,omitempty"`
+}
+
+// GameCredential is what the bridge remembers about a game's certificate.
+//
+// The private key is not here and is never written down: it is shown to the
+// operator once, at generation, and carried to the game by hand. That is what
+// makes it impossible for anything on either machine to fetch a credential it
+// was not given.
+type GameCredential struct {
+	// Fingerprint is the SHA-256 of the certificate, which is what a
+	// connection resolves by.
+	Fingerprint string `json:"fingerprint"`
+
+	// CertPEM is the certificate itself.
+	//
+	// Kept because the certificate is its own root: a handshake verifies a
+	// game's certificate by finding these exact bytes among the roots it
+	// trusts, so a fingerprint alone could not survive a restart. A
+	// certificate is public by construction - the secret is the key, and the
+	// key is not here.
+	CertPEM string `json:"certPem"`
+
+	// IssuedAt is when the operator generated it, so the console can say how
+	// old a credential is.
+	IssuedAt int64 `json:"issuedAt"`
 }
 
 // GamingGame is one registered game, as the dashboard lists it.

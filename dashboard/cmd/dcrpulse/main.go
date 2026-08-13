@@ -224,23 +224,6 @@ func main() {
 	r.Use(middleware.SecurityHeaders)
 
 	// API routes
-	// The gaming tunnel authenticates with a per-game bearer token, so it
-	// sits outside the browser API: that API requires same-origin and a
-	// dashboard session, and a game running as its own process has neither.
-	gaming := r.PathPrefix("/gaming").Subrouter()
-	gaming.Use(handlers.GamingTunnelAuth)
-	gaming.HandleFunc("/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
-	gaming.HandleFunc("/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
-	gaming.HandleFunc("/chain/tip", handlers.BisonrelayGamingChainTipHandler).Methods("GET")
-	gaming.HandleFunc("/chain/outpoint", handlers.BisonrelayGamingOutpointHandler).Methods("GET")
-	gaming.HandleFunc("/chain/blockhash", handlers.BisonrelayGamingBlockHashHandler).Methods("GET")
-	// The one way coin moves without anybody being asked: a game reclaiming
-	// its own timelocked money, which only it can sign for. Bounded rather
-	// than approved - see the handler.
-	gaming.HandleFunc("/chain/broadcast", handlers.BisonrelayGamingBroadcastHandler).Methods("POST")
-	gaming.HandleFunc("/spend", handlers.BisonrelayGamingSpendHandler).Methods("POST")
-	gaming.HandleFunc("/spend/status", handlers.BisonrelayGamingSpendStatusHandler).Methods("GET")
-
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth)
 

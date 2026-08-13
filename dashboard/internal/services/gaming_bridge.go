@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/types"
 )
 
 // Errors a game can be told about. They are deliberately unrevealing: a game
@@ -186,7 +187,12 @@ func (b *GamingBus) deliverFrame(payload json.RawMessage) {
 // registered list is the routing table: a frame for anything else is not this
 // bridge's business.
 func gamingGameRegistered(game string) bool {
-	for _, id := range ReadGamingSettings().RegisteredGames {
+	return gamingRegisteredIn(ReadGamingSettings(), game)
+}
+
+// gamingRegisteredIn is the same answer against settings already read.
+func gamingRegisteredIn(s types.GamingSettings, game string) bool {
+	for _, id := range s.RegisteredGames {
 		if id == game {
 			return true
 		}
