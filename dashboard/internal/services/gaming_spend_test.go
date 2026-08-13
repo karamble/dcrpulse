@@ -91,13 +91,13 @@ func TestAutomaticPaymentIsRefusedRatherThanFaked(t *testing.T) {
 func TestPendingRequestsCountTowardTheDailyCap(t *testing.T) {
 	now := time.Now().Unix()
 	log := spendLog{Spends: []GamingSpend{
-		{State: GamingSpendApproved, AmountAtoms: 100, DecidedAt: now - 60},
-		{State: GamingSpendPending, AmountAtoms: 50},
-		{State: GamingSpendDenied, AmountAtoms: 900, DecidedAt: now - 60},
-		{State: GamingSpendExpired, AmountAtoms: 900, DecidedAt: now - 60},
-		{State: GamingSpendFailed, AmountAtoms: 900, DecidedAt: now - 60},
+		{Game: "poker", State: GamingSpendApproved, AmountAtoms: 100, DecidedAt: now - 60},
+		{Game: "poker", State: GamingSpendPending, AmountAtoms: 50},
+		{Game: "poker", State: GamingSpendDenied, AmountAtoms: 900, DecidedAt: now - 60},
+		{Game: "poker", State: GamingSpendExpired, AmountAtoms: 900, DecidedAt: now - 60},
+		{Game: "poker", State: GamingSpendFailed, AmountAtoms: 900, DecidedAt: now - 60},
 	}}
-	if got, want := spentInDayLocked(log, now), int64(150); got != want {
+	if got, want := spentInDayLocked(log, "poker", now), int64(150); got != want {
 		t.Fatalf("counted %d against the day, want %d", got, want)
 	}
 }
@@ -108,11 +108,35 @@ func TestSpendingOlderThanADayNoLongerCounts(t *testing.T) {
 	now := time.Now().Unix()
 	day := int64((24 * time.Hour).Seconds())
 	log := spendLog{Spends: []GamingSpend{
-		{State: GamingSpendApproved, AmountAtoms: 100, DecidedAt: now - day - 1},
-		{State: GamingSpendApproved, AmountAtoms: 7, DecidedAt: now - 10},
+		{Game: "poker", State: GamingSpendApproved, AmountAtoms: 100, DecidedAt: now - day - 1},
+		{Game: "poker", State: GamingSpendApproved, AmountAtoms: 7, DecidedAt: now - 10},
 	}}
-	if got, want := spentInDayLocked(log, now), int64(7); got != want {
+	if got, want := spentInDayLocked(log, "poker", now), int64(7); got != want {
 		t.Fatalf("counted %d against the day, want %d", got, want)
+	}
+}
+
+// The day total is one game's budget, not the section's.
+//
+// Summed across every game, a busy table spends the allowance of a game that
+// asked for nothing, and that game is then refused for money it never moved -
+// which is a limit falling on whoever happened to play second.
+func TestOneGamesSpendingDoesNotConsumeAnothersAllowance(t *testing.T) {
+	now := time.Now().Unix()
+	log := spendLog{Spends: []GamingSpend{
+		{Game: "poker", State: GamingSpendApproved, AmountAtoms: 100, DecidedAt: now - 60},
+		{Game: "poker", State: GamingSpendPending, AmountAtoms: 50},
+		{Game: "chess", State: GamingSpendApproved, AmountAtoms: 900, DecidedAt: now - 60},
+	}}
+	if got, want := spentInDayLocked(log, "poker", now), int64(150); got != want {
+		t.Errorf("poker was charged %d, want %d", got, want)
+	}
+	if got, want := spentInDayLocked(log, "chess", now), int64(900); got != want {
+		t.Errorf("chess was charged %d, want %d", got, want)
+	}
+	// A game nobody has spent for owes nothing, however busy the others are.
+	if got := spentInDayLocked(log, "backgammon", now); got != 0 {
+		t.Errorf("a game that has spent nothing was charged %d", got)
 	}
 }
 
