@@ -3,8 +3,8 @@
 // license that can be found in the LICENSE file.
 
 import { useContext, useEffect, useState } from 'react';
-import { Gamepad2, Loader2 } from 'lucide-react';
-import { GamingGame, getGamingGames } from '../../services/gamingApi';
+import { Check, Gamepad2, Loader2 } from 'lucide-react';
+import { GamingGame, acceptGamingInvite, getGamingGames } from '../../services/gamingApi';
 import { GamingInvite } from './gamingInviteParse';
 import { GamingChatCtx } from './gamingChatContext';
 
@@ -19,12 +19,16 @@ const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0
 // honestly - which game it is, what it costs, and whether this installation can
 // actually join.
 //
-// Taking the seat belongs to the game, not to this page: a seat costs money and
-// is signed for by a key only the game holds, so the chip reads the terms and
-// says where the person can act on them.
+// Accepting hands the invitation to the game, which joins the table in the
+// conversation the invitation arrived in. The seat itself is signed for by a key
+// only the game holds. The chip offers that only when the game is connected: a
+// game that is registered but not running would take the click and do nothing.
 export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
   const [game, setGame] = useState<GamingGame | null>(null);
   const [loading, setLoading] = useState(true);
+  const [accepting, setAccepting] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const gcid = useContext(GamingChatCtx);
 
   useEffect(() => {
@@ -51,6 +55,24 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
   const name = game?.name ?? invite.game;
   const ready = game?.ready ?? false;
 
+  const accept = async () => {
+    if (!gcid) return;
+    setAccepting(true);
+    setError(null);
+    try {
+      await acceptGamingInvite(invite.game, invite.raw, gcid);
+      setAccepted(true);
+    } catch (e) {
+      // The game's own refusal is the useful part - it knows why the
+      // invitation was not one it could act on.
+      const detail =
+        (e as { response?: { data?: string } })?.response?.data ?? (e as Error)?.message ?? '';
+      setError(String(detail).trim() || 'could not accept');
+    } finally {
+      setAccepting(false);
+    }
+  };
+
   return (
     <span className="inline-flex flex-col gap-1 my-1 px-3 py-2 rounded-lg bg-muted/10 border border-border/50 text-sm align-middle">
       <span className="flex items-center gap-2 font-medium">
@@ -75,6 +97,11 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
           Register <span className="font-mono">{invite.game}</span> under Bison Relay &gt; Gaming to
           join tables like this one.
         </span>
+      ) : accepted ? (
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Check className="h-3 w-3" />
+          Joined. {name} is forming the table.
+        </span>
       ) : !gcid ? (
         // A table plays in the conversation its invitation arrived in, so
         // there is nothing to join without one.
@@ -88,8 +115,17 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
           {name} is registered, but not connected to this bridge.
         </span>
       ) : (
-        <span className="text-xs text-muted-foreground">
-          Join this table from {name}, which is where a seat is taken.
+        <span className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={accept}
+            disabled={accepting}
+            className="self-start inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/20 hover:bg-primary/30 disabled:opacity-50 text-xs font-medium"
+          >
+            {accepting && <Loader2 className="h-3 w-3 animate-spin" />}
+            {accepting ? 'Joining...' : 'Accept'}
+          </button>
+          {error && <span className="text-xs text-destructive break-words">{error}</span>}
         </span>
       )}
     </span>
