@@ -8,12 +8,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/decred/dcrd/dcrutil/v4"
 
@@ -124,17 +121,12 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	until := uint32(tip.Height) + openBlocks
 	invite := gamingInviteLink(game, sid, buyinAtoms, seats, gamingRefundBlocks, until)
 
-	if err := AcceptGamingInvite(ctx, game, invite, gcid); err != nil {
-		return GamingTable{}, err
-	}
-
 	// Prose and the link, not a bare URL: a client that knows nothing about
 	// games must still show a person something they can act on.
 	msg := fmt.Sprintf("Table for %d at %s DCR a seat. Registration closes at block %d.\n%s",
 		seats, gamingAtomsText(buyinAtoms), until, invite)
 	if err := rpc.BrclientdGCMessage(ctx, gcid, msg, 0); err != nil {
-		return GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid},
-			fmt.Errorf("you are seated, but the invitation could not be sent: %w", err)
+		return GamingTable{}, fmt.Errorf("the invitation could not be sent: %w", err)
 	}
 	return GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid}, nil
 }
@@ -143,12 +135,4 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 func gamingAtomsText(atoms uint64) string {
 	s := strconv.FormatFloat(dcrutil.Amount(atoms).ToCoin(), 'f', -1, 64)
 	return s
-}
-
-// GamingTables asks a game what tables it is at, verbatim.
-//
-// The host relaying the game's own answer to its own chrome: the chat sidebar
-// needs the conversation a table plays in, and the game already reports it.
-func GamingTables(ctx context.Context, game string) (json.RawMessage, error) {
-	return gamingCall(ctx, game, http.MethodGet, "/tables", nil, 15*time.Second)
 }

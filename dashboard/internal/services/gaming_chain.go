@@ -16,7 +16,7 @@ import (
 	"dcrpulse/internal/rpc"
 )
 
-// The sandbox has no route to a chain, and it needs one. Bonds are coin at an
+// A game needs a chain and is not given a node of its own. Bonds are coin at an
 // outpoint, so a player can only be asked to post one if the others can check
 // it; an admission window is only agreed if everyone reads the same height; and
 // a dealer chosen from a block hash is only unpredictable if nobody supplies
