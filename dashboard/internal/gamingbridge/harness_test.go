@@ -9,6 +9,7 @@ import (
 	"crypto/elliptic"
 	"crypto/tls"
 	"crypto/x509"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,6 +61,29 @@ type bridgeRig struct {
 	// does.
 	appPassword atomic.Bool
 	enabled     atomic.Bool
+
+	// missed stands in for the fan-out having dropped frames for a table
+	// while nothing was connected.
+	missedMu sync.Mutex
+	missed   map[string][]string
+}
+
+// loseFrames records that a game's table lost frames, as the fan-out would.
+func (r *bridgeRig) loseFrames(game, gcid string) {
+	r.missedMu.Lock()
+	defer r.missedMu.Unlock()
+	if r.missed == nil {
+		r.missed = map[string][]string{}
+	}
+	r.missed[game] = append(r.missed[game], gcid)
+}
+
+func (r *bridgeRig) takeMissed(game string) []string {
+	r.missedMu.Lock()
+	defer r.missedMu.Unlock()
+	out := r.missed[game]
+	delete(r.missed, game)
+	return out
 }
 
 // newBridgeRig stands the bridge up and tears it down again.
@@ -83,6 +107,8 @@ func newBridgeRig(t *testing.T) *bridgeRig {
 		AppPasswordActive: r.appPassword.Load,
 		Enabled:           r.enabled.Load,
 		Allow:             r.allow,
+
+		TakeMissed: func(game string) []string { return r.takeMissed(game) },
 	})
 	if err != nil {
 		t.Fatalf("prepare the bridge: %v", err)
