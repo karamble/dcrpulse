@@ -11,6 +11,9 @@ import (
 	"fmt"
 	"strings"
 
+	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
+
+	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/decred/dcrd/txscript/v4"
 	"github.com/decred/dcrd/wire"
 
@@ -134,6 +137,12 @@ type GamingPrevout struct {
 	Found     bool
 	Type      string
 	Addresses []string
+
+	// ValueAtoms is what the input is worth. It costs nothing to carry - the
+	// lookup already asks for it - and it is what lets the validator check
+	// that a transaction moving coin nobody here owns is not quietly moving
+	// some of it somewhere else.
+	ValueAtoms int64
 }
 
 func lookupGamingPrevout(ctx context.Context, op wire.OutPoint) (GamingPrevout, error) {
@@ -150,10 +159,15 @@ func lookupGamingPrevout(ctx context.Context, op wire.OutPoint) (GamingPrevout, 
 	if out == nil {
 		return GamingPrevout{}, nil
 	}
+	value, err := dcrutil.NewAmount(out.Value)
+	if err != nil {
+		return GamingPrevout{}, fmt.Errorf("read the value of %s:%d: %w", op.Hash, op.Index, err)
+	}
 	return GamingPrevout{
-		Found:     true,
-		Type:      out.ScriptPubKey.Type,
-		Addresses: out.ScriptPubKey.Addresses,
+		Found:      true,
+		Type:       out.ScriptPubKey.Type,
+		Addresses:  out.ScriptPubKey.Addresses,
+		ValueAtoms: int64(value),
 	}, nil
 }
 
@@ -193,6 +207,7 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 	}
 
 	// Inputs: game money only, and never the wallet's own coin.
+	var inputAtoms int64
 	for i, in := range tx.TxIn {
 		facts, err := spendPrevout(ctx, in.PreviousOutPoint)
 		if err != nil {
@@ -208,6 +223,7 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 		case walletOwns(ctx, facts.Addresses):
 			return "", fmt.Errorf("input %d spends coin belonging to this wallet", i)
 		}
+		inputAtoms += facts.ValueAtoms
 	}
 
 	// Outputs: back to the person, and nowhere else.
@@ -215,7 +231,23 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("decode: %w", err)
 	}
+	// Three shapes are allowed out, and no others.
+	//
+	// Co-signed: every input needed a signature from every seat, so the
+	// others already agreed to wherever it goes.
+	//
+	// Coming home: coin the game could move on its own, going back to this
+	// wallet.
+	//
+	// Passing through: coin that was never this wallet's, staying not this
+	// wallet's, with nothing taken on the way. That last one is a real
+	// transaction and not a theoretical one - a game answering an accusation
+	// spends its own bond straight into a fresh one, alone, and being unable
+	// to send it costs the player that bond within minutes.
 	coSigned := outputsMayPayAnyone(&tx)
+	if !coSigned && passesThrough(ctx, &tx, decoded, inputAtoms) {
+		coSigned = true
+	}
 	if !coSigned {
 		for _, out := range decoded.Outputs {
 			if !walletOwns(ctx, out.Addresses) {
@@ -247,4 +279,43 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 	}
 	gameLog.Infof("%s broadcast %s, spending %s (%s)", game, txid, strings.Join(ins, " "), how)
 	return txid, nil
+}
+
+// maxPassThroughFee bounds what a transaction going straight back out may leave
+// behind.
+//
+// Generous next to what any of these actually pay - the game's own fees are a
+// fraction of this - and far below anything worth the trouble of stealing. It
+// is a ceiling on carelessness, not a fee estimate.
+const maxPassThroughFee = 100_000
+
+// passesThrough reports whether this is coin that was never the wallet's,
+// staying not the wallet's, with nothing taken on the way.
+//
+// All three parts are load-bearing. Without the input rule this would let a
+// game move the wallet's own money; without the output rule it says nothing at
+// all; and without conserving the value it would let a game spend a bond into a
+// dust output and hand the rest to a miner, which is theft with extra steps.
+//
+// The bridge learns nothing about any game's escrow to do this. It is a
+// statement about where coin came from and where it is going, which is the only
+// kind of statement this can honestly make.
+func passesThrough(ctx context.Context, tx *wire.MsgTx, decoded *pb.DecodedTransaction, inputAtoms int64) bool {
+	if len(tx.TxIn) == 0 || len(decoded.Outputs) == 0 || inputAtoms <= 0 {
+		return false
+	}
+	var outputAtoms int64
+	for _, out := range tx.TxOut {
+		outputAtoms += out.Value
+	}
+	// Every output has to be a script hash the wallet does not hold. A game
+	// sending its coin to a plain address it chose is the case this must
+	// not admit.
+	for _, out := range decoded.Outputs {
+		if out.GetScriptClass() != pb.DecodedTransaction_Output_SCRIPT_HASH || walletOwns(ctx, out.Addresses) {
+			return false
+		}
+	}
+	fee := inputAtoms - outputAtoms
+	return fee >= 0 && fee <= maxPassThroughFee
 }
