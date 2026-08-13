@@ -32,10 +32,21 @@ type GamingSettings struct {
 	// is abandoned.
 	ApprovalTimeoutSecs int `json:"approvalTimeoutSecs"`
 
-	// InstalledGames holds the game ids the user added. An id is the routing
-	// key in the `--gaming[game=<id>]` Bison Relay envelope, so an
-	// installation routes only the games listed here.
+	// InstalledGames holds the game ids the operator registered, lowercased
+	// and sorted. An id is the routing key in the `--gaming[game=<id>]`
+	// Bison Relay envelope, so an installation routes only the games listed
+	// here and a frame for anything else is dropped as unroutable.
+	//
+	// Any id the wire can carry may be registered. There is no catalogue: a
+	// game has to be able to appear without this build being taught its
+	// name, which is what routing on a key is for.
 	InstalledGames []string `json:"installedGames"`
+
+	// GameNames maps a registered game id to the label the operator gave it,
+	// for the interface to show. It is decoration: nothing routes, resolves
+	// or authorises by it, and a game with no label is called by its id,
+	// which is the only name the wire carries.
+	GameNames map[string]string `json:"gameNames,omitempty"`
 
 	// GameTokens maps an installed game id to its bearer token.
 	//
@@ -52,22 +63,16 @@ type GamingSettings struct {
 	GameTokens map[string]string `json:"gameTokens,omitempty"`
 }
 
-// GamingGame is one entry in the gaming catalogue.
+// GamingGame is one registered game, as the dashboard lists it.
 type GamingGame struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	// ID is the routing key, and the only name the wire carries.
+	ID string `json:"id"`
 
-	// ProtocolVersion is the `gv=` key in the wire envelope. A client that
-	// does not implement a game's protocol version must ignore its traffic
-	// rather than surface it.
-	ProtocolVersion int `json:"protocolVersion"`
-
-	// Installed reports whether the user added this game.
-	Installed bool `json:"installed"`
+	// Name is the label the operator gave it, or the id when they gave none.
+	Name string `json:"name"`
 
 	// Ready reports whether the game is connected to the bridge right now.
-	// Deliberately not the same as installed: a game is registered here and
+	// Deliberately not the same as registered: a game is registered here and
 	// run by the person elsewhere, so it can be added and not running.
 	Ready bool `json:"ready"`
 }

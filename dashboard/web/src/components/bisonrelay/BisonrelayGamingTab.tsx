@@ -29,6 +29,8 @@ export const BisonrelayGamingTab = () => {
   const [draft, setDraft] = useState<GamingSettings | null>(null);
   const [games, setGames] = useState<GamingGame[]>([]);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
+  const [newGame, setNewGame] = useState('');
+  const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,13 +75,29 @@ export const BisonrelayGamingTab = () => {
     }
   };
 
+  // Registering and removing save against what is stored, not the draft: they
+  // are their own act, and carrying half-typed caps along with them would
+  // commit edits nobody pressed Save for.
+  const registerGame = () => {
+    if (!settings) return;
+    const id = newGame.trim().toLowerCase();
+    if (!id) return;
+    const name = newName.trim();
+    apply({
+      ...settings,
+      installedGames: [...settings.installedGames, id],
+      gameNames: name ? { ...(settings.gameNames ?? {}), [id]: name } : settings.gameNames,
+    });
+    setNewGame('');
+    setNewName('');
+  };
+
   const toggleGame = (id: string) => {
-    if (!draft) return;
-    const has = draft.installedGames.includes(id);
-    const installedGames = has
-      ? draft.installedGames.filter((g) => g !== id)
-      : [...draft.installedGames, id];
-    apply({ ...draft, installedGames });
+    if (!settings) return;
+    apply({
+      ...settings,
+      installedGames: settings.installedGames.filter((g) => g !== id),
+    });
   };
 
   if (!settings || !draft) {
@@ -230,12 +248,44 @@ export const BisonrelayGamingTab = () => {
       <div className="space-y-2">
         <h3 className="font-medium text-sm">Games</h3>
         <p className="text-xs text-muted-foreground">
-          Adding a game lets this installation recognise its traffic on Bison Relay. Anything from a
-          game you have not added is ignored rather than shown.
+          A game is a separate program you run yourself. Register it by the id it uses on Bison
+          Relay - <span className="font-mono">poker</span> for dcrpoker - and this installation
+          recognises its traffic. Anything from a game you have not registered is ignored rather
+          than shown.
         </p>
+
+        <div className="flex flex-wrap items-end gap-2 p-3 rounded-lg bg-muted/10 border border-border/50">
+          <label className="text-xs space-y-1 flex-1 min-w-32">
+            <span className="text-muted-foreground block">Game id</span>
+            <input
+              value={newGame}
+              onChange={(e) => setNewGame(e.target.value)}
+              placeholder="poker"
+              className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm font-mono"
+            />
+          </label>
+          <label className="text-xs space-y-1 flex-1 min-w-32">
+            <span className="text-muted-foreground block">Name (optional)</span>
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Poker"
+              className="w-full px-2 py-1.5 rounded-lg bg-background border border-border text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={registerGame}
+            disabled={busy || !newGame.trim()}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50 disabled:cursor-wait"
+          >
+            Register
+          </button>
+        </div>
+
         {games.length === 0 && (
           <div className="p-3 rounded-lg bg-muted/10 border border-border/50 text-sm text-muted-foreground">
-            No games available.
+            No games registered.
           </div>
         )}
         {games.map((g) => (
@@ -243,29 +293,35 @@ export const BisonrelayGamingTab = () => {
             key={g.id}
             className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50"
           >
-            <div className="min-w-0">
+            <div className="min-w-0 space-y-1">
               <span className="font-medium block">
                 {g.name}
-                <span className="text-muted-foreground font-normal text-xs"> v{g.protocolVersion}</span>
+                {g.name !== g.id && (
+                  <span className="text-muted-foreground font-normal font-mono text-xs"> {g.id}</span>
+                )}
               </span>
-              <span className="text-sm text-muted-foreground block">{g.description}</span>
-              {g.installed && !g.ready && (
-                <span className="text-xs text-warning block mt-1">
-                  Added, but its service is not running yet.
-                </span>
+              <span className="text-xs text-muted-foreground block">
+                {g.ready ? 'Connected.' : 'Registered. Nothing has connected under this id yet.'}
+              </span>
+              {settings.gameTokens?.[g.id] && (
+                <div className="text-xs space-y-1 pt-1">
+                  <span className="text-muted-foreground block">
+                    Connection token - paste this into the game. It is the game's identity, not a
+                    password; removing the game revokes it.
+                  </span>
+                  <span className="font-mono text-xs break-all block">
+                    {settings.gameTokens[g.id]}
+                  </span>
+                </div>
               )}
             </div>
             <button
               type="button"
               onClick={() => toggleGame(g.id)}
               disabled={busy}
-              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                g.installed
-                  ? 'bg-muted/20 text-muted-foreground hover:bg-muted/30'
-                  : 'bg-primary/20 text-primary hover:bg-primary/30'
-              } disabled:opacity-50 disabled:cursor-wait`}
+              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30 disabled:opacity-50 disabled:cursor-wait"
             >
-              {g.installed ? 'Remove' : 'Add'}
+              Remove
             </button>
           </div>
         ))}

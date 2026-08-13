@@ -38,9 +38,17 @@ type gamingSettingsView struct {
 	ApprovalTimeoutSecs int      `json:"approvalTimeoutSecs"`
 	InstalledGames      []string `json:"installedGames"`
 
+	// GameNames is the label the operator gave each game, for the interface
+	// to show. Decoration: nothing routes or authorises by it.
+	GameNames map[string]string `json:"gameNames"`
+
 	// GameTokens is what a game authenticates with. It is shown so the user
 	// can copy it into a game's configuration; it is the game's identity,
 	// so anything holding it is that game as far as this host is concerned.
+	//
+	// It travels outward only. A token is issued here and never accepted
+	// back, because a game that could name its own identity could name
+	// another game's.
 	GameTokens map[string]string `json:"gameTokens"`
 }
 
@@ -51,8 +59,12 @@ func gamingToView(s types.GamingSettings) gamingSettingsView {
 	if s.GameTokens == nil {
 		s.GameTokens = map[string]string{}
 	}
+	if s.GameNames == nil {
+		s.GameNames = map[string]string{}
+	}
 	return gamingSettingsView{
 		GameTokens:          s.GameTokens,
+		GameNames:           s.GameNames,
 		Enabled:             s.Enabled,
 		Account:             s.Account,
 		PerTableCapDcr:      dcrutil.Amount(s.PerTableCapAtoms).ToCoin(),
@@ -78,6 +90,10 @@ func gamingFromView(v gamingSettingsView) (types.GamingSettings, error) {
 		PerDayCapAtoms:      int64(perDay),
 		ApprovalTimeoutSecs: v.ApprovalTimeoutSecs,
 		InstalledGames:      v.InstalledGames,
+		GameNames:           v.GameNames,
+		// GameTokens is deliberately not read back: a token is issued
+		// here, and a caller that could set one could name another
+		// game's identity.
 	}, nil
 }
 
@@ -111,6 +127,9 @@ func BisonrelayGamingSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, services.ErrGamingNeedsAppPassword):
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
+		case errors.Is(err, services.ErrGamingBadGameID):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		default:
 			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -121,14 +140,13 @@ func BisonrelayGamingSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// BisonrelayGamingGamesHandler lists the games this build can route, marked
-// with whether the user installed them.
+// BisonrelayGamingGamesHandler lists the games the operator registered.
 func BisonrelayGamingGamesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	gamingJSON(w, map[string]any{"games": services.GamingCatalogue()})
+	gamingJSON(w, map[string]any{"games": services.GamingGames()})
 }
 
 // BisonrelayGamingSpendsHandler lists what games have asked to spend, and what
