@@ -18,7 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"dcrpulse/internal/config"
+	"github.com/decred/dcrd/wire"
+
 	"dcrpulse/internal/types"
 )
 
@@ -91,10 +92,15 @@ var spendMu sync.Mutex
 // approval pass the Pending check and pay twice. Guarded by spendMu.
 var spendApproving = map[string]bool{}
 
-// The staged calls of a spend, swappable in tests, which have no wallet to
-// sign with and no /dashboard-data to log to. Production never touches these.
+// The staged calls a game's money passes through: the account it resolves to,
+// the transaction built for it, the signature a person authorises, the relay
+// that puts it on the network, and what the node says an input was.
+//
+// They are settable because the rules around them are the only thing between an
+// untrusted game and this wallet, and a rule that can only be exercised against
+// a live wallet and a live node is a rule nobody has exercised. Production sets
+// none of them.
 var (
-	spendLogPath   = config.GamingSpendLogPath
 	spendAccount   = gamingAccountNumber
 	spendConstruct = func(ctx context.Context, account uint32, address string, amountAtoms int64) ([]byte, error) {
 		tx, err := ConstructTransaction(ctx, account, []types.TxRecipient{{
@@ -107,7 +113,46 @@ var (
 	}
 	spendSign    = signTransactionForSpend
 	spendPublish = publishSignedTransaction
+	spendPrevout = lookupGamingPrevout
 )
+
+// GamingWalletCalls is that same set, named, so a caller outside this package
+// can stage them. A nil field is left alone.
+type GamingWalletCalls struct {
+	Account   func(ctx context.Context) (uint32, error)
+	Construct func(ctx context.Context, account uint32, address string, amountAtoms int64) ([]byte, error)
+	Sign      func(ctx context.Context, account uint32, unsigned, passphrase []byte) ([]byte, error)
+	Publish   func(ctx context.Context, signed []byte) (string, error)
+	Prevout   func(ctx context.Context, op wire.OutPoint) (GamingPrevout, error)
+}
+
+// SetGamingWalletCalls installs the non-nil calls and returns a func putting
+// every one of them back. It is the seam the bridge's own tests drive the money
+// paths through; nothing in production calls it.
+func SetGamingWalletCalls(c GamingWalletCalls) (restore func()) {
+	prevAccount, prevConstruct := spendAccount, spendConstruct
+	prevSign, prevPublish, prevPrevout := spendSign, spendPublish, spendPrevout
+
+	if c.Account != nil {
+		spendAccount = c.Account
+	}
+	if c.Construct != nil {
+		spendConstruct = c.Construct
+	}
+	if c.Sign != nil {
+		spendSign = c.Sign
+	}
+	if c.Publish != nil {
+		spendPublish = c.Publish
+	}
+	if c.Prevout != nil {
+		spendPrevout = c.Prevout
+	}
+	return func() {
+		spendAccount, spendConstruct = prevAccount, prevConstruct
+		spendSign, spendPublish, spendPrevout = prevSign, prevPublish, prevPrevout
+	}
+}
 
 // spendLog is the whole record, oldest first.
 type spendLog struct {
@@ -120,7 +165,7 @@ const maxSpendLog = 500
 
 func readSpendLog() spendLog {
 	var log spendLog
-	blob, err := os.ReadFile(spendLogPath())
+	blob, err := os.ReadFile(gamingSpendLogPath())
 	if err != nil {
 		return spendLog{}
 	}
@@ -134,7 +179,7 @@ func writeSpendLog(log spendLog) error {
 	if len(log.Spends) > maxSpendLog {
 		log.Spends = log.Spends[len(log.Spends)-maxSpendLog:]
 	}
-	dir := filepath.Dir(spendLogPath())
+	dir := filepath.Dir(gamingSpendLogPath())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create control directory: %w", err)
 	}
@@ -142,11 +187,11 @@ func writeSpendLog(log spendLog) error {
 	if err != nil {
 		return err
 	}
-	tmp := spendLogPath() + ".tmp"
+	tmp := gamingSpendLogPath() + ".tmp"
 	if err := os.WriteFile(tmp, blob, 0o600); err != nil {
 		return fmt.Errorf("write spend log: %w", err)
 	}
-	return os.Rename(tmp, spendLogPath())
+	return os.Rename(tmp, gamingSpendLogPath())
 }
 
 // expireLocked marks anything nobody answered in time. A request that stays
@@ -185,9 +230,10 @@ func spentInDayLocked(log spendLog, now int64) int64 {
 
 // checkSpendRequest is the policy decision that needs nothing but the request.
 //
-// It is separate from reading the settings file because that path is a
-// compile-time constant, so anything touching it is unreachable from a test -
-// and these are the rules most worth being able to check.
+// The caller supplies the policy rather than this reading it, because the
+// bridge holds one per connected game and must not re-read a file for every
+// request a table makes. It is also what lets the whole rule be written out in
+// a test instead of sampled through whatever happens to be on disk.
 func checkSpendRequest(s types.GamingSettings, installed bool, address string, amountAtoms int64) error {
 	if !s.Enabled {
 		return fmt.Errorf("%w: gaming is switched off", ErrGamingSpendRefused)

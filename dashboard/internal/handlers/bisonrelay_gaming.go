@@ -18,6 +18,7 @@ import (
 	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/gorilla/websocket"
 
+	"dcrpulse/internal/auth"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 )
@@ -107,8 +108,16 @@ func BisonrelayGamingSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad amount: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		saved, err := services.WriteGamingSettings(next)
-		if err != nil {
+		// The bridge is only ever live behind the App Password: the caps
+		// below and the approval a spend waits on are worth nothing if the
+		// person approving cannot be told from anybody who reached the port.
+		saved, err := services.WriteGamingSettings(next, auth.Enabled())
+		switch {
+		case err == nil:
+		case errors.Is(err, services.ErrGamingNeedsAppPassword):
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		default:
 			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
