@@ -11,6 +11,7 @@ import dcrlog "dcrpulse/internal/log"
 var (
 	alrtLog = dcrlog.ALRT
 	brelLog = dcrlog.BREL
+	gameLog = dcrlog.GAME
 	govnLog = dcrlog.GOVN
 	lghtLog = dcrlog.LGHT
 	nodeLog = dcrlog.NODE

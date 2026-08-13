@@ -56,6 +56,7 @@ var (
 	BREL = backendLog.Logger("BREL")
 	DCRP = backendLog.Logger("DCRP")
 	DEXC = backendLog.Logger("DEXC")
+	GAME = backendLog.Logger("GAME")
 	GOVN = backendLog.Logger("GOVN")
 	HTTP = backendLog.Logger("HTTP")
 	LGHT = backendLog.Logger("LGHT")
@@ -76,6 +77,7 @@ var subsystems = map[string]slog.Logger{
 	"BREL": BREL,
 	"DCRP": DCRP,
 	"DEXC": DEXC,
+	"GAME": GAME,
 	"GOVN": GOVN,
 	"HTTP": HTTP,
 	"LGHT": LGHT,
