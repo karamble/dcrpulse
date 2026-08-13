@@ -46,8 +46,9 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
     };
   }, [invite.game]);
 
+  // A game is in the list only if the operator registered it, so its absence
+  // is the answer rather than a separate case.
   const name = game?.name ?? invite.game;
-  const installed = game?.installed ?? false;
   const ready = game?.ready ?? false;
 
   return (
@@ -67,15 +68,12 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
       {loading ? (
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           <Loader2 className="h-3 w-3 animate-spin" />
-          Checking whether {name} is installed...
+          Checking whether {name} is registered...
         </span>
       ) : !game ? (
         <span className="text-xs text-muted-foreground">
-          This installation does not have {invite.game}, so it cannot join.
-        </span>
-      ) : !installed ? (
-        <span className="text-xs text-muted-foreground">
-          Register {name} under Bison Relay &gt; Gaming to join tables like this one.
+          Register <span className="font-mono">{invite.game}</span> under Bison Relay &gt; Gaming to
+          join tables like this one.
         </span>
       ) : !gcid ? (
         // A table plays in the conversation its invitation arrived in, so
