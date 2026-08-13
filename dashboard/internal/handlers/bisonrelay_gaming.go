@@ -228,3 +228,95 @@ func BisonrelayGamingSpendDecideHandler(w http.ResponseWriter, r *http.Request) 
 // would carry it across a network to a page a browser session can read, to
 // solve a problem the person is already standing in front of. The game offers
 // its own backup; this only reports whether they have taken it.
+
+// BisonrelayGamingCredentialHandler issues a game its credential.
+//
+// The private key is in the answer and in no file. It is shown once, and what
+// the operator does with it - carrying it to the machine the game runs on - is
+// the whole of why nothing on either side can fetch a credential it was not
+// given. So the answer is marked no-store: a browser that cached it would put
+// the key somewhere nobody chose to put it.
+//
+// Issuing to a game that already has one replaces it. That is what regenerating
+// is, and it takes effect immediately, because the reason to regenerate is
+// usually that the old one is somewhere it should not be.
+func BisonrelayGamingCredentialHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Game string `json:"game"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	material, err := services.IssueGamingCredential(strings.TrimSpace(req.Game))
+	switch {
+	case err == nil:
+	case errors.Is(err, services.ErrGamingGameNotRegistered):
+		http.Error(w, "register the game before issuing it a credential", http.StatusNotFound)
+		return
+	default:
+		http.Error(w, "could not issue a credential: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	gamingJSON(w, material)
+}
+
+// BisonrelayGamingCredentialRevokeHandler withdraws a game's credential.
+//
+// It takes effect on the running bridge before it is written down: any stream
+// the game is holding ends, and the credential stops being admitted. A
+// revocation that waited for a restart would leave the withdrawn machine
+// receiving every table's traffic in the meantime, which is exactly the
+// situation an operator revokes in.
+func BisonrelayGamingCredentialRevokeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Game string `json:"game"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	switch err := services.RevokeGamingCredential(strings.TrimSpace(req.Game)); {
+	case err == nil:
+		gamingJSON(w, map[string]any{"revoked": true})
+	case errors.Is(err, services.ErrGamingNoCredential):
+		http.Error(w, "that game has no credential to revoke", http.StatusNotFound)
+	default:
+		http.Error(w, "could not revoke: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// BisonrelayGamingBridgeInfoHandler tells the console what to put in a game's
+// connection wizard: the bridge's own certificate, and the port it answers on.
+//
+// The certificate is public - it is what a game pins so it can tell this bridge
+// from anything else that answers on that address - so it is served here rather
+// than only alongside a freshly issued credential, which an operator may have
+// closed the dialog on.
+func BisonrelayGamingBridgeInfoHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cert, _, err := services.GamingBridgeKeypair()
+	if err != nil {
+		http.Error(w, "the bridge has no certificate: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	gamingJSON(w, map[string]any{
+		"bridgeCertPem": string(cert),
+		"port":          services.GamingBridgePort(),
+	})
+}

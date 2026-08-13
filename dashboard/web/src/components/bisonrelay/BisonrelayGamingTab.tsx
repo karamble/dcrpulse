@@ -7,10 +7,15 @@ import { GamingSpendApprovals } from './GamingSpendApprovals';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import {
   GamePolicy,
+  GamingBridgeInfo,
+  GamingCredentialMaterial,
   GamingGame,
   GamingSettings,
+  getGamingBridgeInfo,
   getGamingGames,
   getGamingSettings,
+  issueGamingCredential,
+  revokeGamingCredential,
   setGamingSettings,
 } from '../../services/gamingApi';
 import { AccountInfo, getAccounts } from '../../services/api';
@@ -27,6 +32,8 @@ const blankPolicy = (): GamePolicy => ({
 });
 
 const fmtDcr = (v: number) => `${v.toLocaleString(undefined, { maximumFractionDigits: 8 })} DCR`;
+
+const fmtWhen = (unix: number) => (unix ? new Date(unix * 1000).toLocaleDateString() : 'unknown');
 
 // BisonrelayGamingTab configures the bridge that stands between registered
 // games and the wallet. Games are untrusted and are not run here: a person runs
@@ -45,6 +52,11 @@ export const BisonrelayGamingTab = () => {
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // issued is held only while the panel is open. The private key in it is not
+  // stored anywhere else, here or on the appliance, so closing the panel is the
+  // last time anybody sees it.
+  const [issued, setIssued] = useState<GamingCredentialMaterial | null>(null);
+  const [bridge, setBridge] = useState<GamingBridgeInfo | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -64,6 +76,11 @@ export const BisonrelayGamingTab = () => {
       setAccounts(await getAccounts());
     } catch {
       /* wallet may still be starting */
+    }
+    try {
+      setBridge(await getGamingBridgeInfo());
+    } catch {
+      /* the listener may not have come up */
     }
   }, []);
 
@@ -106,6 +123,38 @@ export const BisonrelayGamingTab = () => {
     });
     setNewGame('');
     setNewName('');
+  };
+
+  // Issuing and revoking are their own acts against what is stored, like
+  // registering and removing. A credential cannot travel through the settings
+  // save in any case: the private key is answered once and never read back.
+  const issueCredential = async (id: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setIssued(await issueGamingCredential(id));
+      setSettings(await getGamingSettings());
+    } catch (err: any) {
+      const body = err?.response?.data;
+      setError(typeof body === 'string' ? body : err?.message || 'Could not issue a credential');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revokeCredential = async (id: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await revokeGamingCredential(id);
+      setSettings(await getGamingSettings());
+      setGames(await getGamingGames());
+    } catch (err: any) {
+      const body = err?.response?.data;
+      setError(typeof body === 'string' ? body : err?.message || 'Could not revoke');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const toggleGame = (id: string) => {
@@ -269,17 +318,41 @@ export const BisonrelayGamingTab = () => {
                   <span className="text-xs text-muted-foreground block">
                     {g.ready ? 'Connected.' : 'Registered. Nothing has connected under this id yet.'}
                   </span>
-                  {settings.gameTokens?.[g.id] && (
-                    <div className="text-xs space-y-1 pt-1">
+                  <div className="text-xs space-y-1 pt-1">
+                    {settings.gameCredentials?.[g.id] ? (
                       <span className="text-muted-foreground block">
-                        Connection token - paste this into the game. It is the game's identity, not
-                        a password; removing the game revokes it.
+                        Credential issued {fmtWhen(settings.gameCredentials[g.id].issuedAt)}
+                        <span className="font-mono break-all">
+                          {' '}
+                          {settings.gameCredentials[g.id].fingerprint.slice(0, 16)}
+                        </span>
                       </span>
-                      <span className="font-mono text-xs break-all block">
-                        {settings.gameTokens[g.id]}
+                    ) : (
+                      <span className="text-muted-foreground block">
+                        No credential yet, so nothing can connect as this game.
                       </span>
+                    )}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => issueCredential(g.id)}
+                        disabled={busy}
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 disabled:cursor-wait"
+                      >
+                        {settings.gameCredentials?.[g.id] ? 'Regenerate' : 'Generate credential'}
+                      </button>
+                      {settings.gameCredentials?.[g.id] && (
+                        <button
+                          type="button"
+                          onClick={() => revokeCredential(g.id)}
+                          disabled={busy}
+                          className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30 disabled:opacity-50 disabled:cursor-wait"
+                        >
+                          Revoke
+                        </button>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -364,6 +437,51 @@ export const BisonrelayGamingTab = () => {
           );
         })}
       </div>
+
+      {issued && (
+        <div className="space-y-3 p-4 rounded-lg bg-primary/5 border border-primary/30">
+          <div className="space-y-1">
+            <span className="font-medium block">Credential for {issued.game}</span>
+            <span className="text-xs text-muted-foreground block">
+              Copy all three into the game's connection wizard now. The private key is not stored
+              here and is not shown again - if you lose it, generate another, which replaces this
+              one.
+            </span>
+          </div>
+
+          <div className="text-xs space-y-1">
+            <span className="text-muted-foreground block">
+              Port {bridge?.port || '8443'}. The address is whatever this machine is reachable at
+              from wherever you run the game.
+            </span>
+          </div>
+
+          {[
+            ['Client certificate', issued.certPem],
+            ['Client private key', issued.keyPem],
+            ['Bridge certificate to pin', issued.bridgeCertPem],
+          ].map(([label, value]) => (
+            <label key={label} className="text-xs space-y-1 block">
+              <span className="text-muted-foreground block">{label}</span>
+              <textarea
+                readOnly
+                value={value}
+                rows={5}
+                onFocus={(e) => e.currentTarget.select()}
+                className="w-full px-2 py-1.5 rounded-lg bg-background border border-border font-mono text-[11px]"
+              />
+            </label>
+          ))}
+
+          <button
+            type="button"
+            onClick={() => setIssued(null)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30"
+          >
+            I have copied it
+          </button>
+        </div>
+      )}
 
       <GamingSpendApprovals />
     </div>

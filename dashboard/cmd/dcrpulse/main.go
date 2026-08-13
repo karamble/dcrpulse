@@ -573,6 +573,9 @@ func main() {
 	api.HandleFunc("/br/gaming/games", handlers.BisonrelayGamingGamesHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/spends", handlers.BisonrelayGamingSpendsHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/spends/decide", handlers.BisonrelayGamingSpendDecideHandler).Methods("POST")
+	api.HandleFunc("/br/gaming/bridge", handlers.BisonrelayGamingBridgeInfoHandler).Methods("GET")
+	api.HandleFunc("/br/gaming/credential", handlers.BisonrelayGamingCredentialHandler).Methods("POST")
+	api.HandleFunc("/br/gaming/credential/revoke", handlers.BisonrelayGamingCredentialRevokeHandler).Methods("POST")
 
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
