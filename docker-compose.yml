@@ -189,6 +189,7 @@ services:
     container_name: dcrpulse-dashboard
     ports:
       - "${DASHBOARD_HOST_BIND:-127.0.0.1}:${DASHBOARD_PORT:-8080}:8080"
+      - "${GAMING_BRIDGE_HOST:-0.0.0.0}:${GAMING_BRIDGE_PORT:-8443}:8443"
     volumes:
       - ${APP_DATA_DIR:-app-data}:/app-data
       - ${DCRLND_DATA_DIR:-dcrlnd-data}:/app-data/dcrlnd
@@ -200,6 +201,7 @@ services:
       - PORT=8080
       - DASHBOARD_HOST_BIND=${DASHBOARD_HOST_BIND:-127.0.0.1}
       - DASHBOARD_ALLOWED_HOSTS=${DASHBOARD_ALLOWED_HOSTS:-}
+      - GAMING_BRIDGE_PORT=8443
       - DCRPULSE_LOG_LEVEL=${DCRPULSE_LOG_LEVEL:-info}
       - TOR_PROXY_IP=tor
       - TOR_PROXY_PORT=9050

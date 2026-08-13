@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"dcrpulse/internal/alerts"
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/gamingbridge"
 	"dcrpulse/internal/handlers"
 	dcrlog "dcrpulse/internal/log"
 	"dcrpulse/internal/middleware"
@@ -30,7 +32,10 @@ import (
 	"dcrpulse/internal/timestamp"
 )
 
-var dcrpLog = dcrlog.DCRP
+var (
+	dcrpLog = dcrlog.DCRP
+	gameLog = dcrlog.GAME
+)
 
 //go:embed web/dist
 var embeddedFiles embed.FS
@@ -218,6 +223,13 @@ func main() {
 	if err := auth.Init(); err != nil {
 		dcrpLog.Warnf("could not load app-password config (auth disabled): %v", err)
 	}
+
+	// The gaming bridge listens on its own port, which standalone games dial
+	// in to. Started unconditionally: it answers nothing until the operator
+	// has both switched it on and put an App Password in front of the
+	// dashboard, and it asks both questions on every call - so either being
+	// withdrawn takes effect at once rather than at the next restart.
+	startGamingBridge()
 
 	// Setup router
 	r := mux.NewRouter()
@@ -860,4 +872,45 @@ func waitForWalletLoaded(ctx context.Context) bool {
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// startGamingBridge brings up the port standalone games connect in on.
+//
+// Deliberately not the browser API. That one is guarded by same-origin and a
+// dashboard session, neither of which a separate program has; a game proves who
+// it is with a certificate the operator carried to it by hand. Two audiences,
+// two listeners, two ways of proving who you are.
+//
+// A failure here is logged and not fatal. Gaming is one section of a dashboard
+// that also holds a wallet, a node and a Lightning daemon, and refusing to start
+// any of that because a game could not be served would be the wrong trade.
+func startGamingBridge() {
+	services.LoadGamingAllowlist()
+
+	addr := net.JoinHostPort(
+		getEnv("GAMING_BRIDGE_HOST", "0.0.0.0"),
+		getEnv("GAMING_BRIDGE_PORT", "8443"),
+	)
+	cfg, err := services.GamingBridgeConfig(addr, auth.Enabled)
+	if err != nil {
+		gameLog.Errorf("the gaming bridge has no certificate, so no game can connect: %v", err)
+		return
+	}
+	srv, err := gamingbridge.New(cfg)
+	if err != nil {
+		gameLog.Errorf("could not prepare the gaming bridge: %v", err)
+		return
+	}
+
+	// What the console reports as connected. A live stream is the only honest
+	// answer: a game is registered here and run on a machine of the person's
+	// choosing, so registered and connected are different questions.
+	services.SetGamingConnected(srv.SubscriberCount)
+
+	go func() {
+		gameLog.Infof("gaming bridge listening on %s", addr)
+		if err := srv.Serve(); err != nil {
+			gameLog.Errorf("the gaming bridge stopped: %v", err)
+		}
+	}()
 }

@@ -5,11 +5,14 @@
 package services
 
 import (
+	"context"
 	"crypto/elliptic"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -192,6 +195,84 @@ func gamingBridgeKeypairLocked() (certPEM, keyPEM []byte, err error) {
 	gameLog.Infof("minted the gaming bridge's own certificate")
 	return cert, key, nil
 }
+
+// GamingBridgeConfig assembles what the listener needs from this package.
+//
+// Built here rather than in main so the two sides stay one decision: the bridge
+// package depends on nothing, and everything it is handed is named in one
+// place, where it can be seen that a game is given chain reads and frame
+// carriage and no way to move money.
+func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridge.Config, error) {
+	cert, key, err := GamingBridgeKeypair()
+	if err != nil {
+		return gamingbridge.Config{}, err
+	}
+	if _, port, err := net.SplitHostPort(addr); err == nil {
+		gamingBridgePort = port
+	}
+	return gamingbridge.Config{
+		Addr:              addr,
+		ServerCert:        cert,
+		ServerKey:         key,
+		AppPasswordActive: appPasswordActive,
+		Enabled:           func() bool { return ReadGamingSettings().Enabled },
+		Allow:             gamingAllow,
+
+		Frames: func(game string, buf int) (<-chan gamingbridge.Frame, func()) {
+			in, stop := Gaming().Subscribe(game, buf)
+			out := make(chan gamingbridge.Frame, buf)
+			go func() {
+				defer close(out)
+				for ev := range in {
+					out <- gamingbridge.Frame{GCID: ev.GCID, From: ev.From, Frame: ev.Frame}
+				}
+			}()
+			return out, stop
+		},
+		TakeMissed: Gaming().TakeMissed,
+
+		Network: func() (string, bool) {
+			net, err := CurrentNetwork(context.Background())
+			return net, err == nil
+		},
+		Policy: func(game string) (int64, int64, bool) {
+			p := ReadGamingSettings().Policies[game]
+			return p.PerTableCapAtoms, p.PerDayCapAtoms, strings.TrimSpace(p.Account) != ""
+		},
+
+		SendFrame: SendGamingFrame,
+		ChainTip: func(ctx context.Context) (int64, string, error) {
+			tip, err := GamingChainTipNow(ctx)
+			return tip.Height, tip.Hash, err
+		},
+		BlockHash: GamingBlockHash,
+		Outpoint: func(ctx context.Context, txid string, vout uint32, mempool bool) (gamingbridge.Outpoint, error) {
+			o, err := GamingChainOutpoint(ctx, txid, vout, mempool)
+			if err != nil {
+				return gamingbridge.Outpoint{}, err
+			}
+			return gamingbridge.Outpoint{
+				Found:         o.Found,
+				ValueAtoms:    o.ValueAtoms,
+				PkScriptHex:   o.PkScriptHex,
+				Confirmations: o.Confirmations,
+				Coinbase:      o.Coinbase,
+			}, nil
+		},
+	}, nil
+}
+
+// gamingBridgePort is the port the listener came up on, recorded so the console
+// can tell the operator what to type into a game's wizard.
+//
+// Only the port. The address a game dials is the operator's own, which this
+// process cannot know - it sees a container's interfaces, not the route from
+// wherever the game happens to be running.
+var gamingBridgePort string
+
+// GamingBridgePort is the port games connect in on, or empty if the listener
+// never started.
+func GamingBridgePort() string { return gamingBridgePort }
 
 // gamingConnected reports how many streams a game is holding.
 //
