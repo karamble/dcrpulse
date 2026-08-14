@@ -134,6 +134,9 @@ func StartBrclientdNotifs(ctx context.Context) {
 		const minBackoff = 2 * time.Second
 		const maxBackoff = 30 * time.Second
 		backoff := minBackoff
+		// Outside the loop, because the interesting loss is the one that
+		// happens across a reconnect rather than during one.
+		var gaps notifGapState
 		for {
 			if ctx.Err() != nil {
 				return
@@ -156,9 +159,21 @@ func StartBrclientdNotifs(ctx context.Context) {
 				continue
 			}
 
+			sawEvent := false
 			err := rpc.BrclientdStreamNotifications(attemptCtx, func(evt rpc.BrclientdNotifEvent) {
-				backoff = minBackoff
-				alerts.Resolve("br_disconnected", "")
+				if !sawEvent {
+					sawEvent = true
+					alerts.Resolve("br_disconnected", "")
+				}
+				switch n, why := gaps.observe(evt.Seq, evt.Epoch, evt.Missed); {
+				case n > 0:
+					noteNotifGap(n, why, evt.Epoch)
+				case why != "":
+					// Nothing lost, but something worth seeing: a producer
+					// whose numbering misbehaves is a bug to chase, not a
+					// reason to make every game resynchronise.
+					brelLog.Warnf("brclientd notification stream: %s", why)
+				}
 				// Game frames are protocol traffic for the gaming
 				// bridge, not chat. They go to the game that owns
 				// them and no further: a browser has no use for a
@@ -179,6 +194,13 @@ func StartBrclientdNotifs(ctx context.Context) {
 			cancel()
 			if ctx.Err() != nil {
 				return
+			}
+			// Reset on an attempt that actually carried something, not inside
+			// the callback. A dial that succeeds and then produces nothing is
+			// the failure worth backing off from, and resetting per event hid
+			// it behind the thirty-second keepalive.
+			if sawEvent {
+				backoff = minBackoff
 			}
 			if forced {
 				// Cert change on a wallet switch: redial now, no error log.
