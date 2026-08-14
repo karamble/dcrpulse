@@ -33,12 +33,18 @@ var (
 // Policy belongs where money moves - account scope, caps and grants apply when
 // a game asks to *spend*, not when it asks to speak.
 //
-// Frames reach the bridge over clientrpc rather than the /notifications stream
-// the chat UI uses, because brclientd deliberately drops them from that stream:
-// they are protocol, not conversation, and must not badge the UI or surface as
-// messages. The clientrpc stream carries them unfiltered and resumes from a
-// sequence id, so a table survives the bridge restarting - which matters, since
-// a player who misses frames looks exactly like a player who walked away.
+// Frames reach the bridge on the /notifications stream, as their own event
+// type. brclientd keeps them out of chat history and refuses a content filter
+// that would match them - they are protocol, not conversation, and must not
+// badge the UI or surface as messages - but they ride the same stream as
+// everything else, and share its buffer.
+//
+// That sharing is why the stream carries a sequence: brclientd drops events for
+// a subscriber that falls behind, a single file transfer can drop hundreds, and
+// a frame lost there leaves no trace here. Nothing replays it, so a hole in the
+// numbering is the only way the loss is ever known about - which matters,
+// because a player who misses frames looks exactly like a player who walked
+// away, and is penalised as one.
 
 // GamingFrameEvent is one inbound frame, addressed to a game.
 type GamingFrameEvent struct {
