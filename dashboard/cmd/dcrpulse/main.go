@@ -653,6 +653,10 @@ func main() {
 			middleware.RateLimit("gaming-ui-session", time.Second, 3)(
 				http.HandlerFunc(handlers.BisonrelayGamingUISessionHandler)))).Methods("POST")
 
+	api.Handle("/br/gaming/state", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingStateHandler))).Methods("GET")
+	api.Handle("/br/gaming/reclaim", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingReclaimHandler))).Methods("POST")
+	api.Handle("/br/gaming/payout", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingPayoutHandler))).Methods("POST")
+
 	api.Handle("/br/gaming/table", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCreateHandler))).Methods("POST")
 	api.Handle("/br/gaming/invite", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingInviteHandler))).Methods("POST")
 
@@ -1014,6 +1018,7 @@ func startGamingBridge() {
 	// choosing, so registered and connected are different questions.
 	services.SetGamingConnected(srv.SubscriberCount)
 	services.SetGamingRequest(srv.Request)
+	services.SetGamingState(srv.State)
 
 	go func() {
 		gameLog.Infof("gaming bridge listening on %s", addr)
