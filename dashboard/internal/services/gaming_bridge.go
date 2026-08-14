@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"sync"
 
 	"dcrpulse/internal/rpc"
@@ -16,6 +17,7 @@ var (
 	ErrGamingGameNotRegistered = errors.New("game is not registered")
 	ErrGamingNotAFrame         = errors.New("not a gaming frame")
 	ErrGamingWrongGame         = errors.New("frame belongs to another game")
+	ErrGamingBadGCID           = errors.New("not a group chat id")
 )
 
 // The gaming bridge is a tunnel between registered games and Bison Relay.
@@ -337,5 +339,18 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 	if parsed.Game != game {
 		return ErrGamingWrongGame
 	}
+	// The destination, which nothing above this line has looked at. It is
+	// pasted into a URL path downstream, so a value that is not a plain group
+	// chat id can leave `/gc/{id}/message` entirely and reach the rest of
+	// brclientd's control surface. A game may say what it likes inside a
+	// frame, because its peers check that; where the frame is sent is the
+	// host's decision and has to look like one.
+	if !gamingGCIDRe.MatchString(gcid) {
+		return ErrGamingBadGCID
+	}
 	return rpc.BrclientdGCMessage(ctx, gcid, frame, 0)
 }
+
+// gamingGCIDRe is the shape of a Bison Relay group chat id: 32 bytes as
+// lowercase hex, and nothing else. Anchored, so no prefix or suffix survives.
+var gamingGCIDRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
