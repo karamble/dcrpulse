@@ -20,6 +20,7 @@ import {
 } from '../../services/gamingApi';
 import { AccountInfo, getAccounts } from '../../services/api';
 import { GamingCreateTable } from './GamingCreateTable';
+import { GamingLockedCoin } from './GamingLockedCoin';
 
 // blankPolicy is what an unedited card starts from. The server mints the real
 // defaults on registration; this only keeps the inputs controlled until it
@@ -444,6 +445,8 @@ export const BisonrelayGamingTab = () => {
                   />
                 </label>
               </div>
+
+              <GamingLockedCoin game={g.id} name={g.name} />
             </div>
           );
         })}
