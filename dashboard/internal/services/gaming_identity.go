@@ -270,6 +270,11 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 				Coinbase:      o.Coinbase,
 			}, nil
 		},
+		// A game that has not said where it wants to be paid is told, the
+		// first time it reports itself. A seat that never says holds up
+		// the whole table's payout, not just its own share.
+		OnState:   PinGamingPayoutOnce,
+		OnConnect: GamingGameArrived,
 	}, nil
 }
 
@@ -303,6 +308,12 @@ var gamingRequest func(ctx context.Context, game string, req *gamingpb.BridgeReq
 func SetGamingRequest(f func(ctx context.Context, game string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error)) {
 	gamingRequest = f
 }
+
+// gamingState is the last state a game reported, cached by the listener.
+var gamingState func(game string) *gamingpb.GameState
+
+// SetGamingState wires the listener's view of what each game last reported.
+func SetGamingState(f func(game string) *gamingpb.GameState) { gamingState = f }
 
 func gamingGameConnected(game string) bool {
 	// No listener means nothing is connected, which is the truthful answer

@@ -248,6 +248,15 @@ message Reclaim {
   int64 fee_atoms = 5;
 }
 
+// SetPayoutAddress says where this player's winnings are to be paid.
+//
+// address is derived by the bridge from the game's own bound account, for the
+// same reason a Reclaim's dest_addr is: a game that chose where its winnings
+// landed could simply choose itself.
+//
+// Every seat must answer before a table can pay anybody: the settlement spends
+// the table's escrow and needs every signature, so one seat that has not said
+// holds up everyone's money.
 message SetPayoutAddress { string address = 1; }
 
 // SetNames is merged, not replaced: labels are cosmetic and a partial update

@@ -92,6 +92,18 @@ type Config struct {
 	ChainTip  func(ctx context.Context) (height int64, hash string, err error)
 	BlockHash func(ctx context.Context, height int64) (string, error)
 	Outpoint  func(ctx context.Context, txid string, vout uint32, includeMempool bool) (Outpoint, error)
+
+	// OnState is called after a game reports itself, so the operator's side
+	// can act on what it now knows without this package knowing what acting
+	// means. It is called on its own goroutine: a game reporting must not
+	// wait on whatever the host decides to do about it.
+	OnState func(game string)
+
+	// OnConnect is called once a game has a stream open. A game does not
+	// volunteer its state, so this is the host's chance to ask - and the
+	// first moment anything can be pushed to it at all. Also its own
+	// goroutine: the stream must not wait on it.
+	OnConnect func(game string)
 }
 
 // ErrSpendOverCap and ErrSpendNotFound are what the injected money functions

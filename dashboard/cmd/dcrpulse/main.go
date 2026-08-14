@@ -573,6 +573,9 @@ func main() {
 	api.HandleFunc("/br/gaming/games", handlers.BisonrelayGamingGamesHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/table", handlers.BisonrelayGamingCreateHandler).Methods("POST")
 	api.HandleFunc("/br/gaming/invite", handlers.BisonrelayGamingInviteHandler).Methods("POST")
+	api.HandleFunc("/br/gaming/state", handlers.BisonrelayGamingStateHandler).Methods("GET")
+	api.HandleFunc("/br/gaming/reclaim", handlers.BisonrelayGamingReclaimHandler).Methods("POST")
+	api.HandleFunc("/br/gaming/payout", handlers.BisonrelayGamingPayoutHandler).Methods("POST")
 	api.HandleFunc("/br/gaming/spends", handlers.BisonrelayGamingSpendsHandler).Methods("GET")
 	api.HandleFunc("/br/gaming/spends/decide", handlers.BisonrelayGamingSpendDecideHandler).Methods("POST")
 	api.HandleFunc("/br/gaming/bridge", handlers.BisonrelayGamingBridgeInfoHandler).Methods("GET")
@@ -912,6 +915,7 @@ func startGamingBridge() {
 	// choosing, so registered and connected are different questions.
 	services.SetGamingConnected(srv.SubscriberCount)
 	services.SetGamingRequest(srv.Request)
+	services.SetGamingState(srv.State)
 
 	go func() {
 		gameLog.Infof("gaming bridge listening on %s", addr)
