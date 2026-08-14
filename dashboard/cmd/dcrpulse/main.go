@@ -916,6 +916,9 @@ func startGamingBridge() {
 	services.SetGamingConnected(srv.SubscriberCount)
 	services.SetGamingRequest(srv.Request)
 	services.SetGamingState(srv.State)
+	// How a loss upstream of the bridge reaches the games. The bridge cannot
+	// see that kind of gap for itself, so the notification stream tells it.
+	services.Gaming().SetGamingResync(srv.ResyncAll)
 
 	go func() {
 		gameLog.Infof("gaming bridge listening on %s", addr)

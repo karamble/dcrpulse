@@ -1311,10 +1311,27 @@ func BrclientdAcceptSuggestion(ctx context.Context, mediatorHex, targetHex strin
 
 // BrclientdNotifEvent matches the {type, timestamp, payload} envelope
 // brclientd writes to /notifications. payload shape is event-specific.
+//
+// Seq, Epoch and Missed are how a lossy stream is told apart from a quiet one.
+// A brclientd old enough not to send them leaves all three zero, which reads as
+// "no opinion" everywhere they are used, so the two versions mix.
 type BrclientdNotifEvent struct {
 	Type      string          `json:"type"`
 	Timestamp string          `json:"timestamp"`
 	Payload   json.RawMessage `json:"payload"`
+
+	// Seq counts publishes on brclientd's bus. A jump means events were lost
+	// between there and here. Zero on the keepalive, which is written per
+	// connection and never numbered.
+	Seq uint64 `json:"seq"`
+
+	// Epoch identifies brclientd's numbering. A change means it restarted, so
+	// the sequence starts over and the previous one cannot be compared.
+	Epoch string `json:"epoch"`
+
+	// Missed is how many events brclientd had to drop for this subscriber
+	// before this one, because our buffer was full.
+	Missed uint64 `json:"missed"`
 }
 
 // notifIdleTimeout is how long the /notifications stream may stay silent

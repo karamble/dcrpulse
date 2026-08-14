@@ -78,6 +78,22 @@ type GamingBus struct {
 	// bridge kept the names.
 	missedMu sync.Mutex
 	missed   map[string]map[string]struct{}
+
+	// missedAll records games that missed frames whose tables are unknown,
+	// because the loss happened upstream of this process and the event that
+	// would have named a table never arrived.
+	missedAll map[string]struct{}
+
+	// resync closes every live game stream so the games resubscribe and are
+	// told what they missed. Injected rather than called directly because the
+	// bridge depends on this package, not the other way round.
+	resync func(reason string)
+}
+
+// SetGamingResync wires the bridge's stream-closing hook. Called once at
+// startup, before any game can connect.
+func (b *GamingBus) SetGamingResync(fn func(reason string)) {
+	b.resync = fn
 }
 
 var (
@@ -170,6 +186,50 @@ func (b *GamingBus) noteMissed(game, gcid string) {
 		b.missed[game] = make(map[string]struct{})
 	}
 	b.missed[game][gcid] = struct{}{}
+}
+
+// noteMissedAll remembers that a game missed frames without knowing which
+// tables they were for.
+//
+// Loss upstream of this process has no gcid to name: the event never arrived,
+// so nothing says what it was about. That is the difference between a gap this
+// bus observed and one it was told about, and it is why the answer has to be
+// "resynchronise everything" rather than a list.
+func (b *GamingBus) noteMissedAll(game string) {
+	b.missedMu.Lock()
+	defer b.missedMu.Unlock()
+	if b.missedAll == nil {
+		b.missedAll = make(map[string]struct{})
+	}
+	b.missedAll[game] = struct{}{}
+}
+
+// TookMissedAll reports whether a game missed frames whose tables are unknown,
+// and forgets it. Taken once, for the same reason as TakeMissed.
+func (b *GamingBus) TookMissedAll(game string) bool {
+	b.missedMu.Lock()
+	defer b.missedMu.Unlock()
+	_, ok := b.missedAll[game]
+	delete(b.missedAll, game)
+	return ok
+}
+
+// resyncAllGames tells every registered game that it may have missed anything.
+//
+// Recorded before the streams are closed, never after: a game that reconnects
+// against an unmarked bridge is told it resumed cleanly, which is the failure
+// this exists to remove rather than a smaller version of it.
+func (b *GamingBus) resyncAllGames(reason string) {
+	games := ReadGamingSettings().RegisteredGames
+	if len(games) == 0 {
+		return
+	}
+	for _, game := range games {
+		b.noteMissedAll(game)
+	}
+	if fn := b.resync; fn != nil {
+		fn(reason)
+	}
 }
 
 // TakeMissed reports the tables a game missed frames on and forgets them.

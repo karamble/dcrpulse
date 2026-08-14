@@ -77,6 +77,7 @@ var catalog = map[string]catalogEntry{
 	"dex_order_filled":        {CategoryDex, KindEvent, SeverityInfo, 0, "DEX order filled"},
 	"dex_unreachable":         {CategoryDex, KindCondition, SeverityWarning, 5 * time.Minute, "DEX client unreachable"},
 	"br_disconnected":         {CategoryBisonrelay, KindCondition, SeverityWarning, 5 * time.Minute, "Bison Relay disconnected"},
+	"br_notif_gap":            {CategoryBisonrelay, KindEvent, SeverityWarning, 0, "Bison Relay events were lost"},
 	"disk_high":               {CategorySystem, KindCondition, SeverityWarning, 0, "Disk space low"},
 }
 

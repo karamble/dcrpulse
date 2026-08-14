@@ -67,6 +67,12 @@ type Config struct {
 	// table's.
 	TakeMissed func(game string) []string
 
+	// TookMissedAll reports whether a game missed frames whose tables are
+	// unknown, and forgets it. Separate from TakeMissed because loss upstream
+	// of this process names no table: the event that would have said which one
+	// never arrived, so the only honest answer is that everything is suspect.
+	TookMissedAll func(game string) bool
+
 	// Network is the chain this bridge is on, which a game must be told
 	// before it builds anything: a game on the wrong network makes scripts
 	// nobody can spend and pays real money into them.
@@ -251,6 +257,25 @@ func (s *Server) Stop() {
 // It is what the console reports as connected, and it is also the only honest
 // way to know a subscription has been established rather than merely asked for.
 func (s *Server) SubscriberCount(game string) int { return s.reg.count(game) }
+
+// ResyncAll closes every open game stream so each game resubscribes.
+//
+// For when something upstream of this bridge lost events. The bridge cannot
+// see that loss on its own - its own numbering only ever counted what arrived,
+// so a game reconnecting would be told it resumed cleanly - which is why the
+// caller records the gap first and then calls this. Closing without recording
+// produces a stream that truthfully reports no gap it knows about, which is
+// the original problem with an extra step in front of it.
+func (s *Server) ResyncAll(reason string) {
+	games := s.reg.liveGames()
+	if len(games) == 0 {
+		return
+	}
+	gameLog.Warnf("asking %d connected game(s) to resynchronise: %s", len(games), reason)
+	for _, game := range games {
+		s.reg.closeGame(game)
+	}
+}
 
 // Deliver hands a game something that arrived for it.
 //
