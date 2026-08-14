@@ -85,7 +85,11 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 	// StreamStart first, always. It is the only place a gap is declared, and
 	// a game that inferred one from its own reconnect loop would resync every
 	// table on every failed dial.
-	start := s.reg.streamStart(game, req, missed)
+	missedAll := false
+	if s.cfg.TookMissedAll != nil {
+		missedAll = s.cfg.TookMissedAll(game)
+	}
+	start := s.reg.streamStart(game, req, missed, missedAll)
 	if err := stream.Send(&gamingpb.BridgeEvent{
 		Event: &gamingpb.BridgeEvent_Start{Start: start},
 	}); err != nil {

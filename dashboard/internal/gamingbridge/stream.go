@@ -134,6 +134,19 @@ func (r *registry) count(game string) int {
 // convenience. A credential withdrawn while a stream is open would otherwise go
 // on receiving every table's traffic for as long as the game chose to stay
 // connected, which is exactly the situation an operator revokes in.
+// liveGames names the games with at least one open stream.
+func (r *registry) liveGames() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.streams))
+	for game, set := range r.streams {
+		if len(set) > 0 {
+			out = append(out, game)
+		}
+	}
+	return out
+}
+
 func (r *registry) closeGame(game string) {
 	r.mu.Lock()
 	set := r.streams[game]
@@ -157,7 +170,7 @@ func (r *registry) closeGame(game string) {
 // A game resyncs when and only when gap is true, so this has to be right in
 // both directions: claiming a gap that did not happen costs a resync of every
 // table, and missing one leaves the game quietly out of date.
-func (r *registry) streamStart(game string, req *gamingpb.SubscribeRequest, missedGCIDs []string) *gamingpb.StreamStart {
+func (r *registry) streamStart(game string, req *gamingpb.SubscribeRequest, missedGCIDs []string, missedAll bool) *gamingpb.StreamStart {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -170,6 +183,12 @@ func (r *registry) streamStart(game string, req *gamingpb.SubscribeRequest, miss
 	start := &gamingpb.StreamStart{Epoch: r.epoch, FromSeq: r.seq[game]}
 
 	switch {
+	case missedAll:
+		// Something upstream of this bridge lost events, so nothing that
+		// arrived can be trusted to be everything, and there is no gcid to
+		// name: the event that would have said which table never got here.
+		start.Gap = true
+		start.GapScope = gamingpb.GapScope_GAP_ALL
 	case req.GetEpoch() != r.epoch:
 		// A different epoch means a different process. Nothing from before
 		// can be placed, so everything is suspect.

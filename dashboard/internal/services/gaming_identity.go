@@ -230,7 +230,8 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 			}()
 			return out, stop
 		},
-		TakeMissed: Gaming().TakeMissed,
+		TakeMissed:    Gaming().TakeMissed,
+		TookMissedAll: Gaming().TookMissedAll,
 
 		Network: func() (string, bool) {
 			net, err := CurrentNetwork(context.Background())
