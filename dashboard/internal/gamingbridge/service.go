@@ -95,6 +95,12 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 		gameLog.Infof("%s reconnected with a gap (%s), %d table(s) named",
 			game, start.GetGapScope(), len(start.GetGapGcids()))
 	}
+	// Now that there is a stream, the host can ask this game about itself.
+	// A game volunteers nothing, so without this the console never learns
+	// what it holds - and nothing that depends on knowing can happen.
+	if s.cfg.OnConnect != nil {
+		go s.cfg.OnConnect(game)
+	}
 
 	var frames <-chan Frame
 	if s.cfg.Frames != nil {
@@ -202,7 +208,11 @@ func (s *Server) Outpoint(ctx context.Context, req *gamingpb.OutpointRequest) (*
 // game as it last was when it is not connected - which is most of the time, for
 // something a person runs on their own machine.
 func (s *Server) ReportState(ctx context.Context, state *gamingpb.GameState) (*gamingpb.ReportStateReply, error) {
-	s.reg.setState(callerGame(ctx), state)
+	game := callerGame(ctx)
+	s.reg.setState(game, state)
+	if s.cfg.OnState != nil {
+		go s.cfg.OnState(game)
+	}
 	return &gamingpb.ReportStateReply{}, nil
 }
 
@@ -211,6 +221,9 @@ func (s *Server) Respond(ctx context.Context, req *gamingpb.RespondRequest) (*ga
 	game := callerGame(ctx)
 	if state := req.GetState(); state != nil {
 		s.reg.setState(game, state)
+	}
+	if state := req.GetState(); state != nil && s.cfg.OnState != nil {
+		go s.cfg.OnState(game)
 	}
 	if req.GetOk() {
 		gameLog.Infof("%s completed request %s", game, req.GetRequestId())
