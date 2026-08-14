@@ -123,6 +123,68 @@ export const createGamingTable = async (
   return data;
 };
 
+// One piece of coin a game has locked on chain. maturesAt is absolute because a
+// count of blocks is true for one block and then quietly wrong; blocksLeft is
+// derived against the bridge's own tip when it answers.
+export interface GamingLock {
+  kind: 'bond' | 'stake' | 'tablebond';
+  sid?: string;
+  seat: number;
+  outpoint: string;
+  address?: string;
+  atoms: number;
+  maturesAt: number;
+  blocksLeft: number;
+  spendable: boolean;
+  spent: boolean;
+}
+
+export interface GamingReportedTable {
+  sid: string;
+  gcid: string;
+  state: string;
+  seats: number;
+  buyinAtoms: number;
+  until: number;
+  over: boolean;
+}
+
+export interface GamingReportedState {
+  reported: boolean;
+  reportedAt?: number;
+  tipHeight?: number;
+  tables?: GamingReportedTable[];
+  locks?: GamingLock[];
+  chainErr?: string;
+}
+
+export const getGamingState = async (
+  game: string,
+  refresh = false,
+): Promise<GamingReportedState> => {
+  const { data } = await api.get<GamingReportedState>(
+    `/br/gaming/state?game=${encodeURIComponent(game)}${refresh ? '&refresh=1' : ''}`,
+  );
+  return data;
+};
+
+// Reclaimed coin lands in the account the game is bound to. Where it goes is
+// not a parameter here on purpose: the server derives it.
+export const reclaimGaming = async (
+  game: string,
+  kind: 'bond' | 'stake' | 'tablebond',
+  sid?: string,
+  outpoint?: string,
+): Promise<string> => {
+  const { data } = await api.post<{ txid: string }>('/br/gaming/reclaim', {
+    game,
+    kind,
+    sid,
+    outpoint,
+  });
+  return data.txid;
+};
+
 export const acceptGamingInvite = async (
   game: string,
   invite: string,
