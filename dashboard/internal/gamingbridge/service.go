@@ -254,9 +254,13 @@ func (s *Server) RequestSpend(ctx context.Context, req *gamingpb.RequestSpendReq
 	if s.cfg.RequestSpend == nil {
 		return nil, errNotHere
 	}
-	spend, err := s.cfg.RequestSpend(callerGame(ctx), req.GetAddress(), req.GetAmountAtoms(), req.GetReason())
+	game := callerGame(ctx)
+	if !s.allowCall(s.reqLim, game, requestSpendEvery, requestSpendBurst) {
+		return nil, status.Error(codes.ResourceExhausted, "asking to spend too often; wait and ask again")
+	}
+	spend, err := s.cfg.RequestSpend(ctx, game, req.GetAddress(), req.GetAmountAtoms(), req.GetReason())
 	if err != nil {
-		return nil, spendErr(callerGame(ctx), err)
+		return nil, spendErr(game, err)
 	}
 	return spend, nil
 }
@@ -266,9 +270,17 @@ func (s *Server) SpendStatus(ctx context.Context, req *gamingpb.SpendStatusReque
 	if s.cfg.SpendStatus == nil {
 		return nil, errNotHere
 	}
-	spend, err := s.cfg.SpendStatus(callerGame(ctx), req.GetId())
+	game := callerGame(ctx)
+	// Unavailable on purpose, never ResourceExhausted: the deployed game
+	// renders ResourceExhausted as a spending-limit refusal, and a paced
+	// poll is not that - it is "ask again in a moment", which is exactly
+	// how it treats Unavailable.
+	if !s.allowCall(s.statusLim, game, spendStatusEvery, spendStatusBurst) {
+		return nil, status.Error(codes.Unavailable, "asked about payments too quickly; ask again in a moment")
+	}
+	spend, err := s.cfg.SpendStatus(game, req.GetId())
 	if err != nil {
-		return nil, spendErr(callerGame(ctx), err)
+		return nil, spendErr(game, err)
 	}
 	return spend, nil
 }

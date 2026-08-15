@@ -19,7 +19,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/dcrutil/v4"
+	"github.com/decred/dcrd/txscript/v4/stdaddr"
 	"github.com/decred/dcrd/wire"
 
 	"dcrpulse/internal/types"
@@ -139,6 +141,17 @@ var (
 	spendSign    = signTransactionForSpend
 	spendPublish = publishSignedTransaction
 	spendPrevout = lookupGamingPrevout
+
+	// spendDecodeAddress checks an address against the network this node
+	// is actually on. Staged like the wallet calls above and for the same
+	// reason; the rule itself is checkSpendAddress, which needs no chain.
+	spendDecodeAddress = func(ctx context.Context, address string) error {
+		params, err := chainParams(ctx)
+		if err != nil {
+			return fmt.Errorf("cannot verify the address without the chain: %w", err)
+		}
+		return checkSpendAddress(address, params)
+	}
 )
 
 // GamingWalletCalls is that same set, named, so a caller outside this package
@@ -215,6 +228,12 @@ const spendInterruptedText = "interrupted while broadcasting; check the wallet f
 // spendInvalidatedText is what a request records when the settings it was
 // made under stopped existing before anybody answered it.
 const spendInvalidatedText = "invalidated by a settings change"
+
+// maxSpendReasonLen bounds the one free-text field a game may write. The
+// reason is a line for a person to read on an approval card; anything
+// longer is a payload, and the file it would land in is re-read on every
+// decision this section makes.
+const maxSpendReasonLen = 256
 
 // readSpendLog reads the whole record. A missing file is a legitimate fresh
 // start; anything else unreadable is an error, because this file is both the
@@ -388,6 +407,16 @@ func checkSpendRequest(s types.GamingSettings, game, address string, amountAtoms
 	return p, nil
 }
 
+// checkSpendAddress refuses an address the active network could not pay.
+// Checked when the request is made, so a person is never asked to type a
+// passphrase over a string no transaction here could carry.
+func checkSpendAddress(address string, params *chaincfg.Params) error {
+	if _, err := stdaddr.DecodeAddress(address, params); err != nil {
+		return fmt.Errorf("%w: %q is not an address on this network", ErrGamingSpendRefused, address)
+	}
+	return nil
+}
+
 // checkSpendAgainstDay is the rest of the decision, once this game's day total
 // is known.
 //
@@ -411,13 +440,22 @@ func checkSpendAgainstDay(p types.GamePolicy, amountAtoms, used int64) error {
 //
 // It does not spend. Nothing here can: the passphrase belongs to the person,
 // and this only gets as far as asking them.
-func RequestGamingSpend(game, address string, amountAtoms int64, reason string) (GamingSpend, error) {
+func RequestGamingSpend(ctx context.Context, game, address string, amountAtoms int64, reason string) (GamingSpend, error) {
 	s := ReadGamingSettings()
 	game = strings.ToLower(strings.TrimSpace(game))
 	address = strings.TrimSpace(address)
 
 	policy, err := checkSpendRequest(s, game, address, amountAtoms)
 	if err != nil {
+		return GamingSpend{}, err
+	}
+	if len(reason) > maxSpendReasonLen {
+		return GamingSpend{}, fmt.Errorf("%w: the reason is longer than anything a person reads",
+			ErrGamingSpendRefused)
+	}
+	// After the policy checks, so a switched-off bridge refuses before the
+	// chain is asked anything.
+	if err := spendDecodeAddress(ctx, address); err != nil {
 		return GamingSpend{}, err
 	}
 
@@ -449,9 +487,18 @@ func RequestGamingSpend(game, address string, amountAtoms int64, reason string) 
 		return GamingSpend{}, err
 	}
 
+	// Clamped here as well as at the console write: the file between the
+	// two is editable, and an unclamped window read back would make a
+	// request nobody answers immortal.
 	timeout := policy.ApprovalTimeoutSecs
 	if timeout <= 0 {
 		timeout = gamingDefaultApprovalSecs
+	}
+	if timeout < gamingMinApprovalSecs {
+		timeout = gamingMinApprovalSecs
+	}
+	if timeout > gamingMaxApprovalSecs {
+		timeout = gamingMaxApprovalSecs
 	}
 	id, err := newSpendID()
 	if err != nil {
@@ -502,16 +549,18 @@ func GamingSpendFor(game, id string) (GamingSpend, error) {
 	return GamingSpend{}, ErrGamingSpendNotFound
 }
 
-// GamingSpends reports the whole log, newest first, for a person to read. An
-// unreadable log is reported as itself, never as an empty history.
-func GamingSpends() ([]GamingSpend, error) {
+// GamingSpendLedger reports the whole log newest first, plus each game's
+// live day total - computed here so the console shows the very number the
+// cap enforces, not a re-derivation that can drift from it. An unreadable
+// log is reported as itself, never as an empty history.
+func GamingSpendLedger() ([]GamingSpend, map[string]int64, error) {
 	spendMu.Lock()
 	defer spendMu.Unlock()
 
 	now := time.Now().Unix()
 	log, err := readSpendLog()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	changed := expireLocked(&log, now)
 	if sweepPublishingLocked(&log, now) {
@@ -520,9 +569,15 @@ func GamingSpends() ([]GamingSpend, error) {
 	if changed {
 		_ = writeSpendLog(log, now)
 	}
+	used := map[string]int64{}
+	for _, s := range log.Spends {
+		if _, ok := used[s.Game]; !ok {
+			used[s.Game] = spentInDayLocked(log, s.Game, now, "")
+		}
+	}
 	out := append([]GamingSpend(nil), log.Spends...)
 	sort.Slice(out, func(i, j int) bool { return out[i].RequestedAt > out[j].RequestedAt })
-	return out, nil
+	return out, used, nil
 }
 
 // DenyGamingSpend refuses a request without spending anything.
