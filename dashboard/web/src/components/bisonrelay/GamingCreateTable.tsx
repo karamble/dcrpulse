@@ -2,10 +2,11 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, Loader2, X } from 'lucide-react';
 import { createGamingTable } from '../../services/gamingApi';
 import { listBisonrelayGCs, type BisonrelayGC } from '../../services/bisonrelayApi';
+import { apiError } from '../../utils/apiError';
 
 const inputCls =
   'w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm focus:outline-none focus:border-primary/50';
@@ -33,38 +34,50 @@ export const GamingCreateTable = ({
   const [openBlocks, setOpenBlocks] = useState(1);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [done, setDone] = useState<{ sid: string; until: number } | null>(null);
+  const [gcErr, setGcErr] = useState<string | null>(null);
+  const [done, setDone] = useState<{ sid: string; until: number; invite: string } | null>(null);
+  // Posting takes a seat and puts a real invitation in a group chat, and there
+  // is nothing to cancel once it is under way. So dismissal is refused while
+  // it runs rather than leaving somebody seated at a table they never saw.
+  const requestClose = useCallback(() => {
+    if (busy) {
+      setErr('Posting the invitation. This takes a seat, so it cannot be stopped from here.');
+      return;
+    }
+    onClose();
+  }, [busy, onClose]);
 
   useEffect(() => {
     listBisonrelayGCs()
-      .then(setGcs)
-      .catch(() => {});
+      .then((v) => {
+        setGcs(v);
+        setGcErr(null);
+      })
+      .catch((e) => setGcErr(apiError(e, 'Could not read your group chats')));
   }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') requestClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [requestClose]);
 
   const create = () => {
     setBusy(true);
     setErr(null);
     createGamingTable(game, gcid, buyin, seats, openBlocks)
-      .then((t) => setDone({ sid: t.sid, until: t.until }))
-      .catch((e) => {
-        const body = (e as { response?: { data?: string } })?.response?.data;
-        setErr(
-          typeof body === 'string' ? body : (e as Error)?.message || 'Could not create a table',
-        );
-      })
+      .then((t) => setDone({ sid: t.sid, until: t.until, invite: t.invite }))
+      .catch((e) => setErr(apiError(e, 'Could not create a table')))
       .finally(() => setBusy(false));
   };
 
   return (
-    <div className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-30 bg-black/60 flex items-center justify-center p-4"
+      onClick={requestClose}
+    >
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-sm rounded-xl bg-card border border-border/50 shadow-2xl p-5 space-y-4"
@@ -73,7 +86,7 @@ export const GamingCreateTable = ({
           <h3 className="text-base font-semibold pr-4">New {label} table</h3>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="p-1 -mt-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
             aria-label="Close"
           >
@@ -84,9 +97,22 @@ export const GamingCreateTable = ({
         {done ? (
           <div className="space-y-3">
             <p className="text-sm">
-              Posted, and you are seated. Registration closes at block {done.until.toLocaleString()},
-              about {openBlocks * 5} minutes from now.
+              Posted, and you are seated. Registration closes at block {done.until.toLocaleString()}{' '}
+              - roughly {openBlocks * 5} minutes away, though a block takes as long as it takes.
             </p>
+            <label className="text-xs space-y-1 block">
+              <span className="text-muted-foreground block">
+                The invitation, if you need to send it again
+              </span>
+              <textarea
+                readOnly
+                rows={2}
+                value={done.invite}
+                onFocus={(e) => e.currentTarget.select()}
+                className="w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 font-mono text-[11px]"
+              />
+              <span className="text-muted-foreground block font-mono break-all">{done.sid}</span>
+            </label>
             <p className="text-xs text-muted-foreground">
               Anybody in that group chat can take a seat until then, and seats are drawn a block
               later. The table forms when it is full and gives up if it is not.
@@ -109,10 +135,17 @@ export const GamingCreateTable = ({
                   </option>
                 ))}
               </select>
-              <span className="text-muted-foreground block">
-                The invitation is an ordinary message, so everyone there can read it whether or not
-                they have the game.
-              </span>
+              {gcErr ? (
+                <span className="text-destructive block break-words">
+                  Your group chats could not be read: {gcErr}. This list being empty is that
+                  failure, not an answer about which chats you are in.
+                </span>
+              ) : (
+                <span className="text-muted-foreground block">
+                  The invitation is an ordinary message, so everyone there can read it whether or
+                  not they have the game.
+                </span>
+              )}
             </label>
 
             <div className="grid gap-3 sm:grid-cols-3">
@@ -154,11 +187,12 @@ export const GamingCreateTable = ({
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Registration closes {openBlocks === 1 ? 'one block' : `${openBlocks} blocks`} from now,
-              about {openBlocks * 5} minutes, stated as a height because that is what every player
-              checks. Seats are drawn a block after that, from a hash nobody could know while
-              anybody was still joining. Anyone who has not accepted by then misses the table. Your
-              stake is refundable by you alone after a day if the table never deals.
+              Registration closes {openBlocks === 1 ? 'one block' : `${openBlocks} blocks`} from
+              now, roughly {openBlocks * 5} minutes at the target rate, stated as a height because
+              that is what every player checks and a block takes as long as it takes. Seats are
+              drawn a block after that, from a hash nobody could know while anybody was still
+              joining. Anyone who has not accepted by then misses the table. Your stake is
+              refundable by you alone after a day if the table never deals.
             </p>
 
             {err && (
@@ -169,7 +203,7 @@ export const GamingCreateTable = ({
             )}
 
             <div className="flex gap-2 pt-1">
-              <button type="button" onClick={onClose} className={mutedBtnCls}>
+              <button type="button" onClick={requestClose} className={mutedBtnCls}>
                 Cancel
               </button>
               <button
