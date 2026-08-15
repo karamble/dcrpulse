@@ -1111,7 +1111,7 @@ const ContactPickerModal = ({
               <X className="h-4 w-4" />
             </button>
           </div>
-          <p className="text-xs text-muted-foreground">{body}</p>
+          <div className="text-xs text-muted-foreground space-y-2">{body}</div>
           <input
             type="text"
             autoFocus
@@ -1175,9 +1175,12 @@ export const ConfirmActionModal = ({
   onSuccess,
   optimistic,
   confirmWord,
+  tone = 'primary',
 }: {
   title: string;
-  body: string;
+  // A node rather than a string, because a consequence worth confirming
+  // usually needs more than one sentence and reads badly run together.
+  body: React.ReactNode;
   confirmLabel: string;
   onClose: () => void;
   onConfirm: () => Promise<void> | void;
@@ -1191,6 +1194,9 @@ export const ConfirmActionModal = ({
   // confirmWord (optional): require the user to type this exact word before the
   // confirm button enables. Used to gate irreversible/destructive actions.
   confirmWord?: string;
+  // destructive colours the confirm button for an action that takes something
+  // away. The default keeps every existing caller as it was.
+  tone?: 'primary' | 'destructive';
 }) => {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1281,7 +1287,11 @@ export const ConfirmActionModal = ({
             type="button"
             onClick={handleConfirm}
             disabled={submitting || !typedOk}
-            className="px-3 py-1.5 rounded-lg bg-gradient-primary text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${
+              tone === 'destructive'
+                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                : 'bg-gradient-primary text-white'
+            }`}
           >
             {submitting ? 'Working…' : confirmLabel}
           </button>
