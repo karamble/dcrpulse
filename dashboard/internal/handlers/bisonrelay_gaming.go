@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/decred/dcrd/dcrutil/v4"
@@ -165,17 +166,60 @@ func BisonrelayGamingGamesHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGamingSpendsHandler lists what games have asked to spend, and what
 // was decided, for a person to read.
+//
+// Everything still in flight is always included - it is what the approvals
+// panel and the tab's count exist for - while decided history is served a
+// page at a time: the log is bounded, but shipping all of it on a five second
+// poll made the whole file the cost of every glance. History is in request
+// order, newest first, not decision order.
 func BisonrelayGamingSpendsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	spends, err := services.GamingSpends()
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	spends, usedToday, err := services.GamingSpendLedger()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	gamingJSON(w, map[string]any{"spends": spends})
+	pending := []services.GamingSpend{}
+	decided := []services.GamingSpend{}
+	for _, s := range spends {
+		if s.State == services.GamingSpendPending || s.State == services.GamingSpendPublishing {
+			pending = append(pending, s)
+		} else {
+			decided = append(decided, s)
+		}
+	}
+	total := len(decided)
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	gamingJSON(w, map[string]any{
+		"pending":      pending,
+		"decided":      decided[start:end],
+		"decidedTotal": total,
+		"page":         page,
+		"pageSize":     pageSize,
+		"usedToday":    usedToday,
+	})
 }
 
 // BisonrelayGamingSpendDecideHandler is a person answering a game's request.
