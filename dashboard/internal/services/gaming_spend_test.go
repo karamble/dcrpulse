@@ -7,6 +7,7 @@ package services
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -191,6 +192,93 @@ func TestTheDailyCapRefusesWhatWouldPassIt(t *testing.T) {
 	}
 }
 
+// More atoms than exist is not a cap decision: no operator wrote it, and no
+// game asking for it is asking to play. It is refused before the table cap
+// is consulted, so an absurd amount never comes back described as merely
+// over a limit a game could wait out.
+func TestARequestForMoreAtomsThanExistIsRefused(t *testing.T) {
+	_, err := checkSpendRequest(spendPolicy(), "poker", "Tsaddr", maxSpendAtoms+1)
+	if !errors.Is(err, ErrGamingSpendRefused) {
+		t.Fatalf("a request for more than the supply was carried: %v", err)
+	}
+	if errors.Is(err, ErrGamingSpendOverCap) {
+		t.Fatalf("more than the supply came back as merely over a cap: %v", err)
+	}
+
+	uncapped := withPokerPolicy(spendPolicy(), func(p *types.GamePolicy) {
+		p.PerTableCapAtoms, p.PerDayCapAtoms = 0, 0
+	})
+	if _, err := checkSpendRequest(uncapped, "poker", "Tsaddr", maxSpendAtoms); err != nil {
+		t.Fatalf("the whole supply under no caps was refused: %v", err)
+	}
+}
+
+// The day check is a bound on the request, not a sum: a sum's operands are
+// a caller's to choose, and one absurd request wrapping the arithmetic
+// negative would read as under any cap - the daily limit switched off for
+// everything asked after it.
+func TestTheDailyCapCannotBeWrappedPast(t *testing.T) {
+	p := spendPolicy().Policies["poker"]
+	for _, tc := range []struct {
+		what   string
+		amount int64
+		used   int64
+		refuse bool
+	}{
+		{"an amount that would wrap the sum", math.MaxInt64, 100, true},
+		{"the whole cap with some already used", p.PerDayCapAtoms, 1, true},
+		{"exactly the headroom left", p.PerDayCapAtoms - 100, 100, false},
+		{"one atom when the day is spent", 1, p.PerDayCapAtoms, true},
+		{"one atom against an untouched day", 1, 0, false},
+		{"one atom on a saturated total", 1, math.MaxInt64, true},
+	} {
+		err := checkSpendAgainstDay(p, tc.amount, tc.used)
+		if tc.refuse && !errors.Is(err, ErrGamingSpendOverCap) {
+			t.Errorf("%s was carried: %v", tc.what, err)
+		}
+		if !tc.refuse && err != nil {
+			t.Errorf("%s was refused: %v", tc.what, err)
+		}
+	}
+}
+
+// A negative day total is a log this code never wrote. Granting it as
+// headroom would turn corruption into allowance, so it refuses instead.
+func TestANegativeDayTotalRefusesRatherThanGrantsHeadroom(t *testing.T) {
+	p := spendPolicy().Policies["poker"]
+	if err := checkSpendAgainstDay(p, 1, -1); !errors.Is(err, ErrGamingSpendOverCap) {
+		t.Fatalf("a poisoned total granted headroom: %v", err)
+	}
+}
+
+// Entries too large to sum must read as a day already full, never as a
+// number that wrapped: MaxInt64 refuses everything after it, where a
+// wrapped negative would have allowed anything.
+func TestAHugeDayTotalSaturatesInsteadOfWrapping(t *testing.T) {
+	now := time.Now().Unix()
+	for _, tc := range []struct {
+		what string
+		log  spendLog
+		want int64
+	}{
+		{"two entries no int64 can hold", spendLog{Spends: []GamingSpend{
+			{Game: "poker", State: GamingSpendApproved, AmountAtoms: math.MaxInt64 - 5, DecidedAt: now - 60},
+			{Game: "poker", State: GamingSpendPending, AmountAtoms: 100},
+		}}, math.MaxInt64},
+		{"ordinary entries still sum exactly", spendLog{Spends: []GamingSpend{
+			{Game: "poker", State: GamingSpendApproved, AmountAtoms: 100, DecidedAt: now - 60},
+			{Game: "poker", State: GamingSpendPending, AmountAtoms: 50},
+		}}, 150},
+		{"an amount nobody could have requested", spendLog{Spends: []GamingSpend{
+			{Game: "poker", State: GamingSpendApproved, AmountAtoms: -5, DecidedAt: now - 60},
+		}}, math.MaxInt64},
+	} {
+		if got := spentInDayLocked(tc.log, "poker", now); got != tc.want {
+			t.Errorf("%s: counted %d against the day, want %d", tc.what, got, tc.want)
+		}
+	}
+}
+
 // A request nobody answers must stop being answerable, or a game waits forever
 // on a person who has gone to bed.
 func TestAnUnansweredRequestExpires(t *testing.T) {
@@ -236,7 +324,7 @@ func seedPendingSpend(t *testing.T, id string, expiresAt int64) {
 	if err := writeSpendLog(spendLog{Spends: []GamingSpend{{
 		ID: id, Game: "poker", Address: "Tsaddr", AmountAtoms: 1_000_000,
 		State: GamingSpendPending, RequestedAt: time.Now().Unix(), ExpiresAt: expiresAt,
-	}}}); err != nil {
+	}}}, time.Now().Unix()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 }
@@ -378,5 +466,119 @@ func TestARequestPastItsWindowRefusesApproval(t *testing.T) {
 
 	if _, err := ApproveGamingSpend(context.Background(), "dd44", []byte("right")); !errors.Is(err, ErrGamingSpendNotPending) {
 		t.Fatalf("an expired request was approvable: %v", err)
+	}
+}
+
+// The audit file is also where the day total is counted from, so a trim
+// that dropped what the cap still counts would let a flood of worthless
+// requests scroll the day's real spending out of the file and reset the
+// cap in the middle of the day.
+func TestTheDaysSpendingCannotBeScrolledOffTheLog(t *testing.T) {
+	spendSeams(t)
+	now := time.Now().Unix()
+	// The window is pinned by its own literal, not the constant under test,
+	// so a window that quietly shrank cannot drag this fixture with it.
+	spends := []GamingSpend{
+		{ID: "paid", Game: "poker", State: GamingSpendApproved, AmountAtoms: 7, DecidedAt: now - 86400 + 2},
+		{ID: "open", Game: "poker", State: GamingSpendPending, AmountAtoms: 50, ExpiresAt: now + 300},
+	}
+	for range maxSpendLog {
+		spends = append(spends, GamingSpend{
+			Game: "poker", State: GamingSpendDenied, AmountAtoms: 1, DecidedAt: now - 30,
+		})
+	}
+	if err := writeSpendLog(spendLog{Spends: spends}, now); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	log := readSpendLog()
+	if len(log.Spends) != maxSpendLog {
+		t.Fatalf("the log holds %d entries, want the bound of %d", len(log.Spends), maxSpendLog)
+	}
+	if log.Spends[0].ID != "paid" || log.Spends[1].ID != "open" {
+		t.Fatalf("the entries the cap counts were trimmed or reordered: the first two are %q and %q",
+			log.Spends[0].ID, log.Spends[1].ID)
+	}
+	if got, want := spentInDayLocked(log, "poker", now), int64(57); got != want {
+		t.Fatalf("after the trim the day counts %d, want %d - a flood reset the cap", got, want)
+	}
+}
+
+// When everything in an oversized log still counts, the bound yields:
+// dropping live accounting to honour a file-size number would be the same
+// bug the trim exists to prevent. And exactly at the bound, nothing is
+// dropped at all, droppable or not.
+func TestAFullLogOfLiveEntriesIsKeptWholeRatherThanTrimmed(t *testing.T) {
+	spendSeams(t)
+	now := time.Now().Unix()
+	var spends []GamingSpend
+	for range maxSpendLog + 1 {
+		spends = append(spends, GamingSpend{
+			Game: "poker", State: GamingSpendPending, AmountAtoms: 1, ExpiresAt: now + 300,
+		})
+	}
+	if err := writeSpendLog(spendLog{Spends: spends}, now); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if got := len(readSpendLog().Spends); got != maxSpendLog+1 {
+		t.Fatalf("a log of %d live entries was trimmed to %d", maxSpendLog+1, got)
+	}
+
+	atBound := append(spends[:maxSpendLog-1:maxSpendLog-1], GamingSpend{
+		Game: "poker", State: GamingSpendDenied, AmountAtoms: 1, DecidedAt: now - 60,
+	})
+	if err := writeSpendLog(spendLog{Spends: atBound}, now); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if got := len(readSpendLog().Spends); got != maxSpendLog {
+		t.Fatalf("a log exactly at the bound was cut to %d", got)
+	}
+}
+
+// A person can only be waiting on so much at once. The ninth unanswered
+// request is refused - as over a cap, the refusal that tells a game to
+// wait - until any one of the eight is answered. Eight is pinned by its
+// own literal here: poker's worst honest case is documented against it,
+// so the ceiling does not get to drift without this sentence changing.
+func TestANinthUnansweredRequestIsRefusedUntilOneIsAnswered(t *testing.T) {
+	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
+	var last GamingSpend
+	for i := range 8 {
+		out, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "a seat")
+		if err != nil {
+			t.Fatalf("request %d of 8 was refused: %v", i+1, err)
+		}
+		last = out
+	}
+	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "one too many"); !errors.Is(err, ErrGamingSpendOverCap) {
+		t.Fatalf("an unanswered backlog past the ceiling was carried: %v", err)
+	}
+	if _, err := DenyGamingSpend(last.ID); err != nil {
+		t.Fatalf("deny: %v", err)
+	}
+	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "after an answer"); err != nil {
+		t.Fatalf("answering one request did not make room for another: %v", err)
+	}
+}
+
+// The ceiling is per game for the same reason the day total is: a bound
+// that fell on whoever asked second would not be a bound on anybody.
+func TestOneGamesBacklogDoesNotBlockAnother(t *testing.T) {
+	spendSeams(t)
+	s := spendPolicy()
+	s.RegisteredGames = []string{"poker", "chess"}
+	s.Policies["chess"] = s.Policies["poker"]
+	if _, err := WriteGamingSettings(s, true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
+	for i := range maxPendingSpendsPerGame {
+		if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "a seat"); err != nil {
+			t.Fatalf("request %d was refused: %v", i+1, err)
+		}
+	}
+	if _, err := RequestGamingSpend("chess", "Tsaddr", 1_000_000, "a first ask"); err != nil {
+		t.Fatalf("poker's backlog blocked chess: %v", err)
 	}
 }
