@@ -212,16 +212,24 @@ const spendPublishingGraceSecs = int64(300)
 // sentence, so the console and the tests say the same thing.
 const spendInterruptedText = "interrupted while broadcasting; check the wallet for the transaction before paying it again"
 
-func readSpendLog() spendLog {
+// readSpendLog reads the whole record. A missing file is a legitimate fresh
+// start; anything else unreadable is an error, because this file is both the
+// audit trail and the counter the daily allowance is computed from - reading
+// corruption as an empty log would answer with a day nobody spent and a
+// history nobody kept.
+func readSpendLog() (spendLog, error) {
 	var log spendLog
 	blob, err := os.ReadFile(gamingSpendLogPath())
 	if err != nil {
-		return spendLog{}
+		if os.IsNotExist(err) {
+			return spendLog{}, nil
+		}
+		return spendLog{}, fmt.Errorf("read spend log: %w", err)
 	}
 	if err := json.Unmarshal(blob, &log); err != nil {
-		return spendLog{}
+		return spendLog{}, fmt.Errorf("parse spend log: %w", err)
 	}
-	return log
+	return log, nil
 }
 
 func writeSpendLog(log spendLog, now int64) error {
@@ -407,7 +415,10 @@ func RequestGamingSpend(game, address string, amountAtoms int64, reason string) 
 	defer spendMu.Unlock()
 
 	now := time.Now().Unix()
-	log := readSpendLog()
+	log, err := readSpendLog()
+	if err != nil {
+		return GamingSpend{}, err
+	}
 	expireLocked(&log, now)
 	sweepPublishingLocked(&log, now)
 
@@ -462,7 +473,10 @@ func GamingSpendFor(game, id string) (GamingSpend, error) {
 	defer spendMu.Unlock()
 
 	now := time.Now().Unix()
-	log := readSpendLog()
+	log, err := readSpendLog()
+	if err != nil {
+		return GamingSpend{}, err
+	}
 	changed := expireLocked(&log, now)
 	if sweepPublishingLocked(&log, now) {
 		changed = true
@@ -478,13 +492,17 @@ func GamingSpendFor(game, id string) (GamingSpend, error) {
 	return GamingSpend{}, ErrGamingSpendNotFound
 }
 
-// GamingSpends reports the whole log, newest first, for a person to read.
-func GamingSpends() []GamingSpend {
+// GamingSpends reports the whole log, newest first, for a person to read. An
+// unreadable log is reported as itself, never as an empty history.
+func GamingSpends() ([]GamingSpend, error) {
 	spendMu.Lock()
 	defer spendMu.Unlock()
 
 	now := time.Now().Unix()
-	log := readSpendLog()
+	log, err := readSpendLog()
+	if err != nil {
+		return nil, err
+	}
 	changed := expireLocked(&log, now)
 	if sweepPublishingLocked(&log, now) {
 		changed = true
@@ -494,7 +512,7 @@ func GamingSpends() []GamingSpend {
 	}
 	out := append([]GamingSpend(nil), log.Spends...)
 	sort.Slice(out, func(i, j int) bool { return out[i].RequestedAt > out[j].RequestedAt })
-	return out
+	return out, nil
 }
 
 // DenyGamingSpend refuses a request without spending anything.
@@ -503,7 +521,10 @@ func DenyGamingSpend(id string) (GamingSpend, error) {
 	defer spendMu.Unlock()
 
 	now := time.Now().Unix()
-	log := readSpendLog()
+	log, err := readSpendLog()
+	if err != nil {
+		return GamingSpend{}, err
+	}
 	expireLocked(&log, now)
 	sweepPublishingLocked(&log, now)
 
@@ -544,7 +565,11 @@ func DenyGamingSpend(id string) (GamingSpend, error) {
 func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (GamingSpend, error) {
 	spendMu.Lock()
 	now := time.Now().Unix()
-	log := readSpendLog()
+	log, err := readSpendLog()
+	if err != nil {
+		spendMu.Unlock()
+		return GamingSpend{}, err
+	}
 	expireLocked(&log, now)
 	sweepPublishingLocked(&log, now)
 
@@ -622,7 +647,10 @@ func markSpendPublishing(id string) error {
 	defer spendMu.Unlock()
 
 	now := time.Now().Unix()
-	log := readSpendLog()
+	log, err := readSpendLog()
+	if err != nil {
+		return err
+	}
 	changed := expireLocked(&log, now)
 	if sweepPublishingLocked(&log, now) {
 		changed = true
@@ -660,7 +688,30 @@ func recordSpendOutcome(req GamingSpend, state GamingSpendState, txid, failure s
 	defer spendMu.Unlock()
 
 	now := time.Now().Unix()
-	log := readSpendLog()
+	log, err := readSpendLog()
+	if err != nil {
+		// Money already moved, so the record lands even when the log
+		// cannot be read: the unreadable bytes are set aside for a
+		// person to look at, never deleted, and the outcome starts a
+		// fresh log. Losing the rolling day counter here is the lesser
+		// wrong - the greater one is a broadcast nobody wrote down.
+		aside := fmt.Sprintf("%s.corrupt-%d", gamingSpendLogPath(), now)
+		if renameErr := os.Rename(gamingSpendLogPath(), aside); renameErr != nil {
+			gameLog.Errorf("set the unreadable spend log aside: %v", renameErr)
+		}
+		gameLog.Errorf("spend log unreadable while recording spend %s (txid %q): %v; the old bytes are at %s",
+			req.ID, txid, err, aside)
+		out := req
+		out.State, out.TxID, out.Error, out.DecidedAt = state, txid, failure, now
+		if werr := writeSpendLog(spendLog{Spends: []GamingSpend{out}}, now); werr != nil {
+			gameLog.Errorf("record the outcome of spend %s (txid %q): %v", req.ID, txid, werr)
+			return out, werr
+		}
+		if state != GamingSpendApproved {
+			return out, fmt.Errorf("spend failed: %s", failure)
+		}
+		return out, nil
+	}
 	for i := range log.Spends {
 		s := &log.Spends[i]
 		if s.ID != req.ID {
