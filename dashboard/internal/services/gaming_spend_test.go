@@ -137,7 +137,7 @@ func TestPendingRequestsCountTowardTheDailyCap(t *testing.T) {
 		{Game: "poker", State: GamingSpendExpired, AmountAtoms: 900, DecidedAt: now - 60},
 		{Game: "poker", State: GamingSpendFailed, AmountAtoms: 900, DecidedAt: now - 60},
 	}}
-	if got, want := spentInDayLocked(log, "poker", now), int64(150); got != want {
+	if got, want := spentInDayLocked(log, "poker", now, ""), int64(150); got != want {
 		t.Fatalf("counted %d against the day, want %d", got, want)
 	}
 }
@@ -151,7 +151,7 @@ func TestSpendingOlderThanADayNoLongerCounts(t *testing.T) {
 		{Game: "poker", State: GamingSpendApproved, AmountAtoms: 100, DecidedAt: now - day - 1},
 		{Game: "poker", State: GamingSpendApproved, AmountAtoms: 7, DecidedAt: now - 10},
 	}}
-	if got, want := spentInDayLocked(log, "poker", now), int64(7); got != want {
+	if got, want := spentInDayLocked(log, "poker", now, ""), int64(7); got != want {
 		t.Fatalf("counted %d against the day, want %d", got, want)
 	}
 }
@@ -168,14 +168,14 @@ func TestOneGamesSpendingDoesNotConsumeAnothersAllowance(t *testing.T) {
 		{Game: "poker", State: GamingSpendPending, AmountAtoms: 50},
 		{Game: "chess", State: GamingSpendApproved, AmountAtoms: 900, DecidedAt: now - 60},
 	}}
-	if got, want := spentInDayLocked(log, "poker", now), int64(150); got != want {
+	if got, want := spentInDayLocked(log, "poker", now, ""), int64(150); got != want {
 		t.Errorf("poker was charged %d, want %d", got, want)
 	}
-	if got, want := spentInDayLocked(log, "chess", now), int64(900); got != want {
+	if got, want := spentInDayLocked(log, "chess", now, ""), int64(900); got != want {
 		t.Errorf("chess was charged %d, want %d", got, want)
 	}
 	// A game nobody has spent for owes nothing, however busy the others are.
-	if got := spentInDayLocked(log, "backgammon", now); got != 0 {
+	if got := spentInDayLocked(log, "backgammon", now, ""); got != 0 {
 		t.Errorf("a game that has spent nothing was charged %d", got)
 	}
 }
@@ -275,7 +275,7 @@ func TestAHugeDayTotalSaturatesInsteadOfWrapping(t *testing.T) {
 			{Game: "poker", State: GamingSpendApproved, AmountAtoms: -5, DecidedAt: now - 60},
 		}}, math.MaxInt64},
 	} {
-		if got := spentInDayLocked(tc.log, "poker", now); got != tc.want {
+		if got := spentInDayLocked(tc.log, "poker", now, ""); got != tc.want {
 			t.Errorf("%s: counted %d against the day, want %d", tc.what, got, tc.want)
 		}
 	}
@@ -349,6 +349,9 @@ func seedPendingSpend(t *testing.T, id string, expiresAt int64) {
 // the request, exactly as every failure used to.
 func TestAMistypedPassphraseLeavesTheRequestApprovable(t *testing.T) {
 	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
 	seedPendingSpend(t, "aa11", time.Now().Unix()+300)
 
 	spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
@@ -395,6 +398,9 @@ func TestAMistypedPassphraseLeavesTheRequestApprovable(t *testing.T) {
 
 func TestAPublishFailureIsTerminal(t *testing.T) {
 	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
 	seedPendingSpend(t, "bb22", time.Now().Unix()+300)
 
 	spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
@@ -426,6 +432,9 @@ func TestAPublishFailureIsTerminal(t *testing.T) {
 // a second transaction and pays the address twice.
 func TestOneApprovalRunsAtATime(t *testing.T) {
 	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
 	seedPendingSpend(t, "cc33", time.Now().Unix()+300)
 
 	entered := make(chan struct{})
@@ -511,7 +520,7 @@ func TestTheDaysSpendingCannotBeScrolledOffTheLog(t *testing.T) {
 		t.Fatalf("the entries the cap counts were trimmed or reordered: the first two are %q and %q",
 			log.Spends[0].ID, log.Spends[1].ID)
 	}
-	if got, want := spentInDayLocked(log, "poker", now), int64(57); got != want {
+	if got, want := spentInDayLocked(log, "poker", now, ""), int64(57); got != want {
 		t.Fatalf("after the trim the day counts %d, want %d - a flood reset the cap", got, want)
 	}
 }
@@ -619,6 +628,9 @@ func approvalStubs(t *testing.T, published *int) {
 // by a person who has no way to know.
 func TestTheLogSaysPublishingBeforeAnythingIsBroadcast(t *testing.T) {
 	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
 	seedPendingSpend(t, "aa11", time.Now().Unix()+300)
 
 	published := 0
@@ -645,6 +657,9 @@ func TestTheLogSaysPublishingBeforeAnythingIsBroadcast(t *testing.T) {
 // money that moved.
 func TestAnApprovalThatOutlivedItsWindowNeverBroadcasts(t *testing.T) {
 	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
 	expiresAt := time.Now().Unix() + 1
 	seedPendingSpend(t, "bb22", expiresAt)
 
@@ -699,6 +714,9 @@ func TestADecidedRequestCannotBeRewritten(t *testing.T) {
 // runs, deny refuses; it never says "denied" over a payment going out.
 func TestDenyIsRefusedWhileAnApprovalRuns(t *testing.T) {
 	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
 	seedPendingSpend(t, "dd44", time.Now().Unix()+300)
 
 	entered := make(chan struct{})
@@ -814,7 +832,7 @@ func TestBroadcastingMoneyStillCountsEverywhere(t *testing.T) {
 		{Game: "poker", State: GamingSpendPublishing, AmountAtoms: 70, ExpiresAt: now + 300},
 		{Game: "poker", State: GamingSpendPending, AmountAtoms: 30, ExpiresAt: now + 300},
 	}}
-	if got, want := spentInDayLocked(day, "poker", now), int64(100); got != want {
+	if got, want := spentInDayLocked(day, "poker", now, ""), int64(100); got != want {
 		t.Fatalf("counted %d against the day, want %d", got, want)
 	}
 
@@ -877,6 +895,209 @@ func TestPublishingNeverReachesTheWire(t *testing.T) {
 			t.Errorf("%s rides the wire as %q, want %q", tc.state, p.State, tc.want)
 		}
 	}
+}
+
+// A request is checked when it is made and again when it is paid, because
+// the settings can change in between. Each row edits the stored settings
+// underneath a pending request - the way a hand edit or a carried-over file
+// would - and the approval must refuse by the policy as it stands now, with
+// the request left pending and the wallet never reached.
+func TestApprovalReChecksThePolicyItWasRequestedUnder(t *testing.T) {
+	for _, tc := range []struct {
+		what string
+		edit func(s types.GamingSettings) types.GamingSettings
+	}{
+		{"the bridge was switched off", func(s types.GamingSettings) types.GamingSettings {
+			s.Enabled = false
+			return s
+		}},
+		{"the game was unregistered", func(s types.GamingSettings) types.GamingSettings {
+			s.Policies = map[string]types.GamePolicy{}
+			return s
+		}},
+		{"the account was unbound", func(s types.GamingSettings) types.GamingSettings {
+			return withPokerPolicy(s, func(p *types.GamePolicy) { p.Account = " " })
+		}},
+		{"the table cap was lowered under it", func(s types.GamingSettings) types.GamingSettings {
+			return withPokerPolicy(s, func(p *types.GamePolicy) { p.PerTableCapAtoms = 100_000 })
+		}},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			spendSeams(t)
+			if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+				t.Fatalf("store a policy: %v", err)
+			}
+			seedPendingSpend(t, "rr11", time.Now().Unix()+300)
+			spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+				t.Fatal("a refused approval reached the wallet")
+				return nil, nil
+			}
+			if err := writeGamingSettingsLocked(tc.edit(spendPolicy())); err != nil {
+				t.Fatalf("edit settings: %v", err)
+			}
+			_, err := ApproveGamingSpend(context.Background(), "rr11", []byte("right"))
+			if !errors.Is(err, ErrGamingSpendRefused) && !errors.Is(err, ErrGamingGameNotRegistered) {
+				t.Fatalf("%s and the approval came back %v, want a policy refusal", tc.what, err)
+			}
+			if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendPending {
+				t.Fatalf("the refusal decided the request: %q", got)
+			}
+		})
+	}
+
+	t.Run("a day consumed since the request", func(t *testing.T) {
+		spendSeams(t)
+		if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+			t.Fatalf("store a policy: %v", err)
+		}
+		now := time.Now().Unix()
+		if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+			{ID: "rr22", Game: "poker", Address: "Tsaddr", AmountAtoms: 1_000_000,
+				State: GamingSpendPending, RequestedAt: now, ExpiresAt: now + 300},
+			{Game: "poker", State: GamingSpendApproved, AmountAtoms: 499_500_000, DecidedAt: now - 60},
+		}}, now); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+			t.Fatal("a refused approval reached the wallet")
+			return nil, nil
+		}
+		if _, err := ApproveGamingSpend(context.Background(), "rr22", []byte("right")); !errors.Is(err, ErrGamingSpendOverCap) {
+			t.Fatalf("a day spent since the request approved anyway: %v", err)
+		}
+	})
+
+	// The request's own amount is excluded from the day it is judged
+	// against, or a request for the whole day's budget could never be
+	// approved: it would be counted as already having spent itself.
+	t.Run("a request for the whole day approves", func(t *testing.T) {
+		spendSeams(t)
+		whole := withPokerPolicy(spendPolicy(), func(p *types.GamePolicy) {
+			p.PerTableCapAtoms = 500_000_000
+		})
+		if _, err := WriteGamingSettings(whole, true); err != nil {
+			t.Fatalf("store a policy: %v", err)
+		}
+		now := time.Now().Unix()
+		if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+			{ID: "rr33", Game: "poker", Address: "Tsaddr", AmountAtoms: 500_000_000,
+				State: GamingSpendPending, RequestedAt: now, ExpiresAt: now + 300},
+		}}, now); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		published := 0
+		approvalStubs(t, &published)
+		if _, err := ApproveGamingSpend(context.Background(), "rr33", []byte("right")); err != nil {
+			t.Fatalf("a request counted against its own day: %v", err)
+		}
+	})
+}
+
+// A settings change answers the requests it invalidated instead of leaving
+// them pending, counting against the day and holding ceiling slots - and a
+// removed game's credential stops resolving now, not at the next restart.
+func TestASettingsChangeRetiresTheRequestsItOrphaned(t *testing.T) {
+	reason := "invalidated by a settings change"
+
+	t.Run("disabling retires every pending request", func(t *testing.T) {
+		spendSeams(t)
+		if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+			t.Fatalf("store a policy: %v", err)
+		}
+		now := time.Now().Unix()
+		if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+			{ID: "s1", Game: "poker", State: GamingSpendPending, AmountAtoms: 1, ExpiresAt: now + 300},
+			{ID: "s2", Game: "poker", State: GamingSpendPending, AmountAtoms: 1, ExpiresAt: now + 300},
+			{ID: "s3", Game: "poker", State: GamingSpendPublishing, AmountAtoms: 1, ExpiresAt: now + 300},
+		}}, now); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		off := spendPolicy()
+		off.Enabled = false
+		if _, err := WriteGamingSettings(off, true); err != nil {
+			t.Fatalf("disable: %v", err)
+		}
+		log := mustReadSpendLog(t)
+		for _, i := range []int{0, 1} {
+			if log.Spends[i].State != GamingSpendExpired || log.Spends[i].Error != reason {
+				t.Fatalf("pending %q ended %q %q, want expired with the reason",
+					log.Spends[i].ID, log.Spends[i].State, log.Spends[i].Error)
+			}
+		}
+		if log.Spends[2].State != GamingSpendPublishing {
+			t.Fatalf("disabling touched money in flight: %q", log.Spends[2].State)
+		}
+	})
+
+	t.Run("dropping a game retires only its requests", func(t *testing.T) {
+		spendSeams(t)
+		both := spendPolicy()
+		both.RegisteredGames = []string{"poker", "chess"}
+		both.Policies["chess"] = both.Policies["poker"]
+		if _, err := WriteGamingSettings(both, true); err != nil {
+			t.Fatalf("store a policy: %v", err)
+		}
+		now := time.Now().Unix()
+		if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+			{ID: "p1", Game: "poker", State: GamingSpendPending, AmountAtoms: 1, ExpiresAt: now + 300},
+			{ID: "c1", Game: "chess", State: GamingSpendPending, AmountAtoms: 1, ExpiresAt: now + 300},
+		}}, now); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+			t.Fatalf("drop chess: %v", err)
+		}
+		log := mustReadSpendLog(t)
+		if log.Spends[0].State != GamingSpendPending {
+			t.Fatalf("dropping chess retired poker's request: %q", log.Spends[0].State)
+		}
+		if log.Spends[1].State != GamingSpendExpired || log.Spends[1].Error != reason {
+			t.Fatalf("chess's request ended %q %q, want expired with the reason",
+				log.Spends[1].State, log.Spends[1].Error)
+		}
+	})
+
+	t.Run("revoking a credential retires the game's requests", func(t *testing.T) {
+		spendSeams(t)
+		if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+			t.Fatalf("store a policy: %v", err)
+		}
+		if _, err := IssueGamingCredential("poker"); err != nil {
+			t.Fatalf("issue: %v", err)
+		}
+		seedPendingSpend(t, "v1", time.Now().Unix()+300)
+		if err := RevokeGamingCredential("poker"); err != nil {
+			t.Fatalf("revoke: %v", err)
+		}
+		got := mustReadSpendLog(t).Spends[0]
+		if got.State != GamingSpendExpired || got.Error != reason {
+			t.Fatalf("the revoked game's request ended %q %q, want expired with the reason",
+				got.State, got.Error)
+		}
+	})
+
+	t.Run("a dropped game's credential stops resolving", func(t *testing.T) {
+		spendSeams(t)
+		both := spendPolicy()
+		both.RegisteredGames = []string{"poker", "chess"}
+		both.Policies["chess"] = both.Policies["poker"]
+		if _, err := WriteGamingSettings(both, true); err != nil {
+			t.Fatalf("store a policy: %v", err)
+		}
+		cred, err := IssueGamingCredential("chess")
+		if err != nil {
+			t.Fatalf("issue: %v", err)
+		}
+		if _, ok := gamingAllow.Resolve(cred.Fingerprint); !ok {
+			t.Fatal("a freshly issued credential does not resolve")
+		}
+		if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+			t.Fatalf("drop chess: %v", err)
+		}
+		if _, ok := gamingAllow.Resolve(cred.Fingerprint); ok {
+			t.Fatal("a dropped game's credential still resolves")
+		}
+	})
 }
 
 // The spend log is both the audit trail and the counter the daily allowance
