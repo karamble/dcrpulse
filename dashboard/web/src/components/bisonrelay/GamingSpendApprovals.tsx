@@ -126,7 +126,16 @@ export const GamingSpendApprovals = ({
   }, [counting]);
 
   const now = Math.floor(Date.now() / 1000) + offset;
-  const decided = useMemo(() => (spends ?? []).filter((s) => s.state !== 'pending'), [spends]);
+  const decided = useMemo(
+    () => (spends ?? []).filter((s) => s.state !== 'pending' && s.state !== 'publishing'),
+    [spends],
+  );
+  // A payment on its way to the network: nothing to answer, but its money is
+  // committed and the row says so until the outcome lands.
+  const publishing = useMemo(
+    () => (spends ?? []).filter((s) => s.state === 'publishing'),
+    [spends],
+  );
 
   // Stamped during render, not in an effect. An effect runs after the first
   // paint, so the row would already be on screen with a live Approve button
@@ -142,7 +151,7 @@ export const GamingSpendApprovals = ({
   const usedToday = (game: string): number =>
     (spends ?? []).reduce((total, s) => {
       if (s.game !== game) return total;
-      if (s.state === 'pending') return total + s.amountAtoms;
+      if (s.state === 'pending' || s.state === 'publishing') return total + s.amountAtoms;
       if (s.state === 'approved' && s.decidedAt && now - s.decidedAt < 86400) {
         return total + s.amountAtoms;
       }
@@ -332,6 +341,24 @@ export const GamingSpendApprovals = ({
           )}
         </div>
       )}
+
+      {publishing.map((s) => (
+        <div
+          key={s.id}
+          className="p-3 rounded-lg bg-muted/10 border border-border/50 text-xs space-y-1"
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="truncate">
+              {s.game} - {fmtDcr(s.amountAtoms)} DCR
+            </span>
+            <span className="shrink-0 text-muted-foreground">being paid</span>
+          </div>
+          <span className="block text-muted-foreground break-words">
+            Approved and on its way to the network. Nothing to answer here; the outcome lands in
+            History on its own.
+          </span>
+        </div>
+      ))}
 
       {pending.map((s) => {
         const left = s.expiresAt - now;

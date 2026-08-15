@@ -204,7 +204,15 @@ export const acceptGamingInvite = async (
   return data.sid;
 };
 
-export type GamingSpendState = 'pending' | 'approved' | 'denied' | 'expired' | 'failed';
+// 'publishing' is the moment between approval and the network's answer. It
+// exists only in the console's view; a game is never told about it.
+export type GamingSpendState =
+  | 'pending'
+  | 'publishing'
+  | 'approved'
+  | 'denied'
+  | 'expired'
+  | 'failed';
 
 export interface GamingSpend {
   id: string;

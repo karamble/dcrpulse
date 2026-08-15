@@ -582,3 +582,301 @@ func TestOneGamesBacklogDoesNotBlockAnother(t *testing.T) {
 		t.Fatalf("poker's backlog blocked chess: %v", err)
 	}
 }
+
+// approvalStubs wires the happy wallet path: account 1, a fixed unsigned and
+// signed blob, and a publish that counts itself and returns txid00.
+func approvalStubs(t *testing.T, published *int) {
+	t.Helper()
+	spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
+	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
+		return []byte("unsigned"), nil
+	}
+	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+		return []byte("signed"), nil
+	}
+	spendPublish = func(context.Context, []byte) (string, error) {
+		*published++
+		return "txid00", nil
+	}
+}
+
+// The one fact that must never be lost is that a signed transaction is about
+// to reach the network. If the broadcast came first, a crash between it and
+// the record would leave a paid request pending - approvable a second time,
+// by a person who has no way to know.
+func TestTheLogSaysPublishingBeforeAnythingIsBroadcast(t *testing.T) {
+	spendSeams(t)
+	seedPendingSpend(t, "aa11", time.Now().Unix()+300)
+
+	published := 0
+	approvalStubs(t, &published)
+	spendPublish = func(context.Context, []byte) (string, error) {
+		if got := readSpendLog().Spends[0].State; got != "publishing" {
+			t.Fatalf("at broadcast time the log says %q, want publishing", got)
+		}
+		published++
+		return "txid00", nil
+	}
+
+	out, err := ApproveGamingSpend(context.Background(), "aa11", []byte("right"))
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if out.State != GamingSpendApproved || out.TxID != "txid00" || published != 1 {
+		t.Fatalf("approved as %v txid %q published %d", out.State, out.TxID, published)
+	}
+}
+
+// The window is checked one last time on the way to the network. An approval
+// that outlives it must stop before the broadcast, not record an expiry over
+// money that moved.
+func TestAnApprovalThatOutlivedItsWindowNeverBroadcasts(t *testing.T) {
+	spendSeams(t)
+	expiresAt := time.Now().Unix() + 1
+	seedPendingSpend(t, "bb22", expiresAt)
+
+	published := 0
+	approvalStubs(t, &published)
+	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+		for time.Now().Unix() <= expiresAt {
+			time.Sleep(100 * time.Millisecond)
+		}
+		return []byte("signed"), nil
+	}
+	spendPublish = func(context.Context, []byte) (string, error) {
+		t.Fatal("an approval past its window reached the network")
+		return "", nil
+	}
+
+	if _, err := ApproveGamingSpend(context.Background(), "bb22", []byte("right")); !errors.Is(err, ErrGamingSpendNotPending) {
+		t.Fatalf("an approval past its window came back %v, want not-pending", err)
+	}
+	if got := readSpendLog().Spends[0].State; got != GamingSpendExpired {
+		t.Fatalf("the entry is %q, want expired", got)
+	}
+}
+
+// An outcome is final the moment it is written. Only a payment on its way to
+// the network may take one; every other state refuses, so a decided request
+// can never be rewritten however the paths interleave.
+func TestADecidedRequestCannotBeRewritten(t *testing.T) {
+	spendSeams(t)
+	now := time.Now().Unix()
+	for _, state := range []GamingSpendState{
+		GamingSpendPending, GamingSpendApproved, GamingSpendDenied,
+		GamingSpendExpired, GamingSpendFailed,
+	} {
+		if err := writeSpendLog(spendLog{Spends: []GamingSpend{{
+			ID: "cc33", Game: "poker", Address: "Tsaddr", AmountAtoms: 1_000_000,
+			State: state, RequestedAt: now, ExpiresAt: now + 300, DecidedAt: now,
+		}}}, now); err != nil {
+			t.Fatalf("seed %s: %v", state, err)
+		}
+		if _, err := recordSpendOutcome(GamingSpend{ID: "cc33"}, GamingSpendApproved, "txid99", ""); err == nil {
+			t.Fatalf("an outcome was recorded over %q", state)
+		}
+		if got := readSpendLog().Spends[0].State; got != state {
+			t.Fatalf("recording over %q changed it to %q", state, got)
+		}
+	}
+}
+
+// The deny button is a kill switch, and a kill switch that reports success
+// while doing nothing is the worst way for one to behave. While an approval
+// runs, deny refuses; it never says "denied" over a payment going out.
+func TestDenyIsRefusedWhileAnApprovalRuns(t *testing.T) {
+	spendSeams(t)
+	seedPendingSpend(t, "dd44", time.Now().Unix()+300)
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	published := 0
+	approvalStubs(t, &published)
+	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+		close(entered)
+		<-release
+		return []byte("signed"), nil
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := ApproveGamingSpend(context.Background(), "dd44", []byte("right"))
+		done <- err
+	}()
+	<-entered
+
+	if _, err := DenyGamingSpend("dd44"); !errors.Is(err, ErrGamingSpendNotPending) {
+		t.Fatalf("deny during an approval came back %v, want a refusal", err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("the approval the deny lost to then failed: %v", err)
+	}
+	if published != 1 {
+		t.Fatalf("published %d times for one request", published)
+	}
+	if got := readSpendLog().Spends[0].State; got != GamingSpendApproved {
+		t.Fatalf("the request ended %q, want approved", got)
+	}
+}
+
+// A payment already travelling to the network is not deniable either; there
+// is no answer left to give.
+func TestDenyIsRefusedWhileAPaymentIsBroadcasting(t *testing.T) {
+	spendSeams(t)
+	now := time.Now().Unix()
+	if err := writeSpendLog(spendLog{Spends: []GamingSpend{{
+		ID: "ee55", Game: "poker", Address: "Tsaddr", AmountAtoms: 1_000_000,
+		State: GamingSpendPublishing, RequestedAt: now, ExpiresAt: now + 300,
+	}}}, now); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := DenyGamingSpend("ee55"); !errors.Is(err, ErrGamingSpendNotPending) {
+		t.Fatalf("deny over a broadcast came back %v, want a refusal", err)
+	}
+	if got := readSpendLog().Spends[0].State; got != GamingSpendPublishing {
+		t.Fatalf("deny changed a broadcast to %q", got)
+	}
+}
+
+// A crash between the broadcast and its record leaves an entry publishing
+// with nobody working on it. Long after its window it fails, with the one
+// sentence that says where to look - never silently, and never while an
+// approval in this process is still running it.
+func TestAPaymentInterruptedByARestartFailsWithTheWarning(t *testing.T) {
+	spendSeams(t)
+	now := time.Now().Unix()
+	if err := writeSpendLog(spendLog{Spends: []GamingSpend{{
+		ID: "ff66", Game: "poker", Address: "Tsaddr", AmountAtoms: 1_000_000,
+		State: GamingSpendPublishing, RequestedAt: now - 600, ExpiresAt: now - 301,
+	}}}, now); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	GamingSpends()
+	got := readSpendLog().Spends[0]
+	if got.State != GamingSpendFailed {
+		t.Fatalf("an interrupted broadcast is %q, want failed", got.State)
+	}
+	want := "interrupted while broadcasting; check the wallet for the transaction before paying it again"
+	if got.Error != want {
+		t.Fatalf("the warning reads %q, want %q", got.Error, want)
+	}
+}
+
+// However late a broadcast runs, while this process is still running it the
+// sweep must not declare it dead under its feet - the outcome that is coming
+// would then be refused by the entry's own log.
+func TestALivePaymentIsNeverSwept(t *testing.T) {
+	spendSeams(t)
+	now := time.Now().Unix()
+	if err := writeSpendLog(spendLog{Spends: []GamingSpend{{
+		ID: "gg77", Game: "poker", Address: "Tsaddr", AmountAtoms: 1_000_000,
+		State: GamingSpendPublishing, RequestedAt: now - 9999, ExpiresAt: now - 9000,
+	}}}, now); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	spendMu.Lock()
+	spendApproving["gg77"] = true
+	spendMu.Unlock()
+	t.Cleanup(func() {
+		spendMu.Lock()
+		delete(spendApproving, "gg77")
+		spendMu.Unlock()
+	})
+
+	GamingSpends()
+	if got := readSpendLog().Spends[0].State; got != GamingSpendPublishing {
+		t.Fatalf("a live broadcast was swept to %q", got)
+	}
+}
+
+// Money on its way to the network is exposure like money waiting on a person:
+// it counts against the day, it holds one of the eight outstanding slots, and
+// the trim may never drop it.
+func TestBroadcastingMoneyStillCountsEverywhere(t *testing.T) {
+	spendSeams(t)
+	now := time.Now().Unix()
+
+	day := spendLog{Spends: []GamingSpend{
+		{Game: "poker", State: GamingSpendPublishing, AmountAtoms: 70, ExpiresAt: now + 300},
+		{Game: "poker", State: GamingSpendPending, AmountAtoms: 30, ExpiresAt: now + 300},
+	}}
+	if got, want := spentInDayLocked(day, "poker", now), int64(100); got != want {
+		t.Fatalf("counted %d against the day, want %d", got, want)
+	}
+
+	var spends []GamingSpend
+	spends = append(spends, GamingSpend{
+		ID: "hh88", Game: "poker", State: GamingSpendPublishing, AmountAtoms: 1,
+		RequestedAt: now, ExpiresAt: now + 300,
+	})
+	for i := 0; i < 7; i++ {
+		spends = append(spends, GamingSpend{
+			Game: "poker", State: GamingSpendPending, AmountAtoms: 1,
+			RequestedAt: now, ExpiresAt: now + 300,
+		})
+	}
+	if err := writeSpendLog(spendLog{Spends: spends}, now); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
+	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "a seat"); !errors.Is(err, ErrGamingSpendOverCap) {
+		t.Fatalf("a broadcast did not hold its slot: %v", err)
+	}
+
+	flood := []GamingSpend{{
+		ID: "hh88", Game: "poker", State: GamingSpendPublishing, AmountAtoms: 1,
+		RequestedAt: now, ExpiresAt: now + 300,
+	}}
+	for i := 0; i < 500; i++ {
+		flood = append(flood, GamingSpend{
+			Game: "poker", State: GamingSpendDenied, AmountAtoms: 1, DecidedAt: now - 30,
+		})
+	}
+	if err := writeSpendLog(spendLog{Spends: flood}, now); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	kept := readSpendLog()
+	if kept.Spends[0].ID != "hh88" {
+		t.Fatalf("the trim dropped a broadcast; the log starts with %q", kept.Spends[0].ID)
+	}
+}
+
+// The deployed game reads any state it does not know as a terminal refusal
+// and drops its own double-payment guard, so a payment being broadcast is
+// told to it as still pending - which is also the truthful answer.
+func TestPublishingNeverReachesTheWire(t *testing.T) {
+	for _, tc := range []struct {
+		state GamingSpendState
+		want  string
+	}{
+		{GamingSpendPending, "pending"},
+		{GamingSpendPublishing, "pending"},
+		{GamingSpendApproved, "approved"},
+		{GamingSpendDenied, "denied"},
+		{GamingSpendExpired, "expired"},
+		{GamingSpendFailed, "failed"},
+	} {
+		p := spendProto(GamingSpend{ID: "x", State: tc.state})
+		if p.State != tc.want {
+			t.Errorf("%s rides the wire as %q, want %q", tc.state, p.State, tc.want)
+		}
+	}
+}
+
+// Expiry answers requests nobody decided; a payment being broadcast was
+// decided, and the network is working on it.
+func TestExpiryNeverTouchesAPaymentBeingBroadcast(t *testing.T) {
+	now := time.Now().Unix()
+	log := spendLog{Spends: []GamingSpend{
+		{ID: "a", State: GamingSpendPublishing, ExpiresAt: now - 500},
+	}}
+	if expireLocked(&log, now) {
+		t.Fatal("expiry claimed to change a broadcasting entry")
+	}
+	if log.Spends[0].State != GamingSpendPublishing {
+		t.Fatalf("expiry changed a broadcast to %q", log.Spends[0].State)
+	}
+}
