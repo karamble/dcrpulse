@@ -79,7 +79,7 @@ func BisonrelayGCInvitesAcceptHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCDetailHandler returns the full GC record including members + blocklist.
 func BisonrelayGCDetailHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -103,7 +103,7 @@ func BisonrelayGCInviteHandler(w http.ResponseWriter, r *http.Request) {
 // Returns {body: "<synthesised wire body>"} so the caller can echo it
 // optimistically.
 func BisonrelayGCMessageHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -155,7 +155,7 @@ func BisonrelayGCMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCHistoryHandler paginates GC message history.
 func BisonrelayGCHistoryHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -174,7 +174,7 @@ func BisonrelayGCHistoryHandler(w http.ResponseWriter, r *http.Request) {
 // Local-only and irreversible: the group and its members are untouched and the
 // other members keep their own copies.
 func BisonrelayGCClearHistoryHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -188,8 +188,8 @@ func BisonrelayGCPartHandler(w http.ResponseWriter, r *http.Request) {
 
 // gcReasonAction runs one GC action with an optional {reason} body; a missing
 // body is deliberately tolerated.
-func gcReasonAction(w http.ResponseWriter, r *http.Request, act func(ctx context.Context, gcid, reason string) error) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+func gcReasonAction(w http.ResponseWriter, r *http.Request, act func(ctx context.Context, gcid rpc.ShortIDHex, reason string) error) {
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -207,7 +207,7 @@ func BisonrelayGCKillHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCKickHandler kicks a member (admin action).
 func BisonrelayGCKickHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -223,8 +223,8 @@ func BisonrelayGCKickHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // gcMemberAction decodes {uid} and runs one member-scoped GC action.
-func gcMemberAction(w http.ResponseWriter, r *http.Request, action func(ctx context.Context, gcid, uid string) error) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+func gcMemberAction(w http.ResponseWriter, r *http.Request, action func(ctx context.Context, gcid rpc.ShortIDHex, uid string) error) {
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -250,7 +250,7 @@ func BisonrelayGCUnblockHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCAdminsHandler replaces the ExtraAdmins list (v1+ only).
 func BisonrelayGCAdminsHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -267,7 +267,7 @@ func BisonrelayGCAdminsHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCOwnerHandler swaps the GC owner (Members[0]).
 func BisonrelayGCOwnerHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -284,7 +284,7 @@ func BisonrelayGCOwnerHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCUpgradeHandler bumps the GC protocol version (one-way).
 func BisonrelayGCUpgradeHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -300,7 +300,7 @@ func BisonrelayGCUpgradeHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCAliasHandler sets the local alias for a GC (DB-only).
 func BisonrelayGCAliasHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}
@@ -316,7 +316,7 @@ func BisonrelayGCAliasHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayGCResendListHandler resends the GC member list to one or all members.
 func BisonrelayGCResendListHandler(w http.ResponseWriter, r *http.Request) {
-	gcid, ok := brID(w, mux.Vars(r)["gcid"], "gcid")
+	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
 		return
 	}

@@ -23,6 +23,8 @@ func TestWalletSwitchRacesCertReaders(t *testing.T) {
 		StatusPort: "7677",
 	})
 
+	rv := mustID(t, testRV)
+
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -39,7 +41,7 @@ func TestWalletSwitchRacesCertReaders(t *testing.T) {
 		for i := 0; i < 2000; i++ {
 			// Fails on the missing cert files, but only after it has copied the
 			// config the switch is rewriting.
-			_, _, _ = BrclientdWSDialer()
+			_, _, _ = BrclientdRTDTAudioDial(rv)
 		}
 	}()
 	close(start)

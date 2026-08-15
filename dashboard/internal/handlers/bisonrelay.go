@@ -136,23 +136,27 @@ var (
 	embedFilenameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 	downloadNickRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 	downloadFileRe  = regexp.MustCompile(`^[A-Za-z0-9._ -]+$`)
-	// uid, pid, fid, gcid and rv are all zkidentity.ShortID hex strings, which
-	// brclientd decodes as exactly 32 bytes. Checking here means a malformed
-	// value is refused rather than forwarded into a request URL and left for
-	// the daemon to reject.
-	brIDRe = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 )
 
-// brID reads a Bison Relay identifier, answering false and writing a 400 when
-// it is not one. name appears in the error, so callers pass the parameter's
-// own name.
-func brID(w http.ResponseWriter, value, name string) (string, bool) {
-	v := strings.TrimSpace(value)
-	if !brIDRe.MatchString(v) {
+// brPathID reads a Bison Relay identifier that becomes a path segment in a
+// brclientd URL, answering false and writing a 400 when it is not one. name
+// appears in the error, so callers pass the parameter's own name. The shape
+// itself is defined in the rpc package.
+func brPathID(w http.ResponseWriter, value, name string) (rpc.ShortIDHex, bool) {
+	id, err := rpc.ParseShortIDHex(strings.TrimSpace(value))
+	if err != nil {
+		// The value is caller-chosen, so it is not echoed back.
 		http.Error(w, "invalid "+name, http.StatusBadRequest)
-		return "", false
+		return rpc.ShortIDHex{}, false
 	}
-	return v, true
+	return id, true
+}
+
+// brID is brPathID for a value used as a query parameter or body field rather
+// than a path segment. Same check, plain string.
+func brID(w http.ResponseWriter, value, name string) (string, bool) {
+	id, ok := brPathID(w, value, name)
+	return id.String(), ok
 }
 
 // brIDOpt is brID for a parameter the endpoint treats as optional: an omitted
@@ -428,7 +432,7 @@ func BisonrelayRunningTipsHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayRTDTMessagesHandler returns the chat messages tracked for a
 // live RTDT session.
 func BisonrelayRTDTMessagesHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}
@@ -437,7 +441,7 @@ func BisonrelayRTDTMessagesHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTChatHandler sends a text message into a live RTDT session.
 func BisonrelayRTDTChatHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}
@@ -1076,11 +1080,11 @@ func BisonrelayManageDeleteDownloadHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !brIDRe.MatchString(req.FID) {
+	if _, err := rpc.ParseShortIDHex(req.FID); err != nil {
 		http.Error(w, "invalid fid", http.StatusBadRequest)
 		return
 	}
-	if req.UID != "" && !brIDRe.MatchString(req.UID) {
+	if _, err := rpc.ParseShortIDHex(req.UID); req.UID != "" && err != nil {
 		http.Error(w, "invalid uid", http.StatusBadRequest)
 		return
 	}
@@ -1148,7 +1152,7 @@ func BisonrelayRTDTCreateInstantHandler(w http.ResponseWriter, r *http.Request) 
 
 // BisonrelayRTDTInviteHandler invites users to an existing session.
 func BisonrelayRTDTInviteHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}
@@ -1165,7 +1169,7 @@ func BisonrelayRTDTInviteHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTAcceptHandler accepts a pending invite.
 func BisonrelayRTDTAcceptHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}
@@ -1182,7 +1186,7 @@ func BisonrelayRTDTAcceptHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTJoinHandler joins the live audio for a session.
 func BisonrelayRTDTJoinHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}
@@ -1191,7 +1195,7 @@ func BisonrelayRTDTJoinHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTLeaveHandler leaves a session.
 func BisonrelayRTDTLeaveHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}
@@ -1200,7 +1204,7 @@ func BisonrelayRTDTLeaveHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTDissolveHandler dissolves a session (owner).
 func BisonrelayRTDTDissolveHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}
@@ -1209,7 +1213,7 @@ func BisonrelayRTDTDissolveHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTKickHandler kicks a peer from the live session.
 func BisonrelayRTDTKickHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}
@@ -1226,7 +1230,7 @@ func BisonrelayRTDTKickHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTRemoveHandler removes a member from the session metadata.
 func BisonrelayRTDTRemoveHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}
@@ -1243,7 +1247,7 @@ func BisonrelayRTDTRemoveHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRTDTRotateCookiesHandler invalidates current appointment cookies.
 func BisonrelayRTDTRotateCookiesHandler(w http.ResponseWriter, r *http.Request) {
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		return
 	}

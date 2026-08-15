@@ -10,13 +10,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"net/url"
 	"os"
 	"strconv"
 	"sync"
@@ -153,10 +151,10 @@ func BrclientdCreateIdentity(ctx context.Context, nick, name string) error {
 	if err != nil {
 		return err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.Port == "" {
-		return errors.New("brclientd: host/port not configured")
+	url, err := brclientdEndpoint(setupPort, "/create-identity", nil)
+	if err != nil {
+		return err
 	}
-	url := fmt.Sprintf("https://%s:%s/create-identity", BrclientdCfg.Host, BrclientdCfg.Port)
 	payload, err := json.Marshal(map[string]string{"nick": nick, "name": name})
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
@@ -192,11 +190,12 @@ type BrclientdSendFileResult struct {
 // brclientdUpload posts a multipart form of the given fields plus one file
 // part. cli is a parameter because a slow endpoint needs the no-deadline
 // client; the request context bounds it instead.
-func brclientdUpload(ctx context.Context, cli *http.Client, path string, fields [][2]string,
+func brclientdUpload(ctx context.Context, cli *http.Client, path brPath, fields [][2]string,
 	filename, mime string, body io.Reader) (json.RawMessage, error) {
 
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
+	endpoint, err := brclientdEndpoint(statusPort, path, nil)
+	if err != nil {
+		return nil, err
 	}
 
 	pr, pw := io.Pipe()
@@ -226,7 +225,6 @@ func brclientdUpload(ctx context.Context, cli *http.Client, path string, fields 
 		}
 	}()
 
-	endpoint := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, pr)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -380,13 +378,13 @@ func BrclientdRunningTipAttempts(ctx context.Context) (json.RawMessage, error) {
 
 // BrclientdRTDTMessages returns the chat messages tracked for a live RTDT
 // session.
-func BrclientdRTDTMessages(ctx context.Context, rv string) (json.RawMessage, error) {
-	return brclientdGetRaw(ctx, "/rtdt/sessions/"+rv+"/messages", nil)
+func BrclientdRTDTMessages(ctx context.Context, rv ShortIDHex) (json.RawMessage, error) {
+	return brclientdGetRawID(ctx, "/rtdt/sessions", rv, "/messages", nil)
 }
 
 // BrclientdRTDTChat sends a text message into a live RTDT session.
-func BrclientdRTDTChat(ctx context.Context, rv, message string) error {
-	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/chat", map[string]string{
+func BrclientdRTDTChat(ctx context.Context, rv ShortIDHex, message string) error {
+	return brclientdPostJSONID(ctx, "/rtdt/sessions", rv, "/chat", map[string]string{
 		"message": message,
 	})
 }
@@ -694,13 +692,14 @@ func BrclientdContentFile(ctx context.Context, uidHex, fidHex string) (*http.Res
 	if err != nil {
 		return nil, err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
-	}
-	endpoint := fmt.Sprintf("https://%s:%s/content/file?fid=%s",
-		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(fidHex))
+	// An absent uid stays absent rather than becoming uid=.
+	q := map[string]string{"fid": fidHex}
 	if uidHex != "" {
-		endpoint += "&uid=" + url.QueryEscape(uidHex)
+		q["uid"] = uidHex
+	}
+	endpoint, err := brclientdEndpoint(statusPort, "/content/file", q)
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -721,11 +720,14 @@ func BrclientdPostEmbedData(ctx context.Context, uidHex, pidHex string, index in
 	if err != nil {
 		return nil, err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
+	endpoint, err := brclientdEndpoint(statusPort, "/posts/embed-data", map[string]string{
+		"uid":   uidHex,
+		"pid":   pidHex,
+		"index": strconv.Itoa(index),
+	})
+	if err != nil {
+		return nil, err
 	}
-	endpoint := fmt.Sprintf("https://%s:%s/posts/embed-data?uid=%s&pid=%s&index=%d",
-		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(uidHex), url.QueryEscape(pidHex), index)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -746,10 +748,10 @@ func BrclientdBackup(ctx context.Context) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
+	url, err := brclientdEndpoint(statusPort, "/backup", nil)
+	if err != nil {
+		return nil, err
 	}
-	url := fmt.Sprintf("https://%s:%s/backup", BrclientdCfg.Host, BrclientdCfg.StatusPort)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -770,10 +772,10 @@ func BrclientdRestoreBackup(ctx context.Context, body io.Reader) error {
 	if err != nil {
 		return err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.Port == "" {
-		return errors.New("brclientd: host/port not configured")
+	url, err := brclientdEndpoint(setupPort, "/restore-backup", nil)
+	if err != nil {
+		return err
 	}
-	url := fmt.Sprintf("https://%s:%s/restore-backup", BrclientdCfg.Host, BrclientdCfg.Port)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
@@ -861,11 +863,10 @@ func BrclientdGetStoreFile(ctx context.Context, path string) ([]byte, string, er
 	if err != nil {
 		return nil, "", err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, "", errors.New("brclientd: status host/port not configured")
+	u, err := brclientdEndpoint(statusPort, "/store/files/get", map[string]string{"path": path})
+	if err != nil {
+		return nil, "", err
 	}
-	u := fmt.Sprintf("https://%s:%s/store/files/get?path=%s",
-		BrclientdCfg.Host, BrclientdCfg.StatusPort, url.QueryEscape(path))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("build get-file request: %w", err)
@@ -988,55 +989,55 @@ func BrclientdRTDTCreateInstant(ctx context.Context, uids []string) (json.RawMes
 }
 
 // BrclientdRTDTInvite invites users to an existing RTDT session.
-func BrclientdRTDTInvite(ctx context.Context, rv string, uids []string, asPublisher bool) error {
-	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/invite", map[string]any{
+func BrclientdRTDTInvite(ctx context.Context, rv ShortIDHex, uids []string, asPublisher bool) error {
+	return brclientdPostJSONID(ctx, "/rtdt/sessions", rv, "/invite", map[string]any{
 		"uids":         uids,
 		"as_publisher": asPublisher,
 	})
 }
 
 // BrclientdRTDTAccept accepts a pending invite to an RTDT session.
-func BrclientdRTDTAccept(ctx context.Context, rv, inviter string, asPublisher bool) error {
-	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/accept", map[string]any{
+func BrclientdRTDTAccept(ctx context.Context, rv ShortIDHex, inviter string, asPublisher bool) error {
+	return brclientdPostJSONID(ctx, "/rtdt/sessions", rv, "/accept", map[string]any{
 		"inviter":      inviter,
 		"as_publisher": asPublisher,
 	})
 }
 
 // BrclientdRTDTJoin connects the live UDP audio for an accepted session.
-func BrclientdRTDTJoin(ctx context.Context, rv string) error {
-	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/join", map[string]any{})
+func BrclientdRTDTJoin(ctx context.Context, rv ShortIDHex) error {
+	return brclientdPostJSONID(ctx, "/rtdt/sessions", rv, "/join", map[string]any{})
 }
 
 // BrclientdRTDTLeave leaves an RTDT session (member action).
-func BrclientdRTDTLeave(ctx context.Context, rv string) error {
-	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/leave", map[string]any{})
+func BrclientdRTDTLeave(ctx context.Context, rv ShortIDHex) error {
+	return brclientdPostJSONID(ctx, "/rtdt/sessions", rv, "/leave", map[string]any{})
 }
 
 // BrclientdRTDTDissolve tears down an RTDT session (owner only).
-func BrclientdRTDTDissolve(ctx context.Context, rv string) error {
-	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/dissolve", map[string]any{})
+func BrclientdRTDTDissolve(ctx context.Context, rv ShortIDHex) error {
+	return brclientdPostJSONID(ctx, "/rtdt/sessions", rv, "/dissolve", map[string]any{})
 }
 
 // BrclientdRTDTKick removes a peer from the live audio session.
-func BrclientdRTDTKick(ctx context.Context, rv string, peerID uint32, banSeconds int64) error {
-	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/kick", map[string]any{
+func BrclientdRTDTKick(ctx context.Context, rv ShortIDHex, peerID uint32, banSeconds int64) error {
+	return brclientdPostJSONID(ctx, "/rtdt/sessions", rv, "/kick", map[string]any{
 		"peer_id":     peerID,
 		"ban_seconds": banSeconds,
 	})
 }
 
 // BrclientdRTDTRemove removes a member from the session metadata.
-func BrclientdRTDTRemove(ctx context.Context, rv, uid, reason string) error {
-	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/remove", map[string]any{
+func BrclientdRTDTRemove(ctx context.Context, rv ShortIDHex, uid, reason string) error {
+	return brclientdPostJSONID(ctx, "/rtdt/sessions", rv, "/remove", map[string]any{
 		"uid":    uid,
 		"reason": reason,
 	})
 }
 
 // BrclientdRTDTRotateCookies invalidates current appointment cookies.
-func BrclientdRTDTRotateCookies(ctx context.Context, rv string) error {
-	return brclientdPostJSON(ctx, "/rtdt/sessions/"+rv+"/rotate-cookies", map[string]any{})
+func BrclientdRTDTRotateCookies(ctx context.Context, rv ShortIDHex) error {
+	return brclientdPostJSONID(ctx, "/rtdt/sessions", rv, "/rotate-cookies", map[string]any{})
 }
 
 // ---- GC (group-chat) control plane --------------------------------------
@@ -1061,22 +1062,22 @@ func BrclientdGCInvitesAccept(ctx context.Context, iid uint64) error {
 	return brclientdPostJSON(ctx, "/gc/invites/accept", map[string]any{"iid": iid})
 }
 
-func BrclientdGCDetail(ctx context.Context, gcid string) (json.RawMessage, error) {
-	return brclientdGetRaw(ctx, "/gc/"+gcid, nil)
+func BrclientdGCDetail(ctx context.Context, gcid ShortIDHex) (json.RawMessage, error) {
+	return brclientdGetRawID(ctx, "/gc", gcid, "", nil)
 }
 
-func BrclientdGCInvite(ctx context.Context, gcid, uid string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/invite", map[string]any{"uid": uid})
+func BrclientdGCInvite(ctx context.Context, gcid ShortIDHex, uid string) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/invite", map[string]any{"uid": uid})
 }
 
-func BrclientdGCMessage(ctx context.Context, gcid, message string, mode int) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/message", map[string]any{
+func BrclientdGCMessage(ctx context.Context, gcid ShortIDHex, message string, mode int) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/message", map[string]any{
 		"message": message,
 		"mode":    mode,
 	})
 }
 
-func BrclientdGCHistory(ctx context.Context, gcid string, page, pageSize int) (json.RawMessage, error) {
+func BrclientdGCHistory(ctx context.Context, gcid ShortIDHex, page, pageSize int) (json.RawMessage, error) {
 	q := map[string]string{}
 	if page > 0 {
 		q["page"] = strconv.Itoa(page)
@@ -1084,68 +1085,68 @@ func BrclientdGCHistory(ctx context.Context, gcid string, page, pageSize int) (j
 	if pageSize > 0 {
 		q["page_size"] = strconv.Itoa(pageSize)
 	}
-	return brclientdGetRaw(ctx, "/gc/"+gcid+"/history", q)
+	return brclientdGetRawID(ctx, "/gc", gcid, "/history", q)
 }
 
 // BrclientdGCClearHistory permanently deletes the local scrollback (and inline
 // media) for a group chat. Wraps brclientd's /gc/{gcid}/history/clear, which
 // removes the on-disk message log(s) + embeds for the gcid. Membership and the
 // group itself remain; only the local copy is wiped. Irreversible.
-func BrclientdGCClearHistory(ctx context.Context, gcid string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/history/clear", map[string]any{})
+func BrclientdGCClearHistory(ctx context.Context, gcid ShortIDHex) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/history/clear", map[string]any{})
 }
 
-func BrclientdGCPart(ctx context.Context, gcid, reason string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/part", map[string]any{"reason": reason})
+func BrclientdGCPart(ctx context.Context, gcid ShortIDHex, reason string) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/part", map[string]any{"reason": reason})
 }
 
-func BrclientdGCKill(ctx context.Context, gcid, reason string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/kill", map[string]any{"reason": reason})
+func BrclientdGCKill(ctx context.Context, gcid ShortIDHex, reason string) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/kill", map[string]any{"reason": reason})
 }
 
-func BrclientdGCKick(ctx context.Context, gcid, uid, reason string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/kick", map[string]any{
+func BrclientdGCKick(ctx context.Context, gcid ShortIDHex, uid, reason string) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/kick", map[string]any{
 		"uid":    uid,
 		"reason": reason,
 	})
 }
 
-func BrclientdGCBlock(ctx context.Context, gcid, uid string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/block", map[string]any{"uid": uid})
+func BrclientdGCBlock(ctx context.Context, gcid ShortIDHex, uid string) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/block", map[string]any{"uid": uid})
 }
 
-func BrclientdGCUnblock(ctx context.Context, gcid, uid string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/unblock", map[string]any{"uid": uid})
+func BrclientdGCUnblock(ctx context.Context, gcid ShortIDHex, uid string) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/unblock", map[string]any{"uid": uid})
 }
 
-func BrclientdGCModifyAdmins(ctx context.Context, gcid string, extraAdmins []string, reason string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/admins", map[string]any{
+func BrclientdGCModifyAdmins(ctx context.Context, gcid ShortIDHex, extraAdmins []string, reason string) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/admins", map[string]any{
 		"extra_admins": extraAdmins,
 		"reason":       reason,
 	})
 }
 
-func BrclientdGCModifyOwner(ctx context.Context, gcid, newOwner, reason string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/owner", map[string]any{
+func BrclientdGCModifyOwner(ctx context.Context, gcid ShortIDHex, newOwner, reason string) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/owner", map[string]any{
 		"new_owner": newOwner,
 		"reason":    reason,
 	})
 }
 
-func BrclientdGCUpgrade(ctx context.Context, gcid string, newVersion uint8) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/upgrade", map[string]any{"new_version": newVersion})
+func BrclientdGCUpgrade(ctx context.Context, gcid ShortIDHex, newVersion uint8) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/upgrade", map[string]any{"new_version": newVersion})
 }
 
-func BrclientdGCAlias(ctx context.Context, gcid, alias string) error {
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/alias", map[string]any{"alias": alias})
+func BrclientdGCAlias(ctx context.Context, gcid ShortIDHex, alias string) error {
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/alias", map[string]any{"alias": alias})
 }
 
-func BrclientdGCResendList(ctx context.Context, gcid, uid string) error {
+func BrclientdGCResendList(ctx context.Context, gcid ShortIDHex, uid string) error {
 	body := map[string]any{}
 	if uid != "" {
 		body["uid"] = uid
 	}
-	return brclientdPostJSON(ctx, "/gc/"+gcid+"/resend-list", body)
+	return brclientdPostJSONID(ctx, "/gc", gcid, "/resend-list", body)
 }
 
 // BrclientdPostsFeed returns the raw JSON body of brclientd's /posts/feed.
@@ -1243,27 +1244,20 @@ func BrclientdPostBody(ctx context.Context, uidHex, pidHex string) (json.RawMess
 // brclientdGetRaw issues a GET to brclientd's status server and returns
 // the response body as a json.RawMessage. Mirrors brclientdPostJSON but
 // for GET-shaped endpoints.
-func brclientdGetRaw(ctx context.Context, path string, query map[string]string) (json.RawMessage, error) {
+func brclientdGetRaw(ctx context.Context, path brPath, query map[string]string) (json.RawMessage, error) {
 	return brclientdGetRawLimit(ctx, path, query, 8<<20)
 }
 
 // brclientdGetRawLimit is brclientdGetRaw with an explicit body bound, for
 // endpoints whose replies are much smaller or much larger than the default.
-func brclientdGetRawLimit(ctx context.Context, path string, query map[string]string, limit int64) (json.RawMessage, error) {
+func brclientdGetRawLimit(ctx context.Context, path brPath, query map[string]string, limit int64) (json.RawMessage, error) {
 	cli, err := brclientdClient()
 	if err != nil {
 		return nil, err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
-	}
-	endpoint := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
-	if len(query) > 0 {
-		vals := url.Values{}
-		for k, v := range query {
-			vals.Set(k, v)
-		}
-		endpoint += "?" + vals.Encode()
+	endpoint, err := brclientdEndpoint(statusPort, path, query)
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -1331,10 +1325,10 @@ func BrclientdStreamNotifications(ctx context.Context, onEvent func(BrclientdNot
 	if err != nil {
 		return err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return errors.New("brclientd: status host/port not configured")
+	url, err := brclientdEndpoint(statusPort, "/notifications", nil)
+	if err != nil {
+		return err
 	}
-	url := fmt.Sprintf("https://%s:%s/notifications", BrclientdCfg.Host, BrclientdCfg.StatusPort)
 	// The stream client carries no overall timeout, so a silently dead
 	// connection would otherwise block Decode forever. The watchdog cancels
 	// the request when nothing arrives within notifIdleTimeout; any decoded
@@ -1376,15 +1370,15 @@ func BrclientdStreamNotifications(ctx context.Context, onEvent func(BrclientdNot
 // brclientdPostJSON issues a POST with a JSON body to brclientd's status
 // server and expects a 204 No Content reply. Used by per-contact action
 // endpoints that share the same fire-and-forget shape.
-func brclientdPostJSON(ctx context.Context, path string, body any) error {
+func brclientdPostJSON(ctx context.Context, path brPath, body any) error {
 	cli, err := brclientdClient()
 	if err != nil {
 		return err
 	}
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return errors.New("brclientd: status host/port not configured")
+	url, err := brclientdEndpoint(statusPort, path, nil)
+	if err != nil {
+		return err
 	}
-	url := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("marshal payload: %w", err)
@@ -1409,7 +1403,7 @@ func brclientdPostJSON(ctx context.Context, path string, body any) error {
 // brclientdPostJSONRaw is the variant of brclientdPostJSON used when the
 // endpoint returns a JSON body (e.g. /rtdt/sessions/create returns the new
 // session summary). Accepts 200 OK with body.
-func brclientdPostJSONRaw(ctx context.Context, path string, body any) (json.RawMessage, error) {
+func brclientdPostJSONRaw(ctx context.Context, path brPath, body any) (json.RawMessage, error) {
 	cli, err := brclientdClient()
 	if err != nil {
 		return nil, err
@@ -1421,7 +1415,7 @@ func brclientdPostJSONRaw(ctx context.Context, path string, body any) (json.RawM
 // SUCCESS body is an error rather than a silent truncation, which would surface
 // later as a confusing JSON parse failure. An oversized error body is truncated,
 // since it only becomes text in an error message.
-func readBrclientdBody(resp *http.Response, path string, limit int64) ([]byte, error) {
+func readBrclientdBody(resp *http.Response, path brPath, limit int64) ([]byte, error) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("brclientd %s: read body: %w", path, err)
@@ -1451,11 +1445,11 @@ const (
 // caller can pick a timeout policy that fits the endpoint (e.g. the no-deadline
 // pages client for an unbounded /pages/fetch transfer). limit bounds the
 // response body.
-func brclientdDoPostJSONRaw(ctx context.Context, cli *http.Client, path string, body any, limit int64) (json.RawMessage, error) {
-	if BrclientdCfg.Host == "" || BrclientdCfg.StatusPort == "" {
-		return nil, errors.New("brclientd: status host/port not configured")
+func brclientdDoPostJSONRaw(ctx context.Context, cli *http.Client, path brPath, body any, limit int64) (json.RawMessage, error) {
+	url, err := brclientdEndpoint(statusPort, path, nil)
+	if err != nil {
+		return nil, err
 	}
-	url := fmt.Sprintf("https://%s:%s%s", BrclientdCfg.Host, BrclientdCfg.StatusPort, path)
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal payload: %w", err)
@@ -1565,6 +1559,13 @@ func brclientdBuild(cache **http.Client, timeout, headerTimeout time.Duration) (
 			ResponseHeaderTimeout: headerTimeout,
 		},
 		Timeout: timeout,
+		// brclientd registers both /gc and /gc/, so it never redirects on
+		// purpose; ServeMux's path-cleaning 307 replays the method and body at
+		// another route. ErrUseLastResponse surfaces it as a non-2xx rather
+		// than as a transport error.
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 	return *cache, nil
 }
@@ -1601,21 +1602,24 @@ func brclientdPagesClient() (*http.Client, error) {
 	return brclientdBuild(&brclientdPagesHTTPClient, 0, 0)
 }
 
-// BrclientdWSDialer returns a gorilla-websocket-compatible dialer plus the
-// base wss:// URL for brclientd's status port, both preconfigured with the
-// pinned mTLS chain. The RTDT audio proxy uses this to bridge browser <->
-// brclientd binary frames without re-implementing cert pinning.
-func BrclientdWSDialer() (tlsCfg *tls.Config, baseURL string, err error) {
-	cfg := brclientdConfig()
-	if cfg.Host == "" || cfg.StatusPort == "" {
-		return nil, "", errors.New("brclientd: status host/port not configured")
-	}
-	tlsCfg, err = loadBrclientdTLS(cfg)
+// BrclientdRTDTAudioDial returns the pinned mTLS chain and the complete wss://
+// URL for one session's audio socket, so the RTDT audio proxy can bridge
+// browser <-> brclientd frames without re-implementing cert pinning. Returns a
+// finished URL rather than a base, so the caller has nothing to append to.
+func BrclientdRTDTAudioDial(rv ShortIDHex) (*tls.Config, string, error) {
+	path, err := brclientdRoute("/rtdt/sessions", rv, "/audio")
 	if err != nil {
 		return nil, "", err
 	}
-	baseURL = fmt.Sprintf("wss://%s:%s", cfg.Host, cfg.StatusPort)
-	return tlsCfg, baseURL, nil
+	endpoint, err := brclientdWSEndpoint(statusPort, path)
+	if err != nil {
+		return nil, "", err
+	}
+	tlsCfg, err := loadBrclientdTLS(brclientdConfig())
+	if err != nil {
+		return nil, "", err
+	}
+	return tlsCfg, endpoint, nil
 }
 
 func loadBrclientdTLS(cfg BrclientdConfig) (*tls.Config, error) {

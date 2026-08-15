@@ -30,14 +30,14 @@ var rtdtAudioBrowserUpgrader = websocket.Upgrader{
 // one side doesn't keep the other alive.
 func BisonrelayRTDTAudioHandler(w http.ResponseWriter, r *http.Request) {
 	// The rv is interpolated into the brclientd upstream URL below.
-	rv, ok := brID(w, mux.Vars(r)["rv"], "rv")
+	rv, ok := brPathID(w, mux.Vars(r)["rv"], "rv")
 	if !ok {
 		brelLog.Warnf("RTDT audio: rejecting malformed rv in path %s", r.URL.Path)
 		return
 	}
 	brelLog.Infof("RTDT audio: upgrade request rv=%s origin=%q", rv, r.Header.Get("Origin"))
 
-	tlsCfg, baseURL, err := rpc.BrclientdWSDialer()
+	tlsCfg, upstreamURL, err := rpc.BrclientdRTDTAudioDial(rv)
 	if err != nil {
 		brelLog.Errorf("RTDT audio: dialer config: %v", err)
 		http.Error(w, "brclientd dialer: "+err.Error(), http.StatusInternalServerError)
@@ -52,7 +52,6 @@ func BisonrelayRTDTAudioHandler(w http.ResponseWriter, r *http.Request) {
 	// is not joined yet, or already attached in another tab) we surface
 	// that to the browser BEFORE upgrading our side, so the React client
 	// gets a clean HTTP error rather than a torn-down WS.
-	upstreamURL := baseURL + "/rtdt/sessions/" + rv + "/audio"
 	upstream, resp, err := dialer.Dial(upstreamURL, nil)
 	if err != nil {
 		if resp != nil {

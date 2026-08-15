@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -168,20 +167,19 @@ func (c *BrclientdWSClient) Run(ctx context.Context) error {
 func (c *BrclientdWSClient) dialAndServe(ctx context.Context) error {
 	// One snapshot, so the host dialled and the certs pinned come from the same
 	// read even if a wallet switch lands mid-redial.
-	cfg := brclientdConfig()
-	if cfg.Host == "" || cfg.Port == "" {
-		return errors.New("brclientd: host/port not configured")
-	}
-	tlsCfg, err := loadBrclientdTLS(cfg)
+	endpoint, err := brclientdWSEndpoint(setupPort, "/ws")
 	if err != nil {
 		return err
 	}
-	u := url.URL{Scheme: "wss", Host: cfg.Host + ":" + cfg.Port, Path: "/ws"}
+	tlsCfg, err := loadBrclientdTLS(brclientdConfig())
+	if err != nil {
+		return err
+	}
 	dialer := &websocket.Dialer{
 		TLSClientConfig:  tlsCfg,
 		HandshakeTimeout: 10 * time.Second,
 	}
-	conn, _, err := dialer.DialContext(ctx, u.String(), nil)
+	conn, _, err := dialer.DialContext(ctx, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
@@ -223,7 +221,7 @@ func (c *BrclientdWSClient) dialAndServe(ctx context.Context) error {
 		}
 	}()
 
-	rpccLog.Infof("brclientd-ws: connected to %s", u.String())
+	rpccLog.Infof("brclientd-ws: connected to %s", endpoint)
 
 	c.subMu.RLock()
 	subs := make([]*subscription, 0, len(c.subscribers))
