@@ -476,20 +476,14 @@ export const GamingLockedCoin = ({
       {tables.length > 0 && (
         <div className="space-y-2">
           <span className="text-xs text-muted-foreground block">
-            Tables {name} is still holding. Their stakes and bonds are listed
-            above with the rest of the locks, each with its own maturity. A
-            stake {name} never recorded as a lock can only be asked for, and it
-            answers with how many blocks are left if it is too early.
+            Tables {name} is still holding. Anything of theirs still locked on
+            the chain is listed above, each with its own maturity. A table with
+            nothing listed is holding nothing this console can take back.
           </span>
           {tables.map((t) => {
             const k = `${t.sid}:stake`;
             const a = attempts[k];
             const listed = staked.has(t.sid);
-            const offer =
-              !listed &&
-              !t.settling &&
-              a?.kind !== "sent" &&
-              a?.kind !== "moving";
             return (
               <div
                 key={t.sid}
@@ -516,20 +510,10 @@ export const GamingLockedCoin = ({
                     </span>
                   )
                 )}
-                {offer && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => void take(k, "stake", t.sid)}
-                      disabled={asking}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/20 text-muted-foreground hover:bg-muted/30 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {a?.kind === "asking" && (
-                        <Loader2 className="h-3 w-3 animate-spin inline mr-1" />
-                      )}
-                      Take back the stake
-                    </button>
-                  </div>
+                {!t.settling && !listed && (
+                  <span className="block text-xs text-muted-foreground">
+                    Nothing of this table's is locked on the chain any more.
+                  </span>
                 )}
                 {outcome(a)}
               </div>
