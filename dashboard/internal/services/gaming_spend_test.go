@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -318,6 +320,17 @@ func spendSeams(t *testing.T) {
 	})
 }
 
+// mustReadSpendLog reads the log for an assertion, failing the test rather
+// than returning an error nothing here expects.
+func mustReadSpendLog(t *testing.T) spendLog {
+	t.Helper()
+	log, err := readSpendLog()
+	if err != nil {
+		t.Fatalf("read spend log: %v", err)
+	}
+	return log
+}
+
 // seedPendingSpend writes one request awaiting a person.
 func seedPendingSpend(t *testing.T, id string, expiresAt int64) {
 	t.Helper()
@@ -358,7 +371,7 @@ func TestAMistypedPassphraseLeavesTheRequestApprovable(t *testing.T) {
 	if _, err := ApproveGamingSpend(context.Background(), "aa11", []byte("wrogn")); err == nil {
 		t.Fatal("a failed signing reported success")
 	}
-	if got := readSpendLog().Spends[0].State; got != GamingSpendPending {
+	if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendPending {
 		t.Fatalf("a pre-broadcast failure decided the request: %v", got)
 	}
 	if published != 0 {
@@ -490,7 +503,7 @@ func TestTheDaysSpendingCannotBeScrolledOffTheLog(t *testing.T) {
 	if err := writeSpendLog(spendLog{Spends: spends}, now); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	log := readSpendLog()
+	log := mustReadSpendLog(t)
 	if len(log.Spends) != maxSpendLog {
 		t.Fatalf("the log holds %d entries, want the bound of %d", len(log.Spends), maxSpendLog)
 	}
@@ -519,7 +532,7 @@ func TestAFullLogOfLiveEntriesIsKeptWholeRatherThanTrimmed(t *testing.T) {
 	if err := writeSpendLog(spendLog{Spends: spends}, now); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if got := len(readSpendLog().Spends); got != maxSpendLog+1 {
+	if got := len(mustReadSpendLog(t).Spends); got != maxSpendLog+1 {
 		t.Fatalf("a log of %d live entries was trimmed to %d", maxSpendLog+1, got)
 	}
 
@@ -529,7 +542,7 @@ func TestAFullLogOfLiveEntriesIsKeptWholeRatherThanTrimmed(t *testing.T) {
 	if err := writeSpendLog(spendLog{Spends: atBound}, now); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if got := len(readSpendLog().Spends); got != maxSpendLog {
+	if got := len(mustReadSpendLog(t).Spends); got != maxSpendLog {
 		t.Fatalf("a log exactly at the bound was cut to %d", got)
 	}
 }
@@ -611,7 +624,7 @@ func TestTheLogSaysPublishingBeforeAnythingIsBroadcast(t *testing.T) {
 	published := 0
 	approvalStubs(t, &published)
 	spendPublish = func(context.Context, []byte) (string, error) {
-		if got := readSpendLog().Spends[0].State; got != "publishing" {
+		if got := mustReadSpendLog(t).Spends[0].State; got != "publishing" {
 			t.Fatalf("at broadcast time the log says %q, want publishing", got)
 		}
 		published++
@@ -651,7 +664,7 @@ func TestAnApprovalThatOutlivedItsWindowNeverBroadcasts(t *testing.T) {
 	if _, err := ApproveGamingSpend(context.Background(), "bb22", []byte("right")); !errors.Is(err, ErrGamingSpendNotPending) {
 		t.Fatalf("an approval past its window came back %v, want not-pending", err)
 	}
-	if got := readSpendLog().Spends[0].State; got != GamingSpendExpired {
+	if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendExpired {
 		t.Fatalf("the entry is %q, want expired", got)
 	}
 }
@@ -675,7 +688,7 @@ func TestADecidedRequestCannotBeRewritten(t *testing.T) {
 		if _, err := recordSpendOutcome(GamingSpend{ID: "cc33"}, GamingSpendApproved, "txid99", ""); err == nil {
 			t.Fatalf("an outcome was recorded over %q", state)
 		}
-		if got := readSpendLog().Spends[0].State; got != state {
+		if got := mustReadSpendLog(t).Spends[0].State; got != state {
 			t.Fatalf("recording over %q changed it to %q", state, got)
 		}
 	}
@@ -715,7 +728,7 @@ func TestDenyIsRefusedWhileAnApprovalRuns(t *testing.T) {
 	if published != 1 {
 		t.Fatalf("published %d times for one request", published)
 	}
-	if got := readSpendLog().Spends[0].State; got != GamingSpendApproved {
+	if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendApproved {
 		t.Fatalf("the request ended %q, want approved", got)
 	}
 }
@@ -734,7 +747,7 @@ func TestDenyIsRefusedWhileAPaymentIsBroadcasting(t *testing.T) {
 	if _, err := DenyGamingSpend("ee55"); !errors.Is(err, ErrGamingSpendNotPending) {
 		t.Fatalf("deny over a broadcast came back %v, want a refusal", err)
 	}
-	if got := readSpendLog().Spends[0].State; got != GamingSpendPublishing {
+	if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendPublishing {
 		t.Fatalf("deny changed a broadcast to %q", got)
 	}
 }
@@ -753,7 +766,7 @@ func TestAPaymentInterruptedByARestartFailsWithTheWarning(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	GamingSpends()
-	got := readSpendLog().Spends[0]
+	got := mustReadSpendLog(t).Spends[0]
 	if got.State != GamingSpendFailed {
 		t.Fatalf("an interrupted broadcast is %q, want failed", got.State)
 	}
@@ -785,7 +798,7 @@ func TestALivePaymentIsNeverSwept(t *testing.T) {
 	})
 
 	GamingSpends()
-	if got := readSpendLog().Spends[0].State; got != GamingSpendPublishing {
+	if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendPublishing {
 		t.Fatalf("a live broadcast was swept to %q", got)
 	}
 }
@@ -838,7 +851,7 @@ func TestBroadcastingMoneyStillCountsEverywhere(t *testing.T) {
 	if err := writeSpendLog(spendLog{Spends: flood}, now); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	kept := readSpendLog()
+	kept := mustReadSpendLog(t)
 	if kept.Spends[0].ID != "hh88" {
 		t.Fatalf("the trim dropped a broadcast; the log starts with %q", kept.Spends[0].ID)
 	}
@@ -863,6 +876,90 @@ func TestPublishingNeverReachesTheWire(t *testing.T) {
 		if p.State != tc.want {
 			t.Errorf("%s rides the wire as %q, want %q", tc.state, p.State, tc.want)
 		}
+	}
+}
+
+// The spend log is both the audit trail and the counter the daily allowance
+// is computed from. Read as empty when it cannot be parsed, corruption would
+// answer with a day nobody spent and a history nobody kept - so an unreadable
+// log refuses every decision instead.
+func TestAnUnreadableLogRefusesToDecideAnything(t *testing.T) {
+	spendSeams(t)
+	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+		t.Fatal("an unreadable log let an approval reach the wallet")
+		return nil, nil
+	}
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
+	if err := writeGarbageSpendLog(); err != nil {
+		t.Fatalf("corrupt: %v", err)
+	}
+
+	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "a seat"); err == nil {
+		t.Fatal("a request was carried over an unreadable log")
+	}
+	if _, err := ApproveGamingSpend(context.Background(), "aa11", []byte("right")); err == nil {
+		t.Fatal("an approval started over an unreadable log")
+	}
+	if _, err := DenyGamingSpend("aa11"); err == nil {
+		t.Fatal("a deny answered over an unreadable log")
+	}
+	if _, err := GamingSpends(); err == nil {
+		t.Fatal("an unreadable log was served as a history")
+	}
+	if _, err := GamingSpendFor("poker", "aa11"); err == nil {
+		t.Fatal("a status was answered over an unreadable log")
+	}
+}
+
+// writeGarbageSpendLog overwrites the log with bytes no parser accepts.
+func writeGarbageSpendLog() error {
+	return os.WriteFile(gamingSpendLogPath(), []byte("{not json"), 0o600)
+}
+
+// Money that already moved must be written down even when the log cannot be
+// read: the unreadable bytes are kept aside for a person, and the outcome
+// starts a fresh record rather than vanishing with the corruption.
+func TestAnOutcomeSurvivesAnUnreadableLog(t *testing.T) {
+	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
+	seedPendingSpend(t, "aa11", time.Now().Unix()+300)
+
+	published := 0
+	approvalStubs(t, &published)
+	spendPublish = func(context.Context, []byte) (string, error) {
+		if err := writeGarbageSpendLog(); err != nil {
+			t.Fatalf("corrupt: %v", err)
+		}
+		published++
+		return "txid00", nil
+	}
+
+	out, err := ApproveGamingSpend(context.Background(), "aa11", []byte("right"))
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if out.State != GamingSpendApproved || out.TxID != "txid00" {
+		t.Fatalf("the rescue recorded %v txid %q", out.State, out.TxID)
+	}
+
+	fresh := mustReadSpendLog(t)
+	if len(fresh.Spends) != 1 || fresh.Spends[0].TxID != "txid00" || fresh.Spends[0].State != GamingSpendApproved {
+		t.Fatalf("the fresh log holds %+v", fresh.Spends)
+	}
+	aside, err := filepath.Glob(gamingSpendLogPath() + ".corrupt-*")
+	if err != nil || len(aside) != 1 {
+		t.Fatalf("the unreadable bytes were not kept aside: %v %v", aside, err)
+	}
+	kept, err := os.ReadFile(aside[0])
+	if err != nil || string(kept) != "{not json" {
+		t.Fatalf("the bytes aside read %q (%v), want the corruption byte for byte", kept, err)
+	}
+	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "after the rescue"); err != nil {
+		t.Fatalf("the log did not recover after the rescue: %v", err)
 	}
 }
 
