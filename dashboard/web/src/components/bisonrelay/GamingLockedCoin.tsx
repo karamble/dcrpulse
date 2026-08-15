@@ -92,10 +92,12 @@ export const GamingLockedCoin = ({
         setState(s);
         if (!refresh) return;
         // A refresh is a fresh look, so old refusals are dropped. A sent txid
-        // stays, and so does a timed-out ask unless the coin has left: that
-        // reclaim may be broadcast already, and asking twice spends twice.
+        // stays, and so does a timed-out ask unless the report accounts for it:
+        // that reclaim may be broadcast already, and asking twice spends twice.
         const live = new Set<string>([
-          ...(s.locks ?? []).filter((l) => !l.spent).map(keyOf),
+          ...(s.locks ?? [])
+            .filter((l) => !l.spent && !l.spending)
+            .map(keyOf),
           ...(s.tables ?? []).map((t) => `${t.sid}:stake`),
         ]);
         setAttempts((a) => {
@@ -104,7 +106,9 @@ export const GamingLockedCoin = ({
             if (v.kind === "sent") next[k] = v;
             else if (v.kind === "moving" && live.has(k)) next[k] = v;
           }
-          return next;
+          const same =
+            Object.keys(next).length === Object.keys(a).length;
+          return same ? a : next;
         });
       } catch {
         /* A game that has never reported leaves this empty, which the
@@ -114,8 +118,10 @@ export const GamingLockedCoin = ({
     [game],
   );
 
+  // Mount asks for a live look. The cached report is the game's last word, and
+  // acting on it can offer coin that is already on its way somewhere.
   useEffect(() => {
-    void load();
+    void load(true);
   }, [load]);
 
   // key identifies the button; outpoint is what goes on the wire, and is sent
@@ -348,6 +354,7 @@ export const GamingLockedCoin = ({
             const offer =
               gate !== "wait" &&
               !held &&
+              !l.spending &&
               a?.kind !== "sent" &&
               a?.kind !== "moving";
             return (
@@ -384,33 +391,44 @@ export const GamingLockedCoin = ({
                   )}
                 </div>
 
-                {gate === "ready" && !held && (
+                {/* A broadcast spend answers every other question about this
+                    row, so it is the only thing said about it. */}
+                {l.spending && (
+                  <span className="block text-xs text-muted-foreground">
+                    A spend of this is broadcast and waiting for a block. It is
+                    still listed because a broadcast can be dropped before it is
+                    mined, and it will move to what {name} has already spent
+                    once a block carries it. Refresh to see whether it
+                    confirmed.
+                  </span>
+                )}
+                {gate === "ready" && !held && !l.spending && (
                   <span className="block text-xs text-muted-foreground">
                     Free to take back.
                   </span>
                 )}
-                {held && (
+                {held && !l.spending && (
                   <span className="block text-xs text-warning">
                     That table is still settling. Taking this stake back now
                     would spend an input the settlement needs and defeat the
                     payout every seat signed, so it is not offered here.
                   </span>
                 )}
-                {gate === "wait" && left > 0 && (
+                {gate === "wait" && left > 0 && !l.spending && (
                   <span className="block text-xs text-muted-foreground">
                     Locked until block {l.maturesAt.toLocaleString()} &mdash;{" "}
                     {blocksWord(left)} more, {roughly(left)}. There is nothing
                     to ask for until then.
                   </span>
                 )}
-                {gate === "wait" && left === 0 && (
+                {gate === "wait" && left === 0 && !l.spending && (
                   <span className="block text-xs text-muted-foreground">
                     Block {l.maturesAt.toLocaleString()} has been reached, but{" "}
                     {name} has not counted this as spendable yet. Give it a
                     block and refresh.
                   </span>
                 )}
-                {gate === "unknown" && (
+                {gate === "unknown" && !l.spending && (
                   <span className="block text-xs text-muted-foreground">
                     How long is left is not known here, because the chain could
                     not be read. Asking is safe: {name} counts the confirmations
@@ -418,7 +436,7 @@ export const GamingLockedCoin = ({
                   </span>
                 )}
 
-                {l.kind === "bond" && othersHold && (
+                {l.kind === "bond" && othersHold && !l.spending && (
                   <span className="block text-xs text-warning">
                     Take this one back last. The bond is how {name} reads its
                     own tables back, and without it the route to every stake and

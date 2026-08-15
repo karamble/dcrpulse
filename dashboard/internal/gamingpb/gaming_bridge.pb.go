@@ -1681,15 +1681,17 @@ func (x *Table) GetSettling() bool {
 // true for one block and then quietly wrong; a maturity height stays true while
 // the game is away, and the console derives the rest from the bridge's own tip.
 type Bond struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
-	ScriptHex     string                 `protobuf:"bytes,2,opt,name=script_hex,json=scriptHex,proto3" json:"script_hex,omitempty"`
-	Outpoint      string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
-	MinAtoms      int64                  `protobuf:"varint,4,opt,name=min_atoms,json=minAtoms,proto3" json:"min_atoms,omitempty"`
-	Atoms         int64                  `protobuf:"varint,5,opt,name=atoms,proto3" json:"atoms,omitempty"`
-	MaturesAt     int64                  `protobuf:"varint,6,opt,name=matures_at,json=maturesAt,proto3" json:"matures_at,omitempty"`
-	HasDeposit    bool                   `protobuf:"varint,7,opt,name=has_deposit,json=hasDeposit,proto3" json:"has_deposit,omitempty"`
-	Spent         bool                   `protobuf:"varint,8,opt,name=spent,proto3" json:"spent,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Address    string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	ScriptHex  string                 `protobuf:"bytes,2,opt,name=script_hex,json=scriptHex,proto3" json:"script_hex,omitempty"`
+	Outpoint   string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
+	MinAtoms   int64                  `protobuf:"varint,4,opt,name=min_atoms,json=minAtoms,proto3" json:"min_atoms,omitempty"`
+	Atoms      int64                  `protobuf:"varint,5,opt,name=atoms,proto3" json:"atoms,omitempty"`
+	MaturesAt  int64                  `protobuf:"varint,6,opt,name=matures_at,json=maturesAt,proto3" json:"matures_at,omitempty"`
+	HasDeposit bool                   `protobuf:"varint,7,opt,name=has_deposit,json=hasDeposit,proto3" json:"has_deposit,omitempty"`
+	Spent      bool                   `protobuf:"varint,8,opt,name=spent,proto3" json:"spent,omitempty"`
+	// spending is true while a spend of this output is in the mempool.
+	Spending      bool `protobuf:"varint,9,opt,name=spending,proto3" json:"spending,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1780,15 +1782,26 @@ func (x *Bond) GetSpent() bool {
 	return false
 }
 
+func (x *Bond) GetSpending() bool {
+	if x != nil {
+		return x.Spending
+	}
+	return false
+}
+
 type TableBond struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Sid           string                 `protobuf:"bytes,1,opt,name=sid,proto3" json:"sid,omitempty"`
-	Seat          uint32                 `protobuf:"varint,2,opt,name=seat,proto3" json:"seat,omitempty"`
-	Outpoint      string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
-	Address       string                 `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
-	Atoms         int64                  `protobuf:"varint,5,opt,name=atoms,proto3" json:"atoms,omitempty"`
-	MaturesAt     int64                  `protobuf:"varint,6,opt,name=matures_at,json=maturesAt,proto3" json:"matures_at,omitempty"`
-	Spent         bool                   `protobuf:"varint,7,opt,name=spent,proto3" json:"spent,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Sid       string                 `protobuf:"bytes,1,opt,name=sid,proto3" json:"sid,omitempty"`
+	Seat      uint32                 `protobuf:"varint,2,opt,name=seat,proto3" json:"seat,omitempty"`
+	Outpoint  string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
+	Address   string                 `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
+	Atoms     int64                  `protobuf:"varint,5,opt,name=atoms,proto3" json:"atoms,omitempty"`
+	MaturesAt int64                  `protobuf:"varint,6,opt,name=matures_at,json=maturesAt,proto3" json:"matures_at,omitempty"`
+	Spent     bool                   `protobuf:"varint,7,opt,name=spent,proto3" json:"spent,omitempty"`
+	// spending is true while a spend of this output is in the mempool. Distinct
+	// from spent, which is the chain's settled answer: a broadcast can still be
+	// evicted, so the outpoint stays reported and stays this game's to reclaim.
+	Spending      bool `protobuf:"varint,8,opt,name=spending,proto3" json:"spending,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1872,19 +1885,30 @@ func (x *TableBond) GetSpent() bool {
 	return false
 }
 
+func (x *TableBond) GetSpending() bool {
+	if x != nil {
+		return x.Spending
+	}
+	return false
+}
+
 // Stake is one seat's buy-in, sitting behind its own refund timelock.
 //
 // Reported for the same reason a bond is: the console is where a person takes
 // coin back, and it cannot offer that for an outpoint it was never told about.
 type Stake struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Sid           string                 `protobuf:"bytes,1,opt,name=sid,proto3" json:"sid,omitempty"`
-	Seat          uint32                 `protobuf:"varint,2,opt,name=seat,proto3" json:"seat,omitempty"`
-	Outpoint      string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
-	Address       string                 `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
-	Atoms         int64                  `protobuf:"varint,5,opt,name=atoms,proto3" json:"atoms,omitempty"`
-	MaturesAt     int64                  `protobuf:"varint,6,opt,name=matures_at,json=maturesAt,proto3" json:"matures_at,omitempty"`
-	Spent         bool                   `protobuf:"varint,7,opt,name=spent,proto3" json:"spent,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Sid       string                 `protobuf:"bytes,1,opt,name=sid,proto3" json:"sid,omitempty"`
+	Seat      uint32                 `protobuf:"varint,2,opt,name=seat,proto3" json:"seat,omitempty"`
+	Outpoint  string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
+	Address   string                 `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
+	Atoms     int64                  `protobuf:"varint,5,opt,name=atoms,proto3" json:"atoms,omitempty"`
+	MaturesAt int64                  `protobuf:"varint,6,opt,name=matures_at,json=maturesAt,proto3" json:"matures_at,omitempty"`
+	Spent     bool                   `protobuf:"varint,7,opt,name=spent,proto3" json:"spent,omitempty"`
+	// spending is true while a spend of this output is in the mempool. Distinct
+	// from spent, which is the chain's settled answer: a broadcast can still be
+	// evicted, so the outpoint stays reported and stays this game's to reclaim.
+	Spending      bool `protobuf:"varint,8,opt,name=spending,proto3" json:"spending,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1964,6 +1988,13 @@ func (x *Stake) GetMaturesAt() int64 {
 func (x *Stake) GetSpent() bool {
 	if x != nil {
 		return x.Spent
+	}
+	return false
+}
+
+func (x *Stake) GetSpending() bool {
+	if x != nil {
+		return x.Spending
 	}
 	return false
 }
@@ -2858,7 +2889,7 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"buyinAtoms\x12\x14\n" +
 	"\x05until\x18\x06 \x01(\rR\x05until\x12\x12\n" +
 	"\x04over\x18\a \x01(\bR\x04over\x12\x1a\n" +
-	"\bsettling\x18\b \x01(\bR\bsettling\"\xe4\x01\n" +
+	"\bsettling\x18\b \x01(\bR\bsettling\"\x80\x02\n" +
 	"\x04Bond\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x1d\n" +
 	"\n" +
@@ -2870,7 +2901,8 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"matures_at\x18\x06 \x01(\x03R\tmaturesAt\x12\x1f\n" +
 	"\vhas_deposit\x18\a \x01(\bR\n" +
 	"hasDeposit\x12\x14\n" +
-	"\x05spent\x18\b \x01(\bR\x05spent\"\xb2\x01\n" +
+	"\x05spent\x18\b \x01(\bR\x05spent\x12\x1a\n" +
+	"\bspending\x18\t \x01(\bR\bspending\"\xce\x01\n" +
 	"\tTableBond\x12\x10\n" +
 	"\x03sid\x18\x01 \x01(\tR\x03sid\x12\x12\n" +
 	"\x04seat\x18\x02 \x01(\rR\x04seat\x12\x1a\n" +
@@ -2879,7 +2911,8 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"\x05atoms\x18\x05 \x01(\x03R\x05atoms\x12\x1d\n" +
 	"\n" +
 	"matures_at\x18\x06 \x01(\x03R\tmaturesAt\x12\x14\n" +
-	"\x05spent\x18\a \x01(\bR\x05spent\"\xae\x01\n" +
+	"\x05spent\x18\a \x01(\bR\x05spent\x12\x1a\n" +
+	"\bspending\x18\b \x01(\bR\bspending\"\xca\x01\n" +
 	"\x05Stake\x12\x10\n" +
 	"\x03sid\x18\x01 \x01(\tR\x03sid\x12\x12\n" +
 	"\x04seat\x18\x02 \x01(\rR\x04seat\x12\x1a\n" +
@@ -2888,7 +2921,8 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"\x05atoms\x18\x05 \x01(\x03R\x05atoms\x12\x1d\n" +
 	"\n" +
 	"matures_at\x18\x06 \x01(\x03R\tmaturesAt\x12\x14\n" +
-	"\x05spent\x18\a \x01(\bR\x05spent\"j\n" +
+	"\x05spent\x18\a \x01(\bR\x05spent\x12\x1a\n" +
+	"\bspending\x18\b \x01(\bR\bspending\"j\n" +
 	"\x13RequestSpendRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12!\n" +
 	"\famount_atoms\x18\x02 \x01(\x03R\vamountAtoms\x12\x16\n" +

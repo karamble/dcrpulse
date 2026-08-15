@@ -23,7 +23,7 @@ import (
 //
 // If this fails and the change was meant: regenerate (`make proto`), check the
 // method set below still says what you want, and paste the new hash in.
-const contractSHA256 = "b6c13c6b2dba35628f9206d4ac57f2cc026fb528deb8c7ce38b6d81c984bda70"
+const contractSHA256 = "98681ea0d77a2a3f4e50f0ba58e641d7dd7e422809558b280e976193b843d485"
 
 func TestTheWireContractHasNotDrifted(t *testing.T) {
 	raw, err := os.ReadFile("gaming_bridge.proto")

@@ -200,12 +200,16 @@ type gamingLock struct {
 	BlocksLeft int64  `json:"blocksLeft"`
 	Spendable  bool   `json:"spendable"`
 	Spent      bool   `json:"spent"`
+	// Spending is a spend of this output sitting in the mempool. The coin is
+	// still this game's until it confirms, so the row stays; what it must not
+	// do is invite a second attempt at coin already moving.
+	Spending bool `json:"spending"`
 }
 
 // gamingLockAt fills in what is left to wait, given the bridge's tip. A tip of
 // zero means the chain could not be read, so nothing is claimed to be ready.
 func gamingLockAt(l gamingLock, tip int64) gamingLock {
-	if l.Spent || l.MaturesAt <= 0 || tip <= 0 {
+	if l.Spent || l.Spending || l.MaturesAt <= 0 || tip <= 0 {
 		return l
 	}
 	if left := l.MaturesAt - tip; left > 0 {
@@ -240,6 +244,7 @@ func gamingStateView(s *gamingpb.GameState, tip int64) map[string]any {
 			Atoms:     b.GetAtoms(),
 			MaturesAt: b.GetMaturesAt(),
 			Spent:     b.GetSpent(),
+			Spending:  b.GetSpending(),
 		}, tip))
 	}
 	for _, tb := range s.GetTableBonds() {
@@ -252,6 +257,7 @@ func gamingStateView(s *gamingpb.GameState, tip int64) map[string]any {
 			Atoms:     tb.GetAtoms(),
 			MaturesAt: tb.GetMaturesAt(),
 			Spent:     tb.GetSpent(),
+			Spending:  tb.GetSpending(),
 		}, tip))
 	}
 	for _, st := range s.GetStakes() {
@@ -264,6 +270,7 @@ func gamingStateView(s *gamingpb.GameState, tip int64) map[string]any {
 			Atoms:     st.GetAtoms(),
 			MaturesAt: st.GetMaturesAt(),
 			Spent:     st.GetSpent(),
+			Spending:  st.GetSpending(),
 		}, tip))
 	}
 

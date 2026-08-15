@@ -344,6 +344,9 @@ message Bond {
   int64 matures_at = 6;
   bool has_deposit = 7;
   bool spent = 8;
+
+  // spending is true while a spend of this output is in the mempool.
+  bool spending = 9;
 }
 
 message TableBond {
@@ -354,6 +357,11 @@ message TableBond {
   int64 atoms = 5;
   int64 matures_at = 6;
   bool spent = 7;
+
+  // spending is true while a spend of this output is in the mempool. Distinct
+  // from spent, which is the chain's settled answer: a broadcast can still be
+  // evicted, so the outpoint stays reported and stays this game's to reclaim.
+  bool spending = 8;
 }
 
 // Stake is one seat's buy-in, sitting behind its own refund timelock.
@@ -368,6 +376,11 @@ message Stake {
   int64 atoms = 5;
   int64 matures_at = 6;
   bool spent = 7;
+
+  // spending is true while a spend of this output is in the mempool. Distinct
+  // from spent, which is the chain's settled answer: a broadcast can still be
+  // evicted, so the outpoint stays reported and stays this game's to reclaim.
+  bool spending = 8;
 }
 
 // ---- money ----
