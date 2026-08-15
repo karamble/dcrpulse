@@ -7,6 +7,7 @@ package services
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,26 @@ func TestCarryGamePolicies(t *testing.T) {
 	})
 }
 
+// A cap above the whole supply is either a typo or an overflow on its way to
+// happening; either way the honest reading is the largest cap that means
+// anything. The zero sentinel has to survive the clamp, or "no limit" would
+// quietly become the tightest limit of all.
+func TestACapBeyondTheSupplyIsClampedToIt(t *testing.T) {
+	out := normalizeGamePolicy(types.GamePolicy{
+		PerTableCapAtoms: math.MaxInt64, PerDayCapAtoms: math.MaxInt64, ApprovalTimeoutSecs: 120,
+	})
+	if out.PerTableCapAtoms != maxSpendAtoms || out.PerDayCapAtoms != maxSpendAtoms {
+		t.Fatalf("caps clamped to %d and %d, want the supply %d",
+			out.PerTableCapAtoms, out.PerDayCapAtoms, maxSpendAtoms)
+	}
+
+	out = normalizeGamePolicy(types.GamePolicy{ApprovalTimeoutSecs: 120})
+	if out.PerTableCapAtoms != 0 || out.PerDayCapAtoms != 0 {
+		t.Fatalf("the no-limit sentinel did not survive the clamp: %d, %d",
+			out.PerTableCapAtoms, out.PerDayCapAtoms)
+	}
+}
+
 // Which account a game's money comes from is the most consequential answer in
 // the spend path.
 //
@@ -135,7 +156,7 @@ func TestASpendIsPaidFromItsOwnGamesAccount(t *testing.T) {
 		ID: "bb22", Game: "chess", Address: "Tsaddr", AmountAtoms: 1_000_000,
 		State: GamingSpendPending, RequestedAt: time.Now().Unix(),
 		ExpiresAt: time.Now().Unix() + 300,
-	}}}); err != nil {
+	}}}, time.Now().Unix()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 

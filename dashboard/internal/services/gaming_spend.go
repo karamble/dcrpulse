@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/decred/dcrd/wire"
 
 	"dcrpulse/internal/types"
@@ -87,7 +89,8 @@ var (
 	// working exactly as intended, and a game told about one can wait and
 	// ask for less. An unbound account is something the operator has not
 	// done yet, and a game told it was over a limit would send them looking
-	// at the wrong screen.
+	// at the wrong screen. A backlog of unanswered requests refuses under
+	// the same name, because waiting is the same right answer.
 	ErrGamingSpendOverCap = fmt.Errorf("%w: over a cap", ErrGamingSpendRefused)
 
 	// ErrGamingSpendNotFound is an id nobody asked for, or not this game's.
@@ -174,9 +177,24 @@ type spendLog struct {
 	Spends []GamingSpend `json:"spends"`
 }
 
-// maxSpendLog bounds the file. It is an audit trail for a person, not an
-// accounting system, and the day cap only ever looks a day back.
+// maxSpendLog bounds the file. The trim never drops an entry the day cap
+// still counts - see spendCountsOrPends - so the bound only ever costs old
+// decided history, never the accounting.
 const maxSpendLog = 500
+
+// maxSpendAtoms is the total DCR supply in atoms; no single request can
+// legitimately name more, whatever the caps say.
+const maxSpendAtoms = int64(dcrutil.MaxAmount)
+
+// spendDaySecs is the day the daily cap looks back on. One constant, so
+// counting and trimming can never disagree about what a day is.
+const spendDaySecs = int64(24 * time.Hour / time.Second)
+
+// maxPendingSpendsPerGame bounds how many unanswered requests one game may
+// hold open. Poker needs two per table it is joining and one bond; eight is
+// headroom. The bound is also what keeps a game from churning the log by
+// asking without end.
+const maxPendingSpendsPerGame = 8
 
 func readSpendLog() spendLog {
 	var log spendLog
@@ -190,9 +208,21 @@ func readSpendLog() spendLog {
 	return log
 }
 
-func writeSpendLog(log spendLog) error {
+func writeSpendLog(log spendLog, now int64) error {
 	if len(log.Spends) > maxSpendLog {
-		log.Spends = log.Spends[len(log.Spends)-maxSpendLog:]
+		drop := len(log.Spends) - maxSpendLog
+		kept := make([]GamingSpend, 0, maxSpendLog)
+		for _, s := range log.Spends {
+			if drop > 0 && !spendCountsOrPends(s, now) {
+				drop--
+				continue
+			}
+			kept = append(kept, s)
+		}
+		// Oldest droppable entries go first; if everything still counts,
+		// everything is kept - the bound yields to the accounting, never
+		// the other way round.
+		log.Spends = kept
 	}
 	dir := filepath.Dir(gamingSpendLogPath())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -236,19 +266,27 @@ func expireLocked(log *spendLog, now int64) bool {
 func spentInDayLocked(log spendLog, game string, now int64) int64 {
 	var total int64
 	for _, s := range log.Spends {
-		if s.Game != game {
+		if s.Game != game || !spendCountsOrPends(s, now) {
 			continue
 		}
-		switch s.State {
-		case GamingSpendApproved:
-			if now-s.DecidedAt < int64((24 * time.Hour).Seconds()) {
-				total += s.AmountAtoms
-			}
-		case GamingSpendPending:
-			total += s.AmountAtoms
+		if s.AmountAtoms < 0 || s.AmountAtoms > math.MaxInt64-total {
+			// A negative amount is a log this code never wrote, and a
+			// total past counting is the same answer either way: a day
+			// already full, never a number that wrapped.
+			return math.MaxInt64
 		}
+		total += s.AmountAtoms
 	}
 	return total
+}
+
+// spendCountsOrPends reports whether an entry still feeds the daily cap:
+// awaiting a person, or approved inside the day the cap looks back on. The
+// trim keeps exactly what this counts, which is what makes the cap window
+// untrimmable.
+func spendCountsOrPends(s GamingSpend, now int64) bool {
+	return s.State == GamingSpendPending ||
+		(s.State == GamingSpendApproved && now-s.DecidedAt < spendDaySecs)
 }
 
 // checkSpendRequest is the policy decision that needs nothing but the request,
@@ -276,6 +314,10 @@ func checkSpendRequest(s types.GamingSettings, game, address string, amountAtoms
 	if amountAtoms <= 0 {
 		return p, fmt.Errorf("%w: nothing to pay", ErrGamingSpendRefused)
 	}
+	if amountAtoms > maxSpendAtoms {
+		return p, fmt.Errorf("%w: %d atoms is more than the whole supply",
+			ErrGamingSpendRefused, amountAtoms)
+	}
 	if p.PerTableCapAtoms > 0 && amountAtoms > p.PerTableCapAtoms {
 		return p, fmt.Errorf("%w: %d atoms is over %q's per-table cap of %d",
 			ErrGamingSpendOverCap, amountAtoms, game, p.PerTableCapAtoms)
@@ -285,8 +327,16 @@ func checkSpendRequest(s types.GamingSettings, game, address string, amountAtoms
 
 // checkSpendAgainstDay is the rest of the decision, once this game's day total
 // is known.
+//
+// Phrased as a bound on the request rather than a sum, because a sum's
+// operands are a caller's to choose: used+amount can wrap, and a wrapped
+// total reads as under any cap. A negative total is a log this code never
+// wrote, and it fails closed rather than granting headroom nobody spent.
 func checkSpendAgainstDay(p types.GamePolicy, amountAtoms, used int64) error {
-	if p.PerDayCapAtoms <= 0 || used+amountAtoms <= p.PerDayCapAtoms {
+	if p.PerDayCapAtoms <= 0 {
+		return nil
+	}
+	if used >= 0 && amountAtoms <= p.PerDayCapAtoms-used {
 		return nil
 	}
 	return fmt.Errorf(
@@ -315,6 +365,19 @@ func RequestGamingSpend(game, address string, amountAtoms int64, reason string) 
 	log := readSpendLog()
 	expireLocked(&log, now)
 
+	// A backlog past answering is refused, not queued: nothing here writes,
+	// so a game that keeps asking wears out nothing but its own turn.
+	pending := 0
+	for _, sp := range log.Spends {
+		if sp.Game == game && sp.State == GamingSpendPending {
+			pending++
+		}
+	}
+	if pending >= maxPendingSpendsPerGame {
+		return GamingSpend{}, fmt.Errorf("%w: %q already has %d requests awaiting an answer",
+			ErrGamingSpendOverCap, game, pending)
+	}
+
 	if err := checkSpendAgainstDay(policy, amountAtoms, spentInDayLocked(log, game, now)); err != nil {
 		return GamingSpend{}, err
 	}
@@ -338,7 +401,7 @@ func RequestGamingSpend(game, address string, amountAtoms int64, reason string) 
 		ExpiresAt:   now + int64(timeout),
 	}
 	log.Spends = append(log.Spends, out)
-	if err := writeSpendLog(log); err != nil {
+	if err := writeSpendLog(log, now); err != nil {
 		return GamingSpend{}, err
 	}
 	return out, nil
@@ -355,7 +418,7 @@ func GamingSpendFor(game, id string) (GamingSpend, error) {
 	now := time.Now().Unix()
 	log := readSpendLog()
 	if expireLocked(&log, now) {
-		_ = writeSpendLog(log)
+		_ = writeSpendLog(log, now)
 	}
 	for _, s := range log.Spends {
 		if s.ID == id && s.Game == strings.ToLower(strings.TrimSpace(game)) {
@@ -373,7 +436,7 @@ func GamingSpends() []GamingSpend {
 	now := time.Now().Unix()
 	log := readSpendLog()
 	if expireLocked(&log, now) {
-		_ = writeSpendLog(log)
+		_ = writeSpendLog(log, now)
 	}
 	out := append([]GamingSpend(nil), log.Spends...)
 	sort.Slice(out, func(i, j int) bool { return out[i].RequestedAt > out[j].RequestedAt })
@@ -398,7 +461,7 @@ func DenyGamingSpend(id string) (GamingSpend, error) {
 			return *s, ErrGamingSpendNotPending
 		}
 		s.State, s.DecidedAt = GamingSpendDenied, now
-		if err := writeSpendLog(log); err != nil {
+		if err := writeSpendLog(log, now); err != nil {
 			return GamingSpend{}, err
 		}
 		return *s, nil
@@ -488,6 +551,7 @@ func recordSpendOutcome(id string, state GamingSpendState, txid, failure string)
 	spendMu.Lock()
 	defer spendMu.Unlock()
 
+	now := time.Now().Unix()
 	log := readSpendLog()
 	for i := range log.Spends {
 		s := &log.Spends[i]
@@ -495,8 +559,8 @@ func recordSpendOutcome(id string, state GamingSpendState, txid, failure string)
 			continue
 		}
 		s.State, s.TxID, s.Error = state, txid, failure
-		s.DecidedAt = time.Now().Unix()
-		if err := writeSpendLog(log); err != nil {
+		s.DecidedAt = now
+		if err := writeSpendLog(log, now); err != nil {
 			return *s, err
 		}
 		if state != GamingSpendApproved {

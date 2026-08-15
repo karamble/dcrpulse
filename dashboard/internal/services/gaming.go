@@ -76,6 +76,13 @@ func normalizeGamePolicy(p types.GamePolicy) types.GamePolicy {
 	if p.PerDayCapAtoms < 0 {
 		p.PerDayCapAtoms = 0
 	}
+	// A cap above the whole supply says nothing a smaller number cannot.
+	if p.PerTableCapAtoms > maxSpendAtoms {
+		p.PerTableCapAtoms = maxSpendAtoms
+	}
+	if p.PerDayCapAtoms > maxSpendAtoms {
+		p.PerDayCapAtoms = maxSpendAtoms
+	}
 	// A day cap below the table cap would let a single buy-in exceed the
 	// day's budget, so raise the day cap to match rather than silently
 	// letting one table overshoot it.
