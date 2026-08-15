@@ -146,6 +146,12 @@ func gamingInviteLink(game, sid string, buyinAtoms uint64, seats, csvBlocks, unt
 // invitation nobody is at; a send that fails leaves a table only this player
 // knows about, which nobody can join and which expires on its own.
 func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64, seats, openBlocks uint32) (GamingTable, error) {
+	// Before anything with an effect: a seat taken for a table whose invitation
+	// can never be posted is worse than a refused request.
+	gc, err := parseGamingGCID(gcid)
+	if err != nil {
+		return GamingTable{}, err
+	}
 	if openBlocks == 0 {
 		openBlocks = gamingOpenBlocks
 	}
@@ -192,7 +198,7 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	msg := fmt.Sprintf("Table for %d at %s DCR a seat. Registration closes at block %d.\n%s",
 		seats, gamingAtomsText(buyinAtoms), until, invite)
 	table := GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid}
-	if err := tableGCMessage(ctx, gcid, msg, 0); err != nil {
+	if err := tableGCMessage(ctx, gc, msg, 0); err != nil {
 		return table, fmt.Errorf("you are seated, but the invitation could not be sent: %w", err)
 	}
 	return table, nil

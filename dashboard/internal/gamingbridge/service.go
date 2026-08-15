@@ -153,7 +153,7 @@ func (s *Server) SendFrame(ctx context.Context, req *gamingpb.SendFrameRequest) 
 		return nil, errNotHere
 	}
 	if err := s.cfg.SendFrame(ctx, callerGame(ctx), req.GetGcid(), req.GetFrame()); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, gameErr(callerGame(ctx), "SendFrame", codes.InvalidArgument, err)
 	}
 	return &gamingpb.SendFrameReply{}, nil
 }
@@ -256,7 +256,7 @@ func (s *Server) RequestSpend(ctx context.Context, req *gamingpb.RequestSpendReq
 	}
 	spend, err := s.cfg.RequestSpend(callerGame(ctx), req.GetAddress(), req.GetAmountAtoms(), req.GetReason())
 	if err != nil {
-		return nil, spendErr(err)
+		return nil, spendErr(callerGame(ctx), err)
 	}
 	return spend, nil
 }
@@ -268,7 +268,7 @@ func (s *Server) SpendStatus(ctx context.Context, req *gamingpb.SpendStatusReque
 	}
 	spend, err := s.cfg.SpendStatus(callerGame(ctx), req.GetId())
 	if err != nil {
-		return nil, spendErr(err)
+		return nil, spendErr(callerGame(ctx), err)
 	}
 	return spend, nil
 }
@@ -284,7 +284,7 @@ func (s *Server) Broadcast(ctx context.Context, req *gamingpb.BroadcastRequest) 
 	}
 	txid, err := s.cfg.Broadcast(ctx, callerGame(ctx), req.GetRawTxHex())
 	if err != nil {
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
+		return nil, gameErr(callerGame(ctx), "Broadcast", codes.FailedPrecondition, err)
 	}
 	return &gamingpb.BroadcastReply{Txid: txid}, nil
 }
@@ -298,13 +298,13 @@ func (s *Server) Broadcast(ctx context.Context, req *gamingpb.BroadcastRequest) 
 //
 // Not found rather than forbidden for another game's request: forbidden would
 // confirm the id is real to somebody who has no business knowing.
-func spendErr(err error) error {
+func spendErr(game string, err error) error {
 	switch {
 	case errors.Is(err, ErrSpendOverCap):
-		return status.Error(codes.ResourceExhausted, err.Error())
+		return gameErr(game, "RequestSpend", codes.ResourceExhausted, err)
 	case errors.Is(err, ErrSpendNotFound):
-		return status.Error(codes.NotFound, err.Error())
+		return gameErr(game, "RequestSpend", codes.NotFound, err)
 	default:
-		return status.Error(codes.FailedPrecondition, err.Error())
+		return gameErr(game, "RequestSpend", codes.FailedPrecondition, err)
 	}
 }
