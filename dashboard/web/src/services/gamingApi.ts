@@ -220,9 +220,25 @@ export interface GamingSpend {
   expiresAt: number;
 }
 
-export const getGamingSpends = async (): Promise<GamingSpend[]> => {
-  const { data } = await api.get<{ spends: GamingSpend[] }>('/br/gaming/spends');
-  return data.spends ?? [];
+// A request lapses against the server's clock, not the browser's, and the two
+// disagree by however far the machine's time has drifted. Go always sends a
+// Date header, so the offset comes back with the answer and a countdown can be
+// the server's rather than this computer's opinion of it.
+export interface GamingSpendsAnswer {
+  spends: GamingSpend[];
+  // serverNow is unix seconds as the server saw them, or 0 when the header was
+  // unreadable - in which case a caller should fall back to its own clock.
+  serverNow: number;
+}
+
+export const getGamingSpends = async (): Promise<GamingSpendsAnswer> => {
+  const res = await api.get<{ spends: GamingSpend[] }>('/br/gaming/spends');
+  const date = res.headers?.date;
+  const parsed = typeof date === 'string' ? Date.parse(date) : NaN;
+  return {
+    spends: res.data.spends ?? [],
+    serverNow: Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0,
+  };
 };
 
 // decideGamingSpend answers a game's request. Approving needs the wallet
