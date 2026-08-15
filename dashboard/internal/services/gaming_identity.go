@@ -248,8 +248,8 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 			return p.PerTableCapAtoms, p.PerDayCapAtoms, strings.TrimSpace(p.Account) != ""
 		},
 
-		RequestSpend: func(game, address string, atoms int64, reason string) (*gamingpb.Spend, error) {
-			spend, err := RequestGamingSpend(game, address, atoms, reason)
+		RequestSpend: func(ctx context.Context, game, address string, atoms int64, reason string) (*gamingpb.Spend, error) {
+			spend, err := RequestGamingSpend(ctx, game, address, atoms, reason)
 			return spendProto(spend), spendBridgeErr(err)
 		},
 		SpendStatus: func(game, id string) (*gamingpb.Spend, error) {

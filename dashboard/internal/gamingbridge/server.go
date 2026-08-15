@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -89,7 +90,7 @@ type Config struct {
 	// here and implemented elsewhere for the same reason as everything else
 	// on this struct: what a spend is allowed to be is the operator's
 	// policy, and this package is not where it lives.
-	RequestSpend func(game, address string, amountAtoms int64, reason string) (*gamingpb.Spend, error)
+	RequestSpend func(ctx context.Context, game, address string, amountAtoms int64, reason string) (*gamingpb.Spend, error)
 	SpendStatus  func(game, id string) (*gamingpb.Spend, error)
 	Broadcast    func(ctx context.Context, game, rawTxHex string) (string, error)
 
@@ -144,9 +145,39 @@ type Server struct {
 	reg   *registry
 	pend  *pending
 
+	// The two money RPCs are paced per game. The numbers sit far above
+	// any honest caller - the deployed game polls a spend every three
+	// seconds and retries transport trouble at five - so only a flood
+	// ever meets them. Frames and streams are never paced: gameplay is
+	// the one thing a bridge must not slow down.
+	limMu     sync.Mutex
+	reqLim    map[string]*rate.Limiter
+	statusLim map[string]*rate.Limiter
+
 	mu   sync.Mutex
 	grpc *grpc.Server
 	lis  net.Listener
+}
+
+const (
+	requestSpendEvery = 2 * time.Second
+	// requestSpendBurst matches the host's own ceiling on unanswered
+	// requests: more than that in one breath is refused there anyway.
+	requestSpendBurst = 8
+	spendStatusEvery  = 200 * time.Millisecond
+	spendStatusBurst  = 20
+)
+
+// allowCall answers whether one game may make one more paced call.
+func (s *Server) allowCall(m map[string]*rate.Limiter, game string, every time.Duration, burst int) bool {
+	s.limMu.Lock()
+	defer s.limMu.Unlock()
+	l := m[game]
+	if l == nil {
+		l = rate.NewLimiter(rate.Every(every), burst)
+		m[game] = l
+	}
+	return l.Allow()
 }
 
 // New prepares a bridge. It does not listen; Serve does.
@@ -157,7 +188,10 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AppPasswordActive == nil || cfg.Enabled == nil {
 		return nil, fmt.Errorf("a bridge has to be able to ask whether it should be running")
 	}
-	s := &Server{cfg: cfg, allow: cfg.Allow, reg: newRegistry(), pend: newPending()}
+	s := &Server{
+		cfg: cfg, allow: cfg.Allow, reg: newRegistry(), pend: newPending(),
+		reqLim: map[string]*rate.Limiter{}, statusLim: map[string]*rate.Limiter{},
+	}
 
 	// Withdrawing a credential has to end the stream it is holding, and the
 	// allowlist is where withdrawing happens - including when the operator

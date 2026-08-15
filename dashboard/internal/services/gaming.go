@@ -28,6 +28,13 @@ const (
 	gamingDefaultPerDayAtoms = 500_000_000
 
 	gamingDefaultApprovalSecs = 120
+
+	// gamingMinApprovalSecs and gamingMaxApprovalSecs bound the approval
+	// window. Shared by the console write and the request path, because a
+	// bound applied only where the file is written is a bound a hand edit
+	// walks straight past.
+	gamingMinApprovalSecs = 10
+	gamingMaxApprovalSecs = 600
 )
 
 // gamingGameIDRE is the routing key a game id has to be.
@@ -89,11 +96,11 @@ func normalizeGamePolicy(p types.GamePolicy) types.GamePolicy {
 	if p.PerDayCapAtoms < p.PerTableCapAtoms {
 		p.PerDayCapAtoms = p.PerTableCapAtoms
 	}
-	if p.ApprovalTimeoutSecs < 10 {
-		p.ApprovalTimeoutSecs = 10
+	if p.ApprovalTimeoutSecs < gamingMinApprovalSecs {
+		p.ApprovalTimeoutSecs = gamingMinApprovalSecs
 	}
-	if p.ApprovalTimeoutSecs > 600 {
-		p.ApprovalTimeoutSecs = 600
+	if p.ApprovalTimeoutSecs > gamingMaxApprovalSecs {
+		p.ApprovalTimeoutSecs = gamingMaxApprovalSecs
 	}
 	return p
 }

@@ -17,8 +17,17 @@ import { apiError } from '../utils/apiError';
 // used to own the poll and offer the number through a callback prop that no
 // caller ever passed.
 export interface GamingSpendsSnapshot {
-  spends: GamingSpend[];
+  // pending awaits a person, sorted by deadline; publishing is money on its
+  // way to the network, with nothing left to answer.
   pending: GamingSpend[];
+  publishing: GamingSpend[];
+  // decided is the first page of history, newest first; decidedTotal is how
+  // much of it exists. Deeper pages are fetched by whoever is reading them.
+  decided: GamingSpend[];
+  decidedTotal: number;
+  // usedToday is the server's day total per game - the number the cap is
+  // enforced against, not a client-side re-derivation that can drift.
+  usedToday: Record<string, number>;
   // serverNow is the clock the deadline is enforced against; 0 when unknown.
   serverNow: number;
   offset: number;
@@ -28,8 +37,11 @@ export interface GamingSpendsSnapshot {
 }
 
 const empty: GamingSpendsSnapshot = {
-  spends: [],
   pending: [],
+  publishing: [],
+  decided: [],
+  decidedTotal: 0,
+  usedToday: {},
   serverNow: 0,
   offset: 0,
   failures: 0,
@@ -41,11 +53,14 @@ let snapshot: GamingSpendsSnapshot = empty;
 const listeners = new Set<() => void>();
 let stop: (() => void) | null = null;
 
-// signature is what makes an idle poll free. The array is a new object every
-// five seconds, so comparing it would re-render every subscriber forever;
-// comparing what it says does not.
+// signature is what makes an idle poll free. The arrays are new objects every
+// five seconds, so comparing them would re-render every subscriber forever;
+// comparing what they say does not.
 const signature = (s: GamingSpendsSnapshot): string =>
-  `${s.failures}|${s.error ?? ''}|${s.spends
+  `${s.failures}|${s.error ?? ''}|${s.decidedTotal}|${Object.entries(s.usedToday)
+    .sort()
+    .map(([g, v]) => `${g}=${v}`)
+    .join(',')}|${[...s.pending, ...s.publishing, ...s.decided]
     .map((x) => `${x.id}:${x.state}:${x.decidedAt ?? ''}:${x.txid ?? ''}`)
     .join(',')}`;
 
@@ -64,10 +79,13 @@ const check = async () => {
   try {
     const answer = await getGamingSpends();
     publish({
-      spends: answer.spends,
-      pending: answer.spends
+      pending: answer.pending
         .filter((s) => s.state === 'pending')
         .sort((a, b) => a.expiresAt - b.expiresAt),
+      publishing: answer.pending.filter((s) => s.state === 'publishing'),
+      decided: answer.decided,
+      decidedTotal: answer.decidedTotal,
+      usedToday: answer.usedToday,
       serverNow: answer.serverNow,
       offset: answer.serverNow ? answer.serverNow - Math.floor(Date.now() / 1000) : snapshot.offset,
       failures: 0,

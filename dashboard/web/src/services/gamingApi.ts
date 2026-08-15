@@ -233,20 +233,56 @@ export interface GamingSpend {
 // Date header, so the offset comes back with the answer and a countdown can be
 // the server's rather than this computer's opinion of it.
 export interface GamingSpendsAnswer {
-  spends: GamingSpend[];
+  // pending is everything still in flight - awaiting an answer or being
+  // paid - always in full. decided is one page of history, newest first.
+  pending: GamingSpend[];
+  decided: GamingSpend[];
+  decidedTotal: number;
+  page: number;
+  pageSize: number;
+  // usedToday is the server's own day total per game - the number the cap
+  // is actually enforced against, not a client-side re-derivation.
+  usedToday: Record<string, number>;
   // serverNow is unix seconds as the server saw them, or 0 when the header was
   // unreadable - in which case a caller should fall back to its own clock.
   serverNow: number;
 }
 
+interface spendsWire {
+  pending?: GamingSpend[];
+  decided?: GamingSpend[];
+  decidedTotal?: number;
+  page?: number;
+  pageSize?: number;
+  usedToday?: Record<string, number>;
+}
+
 export const getGamingSpends = async (): Promise<GamingSpendsAnswer> => {
-  const res = await api.get<{ spends: GamingSpend[] }>('/br/gaming/spends');
+  const res = await api.get<spendsWire>('/br/gaming/spends');
   const date = res.headers?.date;
   const parsed = typeof date === 'string' ? Date.parse(date) : NaN;
   return {
-    spends: res.data.spends ?? [],
+    pending: res.data.pending ?? [],
+    decided: res.data.decided ?? [],
+    decidedTotal: res.data.decidedTotal ?? 0,
+    page: res.data.page ?? 1,
+    pageSize: res.data.pageSize ?? 10,
+    usedToday: res.data.usedToday ?? {},
     serverNow: Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0,
   };
+};
+
+// getGamingSpendHistory reads one page of decided history. Deliberately not
+// the shared poll: a page flip is one panel's business, and routing it
+// through the store would wake the badge and the strip for it.
+export const getGamingSpendHistory = async (
+  page: number,
+  pageSize: number,
+): Promise<{ decided: GamingSpend[]; decidedTotal: number }> => {
+  const { data } = await api.get<spendsWire>(
+    `/br/gaming/spends?page=${page}&pageSize=${pageSize}`,
+  );
+  return { decided: data.decided ?? [], decidedTotal: data.decidedTotal ?? 0 };
 };
 
 // decideGamingSpend answers a game's request. Approving needs the wallet

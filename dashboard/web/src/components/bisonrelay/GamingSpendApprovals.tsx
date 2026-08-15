@@ -2,16 +2,18 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, Check, Loader2 } from 'lucide-react';
 import {
   GamePolicy,
   GamingReportedTable,
   GamingSpend,
   decideGamingSpend,
+  getGamingSpendHistory,
   getGamingState,
 } from '../../services/gamingApi';
 import { validateAddress } from '../../services/api';
+import { Pagination } from '../explorer/Pagination';
 import { apiError } from '../../utils/apiError';
 import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
 import { refreshGamingSpends, useGamingSpends } from '../../hooks/useGamingSpends';
@@ -89,9 +91,8 @@ export const GamingSpendApprovals = ({
   // The poll lives in a store, so the count survives this panel not being on
   // screen and the strip and the tab badge read the same answer.
   const feed = useGamingSpends();
-  const spends: GamingSpend[] | null = feed.lastOkAt ? feed.spends : null;
+  const loaded = feed.lastOkAt > 0;
   const offset = feed.offset;
-  const [showAll, setShowAll] = useState(false);
 
   // armed is the one row whose passphrase field is open. One field for the
   // whole panel meant two live Approve buttons sharing it, which is a wrong-row
@@ -126,16 +127,45 @@ export const GamingSpendApprovals = ({
   }, [counting]);
 
   const now = Math.floor(Date.now() / 1000) + offset;
-  const decided = useMemo(
-    () => (spends ?? []).filter((s) => s.state !== 'pending' && s.state !== 'publishing'),
-    [spends],
-  );
+  // The first page of history rides the shared poll; deeper pages are
+  // fetched here, so a page flip never wakes the badge or the strip.
+  const decided = feed.decided;
+  const decidedTotal = feed.decidedTotal;
   // A payment on its way to the network: nothing to answer, but its money is
   // committed and the row says so until the outcome lands.
-  const publishing = useMemo(
-    () => (spends ?? []).filter((s) => s.state === 'publishing'),
-    [spends],
-  );
+  const publishing = feed.publishing;
+  const histPageSize = 10;
+  const [histPage, setHistPage] = useState(1);
+  const [hist, setHist] = useState<{ page: number; decided: GamingSpend[] } | null>(null);
+  const [histLoading, setHistLoading] = useState(false);
+  const totalPages = Math.max(1, Math.ceil(decidedTotal / histPageSize));
+  useEffect(() => {
+    if (mode !== 'history') return;
+    if (histPage > totalPages) {
+      setHistPage(totalPages);
+      return;
+    }
+    if (histPage === 1) {
+      setHist(null);
+      return;
+    }
+    let dead = false;
+    setHistLoading(true);
+    getGamingSpendHistory(histPage, histPageSize)
+      .then((h) => {
+        if (!dead) setHist({ page: histPage, decided: h.decided });
+      })
+      .catch(() => {
+        if (!dead) setHist(null);
+      })
+      .finally(() => {
+        if (!dead) setHistLoading(false);
+      });
+    return () => {
+      dead = true;
+    };
+  }, [mode, histPage, totalPages]);
+  const histRows = histPage === 1 ? decided : hist?.page === histPage ? hist.decided : [];
 
   // Stamped during render, not in an effect. An effect runs after the first
   // paint, so the row would already be on screen with a live Approve button
@@ -144,19 +174,11 @@ export const GamingSpendApprovals = ({
     if (!firstSeen.current[s.id]) firstSeen.current[s.id] = Date.now();
   }
 
-  // What this game has already committed today, by the same rule the server
-  // applies: everything approved inside a day, plus everything still waiting,
-  // because several requests answered at once would otherwise walk past a cap
-  // none of them individually passed.
-  const usedToday = (game: string): number =>
-    (spends ?? []).reduce((total, s) => {
-      if (s.game !== game) return total;
-      if (s.state === 'pending' || s.state === 'publishing') return total + s.amountAtoms;
-      if (s.state === 'approved' && s.decidedAt && now - s.decidedAt < 86400) {
-        return total + s.amountAtoms;
-      }
-      return total;
-    }, 0);
+  // What this game has already committed today - the server's own number,
+  // the one the cap is enforced against. This used to be re-derived here by
+  // the same rule, and the two had already drifted: the copy counted stale
+  // pendings the server would have expired.
+  const usedToday = (game: string): number => feed.usedToday[game] ?? 0;
 
   // Whether the address a game named belongs to this wallet. For a buy-in the
   // answer should be no; yes is the odd one, and "could not check" is its own
@@ -240,13 +262,13 @@ export const GamingSpendApprovals = ({
     return (
       <div className="space-y-2">
         <h3 className="font-medium text-sm">What games have asked for</h3>
-        {decided.length === 0 ? (
+        {decidedTotal === 0 ? (
           <p className="text-xs text-muted-foreground">
             Nothing has been answered yet. Payments and refusals are both kept here.
           </p>
         ) : (
           <div className="space-y-1 p-3 rounded-lg bg-muted/10 border border-border/50">
-            {(showAll ? decided : decided.slice(0, 10)).map((s) => (
+            {histRows.map((s) => (
               <div key={s.id} className="text-xs py-1 border-b border-border/30 last:border-0">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="truncate">
@@ -265,15 +287,21 @@ export const GamingSpendApprovals = ({
                 {s.error && <span className="block text-destructive break-words">{s.error}</span>}
               </div>
             ))}
-            {decided.length > 10 && (
-              <button
-                type="button"
-                onClick={() => setShowAll((v) => !v)}
-                className="text-xs text-primary hover:underline"
-              >
-                {showAll ? 'Show fewer' : `Showing 10 of ${decided.length} \u00b7 show all`}
-              </button>
+            {histRows.length === 0 && !histLoading && (
+              <p className="text-xs text-muted-foreground">Could not read that page.</p>
             )}
+            {histLoading && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Reading that page.
+              </div>
+            )}
+            <Pagination
+              currentPage={histPage}
+              totalPages={totalPages}
+              onPageChange={setHistPage}
+              loading={histLoading}
+            />
           </div>
         )}
       </div>
@@ -645,20 +673,20 @@ export const GamingSpendApprovals = ({
         </div>
       ))}
 
-      {decided.length > 0 && (
+      {decidedTotal > 0 && (
         <p className="text-xs text-muted-foreground">
-          {decided.length === 1 ? '1 earlier request' : `${decided.length} earlier requests`}, with
+          {decidedTotal === 1 ? '1 earlier request' : `${decidedTotal} earlier requests`}, with
           their transaction ids and any refusals, are under History.
         </p>
       )}
 
-      {spends === null && !pollErr && (
+      {!loaded && !pollErr && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="h-3 w-3 animate-spin" />
           Reading what games have asked for.
         </div>
       )}
-      {spends === null && pollErr && (
+      {!loaded && pollErr && (
         <div className="flex items-start gap-2 text-xs text-destructive">
           <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
           <span className="break-words">

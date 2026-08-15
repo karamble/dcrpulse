@@ -103,7 +103,7 @@ func (r *bridgeRig) takeMissed(game string) []string {
 
 // requestSpend records a request the way the policy would, and refuses the
 // ones a cap would refuse.
-func (r *bridgeRig) requestSpend(game, address string, atoms int64, reason string) (*gamingpb.Spend, error) {
+func (r *bridgeRig) requestSpend(_ context.Context, game, address string, atoms int64, reason string) (*gamingpb.Spend, error) {
 	if atoms > testPerTableCap {
 		return nil, fmt.Errorf("%w: %d atoms is over %q's per-table cap of %d",
 			ErrSpendOverCap, atoms, game, testPerTableCap)

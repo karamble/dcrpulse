@@ -10,8 +10,12 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/txscript/v4/stdaddr"
 
 	"dcrpulse/internal/types"
 )
@@ -114,7 +118,7 @@ func TestNothingIsPaidWithoutAPerson(t *testing.T) {
 		t.Fatalf("store a policy: %v", err)
 	}
 
-	spend, err := RequestGamingSpend("poker", "Tsaddr", 10_000_000, "a seat")
+	spend, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 10_000_000, "a seat")
 	if err != nil {
 		t.Fatalf("a spend inside every cap was refused: %v", err)
 	}
@@ -308,15 +312,20 @@ func TestAnUnansweredRequestExpires(t *testing.T) {
 }
 
 // spendSeams points the gaming state at a directory a test may write and puts
-// every staged call back the way it was.
+// every staged call back the way it was. The address check is stubbed open:
+// these tests seed placeholder addresses, and the rule itself is exercised
+// directly against checkSpendAddress with real ones.
 func spendSeams(t *testing.T) {
 	t.Helper()
 	origDir, origAccount := GamingStateDir, spendAccount
 	origConstruct, origSign, origPublish := spendConstruct, spendSign, spendPublish
+	origDecode := spendDecodeAddress
 	GamingStateDir = t.TempDir()
+	spendDecodeAddress = func(context.Context, string) error { return nil }
 	t.Cleanup(func() {
 		GamingStateDir, spendAccount = origDir, origAccount
 		spendConstruct, spendSign, spendPublish = origConstruct, origSign, origPublish
+		spendDecodeAddress = origDecode
 	})
 }
 
@@ -568,19 +577,19 @@ func TestANinthUnansweredRequestIsRefusedUntilOneIsAnswered(t *testing.T) {
 	}
 	var last GamingSpend
 	for i := range 8 {
-		out, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "a seat")
+		out, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, "a seat")
 		if err != nil {
 			t.Fatalf("request %d of 8 was refused: %v", i+1, err)
 		}
 		last = out
 	}
-	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "one too many"); !errors.Is(err, ErrGamingSpendOverCap) {
+	if _, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, "one too many"); !errors.Is(err, ErrGamingSpendOverCap) {
 		t.Fatalf("an unanswered backlog past the ceiling was carried: %v", err)
 	}
 	if _, err := DenyGamingSpend(last.ID); err != nil {
 		t.Fatalf("deny: %v", err)
 	}
-	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "after an answer"); err != nil {
+	if _, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, "after an answer"); err != nil {
 		t.Fatalf("answering one request did not make room for another: %v", err)
 	}
 }
@@ -596,11 +605,11 @@ func TestOneGamesBacklogDoesNotBlockAnother(t *testing.T) {
 		t.Fatalf("store a policy: %v", err)
 	}
 	for i := range maxPendingSpendsPerGame {
-		if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "a seat"); err != nil {
+		if _, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, "a seat"); err != nil {
 			t.Fatalf("request %d was refused: %v", i+1, err)
 		}
 	}
-	if _, err := RequestGamingSpend("chess", "Tsaddr", 1_000_000, "a first ask"); err != nil {
+	if _, err := RequestGamingSpend(context.Background(), "chess", "Tsaddr", 1_000_000, "a first ask"); err != nil {
 		t.Fatalf("poker's backlog blocked chess: %v", err)
 	}
 }
@@ -783,7 +792,7 @@ func TestAPaymentInterruptedByARestartFailsWithTheWarning(t *testing.T) {
 	}}}, now); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	GamingSpends()
+	_, _, _ = GamingSpendLedger()
 	got := mustReadSpendLog(t).Spends[0]
 	if got.State != GamingSpendFailed {
 		t.Fatalf("an interrupted broadcast is %q, want failed", got.State)
@@ -815,7 +824,7 @@ func TestALivePaymentIsNeverSwept(t *testing.T) {
 		spendMu.Unlock()
 	})
 
-	GamingSpends()
+	_, _, _ = GamingSpendLedger()
 	if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendPublishing {
 		t.Fatalf("a live broadcast was swept to %q", got)
 	}
@@ -853,7 +862,7 @@ func TestBroadcastingMoneyStillCountsEverywhere(t *testing.T) {
 	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
 		t.Fatalf("store a policy: %v", err)
 	}
-	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "a seat"); !errors.Is(err, ErrGamingSpendOverCap) {
+	if _, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, "a seat"); !errors.Is(err, ErrGamingSpendOverCap) {
 		t.Fatalf("a broadcast did not hold its slot: %v", err)
 	}
 
@@ -1100,6 +1109,71 @@ func TestASettingsChangeRetiresTheRequestsItOrphaned(t *testing.T) {
 	})
 }
 
+// An address is checked against the network this node is on when the request
+// is made, so a person is never asked to type a passphrase over a string no
+// transaction here could carry - and a game on the wrong network is told at
+// the door rather than at the wallet.
+func TestAnAddressTheChainCannotSpendIsRefused(t *testing.T) {
+	mainnet := chaincfg.MainNetParams()
+	testnet := chaincfg.TestNet3Params()
+	onMain, err := stdaddr.NewAddressPubKeyHashEcdsaSecp256k1V0(make([]byte, 20), mainnet)
+	if err != nil {
+		t.Fatalf("build an address: %v", err)
+	}
+	if err := checkSpendAddress(onMain.String(), mainnet); err != nil {
+		t.Fatalf("a mainnet address was refused on mainnet: %v", err)
+	}
+	if err := checkSpendAddress(onMain.String(), testnet); !errors.Is(err, ErrGamingSpendRefused) {
+		t.Fatalf("a mainnet address on testnet came back %v, want a refusal", err)
+	}
+	if err := checkSpendAddress("not an address", mainnet); !errors.Is(err, ErrGamingSpendRefused) {
+		t.Fatalf("garbage came back %v, want a refusal", err)
+	}
+}
+
+// The one free-text field is bounded, and the approval window is clamped on
+// the way in as well as at the console: the file between the two is editable,
+// and an unclamped window read back makes a request nobody answers immortal.
+func TestReasonAndTimeoutAreBounded(t *testing.T) {
+	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
+
+	long := strings.Repeat("r", 257)
+	if _, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, long); !errors.Is(err, ErrGamingSpendRefused) {
+		t.Fatalf("a 257 character reason was carried: %v", err)
+	}
+	if _, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, strings.Repeat("r", 256)); err != nil {
+		t.Fatalf("a 256 character reason was refused: %v", err)
+	}
+
+	// Written past the clamp the way a hand edit would be.
+	immortal := withPokerPolicy(spendPolicy(), func(p *types.GamePolicy) { p.ApprovalTimeoutSecs = 99999 })
+	if err := writeGamingSettingsLocked(immortal); err != nil {
+		t.Fatalf("edit settings: %v", err)
+	}
+	out, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, "a seat")
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if got := out.ExpiresAt - out.RequestedAt; got != 600 {
+		t.Fatalf("a hand-edited window ran %d seconds, want the 600 ceiling", got)
+	}
+
+	blink := withPokerPolicy(spendPolicy(), func(p *types.GamePolicy) { p.ApprovalTimeoutSecs = 5 })
+	if err := writeGamingSettingsLocked(blink); err != nil {
+		t.Fatalf("edit settings: %v", err)
+	}
+	out, err = RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, "a seat")
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if got := out.ExpiresAt - out.RequestedAt; got < 10 {
+		t.Fatalf("a five second window survived at %d seconds, want at least 10", got)
+	}
+}
+
 // The spend log is both the audit trail and the counter the daily allowance
 // is computed from. Read as empty when it cannot be parsed, corruption would
 // answer with a day nobody spent and a history nobody kept - so an unreadable
@@ -1117,7 +1191,7 @@ func TestAnUnreadableLogRefusesToDecideAnything(t *testing.T) {
 		t.Fatalf("corrupt: %v", err)
 	}
 
-	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "a seat"); err == nil {
+	if _, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, "a seat"); err == nil {
 		t.Fatal("a request was carried over an unreadable log")
 	}
 	if _, err := ApproveGamingSpend(context.Background(), "aa11", []byte("right")); err == nil {
@@ -1126,7 +1200,7 @@ func TestAnUnreadableLogRefusesToDecideAnything(t *testing.T) {
 	if _, err := DenyGamingSpend("aa11"); err == nil {
 		t.Fatal("a deny answered over an unreadable log")
 	}
-	if _, err := GamingSpends(); err == nil {
+	if _, _, err := GamingSpendLedger(); err == nil {
 		t.Fatal("an unreadable log was served as a history")
 	}
 	if _, err := GamingSpendFor("poker", "aa11"); err == nil {
@@ -1179,7 +1253,7 @@ func TestAnOutcomeSurvivesAnUnreadableLog(t *testing.T) {
 	if err != nil || string(kept) != "{not json" {
 		t.Fatalf("the bytes aside read %q (%v), want the corruption byte for byte", kept, err)
 	}
-	if _, err := RequestGamingSpend("poker", "Tsaddr", 1_000_000, "after the rescue"); err != nil {
+	if _, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1_000_000, "after the rescue"); err != nil {
 		t.Fatalf("the log did not recover after the rescue: %v", err)
 	}
 }
