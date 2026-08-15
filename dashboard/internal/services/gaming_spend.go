@@ -212,6 +212,10 @@ const spendPublishingGraceSecs = int64(300)
 // sentence, so the console and the tests say the same thing.
 const spendInterruptedText = "interrupted while broadcasting; check the wallet for the transaction before paying it again"
 
+// spendInvalidatedText is what a request records when the settings it was
+// made under stopped existing before anybody answered it.
+const spendInvalidatedText = "invalidated by a settings change"
+
 // readSpendLog reads the whole record. A missing file is a legitimate fresh
 // start; anything else unreadable is an error, because this file is both the
 // audit trail and the counter the daily allowance is computed from - reading
@@ -287,10 +291,16 @@ func expireLocked(log *spendLog, now int64) bool {
 //
 // Pending counts. A cap that ignored outstanding requests could be walked past
 // by asking several times before anyone answered.
-func spentInDayLocked(log spendLog, game string, now int64) int64 {
+func spentInDayLocked(log spendLog, game string, now int64, excludeID string) int64 {
 	var total int64
 	for _, s := range log.Spends {
 		if s.Game != game || !spendCountsOrPends(s, now) {
+			continue
+		}
+		// excludeID leaves one request out of its own day total, for the
+		// re-check at approval time: skipping by id needs no arithmetic,
+		// where subtracting from a saturated total would mean nothing.
+		if excludeID != "" && s.ID == excludeID {
 			continue
 		}
 		if s.AmountAtoms < 0 || s.AmountAtoms > math.MaxInt64-total {
@@ -435,7 +445,7 @@ func RequestGamingSpend(game, address string, amountAtoms int64, reason string) 
 			ErrGamingSpendOverCap, game, pending)
 	}
 
-	if err := checkSpendAgainstDay(policy, amountAtoms, spentInDayLocked(log, game, now)); err != nil {
+	if err := checkSpendAgainstDay(policy, amountAtoms, spentInDayLocked(log, game, now, "")); err != nil {
 		return GamingSpend{}, err
 	}
 
@@ -599,8 +609,22 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 		spendMu.Unlock()
 		return out, ErrGamingSpendNotPending
 	}
-	spendApproving[id] = true
 	req := log.Spends[idx]
+
+	// The request is checked again on the way out, against the settings as
+	// they are now rather than as they were when it was made. A cap the
+	// operator lowered, a game unregistered, a bridge switched off: each
+	// refuses here, with the request left pending for a deny or its expiry.
+	// Its own amount is left out of the day total it is judged against.
+	policy, err := checkSpendRequest(ReadGamingSettings(), req.Game, req.Address, req.AmountAtoms)
+	if err == nil {
+		err = checkSpendAgainstDay(policy, req.AmountAtoms, spentInDayLocked(log, req.Game, now, req.ID))
+	}
+	if err != nil {
+		spendMu.Unlock()
+		return req, err
+	}
+	spendApproving[id] = true
 	spendMu.Unlock()
 	defer func() {
 		spendMu.Lock()
@@ -734,6 +758,39 @@ func recordSpendOutcome(req GamingSpend, state GamingSpendState, txid, failure s
 		return *s, nil
 	}
 	return GamingSpend{}, ErrGamingSpendNotFound
+}
+
+// invalidatePendingSpends retires requests whose ground was pulled from under
+// them: the bridge switched off, a game unregistered, a credential revoked.
+// Pending entries only - a payment being broadcast has money in flight, and
+// its record must say what actually happened to it. An entry mid-approval is
+// deliberately included: the marker on the way to the network re-reads the
+// log and aborts pre-broadcast when it finds the request no longer pending,
+// which is how a settings change stops even an approval already running.
+func invalidatePendingSpends(match func(game string) bool, reason string) error {
+	spendMu.Lock()
+	defer spendMu.Unlock()
+
+	now := time.Now().Unix()
+	log, err := readSpendLog()
+	if err != nil {
+		return err
+	}
+	changed := expireLocked(&log, now)
+	if sweepPublishingLocked(&log, now) {
+		changed = true
+	}
+	for i := range log.Spends {
+		s := &log.Spends[i]
+		if s.State == GamingSpendPending && match(s.Game) {
+			s.State, s.DecidedAt, s.Error = GamingSpendExpired, now, reason
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writeSpendLog(log, now)
 }
 
 // gamingAccountFor names the account a game may spend from.

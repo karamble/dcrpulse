@@ -148,6 +148,12 @@ func RevokeGamingCredential(game string) error {
 	if err := writeGamingSettingsLocked(s); err != nil {
 		return err
 	}
+	// Requests the revoked game left waiting are answered too; a warning is
+	// all a failure earns, because the approval-time re-check keeps money
+	// shut either way.
+	if err := invalidatePendingSpends(func(g string) bool { return g == game }, spendInvalidatedText); err != nil {
+		gameLog.Warnf("retire %q's pending requests: %v", game, err)
+	}
 	gameLog.Infof("revoked the credential for %q", game)
 	return nil
 }

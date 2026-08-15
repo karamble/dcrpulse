@@ -222,6 +222,10 @@ func BisonrelayGamingSpendDecideHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "no such spend request", http.StatusNotFound)
 	case errors.Is(err, services.ErrGamingSpendNotPending):
 		http.Error(w, "that request was already decided", http.StatusConflict)
+	case errors.Is(err, services.ErrGamingSpendRefused), errors.Is(err, services.ErrGamingGameNotRegistered):
+		// The settings changed under the request: approval is refused by
+		// policy as it stands now, and the row stays for a deny.
+		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		http.Error(w, err.Error(), http.StatusBadGateway)
 	}
