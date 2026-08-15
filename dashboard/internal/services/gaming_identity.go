@@ -353,9 +353,9 @@ func spendBridgeErr(err error) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, ErrGamingSpendOverCap):
-		return fmt.Errorf("%w: %s", gamingbridge.ErrSpendOverCap, err)
+		return gamingbridge.GameSafe(fmt.Errorf("%w: %s", gamingbridge.ErrSpendOverCap, err))
 	case errors.Is(err, ErrGamingSpendNotFound):
-		return fmt.Errorf("%w: %s", gamingbridge.ErrSpendNotFound, err)
+		return gamingbridge.GameSafe(fmt.Errorf("%w: %s", gamingbridge.ErrSpendNotFound, err))
 	default:
 		return err
 	}

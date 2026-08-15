@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/decred/dcrd/dcrutil/v4"
@@ -16,8 +15,6 @@ import (
 	"dcrpulse/internal/gamingpb"
 	"dcrpulse/internal/services"
 )
-
-var gamingGCIDRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // BisonrelayGamingCreateHandler proposes a table and puts it in a group chat.
 func BisonrelayGamingCreateHandler(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +36,7 @@ func BisonrelayGamingCreateHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no game named", http.StatusBadRequest)
 		return
 	}
-	if !gamingGCIDRe.MatchString(gcid) {
+	if !services.ValidGamingGCID(gcid) {
 		http.Error(w, "gcid must be 64 hex characters", http.StatusBadRequest)
 		return
 	}
@@ -78,7 +75,7 @@ func BisonrelayGamingInviteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "game and invite are required", http.StatusBadRequest)
 		return
 	}
-	if !gamingGCIDRe.MatchString(gcid) {
+	if !services.ValidGamingGCID(gcid) {
 		http.Error(w, "gcid must be 64 hex characters", http.StatusBadRequest)
 		return
 	}

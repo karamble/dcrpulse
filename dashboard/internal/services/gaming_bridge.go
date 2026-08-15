@@ -4,20 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"regexp"
+	"strings"
 	"sync"
 
+	"dcrpulse/internal/gamingbridge"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 )
 
-// Errors a game can be told about. They are deliberately unrevealing: a game
-// learns that the tunnel refused, not what else the host is carrying.
+// Errors a game can be told about. Marked GameSafe because they were written
+// for one: a game learns that the tunnel refused, not what else the host is
+// carrying. Anything not marked reaches a game as a fixed message.
 var (
-	ErrGamingGameNotRegistered = errors.New("game is not registered")
-	ErrGamingNotAFrame         = errors.New("not a gaming frame")
-	ErrGamingWrongGame         = errors.New("frame belongs to another game")
-	ErrGamingBadGCID           = errors.New("not a group chat id")
+	ErrGamingGameNotRegistered = gamingbridge.GameSafe(errors.New("game is not registered"))
+	ErrGamingNotAFrame         = gamingbridge.GameSafe(errors.New("not a gaming frame"))
+	ErrGamingWrongGame         = gamingbridge.GameSafe(errors.New("frame belongs to another game"))
+	ErrGamingBadGCID           = gamingbridge.GameSafe(errors.New("not a group chat id"))
 )
 
 // The gaming bridge is a tunnel between registered games and Bison Relay.
@@ -339,18 +341,32 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 	if parsed.Game != game {
 		return ErrGamingWrongGame
 	}
-	// The destination, which nothing above this line has looked at. It is
-	// pasted into a URL path downstream, so a value that is not a plain group
-	// chat id can leave `/gc/{id}/message` entirely and reach the rest of
-	// brclientd's control surface. A game may say what it likes inside a
-	// frame, because its peers check that; where the frame is sent is the
-	// host's decision and has to look like one.
-	if !gamingGCIDRe.MatchString(gcid) {
-		return ErrGamingBadGCID
+	// A game says what it likes inside a frame, because its peers check that;
+	// where the frame is sent is the host's decision. Lowercase only, so one
+	// group chat cannot be named two ways in the per-game bookkeeping.
+	id, err := parseGamingGCID(gcid)
+	if err != nil {
+		return err
 	}
-	return rpc.BrclientdGCMessage(ctx, gcid, frame, 0)
+	return rpc.BrclientdGCMessage(ctx, id, frame, 0)
 }
 
-// gamingGCIDRe is the shape of a Bison Relay group chat id: 32 bytes as
-// lowercase hex, and nothing else. Anchored, so no prefix or suffix survives.
-var gamingGCIDRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+// parseGamingGCID checks a group chat id in the one spelling the gaming paths
+// accept: lowercase, so one chat cannot be named two ways in the per-game
+// bookkeeping.
+func parseGamingGCID(gcid string) (rpc.ShortIDHex, error) {
+	if gcid != strings.ToLower(gcid) {
+		return rpc.ShortIDHex{}, ErrGamingBadGCID
+	}
+	id, err := rpc.ParseShortIDHex(gcid)
+	if err != nil {
+		return rpc.ShortIDHex{}, ErrGamingBadGCID
+	}
+	return id, nil
+}
+
+// ValidGamingGCID is parseGamingGCID for a caller that only needs the verdict.
+func ValidGamingGCID(gcid string) bool {
+	_, err := parseGamingGCID(gcid)
+	return err == nil
+}
