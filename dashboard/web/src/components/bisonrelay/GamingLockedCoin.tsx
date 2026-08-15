@@ -10,9 +10,10 @@ import {
   getGamingState,
   reclaimGaming,
 } from "../../services/gamingApi";
+import { apiError } from "../../utils/apiError";
+import { formatAtomsTrimmed } from "../../utils/amounts";
 
-const fmtDcr = (atoms: number): string =>
-  (atoms / 1e8).toFixed(8).replace(/\.?0+$/, "");
+const fmtDcr = (atoms: number): string => formatAtomsTrimmed(atoms);
 
 const fmtWhen = (unix: number): string =>
   new Date(unix * 1000).toLocaleString();
@@ -84,11 +85,40 @@ export const GamingLockedCoin = ({
   const [state, setState] = useState<GamingReportedState | null>(null);
   const [attempts, setAttempts] = useState<Record<string, Attempt>>({});
   const [panelErr, setPanelErr] = useState<string | null>(null);
+  // loadErr is the bridge never answering at all, which is a different thing
+  // from the game holding nothing. staleReason is a live look that failed over
+  // a cached report that did not: the coin below is real, the moment is old.
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [staleReason, setStaleReason] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(
     async (refresh = false) => {
+      let s: GamingReportedState;
       try {
-        const s = await getGamingState(game, refresh);
+        s = await getGamingState(game, refresh);
+        setLoadErr(null);
+        setStaleReason(null);
+      } catch (e) {
+        const text = apiError(e, `Could not read what ${name} holds`);
+        if (!refresh) {
+          // Nothing to fall back to; say so rather than describing the game.
+          setLoadErr(text);
+          return;
+        }
+        // A live look needs the game to be running, and a game that is off is
+        // the ordinary case rather than an error. The bridge keeps the last
+        // report for exactly this, so ask for it instead of showing nothing.
+        try {
+          s = await getGamingState(game, false);
+          setLoadErr(null);
+          setStaleReason(text);
+        } catch (e2) {
+          setLoadErr(apiError(e2, `Could not read what ${name} holds`));
+          return;
+        }
+      }
+      {
         setState(s);
         if (!refresh) return;
         // A refresh is a fresh look, so old refusals are dropped. A sent txid
@@ -110,18 +140,22 @@ export const GamingLockedCoin = ({
             Object.keys(next).length === Object.keys(a).length;
           return same ? a : next;
         });
-      } catch {
-        /* A game that has never reported leaves this empty, which the
-           render below already says in words. */
       }
     },
-    [game],
+    [game, name],
   );
 
-  // Mount asks for a live look. The cached report is the game's last word, and
-  // acting on it can offer coin that is already on its way somewhere.
+  // Mount reads the cached report, and only the Refresh button asks the game
+  // for a live look.
+  //
+  // Asking live on mount cost more than it bought. A live look needs the game
+  // to be running, the route refuses the whole request when it is not, and the
+  // panel then said "nothing has come back from the bridge" about a game whose
+  // coin the bridge was holding a perfectly good record of. It also meant one
+  // round trip per registered game, to somebody else's machine, on every visit.
+  // The report carries when it was made, so a person can see how old it is.
   useEffect(() => {
-    void load(true);
+    void load(false);
   }, [load]);
 
   // key identifies the button; outpoint is what goes on the wire, and is sent
@@ -277,11 +311,15 @@ export const GamingLockedCoin = ({
         </h4>
         <button
           type="button"
-          onClick={() => void load(true)}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            setRefreshing(true);
+            void load(true).finally(() => setRefreshing(false));
+          }}
+          disabled={refreshing}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-wait"
         >
-          <RefreshCw className="h-3 w-3" />
-          Refresh
+          <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? `Asking ${name}` : "Refresh"}
         </button>
       </div>
 
@@ -294,6 +332,16 @@ export const GamingLockedCoin = ({
             ? `Everything below is measured against block ${tip.toLocaleString()}.`
             : "The chain could not be read, so nothing below is measured against a block height."}
         </p>
+      )}
+
+      {staleReason && (
+        <div className="flex items-start gap-2 p-2 rounded-lg bg-muted/20 border border-border/50 text-xs text-muted-foreground">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span className="break-words">
+            {name} did not answer a fresh look, so what follows is its last
+            report rather than a live one: {staleReason}
+          </span>
+        </div>
       )}
 
       {panelErr && (
@@ -314,7 +362,26 @@ export const GamingLockedCoin = ({
         </div>
       )}
 
-      {!state ? (
+      {loadErr ? (
+        <div className="space-y-2">
+          <div className="flex items-start gap-2 text-xs text-destructive">
+            <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span className="break-words">
+              This console could not read what {name} holds: {loadErr}. That is
+              a question this page could not ask, and not an answer about the
+              coin - {name} may be holding plenty.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void load(false)}
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Try again
+          </button>
+        </div>
+      ) : !state ? (
         <p className="text-xs text-muted-foreground">
           Nothing has come back from the bridge yet about what {name} holds.
         </p>

@@ -21,6 +21,7 @@ import { BisonrelayStats } from './BisonrelayStats';
 import { BisonrelayRealtime } from './BisonrelayRealtime';
 import { BisonrelayPages } from './BisonrelayPages';
 import { BisonrelayGamingTab } from './BisonrelayGamingTab';
+import { useGamingSpends } from '../../hooks/useGamingSpends';
 import { BisonrelaySettingsTab } from './BisonrelaySettingsTab';
 import { BrNotifications } from './BrNotifications';
 import { useBrTextScale } from './brTextScale';
@@ -72,6 +73,7 @@ export const BisonrelayPage = () => {
   const [activeTab, setActiveTab] = useState<TabId>(readHashTab);
   const wallet = useWalletReady();
   const { factor: textScaleFactor } = useBrTextScale();
+  const gamingPending = useGamingSpends().pending.length;
   const textScaleStyle = { '--br-fs': textScaleFactor } as React.CSSProperties;
 
   // Refresh the ready status so header fields (nick, server) stay current.
@@ -120,7 +122,9 @@ export const BisonrelayPage = () => {
 
   if (!ready) {
     if (!wallet.ready) {
-      return <WalletSyncGate feature="Bison Relay" message={wallet.message} progress={wallet.progress} />;
+      return (
+        <WalletSyncGate feature="Bison Relay" message={wallet.message} progress={wallet.progress} />
+      );
     }
     return (
       <div className="br-text-scale" style={textScaleStyle}>
@@ -161,6 +165,18 @@ export const BisonrelayPage = () => {
               >
                 <Icon className="h-4 w-4" />
                 {tab.label}
+                {/* A buy-in lapses in about two minutes, and the operator may
+                 * be reading their feed when one arrives. */}
+                {tab.id === 'gaming' && gamingPending > 0 && (
+                  <span
+                    className="min-w-[16px] h-4 px-1 rounded-full bg-warning text-warning-foreground text-[10px] font-semibold inline-flex items-center justify-center"
+                    aria-label={`${gamingPending} buy-in ${
+                      gamingPending === 1 ? 'request' : 'requests'
+                    } waiting`}
+                  >
+                    {gamingPending}
+                  </span>
+                )}
               </button>
             );
           })}
