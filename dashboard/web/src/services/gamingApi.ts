@@ -136,6 +136,9 @@ export interface GamingLock {
   maturesAt: number;
   blocksLeft: number;
   spendable: boolean;
+  // spending is a spend sitting in the mempool: the coin is still the game's,
+  // because a broadcast can be dropped, but nothing may ask for it again.
+  spending: boolean;
   spent: boolean;
 }
 
