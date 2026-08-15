@@ -248,12 +248,40 @@ func WriteGamingSettings(in types.GamingSettings, appPasswordActive bool) (types
 	gamingSettingsMu.Lock()
 	defer gamingSettingsMu.Unlock()
 
-	out, err := normalizeGamingSettings(in, ReadGamingSettings(), appPasswordActive)
+	cur := ReadGamingSettings()
+	out, err := normalizeGamingSettings(in, cur, appPasswordActive)
 	if err != nil {
 		return types.GamingSettings{}, err
 	}
 	if err := writeGamingSettingsLocked(out); err != nil {
 		return out, err
+	}
+
+	// A write that removed a game or switched the bridge off answers the
+	// requests it invalidated, rather than leaving them pending and
+	// counting - and a removed game's credential stops resolving now, not
+	// at the next restart. Failures only warn: the write itself stands,
+	// and the approval-time re-check keeps the money path shut regardless.
+	still := make(map[string]bool, len(out.RegisteredGames))
+	for _, g := range out.RegisteredGames {
+		still[g] = true
+	}
+	dropped := map[string]bool{}
+	for _, g := range cur.RegisteredGames {
+		if !still[g] {
+			dropped[g] = true
+			gamingAllow.Revoke(g)
+		}
+	}
+	switch {
+	case cur.Enabled && !out.Enabled:
+		if err := invalidatePendingSpends(func(string) bool { return true }, spendInvalidatedText); err != nil {
+			gameLog.Warnf("retire pending spend requests: %v", err)
+		}
+	case len(dropped) > 0:
+		if err := invalidatePendingSpends(func(g string) bool { return dropped[g] }, spendInvalidatedText); err != nil {
+			gameLog.Warnf("retire pending spend requests: %v", err)
+		}
 	}
 	return out, nil
 }

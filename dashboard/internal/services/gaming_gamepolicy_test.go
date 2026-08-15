@@ -138,6 +138,17 @@ func TestTheAccountAGameSpendsFromIsItsOwn(t *testing.T) {
 // of the money that game was confined to.
 func TestASpendIsPaidFromItsOwnGamesAccount(t *testing.T) {
 	spendSeams(t)
+	chess := types.GamingSettings{
+		Enabled:         true,
+		RegisteredGames: []string{"chess"},
+		Policies: map[string]types.GamePolicy{"chess": {
+			Account: "chess-money", PerTableCapAtoms: 100_000_000,
+			PerDayCapAtoms: 500_000_000, ApprovalTimeoutSecs: 120,
+		}},
+	}
+	if _, err := WriteGamingSettings(chess, true); err != nil {
+		t.Fatalf("store a policy: %v", err)
+	}
 
 	asked := make(chan string, 1)
 	spendAccount = func(_ context.Context, game string) (uint32, error) {
