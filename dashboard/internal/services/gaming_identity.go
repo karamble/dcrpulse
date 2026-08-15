@@ -327,13 +327,21 @@ func spendProto(s GamingSpend) *gamingpb.Spend {
 	if s.ID == "" {
 		return nil
 	}
+	// A payment being broadcast is told to its game as still pending. The
+	// deployed game reads any state it does not know as a terminal refusal
+	// and drops its own double-payment guard - and "keep waiting" is also
+	// the truthful answer, since the outcome lands moments later.
+	state := s.State
+	if state == GamingSpendPublishing {
+		state = GamingSpendPending
+	}
 	return &gamingpb.Spend{
 		Id:          s.ID,
 		Game:        s.Game,
 		Address:     s.Address,
 		AmountAtoms: s.AmountAtoms,
 		Reason:      s.Reason,
-		State:       string(s.State),
+		State:       string(state),
 		Txid:        s.TxID,
 		Error:       s.Error,
 		RequestedAt: s.RequestedAt,

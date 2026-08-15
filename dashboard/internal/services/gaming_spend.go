@@ -53,6 +53,13 @@ const (
 	GamingSpendDenied   GamingSpendState = "denied"
 	GamingSpendExpired  GamingSpendState = "expired"
 	GamingSpendFailed   GamingSpendState = "failed"
+
+	// GamingSpendPublishing is the moment between a person's approval
+	// being signed and the network's answer being recorded. Money may be
+	// moving, so nothing may decide, expire or trim an entry in this
+	// state - and it never reaches a game, which is only ever told
+	// pending or an outcome.
+	GamingSpendPublishing GamingSpendState = "publishing"
 )
 
 // GamingSpend is one request a game made, and what was decided.
@@ -196,6 +203,15 @@ const spendDaySecs = int64(24 * time.Hour / time.Second)
 // asking without end.
 const maxPendingSpendsPerGame = 8
 
+// spendPublishingGraceSecs is how long past its window a payment may stay
+// publishing before it is read as interrupted. Long enough for the slowest
+// honest broadcast, short enough that a crash surfaces the same day.
+const spendPublishingGraceSecs = int64(300)
+
+// spendInterruptedText is what an interrupted broadcast records. One fixed
+// sentence, so the console and the tests say the same thing.
+const spendInterruptedText = "interrupted while broadcasting; check the wallet for the transaction before paying it again"
+
 func readSpendLog() spendLog {
 	var log spendLog
 	blob, err := os.ReadFile(gamingSpendLogPath())
@@ -280,13 +296,42 @@ func spentInDayLocked(log spendLog, game string, now int64) int64 {
 	return total
 }
 
+// spendOutstanding reports whether an entry is still in flight: awaiting a
+// person, or approved and being broadcast. Both hold a slot in the per-game
+// ceiling, because both are exposure nobody has finished accounting for.
+func spendOutstanding(s GamingSpend) bool {
+	return s.State == GamingSpendPending || s.State == GamingSpendPublishing
+}
+
 // spendCountsOrPends reports whether an entry still feeds the daily cap:
-// awaiting a person, or approved inside the day the cap looks back on. The
+// still in flight, or approved inside the day the cap looks back on. The
 // trim keeps exactly what this counts, which is what makes the cap window
 // untrimmable.
 func spendCountsOrPends(s GamingSpend, now int64) bool {
-	return s.State == GamingSpendPending ||
+	return spendOutstanding(s) ||
 		(s.State == GamingSpendApproved && now-s.DecidedAt < spendDaySecs)
+}
+
+// sweepPublishingLocked settles what a crash left mid-broadcast. An entry
+// still publishing long after its window, with no approval running in this
+// process, is a payment whose answer was lost: it fails with the sentence
+// that says where to look. An id in spendApproving is a broadcast running
+// right here and is never touched, however late it runs. A swept entry
+// stops counting toward the day, the same accounting the ambiguous-publish
+// arm has always had.
+func sweepPublishingLocked(log *spendLog, now int64) bool {
+	changed := false
+	for i := range log.Spends {
+		s := &log.Spends[i]
+		if s.State != GamingSpendPublishing || spendApproving[s.ID] {
+			continue
+		}
+		if now >= s.ExpiresAt+spendPublishingGraceSecs {
+			s.State, s.DecidedAt, s.Error = GamingSpendFailed, now, spendInterruptedText
+			changed = true
+		}
+	}
+	return changed
 }
 
 // checkSpendRequest is the policy decision that needs nothing but the request,
@@ -364,12 +409,13 @@ func RequestGamingSpend(game, address string, amountAtoms int64, reason string) 
 	now := time.Now().Unix()
 	log := readSpendLog()
 	expireLocked(&log, now)
+	sweepPublishingLocked(&log, now)
 
 	// A backlog past answering is refused, not queued: nothing here writes,
 	// so a game that keeps asking wears out nothing but its own turn.
 	pending := 0
 	for _, sp := range log.Spends {
-		if sp.Game == game && sp.State == GamingSpendPending {
+		if sp.Game == game && spendOutstanding(sp) {
 			pending++
 		}
 	}
@@ -417,7 +463,11 @@ func GamingSpendFor(game, id string) (GamingSpend, error) {
 
 	now := time.Now().Unix()
 	log := readSpendLog()
-	if expireLocked(&log, now) {
+	changed := expireLocked(&log, now)
+	if sweepPublishingLocked(&log, now) {
+		changed = true
+	}
+	if changed {
 		_ = writeSpendLog(log, now)
 	}
 	for _, s := range log.Spends {
@@ -435,7 +485,11 @@ func GamingSpends() []GamingSpend {
 
 	now := time.Now().Unix()
 	log := readSpendLog()
-	if expireLocked(&log, now) {
+	changed := expireLocked(&log, now)
+	if sweepPublishingLocked(&log, now) {
+		changed = true
+	}
+	if changed {
 		_ = writeSpendLog(log, now)
 	}
 	out := append([]GamingSpend(nil), log.Spends...)
@@ -451,13 +505,17 @@ func DenyGamingSpend(id string) (GamingSpend, error) {
 	now := time.Now().Unix()
 	log := readSpendLog()
 	expireLocked(&log, now)
+	sweepPublishingLocked(&log, now)
 
 	for i := range log.Spends {
 		s := &log.Spends[i]
 		if s.ID != id {
 			continue
 		}
-		if !s.Pending() {
+		// An approval running for this id right now also refuses: a deny
+		// that reported success while the payment went out would be worse
+		// than any refusal.
+		if !s.Pending() || spendApproving[s.ID] {
 			return *s, ErrGamingSpendNotPending
 		}
 		s.State, s.DecidedAt = GamingSpendDenied, now
@@ -488,6 +546,7 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 	now := time.Now().Unix()
 	log := readSpendLog()
 	expireLocked(&log, now)
+	sweepPublishingLocked(&log, now)
 
 	idx := -1
 	for i := range log.Spends {
@@ -538,16 +597,65 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 	if err != nil {
 		return req, err
 	}
+	// The broadcast is written down before it happens. After the network
+	// has the transaction it is too late for a crash to be harmless: an
+	// entry still pending on disk while the coins moved is a request a
+	// person can be asked to pay twice. Failing here aborts before any
+	// money moves, which costs a retry and nothing else - and it is the
+	// last look at the clock, so an approval that outlived its window
+	// stops here instead of publishing anyway.
+	if err := markSpendPublishing(id); err != nil {
+		return req, err
+	}
 	txid, err := spendPublish(ctx, signed)
 	if err != nil {
-		return recordSpendOutcome(id, GamingSpendFailed, "", err.Error())
+		return recordSpendOutcome(req, GamingSpendFailed, "", err.Error())
 	}
-	return recordSpendOutcome(id, GamingSpendApproved, txid, "")
+	return recordSpendOutcome(req, GamingSpendApproved, txid, "")
 }
 
-// recordSpendOutcome writes what happened, whatever happened. A spend that was
+// markSpendPublishing records that a signed transaction is about to be
+// handed to the network. Called with an approval in flight and spendMu not
+// held; any error aborts the approval pre-broadcast, retryably.
+func markSpendPublishing(id string) error {
+	spendMu.Lock()
+	defer spendMu.Unlock()
+
+	now := time.Now().Unix()
+	log := readSpendLog()
+	changed := expireLocked(&log, now)
+	if sweepPublishingLocked(&log, now) {
+		changed = true
+	}
+	for i := range log.Spends {
+		s := &log.Spends[i]
+		if s.ID != id {
+			continue
+		}
+		if !s.Pending() {
+			// The refusal stands either way; what expiry just decided
+			// is still worth writing down.
+			if changed {
+				_ = writeSpendLog(log, now)
+			}
+			return ErrGamingSpendNotPending
+		}
+		s.State = GamingSpendPublishing
+		return writeSpendLog(log, now)
+	}
+	return ErrGamingSpendNotFound
+}
+
+// recordSpendOutcome writes what the network said about a payment that was
+// marked publishing. Whatever happened, something is written: a spend that was
 // broadcast and not recorded would be one nobody could account for.
-func recordSpendOutcome(id string, state GamingSpendState, txid, failure string) (GamingSpend, error) {
+//
+// Only publishing may take an outcome. An outcome is final the moment it is
+// written, and a request in any other state is not being paid by this call -
+// so a decided entry can never be rewritten, however the paths interleave. A
+// refusal is logged with the txid, so a broadcast is never silently
+// unaccounted even when the log will not carry it.
+func recordSpendOutcome(req GamingSpend, state GamingSpendState, txid, failure string) (GamingSpend, error) {
 	spendMu.Lock()
 	defer spendMu.Unlock()
 
@@ -555,12 +663,18 @@ func recordSpendOutcome(id string, state GamingSpendState, txid, failure string)
 	log := readSpendLog()
 	for i := range log.Spends {
 		s := &log.Spends[i]
-		if s.ID != id {
+		if s.ID != req.ID {
 			continue
+		}
+		if s.State != GamingSpendPublishing {
+			gameLog.Errorf("refusing to record %s over %s for spend %s (txid %q): the log no longer holds it as being paid",
+				state, s.State, req.ID, txid)
+			return *s, fmt.Errorf("the log no longer holds request %s as being paid", req.ID)
 		}
 		s.State, s.TxID, s.Error = state, txid, failure
 		s.DecidedAt = now
 		if err := writeSpendLog(log, now); err != nil {
+			gameLog.Errorf("record the outcome of spend %s (txid %q): %v", req.ID, txid, err)
 			return *s, err
 		}
 		if state != GamingSpendApproved {
