@@ -170,7 +170,12 @@ func BisonrelayGamingSpendsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	gamingJSON(w, map[string]any{"spends": services.GamingSpends()})
+	spends, err := services.GamingSpends()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	gamingJSON(w, map[string]any{"spends": spends})
 }
 
 // BisonrelayGamingSpendDecideHandler is a person answering a game's request.
