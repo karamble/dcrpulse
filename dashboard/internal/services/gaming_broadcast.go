@@ -17,6 +17,7 @@ import (
 	"github.com/decred/dcrd/txscript/v4"
 	"github.com/decred/dcrd/wire"
 
+	"dcrpulse/internal/gamingbridge"
 	"dcrpulse/internal/rpc"
 )
 
@@ -189,21 +190,21 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 	game = strings.ToLower(strings.TrimSpace(game))
 	raw, err := hex.DecodeString(strings.TrimSpace(rawTxHex))
 	if err != nil {
-		return "", fmt.Errorf("that is not hex")
+		return "", gamingbridge.GameSafe(fmt.Errorf("that is not hex"))
 	}
 	switch {
 	case len(raw) == 0:
-		return "", fmt.Errorf("nothing to broadcast")
+		return "", gamingbridge.GameSafe(fmt.Errorf("nothing to broadcast"))
 	case len(raw) > maxGamingTxBytes:
-		return "", fmt.Errorf("transaction is %d bytes, and the limit is %d", len(raw), maxGamingTxBytes)
+		return "", gamingbridge.GameSafe(fmt.Errorf("transaction is %d bytes, and the limit is %d", len(raw), maxGamingTxBytes))
 	}
 
 	var tx wire.MsgTx
 	if err := tx.Deserialize(bytes.NewReader(raw)); err != nil {
-		return "", fmt.Errorf("that is not a transaction: %w", err)
+		return "", gamingbridge.GameSafe(fmt.Errorf("that is not a transaction: %w", err))
 	}
 	if len(tx.TxIn) == 0 || len(tx.TxOut) == 0 {
-		return "", fmt.Errorf("a transaction needs at least one input and one output")
+		return "", gamingbridge.GameSafe(fmt.Errorf("a transaction needs at least one input and one output"))
 	}
 
 	// Inputs: game money only, and never the wallet's own coin.
@@ -215,13 +216,13 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 		}
 		switch {
 		case !facts.Found:
-			return "", fmt.Errorf("input %d spends %s:%d, which holds no coin anyone can see",
-				i, in.PreviousOutPoint.Hash, in.PreviousOutPoint.Index)
+			return "", gamingbridge.GameSafe(fmt.Errorf("input %d spends %s:%d, which holds no coin anyone can see",
+				i, in.PreviousOutPoint.Hash, in.PreviousOutPoint.Index))
 		case facts.Type != "scripthash":
-			return "", fmt.Errorf("input %d spends a %s output, and a game may only spend script hashes",
-				i, facts.Type)
+			return "", gamingbridge.GameSafe(fmt.Errorf("input %d spends a %s output, and a game may only spend script hashes",
+				i, facts.Type))
 		case walletOwns(ctx, facts.Addresses):
-			return "", fmt.Errorf("input %d spends coin belonging to this wallet", i)
+			return "", gamingbridge.GameSafe(fmt.Errorf("input %d spends coin belonging to this wallet", i))
 		}
 		inputAtoms += facts.ValueAtoms
 	}
@@ -255,15 +256,15 @@ func GamingBroadcast(ctx context.Context, game, rawTxHex string) (string, error)
 				if len(out.Addresses) > 0 {
 					where = out.Addresses[0]
 				}
-				return "", fmt.Errorf("output %d pays %s; coin this game could move on its own "+
-					"may only come back to this wallet", out.Index, where)
+				return "", gamingbridge.GameSafe(fmt.Errorf("output %d pays %s; coin this game could move on its own "+
+					"may only come back to this wallet", out.Index, where))
 			}
 		}
 	}
 
 	txid, err := BroadcastSignedTransaction(ctx, raw)
 	if err != nil {
-		return "", fmt.Errorf("broadcast: %w", err)
+		return "", gamingbridge.GameSafe(fmt.Errorf("broadcast: %w", err))
 	}
 
 	// Said out loud, because this is the one path where coin moves without

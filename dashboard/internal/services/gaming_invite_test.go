@@ -11,7 +11,12 @@ import (
 	"testing"
 
 	"dcrpulse/internal/gamingpb"
+	"dcrpulse/internal/rpc"
 )
+
+// testTableGCID is a real group chat id: CreateGamingTable checks the shape
+// before it does anything with an effect.
+const testTableGCID = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 // inviteSeams points the gaming state at a writable directory and puts the
 // staged calls back the way they were.
@@ -27,7 +32,7 @@ func inviteSeams(t *testing.T) {
 	tableChainTip = func(context.Context) (GamingChainTip, error) {
 		return GamingChainTip{Height: 900_000, Hash: strings.Repeat("ab", 32)}, nil
 	}
-	tableGCMessage = func(context.Context, string, string, int) error { return nil }
+	tableGCMessage = func(context.Context, rpc.ShortIDHex, string, int) error { return nil }
 	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
 		t.Fatalf("seed settings: %v", err)
 	}
@@ -123,12 +128,12 @@ func TestCreatingSeatsBeforeItAnnounces(t *testing.T) {
 			Result: &gamingpb.RespondRequest_AcceptInvite{AcceptInvite: &gamingpb.AcceptInviteResult{Sid: "seat-1"}},
 		}, nil
 	}
-	tableGCMessage = func(context.Context, string, string, int) error {
+	tableGCMessage = func(context.Context, rpc.ShortIDHex, string, int) error {
 		order = append(order, "announce")
 		return nil
 	}
 
-	table, err := CreateGamingTable(t.Context(), "poker", "gc-1", 10_000_000, 2, 1)
+	table, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1)
 	if err != nil {
 		t.Fatalf("create a table: %v", err)
 	}
@@ -146,12 +151,12 @@ func TestCreatingDoesNotAnnounceATableItCouldNotJoin(t *testing.T) {
 	gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
 		return &gamingpb.RespondRequest{Ok: false, Error: "no funds"}, nil
 	}
-	tableGCMessage = func(context.Context, string, string, int) error {
+	tableGCMessage = func(context.Context, rpc.ShortIDHex, string, int) error {
 		t.Error("a table was announced although the creator never took a seat")
 		return nil
 	}
 
-	_, err := CreateGamingTable(t.Context(), "poker", "gc-1", 10_000_000, 2, 1)
+	_, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1)
 	if err == nil {
 		t.Fatal("a table was created although the creator never took a seat")
 	}
@@ -170,11 +175,11 @@ func TestCreatingSaysYouAreSeatedWhenTheChatRefuses(t *testing.T) {
 			Result: &gamingpb.RespondRequest_AcceptInvite{AcceptInvite: &gamingpb.AcceptInviteResult{Sid: "seat-1"}},
 		}, nil
 	}
-	tableGCMessage = func(context.Context, string, string, int) error {
+	tableGCMessage = func(context.Context, rpc.ShortIDHex, string, int) error {
 		return errors.New("group chat unreachable")
 	}
 
-	table, err := CreateGamingTable(t.Context(), "poker", "gc-1", 10_000_000, 2, 1)
+	table, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1)
 	if err == nil {
 		t.Fatal("an invitation that was never sent was reported as posted")
 	}

@@ -114,10 +114,12 @@ type Config struct {
 
 // ErrSpendOverCap and ErrSpendNotFound are what the injected money functions
 // report so this package can answer with the right code without importing the
-// package that owns the policy.
+// package that owns the policy. Marked GameSafe: both were written for a game,
+// which can wait and ask for less, or stop asking about an id that is not its
+// own.
 var (
-	ErrSpendOverCap  = errors.New("over a cap")
-	ErrSpendNotFound = errors.New("no such spend request")
+	ErrSpendOverCap  = GameSafe(errors.New("over a cap"))
+	ErrSpendNotFound = GameSafe(errors.New("no such spend request"))
 )
 
 // Outpoint is what a game is told about one of its outputs.
