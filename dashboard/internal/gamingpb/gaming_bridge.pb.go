@@ -1029,6 +1029,15 @@ func (x *Reclaim) GetFeeAtoms() int64 {
 	return 0
 }
 
+// SetPayoutAddress says where this player's winnings are to be paid.
+//
+// address is derived by the bridge from the game's own bound account, for the
+// same reason a Reclaim's dest_addr is: a game that chose where its winnings
+// landed could simply choose itself.
+//
+// Every seat must answer before a table can pay anybody: the settlement spends
+// the table's escrow and needs every signature, so one seat that has not said
+// holds up everyone's money.
 type SetPayoutAddress struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
@@ -1423,8 +1432,10 @@ type GameState struct {
 	// crosses this bridge: it is the one secret the operator does not otherwise
 	// hold, and the game offers its own backup where the person already is.
 	SeedBackupAcknowledged bool `protobuf:"varint,9,opt,name=seed_backup_acknowledged,json=seedBackupAcknowledged,proto3" json:"seed_backup_acknowledged,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// stakes is every seat of ours still holding a buy-in.
+	Stakes        []*Stake `protobuf:"bytes,10,rep,name=stakes,proto3" json:"stakes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GameState) Reset() {
@@ -1520,6 +1531,13 @@ func (x *GameState) GetSeedBackupAcknowledged() bool {
 	return false
 }
 
+func (x *GameState) GetStakes() []*Stake {
+	if x != nil {
+		return x.Stakes
+	}
+	return nil
+}
+
 type ReportStateReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1557,14 +1575,18 @@ func (*ReportStateReply) Descriptor() ([]byte, []int) {
 }
 
 type Table struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Sid           string                 `protobuf:"bytes,1,opt,name=sid,proto3" json:"sid,omitempty"`
-	Gcid          string                 `protobuf:"bytes,2,opt,name=gcid,proto3" json:"gcid,omitempty"`
-	State         string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
-	Seats         uint32                 `protobuf:"varint,4,opt,name=seats,proto3" json:"seats,omitempty"`
-	BuyinAtoms    int64                  `protobuf:"varint,5,opt,name=buyin_atoms,json=buyinAtoms,proto3" json:"buyin_atoms,omitempty"`
-	Until         uint32                 `protobuf:"varint,6,opt,name=until,proto3" json:"until,omitempty"`
-	Over          bool                   `protobuf:"varint,7,opt,name=over,proto3" json:"over,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Sid        string                 `protobuf:"bytes,1,opt,name=sid,proto3" json:"sid,omitempty"`
+	Gcid       string                 `protobuf:"bytes,2,opt,name=gcid,proto3" json:"gcid,omitempty"`
+	State      string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	Seats      uint32                 `protobuf:"varint,4,opt,name=seats,proto3" json:"seats,omitempty"`
+	BuyinAtoms int64                  `protobuf:"varint,5,opt,name=buyin_atoms,json=buyinAtoms,proto3" json:"buyin_atoms,omitempty"`
+	Until      uint32                 `protobuf:"varint,6,opt,name=until,proto3" json:"until,omitempty"`
+	Over       bool                   `protobuf:"varint,7,opt,name=over,proto3" json:"over,omitempty"`
+	// settling is true while this game could still complete a cooperative
+	// settlement for the table. A refund taken during that window spends an
+	// input the settlement needs, so the console does not offer one.
+	Settling      bool `protobuf:"varint,8,opt,name=settling,proto3" json:"settling,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1644,6 +1666,13 @@ func (x *Table) GetUntil() uint32 {
 func (x *Table) GetOver() bool {
 	if x != nil {
 		return x.Over
+	}
+	return false
+}
+
+func (x *Table) GetSettling() bool {
+	if x != nil {
+		return x.Settling
 	}
 	return false
 }
@@ -1843,6 +1872,102 @@ func (x *TableBond) GetSpent() bool {
 	return false
 }
 
+// Stake is one seat's buy-in, sitting behind its own refund timelock.
+//
+// Reported for the same reason a bond is: the console is where a person takes
+// coin back, and it cannot offer that for an outpoint it was never told about.
+type Stake struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sid           string                 `protobuf:"bytes,1,opt,name=sid,proto3" json:"sid,omitempty"`
+	Seat          uint32                 `protobuf:"varint,2,opt,name=seat,proto3" json:"seat,omitempty"`
+	Outpoint      string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
+	Address       string                 `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
+	Atoms         int64                  `protobuf:"varint,5,opt,name=atoms,proto3" json:"atoms,omitempty"`
+	MaturesAt     int64                  `protobuf:"varint,6,opt,name=matures_at,json=maturesAt,proto3" json:"matures_at,omitempty"`
+	Spent         bool                   `protobuf:"varint,7,opt,name=spent,proto3" json:"spent,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Stake) Reset() {
+	*x = Stake{}
+	mi := &file_gaming_bridge_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Stake) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Stake) ProtoMessage() {}
+
+func (x *Stake) ProtoReflect() protoreflect.Message {
+	mi := &file_gaming_bridge_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Stake.ProtoReflect.Descriptor instead.
+func (*Stake) Descriptor() ([]byte, []int) {
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *Stake) GetSid() string {
+	if x != nil {
+		return x.Sid
+	}
+	return ""
+}
+
+func (x *Stake) GetSeat() uint32 {
+	if x != nil {
+		return x.Seat
+	}
+	return 0
+}
+
+func (x *Stake) GetOutpoint() string {
+	if x != nil {
+		return x.Outpoint
+	}
+	return ""
+}
+
+func (x *Stake) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *Stake) GetAtoms() int64 {
+	if x != nil {
+		return x.Atoms
+	}
+	return 0
+}
+
+func (x *Stake) GetMaturesAt() int64 {
+	if x != nil {
+		return x.MaturesAt
+	}
+	return 0
+}
+
+func (x *Stake) GetSpent() bool {
+	if x != nil {
+		return x.Spent
+	}
+	return false
+}
+
 type RequestSpendRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Address     string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
@@ -1856,7 +1981,7 @@ type RequestSpendRequest struct {
 
 func (x *RequestSpendRequest) Reset() {
 	*x = RequestSpendRequest{}
-	mi := &file_gaming_bridge_proto_msgTypes[22]
+	mi := &file_gaming_bridge_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1868,7 +1993,7 @@ func (x *RequestSpendRequest) String() string {
 func (*RequestSpendRequest) ProtoMessage() {}
 
 func (x *RequestSpendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[22]
+	mi := &file_gaming_bridge_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1881,7 +2006,7 @@ func (x *RequestSpendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestSpendRequest.ProtoReflect.Descriptor instead.
 func (*RequestSpendRequest) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{22}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RequestSpendRequest) GetAddress() string {
@@ -1914,7 +2039,7 @@ type SpendStatusRequest struct {
 
 func (x *SpendStatusRequest) Reset() {
 	*x = SpendStatusRequest{}
-	mi := &file_gaming_bridge_proto_msgTypes[23]
+	mi := &file_gaming_bridge_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1926,7 +2051,7 @@ func (x *SpendStatusRequest) String() string {
 func (*SpendStatusRequest) ProtoMessage() {}
 
 func (x *SpendStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[23]
+	mi := &file_gaming_bridge_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1939,7 +2064,7 @@ func (x *SpendStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SpendStatusRequest.ProtoReflect.Descriptor instead.
 func (*SpendStatusRequest) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{23}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SpendStatusRequest) GetId() string {
@@ -1969,7 +2094,7 @@ type Spend struct {
 
 func (x *Spend) Reset() {
 	*x = Spend{}
-	mi := &file_gaming_bridge_proto_msgTypes[24]
+	mi := &file_gaming_bridge_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1981,7 +2106,7 @@ func (x *Spend) String() string {
 func (*Spend) ProtoMessage() {}
 
 func (x *Spend) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[24]
+	mi := &file_gaming_bridge_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1994,7 +2119,7 @@ func (x *Spend) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Spend.ProtoReflect.Descriptor instead.
 func (*Spend) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{24}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Spend) GetId() string {
@@ -2083,7 +2208,7 @@ type SpendSettled struct {
 
 func (x *SpendSettled) Reset() {
 	*x = SpendSettled{}
-	mi := &file_gaming_bridge_proto_msgTypes[25]
+	mi := &file_gaming_bridge_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2095,7 +2220,7 @@ func (x *SpendSettled) String() string {
 func (*SpendSettled) ProtoMessage() {}
 
 func (x *SpendSettled) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[25]
+	mi := &file_gaming_bridge_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2108,7 +2233,7 @@ func (x *SpendSettled) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SpendSettled.ProtoReflect.Descriptor instead.
 func (*SpendSettled) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{25}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SpendSettled) GetId() string {
@@ -2127,7 +2252,7 @@ type BroadcastRequest struct {
 
 func (x *BroadcastRequest) Reset() {
 	*x = BroadcastRequest{}
-	mi := &file_gaming_bridge_proto_msgTypes[26]
+	mi := &file_gaming_bridge_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2139,7 +2264,7 @@ func (x *BroadcastRequest) String() string {
 func (*BroadcastRequest) ProtoMessage() {}
 
 func (x *BroadcastRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[26]
+	mi := &file_gaming_bridge_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2152,7 +2277,7 @@ func (x *BroadcastRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BroadcastRequest.ProtoReflect.Descriptor instead.
 func (*BroadcastRequest) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{26}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *BroadcastRequest) GetRawTxHex() string {
@@ -2171,7 +2296,7 @@ type BroadcastReply struct {
 
 func (x *BroadcastReply) Reset() {
 	*x = BroadcastReply{}
-	mi := &file_gaming_bridge_proto_msgTypes[27]
+	mi := &file_gaming_bridge_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2183,7 +2308,7 @@ func (x *BroadcastReply) String() string {
 func (*BroadcastReply) ProtoMessage() {}
 
 func (x *BroadcastReply) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[27]
+	mi := &file_gaming_bridge_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2196,7 +2321,7 @@ func (x *BroadcastReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BroadcastReply.ProtoReflect.Descriptor instead.
 func (*BroadcastReply) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{27}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *BroadcastReply) GetTxid() string {
@@ -2216,7 +2341,7 @@ type SendFrameRequest struct {
 
 func (x *SendFrameRequest) Reset() {
 	*x = SendFrameRequest{}
-	mi := &file_gaming_bridge_proto_msgTypes[28]
+	mi := &file_gaming_bridge_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2228,7 +2353,7 @@ func (x *SendFrameRequest) String() string {
 func (*SendFrameRequest) ProtoMessage() {}
 
 func (x *SendFrameRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[28]
+	mi := &file_gaming_bridge_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2241,7 +2366,7 @@ func (x *SendFrameRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendFrameRequest.ProtoReflect.Descriptor instead.
 func (*SendFrameRequest) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{28}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SendFrameRequest) GetGcid() string {
@@ -2266,7 +2391,7 @@ type SendFrameReply struct {
 
 func (x *SendFrameReply) Reset() {
 	*x = SendFrameReply{}
-	mi := &file_gaming_bridge_proto_msgTypes[29]
+	mi := &file_gaming_bridge_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2278,7 +2403,7 @@ func (x *SendFrameReply) String() string {
 func (*SendFrameReply) ProtoMessage() {}
 
 func (x *SendFrameReply) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[29]
+	mi := &file_gaming_bridge_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2291,7 +2416,7 @@ func (x *SendFrameReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendFrameReply.ProtoReflect.Descriptor instead.
 func (*SendFrameReply) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{29}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{30}
 }
 
 type ChainTipRequest struct {
@@ -2302,7 +2427,7 @@ type ChainTipRequest struct {
 
 func (x *ChainTipRequest) Reset() {
 	*x = ChainTipRequest{}
-	mi := &file_gaming_bridge_proto_msgTypes[30]
+	mi := &file_gaming_bridge_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2314,7 +2439,7 @@ func (x *ChainTipRequest) String() string {
 func (*ChainTipRequest) ProtoMessage() {}
 
 func (x *ChainTipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[30]
+	mi := &file_gaming_bridge_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2327,7 +2452,7 @@ func (x *ChainTipRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChainTipRequest.ProtoReflect.Descriptor instead.
 func (*ChainTipRequest) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{30}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{31}
 }
 
 type ChainTipReply struct {
@@ -2340,7 +2465,7 @@ type ChainTipReply struct {
 
 func (x *ChainTipReply) Reset() {
 	*x = ChainTipReply{}
-	mi := &file_gaming_bridge_proto_msgTypes[31]
+	mi := &file_gaming_bridge_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2352,7 +2477,7 @@ func (x *ChainTipReply) String() string {
 func (*ChainTipReply) ProtoMessage() {}
 
 func (x *ChainTipReply) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[31]
+	mi := &file_gaming_bridge_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2365,7 +2490,7 @@ func (x *ChainTipReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChainTipReply.ProtoReflect.Descriptor instead.
 func (*ChainTipReply) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{31}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ChainTipReply) GetHeight() int64 {
@@ -2391,7 +2516,7 @@ type BlockHashRequest struct {
 
 func (x *BlockHashRequest) Reset() {
 	*x = BlockHashRequest{}
-	mi := &file_gaming_bridge_proto_msgTypes[32]
+	mi := &file_gaming_bridge_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2403,7 +2528,7 @@ func (x *BlockHashRequest) String() string {
 func (*BlockHashRequest) ProtoMessage() {}
 
 func (x *BlockHashRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[32]
+	mi := &file_gaming_bridge_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2416,7 +2541,7 @@ func (x *BlockHashRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockHashRequest.ProtoReflect.Descriptor instead.
 func (*BlockHashRequest) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{32}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *BlockHashRequest) GetHeight() uint32 {
@@ -2436,7 +2561,7 @@ type BlockHashReply struct {
 
 func (x *BlockHashReply) Reset() {
 	*x = BlockHashReply{}
-	mi := &file_gaming_bridge_proto_msgTypes[33]
+	mi := &file_gaming_bridge_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2448,7 +2573,7 @@ func (x *BlockHashReply) String() string {
 func (*BlockHashReply) ProtoMessage() {}
 
 func (x *BlockHashReply) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[33]
+	mi := &file_gaming_bridge_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2461,7 +2586,7 @@ func (x *BlockHashReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockHashReply.ProtoReflect.Descriptor instead.
 func (*BlockHashReply) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{33}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *BlockHashReply) GetHeight() uint32 {
@@ -2492,7 +2617,7 @@ type OutpointRequest struct {
 
 func (x *OutpointRequest) Reset() {
 	*x = OutpointRequest{}
-	mi := &file_gaming_bridge_proto_msgTypes[34]
+	mi := &file_gaming_bridge_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2504,7 +2629,7 @@ func (x *OutpointRequest) String() string {
 func (*OutpointRequest) ProtoMessage() {}
 
 func (x *OutpointRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[34]
+	mi := &file_gaming_bridge_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2517,7 +2642,7 @@ func (x *OutpointRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutpointRequest.ProtoReflect.Descriptor instead.
 func (*OutpointRequest) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{34}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *OutpointRequest) GetTxid() string {
@@ -2556,7 +2681,7 @@ type OutpointReply struct {
 
 func (x *OutpointReply) Reset() {
 	*x = OutpointReply{}
-	mi := &file_gaming_bridge_proto_msgTypes[35]
+	mi := &file_gaming_bridge_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2568,7 +2693,7 @@ func (x *OutpointReply) String() string {
 func (*OutpointReply) ProtoMessage() {}
 
 func (x *OutpointReply) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[35]
+	mi := &file_gaming_bridge_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2581,7 +2706,7 @@ func (x *OutpointReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutpointReply.ProtoReflect.Descriptor instead.
 func (*OutpointReply) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{35}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *OutpointReply) GetFound() bool {
@@ -2707,7 +2832,7 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"\x12AcceptInviteResult\x12\x10\n" +
 	"\x03sid\x18\x01 \x01(\tR\x03sid\"#\n" +
 	"\rReclaimResult\x12\x12\n" +
-	"\x04txid\x18\x01 \x01(\tR\x04txid\"\xfc\x02\n" +
+	"\x04txid\x18\x01 \x01(\tR\x04txid\"\xaf\x03\n" +
 	"\tGameState\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
@@ -2720,8 +2845,10 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"tableBonds\x12%\n" +
 	"\x0epayout_address\x18\a \x01(\tR\rpayoutAddress\x12\x1b\n" +
 	"\tchain_err\x18\b \x01(\tR\bchainErr\x128\n" +
-	"\x18seed_backup_acknowledged\x18\t \x01(\bR\x16seedBackupAcknowledged\"\x12\n" +
-	"\x10ReportStateReply\"\xa4\x01\n" +
+	"\x18seed_backup_acknowledged\x18\t \x01(\bR\x16seedBackupAcknowledged\x121\n" +
+	"\x06stakes\x18\n" +
+	" \x03(\v2\x19.dcrpulse.gaming.v1.StakeR\x06stakes\"\x12\n" +
+	"\x10ReportStateReply\"\xc0\x01\n" +
 	"\x05Table\x12\x10\n" +
 	"\x03sid\x18\x01 \x01(\tR\x03sid\x12\x12\n" +
 	"\x04gcid\x18\x02 \x01(\tR\x04gcid\x12\x14\n" +
@@ -2730,7 +2857,8 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"\vbuyin_atoms\x18\x05 \x01(\x03R\n" +
 	"buyinAtoms\x12\x14\n" +
 	"\x05until\x18\x06 \x01(\rR\x05until\x12\x12\n" +
-	"\x04over\x18\a \x01(\bR\x04over\"\xe4\x01\n" +
+	"\x04over\x18\a \x01(\bR\x04over\x12\x1a\n" +
+	"\bsettling\x18\b \x01(\bR\bsettling\"\xe4\x01\n" +
 	"\x04Bond\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x1d\n" +
 	"\n" +
@@ -2744,6 +2872,15 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"hasDeposit\x12\x14\n" +
 	"\x05spent\x18\b \x01(\bR\x05spent\"\xb2\x01\n" +
 	"\tTableBond\x12\x10\n" +
+	"\x03sid\x18\x01 \x01(\tR\x03sid\x12\x12\n" +
+	"\x04seat\x18\x02 \x01(\rR\x04seat\x12\x1a\n" +
+	"\boutpoint\x18\x03 \x01(\tR\boutpoint\x12\x18\n" +
+	"\aaddress\x18\x04 \x01(\tR\aaddress\x12\x14\n" +
+	"\x05atoms\x18\x05 \x01(\x03R\x05atoms\x12\x1d\n" +
+	"\n" +
+	"matures_at\x18\x06 \x01(\x03R\tmaturesAt\x12\x14\n" +
+	"\x05spent\x18\a \x01(\bR\x05spent\"\xae\x01\n" +
+	"\x05Stake\x12\x10\n" +
 	"\x03sid\x18\x01 \x01(\tR\x03sid\x12\x12\n" +
 	"\x04seat\x18\x02 \x01(\rR\x04seat\x12\x1a\n" +
 	"\boutpoint\x18\x03 \x01(\tR\boutpoint\x12\x18\n" +
@@ -2842,7 +2979,7 @@ func file_gaming_bridge_proto_rawDescGZIP() []byte {
 }
 
 var file_gaming_bridge_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_gaming_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_gaming_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_gaming_bridge_proto_goTypes = []any{
 	(Capability)(0),             // 0: dcrpulse.gaming.v1.Capability
 	(GapScope)(0),               // 1: dcrpulse.gaming.v1.GapScope
@@ -2869,21 +3006,22 @@ var file_gaming_bridge_proto_goTypes = []any{
 	(*Table)(nil),               // 22: dcrpulse.gaming.v1.Table
 	(*Bond)(nil),                // 23: dcrpulse.gaming.v1.Bond
 	(*TableBond)(nil),           // 24: dcrpulse.gaming.v1.TableBond
-	(*RequestSpendRequest)(nil), // 25: dcrpulse.gaming.v1.RequestSpendRequest
-	(*SpendStatusRequest)(nil),  // 26: dcrpulse.gaming.v1.SpendStatusRequest
-	(*Spend)(nil),               // 27: dcrpulse.gaming.v1.Spend
-	(*SpendSettled)(nil),        // 28: dcrpulse.gaming.v1.SpendSettled
-	(*BroadcastRequest)(nil),    // 29: dcrpulse.gaming.v1.BroadcastRequest
-	(*BroadcastReply)(nil),      // 30: dcrpulse.gaming.v1.BroadcastReply
-	(*SendFrameRequest)(nil),    // 31: dcrpulse.gaming.v1.SendFrameRequest
-	(*SendFrameReply)(nil),      // 32: dcrpulse.gaming.v1.SendFrameReply
-	(*ChainTipRequest)(nil),     // 33: dcrpulse.gaming.v1.ChainTipRequest
-	(*ChainTipReply)(nil),       // 34: dcrpulse.gaming.v1.ChainTipReply
-	(*BlockHashRequest)(nil),    // 35: dcrpulse.gaming.v1.BlockHashRequest
-	(*BlockHashReply)(nil),      // 36: dcrpulse.gaming.v1.BlockHashReply
-	(*OutpointRequest)(nil),     // 37: dcrpulse.gaming.v1.OutpointRequest
-	(*OutpointReply)(nil),       // 38: dcrpulse.gaming.v1.OutpointReply
-	nil,                         // 39: dcrpulse.gaming.v1.SetNames.NamesEntry
+	(*Stake)(nil),               // 25: dcrpulse.gaming.v1.Stake
+	(*RequestSpendRequest)(nil), // 26: dcrpulse.gaming.v1.RequestSpendRequest
+	(*SpendStatusRequest)(nil),  // 27: dcrpulse.gaming.v1.SpendStatusRequest
+	(*Spend)(nil),               // 28: dcrpulse.gaming.v1.Spend
+	(*SpendSettled)(nil),        // 29: dcrpulse.gaming.v1.SpendSettled
+	(*BroadcastRequest)(nil),    // 30: dcrpulse.gaming.v1.BroadcastRequest
+	(*BroadcastReply)(nil),      // 31: dcrpulse.gaming.v1.BroadcastReply
+	(*SendFrameRequest)(nil),    // 32: dcrpulse.gaming.v1.SendFrameRequest
+	(*SendFrameReply)(nil),      // 33: dcrpulse.gaming.v1.SendFrameReply
+	(*ChainTipRequest)(nil),     // 34: dcrpulse.gaming.v1.ChainTipRequest
+	(*ChainTipReply)(nil),       // 35: dcrpulse.gaming.v1.ChainTipReply
+	(*BlockHashRequest)(nil),    // 36: dcrpulse.gaming.v1.BlockHashRequest
+	(*BlockHashReply)(nil),      // 37: dcrpulse.gaming.v1.BlockHashReply
+	(*OutpointRequest)(nil),     // 38: dcrpulse.gaming.v1.OutpointRequest
+	(*OutpointReply)(nil),       // 39: dcrpulse.gaming.v1.OutpointReply
+	nil,                         // 40: dcrpulse.gaming.v1.SetNames.NamesEntry
 }
 var file_gaming_bridge_proto_depIdxs = []int32{
 	0,  // 0: dcrpulse.gaming.v1.HelloRequest.capabilities:type_name -> dcrpulse.gaming.v1.Capability
@@ -2891,7 +3029,7 @@ var file_gaming_bridge_proto_depIdxs = []int32{
 	8,  // 2: dcrpulse.gaming.v1.BridgeEvent.start:type_name -> dcrpulse.gaming.v1.StreamStart
 	9,  // 3: dcrpulse.gaming.v1.BridgeEvent.frame:type_name -> dcrpulse.gaming.v1.Frame
 	10, // 4: dcrpulse.gaming.v1.BridgeEvent.request:type_name -> dcrpulse.gaming.v1.BridgeRequest
-	28, // 5: dcrpulse.gaming.v1.BridgeEvent.spend:type_name -> dcrpulse.gaming.v1.SpendSettled
+	29, // 5: dcrpulse.gaming.v1.BridgeEvent.spend:type_name -> dcrpulse.gaming.v1.SpendSettled
 	1,  // 6: dcrpulse.gaming.v1.StreamStart.gap_scope:type_name -> dcrpulse.gaming.v1.GapScope
 	11, // 7: dcrpulse.gaming.v1.BridgeRequest.accept_invite:type_name -> dcrpulse.gaming.v1.AcceptInvite
 	12, // 8: dcrpulse.gaming.v1.BridgeRequest.reclaim:type_name -> dcrpulse.gaming.v1.Reclaim
@@ -2899,40 +3037,41 @@ var file_gaming_bridge_proto_depIdxs = []int32{
 	14, // 10: dcrpulse.gaming.v1.BridgeRequest.set_names:type_name -> dcrpulse.gaming.v1.SetNames
 	15, // 11: dcrpulse.gaming.v1.BridgeRequest.refresh_state:type_name -> dcrpulse.gaming.v1.RefreshState
 	2,  // 12: dcrpulse.gaming.v1.Reclaim.kind:type_name -> dcrpulse.gaming.v1.Reclaim.Kind
-	39, // 13: dcrpulse.gaming.v1.SetNames.names:type_name -> dcrpulse.gaming.v1.SetNames.NamesEntry
+	40, // 13: dcrpulse.gaming.v1.SetNames.names:type_name -> dcrpulse.gaming.v1.SetNames.NamesEntry
 	18, // 14: dcrpulse.gaming.v1.RespondRequest.accept_invite:type_name -> dcrpulse.gaming.v1.AcceptInviteResult
 	19, // 15: dcrpulse.gaming.v1.RespondRequest.reclaim:type_name -> dcrpulse.gaming.v1.ReclaimResult
 	20, // 16: dcrpulse.gaming.v1.RespondRequest.state:type_name -> dcrpulse.gaming.v1.GameState
 	22, // 17: dcrpulse.gaming.v1.GameState.tables:type_name -> dcrpulse.gaming.v1.Table
 	23, // 18: dcrpulse.gaming.v1.GameState.bond:type_name -> dcrpulse.gaming.v1.Bond
 	24, // 19: dcrpulse.gaming.v1.GameState.table_bonds:type_name -> dcrpulse.gaming.v1.TableBond
-	3,  // 20: dcrpulse.gaming.v1.BridgeService.Hello:input_type -> dcrpulse.gaming.v1.HelloRequest
-	6,  // 21: dcrpulse.gaming.v1.BridgeService.Subscribe:input_type -> dcrpulse.gaming.v1.SubscribeRequest
-	16, // 22: dcrpulse.gaming.v1.BridgeService.Respond:input_type -> dcrpulse.gaming.v1.RespondRequest
-	20, // 23: dcrpulse.gaming.v1.BridgeService.ReportState:input_type -> dcrpulse.gaming.v1.GameState
-	25, // 24: dcrpulse.gaming.v1.BridgeService.RequestSpend:input_type -> dcrpulse.gaming.v1.RequestSpendRequest
-	26, // 25: dcrpulse.gaming.v1.BridgeService.SpendStatus:input_type -> dcrpulse.gaming.v1.SpendStatusRequest
-	29, // 26: dcrpulse.gaming.v1.BridgeService.Broadcast:input_type -> dcrpulse.gaming.v1.BroadcastRequest
-	31, // 27: dcrpulse.gaming.v1.BridgeService.SendFrame:input_type -> dcrpulse.gaming.v1.SendFrameRequest
-	33, // 28: dcrpulse.gaming.v1.BridgeService.ChainTip:input_type -> dcrpulse.gaming.v1.ChainTipRequest
-	35, // 29: dcrpulse.gaming.v1.BridgeService.BlockHash:input_type -> dcrpulse.gaming.v1.BlockHashRequest
-	37, // 30: dcrpulse.gaming.v1.BridgeService.Outpoint:input_type -> dcrpulse.gaming.v1.OutpointRequest
-	4,  // 31: dcrpulse.gaming.v1.BridgeService.Hello:output_type -> dcrpulse.gaming.v1.HelloReply
-	7,  // 32: dcrpulse.gaming.v1.BridgeService.Subscribe:output_type -> dcrpulse.gaming.v1.BridgeEvent
-	17, // 33: dcrpulse.gaming.v1.BridgeService.Respond:output_type -> dcrpulse.gaming.v1.RespondReply
-	21, // 34: dcrpulse.gaming.v1.BridgeService.ReportState:output_type -> dcrpulse.gaming.v1.ReportStateReply
-	27, // 35: dcrpulse.gaming.v1.BridgeService.RequestSpend:output_type -> dcrpulse.gaming.v1.Spend
-	27, // 36: dcrpulse.gaming.v1.BridgeService.SpendStatus:output_type -> dcrpulse.gaming.v1.Spend
-	30, // 37: dcrpulse.gaming.v1.BridgeService.Broadcast:output_type -> dcrpulse.gaming.v1.BroadcastReply
-	32, // 38: dcrpulse.gaming.v1.BridgeService.SendFrame:output_type -> dcrpulse.gaming.v1.SendFrameReply
-	34, // 39: dcrpulse.gaming.v1.BridgeService.ChainTip:output_type -> dcrpulse.gaming.v1.ChainTipReply
-	36, // 40: dcrpulse.gaming.v1.BridgeService.BlockHash:output_type -> dcrpulse.gaming.v1.BlockHashReply
-	38, // 41: dcrpulse.gaming.v1.BridgeService.Outpoint:output_type -> dcrpulse.gaming.v1.OutpointReply
-	31, // [31:42] is the sub-list for method output_type
-	20, // [20:31] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	25, // 20: dcrpulse.gaming.v1.GameState.stakes:type_name -> dcrpulse.gaming.v1.Stake
+	3,  // 21: dcrpulse.gaming.v1.BridgeService.Hello:input_type -> dcrpulse.gaming.v1.HelloRequest
+	6,  // 22: dcrpulse.gaming.v1.BridgeService.Subscribe:input_type -> dcrpulse.gaming.v1.SubscribeRequest
+	16, // 23: dcrpulse.gaming.v1.BridgeService.Respond:input_type -> dcrpulse.gaming.v1.RespondRequest
+	20, // 24: dcrpulse.gaming.v1.BridgeService.ReportState:input_type -> dcrpulse.gaming.v1.GameState
+	26, // 25: dcrpulse.gaming.v1.BridgeService.RequestSpend:input_type -> dcrpulse.gaming.v1.RequestSpendRequest
+	27, // 26: dcrpulse.gaming.v1.BridgeService.SpendStatus:input_type -> dcrpulse.gaming.v1.SpendStatusRequest
+	30, // 27: dcrpulse.gaming.v1.BridgeService.Broadcast:input_type -> dcrpulse.gaming.v1.BroadcastRequest
+	32, // 28: dcrpulse.gaming.v1.BridgeService.SendFrame:input_type -> dcrpulse.gaming.v1.SendFrameRequest
+	34, // 29: dcrpulse.gaming.v1.BridgeService.ChainTip:input_type -> dcrpulse.gaming.v1.ChainTipRequest
+	36, // 30: dcrpulse.gaming.v1.BridgeService.BlockHash:input_type -> dcrpulse.gaming.v1.BlockHashRequest
+	38, // 31: dcrpulse.gaming.v1.BridgeService.Outpoint:input_type -> dcrpulse.gaming.v1.OutpointRequest
+	4,  // 32: dcrpulse.gaming.v1.BridgeService.Hello:output_type -> dcrpulse.gaming.v1.HelloReply
+	7,  // 33: dcrpulse.gaming.v1.BridgeService.Subscribe:output_type -> dcrpulse.gaming.v1.BridgeEvent
+	17, // 34: dcrpulse.gaming.v1.BridgeService.Respond:output_type -> dcrpulse.gaming.v1.RespondReply
+	21, // 35: dcrpulse.gaming.v1.BridgeService.ReportState:output_type -> dcrpulse.gaming.v1.ReportStateReply
+	28, // 36: dcrpulse.gaming.v1.BridgeService.RequestSpend:output_type -> dcrpulse.gaming.v1.Spend
+	28, // 37: dcrpulse.gaming.v1.BridgeService.SpendStatus:output_type -> dcrpulse.gaming.v1.Spend
+	31, // 38: dcrpulse.gaming.v1.BridgeService.Broadcast:output_type -> dcrpulse.gaming.v1.BroadcastReply
+	33, // 39: dcrpulse.gaming.v1.BridgeService.SendFrame:output_type -> dcrpulse.gaming.v1.SendFrameReply
+	35, // 40: dcrpulse.gaming.v1.BridgeService.ChainTip:output_type -> dcrpulse.gaming.v1.ChainTipReply
+	37, // 41: dcrpulse.gaming.v1.BridgeService.BlockHash:output_type -> dcrpulse.gaming.v1.BlockHashReply
+	39, // 42: dcrpulse.gaming.v1.BridgeService.Outpoint:output_type -> dcrpulse.gaming.v1.OutpointReply
+	32, // [32:43] is the sub-list for method output_type
+	21, // [21:32] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_gaming_bridge_proto_init() }
@@ -2964,7 +3103,7 @@ func file_gaming_bridge_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gaming_bridge_proto_rawDesc), len(file_gaming_bridge_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   37,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

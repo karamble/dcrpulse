@@ -147,6 +147,9 @@ export interface GamingReportedTable {
   buyinAtoms: number;
   until: number;
   over: boolean;
+  // settling is true while the game could still complete a cooperative
+  // settlement. A refund taken then spends an input that settlement needs.
+  settling: boolean;
 }
 
 export interface GamingReportedState {

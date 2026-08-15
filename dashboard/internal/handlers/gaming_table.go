@@ -227,10 +227,11 @@ func gamingStateView(s *gamingpb.GameState, tip int64) map[string]any {
 			"buyinAtoms": t.GetBuyinAtoms(),
 			"until":      t.GetUntil(),
 			"over":       t.GetOver(),
+			"settling":   t.GetSettling(),
 		})
 	}
 
-	locks := make([]gamingLock, 0, 1+len(s.GetTableBonds()))
+	locks := make([]gamingLock, 0, 1+len(s.GetTableBonds())+len(s.GetStakes()))
 	if b := s.GetBond(); b != nil && b.GetHasDeposit() {
 		locks = append(locks, gamingLockAt(gamingLock{
 			Kind:      "bond",
@@ -251,6 +252,18 @@ func gamingStateView(s *gamingpb.GameState, tip int64) map[string]any {
 			Atoms:     tb.GetAtoms(),
 			MaturesAt: tb.GetMaturesAt(),
 			Spent:     tb.GetSpent(),
+		}, tip))
+	}
+	for _, st := range s.GetStakes() {
+		locks = append(locks, gamingLockAt(gamingLock{
+			Kind:      "stake",
+			SID:       st.GetSid(),
+			Seat:      st.GetSeat(),
+			Outpoint:  st.GetOutpoint(),
+			Address:   st.GetAddress(),
+			Atoms:     st.GetAtoms(),
+			MaturesAt: st.GetMaturesAt(),
+			Spent:     st.GetSpent(),
 		}, tip))
 	}
 
