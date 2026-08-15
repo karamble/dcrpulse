@@ -310,6 +310,9 @@ message GameState {
   // crosses this bridge: it is the one secret the operator does not otherwise
   // hold, and the game offers its own backup where the person already is.
   bool seed_backup_acknowledged = 9;
+
+  // stakes is every seat of ours still holding a buy-in.
+  repeated Stake stakes = 10;
 }
 
 message ReportStateReply {}
@@ -322,6 +325,11 @@ message Table {
   int64 buyin_atoms = 5;
   uint32 until = 6;
   bool over = 7;
+
+  // settling is true while this game could still complete a cooperative
+  // settlement for the table. A refund taken during that window spends an
+  // input the settlement needs, so the console does not offer one.
+  bool settling = 8;
 }
 
 // Bond and TableBond carry absolute facts only. A count of blocks remaining is
@@ -339,6 +347,20 @@ message Bond {
 }
 
 message TableBond {
+  string sid = 1;
+  uint32 seat = 2;
+  string outpoint = 3;
+  string address = 4;
+  int64 atoms = 5;
+  int64 matures_at = 6;
+  bool spent = 7;
+}
+
+// Stake is one seat's buy-in, sitting behind its own refund timelock.
+//
+// Reported for the same reason a bond is: the console is where a person takes
+// coin back, and it cannot offer that for an outpoint it was never told about.
+message Stake {
   string sid = 1;
   uint32 seat = 2;
   string outpoint = 3;
