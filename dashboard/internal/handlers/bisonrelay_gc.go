@@ -323,6 +323,9 @@ func BisonrelayGCResendListHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		UID string `json:"uid"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	brDo204(w, func() error { return rpc.BrclientdGCResendList(r.Context(), gcid, req.UID) })
 }

@@ -382,8 +382,9 @@ func BisonrelayContactResetAllHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		AgeDays int `json:"age_days"`
 	}
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
 	}
 	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdResetAllRatchets(r.Context(), req.AgeDays) })
 }
