@@ -596,11 +596,21 @@ var bisonrelayTools = []toolDef{
 		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdGCList(ctx) }),
 	readTool("bisonrelay", "br_groupchat",
 		"Get a group chat's details, members, and blocklist. Requires 'gcid'.",
-		func(ctx context.Context, in brGCInput) (any, error) { return rpc.BrclientdGCDetail(ctx, in.GCID) }),
+		func(ctx context.Context, in brGCInput) (any, error) {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			return rpc.BrclientdGCDetail(ctx, gcid)
+		}),
 	readTool("bisonrelay", "br_groupchat_history",
 		"Get paginated group-chat message history. Requires 'gcid'; optional page and pageSize (default 50).",
 		func(ctx context.Context, in brGCHistoryInput) (any, error) {
-			return rpc.BrclientdGCHistory(ctx, in.GCID, in.Page, brPageSize(in.PageSize))
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			return rpc.BrclientdGCHistory(ctx, gcid, in.Page, brPageSize(in.PageSize))
 		}),
 	readTool("bisonrelay", "br_shared_files",
 		"List files the local user is sharing over Bison Relay.",
@@ -691,7 +701,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_send_groupchat_message", 0, 0, in.GCID, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdGCMessage(ctx, in.GCID, in.Message, 0); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCMessage(ctx, gcid, in.Message, 0); err != nil {
 				recordSpend(a, "br_send_groupchat_message", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -729,7 +743,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdGCMessage(ctx, in.GCID, body, 0); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCMessage(ctx, gcid, body, 0); err != nil {
 				recordSpend(a, "br_send_groupchat_image", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -1123,7 +1141,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_gc_invite", 0, 0, in.GCID, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdGCInvite(ctx, in.GCID, in.UID); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCInvite(ctx, gcid, in.UID); err != nil {
 				recordSpend(a, "br_gc_invite", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -1151,7 +1173,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_gc_part", 0, 0, in.GCID, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdGCPart(ctx, in.GCID, in.Reason); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCPart(ctx, gcid, in.Reason); err != nil {
 				recordSpend(a, "br_gc_part", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -1195,7 +1221,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_rtdt_invite", 0, 0, in.RV, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdRTDTInvite(ctx, in.RV, in.UIDs, in.AsPublisher); err != nil {
+			rv, err := rpc.ParseShortIDHex(in.RV)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdRTDTInvite(ctx, rv, in.UIDs, in.AsPublisher); err != nil {
 				recordSpend(a, "br_rtdt_invite", 0, 0, in.RV, "error", err.Error())
 				return nil, err
 			}
@@ -1209,7 +1239,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_rtdt_accept", 0, 0, in.RV, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdRTDTAccept(ctx, in.RV, in.Inviter, in.AsPublisher); err != nil {
+			rv, err := rpc.ParseShortIDHex(in.RV)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdRTDTAccept(ctx, rv, in.Inviter, in.AsPublisher); err != nil {
 				recordSpend(a, "br_rtdt_accept", 0, 0, in.RV, "error", err.Error())
 				return nil, err
 			}
@@ -1223,7 +1257,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_rtdt_join", 0, 0, in.RV, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdRTDTJoin(ctx, in.RV); err != nil {
+			rv, err := rpc.ParseShortIDHex(in.RV)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdRTDTJoin(ctx, rv); err != nil {
 				recordSpend(a, "br_rtdt_join", 0, 0, in.RV, "error", err.Error())
 				return nil, err
 			}
@@ -1237,7 +1275,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_rtdt_leave", 0, 0, in.RV, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdRTDTLeave(ctx, in.RV); err != nil {
+			rv, err := rpc.ParseShortIDHex(in.RV)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdRTDTLeave(ctx, rv); err != nil {
 				recordSpend(a, "br_rtdt_leave", 0, 0, in.RV, "error", err.Error())
 				return nil, err
 			}
@@ -1251,7 +1293,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_rtdt_dissolve", 0, 0, in.RV, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdRTDTDissolve(ctx, in.RV); err != nil {
+			rv, err := rpc.ParseShortIDHex(in.RV)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdRTDTDissolve(ctx, rv); err != nil {
 				recordSpend(a, "br_rtdt_dissolve", 0, 0, in.RV, "error", err.Error())
 				return nil, err
 			}
@@ -1265,7 +1311,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_rtdt_chat", 0, 0, in.RV, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdRTDTChat(ctx, in.RV, in.Message); err != nil {
+			rv, err := rpc.ParseShortIDHex(in.RV)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdRTDTChat(ctx, rv, in.Message); err != nil {
 				recordSpend(a, "br_rtdt_chat", 0, 0, in.RV, "error", err.Error())
 				return nil, err
 			}
@@ -1279,7 +1329,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_gc_kick", 0, 0, in.GCID, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdGCKick(ctx, in.GCID, in.UID, in.Reason); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCKick(ctx, gcid, in.UID, in.Reason); err != nil {
 				recordSpend(a, "br_gc_kick", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -1293,7 +1347,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_gc_kill", 0, 0, in.GCID, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdGCKill(ctx, in.GCID, in.Reason); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCKill(ctx, gcid, in.Reason); err != nil {
 				recordSpend(a, "br_gc_kill", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -1307,7 +1365,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_gc_block", 0, 0, in.GCID, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdGCBlock(ctx, in.GCID, in.UID); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCBlock(ctx, gcid, in.UID); err != nil {
 				recordSpend(a, "br_gc_block", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -1321,7 +1383,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_gc_unblock", 0, 0, in.GCID, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdGCUnblock(ctx, in.GCID, in.UID); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCUnblock(ctx, gcid, in.UID); err != nil {
 				recordSpend(a, "br_gc_unblock", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -1339,7 +1405,11 @@ var bisonrelayTools = []toolDef{
 			if admins == nil {
 				admins = []string{}
 			}
-			if err := rpc.BrclientdGCModifyAdmins(ctx, in.GCID, admins, in.Reason); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCModifyAdmins(ctx, gcid, admins, in.Reason); err != nil {
 				recordSpend(a, "br_gc_admins", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -1353,7 +1423,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_gc_owner", 0, 0, in.GCID, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdGCModifyOwner(ctx, in.GCID, in.NewOwner, in.Reason); err != nil {
+			gcid, err := rpc.ParseShortIDHex(in.GCID)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdGCModifyOwner(ctx, gcid, in.NewOwner, in.Reason); err != nil {
 				recordSpend(a, "br_gc_owner", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
 			}
@@ -1367,7 +1441,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_rtdt_kick", 0, 0, in.RV, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdRTDTKick(ctx, in.RV, in.PeerID, in.BanSeconds); err != nil {
+			rv, err := rpc.ParseShortIDHex(in.RV)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdRTDTKick(ctx, rv, in.PeerID, in.BanSeconds); err != nil {
 				recordSpend(a, "br_rtdt_kick", 0, 0, in.RV, "error", err.Error())
 				return nil, err
 			}
@@ -1381,7 +1459,11 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_rtdt_remove", 0, 0, in.RV, "denied", err.Error())
 				return nil, err
 			}
-			if err := rpc.BrclientdRTDTRemove(ctx, in.RV, in.UID, in.Reason); err != nil {
+			rv, err := rpc.ParseShortIDHex(in.RV)
+			if err != nil {
+				return nil, err
+			}
+			if err := rpc.BrclientdRTDTRemove(ctx, rv, in.UID, in.Reason); err != nil {
 				recordSpend(a, "br_rtdt_remove", 0, 0, in.RV, "error", err.Error())
 				return nil, err
 			}
