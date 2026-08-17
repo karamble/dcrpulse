@@ -332,10 +332,13 @@ func GamingGames() []types.GamingGame {
 	s := ReadGamingSettings()
 	out := make([]types.GamingGame, 0, len(s.RegisteredGames))
 	for _, id := range s.RegisteredGames {
+		minRefund, bondLock := gamingGameLockTerms(id)
 		out = append(out, types.GamingGame{
-			ID:    id,
-			Name:  gamingDisplayName(s, id),
-			Ready: gamingGameConnected(id),
+			ID:              id,
+			Name:            gamingDisplayName(s, id),
+			Ready:           gamingGameConnected(id),
+			MinRefundBlocks: minRefund,
+			BondLockBlocks:  bondLock,
 		})
 	}
 	return out

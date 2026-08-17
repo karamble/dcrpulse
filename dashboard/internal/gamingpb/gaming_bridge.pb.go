@@ -207,9 +207,17 @@ type HelloRequest struct {
 	// capabilities are the pushes this game can answer. One that cannot do a
 	// thing says so, and the console stops offering it - which is how this
 	// contract grows without every game having to grow with it.
-	Capabilities  []Capability `protobuf:"varint,4,rep,packed,name=capabilities,proto3,enum=dcrpulse.gaming.v1.Capability" json:"capabilities,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Capabilities []Capability `protobuf:"varint,4,rep,packed,name=capabilities,proto3,enum=dcrpulse.gaming.v1.Capability" json:"capabilities,omitempty"`
+	// min_refund_blocks is the shortest refund timelock this game will accept on
+	// a table stake. The bridge mints the invite's csv= at max(default, this), so
+	// a game whose rules need a longer lock is not handed an invite it refuses.
+	MinRefundBlocks uint32 `protobuf:"varint,5,opt,name=min_refund_blocks,json=minRefundBlocks,proto3" json:"min_refund_blocks,omitempty"`
+	// bond_lock_blocks is how long this game's forfeitable table bond stays
+	// locked. Advertised for disclosure only - it rides in game metadata, not the
+	// invite - so a person sees the term before they pay.
+	BondLockBlocks uint32 `protobuf:"varint,6,opt,name=bond_lock_blocks,json=bondLockBlocks,proto3" json:"bond_lock_blocks,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *HelloRequest) Reset() {
@@ -268,6 +276,20 @@ func (x *HelloRequest) GetCapabilities() []Capability {
 		return x.Capabilities
 	}
 	return nil
+}
+
+func (x *HelloRequest) GetMinRefundBlocks() uint32 {
+	if x != nil {
+		return x.MinRefundBlocks
+	}
+	return 0
+}
+
+func (x *HelloRequest) GetBondLockBlocks() uint32 {
+	if x != nil {
+		return x.BondLockBlocks
+	}
+	return 0
 }
 
 type HelloReply struct {
@@ -2779,12 +2801,14 @@ var File_gaming_bridge_proto protoreflect.FileDescriptor
 
 const file_gaming_bridge_proto_rawDesc = "" +
 	"\n" +
-	"\x13gaming_bridge.proto\x12\x12dcrpulse.gaming.v1\"\xc6\x01\n" +
+	"\x13gaming_bridge.proto\x12\x12dcrpulse.gaming.v1\"\x9c\x02\n" +
 	"\fHelloRequest\x12\x17\n" +
 	"\agame_id\x18\x01 \x01(\tR\x06gameId\x122\n" +
 	"\x15game_protocol_version\x18\x02 \x01(\rR\x13gameProtocolVersion\x12%\n" +
 	"\x0eclient_version\x18\x03 \x01(\tR\rclientVersion\x12B\n" +
-	"\fcapabilities\x18\x04 \x03(\x0e2\x1e.dcrpulse.gaming.v1.CapabilityR\fcapabilities\"\xd6\x01\n" +
+	"\fcapabilities\x18\x04 \x03(\x0e2\x1e.dcrpulse.gaming.v1.CapabilityR\fcapabilities\x12*\n" +
+	"\x11min_refund_blocks\x18\x05 \x01(\rR\x0fminRefundBlocks\x12(\n" +
+	"\x10bond_lock_blocks\x18\x06 \x01(\rR\x0ebondLockBlocks\"\xd6\x01\n" +
 	"\n" +
 	"HelloReply\x12\x12\n" +
 	"\x04game\x18\x01 \x01(\tR\x04game\x126\n" +

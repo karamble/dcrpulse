@@ -7,6 +7,7 @@ import { Check, Gamepad2, Loader2 } from 'lucide-react';
 import { GamingGame, acceptGamingInvite, getGamingGames } from '../../services/gamingApi';
 import { GamingInvite } from './gamingInviteParse';
 import { GamingChatCtx } from './gamingChatContext';
+import { blocksToDuration } from '../../utils/blocks';
 
 const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
 
@@ -86,6 +87,21 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
         {invite.seats !== null && <>{invite.seats} seats. </>}
         {invite.buyinAtoms === null && invite.seats === null && <>No terms stated. </>}
       </span>
+
+      {(() => {
+        // The refund lock rides in the invite (csv=); the bond lock is game
+        // metadata. Fall back to the game's advertised minimum when an older
+        // invite carries no csv.
+        const refund = invite.csv ?? game?.minRefundBlocks ?? 0;
+        const bond = game?.bondLockBlocks ?? 0;
+        if (refund <= 0 && bond <= 0) return null;
+        return (
+          <span className="text-xs text-muted-foreground">
+            {refund > 0 && <>Refund lock {blocksToDuration(refund)}. </>}
+            {bond > 0 && <>Seat bond locks {blocksToDuration(bond)}. </>}
+          </span>
+        );
+      })()}
 
       {loading ? (
         <span className="flex items-center gap-1 text-xs text-muted-foreground">

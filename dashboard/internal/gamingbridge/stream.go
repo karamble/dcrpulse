@@ -52,6 +52,18 @@ type registry struct {
 	// states is the last thing each game reported, kept so the console can
 	// render a game that is not connected right now as it last was.
 	states map[string]*gamingpb.GameState
+
+	// locks is the refund and bond timelocks each game advertised on Hello,
+	// kept so the console can disclose them before a person pays.
+	locks map[string]lockTerms
+}
+
+// lockTerms is what a game advertised on Hello about the timelocks its money
+// must sit behind: the least the refund branch may be, and how long a table
+// bond is held.
+type lockTerms struct {
+	minRefund uint32
+	bondLock  uint32
 }
 
 // liveStream is one game's open subscription.
@@ -81,6 +93,7 @@ func newRegistry() *registry {
 		seq:     make(map[string]uint64),
 		missed:  make(map[string]map[string]struct{}),
 		states:  make(map[string]*gamingpb.GameState),
+		locks:   make(map[string]lockTerms),
 	}
 }
 
@@ -94,6 +107,18 @@ func (r *registry) state(game string) *gamingpb.GameState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.states[game]
+}
+
+func (r *registry) setHello(game string, terms lockTerms) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.locks[game] = terms
+}
+
+func (r *registry) hello(game string) lockTerms {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.locks[game]
 }
 
 // add registers a new stream for a game.

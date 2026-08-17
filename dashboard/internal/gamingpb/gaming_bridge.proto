@@ -104,6 +104,16 @@ message HelloRequest {
   // thing says so, and the console stops offering it - which is how this
   // contract grows without every game having to grow with it.
   repeated Capability capabilities = 4;
+
+  // min_refund_blocks is the shortest refund timelock this game will accept on
+  // a table stake. The bridge mints the invite's csv= at max(default, this), so
+  // a game whose rules need a longer lock is not handed an invite it refuses.
+  uint32 min_refund_blocks = 5;
+
+  // bond_lock_blocks is how long this game's forfeitable table bond stays
+  // locked. Advertised for disclosure only - it rides in game metadata, not the
+  // invite - so a person sees the term before they pay.
+  uint32 bond_lock_blocks = 6;
 }
 
 enum Capability {

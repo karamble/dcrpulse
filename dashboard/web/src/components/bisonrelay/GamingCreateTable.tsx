@@ -7,6 +7,11 @@ import { AlertCircle, Loader2, X } from 'lucide-react';
 import { createGamingTable } from '../../services/gamingApi';
 import { listBisonrelayGCs, type BisonrelayGC } from '../../services/bisonrelayApi';
 import { apiError } from '../../utils/apiError';
+import { blocksToDuration } from '../../utils/blocks';
+
+// The dashboard mints a table's refund lock at max(this, the game's advertised
+// minimum). It matches the daemon's own gamingRefundBlocks default.
+const GAMING_REFUND_BLOCKS = 288;
 
 const inputCls =
   'w-full px-2 py-1.5 rounded-lg bg-background border border-border/50 text-sm focus:outline-none focus:border-primary/50';
@@ -21,12 +26,17 @@ const mutedBtnCls =
 export const GamingCreateTable = ({
   game,
   label,
+  minRefundBlocks,
+  bondLockBlocks,
   onClose,
 }: {
   game: string;
   label: string;
+  minRefundBlocks: number;
+  bondLockBlocks: number;
   onClose: () => void;
 }) => {
+  const refundBlocks = Math.max(GAMING_REFUND_BLOCKS, minRefundBlocks);
   const [gcs, setGcs] = useState<BisonrelayGC[]>([]);
   const [gcid, setGcid] = useState('');
   const [buyin, setBuyin] = useState(0.001);
@@ -98,7 +108,7 @@ export const GamingCreateTable = ({
           <div className="space-y-3">
             <p className="text-sm">
               Posted, and you are seated. Registration closes at block {done.until.toLocaleString()}{' '}
-              - roughly {openBlocks * 5} minutes away, though a block takes as long as it takes.
+              - roughly {blocksToDuration(openBlocks)} away, though a block takes as long as it takes.
             </p>
             <label className="text-xs space-y-1 block">
               <span className="text-muted-foreground block">
@@ -188,12 +198,20 @@ export const GamingCreateTable = ({
 
             <p className="text-xs text-muted-foreground">
               Registration closes {openBlocks === 1 ? 'one block' : `${openBlocks} blocks`} from
-              now, roughly {openBlocks * 5} minutes at the target rate, stated as a height because
-              that is what every player checks and a block takes as long as it takes. Seats are
-              drawn a block after that, from a hash nobody could know while anybody was still
+              now, roughly {blocksToDuration(openBlocks)} at the target rate, stated as a height
+              because that is what every player checks and a block takes as long as it takes. Seats
+              are drawn a block after that, from a hash nobody could know while anybody was still
               joining. Anyone who has not accepted by then misses the table. Your stake is
-              refundable by you alone after a day if the table never deals.
+              refundable by you alone after {blocksToDuration(refundBlocks)} ({refundBlocks} blocks)
+              if the table never deals.
             </p>
+
+            {bondLockBlocks > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {label} locks a seat bond for {blocksToDuration(bondLockBlocks)} ({bondLockBlocks}{' '}
+                blocks) once the table forms.
+              </p>
+            )}
 
             {err && (
               <div className="flex items-start gap-2 text-sm text-destructive">
