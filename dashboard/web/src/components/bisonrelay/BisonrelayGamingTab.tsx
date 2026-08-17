@@ -825,13 +825,19 @@ export const BisonrelayGamingTab = () => {
         />
       )}
 
-      {newTable && (
-        <GamingCreateTable
-          game={newTable.id}
-          label={newTable.label}
-          onClose={() => setNewTable(null)}
-        />
-      )}
+      {newTable &&
+        (() => {
+          const g = games.find((x) => x.id === newTable.id);
+          return (
+            <GamingCreateTable
+              game={newTable.id}
+              label={newTable.label}
+              minRefundBlocks={g?.minRefundBlocks ?? 0}
+              bondLockBlocks={g?.bondLockBlocks ?? 0}
+              onClose={() => setNewTable(null)}
+            />
+          );
+        })()}
     </div>
   );
 };

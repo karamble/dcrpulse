@@ -5,8 +5,12 @@
 package services
 
 import (
+	"context"
+	"net/url"
 	"strings"
 	"testing"
+
+	"dcrpulse/internal/gamingpb"
 )
 
 // The link has to be the one a game's own parser accepts, and the two live in
@@ -40,6 +44,49 @@ func TestGamingInviteSessionIsRoutable(t *testing.T) {
 			t.Fatalf("session %q was minted twice", table)
 		}
 		seen[table] = true
+	}
+}
+
+// The refund lock a table is minted with is the longer of the default and what
+// the game advertised on Hello. A game that needs more (battleships) gets it;
+// a game that advertised nothing (poker) keeps the default, which the max never
+// drops below.
+func TestCreatingMintsTheAdvertisedRefundLock(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		advertised uint32
+		wantCSV    string
+	}{
+		{"game advertising a longer lock mints it", 2048, "2048"},
+		{"game advertising nothing keeps the default", 0, "288"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			inviteSeams(t)
+
+			origLocks := gamingLockTerms
+			t.Cleanup(func() { gamingLockTerms = origLocks })
+			gamingLockTerms = func(string) (uint32, uint32) { return c.advertised, 0 }
+
+			var minted string
+			gamingRequest = func(_ context.Context, _ string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
+				u, err := url.Parse(req.GetAcceptInvite().GetInvite())
+				if err != nil {
+					t.Fatalf("the minted invite does not parse: %v", err)
+				}
+				minted = u.Query().Get("csv")
+				return &gamingpb.RespondRequest{
+					Ok:     true,
+					Result: &gamingpb.RespondRequest_AcceptInvite{AcceptInvite: &gamingpb.AcceptInviteResult{Sid: "seat-1"}},
+				}, nil
+			}
+
+			if _, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1); err != nil {
+				t.Fatalf("create a table: %v", err)
+			}
+			if minted != c.wantCSV {
+				t.Fatalf("minted csv=%s, want csv=%s", minted, c.wantCSV)
+			}
+		})
 	}
 }
 

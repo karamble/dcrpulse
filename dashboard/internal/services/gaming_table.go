@@ -175,6 +175,13 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 			buyinAtoms, game, p.PerTableCapAtoms)
 	}
 
+	// The refund lock is the longer of the default and what the game asked for
+	// on Hello. A game that needs more than the default (a longer hand, say)
+	// advertises it, and a table minted shorter is one its daemon refuses at
+	// AcceptInvite. A game that advertised nothing keeps the default.
+	minRefund, _ := gamingGameLockTerms(game)
+	csvBlocks := max(uint32(gamingRefundBlocks), minRefund)
+
 	tip, err := tableChainTip(ctx)
 	if err != nil {
 		// Without a height there is no deadline every peer can check, and
@@ -187,7 +194,7 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 		return GamingTable{}, err
 	}
 	until := uint32(tip.Height) + openBlocks
-	invite := gamingInviteLink(game, sid, buyinAtoms, seats, gamingRefundBlocks, until)
+	invite := gamingInviteLink(game, sid, buyinAtoms, seats, csvBlocks, until)
 
 	if _, err := AcceptGamingInvite(ctx, game, invite, gcid); err != nil {
 		return GamingTable{}, err

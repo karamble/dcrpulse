@@ -63,6 +63,11 @@ export interface GamingGame {
   // game runs on a machine of the person's choosing, so it can be registered
   // and simply not running.
   ready: boolean;
+  // minRefundBlocks and bondLockBlocks are the lock terms the game advertised
+  // on connecting. A table's refund lock is minted at max(288, minRefundBlocks);
+  // bondLockBlocks is 0 for a game that stakes no bond.
+  minRefundBlocks: number;
+  bondLockBlocks: number;
 }
 
 export const getGamingSettings = async (): Promise<GamingSettings> => {

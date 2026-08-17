@@ -322,6 +322,22 @@ var gamingState func(game string) *gamingpb.GameState
 // SetGamingState wires the listener's view of what each game last reported.
 func SetGamingState(f func(game string) *gamingpb.GameState) { gamingState = f }
 
+// gamingLockTerms is the refund and bond timelocks a game advertised on Hello,
+// cached by the listener.
+var gamingLockTerms func(game string) (minRefund, bondLock uint32)
+
+// SetGamingLockTerms wires the listener's view of each game's advertised locks.
+func SetGamingLockTerms(f func(game string) (minRefund, bondLock uint32)) { gamingLockTerms = f }
+
+// gamingGameLockTerms is the advertised locks for a game, or zero when there is
+// no listener or the game advertised none.
+func gamingGameLockTerms(game string) (minRefund, bondLock uint32) {
+	if gamingLockTerms == nil {
+		return 0, 0
+	}
+	return gamingLockTerms(game)
+}
+
 func gamingGameConnected(game string) bool {
 	// No listener means nothing is connected, which is the truthful answer
 	// rather than an optimistic one.

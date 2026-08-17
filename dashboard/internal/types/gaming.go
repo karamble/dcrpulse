@@ -136,4 +136,10 @@ type GamingGame struct {
 	// Deliberately not the same as registered: a game is registered here and
 	// run by the person elsewhere, so it can be added and not running.
 	Ready bool `json:"ready"`
+
+	// MinRefundBlocks and BondLockBlocks are the timelocks the game advertised
+	// on Hello, for the console to disclose before a person pays. Zero when the
+	// game advertised none, or is not connected.
+	MinRefundBlocks uint32 `json:"minRefundBlocks"`
+	BondLockBlocks  uint32 `json:"bondLockBlocks"`
 }

@@ -31,6 +31,8 @@ export type GamingInvite = {
   buyinAtoms: number | null;
   /** Seats at the table, when stated. */
   seats: number | null;
+  /** The refund lock in blocks, when the invite states one. */
+  csv: number | null;
   /** The session the invite refers to, carried through to accept. */
   sid: string;
   /** The whole link, so accept can hand it back untouched. */
@@ -54,6 +56,7 @@ const parseInvite = (game: string, kind: string, query: string, raw: string): Ga
     kind: kind.toLowerCase(),
     buyinAtoms: intOrNull(params.get('buyin')),
     seats: intOrNull(params.get('seats')),
+    csv: intOrNull(params.get('csv')),
     sid: params.get('sid') ?? '',
     raw,
   };
