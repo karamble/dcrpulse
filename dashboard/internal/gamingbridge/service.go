@@ -39,6 +39,14 @@ func (s *Server) Hello(ctx context.Context, req *gamingpb.HelloRequest) (*gaming
 			"this credential is registered to a different game than %q; it has been copied to the wrong place", claimed)
 	}
 
+	// What the game says its money must sit behind, kept so the console can
+	// disclose it before a person pays and so a table is minted with a refund
+	// lock the game's own daemon will accept.
+	s.reg.setHello(game, lockTerms{
+		minRefund: req.GetMinRefundBlocks(),
+		bondLock:  req.GetBondLockBlocks(),
+	})
+
 	reply := &gamingpb.HelloReply{
 		Game:                  game,
 		BridgeContractVersion: contractVersion,
@@ -242,6 +250,14 @@ func (s *Server) Respond(ctx context.Context, req *gamingpb.RespondRequest) (*ga
 
 // State is the last thing a game reported, for the console to render.
 func (s *Server) State(game string) *gamingpb.GameState { return s.reg.state(game) }
+
+// LockTerms is the refund and bond timelocks a game advertised on Hello, for
+// the console to disclose before a person pays. Zero when the game advertised
+// none, or has not connected this epoch.
+func (s *Server) LockTerms(game string) (minRefund, bondLock uint32) {
+	t := s.reg.hello(game)
+	return t.minRefund, t.bondLock
+}
 
 // RequestSpend asks a person to pay, and returns as soon as the request is
 // recorded - never when it is paid.

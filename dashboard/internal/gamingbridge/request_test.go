@@ -148,3 +148,19 @@ func TestAGameCannotAnswerAnothersRequest(t *testing.T) {
 		t.Fatal("the request neither completed nor timed out")
 	}
 }
+
+// TestHelloLockTermsStoreAndReport covers the store half of the lock-terms
+// chain: what a game advertised on Hello is what LockTerms reports back, and an
+// unheard-of game reports nothing rather than a stale or defaulted lock.
+func TestHelloLockTermsStoreAndReport(t *testing.T) {
+	r := newRegistry()
+	r.setHello("battleships", lockTerms{minRefund: 2048, bondLock: 4032})
+	got := r.hello("battleships")
+	if got.minRefund != 2048 || got.bondLock != 4032 {
+		// Mutation: setHello writing the wrong field, or hello reading it, fails here.
+		t.Fatalf("stored %+v, want {minRefund:2048 bondLock:4032}", got)
+	}
+	if z := r.hello("poker"); z.minRefund != 0 || z.bondLock != 0 {
+		t.Fatalf("an unadvertised game reported %+v, want zero", z)
+	}
+}
