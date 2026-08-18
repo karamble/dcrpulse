@@ -116,6 +116,33 @@ func setMixerErr(msg string) {
 // already running or if the gRPC client isn't wired. The passphrase byte slice
 // is owned by this function for the duration of the call.
 func StartMixer(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) error {
+	// The autobuyer mixes inline and a ticket purchase pauses-then-restarts
+	// the mixer itself; all three spend the mixed account, so they never run
+	// together (the recorded S-02 follow-up).
+	if IsAutobuyerRunning() {
+		return fmt.Errorf("stop the ticket autobuyer before starting the mixer")
+	}
+	if IsTicketPurchaseInProgress() {
+		return fmt.Errorf("a ticket purchase is in progress; it restarts the mixer itself when it completes")
+	}
+	return startMixerCore(passphrase, mixedAccount, mixedBranch, changeAccount)
+}
+
+// restartMixerAfterPurchase is the purchase's own restart of the mixer it
+// paused. The purchase flag is still set when this runs (the restart is the
+// purchase's last step), so only the autobuyer guard applies: one started
+// mid-purchase owns the mixed account now, and the mixer stays stopped with
+// the reason on the mixer log.
+func restartMixerAfterPurchase(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) error {
+	if IsAutobuyerRunning() {
+		msg := "mixer not restarted after the ticket purchase: the ticket autobuyer is running"
+		setMixerErr(msg)
+		return fmt.Errorf("%s", msg)
+	}
+	return startMixerCore(passphrase, mixedAccount, mixedBranch, changeAccount)
+}
+
+func startMixerCore(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) error {
 	if rpc.AccountMixerClient == nil || rpc.WalletGrpcClient == nil {
 		return fmt.Errorf("mixer gRPC client unavailable")
 	}

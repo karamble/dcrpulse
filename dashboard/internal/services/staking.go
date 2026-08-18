@@ -566,7 +566,7 @@ func purchaseTicketsCore(ctx context.Context, account, numTickets uint32, vspHos
 		mixerPass := append([]byte(nil), passphrase...)
 		mixerMixed, mixerChange := mixing.Mixed, mixing.Change
 		defer func() {
-			if err := StartMixer(mixerPass, mixerMixed, privacyMixedAccountBranch, mixerChange); err != nil {
+			if err := restartMixerAfterPurchase(mixerPass, mixerMixed, privacyMixedAccountBranch, mixerChange); err != nil {
 				stkeLog.Warnf("restart mixer after ticket purchase: %v", err)
 			}
 		}()

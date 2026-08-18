@@ -84,6 +84,12 @@ func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error 
 	if IsMixerRunning() {
 		return fmt.Errorf("stop the account mixer before starting the ticket autobuyer")
 	}
+	// A purchase may have paused the mixer and will restart it as its last
+	// step, still under its own flag - starting the autobuyer in that window
+	// would put both on the mixed account the moment the restart lands.
+	if IsTicketPurchaseInProgress() {
+		return fmt.Errorf("a ticket purchase is in progress; wait for it to finish before starting the ticket autobuyer")
+	}
 
 	autobuyerMu.Lock()
 	if autobuyerCancel != nil {
