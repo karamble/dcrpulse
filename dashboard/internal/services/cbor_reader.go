@@ -105,11 +105,12 @@ func (r *cborReader) skip() error {
 	case 0, 1, 7: // integers, simple values: fully consumed by head()
 		return nil
 	case 2, 3: // byte / text string: payload follows
-		n := int(v)
-		if r.pos+n > len(r.buf) {
+		// Bound in uint64 before any int conversion: a 64-bit length from a
+		// hostile file would wrap int negative and walk pos off the buffer.
+		if v > uint64(len(r.buf)-r.pos) {
 			return fmt.Errorf("truncated string in skip")
 		}
-		r.pos += n
+		r.pos += int(v)
 		return nil
 	case 4: // array: skip each element
 		for i := uint64(0); i < v; i++ {
