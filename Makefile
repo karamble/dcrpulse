@@ -184,7 +184,7 @@ clean-dcrd: ## Remove only dcrd blockchain data (WARNING: will need to resync!)
 		docker run --rm \
 			-v dcrpulse_app-data:/app-data \
 			alpine sh -c "rm -rf /app-data/dcrd/*"; \
-		docker compose up -d dcrd; \
+		docker compose up -d --no-deps dcrd; \
 		echo "dcrd data cleaned! Blockchain will resync from scratch."; \
 	fi
 
@@ -198,7 +198,7 @@ clean-dcrwallet: ## Remove only dcrwallet data (WARNING: deletes wallet!)
 		docker run --rm \
 			-v dcrpulse_app-data:/app-data \
 			alpine sh -c "rm -rf /app-data/dcrwallet/*"; \
-		docker compose up -d dcrwallet dashboard; \
+		docker compose up -d --no-deps dcrwallet dashboard; \
 		echo "Wallet data cleaned! You can create a new wallet via the web interface."; \
 	fi
 
@@ -325,7 +325,7 @@ restore-wallet: ## Restore wallet data from backup (usage: make restore-wallet B
 			-v dcrpulse_app-data:/app-data \
 			-v $(PWD):/backup \
 			alpine sh -c "rm -rf /app-data/dcrwallet/* && tar xzf /backup/$(BACKUP) -C /app-data/dcrwallet"; \
-		docker compose up -d dcrwallet; \
+		docker compose up -d --no-deps dcrwallet; \
 		echo "Wallet restored!"; \
 	fi
 
@@ -346,7 +346,7 @@ update: ## Update all services to latest
 update-dcrd: ## Update dcrd to latest from source
 	@echo "Rebuilding dcrd from latest source..."
 	docker compose build --no-cache dcrd
-	docker compose up -d dcrd
+	docker compose up -d --no-deps dcrd
 	@echo "dcrd updated!"
 
 build-dcrd: ## Build dcrd (usage: make build-dcrd VERSION=release-v2.0.6)
