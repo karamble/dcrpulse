@@ -33,7 +33,9 @@ services:
       --rpccert=/app-data/dcrd/rpc.cert
       --rpckey=/app-data/dcrd/rpc.key
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -k -u ${APP_SEED}:${APP_SEED} -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"1.0\",\"method\":\"getinfo\",\"params\":[],\"id\":1}' https://127.0.0.1:9109 || exit 1"]
+      # No credentials: dcrd answers 401 whenever its RPC is up, and curl fails
+      # only if nothing is listening. Keeps APP_SEED out of the probe's argv.
+      test: ["CMD", "sh", "-c", "curl -k -s -o /dev/null --max-time 5 https://127.0.0.1:9109 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

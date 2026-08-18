@@ -26,7 +26,9 @@ services:
       - dcrpulse
       - dcrpulse_internal
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -k -u casaos:casaos -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"1.0\",\"method\":\"getinfo\",\"params\":[],\"id\":1}' https://127.0.0.1:9109 || exit 1"]
+      # No credentials: dcrd answers 401 whenever its RPC is up, and curl fails
+      # only if nothing is listening.
+      test: ["CMD", "sh", "-c", "curl -k -s -o /dev/null --max-time 5 https://127.0.0.1:9109 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
