@@ -106,7 +106,7 @@ for the entry point. Shared helper packages live under `dashboard/pkg/`.
 
 **Built From**: Official dcrd source (GitHub)
 
-**Version**: Pinned via the `DCRD_VERSION` build arg (default: `release-v2.1.5`)
+**Version**: Pinned via the `DCRD_VERSION` build arg (default: `release-v2.1.6`)
 
 ---
 

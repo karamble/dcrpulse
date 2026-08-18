@@ -4,7 +4,7 @@ services:
     build:
       context: ./dcrd
       args:
-        DCRD_VERSION: ${DCRD_VERSION:-release-v2.1.5}
+        DCRD_VERSION: ${DCRD_VERSION:-release-v2.1.6}
     container_name: dcrpulse-dcrd
     ports:
       - "${DCRD_P2P_HOST_BIND:-0.0.0.0}:9108:9108"
@@ -52,7 +52,7 @@ services:
     build:
       context: ./dcrwallet
       args:
-        DCRWALLET_VERSION: ${DCRWALLET_VERSION:-release-v2.1.5}
+        DCRWALLET_VERSION: ${DCRWALLET_VERSION:-release-v2.1.6}
     container_name: dcrpulse-dcrwallet
     ports:
       - "127.0.0.1:9110:9110"

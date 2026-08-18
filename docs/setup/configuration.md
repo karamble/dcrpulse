@@ -137,15 +137,14 @@ See [dcrd documentation](https://github.com/decred/dcrd/tree/master/docs).
 ### `DCRD_VERSION`
 **Description**: dcrd version or branch to build from source. Used only when building locally (no image tag set).
 
-**Default**: `release-v2.1.5` (the `docker-compose.yml` build-arg default)
+**Default**: `release-v2.1.6` (the `docker-compose.yml` build-arg default)
 
 **Values**:
-- `release-v2.1.5` - pinned release used by the compose build
+- `release-v2.1.6` - pinned release used by the compose build
 - A different release tag, branch name, or commit hash
 
-**Example**: `DCRD_VERSION=release-v2.1.5`
+**Example**: `DCRD_VERSION=release-v2.1.6`
 
-> Note: the comment in `env.example` mentions `release-v2.1.0` as an example value, but the effective default that ships in `docker-compose.yml` is `release-v2.1.5`.
 
 ---
 
@@ -184,11 +183,10 @@ DCRD_TESTNET=1
 ### `DCRWALLET_VERSION`
 **Description**: dcrwallet version or branch to build from source. Used only when building locally.
 
-**Default**: `release-v2.1.5` (the `docker-compose.yml` build-arg default)
+**Default**: `release-v2.1.6` (the `docker-compose.yml` build-arg default)
 
-**Example**: `DCRWALLET_VERSION=release-v2.1.5`
+**Example**: `DCRWALLET_VERSION=release-v2.1.6`
 
-> Note: as with dcrd, the `env.example` comment shows `release-v2.1.0`, but the shipped compose default is `release-v2.1.5`.
 
 ---
 
