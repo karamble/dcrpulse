@@ -70,7 +70,6 @@ func TestAutobuyerUnwindsOnStreamEOF(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		// Empty VspHost so rememberVSPUsed short-circuits without RPCs.
 		runAutobuyer(context.Background(), types.AutobuyerSettings{}, sourceAccount, TicketMixing{}, false, true, false)
 	}()
 
