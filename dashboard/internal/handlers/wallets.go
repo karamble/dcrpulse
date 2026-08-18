@@ -202,8 +202,8 @@ func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	json.NewEncoder(w).Encode(map[string]any{"success": false, "message": msg})
 }
 
-// validateCreateWalletPassphrases mirrors CreateWalletHandler's checks; returns
-// an error message string, or "" when valid.
+// validateCreateWalletPassphrases enforces the create-wallet passphrase policy
+// for both create routes; returns an error message string, or "" when valid.
 func validateCreateWalletPassphrases(req *types.CreateWalletRequest) string {
 	if req.PrivatePassphrase == "" {
 		return "Private passphrase is required"
