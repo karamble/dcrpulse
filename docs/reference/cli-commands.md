@@ -436,36 +436,6 @@ make wallet-balance
 
 ---
 
-#### `make wallet-seed`
-View wallet seed from logs (first-time setup only).
-
-```bash
-make wallet-seed
-```
-
-** Security Warning**:
-- Only works immediately after wallet creation
-- Seed shown in creation logs
-- **Store seed securely offline!**
-- Never share seed with anyone
-
-**Output**:
-```
-============================================
-WALLET SEED (if found in logs)
-============================================
-Your wallet generation seed is:
-
-word1 word2 word3 ... word33
-
-Hex: abc123...
-
-  IMPORTANT: Store this seed in a safe place!
-============================================
-```
-
----
-
 ### Data Management Commands
 
 #### `make backup`

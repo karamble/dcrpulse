@@ -254,22 +254,12 @@ make wallet-balance
 
 **Create a new wallet**:
 
-```bash
-# Create new wallet via CLI
-docker exec -it dcrpulse-dcrwallet dcrctl --wallet create
+Open the dashboard and follow the wallet setup wizard. It generates the seed,
+shows it to you once for backup, and asks you to confirm it before the wallet
+is created.
 
-# Follow prompts to:
-# 1. Set passphrase
-# 2. Generate seed
-# 3. Confirm seed
-```
-
-** CRITICAL**: Save your seed phrase securely offline!
-
-**View seed** (one-time, right after creation):
-```bash
-make wallet-seed
-```
+** CRITICAL**: Save your seed phrase securely offline while the wizard shows
+it. It is never displayed again.
 
 ---
 

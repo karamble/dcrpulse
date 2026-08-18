@@ -24,23 +24,14 @@ The dcrwallet service is set up to run as a **watch-only wallet**, meaning it ca
 
 ## First-Time Setup
 
-### Automatic Wallet Creation
+### Wallet Creation
 
-On first launch (when no `wallet.db` exists), the entrypoint script automatically:
+The container starts dcrwallet with `--noinitialload`, so no wallet is created
+on launch. Wallets are created from the dashboard's setup wizard, which talks
+to dcrwallet over gRPC and chooses the passphrases and seed.
 
-1. Generates a secure random passphrase (32-byte base64)
-2. Stores the passphrase in `.dcrwallet/.passphrase` (permissions: 600)
-3. Creates a new wallet with:
-   - Private passphrase: [generated secure password]
-   - Public passphrase: no
-   - New seed generation (displayed in logs for backup)
-4. Starts dcrwallet and auto-unlocks with stored passphrase
-
-**Important**: The seed is displayed in the container logs on first run. While this is a watch-only wallet and the seed isn't required for operation, you should save it for backup purposes:
-
-```bash
-docker logs decred-pulse-dcrwallet | grep -A 5 "WALLET SEED"
-```
+**Important**: The wizard displays the seed once, during creation. Save it then
+- it is not written to the container logs and cannot be recovered afterwards.
 
 ### Importing xpub Keys
 
@@ -115,7 +106,7 @@ If wallet creation fails on first run:
 
 ```bash
 # Check logs
-docker logs decred-pulse-dcrwallet
+docker logs dcrpulse-dcrwallet
 
 # Remove wallet data and try again
 docker-compose down
@@ -132,10 +123,10 @@ If wallet cannot connect to dcrd:
 docker-compose ps dcrd
 
 # Check if certificates exist
-docker exec decred-pulse-dcrwallet ls -la /certs/
+docker exec dcrpulse-dcrwallet ls -la /certs/
 
 # Verify network connectivity
-docker exec decred-pulse-dcrwallet ping -c 3 dcrd
+docker exec dcrpulse-dcrwallet ping -c 3 dcrd
 ```
 
 ### Passphrase Lost
@@ -149,7 +140,7 @@ If the passphrase file is lost but wallet.db exists:
 
 ```bash
 # Backup wallet.db
-docker cp decred-pulse-dcrwallet:/home/dcrwallet/.dcrwallet/mainnet/wallet.db ./wallet.db.backup
+docker cp dcrpulse-dcrwallet:/home/dcrwallet/.dcrwallet/mainnet/wallet.db ./wallet.db.backup
 
 # Reset
 docker-compose down
@@ -165,7 +156,7 @@ Access wallet via dcrctl:
 
 ```bash
 # Get wallet info
-docker exec decred-pulse-dcrwallet dcrctl \
+docker exec dcrpulse-dcrwallet dcrctl \
   --wallet \
   --rpcuser=dcrwallet \
   --rpcpass=your_password \
@@ -174,7 +165,7 @@ docker exec decred-pulse-dcrwallet dcrctl \
   walletinfo
 
 # List accounts
-docker exec decred-pulse-dcrwallet dcrctl \
+docker exec dcrpulse-dcrwallet dcrctl \
   --wallet \
   --rpcuser=dcrwallet \
   --rpcpass=your_password \
@@ -183,7 +174,7 @@ docker exec decred-pulse-dcrwallet dcrctl \
   listaccounts
 
 # Get balance
-docker exec decred-pulse-dcrwallet dcrctl \
+docker exec dcrpulse-dcrwallet dcrctl \
   --wallet \
   --rpcuser=dcrwallet \
   --rpcpass=your_password \
@@ -197,7 +188,7 @@ docker exec decred-pulse-dcrwallet dcrctl \
 Open shell in dcrwallet container:
 
 ```bash
-docker exec -it decred-pulse-dcrwallet /bin/sh
+docker exec -it dcrpulse-dcrwallet /bin/sh
 ```
 
 ## Data Persistence
