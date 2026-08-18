@@ -811,11 +811,13 @@ func superviseRpcSync(ctx context.Context) {
 		// the otherwise-blocking RpcSync stream the moment a switch begins.
 		attemptCtx, cancelAttempt := context.WithCancel(ctx)
 		services.RegisterSyncCancel(cancelAttempt)
+		started := time.Now()
 		err := services.EnsureRpcSync(attemptCtx)
 		cancelAttempt()
 		if ctx.Err() != nil {
 			return
 		}
+		backoff = services.NextSupervisorBackoff(backoff, time.Since(started))
 		if err != nil {
 			services.MarkSyncDisconnected(err.Error())
 			dcrpLog.Warnf("RPC sync error (will retry in %v): %v", backoff, err)
@@ -825,9 +827,6 @@ func superviseRpcSync(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(backoff):
-		}
-		if backoff < 60*time.Second {
-			backoff *= 2
 		}
 	}
 }

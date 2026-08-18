@@ -45,10 +45,12 @@ func StartTransactionWatcher(ctx context.Context) {
 				}
 				continue
 			}
+			started := time.Now()
 			err := watchWalletTransactions(ctx, client)
 			if ctx.Err() != nil {
 				return
 			}
+			backoff = NextSupervisorBackoff(backoff, time.Since(started))
 			if err != nil {
 				alrtLog.Warnf("transaction watcher: %v (retrying in %s)", err, backoff)
 			}
@@ -56,9 +58,6 @@ func StartTransactionWatcher(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(backoff):
-			}
-			if backoff < 60*time.Second {
-				backoff *= 2
 			}
 		}
 	}()

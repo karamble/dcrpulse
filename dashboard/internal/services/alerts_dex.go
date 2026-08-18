@@ -38,6 +38,7 @@ func StartDexWatcher(ctx context.Context) {
 				}
 				continue
 			}
+			started := time.Now()
 			client, err := rpc.DcrdexWSClient()
 			if err == nil {
 				err = watchDexNotifications(ctx, client)
@@ -45,6 +46,7 @@ func StartDexWatcher(ctx context.Context) {
 					return
 				}
 			}
+			backoff = NextSupervisorBackoff(backoff, time.Since(started))
 			if err != nil {
 				alerts.Raise("dex_unreachable", "", err.Error())
 				alrtLog.Warnf("dex watcher: %v (retrying in %s)", err, backoff)
@@ -53,11 +55,6 @@ func StartDexWatcher(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(backoff):
-			}
-			if backoff < 60*time.Second {
-				backoff *= 2
-			} else {
-				backoff = 60 * time.Second
 			}
 		}
 	}()
