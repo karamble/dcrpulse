@@ -200,12 +200,11 @@ export const WalletDashboard = () => {
           setIsPreparingRescan(false);
         }
       },
-      (error) => {
-        console.error('Wallet sync stream error:', error);
+      {
+        onError: (error) => {
+          console.error('Wallet sync stream error:', error);
+        },
       },
-      // onClose - do NOT mutate sync state. A stream close means the server
-      // hung up, not that sync finished; the stream reconnects on its own.
-      () => {},
     );
 
     // Cleanup WebSocket connection when component unmounts

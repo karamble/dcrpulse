@@ -602,61 +602,13 @@ export const getSyncProgress = async (): Promise<SyncProgressData> => {
   return response.data;
 };
 
-// WebSocket streaming for rescan progress. Reconnects with capped exponential
-// backoff so a daemon restart does not silently kill the stream.
+// WebSocket streaming for rescan progress. The server pushes the current
+// snapshot on connect, so no refetch is needed on reconnect.
 export const streamRescanProgress = (
   onProgress: (data: SyncProgressData) => void,
-  onError?: (error: Error) => void,
-  onClose?: () => void
-): (() => void) => {
-  // Get WebSocket URL from current origin
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/api/wallet/grpc/stream-rescan`;
-
-  let ws: WebSocket | null = null;
-  let cancelled = false;
-  let retry = 1000;
-  let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const connect = () => {
-    if (cancelled) return;
-    ws = new WebSocket(wsUrl);
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as SyncProgressData;
-        onProgress(data);
-      } catch (err) {
-        console.error('Failed to parse WebSocket message:', err);
-        onError?.(new Error('Failed to parse progress data'));
-      }
-    };
-
-    ws.onopen = () => {
-      retry = 1000;
-    };
-
-    ws.onerror = (event) => {
-      console.error('WebSocket error:', event);
-      onError?.(new Error('WebSocket connection error'));
-    };
-
-    ws.onclose = () => {
-      onClose?.();
-      if (cancelled) return;
-      retryTimer = setTimeout(connect, retry);
-      retry = Math.min(retry * 2, 30000);
-    };
-  };
-  connect();
-
-  // Return cleanup function
-  return () => {
-    cancelled = true;
-    if (retryTimer) clearTimeout(retryTimer);
-    ws?.close();
-  };
-};
+  opts?: SubscribeOpts,
+): (() => void) =>
+  subscribeJSON<SyncProgressData>('/api/wallet/grpc/stream-rescan', onProgress, opts);
 
 export const getWalletTransactions = async (count: number = 50, from: number = 0): Promise<TransactionListResponse> => {
   const response = await api.get<TransactionListResponse>(`/wallet/transactions?count=${count}&from=${from}`);
