@@ -26,9 +26,9 @@ services:
       - dcrpulse
       - dcrpulse_internal
     healthcheck:
-      # No credentials: dcrd answers 401 whenever its RPC is up, and curl fails
-      # only if nothing is listening.
-      test: ["CMD", "sh", "-c", "curl -k -s -o /dev/null --max-time 5 https://127.0.0.1:9109 || exit 1"]
+      # A TCP probe needs no credentials and makes no auth attempt, which dcrd
+      # would log as a warning on every interval.
+      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9109 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
