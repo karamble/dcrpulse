@@ -654,9 +654,12 @@ func OpenLightningChannel(ctx context.Context, req *types.OpenChannelRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	pubkey, err := hexDecodeStrict(pubkeyHex, 33)
+	pubkey, err := hex.DecodeString(strings.TrimSpace(pubkeyHex))
 	if err != nil {
 		return nil, fmt.Errorf("invalid pubkey: %w", err)
+	}
+	if len(pubkey) != 33 {
+		return nil, fmt.Errorf("invalid pubkey length: got %d, want 33", len(pubkey))
 	}
 	if hostPort != "" {
 		_, cerr := client.ConnectPeer(ctx, &lnrpc.ConnectPeerRequest{
@@ -847,33 +850,6 @@ func splitPeerURI(uri string) (pubkey, hostPort string, err error) {
 	return parts[0], parts[1], nil
 }
 
-func hexDecodeStrict(s string, wantLen int) ([]byte, error) {
-	s = strings.ToLower(strings.TrimSpace(s))
-	if len(s) != wantLen*2 {
-		return nil, fmt.Errorf("expected %d hex chars, got %d", wantLen*2, len(s))
-	}
-	out := make([]byte, wantLen)
-	for i := 0; i < wantLen; i++ {
-		hi := hexVal(s[i*2])
-		lo := hexVal(s[i*2+1])
-		if hi < 0 || lo < 0 {
-			return nil, fmt.Errorf("invalid hex")
-		}
-		out[i] = byte(hi<<4 | lo)
-	}
-	return out, nil
-}
-
-func hexVal(c byte) int {
-	switch {
-	case c >= '0' && c <= '9':
-		return int(c - '0')
-	case c >= 'a' && c <= 'f':
-		return int(c - 'a' + 10)
-	}
-	return -1
-}
-
 func parseChannelPoint(s string) (*lnrpc.ChannelPoint, error) {
 	parts := strings.SplitN(s, ":", 2)
 	if len(parts) != 2 {
@@ -913,7 +889,7 @@ func fundingTxConfProgress(ctx context.Context, channelPoint string, capacity, p
 	current := int32(0)
 	if rpc.WalletGrpcClient != nil {
 		if txidHex, _, err := splitChannelPoint(channelPoint); err == nil {
-			if hashBytes, err := hexDecodeStrict(txidHex, 32); err == nil {
+			if hashBytes, err := hex.DecodeString(txidHex); err == nil && len(hashBytes) == 32 {
 				// dcrwallet expects little-endian hash bytes on the wire.
 				revHash := make([]byte, len(hashBytes))
 				for i, v := range hashBytes {
