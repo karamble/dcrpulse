@@ -310,7 +310,12 @@ func BisonrelayDownloadsListHandler(w http.ResponseWriter, r *http.Request) {
 	if network == "" {
 		network = "mainnet"
 	}
-	dir := filepath.Join(services.BrclientdDownloadsDir(network), contact)
+	root := filepath.Clean(services.BrclientdDownloadsDir(network))
+	dir := filepath.Clean(filepath.Join(root, contact))
+	if !strings.HasPrefix(dir, root+string(filepath.Separator)) {
+		http.NotFound(w, r)
+		return
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
