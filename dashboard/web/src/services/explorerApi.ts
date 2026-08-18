@@ -184,7 +184,7 @@ export async function getBlockByHeight(height: number): Promise<BlockDetail> {
 }
 
 export async function getBlockByHash(hash: string): Promise<BlockDetail> {
-  const response = await authFetch(`${API_BASE_URL}/explorer/blocks/hash/${hash}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/blocks/hash/${encodeURIComponent(hash)}`);
   if (!response.ok) {
     throw new Error('Block not found');
   }
@@ -192,7 +192,7 @@ export async function getBlockByHash(hash: string): Promise<BlockDetail> {
 }
 
 export async function getTransaction(txhash: string): Promise<TransactionDetail> {
-  const response = await authFetch(`${API_BASE_URL}/explorer/transactions/${txhash}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/transactions/${encodeURIComponent(txhash)}`);
   if (!response.ok) {
     throw new Error('Transaction not found');
   }
@@ -200,7 +200,7 @@ export async function getTransaction(txhash: string): Promise<TransactionDetail>
 }
 
 export async function getAddressInfo(address: string): Promise<AddressInfo> {
-  const response = await authFetch(`${API_BASE_URL}/explorer/address/${address}`);
+  const response = await authFetch(`${API_BASE_URL}/explorer/address/${encodeURIComponent(address)}`);
   if (!response.ok) {
     throw new Error('Failed to fetch address information');
   }
