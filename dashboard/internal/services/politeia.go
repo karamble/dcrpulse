@@ -101,14 +101,15 @@ var (
 	piListFetchMu sync.Mutex
 	piListFailAt  = map[string]time.Time{}
 
-	// voteSignMu serializes the unlock -> sign -> relock critical section in
-	// buildSignedVotes across all callers (the one-shot cast and every per-
-	// proposal trickle worker). Concurrent signings share owning accounts and
+	// vspSignMu serializes every unlock -> sign-with-commitment-keys -> relock
+	// critical section: buildSignedVotes (the one-shot cast and every per-
+	// proposal trickle worker) and the governance VSP sync
+	// (syncVoteChoicesToVSPs). Concurrent signings share owning accounts and
 	// relockAccountsAfterVSP only re-locks what its own call unlocked, so without
 	// this an overlapping signing could re-lock an account while another is still
 	// signing. Only the brief sign step holds it; the trickle's hours-long
 	// submission runs unlocked and outside this lock.
-	voteSignMu sync.Mutex
+	vspSignMu sync.Mutex
 )
 
 // piListCacheEntry is one status bucket's cached proposal list + fetch time,
@@ -928,8 +929,8 @@ func buildSignedVotes(ctx context.Context, token, voteOption string, passphrase 
 	// still signing with (relockAccountsAfterVSP only re-locks what its own call
 	// unlocked). Registered before the relock defer so, LIFO, the relock runs
 	// first and the lock is released only after it completes.
-	voteSignMu.Lock()
-	defer voteSignMu.Unlock()
+	vspSignMu.Lock()
+	defer vspSignMu.Unlock()
 
 	// Unlock the accounts that own the ticket commitment keys so SignMessages
 	// can sign, then re-lock the ones we unlocked when this function returns

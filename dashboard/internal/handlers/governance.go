@@ -77,7 +77,8 @@ func SetAgendaChoiceHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := services.SetAgendaChoice(ctx, req.AgendaID, req.ChoiceID, pass); err != nil {
+	sync, err := services.SetAgendaChoice(ctx, req.AgendaID, req.ChoiceID, pass)
+	if err != nil {
 		if errors.Is(err, services.ErrAgendaVoteSettled) {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
@@ -85,7 +86,7 @@ func SetAgendaChoiceHandler(w http.ResponseWriter, r *http.Request) {
 		writePassphraseAwareError(w, "SetAgendaChoice", err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, sync)
 }
 
 // GetTreasuryKeyPoliciesHandler returns wallet-wide PI-key policies.
@@ -115,11 +116,12 @@ func SetTreasuryKeyPolicyHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := services.SetTreasuryKeyPolicy(ctx, req.Key, req.Policy, pass); err != nil {
+	sync, err := services.SetTreasuryKeyPolicy(ctx, req.Key, req.Policy, pass)
+	if err != nil {
 		writePassphraseAwareError(w, "SetTreasuryKeyPolicy", err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, sync)
 }
 
 // treasuryPolicies is the shared body of the two policy list reads.
@@ -163,11 +165,12 @@ func SetTSpendPolicyHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := services.SetTSpendPolicyForHash(ctx, req.Hash, req.Policy, pass); err != nil {
+	sync, err := services.SetTSpendPolicyForHash(ctx, req.Hash, req.Policy, pass)
+	if err != nil {
 		writePassphraseAwareError(w, "SetTSpendPolicy", err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, sync)
 }
 
 // writeProposalsResponse encodes the proposals envelope (list + last-fetch time

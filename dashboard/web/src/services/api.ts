@@ -1252,12 +1252,24 @@ export const getAgendaVotes = async (agendaID: string): Promise<AgendaVotes> => 
   return response.data;
 };
 
+// VSPSyncSummary reports how a saved policy change propagated to the VSPs
+// holding this wallet's tickets. A failed host keeps voting the old policy.
+export interface VSPSyncSummary {
+  vspHosts: number;
+  vspFailed?: { host: string; error: string }[];
+}
+
 export const setAgendaChoice = async (
   agendaID: string,
   choiceID: string,
   passphrase: string,
-): Promise<void> => {
-  await api.post('/wallet/governance/agendas/set', { agendaID, choiceID, passphrase });
+): Promise<VSPSyncSummary> => {
+  const response = await api.post<VSPSyncSummary>('/wallet/governance/agendas/set', {
+    agendaID,
+    choiceID,
+    passphrase,
+  });
+  return response.data;
 };
 
 export const getTreasuryKeyPolicies = async (): Promise<TreasuryKeyPolicy[]> => {
@@ -1269,8 +1281,13 @@ export const setTreasuryKeyPolicy = async (
   key: string,
   policy: string,
   passphrase: string,
-): Promise<void> => {
-  await api.post('/wallet/governance/treasury/keys/set', { key, policy, passphrase });
+): Promise<VSPSyncSummary> => {
+  const response = await api.post<VSPSyncSummary>('/wallet/governance/treasury/keys/set', {
+    key,
+    policy,
+    passphrase,
+  });
+  return response.data;
 };
 
 export const getTSpendPolicies = async (): Promise<TSpendPolicyEntry[]> => {
@@ -1282,8 +1299,13 @@ export const setTSpendPolicy = async (
   hash: string,
   policy: string,
   passphrase: string,
-): Promise<void> => {
-  await api.post('/wallet/governance/treasury/tspends/set', { hash, policy, passphrase });
+): Promise<VSPSyncSummary> => {
+  const response = await api.post<VSPSyncSummary>('/wallet/governance/treasury/tspends/set', {
+    hash,
+    policy,
+    passphrase,
+  });
+  return response.data;
 };
 
 // ProposalsResponse is the proposals list envelope: the cached list plus the

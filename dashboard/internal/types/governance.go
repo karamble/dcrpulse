@@ -91,6 +91,20 @@ type AgendaVotes struct {
 	Complete bool `json:"complete"`
 }
 
+// VSPSyncFailure names one VSP the wallet's new policy could not be pushed to.
+type VSPSyncFailure struct {
+	Host  string `json:"host"`
+	Error string `json:"error"`
+}
+
+// VSPSyncSummary reports how a policy change propagated to the VSPs holding
+// this wallet's tickets. The local policy is already saved by the time this is
+// built; a failure here means one VSP keeps voting the old policy.
+type VSPSyncSummary struct {
+	Hosts  int              `json:"vspHosts"`
+	Failed []VSPSyncFailure `json:"vspFailed,omitempty"`
+}
+
 // SetAgendaChoiceRequest is the body for the agenda set endpoint.
 type SetAgendaChoiceRequest struct {
 	AgendaID   string `json:"agendaID"`

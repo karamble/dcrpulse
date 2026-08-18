@@ -250,28 +250,27 @@ func ListAgendas(ctx context.Context) (*types.ConsensusVoteInfo, error) {
 	}, nil
 }
 
-// SetAgendaChoice updates one agenda's vote preference. The wallet is
-// briefly unlocked, the choice is applied, then re-locked.
-func SetAgendaChoice(ctx context.Context, agendaID, choiceID string, passphrase []byte) error {
+// SetAgendaChoice updates one agenda's vote preference. The local write needs
+// no keys, so the wallet stays locked for it; only the VSP sync afterwards
+// opens accounts, and only for its own window.
+func SetAgendaChoice(ctx context.Context, agendaID, choiceID string, passphrase []byte) (*types.VSPSyncSummary, error) {
 	if rpc.WalletGrpcClient == nil {
-		return fmt.Errorf("wallet gRPC unavailable")
+		return nil, fmt.Errorf("wallet gRPC unavailable")
 	}
 	if rpc.DcrdClient == nil {
-		return fmt.Errorf("rpc clients not initialized")
+		return nil, fmt.Errorf("rpc clients not initialized")
 	}
-	// A settled agenda is rejected before the wallet is ever unlocked.
+	// A settled agenda is rejected before the passphrase is even checked.
 	status, err := agendaStatus(ctx, agendaID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !agendaVotable(status) {
-		return fmt.Errorf("%w (status %q)", ErrAgendaVoteSettled, status)
+		return nil, fmt.Errorf("%w (status %q)", ErrAgendaVoteSettled, status)
 	}
-	if err := unlockForVote(ctx, passphrase); err != nil {
-		return err
+	if err := verifyGovernancePassphrase(ctx, passphrase); err != nil {
+		return nil, err
 	}
-	defer lockAfterVote()
-
 	_, err = rpc.VotingClient.SetVoteChoices(ctx, &pb.SetVoteChoicesRequest{
 		Choices: []*pb.SetVoteChoicesRequest_Choice{{
 			AgendaId: agendaID,
@@ -279,10 +278,9 @@ func SetAgendaChoice(ctx context.Context, agendaID, choiceID string, passphrase 
 		}},
 	})
 	if err != nil {
-		return fmt.Errorf("SetVoteChoices: %w", err)
+		return nil, fmt.Errorf("SetVoteChoices: %w", err)
 	}
-	syncVoteChoicesToVSP(ctx)
-	return nil
+	return syncVoteChoicesToVSPs(ctx, passphrase), nil
 }
 
 // ---- Treasury (PI keys) ----------------------------------------------------
@@ -338,28 +336,28 @@ func ListTreasuryKeyPolicies(ctx context.Context) ([]types.TreasuryKeyPolicy, er
 	return out, nil
 }
 
-func SetTreasuryKeyPolicy(ctx context.Context, keyHex, policy string, passphrase []byte) error {
+func SetTreasuryKeyPolicy(ctx context.Context, keyHex, policy string, passphrase []byte) (*types.VSPSyncSummary, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC unavailable")
+	}
 	key, err := hex.DecodeString(strings.TrimSpace(keyHex))
 	if err != nil {
-		return fmt.Errorf("invalid key hex: %w", err)
+		return nil, fmt.Errorf("invalid key hex: %w", err)
 	}
 	if err := validatePolicy(policy); err != nil {
-		return err
+		return nil, err
 	}
-	if err := unlockForVote(ctx, passphrase); err != nil {
-		return err
+	if err := verifyGovernancePassphrase(ctx, passphrase); err != nil {
+		return nil, err
 	}
-	defer lockAfterVote()
-
 	_, err = rpc.VotingClient.SetTreasuryPolicy(ctx, &pb.SetTreasuryPolicyRequest{
 		Key:    key,
 		Policy: policy,
 	})
 	if err != nil {
-		return fmt.Errorf("SetTreasuryPolicy: %w", err)
+		return nil, fmt.Errorf("SetTreasuryPolicy: %w", err)
 	}
-	syncVoteChoicesToVSP(ctx)
-	return nil
+	return syncVoteChoicesToVSPs(ctx, passphrase), nil
 }
 
 // ---- Treasury (per-TSpend hash) -------------------------------------------
@@ -382,78 +380,222 @@ func ListTSpendPolicies(ctx context.Context) ([]types.TSpendPolicy, error) {
 	return out, nil
 }
 
-func SetTSpendPolicyForHash(ctx context.Context, hashHex, policy string, passphrase []byte) error {
+func SetTSpendPolicyForHash(ctx context.Context, hashHex, policy string, passphrase []byte) (*types.VSPSyncSummary, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC unavailable")
+	}
 	hashBytes, err := hex.DecodeString(strings.TrimSpace(hashHex))
 	if err != nil {
-		return fmt.Errorf("invalid hash hex: %w", err)
+		return nil, fmt.Errorf("invalid hash hex: %w", err)
 	}
 	// dcrwallet expects little-endian byte order for hashes over the wire.
 	hashBytes = reversed(hashBytes)
 	if err := validatePolicy(policy); err != nil {
-		return err
+		return nil, err
 	}
-	if err := unlockForVote(ctx, passphrase); err != nil {
-		return err
+	if err := verifyGovernancePassphrase(ctx, passphrase); err != nil {
+		return nil, err
 	}
-	defer lockAfterVote()
-
 	_, err = rpc.VotingClient.SetTSpendPolicy(ctx, &pb.SetTSpendPolicyRequest{
 		Hash:   hashBytes,
 		Policy: policy,
 	})
 	if err != nil {
-		return fmt.Errorf("SetTSpendPolicy: %w", err)
+		return nil, fmt.Errorf("SetTSpendPolicy: %w", err)
 	}
-	syncVoteChoicesToVSP(ctx)
-	return nil
+	return syncVoteChoicesToVSPs(ctx, passphrase), nil
 }
 
 // ---- VSP sync --------------------------------------------------------------
 
-// syncVoteChoicesToVSP pushes the wallet's current vote/treasury/tspend
-// choices to every VSP we have tickets with. Mirrors Decrediton's
-// setVSPDVoteChoices (actions/VSPActions.js:470). dcrwallet handles the
-// signing + HTTP per-ticket internally; we just supply (host, pubkey,
-// fee_account, change_account) per VSP.
+// verifyGovernancePassphrase checks the passphrase against the default account
+// while leaving every lock exactly as found, so a wrong passphrase is a clean
+// 401 before any policy is written and the wallet stays locked for the local
+// write, which needs no keys at all.
+func verifyGovernancePassphrase(ctx context.Context, passphrase []byte) error {
+	return verifyAccountPassphrase(ctx, 0, passphrase)
+}
+
+// syncVoteChoicesToVSPs pushes the wallet's current vote/treasury/tspend
+// choices to every VSP that actually holds one of this wallet's tickets.
+// dcrwallet compares the request host EXACT-STRING against each ticket's
+// stored purchase host, so the hosts are taken verbatim from the wallet's own
+// ticket records - never constructed here. dcrwallet signs each ticket's vspd
+// request with its commitment key, which lives in a per-account-encrypted
+// account, so the accounts are unlocked for exactly this window and re-locked
+// by defer.
 //
-// Logged-and-swallowed: a VSP being briefly unreachable shouldn't roll
-// back a successful local policy change. Decrediton takes the same
-// SETVSPDVOTECHOICE_PARTIAL_SUCCESS path.
-func syncVoteChoicesToVSP(ctx context.Context) {
-	network, err := CurrentNetwork(ctx)
+// The local policy is already saved when this runs; per-host failures are
+// returned for the caller to surface, never rolled back (Decrediton behaves
+// the same way).
+//
+// Known upstream quirks tolerated here: any solo (non-VSP) live ticket makes
+// the RPC return a NotExist "no VSP info" error even on success, filtered
+// below; abstain tspends go out as ""; vspd rejects requests carrying more
+// than 3 tspend or treasury policies.
+func syncVoteChoicesToVSPs(ctx context.Context, passphrase []byte) *types.VSPSyncSummary {
+	sum := &types.VSPSyncSummary{}
+	fail := func(host, msg string) {
+		govnLog.Warnf("VSP sync %s: %s", host, msg)
+		sum.Failed = append(sum.Failed, types.VSPSyncFailure{Host: host, Error: msg})
+	}
+
+	tickets, err := ListTickets(ctx)
 	if err != nil {
-		govnLog.Warnf("VSP sync: resolve network: %v", err)
+		fail("", "list tickets: "+err.Error())
+		return sum
+	}
+	hosts := vspHostsFromTickets(tickets)
+	sum.Hosts = len(hosts)
+	if len(hosts) == 0 {
+		return sum // no VSP tickets - nothing to push
+	}
+
+	// Pubkeys come from the used-VSP metadata (stored bare-host, so the match
+	// ignores the scheme), else a live probe of the VSP itself.
+	used := map[string]config.VSPMetadata{}
+	if network, err := CurrentNetwork(ctx); err == nil {
+		if wc, err := config.LoadWalletCfg(network, CurrentWalletName()); err == nil {
+			if u, err := wc.UsedVSPs(); err == nil {
+				used = u
+			}
+		}
+	}
+	pubkeys := make(map[string]string, len(hosts))
+	for _, host := range hosts {
+		pubkey := pubkeyForVSPHost(used, host)
+		if pubkey == "" {
+			if info, err := GetVSPInfo(ctx, host); err == nil {
+				pubkey = info.PubKey
+			}
+		}
+		if pubkey == "" {
+			fail(host, "no pubkey known for this VSP")
+			continue
+		}
+		pubkeys[host] = pubkey
+	}
+	if len(pubkeys) == 0 {
+		return sum // nothing reachable - no reason to open any account
+	}
+
+	// dcrwallet caches a VSP client per host on first use and keeps its fee
+	// policy for later fee payments, so pass the same accounts a purchase
+	// would rather than poisoning the cache with 0/0 on a mixing wallet.
+	var feeAcct, changeAcct uint32
+	if mix, ok := TicketMixingParams(ctx); ok {
+		feeAcct, changeAcct = mix.Mixed, mix.Change
+	}
+
+	pushVoteChoicesToVSPs(ctx, hosts, pubkeys, feeAcct, changeAcct, passphrase, fail)
+	return sum
+}
+
+// pushVoteChoicesToVSPs runs the unlock -> per-host SetVspdVoteChoices ->
+// relock window. One unlock window for the whole fan-out, the
+// buildSignedVotes shape: the mutex is registered before the relock defer so,
+// LIFO, the relock completes before the lock releases and a concurrent
+// signing flow can never re-lock accounts this one is still using.
+func pushVoteChoicesToVSPs(ctx context.Context, hosts []string, pubkeys map[string]string,
+	feeAcct, changeAcct uint32, passphrase []byte, fail func(host, msg string)) {
+
+	vspSignMu.Lock()
+	defer vspSignMu.Unlock()
+	beginUnlockedOp()
+	defer endUnlockedOp()
+	unlocked, err := unlockAllAccountsForSpend(ctx, passphrase)
+	if err != nil {
+		fail("", "unlock accounts: "+err.Error())
 		return
 	}
-	wc, err := config.LoadWalletCfg(network, CurrentWalletName())
-	if err != nil {
-		govnLog.Warnf("VSP sync: load wallet cfg: %v", err)
-		return
-	}
-	used, err := wc.UsedVSPs()
-	if err != nil {
-		govnLog.Warnf("VSP sync: list used VSPs: %v", err)
-		return
-	}
-	if len(used) == 0 {
-		return // nothing to do — wallet has never delegated to a VSP
-	}
-	for host, meta := range used {
-		if meta.Pubkey == "" {
+	defer relockAccountsAfterVSP(unlocked)
+
+	for _, host := range hosts {
+		pubkey, ok := pubkeys[host]
+		if !ok {
 			continue
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		_, err := rpc.WalletGrpcClient.SetVspdVoteChoices(callCtx, &pb.SetVspdVoteChoicesRequest{
 			VspHost:       host,
-			VspPubkey:     meta.Pubkey,
-			FeeAccount:    0,
-			ChangeAccount: 0,
+			VspPubkey:     pubkey,
+			FeeAccount:    feeAcct,
+			ChangeAccount: changeAcct,
 		})
 		cancel()
 		if err != nil {
-			govnLog.Warnf("VSP sync %s: %v", host, err)
+			if msg := filterSoloTicketNoise(err.Error()); msg != "" {
+				fail(host, msg)
+			}
 		}
 	}
+}
+
+// vspHostsFromTickets returns the distinct VSP hosts holding this wallet's
+// votable tickets, exactly as the wallet stored them. Only statuses dcrwallet's
+// own sync iterates (unmined, immature, live) count; solo tickets have no host
+// and are skipped.
+func vspHostsFromTickets(tickets []types.TicketRecord) []string {
+	seen := map[string]struct{}{}
+	var hosts []string
+	for _, t := range tickets {
+		switch t.Status {
+		case "UNMINED", "IMMATURE", "LIVE":
+		default:
+			continue
+		}
+		if t.VSPHost == "" {
+			continue
+		}
+		if _, ok := seen[t.VSPHost]; ok {
+			continue
+		}
+		seen[t.VSPHost] = struct{}{}
+		hosts = append(hosts, t.VSPHost)
+	}
+	sort.Strings(hosts)
+	return hosts
+}
+
+// pubkeyForVSPHost finds the stored pubkey for a ticket's VSP host. used_vsps
+// keys are bare hosts (Decrediton config compatibility) while ticket hosts
+// carry their scheme, so the comparison strips schemes but never rewrites the
+// host that goes on the wire.
+func pubkeyForVSPHost(used map[string]config.VSPMetadata, host string) string {
+	want := strings.TrimSuffix(stripVSPScheme(host), "/")
+	for key, meta := range used {
+		if strings.EqualFold(strings.TrimSuffix(stripVSPScheme(key), "/"), want) {
+			return meta.Pubkey
+		}
+	}
+	return ""
+}
+
+func stripVSPScheme(host string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+}
+
+// filterSoloTicketNoise drops the per-ticket "no VSP info" errors dcrwallet's
+// gRPC path reports for solo tickets (the JSON-RPC path swallows them) and
+// returns whatever real failure text remains, or "" when the error was only
+// that noise.
+func filterSoloTicketNoise(msg string) string {
+	var kept []string
+	for _, line := range strings.Split(msg, "\n") {
+		if strings.Contains(line, "no VSP info for ticket") {
+			continue
+		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	joined := strings.Join(kept, "\n")
+	// The aggregate prefix alone carries no failure.
+	if strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(joined), "ForUnspentUnexpiredTickets failed. Error:")) == "" {
+		return ""
+	}
+	return joined
 }
 
 // ---- Shared helpers --------------------------------------------------------
@@ -464,30 +606,6 @@ func validatePolicy(p string) error {
 		return nil
 	}
 	return fmt.Errorf("policy must be yes|no|abstain (got %q)", p)
-}
-
-// unlockForVote performs a full-wallet unlock for voting operations. The
-// wallet is locked again via lockAfterVote in the caller's defer.
-func unlockForVote(ctx context.Context, passphrase []byte) error {
-	unlockCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	_, err := rpc.WalletGrpcClient.UnlockWallet(unlockCtx, &pb.UnlockWalletRequest{
-		Passphrase: passphrase,
-	})
-	if err != nil {
-		return fmt.Errorf("unlock wallet: %w", err)
-	}
-	return nil
-}
-
-func lockAfterVote() {
-	lockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	// A failed lock leaves the wallet's keys usable, so say so rather than
-	// dropping it.
-	if _, err := rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{}); err != nil {
-		govnLog.Errorf("lock wallet after vote: %v", err)
-	}
 }
 
 // reversed returns a copy of b with the byte order reversed. Hashes

@@ -599,13 +599,15 @@ func unlockAccountForSpend(ctx context.Context, accountNumber uint32, passphrase
 // locked. Pass the returned slice to relockAccountsAfterVSP to re-lock them
 // once processing is done. Mirrors Decrediton's unlockAllAcctAndExecFn.
 func unlockAllAccountsForSpend(ctx context.Context, passphrase []byte) ([]uint32, error) {
-	accounts, err := FetchAllAccounts(ctx)
+	// Names and numbers are all this needs, and gRPC Accounts carries both;
+	// unlocking must not depend on the JSON-RPC client being up.
+	resp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list accounts: %w", err)
 	}
 	var candidates, succeeded int
 	var newlyUnlocked []uint32
-	for _, a := range accounts {
+	for _, a := range resp.Accounts {
 		// The imported (2^31-1) and xpub-imported (>=2^31) accounts hold no
 		// per-account passphrase key and cannot be unlocked this way. The dex
 		// account is managed by the DCRDEX backend (bisonw), which may encrypt

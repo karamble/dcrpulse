@@ -73,16 +73,22 @@ export const TreasuryTab = () => {
   const handleSubmit = async (passphrase: string) => {
     if (!pending) return;
     try {
-      if (pending.kind === 'key') {
-        await setTreasuryKeyPolicy(pending.id, pending.policy, passphrase);
-      } else {
-        await setTSpendPolicy(pending.id, pending.policy, passphrase);
-      }
-      setFeedback(
+      const sync =
+        pending.kind === 'key'
+          ? await setTreasuryKeyPolicy(pending.id, pending.policy, passphrase)
+          : await setTSpendPolicy(pending.id, pending.policy, passphrase);
+      const saved =
         pending.kind === 'key'
           ? `Saved policy "${pending.policy}" for treasury key.`
-          : `Saved policy "${pending.policy}" for TSpend.`,
-      );
+          : `Saved policy "${pending.policy}" for TSpend.`;
+      if (sync?.vspFailed?.length) {
+        const hosts = sync.vspFailed.map((f) => f.host || 'VSP sync').join(', ');
+        setFeedback(
+          `${saved} It did not reach: ${hosts}. Those VSPs keep voting the old policy - try again later.`,
+        );
+      } else {
+        setFeedback(saved);
+      }
       setPending(null);
       await load();
     } catch (err: any) {

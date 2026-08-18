@@ -296,8 +296,15 @@ export const ConsensusTab = () => {
   const handleSubmit = async (passphrase: string) => {
     if (!pending) return;
     try {
-      await setAgendaChoice(pending.agendaID, pending.choiceID, passphrase);
-      setFeedback(`Saved choice "${pending.choiceID}" for ${pending.agendaID}.`);
+      const sync = await setAgendaChoice(pending.agendaID, pending.choiceID, passphrase);
+      if (sync?.vspFailed?.length) {
+        const hosts = sync.vspFailed.map((f) => f.host || 'VSP sync').join(', ');
+        setFeedback(
+          `Saved choice "${pending.choiceID}" for ${pending.agendaID}, but it did not reach: ${hosts}. Those VSPs keep voting the old choice - try again later.`,
+        );
+      } else {
+        setFeedback(`Saved choice "${pending.choiceID}" for ${pending.agendaID}.`);
+      }
       setPending(null);
       await load();
     } catch (err: any) {
