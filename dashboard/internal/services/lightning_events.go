@@ -22,10 +22,11 @@ import (
 // a list refresh in the UI, so we don't need to over-design the event
 // payload; lowercased UpdateType + channel point is enough.
 func SubscribeLightningChannelEvents(ctx context.Context) (<-chan types.ChannelEvent, error) {
-	if rpc.LightningClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Lightning == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
-	stream, err := rpc.LightningClient.SubscribeChannelEvents(ctx, &lnrpc.ChannelEventSubscription{})
+	stream, err := lnc.Lightning.SubscribeChannelEvents(ctx, &lnrpc.ChannelEventSubscription{})
 	if err != nil {
 		return nil, fmt.Errorf("SubscribeChannelEvents: %w", err)
 	}

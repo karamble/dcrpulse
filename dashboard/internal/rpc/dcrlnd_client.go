@@ -32,46 +32,73 @@ type DcrlndConfig struct {
 	MacaroonPath string
 }
 
+// DcrlndClients is one immutable snapshot of every dcrlnd gRPC stub, built
+// from a single connection and published as a whole: a reader sees a complete
+// generation or an empty one, never a mix, and never a torn interface value.
+type DcrlndClients struct {
+	// Lightning is the main dcrlnd service. Reachable only after the LN
+	// wallet is unlocked.
+	Lightning lnrpc.LightningClient
+
+	// WalletUnlocker is dcrlnd's wallet bootstrap service. The only service
+	// reachable while the LN wallet is locked. Used to init the wallet on
+	// first run and unlock on subsequent starts.
+	WalletUnlocker lnrpc.WalletUnlockerClient
+
+	// Autopilot is dcrlnd's autopilot sub-RPC. Reachable post-unlock.
+	Autopilot autopilotrpc.AutopilotClient
+
+	// Versioner returns dcrlnd's clean semver + build metadata. Reachable
+	// post-unlock; cheaper than GetInfo and the only path to a clean
+	// "0.8.1"-style version string (GetInfo returns "0.8.1-pre+<commit>").
+	Versioner verrpc.VersionerClient
+
+	// Router drives Router.SendPaymentV2 for invoice payments. Post-unlock.
+	Router routerrpc.RouterClient
+
+	// Invoices drives Invoices.CancelInvoice and HODL invoice flows.
+	// Post-unlock.
+	Invoices invoicesrpc.InvoicesClient
+
+	// Watchtower is dcrlnd's wtclient sub-RPC for managing watchtower-client
+	// registrations. Post-unlock.
+	Watchtower wtclientrpc.WatchtowerClientClient
+}
+
 var (
-	// LightningClient is the main dcrlnd gRPC service. Reachable only
-	// after the LN wallet is unlocked.
-	LightningClient lnrpc.LightningClient
+	// dcrlndMu guards the published snapshot, the connection and the config.
+	// Readers come in through Dcrlnd(); nothing reads the fields directly.
+	dcrlndMu      sync.RWMutex
+	dcrlndClients DcrlndClients
 
-	// WalletUnlockerClient is dcrlnd's wallet bootstrap service. The
-	// only service reachable while the LN wallet is locked. Used to
-	// init the wallet on first run and unlock on subsequent starts.
-	WalletUnlockerClient lnrpc.WalletUnlockerClient
+	// dcrlndConn is the underlying connection, kept for cleanup on reconnect.
+	dcrlndConn *grpc.ClientConn
 
-	// AutopilotClient is dcrlnd's autopilot sub-RPC. Reachable only
-	// after the wallet is unlocked.
-	AutopilotClient autopilotrpc.AutopilotClient
-
-	// VersionerClient returns dcrlnd's clean semver + build metadata.
-	// Reachable post-unlock; cheaper than GetInfo and the only path
-	// to a clean "0.8.1"-style version string (GetInfo returns
-	// "0.8.1-pre+<commit>").
-	VersionerClient verrpc.VersionerClient
-
-	// RouterClient drives Router.SendPaymentV2 for invoice payments.
-	// Reachable post-unlock.
-	RouterClient routerrpc.RouterClient
-
-	// InvoicesClient drives Invoices.CancelInvoice and HODL invoice flows.
-	// Reachable post-unlock.
-	InvoicesClient invoicesrpc.InvoicesClient
-
-	// WatchtowerClient is dcrlnd's wtclient sub-RPC for managing
-	// watchtower-client registrations. Reachable post-unlock.
-	WatchtowerClient wtclientrpc.WatchtowerClientClient
-
-	// DcrlndGrpcConn is the underlying connection, kept for cleanup.
-	DcrlndGrpcConn *grpc.ClientConn
-
-	// DcrlndCfg is the resolved config used for late-binding macaroon
-	// reads on every call (the file may not exist until dcrlnd has
-	// initialised its wallet).
-	DcrlndCfg DcrlndConfig
+	// dcrlndCfg is the resolved config used for late-binding macaroon reads
+	// on every call (the file may not exist until dcrlnd has initialised its
+	// wallet).
+	dcrlndCfg DcrlndConfig
 )
+
+// Dcrlnd returns the current dcrlnd client snapshot. Callers take one
+// snapshot per operation and use it throughout, so a reconnect mid-operation
+// cannot hand them clients from two different generations.
+func Dcrlnd() DcrlndClients {
+	dcrlndMu.RLock()
+	defer dcrlndMu.RUnlock()
+	return dcrlndClients
+}
+
+// SwapDcrlndClients publishes a whole client set and returns the previous
+// one. Tests install fakes through it; the dialer publishes under the same
+// lock internally.
+func SwapDcrlndClients(set DcrlndClients) DcrlndClients {
+	dcrlndMu.Lock()
+	defer dcrlndMu.Unlock()
+	prev := dcrlndClients
+	dcrlndClients = set
+	return prev
+}
 
 // InitDcrlndClient dials dcrlnd's gRPC over TLS pinned to dcrlnd's
 // self-signed cert. The macaroon is read fresh on every call because
@@ -79,7 +106,15 @@ var (
 // may not exist yet, but the connection itself can be established.
 // Mirrors Decrediton's app/middleware/ln/client.js:22-95.
 func InitDcrlndClient(cfg DcrlndConfig) error {
-	DcrlndCfg = cfg
+	dcrlndMu.Lock()
+	defer dcrlndMu.Unlock()
+	return initDcrlndLocked(cfg)
+}
+
+// initDcrlndLocked dials and publishes the whole client set in one store.
+// Callers hold dcrlndMu.
+func initDcrlndLocked(cfg DcrlndConfig) error {
+	dcrlndCfg = cfg
 
 	target := fmt.Sprintf("%s:%s", cfg.GrpcHost, cfg.GrpcPort)
 
@@ -103,14 +138,16 @@ func InitDcrlndClient(cfg DcrlndConfig) error {
 		return fmt.Errorf("failed to dial dcrlnd: %v", err)
 	}
 
-	DcrlndGrpcConn = conn
-	LightningClient = lnrpc.NewLightningClient(conn)
-	WalletUnlockerClient = lnrpc.NewWalletUnlockerClient(conn)
-	AutopilotClient = autopilotrpc.NewAutopilotClient(conn)
-	VersionerClient = verrpc.NewVersionerClient(conn)
-	RouterClient = routerrpc.NewRouterClient(conn)
-	InvoicesClient = invoicesrpc.NewInvoicesClient(conn)
-	WatchtowerClient = wtclientrpc.NewWatchtowerClientClient(conn)
+	dcrlndConn = conn
+	dcrlndClients = DcrlndClients{
+		Lightning:      lnrpc.NewLightningClient(conn),
+		WalletUnlocker: lnrpc.NewWalletUnlockerClient(conn),
+		Autopilot:      autopilotrpc.NewAutopilotClient(conn),
+		Versioner:      verrpc.NewVersionerClient(conn),
+		Router:         routerrpc.NewRouterClient(conn),
+		Invoices:       invoicesrpc.NewInvoicesClient(conn),
+		Watchtower:     wtclientrpc.NewWatchtowerClientClient(conn),
+	}
 
 	rpccLog.Info("dcrlnd gRPC clients initialised")
 	return nil
@@ -118,40 +155,33 @@ func InitDcrlndClient(cfg DcrlndConfig) error {
 
 // ReinitDcrlndClient is called when the dashboard observes the dcrlnd
 // cert appearing on disk after a deferred startup (e.g. the wizard
-// just completed). Replaces the existing nil clients in-place.
+// just completed). The check and the dial share one critical section.
 func ReinitDcrlndClient() error {
-	dcrlndReinitMu.Lock()
-	defer dcrlndReinitMu.Unlock()
-	if LightningClient != nil {
+	dcrlndMu.Lock()
+	defer dcrlndMu.Unlock()
+	if dcrlndClients.Lightning != nil {
 		return nil
 	}
-	return InitDcrlndClient(DcrlndCfg)
+	return initDcrlndLocked(dcrlndCfg)
 }
-
-var dcrlndReinitMu sync.Mutex
 
 // ReconnectDcrlnd repoints the dcrlnd client at a different wallet's node by
 // updating the cert/macaroon paths and redialing. Best-effort: the target
 // wallet's node may not be up yet (its cert appears once that wallet's
-// Lightning is set up and unlocked), in which case the clients stay nil and the
-// LN status machine reports the right stage.
+// Lightning is set up and unlocked), in which case the clients stay empty and
+// the LN status machine reports the right stage. Readers observe the old set,
+// the empty set, or the new set - never a mix.
 func ReconnectDcrlnd(tlsCertPath, macaroonPath string) {
-	dcrlndReinitMu.Lock()
-	defer dcrlndReinitMu.Unlock()
-	if DcrlndGrpcConn != nil {
-		_ = DcrlndGrpcConn.Close()
-		DcrlndGrpcConn = nil
+	dcrlndMu.Lock()
+	defer dcrlndMu.Unlock()
+	if dcrlndConn != nil {
+		_ = dcrlndConn.Close()
+		dcrlndConn = nil
 	}
-	LightningClient = nil
-	WalletUnlockerClient = nil
-	AutopilotClient = nil
-	VersionerClient = nil
-	RouterClient = nil
-	InvoicesClient = nil
-	WatchtowerClient = nil
-	DcrlndCfg.TLSCertPath = tlsCertPath
-	DcrlndCfg.MacaroonPath = macaroonPath
-	_ = InitDcrlndClient(DcrlndCfg)
+	dcrlndClients = DcrlndClients{}
+	dcrlndCfg.TLSCertPath = tlsCertPath
+	dcrlndCfg.MacaroonPath = macaroonPath
+	_ = initDcrlndLocked(dcrlndCfg)
 }
 
 func loadDcrlndTLSCreds(certPath, _ string) (credentials.TransportCredentials, error) {

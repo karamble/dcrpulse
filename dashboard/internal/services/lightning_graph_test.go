@@ -36,9 +36,8 @@ func (f *fakeGraphClient) DescribeGraph(ctx context.Context, in *lnrpc.ChannelGr
 
 func withFakeGraph(t *testing.T, f *fakeGraphClient) {
 	t.Helper()
-	prev := rpc.LightningClient
-	rpc.LightningClient = f
-	t.Cleanup(func() { rpc.LightningClient = prev })
+	prev := rpc.SwapDcrlndClients(rpc.DcrlndClients{Lightning: f})
+	t.Cleanup(func() { rpc.SwapDcrlndClients(prev) })
 }
 
 func resetGraphCache(t *testing.T) {

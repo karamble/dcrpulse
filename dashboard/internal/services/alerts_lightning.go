@@ -44,7 +44,7 @@ func StartLightningWatcher(ctx context.Context) {
 				alerts.Resolve("ln_no_peers", "")
 				continue
 			}
-			client := rpc.LightningClient
+			client := rpc.Dcrlnd().Lightning
 			if client == nil {
 				continue
 			}

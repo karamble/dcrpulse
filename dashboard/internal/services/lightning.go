@@ -189,20 +189,22 @@ func RequestLnMacaroonReset() error {
 // Decrediton doesn't either; SCB backups cover recovery. Reused for
 // the first-time init only.
 func InitLightningWallet(ctx context.Context, passphrase []byte) error {
-	if rpc.WalletUnlockerClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.WalletUnlocker == nil {
 		if err := rpc.ReinitDcrlndClient(); err != nil {
 			return fmt.Errorf("dcrlnd not reachable: %w", err)
 		}
+		lnc = rpc.Dcrlnd()
 	}
-	if rpc.WalletUnlockerClient == nil {
+	if lnc.WalletUnlocker == nil {
 		return fmt.Errorf("dcrlnd wallet unlocker unavailable")
 	}
 
-	seed, err := rpc.WalletUnlockerClient.GenSeed(ctx, &lnrpc.GenSeedRequest{})
+	seed, err := lnc.WalletUnlocker.GenSeed(ctx, &lnrpc.GenSeedRequest{})
 	if err != nil {
 		return fmt.Errorf("GenSeed: %w", err)
 	}
-	_, err = rpc.WalletUnlockerClient.InitWallet(ctx, &lnrpc.InitWalletRequest{
+	_, err = lnc.WalletUnlocker.InitWallet(ctx, &lnrpc.InitWalletRequest{
 		WalletPassword:     passphrase,
 		CipherSeedMnemonic: seed.GetCipherSeedMnemonic(),
 	})
@@ -215,15 +217,17 @@ func InitLightningWallet(ctx context.Context, passphrase []byte) error {
 // UnlockLightningWallet is called on subsequent dashboard starts when
 // dcrlnd's wallet is already initialised but still locked.
 func UnlockLightningWallet(ctx context.Context, passphrase []byte) error {
-	if rpc.WalletUnlockerClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.WalletUnlocker == nil {
 		if err := rpc.ReinitDcrlndClient(); err != nil {
 			return fmt.Errorf("dcrlnd not reachable: %w", err)
 		}
+		lnc = rpc.Dcrlnd()
 	}
-	if rpc.WalletUnlockerClient == nil {
+	if lnc.WalletUnlocker == nil {
 		return fmt.Errorf("dcrlnd wallet unlocker unavailable")
 	}
-	_, err := rpc.WalletUnlockerClient.UnlockWallet(ctx, &lnrpc.UnlockWalletRequest{
+	_, err := lnc.WalletUnlocker.UnlockWallet(ctx, &lnrpc.UnlockWalletRequest{
 		WalletPassword: passphrase,
 	})
 	if err != nil {
@@ -246,10 +250,10 @@ func LightningStatus(ctx context.Context) types.LightningStatus {
 	// The sentinel exists; the dcrlnd container should now be running. A nil
 	// client means the TLS cert is absent, i.e. dcrlnd has not come up yet —
 	// report "starting" rather than the unlock wizard.
-	if rpc.LightningClient == nil {
+	if rpc.Dcrlnd().Lightning == nil {
 		_ = rpc.ReinitDcrlndClient()
 	}
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning // one snapshot for the rest of the call
 	if client == nil {
 		out.Stage = "unavailable"
 		out.Message = DaemonStartupHint(ctx, LogComponentDcrlnd).Message
@@ -293,7 +297,10 @@ func LightningStatus(ctx context.Context) types.LightningStatus {
 
 // GetLightningInfo wraps GetInfo for the read-only info endpoint.
 func GetLightningInfo(ctx context.Context) (*types.LightningInfo, error) {
-	client := rpc.LightningClient
+	// One snapshot for both clients, so Lightning and Versioner can never
+	// come from two different connection generations.
+	lnc := rpc.Dcrlnd()
+	client := lnc.Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -308,8 +315,8 @@ func GetLightningInfo(ctx context.Context) (*types.LightningInfo, error) {
 	// want here. GetInfo's `version` field is the last-resort fallback
 	// if the verrpc call fails.
 	version := "v" + strings.TrimPrefix(resp.GetVersion(), "v")
-	if rpc.VersionerClient != nil {
-		if vresp, verr := rpc.VersionerClient.GetVersion(ctx, &verrpc.VersionRequest{}); verr == nil {
+	if lnc.Versioner != nil {
+		if vresp, verr := lnc.Versioner.GetVersion(ctx, &verrpc.VersionRequest{}); verr == nil {
 			version = fmt.Sprintf("v%d.%d.%d", vresp.GetAppMajor(), vresp.GetAppMinor(), vresp.GetAppPatch())
 		}
 	}
@@ -349,7 +356,7 @@ func chainStrings(chains []*lnrpc.Chain) []string {
 // balance is that one account's. We pull the per-account breakdown
 // (AccountBalance map) and look up the "lightning" entry.
 func GetLightningBalance(ctx context.Context) (*types.LightningBalance, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -383,7 +390,7 @@ func GetLightningBalance(ctx context.Context) (*types.LightningBalance, error) {
 // payments, and channel events for the Overview tab. Decrediton
 // renders the same union via the OverviewTab recent-activity list.
 func GetLightningActivity(ctx context.Context) (*types.LightningActivity, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -471,7 +478,7 @@ func lightningNodeAlias(ctx context.Context, client lnrpc.LightningClient, pubke
 // flat slice with a status discriminator, matching Decrediton's
 // LNActions.js:464-540 pattern.
 func ListLightningChannels(ctx context.Context) (*types.LightningChannels, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -585,7 +592,7 @@ func pendingChannelRow(c *lnrpc.PendingChannelsResponse_PendingChannel, status, 
 func lightningChannelTxIDs(ctx context.Context) (funding, closing map[string]bool) {
 	funding = make(map[string]bool)
 	closing = make(map[string]bool)
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return funding, closing
 	}
@@ -639,7 +646,7 @@ func lightningChannelTxIDs(ctx context.Context) (funding, closing map[string]boo
 // semantics — the channel's progression from pending to open is then
 // reflected via the live channel-events WebSocket.
 func OpenLightningChannel(ctx context.Context, req *types.OpenChannelRequest) (*types.OpenChannelResponse, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -686,7 +693,7 @@ func OpenLightningChannel(ctx context.Context, req *types.OpenChannelRequest) (*
 // closes; returning on closePending is enough for the dashboard to move
 // the channel to its pending-close state in the list.
 func CloseLightningChannel(ctx context.Context, channelPoint string, force bool) (*types.CloseChannelResponse, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -718,10 +725,11 @@ func CloseLightningChannel(ctx context.Context, channelPoint string, force bool)
 
 // GetLightningAutopilotStatus reads the current autopilot active flag.
 func GetLightningAutopilotStatus(ctx context.Context) (*types.AutopilotStatus, error) {
-	if rpc.AutopilotClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Autopilot == nil {
 		return nil, fmt.Errorf("dcrlnd autopilot rpc not available")
 	}
-	resp, err := rpc.AutopilotClient.Status(ctx, &autopilotrpc.StatusRequest{})
+	resp, err := lnc.Autopilot.Status(ctx, &autopilotrpc.StatusRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("AutopilotStatus: %w", err)
 	}
@@ -731,10 +739,11 @@ func GetLightningAutopilotStatus(ctx context.Context) (*types.AutopilotStatus, e
 // SetLightningAutopilotStatus toggles autopilot. Mirrors Decrediton's
 // LNActions.js:1181-1193.
 func SetLightningAutopilotStatus(ctx context.Context, enable bool) error {
-	if rpc.AutopilotClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Autopilot == nil {
 		return fmt.Errorf("dcrlnd autopilot rpc not available")
 	}
-	_, err := rpc.AutopilotClient.ModifyStatus(ctx, &autopilotrpc.ModifyStatusRequest{Enable: enable})
+	_, err := lnc.Autopilot.ModifyStatus(ctx, &autopilotrpc.ModifyStatusRequest{Enable: enable})
 	if err != nil {
 		return fmt.Errorf("ModifyStatus: %w", err)
 	}
@@ -746,10 +755,11 @@ func SetLightningAutopilotStatus(ctx context.Context, enable bool) error {
 // the agent is enabled. With ignoreLocalState false, nodes the wallet
 // already has channels with score ~0 (the agent discounts them).
 func GetLightningAutopilotScores(ctx context.Context, pubkeys []string, ignoreLocalState bool) (*types.AutopilotScores, error) {
-	if rpc.AutopilotClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Autopilot == nil {
 		return nil, fmt.Errorf("dcrlnd autopilot rpc not available")
 	}
-	resp, err := rpc.AutopilotClient.QueryScores(ctx, &autopilotrpc.QueryScoresRequest{
+	resp, err := lnc.Autopilot.QueryScores(ctx, &autopilotrpc.QueryScoresRequest{
 		Pubkeys:          pubkeys,
 		IgnoreLocalState: ignoreLocalState,
 	})
@@ -991,7 +1001,7 @@ func splitChannelPoint(s string) (txidHex string, outputIdx uint32, err error) {
 // RPC — graph-wide aggregates (nodes/channels/total capacity + size
 // distribution + topology). Cheap enough for per-render polling.
 func GetLightningNetworkInfo(ctx context.Context) (*types.LightningNetworkInfo, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -1045,7 +1055,7 @@ func lightningGraphNodes(ctx context.Context) ([]types.TopLightningNode, error) 
 		return describeGraphData, nil
 	}
 
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -1159,7 +1169,7 @@ func takeTopN(in []types.TopLightningNode, n int) []types.TopLightningNode {
 // (LNActions.js:683-690). PaymentAddr is converted from raw bytes to
 // lowercase hex for display.
 func DecodeLightningInvoice(ctx context.Context, payReq string) (*types.LightningDecodedPayReq, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -1275,7 +1285,8 @@ func defaultRoutingFeeLimitAtoms(amountAtoms int64) int64 {
 // NoInflightUpdates is false on purpose so the UI can render the
 // in-flight state, not just the terminal one.
 func StreamLightningPayment(ctx context.Context, req *types.LightningSendPaymentRequest) (<-chan types.LightningPayment, error) {
-	if rpc.RouterClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Router == nil {
 		return nil, fmt.Errorf("dcrlnd router not available")
 	}
 	timeout := req.TimeoutSec
@@ -1290,7 +1301,7 @@ func StreamLightningPayment(ctx context.Context, req *types.LightningSendPayment
 		// default curve, resolving the amount from the request and, for a
 		// normal invoice that carries the value, from the decoded pay req.
 		amt := req.Amt
-		payClient := rpc.LightningClient
+		payClient := lnc.Lightning
 		if amt <= 0 && payClient != nil {
 			if dec, err := payClient.DecodePayReq(ctx, &lnrpc.PayReqString{PayReq: req.PayReq}); err == nil {
 				amt = dec.NumAtoms
@@ -1305,7 +1316,7 @@ func StreamLightningPayment(ctx context.Context, req *types.LightningSendPayment
 		TimeoutSeconds:    timeout,
 		NoInflightUpdates: false,
 	}
-	stream, err := rpc.RouterClient.SendPaymentV2(ctx, rpcReq)
+	stream, err := lnc.Router.SendPaymentV2(ctx, rpcReq)
 	if err != nil {
 		return nil, fmt.Errorf("SendPaymentV2: %w", err)
 	}
@@ -1333,7 +1344,7 @@ func StreamLightningPayment(ctx context.Context, req *types.LightningSendPayment
 // IncludeIncomplete: true mirrors Decrediton's listLatestPayments
 // (LNActions.js) which also fetches pending and failed.
 func ListLightningPayments(ctx context.Context) (*types.LightningPaymentList, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -1406,7 +1417,7 @@ func invoiceToType(inv *lnrpc.Invoice) types.LightningInvoice {
 // has creationDate/expiry/state populated (AddInvoice's response is
 // minimal: r_hash, payment_request, add_index).
 func AddLightningInvoice(ctx context.Context, req *types.LightningAddInvoiceRequest) (*types.LightningInvoice, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -1447,7 +1458,7 @@ func AddLightningInvoice(ctx context.Context, req *types.LightningAddInvoiceRequ
 // ListLightningInvoices wraps lnrpc.ListInvoices for the Receive tab's
 // history list. Reversed: true returns newest-first.
 func ListLightningInvoices(ctx context.Context) (*types.LightningInvoiceList, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -1469,7 +1480,7 @@ func ListLightningInvoices(ctx context.Context) (*types.LightningInvoiceList, er
 // each snapshot onto the returned channel. Closes on stream end or ctx
 // cancel. Mirrors Decrediton's subscribeToInvoices (LNActions.js:620-663).
 func StreamLightningInvoiceEvents(ctx context.Context) (<-chan types.LightningInvoice, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -1498,7 +1509,8 @@ func StreamLightningInvoiceEvents(ctx context.Context) (<-chan types.LightningIn
 // CancelLightningInvoice cancels an OPEN invoice via invoicesrpc. Mirrors
 // Decrediton's cancelInvoice (LNActions.js:602-618 via inClient).
 func CancelLightningInvoice(ctx context.Context, paymentHashHex string) error {
-	if rpc.InvoicesClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Invoices == nil {
 		return fmt.Errorf("dcrlnd invoices service not available")
 	}
 	hashBytes, err := hex.DecodeString(strings.TrimSpace(paymentHashHex))
@@ -1508,7 +1520,7 @@ func CancelLightningInvoice(ctx context.Context, paymentHashHex string) error {
 	if len(hashBytes) != 32 {
 		return fmt.Errorf("invalid payment hash length: got %d, want 32", len(hashBytes))
 	}
-	_, err = rpc.InvoicesClient.CancelInvoice(ctx, &invoicesrpc.CancelInvoiceMsg{
+	_, err = lnc.Invoices.CancelInvoice(ctx, &invoicesrpc.CancelInvoiceMsg{
 		PaymentHash: hashBytes,
 	})
 	if err != nil {
@@ -1522,7 +1534,7 @@ func CancelLightningInvoice(ctx context.Context, paymentHashHex string) error {
 // ExportLightningChannelBackup wraps lnrpc.ExportAllChannelBackups and
 // returns the bytes base64-encoded for browser delivery.
 func ExportLightningChannelBackup(ctx context.Context) (*types.LightningChannelBackup, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -1544,7 +1556,7 @@ func ExportLightningChannelBackup(ctx context.Context) (*types.LightningChannelB
 // calls lnrpc.VerifyChanBackup. Returns an OK/Error pair so the frontend
 // can surface validation results inline rather than as a 500 error.
 func VerifyLightningChannelBackup(ctx context.Context, b64 string) *types.LightningVerifyBackupResponse {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return &types.LightningVerifyBackupResponse{OK: false, Error: "dcrlnd not available"}
 	}
@@ -1563,7 +1575,8 @@ func VerifyLightningChannelBackup(ctx context.Context, b64 string) *types.Lightn
 
 // AddLightningWatchtower registers a watchtower with dcrlnd's wtclient.
 func AddLightningWatchtower(ctx context.Context, pubKeyHex, addr string) error {
-	if rpc.WatchtowerClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Watchtower == nil {
 		return fmt.Errorf("dcrlnd watchtower client not available")
 	}
 	pubkey, err := hex.DecodeString(strings.TrimSpace(pubKeyHex))
@@ -1573,7 +1586,7 @@ func AddLightningWatchtower(ctx context.Context, pubKeyHex, addr string) error {
 	if len(pubkey) != 33 {
 		return fmt.Errorf("invalid pubkey length: got %d, want 33", len(pubkey))
 	}
-	_, err = rpc.WatchtowerClient.AddTower(ctx, &wtclientrpc.AddTowerRequest{
+	_, err = lnc.Watchtower.AddTower(ctx, &wtclientrpc.AddTowerRequest{
 		Pubkey:  pubkey,
 		Address: strings.TrimSpace(addr),
 	})
@@ -1586,10 +1599,11 @@ func AddLightningWatchtower(ctx context.Context, pubKeyHex, addr string) error {
 // ListLightningWatchtowers maps the wtclient ListTowers response into the
 // flat shape the Advanced tab renders.
 func ListLightningWatchtowers(ctx context.Context) (*types.LightningWatchtowerList, error) {
-	if rpc.WatchtowerClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Watchtower == nil {
 		return nil, fmt.Errorf("dcrlnd watchtower client not available")
 	}
-	resp, err := rpc.WatchtowerClient.ListTowers(ctx, &wtclientrpc.ListTowersRequest{
+	resp, err := lnc.Watchtower.ListTowers(ctx, &wtclientrpc.ListTowersRequest{
 		IncludeSessions: true,
 	})
 	if err != nil {
@@ -1611,14 +1625,15 @@ func ListLightningWatchtowers(ctx context.Context) (*types.LightningWatchtowerLi
 
 // RemoveLightningWatchtower deregisters a watchtower.
 func RemoveLightningWatchtower(ctx context.Context, pubKeyHex string) error {
-	if rpc.WatchtowerClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Watchtower == nil {
 		return fmt.Errorf("dcrlnd watchtower client not available")
 	}
 	pubkey, err := hex.DecodeString(strings.TrimSpace(pubKeyHex))
 	if err != nil {
 		return fmt.Errorf("invalid pubkey: %w", err)
 	}
-	_, err = rpc.WatchtowerClient.RemoveTower(ctx, &wtclientrpc.RemoveTowerRequest{
+	_, err = lnc.Watchtower.RemoveTower(ctx, &wtclientrpc.RemoveTowerRequest{
 		Pubkey: pubkey,
 	})
 	if err != nil {
@@ -1645,7 +1660,7 @@ func nodePolicyToType(p *lnrpc.RoutingPolicy) *types.LightningNodePolicy {
 // QueryLightningNodeInfo wraps GetNodeInfo with includeChannels=true and
 // renders the per-channel policy summaries the Advanced tab displays.
 func QueryLightningNodeInfo(ctx context.Context, pubkeyHex string) (*types.LightningNodeInfo, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
@@ -1685,7 +1700,7 @@ func QueryLightningNodeInfo(ctx context.Context, pubkeyHex string) (*types.Light
 // QueryLightningRoutes wraps QueryRoutes for the Advanced tab's route
 // discovery panel.
 func QueryLightningRoutes(ctx context.Context, pubkeyHex string, amtAtoms int64) (*types.LightningQueryRoutesResponse, error) {
-	client := rpc.LightningClient
+	client := rpc.Dcrlnd().Lightning
 	if client == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}

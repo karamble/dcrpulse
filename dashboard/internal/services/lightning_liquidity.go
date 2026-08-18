@@ -48,10 +48,11 @@ var liquidityDefaults = map[string]liquidityDefault{
 // liquidityNetwork resolves the active network from dcrlnd itself so the
 // default LP always matches the node the payment will flow through.
 func liquidityNetwork(ctx context.Context) (string, error) {
-	if rpc.LightningClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Lightning == nil {
 		return "", fmt.Errorf("dcrlnd not available")
 	}
-	info, err := rpc.LightningClient.GetInfo(ctx, &lnrpc.GetInfoRequest{})
+	info, err := lnc.Lightning.GetInfo(ctx, &lnrpc.GetInfoRequest{})
 	if err != nil {
 		return "", fmt.Errorf("GetInfo: %w", err)
 	}
@@ -182,7 +183,8 @@ var errEstimateAbort = errors.New("liquidity estimate complete")
 // limit, outbound capacity and the payment route BEFORE PolicyFetched, so
 // those failures surface here as the raw library errors.
 func EstimateLiquidityChannel(ctx context.Context, req *types.RequestLiquidityEstimateRequest) (*types.LiquidityEstimateResponse, error) {
-	if rpc.LightningClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Lightning == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
 	server, certBytes, err := resolveServerCert(ctx, req.Server, req.CertPEM)
@@ -191,7 +193,7 @@ func EstimateLiquidityChannel(ctx context.Context, req *types.RequestLiquidityEs
 	}
 	var out types.LiquidityEstimateResponse
 	c, err := lpclient.New(lpclient.Config{
-		LC:           rpc.LightningClient,
+		LC:           lnc.Lightning,
 		Address:      server,
 		Certificates: certBytes,
 		PolicyFetched: func(p lpclient.ServerPolicy) error {
@@ -228,7 +230,8 @@ func EstimateLiquidityChannel(ctx context.Context, req *types.RequestLiquidityEs
 // cancelling the watcher at that point would not stop the LP-driven open
 // anyway, but letting it run keeps the event stream observed.
 func RequestLiquidityChannel(ctx context.Context, req *types.RequestLiquidityRequest) (*types.RequestLiquidityResponse, error) {
-	if rpc.LightningClient == nil {
+	lnc := rpc.Dcrlnd()
+	if lnc.Lightning == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
 	}
 	server, certBytes, err := resolveServerCert(ctx, req.Server, req.CertPEM)
@@ -242,7 +245,7 @@ func RequestLiquidityChannel(ctx context.Context, req *types.RequestLiquidityReq
 	pendingCh := make(chan pendingChan, 1)
 	doneCh := make(chan error, 1)
 	c, err := lpclient.New(lpclient.Config{
-		LC:           rpc.LightningClient,
+		LC:           lnc.Lightning,
 		Address:      server,
 		Certificates: certBytes,
 		PolicyFetched: func(p lpclient.ServerPolicy) error {
