@@ -8,7 +8,7 @@
 // Delays match the backoff the Go side uses for its own reconnects
 // (internal/rpc/brclientd_ws.go).
 
-const MIN_DELAY_MS = 1000;
+export const MIN_DELAY_MS = 1000;
 const MAX_DELAY_MS = 30000;
 
 // nextDelay doubles the wait, clamping after the doubling rather than before:

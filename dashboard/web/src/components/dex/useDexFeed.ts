@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useRef, useState } from 'react';
+import { MIN_DELAY_MS, nextDelay } from '../../services/socket';
 import { convQty, convRate } from './dexFormat';
 
 // MiniOrder mirrors bisonw's order book entry (client/webserver site registry).
@@ -148,8 +149,15 @@ export function useDexFeed(market: DexMarketRef | null, dur = '1h'): DexFeed {
     setError(null);
 
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${window.location.host}/api/dcrdex/ws`);
-    wsRef.current = ws;
+    const url = `${proto}://${window.location.host}/api/dcrdex/ws`;
+    // Reconnect with the same capped backoff subscribeJSON uses: bisonw
+    // restarts and laptop sleeps must not leave the book frozen until the
+    // user navigates away. onopen re-sends loadmarket/loadcandles, and the
+    // server answers with a full book snapshot, so a reconnect re-subscribes
+    // cleanly.
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let delay = MIN_DELAY_MS;
 
     // rateConv converts an atomic message rate to a conventional price; mirrors
     // bisonw's OrderUtil.RateEncodingFactor / baseConv * quoteConv.
@@ -208,30 +216,7 @@ export function useDexFeed(market: DexMarketRef | null, dur = '1h'): DexFeed {
       endStamp: Number(c?.endStamp) || 0,
     });
 
-    ws.onopen = () => {
-      setConnected(true);
-      ws.send(
-        JSON.stringify({
-          type: 1,
-          route: 'loadmarket',
-          id: 1,
-          payload: { host: market.host, base: market.base, quote: market.quote },
-          sig: '',
-        }),
-      );
-      ws.send(
-        JSON.stringify({
-          type: 1,
-          route: 'loadcandles',
-          id: 2,
-          payload: { host: market.host, base: market.base, quote: market.quote, dur: durRef.current },
-          sig: '',
-        }),
-      );
-    };
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setError('feed connection error');
-    ws.onmessage = (ev) => {
+    const handleMessage = (ev: MessageEvent) => {
       let msg: any;
       try {
         msg = JSON.parse(ev.data);
@@ -320,13 +305,58 @@ export function useDexFeed(market: DexMarketRef | null, dur = '1h'): DexFeed {
       }
     };
 
+    const connect = () => {
+      if (cancelled) return;
+      const sock = new WebSocket(url);
+      wsRef.current = sock;
+      sock.onopen = () => {
+        delay = MIN_DELAY_MS;
+        setConnected(true);
+        // A reconnect obsoletes the previous connection error; leaving it up
+        // over a live book would be wrong.
+        setError(null);
+        sock.send(
+          JSON.stringify({
+            type: 1,
+            route: 'loadmarket',
+            id: 1,
+            payload: { host: market.host, base: market.base, quote: market.quote },
+            sig: '',
+          }),
+        );
+        sock.send(
+          JSON.stringify({
+            type: 1,
+            route: 'loadcandles',
+            id: 2,
+            payload: { host: market.host, base: market.base, quote: market.quote, dur: durRef.current },
+            sig: '',
+          }),
+        );
+      };
+      sock.onerror = () => setError('feed connection error');
+      sock.onclose = () => {
+        setConnected(false);
+        if (cancelled) return;
+        retryTimer = setTimeout(connect, delay);
+        delay = nextDelay(delay);
+      };
+      sock.onmessage = handleMessage;
+    };
+    connect();
+
     return () => {
-      // Detach handlers before closing: otherwise the closing old socket's
-      // onclose/onerror fire after the new socket's onopen and clobber the
-      // connected/error state, leaving the indicator stuck on "connecting"
-      // after a market switch.
-      ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
-      ws.close();
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      const sock = wsRef.current;
+      if (sock) {
+        // Detach handlers before closing: otherwise the closing old socket's
+        // onclose/onerror fire after the new socket's onopen and clobber the
+        // connected/error state, leaving the indicator stuck on "connecting"
+        // after a market switch.
+        sock.onopen = sock.onclose = sock.onerror = sock.onmessage = null;
+        sock.close();
+      }
       wsRef.current = null;
       if (raf) cancelAnimationFrame(raf);
     };
