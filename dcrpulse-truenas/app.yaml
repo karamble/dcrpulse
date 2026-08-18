@@ -1,0 +1,41 @@
+app_version: 2.0.0-rc4
+capabilities: []
+categories:
+- financial
+changelog_url: https://github.com/karamble/dcrpulse/releases
+date_added: '2026-06-14'
+description: A self-hosted dashboard for the full Decred stack - node, wallet, Lightning,
+  DCRDEX, Bison Relay and a block explorer.
+home: https://github.com/karamble/dcrpulse
+host_mounts: []
+icon: https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/icon.png
+keywords:
+- decred
+- cryptocurrency
+- blockchain
+- wallet
+- lightning
+lib_version: 2.3.6
+lib_version_hash: 5067fd69a830797f96075fe2fe08aa41e2ec08d7c94cf5c6d6256690be7e06ae
+maintainers:
+- email: dev@truenas.com
+  name: truenas
+  url: https://www.truenas.com/
+name: dcrpulse
+run_as_context:
+- description: All Decred Pulse containers run as a non-root user and group.
+  gid: 1000
+  group_name: Host group is [unknown (1000)]
+  uid: 1000
+  user_name: Host user is [unknown (1000)]
+screenshots:
+- https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/screenshot_1.jpg
+- https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/screenshot_2.jpg
+- https://cdn.jsdelivr.net/gh/karamble/dcrpulse@master/dcrpulse-casaos/screenshot_3.jpg
+sources:
+- https://apps.truenas.com/catalog/dcrpulse_community/
+- https://github.com/karamble/dcrpulse
+- https://decred.org
+title: Decred Pulse
+train: community
+version: 1.0.0

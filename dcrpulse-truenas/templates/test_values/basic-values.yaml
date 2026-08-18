@@ -1,0 +1,60 @@
+resources:
+  limits:
+    cpus: 2.0
+    memory: 4096
+TZ: UTC
+
+decred:
+  rpc_user: decred
+  rpc_password: decredtestpass
+  gap_limit: 400
+  txindex_enabled: true
+  ln_testnet: false
+
+network:
+  web_port:
+    bind_mode: published
+    port_number: 30080
+  p2p_port:
+    bind_mode: published
+    port_number: 39108
+
+ix_volumes:
+  data: /opt/tests/mnt/data
+  dcrlnd: /opt/tests/mnt/dcrlnd
+  brclientd: /opt/tests/mnt/brclientd
+  dcrdex: /opt/tests/mnt/dcrdex
+  dashboard: /opt/tests/mnt/dashboard
+  tor: /opt/tests/mnt/tor
+
+storage:
+  data:
+    type: ix_volume
+    ix_volume_config:
+      dataset_name: data
+      create_host_path: true
+  dcrlnd:
+    type: ix_volume
+    ix_volume_config:
+      dataset_name: dcrlnd
+      create_host_path: true
+  brclientd:
+    type: ix_volume
+    ix_volume_config:
+      dataset_name: brclientd
+      create_host_path: true
+  dcrdex:
+    type: ix_volume
+    ix_volume_config:
+      dataset_name: dcrdex
+      create_host_path: true
+  dashboard:
+    type: ix_volume
+    ix_volume_config:
+      dataset_name: dashboard
+      create_host_path: true
+  tor:
+    type: ix_volume
+    ix_volume_config:
+      dataset_name: tor
+      create_host_path: true

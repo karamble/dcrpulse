@@ -1,0 +1,70 @@
+images:
+  dcrd_image:
+    repository: ghcr.io/karamble/dcrpulse-dcrd
+    tag: sha-526dfe1
+  dcrwallet_image:
+    repository: ghcr.io/karamble/dcrpulse-dcrwallet
+    tag: sha-526dfe1
+  dcrlnd_image:
+    repository: ghcr.io/karamble/dcrpulse-dcrlnd
+    tag: sha-526dfe1
+  brclientd_image:
+    repository: ghcr.io/karamble/dcrpulse-brclientd
+    tag: sha-526dfe1
+  dcrdex_image:
+    repository: ghcr.io/karamble/dcrpulse-dcrdex
+    tag: sha-526dfe1
+  dashboard_image:
+    repository: ghcr.io/karamble/dcrpulse-dashboard
+    tag: sha-526dfe1
+  tor_image:
+    repository: ghcr.io/karamble/dcrpulse-tor
+    tag: sha-526dfe1
+  container_utils_image:
+    repository: ixsystems/container-utils
+    tag: 1.0.2
+
+consts:
+  perms_container_name: permissions
+  dcrd_container_name: dcrd
+  dcrwallet_container_name: dcrwallet
+  dcrlnd_container_name: dcrlnd
+  brclientd_container_name: brclientd
+  dcrdex_container_name: dcrdex
+  dashboard_container_name: dashboard
+  tor_container_name: tor
+
+  run_as_user: 1000
+  run_as_group: 1000
+
+  # Container internal ports
+  dashboard_port: 8080
+  dcrd_p2p_port: 9108
+  dcrd_rpc_port: 9109
+  dcrwallet_rpc_port: 9110
+  dcrwallet_grpc_port: 9111
+  dcrlnd_grpc_port: 10009
+  brclientd_port: 7676
+  brclientd_status_port: 7677
+  dcrdex_rpc_port: 5757
+  dcrdex_ws_port: 5758
+  tor_proxy_port: 9050
+  tor_control_port: 9051
+
+  # Container mount paths
+  app_data_dir: /app-data
+  dcrlnd_dir: /app-data/dcrlnd
+  brclientd_dir: /app-data/brclientd
+  dcrdex_dashboard_dir: /app-data/dcrdex
+  dcrdex_data_dir: /dex/.dexc
+  dashboard_data_dir: /dashboard-data
+  tor_data_dir: /data
+  tor_mount_dir: /app-data/tor
+
+  # Certificate / macaroon paths (inside the shared data volume)
+  dcrd_rpc_cert: /app-data/dcrd/rpc.cert
+  dcrd_rpc_key: /app-data/dcrd/rpc.key
+  dcrlnd_tls_cert: /app-data/dcrlnd/tls.cert
+  dcrlnd_macaroon: /app-data/dcrlnd/admin.macaroon
+  dcrdex_rpc_cert: /app-data/dcrdex/rpc.cert
+  dcrdex_ws_cert: /app-data/dcrdex/web.cert
