@@ -26,9 +26,9 @@ services:
       - dcrpulse
       - dcrpulse_internal
     healthcheck:
-      # A TCP probe needs no credentials and makes no auth attempt, which dcrd
-      # would log as a warning on every interval.
-      test: ["CMD", "sh", "-c", "nc -z 127.0.0.1 9109 || exit 1"]
+      # A bare TLS handshake proves the RPC is serving. It needs no credentials
+      # and, unlike an HTTP or plain-TCP probe, dcrd logs nothing for it.
+      test: ["CMD", "sh", "-c", "echo | timeout 5 openssl s_client -connect 127.0.0.1:9109 -quiet -verify_quiet >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
