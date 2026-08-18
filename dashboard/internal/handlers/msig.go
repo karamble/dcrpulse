@@ -104,7 +104,6 @@ func MsigInviteHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rec)
 }
 
-// MsigAcceptHandler accepts an incoming invite.
 // MsigActivateHandler is the initiator's checkpoint: every cosigner's key is
 // in, and signing the assembled key set is what releases the roster.
 func MsigActivateHandler(w http.ResponseWriter, r *http.Request) {
@@ -145,29 +144,9 @@ func msigPassphraseAction(w http.ResponseWriter, r *http.Request, action func(co
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// MsigAcceptHandler accepts an incoming invite.
 func MsigAcceptHandler(w http.ResponseWriter, r *http.Request) {
-	if rejectWatchOnly(w, r) {
-		return
-	}
-	var req types.MsigActionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	if len(req.Passphrase) > 1024 {
-		http.Error(w, "Passphrase too long", http.StatusBadRequest)
-		return
-	}
-	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
-	req.Passphrase = ""
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	if err := msig.AcceptInviteHD(ctx, req.ID, passphrase); err != nil {
-		msigPassphraseError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	msigPassphraseAction(w, r, msig.AcceptInviteHD)
 }
 
 // MsigDeclineHandler declines an incoming invite.
