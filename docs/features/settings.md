@@ -51,11 +51,12 @@ returned by the wallet are shown in the modal.
 
 Scan the chain for previously-used addresses under a chosen gap limit. Run this
 after importing an xpub or restoring from a seed that previously used a high
-gap. The current gap limit is shown inline.
+gap. A successful discovery is followed by a rescan so the found addresses' history
+appears; the gap used by the last discovery is shown inline.
 
 Clicking **Discover** opens a modal that asks for:
 
-- **Gap limit** - a number from 20 to 10000 (default 200; increase if the
+- **Gap limit** - a number from 20 to 10000 (default 20; increase if the
   restored wallet previously used a higher gap)
 - **Wallet passphrase**
 

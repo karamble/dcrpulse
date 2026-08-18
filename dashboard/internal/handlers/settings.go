@@ -28,7 +28,7 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	network, _ := services.CurrentNetwork(ctx)
 	walletName := services.CurrentWalletName()
 
-	walletOut := types.WalletSettings{GapLimit: 200}
+	walletOut := types.WalletSettings{GapLimit: 20}
 	globalOut := types.GlobalSettings{
 		ExternalRequests: types.ExternalRequestSettings{
 			VSPListing: true,
@@ -307,7 +307,7 @@ func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.GapLimit == 0 {
-		req.GapLimit = 200
+		req.GapLimit = 20
 	}
 	if req.GapLimit > 10000 {
 		http.Error(w, "gapLimit too large (max 10000)", http.StatusBadRequest)
@@ -316,15 +316,6 @@ func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 
 	passphrase := []byte(req.Passphrase)
 	defer zeroBytes(passphrase)
-
-	// Persist the gap limit as a preference so the modal pre-fills it
-	// next time. The actual scan value is taken from req.GapLimit.
-	if network, err := services.CurrentNetwork(r.Context()); err == nil {
-		if wc, err := config.LoadWalletCfg(network, services.CurrentWalletName()); err == nil {
-			_ = wc.Set(config.KeyGapLimit, int(req.GapLimit))
-			_ = wc.Save()
-		}
-	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
@@ -341,5 +332,35 @@ func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	// Persist the gap limit as the modal's next prefill only once the scan it
+	// described actually ran - a refused attempt must not change the setting.
+	persistDiscoveryGap(r.Context(), int(req.GapLimit))
+
+	// Discovery only marks addresses used; the transactions paying them are
+	// fetched by a rescan, the same two-step every other discovery flow runs
+	// (and Decrediton's discover-usage modal likewise rescans). Detached: the
+	// progress surfaces through the existing rescan stream.
+	go func() {
+		time.Sleep(discoverRescanDelay) // let the wallet load its transaction filter
+		discoverRescan(0)
+	}()
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// The persist and rescan hand-offs are indirected so tests can observe their
+// presence and ordering without the filter-load delay or a config volume.
+var (
+	discoverRescanDelay = 5 * time.Second
+	discoverRescan      = startRescanViaGrpc
+	persistDiscoveryGap = func(ctx context.Context, gap int) {
+		network, err := services.CurrentNetwork(ctx)
+		if err != nil {
+			return
+		}
+		if wc, err := config.LoadWalletCfg(network, services.CurrentWalletName()); err == nil {
+			_ = wc.Set(config.KeyGapLimit, gap)
+			_ = wc.Save()
+		}
+	}
+)

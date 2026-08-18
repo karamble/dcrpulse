@@ -34,7 +34,7 @@ export const WalletSection = () => {
     await discoverAddresses(passphrase, gap);
     setDiscoverModalOpen(false);
     setGapLimit(gap);
-    setFeedback('Address discovery complete.');
+    setFeedback('Address discovery complete - rescanning the chain to fetch their history.');
   };
 
   const handleCloseWallet = async () => {
@@ -93,9 +93,9 @@ export const WalletSection = () => {
             <span className="font-medium">Address discovery</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            Scan the chain for previously-used addresses under a chosen gap limit. Run after
-            importing an xpub or restoring from a seed with high address activity. Current gap
-            limit: <span className="font-mono">{gapLimit}</span>.
+            Scan the chain for previously-used addresses under a one-time gap limit, then rescan
+            to fetch their history. Run after importing an xpub or restoring from a seed with
+            high address activity. Last discovery gap: <span className="font-mono">{gapLimit}</span>.
           </p>
         </div>
         <button

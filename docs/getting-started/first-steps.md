@@ -241,7 +241,6 @@ make wallet-balance
 
 4. Enter:
    - **Xpub key**: Your extended public key
-   - **Gap limit**: 400 (recommended)
 
 5. Click "Import"
 

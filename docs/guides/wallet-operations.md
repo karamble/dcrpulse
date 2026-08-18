@@ -344,7 +344,7 @@ while a rescan is active, shows the progress bar, and re-fetches data from
 
 ### Import Xpub
  **Do**:
-- Use gap limit of 400 for normal wallets
+- Leave the standing gap limit at 20 (the dcrwallet default)
 - Increase to 500-1000 if funds missing
 - Wait for full rescan before using
 - Keep xpub secure (privacy concern)
@@ -374,17 +374,21 @@ while a rescan is active, shows the progress bar, and re-fetches data from
 
 ### Gap Limit Selection
 
-| Scenario | Recommended Gap Limit | Reasoning |
-|----------|----------------------|-----------|
-| New wallet | 20-50 | Few addresses used |
-| Normal use | 400 | Default, handles most cases |
-| Active wallet | 400-500 | Many transactions |
-| Missing funds | 500-1000 | High address indices |
+The standing gap limit stays at `20` — dcrwallet's BIP0044 default, the value
+Decrediton ships. When funds sit at higher address indices (a restored or
+legacy wallet), do not raise the standing limit: run Settings → Wallet →
+Address discovery with a larger one-shot gap for that scan.
+
+| Scenario | One-shot discovery gap | Reasoning |
+|----------|------------------------|-----------|
+| New or normal wallet | not needed | The standing 20 covers it |
+| Missing funds after restore | 500-1000 | High address indices |
 | Legacy wallet | 1000+ | Very old or heavily used |
 
-The gap limit is set on the `dcrwallet` daemon through the `DCRWALLET_GAP_LIMIT`
-environment variable. The compose default is `400`; `env.example` ships `100`.
-Change it in your `.env` and restart the wallet container to apply a new value.
+The standing limit is set on the `dcrwallet` daemon through the
+`DCRWALLET_GAP_LIMIT` environment variable (default `20` everywhere). If you
+change it in `.env`, recreate the container with `docker compose up -d
+dcrwallet` — a plain restart keeps the old environment.
 
 ---
 
@@ -707,7 +711,7 @@ See [API Reference](../api/api-reference.md) for details.
 - [ ] Blockchain fully synced
 - [ ] Xpub key copied correctly
 - [ ] Account name chosen (not reserved, not already in use)
-- [ ] Gap limit set on the wallet daemon if the default is too low (400 default)
+- [ ] Address discovery run with a larger one-shot gap if funds sit past the default window (standing default 20)
 - [ ] Time allocated (10-30 minutes)
 
 ### During Import

@@ -601,10 +601,10 @@ export const getDashboardData = async (): Promise<DashboardData> => {
   return response.data;
 };
 
-export const importXpub = async (xpub: string, gapLimit: number) => {
+export const importXpub = async (xpub: string, accountName: string) => {
   const response = await api.post('/wallet/importxpub', {
     xpub,
-    gapLimit,
+    accountName,
   });
   return response.data;
 };

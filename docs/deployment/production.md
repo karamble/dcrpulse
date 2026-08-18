@@ -146,8 +146,8 @@ DCRWALLET_RPC_PASS=$WALLET_PASS
 DCRD_VERSION=release-v2.0.6
 DCRWALLET_VERSION=release-v2.0.6
 
-# Gap limit
-DCRWALLET_GAP_LIMIT=200
+# Gap limit (dcrwallet default; use the address-discovery setting for deep restores)
+DCRWALLET_GAP_LIMIT=20
 
 # Enable transaction indexing
 DCRD_EXTRA_ARGS=--txindex
@@ -218,7 +218,7 @@ services:
       - DCRWALLET_RPC_PASS=${DCRWALLET_RPC_PASS}
       - DCRD_RPC_USER=${DCRD_RPC_USER}
       - DCRD_RPC_PASS=${DCRD_RPC_PASS}
-      - DCRWALLET_GAP_LIMIT=${DCRWALLET_GAP_LIMIT:-200}
+      - DCRWALLET_GAP_LIMIT=${DCRWALLET_GAP_LIMIT:-20}
     mem_limit: 1g
     cpus: 1.0
     healthcheck:

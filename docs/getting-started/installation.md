@@ -809,14 +809,15 @@ that can take a while.
 
 ### Adjust Gap Limit
 
-Edit `.env`:
-```bash
-DCRWALLET_GAP_LIMIT=500  # Increase for older wallets
-```
+The shipped standing gap limit is 20 (dcrwallet's BIP0044 default). To find
+funds at higher address indices after a restore, use Settings -> Wallet ->
+Address discovery with a larger one-shot gap - it scans once and rescans.
 
-Restart:
+If you must change the standing limit, edit `.env` and recreate the container
+(a plain restart keeps the old environment):
 ```bash
-docker compose restart dcrwallet
+DCRWALLET_GAP_LIMIT=100
+docker compose up -d dcrwallet
 ```
 
 ---

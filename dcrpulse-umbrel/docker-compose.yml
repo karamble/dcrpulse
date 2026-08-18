@@ -55,7 +55,7 @@ services:
       DCRD_RPC_USER: ${APP_SEED}
       DCRD_RPC_PASS: ${APP_SEED}
       DCRD_RPC_HOST: dcrd
-      DCRWALLET_GAP_LIMIT: 400
+      DCRWALLET_GAP_LIMIT: 20
       TOR_PROXY_IP: tor
       TOR_PROXY_PORT: 9050
     depends_on:

@@ -347,7 +347,7 @@ const data = await getWalletTransactions(200);  // Total to fetch
 
 ### For Best Performance
 1. Wait for full blockchain sync before rescanning
-2. Use appropriate gap limit (400 recommended)
+2. Leave the gap limit at the default 20; deep restores use Settings -> Wallet -> Address discovery
 3. Don't navigate away during wallet rescan
 4. Monitor sync progress through dashboard
 
@@ -359,7 +359,7 @@ const data = await getWalletTransactions(200);  // Total to fetch
 
 ### For Watch-Only Wallets
 1. Import xpub for address monitoring
-2. Use appropriate gap limit (200+)
+2. For old, heavily used wallets run Address discovery with a larger one-shot gap
 3. Ticket info requires full RPC connection
 4. Cannot send transactions (watch-only)
 
@@ -386,7 +386,7 @@ const data = await getWalletTransactions(200);  // Total to fetch
 **Problem**: Transaction history is empty
 
 **Solutions:**
-1. **Watch-only wallet**: Import xpub with correct gap limit
+1. **Watch-only wallet**: Import the xpub, then run Address discovery if funds sit at high indices
 2. **New wallet**: No transactions yet
 3. **High address index**: Increase gap limit and rescan
 4. **Sync incomplete**: Wait for wallet to finish syncing

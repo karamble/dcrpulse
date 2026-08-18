@@ -172,15 +172,12 @@ DCRD_TESTNET=1
 ### `DCRWALLET_GAP_LIMIT`
 **Description**: HD wallet address gap limit. Controls how many consecutive unused addresses the wallet monitors during discovery. Passed to dcrwallet as `--gaplimit`.
 
-**Default**: `100` in `env.example`; `400` is the fallback in `docker-compose.yml` if the variable is unset.
+**Default**: `20` — dcrwallet's own BIP0044 default and what Decrediton ships.
 
-**Common values**: `100` (fast), `400` (recommended), `1000` (thorough), `5000` (very thorough)
-
-**Example**: `DCRWALLET_GAP_LIMIT=400`
+**Example**: `DCRWALLET_GAP_LIMIT=20`
 
 **Impact**:
-- Higher values discover funds at higher address indices but increase memory use and rescan time.
-- Lower values scan faster but may miss funds in heavily used wallets.
+- Raising the standing value permanently increases memory use and rescan time. Do not raise it to find funds after a restore: use Settings → Wallet → Address discovery instead, which scans once with a larger gap and rescans, leaving the standing limit at 20.
 
 ---
 
@@ -436,7 +433,7 @@ DCRWALLET_IMAGE_TAG=latest
 DASHBOARD_IMAGE_TAG=latest
 
 # Standard gap limit and transaction indexing
-DCRWALLET_GAP_LIMIT=400
+DCRWALLET_GAP_LIMIT=20
 DCRD_EXTRA_ARGS=--txindex
 ```
 
@@ -452,8 +449,6 @@ DCRWALLET_RPC_PASS=testnet_wallet_pass456
 DCRD_TESTNET=1
 LN_TESTNET=true
 
-# Lower gap limit for faster testing
-DCRWALLET_GAP_LIMIT=100
 ```
 
 ---

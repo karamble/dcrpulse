@@ -109,7 +109,7 @@ start_wallet() {
         --cafile="${RPC_CERT}" \
         --grpclisten=0.0.0.0:9111 \
         --clientcafile="${RPC_CERT}" \
-        --gaplimit="${DCRWALLET_GAP_LIMIT:-400}" \
+        --gaplimit="${DCRWALLET_GAP_LIMIT:-20}" \
         --noinitialload \
         --mixing \
         $TOR_ARGS &

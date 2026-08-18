@@ -95,7 +95,8 @@ export const DiscoverAddressesModal = ({
               className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50 font-mono"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Default 200. Increase if you restored a wallet that previously used a higher gap.
+              Default 20 (the wallet's standing gap limit). A larger value only lengthens this
+              one scan - use it if you restored a wallet that previously used a higher gap.
             </p>
           </div>
 

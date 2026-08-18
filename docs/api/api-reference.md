@@ -540,13 +540,13 @@ POST /api/wallet/importxpub
 ```json
 {
   "xpub": "dpubZF6ScrXjYgjGdVL2FzAWMYpRbWbUk7VJT9JZjNGjqB...",
-  "gapLimit": 200
+  "gapLimit": 20
 }
 ```
 
 **Request Fields**:
 - `xpub` (required): Extended public key starting with `dpub`
-- `gapLimit` (required): Gap limit for address discovery (20-1000)
+- `gapLimit` (optional): one-shot gap limit for this discovery (1-10000; default 20). A successful discovery is followed by a rescan.
 
 **Response**:
 ```json
@@ -554,7 +554,7 @@ POST /api/wallet/importxpub
   "status": "success",
   "message": "Xpub imported successfully. Wallet rescan started.",
   "account": "imported",
-  "gapLimit": 200
+  "gapLimit": 20
 }
 ```
 
@@ -1020,7 +1020,7 @@ curl -X POST http://localhost:8080/api/wallet/importxpub \
   -H "Content-Type: application/json" \
   -d '{
     "xpub": "dpubZF...",
-    "gapLimit": 200
+    "gapLimit": 20
   }'
 ```
 
@@ -1049,7 +1049,7 @@ const dashboard = await api.get('/dashboard');
 // Import xpub
 const result = await api.post('/wallet/importxpub', {
   xpub: 'dpubZF...',
-  gapLimit: 200,
+  gapLimit: 20,
 });
 
 // Get transactions

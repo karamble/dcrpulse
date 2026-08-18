@@ -181,12 +181,6 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-    // Validate gap limit range
-    if req.GapLimit < 20 || req.GapLimit > 1000 {
-        http.Error(w, "Gap limit out of range", http.StatusBadRequest)
-        return
-    }
-    
     // Process request...
 }
 ```

@@ -456,9 +456,8 @@ echo "your_xpub" | wc -c
 ```
 
 #### 2. Check Gap Limit Range
-- Minimum: 20
-- Maximum: 1000
-- Recommended: 200
+- Discovery accepts 1-10000 (default 20)
+- The standing wallet gap limit ships at 20
 
 #### 3. Check Wallet Connection
 ```bash
@@ -561,13 +560,11 @@ curl http://localhost:8080/api/node/status | jq '.syncProgress'
 
 **Solutions**:
 
-#### 1. Increase Gap Limit
-```bash
-# Current gap limit may be too low
-# Try doubling it: 200 -> 400 -> 800
-
-# Re-import xpub with higher gap limit
-# Dashboard -> Import Xpub -> Enter 500
+#### 1. Run Address Discovery With a Larger Gap
+```
+# Funds past the standing gap window are found with a one-shot discovery:
+# Dashboard -> Settings -> Wallet -> Address discovery -> gap 500-1000
+# A successful discovery is followed by a rescan automatically.
 ```
 
 #### 2. Verify Correct Account

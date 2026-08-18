@@ -356,8 +356,8 @@ docker compose restart dcrd
 ```bash
 # dcrwallet.conf
 
-# Gap limit (lower = faster, but may miss transactions)
-gaplimit=200  # Default: 1000
+# Gap limit (dcrwallet default 20; deep restores use the dashboard address-discovery setting)
+gaplimit=20
 
 # Account discovery (if using multiple accounts)
 accountgaplimit=10

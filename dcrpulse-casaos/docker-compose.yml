@@ -74,9 +74,7 @@ services:
       DCRD_RPC_USER: casaos
       DCRD_RPC_PASS: casaos
       DCRD_RPC_HOST: dcrd
-      DCRWALLET_GAP_LIMIT: 400
-    command: >
-      --gaplimit=400
+      DCRWALLET_GAP_LIMIT: 20
     volumes:
       - type: bind
         source: /DATA/AppData/$AppID/dcrwallet
