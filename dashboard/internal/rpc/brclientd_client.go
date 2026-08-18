@@ -184,9 +184,6 @@ type BrclientdSendFileResult struct {
 	Size     int64  `json:"size"`
 }
 
-// BrclientdSendFile uploads a file to brclientd's /files/send mTLS endpoint,
-// which persists the bytes under UploadDir and dispatches them to BR's
-// SendFile RPC. user can be a nick / alias / hex UID.
 // brclientdUpload posts a multipart form of the given fields plus one file
 // part. cli is a parameter because a slow endpoint needs the no-deadline
 // client; the request context bounds it instead.
@@ -245,6 +242,9 @@ func brclientdUpload(ctx context.Context, cli *http.Client, path brPath, fields 
 	return json.RawMessage(respBody), nil
 }
 
+// BrclientdSendFile uploads a file to brclientd's /files/send mTLS endpoint,
+// which persists the bytes under UploadDir and dispatches them to BR's
+// SendFile RPC. user can be a nick / alias / hex UID.
 func BrclientdSendFile(ctx context.Context, user, filename, mime string, body io.Reader) (*BrclientdSendFileResult, error) {
 	// brclientd's c.SendFile blocks synchronously on per-chunk relay acks, so the
 	// response header can be delayed well past the default client's 60s header
