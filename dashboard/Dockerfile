@@ -35,7 +35,7 @@ COPY pkg/ ./pkg/
 COPY --from=frontend-builder /app/web/dist ./cmd/dcrpulse/web/dist
 
 # Build Go binary with embedded frontend
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo ./cmd/dcrpulse
+RUN CGO_ENABLED=0 GOOS=linux go build ./cmd/dcrpulse
 
 # Stage 3: Runtime
 FROM alpine:latest
