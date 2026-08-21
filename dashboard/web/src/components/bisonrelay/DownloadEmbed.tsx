@@ -20,6 +20,7 @@ import {
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { ImageViewerModal } from './ImageViewerModal';
 import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
+import { formatBytes } from '../../utils/bytes';
 import { apiError } from '../../utils/apiError';
 
 // DownloadEmbedSeg is the subset of a BR embed segment a file-transfer embed
@@ -36,18 +37,6 @@ export interface DownloadEmbedSeg {
   // tip records.
   cost?: number;
 }
-
-export const formatDownloadBytes = (n: number): string => {
-  if (!n) return '';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let v = n;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${i === 0 ? v : v.toFixed(1)} ${units[i]}`;
-};
 
 // DownloadEmbed renders a file-transfer embed
 // (--embed[download=<fid>,cost=,filename=,...]--): a file the host shares over
@@ -225,7 +214,7 @@ export const DownloadEmbed = ({ seg, uid, self }: { seg: DownloadEmbedSeg; uid: 
     );
   }
 
-  const meta = [filename, seg.size ? formatDownloadBytes(seg.size) : '', cost > 0 ? costLabel : 'free']
+  const meta = [filename, seg.size ? formatBytes(seg.size) : '', cost > 0 ? costLabel : 'free']
     .filter(Boolean)
     .join(' · ');
 

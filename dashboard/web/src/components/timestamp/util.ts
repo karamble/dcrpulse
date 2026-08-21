@@ -2,19 +2,6 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-// fmtBytes renders a byte count in human units.
-export function fmtBytes(n?: number): string {
-  if (!n || n <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let v = n;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${v.toFixed(i > 0 && v < 10 ? 1 : 0)} ${units[i]}`;
-}
-
 // shortHash abbreviates a long hex string for compact display.
 export function shortHash(h?: string, head = 10, tail = 6): string {
   if (!h) return '';

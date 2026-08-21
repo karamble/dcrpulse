@@ -9,7 +9,8 @@ import { hashFile } from '../../utils/hashFile';
 import { createTimestamp, type TimestampRecord } from '../../services/timestampApi';
 import { StatusBadge } from './StatusBadge';
 import { StageList, type Stage, type StageState } from './StageList';
-import { fmtBytes, shortHash } from './util';
+import { shortHash } from './util';
+import { formatBytes } from '../../utils/bytes';
 import { apiError } from '../../utils/apiError';
 
 type Phase = 'idle' | 'hashing' | 'ready' | 'submitting' | 'done' | 'error';
@@ -170,7 +171,7 @@ export const StampView = ({ onStamped }: Props) => {
                 <div className="min-w-0 flex-1">
                   <div className="font-medium truncate">{file.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {fmtBytes(file.size)}
+                    {formatBytes(file.size)}
                     {file.type ? ` · ${file.type}` : ''}
                   </div>
                 </div>

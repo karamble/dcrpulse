@@ -31,7 +31,8 @@ import {
 } from '../../services/timestampApi';
 import { StatusBadge } from './StatusBadge';
 import { StageList, type Stage, type StageState } from './StageList';
-import { fmtBytes, fromUnix, shortHash } from './util';
+import { fromUnix, shortHash } from './util';
+import { formatBytes } from '../../utils/bytes';
 import { toYMDTime } from '../../utils/date';
 
 interface Props {
@@ -222,7 +223,7 @@ export const RecordDetail = ({ digest, onClose, onChanged }: Props) => {
                         </span>
                       </Row>
                     )}
-                    <Row label="Size">{fmtBytes(rec.fileSize)}{rec.mimeType ? ` · ${rec.mimeType}` : ''}</Row>
+                    <Row label="Size">{formatBytes(rec.fileSize)}{rec.mimeType ? ` · ${rec.mimeType}` : ''}</Row>
                     <Row label="Submitted">{rec.submittedAt ? toYMDTime(new Date(rec.submittedAt)) : '-'}</Row>
                     {rec.failReason && <Row label="Failure"><span className="text-destructive">{rec.failReason}</span></Row>}
                   </>
