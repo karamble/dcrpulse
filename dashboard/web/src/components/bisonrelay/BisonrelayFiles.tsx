@@ -32,7 +32,7 @@ import { formatAtomsTrimmed, toDcr, validateDcrAmount } from '../../utils/amount
 import { formatBytes } from '../../utils/bytes';
 import { apiError } from '../../utils/apiError';
 import { BrSidebar, navigateTo } from './BrSidebar';
-import { displayNick } from './bisonrelayNick';
+import { contactByUid, displayNick } from './bisonrelayNick';
 
 type Section = 'add' | 'shared' | 'downloads';
 
@@ -55,6 +55,10 @@ const formatDCR = (atoms: number): string => {
 
 export const BisonrelayFiles = () => {
   const [section, setSection] = useState<Section>(readHashSection);
+  // Owned here because the three views are swapped in one slot and so remount
+  // on every tab change; sharing a file navigates straight from Add to Shared,
+  // which needs the same list.
+  const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
 
   useEffect(() => {
     const onHashChange = () => setSection(readHashSection());
@@ -62,10 +66,20 @@ export const BisonrelayFiles = () => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  useEffect(() => {
+    getBisonrelayContacts()
+      .then(setContacts)
+      .catch(() => {
+        /* leave empty - sharing still works, peers just show as uids */
+      });
+  }, []);
+
   const content = (() => {
-    if (section === 'shared') return <SharedListView />;
+    if (section === 'shared') return <SharedListView contacts={contacts} />;
     if (section === 'downloads') return <DownloadsView />;
-    return <AddContentView onShared={() => navigateTo('files/shared')} />;
+    return (
+      <AddContentView contacts={contacts} onShared={() => navigateTo('files/shared')} />
+    );
   })();
 
   return (
@@ -88,23 +102,20 @@ const FilesSidebar = ({ active }: { active: Section }) => (
 
 // ---- Add view ------------------------------------------------------------
 
-const AddContentView = ({ onShared }: { onShared: () => void }) => {
+const AddContentView = ({
+  contacts,
+  onShared,
+}: {
+  contacts: BisonrelayContact[];
+  onShared: () => void;
+}) => {
   const [file, setFile] = useState<File | null>(null);
   const [costDcr, setCostDcr] = useState('0');
   const [target, setTarget] = useState(''); // '' = global
   const [descr, setDescr] = useState('');
-  const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [pct, setPct] = useState(0);
   const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    getBisonrelayContacts()
-      .then(setContacts)
-      .catch(() => {
-        /* leave empty — Add still works for global shares */
-      });
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -276,7 +287,7 @@ const AddContentView = ({ onShared }: { onShared: () => void }) => {
 
 // ---- Shared list view ----------------------------------------------------
 
-const SharedListView = () => {
+const SharedListView = ({ contacts }: { contacts: BisonrelayContact[] }) => {
   const [items, setItems] = useState<BisonrelaySharedFile[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -294,6 +305,11 @@ const SharedListView = () => {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  const shareNick = (uid: string): string => {
+    const c = contactByUid(uid, contacts);
+    return c ? displayNick(c) : uid.slice(0, 12);
+  };
 
   // BR revokes one share entry per call: no uid clears the global entry only,
   // so a per-peer share needs its own call and errors out without one.
@@ -342,13 +358,9 @@ const SharedListView = () => {
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-foreground truncate flex items-center gap-2">
                   <span className="truncate">{f.filename || '(unnamed)'}</span>
-                  {f.global ? (
+                  {f.global && (
                     <span className="shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/15 text-primary">
                       Global
-                    </span>
-                  ) : (
-                    <span className="shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground">
-                      Per-user
                     </span>
                   )}
                 </div>
@@ -359,6 +371,20 @@ const SharedListView = () => {
                   <span className="mx-1.5 opacity-50">·</span>
                   <span className="font-mono">{f.fid.slice(0, 16)}…</span>
                 </div>
+                {(f.shares?.length ?? 0) > 0 && (
+                  <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                    <span>Shared with</span>
+                    {f.shares?.map((uid) => (
+                      <span
+                        key={uid}
+                        title={uid}
+                        className="px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground"
+                      >
+                        {shareNick(uid)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <button
                 type="button"
