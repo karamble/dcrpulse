@@ -97,7 +97,12 @@ Contacts are sorted **unread first, then alphabetically** by display nick. The l
 Selecting a contact loads the **last 100 messages** of history. The composer at the bottom grows as you type. Features:
 
 - **Plain text** with automatic linkification of URLs.
-- **Attachments** via the paperclip button. Compressible images open a preview/compression modal; a compressed copy small enough is embedded inline in the message, while larger images or other files are pushed to the contact as a direct file transfer. A direct transfer carries no price.
+- **Attachments** via the paperclip button, which opens a menu of the three ways a file can reach the other side:
+  - **Upload a file** - the original behaviour. Compressible images open a preview/compression modal; a compressed copy small enough is embedded inline in the message, while larger images and other files are pushed to the contact as a direct file transfer. A direct transfer arrives unasked and carries no price.
+  - **Offer for download** - the file is registered as one of your shared files and the message carries a reference to it. The contact sees a download chip and fetches the bytes when they choose, paying over Lightning first if you set a price. You pick the price in DCR (0 for a free offer) and who may fetch it: only this contact, which is the default, or all your subscribers. The upload runs inside the modal with a progress bar and can be cancelled. Up to 200 MB.
+  - **From my shared files** - attach a file you already share. Its price is the one stored on the share and cannot be changed here, so the message advertises exactly what the contact will be charged; to change it, unshare the file under Files and share it again. A file shared only with somebody else is listed but cannot be picked, because Bison Relay would refuse to serve it.
+
+  An offer you have staged but not yet sent can be removed, which also withdraws the share. An offer you attached from the shared list is only unstaged. Once sent, the file stays shared until you remove it under **Files**.
 - **Send** with the send button (disabled while a send is in flight).
 
 Message delivery status is shown with check marks: a **single check** means sent to the relay, a **double check** means acknowledged by the relay server. Your own messages render on the right; the contact's messages render on the left with their nick and avatar. Files a contact sends you appear as download tags in the message stream.
@@ -135,7 +140,10 @@ These flows map to the `/api/br/invites/...` and `/api/br/contacts/...` route gr
 
 ### Group chats
 
-Group chats appear in the **Groups** section of the sidebar. A group row shows the group alias (or name), an avatar, and an unread badge. Opening a group shows its conversation with a header that displays the group name, member count, an **Owner** badge if you own it, an **"Invite"** button (admins only), and a **"Manage"** button.
+Group chats appear in the **Groups** section of the sidebar. A group row shows the group alias (or name), an avatar, and an unread badge.
+
+A group cannot receive a direct file transfer, which Bison Relay addresses to a single peer, so the paperclip's **Upload** choice is limited to images small enough to ride inside the message. Larger files travel as a **download offer** instead, which works in a group because it is only a reference in the message body. Bison Relay has no share aimed at a group, so an offer made in one is available to all your subscribers, and only globally shared files can be attached. A member you have not key-exchanged with cannot fetch from you at all and sees the chip say so.
+ Opening a group shows its conversation with a header that displays the group name, member count, an **Owner** badge if you own it, an **"Invite"** button (admins only), and a **"Manage"** button.
 
 Creating a group uses the **"Create group"** action in the Groups header. Incoming group invites stack as a banner at the top of the chat area with **"Accept"** and **"Dismiss"** buttons; a stale local copy left over after a restore can show a "re-invite blocked" banner with a **"Leave local copy"** action so the inviter can send a fresh one.
 
@@ -206,7 +214,7 @@ A post (or chat message) can carry a paid file embed, shown as a compact card wi
 The **Files** tab manages the files you share and the transfers in flight. It has three sub-views:
 
 - **Add** - share a file. Pick a local file, set an optional cost in DCR (0 for free), choose a sharing preference (**Global** for all your subscribers, or a single contact), and add an optional description (up to 200 characters). Click **Share**.
-- **Shared** - the files you currently share, each showing a Global or Per-user badge, size, cost (or "Free"), and file ID, with an **Unshare** button.
+- **Shared** - the files you currently share, each showing a Global or Per-user badge, size, cost (or "Free"), and file ID, with an **Unshare** button that withdraws the file from everyone it was shared with.
 - **Downloads** - in-flight and recently completed transfers, each showing a Receiving or Sending badge, the contact, size, chunk progress with a progress bar, and the on-disk path when finished. In-progress receives can be canceled. Progress updates live.
 
 Shared files are what you reference when you add a paid download to a post. These map to the `/api/br/files/...`, `/api/br/shared-files`, and `/api/br/downloads/...` routes.
