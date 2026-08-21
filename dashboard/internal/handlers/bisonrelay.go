@@ -991,7 +991,7 @@ func BisonrelaySharedFilesHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayManageAddHandler accepts a multipart upload from the browser
 // (file + form fields cost_dcr, target_uid?, descr?) and proxies it as
 // the /shared-files/add request to brclientd. Cost is collected in DCR
-// for UX, converted to milliatoms before forwarding.
+// for UX, converted to atoms before forwarding.
 func BisonrelayManageAddHandler(w http.ResponseWriter, r *http.Request) {
 	const maxUpload = 200 << 20 // 200 MiB upper bound; BR can store larger via chunks
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)

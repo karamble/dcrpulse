@@ -104,8 +104,8 @@ export const SharedFilePickerModal = ({ onClose, onSubmit }: Props) => {
               </div>
             ) : files.length === 0 ? (
               <p className="text-xs text-muted-foreground px-3 py-4 text-center">
-                You haven't shared any files yet. Share a file first (BR client
-                CLI / future dashboard surface) and it will show up here.
+                You haven't shared any files yet. Share one under Files and it
+                will show up here.
               </p>
             ) : (
               files.map((f) => (

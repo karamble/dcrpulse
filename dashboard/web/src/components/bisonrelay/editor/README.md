@@ -86,6 +86,7 @@ shapes that this editor emits (canonical Go reference:
   inside the post.
 - **Free download** — `download` (FID), `filename`, `type`, `size`. Bytes
   fetched separately over BR's file-transfer subsystem.
-- **Paid download** — same as free + `cost=<milliatoms>`. Reader pays
+- **Paid download** — same as free + `cost=<atoms>` (1 DCR = 1e8, not the
+  milli-atoms of payment records). Reader pays
   over Lightning before BR releases the bytes. This is BR's "pay to read
   more" mechanic.

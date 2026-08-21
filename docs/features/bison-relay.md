@@ -97,7 +97,7 @@ Contacts are sorted **unread first, then alphabetically** by display nick. The l
 Selecting a contact loads the **last 100 messages** of history. The composer at the bottom grows as you type. Features:
 
 - **Plain text** with automatic linkification of URLs.
-- **Attachments** via the paperclip button. Compressible images open a preview/compression modal; a compressed copy small enough is embedded inline in the message, while larger images or other files are sent as a Lightning-paid file transfer.
+- **Attachments** via the paperclip button. Compressible images open a preview/compression modal; a compressed copy small enough is embedded inline in the message, while larger images or other files are pushed to the contact as a direct file transfer. A direct transfer carries no price.
 - **Send** with the send button (disabled while a send is in flight).
 
 Message delivery status is shown with check marks: a **single check** means sent to the relay, a **double check** means acknowledged by the relay server. Your own messages render on the right; the contact's messages render on the left with their nick and avatar. Files a contact sends you appear as download tags in the message stream.
@@ -184,7 +184,7 @@ In the post detail view:
 **New Post** opens a markdown editor with a Write/Preview toggle and a formatting toolbar (bold, italic, strikethrough, headings, lists, blockquote, inline code, code blocks, links). You can:
 
 - **Attach an image or file** - compressible images open an attach modal where you pick the original or a smaller compressed copy and add optional alt text; the image is embedded inline. Files that are too large to inline are rejected with a hint to use a shared-content link instead.
-- **Link to shared content** - pick (or upload) one of your shared files and optionally set a price in DCR so readers pay to download it.
+- **Link to shared content** - pick one of your shared files. The price shown is the one stored on the share, so the post advertises exactly what readers will be charged; to charge for a file, share it with a cost under Files.
 - **Description (optional)** - a short summary (up to 200 characters) shown under the title in feed cards.
 
 A size footer shows the estimated wire size against the per-post cap (Bison Relay posts ride the same wire as chat, with a 1 MB hard cap and a soft warning earlier). **Publish** sends the post; it is disabled if the body is empty or the post is over the size limit.
