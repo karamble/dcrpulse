@@ -39,6 +39,7 @@ import {
 } from '../../../services/bisonrelayApi';
 import { ConfirmActionModal } from '../BisonrelayUserSubNav';
 import { apiError } from '../../../utils/apiError';
+import { displayNick } from '../bisonrelayNick';
 
 // GroupSubNav is the per-group sliding sidebar (mirror of
 // BisonrelayUserSubNav for contacts). Admin-only actions are gated on
@@ -106,7 +107,7 @@ export const GroupSubNav = ({
   const nickFor = (uid: string): string => {
     if (ownUid && uid === ownUid) return `${ownNick || 'You'} (you)`;
     const c = contactsByUid.get(uid);
-    return c?.nick_alias || c?.id?.nick || uid.slice(0, 12);
+    return c ? displayNick(c) : uid.slice(0, 12);
   };
 
   const adminSet = new Set([detail.owner, ...(detail.extra_admins ?? [])]);

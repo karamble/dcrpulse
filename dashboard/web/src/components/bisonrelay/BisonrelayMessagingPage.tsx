@@ -87,6 +87,7 @@ import { CreateGCModal } from './gc/CreateGCModal';
 import { GCInviteModal } from './gc/GCInviteModal';
 import { GroupSubNav } from './gc/GroupSubNav';
 import { IncomingGCInvitesBanner } from './gc/IncomingGCInvitesBanner';
+import { contactByUid, displayNick } from './bisonrelayNick';
 
 const MAX_INLINE_BYTES = 800 * 1024;
 const MAX_TRANSFER_BYTES = 1024 * 1024 * 1024;
@@ -980,10 +981,8 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         const cur = selectedGroupRef.current;
         const isOpen = !!cur && cur.id === gcid;
         const nickFor = (uid: string) => {
-          const c = contactsRef.current.find(
-            (x) => x.id?.identity?.toLowerCase() === uid.toLowerCase()
-          );
-          return c?.nick_alias || c?.id?.nick || `${uid.slice(0, 8)}…`;
+          const c = contactByUid(uid, contactsRef.current);
+          return c ? displayNick(c) : `${uid.slice(0, 8)}…`;
         };
         const sys = (text: string) =>
           setMessages((prev) => [
@@ -2919,10 +2918,6 @@ function brIdentityToHex(s: string): string {
   } catch {
     return s;
   }
-}
-
-function displayNick(c: BisonrelayContact): string {
-  return c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || 'unknown';
 }
 
 function nickOrUid(c: BisonrelayContact): string {

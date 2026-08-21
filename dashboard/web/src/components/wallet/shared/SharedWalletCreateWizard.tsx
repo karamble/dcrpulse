@@ -13,9 +13,7 @@ import {
 import { PassphraseModal } from '../PassphraseModal';
 import { createMsigWallet, MsigInvitee } from '../../../services/msigApi';
 import { apiError } from '../../../utils/apiError';
-
-const displayNick = (c: BisonrelayContact): string =>
-  c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
+import { displayNick } from '../../bisonrelay/bisonrelayNick';
 
 type Step = 'scheme' | 'cosigners' | 'review';
 

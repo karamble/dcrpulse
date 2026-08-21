@@ -11,9 +11,7 @@ import {
   inviteToRTDTSession,
 } from '../../../services/bisonrelayApi';
 import { apiError } from '../../../utils/apiError';
-
-const displayNick = (c: BisonrelayContact): string =>
-  c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
+import { displayNick } from '../bisonrelayNick';
 
 // InviteToRoomModal lets an admin invite additional contacts to an
 // existing RTDT session, filtering out any contact already in the

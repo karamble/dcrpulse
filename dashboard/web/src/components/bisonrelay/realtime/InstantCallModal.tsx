@@ -11,9 +11,7 @@ import {
   joinRTDTSession,
 } from '../../../services/bisonrelayApi';
 import { apiError } from '../../../utils/apiError';
-
-const displayNick = (c: BisonrelayContact): string =>
-  c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
+import { displayNick } from '../bisonrelayNick';
 
 // InstantCallModal lets the user pick a single contact to start a 1:1
 // instant call. On success, the wrapper component routes to the active

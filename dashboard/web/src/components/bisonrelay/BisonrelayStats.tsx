@@ -60,6 +60,7 @@ import { ConfirmActionModal } from './BisonrelayUserSubNav';
 import { formatBytes } from '../../utils/bytes';
 import { BrSidebar } from './BrSidebar';
 import { apiError } from '../../utils/apiError';
+import { displayStatsNick } from './bisonrelayNick';
 
 type Section = 'overview' | 'payments' | 'network' | 'contacts' | 'content';
 
@@ -1160,7 +1161,7 @@ const ContactsView = () => {
                 >
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">
-                      {c.nick_alias || c.nick || c.uid.slice(0, 12)}
+                      {displayStatsNick(c)}
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-0.5">
                       KX since {relativeTime(c.first_created)}
@@ -1202,7 +1203,7 @@ const ContactsView = () => {
 
       {openContact && (
         <SectionCard
-          title={`Ratchet details — ${openContact.nick_alias || openContact.nick || openContact.uid.slice(0, 12)}`}
+          title={`Ratchet details — ${displayStatsNick(openContact)}`}
           icon={Hash}
           action={
             <button

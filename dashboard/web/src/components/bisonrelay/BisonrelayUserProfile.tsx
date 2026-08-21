@@ -59,6 +59,7 @@ import {
   relativeTime,
 } from './BisonrelayStats';
 import { apiError } from '../../utils/apiError';
+import { displayNick } from './bisonrelayNick';
 
 const healthMeta: Record<RatchetHealth, { label: string; cls: string }> = {
   green: { label: 'Active', cls: 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' },
@@ -114,9 +115,7 @@ export const UserProfileView = ({
       const tb = b.last_status_ts && b.last_status_ts > b.date ? b.last_status_ts : b.date;
       return tb - ta;
     });
-  const nick = contact
-    ? contact.nick_alias || contact.id?.nick || uid.slice(0, 12)
-    : theirPosts[0]?.author_nick || uid.slice(0, 12);
+  const nick = contact ? displayNick(contact) : theirPosts[0]?.author_nick || uid.slice(0, 12);
   const avatarB64 = contact?.id?.avatar || avatars[uid];
   const realNick = contact?.id?.nick;
   const mutualGCs = gcs.filter((g) =>
@@ -619,7 +618,7 @@ export const UserProfileView = ({
           contact={contact}
           nick={nick}
           contacts={contacts}
-          displayNick={(c) => c.nick_alias || c.id?.nick || (c.id?.identity ?? '').slice(0, 12)}
+          displayNick={displayNick}
           onClose={() => setShowActions(false)}
           onSendFile={() => {
             // The chat page owns the file-attach flow; degrade to opening

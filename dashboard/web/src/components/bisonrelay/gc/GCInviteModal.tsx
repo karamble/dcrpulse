@@ -11,9 +11,7 @@ import {
   inviteToBisonrelayGC,
 } from '../../../services/bisonrelayApi';
 import { apiError } from '../../../utils/apiError';
-
-const displayNick = (c: BisonrelayContact): string =>
-  c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
+import { displayNick } from '../bisonrelayNick';
 
 // GCInviteModal lets an admin invite contacts to an existing GC. Members
 // already in the group + already-pending invites are filtered out. BR's

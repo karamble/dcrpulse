@@ -12,9 +12,7 @@ import {
   joinRTDTSession,
 } from '../../../services/bisonrelayApi';
 import { apiError } from '../../../utils/apiError';
-
-const displayNick = (c: BisonrelayContact): string =>
-  c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || '(unnamed)';
+import { displayNick } from '../bisonrelayNick';
 
 // NewRoomModal creates a group RTDT room: capacity, description, and an
 // initial multi-select set of invitees. The room owner is auto-joined to

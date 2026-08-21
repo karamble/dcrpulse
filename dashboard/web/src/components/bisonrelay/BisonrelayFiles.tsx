@@ -32,6 +32,7 @@ import { formatAtomsTrimmed, toDcr, validateDcrAmount } from '../../utils/amount
 import { formatBytes } from '../../utils/bytes';
 import { apiError } from '../../utils/apiError';
 import { BrSidebar, navigateTo } from './BrSidebar';
+import { displayNick } from './bisonrelayNick';
 
 type Section = 'add' | 'shared' | 'downloads';
 
@@ -205,7 +206,7 @@ const AddContentView = ({ onShared }: { onShared: () => void }) => {
               <option value="">Global (all subscribers)</option>
               {contacts.map((c) => {
                 const uid = c.id?.identity ?? '';
-                const nick = c.nick_alias || c.id?.nick || uid.slice(0, 12);
+                const nick = displayNick(c);
                 if (!uid) return null;
                 return (
                   <option key={uid} value={uid}>

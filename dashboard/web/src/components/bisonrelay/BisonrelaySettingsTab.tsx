@@ -77,6 +77,7 @@ import { setBrNotifPrefs, useBrNotifPrefs } from './brNotifPrefs';
 import { BrMcpSection } from '../settings/BrMcpSection';
 import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
+import { contactByUid, displayNick } from './bisonrelayNick';
 
 // ---- Section routing --------------------------------------------------------
 
@@ -1209,8 +1210,8 @@ const FiltersCard = () => {
 
   const nickFor = (uid?: string): string => {
     if (!uid) return '';
-    const c = contacts.find((e) => e.id?.identity === uid);
-    return c?.nick_alias || c?.id?.nick || `${uid.slice(0, 12)}...`;
+    const c = contactByUid(uid, contacts);
+    return c ? displayNick(c) : `${uid.slice(0, 12)}...`;
   };
   const gcNameFor = (gcid?: string): string => {
     if (!gcid) return '';
@@ -1430,7 +1431,7 @@ const FiltersCard = () => {
                 <option value="">All users</option>
                 {contacts.map((c) => (
                   <option key={c.id?.identity} value={c.id?.identity}>
-                    {c.nick_alias || c.id?.nick || c.id?.identity}
+                    {displayNick(c)}
                   </option>
                 ))}
               </select>

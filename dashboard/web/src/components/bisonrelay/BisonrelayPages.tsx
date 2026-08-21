@@ -43,6 +43,7 @@ import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { identityToHex } from '../../utils/identity';
 import { apiError } from '../../utils/apiError';
 import { navigateTo } from './BrSidebar';
+import { displayNick } from './bisonrelayNick';
 
 // The page hash is '/'-delimited, so the base64 identity cannot go in it; hex
 // is safe and is what brclientd's /pages/fetch expects.
@@ -175,9 +176,6 @@ const PagesSidebar = ({ active, ownId }: { active: 'mine' | 'visit'; ownId: stri
 
 // ---- Visit (address book) ------------------------------------------------
 
-const visitNick = (c: BisonrelayContact): string =>
-  c.nick_alias || c.id?.nick || c.id?.identity?.slice(0, 12) || 'unknown';
-
 // VisitContactsView is the address-book landing for "Visit": a grid of contacts
 // (avatar + nick); picking one opens that contact's hosted index.md over BR.
 const VisitContactsView = () => {
@@ -189,7 +187,7 @@ const VisitContactsView = () => {
       .then((cs) => {
         const withId = cs.filter((c) => c.id?.identity);
         withId.sort((a, b) =>
-          visitNick(a).toLowerCase().localeCompare(visitNick(b).toLowerCase()),
+          displayNick(a).toLowerCase().localeCompare(displayNick(b).toLowerCase()),
         );
         setContacts(withId);
         setErr(null);
@@ -220,7 +218,7 @@ const VisitContactsView = () => {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {contacts.map((c) => {
             const uid = c.id?.identity ?? '';
-            const nick = visitNick(c);
+            const nick = displayNick(c);
             return (
               <button
                 key={uid}

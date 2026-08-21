@@ -74,6 +74,7 @@ import { TipModal } from './TipModal';
 import { UserProfileView } from './BisonrelayUserProfile';
 import { identityToHex } from '../../utils/identity';
 import { apiError } from '../../utils/apiError';
+import { displayNick } from './bisonrelayNick';
 
 type Section = 'list' | 'yours' | 'subs' | 'new' | 'detail' | 'user';
 
@@ -572,7 +573,7 @@ const SubscriptionsView = () => {
         <div className="rounded-xl bg-gradient-card border border-border/50 overflow-hidden divide-y divide-border/30">
           {list?.map((c) => {
             const uid = c.id?.identity ?? '';
-            const nick = c.nick_alias || c.id?.nick || uid.slice(0, 12);
+            const nick = displayNick(c);
             const isSubscribed = !!c.posts_subscribed;
             return (
               <div

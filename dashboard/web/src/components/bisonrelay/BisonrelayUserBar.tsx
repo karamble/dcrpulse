@@ -14,14 +14,11 @@ import { TipModal } from './TipModal';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { apiError } from '../../utils/apiError';
+import { displayNick } from './bisonrelayNick';
 
 const navigateTo = (hash: string): void => {
   window.location.hash = hash;
 };
-
-// displayNick is the shared contact-nick fallback used across the BR UI.
-const displayNick = (c: BisonrelayContact): string =>
-  c.nick_alias || c.id?.nick || (c.id?.identity ?? '').slice(0, 12) || 'unknown';
 
 // BisonrelayUserBar is a compact owner bar (avatar + nickname + Pay tip + View
 // profile) for one Bison Relay user. Clicking the avatar opens the shared user
