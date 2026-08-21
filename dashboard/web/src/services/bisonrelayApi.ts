@@ -1069,10 +1069,14 @@ export const shareBisonrelayFile = async (
   signal?: AbortSignal,
 ): Promise<BisonrelayShareFileResult> => {
   const form = new FormData();
-  form.append('file', file, file.name);
-  if (costAtoms > 0) form.append('cost_atoms', String(costAtoms));
-  if (targetUid) form.append('target_uid', targetUid);
+  // Fields before the file, always: the handler streams the body and stops at
+  // the file part, so anything written after it is never read. Sending the two
+  // that decide price and audience unconditionally makes a wrong order fail
+  // loudly instead of quietly giving the file away.
+  form.append('cost_atoms', String(costAtoms));
+  form.append('target_uid', targetUid);
   if (descr) form.append('descr', descr);
+  form.append('file', file, file.name);
   // No client-side timeout: brclientd chunks and hashes the whole file into
   // BR's content store before answering, so the reply outlasts the global
   // instance timeout. onUploadProgress reports the browser->dashboard leg.

@@ -8,9 +8,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -987,6 +989,48 @@ func BisonrelaySharedFilesHandler(w http.ResponseWriter, r *http.Request) {
 	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdSharedFiles(r.Context()) })
 }
 
+// uploadFields are the text fields that preceded the file in a multipart
+// upload, keyed by field name.
+type uploadFields map[string]string
+
+// maxUploadFieldBytes bounds one text field. These carry a uid, a number or a
+// short description, so anything larger is a client bug or an attempt to make
+// us buffer.
+const maxUploadFieldBytes = 4 << 10
+
+// streamUpload walks a multipart body in wire order, collecting text fields
+// until it reaches the file, and returns that part unread so the caller can
+// forward it without the dashboard ever holding the bytes. The browser must
+// therefore write every field before the file: a field after it is never
+// seen, which is why callers demand the fields that decide what a file costs
+// and who may fetch it rather than defaulting them.
+func streamUpload(r *http.Request) (uploadFields, *multipart.Part, error) {
+	mr, err := r.MultipartReader()
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse multipart: %w", err)
+	}
+	fields := uploadFields{}
+	for {
+		p, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			return nil, nil, errors.New("file part missing")
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("read multipart: %w", err)
+		}
+		name := p.FormName()
+		if name == "file" {
+			return fields, p, nil
+		}
+		v, rerr := io.ReadAll(io.LimitReader(p, maxUploadFieldBytes))
+		p.Close()
+		if rerr != nil {
+			return nil, nil, fmt.Errorf("read %s: %w", name, rerr)
+		}
+		fields[name] = strings.TrimSpace(string(v))
+	}
+}
+
 // BisonrelayManageAddHandler accepts a multipart upload from the browser
 // (file + form fields cost_atoms, target_uid?, descr?) and proxies it as
 // the /shared-files/add request to brclientd. cost_atoms is the per-fetch
@@ -995,34 +1039,39 @@ func BisonrelaySharedFilesHandler(w http.ResponseWriter, r *http.Request) {
 func BisonrelayManageAddHandler(w http.ResponseWriter, r *http.Request) {
 	const maxUpload = 200 << 20 // 200 MiB upper bound; BR can store larger via chunks
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
+	fields, part, err := streamUpload(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
+	defer part.Close()
 
-	costStr := strings.TrimSpace(r.FormValue("cost_atoms"))
+	// Both are required rather than defaulted: absent means the browser sent
+	// them after the file, and silently falling back would publish a paid file
+	// for free or a private one to everyone.
+	costStr, ok := fields["cost_atoms"]
+	if !ok {
+		http.Error(w, "cost_atoms field is required", http.StatusBadRequest)
+		return
+	}
 	var costAtoms uint64
 	if costStr != "" {
-		v, err := strconv.ParseUint(costStr, 10, 64)
-		if err != nil {
+		v, perr := strconv.ParseUint(costStr, 10, 64)
+		if perr != nil {
 			http.Error(w, "invalid cost_atoms", http.StatusBadRequest)
 			return
 		}
 		costAtoms = v
 	}
-	targetUID := strings.TrimSpace(r.FormValue("target_uid"))
-	descr := strings.TrimSpace(r.FormValue("descr"))
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "file part missing: "+err.Error(), http.StatusBadRequest)
+	targetUID, ok := fields["target_uid"]
+	if !ok {
+		http.Error(w, "target_uid field is required", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
-	mime := header.Header.Get("Content-Type")
+
+	mime := part.Header.Get("Content-Type")
 	brProxyJSON(w, func() (json.RawMessage, error) {
-		return rpc.BrclientdShareFile(r.Context(), header.Filename, mime, file, costAtoms, targetUID, descr)
+		return rpc.BrclientdShareFile(r.Context(), part.FileName(), mime, part, costAtoms, targetUID, fields["descr"])
 	})
 }
 
