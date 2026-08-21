@@ -33,6 +33,7 @@ import { formatBytes } from '../../utils/bytes';
 import { apiError } from '../../utils/apiError';
 import { BrSidebar, navigateTo } from './BrSidebar';
 import { contactByUid, displayNick } from './bisonrelayNick';
+import { ConfirmActionModal } from './BisonrelayUserSubNav';
 
 type Section = 'add' | 'shared' | 'downloads';
 
@@ -287,10 +288,22 @@ const AddContentView = ({
 
 // ---- Shared list view ----------------------------------------------------
 
+// A revoke targets one peer, or every peer when uid is absent.
+interface Revoke {
+  f: BisonrelaySharedFile;
+  uid?: string;
+}
+
+// Bison Relay deletes the stored copy once a file has no shares left, so a
+// revoke that empties the list destroys the content and not just the access.
+const revokeDeletesContent = (r: Revoke): boolean =>
+  !r.uid || (!r.f.global && (r.f.shares?.length ?? 0) <= 1);
+
 const SharedListView = ({ contacts }: { contacts: BisonrelayContact[] }) => {
   const [items, setItems] = useState<BisonrelaySharedFile[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<Revoke | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -313,14 +326,28 @@ const SharedListView = ({ contacts }: { contacts: BisonrelayContact[] }) => {
 
   // BR revokes one share entry per call: no uid clears the global entry only,
   // so a per-peer share needs its own call and errors out without one.
-  const handleUnshare = async (f: BisonrelaySharedFile) => {
+  const runRevoke = async (r: Revoke) => {
+    if (r.uid) {
+      await unshareBisonrelayFile(r.f.fid, r.uid);
+      return;
+    }
+    if (r.f.global) await unshareBisonrelayFile(r.f.fid);
+    for (const uid of r.f.shares ?? []) {
+      await unshareBisonrelayFile(r.f.fid, uid);
+    }
+  };
+
+  // Dropping one peer while others remain leaves the content in place, so it
+  // acts straight away; anything that would delete the copy asks first.
+  const askOrRevoke = async (r: Revoke) => {
     if (removing) return;
-    setRemoving(f.fid);
+    if (revokeDeletesContent(r)) {
+      setConfirming(r);
+      return;
+    }
+    setRemoving(r.f.fid);
     try {
-      if (f.global) await unshareBisonrelayFile(f.fid);
-      for (const uid of f.shares ?? []) {
-        await unshareBisonrelayFile(f.fid, uid);
-      }
+      await runRevoke(r);
       await reload();
     } catch (e: any) {
       setErr(apiError(e, 'Unshare failed'));
@@ -378,9 +405,19 @@ const SharedListView = ({ contacts }: { contacts: BisonrelayContact[] }) => {
                       <span
                         key={uid}
                         title={uid}
-                        className="px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground"
                       >
                         {shareNick(uid)}
+                        <button
+                          type="button"
+                          onClick={() => askOrRevoke({ f, uid })}
+                          disabled={removing === f.fid}
+                          title={`Stop sharing with ${shareNick(uid)}`}
+                          aria-label={`Stop sharing with ${shareNick(uid)}`}
+                          className="rounded hover:text-destructive transition-colors disabled:opacity-50"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
                       </span>
                     ))}
                   </div>
@@ -388,7 +425,7 @@ const SharedListView = ({ contacts }: { contacts: BisonrelayContact[] }) => {
               </div>
               <button
                 type="button"
-                onClick={() => handleUnshare(f)}
+                onClick={() => askOrRevoke({ f })}
                 disabled={removing === f.fid}
                 title="Stop sharing this file"
                 className="shrink-0 px-3 py-1.5 rounded-md border border-border/50 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
@@ -403,6 +440,24 @@ const SharedListView = ({ contacts }: { contacts: BisonrelayContact[] }) => {
             </div>
           ))}
         </div>
+      )}
+      {confirming && (
+        <ConfirmActionModal
+          title={
+            confirming.uid
+              ? `Stop sharing with ${shareNick(confirming.uid)}?`
+              : `Stop sharing ${confirming.f.filename || 'this file'}?`
+          }
+          body={
+            `This is the last share, so Bison Relay deletes its stored copy of ` +
+            `"${confirming.f.filename || 'the file'}" as well as the access. A download ` +
+            `already running will fail, and sharing it again needs the original file.`
+          }
+          confirmLabel="Unshare"
+          onClose={() => setConfirming(null)}
+          onConfirm={() => runRevoke(confirming)}
+          onSuccess={reload}
+        />
       )}
     </div>
   );

@@ -214,7 +214,7 @@ A post (or chat message) can carry a paid file embed, shown as a compact card wi
 The **Files** tab manages the files you share and the transfers in flight. It has three sub-views:
 
 - **Add** - share a file. Pick a local file, set an optional cost in DCR (0 for free), choose a sharing preference (**Global** for all your subscribers, or a single contact), and add an optional description (up to 200 characters). Click **Share**.
-- **Shared** - the files you currently share, each showing a Global or Per-user badge, size, cost (or "Free"), and file ID, with an **Unshare** button that withdraws the file from everyone it was shared with.
+- **Shared** - the files you currently share, each showing size, cost (or "Free"), file ID, a **Global** badge when the file is offered to all subscribers, and the name of every contact it is shared with individually. Each name carries an x that stops sharing with just that person; the **Unshare** button withdraws it from everyone. Note that Bison Relay keeps a file only for as long as something is sharing it: once the last share goes, its stored copy is deleted too, so putting the file back means sharing the original again. Removing the last share asks for confirmation first.
 - **Downloads** - in-flight and recently completed transfers, each showing a Receiving or Sending badge, the contact, size, chunk progress with a progress bar, and the on-disk path when finished. In-progress receives can be canceled. Progress updates live.
 
 Shared files are what you reference when you add a paid download to a post. These map to the `/api/br/files/...`, `/api/br/shared-files`, and `/api/br/downloads/...` routes.
