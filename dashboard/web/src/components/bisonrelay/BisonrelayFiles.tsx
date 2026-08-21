@@ -94,6 +94,7 @@ const AddContentView = ({ onShared }: { onShared: () => void }) => {
   const [descr, setDescr] = useState('');
   const [contacts, setContacts] = useState<BisonrelayContact[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [pct, setPct] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -113,9 +114,10 @@ const AddContentView = ({ onShared }: { onShared: () => void }) => {
       return;
     }
     setSubmitting(true);
+    setPct(0);
     setErr(null);
     try {
-      await shareBisonrelayFile(file, dcr, target, descr.trim());
+      await shareBisonrelayFile(file, dcr, target, descr.trim(), setPct);
       setFile(null);
       setCostDcr('0');
       setTarget('');
@@ -237,6 +239,20 @@ const AddContentView = ({ onShared }: { onShared: () => void }) => {
           <div className="flex items-start gap-2 text-sm text-destructive">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span className="break-words">{err}</span>
+          </div>
+        )}
+
+        {submitting && (
+          <div>
+            <p className="text-[11px] text-muted-foreground">
+              {pct >= 100 ? 'Registering the share…' : `Uploading ${pct}%`}
+            </p>
+            <div className="mt-1 h-1 w-full overflow-hidden rounded bg-muted/30">
+              <div
+                className="h-full bg-primary transition-[width] duration-150"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
           </div>
         )}
 

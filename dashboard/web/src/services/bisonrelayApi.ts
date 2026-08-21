@@ -708,6 +708,9 @@ export interface BisonrelaySharedFile {
   cost: number; // atoms (1 DCR = 1e8)
   size: number;
   global: boolean;
+  // Hex uids this file is shared with individually. BR serves a fetch only for
+  // a file that is global or shared with that exact uid.
+  shares?: string[];
 }
 
 export const getBisonrelaySharedFiles = async (): Promise<BisonrelaySharedFile[]> => {
@@ -1050,9 +1053,10 @@ export const getBisonrelayDownloads = async (
 
 export interface BisonrelayShareFileResult {
   fid: string;
+  // The name BR stored, which brclientd sanitises; not necessarily the name
+  // the browser sent.
   filename: string;
-  cost: number;
-  size: number;
+  cost: number; // atoms
   global: boolean;
 }
 
@@ -1061,16 +1065,26 @@ export const shareBisonrelayFile = async (
   costDcr: number,
   targetUid: string,
   descr: string,
+  onProgress?: (pct: number) => void,
+  signal?: AbortSignal,
 ): Promise<BisonrelayShareFileResult> => {
   const form = new FormData();
   form.append('file', file, file.name);
   if (costDcr > 0) form.append('cost_dcr', String(costDcr));
   if (targetUid) form.append('target_uid', targetUid);
   if (descr) form.append('descr', descr);
+  // No client-side timeout: brclientd chunks and hashes the whole file into
+  // BR's content store before answering, so the reply outlasts the global
+  // instance timeout. onUploadProgress reports the browser->dashboard leg.
   const { data } = await api.post<BisonrelayShareFileResult>(
     '/br/files/add',
     form,
-    { headers: { 'Content-Type': 'multipart/form-data' } },
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0,
+      signal,
+      onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded / e.total) * 100) : 0),
+    },
   );
   return data;
 };

@@ -628,7 +628,11 @@ func BrclientdSharedFiles(ctx context.Context) (json.RawMessage, error) {
 // in atoms (1 DCR = 1e8; 0 = free), targetUIDHex empty = global share.
 // Returns the new SharedFile envelope brclientd emits.
 func BrclientdShareFile(ctx context.Context, filename, mime string, body io.Reader, costAtoms uint64, targetUIDHex, descr string) (json.RawMessage, error) {
-	cli, err := brclientdClient()
+	// brclientd chunks and hashes the whole upload into BR's content store
+	// before answering, so the response header can be delayed well past the
+	// shared client's 60s deadline for a large file. Use the no-deadline client
+	// (as /files/send does); the request context bounds it instead.
+	cli, err := brclientdPagesClient()
 	if err != nil {
 		return nil, err
 	}
