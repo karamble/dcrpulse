@@ -39,7 +39,17 @@ export const EmbedRenderer = ({
   if (embed.mime === 'quote' && embed.quoteFrom && embed.quotePost) {
     return <QuoteEmbedCard from={embed.quoteFrom} post={embed.quotePost} alt={embed.alt} />;
   }
-  if (embed.download && !embed.dataB64 && (downloadSelf || downloadUid)) {
+  if (embed.download && !embed.dataB64) {
+    // Without a host uid there is nobody to fetch from. In a group that means
+    // the sender is not one of our contacts, and BR cannot serve content
+    // between peers that have not key-exchanged.
+    if (!downloadSelf && !downloadUid) {
+      return (
+        <p className="text-[11px] text-muted-foreground italic">
+          [{embed.filename || 'shared file'} - you are not connected to the sender]
+        </p>
+      );
+    }
     return <DownloadEmbed seg={embed} uid={downloadUid ?? ''} self={downloadSelf} />;
   }
   const inlineUrl = embed.dataB64 ? `data:${embed.mime};base64,${embed.dataB64}` : '';

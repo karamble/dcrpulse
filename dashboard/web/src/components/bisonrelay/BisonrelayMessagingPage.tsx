@@ -16,7 +16,6 @@ import {
   FolderCog,
   Loader2,
   MessageSquare,
-  Paperclip,
   Reply,
   Send,
   UserPlus,
@@ -41,6 +40,7 @@ import {
   listBisonrelayGCInvites,
   listBisonrelayGCs,
   sendBisonrelayFile,
+  unshareBisonrelayFile,
   sendBisonrelayGCMessage,
   sendBisonrelayPM,
   subscribeBisonrelayPosts,
@@ -78,7 +78,10 @@ import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
 import { AuthorAvatar } from './AuthorAvatar';
 import { BisonrelayUserSubNav } from './BisonrelayUserSubNav';
-import { ChatAttachmentPreview, StagedAttachment } from './ChatAttachmentPreview';
+import { ChatAttachmentPreview } from './ChatAttachmentPreview';
+import { ChatAttachMenu } from './ChatAttachMenu';
+import { ChatFileOfferModal } from './ChatFileOfferModal';
+import { MAX_OFFER_BYTES, StagedAttachment, StagedOffer, offerTagFor } from './chatOffer';
 import { apiError } from '../../utils/apiError';
 import { CreateGCModal } from './gc/CreateGCModal';
 import { GCInviteModal } from './gc/GCInviteModal';
@@ -176,6 +179,13 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [transfer, setTransfer] = useState<{ pct: number; phase: 'upload' | 'relay' } | null>(null);
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<File | null>(null);
+  // Non-null while the offer modal is open. A null file starts it on the list
+  // of files already shared; compressedFrom is the original that an image
+  // attach re-encoded, since an offer sells the original.
+  const [offerModal, setOfferModal] = useState<
+    { file: File | null; compressedFrom: File | null } | null
+  >(null);
+  const [attachNote, setAttachNote] = useState<string | null>(null);
   const [viewerImage, setViewerImage] = useState<ViewerImage | null>(null);
   const [subNavContact, setSubNavContact] = useState<BisonrelayContact | null>(null);
   const [contactsCollapsed, setContactsCollapsed] = useState(
@@ -198,6 +208,9 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     return { [ARCHIVED_GROUP_ID]: true };
   });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Separate from fileInputRef: an offer skips the compress modal, so its pick
+  // must not go through handleAttachPick.
+  const offerInputRef = useRef<HTMLInputElement | null>(null);
   const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
   const {
     unread,
@@ -1034,6 +1047,10 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     const text = finalizeOutgoing(
       stagedReply ? quoteBlock(stagedReply.flat, stagedReply.nick) + typed : typed,
     );
+    // An offer rides as a tag in the body, the way the handlers append an
+    // inline embed, so PM and group take the same path.
+    const offer = attachment?.mode === 'offer' ? attachment : null;
+    const body = offer ? (text ? `${text}\n${offerTagFor(offer)}` : offerTagFor(offer)) : text;
     setSending(true);
     try {
       if (selected.kind === 'group') {
@@ -1071,6 +1088,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         setStagedReply(null);
         setAttachment(null);
         setAttachErr(null);
+        setAttachNote(null);
         return true;
       }
 
@@ -1115,11 +1133,11 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 data_b64: attachment.dataB64,
               }
             : undefined;
-        const result = await sendBisonrelayPM(recipient, text, embed);
+        const result = await sendBisonrelayPM(recipient, body, embed);
         setMessages((prev) => [
           ...prev,
           {
-            message: result.body || text,
+            message: result.body || body,
             from: ownNick,
             timestamp: Math.floor(Date.now() / 1000),
             internal: false,
@@ -1131,6 +1149,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
       setStagedReply(null);
       setAttachment(null);
       setAttachErr(null);
+      setAttachNote(null);
       return true;
     } catch (err: any) {
       setMessagesErr(apiError(err, 'Send failed'));
@@ -1145,6 +1164,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
+    setAttachNote(null);
     if (f.size > MAX_TRANSFER_BYTES) {
       setAttachErr(`File is ${formatBytes(f.size)}. Maximum is ${formatBytes(MAX_TRANSFER_BYTES)}.`);
       return;
@@ -1185,13 +1205,61 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const handleImageAttach = (r: ImageAttachResult) => {
     const file =
       r.blob instanceof File ? r.blob : new File([r.blob], r.name, { type: r.mime });
+    // pendingImage is the pick before compression; an offer sells that one.
+    const origFile = file === pendingImage ? undefined : (pendingImage ?? undefined);
     if (r.size <= MAX_INLINE_BYTES) {
-      setAttachment({ file, mode: 'inline', dataB64: r.dataB64 });
+      setAttachment({ file, mode: 'inline', dataB64: r.dataB64, origFile });
     } else {
-      setAttachment({ file, mode: 'transfer' });
+      setAttachment({ file, mode: 'transfer', origFile });
     }
     setAttachErr(null);
+    setAttachNote(null);
     setPendingImage(null);
+  };
+
+  // The offer path skips the compress modal: compression exists to fit the
+  // inline cap, which an offer does not use, and the buyer should get the file
+  // that was picked.
+  const handleOfferPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setAttachNote(null);
+    if (f.size > MAX_OFFER_BYTES) {
+      setAttachErr(
+        `File is ${formatBytes(f.size)}. A download offer can be at most ${formatBytes(MAX_OFFER_BYTES)}.`,
+      );
+      return;
+    }
+    setAttachErr(null);
+    setOfferModal({ file: f, compressedFrom: null });
+  };
+
+  // Withdraw a share this composer registered, so a draft that never goes out
+  // does not leave the file on sale. A file that was already shared is left
+  // alone: other posts and messages may still reference it. Sending clears the
+  // attachment directly and so keeps the share, which is the point of it.
+  const dropOfferShare = (a: StagedAttachment | null): boolean => {
+    if (a?.mode !== 'offer' || !a.createdHere) return false;
+    unshareBisonrelayFile(a.fid, a.targetUid || undefined).catch(() => {
+      /* best effort: the file stays listed under Files either way. */
+    });
+    return true;
+  };
+
+  const stageOffer = (offer: StagedOffer) => {
+    dropOfferShare(attachment);
+    setAttachment(offer);
+    setAttachErr(null);
+    setAttachNote(null);
+  };
+
+  const removeAttachment = () => {
+    setAttachNote(
+      dropOfferShare(attachment) ? 'Attachment removed. The file is no longer shared.' : null,
+    );
+    setAttachment(null);
+    setAttachErr(null);
   };
 
   // Stage a reply to a bubble's message: the composer shows a "Replying to"
@@ -1277,6 +1345,16 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
           showAlt={false}
           onCancel={() => setPendingImage(null)}
           onAttach={handleImageAttach}
+        />
+      )}
+      {offerModal && (
+        <ChatFileOfferModal
+          file={offerModal.file}
+          compressedFrom={offerModal.compressedFrom}
+          targetUid={selectedContact ? (selectedContact.id?.identity ?? '') : null}
+          targetNick={selectedContact ? displayNick(selectedContact) : 'Members'}
+          onClose={() => setOfferModal(null)}
+          onStaged={stageOffer}
         />
       )}
       {showTip && selectedContact && (
@@ -1600,17 +1678,20 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               attachment={attachment}
               transfer={transfer}
               attachErr={attachErr}
+              attachNote={attachNote}
               stagedReply={stagedReply}
               quotedEmbeds={quotedEmbeds}
               draftRef={draftInputRef}
               fileInputRef={fileInputRef}
+              offerInputRef={offerInputRef}
+              group={selected?.kind === 'group'}
               displayNick={displayNick}
               onSend={handleSend}
               onAttachPick={handleAttachPick}
-              onRemoveAttachment={() => {
-                setAttachment(null);
-                setAttachErr(null);
-              }}
+              onOfferPick={handleOfferPick}
+              onPickShared={() => setOfferModal({ file: null, compressedFrom: null })}
+              onOfferStaged={(f, orig) => setOfferModal({ file: f, compressedFrom: orig })}
+              onRemoveAttachment={removeAttachment}
               onRemoveQuotedEmbed={removeQuotedEmbed}
               onClearStagedReply={clearStagedReply}
               onShowTip={() => setShowTip(true)}
@@ -1819,17 +1900,25 @@ interface ChatComposerProps {
   attachment: StagedAttachment | null;
   transfer: { pct: number; phase: 'upload' | 'relay' } | null;
   attachErr: string | null;
+  attachNote: string | null;
   stagedReply: { nick: string; flat: string } | null;
   quotedEmbeds: QuotedEmbed[];
   // Both refs stay owned by the page: it focuses the textarea on chat switch
   // and opens the file picker from the user sub-nav.
   draftRef: MutableRefObject<HTMLTextAreaElement | null>;
   fileInputRef: MutableRefObject<HTMLInputElement | null>;
+  offerInputRef: MutableRefObject<HTMLInputElement | null>;
+  group?: boolean;
   displayNick: (c: BisonrelayContact) => string;
   // Resolves true when the message went out (the draft is then cleared);
   // false on any refusal or failure, so the draft survives for a retry.
   onSend: (typed: string) => Promise<boolean>;
   onAttachPick: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onOfferPick: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onPickShared: () => void;
+  // Converts an already-staged file into an offer. orig is the pick before
+  // compression, when there was one.
+  onOfferStaged: (file: File, orig: File | null) => void;
   onRemoveAttachment: () => void;
   onRemoveQuotedEmbed: (qe: QuotedEmbed) => void;
   onClearStagedReply: () => void;
@@ -1846,13 +1935,19 @@ const ChatComposer = ({
   attachment,
   transfer,
   attachErr,
+  attachNote,
   stagedReply,
   quotedEmbeds,
   draftRef,
   fileInputRef,
+  offerInputRef,
+  group,
   displayNick,
   onSend,
   onAttachPick,
+  onOfferPick,
+  onPickShared,
+  onOfferStaged,
   onRemoveAttachment,
   onRemoveQuotedEmbed,
   onClearStagedReply,
@@ -1968,6 +2063,11 @@ const ChatComposer = ({
           attachment={attachment}
           transfer={transfer}
           onRemove={onRemoveAttachment}
+          onOffer={
+            attachment.mode === 'offer'
+              ? undefined
+              : () => onOfferStaged(attachment.file, attachment.origFile ?? null)
+          }
         />
       )}
       {attachErr && (
@@ -1975,12 +2075,21 @@ const ChatComposer = ({
           <AlertCircle className="h-3 w-3" /> {attachErr}
         </p>
       )}
+      {attachNote && !attachErr && (
+        <p className="text-[11px] text-muted-foreground">{attachNote}</p>
+      )}
       <div className="flex items-end gap-1 rounded-2xl border border-border bg-background px-2 py-1 transition-colors focus-within:border-primary">
         <input
           ref={fileInputRef}
           type="file"
           className="hidden"
           onChange={onAttachPick}
+        />
+        <input
+          ref={offerInputRef}
+          type="file"
+          className="hidden"
+          onChange={onOfferPick}
         />
         <EmojiPicker onPick={insertEmojiAtCursor} disabled={sending} />
         <textarea
@@ -2001,16 +2110,13 @@ const ChatComposer = ({
           className="flex-1 min-w-0 px-1 py-1.5 bg-transparent text-foreground leading-normal resize-none overflow-y-auto max-h-[9rem] focus:outline-none disabled:opacity-50"
         />
         <ChatFormatMenu onWrap={wrapDraftSelection} disabled={sending} />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
+        <ChatAttachMenu
+          group={group}
           disabled={sending}
-          title="Attach a file"
-          aria-label="Attach a file"
-          className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
-        >
-          <Paperclip className="h-4 w-4" />
-        </button>
+          onUpload={() => fileInputRef.current?.click()}
+          onOffer={() => offerInputRef.current?.click()}
+          onPickShared={onPickShared}
+        />
         {selectedContact && (
           <button
             type="button"
