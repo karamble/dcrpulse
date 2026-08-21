@@ -293,11 +293,16 @@ const SharedListView = () => {
     reload();
   }, [reload]);
 
-  const handleUnshare = async (fid: string) => {
+  // BR revokes one share entry per call: no uid clears the global entry only,
+  // so a per-peer share needs its own call and errors out without one.
+  const handleUnshare = async (f: BisonrelaySharedFile) => {
     if (removing) return;
-    setRemoving(fid);
+    setRemoving(f.fid);
     try {
-      await unshareBisonrelayFile(fid);
+      if (f.global) await unshareBisonrelayFile(f.fid);
+      for (const uid of f.shares ?? []) {
+        await unshareBisonrelayFile(f.fid, uid);
+      }
       await reload();
     } catch (e: any) {
       setErr(apiError(e, 'Unshare failed'));
@@ -355,7 +360,7 @@ const SharedListView = () => {
               </div>
               <button
                 type="button"
-                onClick={() => handleUnshare(f.fid)}
+                onClick={() => handleUnshare(f)}
                 disabled={removing === f.fid}
                 title="Stop sharing this file"
                 className="shrink-0 px-3 py-1.5 rounded-md border border-border/50 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
