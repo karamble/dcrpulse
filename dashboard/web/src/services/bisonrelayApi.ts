@@ -1062,7 +1062,7 @@ export interface BisonrelayShareFileResult {
 
 export const shareBisonrelayFile = async (
   file: File,
-  costDcr: number,
+  costAtoms: number,
   targetUid: string,
   descr: string,
   onProgress?: (pct: number) => void,
@@ -1070,7 +1070,7 @@ export const shareBisonrelayFile = async (
 ): Promise<BisonrelayShareFileResult> => {
   const form = new FormData();
   form.append('file', file, file.name);
-  if (costDcr > 0) form.append('cost_dcr', String(costDcr));
+  if (costAtoms > 0) form.append('cost_atoms', String(costAtoms));
   if (targetUid) form.append('target_uid', targetUid);
   if (descr) form.append('descr', descr);
   // No client-side timeout: brclientd chunks and hashes the whole file into

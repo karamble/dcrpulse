@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
@@ -989,9 +988,10 @@ func BisonrelaySharedFilesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // BisonrelayManageAddHandler accepts a multipart upload from the browser
-// (file + form fields cost_dcr, target_uid?, descr?) and proxies it as
-// the /shared-files/add request to brclientd. Cost is collected in DCR
-// for UX, converted to atoms before forwarding.
+// (file + form fields cost_atoms, target_uid?, descr?) and proxies it as
+// the /shared-files/add request to brclientd. cost_atoms is the per-fetch
+// price in atoms (1 DCR = 1e8; 0 = free), which is what BR stores; the form
+// collects DCR and converts before sending.
 func BisonrelayManageAddHandler(w http.ResponseWriter, r *http.Request) {
 	const maxUpload = 200 << 20 // 200 MiB upper bound; BR can store larger via chunks
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
@@ -1001,22 +1001,15 @@ func BisonrelayManageAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.MultipartForm.RemoveAll()
 
-	costDCRStr := strings.TrimSpace(r.FormValue("cost_dcr"))
+	costStr := strings.TrimSpace(r.FormValue("cost_atoms"))
 	var costAtoms uint64
-	if costDCRStr != "" {
-		costDCR, err := strconv.ParseFloat(costDCRStr, 64)
-		if err != nil || costDCR < 0 {
-			http.Error(w, "invalid cost_dcr", http.StatusBadRequest)
+	if costStr != "" {
+		v, err := strconv.ParseUint(costStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid cost_atoms", http.StatusBadRequest)
 			return
 		}
-		// BR shared-file costs are in atoms, not the milli-atoms used for
-		// payment/tip records.
-		atoms, aerr := dcrutil.NewAmount(costDCR)
-		if aerr != nil {
-			http.Error(w, "invalid cost_dcr", http.StatusBadRequest)
-			return
-		}
-		costAtoms = uint64(atoms)
+		costAtoms = v
 	}
 	targetUID := strings.TrimSpace(r.FormValue("target_uid"))
 	descr := strings.TrimSpace(r.FormValue("descr"))

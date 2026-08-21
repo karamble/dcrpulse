@@ -28,7 +28,7 @@ import {
   unshareBisonrelayFile,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
-import { formatAtomsTrimmed, toDcr, validateDcrAmount } from '../../utils/amounts';
+import { formatAtomsTrimmed, parseDcrAmount, toDcr } from '../../utils/amounts';
 import { formatBytes } from '../../utils/bytes';
 import { apiError } from '../../utils/apiError';
 import { BrSidebar, navigateTo } from './BrSidebar';
@@ -121,17 +121,19 @@ const AddContentView = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file || submitting) return;
-    const costErr = validateDcrAmount(costDcr, { optional: true, allowZero: true });
+    const { atoms, error: costErr } = parseDcrAmount(costDcr, {
+      optional: true,
+      allowZero: true,
+    });
     if (costErr) {
       setErr(costErr);
       return;
     }
-    const dcr = Number(costDcr);
     setSubmitting(true);
     setPct(0);
     setErr(null);
     try {
-      await shareBisonrelayFile(file, dcr, target, descr.trim(), setPct);
+      await shareBisonrelayFile(file, atoms, target, descr.trim(), setPct);
       setFile(null);
       setCostDcr('0');
       setTarget('');

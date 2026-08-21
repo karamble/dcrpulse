@@ -11,7 +11,7 @@ import {
   shareBisonrelayFile,
 } from '../../services/bisonrelayApi';
 import { MAX_OFFER_BYTES, StagedOffer, canOfferTo } from './chatOffer';
-import { formatAtomsTrimmed, validateDcrAmount } from '../../utils/amounts';
+import { formatAtomsTrimmed, parseDcrAmount, toDcr } from '../../utils/amounts';
 import { formatBytes } from '../../utils/bytes';
 import { apiError } from '../../utils/apiError';
 import { toYMDTime } from '../../utils/date';
@@ -101,8 +101,11 @@ export const ChatFileOfferModal = ({
     };
   }, []);
 
-  const costErr = validateDcrAmount(costDcr, { optional: true, allowZero: true });
-  const dcr = costErr ? 0 : Number(costDcr || '0');
+  const { atoms: costAtoms, error: costErr } = parseDcrAmount(costDcr, {
+    optional: true,
+    allowZero: true,
+  });
+  const dcr = toDcr(costAtoms);
   // The offer sells what the peer will receive, so a compressed preview copy is
   // never the thing shared.
   const source = compressedFrom ?? pick;
@@ -155,7 +158,7 @@ export const ChatFileOfferModal = ({
     try {
       const res = await shareBisonrelayFile(
         source,
-        dcr,
+        costAtoms,
         global ? '' : (targetUid ?? ''),
         '',
         setPct,
