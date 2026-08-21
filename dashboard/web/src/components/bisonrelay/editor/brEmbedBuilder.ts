@@ -70,15 +70,20 @@ export function composeBRBody(displayBody: string, embeds: EditorEmbedMap): stri
   });
 }
 
+// Readers split the tag on ',' and take the first '=', so either character
+// inside a value truncates every field after it. alt is already percent-encoded
+// and data is emitted last, so base64 padding survives.
+const clean = (s: string): string => s.replace(/[,=]/g, '');
+
 function embedToWireString(e: EditorEmbed): string {
   const parts: string[] = [];
   // Wire order matches mdembeds.go's EmbeddedArgs.String for readability,
   // but BR doesn't depend on the order — it's just a comma-split.
-  if (e.name) parts.push(`name=${e.name}`);
+  if (e.name) parts.push(`name=${clean(e.name)}`);
   if (e.alt) parts.push(`alt=${encodeURIComponent(e.alt)}`);
-  if (e.mime) parts.push(`type=${e.mime}`);
-  if (e.download) parts.push(`download=${e.download}`);
-  if (e.filename) parts.push(`filename=${e.filename}`);
+  if (e.mime) parts.push(`type=${clean(e.mime)}`);
+  if (e.download) parts.push(`download=${clean(e.download)}`);
+  if (e.filename) parts.push(`filename=${clean(e.filename)}`);
   if (e.size && e.size > 0) parts.push(`size=${e.size}`);
   if (e.cost && e.cost > 0) parts.push(`cost=${e.cost}`);
   if (e.dataB64) parts.push(`data=${e.dataB64}`);
