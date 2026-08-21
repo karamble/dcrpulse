@@ -1257,8 +1257,11 @@ export const uploadBisonrelayStoreFile = async (
   if (path) form.append('path', path);
   if (overwrite) form.append('overwrite', 'true');
   form.append('file', file, file.name);
+  // No client-side timeout: brclientd writes the whole file before answering,
+  // so a large asset outlasts the global instance timeout.
   const { data } = await api.post<{ path: string }>('/br/store/files/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0,
   });
   return data.path;
 };

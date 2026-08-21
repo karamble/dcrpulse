@@ -240,26 +240,21 @@ func BisonrelayEmbedHandler(w http.ResponseWriter, r *http.Request) {
 func BisonrelayFileSendHandler(w http.ResponseWriter, r *http.Request) {
 	const maxUpload = 1 << 30
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
+	fields, part, err := streamUpload(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
+	defer part.Close()
 
-	user := strings.TrimSpace(r.FormValue("user"))
+	user := fields["user"]
 	if user == "" {
 		http.Error(w, "user field is required", http.StatusBadRequest)
 		return
 	}
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "file part missing: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
 
-	mime := header.Header.Get("Content-Type")
-	result, err := rpc.BrclientdSendFile(r.Context(), user, header.Filename, mime, file)
+	mime := part.Header.Get("Content-Type")
+	result, err := rpc.BrclientdSendFile(r.Context(), user, part.FileName(), mime, part)
 	if err != nil {
 		brWriteErr(w, err)
 		return
@@ -2161,30 +2156,26 @@ func BisonrelayStoreOrderCommentHandler(w http.ResponseWriter, r *http.Request) 
 func BisonrelayStoreFileUploadHandler(w http.ResponseWriter, r *http.Request) {
 	const maxUpload = 200 << 20
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
-	if err := r.ParseMultipartForm(64 << 20); err != nil {
-		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	defer r.MultipartForm.RemoveAll()
-	relPath := strings.TrimSpace(r.FormValue("path"))
-	overwrite := r.FormValue("overwrite") == "true"
-	file, header, err := r.FormFile("file")
+	fields, part, err := streamUpload(r)
 	if err != nil {
-		http.Error(w, "file part missing: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer part.Close()
+	relPath := fields["path"]
+	overwrite := fields["overwrite"] == "true"
 	if relPath != "" && !safeStoreMediaPath(relPath) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
-	if strings.ContainsRune(header.Filename, '/') || !safeStoreMediaPath(header.Filename) {
+	name := part.FileName()
+	if strings.ContainsRune(name, '/') || !safeStoreMediaPath(name) {
 		http.Error(w, "invalid file name", http.StatusBadRequest)
 		return
 	}
-	mime := header.Header.Get("Content-Type")
+	mime := part.Header.Get("Content-Type")
 	brProxyJSON(w, func() (json.RawMessage, error) {
-		return rpc.BrclientdUploadStoreFile(r.Context(), relPath, header.Filename, mime, overwrite, file)
+		return rpc.BrclientdUploadStoreFile(r.Context(), relPath, name, mime, overwrite, part)
 	})
 }
 

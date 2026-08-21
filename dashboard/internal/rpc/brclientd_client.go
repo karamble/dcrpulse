@@ -835,7 +835,10 @@ func BrclientdDeleteStoreProduct(ctx context.Context, sku string) error {
 // stored under the store dir at relPath, for products to reference via
 // sendfilename (digital downloads). Returns {path}.
 func BrclientdUploadStoreFile(ctx context.Context, relPath, filename, mime string, overwrite bool, body io.Reader) (json.RawMessage, error) {
-	cli, err := brclientdClient()
+	// brclientd writes the whole upload before answering, so the reply can
+	// outlast the shared client's deadlines for a large file. Use the
+	// no-deadline client; the request context bounds it.
+	cli, err := brclientdPagesClient()
 	if err != nil {
 		return nil, err
 	}
