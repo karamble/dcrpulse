@@ -1054,11 +1054,9 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     setSending(true);
     try {
       if (selected.kind === 'group') {
-        // GC send. File-transfer-mode attachments are not supported in v1
-        // because BR's shared-file mechanism is per-peer, not broadcast;
-        // bruig doesn't ship GC file-transfer either. Inline embeds work
-        // because they ride in the body string. Phase 6 adds the inline
-        // path; for now PMs-only file send.
+        // A group cannot receive BR's direct file transfer, and bruig ships
+        // none either. Inline embeds and download offers both work, because
+        // each rides in the body string.
         if (attachment && attachment.mode === 'transfer') {
           setMessagesErr('File transfer in groups is not yet supported.');
           return false;
@@ -1071,14 +1069,14 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
                 data_b64: attachment.dataB64,
               }
             : undefined;
-        const result = await sendBisonrelayGCMessage(selected.value.id, text, embed);
+        const result = await sendBisonrelayGCMessage(selected.value.id, body, embed);
         // Sender's own GC message is logged immediately by BR on the
         // backend (no notification loopback). Optimistic insert mirrors
         // that exactly, internal: false so it renders as own bubble.
         setMessages((prev) => [
           ...prev,
           {
-            message: result.body || text,
+            message: result.body || body,
             from: ownNick,
             timestamp: Math.floor(Date.now() / 1000),
             internal: false,

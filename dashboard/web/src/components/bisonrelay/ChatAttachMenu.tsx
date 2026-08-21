@@ -40,14 +40,18 @@ export const ChatAttachMenu = ({ group, onUpload, onOffer, onPickShared, disable
 
   const rows: { label: string; caption: string; icon: ComponentType<{ className?: string }>; run: () => void }[] = [
     {
-      label: 'Upload a file',
-      caption: 'Sent to them right away, free.',
+      label: group ? 'Upload an image' : 'Upload a file',
+      caption: group
+        ? 'Images up to 800 KB ride inside the message.'
+        : 'Sent to them right away, free.',
       icon: Upload,
       run: onUpload,
     },
     {
       label: 'Offer for download',
-      caption: 'They pull it when they want. You can set a price.',
+      caption: group
+        ? 'Members pull it when they want. You can set a price.'
+        : 'They pull it when they want. You can set a price.',
       icon: Download,
       run: onOffer,
     },
@@ -58,10 +62,6 @@ export const ChatAttachMenu = ({ group, onUpload, onOffer, onPickShared, disable
       run: onPickShared,
     },
   ];
-
-  // A group can only carry an inline image today; the offer rows arrive with
-  // group support.
-  const visible = group ? rows.slice(0, 1) : rows;
 
   return (
     <div ref={wrapRef} className="relative shrink-0">
@@ -82,7 +82,7 @@ export const ChatAttachMenu = ({ group, onUpload, onOffer, onPickShared, disable
       </button>
       {open && (
         <div className="absolute bottom-full mb-1 right-0 z-40 w-64 rounded-xl bg-card border border-border/50 shadow-xl p-1">
-          {visible.map((r) => (
+          {rows.map((r) => (
             <button
               key={r.label}
               type="button"
