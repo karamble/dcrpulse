@@ -841,7 +841,7 @@ Decentralized-exchange trading backed by the optional `dcrdex` (bisonw) daemon, 
 | `GET` | `/api/dcrdex/myorders` | This account's orders |
 | `POST` | `/api/dcrdex/orders`, `/api/dcrdex/order` | Order history / single order |
 | `POST` | `/api/dcrdex/cancel` | Cancel an order |
-| `GET`/`POST` | `/api/dcrdex/mm/*` | Market-maker status, market report, run logs, config, start/stop |
+| `GET`/`POST` | `/api/dcrdex/mm/*` | Market-maker status, market report, run logs, config, start/stop, and the running-bot config/inventory updates |
 | `GET` | `/api/dcrdex/ws`, `/api/dcrdex/notify` | WebSocket live feeds (book/notifications) |
 
 See [DEX](../features/dex.md).

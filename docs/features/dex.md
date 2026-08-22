@@ -280,11 +280,32 @@ A section for centralized-exchange API keys, used by arbitrage bot types. Each s
 Lists your configured bots. For each bot:
 
 - The market (with coin icons) and the bot kind: **Basic market maker**, **Arb market maker**, or **Simple arb** (and the CEX it uses, if any).
-- **Start** / **Stop**, **Edit**, and **Delete** controls (edit and delete are available when the bot is stopped). Deleting asks for confirmation.
+- **Start** / **Stop**, **Edit**, and **Delete** controls (delete is available when the bot is stopped). Deleting asks for confirmation.
 - **Logs** while running.
-- A live activity summary while running.
+- A live activity summary while running, with an **Adjust** control on its inventory.
 
 A **Run history** view shows archived bot runs.
+
+### Changing a bot while it runs
+
+Stopping a bot cancels every order it has on the book, and starting it again
+places new ones, so a change made the long way churns the market for several
+epochs. Two things can be changed in place instead, leaving the standing orders
+where they are:
+
+- **Inventory** - **Adjust** on the activity panel's inventory moves funds
+  between the bot's allocation and your wallet. Amounts are signed: positive
+  funds the bot, negative returns funds. A removal larger than the bot holds is
+  reduced to what is available rather than refused, so the balances are read
+  back afterwards.
+- **Configuration** - **Edit** works while the bot is running and applies the
+  change straight away. Two limits come from bisonw: the market, the bot type
+  and the exchange cannot change on a running bot, and **the change is live
+  only**. The stored config is untouched until the bot is stopped and saved
+  again, so a restart returns it to the saved settings.
+
+The settings are checked against bisonw's own rules before being sent, because
+a configuration bisonw rejects stops the bot rather than failing the request.
 
 ### New bot wizard
 
@@ -294,9 +315,9 @@ Creating a bot is a three-step flow (mirroring the bisonw market-maker settings 
 2. **Bot type** - Choose the strategy (basic market maker, arb market maker, simple arb) and, for arb types, the CEX.
 3. **Configure** - Fill the strategy configuration. A market report feeds the placements chart, an oracle table, and lots-to-USD hints.
 
-Editing an existing bot jumps straight to the config step with the market and type locked.
+Editing an existing bot jumps straight to the config step with the market and type locked. For a running bot the save button reads **Apply to running bot** (see [Changing a bot while it runs](#changing-a-bot-while-it-runs)).
 
-**Starting a bot** opens a funding dialog where you set the allocation (and, for arb types, auto-rebalance transfer thresholds). Allocation is collected at start time, not stored in the saved config. Starting spends funds and is gated behind an explicit confirmation.
+**Starting a bot** opens a funding dialog where you set the allocation (and, for arb types, auto-rebalance transfer thresholds). Allocation is collected at start time, not stored in the saved config. Each field's ceiling is what bisonw reports as still allocatable on that market, which accounts for what other bots hold and covers the CEX side too. Starting spends funds and is gated behind an explicit confirmation.
 
 ---
 
@@ -394,6 +415,8 @@ The DEX feature is served under `/api/dcrdex/...`. The handlers proxy to the bis
 - `POST /api/dcrdex/mm/config`, `POST /api/dcrdex/mm/config/remove` - add/remove a bot config
 - `POST /api/dcrdex/mm/cexconfig` - set CEX credentials
 - `POST /api/dcrdex/mm/start`, `POST /api/dcrdex/mm/stop` - start/stop a bot
+- `GET /api/dcrdex/mm/availablebalances` - what a bot on this market may still allocate
+- `POST /api/dcrdex/mm/running/config`, `POST /api/dcrdex/mm/running/inventory` - change a running bot without stopping it
 
 ---
 
