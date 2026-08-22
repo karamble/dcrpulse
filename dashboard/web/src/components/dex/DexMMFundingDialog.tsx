@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Wallet, X } from 'lucide-react';
 import {
   getDexWallets,
+  getMMAvailableBalances,
   type DexAsset,
   type DexMarket,
   type DexWalletState,
@@ -22,8 +23,12 @@ import { suggestedAllocation, autoRebalanceSettings } from './dexMMAlloc';
 // allocation is supplied at start time (mm.StartConfig), not stored in the bot
 // config. It pre-fills bisonw's suggested allocation (book inventory + order
 // reserves + booking/swap fees + slippage, sized to the bot's placements) for
-// each asset, including a token's fee asset, and flags amounts that exceed the
-// available DEX balance. Amounts stay editable and are sent as atoms.
+// each asset, including a token's fee asset, and flags amounts that exceed what
+// is free. Amounts stay editable and are sent as atoms.
+//
+// The ceiling is the daemon's own answer for this market, which covers the CEX
+// side as well and already accounts for what other bots hold. Wallet balances
+// stand in only when that call is unavailable.
 export const DexMMFundingDialog = ({
   market,
   config,
@@ -48,9 +53,18 @@ export const DexMMFundingDialog = ({
   onCancel: () => void;
 }) => {
   const [wallets, setWallets] = useState<DexWalletState[]>([]);
+  const [free, setFree] = useState<{ dex: Record<string, number>; cex: Record<string, number> } | null>(null);
   const [amts, setAmts] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
+  useEffect(() => {
+    getMMAvailableBalances(config.host, config.baseID, config.quoteID)
+      .then((b) => setFree({ dex: b.dexBalances ?? {}, cex: b.cexBalances ?? {} }))
+      .catch(() => setFree(null));
+  }, [config.host, config.baseID, config.quoteID]);
+
+  // Only needed while the daemon's answer is missing, but the bot config has to
+  // be saved before that call works, so keep the fallback loaded either way.
   useEffect(() => {
     getDexWallets()
       .then(setWallets)
@@ -95,9 +109,16 @@ export const DexMMFundingDialog = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggested]);
 
-  // DexWalletState.available is already in conventional units (the backend
-  // converts it), the same as every other wallet view.
-  const availConv = (assetID: number): number | null => {
+  // availConv is what may still be allocated on a venue, in conventional units.
+  // The daemon reports atoms; DexWalletState.available is already converted (the
+  // backend does it), the same as every other wallet view.
+  const availConv = (venue: 'dex' | 'cex', assetID: number): number | null => {
+    if (free) {
+      const atoms = free[venue][assetID];
+      if (atoms !== undefined) return atoms / (metaFor(assetID).convFactor || 1);
+      return null;
+    }
+    if (venue === 'cex') return null;
     const w = wallets.find((wl) => wl.assetID === assetID);
     return w ? w.available : null;
   };
@@ -140,7 +161,7 @@ export const DexMMFundingDialog = ({
     const meta = metaFor(id);
     const key = `${venue}:${id}`;
     const value = amts[key] ?? '0';
-    const av = venue === 'dex' ? availConv(id) : null;
+    const av = availConv(venue === 'cex' ? 'cex' : 'dex', id);
     const over = av !== null && (Number(value) || 0) > av;
     return (
       <label key={key} className="flex flex-col gap-1">
