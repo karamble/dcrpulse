@@ -1793,6 +1793,48 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(raw)
 }
 
+// GetDcrdexActionsHandler returns the actions bisonw is waiting on the user
+// for. The daemon raises these as notifications at a severity it never stores,
+// so a dashboard that was not connected when one fired can only discover it
+// here; this list, not the notification, is what the UI recovers from.
+func GetDcrdexActionsHandler(w http.ResponseWriter, r *http.Request) {
+	client, ok := dexWebSession(w)
+	if !ok {
+		return
+	}
+	dexProxyJSON(w, func() (json.RawMessage, error) {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		return client.PendingActions(ctx)
+	})
+}
+
+// TakeDcrdexActionHandler answers one of those requests. The action body is
+// opaque here and forwarded as the daemon defines it per action kind.
+func TakeDcrdexActionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		AssetID  uint32          `json:"assetID"`
+		ActionID string          `json:"actionID"`
+		Action   json.RawMessage `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ActionID == "" {
+		http.Error(w, "actionID is required", http.StatusBadRequest)
+		return
+	}
+	client, ok := dexWebSession(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	if err := client.TakeAction(ctx, req.AssetID, req.ActionID, req.Action); err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // PreDcrdexAccelerateHandler returns what accelerating this order would look
 // like: the swap chain's current effective fee rate, the network suggestion,
 // the fundable rate range, and a warning when the previous swap or acceleration

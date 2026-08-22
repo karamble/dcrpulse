@@ -271,6 +271,8 @@ func main() {
 	api.HandleFunc("/dcrdex/order/preaccelerate", handlers.PreDcrdexAccelerateHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/order/acceleration-estimate", handlers.DcrdexAccelerationEstimateHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/order/accelerate", handlers.AccelerateDcrdexOrderHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/actions", handlers.GetDcrdexActionsHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/actions/take", handlers.TakeDcrdexActionHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/trade", handlers.PlaceDcrdexOrderHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/preorder", handlers.PreDcrdexOrderHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/maxbuy", handlers.MaxDcrdexBuyHandler).Methods("POST")

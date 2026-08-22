@@ -359,6 +359,36 @@ func (c *WebClient) Order(ctx context.Context, orderID string) (json.RawMessage,
 	return res.Order, nil
 }
 
+// PendingActions returns the actions bisonw is waiting on the user for. These
+// arrive as notifications too, but at a severity the daemon never persists, so
+// a client that was not listening at the moment one fired can only learn of it
+// here. This list is the durable contract; the notification is only a prompt to
+// re-read it.
+func (c *WebClient) PendingActions(ctx context.Context) (json.RawMessage, error) {
+	var res struct {
+		webAck
+		User struct {
+			Actions json.RawMessage `json:"actions"`
+		} `json:"user"`
+	}
+	if err := c.callSession(ctx, http.MethodGet, "/api/user", nil, &res); err != nil {
+		return nil, err
+	}
+	if len(res.User.Actions) == 0 {
+		return json.RawMessage("[]"), nil
+	}
+	return res.User.Actions, nil
+}
+
+// TakeAction answers one of those requests. actionID selects the kind and the
+// body is that kind's own payload; for a rejected redemption it is
+// {orderID, coinID, retry}. Retrying re-broadcasts and so can lose fees again.
+func (c *WebClient) TakeAction(ctx context.Context, assetID uint32, actionID string, action any) error {
+	body := map[string]any{"assetID": assetID, "actionID": actionID, "action": action}
+	var res webAck
+	return c.callSession(ctx, http.MethodPost, "/api/takeaction", body, &res)
+}
+
 // PreAccelerate returns what an acceleration of this order would look like:
 // the swap chain's current effective fee rate, the network's suggested rate,
 // the range of rates the wallet can fund, and a warning when the last swap or

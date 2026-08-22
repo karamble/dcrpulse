@@ -401,6 +401,51 @@ export const cancelDexOrder = async (orderID: string): Promise<void> => {
   await api.post('/dcrdex/cancel', { orderID });
 };
 
+// DexAction is something bisonw is waiting on the user to decide
+// (asset.ActionRequiredNote). uniqueID identifies the thing needing a decision
+// and actionID the kind of decision. These arrive as notifications at a
+// severity the daemon never stores, so getDexActions is the only reliable way
+// to learn about one that fired while nothing was listening.
+export interface DexAction {
+  assetID: number;
+  uniqueID: string;
+  actionID: string;
+  route?: string;
+  payload?: DexRejectedRedemption | Record<string, unknown> | null;
+}
+
+// DexRejectedRedemption is the payload of a redeemRejected action: a redemption
+// the network refused. coinFmt is for display; coinID is the wire value and
+// doubles as the action's uniqueID.
+export interface DexRejectedRedemption {
+  orderID: string;
+  coinID: string;
+  assetID: number;
+  coinFmt: string;
+}
+
+export const DEX_ACTION_REDEEM_REJECTED = 'redeemRejected';
+
+export const getDexActions = async (): Promise<DexAction[]> => {
+  const { data } = await api.get<DexAction[] | null>('/dcrdex/actions');
+  return data || [];
+};
+
+// resolveRejectedRedemption answers a redeemRejected action. retry re-broadcasts
+// the redemption, which can lose fees again if it is refused again; declining
+// leaves the match parked until the daemon restarts and asks once more.
+export const resolveRejectedRedemption = async (
+  action: DexAction,
+  payload: DexRejectedRedemption,
+  retry: boolean,
+): Promise<void> => {
+  await api.post('/dcrdex/actions/take', {
+    assetID: action.assetID,
+    actionID: action.actionID,
+    action: { orderID: payload.orderID, coinID: payload.coinID, retry },
+  });
+};
+
 // XYRange is bisonw's two-axis slider spec (asset.XYRange), used both by the
 // market-maker funding options (which read only the x axis) and by
 // acceleration, where x is a multiple of the swap chain's current rate and y

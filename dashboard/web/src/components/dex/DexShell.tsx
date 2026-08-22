@@ -13,6 +13,7 @@ import { DexSettingsPanel } from './DexSettingsPanel';
 import { DexMMPanel } from './DexMMPanel';
 import { DexNotifications } from './DexNotifications';
 import { DexServerBanner } from './DexServerBanner';
+import { DexActionsBanner } from './DexActionsBanner';
 import { apiError } from '../../utils/apiError';
 
 // The canonical mainnet DEX server.
@@ -56,6 +57,7 @@ export const DexShell = ({ initialTab = 'trade', onLocked }: { initialTab?: DexT
   return (
     <div className="space-y-3">
       <DexServerBanner host={HOST} />
+      <DexActionsBanner />
       <nav className="flex items-center gap-2 border-b border-border px-4">
         <div className="flex items-center gap-2 overflow-x-auto overflow-y-hidden">
           {tabs.map(({ id, label, Icon }) => {
