@@ -359,6 +359,52 @@ func (c *WebClient) Order(ctx context.Context, orderID string) (json.RawMessage,
 	return res.Order, nil
 }
 
+// PreAccelerate returns what an acceleration of this order would look like:
+// the swap chain's current effective fee rate, the network's suggested rate,
+// the range of rates the wallet can fund, and a warning when the last swap or
+// acceleration was under an hour ago. Read-only. Webserver-only route; like
+// /api/order the body is the order id as a bare JSON hex string.
+func (c *WebClient) PreAccelerate(ctx context.Context, orderID string) (json.RawMessage, error) {
+	var res struct {
+		webAck
+		PreAccelerate json.RawMessage `json:"preAccelerate"`
+	}
+	if err := c.callSession(ctx, http.MethodPost, "/api/preaccelerate", orderID, &res); err != nil {
+		return nil, err
+	}
+	return res.PreAccelerate, nil
+}
+
+// AccelerationEstimate returns the fee (atoms) an acceleration to newFeeRate
+// would cost. Read-only, no password.
+func (c *WebClient) AccelerationEstimate(ctx context.Context, orderID string, newRate uint64) (uint64, error) {
+	body := map[string]any{"orderID": orderID, "newRate": newRate}
+	var res struct {
+		webAck
+		Fee uint64 `json:"fee"`
+	}
+	if err := c.callSession(ctx, http.MethodPost, "/api/accelerationestimate", body, &res); err != nil {
+		return 0, err
+	}
+	return res.Fee, nil
+}
+
+// AccelerateOrder broadcasts a child transaction that lifts the order's
+// unconfirmed swap chain to newFeeRate, returning the new transaction's id.
+// bisonw would take the password from the session cache, but this spends a
+// fee, so the dashboard demands it per call as /api/send does.
+func (c *WebClient) AccelerateOrder(ctx context.Context, appPass, orderID string, newRate uint64) (string, error) {
+	body := map[string]any{"pw": appPass, "orderID": orderID, "newRate": newRate}
+	var res struct {
+		webAck
+		TxID string `json:"txID"`
+	}
+	if err := c.callSession(ctx, http.MethodPost, "/api/accelerateorder", body, &res); err != nil {
+		return "", err
+	}
+	return res.TxID, nil
+}
+
 // AddressUsed reports whether the asset's wallet has ever received funds at addr,
 // used to warn against deposit-address reuse. Webserver-only route.
 func (c *WebClient) AddressUsed(ctx context.Context, assetID uint32, addr string) (bool, error) {

@@ -1793,6 +1793,95 @@ func PlaceDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(raw)
 }
 
+// PreDcrdexAccelerateHandler returns what accelerating this order would look
+// like: the swap chain's current effective fee rate, the network suggestion,
+// the fundable rate range, and a warning when the previous swap or acceleration
+// was under an hour ago. Read-only, no password. Every failure here is terminal
+// for the attempt (no change to spend, already confirmed, accelerated ten times
+// already, change locked by another order), so the caller shows the error
+// rather than a disabled control.
+func PreDcrdexAccelerateHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		OrderID string `json:"orderID"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.OrderID == "" {
+		http.Error(w, "orderID is required", http.StatusBadRequest)
+		return
+	}
+	client, ok := dexWebSession(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	raw, err := client.PreAccelerate(ctx, req.OrderID)
+	if err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	w.Write(raw)
+}
+
+// DcrdexAccelerationEstimateHandler returns the fee an acceleration to newRate
+// would cost, in atoms of the order's from asset. Read-only, no password.
+func DcrdexAccelerationEstimateHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		OrderID string `json:"orderID"`
+		NewRate uint64 `json:"newRate"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.OrderID == "" || req.NewRate == 0 {
+		http.Error(w, "orderID and newRate are required", http.StatusBadRequest)
+		return
+	}
+	client, ok := dexWebSession(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	fee, err := client.AccelerationEstimate(ctx, req.OrderID, req.NewRate)
+	if err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]uint64{"fee": fee})
+}
+
+// AccelerateDcrdexOrderHandler broadcasts a child transaction lifting the
+// order's unconfirmed swap chain to newRate, returning its id. bisonw would
+// take the password from the session cache; this spends a fee, so it is
+// demanded per call as the send route does.
+func AccelerateDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		OrderID string `json:"orderID"`
+		NewRate uint64 `json:"newRate"`
+		AppPass string `json:"appPass"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.OrderID == "" || req.NewRate == 0 {
+		http.Error(w, "orderID and newRate are required", http.StatusBadRequest)
+		return
+	}
+	if req.AppPass == "" {
+		http.Error(w, "appPass is required", http.StatusBadRequest)
+		return
+	}
+	client, ok := dexWebSession(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	txID, err := client.AccelerateOrder(ctx, req.AppPass, req.OrderID, req.NewRate)
+	if err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"txID": txID})
+}
+
 // PreDcrdexOrderHandler returns bisonw's pre-order estimate (swap + redeem fee
 // estimates and the per-asset order options) for a prospective order, so the
 // order form can show fees and options before the user commits. Read-only; goes

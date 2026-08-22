@@ -385,6 +385,81 @@ export const cancelDexOrder = async (orderID: string): Promise<void> => {
   await api.post('/dcrdex/cancel', { orderID });
 };
 
+// XYRange is bisonw's two-axis slider spec (asset.XYRange), used both by the
+// market-maker funding options (which read only the x axis) and by
+// acceleration, where x is a multiple of the swap chain's current rate and y
+// the absolute fee rate. Labels and units come from the daemon, not from us.
+export interface DexXYRangePoint {
+  label: string;
+  x: number;
+  y: number;
+}
+
+export interface DexXYRange {
+  start: DexXYRangePoint;
+  end: DexXYRangePoint;
+  xUnit: string;
+  yUnit: string;
+  roundX: boolean;
+  roundY: boolean;
+}
+
+// DexPreAccelerate describes what accelerating an order would look like.
+// swapRate is the unconfirmed chain's current effective rate and suggestedRate
+// the network's, both in the from asset's atoms per size unit. earlyAcceleration
+// is present when the last swap or acceleration was under an hour ago; note the
+// field is wasAccelerated, which bisonw's own frontend misspells and so never
+// reads.
+export interface DexEarlyAcceleration {
+  timePast: number; // seconds
+  wasAccelerated: boolean;
+}
+
+export interface DexPreAccelerate {
+  swapRate: number;
+  suggestedRate: number;
+  suggestedRange: DexXYRange;
+  earlyAcceleration?: DexEarlyAcceleration;
+}
+
+// preAccelerateDexOrder asks what an acceleration would look like. Read-only.
+// It fails for an order that cannot be accelerated at all - no spendable
+// change, every swap already confirmed, ten accelerations already - so the
+// caller shows the message rather than a control.
+export const preAccelerateDexOrder = async (orderID: string): Promise<DexPreAccelerate> => {
+  const { data } = await api.post<DexPreAccelerate>('/dcrdex/order/preaccelerate', { orderID });
+  return data;
+};
+
+// dexAccelerationEstimate returns what an acceleration to newRate would cost,
+// in the from asset's atoms. Read-only.
+export const dexAccelerationEstimate = async (
+  orderID: string,
+  newRate: number,
+): Promise<number> => {
+  const { data } = await api.post<{ fee: number }>('/dcrdex/order/acceleration-estimate', {
+    orderID,
+    newRate,
+  });
+  return data.fee;
+};
+
+// accelerateDexOrder broadcasts a child transaction lifting the order's
+// unconfirmed swap chain to newRate, returning its id. This spends a fee; only
+// call on explicit user action.
+export const accelerateDexOrder = async (
+  orderID: string,
+  newRate: number,
+  appPass: string,
+): Promise<string> => {
+  const { data } = await api.post<{ txID: string }>('/dcrdex/order/accelerate', {
+    orderID,
+    newRate,
+    appPass,
+  });
+  return data.txID;
+};
+
 // postDexBond posts a fidelity bond (bond in the asset's atoms) to
 // register/maintain a DEX account. assetID selects the bond asset (omit/0 =
 // DCR). This spends real funds; only call on explicit user action. The backend
@@ -461,6 +536,7 @@ export const dexAddressUsed = async (assetID: number, addr: string): Promise<boo
 export const WalletTrait = {
   Rescanner: 1 << 0,
   NewAddresser: 1 << 1,
+  Accelerator: 1 << 4,
   Withdrawer: 1 << 6,
   PeerManager: 1 << 10,
   Historian: 1 << 16,
@@ -480,14 +556,6 @@ export interface DexConfigOption {
   repeatable?: string;
   required: boolean;
   dependsOn?: string;
-}
-
-// DexXYRange describes a numeric option's range (bisonw asset.XYRange); only the
-// x axis is used here (start.x..end.x in xUnit) to render a slider.
-export interface DexXYRange {
-  start: { label: string; x: number };
-  end: { label: string; x: number };
-  xUnit: string;
 }
 
 // DexOrderOption is a per-order funding option (bisonw asset.OrderOption): a
