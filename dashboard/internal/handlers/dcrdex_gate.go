@@ -21,6 +21,19 @@ func dexClient(w http.ResponseWriter) (*bisonw.Client, bool) {
 	return client, true
 }
 
+// dexUnlockedClient gates an RPC action that needs bisonw's core logged in:
+// 409 while no session is up, then 503 when the RPC client is not up. The
+// dashboard holds no app password, so the webserver session is the unlock
+// state; bisonw's core is shared by both servers, so that login satisfies the
+// RPC routes too.
+func dexUnlockedClient(w http.ResponseWriter) (*bisonw.Client, bool) {
+	if !rpc.DcrdexUnlocked() {
+		http.Error(w, "DCRDEX is locked", http.StatusConflict)
+		return nil, false
+	}
+	return dexClient(w)
+}
+
 // dexWebSession gates an action that needs the unlocked session: 409 while no
 // webserver session is up, then 503 when the web client is not up, in that
 // order.

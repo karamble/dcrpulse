@@ -39,6 +39,11 @@ const (
 	BrclientdDataRoot = "/app-data/brclientd"
 	DcrdexDataRoot    = "/app-data/dcrdex"
 
+	// DcrdexDaemonRoot is that same tree as bisonw sees it, matching DEX_ROOT
+	// in dcrdex/supervisor.sh. Needed only by the market-maker RPC routes,
+	// which take a file path on the daemon's own filesystem.
+	DcrdexDaemonRoot = "/dex/.dexc"
+
 	// DcrdDataRoot is dcrd's appdata mount, shared read-write with the dashboard.
 	DcrdDataRoot = "/app-data/dcrd"
 
@@ -178,6 +183,20 @@ func DcrdexCert(walletName string) string {
 }
 func DcrdexWSCert(walletName string) string {
 	return filepath.Join(DcrdexDir(walletName), "web.cert")
+}
+
+// DcrdexMMConfigPath is bisonw's market-maker config file as the daemon sees
+// it, for the RPC routes that name it by path. supervisor.sh passes --appdata
+// and no --botConfigPath, so bisonw's default applies:
+// <appdata>/<network>/mm_cfg.json. If that flag is ever set, this moves with it.
+func DcrdexMMConfigPath(walletName, network string) string {
+	return filepath.Join(ResolveServiceDir(DcrdexDaemonRoot, walletName), network, "mm_cfg.json")
+}
+
+// DcrdexMMConfigLocalPath is the same file on the dashboard's read-only mount,
+// so a caller can check it exists before naming it to the daemon.
+func DcrdexMMConfigLocalPath(walletName, network string) string {
+	return filepath.Join(DcrdexDir(walletName), network, "mm_cfg.json")
 }
 
 func BrclientdDir(walletName string) string {

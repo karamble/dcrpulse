@@ -7,17 +7,24 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
+	"dcrpulse/internal/config"
+	"dcrpulse/internal/services"
 	"dcrpulse/pkg/bisonw"
 )
 
-// The market-maker handlers proxy bisonw's webserver MM API, which persists
-// bot and CEX configuration in the daemon's encrypted database. Each call
-// rides the webserver cookie session established at unlock.
+// The market-maker handlers proxy bisonw's webserver MM API, which persists bot
+// and CEX configuration to mm_cfg.json in the daemon's appdata. Each call rides
+// the webserver cookie session established at unlock.
+//
+// The routes that reconfigure or refund an already-running bot live on bisonw's
+// RPC server instead, and name that same config file by its daemon-side path.
 
 // GetDcrdexMMStatusHandler returns the market-making status (bots + CEX state).
 func GetDcrdexMMStatusHandler(w http.ResponseWriter, r *http.Request) {
@@ -235,4 +242,132 @@ func StopDcrdexMMBotHandler(w http.ResponseWriter, r *http.Request) {
 	mmMarketAction(w, r, func(ctx context.Context, client *bisonw.WebClient, host string, baseID, quoteID uint32) error {
 		return client.StopBot(ctx, host, baseID, quoteID)
 	})
+}
+
+// mmConfigPath names bisonw's market-maker config file for the active wallet
+// and network as the daemon sees it, after confirming through the dashboard's
+// read-only mount of the same volume that the file is there. That turns a
+// wrong path into a clear answer here instead of an opaque daemon error, and
+// pins the assumption that bisonw is using its default location.
+func mmConfigPath(ctx context.Context) (string, error) {
+	network, err := services.CurrentNetwork(ctx)
+	if err != nil || network == "" {
+		network = "mainnet"
+	}
+	wallet := services.CurrentWalletName()
+	local := config.DcrdexMMConfigLocalPath(wallet, network)
+	if _, err := os.Stat(local); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("no market-maker config saved yet (%s); save a bot config first", local)
+		}
+		return "", err
+	}
+	return config.DcrdexMMConfigPath(wallet, network), nil
+}
+
+// GetDcrdexMMAvailableBalancesHandler reports what a bot on this market may
+// still allocate, in atoms keyed by asset id. Read-only, and the only one of
+// the three running-bot routes that is safe to call speculatively.
+func GetDcrdexMMAvailableBalancesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	q := r.URL.Query()
+	host := q.Get("host")
+	baseID, err1 := strconv.ParseUint(q.Get("baseID"), 10, 32)
+	quoteID, err2 := strconv.ParseUint(q.Get("quoteID"), 10, 32)
+	if host == "" || err1 != nil || err2 != nil {
+		http.Error(w, "host, baseID and quoteID are required", http.StatusBadRequest)
+		return
+	}
+	client, ok := dexUnlockedClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	cfgPath, err := mmConfigPath(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	bals, err := client.MMAvailableBalances(ctx, cfgPath, host, uint32(baseID), uint32(quoteID))
+	if err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	json.NewEncoder(w).Encode(bals)
+}
+
+// mmRunningBotUpdate decodes a running-bot request: the market plus the signed
+// per-asset atom deltas both update routes can carry.
+type mmRunningBotUpdate struct {
+	Host     string           `json:"host"`
+	BaseID   uint32           `json:"baseID"`
+	QuoteID  uint32           `json:"quoteID"`
+	DexDiffs map[uint32]int64 `json:"dexDiffs"`
+	CexDiffs map[uint32]int64 `json:"cexDiffs"`
+}
+
+func decodeRunningBotUpdate(w http.ResponseWriter, r *http.Request) (*mmRunningBotUpdate, bool) {
+	var req mmRunningBotUpdate
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil || req.Host == "" {
+		http.Error(w, "host is required", http.StatusBadRequest)
+		return nil, false
+	}
+	return &req, true
+}
+
+// UpdateDcrdexMMRunningBotCfgHandler applies the saved config to a bot that is
+// already running, so a change takes effect without the stop/start cycle that
+// would cancel its book. The caller persists the config first; this route only
+// tells bisonw to re-read the file.
+func UpdateDcrdexMMRunningBotCfgHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	req, ok := decodeRunningBotUpdate(w, r)
+	if !ok {
+		return
+	}
+	client, ok := dexUnlockedClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	cfgPath, err := mmConfigPath(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if err := client.UpdateRunningBotCfg(ctx, cfgPath, req.Host, req.BaseID, req.QuoteID,
+		req.DexDiffs, req.CexDiffs); err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// UpdateDcrdexMMRunningBotInventoryHandler moves funds between a running bot's
+// allocation and the wallet, leaving its config alone. This spends real funds;
+// the frontend gates it behind an explicit confirmation.
+func UpdateDcrdexMMRunningBotInventoryHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	req, ok := decodeRunningBotUpdate(w, r)
+	if !ok {
+		return
+	}
+	if len(req.DexDiffs) == 0 && len(req.CexDiffs) == 0 {
+		http.Error(w, "at least one balance change is required", http.StatusBadRequest)
+		return
+	}
+	client, ok := dexUnlockedClient(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	if err := client.UpdateRunningBotInventory(ctx, req.Host, req.BaseID, req.QuoteID,
+		req.DexDiffs, req.CexDiffs); err != nil {
+		dexWriteErr(w, err)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }

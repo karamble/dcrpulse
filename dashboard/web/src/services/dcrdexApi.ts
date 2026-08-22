@@ -1279,3 +1279,50 @@ export const startMMBot = async (cfg: MMStartConfig): Promise<void> => {
 export const stopMMBot = async (host: string, baseID: number, quoteID: number): Promise<void> => {
   await api.post('/dcrdex/mm/stop', { host, baseID, quoteID });
 };
+
+// The running-bot routes reconfigure or refund a bot without stopping it, which
+// is what keeps its standing orders on the book. bisonw exposes them on its RPC
+// server rather than the webserver, and they read the market-maker config file
+// the webserver routes above write, so a config change is persisted first and
+// then pushed with updateRunningMMBotConfig.
+
+// MMBalanceDiffs are signed per-asset atom deltas keyed by asset id: positive
+// adds to the bot's allocation, negative returns funds to the wallet. An
+// over-withdrawal is clamped to what the bot holds and still reports success,
+// so re-read the balances afterwards rather than assuming the request applied.
+export type MMBalanceDiffs = Record<number, number>;
+
+// MMAvailableBalances is what a bot on a market may still allocate, in atoms
+// keyed by asset id.
+export interface MMAvailableBalances {
+  dexBalances: Record<string, number> | null;
+  cexBalances: Record<string, number> | null;
+}
+export const getMMAvailableBalances = async (
+  host: string,
+  baseID: number,
+  quoteID: number,
+): Promise<MMAvailableBalances> => {
+  const { data } = await api.get<MMAvailableBalances>('/dcrdex/mm/availablebalances', {
+    params: { host, baseID, quoteID },
+  });
+  return data;
+};
+export const updateRunningMMBotConfig = async (
+  host: string,
+  baseID: number,
+  quoteID: number,
+  dexDiffs?: MMBalanceDiffs,
+  cexDiffs?: MMBalanceDiffs,
+): Promise<void> => {
+  await api.post('/dcrdex/mm/running/config', { host, baseID, quoteID, dexDiffs, cexDiffs });
+};
+export const updateRunningMMBotInventory = async (
+  host: string,
+  baseID: number,
+  quoteID: number,
+  dexDiffs?: MMBalanceDiffs,
+  cexDiffs?: MMBalanceDiffs,
+): Promise<void> => {
+  await api.post('/dcrdex/mm/running/inventory', { host, baseID, quoteID, dexDiffs, cexDiffs });
+};

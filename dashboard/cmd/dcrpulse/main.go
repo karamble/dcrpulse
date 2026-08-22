@@ -305,6 +305,9 @@ func main() {
 	api.HandleFunc("/dcrdex/mm/cexconfig", handlers.UpdateDcrdexMMCexConfigHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/mm/start", handlers.StartDcrdexMMBotHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/mm/stop", handlers.StopDcrdexMMBotHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/mm/availablebalances", handlers.GetDcrdexMMAvailableBalancesHandler).Methods("GET")
+	api.HandleFunc("/dcrdex/mm/running/config", handlers.UpdateDcrdexMMRunningBotCfgHandler).Methods("POST")
+	api.HandleFunc("/dcrdex/mm/running/inventory", handlers.UpdateDcrdexMMRunningBotInventoryHandler).Methods("POST")
 
 	// Node/dcrd routes
 	api.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")
