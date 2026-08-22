@@ -93,6 +93,7 @@ export const DexMMConfigStep = ({
   market,
   initial,
   editing,
+  running = false,
   report,
   catalog,
   onChangeMarket,
@@ -105,6 +106,7 @@ export const DexMMConfigStep = ({
   market: DexMarket;
   initial: ConfigDraft;
   editing: boolean;
+  running?: boolean;
   report: MMMarketReport | null;
   catalog: DexAsset[];
   onChangeMarket: () => void;
@@ -569,6 +571,13 @@ export const DexMMConfigStep = ({
         </div>
       )}
 
+      {running && (
+        <p className="text-[11px] text-muted-foreground">
+          This bot is running. Saving applies the change straight away and leaves its orders on the book, but the
+          stored config is untouched until the bot is stopped and saved again.
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -576,7 +585,7 @@ export const DexMMConfigStep = ({
           onClick={doSave}
           className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
         >
-          {busy ? 'Saving...' : editing ? 'Save changes' : 'Create bot'}
+          {busy ? 'Saving...' : running ? 'Apply to running bot' : editing ? 'Save changes' : 'Create bot'}
         </button>
         {!editing && (
           <button

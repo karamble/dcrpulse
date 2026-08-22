@@ -8,6 +8,7 @@ import {
   getMMMarketReport,
   startMMBot,
   updateMMBotConfig,
+  updateRunningMMBotConfig,
   type DexAsset,
   type DexMarket,
   type MMAllocation,
@@ -20,7 +21,16 @@ import { DexMMMarketSelector } from './DexMMMarketSelector';
 import { DexMMBotTypeSelector } from './DexMMBotTypeSelector';
 import { DexMMConfigStep } from './DexMMConfigStep';
 import { DexMMFundingDialog } from './DexMMFundingDialog';
-import { botTypeOf, cexMarketFor, defaultDraft, draftFromConfig, needsCex, type BotType, type ConfigDraft } from './dexMMConfig';
+import {
+  botTypeOf,
+  cexMarketFor,
+  defaultDraft,
+  draftFromConfig,
+  needsCex,
+  runningUpdateError,
+  type BotType,
+  type ConfigDraft,
+} from './dexMMConfig';
 
 type Step = 'market' | 'type' | 'config';
 
@@ -99,8 +109,18 @@ export const DexMMWizard = ({
     setStep('config');
   };
 
+  // A running bot takes its config over the running-bot route: bisonw refuses
+  // updatebotconfig while a bot runs, and the point of the route is that the
+  // bot's standing orders survive the change. Lot size is carried over because
+  // only the stopped path fills it in.
   const saveConfig = async (cfg: MMBotConfig) => {
-    await updateMMBotConfig(cfg);
+    if (editBot?.running) {
+      const problem = runningUpdateError(editBot.config, cfg);
+      if (problem) throw new Error(problem);
+      await updateRunningMMBotConfig({ ...cfg, lotSize: editBot.config.lotSize });
+    } else {
+      await updateMMBotConfig(cfg);
+    }
     refresh();
   };
 
@@ -156,6 +176,7 @@ export const DexMMWizard = ({
           market={market}
           initial={draft}
           editing={editing}
+          running={!!editBot?.running}
           report={report}
           catalog={catalog}
           onChangeMarket={() => setStep('market')}

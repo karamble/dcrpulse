@@ -281,3 +281,72 @@ export const cexMarketFor = (
   const m = Object.values(markets).find((mk) => mk.baseID === baseID && mk.quoteID === quoteID);
   return m ? { baseMinWithdraw: m.baseMinWithdraw, quoteMinWithdraw: m.quoteMinWithdraw } : undefined;
 };
+
+// gapFactorLimits mirrors bisonw's per-strategy bounds on a basic market
+// maker's gap factor (mm_basic.go validatePlacement).
+const gapFactorLimits = (strategy: MMGapStrategy): [number, number] => {
+  switch (strategy) {
+    case 'multiplier':
+      return [1, 100];
+    case 'percent':
+    case 'percent-plus':
+      return [0, 0.1];
+    default:
+      return [0, Number.MAX_VALUE];
+  }
+};
+
+// runningUpdateError mirrors the checks bisonw runs on a config pushed to a
+// running bot and returns the first failure, or null.
+//
+// Checking here is not politeness. bisonw runs the market/CEX checks before it
+// pauses the bot, so those fail cleanly, but the per-bot-type validation runs
+// inside the paused section: a config it rejects does not fail the call, it
+// disconnects the bot and cancels every order it had booked.
+export const runningUpdateError = (oldCfg: MMBotConfig, next: MMBotConfig): string | null => {
+  if (oldCfg.cexName && !next.cexName) return 'A running bot cannot have its exchange removed.';
+  if (oldCfg.cexName && oldCfg.cexName !== next.cexName) return 'A running bot cannot change exchange.';
+  if (botTypeOf(oldCfg) !== botTypeOf(next)) return 'A running bot cannot change type.';
+
+  const basic = next.basicMarketMakingConfig;
+  if (basic) {
+    if (basic.driftTolerance < 0 || basic.driftTolerance > 0.01) {
+      return 'Drift tolerance must be between 0 and 0.01.';
+    }
+    if (!GAP_STRATEGIES.includes(basic.gapStrategy)) return `Unknown gap strategy ${basic.gapStrategy}.`;
+    const [lo, hi] = gapFactorLimits(basic.gapStrategy);
+    for (const [side, rows] of [
+      ['buy', basic.buyPlacements],
+      ['sell', basic.sellPlacements],
+    ] as const) {
+      const seen = new Set<number>();
+      for (const p of rows) {
+        if (seen.has(p.gapFactor)) return `Two ${side} placements share the gap factor ${p.gapFactor}.`;
+        seen.add(p.gapFactor);
+        if (p.gapFactor < lo || p.gapFactor > hi) {
+          return `A ${side} placement's gap factor ${p.gapFactor} is outside the ${basic.gapStrategy} range.`;
+        }
+      }
+    }
+    return null;
+  }
+
+  const simple = next.simpleArbConfig;
+  if (simple) {
+    if (simple.profitTrigger <= 0 || simple.profitTrigger > 1) return 'Profit trigger must be above 0 and at most 1.';
+    if (simple.maxActiveArbs < 1) return 'At least one active arbitrage must be allowed.';
+    if (simple.numEpochsLeaveOpen < 2) return 'Arbitrages must be left open for at least 2 epochs.';
+    return null;
+  }
+
+  const arb = next.arbMarketMakingConfig;
+  if (arb) {
+    if (arb.buyPlacements.length === 0 && arb.sellPlacements.length === 0) return 'Add at least one placement.';
+    if (arb.profit <= 0) return 'Profit must be above 0.';
+    if (arb.driftTolerance < 0 || arb.driftTolerance > 0.01) return 'Drift tolerance must be between 0 and 0.01.';
+    if (arb.orderPersistence < 2) return 'Orders must be left open for at least 2 epochs.';
+    return null;
+  }
+
+  return 'No bot settings to apply.';
+};

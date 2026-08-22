@@ -142,6 +142,14 @@ func SelectedWalletPath() string {
 	return filepath.Join(StackControlDir(), "selected.json")
 }
 
+// DcrdexMMUpdateDir is where the dashboard stages a market-maker config for
+// bisonw to read back. The running-bot RPC route takes a file path rather than
+// a config, and the webserver route that would persist one refuses while the
+// bot is running, so the config travels through the control directory: the
+// dashboard mounts it read-write and every daemon read-only, at the same
+// absolute path on both sides.
+func DcrdexMMUpdateDir() string { return StackControlDir() }
+
 // TorPointerPath is the shared Tor toggle pointer the dashboard writes. Every
 // service supervisor watches it and relaunches its daemon with or without the
 // proxy flags when the rev changes.

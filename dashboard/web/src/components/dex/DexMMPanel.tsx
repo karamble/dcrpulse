@@ -334,32 +334,30 @@ export const DexMMPanel = () => {
                           <Play className="h-3.5 w-3.5" /> Start
                         </button>
                       )}
+                      <button
+                        type="button"
+                        title={b.running ? 'Edit running bot' : 'Edit'}
+                        onClick={() => {
+                          setEditBot(b);
+                          setView('edit');
+                        }}
+                        className="p-1.5 rounded-lg hover:bg-muted/20 text-muted-foreground"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
                       {!b.running && (
-                        <>
-                          <button
-                            type="button"
-                            title="Edit"
-                            onClick={() => {
-                              setEditBot(b);
-                              setView('edit');
-                            }}
-                            className="p-1.5 rounded-lg hover:bg-muted/20 text-muted-foreground"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            title="Delete"
-                            disabled={busy}
-                            onClick={() =>
-                              window.confirm('Delete this bot config?') &&
-                              act(k, () => removeMMBotConfig(b.config.host, b.config.baseID, b.config.quoteID))
-                            }
-                            className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          title="Delete"
+                          disabled={busy}
+                          onClick={() =>
+                            window.confirm('Delete this bot config?') &&
+                            act(k, () => removeMMBotConfig(b.config.host, b.config.baseID, b.config.quoteID))
+                          }
+                          className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       )}
                     </div>
                   </div>

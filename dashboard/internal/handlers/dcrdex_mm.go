@@ -24,7 +24,9 @@ import (
 // the webserver cookie session established at unlock.
 //
 // The routes that reconfigure or refund an already-running bot live on bisonw's
-// RPC server instead, and name that same config file by its daemon-side path.
+// RPC server instead. Those take a config file by its path on the daemon's own
+// filesystem: read-only queries name bisonw's own mm_cfg.json, and a config
+// push stages its own file in the shared control directory (see stageMMConfig).
 
 // GetDcrdexMMStatusHandler returns the market-making status (bots + CEX state).
 func GetDcrdexMMStatusHandler(w http.ResponseWriter, r *http.Request) {
@@ -298,45 +300,94 @@ func GetDcrdexMMAvailableBalancesHandler(w http.ResponseWriter, r *http.Request)
 }
 
 // mmRunningBotUpdate decodes a running-bot request: the market plus the signed
-// per-asset atom deltas both update routes can carry.
+// per-asset atom deltas both update routes can carry. Config carries a bisonw
+// mm.BotConfig verbatim on the config route and is unused on the inventory one.
 type mmRunningBotUpdate struct {
 	Host     string           `json:"host"`
 	BaseID   uint32           `json:"baseID"`
 	QuoteID  uint32           `json:"quoteID"`
 	DexDiffs map[uint32]int64 `json:"dexDiffs"`
 	CexDiffs map[uint32]int64 `json:"cexDiffs"`
+	Config   json.RawMessage  `json:"config"`
 }
 
 func decodeRunningBotUpdate(w http.ResponseWriter, r *http.Request) (*mmRunningBotUpdate, bool) {
 	var req mmRunningBotUpdate
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil || req.Host == "" {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.Host == "" {
 		http.Error(w, "host is required", http.StatusBadRequest)
 		return nil, false
 	}
 	return &req, true
 }
 
-// UpdateDcrdexMMRunningBotCfgHandler applies the saved config to a bot that is
-// already running, so a change takes effect without the stop/start cycle that
-// would cancel its book. The caller persists the config first; this route only
-// tells bisonw to re-read the file.
+// stageMMConfig writes one bot config where bisonw can read it back and returns
+// that path plus a cleanup. The RPC route takes a file rather than a config,
+// and the webserver route that writes bisonw's own mm_cfg.json refuses while
+// the bot is running, so the config goes through the shared control directory
+// instead of through the daemon's file. Only the named bot is written: the
+// route looks up its market and ignores the rest.
+func stageMMConfig(cfg json.RawMessage) (path string, cleanup func(), err error) {
+	if err := os.MkdirAll(config.DcrdexMMUpdateDir(), 0o755); err != nil {
+		return "", nil, err
+	}
+	f, err := os.CreateTemp(config.DcrdexMMUpdateDir(), "dcrdex-mm-*.json")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup = func() { os.Remove(f.Name()) }
+	// bisonw reads this through a read-only mount, so it has to be world
+	// readable; the file holds bot settings only, never keys or credentials.
+	if err := f.Chmod(0o644); err != nil {
+		f.Close()
+		cleanup()
+		return "", nil, err
+	}
+	body, err := json.Marshal(struct {
+		BotConfigs []json.RawMessage `json:"botConfigs"`
+	}{BotConfigs: []json.RawMessage{cfg}})
+	if err == nil {
+		_, err = f.Write(body)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return f.Name(), cleanup, nil
+}
+
+// UpdateDcrdexMMRunningBotCfgHandler applies a config to a bot that is already
+// running, so a change takes effect without the stop/start cycle that would
+// cancel its book.
+//
+// The change is live only. bisonw's UpdateRunningBotCfg takes a saveUpdate flag
+// its body never reads, and the webserver route that does persist refuses while
+// the bot is running, so the stored config is unchanged until the bot is
+// stopped and saved again.
 func UpdateDcrdexMMRunningBotCfgHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	req, ok := decodeRunningBotUpdate(w, r)
 	if !ok {
 		return
 	}
+	if len(req.Config) == 0 {
+		http.Error(w, "config is required", http.StatusBadRequest)
+		return
+	}
 	client, ok := dexUnlockedClient(w)
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	cfgPath, err := mmConfigPath(ctx)
+	cfgPath, cleanup, err := stageMMConfig(req.Config)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
 	if err := client.UpdateRunningBotCfg(ctx, cfgPath, req.Host, req.BaseID, req.QuoteID,
 		req.DexDiffs, req.CexDiffs); err != nil {
 		dexWriteErr(w, err)

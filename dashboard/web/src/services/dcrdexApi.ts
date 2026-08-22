@@ -1282,9 +1282,9 @@ export const stopMMBot = async (host: string, baseID: number, quoteID: number): 
 
 // The running-bot routes reconfigure or refund a bot without stopping it, which
 // is what keeps its standing orders on the book. bisonw exposes them on its RPC
-// server rather than the webserver, and they read the market-maker config file
-// the webserver routes above write, so a config change is persisted first and
-// then pushed with updateRunningMMBotConfig.
+// server rather than the webserver, and updatebotconfig above refuses outright
+// while a bot is running, so a config pushed with updateRunningMMBotConfig
+// applies live and does not change the stored config.
 
 // MMBalanceDiffs are signed per-asset atom deltas keyed by asset id: positive
 // adds to the bot's allocation, negative returns funds to the wallet. An
@@ -1309,13 +1309,18 @@ export const getMMAvailableBalances = async (
   return data;
 };
 export const updateRunningMMBotConfig = async (
-  host: string,
-  baseID: number,
-  quoteID: number,
+  config: MMBotConfig,
   dexDiffs?: MMBalanceDiffs,
   cexDiffs?: MMBalanceDiffs,
 ): Promise<void> => {
-  await api.post('/dcrdex/mm/running/config', { host, baseID, quoteID, dexDiffs, cexDiffs });
+  await api.post('/dcrdex/mm/running/config', {
+    host: config.host,
+    baseID: config.baseID,
+    quoteID: config.quoteID,
+    config,
+    dexDiffs,
+    cexDiffs,
+  });
 };
 export const updateRunningMMBotInventory = async (
   host: string,
