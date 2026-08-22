@@ -3,13 +3,15 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, TrendingDown, TrendingUp } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowDownUp, TrendingDown, TrendingUp } from 'lucide-react';
 import type { DexMarket, MMBotStatus, MMOrderReport } from '../../services/dcrdexApi';
 import { fmtAmt, fmtUsd } from './dexFormat';
 import { botProblemMessages, cexProblemMessages, placedCount } from './dexMMProblems';
 import { DexMMOrderReport } from './DexMMOrderReport';
 import { DexMMPlacementsChart } from './DexMMPlacementsChart';
 import { draftFromConfig } from './dexMMConfig';
+import { DexMMInventoryDialog } from './DexMMInventoryDialog';
+import { useMMRefresh } from './DexLiveProvider';
 import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 
 // AssetInfo resolves an asset id to a display ticker and its atoms-per-unit
@@ -84,6 +86,8 @@ export const DexMMActivity = ({
 }) => {
   const [, tick] = useState(0);
   const [reportModal, setReportModal] = useState<{ report: MMOrderReport; side: string } | null>(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const refreshMM = useMMRefresh();
   const stats = bot.runStats;
 
   // Re-render once a second so the run timer advances while a bot is running.
@@ -155,7 +159,16 @@ export const DexMMActivity = ({
 
       {dexBalances.length > 0 && (
         <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Inventory</div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Inventory</span>
+            <button
+              type="button"
+              onClick={() => setAdjusting(true)}
+              className="flex items-center gap-1 text-[10px] text-primary hover:underline"
+            >
+              <ArrowDownUp className="h-3 w-3" /> Adjust
+            </button>
+          </div>
           <div className="space-y-0.5 text-[11px] font-mono tabular-nums">
             {dexBalances.map(([id, bal]) => {
               const { symbol, convFactor } = assetOf(Number(id));
@@ -219,6 +232,15 @@ export const DexMMActivity = ({
             </div>
           ))}
         </div>
+      )}
+
+      {adjusting && (
+        <DexMMInventoryDialog
+          bot={bot}
+          assetOf={assetOf}
+          onApplied={refreshMM}
+          onClose={() => setAdjusting(false)}
+        />
       )}
 
       {reportModal && (
