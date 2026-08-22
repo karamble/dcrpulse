@@ -200,6 +200,23 @@ The detail view shows:
 
 While an order is still settling, the detail view polls the single-order route so the swap steps and confirmation counts advance even if a notification is missed. A cancellable order can be cancelled from here.
 
+### Accelerating a stuck swap
+
+If a swap transaction was broadcast at a fee rate the network has since outgrown, it can sit unconfirmed indefinitely. **Accelerate** sends a follow-up transaction spending your own swap change at a higher fee, which lifts the effective rate of the whole unconfirmed chain. It helps when the rate is genuinely too low to be mined; it does not help when blocks are simply slow, and the form says so.
+
+The button appears on the order detail only when it can actually work: the wallet paying for the order must support acceleration, and at least one swap must still be unconfirmed. **Only Bitcoin and two of its clones support it** - Bitcoin (RPC, legacy or SPV), Bitcoin Cash (SPV) and Litecoin (SPV). Decred does not, so an order where you are selling DCR never offers it, and neither does one paying with Ethereum or a token. When acceleration is unavailable the button is simply absent rather than shown disabled.
+
+Opening it asks DCRDEX what an acceleration would look like and refuses outright when there is nothing to accelerate - no spendable change, every swap already confirmed, the change locked by another order, or ten accelerations already made. Otherwise you get the current effective rate, the network's suggested rate, and a slider bounded by what your wallet can actually fund. The slider starts at the cheapest rate that improves on the current one, and the cost is estimated by DCRDEX each time you release it. Accelerating less than an hour after the previous swap or acceleration is usually wasted money, so that case asks again before continuing. The final step spends a fee and asks for your DCRDEX app password.
+
+### When DCRDEX needs a decision
+
+Occasionally the network rejects a redemption outright. DCRDEX stops retrying at that point and waits, because another attempt spends fees again. A banner appears at the top of the DEX section offering the two answers:
+
+- **Try again** re-broadcasts the redemption. It will probably cost more fees and may be rejected again.
+- **Leave it** parks the trade. It is not a dismissal: the match stays where it is until DCRDEX restarts, at which point it notices the rejection again and asks once more.
+
+These requests are not stored in the notification list. DCRDEX raises them at a severity it does not persist, so the banner reads them from the daemon's own outstanding-actions list instead - which means one raised while the dashboard was closed is still waiting when you return. Answering clears the banner here; another browser tab showing the same DEX catches up on its next refresh.
+
 ---
 
 ## Wallets Tab
@@ -360,8 +377,15 @@ The DEX feature is served under `/api/dcrdex/...`. The handlers proxy to the bis
 - `POST /api/dcrdex/wallet/rescan` - rescan
 - `POST /api/dcrdex/wallet/send`, `POST /api/dcrdex/wallet/txfee` - send and fee estimate
 - `POST /api/dcrdex/wallet/new-address`, `GET /api/dcrdex/wallet/address-used` - deposit addresses
-- `GET /api/dcrdex/wallet/txs`, `GET /api/dcrdex/wallet/tx` - transaction history
+- `GET /api/dcrdex/wallet/txs` - transaction history
 - `GET|POST|DELETE /api/dcrdex/wallet/peers` - list/add/remove peers
+
+**Stuck-trade recovery**
+- `POST /api/dcrdex/order/preaccelerate` - what an acceleration would look like (read-only)
+- `POST /api/dcrdex/order/acceleration-estimate` - what a given rate would cost (read-only)
+- `POST /api/dcrdex/order/accelerate` - broadcast the acceleration (spends a fee)
+- `GET /api/dcrdex/actions` - decisions DCRDEX is waiting on
+- `POST /api/dcrdex/actions/take` - answer one
 
 **Market maker**
 - `GET /api/dcrdex/mm/status` - live bot and CEX status
