@@ -330,6 +330,22 @@ export const isCancellable = (o: DexOrder): boolean =>
 export const orderHasActiveMatches = (o: DexOrder): boolean =>
   (o.matches || []).some((m) => !m.isCancel && !m.refund && m.status !== 'MatchConfirmed');
 
+// canAccelerateDexOrder mirrors bisonw's canAccelerateOrder: the wallet paying
+// for the order must be able to accelerate, and at least one swap must still be
+// unconfirmed. The paying wallet is the base asset when selling and the quote
+// when buying. Only Bitcoin and two of its clones implement acceleration, so
+// this is false for every Decred-side order by design. Needs the full order,
+// since the archive's matches carry no confirmation counts.
+export const canAccelerateDexOrder = (
+  o: DexOrderFull,
+  wallets: DexWalletState[],
+): boolean => {
+  const fromAssetID = o.sell ? o.baseID : o.quoteID;
+  const wallet = wallets.find((w) => w.assetID === fromAssetID);
+  if (!wallet || !hasTrait(wallet.traits, WalletTrait.Accelerator)) return false;
+  return (o.matches || []).some((m) => !m.revoked && m.swap?.confs?.count === 0);
+};
+
 // orderStatusString composes the user-facing order status, mirroring bisonw's
 // OrderUtil.statusString. An order that has matched but whose swaps are still
 // confirming reads "Settling" (or "<status>/Settling"); it only reads "Executed"

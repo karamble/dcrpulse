@@ -5,9 +5,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Check, X } from 'lucide-react';
+import { ArrowLeft, Check, Rocket, X } from 'lucide-react';
 import {
+  canAccelerateDexOrder,
   getDexOrder,
+  getDexWallets,
   isCancellable,
   orderHasActiveMatches,
   orderStatusString,
@@ -17,12 +19,14 @@ import {
   type DexMatch,
   type DexOrder,
   type DexOrderFull,
+  type DexWalletState,
 } from '../../services/dcrdexApi';
 import { convQty, convRate, fmtAmt, fmtPrice, isMarketBuy, orderQty } from './dexFormat';
 import { dexCoinExplorer } from './dexExplorers';
 import { stepIndex, StepBar } from './dexSteps';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
 import { startVisiblePoll } from '../../hooks/useVisiblePoll';
+import { DexAccelerateModal } from './DexAccelerateModal';
 
 interface Props {
   order: DexOrder;
@@ -221,6 +225,10 @@ const Bar = ({ label, pct, tint }: { label: string; pct: number; tint: string })
 // and on order/match notes; until it resolves, the confs-less list match is used.
 export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
   const [full, setFull] = useState<DexOrderFull | null>(null);
+  // Only for the acceleration gate: whether the wallet paying for this order
+  // can accelerate at all is a wallet trait, not an order field.
+  const [wallets, setWallets] = useState<DexWalletState[]>([]);
+  const [accelerating, setAccelerating] = useState(false);
   const loadFull = useCallback(() => {
     getDexOrder(order.id)
       .then(setFull)
@@ -231,6 +239,13 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
     loadFull();
   }, [loadFull]);
   useDexRefreshOnNotes(['order', 'match'], loadFull);
+  useEffect(() => {
+    getDexWallets()
+      .then(setWallets)
+      .catch(() => {
+        /* leave empty - the accelerate control simply stays hidden */
+      });
+  }, []);
   // While the order is still settling, poll the single-order route so the swap
   // steps + confirmation counts advance on their own, even if a match note is
   // missed or late. Stops once nothing is active.
@@ -248,6 +263,7 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
   // A market buy's quantity and filled are quote-denominated; everything else
   // is base. Matches are always base, which is why settled cannot be shown as a
   // percentage of a market buy's quantity.
+  const canAccelerate = !!full && canAccelerateDexOrder(full, wallets);
   const mktBuy = isMarketBuy(order.type, order.sell);
   const qtyDisp = orderQty(order.quantity, order.type, order.sell, baseConv, quoteConv, baseSym, quoteSym);
   const price = order.rate ? convRate(order.rate, baseConv, quoteConv) : 0;
@@ -272,17 +288,40 @@ export const DexOrderDetail = ({ order, market, onBack, onCancel }: Props) => {
           <ArrowLeft className="h-4 w-4" />
           Orders
         </button>
-        {isCancellable(order) && (
-          <button
-            type="button"
-            onClick={() => onCancel(order, market)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-destructive/40 text-destructive rounded-lg hover:bg-destructive/10 transition-colors"
-          >
-            <X className="h-4 w-4" />
-            Cancel order
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canAccelerate && (
+            <button
+              type="button"
+              onClick={() => setAccelerating(true)}
+              title="Raise the fee rate on this order's unconfirmed swaps"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-background/50 transition-colors"
+            >
+              <Rocket className="h-4 w-4" />
+              Accelerate
+            </button>
+          )}
+          {isCancellable(order) && (
+            <button
+              type="button"
+              onClick={() => onCancel(order, market)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-destructive/40 text-destructive rounded-lg hover:bg-destructive/10 transition-colors"
+            >
+              <X className="h-4 w-4" />
+              Cancel order
+            </button>
+          )}
+        </div>
       </div>
+
+      {accelerating && full && (
+        <DexAccelerateModal
+          order={full}
+          fromSym={order.sell ? baseSym : quoteSym}
+          fromConv={order.sell ? baseConv : quoteConv}
+          onClose={() => setAccelerating(false)}
+          onAccelerated={loadFull}
+        />
+      )}
 
       <div className="p-4 rounded-xl bg-gradient-card border border-border/50 space-y-4">
         <div className="flex items-center gap-2">
