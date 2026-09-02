@@ -94,44 +94,44 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
   // The nav links, reused by the desktop bar and the mobile drawer.
   const navLinks = (
     <>
-      <Link to="/" className={linkClass(isNodePage)}>
-        <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary p-2">
+      <Link to="/" title="Node" className={linkClass(isNodePage)}>
+        <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary p-2">
           <img src="/images/dcrpulse.svg" alt="Decred" className="w-full h-full" />
         </div>
-        <span className="text-primary font-semibold whitespace-nowrap">Node</span>
+        <span className="text-primary font-semibold whitespace-nowrap lg:hidden xl:inline">Node</span>
       </Link>
-      <Link to="/wallet" className={linkClass(isWalletPage)}>
-        <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
+      <Link to="/wallet" title="Wallet" className={linkClass(isWalletPage)}>
+        <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary">
           <Wallet className="h-5 w-5 text-white" />
         </div>
-        <span className="text-primary font-semibold whitespace-nowrap">Wallet</span>
+        <span className="text-primary font-semibold whitespace-nowrap lg:hidden xl:inline">Wallet</span>
       </Link>
-      <Link to="/explorer" className={linkClass(isExplorerPage)}>
-        <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
+      <Link to="/explorer" title="Explorer" className={linkClass(isExplorerPage)}>
+        <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary">
           <Compass className="h-5 w-5 text-white" />
         </div>
-        <span className="text-primary font-semibold whitespace-nowrap">Explorer</span>
+        <span className="text-primary font-semibold whitespace-nowrap lg:hidden xl:inline">Explorer</span>
       </Link>
-      <Link to="/treasury" className={linkClass(isTreasuryPage)}>
-        <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
+      <Link to="/treasury" title="Treasury" className={linkClass(isTreasuryPage)}>
+        <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary">
           <Vote className="h-5 w-5 text-white" />
         </div>
-        <span className="text-primary font-semibold whitespace-nowrap">Treasury</span>
+        <span className="text-primary font-semibold whitespace-nowrap lg:hidden xl:inline">Treasury</span>
       </Link>
       {!isWatchOnly && (
         <>
-          <Link to="/br" className={`relative ${linkClass(isBisonrelayPage)}`}>
-            <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-gradient-primary">
+          <Link to="/br" title="Bison Relay" className={`relative ${linkClass(isBisonrelayPage)}`}>
+            <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary">
               <img src="/images/bisonrelay.svg" alt="Bison Relay" className="h-6 w-auto" />
             </div>
-            <span className="text-primary font-semibold whitespace-nowrap">Bison Relay</span>
+            <span className="text-primary font-semibold whitespace-nowrap lg:hidden">Bison Relay</span>
             {brBadge}
           </Link>
-          <Link to="/dex" className={linkClass(isDexPage)}>
-            <div className="h-10 w-auto rounded-lg flex items-center justify-center bg-gradient-primary px-2">
+          <Link to="/dex" title="DEX" className={linkClass(isDexPage)}>
+            <div className="h-10 w-auto shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary px-2">
               <img src="/images/bisonwallet.svg" alt="Bison Wallet" className="h-6 w-auto" />
             </div>
-            <span className="text-primary font-semibold whitespace-nowrap">DEX</span>
+            <span className="text-primary font-semibold whitespace-nowrap lg:hidden">DEX</span>
           </Link>
         </>
       )}
