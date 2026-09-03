@@ -713,10 +713,6 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "newName must be 50 characters or fewer", http.StatusBadRequest)
 		return
 	}
-	if services.IsReservedAccountName(name) {
-		http.Error(w, fmt.Sprintf("%q is a reserved account name", name), http.StatusBadRequest)
-		return
-	}
 	if req.AccountNumber == importedAccountNumber {
 		http.Error(w, "the imported account cannot be renamed", http.StatusBadRequest)
 		return
@@ -724,6 +720,29 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
+
+	// dcrwallet's own private-key bucket is never a valid target.
+	if strings.EqualFold(name, "imported") {
+		http.Error(w, `"imported" is a reserved account name`, http.StatusBadRequest)
+		return
+	}
+
+	// A reserved name may be claimed while it is still free, so a restored
+	// account can be handed back the role it was created for before the feature
+	// is enabled. Once a name is in use - or, for lightning, once dcrlnd has
+	// bound to an account number - it is refused.
+	if services.IsReservedAccountName(name) {
+		claimable, cerr := services.IsClaimableReservedName(ctx, name)
+		if cerr != nil {
+			wlltLog.Errorf("Rename account: claimable check: %v", cerr)
+			http.Error(w, "rename failed", http.StatusInternalServerError)
+			return
+		}
+		if !claimable {
+			http.Error(w, fmt.Sprintf("%q is already in use", name), http.StatusBadRequest)
+			return
+		}
+	}
 
 	// Block renaming the special accounts other daemons bind to by name
 	// (mixed/unmixed/lightning/dex); renaming them breaks those bindings.
@@ -752,6 +771,27 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte("{}"))
+}
+
+// ClaimableAccountNamesHandler lists the reserved account names a rename may
+// still claim, so the accounts UI can offer them instead of guessing. Shares its
+// rule with the rename handler.
+func ClaimableAccountNamesHandler(w http.ResponseWriter, r *http.Request) {
+	if rpc.WalletGrpcClient == nil {
+		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	names, err := services.ClaimableReservedNames(ctx)
+	if err != nil {
+		wlltLog.Errorf("ClaimableReservedNames failed: %v", err)
+		http.Error(w, "failed to list claimable account names", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(names)
 }
 
 type privacyStatusResponse struct {

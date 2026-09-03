@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Edit2, X } from 'lucide-react';
-import { renameAccount } from '../../services/api';
+import { getClaimableAccountNames, renameAccount } from '../../services/api';
 import { apiError } from '../../utils/apiError';
 
 interface Props {
@@ -21,11 +21,17 @@ export const RenameAccountModal = ({
   const [name, setName] = useState(currentName);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Reserved names still free to claim. Best-effort: on failure the picker just
+  // stays hidden and the plain rename still works.
+  const [claimable, setClaimable] = useState<string[]>([]);
 
   useEffect(() => {
     if (isOpen) {
       setName(currentName);
       setError(null);
+      getClaimableAccountNames()
+        .then(setClaimable)
+        .catch(() => setClaimable([]));
     }
   }, [isOpen, currentName]);
 
@@ -108,6 +114,32 @@ export const RenameAccountModal = ({
             />
             {nameError && <p className="mt-1 text-xs text-destructive">{nameError}</p>}
           </div>
+
+          {claimable.length > 0 && (
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1" htmlFor="rename-account-role">
+                Or give it a role
+              </label>
+              <select
+                id="rename-account-role"
+                value={claimable.includes(trimmedName) ? trimmedName : ''}
+                onChange={(e) => setName(e.target.value)}
+                disabled={submitting}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+              >
+                <option value="">None</option>
+                {claimable.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                These names are still unused. Taking one lets that feature adopt this
+                account when you enable it, instead of creating a new one.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 text-sm text-destructive">

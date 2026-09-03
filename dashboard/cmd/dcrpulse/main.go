@@ -349,6 +349,7 @@ func main() {
 	api.HandleFunc("/wallet/accounts", handlers.GetAccountsHandler).Methods("GET")
 	api.HandleFunc("/wallet/create-account", handlers.CreateAccountHandler).Methods("POST")
 	api.HandleFunc("/wallet/rename-account", handlers.RenameAccountHandler).Methods("POST")
+	api.HandleFunc("/wallet/claimable-account-names", handlers.ClaimableAccountNamesHandler).Methods("GET")
 	api.HandleFunc("/wallet/account-extended-pubkey", handlers.GetAccountExtendedPubKeyHandler).Methods("GET")
 	api.HandleFunc("/wallet/privacy/status", handlers.PrivacyStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/privacy/setup", handlers.PrivacySetupHandler).Methods("POST")

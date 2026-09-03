@@ -889,6 +889,68 @@ func IsReservedAccountName(name string) bool {
 	}
 }
 
+// ClaimableReservedNames reports which reserved account names are still free to
+// be handed to an existing account by a rename.
+//
+// A restored wallet gets its accounts back as "account-1", "account-2" and so
+// on, because names are not recoverable from a seed. Every feature finds its
+// account by name, so without this the recovered accounts are stranded and
+// enabling a feature mints an empty duplicate beside them. Claiming the name
+// first lets the feature adopt the account it was originally given.
+//
+// For mixed, unmixed and dex, "the feature is set up" is defined by the account
+// existing (see FindPrivacyAccounts and ensureDexAccount), so a free name is the
+// whole test. Lightning is the exception: dcrlnd binds to an account *number*
+// recorded in the sentinel, so once that exists the name must not be given away,
+// even when no account currently holds it. "imported" is dcrwallet's own bucket
+// and is never claimable.
+func ClaimableReservedNames(ctx context.Context) ([]string, error) {
+	accounts, err := FetchAllAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	taken := make(map[string]bool, len(accounts))
+	for _, a := range accounts {
+		taken[strings.ToLower(strings.TrimSpace(a.AccountName))] = true
+	}
+
+	claimable := make([]string, 0, 4)
+	for _, name := range []string{
+		PrivacyMixedAccountName,
+		PrivacyChangeAccountName,
+		LightningAccountName,
+		DexAccountName,
+	} {
+		if taken[name] {
+			continue
+		}
+		if name == LightningAccountName {
+			if _, ok := readSentinelAccount(); ok {
+				continue
+			}
+		}
+		claimable = append(claimable, name)
+	}
+	return claimable, nil
+}
+
+// IsClaimableReservedName reports whether name is a reserved name that is still
+// free to claim. The rename handler and the endpoint that feeds the picker both
+// go through here, so the UI can never offer a name the API would refuse.
+func IsClaimableReservedName(ctx context.Context, name string) (bool, error) {
+	want := strings.ToLower(strings.TrimSpace(name))
+	claimable, err := ClaimableReservedNames(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, c := range claimable {
+		if c == want {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // FindPrivacyAccounts looks up the mixer's mixed and unmixed accounts by name.
 // `configured` is true only when both exist.
 func FindPrivacyAccounts(ctx context.Context) (mixed uint32, change uint32, configured bool, err error) {

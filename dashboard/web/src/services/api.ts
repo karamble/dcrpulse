@@ -345,6 +345,15 @@ export const renameAccount = async (accountNumber: number, newName: string): Pro
   await api.post('/wallet/rename-account', { accountNumber, newName });
 };
 
+// Reserved account names a rename may still claim. A restored wallet gets its
+// accounts back as "account-1", "account-2"..., and every feature finds its
+// account by name, so claiming the name first lets the feature adopt the
+// recovered account instead of creating an empty duplicate beside it.
+export const getClaimableAccountNames = async (): Promise<string[]> => {
+  const response = await api.get<string[]>('/wallet/claimable-account-names');
+  return response.data ?? [];
+};
+
 export const getAccountExtendedPubKey = async (accountNumber: number): Promise<string> => {
   const response = await api.get<{ xpub: string }>('/wallet/account-extended-pubkey', {
     params: { accountNumber },
