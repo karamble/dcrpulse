@@ -645,6 +645,13 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "denied", err.Error())
 				return nil, err
 			}
+			// The store delivers this file to a buyer on purchase, so a path
+			// escaping the store dir would exfiltrate any file the daemon reads.
+			if in.SendFilename != "" && !safeStoreMediaName(in.SendFilename) {
+				err := fmt.Errorf("invalid sendfilename")
+				recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "error", err.Error())
+				return nil, err
+			}
 			tags := in.Tags
 			if tags == nil {
 				tags = []string{}
@@ -1056,7 +1063,7 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "denied", err.Error())
 				return nil, err
 			}
-			if in.Path != "" && !safeBRName(in.Path) {
+			if in.Path != "" && !safeStoreMediaName(in.Path) {
 				err := fmt.Errorf("invalid path")
 				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "error", err.Error())
 				return nil, err
@@ -1712,6 +1719,9 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_store_file_get",
 		"Fetch one Bison Relay storefront media file by path. Returns its content type and base64 bytes.",
 		func(ctx context.Context, in brStorePathInput) (any, error) {
+			if !safeStoreMediaName(in.Path) {
+				return nil, fmt.Errorf("invalid path")
+			}
 			data, contentType, err := rpc.BrclientdGetStoreFile(ctx, in.Path)
 			if err != nil {
 				return nil, err
@@ -1723,6 +1733,11 @@ var bisonrelayTools = []toolDef{
 		func(ctx context.Context, a *agent, in brStorePathInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
 				recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "denied", err.Error())
+				return nil, err
+			}
+			if !safeStoreMediaName(in.Path) {
+				err := fmt.Errorf("invalid path")
+				recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "error", err.Error())
 				return nil, err
 			}
 			if err := rpc.BrclientdDeleteStoreFile(ctx, in.Path); err != nil {
@@ -2035,3 +2050,14 @@ func extractLNInvoice(markdown string) string {
 }
 
 func containsSlash(s string) bool { return strings.ContainsRune(s, '/') }
+
+// safeStoreMediaName is safeBRName plus the store's .tmpl/.tmp denylist, mirroring
+// the dashboard's safeStoreMediaPath: the store parses and executes *.tmpl, which
+// has its own tools, so generic store-file paths must never reach one.
+func safeStoreMediaName(p string) bool {
+	if !safeBRName(p) {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimRight(p, ". "))
+	return !strings.HasSuffix(lower, ".tmpl") && !strings.HasSuffix(lower, ".tmp")
+}

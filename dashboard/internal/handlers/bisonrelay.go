@@ -2010,6 +2010,15 @@ func BisonrelayStoreProductsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	// The store delivers sendfilename to a buyer on purchase, so a path escaping
+	// the store dir would exfiltrate any file the daemon can read.
+	if v, ok := req["sendfilename"]; ok && v != nil {
+		name, isStr := v.(string)
+		if !isStr || (name != "" && !safeStoreMediaPath(name)) {
+			http.Error(w, "invalid sendfilename", http.StatusBadRequest)
+			return
+		}
+	}
 	brDo204(w, func() error { return rpc.BrclientdSaveStoreProduct(r.Context(), req) })
 }
 
