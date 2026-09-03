@@ -198,11 +198,11 @@ func vspMaintenanceRun(ctx context.Context, a *agent, tool string, in vspTicketM
 
 // purchaseInput parameterizes staking_purchase.
 type purchaseInput struct {
-	Account       uint32 `json:"account" jsonschema:"source account number"`
+	Account       uint32 `json:"account" jsonschema:"source account number; overridden by the mixed account when privacy is configured"`
 	NumTickets    uint32 `json:"numTickets" jsonschema:"number of tickets to buy"`
 	VSPHost       string `json:"vspHost" jsonschema:"VSP host URL (from staking_vsps)"`
 	VSPPubkey     string `json:"vspPubkey" jsonschema:"VSP public key (from staking_vsps)"`
-	ChangeAccount uint32 `json:"changeAccount,omitempty" jsonschema:"change account number; defaults to the source account"`
+	ChangeAccount uint32 `json:"changeAccount,omitempty" jsonschema:"change account number; defaults to the source account, and is overridden by the mixed change account when privacy is configured"`
 }
 
 // vspInfoInput parameterizes staking_vsp_info.
@@ -260,7 +260,7 @@ var stakingTools = []toolDef{
 			return services.AutobuyerStatusSnapshot(ctx), nil
 		}),
 	agentTool("staking", "staking_purchase",
-		"Buy staking tickets through a VSP. Requires a spend grant covering the account; the cost (ticket price x count) is checked against the grant caps. The agent never supplies a passphrase.",
+		"Buy staking tickets through a VSP. Requires a spend grant covering both the funding account and the change account; the cost (ticket price x count) is checked against the grant caps. When privacy is configured the ticket is funded from the mixed account and the change goes to the mixed change account, overriding both account fields - see privacy_status for which those are. The agent never supplies a passphrase.",
 		func(ctx context.Context, a *agent, in purchaseInput) (any, error) {
 			if in.NumTickets == 0 {
 				return nil, fmt.Errorf("numTickets must be at least 1")
@@ -287,9 +287,13 @@ var stakingTools = []toolDef{
 				srcAccount = mixing.Mixed
 				changeAccount = mixing.Change
 			}
-			if err := grants.precheckAccount(a.id, srcAccount, time.Now()); err != nil {
-				recordSpend(a, "staking_purchase", srcAccount, 0, in.VSPHost, "denied", err.Error())
-				return nil, err
+			// The ticket is funded from one account and the split's change
+			// lands in the other, so both must be covered by the grant.
+			for _, acct := range []uint32{srcAccount, changeAccount} {
+				if err := grants.precheckAccount(a.id, acct, time.Now()); err != nil {
+					recordSpend(a, "staking_purchase", acct, 0, in.VSPHost, "denied", err.Error())
+					return nil, err
+				}
 			}
 			// A completed purchase records the VSP in the wallet's used list, so
 			// an unconstrained host here would let an agent seed that list and
