@@ -21,13 +21,13 @@ const HOST = 'dex.decred.org:7232';
 
 export type DexTab = 'trade' | 'wallets' | 'orders' | 'account' | 'mm' | 'settings';
 
-const tabs: { id: DexTab; label: string; Icon: typeof Wallet }[] = [
-  { id: 'trade', label: 'Trade', Icon: CandlestickChart },
-  { id: 'wallets', label: 'Wallets', Icon: Wallet },
-  { id: 'orders', label: 'Orders', Icon: ListOrdered },
-  { id: 'account', label: 'Account', Icon: ShieldCheck },
-  { id: 'mm', label: 'Market Maker', Icon: Bot },
-  { id: 'settings', label: 'Settings', Icon: Settings },
+const tabs: { id: DexTab; label: string; Icon: typeof Wallet; accessKey: string }[] = [
+  { id: 'trade', label: 'Trade', Icon: CandlestickChart, accessKey: 'a' },
+  { id: 'wallets', label: 'Wallets', Icon: Wallet, accessKey: 'b' },
+  { id: 'orders', label: 'Orders', Icon: ListOrdered, accessKey: 'c' },
+  { id: 'account', label: 'Account', Icon: ShieldCheck, accessKey: 'd' },
+  { id: 'mm', label: 'Market Maker', Icon: Bot, accessKey: 'e' },
+  { id: 'settings', label: 'Settings', Icon: Settings, accessKey: 'f' },
 ];
 
 // DexShell is the registered-account view. It hosts the DEX sub-pages behind a
@@ -60,12 +60,14 @@ export const DexShell = ({ initialTab = 'trade', onLocked }: { initialTab?: DexT
       <DexActionsBanner />
       <nav className="flex items-center gap-2 border-b border-border px-4">
         <div className="flex items-center gap-2 overflow-x-auto overflow-y-hidden">
-          {tabs.map(({ id, label, Icon }) => {
+          {tabs.map(({ id, label, Icon, accessKey }) => {
             const isActive = tab === id;
             return (
               <button
                 key={id}
                 type="button"
+                accessKey={accessKey}
+                title={`${label} (access key ${accessKey})`}
                 onClick={() => setTab(id)}
                 className={`flex items-center gap-1.5 px-4 py-2 border-b-2 whitespace-nowrap shrink-0 text-sm transition-colors ${
                   isActive

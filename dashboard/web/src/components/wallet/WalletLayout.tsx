@@ -68,54 +68,57 @@ export const WalletLayout = () => {
             <div className="font-semibold truncate">{activeName}</div>
           </div>
         )}
+        {/* Access keys a-k belong to the item, not its position, so the
+            watch-only items dropping out leaves a gap rather than
+            renumbering everything below them. */}
         <nav className="flex md:flex-col gap-1 overflow-x-auto overflow-y-hidden md:overflow-visible -mx-3 px-3 md:mx-0 md:px-0 pb-1 md:pb-0">
-          <NavLink to="/wallet" end className={navItemClass}>
+          <NavLink to="/wallet" end accessKey="a" title="Overview (access key a)" className={navItemClass}>
             <LayoutDashboard className="h-4 w-4" />
             <span>Overview</span>
           </NavLink>
-          <NavLink to="/wallet/transactions" className={navItemClass}>
+          <NavLink to="/wallet/transactions" accessKey="b" title="On-Chain Transactions (access key b)" className={navItemClass}>
             <ArrowLeftRight className="h-4 w-4" />
             <span>On-Chain Transactions</span>
           </NavLink>
           {!isWatchOnly && (
-            <NavLink to="/wallet/privacy" className={navItemClass}>
+            <NavLink to="/wallet/privacy" accessKey="c" title="Privacy (access key c)" className={navItemClass}>
               <ShieldCheck className="h-4 w-4" />
               <span>Privacy</span>
             </NavLink>
           )}
-          <NavLink to="/wallet/staking" className={navItemClass}>
+          <NavLink to="/wallet/staking" accessKey="d" title="Staking (access key d)" className={navItemClass}>
             <Ticket className="h-4 w-4" />
             <span>Staking</span>
           </NavLink>
-          <NavLink to="/wallet/governance" className={navItemClass}>
+          <NavLink to="/wallet/governance" accessKey="e" title="Governance (access key e)" className={navItemClass}>
             <Vote className="h-4 w-4" />
             <span>Governance</span>
           </NavLink>
           {!isWatchOnly && (
-            <NavLink to="/wallet/lightning" className={navItemClass}>
+            <NavLink to="/wallet/lightning" accessKey="f" title="Lightning (access key f)" className={navItemClass}>
               <Zap className="h-4 w-4" />
               <span>Lightning</span>
             </NavLink>
           )}
-          <NavLink to="/wallet/accounts" className={navItemClass}>
+          <NavLink to="/wallet/accounts" accessKey="g" title="Accounts (access key g)" className={navItemClass}>
             <Users className="h-4 w-4" />
             <span>Accounts</span>
           </NavLink>
           {!isWatchOnly && (
-            <NavLink to="/wallet/shared" className={navItemClass}>
+            <NavLink to="/wallet/shared" accessKey="h" title="MultiSig Wallet (access key h)" className={navItemClass}>
               <UsersRound className="h-4 w-4" />
               <span>MultiSig Wallet</span>
             </NavLink>
           )}
-          <NavLink to="/wallet/timestamp" className={navItemClass}>
+          <NavLink to="/wallet/timestamp" accessKey="i" title="Timestamp (access key i)" className={navItemClass}>
             <FileClock className="h-4 w-4" />
             <span>Timestamp</span>
           </NavLink>
-          <NavLink to="/wallet/settings" className={navItemClass}>
+          <NavLink to="/wallet/settings" accessKey="j" title="Settings (access key j)" className={navItemClass}>
             <Settings className="h-4 w-4" />
             <span>Settings</span>
           </NavLink>
-          <NavLink to="/wallet/select" className={navItemClass}>
+          <NavLink to="/wallet/select" accessKey="k" title="Switch Wallet (access key k)" className={navItemClass}>
             <Wallet className="h-4 w-4" />
             <span>Switch Wallet</span>
           </NavLink>

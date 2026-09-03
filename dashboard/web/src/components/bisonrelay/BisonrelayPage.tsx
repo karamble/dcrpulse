@@ -34,18 +34,19 @@ interface TabDef {
   id: TabId;
   label: string;
   icon: ComponentType<{ className?: string }>;
+  accessKey: string;
 }
 
 const tabs: TabDef[] = [
-  { id: 'chat', label: 'Chat', icon: MessageSquare },
-  { id: 'feed', label: 'Feed', icon: Rss },
-  { id: 'files', label: 'Files', icon: FolderOpen },
-  { id: 'stats', label: 'Stats', icon: BarChart3 },
+  { id: 'chat', label: 'Chat', icon: MessageSquare, accessKey: 'a' },
+  { id: 'feed', label: 'Feed', icon: Rss, accessKey: 'b' },
+  { id: 'files', label: 'Files', icon: FolderOpen, accessKey: 'c' },
+  { id: 'stats', label: 'Stats', icon: BarChart3, accessKey: 'd' },
   // Realtime (RTDT) is hidden from the nav: the upstream-BR build has no audio.
   // Still reachable via the #realtime hash (route + render kept below) as an easter egg.
   // { id: 'realtime', label: 'Realtime', icon: Phone },
-  { id: 'pages', label: 'Pages', icon: FileText },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'pages', label: 'Pages', icon: FileText, accessKey: 'e' },
+  { id: 'settings', label: 'Settings', icon: Settings, accessKey: 'f' },
 ];
 
 // readHashTab returns the active tab based on the URL hash. Feed, Files,
@@ -148,6 +149,8 @@ export const BisonrelayPage = () => {
               <button
                 key={tab.id}
                 type="button"
+                accessKey={tab.accessKey}
+                title={`${tab.label} (access key ${tab.accessKey})`}
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-2 border-b-2 inline-flex items-center gap-2 whitespace-nowrap shrink-0 text-sm transition-colors ${
                   isActive

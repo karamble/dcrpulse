@@ -91,28 +91,37 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
     </span>
   ) : null;
 
-  // The nav links, reused by the desktop bar and the mobile drawer.
-  const navLinks = (
+  // The nav links, reused by the desktop bar and the mobile drawer. Access keys
+  // go on the desktop copy only: the desktop bar is hidden rather than
+  // unmounted, so both copies are in the DOM while the drawer is open and a
+  // duplicate accesskey has no defined behaviour. Each key belongs to a
+  // destination rather than a position, so hiding an item leaves a gap instead
+  // of renumbering the ones after it.
+  const navLinks = (withKeys: boolean) => {
+    const key = (k: string) => (withKeys ? k : undefined);
+    const hint = (label: string, k: string) =>
+      withKeys ? `${label} (access key ${k})` : label;
+    return (
     <>
-      <Link to="/" title="Node" className={linkClass(isNodePage)}>
+      <Link to="/" accessKey={key('1')} title={hint('Node', '1')} className={linkClass(isNodePage)}>
         <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary p-2">
           <img src="/images/dcrpulse.svg" alt="Decred" className="w-full h-full" />
         </div>
         <span className="text-primary font-semibold whitespace-nowrap lg:hidden xl:inline">Node</span>
       </Link>
-      <Link to="/wallet" title="Wallet" className={linkClass(isWalletPage)}>
+      <Link to="/wallet" accessKey={key('2')} title={hint('Wallet', '2')} className={linkClass(isWalletPage)}>
         <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary">
           <Wallet className="h-5 w-5 text-white" />
         </div>
         <span className="text-primary font-semibold whitespace-nowrap lg:hidden xl:inline">Wallet</span>
       </Link>
-      <Link to="/explorer" title="Explorer" className={linkClass(isExplorerPage)}>
+      <Link to="/explorer" accessKey={key('3')} title={hint('Explorer', '3')} className={linkClass(isExplorerPage)}>
         <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary">
           <Compass className="h-5 w-5 text-white" />
         </div>
         <span className="text-primary font-semibold whitespace-nowrap lg:hidden xl:inline">Explorer</span>
       </Link>
-      <Link to="/treasury" title="Treasury" className={linkClass(isTreasuryPage)}>
+      <Link to="/treasury" accessKey={key('4')} title={hint('Treasury', '4')} className={linkClass(isTreasuryPage)}>
         <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary">
           <Vote className="h-5 w-5 text-white" />
         </div>
@@ -120,14 +129,14 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
       </Link>
       {!isWatchOnly && (
         <>
-          <Link to="/br" title="Bison Relay" className={`relative ${linkClass(isBisonrelayPage)}`}>
+          <Link to="/br" accessKey={key('5')} title={hint('Bison Relay', '5')} className={`relative ${linkClass(isBisonrelayPage)}`}>
             <div className="h-10 w-10 shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary">
               <img src="/images/bisonrelay.svg" alt="Bison Relay" className="h-6 w-auto" />
             </div>
             <span className="text-primary font-semibold whitespace-nowrap lg:hidden">Bison Relay</span>
             {brBadge}
           </Link>
-          <Link to="/dex" title="DEX" className={linkClass(isDexPage)}>
+          <Link to="/dex" accessKey={key('6')} title={hint('DEX', '6')} className={linkClass(isDexPage)}>
             <div className="h-10 w-auto shrink-0 rounded-lg flex items-center justify-center bg-gradient-primary px-2">
               <img src="/images/bisonwallet.svg" alt="Bison Wallet" className="h-6 w-auto" />
             </div>
@@ -136,7 +145,8 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
         </>
       )}
     </>
-  );
+    );
+  };
 
   const versionBadge = nodeVersion ? (
     <div className="px-4 py-2 rounded-lg bg-primary/10 border border-primary/20">
@@ -183,7 +193,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
 
       {/* Desktop navigation */}
       <div className="hidden lg:flex items-center gap-4">
-        {navLinks}
+        {navLinks(true)}
         {versionBadge}
         {logoutIconButton}
       </div>
@@ -225,7 +235,7 @@ export const Header = ({ nodeVersion }: HeaderProps) => {
               </button>
             </div>
             <nav className="flex flex-col gap-2" onClick={() => setMenuOpen(false)}>
-              {navLinks}
+              {navLinks(false)}
             </nav>
             {logoutDrawerButton && <div className="mt-4">{logoutDrawerButton}</div>}
             {versionBadge && <div className="mt-4">{versionBadge}</div>}
