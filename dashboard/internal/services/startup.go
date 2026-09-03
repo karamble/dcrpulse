@@ -114,9 +114,16 @@ var (
 		"performing database schema migration",
 		"migrating",
 	}
+	// "database(s) now open" and the unlocker prompt both print after dcrlnd
+	// finishes its schema work, and both are needed here: a brand-new channeldb
+	// runs its migrations on first creation, and dcrlnd logs "rpc server
+	// listening" before that, so without an end-of-schema-work marker a
+	// first-run wallet looks like an upgrade that never completes.
 	dcrlndReadyMarkers = []string{
 		"rpc server listening",
 		"ready for",
+		"database(s) now open",
+		"waiting for wallet encryption password",
 	}
 )
 
@@ -131,6 +138,31 @@ func startupMarkers(c LogComponent) (starts, ready []string) {
 	default:
 		return nil, nil
 	}
+}
+
+// startupUpgradeInProgress reports whether a log tail shows a database upgrade
+// that has not finished yet, along with the line that started it. An upgrade
+// counts as finished as soon as any ready marker appears after it, so a
+// completed upgrade still sitting in the tail does not false-positive, and
+// neither does the schema work a daemon does while creating a fresh database.
+func startupUpgradeInProgress(lines, starts, ready []string) (bool, string) {
+	lastStart, lastReady, startLine := -1, -1, ""
+	for i, ln := range lines {
+		l := strings.ToLower(ln)
+		for _, m := range starts {
+			if strings.Contains(l, m) {
+				lastStart, startLine = i, ln
+				break
+			}
+		}
+		for _, m := range ready {
+			if strings.Contains(l, m) {
+				lastReady = i
+				break
+			}
+		}
+	}
+	return lastStart > lastReady, startLine
 }
 
 // DaemonStartupHint inspects the tail of a daemon's log to decide whether an
@@ -166,24 +198,8 @@ func DaemonStartupHint(ctx context.Context, component LogComponent) DaemonStartu
 		return starting
 	}
 
-	lastStart, lastReady, startLine := -1, -1, ""
-	for i, ln := range lines {
-		l := strings.ToLower(ln)
-		for _, m := range starts {
-			if strings.Contains(l, m) {
-				lastStart, startLine = i, ln
-				break
-			}
-		}
-		for _, m := range ready {
-			if strings.Contains(l, m) {
-				lastReady = i
-				break
-			}
-		}
-	}
-
-	if lastStart > lastReady {
+	upgrading, startLine := startupUpgradeInProgress(lines, starts, ready)
+	if upgrading {
 		return DaemonStartupState{
 			State:   "upgrading",
 			Detail:  strings.TrimSpace(startLine),

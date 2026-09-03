@@ -286,6 +286,11 @@ func LightningStatus(ctx context.Context) types.LightningStatus {
 	case strings.Contains(lower, "not created"), strings.Contains(lower, "wallet exists"):
 		out.Stage = "needs-setup"
 	case LndStartupOrUnreachable(err):
+		// Unreachable also covers a failed TLS handshake against a node that
+		// regenerated its pinned cert, which no other path re-dials once a
+		// client exists. Rebuild here so the next poll recovers on its own
+		// instead of stranding the page with no way forward.
+		rpc.RedialDcrlnd()
 		out.Stage = "unavailable"
 		out.Message = DaemonStartupHint(ctx, LogComponentDcrlnd).Message
 	default:

@@ -522,24 +522,57 @@ func ensureAccountEncrypted(ctx context.Context, accountNumber uint32, passphras
 	return fmt.Errorf("account %d not found", accountNumber)
 }
 
+// ensureAllAccountsEncryptedRetry runs ensureAllAccountsEncrypted, retrying for
+// a few seconds so a daemon that has only just been relaunched onto a different
+// wallet gets a chance to answer. Callers treat a final failure as non-fatal:
+// unlockAccountForSpend migrates any account that was missed on its first use.
+func ensureAllAccountsEncryptedRetry(ctx context.Context, passphrase []byte) error {
+	var err error
+	for i := 0; i < 5; i++ {
+		if err = ensureAllAccountsEncrypted(ctx, passphrase); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	return err
+}
+
 // ensureAllAccountsEncrypted gives every normal account the same per-account
 // passphrase (equal to the wallet passphrase) in one pass, so all accounts unlock
 // uniformly via UnlockAccount. Mirrors Decrediton's setAccountsPass migration.
 // Run after wallet creation and after a restore's account discovery so the default
 // account never diverges from the accounts recovered or created later. Skips the
 // same accounts unlockAllAccountsForSpend does: imported, dex (bisonw-managed), and
-// xpub-imported (>= 2^31). Each account is delegated to ensureAccountEncrypted,
-// which is a no-op for accounts already per-account-encrypted.
+// xpub-imported (>= 2^31). Accounts already per-account-encrypted are skipped.
+//
+// The account list comes from gRPC rather than FetchAllAccounts: that helper is
+// backed by JSON-RPC getbalance and reports a failure as an empty list with a
+// nil error, so a JSON-RPC leg that has not caught up with a daemon restart
+// would silently encrypt nothing and still report success.
 func ensureAllAccountsEncrypted(ctx context.Context, passphrase []byte) error {
-	accounts, err := FetchAllAccounts(ctx)
-	if err != nil {
-		return err
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC unavailable")
 	}
-	for _, a := range accounts {
+	acctsResp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	if err != nil {
+		return fmt.Errorf("list accounts: %w", err)
+	}
+	for _, a := range acctsResp.Accounts {
 		if a.AccountName == "imported" || a.AccountName == "dex" || a.AccountNumber >= 1<<31 {
 			continue
 		}
-		if err := ensureAccountEncrypted(ctx, a.AccountNumber, passphrase); err != nil {
+		if a.AccountEncrypted {
+			continue
+		}
+		if _, err := rpc.WalletGrpcClient.SetAccountPassphrase(ctx, &pb.SetAccountPassphraseRequest{
+			AccountNumber:        a.AccountNumber,
+			NewAccountPassphrase: passphrase,
+			WalletPassphrase:     passphrase,
+		}); err != nil {
 			return fmt.Errorf("encrypt account %q (%d): %w", a.AccountName, a.AccountNumber, err)
 		}
 	}

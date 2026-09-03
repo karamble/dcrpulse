@@ -142,11 +142,13 @@ func CreateNamedWallet(ctx context.Context, name, publicPass, privatePass, seedH
 	if err := switchDaemonToNewWallet(ctx, name, network); err != nil {
 		return err
 	}
-	if err := CreateNewWallet(ctx, publicPass, privatePass, seedHex, discoverAccounts); err != nil {
-		return err
-	}
-	finishWalletCreate(ctx, network, name)
-	return nil
+	// The active wallet is already this one, so the stack clients must be
+	// repointed at its certs even when the create below fails. Skipping that on
+	// the error path leaves them serving the previous wallet's paths, which
+	// strands Lightning behind a cert it can no longer verify.
+	defer finishWalletCreate(ctx, network, name)
+
+	return CreateNewWallet(ctx, publicPass, privatePass, seedHex, discoverAccounts)
 }
 
 // CreateNamedWatchOnlyWallet creates a watching-only wallet (from an xpub) under

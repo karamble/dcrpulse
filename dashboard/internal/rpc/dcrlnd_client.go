@@ -174,13 +174,30 @@ func ReinitDcrlndClient() error {
 func ReconnectDcrlnd(tlsCertPath, macaroonPath string) {
 	dcrlndMu.Lock()
 	defer dcrlndMu.Unlock()
+	dcrlndCfg.TLSCertPath = tlsCertPath
+	dcrlndCfg.MacaroonPath = macaroonPath
+	redialDcrlndLocked()
+}
+
+// RedialDcrlnd rebuilds the clients from the paths already configured, so a
+// cert regenerated after the current client was built is picked up. dcrlnd
+// writes a fresh self-signed cert the first time it starts for a wallet, and
+// the dial pins that leaf, so an established client keeps failing the handshake
+// until it re-reads the file. ReinitDcrlndClient cannot cover this: it only
+// dials when there is no client at all.
+func RedialDcrlnd() {
+	dcrlndMu.Lock()
+	defer dcrlndMu.Unlock()
+	redialDcrlndLocked()
+}
+
+// redialDcrlndLocked drops the connection and dials again. Callers hold dcrlndMu.
+func redialDcrlndLocked() {
 	if dcrlndConn != nil {
 		_ = dcrlndConn.Close()
 		dcrlndConn = nil
 	}
 	dcrlndClients = DcrlndClients{}
-	dcrlndCfg.TLSCertPath = tlsCertPath
-	dcrlndCfg.MacaroonPath = macaroonPath
 	_ = initDcrlndLocked(dcrlndCfg)
 }
 

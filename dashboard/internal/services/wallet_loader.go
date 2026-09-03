@@ -150,9 +150,14 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 	//     the default account would end up sealed under unrecoverable bytes. Mirror
 	//     Decrediton, which runs setAccountsPass only AFTER discovery reaches SYNCED;
 	//     runDiscoveryRpcSync does that below once its discovery stream completes.
+	//
+	// A failure here is logged, not returned: the wallet already exists and is
+	// open, so aborting would strand the caller mid-switch with the new wallet
+	// active but the rest of the stack never repointed at it. Any account missed
+	// here is migrated by unlockAccountForSpend on first use.
 	if !discoverAccounts {
-		if err := ensureAllAccountsEncrypted(ctx, []byte(privatePass)); err != nil {
-			return fmt.Errorf("set account passphrases: %w", err)
+		if err := ensureAllAccountsEncryptedRetry(ctx, []byte(privatePass)); err != nil {
+			wlltLog.Errorf("Wallet created but per-account encryption did not complete: %v", err)
 		}
 	}
 
@@ -252,7 +257,7 @@ func runDiscoveryRpcSync(privatePass string) {
 	// Decrediton's setAccountsPass-on-SYNCED. Best-effort: log on failure.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := ensureAllAccountsEncrypted(ctx, []byte(privatePass)); err != nil {
+	if err := ensureAllAccountsEncryptedRetry(ctx, []byte(privatePass)); err != nil {
 		wlltLog.Errorf("Discovery RPC sync: set account passphrases: %v", err)
 	}
 }
