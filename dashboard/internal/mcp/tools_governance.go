@@ -200,7 +200,7 @@ var governanceTools = []toolDef{
 				return nil, err
 			}
 			defer zero(pass)
-			if err := services.SetAgendaChoice(ctx, in.AgendaID, in.ChoiceID, pass); err != nil {
+			if _, err := services.SetAgendaChoice(ctx, in.AgendaID, in.ChoiceID, pass); err != nil {
 				recordSpend(a, "governance_set_vote_choice", 0, 0, in.AgendaID, "error", err.Error())
 				return nil, err
 			}
@@ -233,7 +233,7 @@ var governanceTools = []toolDef{
 				return nil, err
 			}
 			defer zero(pass)
-			if err := services.SetTreasuryKeyPolicy(ctx, in.Key, in.Policy, pass); err != nil {
+			if _, err := services.SetTreasuryKeyPolicy(ctx, in.Key, in.Policy, pass); err != nil {
 				recordSpend(a, "governance_set_treasury_policy", 0, 0, in.Key, "error", err.Error())
 				return nil, err
 			}
@@ -249,7 +249,7 @@ var governanceTools = []toolDef{
 				return nil, err
 			}
 			defer zero(pass)
-			if err := services.SetTSpendPolicyForHash(ctx, in.Hash, in.Policy, pass); err != nil {
+			if _, err := services.SetTSpendPolicyForHash(ctx, in.Hash, in.Policy, pass); err != nil {
 				recordSpend(a, "governance_set_tspend_policy", 0, 0, in.Hash, "error", err.Error())
 				return nil, err
 			}
