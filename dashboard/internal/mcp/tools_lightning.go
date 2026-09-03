@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -223,17 +224,28 @@ var lightningTools = []toolDef{
 			}
 			req := &types.OpenChannelRequest{PeerURI: in.PeerURI, LocalAtoms: localAtoms, Private: in.Private}
 			if in.PushDCR > 0 {
-				if p, err := dcrutil.NewAmount(in.PushDCR); err == nil {
-					req.PushAtoms = int64(p)
+				p, perr := dcrutil.NewAmount(in.PushDCR)
+				if perr != nil || int64(p) <= 0 {
+					return nil, fmt.Errorf("pushDcr is not a valid amount")
 				}
+				req.PushAtoms = int64(p)
 			}
+			// The pushed part is handed to the peer for good, so it belongs in
+			// the trail rather than being folded into the funding amount.
+			detail := fmt.Sprintf("push %s", dcrAmountStr(req.PushAtoms))
 			resp, err := services.OpenLightningChannel(ctx, req)
 			if err != nil {
-				grants.refund(a.id, localAtoms)
-				recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "error", err.Error())
+				// Only a failure that provably precedes the funding request may
+				// release the reservation; see services.ErrSpendStarted.
+				if !errors.Is(err, services.ErrSpendStarted) {
+					grants.refund(a.id, localAtoms)
+				} else {
+					detail += "; reservation kept, the funding may still complete"
+				}
+				recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "error", detail+": "+err.Error())
 				return nil, err
 			}
-			recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "ok", resp.FundingTxid)
+			recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "ok", resp.FundingTxid+" "+detail)
 			return resp, nil
 		}),
 	readTool("lightning", "ln_decode_invoice",
@@ -413,8 +425,15 @@ var lightningTools = []toolDef{
 			}
 			resp, err := services.RequestLiquidityChannel(ctx, req)
 			if err != nil {
-				grants.refund(a.id, feeAtoms)
-				recordSpend(a, "ln_liquidity_request", 0, feeDCR, in.Server, "error", err.Error())
+				detail := err.Error()
+				// The provider flow runs on its own context, so once it has
+				// begun a failure here does not mean the fee went unpaid.
+				if !errors.Is(err, services.ErrSpendStarted) {
+					grants.refund(a.id, feeAtoms)
+				} else {
+					detail = "reservation kept, the fee may still be paid: " + detail
+				}
+				recordSpend(a, "ln_liquidity_request", 0, feeDCR, in.Server, "error", detail)
 				return nil, err
 			}
 			recordSpend(a, "ln_liquidity_request", 0, feeDCR, in.Server, "ok", resp.ChannelPoint)
