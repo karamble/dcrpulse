@@ -1338,10 +1338,23 @@ sudo nano /etc/logrotate.d/docker-containers
 
 ### Complete System Reset
 
-**When all else fails**, nuclear option:
+**When all else fails**, nuclear option.
+
+**`make backup` does not cover what step 3 deletes.** It archives the
+`app-data` volume only. The dcrdex, dcrlnd, brclientd, dashboard and tor
+volumes are separate and are not in that archive, so back up anything you need
+from them by hand first (see
+[Backup & Restore](backup-restore.md)). In particular:
+
+- **DCRDEX:** a locked fidelity bond is refunded with a key derived from the
+  DEX app seed, which lives only in this volume. Export it under DEX ->
+  Settings -> Back up app seed, or the bonded DCR is unrecoverable.
+- **Lightning:** removing `dcrpulse_dcrlnd-data` abandons any open channel.
+  Close channels first, or keep the channel backup.
+- **Bison Relay:** removing `dcrpulse_brclientd-data` destroys the BR identity.
 
 ```bash
-# 1. Backup important data
+# 1. Backup important data (app-data volume only, see the warning above)
 make backup  # If Makefile available
 
 # 2. Stop everything

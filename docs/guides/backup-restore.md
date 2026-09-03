@@ -291,9 +291,16 @@ keep at least one current copy.
 
 If you trade on DCRDEX, bisonw stores account and trade state in the
 `dcrpulse_dcrdex-data` volume (mounted at `/dex/.dexc`). This state records
-your registered DEX servers and trade history. It does not hold spendable
-funds (those live in the dcrwallet database), but losing it loses your trade
-records and active-order tracking.
+your registered DEX servers and trade history.
+
+**This volume can hold unrecoverable funds.** A fidelity bond is locked on
+chain, and the refund is spent with a key derived from the DEX app seed, which
+exists only in `dexc.db` inside this volume. Your wallet seed does not derive
+that key, so restoring the wallet does not bring the bond back. Delete or reset
+this volume while a bond is still locked and the bonded DCR is gone for good.
+
+Export the app seed before you delete or reset the volume, under DEX ->
+Settings -> Back up app seed, and keep it as carefully as your wallet seed.
 
 ```bash
 # Create backup directory
