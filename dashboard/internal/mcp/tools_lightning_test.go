@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -36,6 +37,13 @@ func (s stubLightning) OpenChannelSync(context.Context, *lnrpc.OpenChannelReques
 // AddInvoice lets a test drive invoice creation without a daemon.
 func (s stubLightning) AddInvoice(_ context.Context, in *lnrpc.Invoice, _ ...grpc.CallOption) (*lnrpc.AddInvoiceResponse, error) {
 	return &lnrpc.AddInvoiceResponse{PaymentRequest: "lnbogus", RHash: []byte{0xab, 0xcd}}, nil
+}
+
+// GetInfo is reached when a tool resolves the configured liquidity provider for
+// the audit trail. Failing it exercises the best-effort fallback, which leaves
+// the provider unnamed rather than failing the call.
+func (s stubLightning) GetInfo(context.Context, *lnrpc.GetInfoRequest, ...grpc.CallOption) (*lnrpc.GetInfoResponse, error) {
+	return nil, errors.New("no node info in this test")
 }
 
 // LookupInvoice is the second roundtrip AddLightningInvoice makes; failing it
@@ -134,5 +142,48 @@ func TestAddInvoiceRecordsNoAmount(t *testing.T) {
 	}
 	if !strings.Contains(got[0].Detail, "requested") {
 		t.Errorf("the requested amount was dropped from the trail: %q", got[0].Detail)
+	}
+}
+
+// TestLiquidityToolsRejectACallerProvider pins that the liquidity provider and
+// its certificate are the dashboard's to choose. The request tool pays that
+// provider a fee, so a caller naming it would pick who gets paid, and a caller
+// supplying its certificate would vouch for them too.
+func TestLiquidityToolsRejectACallerProvider(t *testing.T) {
+	const agentID = "ln-provider"
+	grants.set(agentID, GrantSpec{
+		WriteScopes: []string{scopeLightning}, PerTxAtoms: 1e8, DailyAtoms: 1e8,
+	}, time.Now())
+	t.Cleanup(func() { grants.revoke(agentID) })
+	cs := connectTo(t, testAgent(agentID, "ln", map[string]bool{"lightning": true}))
+
+	for _, tool := range []string{"ln_liquidity_estimate", "ln_liquidity_request"} {
+		for _, field := range []string{"server", "certPem"} {
+			args := map[string]any{"chanSizeDcr": 1.0, "approvedFeeDcr": 0.5, field: "x"}
+			out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: tool, Arguments: args})
+			// A removed field is rejected by schema validation rather than
+			// silently dropped, so it surfaces either as a call error or an
+			// error result; both mean the caller cannot set it.
+			if err == nil && !out.IsError {
+				t.Errorf("%s accepted a caller-supplied %q", tool, field)
+			}
+		}
+	}
+
+	// And the catalogue must not invite it either.
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	for _, tl := range res.Tools {
+		if tl.Name != "ln_liquidity_estimate" && tl.Name != "ln_liquidity_request" {
+			continue
+		}
+		schema, _ := json.Marshal(tl.InputSchema)
+		for _, field := range []string{"server", "certPem"} {
+			if strings.Contains(string(schema), field) {
+				t.Errorf("%s still advertises %q in its input schema", tl.Name, field)
+			}
+		}
 	}
 }

@@ -156,3 +156,24 @@ func TestVSPFeeCandidatesNeedsFeeStatus(t *testing.T) {
 		}
 	})
 }
+
+// TestVSPInfoProbeIsConstrained pins that the VSP probe cannot be pointed at an
+// arbitrary host. It makes an outbound request to whatever it is given, so it is
+// limited to the same set the paying staking tools accept.
+func TestVSPInfoProbeIsConstrained(t *testing.T) {
+	cs := connectTo(t, testAgent("vsp-probe", "probe", map[string]bool{"staking": true}))
+	out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "staking_vsp_info", Arguments: map[string]any{"host": "https://evil.example"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !out.IsError {
+		t.Fatal("an unknown VSP host was probed rather than refused")
+	}
+	// With no wallet and no registry reachable both candidate sets are empty, so
+	// every host is refused here; this pins the refusal, not the accept path.
+	if txt := resultText(out); !strings.Contains(txt, "is not a VSP this wallet has used") {
+		t.Errorf("refused, but not by the known-VSP check: %q", txt)
+	}
+}

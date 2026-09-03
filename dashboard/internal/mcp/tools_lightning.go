@@ -53,15 +53,11 @@ type lnGraphRoutesInput struct {
 
 type lnLiquidityEstimateInput struct {
 	ChanSizeDCR float64 `json:"chanSizeDcr" jsonschema:"inbound channel size in DCR"`
-	Server      string  `json:"server,omitempty" jsonschema:"optional liquidity provider server; blank uses the network default"`
-	CertPEM     string  `json:"certPem,omitempty" jsonschema:"optional provider TLS cert (PEM)"`
 }
 
 type lnLiquidityRequestInput struct {
 	ChanSizeDCR    float64 `json:"chanSizeDcr" jsonschema:"inbound channel size in DCR"`
 	ApprovedFeeDCR float64 `json:"approvedFeeDcr" jsonschema:"maximum provider fee in DCR the request may pay; aborts if exceeded"`
-	Server         string  `json:"server,omitempty" jsonschema:"optional liquidity provider server; blank uses the network default"`
-	CertPEM        string  `json:"certPem,omitempty" jsonschema:"optional provider TLS cert (PEM)"`
 }
 
 type lnCloseChannelInput struct {
@@ -272,11 +268,11 @@ var lightningTools = []toolDef{
 			if err != nil || int64(size) <= 0 {
 				return nil, fmt.Errorf("chanSizeDcr must be positive")
 			}
-			req := &types.RequestLiquidityEstimateRequest{
-				ChanSizeAtoms: int64(size),
-				Server:        in.Server,
-				CertPEM:       in.CertPEM,
-			}
+			// The provider and its certificate come from the dashboard's
+			// configuration, never from the caller: this call's sibling pays the
+			// provider, and an agent must not choose who is paid nor vouch for
+			// its certificate.
+			req := &types.RequestLiquidityEstimateRequest{ChanSizeAtoms: int64(size)}
 			return services.EstimateLiquidityChannel(ctx, req)
 		}),
 	readTool("lightning", "ln_autopilot_status",
@@ -413,19 +409,27 @@ var lightningTools = []toolDef{
 			}
 			feeAtoms := int64(fee)
 			feeDCR := dcrutil.Amount(feeAtoms).ToCoin()
+			// Name the provider that will actually be paid in the trail, since
+			// the caller no longer supplies it. Best-effort: an unavailable
+			// lookup must not stop the call from being recorded.
+			provider := ""
+			if d, derr := services.GetLiquidityDefaults(ctx); derr == nil && d != nil {
+				provider = d.Server
+			}
 			if err := grants.authorizeLightning(ctx, a.id, feeAtoms, time.Now()); err != nil {
 				if tripwire(a.id, err) {
-					recordSpend(a, "ln_liquidity_request", 0, feeDCR, in.Server, "blocked", "spend-limit violation: grant revoked and token blocked")
+					recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
-					recordSpend(a, "ln_liquidity_request", 0, feeDCR, in.Server, "denied", err.Error())
+					recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "denied", err.Error())
 				}
 				return nil, err
 			}
+			// Provider and certificate come from the dashboard's configuration;
+			// the caps bound how much this pays, and the configured provider
+			// bounds who is paid.
 			req := &types.RequestLiquidityRequest{
 				ChanSizeAtoms:    int64(size),
 				ApprovedFeeAtoms: feeAtoms,
-				Server:           in.Server,
-				CertPEM:          in.CertPEM,
 			}
 			resp, err := services.RequestLiquidityChannel(ctx, req)
 			if err != nil {
@@ -437,10 +441,10 @@ var lightningTools = []toolDef{
 				} else {
 					detail = "reservation kept, the fee may still be paid: " + detail
 				}
-				recordSpend(a, "ln_liquidity_request", 0, feeDCR, in.Server, "error", detail)
+				recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "error", detail)
 				return nil, err
 			}
-			recordSpend(a, "ln_liquidity_request", 0, feeDCR, in.Server, "ok", resp.ChannelPoint)
+			recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "ok", resp.ChannelPoint)
 			return resp, nil
 		}),
 }

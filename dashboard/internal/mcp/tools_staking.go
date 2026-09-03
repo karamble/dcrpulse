@@ -28,7 +28,10 @@ func normVSPHost(h string) string {
 // used or one the public registry lists, with a matching pubkey. The VSP names
 // the address its fee is paid to, so an unconstrained host lets an agent choose
 // where wallet funds land. The dashboard's own UI paths stay unrestricted.
-func resolveKnownVSP(ctx context.Context, host, pubkey string) (*types.VSPInfo, error) {
+// findKnownVSP returns the used-list or registry entry for host, or an error
+// naming what is acceptable. Callers that pay a VSP go through resolveKnownVSP,
+// which additionally pins the pubkey; a read-only probe only needs membership.
+func findKnownVSP(ctx context.Context, host string) (*types.VSPInfo, error) {
 	want := normVSPHost(host)
 	if want == "" {
 		return nil, fmt.Errorf("vspHost is required (see staking_vsps)")
@@ -52,6 +55,14 @@ func resolveKnownVSP(ctx context.Context, host, pubkey string) (*types.VSPInfo, 
 	}
 	if found == nil {
 		return nil, fmt.Errorf("vspHost %q is not a VSP this wallet has used or a public registry entry: pick one from staking_used_vsps or staking_vsps", host)
+	}
+	return found, nil
+}
+
+func resolveKnownVSP(ctx context.Context, host, pubkey string) (*types.VSPInfo, error) {
+	found, err := findKnownVSP(ctx, host)
+	if err != nil {
+		return nil, err
 	}
 	if found.PubKey != "" && found.PubKey != pubkey {
 		return nil, fmt.Errorf("vspPubkey does not match the known key for %q", host)
@@ -257,6 +268,12 @@ var stakingTools = []toolDef{
 		func(ctx context.Context, in vspInfoInput) (any, error) {
 			if in.Host == "" {
 				return nil, fmt.Errorf("host is required (see staking_vsps)")
+			}
+			// The probe is an outbound request to whatever host is named, so it
+			// is limited to the same VSPs the paying tools accept rather than
+			// letting a caller point the dashboard at an arbitrary server.
+			if _, err := findKnownVSP(ctx, in.Host); err != nil {
+				return nil, err
 			}
 			return services.GetVSPInfo(ctx, in.Host)
 		}),

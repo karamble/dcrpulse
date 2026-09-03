@@ -223,7 +223,7 @@ var capBoundTools = []struct {
 	{"wallet_send", map[string]any{"account": 0, "address": "DsTest", "amountDcr": 1.0}},
 	{"ln_pay", map[string]any{"payReq": "lnbogus"}},
 	{"ln_open_channel", map[string]any{"peerUri": lnTestPeer, "localDcr": 1.0}},
-	{"ln_liquidity_request", map[string]any{"chanSizeDcr": 1.0, "approvedFeeDcr": 0.5, "server": "https://lp.example"}},
+	{"ln_liquidity_request", map[string]any{"chanSizeDcr": 1.0, "approvedFeeDcr": 0.5}},
 	{"br_tip_user", map[string]any{"uid": "ab12", "amountDcr": 1.0}},
 	{"br_content_get", map[string]any{"uid": "ab12", "fid": "f", "maxCostAtoms": 100000000}},
 	// base must stay 42 (bisonw.AssetDCR): dexOrderDCROutlay returns 0 for a
