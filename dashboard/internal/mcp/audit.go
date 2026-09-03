@@ -7,6 +7,7 @@ package mcp
 import (
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // AuditEntry records one agent spend attempt (allowed, denied, or failed) for
@@ -24,6 +25,33 @@ type AuditEntry struct {
 }
 
 const auditMax = 200
+
+// Audit fields carry caller-supplied strings - an address, a VSP host, a uid, or
+// an error text that quotes the agent's own input - so they are bounded before
+// they reach the ring, the persisted trail, the audit resource and the operator's
+// Bison Relay notification. The budgets are generous against real values: a
+// Decred address is ~35 chars and a Bison Relay uid 64.
+const (
+	auditTargetMax   = 256
+	auditDetailMax   = 1024
+	auditTruncMarker = "...[truncated]"
+)
+
+// clampAuditField bounds s to max bytes, cutting on a rune boundary and marking
+// the cut, so a clipped value is never mistaken for a complete one.
+func clampAuditField(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	keep := max - len(auditTruncMarker)
+	if keep < 0 {
+		keep = 0
+	}
+	for keep > 0 && !utf8.RuneStart(s[keep]) {
+		keep--
+	}
+	return s[:keep] + auditTruncMarker
+}
 
 type auditLog struct {
 	mu      sync.Mutex
@@ -71,9 +99,9 @@ func recordSpend(a *agent, tool string, account uint32, amountDCR float64, targe
 		Tool:      tool,
 		Account:   account,
 		AmountDCR: amountDCR,
-		Target:    target,
+		Target:    clampAuditField(target, auditTargetMax),
 		Result:    result,
-		Detail:    detail,
+		Detail:    clampAuditField(detail, auditDetailMax),
 	}
 	audit.record(e)
 	persistAudit(e)
