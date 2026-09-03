@@ -19,8 +19,9 @@ import (
 
 type stubLightning struct {
 	lnrpc.LightningClient
-	connectErr error
-	openErr    error
+	connectErr  error
+	openErr     error
+	decodeAtoms int64
 }
 
 func (s stubLightning) ConnectPeer(context.Context, *lnrpc.ConnectPeerRequest, ...grpc.CallOption) (*lnrpc.ConnectPeerResponse, error) {
@@ -29,6 +30,12 @@ func (s stubLightning) ConnectPeer(context.Context, *lnrpc.ConnectPeerRequest, .
 
 func (s stubLightning) OpenChannelSync(context.Context, *lnrpc.OpenChannelRequest, ...grpc.CallOption) (*lnrpc.ChannelPoint, error) {
 	return nil, s.openErr
+}
+
+// decodeAtoms lets a test drive a tool that decodes an invoice before it reaches
+// the cap check, without a daemon.
+func (s stubLightning) DecodePayReq(context.Context, *lnrpc.PayReqString, ...grpc.CallOption) (*lnrpc.PayReq, error) {
+	return &lnrpc.PayReq{NumAtoms: s.decodeAtoms, Destination: "02deadbeef"}, nil
 }
 
 const lnTestPeer = "03aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899@127.0.0.1:9735"

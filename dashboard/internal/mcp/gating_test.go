@@ -7,11 +7,14 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"dcrpulse/internal/rpc"
 )
 
 // minimalArgs builds a schema-valid argument map for a tool by filling every
@@ -113,11 +116,6 @@ func TestEveryWriteToolGatesWithoutGrant(t *testing.T) {
 			t.Errorf("%s: SUCCEEDED without a spend grant - missing grant gate?", tl.Name)
 			continue
 		}
-		// ln_pay decodes the invoice before the grant check, so without a daemon
-		// it errors at decode rather than the gate; an error is still a safe no-op.
-		if tl.Name == "ln_pay" {
-			continue
-		}
 		if txt := resultText(out); !strings.Contains(txt, "no spend grant") && !strings.Contains(txt, "no write grant") &&
 			!strings.Contains(txt, "does not allow") && !strings.Contains(txt, "does not include") {
 			t.Errorf("%s: refused, but not by the grant gate: %q", tl.Name, txt)
@@ -208,5 +206,70 @@ func TestReadToolsAnnotatedReadOnly(t *testing.T) {
 		if tl.Annotations == nil {
 			t.Errorf("%s: missing annotations", tl.Name)
 		}
+	}
+}
+
+// capBoundTools are the fund-moving tools that reach their cap check without any
+// daemon, with the arguments needed to attempt a spend above a 1-atom cap.
+//
+// The three staking fund tools are absent deliberately: staking_purchase and the
+// two VSP maintenance runs resolve a VSP over the network and read the ticket
+// price before they authorize, so without daemons they fail earlier than the cap
+// and would assert nothing.
+var capBoundTools = []struct {
+	name string
+	args map[string]any
+}{
+	{"wallet_send", map[string]any{"account": 0, "address": "DsTest", "amountDcr": 1.0}},
+	{"ln_pay", map[string]any{"payReq": "lnbogus"}},
+	{"ln_open_channel", map[string]any{"peerUri": lnTestPeer, "localDcr": 1.0}},
+	{"ln_liquidity_request", map[string]any{"chanSizeDcr": 1.0, "approvedFeeDcr": 0.5, "server": "https://lp.example"}},
+	{"br_tip_user", map[string]any{"uid": "ab12", "amountDcr": 1.0}},
+	{"br_content_get", map[string]any{"uid": "ab12", "fid": "f", "maxCostAtoms": 100000000}},
+	// base must stay 42 (bisonw.AssetDCR): dexOrderDCROutlay returns 0 for a
+	// market with no DCR side, which makes the call scope-only and leaves
+	// nothing for the cap to bind against.
+	{"dex_place_order", map[string]any{"host": "h", "base": 42, "quote": 0, "qty": 100000000, "rate": 100000000, "isLimit": true, "sell": true}},
+	{"dex_post_bond", map[string]any{"host": "h", "bond": 100000000}},
+}
+
+// TestFundToolsRespectTheCaps exercises the fund tools *with* a grant, which the
+// rest of the suite never does. Pinning the scope alone cannot see a gate that
+// was downgraded rather than dropped - swapping a reserving authorizer for a
+// scope-only one keeps the scope name and silently stops the cap binding - so
+// each tool here must refuse a spend that exceeds a 1-atom per-transaction cap.
+//
+// Each tool gets its own agent because exceeding a cap trips the tripwire, which
+// revokes the grant and blocks the token.
+func TestFundToolsRespectTheCaps(t *testing.T) {
+	prev := rpc.SwapDcrlndClients(rpc.DcrlndClients{Lightning: stubLightning{decodeAtoms: 1e8}})
+	t.Cleanup(func() { rpc.SwapDcrlndClients(prev) })
+
+	domains := map[string]bool{}
+	for _, d := range catalogDomains() {
+		domains[d] = true
+	}
+	for i, c := range capBoundTools {
+		t.Run(c.name, func(t *testing.T) {
+			id := fmt.Sprintf("cap-bound-%d", i)
+			grants.set(id, GrantSpec{
+				Accounts: []uint32{0}, PerTxAtoms: 1, DailyAtoms: 1,
+				WriteScopes: []string{scopeLightning, scopeBR, scopeDex, scopeDexSpend, scopeStaking},
+			}, time.Now())
+			t.Cleanup(func() { grants.revoke(id) })
+
+			cs := connectTo(t, testAgent(id, "cap", domains))
+			out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: c.name, Arguments: c.args})
+			if err != nil {
+				t.Fatalf("unexpected transport error: %v", err)
+			}
+			if !out.IsError {
+				t.Fatalf("spent above the per-transaction cap without refusing")
+			}
+			if txt := resultText(out); !strings.Contains(txt, errPerTxExceeded.Error()) &&
+				!strings.Contains(txt, errDailyExceeded.Error()) {
+				t.Errorf("refused, but not by the caps - the reservation may have been dropped: %q", txt)
+			}
+		})
 	}
 }
