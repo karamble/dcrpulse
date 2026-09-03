@@ -909,3 +909,67 @@ func ProcessUnmanagedVSPTickets(ctx context.Context, vspHost, vspPubkey string, 
 		After:   after,
 	}, nil
 }
+
+// GetStakingProfile reports how this wallet stakes: which accounts hold ticket
+// value, which VSPs its tickets are registered with, and the mixing accounts a
+// purchase is redirected to. Both sources are single calls - per-account stake
+// balances come from getbalance and the VSP tally from the ticket list - so this
+// costs no per-ticket lookups. A wallet that is not up yields an empty profile
+// rather than an error, because every caller treats this as a hint.
+func GetStakingProfile(ctx context.Context) types.StakingProfile {
+	var out types.StakingProfile
+	if accounts, err := FetchAllAccounts(ctx); err == nil {
+		out.Accounts = stakingAccounts(accounts)
+	}
+	if tickets, err := ListTickets(ctx); err == nil {
+		out.VSPs = ticketVSPUse(tickets)
+	}
+	if mixing, mixed := TicketMixingParams(ctx); mixed {
+		m, c := mixing.Mixed, mixing.Change
+		out.MixedAccount, out.ChangeAccount = &m, &c
+	}
+	return out
+}
+
+// stakingAccounts picks the accounts that demonstrably buy tickets. dcrwallet
+// reports lockedbytickets as "coins locked by tickets" and
+// immaturestakegeneration as immature stake coins returning from this account's
+// votes, so either one means the account really stakes. votingauthority is
+// deliberately not used: a wallet can hold voting authority over tickets it did
+// not pay for, which would name an account a purchase cannot come from. The
+// accounts a spend can never come from are skipped, the same set
+// unlockAllAccountsForSpend skips.
+func stakingAccounts(accounts []types.AccountInfo) []uint32 {
+	var out []uint32
+	for _, a := range accounts {
+		if a.AccountName == "imported" || a.AccountName == "dex" || a.AccountNumber >= 1<<31 {
+			continue
+		}
+		if a.LockedByTickets > 0 || a.ImmatureStakeGeneration > 0 {
+			out = append(out, a.AccountNumber)
+		}
+	}
+	return out
+}
+
+// ticketVSPUse tallies which VSPs the wallet's tickets are registered with, most
+// used first, ties broken by host so the order is stable.
+func ticketVSPUse(tickets []types.TicketRecord) []types.VSPUse {
+	counts := map[string]int{}
+	for _, t := range tickets {
+		if t.VSPHost != "" {
+			counts[t.VSPHost]++
+		}
+	}
+	out := make([]types.VSPUse, 0, len(counts))
+	for host, n := range counts {
+		out = append(out, types.VSPUse{Host: host, Tickets: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Tickets != out[j].Tickets {
+			return out[i].Tickets > out[j].Tickets
+		}
+		return out[i].Host < out[j].Host
+	})
+	return out
+}

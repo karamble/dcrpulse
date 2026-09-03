@@ -352,6 +352,13 @@ type walletBalances struct {
 
 func (w *walletBalances) get(ctx context.Context) (balanceResponse, error) {
 	w.once.Do(func() {
+		// Callers treat a failure here as "no accounts" and carry on, so a
+		// wallet that is not up yet must report an error rather than panic on
+		// the nil client.
+		if rpc.WalletClient == nil {
+			w.err = fmt.Errorf("wallet RPC client is not connected")
+			return
+		}
 		result, rerr := rpc.WalletClient.RawRequest(ctx, "getbalance", []json.RawMessage{})
 		if rerr != nil {
 			w.err = rerr

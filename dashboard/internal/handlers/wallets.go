@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/mcp"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 )
@@ -64,6 +65,10 @@ func SelectWalletHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, status, err.Error())
 		return
 	}
+
+	// The agent tools describe this wallet's staking accounts and VSPs, so that
+	// description belongs to the wallet that just went away.
+	mcp.InvalidateStakingProfile()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "active": services.ActiveWalletName()})

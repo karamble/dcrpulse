@@ -436,6 +436,22 @@ func agentTool[In any](domain, name, description string, fn func(context.Context
 	}}
 }
 
+// agentToolDesc is agentTool with a description computed per agent at
+// registration, so a tool can name the accounts and VSPs this wallet actually
+// uses instead of describing its fields in the abstract. The text is a hint: the
+// grant checks inside the handler remain the authority.
+func agentToolDesc[In any](domain, name string, describe func(*agent) string, fn func(context.Context, *agent, In) (any, error)) toolDef {
+	return toolDef{domain: domain, name: name, readOnly: false, register: func(s *mcp.Server, a *agent) {
+		mcp.AddTool(s, &mcp.Tool{Name: name, Description: describe(a), Annotations: writeAnnotations},
+			func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+				if err := requireDomain(a, domain); err != nil {
+					return ok(nil, err)
+				}
+				return ok(fn(ctx, a, in))
+			})
+	}}
+}
+
 // agentReadTool is an agent-aware but read-only tool (introspection like
 // capabilities): it receives the agent yet moves nothing, so it carries the
 // read-only hint and is exempt from the spend-gating test.

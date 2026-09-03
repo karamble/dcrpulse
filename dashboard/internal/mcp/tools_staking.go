@@ -259,8 +259,10 @@ var stakingTools = []toolDef{
 		func(ctx context.Context, _ emptyInput) (any, error) {
 			return services.AutobuyerStatusSnapshot(ctx), nil
 		}),
-	agentTool("staking", "staking_purchase",
-		"Buy staking tickets through a VSP. Requires a spend grant covering both the funding account and the change account; the cost (ticket price x count) is checked against the grant caps. When privacy is configured the ticket is funded from the mixed account and the change goes to the mixed change account, overriding both account fields - see privacy_status for which those are. The agent never supplies a passphrase.",
+	agentToolDesc("staking", "staking_purchase",
+		func(a *agent) string {
+			return "Buy staking tickets through a VSP. Requires a spend grant covering both the funding account and the change account; the cost (ticket price x count) is checked against the grant caps. The agent never supplies a passphrase." + stakingHint(a)
+		},
 		func(ctx context.Context, a *agent, in purchaseInput) (any, error) {
 			if in.NumTickets == 0 {
 				return nil, fmt.Errorf("numTickets must be at least 1")
@@ -384,16 +386,20 @@ var stakingTools = []toolDef{
 			recordSpend(a, "staking_autobuyer_stop", 0, 0, "", "ok", "")
 			return map[string]any{"ok": true}, nil
 		}),
-	agentTool("staking", "staking_sync_failed_vsp_tickets",
-		"Retry VSP fee payments for the wallet's failed tickets. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase.",
+	agentToolDesc("staking", "staking_sync_failed_vsp_tickets",
+		func(a *agent) string {
+			return "Retry VSP fee payments for the wallet's failed tickets. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase." + stakingHint(a)
+		},
 		func(ctx context.Context, a *agent, in vspTicketMaintenanceInput) (any, error) {
 			return vspMaintenanceRun(ctx, a, "staking_sync_failed_vsp_tickets", in, false,
 				func(ctx context.Context, changeAccount uint32, pass []byte) (*types.SyncFailedVSPTicketsResponse, error) {
 					return services.SyncFailedVSPTickets(ctx, in.VSPHost, in.VSPPubkey, in.Account, changeAccount, pass)
 				})
 		}),
-	agentTool("staking", "staking_process_unmanaged_vsp_tickets",
-		"Re-associate the wallet's untracked tickets with a VSP. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase.",
+	agentToolDesc("staking", "staking_process_unmanaged_vsp_tickets",
+		func(a *agent) string {
+			return "Re-associate the wallet's untracked tickets with a VSP. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase." + stakingHint(a)
+		},
 		func(ctx context.Context, a *agent, in vspTicketMaintenanceInput) (any, error) {
 			return vspMaintenanceRun(ctx, a, "staking_process_unmanaged_vsp_tickets", in, true,
 				func(ctx context.Context, changeAccount uint32, pass []byte) (*types.SyncFailedVSPTicketsResponse, error) {

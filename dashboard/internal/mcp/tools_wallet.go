@@ -136,8 +136,10 @@ var walletTools = []toolDef{
 	readTool("wallet", "wallet_sync_progress",
 		"Get the active wallet's sync progress: phase, peer count, header/rescan progress.",
 		func(_ context.Context, _ emptyInput) (any, error) { return services.GetSyncSnapshot(), nil }),
-	agentTool("wallet", "wallet_send",
-		"Send DCR on-chain from a wallet account. Requires a user-granted spend grant covering the account and amount; the agent never supplies a passphrase. Amount is in DCR. Returns the transaction id.",
+	agentToolDesc("wallet", "wallet_send",
+		func(a *agent) string {
+			return "Send DCR on-chain from a wallet account. Requires a user-granted spend grant covering the account and amount; the agent never supplies a passphrase. Amount is in DCR. Returns the transaction id. " + grantedAccounts(a)
+		},
 		func(ctx context.Context, a *agent, in sendInput) (any, error) {
 			amt, err := dcrutil.NewAmount(in.AmountDCR)
 			if err != nil {
