@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,18 @@ func (s stubLightning) ConnectPeer(context.Context, *lnrpc.ConnectPeerRequest, .
 
 func (s stubLightning) OpenChannelSync(context.Context, *lnrpc.OpenChannelRequest, ...grpc.CallOption) (*lnrpc.ChannelPoint, error) {
 	return nil, s.openErr
+}
+
+// AddInvoice lets a test drive invoice creation without a daemon.
+func (s stubLightning) AddInvoice(_ context.Context, in *lnrpc.Invoice, _ ...grpc.CallOption) (*lnrpc.AddInvoiceResponse, error) {
+	return &lnrpc.AddInvoiceResponse{PaymentRequest: "lnbogus", RHash: []byte{0xab, 0xcd}}, nil
+}
+
+// LookupInvoice is the second roundtrip AddLightningInvoice makes; failing it
+// exercises the documented fallback to a minimal record rather than needing a
+// full invoice fixture.
+func (s stubLightning) LookupInvoice(context.Context, *lnrpc.PaymentHash, ...grpc.CallOption) (*lnrpc.Invoice, error) {
+	return nil, errors.New("no invoice store in this test")
 }
 
 // decodeAtoms lets a test drive a tool that decodes an invoice before it reaches
@@ -83,4 +96,43 @@ func TestOpenChannelKeepsReservationOnCommittedFailure(t *testing.T) {
 			t.Fatalf("spent %d atoms after a pre-funding failure, want the reservation released", got)
 		}
 	})
+}
+
+// TestAddInvoiceRecordsNoAmount pins the direction of an invoice in the trail.
+// notifySpend renders any successful entry with a positive amount as money the
+// agent sent, so recording the requested figure as an amount would tell the
+// operator over Bison Relay that an incoming request was an outgoing payment.
+func TestAddInvoiceRecordsNoAmount(t *testing.T) {
+	prev := rpc.SwapDcrlndClients(rpc.DcrlndClients{Lightning: stubLightning{}})
+	t.Cleanup(func() { rpc.SwapDcrlndClients(prev) })
+
+	const agentID = "ln-invoice-direction"
+	grants.set(agentID, GrantSpec{WriteScopes: []string{scopeLightning}}, time.Now())
+	t.Cleanup(func() { grants.revoke(agentID) })
+
+	cs := connectTo(t, testAgent(agentID, "ln", map[string]bool{"lightning": true}))
+	if _, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "ln_add_invoice",
+		Arguments: map[string]any{"amountDcr": 50.0, "memo": "x"},
+	}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+
+	got := AuditLog(1)
+	if len(got) != 1 {
+		t.Fatalf("AuditLog returned %d entries, want 1", len(got))
+	}
+	if got[0].Tool != "ln_add_invoice" {
+		t.Fatalf("newest audit entry is %q, want ln_add_invoice", got[0].Tool)
+	}
+	// notifySpend's outbound case is exactly Result=="ok" && AmountDCR>0, so a
+	// zero amount is what keeps an invoice out of it. Sending the notification
+	// itself needs brclientd, so this asserts the recorded entry rather than the
+	// message.
+	if got[0].Result == "ok" && got[0].AmountDCR > 0 {
+		t.Errorf("an invoice was recorded as %.8f DCR sent; it asks for money in", got[0].AmountDCR)
+	}
+	if !strings.Contains(got[0].Detail, "requested") {
+		t.Errorf("the requested amount was dropped from the trail: %q", got[0].Detail)
+	}
 }

@@ -186,8 +186,11 @@ var lightningTools = []toolDef{
 	agentTool("lightning", "ln_add_invoice",
 		"Create a Lightning invoice to receive payment. Requires a spend grant with Lightning enabled.",
 		func(ctx context.Context, a *agent, in lnInvoiceInput) (any, error) {
+			// An invoice asks for money in, so it is recorded with no amount:
+			// the audit and the operator's notification both read a positive
+			// amount as something the agent sent. The figure stays in the detail.
 			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
-				recordSpend(a, "ln_add_invoice", 0, in.AmountDCR, "", "denied", err.Error())
+				recordSpend(a, "ln_add_invoice", 0, 0, "", "denied", err.Error())
 				return nil, err
 			}
 			var atoms int64
@@ -200,10 +203,11 @@ var lightningTools = []toolDef{
 			}
 			inv, err := services.AddLightningInvoice(ctx, &types.LightningAddInvoiceRequest{Memo: in.Memo, ValueAtoms: atoms})
 			if err != nil {
-				recordSpend(a, "ln_add_invoice", 0, in.AmountDCR, "", "error", err.Error())
+				recordSpend(a, "ln_add_invoice", 0, 0, "", "error", err.Error())
 				return nil, err
 			}
-			recordSpend(a, "ln_add_invoice", 0, in.AmountDCR, "", "ok", inv.RHashHex)
+			recordSpend(a, "ln_add_invoice", 0, 0, "", "ok",
+				fmt.Sprintf("requested %s rhash=%s", dcrAmountStr(atoms), inv.RHashHex))
 			return inv, nil
 		}),
 	agentTool("lightning", "ln_open_channel",
