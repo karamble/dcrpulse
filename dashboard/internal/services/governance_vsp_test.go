@@ -200,8 +200,8 @@ func TestVSPHostsFromTickets(t *testing.T) {
 		{Status: "LIVE", VSPHost: "https://vsp-b.example.org"},
 		{Status: "IMMATURE", VSPHost: "https://vsp-a.example.org:8443"},
 		{Status: "UNMINED", VSPHost: "https://vsp-b.example.org"}, // duplicate host
-		{Status: "LIVE", VSPHost: ""},                            // solo ticket - no host
-		{Status: "VOTED", VSPHost: "https://vsp-c.example.org"},  // spent - not votable
+		{Status: "LIVE", VSPHost: ""},                             // solo ticket - no host
+		{Status: "VOTED", VSPHost: "https://vsp-c.example.org"},   // spent - not votable
 		{Status: "EXPIRED", VSPHost: "https://vsp-d.example.org"},
 	}
 	got := vspHostsFromTickets(tickets)
