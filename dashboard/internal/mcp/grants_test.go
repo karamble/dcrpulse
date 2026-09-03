@@ -327,14 +327,16 @@ func TestGrantVSPFees(t *testing.T) {
 		t.Fatalf("reserved %d atoms, want %d", got, 4*dcrAtoms)
 	}
 
-	// Nothing to pay for still authorizes, without touching the budget. A fresh
-	// store because re-granting deliberately carries the spend window over.
+	// A run with nothing to pay for is refused rather than authorized: the callee
+	// settles whatever the VSP still asks for, so "no local candidates" is not
+	// "no payment", and a zero ceiling would hand over the passphrase with no cap
+	// behind it. A fresh store because re-granting carries the spend window over.
 	s2 := newGrantStore()
 	s2.set("a", full, now)
-	if _, err := s2.authorizeVSPFees(context.Background(), "a", 0, 1, 0, "", now); err != nil {
-		t.Fatalf("zero ceiling: want ok, got %v", err)
+	if _, err := s2.authorizeVSPFees(context.Background(), "a", 0, 1, 0, "", now); err != errBadAmount {
+		t.Fatalf("zero ceiling: want errBadAmount, got %v", err)
 	}
 	if got := s2.byAgent["a"].spentAtoms; got != 0 {
-		t.Fatalf("zero ceiling reserved %d atoms, want 0", got)
+		t.Fatalf("refused run reserved %d atoms, want 0", got)
 	}
 }

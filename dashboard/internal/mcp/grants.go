@@ -432,13 +432,15 @@ func (s *grantStore) reserveVSPFees(agentID string, account, changeAccount uint3
 	if !g.accounts[account] || !g.accounts[changeAccount] {
 		return nil, errAccountNotGranted
 	}
-	if feeCeilingAtoms < 0 {
+	// A run that cannot say what it might spend does not get the passphrase. The
+	// callee pays the fees the VSP asks for, not the ones the local ticket view
+	// predicted, so a zero ceiling would authorize an unbounded run rather than
+	// an empty one.
+	if feeCeilingAtoms <= 0 {
 		return nil, errBadAmount
 	}
-	if feeCeilingAtoms > 0 {
-		if err := g.reserveLocked(feeCeilingAtoms, now); err != nil {
-			return nil, err
-		}
+	if err := g.reserveLocked(feeCeilingAtoms, now); err != nil {
+		return nil, err
 	}
 	return append([]byte(nil), g.passphrase...), nil
 }

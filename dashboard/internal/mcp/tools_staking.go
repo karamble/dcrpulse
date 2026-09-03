@@ -128,7 +128,20 @@ func vspMaintenanceRun(ctx context.Context, a *agent, tool string, in vspTicketM
 		return nil, fmt.Errorf("ticket list unavailable: %w", err)
 	}
 	count, priceDCR := vspFeeCandidates(tickets, unmanaged)
-	if count > 0 && feePct <= 0 {
+	noun := "failed"
+	if unmanaged {
+		noun = "untracked"
+	}
+	// No local candidates does not mean nothing will be paid: the run settles
+	// whatever the VSP still asks for, and a wallet that cannot report ticket fee
+	// status looks exactly like a wallet with nothing to pay. Refuse rather than
+	// authorize a run whose cost has no ceiling.
+	if count == 0 {
+		err := fmt.Errorf("the wallet reports no %s tickets needing a VSP fee, so this run's cost cannot be bounded; check that it is synced and reporting ticket fee status", noun)
+		recordSpend(a, tool, in.Account, 0, in.VSPHost, "denied", err.Error())
+		return nil, err
+	}
+	if feePct <= 0 {
 		err := fmt.Errorf("could not determine the fee %q charges, so the cost cannot be bounded", in.VSPHost)
 		recordSpend(a, tool, in.Account, 0, in.VSPHost, "denied", err.Error())
 		return nil, err
@@ -138,10 +151,6 @@ func vspMaintenanceRun(ctx context.Context, a *agent, tool string, in vspTicketM
 		return nil, fmt.Errorf("fee ceiling is out of range: %w", err)
 	}
 	ceilingAtoms := int64(ceiling)
-	noun := "failed"
-	if unmanaged {
-		noun = "untracked"
-	}
 	action := fmt.Sprintf("pay up to %s in VSP fees for %d %s ticket(s) at %s",
 		dcrAmountStr(ceilingAtoms), count, noun, in.VSPHost)
 	pass, err := grants.authorizeVSPFees(ctx, a.id, in.Account, changeAccount, ceilingAtoms, action, time.Now())

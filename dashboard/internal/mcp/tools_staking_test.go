@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"dcrpulse/internal/types"
 )
 
 // TestStakingPurchaseChecksBothAccounts verifies that staking_purchase gates on
@@ -116,4 +118,41 @@ func TestGrantedAccountsWithoutGrant(t *testing.T) {
 	if got := grantedAccounts(testAgent("no-grant", "none", nil)); !strings.Contains(got, "refused") {
 		t.Errorf("grantedAccounts without a grant = %q, want it to say a call would be refused", got)
 	}
+}
+
+// TestVSPFeeCandidatesNeedsFeeStatus covers the input shape that makes a VSP
+// maintenance run unboundable. fetchFeeStatusMap logs and continues on each of
+// its four lookups, so a wallet that cannot report fee status yields tickets with
+// an empty FeeStatus - which the sync run must not read as "nothing to pay".
+func TestVSPFeeCandidatesNeedsFeeStatus(t *testing.T) {
+	noFeeStatus := []types.TicketRecord{
+		{Status: "LIVE", FeeStatus: "", TicketPrice: 100},
+		{Status: "LIVE", FeeStatus: "", TicketPrice: 100},
+	}
+
+	t.Run("sync counts nothing without fee status", func(t *testing.T) {
+		if count, price := vspFeeCandidates(noFeeStatus, false); count != 0 || price != 0 {
+			t.Fatalf("count=%d price=%v, want 0/0 so the run is refused rather than unbounded", count, price)
+		}
+	})
+
+	t.Run("sync counts tickets whose fees failed or are unpaid", func(t *testing.T) {
+		tickets := []types.TicketRecord{
+			{Status: "LIVE", FeeStatus: "ERRORED", TicketPrice: 100},
+			{Status: "LIVE", FeeStatus: "UNPAID", TicketPrice: 50},
+			{Status: "LIVE", FeeStatus: "PAID", TicketPrice: 999},
+		}
+		if count, price := vspFeeCandidates(tickets, false); count != 2 || price != 150 {
+			t.Fatalf("count=%d price=%v, want 2/150", count, price)
+		}
+	})
+
+	t.Run("an empty ticket list counts nothing", func(t *testing.T) {
+		if count, _ := vspFeeCandidates(nil, false); count != 0 {
+			t.Fatalf("count=%d, want 0", count)
+		}
+		if count, _ := vspFeeCandidates(nil, true); count != 0 {
+			t.Fatalf("unmanaged count=%d, want 0", count)
+		}
+	})
 }
