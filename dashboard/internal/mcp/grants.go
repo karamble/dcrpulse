@@ -538,10 +538,22 @@ var grants = newGrantStore()
 
 // SetSpendGrant installs (or replaces) the spend grant for an agent. The
 // passphrase is copied into memory and never persisted.
-func SetSpendGrant(agentID string, spec GrantSpec) { grants.set(agentID, spec, time.Now()) }
+// SetSpendGrant records a grant and rebuilds the agent's scoped server, because
+// the tool descriptions name the accounts the grant covers; without this the
+// agent keeps reading the grant state from whenever its server was first built.
+func SetSpendGrant(agentID string, spec GrantSpec) {
+	grants.set(agentID, spec, time.Now())
+	invalidateAgentServer(agentID)
+}
 
 // RevokeSpendGrant clears an agent's spend grant, zeroing the passphrase.
-func RevokeSpendGrant(agentID string) bool { return grants.revoke(agentID) }
+func RevokeSpendGrant(agentID string) bool {
+	revoked := grants.revoke(agentID)
+	if revoked {
+		invalidateAgentServer(agentID)
+	}
+	return revoked
+}
 
 // SpendGrantInfo returns the (passphrase-free) grant view for the dashboard.
 func SpendGrantInfo(agentID string) (GrantInfo, bool) { return grants.info(agentID) }

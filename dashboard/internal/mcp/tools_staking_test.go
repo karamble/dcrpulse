@@ -177,3 +177,52 @@ func TestVSPInfoProbeIsConstrained(t *testing.T) {
 		t.Errorf("refused, but not by the known-VSP check: %q", txt)
 	}
 }
+
+// TestGrantChangeRefreshesToolDescriptions is the regression guard for a defect
+// the other tests could not see: connectTo builds a server directly, while the
+// HTTP handler serves a per-agent CACHED one. A grant set after that cache was
+// warmed left the descriptions claiming no grant existed, telling an agent it
+// could not act when it could.
+func TestGrantChangeRefreshesToolDescriptions(t *testing.T) {
+	const agentID = "grant-refresh"
+	a := testAgent(agentID, "refresh", map[string]bool{"wallet": true})
+	invalidateAgentServer(agentID)
+	t.Cleanup(func() { RevokeSpendGrant(agentID); invalidateAgentServer(agentID) })
+
+	// Connect through scopedServerFor, the cache the handler uses, rather than
+	// buildServer, which would hide a stale entry.
+	describe := func(t *testing.T) string {
+		t.Helper()
+		ctx := context.Background()
+		srvT, cliT := mcp.NewInMemoryTransports()
+		ss, err := scopedServerFor(a).Connect(ctx, srvT, nil)
+		if err != nil {
+			t.Fatalf("server connect: %v", err)
+		}
+		t.Cleanup(func() { ss.Close() })
+		cs, err := mcp.NewClient(&mcp.Implementation{Name: "t", Version: "0"}, nil).Connect(ctx, cliT, nil)
+		if err != nil {
+			t.Fatalf("client connect: %v", err)
+		}
+		t.Cleanup(func() { cs.Close() })
+		res, err := cs.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatalf("list tools: %v", err)
+		}
+		for _, tl := range res.Tools {
+			if tl.Name == "wallet_send" {
+				return tl.Description
+			}
+		}
+		t.Fatal("wallet_send missing from the listing")
+		return ""
+	}
+
+	if got := describe(t); !strings.Contains(got, "No spend grant") {
+		t.Fatalf("expected the ungranted description to warm the cache, got: %q", got)
+	}
+	SetSpendGrant(agentID, GrantSpec{Accounts: []uint32{0, 2}, PerTxAtoms: 1e8, DailyAtoms: 1e8})
+	if got := describe(t); !strings.Contains(got, "covers accounts 0, 2") {
+		t.Errorf("the cached server was not rebuilt after the grant; description still reads: %q", got)
+	}
+}

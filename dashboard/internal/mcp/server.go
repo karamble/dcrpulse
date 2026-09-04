@@ -26,7 +26,7 @@ const serverVersion = "0.1.0"
 // per-agent domain access, and see live sessions.
 var reg = func() *registry {
 	r := newRegistry()
-	r.onChange = invalidateAgentServer // rebuild a scoped server when grants change
+	r.onChange = invalidateAgentServer // rebuild a scoped server when an agent changes
 	return r
 }()
 
