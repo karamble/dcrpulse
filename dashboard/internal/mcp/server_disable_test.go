@@ -31,7 +31,7 @@ func TestDisableEndsOpenListenStreams(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	id, ok := surface.addListen(cancel)
+	id, ok := surface.addListen("disable-test", cancel)
 	if !ok {
 		t.Fatal("a listen should register while the surface is up")
 	}
@@ -51,7 +51,7 @@ func TestDisableEndsOpenListenStreams(t *testing.T) {
 // by a fresh feed.
 func TestNoListenOpensWhileDown(t *testing.T) {
 	surface.setDown()
-	if _, ok := surface.addListen(func() {}); ok {
+	if _, ok := surface.addListen("disable-test", func() {}); ok {
 		t.Fatal("a listen must not register while the surface is down")
 	}
 }
@@ -66,7 +66,7 @@ func TestListenGateRefusesOnlyListens(t *testing.T) {
 		reached = true
 		return nil, nil
 	}
-	gated := listenGate(next)
+	gated := listenGate(testAgent("gate-test", "gate", nil))(next)
 
 	if _, err := gated(context.Background(), "subscriptions/listen", nil); !errors.Is(err, errSurfaceDown) {
 		t.Fatalf("listen while down: err = %v, want errSurfaceDown", err)
@@ -95,7 +95,7 @@ func TestListenGateRegistersAndReleases(t *testing.T) {
 		<-ctx.Done() // parked, as the real listen handler is
 		return nil, nil
 	}
-	go func() { _, _ = listenGate(next)(context.Background(), "subscriptions/listen", nil) }()
+	go func() { _, _ = listenGate(testAgent("gate-open", "gate", nil))(next)(context.Background(), "subscriptions/listen", nil) }()
 	<-done
 
 	surface.mu.Lock()

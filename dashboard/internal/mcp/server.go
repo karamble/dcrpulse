@@ -155,13 +155,26 @@ var (
 // surface is the toggle as the request path sees it. Open listen streams
 // register here so switching the surface off ends them, which the listener's
 // own shutdown cannot do: net/http never interrupts an active request.
-var surface = &surfaceState{listens: map[uint64]context.CancelFunc{}}
+var surface = &surfaceState{listens: map[uint64]listenEntry{}}
+
+// maxListensPerAgent caps concurrent listen streams. A client opens one per
+// resource it subscribes to, so an agent holding every domain legitimately needs
+// nine; this leaves room above that while stopping one token from parking an
+// unbounded number of streams and connections.
+const maxListensPerAgent = 16
+
+// listenEntry is one open stream. The agent is kept so the cap can be counted
+// per token rather than across the surface.
+type listenEntry struct {
+	agent  string
+	cancel context.CancelFunc
+}
 
 type surfaceState struct {
 	mu      sync.Mutex
 	up      bool
 	nextID  uint64
-	listens map[uint64]context.CancelFunc
+	listens map[uint64]listenEntry
 }
 
 func (s *surfaceState) isUp() bool {
@@ -181,22 +194,32 @@ func (s *surfaceState) setUp() {
 func (s *surfaceState) setDown() {
 	s.mu.Lock()
 	s.up = false
-	for id, cancel := range s.listens {
-		cancel()
+	for id, e := range s.listens {
+		e.cancel()
 		delete(s.listens, id)
 	}
 	s.mu.Unlock()
 }
 
-// addListen registers an open listen stream, refusing while the surface is down.
-func (s *surfaceState) addListen(cancel context.CancelFunc) (uint64, bool) {
+// addListen registers an open listen stream, refusing while the surface is down
+// and once the agent is at its cap.
+func (s *surfaceState) addListen(agentID string, cancel context.CancelFunc) (uint64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.up {
 		return 0, false
 	}
+	n := 0
+	for _, e := range s.listens {
+		if e.agent == agentID {
+			n++
+		}
+	}
+	if n >= maxListensPerAgent {
+		return 0, false
+	}
 	s.nextID++
-	s.listens[s.nextID] = cancel
+	s.listens[s.nextID] = listenEntry{agent: agentID, cancel: cancel}
 	return s.nextID, true
 }
 
@@ -324,7 +347,15 @@ func shutdownServer(s *http.Server) {
 // listenerHandler is the listener's chain. The toggle gate sits outside auth so
 // a request arriving after a disable never reaches a scoped server.
 func listenerHandler() http.Handler {
-	return surfaceGate(reg.authMiddleware(buildHandler()))
+	return surfaceGate(agentHandler(reg))
+}
+
+// agentHandler is the part of the chain below the toggle. The listener and the
+// wire tests share it, so a test cannot pass against a chain the listener does
+// not actually serve. boundWrites sits innermost: the gates above it answer with
+// a single short body, while everything the SDK writes goes to an agent.
+func agentHandler(r *registry) http.Handler {
+	return r.authMiddleware(boundWrites(buildHandler()))
 }
 
 func surfaceGate(next http.Handler) http.Handler {
@@ -341,19 +372,21 @@ var errSurfaceDown = errors.New("MCP agent access is turned off")
 
 // listenGate ties each subscriptions/listen stream to the toggle: the stream
 // ends when the surface goes down, and none opens while it is down.
-func listenGate(next mcp.MethodHandler) mcp.MethodHandler {
-	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-		if method != "subscriptions/listen" {
+func listenGate(a *agent) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method != "subscriptions/listen" {
+				return next(ctx, method, req)
+			}
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			id, ok := surface.addListen(a.id, cancel)
+			if !ok {
+				return nil, errSurfaceDown
+			}
+			defer surface.removeListen(id)
 			return next(ctx, method, req)
 		}
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		id, ok := surface.addListen(cancel)
-		if !ok {
-			return nil, errSurfaceDown
-		}
-		defer surface.removeListen(id)
-		return next(ctx, method, req)
 	}
 }
 
@@ -457,7 +490,7 @@ func buildServer(a *agent) *mcp.Server {
 		Title:   "Decred Pulse",
 		Version: serverVersion,
 	}, opts)
-	s.AddReceivingMiddleware(activityMiddleware(a), listenGate)
+	s.AddReceivingMiddleware(activityMiddleware(a), listenGate(a))
 	for _, t := range toolCatalog {
 		if a.allows(t.domain) {
 			t.register(s, a)

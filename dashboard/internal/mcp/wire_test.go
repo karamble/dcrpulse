@@ -13,15 +13,17 @@ import (
 	"testing"
 )
 
-// newWireServer serves authMiddleware(buildHandler()) for a fresh node-only
-// agent, returning the endpoint URL and the agent's bearer token.
+// newWireServer serves the listener's own per-agent chain for a fresh node-only
+// agent, returning the endpoint URL and the agent's bearer token. It goes
+// through agentHandler rather than assembling the chain itself, so a test cannot
+// pass against middleware the listener does not actually serve.
 func newWireServer(t *testing.T) (url, token string) {
 	t.Helper()
 	r := newRegistry()
 	const id, tok = "wire-agent", "wire-test-token"
 	r.addToken(id, "wire", tok)
 	t.Cleanup(func() { invalidateAgentServer(id) })
-	srv := httptest.NewServer(r.authMiddleware(buildHandler()))
+	srv := httptest.NewServer(agentHandler(r))
 	t.Cleanup(srv.Close)
 	return srv.URL, tok
 }

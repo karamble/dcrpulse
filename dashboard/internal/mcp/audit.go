@@ -105,6 +105,9 @@ func recordSpend(a *agent, tool string, account uint32, amountDCR float64, targe
 	}
 	audit.record(e)
 	persistAudit(e)
-	notifyResourceUpdated(resAudit)
+	// Off this goroutine: recordSpend runs after the transaction is away and
+	// before the caller gets its id back, so an agent that has stopped reading
+	// its audit feed must not be able to hold up that reply.
+	go notifyResourceUpdated(resAudit)
 	notifySpend(e)
 }
