@@ -793,6 +793,10 @@ var bisonrelayTools = []toolDef{
 				attempts = 1
 			}
 			if err := refuseOversightContact(ctx, in.UID); err != nil {
+				// The tip was reserved above and this refusal spends nothing, so
+				// the cap has to come back: the check cannot move above the
+				// reservation because it needs brclientd to resolve the target.
+				grants.refund(a.id, atoms)
 				recordSpend(a, "br_tip_user", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}

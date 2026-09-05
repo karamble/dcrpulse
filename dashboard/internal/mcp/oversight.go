@@ -70,6 +70,16 @@ func oversightConfig() (enabled bool, contact string) {
 	return enabled, strings.TrimSpace(contact)
 }
 
+// oversightSettings reads the oversight configuration. A variable so a test can
+// drive the paths that only run while oversight is on, which otherwise cannot be
+// reached without the dashboard's config mount.
+var oversightSettings = oversightConfig
+
+// sendApprovalPM delivers an approval request to the operator. A variable for
+// the same reason: without it no oversight-gated path can be exercised at all,
+// because every one of them stops at this message.
+var sendApprovalPM = rpc.BrclientdSendPM
+
 // SetOversightConfig persists the BR oversight on/off state and target contact.
 func SetOversightConfig(enabled bool, contact string) error {
 	gc, err := config.LoadGlobalCfg()
@@ -93,7 +103,7 @@ type OversightConfig struct {
 
 // Oversight returns the current oversight settings for the Settings UI.
 func Oversight() OversightConfig {
-	enabled, contact := oversightConfig()
+	enabled, contact := oversightSettings()
 	return OversightConfig{Enabled: enabled, Contact: contact}
 }
 
@@ -260,7 +270,7 @@ var approvals = newApprovalRegistry()
 // timeout, or the agent's request being cancelled; it fails closed (refuse) if
 // the operator cannot be reached. The caller must hold no locks: this blocks.
 func gateApproval(ctx context.Context, agentID, action string) error {
-	enabled, contact := oversightConfig()
+	enabled, contact := oversightSettings()
 	if !enabled || contact == "" {
 		return nil
 	}
@@ -279,7 +289,7 @@ func gateApproval(ctx context.Context, agentID, action string) error {
 		id, name, action, id, id, id, mins)
 
 	sctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	sendErr := rpc.BrclientdSendPM(sctx, contact, msg)
+	sendErr := sendApprovalPM(sctx, contact, msg)
 	cancel()
 	if sendErr != nil {
 		return errApprovalUnreachable
@@ -328,7 +338,7 @@ func startOversightConsumer() {
 		if json.Unmarshal(evt.Payload, &p) != nil {
 			continue
 		}
-		_, contact := oversightConfig()
+		_, contact := oversightSettings()
 		if contact == "" || !strings.EqualFold(strings.TrimSpace(p.From), contact) {
 			continue
 		}
@@ -403,7 +413,7 @@ func freezeAgent(agentID string) {
 // blocks are reported; routine denials are not, since the operator already saw
 // the approval request. Sent in the background so it never blocks the spend path.
 func notifySpend(e AuditEntry) {
-	enabled, contact := oversightConfig()
+	enabled, contact := oversightSettings()
 	if !enabled || contact == "" {
 		return
 	}
@@ -455,7 +465,7 @@ var errOversightContact = errors.New("this contact receives dcrpulse's own appro
 // Nothing is refused when oversight is off, and a contact lookup that fails
 // refuses rather than guessing: only messages to one contact are affected.
 func refuseOversightContact(ctx context.Context, target string) error {
-	enabled, contact := oversightConfig()
+	enabled, contact := oversightSettings()
 	if !enabled || contact == "" {
 		return nil
 	}

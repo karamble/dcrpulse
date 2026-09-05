@@ -4,7 +4,15 @@
 
 package mcp
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
 
 const overseer = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 
@@ -73,5 +81,71 @@ func TestNamesOversightContactIgnoresMalformedEntries(t *testing.T) {
 	}
 	if namesOversightContact("orphan", overseer, entries) {
 		t.Error("an entry with no uid must not match the contact")
+	}
+}
+
+// withOversight turns oversight on for a fixed contact and stands in for the
+// operator, approving whatever is asked. Both seams are needed: without the
+// first, oversight reads as off in tests and every refusal is a silent no-op;
+// without the second, every gated tool stops at the approval message and never
+// reaches its own body.
+func withOversight(t *testing.T, contact string) {
+	t.Helper()
+	prevCfg, prevSend := oversightSettings, sendApprovalPM
+	oversightSettings = func() (bool, string) { return true, contact }
+	sendApprovalPM = func(_ context.Context, _, msg string) error {
+		open, close := strings.Index(msg, "["), strings.Index(msg, "]")
+		if open < 0 || close < open {
+			return fmt.Errorf("no approval id in %q", msg)
+		}
+		id := msg[open+1 : close]
+		// The operator says yes, from another goroutine: gateApproval is about
+		// to block on the reply and this send is what unblocks it.
+		go approvals.resolve(id, approvalVerdict{approved: true})
+		return nil
+	}
+	t.Cleanup(func() { oversightSettings, sendApprovalPM = prevCfg, prevSend })
+}
+
+// br_tip_user reserves the tip against the caps before it checks the recipient,
+// so refusing the oversight contact has to hand the reservation back. Otherwise
+// the tip spends nothing and still burns the daily cap, repeatably.
+func TestTipRefundsWhenTheOversightContactIsRefused(t *testing.T) {
+	const agentID = "tip-oversight-refund"
+	withOversight(t, overseer)
+	grants.set(agentID, GrantSpec{
+		WriteScopes: []string{scopeLightning},
+		PerTxAtoms:  dcrAtoms, DailyAtoms: dcrAtoms,
+	}, time.Now())
+	t.Cleanup(func() { grants.revoke(agentID) })
+
+	if info, ok := SpendGrantInfo(agentID); !ok || info.SpentAtoms != 0 {
+		t.Fatalf("the grant did not install clean: ok=%v spent=%d", ok, info.SpentAtoms)
+	}
+
+	cs := connectTo(t, testAgent(agentID, "tipper", map[string]bool{"bisonrelay": true}))
+	// The hex uid matches the contact directly, so the refusal lands before the
+	// brclientd contact lookup and this needs no daemon.
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "br_tip_user",
+		Arguments: map[string]any{"uid": overseer, "amountDcr": 0.5},
+	})
+	if err == nil && !res.IsError {
+		t.Fatal("tipping the oversight contact was allowed")
+	}
+	// Assert the refusal specifically. Any error would otherwise do, and with
+	// oversight reading as off the tool falls through to brclientd, fails there
+	// for want of a daemon, and refunds on that path instead.
+	if got := resultText(res); !strings.Contains(got, "approval requests") {
+		t.Fatalf("the call failed for the wrong reason, so this asserts nothing: %q", got)
+	}
+
+	info, ok := SpendGrantInfo(agentID)
+	if !ok {
+		t.Fatal("the grant is gone; the tripwire fired when it should not have")
+	}
+	if info.SpentAtoms != 0 {
+		t.Errorf("SpentAtoms = %d, want 0: the refusal spent nothing but kept the reservation",
+			info.SpentAtoms)
 	}
 }
