@@ -106,7 +106,6 @@ func newGrantStore() *grantStore { return &grantStore{byAgent: map[string]*spend
 // zeroing any prior one.
 func (s *grantStore) set(agentID string, spec GrantSpec, now time.Time) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	// Carry the current window across an edit. The daily allowance belongs to
 	// the agent's spending, not to the grant document, so editing an unrelated
 	// field must not hand back headroom already used. An explicit revoke drops
@@ -145,31 +144,42 @@ func (s *grantStore) set(agentID string, spec GrantSpec, now time.Time) {
 		spentAtoms:  spent,
 		windowStart: windowStart,
 	}
+	s.mu.Unlock()
+	// An approval already waiting was validated against the previous grant, so
+	// make the agent ask again under the new one.
+	approvals.cancelAgent(agentID)
 }
 
-// revoke removes an agent's grant and zeroes its passphrase. Returns false if
-// the agent had no grant.
+// revoke removes an agent's grant, zeroes its passphrase, and fails any approval
+// it is waiting on, so an operator's stop reaches work already in flight. Returns
+// false if the agent had no grant. Every stop path reaches here: freezeAgent, the
+// tripwire, the dashboard's revoke, and agent teardown.
 func (s *grantStore) revoke(agentID string) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	g := s.byAgent[agentID]
-	if g == nil {
-		return false
+	if g != nil {
+		zero(g.passphrase)
+		delete(s.byAgent, agentID)
 	}
-	zero(g.passphrase)
-	delete(s.byAgent, agentID)
-	return true
+	s.mu.Unlock()
+	// After the unlock: cancelAgent takes the approval registry's lock, and
+	// holding both at once would order two locks for no reason.
+	approvals.cancelAgent(agentID)
+	return g != nil
 }
 
 // revokeAll clears every agent's grant, zeroing all held passphrases. Used by
 // the freeze-all kill-switch.
 func (s *grantStore) revokeAll() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for id, g := range s.byAgent {
 		zero(g.passphrase)
 		delete(s.byAgent, id)
 	}
+	s.mu.Unlock()
+	// Every approval, not just those of agents that still held a grant: this is
+	// the kill switch, and a waiting agent may already have lost its grant.
+	approvals.cancelAll()
 }
 
 func (s *grantStore) info(agentID string) (GrantInfo, bool) {

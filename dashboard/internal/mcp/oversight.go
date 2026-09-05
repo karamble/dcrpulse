@@ -29,6 +29,12 @@ import (
 
 const approvalTimeout = 2 * time.Minute
 
+// maxPendingPerAgent bounds how many approvals one agent can hold open. One is
+// the normal case and calls are served concurrently, so a few is plausible;
+// beyond that an agent is either malfunctioning or flooding the operator, who
+// pays a DM for each.
+const maxPendingPerAgent = 3
+
 var (
 	// These denials are NOT spend-limit violations, so isOverLimit reports false
 	// and the tripwire does not fire: a refused approval is an operator choice,
@@ -37,6 +43,8 @@ var (
 	errApprovalFrozen      = errors.New("the operator denied this spend and blocked this agent over Bison Relay")
 	errApprovalTimeout     = errors.New("operator approval timed out over Bison Relay; the spend was not made")
 	errApprovalUnreachable = errors.New("could not reach the operator over Bison Relay for approval; the spend was refused")
+	errApprovalRevoked     = errors.New("the agent's authority was withdrawn while this spend awaited approval")
+	errApprovalPending     = errors.New("this agent already has the most approvals it may keep waiting on the operator")
 )
 
 // approvalVerdict is the operator's reply to a fund-move approval request.
@@ -45,6 +53,9 @@ var (
 type approvalVerdict struct {
 	approved bool
 	freeze   bool
+	// cancelled marks an approval failed because the agent lost its authority
+	// while waiting, rather than by any reply from the operator.
+	cancelled bool
 }
 
 // oversightConfig reports whether the BR oversight loop is enabled and the hex
@@ -86,28 +97,145 @@ func Oversight() OversightConfig {
 	return OversightConfig{Enabled: enabled, Contact: contact}
 }
 
+// newApprovalID generates an approval id. A variable so a test can force the
+// collision the short id makes possible but random generation almost never hits.
+var newApprovalID = func() (string, error) { return randomHex(2) } // short, so the operator can type it back
+
+// pendingApproval is one approval awaiting a reply, and the agent it is for.
+type pendingApproval struct {
+	ch    chan approvalVerdict
+	agent string
+}
+
+// retiredApproval is an id that has left the pending set, kept for one
+// approvalTimeout. It lets a reply arriving after its request gave up still name
+// the agent, and keeps the id from being reissued while that can happen.
+type retiredApproval struct {
+	agent string
+	at    time.Time
+	// abandoned marks a request that ended with no reply, so it still counts
+	// against the agent's cap: the operator was DMed and never got to answer.
+	abandoned bool
+}
+
 // approvalRegistry tracks fund-move approvals awaiting an operator reply.
 type approvalRegistry struct {
 	mu      sync.Mutex
-	pending map[string]chan approvalVerdict
+	pending map[string]pendingApproval
+	retired map[string]retiredApproval
+	now     func() time.Time
 }
 
 func newApprovalRegistry() *approvalRegistry {
-	return &approvalRegistry{pending: map[string]chan approvalVerdict{}}
+	return &approvalRegistry{
+		pending: map[string]pendingApproval{},
+		retired: map[string]retiredApproval{},
+		now:     time.Now,
+	}
 }
 
-func (r *approvalRegistry) register(id string) chan approvalVerdict {
-	ch := make(chan approvalVerdict, 1)
+// pruneLocked forgets ids retired longer ago than a reply could still arrive.
+func (r *approvalRegistry) pruneLocked() {
+	for id, t := range r.retired {
+		if r.now().Sub(t.at) >= approvalTimeout {
+			delete(r.retired, id)
+		}
+	}
+}
+
+// retireLocked moves an entry out of the pending set, keeping its id reserved.
+func (r *approvalRegistry) retireLocked(id string, p pendingApproval, abandoned bool) {
+	delete(r.pending, id)
+	r.retired[id] = retiredApproval{agent: p.agent, at: r.now(), abandoned: abandoned}
+}
+
+// agentFor names the agent an id belongs to, waiting or recently retired. The
+// caller must not hold the lock when acting on the result: freezing takes others.
+func (r *approvalRegistry) agentFor(id string) (string, bool) {
 	r.mu.Lock()
-	r.pending[id] = ch
-	r.mu.Unlock()
-	return ch
+	defer r.mu.Unlock()
+	if p, ok := r.pending[id]; ok {
+		return p.agent, true
+	}
+	if t, ok := r.retired[id]; ok {
+		return t.agent, true
+	}
+	return "", false
 }
 
+// register reserves a fresh id for this agent. It never replaces a live entry:
+// an id that silently changed hands would route the operator's reply to a
+// request they were never shown.
+func (r *approvalRegistry) register(agentID string) (string, chan approvalVerdict, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruneLocked()
+	held := 0
+	for _, p := range r.pending {
+		if p.agent == agentID {
+			held++
+		}
+	}
+	for _, t := range r.retired {
+		if t.agent == agentID && t.abandoned {
+			held++
+		}
+	}
+	if held >= maxPendingPerAgent {
+		return "", nil, errApprovalPending
+	}
+	for i := 0; i < 8; i++ {
+		id, err := newApprovalID()
+		if err != nil {
+			return "", nil, errApprovalUnreachable
+		}
+		if _, taken := r.pending[id]; taken {
+			continue
+		}
+		if _, reserved := r.retired[id]; reserved {
+			continue
+		}
+		ch := make(chan approvalVerdict, 1)
+		r.pending[id] = pendingApproval{ch: ch, agent: agentID}
+		return id, ch, nil
+	}
+	return "", nil, errApprovalUnreachable
+}
+
+// cancelAll fails every approval in flight, for the freeze-all kill switch: it
+// must reach a waiting approval whether or not that agent still holds a grant.
+func (r *approvalRegistry) cancelAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, p := range r.pending {
+		r.retireLocked(id, p, false)
+		p.ch <- approvalVerdict{cancelled: true}
+	}
+}
+
+// cancelAgent fails every approval this agent is waiting on. Deleting before the
+// send is what keeps it safe: resolve does the same, so a verdict and a cancel
+// can never both write to one buffered channel.
+func (r *approvalRegistry) cancelAgent(agentID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, p := range r.pending {
+		if p.agent != agentID {
+			continue
+		}
+		r.retireLocked(id, p, false)
+		p.ch <- approvalVerdict{cancelled: true}
+	}
+}
+
+// clear retires a request that ended with no reply. A no-op once the entry has
+// left, so the deferred call after a resolve does not overwrite its record.
 func (r *approvalRegistry) clear(id string) {
 	r.mu.Lock()
-	delete(r.pending, id)
-	r.mu.Unlock()
+	defer r.mu.Unlock()
+	if p, ok := r.pending[id]; ok {
+		r.retireLocked(id, p, true)
+	}
 }
 
 // resolve delivers a verdict to the pending approval with this id. Returns true
@@ -115,12 +243,12 @@ func (r *approvalRegistry) clear(id string) {
 func (r *approvalRegistry) resolve(id string, v approvalVerdict) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	ch := r.pending[id]
-	if ch == nil {
+	p, ok := r.pending[id]
+	if !ok {
 		return false
 	}
-	delete(r.pending, id)
-	ch <- v
+	r.retireLocked(id, p, false)
+	p.ch <- v
 	return true
 }
 
@@ -136,11 +264,10 @@ func gateApproval(ctx context.Context, agentID, action string) error {
 	if !enabled || contact == "" {
 		return nil
 	}
-	id, err := randomHex(2) // short, so the operator can type it back
+	id, ch, err := approvals.register(agentID)
 	if err != nil {
-		return errApprovalUnreachable
+		return err
 	}
-	ch := approvals.register(id)
 	defer approvals.clear(id)
 
 	name := reg.name(agentID)
@@ -160,12 +287,22 @@ func gateApproval(ctx context.Context, agentID, action string) error {
 
 	select {
 	case v := <-ch:
+		if v.cancelled {
+			return errApprovalRevoked
+		}
 		if v.freeze {
-			freezeAgent(agentID)
+			// The freeze itself is applied by the reply consumer, so it lands
+			// even when no request is still waiting to hear it.
 			return errApprovalFrozen
 		}
 		if !v.approved {
 			return errApprovalDenied
+		}
+		// The grant was checked before the operator was asked. Revocation
+		// cancels a waiting approval, but expiry is lazy and cancels nothing, so
+		// confirm the agent may still spend before letting it through.
+		if err := grants.precheckGrant(agentID, time.Now()); err != nil {
+			return err
 		}
 		return nil
 	case <-time.After(approvalTimeout):
@@ -225,7 +362,17 @@ func handleApprovalReply(text string) {
 		if f == "" || f == "freeze" || f == "block" {
 			continue
 		}
-		if approvals.resolve(f, approvalVerdict{approved: verdict, freeze: freeze}) {
+		resolved := approvals.resolve(f, approvalVerdict{approved: verdict, freeze: freeze})
+		if freeze {
+			// Applied here rather than by the waiting request: a freeze that
+			// arrives after the request gave up, or that loses the race with its
+			// own timeout, must still block the agent it names.
+			if agentID, ok := approvals.agentFor(f); ok {
+				freezeAgent(agentID)
+				return
+			}
+		}
+		if resolved {
 			return
 		}
 	}
