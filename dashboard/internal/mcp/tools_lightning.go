@@ -214,6 +214,16 @@ var lightningTools = []toolDef{
 				return nil, fmt.Errorf("localDcr must be positive")
 			}
 			localAtoms := int64(local)
+			// Parsed before anything is reserved, as localDcr is: a rejected
+			// input must not consume the agent's daily budget.
+			var pushAtoms int64
+			if in.PushDCR > 0 {
+				p, perr := dcrutil.NewAmount(in.PushDCR)
+				if perr != nil || int64(p) <= 0 {
+					return nil, fmt.Errorf("pushDcr is not a valid amount")
+				}
+				pushAtoms = int64(p)
+			}
 			if err := grants.authorizeLightning(ctx, a.id, localAtoms, time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -222,13 +232,8 @@ var lightningTools = []toolDef{
 				}
 				return nil, err
 			}
-			req := &types.OpenChannelRequest{PeerURI: in.PeerURI, LocalAtoms: localAtoms, Private: in.Private}
-			if in.PushDCR > 0 {
-				p, perr := dcrutil.NewAmount(in.PushDCR)
-				if perr != nil || int64(p) <= 0 {
-					return nil, fmt.Errorf("pushDcr is not a valid amount")
-				}
-				req.PushAtoms = int64(p)
+			req := &types.OpenChannelRequest{
+				PeerURI: in.PeerURI, LocalAtoms: localAtoms, PushAtoms: pushAtoms, Private: in.Private,
 			}
 			// The pushed part is handed to the peer for good, so it belongs in
 			// the trail rather than being folded into the funding amount.

@@ -187,3 +187,98 @@ func TestLiquidityToolsRejectACallerProvider(t *testing.T) {
 		}
 	}
 }
+
+// ln_open_channel reserves the funding amount against the daily cap. Every input
+// it can reject must therefore be checked before that reservation, or a call
+// that never opens a channel still spends the agent's budget for the day, and
+// leaves no audit row saying it did.
+func TestOpenChannelRejectsPushBeforeReserving(t *testing.T) {
+	const id = "push-before-reserve"
+	grants.set(id, GrantSpec{
+		Accounts:    []uint32{0},
+		PerTxAtoms:  10e8,
+		DailyAtoms:  10e8,
+		WriteScopes: []string{scopeLightning},
+	}, time.Now())
+	t.Cleanup(func() { grants.revoke(id) })
+
+	cs := connectTo(t, testAgent(id, "push", map[string]bool{"lightning": true}))
+
+	// Positive, so it passes the > 0 guard, but it rounds to zero atoms.
+	out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "ln_open_channel",
+		Arguments: map[string]any{"localDcr": 1.0, "peerUri": lnTestPeer, "pushDcr": 0.000000001},
+	})
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+	if !out.IsError {
+		t.Fatal("an unusable pushDcr should be refused")
+	}
+	if txt := resultText(out); !strings.Contains(txt, "pushDcr") {
+		t.Errorf("refused, but not by the input: %q", txt)
+	}
+
+	gi, ok := grants.info(id)
+	if !ok {
+		t.Fatal("the grant should still exist")
+	}
+	if gi.SpentAtoms != 0 {
+		t.Fatalf("SpentAtoms = %d, want 0: a rejected input consumed the daily budget",
+			gi.SpentAtoms)
+	}
+}
+
+// openCapture records the request handed to dcrlnd, so a test can check what the
+// tool actually asked for rather than only what it returned.
+type openCapture struct {
+	lnrpc.LightningClient
+	got *lnrpc.OpenChannelRequest
+}
+
+func (c *openCapture) ConnectPeer(context.Context, *lnrpc.ConnectPeerRequest, ...grpc.CallOption) (*lnrpc.ConnectPeerResponse, error) {
+	return &lnrpc.ConnectPeerResponse{}, nil
+}
+
+func (c *openCapture) OpenChannelSync(_ context.Context, req *lnrpc.OpenChannelRequest, _ ...grpc.CallOption) (*lnrpc.ChannelPoint, error) {
+	c.got = req
+	return &lnrpc.ChannelPoint{FundingTxid: &lnrpc.ChannelPoint_FundingTxidBytes{FundingTxidBytes: make([]byte, 32)}}, nil
+}
+
+// Moving the parse must not drop the pushed amount on the way to the request:
+// the agent asked for it to be handed to the peer.
+func TestOpenChannelCarriesTheValidPushAmount(t *testing.T) {
+	cap := &openCapture{}
+	prev := rpc.SwapDcrlndClients(rpc.DcrlndClients{Lightning: cap})
+	t.Cleanup(func() { rpc.SwapDcrlndClients(prev) })
+
+	const id = "push-carried"
+	grants.set(id, GrantSpec{
+		Accounts:    []uint32{0},
+		PerTxAtoms:  10e8,
+		DailyAtoms:  10e8,
+		WriteScopes: []string{scopeLightning},
+	}, time.Now())
+	t.Cleanup(func() { grants.revoke(id) })
+
+	cs := connectTo(t, testAgent(id, "push", map[string]bool{"lightning": true}))
+	out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "ln_open_channel",
+		Arguments: map[string]any{"localDcr": 1.0, "peerUri": lnTestPeer, "pushDcr": 0.5},
+	})
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+	if out.IsError {
+		t.Fatalf("the open should succeed: %s", resultText(out))
+	}
+	if cap.got == nil {
+		t.Fatal("dcrlnd was never asked to open a channel")
+	}
+	if cap.got.PushAtoms != 5e7 {
+		t.Fatalf("PushAtoms = %d, want 50000000: the pushed amount was lost", cap.got.PushAtoms)
+	}
+	if cap.got.LocalFundingAmount != 1e8 {
+		t.Fatalf("LocalFundingAmount = %d, want 100000000", cap.got.LocalFundingAmount)
+	}
+}
