@@ -160,7 +160,7 @@ func TestBoundedWriterScalesWithSize(t *testing.T) {
 	if bigD <= smallD+time.Second {
 		t.Fatalf("16 MiB got %v and one byte got %v; a flat bound cuts off large bodies", bigD, smallD)
 	}
-	if smallD > listenWriteTimeout+time.Second {
-		t.Errorf("a one-byte write got %v, want about %v", smallD, listenWriteTimeout)
+	if smallD > time.Duration(listenWriteTimeout.Load())+time.Second {
+		t.Errorf("a one-byte write got %v, want about %v", smallD, time.Duration(listenWriteTimeout.Load()))
 	}
 }

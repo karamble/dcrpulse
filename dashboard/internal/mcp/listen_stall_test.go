@@ -158,9 +158,9 @@ func openListen(t *testing.T, h *stallHarness, uri string) net.Conn {
 
 func shortWriteTimeout(t *testing.T, d time.Duration) {
 	t.Helper()
-	prev := listenWriteTimeout
-	listenWriteTimeout = d
-	t.Cleanup(func() { listenWriteTimeout = prev })
+	prev := listenWriteTimeout.Load()
+	listenWriteTimeout.Store(int64(d))
+	t.Cleanup(func() { listenWriteTimeout.Store(prev) })
 }
 
 // The finding: an agent with only the default domain opens a listen stream,
@@ -243,9 +243,11 @@ func TestListenCapIsPerAgent(t *testing.T) {
 // id back, so it must not wait on anyone's feed.
 func TestRecordSpendDoesNotWaitOnListeners(t *testing.T) {
 	useTempAuditFile(t)
-	shortWriteTimeout(t, 30*time.Second) // long: only an async notify can beat it
+	// Long on purpose: with a short one a synchronous notify would also return
+	// quickly and this would pass with the fix reverted.
+	shortWriteTimeout(t, 30*time.Second)
 	h := newStallHarness(t, "spend-stall", map[string]bool{"node": true, "audit": true})
-	openListen(t, h, resAudit)
+	stalled := openListen(t, h, resAudit)
 	_ = serverFor(t, h.agent)
 
 	done := make(chan struct{})
@@ -259,6 +261,17 @@ func TestRecordSpendDoesNotWaitOnListeners(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("recordSpend is waiting on a stalled audit listener; the transaction is " +
 			"already broadcast and the caller cannot get its id back")
+	}
+
+	// The notify is off on its own goroutine, parked in the write for the full
+	// deadline above. Drain it before returning: closing the peer fails that
+	// write at once, and a goroutine still running here would race whatever the
+	// next test touches.
+	stalled.Close()
+	select {
+	case <-h.closed:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the stalled connection outlived the test")
 	}
 }
 

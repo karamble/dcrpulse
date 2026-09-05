@@ -6,13 +6,19 @@ package mcp
 
 import (
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
-// listenWriteTimeout bounds one write to an agent. Notifications are a couple of
-// hundred bytes, so this is only ever reached by a peer that has stopped reading
-// long enough to fill its receive window. A var so tests can shorten it.
-var listenWriteTimeout = 10 * time.Second
+// listenWriteTimeout bounds one write to an agent, in nanoseconds. Notifications
+// are a couple of hundred bytes, so this is only ever reached by a peer that has
+// stopped reading long enough to fill its receive window.
+//
+// Atomic because tests shorten it while writer goroutines are live: nothing
+// writes it in a running daemon, but a plain var races the moment one does.
+var listenWriteTimeout atomic.Int64
+
+func init() { listenWriteTimeout.Store(int64(10 * time.Second)) }
 
 // writeDeadlineRate extends the bound for large bodies, so a file or a long
 // transaction listing is not cut off just for being big on a slow link. At this
@@ -42,7 +48,8 @@ func boundWrites(next http.Handler) http.Handler {
 func (b *boundedWriter) Unwrap() http.ResponseWriter { return b.ResponseWriter }
 
 func (b *boundedWriter) deadline(n int) time.Time {
-	return time.Now().Add(listenWriteTimeout + time.Duration(n/writeDeadlineRate)*time.Second)
+	d := time.Duration(listenWriteTimeout.Load())
+	return time.Now().Add(d + time.Duration(n/writeDeadlineRate)*time.Second)
 }
 
 // Write arms the deadline and leaves it armed. A small body only reaches
