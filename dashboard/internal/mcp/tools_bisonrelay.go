@@ -550,6 +550,9 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_pm_history",
 		"Get paginated private-message history with a contact. Requires 'uid'; optional page and pageSize (default 50). Optional 'since' (unix seconds) and 'onlyEmbeds' filters scan newest-first and return only matching entries.",
 		func(ctx context.Context, in brPmHistoryInput) (any, error) {
+			if err := refuseOversightContact(ctx, in.UID); err != nil {
+				return nil, err
+			}
 			if in.Since <= 0 && !in.OnlyEmbeds {
 				return rpc.BrclientdHistoryPM(ctx, in.UID, in.Page, brPageSize(in.PageSize))
 			}
@@ -694,6 +697,10 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_send_message", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
+			if err := refuseOversightContact(ctx, in.UID); err != nil {
+				recordSpend(a, "br_send_message", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
 			if err := rpc.BrclientdSendPM(ctx, in.UID, in.Message); err != nil {
 				recordSpend(a, "br_send_message", 0, 0, in.UID, "error", err.Error())
 				return nil, err
@@ -729,6 +736,10 @@ var bisonrelayTools = []toolDef{
 			body, err := buildImageEmbedBody(in.Path, in.Message, in.Mime)
 			if err != nil {
 				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			if err := refuseOversightContact(ctx, in.UID); err != nil {
+				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
 			if err := rpc.BrclientdSendPM(ctx, in.UID, body); err != nil {
@@ -780,6 +791,10 @@ var bisonrelayTools = []toolDef{
 			attempts := in.MaxAttempts
 			if attempts <= 0 {
 				attempts = 1
+			}
+			if err := refuseOversightContact(ctx, in.UID); err != nil {
+				recordSpend(a, "br_tip_user", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
 			}
 			if err := rpc.BrclientdTipUser(ctx, in.UID, in.AmountDCR, attempts); err != nil {
 				grants.refund(a.id, atoms)
@@ -948,6 +963,10 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_file_send", 0, 0, in.UID, "error", err.Error())
 				return nil, err
 			}
+			if err := refuseOversightContact(ctx, in.UID); err != nil {
+				recordSpend(a, "br_file_send", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
+			}
 			result, err := rpc.BrclientdSendFile(ctx, in.UID, in.Filename, in.Mime, bytes.NewReader(data))
 			if err != nil {
 				recordSpend(a, "br_file_send", 0, 0, in.UID, "error", err.Error())
@@ -987,6 +1006,10 @@ var bisonrelayTools = []toolDef{
 			name := in.Filename
 			if name == "" {
 				name = filepath.Base(candidate)
+			}
+			if err := refuseOversightContact(ctx, in.UID); err != nil {
+				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "denied", err.Error())
+				return nil, err
 			}
 			result, err := rpc.BrclientdSendFile(ctx, in.UID, name, in.Mime, f)
 			if err != nil {
@@ -1150,6 +1173,10 @@ var bisonrelayTools = []toolDef{
 			}
 			gcid, err := rpc.ParseShortIDHex(in.GCID)
 			if err != nil {
+				return nil, err
+			}
+			if err := refuseOversightContact(ctx, in.UID); err != nil {
+				recordSpend(a, "br_gc_invite", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
 			if err := rpc.BrclientdGCInvite(ctx, gcid, in.UID); err != nil {

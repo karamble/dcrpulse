@@ -296,3 +296,57 @@ func detailSuffix(d string) string {
 func dcrAmountStr(atoms int64) string {
 	return fmt.Sprintf("%.8f DCR", dcrutil.Amount(atoms).ToCoin())
 }
+
+// errOversightContact refuses an agent's attempt to reach the operator's
+// oversight contact.
+var errOversightContact = errors.New("this contact receives dcrpulse's own approval requests and cannot be addressed by an agent")
+
+// refuseOversightContact reports whether target names the configured oversight
+// contact. The BR tools accept a nick, alias or hex uid and let brclientd do the
+// resolving, so comparing against the stored hex alone would be bypassed by
+// passing the nick; the contact's own names are resolved and matched too.
+// Nothing is refused when oversight is off, and a contact lookup that fails
+// refuses rather than guessing: only messages to one contact are affected.
+func refuseOversightContact(ctx context.Context, target string) error {
+	enabled, contact := oversightConfig()
+	if !enabled || contact == "" {
+		return nil
+	}
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return nil
+	}
+	if strings.EqualFold(target, contact) {
+		return errOversightContact
+	}
+	entries, err := brContactEntries(ctx)
+	if err != nil {
+		return fmt.Errorf("check the oversight contact: %w", err)
+	}
+	if namesOversightContact(target, contact, entries) {
+		return errOversightContact
+	}
+	return nil
+}
+
+// namesOversightContact reports whether target is any name the oversight contact
+// answers to. brclientd resolves a nick or alias for us, so matching the stored
+// hex alone would leave those as a way around the refusal.
+func namesOversightContact(target, contact string, entries []map[string]any) bool {
+	// Trimmed here rather than relying on the caller: an untrimmed nick would
+	// otherwise slip past. An empty target cannot match, since every name is
+	// checked non-empty below.
+	target = strings.TrimSpace(target)
+	for _, entry := range entries {
+		uid, nick, alias, name := brContactStrings(entry)
+		if !strings.EqualFold(strings.TrimSpace(uid), strings.TrimSpace(contact)) {
+			continue
+		}
+		for _, own := range []string{uid, nick, alias, name} {
+			if own = strings.TrimSpace(own); own != "" && strings.EqualFold(target, own) {
+				return true
+			}
+		}
+	}
+	return false
+}
