@@ -168,10 +168,13 @@ func (s *grantStore) revoke(agentID string) bool {
 	return g != nil
 }
 
-// revokeAll clears every agent's grant, zeroing all held passphrases. Used by
-// the freeze-all kill-switch.
-func (s *grantStore) revokeAll() {
+// revokeAll clears every agent's grant, zeroing all held passphrases, and
+// returns how many it removed. Used by the freeze-all kill-switch and by a
+// change of the active wallet, since a grant names account numbers on the
+// wallet it was issued against.
+func (s *grantStore) revokeAll() int {
 	s.mu.Lock()
+	n := len(s.byAgent)
 	for id, g := range s.byAgent {
 		zero(g.passphrase)
 		delete(s.byAgent, id)
@@ -180,6 +183,7 @@ func (s *grantStore) revokeAll() {
 	// Every approval, not just those of agents that still held a grant: this is
 	// the kill switch, and a waiting agent may already have lost its grant.
 	approvals.cancelAll()
+	return n
 }
 
 func (s *grantStore) info(agentID string) (GrantInfo, bool) {

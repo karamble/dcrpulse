@@ -66,8 +66,11 @@ func SelectWalletHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The agent tools describe this wallet's staking accounts and VSPs, so that
-	// description belongs to the wallet that just went away.
+	// The active-wallet hook already dropped this cache, but it fires mid-switch
+	// while the new wallet is still opening, so a tool listing in between can
+	// refill it with an empty profile and hold that for the cache lifetime. This
+	// call is the freshness refresh once the wallet is actually open; the hook is
+	// the one that matters for authority. Both are needed.
 	mcp.InvalidateStakingProfile()
 
 	w.Header().Set("Content-Type", "application/json")

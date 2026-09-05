@@ -407,7 +407,8 @@ func persistedEnabled() (val bool, ok bool) {
 	return v, true
 }
 
-// per-agent scoped server cache (keyed by agent id), invalidated on grant change.
+// per-agent scoped server cache (keyed by agent id), invalidated on a grant
+// change and on a change of the active wallet.
 var (
 	serversMu sync.Mutex
 	servers   = map[string]*mcp.Server{}
@@ -427,6 +428,17 @@ func scopedServerFor(a *agent) *mcp.Server {
 func invalidateAgentServer(id string) {
 	serversMu.Lock()
 	delete(servers, id)
+	serversMu.Unlock()
+}
+
+// invalidateAllServers drops every cached server, for a change that invalidates
+// all of them at once. Tool descriptions are built once per server and name the
+// accounts a grant covers, so they belong to the wallet they were built against.
+func invalidateAllServers() {
+	serversMu.Lock()
+	for id := range servers {
+		delete(servers, id)
+	}
 	serversMu.Unlock()
 }
 

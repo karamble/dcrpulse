@@ -77,12 +77,28 @@ func (r *eventRing) snapshot() []any {
 	return out
 }
 
+func (r *eventRing) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entries = nil
+}
+
 var (
 	brRing      = &eventRing{}
 	lnRing      = &eventRing{}
 	stakingRing = &eventRing{}
 	mixerRing   = &eventRing{}
 )
+
+// resetEventRings drops the buffered feed history. The daemons behind these
+// feeds are per-wallet, so after a wallet change the entries describe messages,
+// channels, tickets and mixes that belong to a wallet the agent is no longer on.
+func resetEventRings() {
+	brRing.reset()
+	lnRing.reset()
+	stakingRing.reset()
+	mixerRing.reset()
+}
 
 // resourceCatalog is the master list of MCP resources. State resources read
 // fresh from services on demand; event-feed resources return a bounded ring fed

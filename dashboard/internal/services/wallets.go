@@ -61,10 +61,52 @@ func ActiveWalletName() string {
 	return activeWallet
 }
 
+// ActiveWalletChange describes one in-process active-wallet transition. Old and
+// New are wallet names; "" means no wallet is selected. They may be equal: the
+// daemon is relaunched against the name either way.
+type ActiveWalletChange struct{ Old, New string }
+
+// activeWalletHooks run synchronously, in registration order, on every write of
+// the active wallet name. Subscribers holding authority that belongs to one
+// wallet use this to drop it before the daemons are repointed. Append-only: a
+// security hook must not be silently replaced by a later registrant.
+var (
+	activeWalletHooksMu sync.Mutex
+	activeWalletHooks   []func(ActiveWalletChange)
+)
+
+// OnActiveWalletChange registers fn to run on every active-wallet write. fn must
+// not block; it may call ActiveWalletName, which already reports the new name.
+func OnActiveWalletChange(fn func(ActiveWalletChange)) {
+	activeWalletHooksMu.Lock()
+	activeWalletHooks = append(activeWalletHooks, fn)
+	activeWalletHooksMu.Unlock()
+}
+
+// notifyActiveWalletChange calls each hook outside both locks: a hook reading
+// ActiveWalletName would otherwise deadlock on activeWalletMu, and one
+// registering a hook would deadlock on the hooks lock.
+func notifyActiveWalletChange(ch ActiveWalletChange) {
+	activeWalletHooksMu.Lock()
+	hooks := make([]func(ActiveWalletChange), len(activeWalletHooks))
+	copy(hooks, activeWalletHooks)
+	activeWalletHooksMu.Unlock()
+	for _, fn := range hooks {
+		fn(ch)
+	}
+}
+
+// setActiveWalletName is the sole writer of the in-process active wallet, so it
+// is where the change hooks fire. They run after the write and before the
+// callers persist anything, which is deliberate: a switch that fails partway
+// still leaves the daemons pointed at the new wallet, so authority tied to the
+// old one has to be dropped either way.
 func setActiveWalletName(name string) {
 	activeWalletMu.Lock()
+	old := activeWallet
 	activeWallet = name
 	activeWalletMu.Unlock()
+	notifyActiveWalletChange(ActiveWalletChange{Old: old, New: name})
 }
 
 // SeedActiveWallet restores the active wallet at startup. The shared control
