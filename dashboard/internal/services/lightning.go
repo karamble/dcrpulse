@@ -651,12 +651,13 @@ func lightningChannelTxIDs(ctx context.Context) (funding, closing map[string]boo
 // the streaming variant; we use the sync variant for simpler HTTP
 // semantics — the channel's progression from pending to open is then
 // reflected via the live channel-events WebSocket.
-// ErrSpendStarted marks a Lightning failure raised after the daemon was asked to
-// move funds. dcrlnd's OpenChannelSync stops watching the caller's context once
-// the funding workflow starts, and the liquidity flow runs on a background
-// context, so past this point a failure - a cancelled call included - does not
-// mean nothing was spent. Callers that reserved against a spend cap must keep
-// the reservation rather than hand it back.
+// ErrSpendStarted marks a failure raised after a daemon was asked to move funds,
+// on any spend path. dcrlnd's OpenChannelSync stops watching the caller's context
+// once the funding workflow starts, dcrwallet publishes tickets one at a time, and
+// a published transaction is on the network whatever the call returns, so past
+// this point a failure - a cancelled call included - does not mean nothing was
+// spent. Callers that reserved against a spend cap must keep the reservation
+// rather than hand it back.
 var ErrSpendStarted = errors.New("the spend was already requested")
 
 func OpenLightningChannel(ctx context.Context, req *types.OpenChannelRequest) (*types.OpenChannelResponse, error) {

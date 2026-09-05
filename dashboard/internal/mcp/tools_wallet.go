@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -167,8 +168,15 @@ var walletTools = []toolDef{
 			// SignAndPublishTransaction zeroes pass after use.
 			txid, err := services.SignAndPublishTransaction(ctx, in.Account, unsigned.UnsignedTransaction, pass)
 			if err != nil {
-				grants.refund(a.id, atoms)
-				recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "error", err.Error())
+				// Only a failure that provably precedes the publish may release
+				// the reservation; see services.ErrSpendStarted.
+				detail := err.Error()
+				if !errors.Is(err, services.ErrSpendStarted) {
+					grants.refund(a.id, atoms)
+				} else {
+					detail = "reservation kept, the send may still confirm: " + detail
+				}
+				recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "error", detail)
 				return nil, err
 			}
 			recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "ok", txid)

@@ -1688,6 +1688,9 @@ func spendGuard() error {
 	return nil
 }
 
+// publishTimeout bounds the publish once it can no longer be cancelled.
+const publishTimeout = 60 * time.Second
+
 func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsignedTxBytes []byte, passphrase []byte) (string, error) {
 	if err := spendGuard(); err != nil {
 		return "", err
@@ -1728,11 +1731,15 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 	if err != nil {
 		return "", err
 	}
-	pubResp, err := rpc.WalletGrpcClient.PublishTransaction(ctx, &pb.PublishTransactionRequest{
+	// Detached and wrapped: once the transaction is handed over it may reach the
+	// network whatever this call returns. The signing above is still pre-spend.
+	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
+	defer cancel()
+	pubResp, err := rpc.WalletGrpcClient.PublishTransaction(pubCtx, &pb.PublishTransactionRequest{
 		SignedTransaction: signResp.Transaction,
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("PublishTransaction: %w: %w", ErrSpendStarted, err)
 	}
 	hash, err := chainhash.NewHash(pubResp.TransactionHash)
 	if err != nil {

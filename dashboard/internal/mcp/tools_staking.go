@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -361,8 +362,15 @@ var stakingTools = []toolDef{
 			defer zero(pass)
 			resp, err := services.PurchaseTickets(ctx, in.Account, in.NumTickets, in.VSPHost, in.VSPPubkey, changeAccount, pass)
 			if err != nil {
-				grants.refund(a.id, totalAtoms)
-				recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "error", err.Error())
+				// Only a failure that provably precedes the spend may release
+				// the reservation; see services.ErrSpendStarted.
+				detail := err.Error()
+				if !errors.Is(err, services.ErrSpendStarted) {
+					grants.refund(a.id, totalAtoms)
+				} else {
+					detail = "reservation kept, the purchase may still complete: " + detail
+				}
+				recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "error", detail)
 				return nil, err
 			}
 			recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "ok",

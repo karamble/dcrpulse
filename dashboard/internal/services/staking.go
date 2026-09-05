@@ -496,7 +496,7 @@ func StartPurchaseWorker(account, numTickets uint32, vspHost, vspPubkey string, 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		resp, err := purchaseTicketsCore(ctx, account, numTickets, vspHost, vspPubkey, changeAccount, passCopy)
+		resp, err := purchaseTicketsCore(ctx, 0, account, numTickets, vspHost, vspPubkey, changeAccount, passCopy)
 		if err != nil {
 			setPurchaseResult(nil, "", err.Error())
 			emitPurchaseEvent(types.PurchaseEvent{Level: "error", Kind: "error", Message: "Purchase failed: " + err.Error()})
@@ -518,6 +518,11 @@ func StartPurchaseWorker(account, numTickets uint32, vspHost, vspPubkey string, 
 	return nil
 }
 
+// purchaseTimeout bounds a detached synchronous purchase. It sits above
+// dcrwallet's own ceilings, so it frees this side on a hang rather than
+// interrupting work that is still progressing.
+const purchaseTimeout = 2 * time.Hour
+
 // PurchaseTickets runs a ticket purchase synchronously under the single-flight
 // guard. Used for plain (non-privacy) purchases, which complete quickly.
 func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
@@ -525,13 +530,15 @@ func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, v
 		return nil, fmt.Errorf("a ticket purchase is already in progress")
 	}
 	defer endTicketPurchase()
-	return purchaseTicketsCore(ctx, account, numTickets, vspHost, vspPubkey, changeAccount, passphrase)
+	return purchaseTicketsCore(ctx, purchaseTimeout, account, numTickets, vspHost, vspPubkey, changeAccount, passphrase)
 }
 
 // purchaseTicketsCore calls dcrwallet's PurchaseTickets gRPC with the modern VSP
 // fields. Uses lazy per-account-encryption migration on the source account. The
-// caller owns the single-flight guard (see tryBeginTicketPurchase).
-func purchaseTicketsCore(ctx context.Context, account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
+// caller owns the single-flight guard (see tryBeginTicketPurchase) and bounds the
+// detached wallet call with spendTimeout; 0 leaves it unbounded, which the mixed
+// background worker needs since CSPP pairing has no fixed ceiling.
+func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
 	if rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("wallet gRPC client not initialized")
 	}
@@ -604,9 +611,17 @@ func purchaseTicketsCore(ctx context.Context, account, numTickets uint32, vspHos
 		purchaseReq.MixedAccountBranch = privacyMixedAccountBranch
 	}
 
-	resp, err := rpc.WalletGrpcClient.PurchaseTickets(ctx, purchaseReq)
+	// A cancelled caller must not interrupt this: dcrwallet publishes tickets one
+	// at a time, so an interrupt leaves some live and unaccounted for.
+	rpcCtx := context.WithoutCancel(ctx)
+	if spendTimeout > 0 {
+		var cancel context.CancelFunc
+		rpcCtx, cancel = context.WithTimeout(rpcCtx, spendTimeout)
+		defer cancel()
+	}
+	resp, err := rpc.WalletGrpcClient.PurchaseTickets(rpcCtx, purchaseReq)
 	if err != nil {
-		return nil, fmt.Errorf("PurchaseTickets RPC: %w", err)
+		return nil, fmt.Errorf("PurchaseTickets RPC: %w: %w", ErrSpendStarted, err)
 	}
 
 	out := &types.PurchaseTicketsResponse{
