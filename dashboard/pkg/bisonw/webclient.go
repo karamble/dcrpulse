@@ -136,6 +136,8 @@ func (c *WebClient) LoggedIn() bool {
 // SessionValid probes /api/user (200 even unauthed): a non-null user means a
 // live session and an unlocked daemon. The local flag is reconciled to match.
 func (c *WebClient) SessionValid(ctx context.Context) (bool, error) {
+	// /api/user also carries mmStatus and its CEX credentials; naming only the
+	// wanted field is what keeps them out. Do not widen this to the whole body.
 	var res struct {
 		webAck
 		User json.RawMessage `json:"user"`
@@ -365,6 +367,7 @@ func (c *WebClient) Order(ctx context.Context, orderID string) (json.RawMessage,
 // here. This list is the durable contract; the notification is only a prompt to
 // re-read it.
 func (c *WebClient) PendingActions(ctx context.Context) (json.RawMessage, error) {
+	// As in SessionValid, the narrow target keeps /api/user's credentials out.
 	var res struct {
 		webAck
 		User struct {
@@ -478,7 +481,8 @@ func (c *WebClient) ReconfigureWallet(ctx context.Context, assetID uint32, walle
 }
 
 // MMStatus returns the market-making status (bots + CEX state) as the raw
-// `status` object from /api/marketmakingstatus.
+// `status` object from /api/marketmakingstatus, with each CEX config cut to
+// {name}: bisonw serializes the stored API key and secret into it.
 func (c *WebClient) MMStatus(ctx context.Context) (json.RawMessage, error) {
 	var res struct {
 		webAck
@@ -487,7 +491,7 @@ func (c *WebClient) MMStatus(ctx context.Context) (json.RawMessage, error) {
 	if err := c.callSession(ctx, http.MethodGet, "/api/marketmakingstatus", nil, &res); err != nil {
 		return nil, err
 	}
-	return res.Status, nil
+	return redactCEXSecrets(res.Status)
 }
 
 // ArchivedRuns returns the market-maker run history as the raw `runs` array

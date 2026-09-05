@@ -7,6 +7,7 @@ package bisonw
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -112,3 +113,76 @@ func (c *Client) UpdateRunningBotInventory(ctx context.Context, host string, bas
 	}
 	return c.Call(ctx, "updaterunningbotinv", nil, args, nil)
 }
+
+// redactCEXSecrets cuts each cexes entry's config down to {name}; bisonw
+// serializes the stored API key and secret into it. A shape it cannot walk is
+// refused rather than passed through.
+func redactCEXSecrets(status json.RawMessage) (json.RawMessage, error) {
+	if len(status) == 0 || jsonNull(status) {
+		return status, nil
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(status, &top); err != nil {
+		return nil, fmt.Errorf("redact cex config: status: %w", err)
+	}
+	cexesRaw, ok := top["cexes"]
+	if !ok {
+		// Never absent upstream, so absence means the shape moved and the
+		// credentials may now sit somewhere this does not reach.
+		return nil, errors.New("redact cex config: status has no cexes member")
+	}
+	if jsonNull(cexesRaw) {
+		return status, nil
+	}
+	var cexes map[string]json.RawMessage
+	if err := json.Unmarshal(cexesRaw, &cexes); err != nil {
+		return nil, fmt.Errorf("redact cex config: cexes: %w", err)
+	}
+	for name, entryRaw := range cexes {
+		if jsonNull(entryRaw) {
+			continue
+		}
+		var entry map[string]json.RawMessage
+		if err := json.Unmarshal(entryRaw, &entry); err != nil {
+			return nil, fmt.Errorf("redact cex config: cexes.%s: %w", name, err)
+		}
+		cfgRaw, ok := entry["config"]
+		if !ok {
+			return nil, fmt.Errorf("redact cex config: cexes.%s has no config member", name)
+		}
+		if jsonNull(cfgRaw) {
+			continue
+		}
+		var cfg map[string]json.RawMessage
+		if err := json.Unmarshal(cfgRaw, &cfg); err != nil {
+			return nil, fmt.Errorf("redact cex config: cexes.%s.config: %w", name, err)
+		}
+		// Rebuilt from an allow list so a field added upstream is dropped too.
+		kept := map[string]json.RawMessage{}
+		if n, ok := cfg["name"]; ok {
+			kept["name"] = n
+		}
+		keptRaw, err := json.Marshal(kept)
+		if err != nil {
+			return nil, fmt.Errorf("redact cex config: cexes.%s.config: %w", name, err)
+		}
+		entry["config"] = keptRaw
+		redacted, err := json.Marshal(entry)
+		if err != nil {
+			return nil, fmt.Errorf("redact cex config: cexes.%s: %w", name, err)
+		}
+		cexes[name] = redacted
+	}
+	cexesOut, err := json.Marshal(cexes)
+	if err != nil {
+		return nil, fmt.Errorf("redact cex config: cexes: %w", err)
+	}
+	top["cexes"] = cexesOut
+	out, err := json.Marshal(top)
+	if err != nil {
+		return nil, fmt.Errorf("redact cex config: status: %w", err)
+	}
+	return out, nil
+}
+
+func jsonNull(b json.RawMessage) bool { return string(b) == "null" }

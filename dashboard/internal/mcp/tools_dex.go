@@ -729,7 +729,7 @@ var dexTools = []toolDef{
 			return c.WalletTx(ctx, in.AssetID, in.TxID)
 		}),
 	readTool("dex", "dex_mm_status",
-		"Get the market-making status (bots and CEX state). Requires the DEX unlocked.",
+		"Get the market-making status (bots and CEX state). CEX API credentials are not returned. Requires the DEX unlocked.",
 		func(ctx context.Context, _ emptyInput) (any, error) {
 			if !rpc.DcrdexUnlocked() {
 				return nil, dexLocked()
