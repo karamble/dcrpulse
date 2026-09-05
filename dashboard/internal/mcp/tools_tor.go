@@ -6,6 +6,8 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"dcrpulse/internal/services"
@@ -15,11 +17,34 @@ import (
 // torSetSettingsInput mirrors the settable fields of types.TorSettings. Rev is
 // owned by the writer (bumped so the supervisors relaunch their daemons) and is
 // not accepted from the agent.
+// applyTorSettings overlays the named fields onto the current settings and
+// reports which were named. An omitted field keeps its current value, so a
+// caller changing one setting cannot revert another it read earlier, and
+// lnOnion - which this tool does not expose - is never written.
+func applyTorSettings(cur types.TorSettings, in torSetSettingsInput) (types.TorSettings, string) {
+	next := cur
+	var named []string
+	flag := func(name string, dst, src *bool) {
+		if src != nil {
+			*dst = *src
+			named = append(named, fmt.Sprintf("%s=%t", name, *src))
+		}
+	}
+	flag("enabled", &next.Enabled, in.Enabled)
+	flag("isolation", &next.Isolation, in.Isolation)
+	flag("dcrdOnion", &next.DcrdOnion, in.DcrdOnion)
+	if in.CircuitLimit != nil {
+		next.CircuitLimit = *in.CircuitLimit
+		named = append(named, fmt.Sprintf("circuitLimit=%d", *in.CircuitLimit))
+	}
+	return next, strings.Join(named, " ")
+}
+
 type torSetSettingsInput struct {
-	Enabled      bool `json:"enabled" jsonschema:"route the stack's outbound traffic through Tor"`
-	Isolation    bool `json:"isolation" jsonschema:"use stream isolation (a separate circuit per daemon)"`
-	DcrdOnion    bool `json:"dcrdOnion" jsonschema:"publish dcrd as an onion service"`
-	CircuitLimit int  `json:"circuitLimit" jsonschema:"maximum number of Tor circuits (1-1000)"`
+	Enabled      *bool `json:"enabled,omitempty" jsonschema:"route the stack's outbound traffic through Tor; omit to leave unchanged"`
+	Isolation    *bool `json:"isolation,omitempty" jsonschema:"use stream isolation (a separate circuit per daemon); omit to leave unchanged"`
+	DcrdOnion    *bool `json:"dcrdOnion,omitempty" jsonschema:"publish dcrd as an onion service; omit to leave unchanged"`
+	CircuitLimit *int  `json:"circuitLimit,omitempty" jsonschema:"maximum number of Tor circuits (1-1000); omit to leave unchanged"`
 }
 
 // torTools are the "tor" domain tools. The read snapshot getters do not return
@@ -36,23 +61,26 @@ var torTools = []toolDef{
 		"Get the current Tor configuration (enabled, stream isolation, onion service, circuit limit).",
 		func(_ context.Context, _ emptyInput) (any, error) { return services.ReadTorSettings(), nil }),
 	agentTool("tor", "tor_set_settings",
-		"Update the Tor configuration (enable/disable routing, stream isolation, dcrd onion service, circuit limit). Bumps the revision so every daemon relaunches with the new flags. Requires a grant with Tor write enabled. Returns the updated settings.",
+		"Update the Tor configuration (routing, stream isolation, dcrd onion service, circuit limit). Every field is optional: omit one to leave it unchanged. A change bumps the revision so every daemon relaunches with the new flags. Requires a grant with Tor write enabled. Returns the settings.",
 		func(_ context.Context, a *agent, in torSetSettingsInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeTor, time.Now()); err != nil {
 				recordSpend(a, "tor_set_settings", 0, 0, "", "denied", err.Error())
 				return nil, err
 			}
-			out, err := services.WriteTorSettings(types.TorSettings{
-				Enabled:      in.Enabled,
-				Isolation:    in.Isolation,
-				DcrdOnion:    in.DcrdOnion,
-				CircuitLimit: in.CircuitLimit,
-			})
+			cur := services.ReadTorSettings()
+			next, named := applyTorSettings(cur, in)
+			// A write bumps Rev and relaunches every daemon, so a call that
+			// changes nothing does nothing.
+			if next == cur {
+				recordSpend(a, "tor_set_settings", 0, 0, "", "ok", "no change")
+				return cur, nil
+			}
+			out, err := services.WriteTorSettings(next)
 			if err != nil {
 				recordSpend(a, "tor_set_settings", 0, 0, "", "error", err.Error())
 				return nil, err
 			}
-			recordSpend(a, "tor_set_settings", 0, 0, "", "ok", "")
+			recordSpend(a, "tor_set_settings", 0, 0, "", "ok", named)
 			return out, nil
 		}),
 	agentTool("tor", "tor_new_identity",
