@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -151,6 +152,60 @@ var (
 	runPort = "8090"
 )
 
+// surface is the toggle as the request path sees it. Open listen streams
+// register here so switching the surface off ends them, which the listener's
+// own shutdown cannot do: net/http never interrupts an active request.
+var surface = &surfaceState{listens: map[uint64]context.CancelFunc{}}
+
+type surfaceState struct {
+	mu      sync.Mutex
+	up      bool
+	nextID  uint64
+	listens map[uint64]context.CancelFunc
+}
+
+func (s *surfaceState) isUp() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.up
+}
+
+func (s *surfaceState) setUp() {
+	s.mu.Lock()
+	s.up = true
+	s.mu.Unlock()
+}
+
+// setDown flips the toggle and ends every open listen under the one lock, so
+// none can register between the flip and the sweep.
+func (s *surfaceState) setDown() {
+	s.mu.Lock()
+	s.up = false
+	for id, cancel := range s.listens {
+		cancel()
+		delete(s.listens, id)
+	}
+	s.mu.Unlock()
+}
+
+// addListen registers an open listen stream, refusing while the surface is down.
+func (s *surfaceState) addListen(cancel context.CancelFunc) (uint64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.up {
+		return 0, false
+	}
+	s.nextID++
+	s.listens[s.nextID] = cancel
+	return s.nextID, true
+}
+
+func (s *surfaceState) removeListen(id uint64) {
+	s.mu.Lock()
+	delete(s.listens, id)
+	s.mu.Unlock()
+}
+
 // Start records the listener address, registers the optional bootstrap token,
 // and brings the server up if it should be enabled. The enabled state is the
 // persisted dashboard toggle when present, otherwise the env default.
@@ -206,9 +261,7 @@ func SetEnabled(enabled bool) error {
 			}
 		}
 	} else if httpSrv != nil {
-		srv := httpSrv
-		httpSrv = nil
-		go shutdownServer(srv)
+		stopListenerLocked()
 	}
 	srvMu.Unlock()
 	return persistEnabled(enabled)
@@ -229,9 +282,10 @@ func startListenerLocked() error {
 		return err
 	}
 	httpSrv = &http.Server{
-		Handler:           reg.authMiddleware(buildHandler()),
+		Handler:           listenerHandler(),
 		ReadHeaderTimeout: 15 * time.Second,
 	}
+	surface.setUp()
 	// Bridge the live event buses into MCP resource notifications (once).
 	startResourceFeeds()
 	go func(s *http.Server) {
@@ -243,11 +297,64 @@ func startListenerLocked() error {
 	return nil
 }
 
+// stopListenerLocked takes the surface down. The caller holds srvMu and has
+// checked that httpSrv is non-nil.
+func stopListenerLocked() {
+	srv := httpSrv
+	httpSrv = nil
+	// Ends the open listen streams and refuses new ones; the listener's own
+	// shutdown only stops new connections.
+	surface.setDown()
+	// A spend parked on the operator's approval is denied here rather than left
+	// waiting for a reply that can no longer reach it.
+	approvals.cancelAll()
+	go shutdownServer(srv)
+}
+
 func shutdownServer(s *http.Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = s.Shutdown(ctx)
+	if err := s.Shutdown(ctx); err != nil {
+		mcpLog.Warnf("MCP server stopped with requests still in flight; they finish on their own: %v", err)
+		return
+	}
 	mcpLog.Infof("MCP server stopped")
+}
+
+// listenerHandler is the listener's chain. The toggle gate sits outside auth so
+// a request arriving after a disable never reaches a scoped server.
+func listenerHandler() http.Handler {
+	return surfaceGate(reg.authMiddleware(buildHandler()))
+}
+
+func surfaceGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !surface.isUp() {
+			http.Error(w, "MCP agent access is turned off", http.StatusServiceUnavailable)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+var errSurfaceDown = errors.New("MCP agent access is turned off")
+
+// listenGate ties each subscriptions/listen stream to the toggle: the stream
+// ends when the surface goes down, and none opens while it is down.
+func listenGate(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if method != "subscriptions/listen" {
+			return next(ctx, method, req)
+		}
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		id, ok := surface.addListen(cancel)
+		if !ok {
+			return nil, errSurfaceDown
+		}
+		defer surface.removeListen(id)
+		return next(ctx, method, req)
+	}
 }
 
 // buildHandler builds the streamable-HTTP handler. The getServer callback
@@ -338,7 +445,7 @@ func buildServer(a *agent) *mcp.Server {
 		Title:   "Decred Pulse",
 		Version: serverVersion,
 	}, opts)
-	s.AddReceivingMiddleware(activityMiddleware(a))
+	s.AddReceivingMiddleware(activityMiddleware(a), listenGate)
 	for _, t := range toolCatalog {
 		if a.allows(t.domain) {
 			t.register(s, a)

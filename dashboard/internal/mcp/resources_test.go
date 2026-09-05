@@ -107,6 +107,7 @@ func TestResourceSubscribeGating(t *testing.T) {
 // registers asynchronously on this wire, so the triggers retry until a push
 // lands.
 func TestResourceSubscribePushNewWire(t *testing.T) {
+	surfaceUpForTest(t)
 	a := testAgent("rp", "node-only", map[string]bool{"node": true})
 	var mu sync.Mutex
 	got := map[string]int{}
