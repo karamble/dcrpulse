@@ -6,10 +6,12 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	stdslog "log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/decred/slog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -68,14 +70,45 @@ func Logging() LoggingConfig {
 	return LoggingConfig{Enabled: logGate.Load()}
 }
 
-// sanitizeLogField strips newlines from agent-supplied strings (tool names,
-// error text) so a crafted value cannot forge log lines.
+// unsafeLogRune reports whether r must not reach the log as itself: anything a
+// terminal or a log reader acts on rather than displays. A newline would forge a
+// second line, the control runes move the cursor and repaint, and the separators
+// and bidi overrides re-order what the operator sees.
+func unsafeLogRune(r rune) bool {
+	switch {
+	case unicode.IsControl(r):
+		return true
+	case r == '\u2028' || r == '\u2029': // line and paragraph separators
+		return true
+	case r >= '\u202a' && r <= '\u202e': // bidi embedding and override
+		return true
+	case r >= '\u2066' && r <= '\u2069': // bidi isolates
+		return true
+	}
+	return false
+}
+
+// sanitizeLogField renders an agent-supplied string safe to write to the log.
+// The dangerous runes are escaped rather than dropped: what the agent actually
+// sent is what an investigation wants to see, and an escaped byte can neither
+// forge a line nor move the operator's cursor.
 func sanitizeLogField(s string) string {
-	if !strings.ContainsAny(s, "\r\n") {
+	if !strings.ContainsFunc(s, unsafeLogRune) {
 		return s
 	}
-	s = strings.ReplaceAll(s, "\r", " ")
-	return strings.ReplaceAll(s, "\n", " ")
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for _, r := range s {
+		switch {
+		case !unsafeLogRune(r):
+			b.WriteRune(r)
+		case r < 0x100:
+			fmt.Fprintf(&b, "\\x%02x", r)
+		default:
+			fmt.Fprintf(&b, "\\u%04x", r)
+		}
+	}
+	return b.String()
 }
 
 // truncateLogField bounds error text to one readable line.
@@ -187,6 +220,28 @@ var activityInfoMethods = map[string]bool{
 	"subscriptions/listen":  true,
 }
 
+// knownToolNames indexes the tool catalog once, so the middleware can tell one of
+// our own names from a string an agent invented.
+var knownToolNames = func() map[string]bool {
+	m := make(map[string]bool, len(toolCatalog))
+	for _, t := range toolCatalog {
+		m[t.name] = true
+	}
+	return m
+}()
+
+// logTarget renders an agent-supplied tool name or resource URI for the log. A
+// value we recognise is one of our own constants and is safe to print as-is;
+// anything else is flagged rather than echoed, so the field the operator reads
+// never carries agent input. The attempted value still reaches the line through
+// err=, which the SDK fills in and which is already length-bounded.
+func logTarget(known bool, v string) string {
+	if known {
+		return sanitizeLogField(v)
+	}
+	return "<unregistered>"
+}
+
 // activityMiddleware logs one line per handled request for the agent's
 // server. Arguments are never logged; only the method, the tool name, the
 // duration, and the outcome.
@@ -200,19 +255,22 @@ func activityMiddleware(a *agent) mcp.Middleware {
 			switch p := req.GetParams().(type) {
 			case *mcp.CallToolParamsRaw:
 				if p != nil {
-					target = " tool=" + sanitizeLogField(p.Name)
+					target = " tool=" + logTarget(knownToolNames[p.Name], p.Name)
 				}
 			case *mcp.ReadResourceParams:
 				if p != nil {
-					target = " uri=" + sanitizeLogField(p.URI)
+					_, known := domainForResourceURI(p.URI)
+					target = " uri=" + logTarget(known, p.URI)
 				}
 			case *mcp.SubscribeParams:
 				if p != nil {
-					target = " uri=" + sanitizeLogField(p.URI)
+					_, known := domainForResourceURI(p.URI)
+					target = " uri=" + logTarget(known, p.URI)
 				}
 			case *mcp.UnsubscribeParams:
 				if p != nil {
-					target = " uri=" + sanitizeLogField(p.URI)
+					_, known := domainForResourceURI(p.URI)
+					target = " uri=" + logTarget(known, p.URI)
 				}
 			}
 			prefix := "agent=" + sanitizeLogField(a.name) + " method=" + method + target

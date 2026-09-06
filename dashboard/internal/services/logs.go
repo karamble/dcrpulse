@@ -73,6 +73,42 @@ func logPath(component LogComponent, network, wallet string) (string, error) {
 	}
 }
 
+// tailLineMax bounds one returned line. A longer line is reported as its head
+// plus a marker and the rest is discarded, so a single huge line costs its own
+// content and nothing else.
+const tailLineMax = 8 * 1024
+
+// readLogLine reads one newline-terminated line. It uses ReadSlice rather than
+// ReadString so an over-long line is never accumulated: past tailLineMax the
+// remainder is read and dropped a bufferful at a time. A Scanner cannot do this
+// at all - it stops at the first token over its buffer, hiding every line after
+// it. Returns io.EOF alongside a final unterminated line.
+func readLogLine(r *bufio.Reader) (string, error) {
+	var b []byte
+	truncated := false
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if n := len(b); n < tailLineMax {
+			b = append(b, chunk[:min(len(chunk), tailLineMax-n)]...)
+		} else if len(chunk) > 0 {
+			truncated = true
+		}
+		if err == bufio.ErrBufferFull {
+			// The delimiter is not in the buffer yet; keep draining.
+			truncated = truncated || len(b) >= tailLineMax
+			continue
+		}
+		line := strings.TrimRight(string(b), "\r\n")
+		if len(line) >= tailLineMax {
+			truncated = true
+		}
+		if truncated {
+			line += "...[line truncated]"
+		}
+		return line, err
+	}
+}
+
 // TailLog returns the last `lines` lines of the named component's log
 // for the active network. The dashboard mounts /app-data read-only, so
 // we can't write — only read.
@@ -120,26 +156,31 @@ func TailLog(ctx context.Context, component LogComponent, lines int) ([]string, 
 		}
 	}
 
-	// Scan into a ring buffer of size `lines`.
-	scanner := bufio.NewScanner(f)
-	// dcrwallet/dcrd lines can be long; raise the default 64 KB buffer.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// Read into a ring buffer of size `lines`. A bufio.Reader rather than a
+	// Scanner: a Scanner stops at the first token over its buffer, so one
+	// over-long line would hide every line after it, which is exactly when the
+	// operator most wants to see what followed.
+	r := bufio.NewReaderSize(f, 64*1024)
 
-	// A seek lands mid-line, so the first token is a partial line.
+	// A seek lands mid-line, so the first line read is a partial one.
 	if seeked {
-		scanner.Scan()
+		_, _ = readLogLine(r)
 	}
 
 	ring := make([]string, lines)
 	count := 0
-	for scanner.Scan() {
-		ring[count%lines] = scanner.Text()
-		count++
-	}
-	// A single over-long line must not cost the whole tail: return what was
-	// read up to it rather than failing the file.
-	if err := scanner.Err(); err != nil && !errors.Is(err, bufio.ErrTooLong) {
-		return nil, fmt.Errorf("scan %s: %w", path, err)
+	for {
+		line, err := readLogLine(r)
+		if line != "" || err == nil {
+			ring[count%lines] = line
+			count++
+		}
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				return nil, fmt.Errorf("read %s: %w", path, err)
+			}
+			break
+		}
 	}
 
 	out := make([]string, 0, lines)
