@@ -12,7 +12,6 @@ dashboard/.env.local
 dashboard/web/node_modules/
 dashboard/web/dist/
 dashboard/web/.vite/
-dashboard/web/package-lock.json
 
 # Docker volumes and data
 dcrd-data/
