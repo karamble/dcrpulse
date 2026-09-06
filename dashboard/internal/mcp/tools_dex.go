@@ -245,6 +245,25 @@ type dexPostBondInput struct {
 
 // dexLocked is the actionable error returned when a DEX read or write needs a
 // bisonw webserver session but the DEX is locked.
+// cexConfigName pulls the exchange name out of a CEX config blob. The name is
+// what the credentials are bound to upstream, where storing them replaces any
+// existing entry for the same exchange, so the operator has to be told which one
+// they are approving and the audit row has to say which one changed. A blob that
+// names no exchange is refused rather than approved blind.
+func cexConfigName(raw string) (string, error) {
+	var cfg struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return "", fmt.Errorf("config is not a JSON object: %w", err)
+	}
+	name := strings.TrimSpace(cfg.Name)
+	if name == "" {
+		return "", fmt.Errorf("config names no exchange")
+	}
+	return name, nil
+}
+
 func dexLocked() error {
 	return fmt.Errorf("DEX is locked; ask the user to unlock it in the dashboard")
 }
@@ -1079,15 +1098,38 @@ var dexTools = []toolDef{
 			return map[string]bool{"ok": true}, nil
 		}),
 	agentTool("dex", "dex_mm_update_cex_config",
-		"Store (and validate) CEX API credentials for the market maker. Requires a spend grant with DEX trading enabled and the DEX unlocked.",
+		"Store (and validate) CEX API credentials for the market maker. Requires a spend grant with DEX trading enabled, the DEX unlocked, and the operator's approval: these credentials decide which exchange account a market-maker bot deposits into.",
 		func(ctx context.Context, a *agent, in dexMMCexConfigInput) (any, error) {
-			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
+			// Scope first, so an agent without the grant is refused by the gate
+			// rather than by input validation, like ln_pay's pre-decode reject.
+			if err := grants.precheckScope(a.id, scopeDex, time.Now()); err != nil {
 				recordSpend(a, "dex_mm_update_cex_config", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
+			// Then the name, before the approval: the prompt and the audit row
+			// are worth nothing if neither says which exchange changed.
+			name, err := cexConfigName(in.Config)
+			if err != nil {
+				recordSpend(a, "dex_mm_update_cex_config", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
+			// Gated rather than a plain scope check. Storing these credentials
+			// arms where an autonomous spender sends funds: a bot the operator
+			// starts later reads the deposit address from the exchange using
+			// whichever key is stored here, and that send never passes a DCR cap.
+			// One place carries the exchange name into the trail, so no outcome
+			// can end up recording a write without saying what was rewritten.
+			audit := func(result, detail string) {
+				recordSpend(a, "dex_mm_update_cex_config", 0, 0, name, result, detail)
+			}
+			action := fmt.Sprintf("store API credentials for the %s exchange, which sets where a market-maker bot deposits funds", name)
+			if err := grants.authorizeActionGated(ctx, a.id, scopeDex, action, time.Now()); err != nil {
+				audit("denied", err.Error())
 				return nil, err
 			}
 			if !rpc.DcrdexUnlocked() {
 				err := dexLocked()
-				recordSpend(a, "dex_mm_update_cex_config", 0, 0, "", "error", err.Error())
+				audit("error", err.Error())
 				return nil, err
 			}
 			client, err := rpc.DcrdexWebClient()
@@ -1095,10 +1137,10 @@ var dexTools = []toolDef{
 				return nil, err
 			}
 			if err := client.UpdateCEXConfig(ctx, []byte(in.Config)); err != nil {
-				recordSpend(a, "dex_mm_update_cex_config", 0, 0, "", "error", err.Error())
+				audit("error", err.Error())
 				return nil, err
 			}
-			recordSpend(a, "dex_mm_update_cex_config", 0, 0, "", "ok", "")
+			audit("ok", "")
 			return map[string]bool{"ok": true}, nil
 		}),
 	agentTool("dex", "dex_mm_stop",
