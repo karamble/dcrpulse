@@ -414,6 +414,9 @@ var lightningTools = []toolDef{
 			}
 			feeAtoms := int64(fee)
 			feeDCR := dcrutil.Amount(feeAtoms).ToCoin()
+			// The provider fee is paid over Lightning, so its routing fee rides
+			// on top and belongs in the reservation as well.
+			reserved := feeAtoms + services.RoutingFeeCeilingAtoms(feeAtoms)
 			// Name the provider that will actually be paid in the trail, since
 			// the caller no longer supplies it. Best-effort: an unavailable
 			// lookup must not stop the call from being recorded.
@@ -421,7 +424,7 @@ var lightningTools = []toolDef{
 			if d, derr := services.GetLiquidityDefaults(ctx); derr == nil && d != nil {
 				provider = d.Server
 			}
-			if err := grants.authorizeLightning(ctx, a.id, feeAtoms, time.Now()); err != nil {
+			if err := grants.authorizeLightning(ctx, a.id, reserved, time.Now()); err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -442,7 +445,7 @@ var lightningTools = []toolDef{
 				// The provider flow runs on its own context, so once it has
 				// begun a failure here does not mean the fee went unpaid.
 				if !errors.Is(err, services.ErrSpendStarted) {
-					grants.refund(a.id, feeAtoms)
+					grants.refund(a.id, reserved)
 				} else {
 					detail = "reservation kept, the fee may still be paid: " + detail
 				}
