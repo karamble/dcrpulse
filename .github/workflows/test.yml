@@ -11,14 +11,54 @@ on:
       - master
 
 jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard/web
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # tsc then vite, so a type error fails the job.
+      - name: Build
+        run: npm run build
+
+      # The Go binary embeds this, so the test job cannot compile without it.
+      - name: Upload the built frontend
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dashboard/web/dist
+          retention-days: 1
+
   go:
     runs-on: ubuntu-latest
+    needs: web
     defaults:
       run:
         working-directory: dashboard
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      # cmd/dcrpulse embeds web/dist, which is built rather than committed. The
+      # image build copies it in at the same path.
+      - name: Fetch the built frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dashboard/cmd/dcrpulse/web/dist
 
       # Pinned to the 1.26 line: 1.27 fails this module with a bogus
       # http2.TrailerPrefix error out of grpc.
@@ -33,26 +73,3 @@ jobs:
 
       - name: Test
         run: go test -race ./...
-
-  web:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: dashboard/web
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: dashboard/web/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      # tsc then vite, so a type error fails the job.
-      - name: Build
-        run: npm run build
