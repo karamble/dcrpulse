@@ -55,3 +55,7 @@ tmp/
 temp/
 *.tmp
 
+# Local agent and spec tooling (never part of the repo)
+.claude/
+/.specify/
+/specs/
