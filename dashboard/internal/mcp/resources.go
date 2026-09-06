@@ -29,11 +29,18 @@ const (
 	resStaking    = "dcrpulse://staking/activity"
 	resMixer      = "dcrpulse://privacy/mixer"
 	resAudit      = "dcrpulse://mcp/audit"
+	resBRMCP      = "dcrpulse://bisonrelay/mcp"
 
 	// domainAudit gates the cross-agent spend-audit resource. It is a
 	// resource-only domain (no tools), granted like any other capability so the
 	// user opts in before an agent can watch other agents' spends.
 	domainAudit = "audit"
+
+	// domainBRMCP gates the Bison Relay MCP bridge view (bot tool payments
+	// awaiting approval and the bridge spend log). Also a resource-only domain,
+	// kept apart from audit so the user grants "watch the bridge" separately
+	// from "watch agent spends": the two describe different money.
+	domainBRMCP = "brmcp"
 
 	// resourceRingMax bounds each event-feed resource so a long-running session
 	// cannot grow memory without limit.
@@ -143,6 +150,11 @@ var resourceCatalog = []resourceDef{
 		domain: domainAudit, uri: resAudit, name: "Agent spend audit",
 		desc: "Recent MCP agent spend attempts across all agents, newest first: allowed, denied, blocked.",
 		read: func(context.Context) (any, error) { return AuditLog(auditMax), nil },
+	},
+	{
+		domain: domainBRMCP, uri: resBRMCP, name: "BRMCP bridge",
+		desc: "Bison Relay MCP bridge (bot tool payments): settings summary, payments awaiting approval, and the spend log newest first. Read-only; approvals are made in the dashboard.",
+		read: readBRMCP,
 	},
 }
 

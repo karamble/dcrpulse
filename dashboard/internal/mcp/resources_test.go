@@ -34,7 +34,7 @@ func TestNodeOnlyAgentSeesOnlyNodeResources(t *testing.T) {
 	if !uris[resNodeSync] {
 		t.Errorf("node-only agent missing %s", resNodeSync)
 	}
-	for _, deny := range []string{resWalletSync, resWalletBal, resBRMessages, resLightning, resStaking, resMixer, resAudit} {
+	for _, deny := range []string{resWalletSync, resWalletBal, resBRMessages, resLightning, resStaking, resMixer, resAudit, resBRMCP} {
 		if uris[deny] {
 			t.Errorf("node-only agent must NOT expose %s", deny)
 		}
@@ -70,6 +70,25 @@ func TestAuditIsResourceOnlyDomain(t *testing.T) {
 	for _, td := range toolCatalog {
 		if td.domain == domainAudit {
 			t.Fatal("audit domain should have no tools")
+		}
+	}
+}
+
+// TestBRMCPIsResourceOnlyDomain checks the same for the bridge domain: grantable,
+// so the UI shows a toggle, yet no tool can act on the bridge through it.
+func TestBRMCPIsResourceOnlyDomain(t *testing.T) {
+	found := false
+	for _, d := range catalogDomains() {
+		if d == domainBRMCP {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("brmcp domain missing from catalogDomains")
+	}
+	for _, td := range toolCatalog {
+		if td.domain == domainBRMCP {
+			t.Fatal("brmcp domain should have no tools")
 		}
 	}
 }

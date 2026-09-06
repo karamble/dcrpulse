@@ -159,7 +159,7 @@ var surface = &surfaceState{listens: map[uint64]listenEntry{}}
 
 // maxListensPerAgent caps concurrent listen streams. A client opens one per
 // resource it subscribes to, so an agent holding every domain legitimately needs
-// nine; this leaves room above that while stopping one token from parking an
+// ten; this leaves room above that while stopping one token from parking an
 // unbounded number of streams and connections.
 const maxListensPerAgent = 16
 
@@ -311,6 +311,8 @@ func startListenerLocked() error {
 	surface.setUp()
 	// Bridge the live event buses into MCP resource notifications (once).
 	startResourceFeeds()
+	// The BR-MCP bridge has no event bus; poll it while the listener is up.
+	brmcpFeed.start()
 	go func(s *http.Server) {
 		mcpLog.Infof("MCP server listening on http://%s (streamable HTTP, bearer-auth, default domain=%q)", ln.Addr(), defaultDomain)
 		if err := s.Serve(ln); err != nil && err != http.ErrServerClosed {
@@ -328,6 +330,7 @@ func stopListenerLocked() {
 	// Ends the open listen streams and refuses new ones; the listener's own
 	// shutdown only stops new connections.
 	surface.setDown()
+	brmcpFeed.stop()
 	// A spend parked on the operator's approval is denied here rather than left
 	// waiting for a reply that can no longer reach it.
 	approvals.cancelAll()

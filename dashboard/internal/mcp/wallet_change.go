@@ -25,6 +25,7 @@ func onActiveWalletChange(ch services.ActiveWalletChange) {
 	invalidateAllServers()
 	InvalidateStakingProfile()
 	resetEventRings()
+	brmcpFeed.reset()
 	if n > 0 {
 		mcpLog.Warnf("Active wallet changed (%q to %q): revoked %d spend grant(s); "+
 			"re-grant spend access under the new wallet", ch.Old, ch.New, n)

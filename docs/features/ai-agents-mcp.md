@@ -86,8 +86,9 @@ agent under **Settings -> AI Agents** (toggle the domains for an agent). A node-
 agent literally cannot see wallet tools.
 
 Domains: `node` (always granted), `wallet`, `staking`, `governance`, `treasury`,
-`lightning`, `privacy`, `explorer`, `timestamp`, `tor`, `dex`, `bisonrelay`, and
-`audit` (the cross-agent spend feed).
+`lightning`, `privacy`, `explorer`, `timestamp`, `tor`, `dex`, `bisonrelay`,
+`audit` (the cross-agent spend feed), and `brmcp` (the Bison Relay MCP bridge
+view: bot payments awaiting approval and the bridge spend log).
 
 ### Write scopes (authorization)
 
@@ -349,6 +350,7 @@ instead of polling. Each is gated by the same domain as the matching tools.
 | `dcrpulse://staking/activity` | staking | Recent ticket-purchase and autobuyer events |
 | `dcrpulse://privacy/mixer` | privacy | Recent mixer events |
 | `dcrpulse://mcp/audit` | audit | Recent agent spend attempts (all agents) |
+| `dcrpulse://bisonrelay/mcp` | brmcp | BR-MCP bridge: settings summary, bot payments awaiting approval, spend log (read-only; approve/deny stays in the dashboard) |
 
 How updates are delivered depends on the client's MCP revision. Clients on the
 2026-07-28 wire (e.g. go-sdk >= v1.7.0 `ClientSession.Subscribe`) subscribe via a

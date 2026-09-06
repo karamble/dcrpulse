@@ -21,6 +21,8 @@ export const domainLabels: Record<string, string> = {
   explorer: 'Explorer',
   timestamp: 'Timestamps',
   tor: 'Tor',
+  audit: 'Spend audit',
+  brmcp: 'BR-MCP bridge',
 };
 
 export const domainLabel = (key: string) => domainLabels[key] ?? key;
