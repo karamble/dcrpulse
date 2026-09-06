@@ -13,17 +13,39 @@ func isOverLimit(err error) bool {
 	return errors.Is(err, errPerTxExceeded) || errors.Is(err, errDailyExceeded)
 }
 
+// saveAgentsFn persists the agent roster. A variable so a test can drive the
+// failure branch below, which otherwise needs an unwritable data volume.
+var saveAgentsFn = saveAgents
+
+// blockAndPersist revokes the agent's grant, blocks its token, and writes the
+// roster so the block survives a restart.
+//
+// The write is best-effort because neither caller has anywhere to return an
+// error to, but it is not silent. The block is in force in this process either
+// way; if it never reaches the file, a restart brings the token back, and the
+// only thing lost is the reason - the agent's authority to spend needs a fresh
+// grant regardless, since grants do not survive a restart at all.
+func blockAndPersist(agentID string) {
+	grants.revoke(agentID)
+	reg.block(agentID)
+	if err := saveAgentsFn(); err != nil {
+		mcpLog.Errorf("Agent %s is blocked, but saving the roster failed, so a "+
+			"restart will accept its token again: %v", agentID, err)
+	}
+}
+
 // tripwire reacts to a failed spend authorization. If the agent attempted to
 // exceed its spend limit, it is treated as compromised: the grant is revoked
-// (passphrase zeroed) and the token is blocked (persisted), so the agent loses
-// all spend access and cannot reconnect until the user unblocks it in the
-// dashboard. Returns true if it tripped.
+// (passphrase zeroed) and the token is blocked, so the agent loses all spend
+// access and cannot reconnect until the user unblocks it in the dashboard.
+// Returns true if it tripped.
+//
+// No audit row here: every call site records its own, naming the tool that
+// tripped.
 func tripwire(agentID string, err error) bool {
 	if !isOverLimit(err) {
 		return false
 	}
-	grants.revoke(agentID)
-	reg.block(agentID)
-	_ = saveAgents()
+	blockAndPersist(agentID)
 	return true
 }

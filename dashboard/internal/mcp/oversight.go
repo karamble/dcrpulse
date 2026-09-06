@@ -403,9 +403,14 @@ func parseVerdict(s string) (verdict bool, ok bool) {
 // or reconnect until the user unblocks it in the dashboard. Triggered when an
 // approval reply includes "freeze".
 func freezeAgent(agentID string) {
-	grants.revoke(agentID)
-	reg.block(agentID)
-	_ = saveAgents()
+	blockAndPersist(agentID)
+	// Unlike the tripwire, which records at each tool call site, this path has
+	// none - so without this the operator's own freeze leaves no trace in the
+	// trail they would go to afterwards.
+	if a := reg.agent(agentID); a != nil {
+		recordSpend(a, "oversight_freeze", 0, 0, "", "blocked",
+			"the operator replied freeze: grant revoked and token blocked")
+	}
 }
 
 // notifySpend reports a spend outcome to the configured contact when oversight is

@@ -163,6 +163,13 @@ func (r *registry) has(id string) bool {
 	return ok
 }
 
+// agent returns the agent with this id, or nil if unknown.
+func (r *registry) agent(id string) *agent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.agents[id]
+}
+
 // name returns an agent's display name, or "" if unknown.
 func (r *registry) name(id string) string {
 	r.mu.Lock()
