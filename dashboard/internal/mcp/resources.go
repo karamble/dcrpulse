@@ -239,6 +239,33 @@ func notifyResourceUpdated(uri string) {
 	}
 }
 
+// coalescedNotifier turns a burst of updates to one resource into notifications
+// rather than goroutines: one sender, one pending signal, and a signal never
+// blocks its caller. The sender starts on the first signal and runs for the
+// process lifetime, like the feeds below.
+type coalescedNotifier struct {
+	uri    string
+	notify func(string)
+	ch     chan struct{}
+	once   sync.Once
+}
+
+func (c *coalescedNotifier) signal() {
+	c.once.Do(func() { go c.run() })
+	select {
+	case c.ch <- struct{}{}:
+	default: // a notification is already pending; it covers this update too
+	}
+}
+
+// run takes the pending token before notifying, so an update raised while a
+// notification is in flight refills the slot and gets one of its own.
+func (c *coalescedNotifier) run() {
+	for range c.ch {
+		c.notify(c.uri)
+	}
+}
+
 var resourceFeedsOnce sync.Once
 
 // startResourceFeeds bridges the in-process event buses into MCP resource-updated

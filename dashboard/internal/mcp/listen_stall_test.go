@@ -266,10 +266,10 @@ func TestRecordSpendDoesNotWaitOnListeners(t *testing.T) {
 			"already broadcast and the caller cannot get its id back")
 	}
 
-	// The notify is off on its own goroutine, parked in the write for the full
-	// deadline above. Drain it before returning: closing the peer fails that
-	// write at once, and a goroutine still running here would race whatever the
-	// next test touches.
+	// The notify is off on the shared audit notifier, parked in the write for the
+	// full deadline above. Drain it before returning: closing the peer fails that
+	// write at once, and the notifier outlives this test, so leaving it parked
+	// would have it touching whatever the next test sets up.
 	stalled.Close()
 	select {
 	case <-h.closed:
