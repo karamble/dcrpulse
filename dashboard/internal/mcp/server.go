@@ -223,6 +223,41 @@ func (s *surfaceState) addListen(agentID string, cancel context.CancelFunc) (uin
 	return s.nextID, true
 }
 
+// endAgentListens ends every open listen belonging to one agent, returning how
+// many it ended. Unlike setDown it leaves the toggle alone: the surface stays up
+// and the agent is free to subscribe again straight away.
+//
+// The entry is dropped here rather than waiting for the gate's deferred
+// removeListen, so the agent's slot frees at once; that deferred call then finds
+// nothing, which it already tolerates.
+func (s *surfaceState) endAgentListens(agentID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for id, e := range s.listens {
+		if e.agent != agentID {
+			continue
+		}
+		e.cancel()
+		delete(s.listens, id)
+		n++
+	}
+	return n
+}
+
+// endAllListens ends every open listen, for a change that invalidates all of
+// them at once. It leaves the toggle alone, so this is not a shutdown.
+func (s *surfaceState) endAllListens() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := len(s.listens)
+	for id, e := range s.listens {
+		e.cancel()
+		delete(s.listens, id)
+	}
+	return n
+}
+
 func (s *surfaceState) removeListen(id uint64) {
 	s.mu.Lock()
 	delete(s.listens, id)
@@ -465,6 +500,17 @@ func invalidateAgentServer(id string) {
 	serversMu.Lock()
 	delete(servers, id)
 	serversMu.Unlock()
+	// The discarded server keeps whatever listen streams were open against it,
+	// and nothing notifies it again, so those streams would go quiet with
+	// neither side told. End them instead: the agent gets a clean end of stream
+	// and resubscribes against the rebuilt server, which re-checks its domains.
+	//
+	// Swept outside serversMu: cancelling unwinds a handler that takes other
+	// locks. A listen that resolved its server just before this sweep can still
+	// attach to the discarded one; that window is the gap between the handler
+	// picking a server and registering its cancel, and it closes on the next
+	// invalidation or reconnect.
+	surface.endAgentListens(id)
 }
 
 // invalidateAllServers drops every cached server, for a change that invalidates
@@ -476,6 +522,7 @@ func invalidateAllServers() {
 		delete(servers, id)
 	}
 	serversMu.Unlock()
+	surface.endAllListens()
 }
 
 // buildServer creates an MCP server exposing only the tools whose domain the

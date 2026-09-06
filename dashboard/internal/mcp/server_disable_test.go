@@ -137,3 +137,73 @@ func TestSurfaceGateRefusesWhileDown(t *testing.T) {
 		t.Fatal("a request must pass while the surface is up")
 	}
 }
+
+// A discarded server keeps whatever listens were open against it, and nothing
+// notifies it again, so those streams would go quiet with neither side told.
+// The sweep is per agent: it must not touch anyone else's, and it must not take
+// the surface down the way the off-toggle does.
+func TestEndAgentListensIsPerAgent(t *testing.T) {
+	surfaceUpForTest(t)
+
+	mineA, mineB, theirs := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	for _, reg := range []struct {
+		agent string
+		done  chan struct{}
+	}{{"sweep-me", mineA}, {"sweep-me", mineB}, {"leave-me", theirs}} {
+		done := reg.done
+		if _, ok := surface.addListen(reg.agent, func() { close(done) }); !ok {
+			t.Fatalf("%s could not register a listen", reg.agent)
+		}
+	}
+
+	if n := surface.endAgentListens("sweep-me"); n != 2 {
+		t.Errorf("swept %d listens, want 2", n)
+	}
+	for name, ch := range map[string]chan struct{}{"first": mineA, "second": mineB} {
+		select {
+		case <-ch:
+		default:
+			t.Errorf("the agent's %s listen was not ended", name)
+		}
+	}
+	select {
+	case <-theirs:
+		t.Error("another agent's listen was ended by a per-agent sweep")
+	default:
+	}
+
+	if !surface.isUp() {
+		t.Error("the sweep took the surface down; it is not a shutdown")
+	}
+	surface.mu.Lock()
+	left := len(surface.listens)
+	surface.mu.Unlock()
+	if left != 1 {
+		t.Errorf("%d entries left, want only the other agent's: the swept slots must free at once", left)
+	}
+}
+
+// Freeing the slot is the finding's real bite: removeListen runs in the gate's
+// defer, which fires when the parked handler returns, and invalidation does not
+// cause that. So the sweep has to drop the entry itself or the agent loses a slot
+// per subscribed resource, permanently.
+func TestSweptListensFreeTheirSlots(t *testing.T) {
+	surfaceUpForTest(t)
+
+	for i := 0; i < maxListensPerAgent; i++ {
+		if _, ok := surface.addListen("slot-agent", func() {}); !ok {
+			t.Fatalf("could not register listen %d", i+1)
+		}
+	}
+	if _, ok := surface.addListen("slot-agent", func() {}); ok {
+		t.Fatal("the cap did not apply, so this test would assert nothing")
+	}
+
+	surface.endAgentListens("slot-agent")
+
+	for i := 0; i < maxListensPerAgent; i++ {
+		if _, ok := surface.addListen("slot-agent", func() {}); !ok {
+			t.Fatalf("only %d slots came back after the sweep; a swept stream still holds its slot", i)
+		}
+	}
+}

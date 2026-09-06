@@ -6,12 +6,15 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"dcrpulse/internal/services"
 	"strings"
 	"sync"
 	"testing"
@@ -291,5 +294,89 @@ func serverFor(t *testing.T, id string) *mcp.Server {
 			t.Fatal("no scoped server was cached for the agent; the listen never reached one")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Discarding an agent's cached server used to leave its open listens attached to
+// the orphan, which nothing notifies again: the stream stayed open, silent, and
+// still holding its slot. It must end cleanly instead, so the agent resubscribes
+// against the rebuilt server.
+func TestInvalidateAgentServerEndsItsListens(t *testing.T) {
+	h := newStallHarness(t, "invalidate-listens", map[string]bool{"node": true})
+	c := openListen(t, h, resNodeSync)
+	_ = serverFor(t, h.agent)
+
+	surface.mu.Lock()
+	before := len(surface.listens)
+	surface.mu.Unlock()
+	if before == 0 {
+		t.Fatal("the listen did not register, so this test would assert nothing")
+	}
+
+	// Keep reading. The stream ends by delivering the JSON-RPC result for the
+	// listen request - the "server ended the subscription" signal - after which
+	// the connection is free for reuse. A peer that had stopped reading would
+	// instead be killed by the write deadline, a different mechanism that would
+	// pass for the wrong reason.
+	seen := make(chan string, 1)
+	go func() {
+		var acc []byte
+		buf := make([]byte, 4096)
+		for {
+			n, err := c.Read(buf)
+			acc = append(acc, buf[:n]...)
+			if bytes.Contains(acc, []byte(`"result"`)) {
+				seen <- "result"
+				return
+			}
+			if err != nil {
+				seen <- "error: " + err.Error()
+				return
+			}
+		}
+	}()
+
+	invalidateAgentServer(h.agent)
+
+	select {
+	case got := <-seen:
+		if got != "result" {
+			t.Fatalf("the stream did not end with a result frame: %s", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream was left open after its server was discarded; " +
+			"the agent is told nothing and never hears from it again")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		surface.mu.Lock()
+		n := len(surface.listens)
+		surface.mu.Unlock()
+		if n == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d listen slot(s) still held after the server was discarded", n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// The wallet-change hook discards every cached server, so it must end every open
+// listen too - the same silence, across all agents at once.
+func TestWalletChangeEndsListens(t *testing.T) {
+	surfaceUpForTest(t)
+	ended := make(chan struct{})
+	if _, ok := surface.addListen("wallet-change-listener", func() { close(ended) }); !ok {
+		t.Fatal("could not register a listen")
+	}
+
+	onActiveWalletChange(services.ActiveWalletChange{Old: "alpha", New: "beta"})
+
+	select {
+	case <-ended:
+	default:
+		t.Error("a wallet change discarded every server but left the listens open and silent")
 	}
 }
