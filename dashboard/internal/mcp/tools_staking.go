@@ -416,8 +416,12 @@ var stakingTools = []toolDef{
 				recordSpend(a, "staking_autobuyer_stop", 0, 0, "", "denied", err.Error())
 				return nil, err
 			}
+			if !services.IsAutobuyerRunning() {
+				recordSpend(a, "staking_autobuyer_stop", 0, 0, "", "unchanged", "the ticket buyer was not running")
+				return map[string]any{"ok": true}, nil
+			}
 			services.StopAutobuyer()
-			recordSpend(a, "staking_autobuyer_stop", 0, 0, "", "ok", "")
+			recordSpend(a, "staking_autobuyer_stop", 0, 0, "", "ok", "stop requested")
 			return map[string]any{"ok": true}, nil
 		}),
 	agentToolDesc("staking", "staking_sync_failed_vsp_tickets",

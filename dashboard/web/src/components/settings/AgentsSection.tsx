@@ -731,9 +731,11 @@ export const AgentsSection = () => {
                     className={`rounded px-2 py-0.5 font-medium ${
                       e.result === 'ok'
                         ? 'bg-success/20 text-success'
-                        : e.result === 'denied'
-                          ? 'bg-warning/20 text-warning'
-                          : 'bg-destructive/20 text-destructive'
+                        : e.result === 'unchanged'
+                          ? 'bg-muted/30 text-muted-foreground'
+                          : e.result === 'denied'
+                            ? 'bg-warning/20 text-warning'
+                            : 'bg-destructive/20 text-destructive'
                     }`}
                   >
                     {e.result}

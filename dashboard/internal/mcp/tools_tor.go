@@ -40,6 +40,28 @@ func applyTorSettings(cur types.TorSettings, in torSetSettingsInput) (types.TorS
 	return next, strings.Join(named, " ")
 }
 
+// torSettingsChanges names the fields that actually differ, so the audit row
+// reports what was written rather than what was asked for: the writer clamps an
+// out-of-range circuit limit. Rev is the writer's own and never reported.
+func torSettingsChanges(prev, next types.TorSettings) string {
+	var named []string
+	flag := func(name string, was, now bool) {
+		if was != now {
+			named = append(named, fmt.Sprintf("%s=%t", name, now))
+		}
+	}
+	flag("enabled", prev.Enabled, next.Enabled)
+	flag("isolation", prev.Isolation, next.Isolation)
+	flag("dcrdOnion", prev.DcrdOnion, next.DcrdOnion)
+	if prev.CircuitLimit != next.CircuitLimit {
+		named = append(named, fmt.Sprintf("circuitLimit=%d", next.CircuitLimit))
+	}
+	if len(named) == 0 {
+		return "the request was clamped; nothing changed"
+	}
+	return strings.Join(named, " ")
+}
+
 type torSetSettingsInput struct {
 	Enabled      *bool `json:"enabled,omitempty" jsonschema:"route the stack's outbound traffic through Tor; omit to leave unchanged"`
 	Isolation    *bool `json:"isolation,omitempty" jsonschema:"use stream isolation (a separate circuit per daemon); omit to leave unchanged"`
@@ -72,7 +94,11 @@ var torTools = []toolDef{
 			// A write bumps Rev and relaunches every daemon, so a call that
 			// changes nothing does nothing.
 			if next == cur {
-				recordSpend(a, "tor_set_settings", 0, 0, "", "ok", "no change")
+				detail := "no fields given"
+				if named != "" {
+					detail = named + " already set"
+				}
+				recordSpend(a, "tor_set_settings", 0, 0, "", "unchanged", detail)
 				return cur, nil
 			}
 			out, err := services.WriteTorSettings(next)
@@ -80,7 +106,7 @@ var torTools = []toolDef{
 				recordSpend(a, "tor_set_settings", 0, 0, "", "error", err.Error())
 				return nil, err
 			}
-			recordSpend(a, "tor_set_settings", 0, 0, "", "ok", named)
+			recordSpend(a, "tor_set_settings", 0, 0, "", "ok", torSettingsChanges(cur, out))
 			return out, nil
 		}),
 	agentTool("tor", "tor_new_identity",

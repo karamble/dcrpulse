@@ -73,8 +73,14 @@ var privacyTools = []toolDef{
 				recordSpend(a, "privacy_mixer_stop", 0, 0, "mixer", "denied", err.Error())
 				return nil, err
 			}
+			if !services.IsMixerRunning() {
+				recordSpend(a, "privacy_mixer_stop", 0, 0, "mixer", "unchanged", "the mixer was not running")
+				return map[string]any{"ok": true}, nil
+			}
+			// StopMixer only signals the mixer goroutine, which relocks the change
+			// account on its way out, so this is a request and not a stopped mixer.
 			services.StopMixer()
-			recordSpend(a, "privacy_mixer_stop", 0, 0, "mixer", "ok", "")
+			recordSpend(a, "privacy_mixer_stop", 0, 0, "mixer", "ok", "stop requested")
 			return map[string]any{"ok": true}, nil
 		}),
 }

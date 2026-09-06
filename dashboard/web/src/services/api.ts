@@ -1552,7 +1552,7 @@ export interface MCPAuditEntry {
   account: number;
   amountDcr: number;
   target?: string;
-  result: string; // ok | denied | error
+  result: string; // ok | unchanged | denied | error | blocked
   detail?: string;
 }
 

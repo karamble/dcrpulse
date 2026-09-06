@@ -20,7 +20,7 @@ type AuditEntry struct {
 	Account   uint32    `json:"account"`
 	AmountDCR float64   `json:"amountDcr"`
 	Target    string    `json:"target,omitempty"` // recipient address, VSP host, etc.
-	Result    string    `json:"result"`           // ok | denied | error
+	Result    string    `json:"result"`           // ok | unchanged | denied | error | blocked
 	Detail    string    `json:"detail,omitempty"` // txid on success, else the reason
 }
 

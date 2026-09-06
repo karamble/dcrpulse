@@ -130,6 +130,16 @@ func proposalBucketOrDefault(status string) (string, error) {
 	return bucket, nil
 }
 
+// voteTrickleRun finds the trickle run for a proposal token, if there is one.
+func voteTrickleRun(token string) (types.VoteTrickleStatus, bool) {
+	for _, st := range services.VoteTrickleWorkersSnapshot() {
+		if st.Token == token {
+			return st, true
+		}
+	}
+	return types.VoteTrickleStatus{}, false
+}
+
 // governanceTools are the governance domain tools: read agendas/policies/
 // proposals, plus voting writes gated on a grant with voting enabled.
 var governanceTools = []toolDef{
@@ -283,8 +293,20 @@ var governanceTools = []toolDef{
 				recordSpend(a, "governance_vote_trickle_stop", 0, 0, in.Token, "denied", err.Error())
 				return nil, err
 			}
+			// StopVoteTrickle is silent about which of its three cases it hit, so
+			// the run is looked up first: no run at all changes nothing.
+			run, found := voteTrickleRun(in.Token)
+			if !found {
+				recordSpend(a, "governance_vote_trickle_stop", 0, 0, in.Token, "unchanged",
+					"no trickle run for this proposal")
+				return map[string]any{"token": in.Token, "stopped": false}, nil
+			}
 			services.StopVoteTrickle(in.Token)
-			recordSpend(a, "governance_vote_trickle_stop", 0, 0, in.Token, "ok", "")
+			detail := "dismissed a finished run"
+			if run.Running {
+				detail = "stopped a running trickle"
+			}
+			recordSpend(a, "governance_vote_trickle_stop", 0, 0, in.Token, "ok", detail)
 			return map[string]any{"token": in.Token, "stopped": true}, nil
 		}),
 	readTool("governance", "governance_vote_trickle_status",

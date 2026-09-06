@@ -413,6 +413,21 @@ func freezeAgent(agentID string) {
 	}
 }
 
+// spendNotice is the operator message for an audit row, or "" for a row the
+// operator is not told about - a denial, an error, or a call that changed
+// nothing.
+func spendNotice(e AuditEntry) string {
+	switch {
+	case e.Result == "ok" && e.AmountDCR > 0:
+		return fmt.Sprintf("dcrpulse: agent %q sent %.8f DCR via %s%s. %s",
+			e.Agent, e.AmountDCR, e.Tool, targetSuffix(e.Target), detailSuffix(e.Detail))
+	case e.Result == "blocked":
+		return fmt.Sprintf("dcrpulse ALERT: agent %q was BLOCKED attempting %s (%.8f DCR%s): %s",
+			e.Agent, e.Tool, e.AmountDCR, targetSuffix(e.Target), e.Detail)
+	}
+	return ""
+}
+
 // notifySpend reports a spend outcome to the configured contact when oversight is
 // on. Only fund movements (result "ok" with a positive amount) and tripwire
 // blocks are reported; routine denials are not, since the operator already saw
@@ -422,15 +437,8 @@ func notifySpend(e AuditEntry) {
 	if !enabled || contact == "" {
 		return
 	}
-	var msg string
-	switch {
-	case e.Result == "ok" && e.AmountDCR > 0:
-		msg = fmt.Sprintf("dcrpulse: agent %q sent %.8f DCR via %s%s. %s",
-			e.Agent, e.AmountDCR, e.Tool, targetSuffix(e.Target), detailSuffix(e.Detail))
-	case e.Result == "blocked":
-		msg = fmt.Sprintf("dcrpulse ALERT: agent %q was BLOCKED attempting %s (%.8f DCR%s): %s",
-			e.Agent, e.Tool, e.AmountDCR, targetSuffix(e.Target), e.Detail)
-	default:
+	msg := spendNotice(e)
+	if msg == "" {
 		return
 	}
 	go func(to, body string) {
