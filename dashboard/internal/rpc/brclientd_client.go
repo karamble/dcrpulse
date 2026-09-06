@@ -1515,6 +1515,18 @@ func BrclientdPagesLocalDelete(ctx context.Context, body any) error {
 	return brclientdPostJSON(ctx, "/pages/local/delete", body)
 }
 
+// BrclientdPagesImportEmbed copies one received chat embed into the pages
+// directory server-side, so a page can reference it via an embed
+// localfilename without the bytes transiting the caller. body: {source,
+// dest}. Returns the raw {source, dest, sizeBytes, contentType} JSON.
+func BrclientdPagesImportEmbed(ctx context.Context, body any) (json.RawMessage, error) {
+	cli, err := brclientdClient()
+	if err != nil {
+		return nil, err
+	}
+	return brclientdDoPostJSONRaw(ctx, cli, "/pages/local/import-embed", body, brclientdControlRespLimit)
+}
+
 // BrclientdAcceptInvite hands a previously-shared OOB invite blob to
 // brclientd's /invites/accept status endpoint. inviteBytes is base64-encoded.
 func BrclientdAcceptInvite(ctx context.Context, inviteBytesB64 string) (json.RawMessage, error) {

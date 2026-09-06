@@ -419,6 +419,35 @@ func parsePageForm(lines []string, section string) BRPageSegment {
 	return seg
 }
 
+// MaxInlineEmbedBytes is the size cap (in decoded bytes) for an inline
+// attachment that rides in a PM/GC body via the bruig --embed[...]-- tag.
+// Stays comfortably under the 1 MiB floor of BR's per-message payload limit.
+const MaxInlineEmbedBytes = 800 * 1024
+
+// BuildEmbedTag renders bruig's --embed[...]-- tag carrying an inline image.
+// Field order mirrors internal/mdembeds so an audited peer parses it
+// identically. Bruig does no escaping on name/type/data; commas and '=' in
+// name/mime would break the regex parser, so they are stripped defensively.
+// It is the inverse of parseBREmbedTag and is shared by the HTTP PM/GC handlers
+// and the MCP image-send tools so the wire format has a single source of truth.
+func BuildEmbedTag(name, mime, dataB64 string) string {
+	name = strings.ReplaceAll(name, ",", "")
+	name = strings.ReplaceAll(name, "=", "")
+	mime = strings.ReplaceAll(mime, ",", "")
+	mime = strings.ReplaceAll(mime, "=", "")
+	var parts []string
+	if name != "" {
+		parts = append(parts, "name="+name)
+	}
+	if mime != "" {
+		parts = append(parts, "type="+mime)
+	}
+	if dataB64 != "" {
+		parts = append(parts, "data="+dataB64)
+	}
+	return "--embed[" + strings.Join(parts, ",") + "]--"
+}
+
 func parseBREmbedTag(inner string) BRPostBodySegment {
 	seg := BRPostBodySegment{Kind: "embed"}
 	for _, part := range strings.Split(inner, ",") {

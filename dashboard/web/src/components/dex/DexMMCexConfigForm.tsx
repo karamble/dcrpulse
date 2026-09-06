@@ -9,8 +9,9 @@ import { CEX_DISPLAY, CexIcon, SUPPORTED_CEXES } from './CexIcon';
 import { apiError } from '../../utils/apiError';
 
 // DexMMCexConfigForm stores a centralized-exchange API key/secret for the arb
-// bots. v1.0.6 supports Binance and BinanceUS. Credentials persist in bisonw's
-// encrypted database (updatecexconfig); they are never stored by the dashboard.
+// bots. v1.0.6 supports Binance and BinanceUS. The dashboard never stores them;
+// it forwards them to bisonw (updatecexconfig), which keeps them in its
+// market-making config file as plain text, not encrypted.
 export const DexMMCexConfigForm = ({ onSaved }: { onSaved: () => void }) => {
   const [name, setName] = useState<string>(SUPPORTED_CEXES[0]);
   const [apiKey, setApiKey] = useState('');

@@ -101,6 +101,24 @@ type TicketRecord struct {
 	BlocksUntilMature int32 `json:"blocksUntilMature"`
 }
 
+// VSPUse counts how many of the wallet's tickets are registered with one VSP.
+type VSPUse struct {
+	Host    string `json:"host"`
+	Tickets int    `json:"tickets"`
+}
+
+// StakingProfile describes how a wallet actually stakes: the accounts holding
+// ticket value, the VSPs its tickets are registered with (most used first), and
+// the mixing accounts a purchase is redirected to when privacy is configured.
+// It is derived from balances and the ticket list, so it reflects what the
+// wallet has done rather than what a caller asked for.
+type StakingProfile struct {
+	Accounts      []uint32 `json:"accounts"`
+	VSPs          []VSPUse `json:"vsps"`
+	MixedAccount  *uint32  `json:"mixedAccount,omitempty"`
+	ChangeAccount *uint32  `json:"changeAccount,omitempty"`
+}
+
 // SyncFailedVSPTicketsRequest is the body posted to /api/wallet/staking/sync-failed-vsp-tickets.
 type SyncFailedVSPTicketsRequest struct {
 	VspHost       string `json:"vspHost"`

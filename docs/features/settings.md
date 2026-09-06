@@ -169,7 +169,8 @@ A read-only viewer that tails one log file at a time. It does not interpret the
 logs; it tails the file written by the selected container under
 `/app-data/<component>/logs/`. The exceptions are `tor`, which writes straight
 to `/app-data/tor/tor.log`, and `dcrpulse`, the dashboard's own log at
-`/dashboard-data/logs/dcrpulse.log` (10 MB rotation, 3 compressed rolls).
+`/dashboard-data/logs/dcrpulse.log` (10 MB rotation, 3 compressed rolls). It carries the MCP agent-activity log when that is enabled under
+Settings -> AI Agents.
 
 ### Controls
 
@@ -302,6 +303,7 @@ in a new tab.
 - **[Wallet Dashboard](wallet-dashboard.md)** - account balances, transactions, and staking
 - **[Wallet Setup](../guides/wallet-operations.md)** - initial wallet configuration
 - **[Staking Guide](staking-guide.md)** - tickets, VSPs, and governance
+- **[AI Agents (MCP)](ai-agents-mcp.md)** - agent tokens, capability grants, spend limits, and per-agent allowed IPs
 
 ---
 

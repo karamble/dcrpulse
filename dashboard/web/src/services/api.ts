@@ -1497,5 +1497,180 @@ export const saveAlertsSettings = async (settings: AlertsSettings): Promise<void
   await api.post('/alerts/settings', settings);
 };
 
+// MCP (Model Context Protocol) agent access. The dashboard can expose its
+// capabilities to AI agents over a separate streamable-HTTP listener. Agents
+// authenticate with a named bearer token and start limited to the read-only
+// "node" domain; the user grants further capability domains per agent here.
+export interface MCPAgent {
+  id: string;
+  name: string;
+  domains: string[];
+  allowedIps: string[];
+  lastDenied?: { ip: string; at: string };
+  createdAt: string;
+  blocked: boolean;
+}
+
+export interface MCPSession {
+  agentId: string;
+  name: string;
+  firstSeen: string;
+  lastSeen: string;
+  remote: string;
+}
+
+// MCPGrant is an agent's account-scoped spend capability (DCR amounts; the
+// wallet passphrase is held server-side and never returned).
+export interface MCPGrant {
+  accounts: number[];
+  perTxDcr: number;
+  dailyDcr: number;
+  spentTodayDcr: number;
+  remainingTodayDcr: number;
+  allowlist: string[];
+  expiry?: string;
+  writeScopes: string[];
+}
+
+// MCPWriteScope is one grantable write/action capability, from the server's
+// scope catalog. The grant editor renders these as a checklist.
+export interface MCPWriteScope {
+  key: string;
+  label: string;
+  domain: string;
+  needsPass: boolean; // signs with the held wallet passphrase
+  fund: boolean; // draws on the DCR spend budget (per-tx/daily caps)
+  risk: boolean; // high blast-radius; shown with a warning
+}
+
+// MCPAuditEntry records one agent spend attempt for display.
+export interface MCPAuditEntry {
+  time: string;
+  agentId: string;
+  agent: string;
+  tool: string;
+  account: number;
+  amountDcr: number;
+  target?: string;
+  result: string; // ok | unchanged | denied | error | blocked
+  detail?: string;
+}
+
+export interface MCPSettings {
+  enabled: boolean;
+  bind: string;
+  port: string;
+  domains: string[];
+  writeScopes: MCPWriteScope[];
+  agents: MCPAgent[];
+  sessions: MCPSession[];
+  grants: Record<string, MCPGrant>;
+  audit: MCPAuditEntry[];
+  notify: MCPOversight;
+  logging: MCPLogging;
+}
+
+export interface MCPOversight {
+  enabled: boolean;
+  contact: string;
+}
+
+export interface MCPLogging {
+  enabled: boolean;
+}
+
+export interface MCPGrantRequest {
+  accounts: number[];
+  perTxDcr: number;
+  dailyDcr: number;
+  allowlist: string[];
+  expiryHours: number;
+  passphrase: string;
+  writeScopes: string[];
+}
+
+export const getMCPSettings = async (): Promise<MCPSettings> => {
+  const response = await api.get<MCPSettings>('/settings/mcp');
+  return response.data;
+};
+
+// setMCPEnabled starts or stops the MCP listener and returns its new live state.
+export const setMCPEnabled = async (
+  enabled: boolean,
+): Promise<{ enabled: boolean; bind: string; port: string }> => {
+  const response = await api.post('/settings/mcp/enable', { enabled });
+  return response.data;
+};
+
+// createMCPToken mints a new agent identity. The returned token is shown to the
+// user exactly once; only its hash is stored server-side.
+export const createMCPToken = async (
+  name: string,
+): Promise<{ id: string; name: string; token: string }> => {
+  const response = await api.post('/settings/mcp/tokens', { name });
+  return response.data;
+};
+
+export const revokeMCPToken = async (id: string): Promise<void> => {
+  await api.delete(`/settings/mcp/tokens/${encodeURIComponent(id)}`);
+};
+
+export const setMCPAgentDomains = async (id: string, domains: string[]): Promise<void> => {
+  await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/domains`, { domains });
+};
+
+// setMCPAgentAllowedIPs replaces the source-IP allowlist enforced on an
+// agent's connections (single IPs or CIDR ranges; empty = any address).
+export const setMCPAgentAllowedIPs = async (id: string, ips: string[]): Promise<void> => {
+  await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/ips`, { ips });
+};
+
+// setMCPGrant authorizes an agent to spend: the passphrase is verified and held
+// server-side, never returned. Scoped to accounts with per-tx and daily caps.
+export const setMCPGrant = async (id: string, req: MCPGrantRequest): Promise<void> => {
+  await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/grant`, req);
+};
+
+export const revokeMCPGrant = async (id: string): Promise<void> => {
+  await api.delete(`/settings/mcp/agents/${encodeURIComponent(id)}/grant`);
+};
+
+// unblockMCPAgent clears a tripwire block so the agent's token works again.
+export const unblockMCPAgent = async (id: string): Promise<void> => {
+  await api.post(`/settings/mcp/agents/${encodeURIComponent(id)}/unblock`);
+};
+
+// freezeAllMCPAgents is the kill-switch: it revokes every spend grant and blocks
+// every agent token at once. Agents are restored individually via unblock + a
+// fresh grant.
+export const freezeAllMCPAgents = async (): Promise<void> => {
+  await api.post('/settings/mcp/freeze-all');
+};
+
+// setMCPNotify configures the Bison Relay oversight loop: on/off plus the
+// contact (hex peer UID) that receives approval requests and spend notices.
+export const setMCPNotify = async (enabled: boolean, contact: string): Promise<void> => {
+  await api.post('/settings/mcp/notify', { enabled, contact });
+};
+
+// setMCPLogging toggles agent-activity logging into the dcrpulse log file
+// (viewable under Settings -> Logs).
+export const setMCPLogging = async (enabled: boolean): Promise<void> => {
+  await api.post('/settings/mcp/logging', { enabled });
+};
+
+// exportMCPAudit downloads the full persisted spend-audit trail as a JSON file.
+export const exportMCPAudit = async (): Promise<void> => {
+  const response = await api.get('/settings/mcp/audit/export', { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data as Blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'dcrpulse-mcp-audit.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
 export default api;
 

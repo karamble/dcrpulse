@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/mcp"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 )
@@ -64,6 +65,13 @@ func SelectWalletHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, status, err.Error())
 		return
 	}
+
+	// The active-wallet hook already dropped this cache, but it fires mid-switch
+	// while the new wallet is still opening, so a tool listing in between can
+	// refill it with an empty profile and hold that for the cache lifetime. This
+	// call is the freshness refresh once the wallet is actually open; the hook is
+	// the one that matters for authority. Both are needed.
+	mcp.InvalidateStakingProfile()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"success": true, "active": services.ActiveWalletName()})

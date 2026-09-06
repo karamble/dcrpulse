@@ -6,6 +6,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -650,6 +651,15 @@ func lightningChannelTxIDs(ctx context.Context) (funding, closing map[string]boo
 // the streaming variant; we use the sync variant for simpler HTTP
 // semantics — the channel's progression from pending to open is then
 // reflected via the live channel-events WebSocket.
+// ErrSpendStarted marks a failure raised after a daemon was asked to move funds,
+// on any spend path. dcrlnd's OpenChannelSync stops watching the caller's context
+// once the funding workflow starts, dcrwallet publishes tickets one at a time, and
+// a published transaction is on the network whatever the call returns, so past
+// this point a failure - a cancelled call included - does not mean nothing was
+// spent. Callers that reserved against a spend cap must keep the reservation
+// rather than hand it back.
+var ErrSpendStarted = errors.New("the spend was already requested")
+
 func OpenLightningChannel(ctx context.Context, req *types.OpenChannelRequest) (*types.OpenChannelResponse, error) {
 	client := rpc.Dcrlnd().Lightning
 	if client == nil {
@@ -681,7 +691,9 @@ func OpenLightningChannel(ctx context.Context, req *types.OpenChannelRequest) (*
 		Private:            req.Private,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("OpenChannelSync: %w", err)
+		// Past this point dcrlnd owns the funding workflow, so the caller cannot
+		// treat a failure - or its own cancellation - as "nothing was spent".
+		return nil, fmt.Errorf("OpenChannelSync: %w: %w", ErrSpendStarted, err)
 	}
 	txid := ""
 	if hashBytes := oresp.GetFundingTxidBytes(); len(hashBytes) > 0 {
@@ -1257,6 +1269,14 @@ func defaultRoutingFeeLimitAtoms(amountAtoms int64) int64 {
 		return amountAtoms
 	}
 	return amountAtoms * 5 / 100
+}
+
+// RoutingFeeCeilingAtoms reports the routing fee a payment of amountAtoms may
+// incur when the caller sets no explicit limit. Spend accounting needs it: the
+// fee leaves the channel on top of the invoice amount, so a budget that counts
+// only the invoice under-reserves by up to this much.
+func RoutingFeeCeilingAtoms(amountAtoms int64) int64 {
+	return defaultRoutingFeeLimitAtoms(amountAtoms)
 }
 
 // StreamLightningPayment opens Router.SendPaymentV2 and pushes every

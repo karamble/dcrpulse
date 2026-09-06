@@ -7,11 +7,16 @@
 dashboard/dcrpulse
 dashboard/cmd/dcrpulse/dcrpulse
 dashboard/cmd/dcrpulse/web/
+dashboard/mcptest
+dashboard/cmd/mcptest/mcptest
 dashboard/.env
 dashboard/.env.local
 dashboard/web/node_modules/
 dashboard/web/dist/
 dashboard/web/.vite/
+dashboard/web/*.tsbuildinfo
+dashboard/web/vite.config.d.ts
+dashboard/web/vite.config.js
 
 # Docker volumes and data
 dcrd-data/

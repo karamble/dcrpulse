@@ -11,74 +11,21 @@ import (
 	"github.com/decred/dcrd/dcrutil/v4"
 
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
+	"dcrpulse/internal/types"
 )
 
 // Proxies for brclientd's BR-MCP client engine (Settings > AI Agents >
-// BR-MCP). brclientd speaks atoms; the frontend speaks DCR, converted here
-// via dcrutil.
+// BR-MCP). brclientd speaks atoms; the frontend speaks DCR, converted by the
+// services decoders that the agent-facing MCP resource shares.
 
 func brMCPJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// brMCPDenied is the listener's most recent allowed-IP denial, passed
-// through verbatim (only ever present on replies from brclientd).
-type brMCPDenied struct {
-	IP string `json:"ip"`
-	At string `json:"at"`
-}
-
-// brMCPSettingsWire mirrors brclientd's mcpclient.json shape. The listener
-// address is not here - it is brclientd startup config (mcplisten), not a
-// runtime setting.
-type brMCPSettingsWire struct {
-	Enabled             bool         `json:"enabled"`
-	Token               string       `json:"token"`
-	Mode                string       `json:"mode"`
-	PerCallCapAtoms     int64        `json:"per_call_cap_atoms"`
-	PerDayCapAtoms      int64        `json:"per_day_cap_atoms"`
-	AllowedBots         []string     `json:"allowed_bots"`
-	AllowedIPs          []string     `json:"allowed_ips"`
-	ApprovalTimeoutSecs int          `json:"approval_timeout_secs"`
-	TipWaitSecs         int          `json:"tip_wait_secs"`
-	LastDenied          *brMCPDenied `json:"last_denied,omitempty"`
-}
-
-// brMCPSettingsView is the DCR-denominated frontend shape.
-type brMCPSettingsView struct {
-	Enabled             bool         `json:"enabled"`
-	Token               string       `json:"token"`
-	Mode                string       `json:"mode"`
-	PerCallCapDcr       float64      `json:"perCallCapDcr"`
-	PerDayCapDcr        float64      `json:"perDayCapDcr"`
-	AllowedBots         []string     `json:"allowedBots"`
-	AllowedIPs          []string     `json:"allowedIps"`
-	ApprovalTimeoutSecs int          `json:"approvalTimeoutSecs"`
-	TipWaitSecs         int          `json:"tipWaitSecs"`
-	LastDenied          *brMCPDenied `json:"lastDenied,omitempty"`
-}
-
-func brMCPSettingsToView(w brMCPSettingsWire) brMCPSettingsView {
-	if w.AllowedBots == nil {
-		w.AllowedBots = []string{}
-	}
-	if w.AllowedIPs == nil {
-		w.AllowedIPs = []string{}
-	}
-	return brMCPSettingsView{
-		Enabled:             w.Enabled,
-		Token:               w.Token,
-		Mode:                w.Mode,
-		PerCallCapDcr:       dcrutil.Amount(w.PerCallCapAtoms).ToCoin(),
-		PerDayCapDcr:        dcrutil.Amount(w.PerDayCapAtoms).ToCoin(),
-		AllowedBots:         w.AllowedBots,
-		AllowedIPs:          w.AllowedIPs,
-		ApprovalTimeoutSecs: w.ApprovalTimeoutSecs,
-		TipWaitSecs:         w.TipWaitSecs,
-		LastDenied:          w.LastDenied,
-	}
-}
+// brMCPSettingsWire is the daemon-side settings shape the save path posts.
+type brMCPSettingsWire = services.BRMCPSettingsWire
 
 // mergeOwnedMCPSettings overlays the dashboard-owned settings keys onto the
 // daemon's current settings JSON, so a field a newer brclientd stores
@@ -107,19 +54,14 @@ func mergeOwnedMCPSettings(current json.RawMessage, wire brMCPSettingsWire) (map
 func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		raw, err := rpc.BrclientdMCPSettings(r.Context())
+		view, err := services.FetchBRMCPSettings(r.Context())
 		if err != nil {
 			brWriteErr(w, err)
 			return
 		}
-		var wire brMCPSettingsWire
-		if err := json.Unmarshal(raw, &wire); err != nil {
-			http.Error(w, "parse settings: "+err.Error(), http.StatusBadGateway)
-			return
-		}
-		brMCPJSON(w, brMCPSettingsToView(wire))
+		brMCPJSON(w, view)
 	case http.MethodPost:
-		var view brMCPSettingsView
+		var view types.BRMCPSettings
 		if err := json.NewDecoder(r.Body).Decode(&view); err != nil {
 			http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 			return
@@ -162,12 +104,12 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			brWriteErr(w, err)
 			return
 		}
-		var applied brMCPSettingsWire
-		if err := json.Unmarshal(raw, &applied); err != nil {
-			http.Error(w, "parse settings: "+err.Error(), http.StatusBadGateway)
+		applied, err := services.DecodeBRMCPSettings(raw)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-		brMCPJSON(w, brMCPSettingsToView(applied))
+		brMCPJSON(w, applied)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -175,42 +117,14 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayMCPPendingHandler lists payments awaiting approval.
 func BisonrelayMCPPendingHandler(w http.ResponseWriter, r *http.Request) {
-	raw, err := rpc.BrclientdMCPPending(r.Context())
+	pending, err := services.FetchBRMCPPending(r.Context())
 	if err != nil {
 		brWriteErr(w, err)
 		return
 	}
-	var wire struct {
-		Pending []struct {
-			ID      string `json:"id"`
-			Bot     string `json:"bot"`
-			Tool    string `json:"tool"`
-			Atoms   int64  `json:"atoms"`
-			Created int64  `json:"created"`
-		} `json:"pending"`
-	}
-	if err := json.Unmarshal(raw, &wire); err != nil {
-		http.Error(w, "parse pending: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	type entry struct {
-		ID        string  `json:"id"`
-		Bot       string  `json:"bot"`
-		Tool      string  `json:"tool"`
-		AmountDcr float64 `json:"amountDcr"`
-		Created   int64   `json:"created"`
-	}
-	out := make([]entry, 0, len(wire.Pending))
-	for _, p := range wire.Pending {
-		out = append(out, entry{
-			ID: p.ID, Bot: p.Bot, Tool: p.Tool,
-			AmountDcr: dcrutil.Amount(p.Atoms).ToCoin(),
-			Created:   p.Created,
-		})
-	}
 	brMCPJSON(w, struct {
-		Pending []entry `json:"pending"`
-	}{Pending: out})
+		Pending []types.BRMCPPending `json:"pending"`
+	}{Pending: pending})
 }
 
 // BisonrelayMCPResolvePendingHandler approves or denies one pending payment.
@@ -232,46 +146,10 @@ func BisonrelayMCPResolvePendingHandler(w http.ResponseWriter, r *http.Request) 
 
 // BisonrelayMCPSpendHandler returns the spend log and the rolling-day total.
 func BisonrelayMCPSpendHandler(w http.ResponseWriter, r *http.Request) {
-	raw, err := rpc.BrclientdMCPSpend(r.Context())
+	spend, err := services.FetchBRMCPSpend(r.Context())
 	if err != nil {
 		brWriteErr(w, err)
 		return
 	}
-	var wire struct {
-		Entries []struct {
-			TS     int64  `json:"ts"`
-			Bot    string `json:"bot"`
-			Tool   string `json:"tool"`
-			Rail   string `json:"rail"`
-			Atoms  int64  `json:"atoms"`
-			Status string `json:"status"`
-			Err    string `json:"err"`
-		} `json:"entries"`
-		TodayAtoms int64 `json:"today_atoms"`
-	}
-	if err := json.Unmarshal(raw, &wire); err != nil {
-		http.Error(w, "parse spend: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	type entry struct {
-		TS        int64   `json:"ts"`
-		Bot       string  `json:"bot"`
-		Tool      string  `json:"tool"`
-		Rail      string  `json:"rail"`
-		AmountDcr float64 `json:"amountDcr"`
-		Status    string  `json:"status,omitempty"`
-		Err       string  `json:"err,omitempty"`
-	}
-	out := make([]entry, 0, len(wire.Entries))
-	for _, e := range wire.Entries {
-		out = append(out, entry{
-			TS: e.TS, Bot: e.Bot, Tool: e.Tool, Rail: e.Rail,
-			AmountDcr: dcrutil.Amount(e.Atoms).ToCoin(),
-			Status:    e.Status, Err: e.Err,
-		})
-	}
-	brMCPJSON(w, struct {
-		Entries  []entry `json:"entries"`
-		TodayDcr float64 `json:"todayDcr"`
-	}{Entries: out, TodayDcr: dcrutil.Amount(wire.TodayAtoms).ToCoin()})
+	brMCPJSON(w, spend)
 }

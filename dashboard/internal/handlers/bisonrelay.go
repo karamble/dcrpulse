@@ -382,8 +382,9 @@ func BisonrelayContactResetAllHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		AgeDays int `json:"age_days"`
 	}
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
 	}
 	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdResetAllRatchets(r.Context(), req.AgeDays) })
 }
@@ -2009,6 +2010,15 @@ func BisonrelayStoreProductsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	// The store delivers sendfilename to a buyer on purchase, so a path escaping
+	// the store dir would exfiltrate any file the daemon can read.
+	if v, ok := req["sendfilename"]; ok && v != nil {
+		name, isStr := v.(string)
+		if !isStr || (name != "" && !safeStoreMediaPath(name)) {
+			http.Error(w, "invalid sendfilename", http.StatusBadRequest)
+			return
+		}
+	}
 	brDo204(w, func() error { return rpc.BrclientdSaveStoreProduct(r.Context(), req) })
 }
 
@@ -2254,11 +2264,6 @@ func decodeBisonrelayUIDBody(w http.ResponseWriter, r *http.Request) (string, bo
 	return brID(w, req.UID, "uid")
 }
 
-// maxInlineEmbedBytes is the size cap (in decoded bytes) for an inline
-// attachment that rides in the PM body via the bruig --embed[...]-- tag.
-// Stays comfortably under the 1 MiB floor of BR's per-PM payload limit.
-const maxInlineEmbedBytes = 800 * 1024
-
 // BisonrelayPMHandler sends a PM through brclientd. Body:
 // {user, msg, embed?: {name, mime, data_b64}}. When an embed is present
 // it is rendered into the bruig-compatible --embed[...]-- markdown tag
@@ -2296,11 +2301,11 @@ func BisonrelayPMHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "embed data_b64: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if len(decoded) > maxInlineEmbedBytes {
+		if len(decoded) > services.MaxInlineEmbedBytes {
 			http.Error(w, "embed exceeds inline size cap", http.StatusRequestEntityTooLarge)
 			return
 		}
-		tag := buildEmbedTag(req.Embed.Name, req.Embed.Mime, req.Embed.DataB64)
+		tag := services.BuildEmbedTag(req.Embed.Name, req.Embed.Mime, req.Embed.DataB64)
 		if body == "" {
 			body = tag
 		} else {
@@ -2314,28 +2319,6 @@ func BisonrelayPMHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"body": body})
-}
-
-// buildEmbedTag renders bruig's --embed[...]-- tag. Field order mirrors
-// internal/mdembeds/mdembeds.go so an audited peer parses it identically.
-// Bruig does no escaping on name/type/data; commas in name would break the
-// parser, so we strip them defensively.
-func buildEmbedTag(name, mime, dataB64 string) string {
-	name = strings.ReplaceAll(name, ",", "")
-	name = strings.ReplaceAll(name, "=", "")
-	mime = strings.ReplaceAll(mime, ",", "")
-	mime = strings.ReplaceAll(mime, "=", "")
-	var parts []string
-	if name != "" {
-		parts = append(parts, "name="+name)
-	}
-	if mime != "" {
-		parts = append(parts, "type="+mime)
-	}
-	if dataB64 != "" {
-		parts = append(parts, "data="+dataB64)
-	}
-	return "--embed[" + strings.Join(parts, ",") + "]--"
 }
 
 // BisonrelayInviteWriteHandler asks brclientd to mint a fresh OOB invite.

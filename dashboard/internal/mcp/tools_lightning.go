@@ -1,0 +1,458 @@
+// Copyright (c) 2015-2026 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+package mcp
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/decred/dcrd/dcrutil/v4"
+
+	"dcrpulse/internal/services"
+	"dcrpulse/internal/types"
+)
+
+type lnPayInput struct {
+	PayReq      string  `json:"payReq" jsonschema:"bolt11 invoice to pay"`
+	AmountDCR   float64 `json:"amountDcr,omitempty" jsonschema:"amount in DCR, required only for zero-amount invoices"`
+	FeeLimitDCR float64 `json:"feeLimitDcr,omitempty" jsonschema:"optional maximum routing fee in DCR"`
+}
+
+type lnInvoiceInput struct {
+	AmountDCR float64 `json:"amountDcr,omitempty" jsonschema:"invoice amount in DCR (0 = any)"`
+	Memo      string  `json:"memo,omitempty" jsonschema:"optional memo"`
+}
+
+type lnOpenChannelInput struct {
+	PeerURI  string  `json:"peerUri" jsonschema:"pubkey@host:port or bare node pubkey"`
+	LocalDCR float64 `json:"localDcr" jsonschema:"local funding amount in DCR"`
+	PushDCR  float64 `json:"pushDcr,omitempty" jsonschema:"optional amount to push to the remote, in DCR"`
+	Private  bool    `json:"private,omitempty" jsonschema:"open as a private channel"`
+}
+
+type lnDecodeInvoiceInput struct {
+	PayReq string `json:"payReq" jsonschema:"bolt11 invoice to decode"`
+}
+
+type lnGraphNodeInput struct {
+	PubKey string `json:"pubKey" jsonschema:"node identity pubkey (hex)"`
+}
+
+type lnGraphSearchInput struct {
+	Query string `json:"query,omitempty" jsonschema:"substring to match against node alias or pubkey"`
+}
+
+type lnGraphRoutesInput struct {
+	PubKey    string  `json:"pubKey" jsonschema:"destination node identity pubkey (hex)"`
+	AmountDCR float64 `json:"amountDcr" jsonschema:"amount to route in DCR"`
+}
+
+type lnLiquidityEstimateInput struct {
+	ChanSizeDCR float64 `json:"chanSizeDcr" jsonschema:"inbound channel size in DCR"`
+}
+
+type lnLiquidityRequestInput struct {
+	ChanSizeDCR    float64 `json:"chanSizeDcr" jsonschema:"inbound channel size in DCR"`
+	ApprovedFeeDCR float64 `json:"approvedFeeDcr" jsonschema:"maximum provider fee in DCR the request may pay; aborts if exceeded"`
+}
+
+type lnCloseChannelInput struct {
+	ChannelPoint string `json:"channelPoint" jsonschema:"channel point in txid:index form"`
+	Force        bool   `json:"force,omitempty" jsonschema:"force close without cooperation from the remote"`
+}
+
+type lnCancelInvoiceInput struct {
+	PaymentHash string `json:"paymentHash" jsonschema:"payment hash (hex) of the open invoice to cancel"`
+}
+
+type lnWatchtowerAddInput struct {
+	PubKey  string `json:"pubKey" jsonschema:"watchtower identity pubkey (hex)"`
+	Address string `json:"address" jsonschema:"watchtower address (host:port)"`
+}
+
+type lnWatchtowerRemoveInput struct {
+	PubKey string `json:"pubKey" jsonschema:"watchtower identity pubkey (hex)"`
+}
+
+type lnAutopilotSetInput struct {
+	Active bool `json:"active" jsonschema:"true to enable autopilot, false to disable"`
+}
+
+// lightningTools are the lightning domain tools: reads plus grant-gated spend
+// actions (pay, open channel) and invoice creation.
+var lightningTools = []toolDef{
+	readTool("lightning", "lightning_info",
+		"Get the Lightning node info (identity pubkey, sync state, channel and peer counts).",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.GetLightningInfo(ctx) }),
+	readTool("lightning", "lightning_balance",
+		"Get Lightning on-chain and channel balances.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.GetLightningBalance(ctx) }),
+	readTool("lightning", "lightning_channels",
+		"List Lightning channels and their state.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.ListLightningChannels(ctx) }),
+	readTool("lightning", "lightning_activity",
+		"Get a summary of recent Lightning activity (payments and invoices).",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.GetLightningActivity(ctx) }),
+	readTool("lightning", "lightning_payments",
+		"List Lightning payments sent from this node.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.ListLightningPayments(ctx) }),
+	readTool("lightning", "lightning_invoices",
+		"List Lightning invoices created on this node.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.ListLightningInvoices(ctx) }),
+	agentTool("lightning", "ln_pay",
+		"Pay a Lightning (bolt11) invoice. Requires a spend grant with Lightning enabled; the amount counts against the grant's daily cap. dcrlnd must be unlocked.",
+		func(ctx context.Context, a *agent, in lnPayInput) (any, error) {
+			// Reject before decoding the invoice when Lightning is not granted,
+			// so an ungranted call does no work.
+			if err := grants.precheckScope(a.id, scopeLightning, time.Now()); err != nil {
+				recordSpend(a, "ln_pay", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
+			dec, err := services.DecodeLightningInvoice(ctx, in.PayReq)
+			if err != nil {
+				return nil, fmt.Errorf("decode invoice: %w", err)
+			}
+			amtAtoms := dec.NumAtoms
+			if amtAtoms <= 0 {
+				amt, err := dcrutil.NewAmount(in.AmountDCR)
+				if err != nil || int64(amt) <= 0 {
+					return nil, fmt.Errorf("this invoice has no amount; provide amountDcr")
+				}
+				amtAtoms = int64(amt)
+			}
+			// The routing fee leaves the channel on top of the invoice, so
+			// reserve the ceiling too and pin the daemon to it; the unused part
+			// is returned once the payment settles.
+			feeCeiling := services.RoutingFeeCeilingAtoms(amtAtoms)
+			if f, err := dcrutil.NewAmount(in.FeeLimitDCR); err == nil && int64(f) > 0 {
+				feeCeiling = int64(f)
+			}
+			reserved := amtAtoms + feeCeiling
+			amtDCR := dcrutil.Amount(amtAtoms).ToCoin()
+			if err := grants.authorizeLightning(ctx, a.id, reserved, time.Now()); err != nil {
+				if tripwire(a.id, err) {
+					recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "blocked", "spend-limit violation: grant revoked and token blocked")
+				} else {
+					recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "denied", err.Error())
+				}
+				return nil, err
+			}
+			req := &types.LightningSendPaymentRequest{PayReq: in.PayReq, FeeLimitAtoms: feeCeiling}
+			if dec.NumAtoms <= 0 {
+				req.Amt = amtAtoms
+			}
+			ch, err := services.StreamLightningPayment(ctx, req)
+			if err != nil {
+				grants.refund(a.id, reserved)
+				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "error", err.Error())
+				return nil, err
+			}
+			var last types.LightningPayment
+			for p := range ch {
+				last = p
+				if p.Status == "confirmed" || p.Status == "failed" {
+					break
+				}
+			}
+			switch last.Status {
+			case "confirmed":
+				// Return the fee headroom the route did not use.
+				if unused := feeCeiling - last.FeeAtoms; unused > 0 {
+					grants.refund(a.id, unused)
+				}
+			case "failed":
+				grants.refund(a.id, reserved)
+				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "error", "payment failed")
+				return nil, fmt.Errorf("payment failed")
+			default:
+				// The stream ended without a verdict - cancelled context, or the
+				// daemon stopped reporting. dcrlnd keeps the payment alive
+				// server-side, so the reservation stands rather than handing back
+				// headroom for a spend that may still settle.
+				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "error", "payment still in flight")
+				return nil, fmt.Errorf("payment is still in flight; it may still settle, so it stays counted against the daily cap")
+			}
+			recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "ok", last.PaymentHash)
+			return last, nil
+		}),
+	agentTool("lightning", "ln_add_invoice",
+		"Create a Lightning invoice to receive payment. Requires a spend grant with Lightning enabled.",
+		func(ctx context.Context, a *agent, in lnInvoiceInput) (any, error) {
+			// An invoice asks for money in, so it is recorded with no amount:
+			// the audit and the operator's notification both read a positive
+			// amount as something the agent sent. The figure stays in the detail.
+			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
+				recordSpend(a, "ln_add_invoice", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
+			var atoms int64
+			if in.AmountDCR > 0 {
+				amt, err := dcrutil.NewAmount(in.AmountDCR)
+				if err != nil {
+					return nil, fmt.Errorf("invalid amount: %w", err)
+				}
+				atoms = int64(amt)
+			}
+			inv, err := services.AddLightningInvoice(ctx, &types.LightningAddInvoiceRequest{Memo: in.Memo, ValueAtoms: atoms})
+			if err != nil {
+				recordSpend(a, "ln_add_invoice", 0, 0, "", "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "ln_add_invoice", 0, 0, "", "ok",
+				fmt.Sprintf("requested %s rhash=%s", dcrAmountStr(atoms), inv.RHashHex))
+			return inv, nil
+		}),
+	agentTool("lightning", "ln_open_channel",
+		"Open a Lightning channel, funding it from the Lightning wallet. Requires a spend grant with Lightning enabled; the funding amount counts against the daily cap.",
+		func(ctx context.Context, a *agent, in lnOpenChannelInput) (any, error) {
+			local, err := dcrutil.NewAmount(in.LocalDCR)
+			if err != nil || int64(local) <= 0 {
+				return nil, fmt.Errorf("localDcr must be positive")
+			}
+			localAtoms := int64(local)
+			// Parsed before anything is reserved, as localDcr is: a rejected
+			// input must not consume the agent's daily budget.
+			var pushAtoms int64
+			if in.PushDCR > 0 {
+				p, perr := dcrutil.NewAmount(in.PushDCR)
+				if perr != nil || int64(p) <= 0 {
+					return nil, fmt.Errorf("pushDcr is not a valid amount")
+				}
+				pushAtoms = int64(p)
+			}
+			if err := grants.authorizeLightning(ctx, a.id, localAtoms, time.Now()); err != nil {
+				if tripwire(a.id, err) {
+					recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "blocked", "spend-limit violation: grant revoked and token blocked")
+				} else {
+					recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "denied", err.Error())
+				}
+				return nil, err
+			}
+			req := &types.OpenChannelRequest{
+				PeerURI: in.PeerURI, LocalAtoms: localAtoms, PushAtoms: pushAtoms, Private: in.Private,
+			}
+			// The pushed part is handed to the peer for good, so it belongs in
+			// the trail rather than being folded into the funding amount.
+			detail := fmt.Sprintf("push %s", dcrAmountStr(req.PushAtoms))
+			resp, err := services.OpenLightningChannel(ctx, req)
+			if err != nil {
+				// Only a failure that provably precedes the funding request may
+				// release the reservation; see services.ErrSpendStarted.
+				if !errors.Is(err, services.ErrSpendStarted) {
+					grants.refund(a.id, localAtoms)
+				} else {
+					detail += "; reservation kept, the funding may still complete"
+				}
+				recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "error", detail+": "+err.Error())
+				return nil, err
+			}
+			recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "ok", resp.FundingTxid+" "+detail)
+			return resp, nil
+		}),
+	readTool("lightning", "ln_decode_invoice",
+		"Decode a Lightning (bolt11) invoice into its fields (destination, amount, expiry, description) without paying it.",
+		func(ctx context.Context, in lnDecodeInvoiceInput) (any, error) {
+			return services.DecodeLightningInvoice(ctx, in.PayReq)
+		}),
+	readTool("lightning", "ln_peer_presets",
+		"List recommended Lightning peer presets (hub nodes) for opening channels.",
+		func(ctx context.Context, _ emptyInput) (any, error) {
+			return services.LightningPeerPresets(ctx), nil
+		}),
+	readTool("lightning", "ln_liquidity_defaults",
+		"Get the built-in liquidity provider defaults (server and cert) for the active network.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.GetLiquidityDefaults(ctx) }),
+	readTool("lightning", "ln_liquidity_estimate",
+		"Estimate the provider fee and policy for an inbound liquidity channel of a given size, without paying anything.",
+		func(ctx context.Context, in lnLiquidityEstimateInput) (any, error) {
+			size, err := dcrutil.NewAmount(in.ChanSizeDCR)
+			if err != nil || int64(size) <= 0 {
+				return nil, fmt.Errorf("chanSizeDcr must be positive")
+			}
+			// The provider and its certificate come from the dashboard's
+			// configuration, never from the caller: this call's sibling pays the
+			// provider, and an agent must not choose who is paid nor vouch for
+			// its certificate.
+			req := &types.RequestLiquidityEstimateRequest{ChanSizeAtoms: int64(size)}
+			return services.EstimateLiquidityChannel(ctx, req)
+		}),
+	readTool("lightning", "ln_autopilot_status",
+		"Get the Lightning autopilot status (whether automatic channel management is active).",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.GetLightningAutopilotStatus(ctx) }),
+	readTool("lightning", "ln_graph_node",
+		"Get details for one node in the Lightning channel graph by its identity pubkey.",
+		func(ctx context.Context, in lnGraphNodeInput) (any, error) {
+			return services.QueryLightningNodeInfo(ctx, in.PubKey)
+		}),
+	readTool("lightning", "ln_graph_search",
+		"Search the Lightning channel graph for nodes matching a substring (alias or pubkey).",
+		func(ctx context.Context, in lnGraphSearchInput) (any, error) {
+			return services.SearchLightningNodes(ctx, in.Query)
+		}),
+	readTool("lightning", "ln_graph_routes",
+		"Query candidate payment routes to a destination node for a given amount.",
+		func(ctx context.Context, in lnGraphRoutesInput) (any, error) {
+			amt, err := dcrutil.NewAmount(in.AmountDCR)
+			if err != nil || int64(amt) <= 0 {
+				return nil, fmt.Errorf("amountDcr must be positive")
+			}
+			return services.QueryLightningRoutes(ctx, in.PubKey, int64(amt))
+		}),
+	readTool("lightning", "ln_network",
+		"Get global Lightning network statistics from the channel graph.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.GetLightningNetworkInfo(ctx) }),
+	readTool("lightning", "ln_watchtowers",
+		"List the watchtowers registered with this Lightning node.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.ListLightningWatchtowers(ctx) }),
+	agentTool("lightning", "ln_close_channel",
+		"Close a Lightning channel. Requires a spend grant with Lightning enabled. dcrlnd must be unlocked.",
+		func(ctx context.Context, a *agent, in lnCloseChannelInput) (any, error) {
+			if in.ChannelPoint == "" {
+				return nil, fmt.Errorf("channelPoint required")
+			}
+			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
+				recordSpend(a, "ln_close_channel", 0, 0, in.ChannelPoint, "denied", err.Error())
+				return nil, err
+			}
+			resp, err := services.CloseLightningChannel(ctx, in.ChannelPoint, in.Force)
+			if err != nil {
+				recordSpend(a, "ln_close_channel", 0, 0, in.ChannelPoint, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "ln_close_channel", 0, 0, in.ChannelPoint, "ok", resp.ClosingTxid)
+			return resp, nil
+		}),
+	agentTool("lightning", "ln_cancel_invoice",
+		"Cancel an open Lightning invoice by its payment hash. Requires a spend grant with Lightning enabled.",
+		func(ctx context.Context, a *agent, in lnCancelInvoiceInput) (any, error) {
+			if in.PaymentHash == "" {
+				return nil, fmt.Errorf("paymentHash required")
+			}
+			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
+				recordSpend(a, "ln_cancel_invoice", 0, 0, in.PaymentHash, "denied", err.Error())
+				return nil, err
+			}
+			if err := services.CancelLightningInvoice(ctx, in.PaymentHash); err != nil {
+				recordSpend(a, "ln_cancel_invoice", 0, 0, in.PaymentHash, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "ln_cancel_invoice", 0, 0, in.PaymentHash, "ok", "")
+			return map[string]any{"canceled": true}, nil
+		}),
+	agentTool("lightning", "ln_watchtower_add",
+		"Register a watchtower with this Lightning node. Requires a spend grant with Lightning enabled.",
+		func(ctx context.Context, a *agent, in lnWatchtowerAddInput) (any, error) {
+			if in.PubKey == "" || in.Address == "" {
+				return nil, fmt.Errorf("pubKey and address required")
+			}
+			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
+				recordSpend(a, "ln_watchtower_add", 0, 0, in.PubKey, "denied", err.Error())
+				return nil, err
+			}
+			if err := services.AddLightningWatchtower(ctx, in.PubKey, in.Address); err != nil {
+				recordSpend(a, "ln_watchtower_add", 0, 0, in.PubKey, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "ln_watchtower_add", 0, 0, in.PubKey, "ok", in.Address)
+			return map[string]any{"added": true}, nil
+		}),
+	agentTool("lightning", "ln_watchtower_remove",
+		"Deregister a watchtower from this Lightning node. Requires a spend grant with Lightning enabled.",
+		func(ctx context.Context, a *agent, in lnWatchtowerRemoveInput) (any, error) {
+			if in.PubKey == "" {
+				return nil, fmt.Errorf("pubKey required")
+			}
+			if err := grants.authorizeAction(a.id, scopeLightning, time.Now()); err != nil {
+				recordSpend(a, "ln_watchtower_remove", 0, 0, in.PubKey, "denied", err.Error())
+				return nil, err
+			}
+			if err := services.RemoveLightningWatchtower(ctx, in.PubKey); err != nil {
+				recordSpend(a, "ln_watchtower_remove", 0, 0, in.PubKey, "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "ln_watchtower_remove", 0, 0, in.PubKey, "ok", "")
+			return map[string]any{"removed": true}, nil
+		}),
+	agentTool("lightning", "ln_autopilot_set",
+		"Enable or disable Lightning autopilot (automatic channel management). Requires a spend grant with Lightning enabled; enabling also needs the user's approval when Bison Relay oversight is on.",
+		func(ctx context.Context, a *agent, in lnAutopilotSetInput) (any, error) {
+			// Autopilot opens funded channels on its own, so arming it is gated
+			// on the operator's approval. Switching it off is not: an approval
+			// timeout must never keep a running autopilot alive.
+			var err error
+			if in.Active {
+				err = grants.authorizeActionGated(ctx, a.id, scopeLightning,
+					"enable Lightning autopilot (it opens funded channels automatically)", time.Now())
+			} else {
+				err = grants.authorizeAction(a.id, scopeLightning, time.Now())
+			}
+			if err != nil {
+				recordSpend(a, "ln_autopilot_set", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
+			if err := services.SetLightningAutopilotStatus(ctx, in.Active); err != nil {
+				recordSpend(a, "ln_autopilot_set", 0, 0, "", "error", err.Error())
+				return nil, err
+			}
+			recordSpend(a, "ln_autopilot_set", 0, 0, "", "ok", fmt.Sprintf("active=%v", in.Active))
+			return map[string]any{"active": in.Active}, nil
+		}),
+	agentTool("lightning", "ln_liquidity_request",
+		"Request an inbound liquidity channel from a provider. This pays the provider a fee, which counts against the spend grant's daily cap. Requires a spend grant with Lightning enabled.",
+		func(ctx context.Context, a *agent, in lnLiquidityRequestInput) (any, error) {
+			size, err := dcrutil.NewAmount(in.ChanSizeDCR)
+			if err != nil || int64(size) <= 0 {
+				return nil, fmt.Errorf("chanSizeDcr must be positive")
+			}
+			fee, err := dcrutil.NewAmount(in.ApprovedFeeDCR)
+			if err != nil || int64(fee) <= 0 {
+				return nil, fmt.Errorf("approvedFeeDcr must be positive")
+			}
+			feeAtoms := int64(fee)
+			feeDCR := dcrutil.Amount(feeAtoms).ToCoin()
+			// The provider fee is paid over Lightning, so its routing fee rides
+			// on top and belongs in the reservation as well.
+			reserved := feeAtoms + services.RoutingFeeCeilingAtoms(feeAtoms)
+			// Name the provider that will actually be paid in the trail, since
+			// the caller no longer supplies it. Best-effort: an unavailable
+			// lookup must not stop the call from being recorded.
+			provider := ""
+			if d, derr := services.GetLiquidityDefaults(ctx); derr == nil && d != nil {
+				provider = d.Server
+			}
+			if err := grants.authorizeLightning(ctx, a.id, reserved, time.Now()); err != nil {
+				if tripwire(a.id, err) {
+					recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "blocked", "spend-limit violation: grant revoked and token blocked")
+				} else {
+					recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "denied", err.Error())
+				}
+				return nil, err
+			}
+			// Provider and certificate come from the dashboard's configuration;
+			// the caps bound how much this pays, and the configured provider
+			// bounds who is paid.
+			req := &types.RequestLiquidityRequest{
+				ChanSizeAtoms:    int64(size),
+				ApprovedFeeAtoms: feeAtoms,
+			}
+			resp, err := services.RequestLiquidityChannel(ctx, req)
+			if err != nil {
+				detail := err.Error()
+				// The provider flow runs on its own context, so once it has
+				// begun a failure here does not mean the fee went unpaid.
+				if !errors.Is(err, services.ErrSpendStarted) {
+					grants.refund(a.id, reserved)
+				} else {
+					detail = "reservation kept, the fee may still be paid: " + detail
+				}
+				recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "error", detail)
+				return nil, err
+			}
+			recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "ok", resp.ChannelPoint)
+			return resp, nil
+		}),
+}

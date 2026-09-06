@@ -352,6 +352,13 @@ type walletBalances struct {
 
 func (w *walletBalances) get(ctx context.Context) (balanceResponse, error) {
 	w.once.Do(func() {
+		// Callers treat a failure here as "no accounts" and carry on, so a
+		// wallet that is not up yet must report an error rather than panic on
+		// the nil client.
+		if rpc.WalletClient == nil {
+			w.err = fmt.Errorf("wallet RPC client is not connected")
+			return
+		}
 		result, rerr := rpc.WalletClient.RawRequest(ctx, "getbalance", []json.RawMessage{})
 		if rerr != nil {
 			w.err = rerr
@@ -1609,6 +1616,43 @@ func ConstructTransaction(ctx context.Context, sourceAccount uint32, outputs []t
 	return rpc.WalletGrpcClient.ConstructTransaction(ctx, req)
 }
 
+// ConstructUnsignedTx builds an unsigned transaction and summarizes its amounts
+// (inputs, outputs, change, fee) for preview and offline signing. It uses no
+// private keys, so it is allowed for watch-only wallets. Change returns to the
+// wallet, so the net debit is inputs - change (recipient amount + fee); send-all
+// routes the whole balance through the change destination, leaving no real change
+// output to subtract.
+func ConstructUnsignedTx(ctx context.Context, sourceAccount uint32, outputs []types.TxRecipient, sendAll bool) (*types.ConstructTransactionResponse, error) {
+	cResp, err := ConstructTransaction(ctx, sourceAccount, outputs, sendAll)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := DecodeRawTransaction(ctx, cResp.UnsignedTransaction)
+	if err != nil {
+		return nil, err
+	}
+	var inputsTotal, outputsTotal int64
+	for _, in := range decoded.Inputs {
+		inputsTotal += in.AmountIn
+	}
+	for _, out := range decoded.Outputs {
+		outputsTotal += out.Value
+	}
+	var change int64
+	if !sendAll && cResp.ChangeIndex >= 0 && int(cResp.ChangeIndex) < len(decoded.Outputs) {
+		change = decoded.Outputs[cResp.ChangeIndex].Value
+	}
+	return &types.ConstructTransactionResponse{
+		UnsignedTxHex:       hex.EncodeToString(cResp.UnsignedTransaction),
+		InputsTotalAtoms:    inputsTotal,
+		OutputsTotalAtoms:   outputsTotal,
+		ChangeAtoms:         change,
+		FeeAtoms:            inputsTotal - outputsTotal,
+		TotalDebitedAtoms:   inputsTotal - change,
+		EstimatedSignedSize: cResp.EstimatedSignedSize,
+	}, nil
+}
+
 func DecodeRawTransaction(ctx context.Context, txBytes []byte) (*pb.DecodedTransaction, error) {
 	if rpc.DecodeMessageClient == nil {
 		return nil, fmt.Errorf("decode message gRPC client not initialized")
@@ -1643,6 +1687,9 @@ func spendGuard() error {
 	}
 	return nil
 }
+
+// publishTimeout bounds the publish once it can no longer be cancelled.
+const publishTimeout = 60 * time.Second
 
 func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsignedTxBytes []byte, passphrase []byte) (string, error) {
 	if err := spendGuard(); err != nil {
@@ -1684,11 +1731,15 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 	if err != nil {
 		return "", err
 	}
-	pubResp, err := rpc.WalletGrpcClient.PublishTransaction(ctx, &pb.PublishTransactionRequest{
+	// Detached and wrapped: once the transaction is handed over it may reach the
+	// network whatever this call returns. The signing above is still pre-spend.
+	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
+	defer cancel()
+	pubResp, err := rpc.WalletGrpcClient.PublishTransaction(pubCtx, &pb.PublishTransactionRequest{
 		SignedTransaction: signResp.Transaction,
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("PublishTransaction: %w: %w", ErrSpendStarted, err)
 	}
 	hash, err := chainhash.NewHash(pubResp.TransactionHash)
 	if err != nil {
@@ -1826,5 +1877,25 @@ func DiscoverUsage(ctx context.Context, passphrase []byte, gapLimit uint32) erro
 	}); err != nil {
 		return fmt.Errorf("DiscoverUsage RPC: %w", err)
 	}
+	return nil
+}
+
+// VerifyWalletPassphrase checks that passphrase is the wallet's private
+// passphrase by attempting an unlock, then re-locks. Used to validate a spend
+// grant before the passphrase is held in memory on the agent's behalf.
+func VerifyWalletPassphrase(ctx context.Context, passphrase []byte) error {
+	if rpc.WalletGrpcClient == nil {
+		return fmt.Errorf("wallet gRPC client not initialized")
+	}
+	unlockCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := rpc.WalletGrpcClient.UnlockWallet(unlockCtx, &pb.UnlockWalletRequest{
+		Passphrase: passphrase,
+	}); err != nil {
+		return err
+	}
+	lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer lockCancel()
+	_, _ = rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{})
 	return nil
 }

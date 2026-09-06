@@ -281,11 +281,15 @@ func RequestLiquidityChannel(ctx context.Context, req *types.RequestLiquidityReq
 			CapacityAtoms: int64(p.capacity),
 		}, nil
 	case err := <-doneCh:
+		// The provider flow already ran, so a failure here says nothing about
+		// whether the fee was paid.
 		if err != nil {
-			return nil, lpErr(err)
+			return nil, fmt.Errorf("%w: %w", ErrSpendStarted, lpErr(err))
 		}
 		return nil, fmt.Errorf("channel opened without an observed pending event")
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		// RequestChannel keeps running on its own context, so the caller giving
+		// up does not stop the payment.
+		return nil, fmt.Errorf("%w: %w", ErrSpendStarted, ctx.Err())
 	}
 }

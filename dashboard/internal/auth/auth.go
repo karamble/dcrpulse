@@ -304,6 +304,31 @@ func isSecure(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
+// ErrAppPasswordRequired is the message returned when a route that cannot be
+// left open is reached while the app password is unset.
+const ErrAppPasswordRequired = "set a dashboard app password before managing AI agent access"
+
+// RequireAppPassword gates routes that must never be open to an unauthenticated
+// caller. RequireAuth deliberately passes everything through while the app
+// password is disabled, which is the right default for a single-user dashboard
+// but not for routes that mint agent tokens or widen an agent's authority: those
+// would otherwise let anyone who can reach the port grant themselves access.
+func RequireAppPassword(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !Enabled() {
+			w.Header().Set("X-Dashboard-Auth", "password-required")
+			http.Error(w, ErrAppPasswordRequired, http.StatusUnauthorized)
+			return
+		}
+		if !Authenticated(r) {
+			w.Header().Set("X-Dashboard-Auth", "required")
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // RequireAuth gates the /api subrouter. While the app password is disabled it
 // is a pass-through. When enabled, only the login handshake (/api/auth/login,
 // /api/auth/status) is exempt; every other route needs a valid session cookie.

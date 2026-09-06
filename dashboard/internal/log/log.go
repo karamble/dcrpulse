@@ -59,6 +59,7 @@ var (
 	GOVN = backendLog.Logger("GOVN")
 	HTTP = backendLog.Logger("HTTP")
 	LGHT = backendLog.Logger("LGHT")
+	MCPS = backendLog.Logger("MCPS")
 	MSIG = backendLog.Logger("MSIG")
 	NODE = backendLog.Logger("NODE")
 	RPCC = backendLog.Logger("RPCC")
@@ -79,6 +80,7 @@ var subsystems = map[string]slog.Logger{
 	"GOVN": GOVN,
 	"HTTP": HTTP,
 	"LGHT": LGHT,
+	"MCPS": MCPS,
 	"MSIG": MSIG,
 	"NODE": NODE,
 	"RPCC": RPCC,

@@ -71,6 +71,29 @@ const (
 	KeyAuthSessionSecret  = "auth_session_secret"
 	KeyAuthSetupDismissed = "auth_setup_dismissed"
 
+	// KeyMCPAgents persists the MCP agent roster: named bearer-token identities
+	// (token SHA-256 hash only, never the plaintext) plus the capability domains
+	// the user has granted each one. Lives in the global config so it is shared
+	// across wallets, like the dashboard auth gate.
+	KeyMCPAgents = "mcp_agents"
+
+	// KeyMCPEnabled is the persisted on/off state of the MCP listener, toggled
+	// from Settings -> AI Agents. When set it overrides the MCP_ENABLE env var,
+	// which only seeds the first run.
+	KeyMCPEnabled = "mcp_enabled"
+
+	// KeyMCPNotifyEnabled / KeyMCPNotifyContact configure the Bison Relay
+	// oversight loop: when enabled, every fund-moving agent action requires the
+	// user's approval over a BR DM to the selected contact, and successful spends
+	// (and tripwire blocks) are reported there. The contact is a hex peer UID.
+	KeyMCPNotifyEnabled = "mcp_notify_enabled"
+	KeyMCPNotifyContact = "mcp_notify_contact"
+
+	// KeyMCPLogEnabled is the persisted on/off state of agent-activity logging
+	// to the dashboard log file (MCPS subsystem). The always-on MCP lifecycle
+	// lines are unaffected by it.
+	KeyMCPLogEnabled = "mcp_log_enabled"
+
 	// Per-wallet record of Politeia vote choices we cast through this
 	// dashboard. Map keyed by proposal token, value = "yes"|"no"|"abstain".
 	// Mirrors Decrediton's savePiVote local cache so the UI can show

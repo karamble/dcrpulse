@@ -72,7 +72,10 @@ When a tool costs money, the bot replies that payment is required. The
 bridge checks your caps and mode, tips the exact amount to the bot over
 Lightning, and retries the call. In approval mode the payment parks in this
 page until you approve or deny it; the spend log below records every settled
-payment and the rolling daily total.
+payment and the rolling daily total. An agent granted the `brmcp` capability
+domain on the dashboard's own MCP server can watch the parked approvals and
+the spend log through the `dcrpulse://bisonrelay/mcp` resource, but approving
+or denying a payment stays in this page: there is no MCP tool for it.
 
 Envelope frames the agent and bot exchange are hidden from your chat history
 automatically, and Bison Relay content filters that would match them are

@@ -24,6 +24,7 @@ import (
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/handlers"
 	dcrlog "dcrpulse/internal/log"
+	"dcrpulse/internal/mcp"
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/msig"
 	"dcrpulse/internal/rpc"
@@ -386,6 +387,19 @@ func main() {
 	api.HandleFunc("/alerts/settings", handlers.GetAlertsSettingsHandler).Methods("GET")
 	api.HandleFunc("/alerts/settings", handlers.SaveAlertsSettingsHandler).Methods("POST")
 	api.HandleFunc("/alerts/{id}/read", handlers.MarkAlertReadHandler).Methods("POST")
+	api.Handle("/settings/mcp", auth.RequireAppPassword(http.HandlerFunc(handlers.MCPSettingsHandler))).Methods("GET")
+	api.Handle("/settings/mcp/enable", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPEnabledHandler))).Methods("POST")
+	api.Handle("/settings/mcp/tokens", auth.RequireAppPassword(http.HandlerFunc(handlers.CreateMCPTokenHandler))).Methods("POST")
+	api.Handle("/settings/mcp/tokens/{id}", auth.RequireAppPassword(http.HandlerFunc(handlers.RevokeMCPTokenHandler))).Methods("DELETE")
+	api.Handle("/settings/mcp/agents/{id}/domains", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPAgentDomainsHandler))).Methods("POST")
+	api.Handle("/settings/mcp/agents/{id}/ips", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPAgentAllowedIPsHandler))).Methods("POST")
+	api.Handle("/settings/mcp/agents/{id}/grant", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPGrantHandler))).Methods("POST")
+	api.Handle("/settings/mcp/agents/{id}/grant", auth.RequireAppPassword(http.HandlerFunc(handlers.RevokeMCPGrantHandler))).Methods("DELETE")
+	api.Handle("/settings/mcp/agents/{id}/unblock", auth.RequireAppPassword(http.HandlerFunc(handlers.UnblockMCPAgentHandler))).Methods("POST")
+	api.Handle("/settings/mcp/freeze-all", auth.RequireAppPassword(http.HandlerFunc(handlers.FreezeAllMCPAgentsHandler))).Methods("POST")
+	api.Handle("/settings/mcp/audit/export", auth.RequireAppPassword(http.HandlerFunc(handlers.ExportMCPAuditHandler))).Methods("GET")
+	api.Handle("/settings/mcp/notify", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPNotifyHandler))).Methods("POST")
+	api.Handle("/settings/mcp/logging", auth.RequireAppPassword(http.HandlerFunc(handlers.SetMCPLoggingHandler))).Methods("POST")
 	api.HandleFunc("/timestamp/records", handlers.ListTimestampsHandler).Methods("GET")
 	api.HandleFunc("/timestamp/records", handlers.CreateTimestampHandler).Methods("POST")
 	api.HandleFunc("/timestamp/records/{digest}", handlers.GetTimestampHandler).Methods("GET")
@@ -740,6 +754,16 @@ func main() {
 	// and Write timeouts are intentionally left unset so long-lived streams
 	// (WebSocket rescan/events, SSE progress) and large BR file uploads are not
 	// cut off mid-transfer.
+	// Optional MCP server (disabled unless MCP_ENABLE=true): exposes dcrpulse
+	// capabilities to AI agents over streamable HTTP on a separate listener,
+	// reusing the in-process daemon clients. Bound to 127.0.0.1 by default.
+	// Load the saved agent roster first so the Settings -> Agents panel can
+	// manage tokens even while the listener is disabled.
+	if err := mcp.LoadPersisted(); err != nil {
+		dcrlog.MCPS.Warnf("load saved agents: %v", err)
+	}
+	mcp.Start(mcp.ConfigFromEnv())
+
 	// The host check wraps the router rather than joining r.Use: mux only runs
 	// root middleware on a matched route, and a dev build without the embedded
 	// frontend has no catch-all to match.
