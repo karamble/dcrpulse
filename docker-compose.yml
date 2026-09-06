@@ -120,7 +120,7 @@ services:
           memory: 256M
 
   brclientd:
-    image: ghcr.io/karamble/dcrpulse-brclientd:${BRCLIENTD_IMAGE_TAG:-dev}
+    image: ghcr.io/karamble/dcrpulse-brclientd:${BRCLIENTD_IMAGE_TAG:-latest}
     build:
       context: ./brclientd
     container_name: dcrpulse-brclientd
@@ -151,7 +151,7 @@ services:
           memory: 128M
 
   dcrdex:
-    image: ghcr.io/karamble/dcrpulse-dcrdex:${DCRDEX_IMAGE_TAG:-dev}
+    image: ghcr.io/karamble/dcrpulse-dcrdex:${DCRDEX_IMAGE_TAG:-latest}
     build:
       context: ./dcrdex
     container_name: dcrpulse-dcrdex
