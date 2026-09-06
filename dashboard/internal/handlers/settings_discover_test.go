@@ -55,8 +55,10 @@ func (f *fakeDiscoverWallet) DiscoverUsage(ctx context.Context, in *pb.DiscoverU
 }
 
 // discoverHarness wires the fake wallet plus the persist/rescan seams and
-// returns recorders for both.
-func discoverHarness(t *testing.T, f *fakeDiscoverWallet) (persisted *[]int, rescans *[]int32) {
+// returns a snapshot reader for each. Readers rather than the slices themselves:
+// the handler records from a detached goroutine, so every read has to take the
+// same lock the write did.
+func discoverHarness(t *testing.T, f *fakeDiscoverWallet) (persisted func() []int, rescans func() []int32) {
 	t.Helper()
 	prevClient := rpc.WalletGrpcClient
 	rpc.WalletGrpcClient = f
@@ -81,7 +83,15 @@ func discoverHarness(t *testing.T, f *fakeDiscoverWallet) (persisted *[]int, res
 		rpc.WalletGrpcClient = prevClient
 		persistDiscoveryGap, discoverRescan, discoverRescanDelay = prevPersist, prevRescan, prevDelay
 	})
-	return &gaps, &heights
+	return func() []int {
+			mu.Lock()
+			defer mu.Unlock()
+			return append([]int(nil), gaps...)
+		}, func() []int32 {
+			mu.Lock()
+			defer mu.Unlock()
+			return append([]int32(nil), heights...)
+		}
 }
 
 func postDiscover(body string) *httptest.ResponseRecorder {
@@ -102,12 +112,12 @@ func TestDiscoverRefusalPersistsNothing(t *testing.T) {
 		t.Fatalf("wrong passphrase answered %d, want 401", rec.Code)
 	}
 	time.Sleep(50 * time.Millisecond) // give a buggy detached rescan time to appear
-	if len(*persisted) != 0 {
+	if got := persisted(); len(got) != 0 {
 		// Mutation catch: persisting before the scan runs records the refused gap.
-		t.Fatalf("a refused attempt persisted gaps %v", *persisted)
+		t.Fatalf("a refused attempt persisted gaps %v", got)
 	}
-	if len(*rescans) != 0 {
-		t.Fatalf("a refused attempt started a rescan: %v", *rescans)
+	if got := rescans(); len(got) != 0 {
+		t.Fatalf("a refused attempt started a rescan: %v", got)
 	}
 }
 
@@ -123,21 +133,15 @@ func TestDiscoverSuccessPersistsThenRescans(t *testing.T) {
 		t.Fatalf("discover answered %d, want 204: %s", rec.Code, rec.Body.String())
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		f.mu.Lock()
-		n := len(*rescans)
-		f.mu.Unlock()
-		if n > 0 {
-			break
-		}
+	for time.Now().Before(deadline) && len(rescans()) == 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if len(*persisted) != 1 || (*persisted)[0] != 500 {
-		t.Fatalf("persisted gaps = %v, want [500]", *persisted)
+	if got := persisted(); len(got) != 1 || got[0] != 500 {
+		t.Fatalf("persisted gaps = %v, want [500]", got)
 	}
-	if len(*rescans) != 1 || (*rescans)[0] != 0 {
+	if got := rescans(); len(got) != 1 || got[0] != 0 {
 		// Mutation catch: dropping the rescan hand-off leaves this empty.
-		t.Fatalf("rescan heights = %v, want [0]", *rescans)
+		t.Fatalf("rescan heights = %v, want [0]", got)
 	}
 	f.mu.Lock()
 	events := append([]string(nil), f.events...)
