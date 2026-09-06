@@ -201,13 +201,14 @@ func (s *surfaceState) setDown() {
 	s.mu.Unlock()
 }
 
-// addListen registers an open listen stream, refusing while the surface is down
-// and once the agent is at its cap.
-func (s *surfaceState) addListen(agentID string, cancel context.CancelFunc) (uint64, bool) {
+// addListen registers an open listen stream. It refuses with a distinct error
+// for each reason - the surface being off, and the agent already holding its cap
+// - because only the second is the agent's to act on.
+func (s *surfaceState) addListen(agentID string, cancel context.CancelFunc) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.up {
-		return 0, false
+		return 0, errSurfaceDown
 	}
 	n := 0
 	for _, e := range s.listens {
@@ -216,11 +217,11 @@ func (s *surfaceState) addListen(agentID string, cancel context.CancelFunc) (uin
 		}
 	}
 	if n >= maxListensPerAgent {
-		return 0, false
+		return 0, errTooManyListens
 	}
 	s.nextID++
 	s.listens[s.nextID] = listenEntry{agent: agentID, cancel: cancel}
-	return s.nextID, true
+	return s.nextID, nil
 }
 
 // endAgentListens ends every open listen belonging to one agent, returning how
@@ -408,6 +409,10 @@ func surfaceGate(next http.Handler) http.Handler {
 
 var errSurfaceDown = errors.New("MCP agent access is turned off")
 
+// errTooManyListens is kept distinct from errSurfaceDown: the surface is up and
+// the agent simply holds its limit already, which is the agent's to fix.
+var errTooManyListens = fmt.Errorf("too many open subscription streams for this agent (limit %d): close one before opening another", maxListensPerAgent)
+
 // listenGate ties each subscriptions/listen stream to the toggle: the stream
 // ends when the surface goes down, and none opens while it is down.
 func listenGate(a *agent) mcp.Middleware {
@@ -418,9 +423,9 @@ func listenGate(a *agent) mcp.Middleware {
 			}
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			id, ok := surface.addListen(a.id, cancel)
-			if !ok {
-				return nil, errSurfaceDown
+			id, err := surface.addListen(a.id, cancel)
+			if err != nil {
+				return nil, err
 			}
 			defer surface.removeListen(id)
 			return next(ctx, method, req)

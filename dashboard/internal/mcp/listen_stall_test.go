@@ -223,21 +223,21 @@ func TestListenCapIsPerAgent(t *testing.T) {
 
 	var ids []uint64
 	for i := 0; i < maxListensPerAgent; i++ {
-		id, ok := surface.addListen("cap-a", func() {})
-		if !ok {
+		id, err := surface.addListen("cap-a", func() {})
+		if err != nil {
 			t.Fatalf("agent a was refused its %d listen, below the cap of %d", i+1, maxListensPerAgent)
 		}
 		ids = append(ids, id)
 	}
-	if _, ok := surface.addListen("cap-a", func() {}); ok {
+	if _, err := surface.addListen("cap-a", func() {}); err == nil {
 		t.Error("agent a was allowed past its cap")
 	}
-	if _, ok := surface.addListen("cap-b", func() {}); !ok {
+	if _, err := surface.addListen("cap-b", func() {}); err != nil {
 		t.Error("agent b was refused because another agent was at its cap")
 	}
 
 	surface.removeListen(ids[0])
-	if _, ok := surface.addListen("cap-a", func() {}); !ok {
+	if _, err := surface.addListen("cap-a", func() {}); err != nil {
 		t.Error("agent a was still refused after one of its streams closed")
 	}
 }
@@ -368,7 +368,7 @@ func TestInvalidateAgentServerEndsItsListens(t *testing.T) {
 func TestWalletChangeEndsListens(t *testing.T) {
 	surfaceUpForTest(t)
 	ended := make(chan struct{})
-	if _, ok := surface.addListen("wallet-change-listener", func() { close(ended) }); !ok {
+	if _, err := surface.addListen("wallet-change-listener", func() { close(ended) }); err != nil {
 		t.Fatal("could not register a listen")
 	}
 

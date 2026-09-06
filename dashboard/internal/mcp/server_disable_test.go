@@ -9,6 +9,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -31,8 +33,8 @@ func TestDisableEndsOpenListenStreams(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	id, ok := surface.addListen("disable-test", cancel)
-	if !ok {
+	id, err := surface.addListen("disable-test", cancel)
+	if err != nil {
 		t.Fatal("a listen should register while the surface is up")
 	}
 
@@ -51,7 +53,7 @@ func TestDisableEndsOpenListenStreams(t *testing.T) {
 // by a fresh feed.
 func TestNoListenOpensWhileDown(t *testing.T) {
 	surface.setDown()
-	if _, ok := surface.addListen("disable-test", func() {}); ok {
+	if _, err := surface.addListen("disable-test", func() {}); err == nil {
 		t.Fatal("a listen must not register while the surface is down")
 	}
 }
@@ -151,7 +153,7 @@ func TestEndAgentListensIsPerAgent(t *testing.T) {
 		done  chan struct{}
 	}{{"sweep-me", mineA}, {"sweep-me", mineB}, {"leave-me", theirs}} {
 		done := reg.done
-		if _, ok := surface.addListen(reg.agent, func() { close(done) }); !ok {
+		if _, err := surface.addListen(reg.agent, func() { close(done) }); err != nil {
 			t.Fatalf("%s could not register a listen", reg.agent)
 		}
 	}
@@ -191,19 +193,61 @@ func TestSweptListensFreeTheirSlots(t *testing.T) {
 	surfaceUpForTest(t)
 
 	for i := 0; i < maxListensPerAgent; i++ {
-		if _, ok := surface.addListen("slot-agent", func() {}); !ok {
+		if _, err := surface.addListen("slot-agent", func() {}); err != nil {
 			t.Fatalf("could not register listen %d", i+1)
 		}
 	}
-	if _, ok := surface.addListen("slot-agent", func() {}); ok {
+	if _, err := surface.addListen("slot-agent", func() {}); err == nil {
 		t.Fatal("the cap did not apply, so this test would assert nothing")
 	}
 
 	surface.endAgentListens("slot-agent")
 
 	for i := 0; i < maxListensPerAgent; i++ {
-		if _, ok := surface.addListen("slot-agent", func() {}); !ok {
+		if _, err := surface.addListen("slot-agent", func() {}); err != nil {
 			t.Fatalf("only %d slots came back after the sweep; a swept stream still holds its slot", i)
 		}
+	}
+}
+
+// A refused listen has to say which of the two refusals it is: the surface being
+// off is the operator's to fix, while holding the cap is the agent's. Answering
+// "agent access is turned off" to an agent at its cap sends the operator to the
+// wrong switch.
+func TestListenRefusalsAreDistinct(t *testing.T) {
+	surfaceUpForTest(t)
+
+	var ids []uint64
+	for i := 0; i < maxListensPerAgent; i++ {
+		id, err := surface.addListen("distinct-agent", func() {})
+		if err != nil {
+			t.Fatalf("listen %d was refused below the cap: %v", i+1, err)
+		}
+		ids = append(ids, id)
+	}
+	t.Cleanup(func() {
+		for _, id := range ids {
+			surface.removeListen(id)
+		}
+	})
+
+	_, err := surface.addListen("distinct-agent", func() {})
+	if err == nil {
+		t.Fatal("the listen past the cap was admitted")
+	}
+	if errors.Is(err, errSurfaceDown) {
+		t.Errorf("an agent at its cap is told the surface is off: %v", err)
+	}
+	if !errors.Is(err, errTooManyListens) {
+		t.Errorf("cap refusal = %v, want errTooManyListens", err)
+	}
+	if !strings.Contains(err.Error(), strconv.Itoa(maxListensPerAgent)) {
+		t.Errorf("the refusal does not name the cap it hit: %v", err)
+	}
+
+	// The other refusal still reads as the operator's problem.
+	surface.setDown()
+	if _, err := surface.addListen("distinct-agent", func() {}); !errors.Is(err, errSurfaceDown) {
+		t.Errorf("with the surface down the refusal = %v, want errSurfaceDown", err)
 	}
 }
