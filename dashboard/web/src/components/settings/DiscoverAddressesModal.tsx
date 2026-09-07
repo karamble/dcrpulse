@@ -9,7 +9,7 @@ import { apiError } from '../../utils/apiError';
 interface DiscoverAddressesModalProps {
   isOpen: boolean;
   defaultGapLimit: number;
-  onSubmit: (passphrase: string, gapLimit: number) => Promise<void>;
+  onSubmit: (gapLimit: number) => Promise<void>;
   onClose: () => void;
 }
 
@@ -19,14 +19,12 @@ export const DiscoverAddressesModal = ({
   onSubmit,
   onClose,
 }: DiscoverAddressesModalProps) => {
-  const [passphrase, setPassphrase] = useState('');
   const [gapLimit, setGapLimit] = useState<number>(defaultGapLimit);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
-      setPassphrase('');
       setGapLimit(defaultGapLimit);
       setError(null);
       setSubmitting(false);
@@ -44,11 +42,11 @@ export const DiscoverAddressesModal = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!passphrase || submitting) return;
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(passphrase, gapLimit);
+      await onSubmit(gapLimit);
     } catch (err: any) {
       const msg = apiError(err, 'Discovery failed');
       setError(msg);
@@ -100,18 +98,6 @@ export const DiscoverAddressesModal = ({
             </p>
           </div>
 
-          <div>
-            <label className="block text-sm text-muted-foreground mb-1">Wallet passphrase</label>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              disabled={submitting}
-              className="w-full px-3 py-2 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
-            />
-          </div>
-
           {error && (
             <div className="flex items-start gap-2 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -136,7 +122,7 @@ export const DiscoverAddressesModal = ({
             </button>
             <button
               type="submit"
-              disabled={!passphrase || submitting}
+              disabled={submitting}
               className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Scanning…' : 'Discover'}

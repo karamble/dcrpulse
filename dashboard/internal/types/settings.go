@@ -45,6 +45,5 @@ type ChangePassphraseRequest struct {
 // DiscoverUsageRequest is the body for /api/wallet/settings/discover-addresses.
 // This endpoint runs address discovery only; account discovery is not exposed.
 type DiscoverUsageRequest struct {
-	Passphrase string `json:"passphrase"`
-	GapLimit   uint32 `json:"gapLimit,omitempty"`
+	GapLimit uint32 `json:"gapLimit,omitempty"`
 }

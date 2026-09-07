@@ -1058,13 +1058,10 @@ export const getLogs = async (component: LogComponent, lines = 500): Promise<Log
   return response.data;
 };
 
-export const discoverAddresses = async (
-  passphrase: string,
-  gapLimit?: number,
-): Promise<void> => {
+export const discoverAddresses = async (gapLimit?: number): Promise<void> => {
   await api.post(
     '/wallet/settings/discover-addresses',
-    { passphrase, gapLimit },
+    { gapLimit },
     { timeout: 10 * 60 * 1000 },
   );
 };

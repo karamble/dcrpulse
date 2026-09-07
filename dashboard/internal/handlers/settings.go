@@ -302,10 +302,6 @@ func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.Passphrase == "" {
-		http.Error(w, "passphrase required", http.StatusBadRequest)
-		return
-	}
 	if req.GapLimit == 0 {
 		req.GapLimit = 20
 	}
@@ -314,22 +310,12 @@ func DiscoverAddressesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
-
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
-	if err := services.DiscoverUsage(ctx, passphrase, req.GapLimit); err != nil {
-		msg := err.Error()
-		lower := strings.ToLower(msg)
-		switch {
-		case strings.Contains(lower, "passphrase"), strings.Contains(lower, "decrypt"):
-			http.Error(w, "Wrong passphrase", http.StatusUnauthorized)
-		default:
-			settLog.Errorf("DiscoverUsage failed: %v", err)
-			http.Error(w, msg, http.StatusInternalServerError)
-		}
+	if err := services.DiscoverUsage(ctx, req.GapLimit); err != nil {
+		settLog.Errorf("DiscoverUsage failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

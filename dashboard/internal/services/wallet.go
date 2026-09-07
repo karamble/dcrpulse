@@ -1866,31 +1866,21 @@ func ChangePrivatePassphrase(ctx context.Context, oldPass, newPass []byte) error
 
 // DiscoverUsage unlocks the wallet and runs dcrwallet's DiscoverUsage gRPC to
 // scan the chain for previously-used addresses of the existing accounts under
-// gapLimit. Blocks until the scan completes. The wallet is re-locked on return.
+// gapLimit. Blocks until the scan completes.
 //
 // It requests address discovery only (DiscoverAccounts=false), matching
 // Decrediton's post-setup Discover Address Usage. Account discovery runs only
 // during a restore, before accounts are per-account-encrypted (runDiscoveryRpcSync).
-func DiscoverUsage(ctx context.Context, passphrase []byte, gapLimit uint32) error {
+//
+// No passphrase and no unlock: dcrwallet reaches for the cointype private key
+// only when discovering accounts, so an address-only scan needs no key at all.
+// Decrediton's discoverUsage likewise passes neither, and a wallet-wide unlock
+// would have to be paired with a wallet-wide lock, which zeroes the per-account
+// keys the mixer and autobuyer hold open for their whole run.
+func DiscoverUsage(ctx context.Context, gapLimit uint32) error {
 	if rpc.WalletGrpcClient == nil {
 		return fmt.Errorf("wallet gRPC client not initialized")
 	}
-
-	unlockCtx, unlockCancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err := rpc.WalletGrpcClient.UnlockWallet(unlockCtx, &pb.UnlockWalletRequest{
-		Passphrase: passphrase,
-	})
-	unlockCancel()
-	if err != nil {
-		return fmt.Errorf("unlock wallet: %w", err)
-	}
-	defer func() {
-		lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer lockCancel()
-		if _, err := rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{}); err != nil {
-			wlltLog.Errorf("DiscoverUsage: lock wallet: %v", err)
-		}
-	}()
 
 	if _, err := rpc.WalletGrpcClient.DiscoverUsage(ctx, &pb.DiscoverUsageRequest{
 		DiscoverAccounts: false,
@@ -1902,21 +1892,17 @@ func DiscoverUsage(ctx context.Context, passphrase []byte, gapLimit uint32) erro
 }
 
 // VerifyWalletPassphrase checks that passphrase is the wallet's private
-// passphrase by attempting an unlock, then re-locks. Used to validate a spend
-// grant before the passphrase is held in memory on the agent's behalf.
+// passphrase. Used to validate a spend grant before the passphrase is held in
+// memory on the agent's behalf.
+//
+// Checked per-account rather than with a wallet-wide unlock: dcrwallet's
+// wallet-wide lock zeroes EVERY account's key, including the per-account
+// unlocks the mixer and autobuyer hold for their whole run, while its
+// wallet-wide unlock cannot reopen them. Every account this app encrypts
+// carries the wallet passphrase, so account 0 answers the same question.
 func VerifyWalletPassphrase(ctx context.Context, passphrase []byte) error {
 	if rpc.WalletGrpcClient == nil {
 		return fmt.Errorf("wallet gRPC client not initialized")
 	}
-	unlockCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if _, err := rpc.WalletGrpcClient.UnlockWallet(unlockCtx, &pb.UnlockWalletRequest{
-		Passphrase: passphrase,
-	}); err != nil {
-		return err
-	}
-	lockCtx, lockCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer lockCancel()
-	_, _ = rpc.WalletGrpcClient.LockWallet(lockCtx, &pb.LockWalletRequest{})
-	return nil
+	return verifyAccountPassphrase(ctx, 0, passphrase)
 }

@@ -19,12 +19,14 @@ import (
 	"google.golang.org/grpc"
 )
 
-// fakeDiscoverWallet drives services.DiscoverUsage without a wallet: unlock
-// can be told to refuse, and every step is recorded in order.
+// fakeDiscoverWallet drives services.DiscoverUsage without a wallet: the scan
+// can be told to refuse, and every step is recorded in order. The unlock and
+// lock recorders are kept deliberately: discovery needs no key, so a change
+// that reintroduces a wallet-wide unlock/lock pair has to show up here.
 type fakeDiscoverWallet struct {
 	pb.WalletServiceClient
 
-	unlockErr error
+	discoverErr error
 
 	mu     sync.Mutex
 	events []string
@@ -37,9 +39,6 @@ func (f *fakeDiscoverWallet) record(ev string) {
 }
 
 func (f *fakeDiscoverWallet) UnlockWallet(ctx context.Context, in *pb.UnlockWalletRequest, _ ...grpc.CallOption) (*pb.UnlockWalletResponse, error) {
-	if f.unlockErr != nil {
-		return nil, f.unlockErr
-	}
 	f.record("unlock")
 	return &pb.UnlockWalletResponse{}, nil
 }
@@ -50,6 +49,9 @@ func (f *fakeDiscoverWallet) LockWallet(ctx context.Context, in *pb.LockWalletRe
 }
 
 func (f *fakeDiscoverWallet) DiscoverUsage(ctx context.Context, in *pb.DiscoverUsageRequest, _ ...grpc.CallOption) (*pb.DiscoverUsageResponse, error) {
+	if f.discoverErr != nil {
+		return nil, f.discoverErr
+	}
 	f.record("discover")
 	return &pb.DiscoverUsageResponse{}, nil
 }
@@ -101,15 +103,15 @@ func postDiscover(body string) *httptest.ResponseRecorder {
 	return rec
 }
 
-// A refused passphrase must not change the stored preference and must not
-// start a rescan - the failed attempt described a scan that never ran.
+// A failed scan must not change the stored preference and must not start a
+// rescan - the failed attempt described a scan that never ran.
 func TestDiscoverRefusalPersistsNothing(t *testing.T) {
-	f := &fakeDiscoverWallet{unlockErr: contextErr("invalid passphrase")}
+	f := &fakeDiscoverWallet{discoverErr: contextErr("discovery backend unavailable")}
 	persisted, rescans := discoverHarness(t, f)
 
-	rec := postDiscover(`{"passphrase":"wrong","gapLimit":500}`)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("wrong passphrase answered %d, want 401", rec.Code)
+	rec := postDiscover(`{"gapLimit":500}`)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("a failed scan answered %d, want 500", rec.Code)
 	}
 	time.Sleep(50 * time.Millisecond) // give a buggy detached rescan time to appear
 	if got := persisted(); len(got) != 0 {
@@ -128,7 +130,7 @@ func TestDiscoverSuccessPersistsThenRescans(t *testing.T) {
 	f := &fakeDiscoverWallet{}
 	persisted, rescans := discoverHarness(t, f)
 
-	rec := postDiscover(`{"passphrase":"right","gapLimit":500}`)
+	rec := postDiscover(`{"gapLimit":500}`)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("discover answered %d, want 204: %s", rec.Code, rec.Body.String())
 	}
@@ -157,10 +159,42 @@ func TestDiscoverSuccessPersistsThenRescans(t *testing.T) {
 	}
 }
 
+// Discovery needs no key, and a wallet-wide lock would zero the per-account
+// keys the mixer and autobuyer hold open for their whole run.
+func TestDiscoverNeverLocksWalletWide(t *testing.T) {
+	f := &fakeDiscoverWallet{}
+	_, rescans := discoverHarness(t, f)
+
+	if rec := postDiscover(`{"gapLimit":500}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("discover answered %d, want 204: %s", rec.Code, rec.Body.String())
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(rescans()) == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.mu.Lock()
+	events := append([]string(nil), f.events...)
+	f.mu.Unlock()
+	for _, ev := range events {
+		if ev == "unlock" || ev == "lock" {
+			t.Fatalf("discovery touched the wallet-wide lock: %v", events)
+		}
+	}
+	var sawDiscover bool
+	for _, ev := range events {
+		if ev == "discover" {
+			sawDiscover = true
+		}
+	}
+	if !sawDiscover {
+		t.Fatalf("the scan never ran: %v", events)
+	}
+}
+
 func TestDiscoverRejectsOversizedGap(t *testing.T) {
 	f := &fakeDiscoverWallet{}
 	discoverHarness(t, f)
-	rec := postDiscover(`{"passphrase":"x","gapLimit":20000}`)
+	rec := postDiscover(`{"gapLimit":20000}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("oversized gap answered %d, want 400", rec.Code)
 	}
