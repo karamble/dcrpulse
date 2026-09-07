@@ -218,17 +218,25 @@ var (
 	rateLimiters   = map[string]*rate.Limiter{}
 )
 
-// RateLimit returns a middleware enforcing a token-bucket allowance keyed by
-// name. The dashboard is single-user so a global limiter per route is
-// sufficient; no per-IP slicing.
-func RateLimit(name string, every time.Duration, burst int) func(http.Handler) http.Handler {
+// Limiter returns the token bucket registered under name, creating it on first
+// use. Callers outside HTTP (the MCP tools) share a route's allowance by asking
+// for the same name.
+func Limiter(name string, every time.Duration, burst int) *rate.Limiter {
 	rateLimitersMu.Lock()
+	defer rateLimitersMu.Unlock()
 	lim, ok := rateLimiters[name]
 	if !ok {
 		lim = rate.NewLimiter(rate.Every(every), burst)
 		rateLimiters[name] = lim
 	}
-	rateLimitersMu.Unlock()
+	return lim
+}
+
+// RateLimit returns a middleware enforcing a token-bucket allowance keyed by
+// name. The dashboard is single-user so a global limiter per route is
+// sufficient; no per-IP slicing.
+func RateLimit(name string, every time.Duration, burst int) func(http.Handler) http.Handler {
+	lim := Limiter(name, every, burst)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !lim.Allow() {
