@@ -184,8 +184,14 @@ func RefreshNodeSync() {
 	}
 
 	nodeSyncMu.Lock()
+	prev := nodeSyncSnap.Status
 	nodeSyncSnap = snap
 	nodeSyncMu.Unlock()
+	// The matched startup log line used to reach the dcrpulse log only from a
+	// wallet request's own dcrd check; keep it, once per state change.
+	if snap.Status != prev && snap.StartupLog != "" {
+		nodeLog.Warnf("dcrd %s: %s", snap.Status, snap.StartupLog)
+	}
 	broadcastNodeSync(snap)
 	if ready != nil {
 		nodeAlertsHealthy(ready.Blocks)

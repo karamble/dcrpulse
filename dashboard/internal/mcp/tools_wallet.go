@@ -101,14 +101,14 @@ var walletTools = []toolDef{
 	readTool("wallet", "wallet_dashboard",
 		"Get the active wallet overview: balances and wallet status.",
 		func(ctx context.Context, _ emptyInput) (any, error) {
-			return services.FetchWalletDashboardDataWithContext(ctx)
+			return services.FetchWalletDashboardData(ctx)
 		}),
 	readTool("wallet", "wallet_accounts",
 		"List the accounts in the active wallet with their balances.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.FetchAllAccounts(ctx) }),
 	readTool("wallet", "wallet_status",
 		"Get the active wallet's status (loaded, locked/unlocked, sync state).",
-		func(_ context.Context, _ emptyInput) (any, error) { return services.FetchWalletStatus() }),
+		func(ctx context.Context, _ emptyInput) (any, error) { return services.FetchWalletStatus(ctx) }),
 	readTool("wallet", "wallet_addresses",
 		"List the active wallet's receiving addresses that have received funds.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.FetchAddressesWithContext(ctx) }),

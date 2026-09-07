@@ -30,8 +30,12 @@ import (
 	"github.com/decred/dcrd/wire"
 )
 
-func FetchWalletStatus() (*types.WalletStatus, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+// walletStatusTimeout bounds FetchWalletStatus: no caller's context carries a
+// deadline of its own. A var so a test can shorten it.
+var walletStatusTimeout = 10 * time.Second
+
+func FetchWalletStatus(ctx context.Context) (*types.WalletStatus, error) {
+	ctx, cancel := context.WithTimeout(ctx, walletStatusTimeout)
 	defer cancel()
 
 	// getinfo also serves as a "wallet is loaded" probe.
@@ -232,8 +236,10 @@ func Bip44IndexInUse(ctx context.Context, index uint32) (string, bool) {
 	return "", false
 }
 
-func FetchWalletDashboardDataWithContext(ctx context.Context) (*types.WalletDashboardData, error) {
-	walletStatus, err := FetchWalletStatus()
+// FetchWalletDashboardData assembles the wallet page in one call. Each fetch
+// honours ctx down to the RPC, so the wait is bounded by the caller's deadline.
+func FetchWalletDashboardData(ctx context.Context) (*types.WalletDashboardData, error) {
+	walletStatus, err := FetchWalletStatus(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -241,83 +247,50 @@ func FetchWalletDashboardDataWithContext(ctx context.Context) (*types.WalletDash
 	accountInfo := &types.AccountInfo{}
 	accounts := []types.AccountInfo{}
 	var stakingInfo *types.WalletStakingInfo
-
-	// Fetch data with timeout protection - use channels to respect context
-	type accountResult struct {
-		data *types.AccountInfo
-		err  error
-	}
-	type accountsResult struct {
-		data []types.AccountInfo
-		err  error
-	}
-	type stakingResult struct {
-		data *types.WalletStakingInfo
-		err  error
-	}
-
-	accountChan := make(chan accountResult, 1)
-	accountsChan := make(chan accountsResult, 1)
-	stakingChan := make(chan stakingResult, 1)
-
 	bal := &walletBalances{}
 
+	var wg sync.WaitGroup
+	wg.Add(3)
 	go func() {
-		info, err := fetchAccountInfo(ctx, bal)
-		accountChan <- accountResult{info, err}
+		defer wg.Done()
+		if info, err := fetchAccountInfo(ctx, bal); err != nil {
+			wlltLog.Warnf("Failed to fetch account info: %v", err)
+		} else {
+			accountInfo = info
+		}
 	}()
-
 	go func() {
-		accts, err := fetchAllAccounts(ctx, bal)
-		accountsChan <- accountsResult{accts, err}
+		defer wg.Done()
+		if accts, err := fetchAllAccounts(ctx, bal); err != nil {
+			wlltLog.Warnf("Failed to fetch accounts: %v", err)
+		} else {
+			accounts = accts
+		}
 	}()
-
 	go func() {
-		staking, err := FetchWalletStakingInfo(ctx)
-		stakingChan <- stakingResult{staking, err}
+		defer wg.Done()
+		// Staking info is optional; the page renders without it.
+		if staking, err := FetchWalletStakingInfo(ctx); err != nil {
+			wlltLog.Warnf("Failed to fetch staking info: %v", err)
+		} else {
+			stakingInfo = staking
+		}
 	}()
+	wg.Wait()
 
-	select {
-	case res := <-accountChan:
-		if res.err != nil {
-			wlltLog.Warnf("Failed to fetch account info: %v", res.err)
-		} else {
-			accountInfo = res.data
-		}
-	case <-ctx.Done():
-		wlltLog.Warnf("Account info fetch cancelled: %v", ctx.Err())
-	}
-
-	select {
-	case res := <-accountsChan:
-		if res.err != nil {
-			wlltLog.Warnf("Failed to fetch accounts: %v", res.err)
-		} else {
-			accounts = res.data
-		}
-	case <-ctx.Done():
-		wlltLog.Warnf("Accounts fetch cancelled: %v", ctx.Err())
-	}
-
-	select {
-	case res := <-stakingChan:
-		if res.err != nil {
-			wlltLog.Warnf("Failed to fetch staking info: %v", res.err)
-			// Staking info is optional - continue without it
-		} else {
-			stakingInfo = res.data
-		}
-	case <-ctx.Done():
-		wlltLog.Warnf("Staking info fetch cancelled: %v", ctx.Err())
-	}
-
-	return &types.WalletDashboardData{
+	data := &types.WalletDashboardData{
 		WalletStatus: *walletStatus,
 		AccountInfo:  *accountInfo,
 		Accounts:     accounts,
 		StakingInfo:  stakingInfo,
 		LastUpdate:   time.Now(),
-	}, nil
+	}
+	// A fetch cut short by the deadline reports zeroed pieces with nil errors,
+	// so the caller must be told rather than shown them as balances.
+	if err := ctx.Err(); err != nil {
+		return data, err
+	}
+	return data, nil
 }
 
 // getbalance returns one point-in-time view of the whole wallet:

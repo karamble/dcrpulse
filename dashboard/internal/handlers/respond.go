@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
 )
 
 // The handlers wrote their JSON replies by hand, each setting the same header
@@ -56,6 +57,16 @@ func walletRPCReady(w http.ResponseWriter) bool {
 func walletGRPCReady(w http.ResponseWriter) bool {
 	if rpc.WalletGrpcClient == nil {
 		walletUnavailable(w)
+		return false
+	}
+	return true
+}
+
+// dcrdReadyForWallet answers 503 when dcrd's polled state says wallet RPC
+// cannot serve yet, and reports whether the handler may continue.
+func dcrdReadyForWallet(w http.ResponseWriter) bool {
+	if gate, reason := services.NodeWalletGateState(); gate != services.GateOK {
+		http.Error(w, reason, http.StatusServiceUnavailable)
 		return false
 	}
 	return true

@@ -101,31 +101,11 @@ func rescanStream(beginHeight int32) {
 
 // GetWalletStatusHandler handles requests for wallet status
 func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
-	if !walletRPCReady(w) {
+	if !walletRPCReady(w) || !dcrdReadyForWallet(w) {
 		return
 	}
 
-	// Check if dcrd is still syncing before attempting wallet operations
-	if rpc.DcrdClient != nil {
-		checkCtx, checkCancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer checkCancel()
-
-		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
-		if err != nil {
-			// dcrd is unreachable (down, starting, or running a database
-			// upgrade). Surface that rather than a confusing wallet error.
-			if services.IsDaemonUnreachable(err) {
-				respondDaemonError(w, r, services.LogComponentDcrd, err)
-				return
-			}
-		} else if chainInfo.InitialBlockDownload {
-			// Wallet RPC cannot serve data until dcrd finishes its IBD.
-			http.Error(w, "The Decred node is still downloading the blockchain. Your wallet will be available once the node finishes syncing.", http.StatusServiceUnavailable)
-			return
-		}
-	}
-
-	status, err := services.FetchWalletStatus()
+	status, err := services.FetchWalletStatus(r.Context())
 	if err != nil {
 		wlltLog.Errorf("Error fetching wallet status: %v", err)
 		respondDaemonError(w, r, services.LogComponentDcrwallet, err)
@@ -135,68 +115,35 @@ func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status)
 }
 
+// fetchWalletDashboard is a seam so the timeout path can be tested without a
+// wallet; mirrors stopAgentSurface in auth.go.
+var fetchWalletDashboard = services.FetchWalletDashboardData
+
 // GetWalletDashboardHandler handles requests for complete wallet dashboard data
 func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
-	if !walletRPCReady(w) {
+	if !walletRPCReady(w) || !dcrdReadyForWallet(w) {
 		return
 	}
 
-	// Check if dcrd is still syncing before attempting wallet operations
-	if rpc.DcrdClient != nil {
-		checkCtx, checkCancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer checkCancel()
-
-		chainInfo, err := rpc.DcrdClient.GetBlockChainInfo(checkCtx)
-		if err != nil {
-			// dcrd is unreachable (down, starting, or running a database
-			// upgrade). Surface that rather than a confusing wallet error.
-			if services.IsDaemonUnreachable(err) {
-				respondDaemonError(w, r, services.LogComponentDcrd, err)
-				return
-			}
-		} else if chainInfo.InitialBlockDownload {
-			// Wallet RPC cannot serve data until dcrd finishes its IBD.
-			http.Error(w, "The Decred node is still downloading the blockchain. Your wallet will be available once the node finishes syncing.", http.StatusServiceUnavailable)
-			return
-		}
-	}
-
-	// Create a context with timeout to prevent hanging on slow RPC calls
-	// Use 20 seconds to accommodate wallet rescans which can slow down RPC responses
+	// 20s accommodates wallet rescans, which slow every RPC.
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 
-	// Use a channel to handle the async fetch with timeout
-	type result struct {
-		data *types.WalletDashboardData
-		err  error
-	}
-	resultChan := make(chan result, 1)
-
-	go func() {
-		data, err := services.FetchWalletDashboardDataWithContext(ctx)
-		resultChan <- result{data, err}
-	}()
-
-	select {
-	case res := <-resultChan:
-		if res.err != nil {
-			wlltLog.Errorf("Error fetching wallet dashboard data: %v", res.err)
-			// Return partial data if available
-			if res.data != nil {
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(res.data)
-				return
-			}
-			respondDaemonError(w, r, services.LogComponentDcrwallet, res.err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(res.data)
-	case <-ctx.Done():
+	data, err := fetchWalletDashboard(ctx)
+	// Checked before err: a fetch cut short by the deadline carries zeroed
+	// balances with no error, and a 200 would render them as real. 408 keeps
+	// the page's last good figures.
+	if ctx.Err() != nil {
 		wlltLog.Warn("Wallet dashboard request timed out")
 		http.Error(w, "Wallet dashboard request timed out - wallet may be rescanning", http.StatusRequestTimeout)
+		return
 	}
+	if err != nil {
+		wlltLog.Errorf("Error fetching wallet dashboard data: %v", err)
+		respondDaemonError(w, r, services.LogComponentDcrwallet, err)
+		return
+	}
+	writeJSON(w, data)
 }
 
 // ImportXpubHandler handles xpub import requests
