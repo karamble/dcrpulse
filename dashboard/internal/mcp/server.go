@@ -18,6 +18,7 @@ import (
 
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/config"
+	dcrlog "dcrpulse/internal/log"
 	"dcrpulse/internal/utils"
 )
 
@@ -258,6 +259,18 @@ func (s *surfaceState) removeListen(id uint64) {
 // Start records the listener address, registers the optional bootstrap token,
 // and brings the server up if it should be enabled. The enabled state is the
 // persisted dashboard toggle when present, otherwise the env default.
+// newListenerServer is the MCP listener's http.Server, shaped like the
+// dashboard's own: idle keep-alives are reaped and the server's own log lines
+// go through the daemon logger rather than stderr.
+func newListenerServer(h http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ErrorLog:          dcrlog.StdErrorLogger(dcrlog.MCPS),
+	}
+}
+
 func Start(cfg Config) {
 	srvMu.Lock()
 	runBind, runPort = cfg.Bind, cfg.Port
@@ -331,10 +344,7 @@ func startListenerLocked() error {
 	if err != nil {
 		return err
 	}
-	httpSrv = &http.Server{
-		Handler:           listenerHandler(),
-		ReadHeaderTimeout: 15 * time.Second,
-	}
+	httpSrv = newListenerServer(listenerHandler())
 	surface.setUp()
 	// Bridge the live event buses into MCP resource notifications (once).
 	startResourceFeeds()
