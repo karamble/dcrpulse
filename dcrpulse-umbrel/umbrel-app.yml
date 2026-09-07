@@ -3,47 +3,51 @@ id: dcrpulse
 name: Decred Pulse
 tagline: Full Decred node and wallet with Lightning, DCRDEX, Bison Relay, and a block explorer
 category: crypto
-version: "2.0.0-rc4"
+version: "2.0.0-rc9"
 port: 8735
-icon: ""
 description: |-
-  Decred Pulse is a comprehensive self-hosted dashboard for the full Decred stack.
+  Decred Pulse is your whole Decred node, in one place.
 
-  It includes:
+  Run the chain, hold the coins, stake them, trade them, and talk to people, all from one dashboard on hardware you own. No custodians. No accounts. Your keys, your node.
 
-  - Full dcrd blockchain node with transaction indexing
+  The node syncs the full chain with transaction indexing. The wallet is a real wallet: multiple wallets, accounts, and a privacy mixer that shuffles your coins in with everyone else's. Buy tickets and stake through a VSP in a few clicks, or let the autobuyer handle it. Open Lightning channels and pay invoices. Trade peer to peer on DCRDEX without handing custody to anyone. Message, post and tip over Bison Relay. And watch blocks, mempool and the treasury in an explorer that is genuinely nice to read.
 
-  - dcrwallet with full wallet support and multi-wallet management
-
-  - Staking (ticket purchase, VSP) and the privacy mixer
-
-  - Lightning Network (dcrlnd): channels and payments
-
-  - DCRDEX: decentralized exchange trading and market making
-
-  - Bison Relay: encrypted messaging, posts, and tipping
-
-  - Block explorer with mempool and treasury monitoring
-
-  Perfect for running, using, and monitoring a complete Decred node and wallet.
+  Everything beyond the node is optional. Start as a node and an explorer, and switch the rest on when you want it.
 
   Features:
 
-  - Full Decred node and wallet (multi-wallet)
+  - Full dcrd node with transaction indexing
 
-  - Lightning, DCRDEX, and Bison Relay
+  - Multi-wallet dcrwallet with accounts, xpub import and watch-only
 
-  - Staking and privacy mixer
+  - Staking with VSP support and an automatic ticket buyer
 
-  - Modern block explorer with mempool monitoring
+  - CoinShuffle++ privacy mixer
 
+  - Lightning Network through dcrlnd
+
+  - DCRDEX for non-custodial trading and market making
+
+  - Bison Relay for encrypted messaging, posts and tipping
+
+  - Block explorer with mempool and treasury monitoring
+
+  - Optional Tor routing for the whole stack
+
+  - Optional MCP interfaces for AI agents, off by default
 developer: Decred
 website: https://decred.org
 submitter: karamble
 repo: https://github.com/karamble/dcrpulse
 support: https://github.com/karamble/dcrpulse/issues
-gallery: []
+gallery:
+  - 1.jpg
+  - 2.jpg
+  - 3.jpg
 dependencies: []
+backupIgnore:
+  - data/dcrd/data
+  - data/dcrd/logs
 releaseNotes: |-
   v2.0.0 upgrades Decred Pulse from a watch-only node and block explorer to the full Decred stack.
 
@@ -52,6 +56,8 @@ releaseNotes: |-
   New in this release: full wallet with multi-wallet management, staking, the privacy mixer, Lightning, DCRDEX, Bison Relay, and an optional Tor proxy that routes the whole stack through Tor. These features are idle until you set each one up, so your node and wallet keep working exactly as before until then.
 
   After updating, the wallet starts locked - unlock it in the dashboard to resume balances and transactions. Resource use increases with the new services.
+
+  It also brings optional MCP interfaces for AI agents, off by default.
 path: ""
 defaultUsername: ""
 defaultPassword: ""

@@ -8,9 +8,16 @@ services:
     image: alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
     user: "0:0"
     restart: "no"
-    command: ["sh", "-c", "mkdir -p /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor && chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor"]
+    # Each directory is committed in the app, so umbrelOS seeds it; Docker
+    # still creates it root-owned when an update adds one, which is what this
+    # repairs. Mounted one by one because ${APP_DATA_DIR} itself may not be.
+    command: ["sh", "-c", "chown -R 1000:1000 /host/dashboard /host/dcrlnd /host/brclientd /host/dcrdex /host/tor"]
     volumes:
-      - ${APP_DATA_DIR}:/host
+      - ${APP_DATA_DIR}/data/dashboard:/host/dashboard
+      - ${APP_DATA_DIR}/data/dcrlnd:/host/dcrlnd
+      - ${APP_DATA_DIR}/data/brclientd:/host/brclientd
+      - ${APP_DATA_DIR}/data/dcrdex:/host/dcrdex
+      - ${APP_DATA_DIR}/data/tor:/host/tor
 
   dcrd:
     image: ghcr.io/karamble/dcrpulse-dcrd:2.1.5@sha256:7f3227bf99a6be2d173daf43aacb7bf405d81fd4ba78f8f35a37ba2116ef5138
@@ -19,7 +26,6 @@ services:
     stop_grace_period: 5m
     volumes:
       - ${APP_DATA_DIR}/data:/app-data
-      - ${APP_DATA_DIR}/tor:/app-data/tor:ro
     environment:
       DCRD_RPC_USER: ${APP_SEED}
       DCRD_RPC_PASS: ${APP_SEED}
@@ -77,7 +83,7 @@ services:
     stop_grace_period: 1m
     volumes:
       - ${APP_DATA_DIR}/data:/app-data:ro
-      - ${APP_DATA_DIR}/dcrlnd:/app-data/dcrlnd
+      - ${APP_DATA_DIR}/data/dcrlnd:/app-data/dcrlnd
     environment:
       DCRWALLET_HOST: dcrwallet
       DCRWALLET_GRPC_PORT: 9111
@@ -101,13 +107,16 @@ services:
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 1m
+    ports:
+      # The Bison Relay MCP bridge. It binds only while the bridge is
+      # enabled in Settings > Bison Relay.
+      - "${APP_DCRPULSE_MCP_BRIDGE_PORT}:8891"
     environment:
       TOR_PROXY_IP: tor
       TOR_PROXY_PORT: 9050
     volumes:
       - ${APP_DATA_DIR}/data:/app-data:ro
-      - ${APP_DATA_DIR}/dcrlnd:/app-data/dcrlnd:ro
-      - ${APP_DATA_DIR}/brclientd:/app-data/brclientd
+      - ${APP_DATA_DIR}/data/brclientd:/app-data/brclientd
     depends_on:
       init:
         condition: service_completed_successfully
@@ -126,7 +135,7 @@ services:
       TOR_PROXY_IP: tor
       TOR_PROXY_PORT: 9050
     volumes:
-      - ${APP_DATA_DIR}/dcrdex:/dex/.dexc
+      - ${APP_DATA_DIR}/data/dcrdex:/dex/.dexc
       - ${APP_DATA_DIR}/data:/app-data:ro
     depends_on:
       init:
@@ -138,14 +147,19 @@ services:
     restart: on-failure
     volumes:
       - ${APP_DATA_DIR}/data:/app-data
-      - ${APP_DATA_DIR}/dcrlnd:/app-data/dcrlnd
-      - ${APP_DATA_DIR}/brclientd:/app-data/brclientd:ro
-      - ${APP_DATA_DIR}/dcrdex:/app-data/dcrdex:ro
-      - ${APP_DATA_DIR}/dashboard:/dashboard-data
-      - ${APP_DATA_DIR}/tor:/app-data/tor:ro
+      - ${APP_DATA_DIR}/data/dashboard:/dashboard-data
+    ports:
+      # The agents MCP server, beside the app proxy: MCP clients present a
+      # bearer token, not an Umbrel session. No listener binds until the
+      # server is switched on in Settings > AI Agents.
+      - "${APP_DCRPULSE_MCP_AGENTS_PORT}:8090"
     environment:
       PORT: 8735
       DCRPULSE_LOG_LEVEL: ${DCRPULSE_LOG_LEVEL:-info}
+      MCP_ENABLE: "false"
+      # Reaches the published port above; the dashboard defaults to loopback.
+      MCP_BIND: 0.0.0.0
+      MCP_PORT: 8090
       TOR_PROXY_IP: tor
       TOR_PROXY_PORT: 9050
       TOR_CONTROL_PORT: 9051
@@ -187,7 +201,7 @@ services:
     environment:
       HOME: /tmp
     volumes:
-      - ${APP_DATA_DIR}/tor:/data
+      - ${APP_DATA_DIR}/data/tor:/data
     depends_on:
       init:
         condition: service_completed_successfully
