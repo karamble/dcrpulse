@@ -1578,19 +1578,25 @@ func ValidateAddress(ctx context.Context, address string) (*pb.ValidateAddressRe
 }
 
 func ConstructTransaction(ctx context.Context, sourceAccount uint32, outputs []types.TxRecipient, sendAll bool) (*pb.ConstructTransactionResponse, error) {
-	if rpc.WalletGrpcClient == nil {
-		return nil, fmt.Errorf("wallet gRPC client not initialized")
-	}
+	// The request is validated before the client check, or a wallet that is
+	// merely down reports "client not initialized" instead of the real reason.
 	if len(outputs) == 0 {
 		return nil, fmt.Errorf("at least one output is required")
+	}
+	// Send-all sweeps the whole balance through the change destination, so it
+	// cannot honour a second recipient or a stated amount. Refuse rather than
+	// silently reinterpret; msig/spend.go answers the same way.
+	if sendAll && len(outputs) != 1 {
+		return nil, fmt.Errorf("send all pays a single recipient")
+	}
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
 	}
 	req := &pb.ConstructTransactionRequest{
 		SourceAccount:         sourceAccount,
 		RequiredConfirmations: 1,
 	}
 	if sendAll {
-		// Send-all sweeps the whole balance to a single recipient via the change
-		// destination, so only the first output's address is used.
 		req.OutputSelectionAlgorithm = pb.ConstructTransactionRequest_ALL
 		req.ChangeDestination = &pb.ConstructTransactionRequest_OutputDestination{Address: outputs[0].Address}
 	} else {

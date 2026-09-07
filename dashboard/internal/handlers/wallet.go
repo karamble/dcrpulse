@@ -1051,8 +1051,8 @@ const maxTxAtoms = int64(dcrutil.MaxAmount)
 
 // resolveTxOutputs normalizes and validates a construct request into the list of
 // recipients to pay. It accepts either the Outputs slice or the legacy single
-// Address/AmountAtoms pair. For send-all it returns the single sweep destination
-// (the amount is ignored). Every recipient address is checked for valid format.
+// Address/AmountAtoms pair. Send-all takes exactly one recipient and ignores its
+// amount. Every recipient address is checked for valid format.
 func resolveTxOutputs(ctx context.Context, req *types.ConstructTransactionRequest) ([]types.TxRecipient, error) {
 	var recipients []types.TxRecipient
 	if len(req.Outputs) > 0 {
@@ -1062,6 +1062,11 @@ func resolveTxOutputs(ctx context.Context, req *types.ConstructTransactionReques
 	}
 
 	if req.SendAll {
+		// Checked before the address lookup so it needs no RPC. Collapsing to
+		// the first recipient here would quietly reinterpret the request.
+		if len(recipients) != 1 {
+			return nil, fmt.Errorf("send all pays a single recipient")
+		}
 		if strings.TrimSpace(recipients[0].Address) == "" {
 			return nil, fmt.Errorf("address required")
 		}

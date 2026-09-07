@@ -189,7 +189,7 @@ var walletTools = []toolDef{
 			}, nil
 		}),
 	readTool("wallet", "wallet_construct_transaction",
-		"Build an UNSIGNED transaction and summarize its inputs, outputs, change, fee, and net debit. Uses no private keys and works on watch-only wallets. Returns unsignedTxHex to sign offline on a hardware wallet, then broadcast the signed result with wallet_broadcast_signed_transaction. Provide either address+amountAtoms or an outputs list; set sendAll to sweep the account.",
+		"Build an UNSIGNED transaction and summarize its inputs, outputs, change, fee, and net debit. Uses no private keys and works on watch-only wallets. Returns unsignedTxHex to sign offline on a hardware wallet, then broadcast the signed result with wallet_broadcast_signed_transaction. Provide either address+amountAtoms or an outputs list; set sendAll to sweep the account to exactly one recipient.",
 		func(ctx context.Context, in walletConstructInput) (any, error) {
 			var recipients []types.TxRecipient
 			if len(in.Outputs) > 0 {
