@@ -52,47 +52,6 @@ func TestResolveOutboxPath(t *testing.T) {
 	})
 }
 
-// TestSafeStoreMediaName covers the guard that keeps a storefront path - most
-// importantly a product's sendfilename, which the store delivers to a buyer on
-// purchase - inside the store directory.
-func TestSafeStoreMediaName(t *testing.T) {
-	t.Run("store-relative names are accepted", func(t *testing.T) {
-		for _, p := range []string{
-			"manual.pdf",
-			"goods/manual.pdf",
-			"goods/sub/dir/manual.pdf",
-			"cover.png",
-		} {
-			if !safeStoreMediaName(p) {
-				t.Errorf("safeStoreMediaName(%q) = false, want true", p)
-			}
-		}
-	})
-
-	t.Run("escapes and templates are rejected", func(t *testing.T) {
-		bad := []string{
-			"",                                // empty
-			"/app-data/dcrlnd/admin.macaroon", // the S-01 payload
-			"/etc/passwd",                     // absolute
-			"goods/../../../app-data/dcrlnd/tls.cert", // traversal via segments
-			"..",                     // bare parent
-			"../secret.pdf",          // parent escape
-			"a\\b",                   // backslash segment
-			"a\x00b",                 // NUL
-			strings.Repeat("a", 256), // over the length cap
-			"index.tmpl",             // template, executed by the store
-			"index.tmp",              // template scratch
-			"INDEX.TMPL",             // case-insensitive
-			"index.tmpl. ",           // trailing dot/space evasion
-		}
-		for _, p := range bad {
-			if safeStoreMediaName(p) {
-				t.Errorf("safeStoreMediaName(%q) = true, want false", p)
-			}
-		}
-	})
-}
-
 // TestStoreProductSendFilenameWiring checks that br_store_save_product actually
 // applies the sendfilename guard, which TestSafeStoreMediaName alone cannot see:
 // the validator could be correct and simply never called. A rejected name must
@@ -139,4 +98,63 @@ func TestStoreProductSendFilenameWiring(t *testing.T) {
 			}
 		}
 	})
+}
+
+// The upload tool guarded its directory with the media rule but its filename
+// with the base one, so an agent could put a .tmpl into the storefront that the
+// dashboard's own upload route refuses. Both reach the same brclientd call, so
+// the agent surface must not be the more permissive of the two.
+func TestStoreFileUploadRejectsTemplateNames(t *testing.T) {
+	const agentID = "br-upload-tmpl"
+	grants.set(agentID, GrantSpec{WriteScopes: []string{scopeBR}}, time.Now())
+	t.Cleanup(func() { grants.revoke(agentID) })
+
+	cs := connectTo(t, testAgent(agentID, "upload", map[string]bool{"bisonrelay": true}))
+	call := func(t *testing.T, filename string) string {
+		t.Helper()
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      "br_store_file_upload",
+			Arguments: map[string]any{"filename": filename, "dataB64": "aGk="},
+		})
+		if err != nil {
+			t.Fatalf("CallTool(%q) transport error: %v", filename, err)
+		}
+		return resultText(res)
+	}
+
+	for _, bad := range []string{"evil.tmpl", "EVIL.TMPL", "evil.tmpl. ", "evil.tmp"} {
+		if txt := call(t, bad); !strings.Contains(txt, "invalid filename") {
+			t.Errorf("filename %q: got %q, want it refused", bad, txt)
+		}
+	}
+
+	// A good name passes the guard and then fails in the brclientd client (no
+	// daemon under test), so assert on the guard's own message.
+	for _, ok := range []string{"manual.pdf", "cover.png"} {
+		if txt := call(t, ok); strings.Contains(txt, "invalid filename") {
+			t.Errorf("filename %q: refused by the guard, want accepted", ok)
+		}
+	}
+}
+
+// The asymmetry is deliberate: templates are the one place a .tmpl name is
+// correct, so tightening these tools to the media guard would break saving one.
+func TestStoreTemplateToolsStillAcceptTmpl(t *testing.T) {
+	const agentID = "br-template-tmpl"
+	grants.set(agentID, GrantSpec{WriteScopes: []string{scopeBR}}, time.Now())
+	t.Cleanup(func() { grants.revoke(agentID) })
+
+	cs := connectTo(t, testAgent(agentID, "template", map[string]bool{"bisonrelay": true}))
+	for _, tool := range []string{"br_store_template_save", "br_store_template_delete"} {
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      tool,
+			Arguments: map[string]any{"name": "index.tmpl", "content": "hi"},
+		})
+		if err != nil {
+			t.Fatalf("%s transport error: %v", tool, err)
+		}
+		if txt := resultText(res); strings.Contains(txt, "invalid name") {
+			t.Errorf("%s refused index.tmpl: %q", tool, txt)
+		}
+	}
 }

@@ -28,6 +28,7 @@ import (
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/utils"
 )
 
 // BisonrelayVersionHandler proxies brclientd's VersionService.Version
@@ -1564,33 +1565,6 @@ func BisonrelayPagesLocalListHandler(w http.ResponseWriter, r *http.Request) {
 // defense-in-depth guard so a crafted "../" never leaves the dashboard. It
 // allows nested relative paths and rejects absolute paths, backslashes, NUL,
 // the empty string, and any ".." segment.
-func safeBRPath(p string) bool {
-	if p == "" || len(p) > 255 {
-		return false
-	}
-	if strings.ContainsRune(p, 0) || strings.ContainsRune(p, '\\') || strings.HasPrefix(p, "/") {
-		return false
-	}
-	for _, seg := range strings.Split(p, "/") {
-		if seg == ".." {
-			return false
-		}
-	}
-	return true
-}
-
-// safeStoreMediaPath is safeBRPath plus a denylist for the store file endpoints:
-// .tmpl/.tmp must never be created or served as "media" because the store parses
-// and executes *.tmpl as Go templates. Templates have their own /store/templates
-// routes; this keeps the generic file upload/get/delete from reaching them.
-func safeStoreMediaPath(p string) bool {
-	if !safeBRPath(p) {
-		return false
-	}
-	lower := strings.ToLower(strings.TrimRight(p, ". "))
-	return !strings.HasSuffix(lower, ".tmpl") && !strings.HasSuffix(lower, ".tmp")
-}
-
 // brNamedFile validates a ?name= path and proxies one named-file read.
 func brNamedFile(w http.ResponseWriter, r *http.Request, read func(ctx context.Context, name string) (json.RawMessage, error)) {
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
@@ -1598,7 +1572,7 @@ func brNamedFile(w http.ResponseWriter, r *http.Request, read func(ctx context.C
 		http.Error(w, "name query param is required", http.StatusBadRequest)
 		return
 	}
-	if !safeBRPath(name) {
+	if !utils.SafeBRPath(name) {
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
@@ -1620,7 +1594,7 @@ func brNamedSave(w http.ResponseWriter, r *http.Request, save func(ctx context.C
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !safeBRPath(strings.TrimSpace(req.Name)) {
+	if !utils.SafeBRPath(strings.TrimSpace(req.Name)) {
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
@@ -1642,7 +1616,7 @@ func BisonrelayPagesLocalDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !safeBRPath(strings.TrimSpace(req.Name)) {
+	if !utils.SafeBRPath(strings.TrimSpace(req.Name)) {
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
@@ -2014,7 +1988,7 @@ func BisonrelayStoreProductsHandler(w http.ResponseWriter, r *http.Request) {
 	// the store dir would exfiltrate any file the daemon can read.
 	if v, ok := req["sendfilename"]; ok && v != nil {
 		name, isStr := v.(string)
-		if !isStr || (name != "" && !safeStoreMediaPath(name)) {
+		if !isStr || (name != "" && !utils.SafeStoreMediaPath(name)) {
 			http.Error(w, "invalid sendfilename", http.StatusBadRequest)
 			return
 		}
@@ -2089,7 +2063,7 @@ func BisonrelayStoreTemplateDeleteHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !safeBRPath(strings.TrimSpace(req.Name)) {
+	if !utils.SafeBRPath(strings.TrimSpace(req.Name)) {
 		http.Error(w, "invalid name", http.StatusBadRequest)
 		return
 	}
@@ -2110,7 +2084,7 @@ func BisonrelayStoreFileGetHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path query param is required", http.StatusBadRequest)
 		return
 	}
-	if !safeStoreMediaPath(path) {
+	if !utils.SafeStoreMediaPath(path) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
@@ -2134,7 +2108,7 @@ func BisonrelayStoreFileDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := strings.TrimSpace(req.Path)
-	if p == "" || !safeStoreMediaPath(p) {
+	if p == "" || !utils.SafeStoreMediaPath(p) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
@@ -2174,12 +2148,12 @@ func BisonrelayStoreFileUploadHandler(w http.ResponseWriter, r *http.Request) {
 	defer part.Close()
 	relPath := fields["path"]
 	overwrite := fields["overwrite"] == "true"
-	if relPath != "" && !safeStoreMediaPath(relPath) {
+	if relPath != "" && !utils.SafeStoreMediaPath(relPath) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
 	name := part.FileName()
-	if strings.ContainsRune(name, '/') || !safeStoreMediaPath(name) {
+	if strings.ContainsRune(name, '/') || !utils.SafeStoreMediaPath(name) {
 		http.Error(w, "invalid file name", http.StatusBadRequest)
 		return
 	}

@@ -25,6 +25,7 @@ import (
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/utils"
 )
 
 type brSaveProductInput struct {
@@ -632,7 +633,7 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_page_get",
 		"Read the raw markdown of one page this node hosts. Requires 'name'.",
 		func(ctx context.Context, in brPageGetInput) (any, error) {
-			if !safeBRName(in.Name) {
+			if !utils.SafeBRPath(in.Name) {
 				return nil, fmt.Errorf("invalid name")
 			}
 			return rpc.BrclientdPagesLocalFile(ctx, in.Name)
@@ -649,7 +650,7 @@ var bisonrelayTools = []toolDef{
 			}
 			// The store delivers this file to a buyer on purchase, so a path
 			// escaping the store dir would exfiltrate any file the daemon reads.
-			if in.SendFilename != "" && !safeStoreMediaName(in.SendFilename) {
+			if in.SendFilename != "" && !utils.SafeStoreMediaPath(in.SendFilename) {
 				err := fmt.Errorf("invalid sendfilename")
 				recordSpend(a, "br_store_save_product", 0, 0, in.SKU, "error", err.Error())
 				return nil, err
@@ -901,7 +902,7 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_page_save", 0, 0, in.Name, "denied", err.Error())
 				return nil, err
 			}
-			if !safeBRName(in.Name) {
+			if !utils.SafeBRPath(in.Name) {
 				err := fmt.Errorf("invalid name")
 				recordSpend(a, "br_page_save", 0, 0, in.Name, "error", err.Error())
 				return nil, err
@@ -926,7 +927,7 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "error", err.Error())
 				return nil, err
 			}
-			if !safeBRName(in.Dest) || !pageImageExtRE.MatchString(in.Dest) {
+			if !utils.SafeBRPath(in.Dest) || !pageImageExtRE.MatchString(in.Dest) {
 				err := fmt.Errorf("invalid dest: must be an image path (jpg/jpeg/jfif/png/gif/webp) inside the pages directory")
 				recordSpend(a, "br_page_import_embed", 0, 0, in.Dest, "error", err.Error())
 				return nil, err
@@ -946,7 +947,7 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_page_delete", 0, 0, in.Name, "denied", err.Error())
 				return nil, err
 			}
-			if !safeBRName(in.Name) {
+			if !utils.SafeBRPath(in.Name) {
 				err := fmt.Errorf("invalid name")
 				recordSpend(a, "br_page_delete", 0, 0, in.Name, "error", err.Error())
 				return nil, err
@@ -1095,12 +1096,14 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "denied", err.Error())
 				return nil, err
 			}
-			if in.Path != "" && !safeStoreMediaName(in.Path) {
+			if in.Path != "" && !utils.SafeStoreMediaPath(in.Path) {
 				err := fmt.Errorf("invalid path")
 				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "error", err.Error())
 				return nil, err
 			}
-			if !safeBRName(in.Filename) || containsSlash(in.Filename) {
+			// The media guard, matching the dashboard's own upload route: a name
+			// ending .tmpl would be executed as a Go template by the store.
+			if !utils.SafeStoreMediaPath(in.Filename) || strings.ContainsRune(in.Filename, '/') {
 				err := fmt.Errorf("invalid filename")
 				recordSpend(a, "br_store_file_upload", 0, 0, in.Filename, "error", err.Error())
 				return nil, err
@@ -1126,7 +1129,7 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_store_template_save", 0, 0, in.Name, "denied", err.Error())
 				return nil, err
 			}
-			if !safeBRName(in.Name) {
+			if !utils.SafeBRPath(in.Name) {
 				err := fmt.Errorf("invalid name")
 				recordSpend(a, "br_store_template_save", 0, 0, in.Name, "error", err.Error())
 				return nil, err
@@ -1146,7 +1149,7 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_store_template_delete", 0, 0, in.Name, "denied", err.Error())
 				return nil, err
 			}
-			if !safeBRName(in.Name) {
+			if !utils.SafeBRPath(in.Name) {
 				err := fmt.Errorf("invalid name")
 				recordSpend(a, "br_store_template_delete", 0, 0, in.Name, "error", err.Error())
 				return nil, err
@@ -1758,7 +1761,7 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_store_file_get",
 		"Fetch one Bison Relay storefront media file by path. Returns its content type and base64 bytes.",
 		func(ctx context.Context, in brStorePathInput) (any, error) {
-			if !safeStoreMediaName(in.Path) {
+			if !utils.SafeStoreMediaPath(in.Path) {
 				return nil, fmt.Errorf("invalid path")
 			}
 			data, contentType, err := rpc.BrclientdGetStoreFile(ctx, in.Path)
@@ -1774,7 +1777,7 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "denied", err.Error())
 				return nil, err
 			}
-			if !safeStoreMediaName(in.Path) {
+			if !utils.SafeStoreMediaPath(in.Path) {
 				err := fmt.Errorf("invalid path")
 				recordSpend(a, "br_store_file_delete", 0, 0, in.Path, "error", err.Error())
 				return nil, err
@@ -1808,7 +1811,7 @@ func decodeBRResult(body []byte) any {
 // path that would resolve outside the outbox, so a path-based send can never
 // reach arbitrary host files.
 func resolveOutboxPath(rel string) (string, error) {
-	if !safeBRName(rel) {
+	if !utils.SafeBRPath(rel) {
 		return "", fmt.Errorf("invalid path")
 	}
 	root := filepath.Clean(services.AgentOutboxDir())
@@ -1971,21 +1974,6 @@ func filteredPMHistory(ctx context.Context, in brPmHistoryInput) (any, error) {
 // template, and store-file names handed to brclientd: brclientd owns the real
 // containment, this is a defense-in-depth check that rejects empty names,
 // absolute paths, backslashes, NUL, and any ".." segment.
-func safeBRName(p string) bool {
-	if p == "" || len(p) > 255 {
-		return false
-	}
-	if strings.ContainsRune(p, 0) || strings.ContainsRune(p, '\\') || strings.HasPrefix(p, "/") {
-		return false
-	}
-	for _, seg := range strings.Split(p, "/") {
-		if seg == ".." {
-			return false
-		}
-	}
-	return true
-}
-
 // brPageFetch fetches a remote Bison Relay page/resource and decorates the reply
 // with the parsed markdown segments (form fields, download embeds), mirroring the
 // dashboard's BisonrelayPagesFetchHandler. data is nil for a plain navigation
@@ -2086,17 +2074,4 @@ func extractLNInvoice(markdown string) string {
 		return m[1]
 	}
 	return ""
-}
-
-func containsSlash(s string) bool { return strings.ContainsRune(s, '/') }
-
-// safeStoreMediaName is safeBRName plus the store's .tmpl/.tmp denylist, mirroring
-// the dashboard's safeStoreMediaPath: the store parses and executes *.tmpl, which
-// has its own tools, so generic store-file paths must never reach one.
-func safeStoreMediaName(p string) bool {
-	if !safeBRName(p) {
-		return false
-	}
-	lower := strings.ToLower(strings.TrimRight(p, ". "))
-	return !strings.HasSuffix(lower, ".tmpl") && !strings.HasSuffix(lower, ".tmp")
 }
