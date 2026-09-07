@@ -32,10 +32,6 @@ var reg = func() *registry {
 	return r
 }()
 
-// AddToken registers a named bearer token (hash only) for an agent identity.
-// New agents are limited to the default "node" domain until the user grants more.
-func AddToken(id, name, token string) { reg.addToken(id, name, token) }
-
 // CreateAgent mints a new named agent identity and returns its bearer token.
 // The token is shown to the user only once; only its hash is retained.
 func CreateAgent(name string) (id, token string, err error) {
@@ -271,12 +267,6 @@ func Start(cfg Config) {
 	initAuditStore()
 	// Seed the activity-log gate before any listener can serve a request.
 	applyPersistedLogging()
-
-	// Bootstrap token from the environment for headless/dev use. Registered
-	// regardless of the enabled state so a later toggle-on can accept it.
-	if t := os.Getenv("MCP_TOKEN"); t != "" {
-		AddToken("env", "env-token", t)
-	}
 
 	enabled := cfg.Enable
 	if v, ok := persistedEnabled(); ok {

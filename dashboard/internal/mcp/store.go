@@ -11,10 +11,6 @@ import (
 	"dcrpulse/internal/config"
 )
 
-// envAgentID is the reserved id of the MCP_TOKEN bootstrap agent. It is
-// re-created from the environment on each start and is never persisted.
-const envAgentID = "env"
-
 // persistedAgent is the on-disk shape of an agent identity. Only the token's
 // SHA-256 hash is stored (hex), never the plaintext token.
 type persistedAgent struct {
@@ -34,9 +30,6 @@ func (r *registry) snapshot() []persistedAgent {
 	defer r.mu.Unlock()
 	out := make([]persistedAgent, 0, len(r.agents))
 	for _, a := range r.agents {
-		if a.id == envAgentID {
-			continue
-		}
 		out = append(out, persistedAgent{
 			ID:         a.id,
 			Name:       a.name,

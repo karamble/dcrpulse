@@ -138,9 +138,6 @@ Caveats:
   **Allow this IP** button - the one-click fix when you don't know which address
   the server sees. The notice is in-memory only and clears on the agent's next
   successful request; the agent itself still sees only the generic 401.
-- The `MCP_TOKEN` environment bootstrap agent is re-created at every start and is
-  never persisted, so a list set on it lasts only until restart - treat it as
-  unrestricted and prefer created agents when pinning IPs.
 
 ## Spend grants
 
