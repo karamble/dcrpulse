@@ -15,16 +15,11 @@ const (
 	KeyEnablePrivacy     = "enable_privacy"
 	KeyLastAccess        = "last_access"
 	KeyIsWatchOnly       = "is_watch_only"
-	KeyHiddenAccounts    = "hidden_accounts"
 	// KeyXpubAccountIndexes maps an imported xpub account's dcrwallet account
 	// number (>= 2^31, stringified) to its real BIP44 account index. dcrpulse-only
 	// (not a Decrediton key); needed because the device derives keys by BIP44 index.
 	KeyXpubAccountIndexes = "xpub_account_indexes"
 	KeyGapLimit           = "gap_limit"
-	KeyMixedAccountCfg    = "mixed_account_cfg"
-	KeyChangeAccountCfg   = "change_account_cfg"
-	KeyMixedAccBranch     = "mixed_acc_branch"
-	KeySendFromUnmixed    = "send_from_unmixed"
 
 	// Global config keys (live in /dashboard-data/config.json).
 	KeyAllowedExternalRequests = "allowed_external_requests"

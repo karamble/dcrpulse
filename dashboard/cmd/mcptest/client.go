@@ -182,7 +182,6 @@ func findFloat(v any, keys ...string) (float64, bool) {
 
 func isHex64(s string) bool { return hex64Re.MatchString(s) }
 func isAddr(s string) bool  { return addrRe.MatchString(s) }
-func anyString(string) bool { return true }
 
 // preview collapses whitespace and truncates a payload for one-line display.
 func preview(s string, max int) string {

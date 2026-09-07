@@ -65,10 +65,6 @@ var writeScopeByKey = func() map[string]WriteScope {
 // WriteScopes returns the grantable write-scope catalog for the dashboard UI.
 func WriteScopes() []WriteScope { return writeScopeCatalog }
 
-func knownScope(k string) bool     { _, ok := writeScopeByKey[k]; return ok }
-func scopeNeedsPass(k string) bool { return writeScopeByKey[k].NeedsPass }
-func scopeIsFund(k string) bool    { return writeScopeByKey[k].Fund }
-
 // FilterScopes drops unknown/duplicate scope keys and reports whether any
 // retained scope signs with the wallet passphrase (needsPass) or draws on the
 // DCR spend budget (needsFund). Used by the dashboard grant handler to validate

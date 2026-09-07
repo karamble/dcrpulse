@@ -111,7 +111,6 @@ const (
 	HopSigned   = "signed"
 	HopDeclined = "declined"
 	HopTimeout  = "timeout"
-	HopSkipped  = "skipped"
 )
 
 // OwnHDKey records this wallet's HD contribution: the dedicated

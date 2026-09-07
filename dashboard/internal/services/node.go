@@ -491,17 +491,7 @@ func fetchMempoolInfo(ctx context.Context, _ *chainSnapshot) (*types.MempoolInfo
 	if err != nil {
 		nodeLog.Warnf("Failed to get mempool info: %v", err)
 		// If mempool query fails (e.g., during sync), return empty mempool
-		return &types.MempoolInfo{
-			Size:           0,
-			Bytes:          0,
-			TxCount:        0,
-			TotalFee:       0,
-			AverageFeeRate: 0,
-			Tickets:        0,
-			Votes:          0,
-			Revocations:    0,
-			RegularTxs:     0,
-		}, nil
+		return &types.MempoolInfo{}, nil
 	}
 
 	// Parse the getmempoolinfo response
@@ -513,17 +503,7 @@ func fetchMempoolInfo(ctx context.Context, _ *chainSnapshot) (*types.MempoolInfo
 	var mempoolResp MempoolInfoResponse
 	if err := json.Unmarshal(result, &mempoolResp); err != nil {
 		nodeLog.Warnf("Failed to unmarshal mempool info: %v", err)
-		return &types.MempoolInfo{
-			Size:           0,
-			Bytes:          0,
-			TxCount:        0,
-			TotalFee:       0,
-			AverageFeeRate: 0,
-			Tickets:        0,
-			Votes:          0,
-			Revocations:    0,
-			RegularTxs:     0,
-		}, nil
+		return &types.MempoolInfo{}, nil
 	}
 
 	// Analyze mempool transactions to categorize staking transactions

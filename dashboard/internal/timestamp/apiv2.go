@@ -21,7 +21,6 @@ const (
 	routeStatus         = "/v2/status"
 	routeTimestampBatch = "/v2/timestamp/batch"
 	routeVerifyBatch    = "/v2/verify/batch"
-	routeVersion        = "/version"
 )
 
 // zeroHash is the all-zero transaction string dcrtime returns for a digest that

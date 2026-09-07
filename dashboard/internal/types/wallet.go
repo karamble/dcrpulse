@@ -272,14 +272,6 @@ type RescanResponse struct {
 	Message string `json:"message"`
 }
 
-type SyncProgressResponse struct {
-	IsRescanning bool    `json:"isRescanning"`
-	ScanHeight   int64   `json:"scanHeight"`
-	ChainHeight  int64   `json:"chainHeight"`
-	Progress     float64 `json:"progress"`
-	Message      string  `json:"message"`
-}
-
 // WalletStakingInfo represents wallet staking information
 type WalletStakingInfo struct {
 	// From getstakeinfo
