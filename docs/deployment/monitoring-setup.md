@@ -44,11 +44,28 @@ Already configured in `docker-compose.yml`:
 services:
   dcrd:
     healthcheck:
-      test: ["CMD", "dcrctl", "...", "getblockcount"]
+      # A bare TLS handshake proves the RPC is serving. It needs no credentials
+      # and, unlike an HTTP or plain-TCP probe, dcrd logs nothing for it.
+      test: ["CMD", "sh", "-c", "echo | timeout 5 openssl s_client -connect 127.0.0.1:9109 -quiet -verify_quiet >/dev/null 2>&1 && exit 0; tail -n 80 /app-data/dcrd/logs/*/dcrd.log 2>/dev/null | grep -qiE 'upgrading database|upgrading utxo|upgrading spend journal|migrating database|migrating utxo|migrating versioning|reindexing|creating and storing gcs filters' && exit 0; exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 120s
+      start_interval: 10s
+
+  dcrwallet:
+    healthcheck:
+      # Healthy while dcrwallet keeps its control state file fresh.
+      test: ["CMD", "sh", "-c", "S=/app-data/dcrwallet/control/state.json; [ -f \"$$S\" ] && [ $$(( $$(date +%s) - $$(stat -c %Y \"$$S\") )) -lt 60 ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 ```
+
+`dcrd` and `dcrwallet` are the only services with a healthcheck. `dcrlnd`,
+`brclientd`, `dcrdex`, `dashboard` and `tor` report a plain `Up` with no health
+state.
 
 **Check status**:
 ```bash
@@ -73,7 +90,7 @@ echo "=== Monitoring Check: $(date) ===" >> $LOG_FILE
 
 # Check Docker containers
 echo "Checking containers..." >> $LOG_FILE
-if ! docker compose ps | grep -q "Up (healthy)"; then
+if docker compose ps --format '{{.Name}} {{.Health}}' | grep -q "unhealthy"; then
     echo "ERROR: Containers unhealthy" >> $LOG_FILE
     echo "Decred Pulse: Unhealthy containers detected" | mail -s "ALERT: Container Health" $ALERT_EMAIL
 fi
@@ -94,8 +111,9 @@ if [ $MEM_USAGE -gt 90 ]; then
     echo "Memory usage is at ${MEM_USAGE}%" | mail -s "ALERT: Memory" $ALERT_EMAIL
 fi
 
-# Check API health
-if ! curl -sf http://localhost:8080/api/health > /dev/null; then
+# Check API health. /api/auth/status answers without a session; /api/health
+# sits behind the app-password gate and returns 401 once that gate is on.
+if ! curl -sf http://localhost:8080/api/auth/status > /dev/null; then
     echo "ERROR: API health check failed" >> $LOG_FILE
     echo "API health check failed" | mail -s "ALERT: API Down" $ALERT_EMAIL
 fi
@@ -105,7 +123,7 @@ BLOCK_COUNT=$(docker exec dcrpulse-dcrd dcrctl \
     --rpcuser=$DCRD_RPC_USER \
     --rpcpass=$DCRD_RPC_PASS \
     --rpcserver=127.0.0.1:9109 \
-    --rpccert=/certs/rpc.cert \
+    --rpccert=/app-data/dcrd/rpc.cert \
     getblockcount 2>/dev/null)
 
 if [ -n "$BLOCK_COUNT" ]; then
@@ -172,7 +190,8 @@ grep -i "error\|fatal" /var/log/dcrpulse/*.log | \
          │
          ├──► Node Exporter (System Metrics)
          ├──► cAdvisor (Docker Metrics)
-         └──► Backend /metrics (App Metrics)
+         └──► Backend /metrics (App Metrics - not shipped;
+              see "Add Metrics to Backend" to build it in)
 ```
 
 ---
@@ -253,11 +272,16 @@ services:
 networks:
   decred-network:
     external: true
+    name: dcrpulse_decred-network
 
 volumes:
   prometheus-data:
   grafana-data:
 ```
+
+Compose prefixes the project name onto the networks it creates, so the network
+the main stack brings up is `dcrpulse_decred-network`. An external network
+declared as bare `decred-network` is not found and `up` fails.
 
 ---
 
@@ -286,10 +310,10 @@ scrape_configs:
     static_configs:
       - targets: ['cadvisor:8080']
 
-  # Backend application metrics (if implemented)
+  # Dashboard application metrics (if implemented)
   - job_name: 'dcrpulse-dashboard'
     static_configs:
-      - targets: ['backend:8080']
+      - targets: ['dashboard:8080']
     metrics_path: '/metrics'
 ```
 
@@ -430,7 +454,10 @@ groups:
           summary: "Low disk space on {{ $labels.instance }}"
           description: "Less than 10% disk space remaining"
 
-      # API health check failed
+      # API health check failed. Add this rule only once the dashboard serves
+      # /metrics (see "Add Metrics to Backend"); the binary ships without that
+      # endpoint, so until you add it the scrape target is down by definition
+      # and this alert fires continuously against a healthy API.
       - alert: APIHealthCheckFailed
         expr: up{job="dcrpulse-dashboard"} == 0
         for: 2m

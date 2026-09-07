@@ -1,34 +1,70 @@
 # dcrpulse
 
-A modern, self-hosted dashboard for monitoring your Decred node, wallet, and blockchain in real-time.
+The full Decred stack, on hardware you own.
 
 ![License](https://img.shields.io/badge/license-ISC-blue.svg)
-![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)
+![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)
 ![React](https://img.shields.io/badge/React-18+-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5+-3178C6?logo=typescript)
 
 ## What is dcrpulse?
 
-dcrpulse is a comprehensive dashboard that provides:
-- **Node Dashboard**: Monitor your dcrd node performance, blockchain sync status, network peers, and mempool activity
-- **Wallet Dashboard**: Track your wallet balances, transactions, staking tickets, and ticket pool statistics
-- **Block Explorer**: Browse blocks, transactions, and addresses directly from your node
-- **Treasury & Governance**: Monitor Decred treasury balance and TSpend proposals
-- **AI Agents (MCP)**: Give AI agents scoped, capped access over the Model Context Protocol ([guide](docs/features/ai-agents-mcp.md))
+Six daemons and one dashboard. [dcrd](https://github.com/decred/dcrd) for the
+chain, [dcrwallet](https://github.com/decred/dcrwallet) for the coins,
+[dcrlnd](https://github.com/decred/dcrlnd) for Lightning,
+[bisonw](https://github.com/decred/dcrdex) for DCRDEX,
+[brclientd](https://github.com/karamble/brclientd) for Bison Relay, and
+[Tor](https://www.torproject.org/) in front of all of them once you switch it
+on, with an inbound onion service for dcrd and another for Lightning. dcrpulse
+starts them in the right order, wires them to each other, and puts a single web
+interface over the lot.
 
-All data comes from your local dcrd and dcrwallet instances via RPC - no third-party services required.
+Run the chain, hold the coins, stake them, trade them, and talk to people. No
+custodians. No accounts. Your keys, your node.
+
+The node syncs the full chain with transaction indexing. The wallet is a real
+wallet: several of them, with accounts, xpub import and watch-only, and a mixer
+that shuffles your coins in with everyone else's. Buy tickets and stake through a
+VSP in a few clicks, or let the autobuyer do it. Open Lightning channels and pay
+invoices. Trade peer to peer on DCRDEX, and run a market maker on it if you want
+one. Message, post and tip over Bison Relay. Timestamp a file against the chain.
+And read blocks, mempool and the treasury in an explorer that is genuinely nice
+to look at.
+
+**Everything past the node is optional.** Start as a node and an explorer, and
+switch the rest on when you want it.
+
+- Full dcrd node with transaction indexing
+- Multi-wallet dcrwallet with accounts, xpub import and watch-only
+- Shared wallets: m-of-n multisig, set up and signed over Bison Relay
+- Staking with VSP support and an automatic ticket buyer
+- CoinShuffle++ privacy mixer
+- Lightning Network through dcrlnd
+- DCRDEX for non-custodial trading and market making
+- Bison Relay for encrypted messaging, posts and tipping
+- Block explorer with mempool and treasury monitoring
+- Governance: consensus agendas, Politeia proposals and treasury policy
+- dcrtime timestamping with verifiable proofs
+- Alerts for node, wallet, staking, Lightning, DEX, Bison Relay and disk conditions
+- Optional Tor routing for the whole stack, with inbound onion services for dcrd and Lightning
+- Optional MCP interfaces for AI agents, off by default ([guide](docs/features/ai-agents-mcp.md))
+
+Node, wallet and explorer data comes from your own dcrd and dcrwallet over RPC,
+never from a third party. The optional features reach the services they have to:
+Politeia for proposals, dcrtime for timestamps, your chosen VSP, DEX servers,
+Bison Relay relays, and a rate source for the DCR price.
 
 ## Quick Start
 
 ### Prerequisites
 - Docker and Docker Compose
-- 10GB+ free disk space for blockchain data
+- 50 GB+ free disk space - the chain alone is around 30 GB and growing
 
 ### Launch
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/<username>/dcrpulse.git
+git clone https://github.com/karamble/dcrpulse.git
 cd dcrpulse
 
 # 2. Set up environment
@@ -63,14 +99,14 @@ For more commands: `make help`
 
 Complete documentation is available in the [`docs/`](docs/) folder:
 
-📚 **[Documentation Index](docs/readme.md)** - Start here
+**[Documentation Index](docs/readme.md)** - Start here
 
 ### Quick Links
 
 **Getting Started**
 - [First Steps](docs/getting-started/first-steps.md) - What to do after installation
-- [Quick Start Guide](docs/getting-started/quick-start.md) - Detailed setup instructions
-- [Environment Setup](docs/getting-started/environment-setup.md) - Configuration options
+- [Installation Guide](docs/getting-started/installation.md) - Detailed setup instructions
+- [Configuration Guide](docs/setup/configuration.md) - Configuration options
 
 **Guides**
 - [Wallet Operations](docs/guides/wallet-operations.md) - Import xpub, rescan, sync monitoring
@@ -80,10 +116,10 @@ Complete documentation is available in the [`docs/`](docs/) folder:
 **Features**
 - [Node Dashboard](docs/features/node-dashboard.md) - Monitor your dcrd node
 - [Wallet Dashboard](docs/features/wallet-dashboard.md) - Track balances and staking
-- [Block Explorer](docs/features/block-explorer.md) - Browse blocks and transactions
+- [Block Explorer](docs/features/explorer.md) - Browse blocks and transactions
 
 **Deployment**
-- [Docker Deployment](docs/deployment/docker-deployment.md) - Production setup
+- [Production Deployment](docs/deployment/production.md) - Production setup
 - [Monitoring Setup](docs/deployment/monitoring-setup.md) - Health checks and alerts
 
 **Reference**
@@ -100,6 +136,13 @@ dcrpulse/
 │   └── web/           # Frontend React app
 ├── dcrd/              # dcrd node Docker setup
 ├── dcrwallet/         # dcrwallet Docker setup
+├── dcrlnd/            # Lightning daemon Docker setup
+├── brclientd/         # Bison Relay daemon Docker setup
+├── dcrdex/            # DCRDEX (bisonw) Docker setup
+├── tor/               # Tor proxy Docker setup
+├── dcrpulse-umbrel/   # Umbrel app package
+├── dcrpulse-casaos/   # CasaOS app package
+├── umbrel-widget/     # Umbrel home-screen widget
 ├── docs/              # Documentation
 └── docker-compose.yml # Orchestration
 ```
@@ -114,7 +157,7 @@ The dashboard combines backend and frontend into a single Go binary with embedde
 ```bash
 # Terminal 1: Backend
 cd dashboard
-go run cmd/dcrpulse/main.go
+go run ./cmd/dcrpulse
 
 # Terminal 2: Frontend
 cd dashboard/web
@@ -134,9 +177,16 @@ cd .. && go build ./cmd/dcrpulse
 ## Support
 
 For issues and questions:
-- [GitHub Issues](https://github.com/<username>/dcrpulse/issues)
+- [GitHub Issues](https://github.com/karamble/dcrpulse/issues)
 - [Decred Matrix](https://chat.decred.org)
 - [Decred Discord](https://discord.gg/decred)
+
+## Related Projects
+
+- [demarchy](https://github.com/karamble/demarchy) - a Decred mark for the
+  [Omarchy](https://omarchy.org/) bar. It shows your staking record, the network
+  you vote in, and your Bison Relay messages, all read from dcrpulse over its MCP
+  interface with a token that can only read.
 
 ## License
 

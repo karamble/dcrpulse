@@ -69,6 +69,10 @@ Switching is more than a UI change - it relaunches the daemon stack:
 
 Because the daemons restart, a switch is not instant. The button shows **Switching...** while it runs, and the operation is bounded by a timeout.
 
+#### When a switch is refused
+
+A switch returns **409 Conflict** while the **privacy mixer**, the **ticket autobuyer**, or a **ticket purchase** is running, because those workers carry the current wallet's account numbers and would act on the next wallet. Stop the mixer or the autobuyer, or wait for the purchase to finish, then retry. Re-selecting the wallet that is already active is exempt, since the workers already belong to it.
+
 #### Public passphrase prompt
 
 If a wallet was created with a public passphrase, opening it fails until the passphrase is supplied. The picker detects this and prompts for the **public passphrase**, then retries the open. Wallets without a public passphrase open directly.
@@ -77,7 +81,7 @@ If a wallet was created with a public passphrase, opening it fails until the pas
 
 ### Closing the active wallet
 
-Closing the active wallet stops the wallet process (the supervisor idles), clears the previous wallet's DCRDEX session secret, and returns the UI to the picker.
+Closing the active wallet stops the wallet process (the supervisor idles), clears the previous wallet's DCRDEX session secret, and returns the UI to the picker. It is refused with **409 Conflict** under the same running-worker rule as a switch.
 
 **API**: `POST /api/wallet/close`.
 
@@ -85,7 +89,7 @@ Closing the active wallet stops the wallet process (the supervisor idles), clear
 
 ## Creating a New Wallet
 
-From the picker, choose **Create new wallet** to run the standard setup flow (generate or restore a seed, set passphrases, optionally discover accounts) under a new name. Creating a wallet switches the daemon to the new wallet's appdata first, then runs create/restore, and finally repoints the dcrlnd / DCRDEX / Bison Relay clients exactly as a switch does.
+From the picker, choose **Create new wallet** to run the standard setup flow under a new name. The wizard offers three modes: **Create new wallet** (generate a fresh seed), **Restore from seed** (enter an existing 33-word seed or raw hex), and **Watch-only wallet** (import an extended public key to monitor balances without spending keys). Creating a wallet switches the daemon to the new wallet's appdata first, then runs create/restore, and finally repoints the dcrlnd / DCRDEX / Bison Relay clients exactly as a switch does.
 
 ### Wallet names
 
@@ -96,11 +100,12 @@ From the picker, choose **Create new wallet** to run the standard setup flow (ge
 
 ### Passphrase rules
 
-- A **private passphrase** is required and must be at least 8 characters; its confirmation must match.
+- A **private passphrase** is required for a seeded wallet and must be at least 8 characters; its confirmation must match.
 - A **public passphrase** is optional; when set it must also be at least 8 characters and match its confirmation.
-- A **seed** is required (generated for a new wallet, or entered to restore one).
+- A **seed** is required for a seeded wallet (generated for a new wallet, or entered to restore one).
+- A **watch-only wallet** takes neither a seed nor a private passphrase. It needs an **extended public key** starting with `dpub` (mainnet) or `tpub` (testnet), and it must be created from the device's account 0; import further device accounts after creation. The public passphrase stays optional under the same rules.
 
-**API**: `POST /api/wallets/create` with the create-wallet body (name, passphrases, seed, discover-accounts flag). Rate limited to one call per 5 seconds.
+**API**: `POST /api/wallets/create` with the create-wallet body (name, passphrases, seed, discover-accounts flag), or with `"watchOnly": true` plus `extendedPubKey` for a watch-only wallet. Rate limited to one call per 5 seconds.
 
 ---
 
@@ -122,7 +127,7 @@ Renaming moves the wallet's data directory to the new name and renames its dashb
 
 ## Deleting a Wallet
 
-In the picker, click **Edit**, then the delete (trash) action. A confirmation dialog warns that the wallet will no longer appear in the list and reminds you to keep your seed phrase.
+In the picker, click **Edit**, then the delete (trash) action. A confirmation dialog warns that the deletion cannot be undone and that the wallet is not backed up, and it requires you to type **DELETE** to confirm before the button becomes usable.
 
 Constraints:
 
@@ -131,7 +136,7 @@ Constraints:
 
 ### What delete does to your data
 
-Deleting does **not** erase coins outright. The wallet's data directory is **moved aside into a timestamped backup** inside the wallet volume (`backups/<name>-<timestamp>`) before it is removed from the active set, and the dashboard-side config directory (metadata only) is removed. A wallet whose seed you control can be restored from that seed even after deletion.
+Deleting is **irreversible and takes no backup**. The wallet's data directory (`wallet.db` and everything beside it) is removed from disk outright, and the dashboard-side config directory (metadata only) is removed with it. A wallet whose seed you control can be restored from that seed; without the seed the coins are gone.
 
 **API**: `POST /api/wallets/delete` with `{ "name": "..." }`. Rate limited.
 
@@ -140,8 +145,8 @@ Deleting does **not** erase coins outright. The wallet's data directory is **mov
 ## Cautions
 
 ### Funds and seed phrases
-- **Always keep the seed phrase** for every wallet you create or restore. The on-disk backup taken on delete lives only inside this installation's wallet volume; the seed is the authoritative recovery path.
-- **Deleting a wallet removes it from the list.** Its data is moved to a backup directory, but you should treat the seed as your real backup before deleting.
+- **Always keep the seed phrase** for every wallet you create or restore. Deleting a wallet leaves no on-disk copy behind; the seed is the only recovery path.
+- **Deleting a wallet erases its data.** The directory is removed from disk, so make sure you hold the seed before deleting.
 
 ### Switching takes time
 - A switch **restarts dcrwallet and the dependent daemons**. Expect a short delay, and a fresh sync state on the newly opened wallet (the dashboard pauses polling during the changeover and resumes after).

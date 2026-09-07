@@ -22,30 +22,29 @@ One of the key features of this CasaOS implementation is its **secure network is
 
 ```
 ┌─────────────────────────────────────────┐
-│         Internet / P2P Network           │
+│         Internet / P2P Network          │
 └──────────────┬──────────────────────────┘
                │
                │ (blockchain sync)
                │
-         ┌─────▼─────┐
-         │   dcrd    │ ◄── Public network (dcrpulse)
-         │  :9109    │     Has internet access
-         └─────┬─────┘
-               │
-               │ (RPC cert sharing)
-               │
-    ┌──────────┴──────────┐
+         ┌─────▼─────┐          ┌──────────┐
+         │   dcrd    │          │dashboard │ :8080 on
+         │  :9109    │          │ (Web UI) │ 127.0.0.1
+         └─────┬─────┘          └────┬─────┘
+               │  both on dcrpulse   │
+               │  (has internet)     │
+    ═══════════╪═════════════════════╪═══════════
+               │  and on dcrpulse_internal
+               │  (internal: true - NO internet)
+               │                     │
+    ┌──────────┴──────────┬──────────┘
     │                     │
-┌───▼────┐          ┌────▼─────┐
-│dcrwallet│          │dashboard │
-│ :9110   │          │  :8080   │
-│ :9111   │◄─────────┤ (Web UI) │
+┌───▼─────┐          ┌────▼─────┐
+│dcrwallet│          │  dcrlnd  │
+│ :9110   │          │  :10009  │
+│ :9111   │          │   gRPC   │
 └─────────┘          └──────────┘
-    │                     │
-    └──────────┬──────────┘
-               │
-    Internal Network (dcrpulse_internal)
-    NO Internet Access - Isolated
+  internal only        internal only
 ```
 
 ### Security Benefits
@@ -85,7 +84,7 @@ For RPC communication between services:
 - **Username**: `casaos`
 - **Password**: `casaos`
 
-⚠️ **Security Note**: These are default credentials. For production use, consider changing them by modifying the environment variables in the docker-compose.yml file.
+**Security Note**: These are default credentials. For production use, consider changing them by modifying the environment variables in the docker-compose.yml file.
 
 ## System Requirements
 

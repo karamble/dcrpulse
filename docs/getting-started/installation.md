@@ -30,7 +30,7 @@ Choose your installation method:
 - **Operating System**: Linux, macOS, Windows, or Qubes OS (see the Qubes section below)
 
 #### Option B: Manual Installation
-- **Go**: Version 1.21+
+- **Go**: Version 1.26+
 - **Node.js**: Version 18+
 - **Git**: Latest version
 - **dcrd**: Running instance
@@ -234,7 +234,7 @@ sudo apt install golang-go
 brew install go
 
 # Verify
-go version  # Should be 1.21+
+go version  # Should be 1.26+
 ```
 
 **Node.js (Frontend)**:
@@ -354,7 +354,7 @@ export DCRWALLET_RPC_USER=your_wallet_username
 export DCRWALLET_RPC_PASS=your_wallet_password
 
 # Start the dashboard
-go run cmd/dcrpulse/main.go
+go run ./cmd/dcrpulse
 ```
 
 **The dashboard serves on**: http://localhost:8080
@@ -739,37 +739,15 @@ policy entry in dom0 allowing the connection.
 
 ---
 
-## Testnet Installation
+## Testnet
 
-For testing without real DCR:
+There is no stack-wide testnet mode. The stack runs on mainnet: the dcrd entrypoint
+launches the node with no network flag, and no `.env` variable switches dcrd, dcrwallet,
+or the dashboard to testnet.
 
-```bash
-# Clone repository
-git clone https://github.com/karamble/dcrpulse.git
-cd dcrpulse
-
-# Create .env file
-cp env.example .env
-
-# Edit .env and enable testnet
-nano .env
-```
-
-**Add/uncomment**:
-```bash
-DCRD_TESTNET=1
-```
-
-**Start services**:
-```bash
-make start
-```
-
-**Testnet benefits**:
-- Faster sync (~30-60 minutes)
-- Smaller size (~1-2 GB)
-- Free testnet coins
-- Safe for experimentation
+The one testnet knob is `LN_TESTNET`, which runs dcrlnd with its testnet flag. Nothing
+else in the stack switches with it, so it is a development knob rather than a way to run
+the whole deployment on testnet.
 
 ---
 

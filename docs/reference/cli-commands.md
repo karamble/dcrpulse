@@ -123,31 +123,17 @@ make logs-dcrd
 
 ---
 
-#### `make logs-backend`
-View backend API logs.
+#### `make logs-dashboard`
+View dashboard logs. The dashboard serves both the API and the frontend, which is embedded in the Go binary, so there is no separate frontend container or web-server log.
 
 ```bash
-make logs-backend
+make logs-dashboard
 ```
 
 **Use for**:
 - API request/response tracking
 - RPC connection status
 - Backend errors
-
----
-
-#### `make logs-frontend`
-View frontend Nginx logs.
-
-```bash
-make logs-frontend
-```
-
-**Use for**:
-- Web server access logs
-- Frontend build output
-- HTTP errors
 
 ---
 
@@ -305,11 +291,11 @@ make shell-dcrd
 
 ---
 
-#### `make shell-backend`
+#### `make shell-dashboard`
 Open shell in the dashboard container.
 
 ```bash
-make shell-backend
+make shell-dashboard
 ```
 
 ---
@@ -439,24 +425,24 @@ make wallet-balance
 ### Data Management Commands
 
 #### `make backup`
-Backup blockchain data to local directory.
+Backup the whole app-data volume to local directory.
 
 ```bash
 make backup
 ```
 
 **What it does**:
-- Creates compressed backup of dcrd data
+- Creates compressed backup of everything under `/app-data`, which is the dcrd chain and the dcrwallet data together
 - Saves to `backups/` directory
-- Filename: `dcrd-backup-YYYYMMDD-HHMMSS.tar.gz`
+- Filename: `app-data-backup-YYYYMMDD-HHMMSS.tar.gz`
 
 **Output**:
 ```bash
-Creating backup of dcrd data...
-Backup created in backups/dcrd-backup-20251006-123456.tar.gz
+Creating backup of all app data...
+Backup created in backups/
 ```
 
-**Backup size**: ~30 GB (blockchain data compresses very little)
+**Backup size**: ~30 GB (the blockchain dominates and compresses very little)
 
 ---
 
@@ -470,7 +456,7 @@ make backup-wallet
 **What it does**:
 - Creates compressed backup of dcrwallet data
 - Saves to `backups/` directory
-- Filename: `dcrwallet-backup-YYYYMMDD-HHMMSS.tar.gz`
+- Filename: `wallet-backup-YYYYMMDD-HHMMSS.tar.gz`
 
 **What's included**:
 - Wallet database (wallet.db)
@@ -490,9 +476,9 @@ make backup-certs
 ```
 
 **What it does**:
-- Creates compressed backup of dcrd certificates
+- Creates compressed backup of dcrd's `rpc.cert` and `rpc.key`
 - Saves to `backups/` directory
-- Filename: `dcrd-certs-YYYYMMDD-HHMMSS.tar.gz`
+- Filename: `certs-backup-YYYYMMDD-HHMMSS.tar.gz`
 
 **Use case**: Preserve certificates before clean rebuild
 
@@ -501,18 +487,18 @@ make backup-certs
 ---
 
 #### `make restore`
-Restore blockchain data from backup.
+Restore the whole app-data volume from backup.
 
 ```bash
-make restore BACKUP=backups/dcrd-backup-20251006-123456.tar.gz
+make restore BACKUP=backups/app-data-backup-20251006-123456.tar.gz
 ```
 
 **What it does**:
 - Stops all services
-- Restores blockchain data from specified backup
+- Empties `/app-data` and unpacks the specified backup in its place
 - Restarts services
 
-** Warning**: Overwrites existing blockchain data
+** Warning**: Deletes everything under `/app-data`, the wallet as well as the chain, before unpacking
 
 ---
 
@@ -520,12 +506,12 @@ make restore BACKUP=backups/dcrd-backup-20251006-123456.tar.gz
 Restore wallet data from backup.
 
 ```bash
-make restore-wallet BACKUP=backups/dcrwallet-backup-20251006-123456.tar.gz
+make restore-wallet BACKUP=backups/wallet-backup-20251006-123456.tar.gz
 ```
 
 **What it does**:
 - Stops dcrwallet service
-- Restores wallet data from specified backup
+- Empties `/app-data/dcrwallet` and unpacks the specified backup in its place
 - Restarts dcrwallet
 
 ** Warning**: Overwrites existing wallet data
@@ -633,7 +619,7 @@ make dev-backend
 ```
 
 **Requirements**:
-- Go 1.21+
+- Go 1.26 or newer (`dashboard/go.mod` declares `go 1.26.0`)
 - RPC credentials in environment
 - dcrd/dcrwallet running
 
@@ -704,7 +690,7 @@ docker compose up -d
 
 # Specific service
 docker compose up -d dcrd
-docker compose up -d backend
+docker compose up -d dashboard
 ```
 
 #### Stop Services
@@ -761,8 +747,7 @@ docker compose build --no-cache
 #### Build Specific Service
 ```bash
 docker compose build dcrd
-docker compose build backend
-docker compose build frontend
+docker compose build dashboard
 ```
 
 #### Build with Variables
@@ -834,7 +819,7 @@ docker exec dcrpulse-dcrd dcrctl --help
 # dcrwallet
 docker exec dcrpulse-dcrwallet dcrctl --wallet --help
 
-# backend
+# dashboard
 docker exec dcrpulse-dashboard ls -la
 ```
 
@@ -983,7 +968,7 @@ docker compose ps
 # View logs
 make logs
 make logs-dcrd
-make logs-backend
+make logs-dashboard
 
 # Stop
 make stop
@@ -1047,7 +1032,7 @@ make build-dcrd VERSION=release-v2.0.6
 make backup
 
 # Restore
-make restore BACKUP=backups/dcrd-backup-xxx.tar.gz
+make restore BACKUP=backups/app-data-backup-xxx.tar.gz
 
 # Clean (careful!)
 make clean         # Everything

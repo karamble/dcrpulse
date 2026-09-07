@@ -29,13 +29,21 @@ The security model has five layers:
   the offending agent; a one-click freeze blocks all agents; and you can require a
   Bison Relay approval before every fund move.
 
-The listener is bound to localhost by default and is never exposed by the Umbrel or
-CasaOS app definitions.
+The listener is bound to localhost by default. The CasaOS app definition never
+publishes it. The Umbrel one does: it sets `MCP_BIND=0.0.0.0` and publishes host
+port `8750` for the agents server and `8751` for the Bison Relay bridge, so both
+answer on every interface of the Umbrel host once you switch them on.
 
 ## Enabling the server
 
 Open **Settings -> AI Agents** and toggle the MCP server on. The toggle is persisted
 and survives restarts.
+
+The app password under **Settings -> Security** is a precondition. Every route that
+mints tokens or widens an agent's authority requires it, so while no password is set
+the enable request is refused with `401 set a dashboard app password before managing
+AI agent access` and an `X-Dashboard-Auth: password-required` header, and the listener
+stays down at startup whatever the toggle or `MCP_ENABLE` says.
 
 The listener address is configured by environment variables on the `dashboard`
 service:
@@ -100,7 +108,8 @@ Write scopes: `governance`, `lightning`, `dex`, `dex.spend`, `bisonrelay`,
 `bisonrelay.admin`, `timestamp`, `tor`, `staking`, `privacy`, `wallet.broadcast`.
 Some carry extra risk or move funds and are separate tiers you enable deliberately:
 
-- `dex.spend` - withdrawals and bond posting on the DEX (moves funds).
+- `dex.spend` - posting a fidelity bond and arming bond auto-renewal on the DEX
+  (moves funds).
 - `staking` - ticket purchase and VSP fee maintenance (moves funds, so caps are
   required). The fee tools also need the grant to cover the accounts the fee and its
   change come from, and the VSP must be one this wallet has already used or a public
@@ -158,8 +167,8 @@ restart.
 
 Fund-moving tools include `wallet_send`, `staking_purchase`,
 `staking_sync_failed_vsp_tickets`, `staking_process_unmanaged_vsp_tickets`, `ln_pay`,
-`ln_open_channel`, the `dex.spend` send/post-bond tools, `br_tip_user`, and
-`br_content_get` with a nonzero `maxCostAtoms`.
+`ln_open_channel`, `ln_liquidity_request`, `dex_post_bond`, `dex_place_order`,
+`br_tip_user`, and `br_content_get` with a nonzero `maxCostAtoms`.
 
 Where a tool's real cost is only knowable afterwards, the worst case is reserved up
 front and the unused part is returned once it settles: `ln_pay` does this with the
@@ -197,12 +206,14 @@ session; changing the toggle requires the app password.
 
 When enabled (Settings -> AI Agents -> Bison Relay oversight: toggle on and pick a
 contact), every fund move must be approved by you over a Bison Relay direct message
-before it executes. The same applies to the two actions that arm a component which
-then spends on its own: `dex_set_bond_options` (DEX bond auto-renewal) and enabling
-Lightning autopilot. Neither moves funds in the call itself, so the approval is the
-last checkpoint before the daemon starts posting bonds or opening channels. Turning
-autopilot back off is not gated, so a timed-out approval can never keep a running
-autopilot alive. The dashboard DMs the selected contact:
+before it executes. The same applies to the three actions that arm a component which
+then spends on its own: `dex_set_bond_options` (DEX bond auto-renewal), enabling
+Lightning autopilot, and `dex_mm_update_cex_config` (storing exchange API
+credentials, which sets where a market-maker bot deposits funds). None moves funds
+in the call itself, so the approval is the last checkpoint before the daemon starts
+posting bonds, opening channels, or depositing to an exchange. Turning autopilot
+back off is not gated, so a timed-out approval can never keep a running autopilot
+alive. The dashboard DMs the selected contact:
 
 ```
 dcrpulse approval [a1b2]: agent "trader" wants to send 0.50000000 DCR to Dsxxx.
@@ -287,7 +298,7 @@ curl -sS $H -H Mcp-Protocol-Version:2026-07-28 -H Mcp-Method:server/discover \
 
 ### Tools
 
-The server exposes roughly 200 tools across the domains above (node, wallet, staking,
+The server exposes over 200 tools across the domains above (node, wallet, staking,
 governance, treasury, lightning, privacy, explorer, timestamp, tor, dex, bisonrelay).
 Rather than list them all here, discover the live set from the client:
 
@@ -398,6 +409,7 @@ automating):
 - `POST /api/settings/mcp/agents/{id}/unblock` - clear a tripwire/freeze block.
 - `POST /api/settings/mcp/freeze-all` - revoke all grants and block all tokens.
 - `POST /api/settings/mcp/notify` - configure Bison Relay oversight (on/off + contact).
+- `POST /api/settings/mcp/logging` - turn the agent activity log on/off.
 - `GET /api/settings/mcp/audit/export` - download the full audit trail.
 
 ## Troubleshooting

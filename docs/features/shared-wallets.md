@@ -5,7 +5,7 @@ over Bison Relay private messages. Invitations, key exchange and payment
 approvals all travel over the encrypted connection you already have with
 your contacts; no server, no email, no files to pass around. A wallet
 can instead opt into manual coordination at creation, where the same
-messages are carried by the participants themselves — see the
+messages are carried by the participants themselves - see the
 transports section.
 
 A shared wallet is not one address but a ladder of them: every
@@ -23,7 +23,7 @@ Bison Relay contacts who hold the other keys (or name them, on a
 manually coordinated wallet), then review and send the invitations.
 Creating or accepting asks for your wallet passphrase once: it creates
 a dedicated account in your wallet, and only that account's extended
-public key is shared with your cosigners — your other accounts stay
+public key is shared with your cosigners - your other accounts stay
 private. Declining an invitation costs nothing and shares nothing.
 
 On a manually coordinated wallet the invitations do not travel by
@@ -35,7 +35,7 @@ wallets page.
 Receive addresses appear once every cosigner has confirmed. The Receive
 card shows the current address and mints the next one on demand; a fresh
 address per payer keeps deposits apart. The wallet refuses to run more
-than a full window of unpaid addresses ahead (see the gap rules below) —
+than a full window of unpaid addresses ahead (see the gap rules below) -
 new ones unlock as earlier ones receive funds.
 
 Paying out works the same way as before: fill in the destination and
@@ -96,7 +96,7 @@ full:
 - Each participant's contribution is a dcrwallet ACCOUNT extended public
   key (the dedicated account created for the round).
 - The child key of participant p at branch b, index i is
-  `xpub_p / b / i` using dcrd hdkeychain's `Child` derivation — the same
+  `xpub_p / b / i` using dcrd hdkeychain's `Child` derivation - the same
   calls dcrwallet's address manager makes, so the wallet can always sign
   for the derived keys once its branch index covers them.
 - Branch 0 receives; branch 1 takes change.
@@ -110,8 +110,8 @@ full:
   for any roster xpub (hdkeychain's invalid-child case, odds ~2^-127).
   Every participant computes over the identical xpub set, so skipping is
   deterministic; cursors count raw indices, holes included.
-- The wallet's identity — `walletId` on the wire and the record's
-  address — is the address at the smallest non-skipped external index.
+- The wallet's identity - `walletId` on the wire and the record's
+  address - is the address at the smallest non-skipped external index.
 
 Anything that changes any of the above is a NEW scheme with a new name,
 never an amendment: deriving a card's ladder any other way rebuilds the
@@ -127,7 +127,7 @@ for multisig scripts, so each derived script is individually imported
 and watched), and syncs its own account's branch indices at least as
 far, so any imported index is also signable.
 
-No member hands out an index at or beyond `localLastUsed + Gap` — the
+No member hands out an index at or beyond `localLastUsed + Gap` - the
 receive UI surfaces the refusal. This bound is what keeps every member's
 imported window covering every address any member can legally disclose.
 Two members handing out addresses concurrently may mint the same index;
@@ -136,9 +136,9 @@ that is only address reuse between two payers, never a loss of funds.
 Imports come in two classes. Pre-use imports (the activation batch and
 the top-ups that precede handing out a receive or change address) happen
 before the address is ever revealed, so they need no rescan. Imports
-forced by OBSERVATION — chain usage at the window's edge caused by a
+forced by OBSERVATION - chain usage at the window's edge caused by a
 peer, a restore, or a payment request naming an index this node has not
-imported yet — may postdate the funding they need to see, so they are
+imported yet - may postdate the funding they need to see, so they are
 followed by one deferred wallet rescan bounded by the wallet's creation
 height.
 
@@ -153,15 +153,20 @@ unknown types after journaling their mid.
 | Type | From | Fields | TTL |
 |---|---|---|---|
 | `invite` | initiator | ver, tempId, label, m, n, network, xpub | 7 d |
-| `accept` | cosigner | ver, tempId, xpub | 7 d |
+| `accept` | cosigner | ver, tempId, xpub, attest | 7 d |
 | `decline` | cosigner | tempId, reason | 7 d |
-| `roster` | initiator | ver, tempId, label, m, n, network, xpubs, address, peers | 7 d |
-| `ready` | cosigner | tempId, walletId | 7 d |
+| `roster` | initiator | ver, tempId, label, m, n, network, xpubs, address, peers, attest | 7 d |
+| `ready` | cosigner | tempId, walletId, attest | 7 d |
+| `attest_set` | initiator | tempId, walletId, attests | 7 d |
 | `invite_cancel` | initiator | tempId | 7 d |
 | `sign_req` | proposer | walletId, txid, rawTx, note, sigsHave | 24 h default |
 | `sig` | cosigner | walletId, txid, rawTx | 7 d |
 | `sig_decline` | cosigner | walletId, txid, reason | 7 d |
 | `broadcast` | proposer | walletId, txid | 7 d |
+
+`attest` is one signature in each case: proof of possession on an `accept`, the
+initiator's commitment to the roster on a `roster`, and the cosigner's on a
+`ready`. `attest_set` carries the whole set instead, in `attests`.
 
 Extended public keys travel in their standard base58 encoding and must
 be public-only. The roster's `xpubs` list is canonical: exactly n keys
@@ -177,10 +182,10 @@ and every participant signs a cosigner attestation before the wallet can
 receive funds (see "Cosigner attestation" below).
 Receivers ignore tuples for keys outside the roster; on the manual
 transport they discard the sender-local ids entirely and mint their
-own. Rosters without the field remain valid (older builds). Schemes are capped at 8 participants — the network itself
+own. Rosters without the field remain valid (older builds). Schemes are capped at 8 participants - the network itself
 allows more, but the serial signing relay becomes impractical first.
 A handshake frame carrying both the historical single-key
-fields and the extended-key fields is invalid — receivers must reject
+fields and the extended-key fields is invalid - receivers must reject
 it rather than guess, so one frame can never mean different wallets to
 different builds. Amounts, where present, are in atoms. Handshake
 lifetimes match the relay server's queueing horizon; only `sign_req` is
@@ -244,7 +249,7 @@ relay holding no key in the roster.
 
 It does **not** prove the holders are distinct people, and it does not
 close a roster whose other slots are keys the initiator controls
-outright — those sign happily. Only confirming a cosigner's key with
+outright - those sign happily. Only confirming a cosigner's key with
 that person, over a channel that does not pass through the initiator,
 closes that one. The confirmation step exists to prompt exactly that,
 and the wallet hands out no receive address until it is done.
@@ -283,7 +288,7 @@ Any member may propose. The proposer is the hub for that payment.
    seen), signs with its dedicated account and returns `sig`.
 5. The proposer verifies the returned transaction: identical transaction
    id, and a strictly larger set of PARTICIPANTS whose signatures are
-   present on every input — signatures attribute per input against that
+   present on every input - signatures attribute per input against that
    index's keys, and a participant only counts once it has signed all of
    them. It then relays to the next cosigner automatically, with no
    human action and no unlock at the hub.
@@ -325,8 +330,8 @@ only signature scripts may differ between hops.
 - Each dcrpulse wallet has its own Bison Relay identity, so shared wallet
   membership is per wallet. Frames addressed to a record whose wallet is
   not active are persisted and surfaced as "switch to that wallet";
-  steps that need wallet keys — activation, ladder imports, window
-  top-ups — resume automatically after the switch.
+  steps that need wallet keys - activation, ladder imports, window
+  top-ups - resume automatically after the switch.
 
 ## Registry and backup
 
@@ -336,14 +341,14 @@ per-branch cursors (next index to hand out, imported-through, last used
 on chain), the creation height, peer states, payments and the mid
 journal. A build refuses to open an `msig.json` written by a newer
 schema: saving would silently strip the newer fields. Downgrading past
-this version therefore destroys ladder state — keep backup cards.
+this version therefore destroys ladder state - keep backup cards.
 
 The wallet database holds the imported scripts but cannot enumerate
 them, name cosigners or survive a seed restore, which is why the
 registry exists. A backup card exports one record without device-local
 data, stamped with its `cardVersion` and `derivationScheme`. Restoring
-it proves ownership by extended-key equality — the same seed always
-derives the same account xpub — locating the account by scanning every
+it proves ownership by extended-key equality - the same seed always
+derives the same account xpub - locating the account by scanning every
 account of the wallet, which survives renames and renumbering. Only when
 no account matches (a fresh wallet from the same seed) are accounts
 recreated sequentially up to the card's number, which requires the
@@ -359,8 +364,8 @@ no transaction history, and a dedicated shared-wallet account never
 gains history of its own (funds live on the imported script addresses).
 A card whose account number lies more than 10 past the wallet's last
 account is therefore refused up front, before the passphrase is asked
-for. Recover the seed's used accounts first — a full seed restore with
-account discovery — and import the card again; restoring other backup
+for. Recover the seed's used accounts first - a full seed restore with
+account discovery - and import the card again; restoring other backup
 cards does not help, because their accounts stay unused too.
 
 ### Recovering without dcrpulse
@@ -383,8 +388,8 @@ transports speak the identical wire format.
   KX'd contacts, delivery and replay are automatic, and the relay's
   end-to-end encryption authenticates every sender.
 - **Manual**: no frame is ever sent anywhere. Outbound frames wait on
-  the wallet's Coordination card as per-cosigner hand-over items —
-  copy, file download or QR for small frames — and inbound frames are
+  the wallet's Coordination card as per-cosigner hand-over items -
+  copy, file download or QR for small frames - and inbound frames are
   pasted or opened there, attributed by the importer to the cosigner
   who handed them over. Cosigners are local labels with locally minted
   pseudo-identities; the wire carries no identities, so each
@@ -394,8 +399,8 @@ transports speak the identical wire format.
 Manual frames are minted with a 30-day envelope lifetime, and exporting
 a frame that has passed half of it re-wraps the stored payload with a
 fresh expiry (same message id, so duplicates stay harmless). Signing
-requests carry no per-cosigner deadlines — a courier cannot be timed
-out — so a stalled request is resolved by the humans: decline it,
+requests carry no per-cosigner deadlines - a courier cannot be timed
+out - so a stalled request is resolved by the humans: decline it,
 abort it, or just hand it over again. Rounds that never complete are
 failed after 31 days. Hand-over items retire themselves once the
 protocol state proves the counterpart acted on them.
@@ -406,19 +411,19 @@ On Bison Relay the transport authenticates peers, so the identity
 carries no keys of its own: a frame is accepted only from the round's
 initiator, from a member of the named wallet, or from the cosigner
 currently holding the baton, as the message type requires. On the
-manual transport that sender identity comes from the hand-over itself —
-whoever gave you the blob is who you attribute it to — while everything
+manual transport that sender identity comes from the hand-over itself -
+whoever gave you the blob is who you attribute it to - while everything
 that guards funds stays cryptographic and is verified identically on
 both transports. Nothing in a frame is trusted beyond that.
 Rosters, wallet ids, scripts, addresses, amounts, fees and signatures
-are all recomputed locally — at every index — and a transaction is only
+are all recomputed locally - at every index - and a transaction is only
 ever signed after it has been verified against this node's own view of
 the chain. Broadcast notices are courtesy signals; the local chain view
 stays authoritative.
 
 Sharing an account xpub lets every cosigner derive and watch ALL of the
-shared wallet's addresses — that is what makes independent verification
-possible — and nothing else: the dedicated account exists only for this
+shared wallet's addresses - that is what makes independent verification
+possible - and nothing else: the dedicated account exists only for this
 wallet, so no personal history is exposed. An invitation necessarily
 reveals the initiator's xpub to every invitee, including ones who
 decline; the dedicated account contains that disclosure.

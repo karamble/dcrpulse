@@ -148,21 +148,9 @@ See [dcrd documentation](https://github.com/decred/dcrd/tree/master/docs).
 
 ---
 
-### `DCRD_TESTNET`
-**Description**: Enable testnet for dcrd. Commented out by default (mainnet).
+### Network
 
-**Default**: unset (mainnet)
-
-**Example**:
-```bash
-# Mainnet (default)
-# DCRD_TESTNET=1
-
-# Testnet
-DCRD_TESTNET=1
-```
-
-**Note**: switching networks requires a clean restart and fresh data.
+There is no variable that puts dcrd on testnet. The entrypoint launches it with no network flag, so the node, the wallet, and the dashboard always run on mainnet. `LN_TESTNET` switches dcrlnd alone and is a development knob, not a stack-wide testnet mode.
 
 ---
 
@@ -171,7 +159,7 @@ DCRD_TESTNET=1
 ### `DCRWALLET_GAP_LIMIT`
 **Description**: HD wallet address gap limit. Controls how many consecutive unused addresses the wallet monitors during discovery. Passed to dcrwallet as `--gaplimit`.
 
-**Default**: `20` — dcrwallet's own BIP0044 default and what Decrediton ships.
+**Default**: `20` - dcrwallet's own BIP0044 default and what Decrediton ships.
 
 **Example**: `DCRWALLET_GAP_LIMIT=20`
 
@@ -223,9 +211,9 @@ dcrlnd uses dcrwallet as its chain backend over gRPC and funds channels from a p
 ### `DCRLND_VERSION`
 **Description**: dcrlnd version or branch to build from source.
 
-**Default**: `master` (the `docker-compose.yml` build-arg default)
+**Default**: `v0.8.1` (the `docker-compose.yml` build-arg default)
 
-**Example**: `DCRLND_VERSION=master`
+**Example**: `DCRLND_VERSION=v0.8.1`
 
 ---
 
@@ -236,7 +224,7 @@ dcrlnd uses dcrwallet as its chain backend over gRPC and funds channels from a p
 | `DCRWALLET_HOST` | `dcrwallet` | dcrwallet hostname for the gRPC chain backend |
 | `DCRWALLET_GRPC_PORT` | `9111` | dcrwallet gRPC port |
 
-dcrlnd serves its gRPC API on `10009` inside the Docker network only (no host port). The dashboard reaches it via the macaroon at `/app-data/dcrlnd/admin.macaroon` and the cert at `/app-data/dcrlnd/tls.cert`. The supervisor also supports `DCRLND_TLS_EXTRA_DOMAIN` (default `dcrlnd`) for an extra TLS SAN.
+dcrlnd serves its gRPC API on `10009` inside the Docker network only (no host port). The macaroon and TLS certificate are per-wallet and the dashboard resolves them in code, not from the environment: `/app-data/dcrlnd/admin.macaroon` and `/app-data/dcrlnd/tls.cert` for the default wallet, and `/app-data/dcrlnd/wallets/<name>/` for any other. The supervisor also supports `DCRLND_TLS_EXTRA_DOMAIN` (default `dcrlnd`) for an extra TLS SAN.
 
 ---
 
@@ -259,7 +247,7 @@ brclientd is a headless Bison Relay client. It requires Lightning and idles unti
 
 ### brclientd wiring (set in docker-compose.yml)
 
-brclientd exposes its status server on `127.0.0.1:7677` (the only host-published brclientd port). The dashboard connects with these values:
+brclientd exposes its status server on `127.0.0.1:7677`, and the Bison Relay MCP bridge on `${MCP_BRIDGE_HOST:-127.0.0.1}:${MCP_BRIDGE_PORT:-8891}`. The dashboard connects with these values:
 
 | Variable (in container) | Value | Purpose |
 |---|---|---|
@@ -268,7 +256,20 @@ brclientd exposes its status server on `127.0.0.1:7677` (the only host-published
 | `BRCLIENTD_STATUS_PORT` | `7677` | status-server port the dashboard uses |
 | `BRCLIENTD_DATA_DIR` | `/app-data/brclientd` | appdata path (see above) |
 
-The `BRCLIENTD_IMAGE_TAG` build/pull tag defaults to `dev`.
+The `BRCLIENTD_IMAGE_TAG` build/pull tag defaults to `latest`.
+
+---
+
+### `MCP_BRIDGE_HOST` / `MCP_BRIDGE_PORT`
+**Description**: Host interface and port the Bison Relay MCP bridge is published on, as `${MCP_BRIDGE_HOST:-127.0.0.1}:${MCP_BRIDGE_PORT:-8891}:8891`.
+
+**Default**: `127.0.0.1` and `8891` - loopback only.
+
+**Example**: `MCP_BRIDGE_HOST=0.0.0.0`
+
+**Notes**:
+- Set `MCP_BRIDGE_HOST=0.0.0.0` to reach it from another device. Like the agents MCP it is plain HTTP behind a bearer token, so prefer an SSH tunnel or a reverse proxy.
+- This is only the host publish. The listener inside the container stays `0.0.0.0:8891`, set via `--mcp.mcplisten` in the supervisor, which overrides any `brclientd.conf` value.
 
 ---
 
@@ -304,11 +305,11 @@ bisonw serves RPC on `5757` and a TLS web/WebSocket endpoint on `5758`, both ins
 | `DCRDEX_RPC_PORT` | `5757` | bisonw RPC port |
 | `DCRDEX_RPC_USER` | from `.env` | bisonw RPC user |
 | `DCRDEX_RPC_PASS` | from `.env` | bisonw RPC password |
-| `DCRDEX_RPC_CERT` | `/app-data/dcrdex/rpc.cert` | bisonw RPC TLS cert |
 | `DCRDEX_WS_PORT` | `5758` | bisonw web/WebSocket port |
-| `DCRDEX_WS_CERT` | `/app-data/dcrdex/web.cert` | bisonw web TLS cert |
 
-The `DCRDEX_IMAGE_TAG` build/pull tag defaults to `dev`.
+The RPC and web TLS certificates are per-wallet and the dashboard resolves them in code, not from the environment: `/app-data/dcrdex/rpc.cert` and `/app-data/dcrdex/web.cert` for the default wallet, and `/app-data/dcrdex/wallets/<name>/` for any other.
+
+The `DCRDEX_IMAGE_TAG` build/pull tag defaults to `latest`.
 
 ---
 
@@ -344,13 +345,80 @@ Access the UI at `http://127.0.0.1:8080` on the machine running the stack.
 
 Set `DASHBOARD_HOST_BIND=0.0.0.0` to reach the dashboard from another device, but enable the app password first: the API drives the wallet, speaks plain HTTP, and has no other gate. An SSH tunnel or a TLS reverse proxy is the better answer. The dashboard logs a warning at startup when it is published beyond loopback with no password set.
 
+### `DASHBOARD_ALLOWED_HOSTS`
+**Description**: Extra host names the dashboard answers to, comma separated. It already answers to IP addresses, `localhost`, single-label names (container and compose service names) and `.local`/`.onion` names, which covers direct, LAN, Umbrel and CasaOS access. A public domain has to be named here, otherwise the request is refused with `403 host not served by this dashboard`.
+
+**Default**: unset
+
+**Example**: `DASHBOARD_ALLOWED_HOSTS=dcrpulse.example.com`
+
+**Notes**:
+- Set this when you front the UI with a reverse proxy that passes the browser's `Host` through. This is the variable a reverse-proxy install fails without.
+- A single `*` answers to anything; the dashboard logs a warning at startup when it is set that way.
+
+---
+
+### `DCRPULSE_LOG_LEVEL`
+**Description**: Verbosity of the dashboard's own log, readable under Settings -> Logs and written to `/dashboard-data/logs/dcrpulse.log`. Either a level on its own, or a level followed by per-subsystem overrides.
+
+**Default**: `info`
+
+**Example**: `DCRPULSE_LOG_LEVEL=info,MSIG=debug`
+
+**Values**:
+- Levels: `trace`, `debug`, `info`, `warn`, `error`, `critical`, `off`
+- Subsystems: `ALRT`, `BREL`, `DCRP`, `DEXC`, `GOVN`, `HTTP`, `LGHT`, `MCPS`, `MSIG`, `NODE`, `RPCC`, `SETT`, `STKE`, `TSTP`, `WLLT`
+
+An unknown level or subsystem is reported at startup rather than ignored.
+
+---
+
+### `MCP_ENABLE`
+**Description**: Seeds whether the dcrpulse agents MCP server comes up. It hands AI agents scoped, capped access to the wallet, so it is opted into rather than shipped on.
+
+**Default**: `false`
+
+**Example**: `MCP_ENABLE=true`
+
+**Notes**:
+- The toggle under Settings -> AI Agents is the normal way to turn it on. Once used it is remembered and overrides this variable, which then only seeds installs where the toggle has never been touched.
+- The server does not start without an app password set, whatever this is set to, because the routes that mint tokens and widen an agent's authority are otherwise ungated.
+
+---
+
+### `MCP_AGENTS_HOST` / `MCP_AGENTS_PORT`
+**Description**: Host interface and port the agents MCP server is published on, as `${MCP_AGENTS_HOST:-127.0.0.1}:${MCP_AGENTS_PORT:-8090}:8090`.
+
+**Default**: `127.0.0.1` and `8090` - loopback only.
+
+**Example**: `MCP_AGENTS_HOST=0.0.0.0`
+
+**Notes**:
+- Set `MCP_AGENTS_HOST=0.0.0.0` to let an AI agent on another LAN device reach it. The bearer token is the access gate and it crosses the LAN as plain HTTP, so prefer an SSH tunnel or a reverse proxy.
+- This is only the host publish. Inside the container the listener binds on `MCP_BIND=0.0.0.0`, set in `docker-compose.yml`, and on port 8090, which is the `MCP_PORT` default compiled into the dashboard rather than a value the compose file sets.
+
+---
+
+### `AGENT_OUTBOX_DIR`
+**Description**: Host directory the dashboard mounts read-only at `/agent-outbox` (set as `MCP_AGENT_OUTBOX_DIR` in `docker-compose.yml`). Files placed there can be sent to a Bison Relay contact by relative path with the `br_file_send_path` MCP tool, without base64-encoding through the agent.
+
+**Default**: unset, which maps to the empty named volume `dcrpulse_agent-outbox` (the feature is present but unused).
+
+**Example**: `AGENT_OUTBOX_DIR=/home/youruser/dcrpulse-agent-outbox`
+
+**Note**: it is the only directory that tool may read, so an agent cannot reach other host files.
+
+---
+
+### Daemon RPC wiring
+
 The dashboard receives the RPC host/port/user/pass/cert values for every daemon as environment variables (see the per-daemon wiring tables above). The full set in `docker-compose.yml` is:
 
 - dcrd: `DCRD_RPC_HOST=dcrd`, `DCRD_RPC_PORT=9109`, `DCRD_RPC_USER`, `DCRD_RPC_PASS`, `DCRD_RPC_CERT=/app-data/dcrd/rpc.cert`
 - dcrwallet: `DCRWALLET_RPC_HOST=dcrwallet`, `DCRWALLET_RPC_PORT=9110`, `DCRWALLET_GRPC_PORT=9111`, `DCRWALLET_RPC_USER`, `DCRWALLET_RPC_PASS`, `DCRWALLET_RPC_CERT=/app-data/dcrd/rpc.cert`
-- dcrlnd: `DCRLND_HOST=dcrlnd`, `DCRLND_GRPC_PORT=10009`, `DCRLND_TLS_CERT=/app-data/dcrlnd/tls.cert`, `DCRLND_MACAROON=/app-data/dcrlnd/admin.macaroon`
+- dcrlnd: `DCRLND_HOST=dcrlnd`, `DCRLND_GRPC_PORT=10009` (the cert and macaroon are per-wallet paths resolved in code)
 - brclientd: `BRCLIENTD_HOST=brclientd`, `BRCLIENTD_PORT=7676`, `BRCLIENTD_STATUS_PORT=7677`, `BRCLIENTD_DATA_DIR=/app-data/brclientd`
-- dcrdex: the `DCRDEX_*` set listed above
+- dcrdex: the `DCRDEX_*` set listed above (the certs are per-wallet paths resolved in code)
 - tor: `TOR_PROXY_IP=tor`, `TOR_PROXY_PORT=9050`, `TOR_CONTROL_PORT=9051`
 
 The `DASHBOARD_IMAGE_TAG` build/pull tag defaults to `latest`.
@@ -361,19 +429,19 @@ The `DASHBOARD_IMAGE_TAG` build/pull tag defaults to `latest`.
 
 ### Image tags
 
-By default, services build from source. Set these to pull pre-built images from GitHub Container Registry (GHCR) instead, which speeds up deployment:
+Every service resolves to a published image, so an unedited checkout pulls all seven from the GitHub Container Registry (`ghcr.io/karamble/dcrpulse-*`) rather than building them. Each tag defaults to `latest`, the rolling tag published on each master push. Set one here to pin a service to a release:
 
 ```bash
 #DCRD_IMAGE_TAG=latest
 #DCRWALLET_IMAGE_TAG=latest
 #DCRLND_IMAGE_TAG=latest
-#BRCLIENTD_IMAGE_TAG=dev
-#DCRDEX_IMAGE_TAG=dev
+#BRCLIENTD_IMAGE_TAG=latest
+#DCRDEX_IMAGE_TAG=latest
 #TOR_IMAGE_TAG=latest
 #DASHBOARD_IMAGE_TAG=latest
 ```
 
-(`env.example` lists `DCRD_IMAGE_TAG`, `DCRWALLET_IMAGE_TAG`, and `DASHBOARD_IMAGE_TAG`; the remaining tags exist in `docker-compose.yml` with the defaults shown above.)
+Run `docker compose pull` before `up` to move a `latest` deployment forward; compose keeps the image it already has otherwise. Building a service yourself overwrites the tag it resolves to here, so set the tag first (for example `BRCLIENTD_IMAGE_TAG=dev`) to keep a local build separate from the published image.
 
 ### `APP_DATA_DIR`
 **Description**: Location of the shared application-data volume. For app-store integrations (Umbrel, Start9, CasaOS) this can point at a managed path.
@@ -425,7 +493,7 @@ DCRWALLET_RPC_PASS=$(openssl rand -base64 32)
 DCRDEX_RPC_USER=dex_production
 DCRDEX_RPC_PASS=$(openssl rand -base64 32)
 
-# Pull pre-built images for faster, reproducible deploys
+# Pin the published images to a release for reproducible deploys
 DCRD_IMAGE_TAG=latest
 DCRWALLET_IMAGE_TAG=latest
 DASHBOARD_IMAGE_TAG=latest
@@ -435,18 +503,9 @@ DCRWALLET_GAP_LIMIT=20
 DCRD_EXTRA_ARGS=--txindex
 ```
 
-**Testnet configuration**:
+**dcrlnd on testnet** (a development knob; the node and wallet stay on mainnet):
 ```bash
-DCRD_RPC_USER=testnet_user
-DCRD_RPC_PASS=testnet_pass123
-
-DCRWALLET_RPC_USER=testnet_wallet
-DCRWALLET_RPC_PASS=testnet_wallet_pass456
-
-# Enable testnet for the node, wallet, and Lightning
-DCRD_TESTNET=1
 LN_TESTNET=true
-
 ```
 
 ---
@@ -458,6 +517,7 @@ LN_TESTNET=true
 | Service | Port | Bind | Protocol | Notes |
 |---|---|---|---|---|
 | dashboard | 8080 | `${DASHBOARD_HOST_BIND}` (default `127.0.0.1`) | HTTP | Web UI and API (the only externally served app) |
+| dashboard | 8090 | `${MCP_AGENTS_HOST}` (default `127.0.0.1`) | HTTP | Agents MCP server; the listener runs only while MCP is enabled |
 | dcrd | 9108 | `${DCRD_P2P_HOST_BIND}` (default `0.0.0.0`) | P2P | Peer connections |
 | dcrd | 9109 | `127.0.0.1` | RPC | JSON-RPC (localhost only) |
 | dcrwallet | 9110 | `127.0.0.1` | RPC | JSON-RPC (localhost only) |
@@ -465,6 +525,7 @@ LN_TESTNET=true
 | dcrlnd | 10009 | internal | gRPC | No host port |
 | brclientd | 7677 | `127.0.0.1` | HTTP | Status server (localhost only) |
 | brclientd | 7676 | internal | clientrpc | No host port |
+| brclientd | 8891 | `${MCP_BRIDGE_HOST}` (default `127.0.0.1`) | HTTP | Bison Relay MCP bridge |
 | dcrdex | 5757 | internal | RPC | bisonw RPC, no host port |
 | dcrdex | 5758 | internal | HTTP/WS | bisonw web/WebSocket, no host port |
 | tor | 9050 | internal | SOCKS | Tor proxy, no host port |

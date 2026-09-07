@@ -160,11 +160,11 @@ docker exec dcrd dcrctl --rpcuser=decred --rpcpass=yourpassword --rpcserver=127.
 
 ## Security Features
 
-- ✅ Runs as non-root user
-- ✅ Minimal Alpine base image
-- ✅ No unnecessary tools or packages
-- ✅ Built from official source
-- ✅ Multi-stage build (no build artifacts in final image)
+- Runs as non-root user
+- Minimal Alpine base image
+- No unnecessary tools or packages
+- Built from official source
+- Multi-stage build (no build artifacts in final image)
 
 ## Updating dcrd
 

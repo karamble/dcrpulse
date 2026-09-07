@@ -20,10 +20,10 @@ blocks until it exists. Until then the container sits idle.
 
 Reads from the shared `/app-data` volume:
 
-- `/app-data/dcrd/rpc.cert` — dcrwallet's TLS cert. Mutual-TLS auth
+- `/app-data/dcrd/rpc.cert` - dcrwallet's TLS cert. Mutual-TLS auth
   on the dcrlnd ↔ dcrwallet hop uses this same cert as both server
   identity and client credential.
-- `/app-data/dcrlnd/.account` — single-line file with the dcrwallet
+- `/app-data/dcrlnd/.account` - single-line file with the dcrwallet
   account number to bind. Written by the dashboard's
   `/api/wallet/ln/setup` handler.
 
@@ -31,20 +31,20 @@ Reads from the shared `/app-data` volume:
 
 Writes to `/app-data/dcrlnd/`:
 
-- `tls.cert`, `tls.key` — auto-generated on first start, used by the
+- `tls.cert`, `tls.key` - auto-generated on first start, used by the
   dashboard to authenticate dcrlnd's gRPC.
-- `admin.macaroon` — auto-generated, supplied as
+- `admin.macaroon` - auto-generated, supplied as
   `grpc-metadata-macaroon` header on every dashboard call.
-- `data/`, `logs/`, `dcrlnd.conf` — dcrlnd's own state directories.
+- `data/`, `logs/`, `dcrlnd.conf` - dcrlnd's own state directories.
 
 ## Environment variables
 
-- `LN_TESTNET=true` — appends `--testnet` to the dcrlnd invocation.
-- `DCRWALLET_HOST` — dcrwallet container hostname, defaults to
+- `LN_TESTNET=true` - appends `--testnet` to the dcrlnd invocation.
+- `DCRWALLET_HOST` - dcrwallet container hostname, defaults to
   `dcrwallet`.
-- `DCRWALLET_GRPC_PORT` — defaults to `9111`.
+- `DCRWALLET_GRPC_PORT` - defaults to `9111`.
 
 ## Build args
 
-- `DCRLND_VERSION` — git ref to clone. Defaults to upstream master in
+- `DCRLND_VERSION` - git ref to clone. Defaults to upstream master in
   the Dockerfile; the top-level compose pins this to a released tag.

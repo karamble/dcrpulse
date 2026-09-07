@@ -454,9 +454,11 @@ source account's spendable balance stays above a threshold you set.
    passphrase. Use **Stop** to halt it.
 
 A status badge shows whether the autobuyer is running, and an **Autobuyer
-events** log streams its activity (and the last error, if any). With privacy
-configured, starting the autobuyer stops the standalone mixer; the autobuyer
-mixes the tickets it buys while it runs.
+events** log streams its activity (and the last error, if any). The autobuyer
+mixes the tickets it buys while it runs, so it refuses to start while the
+standalone mixer is running: **Start** stays disabled and the request returns
+**409 Conflict**. Stop the mixer on the **Privacy** page first. It also refuses
+to start while a ticket purchase is in progress.
 
 **Caution**: Only enable this with a balance you intend to fully commit to
 tickets.

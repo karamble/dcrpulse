@@ -175,8 +175,7 @@ services:
     container_name: dcrpulse-dcrd-prod
     restart: always
     volumes:
-      - dcrd-data:/home/dcrd/.dcrd
-      - certs:/certs
+      - app-data:/app-data
     ports:
       - "9108:9108"  # P2P
     networks:
@@ -187,7 +186,7 @@ services:
     mem_limit: 2g
     cpus: 2.0
     healthcheck:
-      test: ["CMD", "dcrctl", "--rpcuser=${DCRD_RPC_USER}", "--rpcpass=${DCRD_RPC_PASS}", "--rpcserver=127.0.0.1:9109", "--rpccert=/certs/rpc.cert", "getblockcount"]
+      test: ["CMD", "dcrctl", "--rpcuser=${DCRD_RPC_USER}", "--rpcpass=${DCRD_RPC_PASS}", "--rpcserver=127.0.0.1:9109", "--rpccert=/app-data/dcrd/rpc.cert", "getblockcount"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -209,8 +208,7 @@ services:
       dcrd:
         condition: service_healthy
     volumes:
-      - dcrwallet-data:/home/dcrwallet/.dcrwallet
-      - certs:/certs:ro
+      - app-data:/app-data
     networks:
       - decred-network
     environment:
@@ -222,11 +220,13 @@ services:
     mem_limit: 1g
     cpus: 1.0
     healthcheck:
-      test: ["CMD", "dcrctl", "--wallet", "--rpcuser=${DCRWALLET_RPC_USER}", "--rpcpass=${DCRWALLET_RPC_PASS}", "--rpcserver=127.0.0.1:9110", "--rpccert=/certs/rpc.cert", "walletinfo"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      # Healthy while dcrwallet keeps its control state file fresh, the same
+      # probe the standard docker-compose.yml uses.
+      test: ["CMD", "sh", "-c", "S=/app-data/dcrwallet/control/state.json; [ -f \"$$S\" ] && [ $$(( $$(date +%s) - $$(stat -c %Y \"$$S\") )) -lt 60 ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -243,8 +243,11 @@ services:
         condition: service_healthy
       dcrwallet:
         condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
     volumes:
-      - certs:/certs:ro
+      - app-data:/app-data
+      - dashboard-data:/dashboard-data
     networks:
       - decred-network
     environment:
@@ -253,14 +256,19 @@ services:
       - DCRD_RPC_PORT=9109
       - DCRD_RPC_USER=${DCRD_RPC_USER}
       - DCRD_RPC_PASS=${DCRD_RPC_PASS}
+      - DCRD_RPC_CERT=/app-data/dcrd/rpc.cert
       - DCRWALLET_RPC_HOST=dcrwallet
       - DCRWALLET_RPC_PORT=9110
+      - DCRWALLET_GRPC_PORT=9111
       - DCRWALLET_RPC_USER=${DCRWALLET_RPC_USER}
       - DCRWALLET_RPC_PASS=${DCRWALLET_RPC_PASS}
+      - DCRWALLET_RPC_CERT=/app-data/dcrd/rpc.cert
+      - DASHBOARD_ALLOWED_HOSTS=${DASHBOARD_ALLOWED_HOSTS:-}
+      - TRUSTED_PROXY=true
     mem_limit: 512m
     cpus: 1.0
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/auth/status"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -275,10 +283,27 @@ networks:
     driver: bridge
 
 volumes:
-  dcrd-data:
-  dcrwallet-data:
-  certs:
+  app-data:
+  dashboard-data:
 ```
+
+The `dcrd` and `dcrwallet` images write everything under `/app-data`, so one
+shared volume mounted there carries both daemons' data and the RPC certificate
+dcrd generates at `/app-data/dcrd/rpc.cert`. The dashboard keeps its own
+config, alerts and timestamp archive on a second volume at `/dashboard-data`,
+and publishes `8080` on the host loopback because the Nginx in Step 6 runs on
+the host and proxies to `http://localhost:8080`, not into the compose network.
+
+The dashboard healthcheck probes `/api/auth/status` rather than `/api/health`,
+because `/api/health` sits behind the app-password gate and returns 401 once
+that gate is on.
+
+Two settings exist for the proxy in front. `TRUSTED_PROXY=true` makes the
+backend honour `X-Forwarded-Host` and `X-Forwarded-Proto` when it checks that a
+state-changing request is same-origin. `DASHBOARD_ALLOWED_HOSTS` is read from
+the process environment, not from `.env` at run time, so it has to appear in
+this `environment:` block for the value set in Step 6 to reach the dashboard at
+all.
 
 ---
 
@@ -392,8 +417,9 @@ sudo certbot renew --dry-run
 # Test HTTPS access
 curl https://your-domain.com
 
-# Test API
-curl https://your-domain.com/api/health
+# Test API. /api/auth/status answers without a session; /api/health sits
+# behind the app-password gate and returns 401 once that gate is on.
+curl https://your-domain.com/api/auth/status
 
 # Check all services
 docker compose -f docker-compose.prod.yml ps
@@ -525,9 +551,9 @@ tar czf "$BACKUP_DIR/configs-$DATE.tar.gz" \
 # Backup volumes (blockchain data - optional, large)
 # Uncomment if needed
 # docker run --rm \
-#     -v dcrpulse_dcrd-data:/data \
+#     -v dcrpulse_app-data:/data \
 #     -v $BACKUP_DIR:/backup \
-#     alpine tar czf /backup/dcrd-data-$DATE.tar.gz -C /data .
+#     alpine tar czf /backup/app-data-$DATE.tar.gz -C /data .
 
 # Keep only last 7 backups
 find $BACKUP_DIR -type f -mtime +7 -delete
@@ -565,8 +591,9 @@ if ! docker compose -f /opt/dcrpulse/docker-compose.prod.yml ps | grep -q "Up"; 
     exit 1
 fi
 
-# Check API health
-if ! curl -sf http://localhost:8080/api/health > /dev/null; then
+# Check API health. /api/health needs a session once the app password is on,
+# so probe /api/auth/status, which answers unauthenticated.
+if ! curl -sf http://localhost:8080/api/auth/status > /dev/null; then
     echo "ERROR: API health check failed!"
     exit 1
 fi
@@ -613,7 +640,7 @@ docker compose -f docker-compose.prod.yml restart
 docker compose -f docker-compose.prod.yml down
 
 # Restore from backup
-tar xzf /backup/dcrd-data-YYYYMMDD.tar.gz -C /var/lib/docker/volumes/dcrd-data/_data
+tar xzf /backup/app-data-YYYYMMDD.tar.gz -C /var/lib/docker/volumes/dcrpulse_app-data/_data
 
 # Start services
 docker compose -f docker-compose.prod.yml up -d

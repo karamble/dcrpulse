@@ -359,7 +359,7 @@ build-dcrd: ## Build dcrd (usage: make build-dcrd VERSION=release-v2.0.6)
 	fi
 
 dev-backend: ## Run backend in development mode (outside Docker)
-	cd dashboard && go run cmd/dcrpulse/main.go
+	cd dashboard && go run ./cmd/dcrpulse
 
 dev-frontend: ## Run frontend in development mode (outside Docker)
 	cd dashboard/web && npm run dev

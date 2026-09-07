@@ -115,8 +115,10 @@ DASHBOARD_ALLOWED_HOSTS=your-domain.com
 
 It answers to IP addresses, localhost, container/service names and
 `.local`/`.onion` names without any entry, so only proxied domain names need
-listing. Set `TRUSTED_PROXY=true` as well if your proxy sends
-`X-Forwarded-Host`.
+listing. If your proxy sends `X-Forwarded-Host`, add `TRUSTED_PROXY=true` to
+the `dashboard` service's `environment:` block in `docker-compose.yml`. Unlike
+`DASHBOARD_ALLOWED_HOSTS`, that variable is not passed through from `.env`, so
+a value set there never reaches the process.
 
 #### Security Headers
 
@@ -271,27 +273,31 @@ sudo iptables-save > /etc/iptables/rules.v4
 - **80**: HTTP (redirect to HTTPS)
 - **443**: HTTPS (public access)
 
-**Internal Ports** (Docker network only):
-- **9109**: dcrd RPC (not exposed to internet)
-- **9110**: dcrwallet RPC (not exposed to internet)
-- **8080**: Backend API (behind Nginx proxy)
+**Loopback Ports** (published on the host, bound to `127.0.0.1`):
+- **9109**: dcrd RPC (not reachable from the network)
+- **9110**, **9111**: dcrwallet JSON-RPC and gRPC
+- **8080**: dashboard UI and API (behind Nginx proxy)
+- **8090**: agents MCP server
+- **7677**, **8891**: brclientd status and MCP bridge
 
 **Docker Compose (secure)**:
 ```yaml
 services:
   dcrd:
     ports:
-      - "9108:9108"  # P2P only
-    # NOT exposed: 9109 (RPC - internal only)
-  
-  backend:
-    # NOT exposed directly
-    # Accessed via Nginx proxy
-  
-  frontend:
-    # NOT exposed directly
-    # Served by Nginx
+      - "${DCRD_P2P_HOST_BIND:-0.0.0.0}:9108:9108"  # P2P, network-reachable
+      - "127.0.0.1:9109:9109"                       # RPC, loopback only
+
+  dashboard:
+    ports:
+      - "${DASHBOARD_HOST_BIND:-127.0.0.1}:${DASHBOARD_PORT:-8080}:8080"
+      - "${MCP_AGENTS_HOST:-127.0.0.1}:${MCP_AGENTS_PORT:-8090}:8090"
 ```
+
+These ports are published on the host, not confined to the compose network, so
+anything running on the machine can reach them. Only the `127.0.0.1` bind keeps
+them off the network. One `dashboard` service serves both the UI and the API;
+there is no separate backend or frontend container.
 
 ---
 

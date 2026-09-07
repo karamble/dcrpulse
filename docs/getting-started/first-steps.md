@@ -22,13 +22,10 @@ After installation, complete these steps:
 
 After starting Decred Pulse, `dcrd` begins downloading and validating the blockchain.
 
-**Time Required**:
-- **Mainnet**: 4-8 hours
-- **Testnet**: 30-60 minutes
+**Time Required**: 4-8 hours on mainnet, which is the only network the stack
+runs (see [Testnet](installation.md#testnet)).
 
-**Disk Space**:
-- **Mainnet**: ~30 GB and growing
-- **Testnet**: ~1-2 GB
+**Disk Space**: ~30 GB and growing.
 
 ---
 
@@ -110,7 +107,7 @@ Verified 1200 blocks in the last 30 seconds
 │   Syncing Blockchain                 │
 │  ━━━━━━━━━━━━━━░░░░░░  68%            │
 │                                        │
-│  Block 692,847 / 1,016,401            │
+│  Block 758,120 / 1,113,281            │
 │  ~2 hours remaining                    │
 └────────────────────────────────────────┘
 ```

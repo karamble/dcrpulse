@@ -43,7 +43,7 @@ During initial sync:
 |  Syncing Blockchain                  68%   |
 |  [================........]                |
 |                                            |
-|  Processing blocks: 1,016,234 / 1,016,401  |
+|  Processing blocks: 758,120 / 1,113,281    |
 +--------------------------------------------+
 ```
 
@@ -70,7 +70,7 @@ The same version also appears in the "Version" badge in the header.
 Lists the most recently mined blocks (newest first). It is titled "Recent Blocks" with a "Latest mined blocks" subtitle.
 
 Each row shows:
-- **Block height**: e.g., "Block #1,016,401"
+- **Block height**: e.g., "Block #1,113,281"
 - **Block hash**: First 16 characters, shown in monospace
 - **Time ago**: How long since the block was mined (for example "2m ago")
 
@@ -101,7 +101,7 @@ The page shows two rows of metric cards.
 +-------------------------+
 |  Circulating Supply     |
 |                         |
-|    15,234,567.89 DCR    |
+|    17,593,867.15 DCR    |
 |    DCR of 21 million    |
 +-------------------------+
 ```
@@ -111,8 +111,8 @@ The page shows two rows of metric cards.
 **Maximum Supply**: 21,000,000 DCR
 
 **Emission Schedule**:
-- Block reward decreases every 6,144 blocks (~21 days)
-- Current reward: ~7.5 DCR per block
+- Block reward drops to 100/101 of its previous value every 6,144 blocks (~21 days)
+- At block 1,113,281 that is 181 reductions, leaving ~5.15 DCR per block
 - Final DCR: ~2140 (estimated)
 
 ---
@@ -123,8 +123,8 @@ The page shows two rows of metric cards.
 +-------------------------+
 |  Supply Staked          |
 |                         |
-|    6,123,456.78 DCR     |
-|    40.2% of supply      |
+|   11,366,135.12 DCR     |
+|    64.6% of supply      |
 +-------------------------+
 ```
 
@@ -226,11 +226,11 @@ Each peer displays:
 |  Connected Peers                  12 Active      |
 +--------------------------------------------------+
 | * 192.0.2.1:9108                          SYNC   |
-|   dcrd 2.0.6                                      |
+|   dcrd 2.0.6                                     |
 |   Ping: 45ms   Up: 2h 34m   Traffic: 45.6 MB     |
 |                                                  |
 |   198.51.100.42:9108                             |
-|   dcrd 2.0.5                                      |
+|   dcrd 2.0.5                                     |
 |   Ping: 89ms   Up: 5d 12h   Traffic: 120 MB      |
 +--------------------------------------------------+
 ```
@@ -642,7 +642,7 @@ Stacks vertically:
 Circulating Supply = Total Mined - Treasury - Unmined
 ```
 
-**Growth Rate**: ~7.5 DCR per block (~2,160 DCR/day)
+**Growth Rate**: ~5.15 DCR per block at block 1,113,281 (~1,480 DCR/day), falling by 1/101 every 6,144 blocks
 
 **Use Case**: Market cap calculation
 

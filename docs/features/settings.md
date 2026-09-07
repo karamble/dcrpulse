@@ -3,17 +3,19 @@
 The **Settings** area gathers the dashboard's global, app-wide controls into a
 single tabbed page. It covers wallet maintenance, privacy and external-request
 preferences, Tor connectivity, log inspection, theming, the optional app
-password that protects the whole dashboard, and version information.
+password that protects the whole dashboard, alert categories, AI agent access,
+and version information.
 
 ## Overview
 
-Settings is organized as a horizontal tab bar with seven tabs. Each tab is its
-own route under `/settings`, so the active tab is reflected in the URL and can
-be bookmarked or linked directly. The tab bar scrolls horizontally on narrow
+Settings is organized as a horizontal tab bar with nine tabs. Each tab is its
+own route under `/wallet/settings`, so the active tab is reflected in the URL and
+can be bookmarked or linked directly. The tab bar scrolls horizontally on narrow
 screens.
 
-**Access**: Click the **"Settings"** entry in the header navigation, then choose
-a tab.
+**Access**: Click the **"Settings"** entry in the wallet navigation, then choose
+a tab. Settings sits inside the wallet section, so it is reachable once a wallet
+is open.
 
 **Tabs:**
 
@@ -23,6 +25,10 @@ a tab.
 - **Logs** - read-only tail of each daemon's log file
 - **Themes** - light/dark/custom themes with a live editor and import/export
 - **Security** - the optional app password that gates the whole dashboard
+- **Alerts** - which categories the alert center raises (node, wallet, staking,
+  Lightning, DEX, Bison Relay, system)
+- **AI Agents** - the MCP server and per-agent access, covered in
+  [AI Agents (MCP)](ai-agents-mcp.md)
 - **About** - dcrpulse and daemon version information, plus reference links
 
 ---
@@ -42,10 +48,19 @@ Clicking **Change** opens a modal that asks for:
 - **Current passphrase**
 - **New passphrase** (must be at least 8 characters)
 - **Confirm new passphrase**
+- **DCRDEX app password** - shown only while the DEX is locked. The DEX stores the
+  wallet passphrase too, so it needs the app password chosen at DEX setup (not the
+  wallet passphrase) to receive the new one; it stays locked afterwards.
 
 The modal validates locally that the new passphrase is long enough and that the
-two new entries match before the **Change passphrase** button enables. Errors
-returned by the wallet are shown in the modal.
+two new entries match before the **Change passphrase** button enables; with a
+locked DEX it also waits for the DCRDEX app password field above. Errors returned
+by the wallet are shown in the modal.
+
+When Lightning is set up, the modal continues after the change instead of closing:
+dcrlnd is restarted to re-key its macaroons, then unlocked with the new passphrase.
+If the automatic unlock does not take, the modal offers a **Wallet passphrase**
+field to unlock it by hand, and lets you close it and unlock later.
 
 ### Address Discovery
 
@@ -266,8 +281,47 @@ can reach the dashboard will be able to use it.
   login endpoint are reachable without a session.
 - **Disabling** the password invalidates all existing sessions. **Changing** the
   password leaves your current session valid.
-- The gate is fail-open by design: it is only treated as enabled when a stored
-  password actually exists, so a broken or partial config cannot lock you out.
+- A stray enabled flag cannot lock you out: the gate counts as enabled only when
+  a stored password hash and a session secret both exist. A half-written or
+  unreadable auth config is the other case and fails closed - the dashboard locks
+  and answers `503 dashboard locked: the app-password config could not be loaded;
+  repair it and restart the dashboard` on every `/api` route except the
+  password-status check, which stays reachable so the setup screen can still say
+  what happened. The lock is read at startup, so it clears only once the config is
+  repaired and the dashboard restarted.
+
+---
+
+## Alerts Tab
+
+Which categories the alert center is allowed to raise. Every category is on by
+default and each one is an opt-out toggle:
+
+| Category | Raises on |
+|---|---|
+| Node | dcrd unreachable, zero peers, stalled chain sync |
+| Wallet | Incoming payments |
+| Staking | Ticket purchases, votes, misses, expiries, revocations |
+| Lightning | Force-closed channels, peer connectivity |
+| DEX | Completed trades, bisonw connectivity |
+| Bison Relay | brclientd connectivity |
+| System | Disk space on the data volumes |
+
+Turning a category off stops it at the source rather than hiding it: the engine
+drops those alerts at raise time, and any of that category's active conditions
+resolve as it goes off. Entries already recorded stay in the alert center until
+you read them.
+
+Alerts never leave the box. They are not delivered over Bison Relay, email, or
+any other transport.
+
+---
+
+## AI Agents Tab
+
+The MCP server toggle, the Bison Relay bridge, and per-agent tokens and scopes.
+Both listeners ship off. See [AI Agents (MCP)](ai-agents-mcp.md) for the whole
+surface.
 
 ---
 
@@ -385,9 +439,10 @@ restart the dashboard.
 
 **Solutions:**
 
-1. The gate is fail-open only against a broken config, not a forgotten password.
-   The password hash is stored in the global config; clearing the auth fields
-   there disables the gate.
+1. A forgotten password cannot be recovered from the dashboard. The password hash
+   is stored in the global config; clearing the auth fields there disables the
+   gate. Clear them together - a hash left behind without its session secret
+   locks the whole API with a 503 instead.
 2. Choose a password you can recover and keep a record of it.
 
 ---

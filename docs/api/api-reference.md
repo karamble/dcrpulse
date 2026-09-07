@@ -1,8 +1,8 @@
 # API Reference
 
-API documentation for the Decred Pulse dashboard backend. Most endpoints use JSON for request and response bodies; a few stream over Server-Sent Events or WebSocket, and several serve or accept binary payloads (file embeds, downloads, backups, uploads).
+API documentation for the Decred Pulse dashboard backend. Most endpoints use JSON for request and response bodies; fourteen upgrade to a WebSocket, and several serve or accept binary payloads (file embeds, downloads, backups, uploads). No `/api` route uses Server-Sent Events; the MCP server on its own port does, because the protocol calls for it (see [AI Agents (MCP)](../features/ai-agents-mcp.md)).
 
-This reference documents the routes that actually exist, grouped the same way they are registered in `dashboard/cmd/dcrpulse/main.go`. The Node and Wallet sections below are documented in detail; the remaining feature groups are summarized with a representative list of endpoints and a pointer to the matching feature doc.
+This reference documents the routes that actually exist, grouped the same way they are registered in `dashboard/cmd/dcrpulse/main.go`. The Node and Wallet sections below are documented in detail, and each feature group that follows carries the endpoints worth calling out plus a pointer to the matching feature doc. Every one of the 393 registered routes is listed in [Complete Route Index](#complete-route-index) at the end.
 
 ## Base URL
 
@@ -26,7 +26,7 @@ Decred Pulse is a single-user dashboard. There are two layers in front of every 
 
 2. **Optional app-password gate.** A single dashboard-wide password can be enabled under `/api/auth/*`. It is **off by default**, in which case the gate is a pass-through. When enabled, every `/api` route requires a valid signed session cookie (`dcrpulse_session`, HttpOnly, SameSite=Strict, 30-day TTL); only the login handshake (`/api/auth/login` and `/api/auth/status`) is exempt so the client can reach it. A failed gate returns `401 Unauthorized` with an `X-Dashboard-Auth: required` header so the frontend can distinguish it from a downstream daemon `401`.
 
-Request bodies on state-changing methods are capped at 1 MiB (multipart uploads are exempt so file-attachment handlers can apply their own larger limit). A handful of expensive or daemon-cycling routes are additionally rate limited (see the per-group notes below) and return `429 Too Many Requests` when the allowance is exceeded.
+Request bodies on state-changing methods are capped at 1 MiB. The cap skips `multipart/*` requests, but no route accepts one today: uploads (avatars, file sends, store files) arrive base64-encoded in JSON and are bounded by the same 1 MiB. A handful of expensive or daemon-cycling routes are additionally rate limited (see the per-group notes below) and return `429 Too Many Requests` when the allowance is exceeded.
 
 There is no separate RPC/credential layer for clients: the backend speaks to the daemons on the client's behalf using its environment-configured credentials.
 
@@ -51,7 +51,13 @@ Error responses:
 }
 ```
 
-Streaming routes (paths ending in `/events`, `/stream`, `*-events`, or `/ws`) upgrade to WebSocket or Server-Sent Events instead of returning a single JSON body; binary routes (file embeds/downloads, backup export, uploads) return or accept raw bytes.
+Fourteen routes upgrade to a WebSocket instead of returning a single JSON body. Most are named for it, but two are not - `GET /api/wallet/ln/send` and `GET /api/br/rtdt/sessions/{rv}/audio` - so read the Notes column in the [Complete Route Index](#complete-route-index) rather than the path:
+
+`/api/node/sync/stream`, `/api/wallet/privacy/events`, `/api/wallet/staking/purchase/events`, `/api/wallet/staking/autobuyer/events`, `/api/wallet/governance/votetrickle/events`, `/api/wallet/grpc/stream-rescan`, `/api/wallet/ln/channel-events`, `/api/wallet/ln/invoice-events`, `/api/wallet/ln/liquidity/confirm/events`, `/api/wallet/ln/send`, `/api/br/events`, `/api/br/rtdt/sessions/{rv}/audio`, `/api/dcrdex/ws`, `/api/dcrdex/notify`.
+
+Every browser socket is opened through one helper that applies the same-origin check and a read limit: 64 KiB on the control and event sockets, 4 MiB on the DCRDEX relay, and the Bison Relay protocol maximum on the BR sockets.
+
+Binary routes (file embeds and downloads, backup and CSV export, the timestamp proof) return raw bytes rather than JSON. Bytes that came from a Bison Relay peer are served as `application/octet-stream` with `Content-Disposition: attachment` unless the declared type is an allowlisted image, and always under `default-src 'none'; sandbox`.
 
 ---
 
@@ -71,9 +77,21 @@ GET /api/health
 ```json
 {
   "status": "healthy",
-  "timestamp": "2025-10-06T12:34:56Z"
+  "rpcConnected": true,
+  "walletRPCConnected": true,
+  "dcrdTLS": true,
+  "walletTLS": true,
+  "time": "2025-10-06T12:34:56.789Z"
 }
 ```
+
+**Fields**:
+- `status`: Always `"healthy"` when the server answers
+- `rpcConnected`: A dcrd RPC client is initialized
+- `walletRPCConnected`: A dcrwallet RPC client is initialized
+- `dcrdTLS`: The dcrd connection uses TLS
+- `walletTLS`: The dcrwallet connection uses TLS
+- `time`: Server time when the response was built
 
 **Status Codes**:
 - `200`: Server is healthy
@@ -91,61 +109,92 @@ GET /api/dashboard
 **Response**:
 ```json
 {
-  "node": {
-    "version": 20006,
-    "versionStr": "2.0.6",
-    "protocolVersion": 8,
-    "blocks": 1016401,
-    "timeOffset": 0,
-    "connections": 12,
-    "proxy": "",
-    "difficulty": 223847291.45,
-    "testnet": false,
-    "relayFee": 0.0001,
-    "errors": ""
+  "nodeStatus": {
+    "status": "running",
+    "syncProgress": 100,
+    "version": "v2.0.6",
+    "syncPhase": "synced",
+    "syncMessage": "Fully synced"
   },
-  "blockchain": {
-    "chain": "mainnet",
-    "blocks": 1016401,
-    "headers": 1016401,
-    "bestBlockHash": "000000000000000000abc123...",
+  "blockchainInfo": {
+    "blockHeight": 1113281,
+    "blockHash": "000000000000000000abc123...",
     "difficulty": 223847291.45,
-    "verificationProgress": 1.0,
-    "chainWork": "00000000000000000000000000abc...",
-    "initialBlockDownload": false,
-    "maxBlockSize": 393216,
-    "deployments": {...}
+    "chainSize": 0,
+    "blockTime": "2m 14s",
+    "recentBlocks": [
+      {
+        "height": 1113281,
+        "hash": "000000000000000000abc123...",
+        "timestamp": 1696600000
+      }
+    ]
+  },
+  "networkInfo": {
+    "peerCount": 12,
+    "hashrate": "612.40 PH/s",
+    "networkHashPS": 612400000000000000
   },
   "peers": [
     {
       "id": 1,
-      "addr": "192.0.2.1:9108",
-      "addrLocal": "10.0.0.1:54321",
-      "services": "0000000000000005",
-      "version": 20006,
-      "subVer": "/dcrd:2.0.6/",
-      "startingHeight": 1016350,
-      "currentHeight": 1016401,
-      "bytesReceived": 12345678,
-      "bytesSent": 23456789,
-      "connTime": 1696600000,
-      "timeOffset": 0,
-      "pingTime": 0.045,
-      "inbound": false
+      "address": "192.0.2.1:9108",
+      "protocol": "TCP",
+      "latency": "45ms",
+      "connTime": "2h 15m",
+      "traffic": "35.71 MB",
+      "version": "2.0.6",
+      "isSyncNode": false,
+      "inbound": false,
+      "tor": false
     }
   ],
-  "mempool": {
-    "size": 18,
-    "bytes": 16160
+  "supplyInfo": {
+    "circulatingSupply": 15234567.89,
+    "stakedSupply": 6123456.78,
+    "stakedPercent": 40.19,
+    "exchangeRate": "N/A",
+    "treasurySize": 812345.67,
+    "mixedPercent": "N/A"
   },
-  "supply": {
-    "circulating": 15234567.89,
-    "staked": 6123456.78,
-    "mixed": 4567890.12
+  "stakingInfo": {
+    "ticketPrice": 293.0845535,
+    "nextTicketPrice": 293.0845535,
+    "poolSize": 41095,
+    "lockedDCR": 6123456.78,
+    "participationRate": 40.19,
+    "allMempoolTix": 15,
+    "immature": 1284,
+    "live": 41095,
+    "voted": 0,
+    "missed": 0,
+    "revoked": 0
+  },
+  "mempoolInfo": {
+    "size": 18,
+    "bytes": 16160,
+    "txCount": 18,
+    "totalFee": 0.00214,
+    "averageFeeRate": 0.0001,
+    "tickets": 3,
+    "votes": 5,
+    "revocations": 0,
+    "regularTxs": 9,
+    "coinJoinTxs": 1
   },
   "lastUpdate": "2025-10-06T12:34:56.789Z"
 }
 ```
+
+**Fields**:
+- `nodeStatus`: dcrd process state (`running`, `syncing`, `connecting`), sync percentage, version string, and the current phase (`synced`, `starting`, `headers`, `blocks`) with a human-readable message
+- `blockchainInfo`: Best block height and hash, difficulty ratio, time since the last block, and the three most recent blocks
+- `networkInfo`: Peer count and network hashrate, both raw and formatted
+- `peers`: One entry per connected peer, with formatted latency, connection age, and total traffic, plus `isSyncNode`, `inbound`, and `tor` flags
+- `supplyInfo`: Circulating, staked, and treasury amounts in DCR. An amount dcrd could not supply is omitted rather than sent as zero; `exchangeRate` and `mixedPercent` are `"N/A"`
+- `stakingInfo`: Ticket price, pool size, locked DCR, participation rate, and mempool ticket counts
+- `mempoolInfo`: Mempool size and byte count, fee totals, and per-type transaction counts
+- `degraded`: Present only when a section failed this poll; it names the sections that are zeroed so the UI can show them as unavailable rather than as real zeros
 
 **Status Codes**:
 - `200`: Success
@@ -153,145 +202,37 @@ GET /api/dashboard
 
 ---
 
-### Node Status
+### Node Sync Stream
 
-Get current node information and sync status.
+Subscribe to dcrd sync-progress snapshots. The connection upgrades to a WebSocket and receives the current snapshot immediately, then one message per refresh. Refreshes are driven by dcrd's block-connected notifications, throttled to at most one per second, with a safety timer every 20 seconds while the node is running and every 3 seconds while it is not.
 
 ```http
-GET /api/node/status
+GET /api/node/sync/stream
 ```
 
-**Response**:
+**Message**:
 ```json
 {
-  "version": 20006,
-  "versionStr": "2.0.6",
-  "protocolVersion": 8,
-  "blocks": 1016401,
-  "timeOffset": 0,
-  "connections": 12,
-  "proxy": "",
-  "difficulty": 223847291.45,
-  "testnet": false,
-  "relayFee": 0.0001,
-  "errors": ""
+  "status": "syncing",
+  "syncProgress": 68.5,
+  "syncPhase": "blocks",
+  "syncMessage": "Downloading blocks: 758,120 of 1,113,281",
+  "blocks": 758120,
+  "headers": 1113281,
+  "syncHeight": 1113281
 }
 ```
 
 **Fields**:
-- `version`: dcrd version number
-- `versionStr`: Human-readable version
-- `protocolVersion`: Network protocol version
-- `blocks`: Current block height
-- `timeOffset`: Time offset in seconds
-- `connections`: Number of peer connections
-- `difficulty`: Current mining difficulty
-- `testnet`: `true` if testnet, `false` if mainnet
-- `relayFee`: Minimum relay fee in DCR
-- `errors`: Any error messages
+- `status`: `running`, `syncing`, `connecting`, `starting`, `upgrading`, or `error`
+- `syncProgress`: Percentage complete (0-100)
+- `syncPhase`: `synced`, `starting`, `headers`, or `blocks`
+- `syncMessage`: Human-readable status line
+- `blocks`, `headers`: dcrd's current block and header counts
+- `syncHeight`: The sync peer's advertised tip, used as the denominator so the bar cannot run backwards
+- `startupNote`, `startupLog`: Present only while dcrd is unreachable - the startup explanation and the dcrd log line that classified it
 
-**Status Codes**:
-- `200`: Success
-- `503`: Node RPC not connected
-
----
-
-### Blockchain Information
-
-Get detailed blockchain state and sync information.
-
-```http
-GET /api/blockchain/info
-```
-
-**Response**:
-```json
-{
-  "chain": "mainnet",
-  "blocks": 1016401,
-  "headers": 1016401,
-  "bestBlockHash": "000000000000000000abc123...",
-  "difficulty": 223847291.45,
-  "verificationProgress": 1.0,
-  "chainWork": "00000000000000000000000000abc...",
-  "initialBlockDownload": false,
-  "maxBlockSize": 393216,
-  "deployments": {
-    "pos": {
-      "status": "active",
-      "since": 4096
-    }
-  }
-}
-```
-
-**Fields**:
-- `chain`: Network name ("mainnet", "testnet3")
-- `blocks`: Current block height
-- `headers`: Number of validated headers
-- `bestBlockHash`: Hash of best block
-- `difficulty`: Current PoW difficulty
-- `verificationProgress`: Sync progress (0.0-1.0)
-- `chainWork`: Accumulated chain work (hex)
-- `initialBlockDownload`: `true` if still syncing
-- `maxBlockSize`: Maximum block size in bytes
-- `deployments`: Active consensus deployments
-
-**Status Codes**:
-- `200`: Success
-- `503`: Node RPC not connected
-
----
-
-### Network Peers
-
-Get list of connected peers with statistics.
-
-```http
-GET /api/network/peers
-```
-
-**Response**:
-```json
-[
-  {
-    "id": 1,
-    "addr": "192.0.2.1:9108",
-    "addrLocal": "10.0.0.1:54321",
-    "services": "0000000000000005",
-    "version": 20006,
-    "subVer": "/dcrd:2.0.6/",
-    "startingHeight": 1016350,
-    "currentHeight": 1016401,
-    "bytesReceived": 12345678,
-    "bytesSent": 23456789,
-    "connTime": 1696600000,
-    "timeOffset": 0,
-    "pingTime": 0.045,
-    "inbound": false
-  }
-]
-```
-
-**Peer Fields**:
-- `id`: Peer ID number
-- `addr`: Peer IP address and port
-- `addrLocal`: Local address for this connection
-- `services`: Supported services (hex)
-- `version`: Peer's dcrd version
-- `subVer`: Peer's user agent
-- `startingHeight`: Peer's starting block height
-- `currentHeight`: Peer's current block height
-- `bytesReceived`: Total bytes received
-- `bytesSent`: Total bytes sent
-- `connTime`: Connection timestamp (Unix)
-- `timeOffset`: Time offset in seconds
-- `pingTime`: Ping latency in seconds
-- `inbound`: `true` if inbound connection
-
-**Status Codes**:
-- `200`: Success
-- `503`: Node RPC not connected
+This is the only route registered under `/api/node`. There are no `/api/node/status`, `/api/blockchain/*`, or `/api/network/*` routes; node, blockchain, and peer data comes from `GET /api/dashboard` above.
 
 ---
 
@@ -310,18 +251,36 @@ GET /api/wallet/status
 **Response**:
 ```json
 {
-  "status": "connected",
-  "synced": true,
+  "status": "synced",
+  "syncProgress": 100,
+  "syncHeight": 1113281,
+  "bestBlockHash": "000000000000000000abc123...",
+  "version": "v2.1.6",
   "unlocked": true,
-  "message": "Wallet is connected and ready"
+  "daemonConnected": true,
+  "rescanInProgress": false,
+  "syncMessage": "Fully synced",
+  "isWatchOnly": false
 }
 ```
 
+**Fields**:
+- `status`: Wallet state (see Status Values)
+- `syncProgress`: Percentage complete (0-100)
+- `syncHeight`: Wallet's best block height
+- `bestBlockHash`: Wallet's best block hash
+- `version`: dcrwallet version string
+- `unlocked`: `true` if the wallet is unlocked
+- `daemonConnected`: `true` if dcrwallet is connected to dcrd
+- `rescanInProgress`: `true` while a rescan is running
+- `syncMessage`: Human-readable status line
+- `isWatchOnly`: `true` if the wallet has no spending keys
+
 **Status Values**:
-- `connected`: Wallet RPC connected and operational
-- `syncing`: Wallet is syncing
-- `locked`: Wallet is locked (encrypted)
-- `no_wallet`: No wallet connected
+- `synced`: Wallet is loaded and fully synced
+- `syncing`: Wallet is rescanning, fetching filters or headers, or discovering addresses
+- `disconnected`: dcrwallet is not connected to dcrd
+- `no_wallet`: No wallet is loaded
 
 **Status Codes**:
 - `200`: Success
@@ -341,10 +300,16 @@ GET /api/wallet/dashboard
 ```json
 {
   "walletStatus": {
-    "status": "connected",
-    "synced": true,
+    "status": "synced",
+    "syncProgress": 100,
+    "syncHeight": 1113281,
+    "bestBlockHash": "000000000000000000abc123...",
+    "version": "v2.1.6",
     "unlocked": true,
-    "message": "Wallet operational"
+    "daemonConnected": true,
+    "rescanInProgress": false,
+    "syncMessage": "Fully synced",
+    "isWatchOnly": false
   },
   "accountInfo": {
     "accountName": "default",
@@ -363,23 +328,31 @@ GET /api/wallet/dashboard
       "accountName": "default",
       "accountNumber": 0,
       "totalBalance": 500.12345678,
-      "spendable": 450.12345678,
+      "spendableBalance": 450.12345678,
+      "immatureBalance": 25.0,
+      "unconfirmedBalance": 0,
       "immatureCoinbaseRewards": 0,
       "immatureStakeGeneration": 25.0,
       "lockedByTickets": 25.0,
       "votingAuthority": 0,
-      "unconfirmed": 0
+      "accountEncrypted": true,
+      "accountUnlocked": false,
+      "reserved": false
     },
     {
       "accountName": "mixed",
-      "accountNumber": 0,
+      "accountNumber": 1,
       "totalBalance": 734.44443334,
-      "spendable": 550.0,
+      "spendableBalance": 550.0,
+      "immatureBalance": 0,
+      "unconfirmedBalance": 0,
       "immatureCoinbaseRewards": 0,
       "immatureStakeGeneration": 0,
       "lockedByTickets": 184.44443334,
       "votingAuthority": 0,
-      "unconfirmed": 0
+      "accountEncrypted": true,
+      "accountUnlocked": false,
+      "reserved": true
     }
   ],
   "stakingInfo": {
@@ -414,12 +387,16 @@ GET /api/wallet/dashboard
 **accounts** (detailed list):
 - Individual account balances
 - Granular balance types:
-  - `spendable`: Available for use
+  - `spendableBalance`: Available for use
+  - `immatureBalance`: Coinbase and stake rewards not yet mature
   - `immatureCoinbaseRewards`: Mining rewards awaiting maturity
   - `immatureStakeGeneration`: Voting rewards awaiting maturity
   - `lockedByTickets`: Funds in active tickets
   - `votingAuthority`: Delegated voting rights
-  - `unconfirmed`: Pending transactions
+  - `unconfirmedBalance`: Pending transactions
+  - `reserved`: Account another daemon binds to by name, or the imported bucket
+- `cumulativeTotal`, `totalSpendable` and `totalLockedByTickets` are wallet-wide
+  totals and appear only on `accountInfo`, never on an entry in this list.
 
 **stakingInfo**:
 - Network pool statistics
@@ -540,28 +517,32 @@ POST /api/wallet/importxpub
 ```json
 {
   "xpub": "dpubZF6ScrXjYgjGdVL2FzAWMYpRbWbUk7VJT9JZjNGjqB...",
-  "gapLimit": 20
+  "accountName": "trezor",
+  "accountIndex": 0,
+  "rescan": true
 }
 ```
 
 **Request Fields**:
-- `xpub` (required): Extended public key starting with `dpub`
-- `gapLimit` (optional): one-shot gap limit for this discovery (1-10000; default 20). A successful discovery is followed by a rescan.
+- `xpub` (required): Extended public key starting with `dpub` (or `tpub`)
+- `accountName` (required): Name for the new watch-only account, 50 characters or fewer. It must not be a reserved account name (`imported`, `mixed`, `unmixed`, `lightning`, `dex`) or match an existing account.
+- `accountIndex` (optional): The real BIP44 account index (0 to 2147483647) the xpub was derived from on the signing device, recorded so offline signing derives against the right account. Omit it for a monitor-only xpub. An index another imported account already uses is rejected.
+- `rescan`: Accepted for compatibility. The import always runs address discovery and a rescan from block 0, so this field changes nothing.
 
 **Response**:
 ```json
 {
-  "status": "success",
-  "message": "Xpub imported successfully. Wallet rescan started.",
-  "account": "imported",
-  "gapLimit": 20
+  "success": true,
+  "message": "Xpub import started for account 'trezor'. Now discovering addresses and rescanning blockchain. This typically takes 5-30 minutes."
 }
 ```
 
+The import runs in the background, so the response returns immediately. `accountNum` is part of the response shape but is omitted here because the new account number is not known yet.
+
 **Status Codes**:
-- `200`: Import successful, rescan started
-- `400`: Invalid request body
-- `500`: Import failed
+- `200`: Import started, or the xpub prefix was rejected (with `success: false` in the body)
+- `400`: Invalid request body, missing or over-long `accountName`, reserved name, or an out-of-range `accountIndex`
+- `409`: The account name, the BIP44 index, or the xpub itself is already in use
 - `503`: Wallet RPC not connected
 
 **Note**: After import, wallet automatically begins rescanning. Monitor progress via `/api/wallet/sync-progress`.
@@ -576,20 +557,30 @@ Manually trigger wallet rescan to discover transactions.
 POST /api/wallet/rescan
 ```
 
-**Request Body**: Empty (`{}`) or omit
+**Request Body**:
+```json
+{
+  "beginHeight": 0
+}
+```
+`beginHeight` is the block to rescan from. An empty or unparsable body defaults
+it to `0`, a rescan from genesis.
 
 **Response**:
 ```json
 {
-  "status": "success",
-  "message": "Wallet rescan initiated"
+  "success": true,
+  "message": "Discovering addresses and rescanning blockchain from block 0. This may take 30+ minutes."
 }
 ```
 
 **Status Codes**:
 - `200`: Rescan started
-- `500`: Rescan failed
 - `503`: Wallet RPC not connected
+
+The rescan itself runs in the background - address discovery over JSON-RPC,
+then a gRPC rescan - so the handler answers before any of it happens and a
+later failure is reported in the log and the progress stream, not here.
 
 **Note**: Monitor rescan progress via `/api/wallet/sync-progress`.
 
@@ -607,10 +598,18 @@ GET /api/wallet/sync-progress
 ```json
 {
   "isRescanning": true,
+  "scanHeight": 758120,
+  "chainHeight": 1113281,
   "progress": 68.5,
-  "currentBlock": 1016234,
-  "totalBlocks": 1016401,
-  "message": "Rescanning blockchain for addresses..."
+  "message": "Rescanning... 758120/1113281 blocks (68.1%)",
+  "phase": "rescanning",
+  "daemonConnected": true,
+  "peerCount": 8,
+  "cfiltersStart": 0,
+  "cfiltersEnd": 0,
+  "headersCount": 0,
+  "firstHeaderTime": 0,
+  "lastHeaderTime": 0
 }
 ```
 
@@ -618,17 +617,33 @@ GET /api/wallet/sync-progress
 ```json
 {
   "isRescanning": false,
-  "progress": 100,
-  "message": "Wallet fully synced"
+  "scanHeight": 0,
+  "chainHeight": 1113281,
+  "progress": 0,
+  "message": "Synced",
+  "phase": "synced",
+  "daemonConnected": true,
+  "peerCount": 8,
+  "cfiltersStart": 0,
+  "cfiltersEnd": 0,
+  "headersCount": 0,
+  "firstHeaderTime": 0,
+  "lastHeaderTime": 0
 }
 ```
 
 **Fields**:
-- `isRescanning`: `true` if actively rescanning
-- `progress`: Percentage complete (0-100)
-- `currentBlock`: Current block being scanned
-- `totalBlocks`: Total blocks to scan
-- `message`: Human-readable status message
+- `isRescanning`: `true` while the phase is `fetching_cfilters`, `fetching_headers`, `discovering_addresses`, or `rescanning`
+- `scanHeight`: Block the current phase has reached. Only `rescanning` and `fetching_cfilters` report one; every other phase sends `0`.
+- `chainHeight`: Denominator for the current phase - the rescan's target during `rescanning`, dcrd's tip during `fetching_cfilters` and the phases with no bar of their own, and `0` throughout `fetching_headers`, which has no usable height to count against
+- `progress`: Percentage complete for the phase in flight (0-100). It reports `0` in the `synced` phase, so read `phase` rather than `progress` to detect completion.
+- `message`: Human-readable status message, derived from `phase`
+- `phase`: One of `unknown`, `unsynced`, `fetching_cfilters`, `fetching_headers`, `discovering_addresses`, `rescanning`, `synced`
+- `daemonConnected`: `true` if dcrwallet is connected to dcrd. When `false`, `message` reads `"Disconnected from dcrd"`.
+- `peerCount`: Peers dcrwallet is synced against
+- `cfiltersStart`, `cfiltersEnd`: Committed-filter range being fetched, during the `fetching_cfilters` phase
+- `headersCount`: Headers fetched this session, during the `fetching_headers` phase
+- `firstHeaderTime`, `lastHeaderTime`: Timestamps of the first and last header fetched this session, used to derive time-based progress while headers are downloading
 
 **Status Codes**:
 - `200`: Success
@@ -660,6 +675,7 @@ Beyond status and history, the wallet group exposes lifecycle, account, address,
 | `GET` | `/api/wallet/validate-address` | Validate an address |
 | `POST` | `/api/wallet/construct-transaction` | Build an unsigned send transaction |
 | `POST` | `/api/wallet/sign-publish-transaction` | Sign and broadcast a transaction |
+| `GET` | `/api/wallet/export` | Download wallet history as CSV. `?type=` selects `transactions` (the default), `tickets`, `votetime`, `balances`, or `dailybalances`. |
 | `GET`/`POST` | `/api/wallet/settings` | Read / save wallet dashboard settings |
 | `POST` | `/api/wallet/settings/change-passphrase` | Change the wallet passphrase |
 | `POST` | `/api/wallet/settings/discover-addresses` | Re-run address discovery (rate limited: 1 / 30s) |
@@ -682,6 +698,38 @@ Manage multiple independent wallet stacks (each with its own dcrwallet, dcrlnd, 
 | `POST` | `/api/wallets/delete` | Delete a wallet |
 
 See [Multi-Wallet](../features/multi-wallet.md).
+
+---
+
+## Shared Wallets (Multisig)
+
+Multisig wallets whose setup and signing rounds are coordinated over Bison Relay, under `/api/msig/*`. A manual wallet carries the same frames by hand instead, through the outbox and import routes.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/msig/wallets` | List the active wallet's shared-wallet records |
+| `POST` | `/api/msig/wallets/invite` | Start a shared wallet round |
+| `POST` | `/api/msig/wallets/accept` | Accept an incoming invite |
+| `POST` | `/api/msig/wallets/decline` | Decline an incoming invite |
+| `POST` | `/api/msig/wallets/activate` | Initiator checkpoint: every cosigner's key is in |
+| `POST` | `/api/msig/wallets/confirm` | Cosigner checkpoint: the roster is verified |
+| `POST` | `/api/msig/wallets/cancel` | Withdraw a round this wallet initiated |
+| `GET` | `/api/msig/wallets/detail` | One record, with live balance data |
+| `GET` | `/api/msig/wallets/backup` | Export the backup card for one shared wallet |
+| `POST` | `/api/msig/wallets/restore` | Import a backup card into the active wallet |
+| `POST` | `/api/msig/proposals/propose` | Build and dispatch a payment |
+| `POST` | `/api/msig/proposals/sign` | Add this wallet's signature to an incoming request |
+| `POST` | `/api/msig/proposals/reject` | Decline an incoming payment request |
+| `POST` | `/api/msig/proposals/abort` | Cancel a payment this wallet proposed |
+| `POST` | `/api/msig/proposals/rebroadcast` | Retry a fully signed payment |
+| `GET` | `/api/msig/pending` | Open invites and deferred imports across all shared wallets |
+| `POST` | `/api/msig/refresh` | Retry unsent frames and resume wallet-gated steps |
+| `POST` | `/api/msig/receive` | Next receive address of an HD shared wallet |
+| `GET` | `/api/msig/outbox` | A manual wallet's frames waiting to be handed over |
+| `POST` | `/api/msig/outbox/done` | Record a frame as handed over |
+| `POST` | `/api/msig/import` | Ingest one hand-carried coordination message |
+
+See [Shared Wallets](../features/shared-wallets.md).
 
 ---
 
@@ -744,6 +792,10 @@ Consensus agenda voting, treasury (TSpend) policies, and Politeia proposal brows
 | `POST` | `/api/wallet/governance/proposals/cast-vote` | Cast a Politeia vote |
 | `POST` | `/api/wallet/governance/proposals/refresh` | Refresh the proposal list |
 | `POST` | `/api/wallet/governance/proposals/{token}/refresh` | Refresh a single proposal |
+| `POST` | `/api/wallet/governance/votetrickle/start` | Sign a proposal's eligible votes up front, then submit them spread over a duration |
+| `POST` | `/api/wallet/governance/votetrickle/stop` | Stop a running trickle or dismiss a finished one (`?token=`) |
+| `GET` | `/api/wallet/governance/votetrickle/status` | Live status of every trickle run |
+| `GET` | `/api/wallet/governance/votetrickle/events` | WebSocket stream of trickle events (replays the last 200, then live) |
 
 See [Governance](../features/governance.md).
 
@@ -760,8 +812,6 @@ Read the project treasury balance and scan its TSpend history. The full-history 
 | `POST` | `/api/treasury/scan-history` | Trigger a full TSpend history scan (rate limited) |
 | `GET` | `/api/treasury/scan-progress` | TSpend scan progress |
 | `GET` | `/api/treasury/scan-results` | TSpend scan results |
-| `GET` | `/api/treasury/mempool` | TSpends currently in the mempool |
-| `GET` | `/api/treasury/votes/{txhash}/progress` | Vote-parsing progress for a TSpend |
 
 See [Governance](../features/governance.md).
 
@@ -856,7 +906,7 @@ Bison Relay messaging backed by the optional `brclientd` daemon, under `/api/br/
 - **Backup and restore**: `GET /api/br/backup`, `POST /api/br/backup/prepare`, `GET /api/br/backup/status`, `POST /api/br/backup/restore`.
 - **Messaging**: `GET /api/br/messages`, `POST /api/br/messages/clear`, `POST /api/br/pm`, `GET /api/br/events` (WebSocket event stream).
 - **Contacts and KX**: `GET /api/br/contacts`, `POST /api/br/contacts/rename`, `.../block`, `.../unblock`, `.../ignore`, `.../kx-reset`, `.../handshake`, `.../tip`, contact groups under `/api/br/contacts/groups*`, and key-exchange listings under `/api/br/kx/*`.
-- **Invites**: `POST /api/br/invites/write`, `POST /api/br/invites/accept`, `POST /api/br/join-dcrpulse`.
+- **Invites**: `POST /api/br/invites/write`, `POST /api/br/invites/accept`, `POST /api/br/join-decred-pulse`.
 - **Posts (feed)**: `GET /api/br/posts`, `GET /api/br/posts/body`, `GET /api/br/posts/comments`, `POST /api/br/posts/comment`, `GET /api/br/posts/hearts`, `POST /api/br/posts/heart`, `POST /api/br/posts/new`, `POST /api/br/posts/relay`.
 - **Group chat (GC)**: `GET /api/br/gc`, `POST /api/br/gc/create`, GC invites under `/api/br/gc/invites*`, and per-GC actions under `/api/br/gc/{gcid}/*` (message, history, invite, part, kick, admins, owner, alias, ...).
 - **Files and shared content**: `GET /api/br/shared-files`, `POST /api/br/files/send`, downloads under `/api/br/downloads/{contact}*`, embeds under `/api/br/embeds/{contact}/{filename}`, and content fetch under `/api/br/content/*`.
@@ -918,6 +968,49 @@ See [Settings](../features/settings.md).
 
 ---
 
+## Alerts
+
+The dashboard-wide alert ring, with per-category opt-outs across `node`, `wallet`, `staking`, `lightning`, `dex`, `bisonrelay`, and `system`. The ring is capped at a few hundred entries, so filtering stays client-side.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/alerts` | Every entry, newest first |
+| `GET` | `/api/alerts/summary` | The pill payload: unread and active counts, plus the highest severity among them |
+| `POST` | `/api/alerts/{id}/read` | Mark one entry read |
+| `POST` | `/api/alerts/read-all` | Mark every entry read |
+| `GET` | `/api/alerts/settings` | Per-category opt-outs, defaults filled in |
+| `POST` | `/api/alerts/settings` | Save the per-category opt-outs |
+
+---
+
+## Agents (MCP)
+
+The agent surface: the dashboard's own MCP listener and its agent roster under `/api/settings/mcp/*`, and the Bison Relay MCP bridge under `/api/br/mcp/*`. **Every route in this group requires the app-password gate to be enabled**; with the gate off they return `401 Unauthorized` with an `X-Dashboard-Auth: password-required` header and the message `set a dashboard app password before managing AI agent access`, so minting a token or widening an agent's authority is never open to anyone who can reach the port.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/settings/mcp` | Live listener state, agent roster, and open sessions |
+| `POST` | `/api/settings/mcp/enable` | Start or stop the MCP listener |
+| `POST` | `/api/settings/mcp/tokens` | Mint a named agent token (the plaintext is returned exactly once) |
+| `DELETE` | `/api/settings/mcp/tokens/{id}` | Delete an agent identity |
+| `POST` | `/api/settings/mcp/agents/{id}/domains` | Replace an agent's capability domains |
+| `POST` | `/api/settings/mcp/agents/{id}/ips` | Replace an agent's source-IP allowlist (IPs or CIDR prefixes) |
+| `POST` | `/api/settings/mcp/agents/{id}/grant` | Grant an account-scoped spend capability |
+| `DELETE` | `/api/settings/mcp/agents/{id}/grant` | Clear an agent's spend grant |
+| `POST` | `/api/settings/mcp/agents/{id}/unblock` | Clear an agent's tripwire block |
+| `POST` | `/api/settings/mcp/freeze-all` | Kill switch: revoke every grant and block every token |
+| `GET` | `/api/settings/mcp/audit/export` | Download the persisted spend-audit trail as JSON |
+| `POST` | `/api/settings/mcp/notify` | Save the Bison Relay oversight contact and on/off state |
+| `POST` | `/api/settings/mcp/logging` | Turn agent-activity logging on or off |
+| `GET`/`POST` | `/api/br/mcp/settings` | Read / save the Bison Relay MCP client settings |
+| `GET` | `/api/br/mcp/pending` | Payments awaiting approval |
+| `POST` | `/api/br/mcp/pending/resolve` | Approve or deny one pending payment |
+| `GET` | `/api/br/mcp/spend` | The spend log and the rolling-day total |
+
+See [AI Agents (MCP)](../features/ai-agents-mcp.md) and [Bison Relay MCP](../features/bison-relay-mcp.md).
+
+---
+
 ## Auth (app-password gate)
 
 Manage the optional dashboard-wide password. `/api/auth/status` and `/api/auth/login` are exempt from the gate so the client can reach the login handshake; `/api/auth/login` is rate limited (5 / s).
@@ -931,6 +1024,510 @@ Manage the optional dashboard-wide password. `/api/auth/status` and `/api/auth/l
 | `POST` | `/api/auth/logout` | Clear the session cookie |
 | `POST` | `/api/auth/change` | Change the password |
 | `POST` | `/api/auth/disable` | Disable the gate (clears the password) |
+
+---
+
+## Complete Route Index
+
+Every route registered on the `/api` subrouter, in the groups above. The Notes
+column carries only what is not true of every route: `App password` for the
+routes behind `RequireAppPassword`, the allowance for a rate-limited route,
+`WebSocket` for a route that upgrades, and the payload shape for one that does
+not answer JSON. All 393 are subject to the same-origin check and, once the
+gate is on, the session cookie.
+
+### Node (3 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/dashboard` |  |
+| `GET` | `/api/health` |  |
+| `GET` | `/api/node/sync/stream` | WebSocket |
+
+### Wallet (30 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/wallet/account-extended-pubkey` |  |
+| `GET` | `/api/wallet/accounts` |  |
+| `POST` | `/api/wallet/broadcast-signed-transaction` |  |
+| `POST` | `/api/wallet/build-sign-request` |  |
+| `GET` | `/api/wallet/claimable-account-names` |  |
+| `POST` | `/api/wallet/close` |  |
+| `POST` | `/api/wallet/construct-transaction` |  |
+| `POST` | `/api/wallet/create` |  |
+| `POST` | `/api/wallet/create-account` |  |
+| `GET` | `/api/wallet/dashboard` |  |
+| `POST` | `/api/wallet/decode-seed` |  |
+| `POST` | `/api/wallet/decode-signed-transaction` |  |
+| `GET` | `/api/wallet/device-balance` |  |
+| `GET` | `/api/wallet/exists` |  |
+| `GET` | `/api/wallet/export` | CSV download |
+| `POST` | `/api/wallet/generate-seed` |  |
+| `POST` | `/api/wallet/importxpub` | Rate limit 1 per 30s |
+| `GET` | `/api/wallet/loaded` |  |
+| `GET`, `POST` | `/api/wallet/mixer/debug` |  |
+| `GET` | `/api/wallet/next-address` |  |
+| `POST` | `/api/wallet/open` | Rate limit 5 per second |
+| `POST` | `/api/wallet/parse-account-export` |  |
+| `POST` | `/api/wallet/rename-account` |  |
+| `POST` | `/api/wallet/rescan` | Rate limit 1 per 60s |
+| `GET` | `/api/wallet/seed-words` |  |
+| `POST` | `/api/wallet/sign-publish-transaction` |  |
+| `GET` | `/api/wallet/status` |  |
+| `GET` | `/api/wallet/sync-progress` |  |
+| `GET` | `/api/wallet/transactions` |  |
+| `GET` | `/api/wallet/validate-address` |  |
+
+### Wallet gRPC (1 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/wallet/grpc/stream-rescan` | WebSocket |
+
+### Wallet settings (5 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/wallet/settings` |  |
+| `POST` | `/api/wallet/settings` |  |
+| `POST` | `/api/wallet/settings/change-passphrase` |  |
+| `POST` | `/api/wallet/settings/discover-addresses` | Rate limit 1 per 30s |
+| `GET` | `/api/wallet/settings/logs` |  |
+
+### Multi-wallet (5 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/wallets` |  |
+| `POST` | `/api/wallets/create` | Rate limit 1 per 5s |
+| `POST` | `/api/wallets/delete` | Rate limit 1 per 5s |
+| `POST` | `/api/wallets/rename` | Rate limit 1 per 5s |
+| `POST` | `/api/wallets/select` | Rate limit 1 per 5s |
+
+### Shared (multisig) wallets (21 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/api/msig/import` |  |
+| `GET` | `/api/msig/outbox` |  |
+| `POST` | `/api/msig/outbox/done` |  |
+| `GET` | `/api/msig/pending` |  |
+| `POST` | `/api/msig/proposals/abort` |  |
+| `POST` | `/api/msig/proposals/propose` |  |
+| `POST` | `/api/msig/proposals/rebroadcast` |  |
+| `POST` | `/api/msig/proposals/reject` |  |
+| `POST` | `/api/msig/proposals/sign` |  |
+| `POST` | `/api/msig/receive` |  |
+| `POST` | `/api/msig/refresh` |  |
+| `GET` | `/api/msig/wallets` |  |
+| `POST` | `/api/msig/wallets/accept` |  |
+| `POST` | `/api/msig/wallets/activate` |  |
+| `GET` | `/api/msig/wallets/backup` |  |
+| `POST` | `/api/msig/wallets/cancel` |  |
+| `POST` | `/api/msig/wallets/confirm` |  |
+| `POST` | `/api/msig/wallets/decline` |  |
+| `GET` | `/api/msig/wallets/detail` |  |
+| `POST` | `/api/msig/wallets/invite` |  |
+| `POST` | `/api/msig/wallets/restore` |  |
+
+### Privacy / mixer (5 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/wallet/privacy/events` | WebSocket |
+| `POST` | `/api/wallet/privacy/setup` |  |
+| `POST` | `/api/wallet/privacy/start` |  |
+| `GET` | `/api/wallet/privacy/status` |  |
+| `POST` | `/api/wallet/privacy/stop` |  |
+
+### Staking (14 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/wallet/staking/autobuyer/events` | WebSocket |
+| `GET` | `/api/wallet/staking/autobuyer/settings` |  |
+| `POST` | `/api/wallet/staking/autobuyer/settings` |  |
+| `POST` | `/api/wallet/staking/autobuyer/start` |  |
+| `GET` | `/api/wallet/staking/autobuyer/status` |  |
+| `POST` | `/api/wallet/staking/autobuyer/stop` |  |
+| `POST` | `/api/wallet/staking/process-unmanaged-vsp-tickets` | Rate limit 1 per 30s |
+| `POST` | `/api/wallet/staking/purchase` |  |
+| `GET` | `/api/wallet/staking/purchase/events` | WebSocket |
+| `GET` | `/api/wallet/staking/purchase/status` |  |
+| `POST` | `/api/wallet/staking/sync-failed-vsp-tickets` | Rate limit 1 per 30s |
+| `GET` | `/api/wallet/staking/tickets` |  |
+| `GET` | `/api/wallet/staking/vsp-info` |  |
+| `GET` | `/api/wallet/staking/vsps` |  |
+
+### Governance (18 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/wallet/governance/agendas` |  |
+| `POST` | `/api/wallet/governance/agendas/set` |  |
+| `GET` | `/api/wallet/governance/agendas/{id}/votes` |  |
+| `GET` | `/api/wallet/governance/proposals` |  |
+| `POST` | `/api/wallet/governance/proposals/cast-vote` |  |
+| `POST` | `/api/wallet/governance/proposals/load-more` |  |
+| `POST` | `/api/wallet/governance/proposals/refresh` |  |
+| `GET` | `/api/wallet/governance/proposals/{token}` |  |
+| `POST` | `/api/wallet/governance/proposals/{token}/refresh` |  |
+| `POST` | `/api/wallet/governance/proposals/{token}/vote-eligibility` |  |
+| `GET` | `/api/wallet/governance/treasury/keys` |  |
+| `POST` | `/api/wallet/governance/treasury/keys/set` |  |
+| `GET` | `/api/wallet/governance/treasury/tspends` |  |
+| `POST` | `/api/wallet/governance/treasury/tspends/set` |  |
+| `GET` | `/api/wallet/governance/votetrickle/events` | WebSocket |
+| `POST` | `/api/wallet/governance/votetrickle/start` |  |
+| `GET` | `/api/wallet/governance/votetrickle/status` |  |
+| `POST` | `/api/wallet/governance/votetrickle/stop` |  |
+
+### Treasury (5 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/treasury/balance-history` |  |
+| `GET` | `/api/treasury/info` |  |
+| `POST` | `/api/treasury/scan-history` | Rate limit 1 per 60s |
+| `GET` | `/api/treasury/scan-progress` |  |
+| `GET` | `/api/treasury/scan-results` |  |
+
+### Explorer (7 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/explorer/address/{address}` |  |
+| `GET` | `/api/explorer/blocks/hash/{hash}` |  |
+| `GET` | `/api/explorer/blocks/recent` |  |
+| `GET` | `/api/explorer/blocks/{height:[0-9]+}` |  |
+| `GET` | `/api/explorer/mempool` |  |
+| `GET` | `/api/explorer/search` |  |
+| `GET` | `/api/explorer/transactions/{txhash}` |  |
+
+### Lightning (36 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/wallet/ln/activity` |  |
+| `GET` | `/api/wallet/ln/autopilot` |  |
+| `POST` | `/api/wallet/ln/autopilot` |  |
+| `GET` | `/api/wallet/ln/autopilot/scores` |  |
+| `GET` | `/api/wallet/ln/backup` |  |
+| `POST` | `/api/wallet/ln/backup/verify` |  |
+| `GET` | `/api/wallet/ln/balance` |  |
+| `GET` | `/api/wallet/ln/channel-events` | WebSocket |
+| `GET` | `/api/wallet/ln/channels` |  |
+| `POST` | `/api/wallet/ln/channels/close` |  |
+| `POST` | `/api/wallet/ln/channels/open` |  |
+| `GET` | `/api/wallet/ln/graph/node` |  |
+| `POST` | `/api/wallet/ln/graph/routes` |  |
+| `GET` | `/api/wallet/ln/graph/search` |  |
+| `GET` | `/api/wallet/ln/info` |  |
+| `GET` | `/api/wallet/ln/invoice-events` | WebSocket |
+| `GET` | `/api/wallet/ln/invoices` |  |
+| `POST` | `/api/wallet/ln/invoices/add` |  |
+| `POST` | `/api/wallet/ln/invoices/cancel` |  |
+| `POST` | `/api/wallet/ln/liquidity/confirm` |  |
+| `GET` | `/api/wallet/ln/liquidity/confirm/events` | WebSocket |
+| `GET` | `/api/wallet/ln/liquidity/confirm/pending` |  |
+| `GET` | `/api/wallet/ln/liquidity/defaults` |  |
+| `POST` | `/api/wallet/ln/liquidity/estimate` |  |
+| `POST` | `/api/wallet/ln/liquidity/request` |  |
+| `GET` | `/api/wallet/ln/network` |  |
+| `GET` | `/api/wallet/ln/payments` |  |
+| `GET` | `/api/wallet/ln/peer-presets` |  |
+| `GET` | `/api/wallet/ln/send` | WebSocket |
+| `POST` | `/api/wallet/ln/send/decode` |  |
+| `POST` | `/api/wallet/ln/setup` |  |
+| `GET` | `/api/wallet/ln/status` |  |
+| `POST` | `/api/wallet/ln/unlock` | Rate limit 5 per second |
+| `GET` | `/api/wallet/ln/watchtowers` |  |
+| `POST` | `/api/wallet/ln/watchtowers/add` |  |
+| `POST` | `/api/wallet/ln/watchtowers/remove` |  |
+
+### DEX (DCRDEX) (60 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/dcrdex/account` |  |
+| `GET` | `/api/dcrdex/actions` |  |
+| `POST` | `/api/dcrdex/actions/take` |  |
+| `GET` | `/api/dcrdex/assets` |  |
+| `POST` | `/api/dcrdex/bondopts` |  |
+| `GET` | `/api/dcrdex/bondsfeebuffer` |  |
+| `POST` | `/api/dcrdex/cancel` |  |
+| `GET` | `/api/dcrdex/dexconfig` |  |
+| `POST` | `/api/dcrdex/discover-account` | Rate limit 1 per 10s |
+| `GET` | `/api/dcrdex/exchanges` |  |
+| `POST` | `/api/dcrdex/init` | Rate limit 5 per second |
+| `POST` | `/api/dcrdex/lock` |  |
+| `POST` | `/api/dcrdex/maxbuy` |  |
+| `POST` | `/api/dcrdex/maxsell` |  |
+| `GET` | `/api/dcrdex/mm/archivedruns` |  |
+| `GET` | `/api/dcrdex/mm/availablebalances` |  |
+| `POST` | `/api/dcrdex/mm/cexconfig` |  |
+| `POST` | `/api/dcrdex/mm/config` |  |
+| `POST` | `/api/dcrdex/mm/config/remove` |  |
+| `GET` | `/api/dcrdex/mm/marketreport` |  |
+| `GET` | `/api/dcrdex/mm/runlogs` |  |
+| `POST` | `/api/dcrdex/mm/running/config` |  |
+| `POST` | `/api/dcrdex/mm/running/inventory` |  |
+| `POST` | `/api/dcrdex/mm/start` |  |
+| `GET` | `/api/dcrdex/mm/status` |  |
+| `POST` | `/api/dcrdex/mm/stop` |  |
+| `GET` | `/api/dcrdex/myorders` |  |
+| `GET` | `/api/dcrdex/notifications` |  |
+| `GET` | `/api/dcrdex/notify` | WebSocket |
+| `POST` | `/api/dcrdex/order` |  |
+| `POST` | `/api/dcrdex/order/accelerate` |  |
+| `POST` | `/api/dcrdex/order/acceleration-estimate` |  |
+| `POST` | `/api/dcrdex/order/preaccelerate` |  |
+| `POST` | `/api/dcrdex/orders` |  |
+| `POST` | `/api/dcrdex/postbond` |  |
+| `GET` | `/api/dcrdex/postbond/status` |  |
+| `POST` | `/api/dcrdex/preorder` |  |
+| `GET` | `/api/dcrdex/rates` |  |
+| `POST` | `/api/dcrdex/seed` |  |
+| `POST` | `/api/dcrdex/seed/backed-up` |  |
+| `GET` | `/api/dcrdex/status` |  |
+| `POST` | `/api/dcrdex/trade` |  |
+| `POST` | `/api/dcrdex/unlock` | Rate limit 5 per second |
+| `GET` | `/api/dcrdex/wallet` |  |
+| `POST` | `/api/dcrdex/wallet` |  |
+| `GET` | `/api/dcrdex/wallet/address-used` |  |
+| `POST` | `/api/dcrdex/wallet/close` |  |
+| `POST` | `/api/dcrdex/wallet/create` |  |
+| `POST` | `/api/dcrdex/wallet/new-address` |  |
+| `POST` | `/api/dcrdex/wallet/open` |  |
+| `DELETE` | `/api/dcrdex/wallet/peers` |  |
+| `GET` | `/api/dcrdex/wallet/peers` |  |
+| `POST` | `/api/dcrdex/wallet/peers` |  |
+| `POST` | `/api/dcrdex/wallet/rescan` | Rate limit 1 per 60s |
+| `POST` | `/api/dcrdex/wallet/send` |  |
+| `POST` | `/api/dcrdex/wallet/toggle` |  |
+| `POST` | `/api/dcrdex/wallet/txfee` |  |
+| `GET` | `/api/dcrdex/wallet/txs` |  |
+| `GET` | `/api/dcrdex/wallets` |  |
+| `GET` | `/api/dcrdex/ws` | WebSocket |
+
+### Bison Relay (138 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/api/br/avatar` |  |
+| `GET` | `/api/br/backup` | file download |
+| `POST` | `/api/br/backup/prepare` |  |
+| `POST` | `/api/br/backup/restore` |  |
+| `GET` | `/api/br/backup/status` |  |
+| `GET`, `POST` | `/api/br/connection` |  |
+| `GET` | `/api/br/contacts` |  |
+| `POST` | `/api/br/contacts/accept-suggestion` |  |
+| `POST` | `/api/br/contacts/block` |  |
+| `GET` | `/api/br/contacts/blocked` |  |
+| `POST` | `/api/br/contacts/fetch-post` |  |
+| `GET`, `POST` | `/api/br/contacts/groups` |  |
+| `POST` | `/api/br/contacts/groups/assign` |  |
+| `POST` | `/api/br/contacts/groups/settings` |  |
+| `POST` | `/api/br/contacts/handshake` |  |
+| `POST` | `/api/br/contacts/ignore` |  |
+| `POST` | `/api/br/contacts/kx-reset` |  |
+| `POST` | `/api/br/contacts/list-content` |  |
+| `POST` | `/api/br/contacts/list-posts` |  |
+| `POST` | `/api/br/contacts/rename` |  |
+| `POST` | `/api/br/contacts/reset-all` |  |
+| `POST` | `/api/br/contacts/subscribe-posts` |  |
+| `POST` | `/api/br/contacts/suggest-kx` |  |
+| `POST` | `/api/br/contacts/tip` |  |
+| `POST` | `/api/br/contacts/trans-reset` |  |
+| `POST` | `/api/br/contacts/unblock` |  |
+| `POST` | `/api/br/contacts/unsubscribe-posts` |  |
+| `GET` | `/api/br/content/file` | peer bytes |
+| `POST` | `/api/br/content/get` |  |
+| `GET` | `/api/br/downloads/{contact}` |  |
+| `GET` | `/api/br/downloads/{contact}/{filename}` | peer bytes |
+| `GET` | `/api/br/embeds/{contact}/{filename}` | peer bytes |
+| `GET` | `/api/br/events` | WebSocket |
+| `POST` | `/api/br/files/add` |  |
+| `GET` | `/api/br/files/downloads` |  |
+| `POST` | `/api/br/files/downloads/cancel` |  |
+| `POST` | `/api/br/files/downloads/delete` |  |
+| `POST` | `/api/br/files/send` |  |
+| `POST` | `/api/br/files/shared/remove` |  |
+| `GET`, `POST` | `/api/br/filters` |  |
+| `POST` | `/api/br/filters/delete` |  |
+| `GET` | `/api/br/gc` |  |
+| `POST` | `/api/br/gc/create` |  |
+| `GET` | `/api/br/gc/invites` |  |
+| `POST` | `/api/br/gc/invites/accept` |  |
+| `GET` | `/api/br/gc/{gcid}` |  |
+| `POST` | `/api/br/gc/{gcid}/admins` |  |
+| `POST` | `/api/br/gc/{gcid}/alias` |  |
+| `POST` | `/api/br/gc/{gcid}/block` |  |
+| `GET` | `/api/br/gc/{gcid}/history` |  |
+| `POST` | `/api/br/gc/{gcid}/history/clear` |  |
+| `POST` | `/api/br/gc/{gcid}/invite` |  |
+| `POST` | `/api/br/gc/{gcid}/kick` |  |
+| `POST` | `/api/br/gc/{gcid}/kill` |  |
+| `POST` | `/api/br/gc/{gcid}/message` |  |
+| `POST` | `/api/br/gc/{gcid}/owner` |  |
+| `POST` | `/api/br/gc/{gcid}/part` |  |
+| `POST` | `/api/br/gc/{gcid}/resend-list` |  |
+| `POST` | `/api/br/gc/{gcid}/unblock` |  |
+| `POST` | `/api/br/gc/{gcid}/upgrade` |  |
+| `GET` | `/api/br/identity` |  |
+| `POST` | `/api/br/invites/accept` |  |
+| `POST` | `/api/br/invites/write` |  |
+| `POST` | `/api/br/join-decred-pulse` |  |
+| `GET` | `/api/br/kx/list` |  |
+| `GET`, `POST` | `/api/br/kx/mediateids` |  |
+| `GET` | `/api/br/kx/searches` |  |
+| `GET` | `/api/br/mcp/pending` | App password |
+| `POST` | `/api/br/mcp/pending/resolve` | App password |
+| `GET`, `POST` | `/api/br/mcp/settings` | App password |
+| `GET` | `/api/br/mcp/spend` | App password |
+| `GET` | `/api/br/messages` |  |
+| `POST` | `/api/br/messages/clear` |  |
+| `POST` | `/api/br/notifications/clear` |  |
+| `POST` | `/api/br/notifications/delete` |  |
+| `GET` | `/api/br/notifications/recent` |  |
+| `POST` | `/api/br/pages/fetch` |  |
+| `GET` | `/api/br/pages/local` |  |
+| `POST` | `/api/br/pages/local/delete` |  |
+| `GET` | `/api/br/pages/local/file` |  |
+| `POST` | `/api/br/pages/local/save` |  |
+| `POST` | `/api/br/pages/render` |  |
+| `GET` | `/api/br/payments/tips` |  |
+| `GET` | `/api/br/payments/tips/running` |  |
+| `POST` | `/api/br/pm` |  |
+| `GET` | `/api/br/posts` |  |
+| `GET` | `/api/br/posts/body` |  |
+| `POST` | `/api/br/posts/comment` |  |
+| `GET` | `/api/br/posts/comment-receivereceipts` |  |
+| `GET` | `/api/br/posts/comments` |  |
+| `GET` | `/api/br/posts/embed-data` | peer bytes |
+| `POST` | `/api/br/posts/heart` |  |
+| `GET` | `/api/br/posts/hearts` |  |
+| `POST` | `/api/br/posts/new` |  |
+| `GET` | `/api/br/posts/receivereceipts` |  |
+| `POST` | `/api/br/posts/relay` |  |
+| `POST` | `/api/br/posts/render` |  |
+| `POST` | `/api/br/posts/subscribe-all` |  |
+| `GET` | `/api/br/rates` |  |
+| `GET` | `/api/br/rtdt/sessions` |  |
+| `POST` | `/api/br/rtdt/sessions/create` |  |
+| `POST` | `/api/br/rtdt/sessions/create-instant` |  |
+| `POST` | `/api/br/rtdt/sessions/{rv}/accept` |  |
+| `GET` | `/api/br/rtdt/sessions/{rv}/audio` | WebSocket |
+| `POST` | `/api/br/rtdt/sessions/{rv}/chat` |  |
+| `POST` | `/api/br/rtdt/sessions/{rv}/dissolve` |  |
+| `POST` | `/api/br/rtdt/sessions/{rv}/invite` |  |
+| `POST` | `/api/br/rtdt/sessions/{rv}/join` |  |
+| `POST` | `/api/br/rtdt/sessions/{rv}/kick` |  |
+| `POST` | `/api/br/rtdt/sessions/{rv}/leave` |  |
+| `GET` | `/api/br/rtdt/sessions/{rv}/messages` |  |
+| `POST` | `/api/br/rtdt/sessions/{rv}/remove` |  |
+| `POST` | `/api/br/rtdt/sessions/{rv}/rotate-cookies` |  |
+| `GET`, `POST` | `/api/br/settings/behavior` |  |
+| `POST` | `/api/br/setup` | Rate limit 5 per second |
+| `GET` | `/api/br/shared-files` |  |
+| `GET` | `/api/br/stats/contacts` |  |
+| `GET` | `/api/br/stats/network` |  |
+| `GET` | `/api/br/stats/overview` |  |
+| `GET` | `/api/br/stats/payments` |  |
+| `POST` | `/api/br/stats/payments/clear` |  |
+| `GET` | `/api/br/stats/posts` |  |
+| `GET` | `/api/br/status` |  |
+| `POST` | `/api/br/store/files/delete` |  |
+| `GET` | `/api/br/store/files/get` | peer bytes |
+| `GET` | `/api/br/store/files/list` |  |
+| `POST` | `/api/br/store/files/upload` |  |
+| `GET`, `POST` | `/api/br/store/mode` |  |
+| `GET` | `/api/br/store/orders` |  |
+| `POST` | `/api/br/store/orders/comment` |  |
+| `POST` | `/api/br/store/orders/status` |  |
+| `GET`, `POST` | `/api/br/store/products` |  |
+| `POST` | `/api/br/store/products/delete` |  |
+| `GET` | `/api/br/store/templates` |  |
+| `POST` | `/api/br/store/templates/delete` |  |
+| `GET` | `/api/br/store/templates/file` |  |
+| `POST` | `/api/br/store/templates/save` |  |
+| `GET` | `/api/br/version` |  |
+
+### Timestamp (dcrtime) (12 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/timestamp/export` | file download |
+| `GET` | `/api/timestamp/records` |  |
+| `POST` | `/api/timestamp/records` |  |
+| `DELETE` | `/api/timestamp/records/{digest}` |  |
+| `GET` | `/api/timestamp/records/{digest}` |  |
+| `PATCH` | `/api/timestamp/records/{digest}` |  |
+| `GET` | `/api/timestamp/records/{digest}/proof` | file download |
+| `POST` | `/api/timestamp/records/{digest}/retry` |  |
+| `POST` | `/api/timestamp/refresh` | Rate limit 1 per 30s |
+| `GET` | `/api/timestamp/status` |  |
+| `POST` | `/api/timestamp/validate` |  |
+| `POST` | `/api/timestamp/verify` |  |
+
+### Alerts (6 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/alerts` |  |
+| `POST` | `/api/alerts/read-all` |  |
+| `GET` | `/api/alerts/settings` |  |
+| `POST` | `/api/alerts/settings` |  |
+| `GET` | `/api/alerts/summary` |  |
+| `POST` | `/api/alerts/{id}/read` |  |
+
+### Settings (13 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/settings/mcp` | App password |
+| `POST` | `/api/settings/mcp/agents/{id}/domains` | App password |
+| `DELETE` | `/api/settings/mcp/agents/{id}/grant` | App password |
+| `POST` | `/api/settings/mcp/agents/{id}/grant` | App password |
+| `POST` | `/api/settings/mcp/agents/{id}/ips` | App password |
+| `POST` | `/api/settings/mcp/agents/{id}/unblock` | App password |
+| `GET` | `/api/settings/mcp/audit/export` | file download, App password |
+| `POST` | `/api/settings/mcp/enable` | App password |
+| `POST` | `/api/settings/mcp/freeze-all` | App password |
+| `POST` | `/api/settings/mcp/logging` | App password |
+| `POST` | `/api/settings/mcp/notify` | App password |
+| `POST` | `/api/settings/mcp/tokens` | App password |
+| `DELETE` | `/api/settings/mcp/tokens/{id}` | App password |
+
+### Tor (5 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/tor` |  |
+| `POST` | `/api/tor` |  |
+| `GET` | `/api/tor/control` |  |
+| `POST` | `/api/tor/newidentity` |  |
+| `GET` | `/api/tor/status` |  |
+
+### Themes (2 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/themes` |  |
+| `POST` | `/api/themes` |  |
+
+### Auth (app-password gate) (7 routes)
+
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/api/auth/change` | Rate limit 5 per second |
+| `POST` | `/api/auth/disable` | Rate limit 5 per second |
+| `POST` | `/api/auth/login` | Rate limit 5 per second |
+| `POST` | `/api/auth/logout` |  |
+| `POST` | `/api/auth/setup` |  |
+| `POST` | `/api/auth/skip-setup` |  |
+| `GET` | `/api/auth/status` |  |
 
 ---
 
@@ -977,10 +1574,17 @@ Status: `500`
 Most endpoints are not rate limited (the dashboard is single-user). A token-bucket limiter is applied per-route to a handful of expensive or daemon-cycling operations; exceeding the allowance returns `429 Too Many Requests`:
 
 - `POST /api/auth/login`: 5 / second
+- `POST /api/auth/change` and `POST /api/auth/disable`: 5 / second, shared between the two
+- `POST /api/wallet/open`, `/api/wallet/ln/unlock`, `/api/br/setup`, `/api/dcrdex/init`, `/api/dcrdex/unlock`: 5 / second, shared across all five, because each costs a daemon a key derivation
 - `POST /api/wallets/select`, `/create`, `/rename`, `/delete`: 1 / 5 seconds each
+- `POST /api/dcrdex/discover-account`: 1 / 10 seconds
 - `POST /api/wallet/importxpub`: 1 / 30 seconds
 - `POST /api/wallet/settings/discover-addresses`: 1 / 30 seconds
+- `POST /api/wallet/staking/sync-failed-vsp-tickets`: 1 / 30 seconds
+- `POST /api/wallet/staking/process-unmanaged-vsp-tickets`: 1 / 30 seconds
+- `POST /api/timestamp/refresh`: 1 / 30 seconds
 - `POST /api/wallet/rescan`: 1 / 60 seconds
+- `POST /api/dcrdex/wallet/rescan`: 1 / 60 seconds
 - `POST /api/treasury/scan-history`: 1 / 60 seconds
 
 ---
@@ -989,7 +1593,7 @@ Most endpoints are not rate limited (the dashboard is single-user). A token-buck
 
 - **Same-origin protected.** State-changing requests must originate from the dashboard's own host; cross-origin POST/PUT/PATCH/DELETE are rejected with `403`. WebSocket upgrades enforce the same origin check.
 - **Optional app-password gate.** When enabled, every `/api` route requires a signed `dcrpulse_session` cookie (see Authentication).
-- **Request-body cap.** JSON bodies on state-changing methods are limited to 1 MiB (multipart uploads exempt).
+- **Request-body cap.** JSON bodies on state-changing methods are limited to 1 MiB. The middleware skips `multipart/*`, which no route currently uses.
 - **Hardening headers.** Every response carries `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: no-referrer`, and a restrictive `Permissions-Policy`.
 - **Credentials stay server-side.** RPC credentials for the daemons are read from environment variables and never exposed to the frontend.
 
@@ -1018,9 +1622,12 @@ curl http://localhost:8080/api/dashboard
 ```bash
 curl -X POST http://localhost:8080/api/wallet/importxpub \
   -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:8080" \
   -d '{
     "xpub": "dpubZF...",
-    "gapLimit": 20
+    "accountName": "trezor",
+    "accountIndex": 0,
+    "rescan": true
   }'
 ```
 
@@ -1049,7 +1656,9 @@ const dashboard = await api.get('/dashboard');
 // Import xpub
 const result = await api.post('/wallet/importxpub', {
   xpub: 'dpubZF...',
-  gapLimit: 20,
+  accountName: 'trezor',
+  accountIndex: 0,
+  rescan: true,
 });
 
 // Get transactions
@@ -1067,6 +1676,7 @@ const txHistory = await api.get('/wallet/transactions', {
 - **[Node Dashboard](../features/node-dashboard.md)** - Node, blockchain, and network status
 - **[Wallet Dashboard](../features/wallet-dashboard.md)** - Balances, accounts, transactions
 - **[Multi-Wallet](../features/multi-wallet.md)** - Multiple wallet stacks
+- **[Shared Wallets](../features/shared-wallets.md)** - Multisig coordinated over Bison Relay
 - **[Privacy / Mixer](../features/privacy-mixer.md)** - CoinJoin mixer
 - **[Staking Guide](../features/staking-guide.md)** - Tickets, VSPs, autobuyer
 - **[Governance](../features/governance.md)** - Agendas, treasury, Politeia
@@ -1075,6 +1685,8 @@ const txHistory = await api.get('/wallet/transactions', {
 - **[DEX](../features/dex.md)** - DCRDEX trading (bisonw)
 - **[Bison Relay](../features/bison-relay.md)** - Bison Relay messaging (brclientd)
 - **[Timestamp](../features/timestamp.md)** - dcrtime file timestamping
+- **[AI Agents (MCP)](../features/ai-agents-mcp.md)** - Agent tokens, domains, and spend grants
+- **[Bison Relay MCP](../features/bison-relay-mcp.md)** - The Bison Relay MCP bridge
 - **[Settings](../features/settings.md)** - Themes and dashboard settings
 
 **Other references**:

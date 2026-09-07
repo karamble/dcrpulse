@@ -18,12 +18,18 @@ your Lightning node - under caps and an approval mode you control.
   are Bison Relay tips over the Lightning Network.
 - A key exchange (KX) completed with each bot you want to call; you allow it
   by its 64-hex uid.
+- A dashboard app password set under **Settings -> Security**. All four bridge
+  routes require it, and the section shows a "Set a dashboard app password
+  first" panel until one exists.
 
 ## Enabling it
 
 Settings -> Bison Relay -> AI Agent Access:
 
-1. Toggle it on. A bearer token is minted (recycle it any time).
+1. Toggle it on. A bearer token is minted, but the plaintext reaches you only
+   in the reply to a recycle, so press the recycle button beside the token to
+   get one you can copy. It is shown that once and never again, and recycling
+   cuts off any agent still using the previous token.
 2. Add the uid of each bot you allow (default deny - no bot is callable
    until listed).
 3. Set the spending policy:

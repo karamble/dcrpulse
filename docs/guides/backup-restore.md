@@ -104,9 +104,10 @@ make backup
 ```
 
 Note: `make backup` archives the shared `dcrpulse_app-data` volume only. The
-dcrlnd, brclientd, and DCRDEX volumes are separate; back them up with the
-manual commands in their sections below, or use the full backup script under
-[Complete System Backup](#complete-system-backup).
+dcrlnd, brclientd, DCRDEX, dashboard and Tor volumes are separate. Back up
+dcrlnd, brclientd and DCRDEX with the manual commands in their sections below,
+or use the full backup script under
+[Complete System Backup](#complete-system-backup), which covers all six.
 
 ---
 
@@ -376,8 +377,8 @@ echo "Configuration backed up to backups/config-backup-$(date +%Y%m%d).tar.gz"
 
 ### Full Backup Script
 
-Create a backup of everything, including the separate dcrlnd, brclientd, and
-DCRDEX volumes:
+Create a backup of everything, including the separate dcrlnd, brclientd,
+DCRDEX, dashboard and Tor volumes:
 
 ```bash
 #!/bin/bash
@@ -422,7 +423,21 @@ docker run --rm \
   -v $(pwd)/${BACKUP_DIR}:/backup \
   alpine tar czf /backup/dcrdex-data.tar.gz -C /data . 2>/dev/null || echo "No dcrdex volume"
 
-# 6. Create final archive
+# 6. Dashboard settings, per-wallet config, alerts, timestamp proofs
+echo "Backing up dashboard-data..."
+docker run --rm \
+  -v dcrpulse_dashboard-data:/data \
+  -v $(pwd)/${BACKUP_DIR}:/backup \
+  alpine tar czf /backup/dashboard-data.tar.gz -C /data . 2>/dev/null || echo "No dashboard volume"
+
+# 7. Tor data and onion service keys
+echo "Backing up tor-data..."
+docker run --rm \
+  -v dcrpulse_tor-data:/data \
+  -v $(pwd)/${BACKUP_DIR}:/backup \
+  alpine tar czf /backup/tor-data.tar.gz -C /data . 2>/dev/null || echo "No tor volume"
+
+# 8. Create final archive
 echo "Creating final archive..."
 cd backups
 tar czf "full-backup-${BACKUP_DATE}.tar.gz" "full-backup-${BACKUP_DATE}/"
@@ -624,6 +639,18 @@ docker run --rm \
   -v dcrpulse_dcrdex-data:/data \
   -v $(pwd):/backup \
   alpine sh -c "rm -rf /data/* && tar xzf /backup/dcrdex-data.tar.gz -C /data" 2>/dev/null || true
+
+# Restore dashboard-data (if present)
+docker run --rm \
+  -v dcrpulse_dashboard-data:/data \
+  -v $(pwd):/backup \
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/dashboard-data.tar.gz -C /data" 2>/dev/null || true
+
+# Restore tor-data (if present)
+docker run --rm \
+  -v dcrpulse_tor-data:/data \
+  -v $(pwd):/backup \
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/tor-data.tar.gz -C /data" 2>/dev/null || true
 
 # Start services
 cd ../..
@@ -897,8 +924,11 @@ If you lose everything:
 1. Reinstall Decred Pulse
 2. Restore configuration files
 3. Restore the app-data volume (blockchain + wallet)
-4. Restore dcrlnd, brclientd, and dcrdex volumes if you use them
-5. Verify balances
+4. Restore the dashboard-data volume (app password, per-wallet config including
+   the xpub account-index map, alerts, dcrtime proofs) and the tor-data volume
+   (onion service keys)
+5. Restore the dcrlnd, brclientd and dcrdex volumes if you use them
+6. Verify balances
 
 **Without Seed or Backup:**
 - Watch-only wallets can be recreated (just import the xpub again)

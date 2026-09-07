@@ -41,7 +41,7 @@ return (
 );
 ```
 
-The editor is controlled — it never owns the body string or the embed map;
+The editor is controlled - it never owns the body string or the embed map;
 the host manages both. `composeBRBody(body, embeds)` substitutes the
 in-textarea `--embed[id=X]--` placeholders with the full BR wire-format
 tags right before submission.
@@ -63,7 +63,7 @@ Defaults: all groups enabled. Recognised keys: `attach`, `linkContent`,
 ## Server-side dependencies
 
 The editor consumes two dashboard endpoints. They are part of the editor's
-contract — moving the editor to another deployment means moving these too:
+contract - moving the editor to another deployment means moving these too:
 
 | Endpoint                  | Purpose                                                      | Backed by                                |
 | ------------------------- | ------------------------------------------------------------ | ---------------------------------------- |
@@ -82,11 +82,11 @@ Inline `--embed[k=v,...]--` is the only BR wire tag. Three practical
 shapes that this editor emits (canonical Go reference:
 `github.com/companyzero/bisonrelay/internal/mdembeds`):
 
-- **Inline data** — `name`, `type`, `data` (+ optional `alt`). Bytes ride
+- **Inline data** - `name`, `type`, `data` (+ optional `alt`). Bytes ride
   inside the post.
-- **Free download** — `download` (FID), `filename`, `type`, `size`. Bytes
+- **Free download** - `download` (FID), `filename`, `type`, `size`. Bytes
   fetched separately over BR's file-transfer subsystem.
-- **Paid download** — same as free + `cost=<atoms>` (1 DCR = 1e8, not the
+- **Paid download** - same as free + `cost=<atoms>` (1 DCR = 1e8, not the
   milli-atoms of payment records). Reader pays
   over Lightning before BR releases the bytes. This is BR's "pay to read
   more" mechanic.

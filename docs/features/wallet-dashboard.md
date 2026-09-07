@@ -15,12 +15,13 @@ The Wallet Dashboard displays real-time information about your wallet's financia
 The Wallet area is organized as a hub with a left-hand sidebar. The **Overview** page (this document) is the landing view; the other sections each have their own dedicated guide:
 
 - **Overview** - balances, recent transactions, ticket summary, accounts (this page)
-- **On-Chain Transactions** - send, receive, full transaction history, export
+- **On-Chain Transactions** - send, receive, full transaction history, export, and offline signing for watch-only wallets
 - **Privacy** - see [Privacy Mixer](privacy-mixer.md)
 - **Staking** - see [Staking Guide](staking-guide.md)
 - **Governance** - see [Governance](governance.md)
 - **Lightning** - see [Lightning](lightning.md)
 - **Accounts** - account management
+- **MultiSig Wallet** - see [Shared Wallets](shared-wallets.md)
 - **Timestamp** - see [Timestamp](timestamp.md)
 - **Settings** - wallet, privacy, logs, themes, security, and Tor settings
 - **Switch Wallet** - see [Multiple Wallets](multi-wallet.md)
@@ -304,11 +305,13 @@ The Overview refreshes balances and account data every **10 seconds** automatica
 To adjust the refresh interval, modify:
 ```typescript
 // dashboard/web/src/pages/WalletDashboard.tsx
-useEffect(() => {
-  const interval = setInterval(fetchData, 10000); // Change 10000 to desired ms
-  return () => clearInterval(interval);
-}, []);
+useVisiblePoll(fetchData, 10000, { immediate: false }); // Change 10000 to desired ms
 ```
+
+The poll runs unconditionally, including during a rescan: sync state belongs to
+the WebSocket, so polling has no reason to pause. A second poll in the same file
+refreshes the activity flags every 15 seconds and is skipped on a watch-only
+wallet.
 
 ### Transaction Display Limits
 The full transaction history (On-Chain Transactions > History) uses these defaults:
@@ -361,7 +364,7 @@ const data = await getWalletTransactions(200);  // Total to fetch
 1. Import xpub for address monitoring
 2. For old, heavily used wallets run Address discovery with a larger one-shot gap
 3. Ticket info requires full RPC connection
-4. Cannot send transactions (watch-only)
+4. Cannot sign in-app; spend through the **Offline signing** tab with an external signer
 
 ### For Transaction History
 1. Click transactions to view blockchain details
@@ -388,7 +391,7 @@ const data = await getWalletTransactions(200);  // Total to fetch
 **Solutions:**
 1. **Watch-only wallet**: Import the xpub, then run Address discovery if funds sit at high indices
 2. **New wallet**: No transactions yet
-3. **High address index**: Increase gap limit and rescan
+3. **High address index**: run **Settings -> Wallet -> Address discovery**
 4. **Sync incomplete**: Wait for wallet to finish syncing
 
 ### Ticket Counts Incorrect
@@ -406,8 +409,7 @@ const data = await getWalletTransactions(200);  // Total to fetch
 **Solutions:**
 1. Check dcrwallet logs: `docker compose logs -f dcrwallet`
 2. Verify dcrwallet is running: `docker compose ps`
-3. Check for stale logs: Backend auto-detects stale progress
-4. Restart if necessary: `docker compose restart dcrwallet`
+3. Restart if necessary: `docker compose restart dcrwallet`
 
 ### Cards Not Appearing After Rescan
 **Problem**: Dashboard cards don't show after rescan completes

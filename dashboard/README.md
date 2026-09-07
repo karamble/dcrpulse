@@ -17,19 +17,36 @@ The dcrpulse dashboard is a single Go binary that serves both the API backend an
 ```
 dashboard/
 ├── cmd/
-│   └── dcrpulse/         # Main application entry point
-│       └── main.go       # HTTP server with embedded files
-├── internal/             # Private application code
-│   ├── handlers/         # HTTP request handlers
-│   ├── services/         # Business logic
-│   ├── rpc/             # Decred RPC clients
+│   ├── dcrpulse/        # Main application entry point
+│   │   └── main.go      # HTTP server with embedded files
+│   ├── bisonwping/      # DCRDEX reachability probe
+│   ├── dexassetgen/     # DCRDEX asset table generator
+│   └── mcptest/         # MCP wire test client
+├── internal/            # Private application code
+│   ├── handlers/        # HTTP request handlers
+│   ├── services/        # Business logic
+│   ├── rpc/             # Daemon clients (dcrd, dcrwallet, dcrlnd,
+│   │                    #   brclientd, dcrdex)
+│   ├── mcp/             # MCP server and tool catalogue
+│   ├── auth/            # App-password gate and sessions
+│   ├── middleware/      # Same-origin, body cap, rate limits
+│   ├── msig/            # Shared-wallet protocol
+│   ├── alerts/          # Alert engine
+│   ├── timestamp/       # dcrtime records and proofs
+│   ├── config/          # Per-wallet paths and settings
+│   ├── dexassets/       # Generated DCRDEX asset data
 │   ├── types/           # Type definitions
+│   ├── log/             # slog wiring
+│   ├── fsutil/          # Filesystem helpers
 │   └── utils/           # Utility functions
-├── web/                  # Frontend source code
+├── pkg/                 # Importable helpers
+│   ├── bisonw/          # bisonw client
+│   └── exchangerate/    # Rate sources
+├── web/                 # Frontend source code
 │   ├── src/             # React/TypeScript source
 │   ├── public/          # Static assets
 │   ├── dist/            # Build output (gitignored)
-│   └── *.config.js      # Build configuration
+│   └── vite.config.ts   # Build configuration (plus tailwind, postcss)
 ├── Dockerfile           # Multi-stage build
 ├── go.mod
 └── config.example
@@ -39,7 +56,7 @@ dashboard/
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.26+
 - Node.js 18+
 - npm
 
@@ -50,7 +67,7 @@ Development mode allows hot reloading for the frontend:
 **Terminal 1: Start Go backend**
 ```bash
 cd dashboard
-go run cmd/dcrpulse/main.go
+go run ./cmd/dcrpulse
 ```
 
 **Terminal 2: Start Vite dev server**

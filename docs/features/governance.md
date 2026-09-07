@@ -60,6 +60,9 @@ For every agenda in the deployment:
   - **lockedin** - the threshold was met and the change is queued to activate
   - **active** - the change passed and is in force
   - **failed** - the agenda did not pass
+- **Vote tally**, once any votes are counted - the approval percentage of the yes and no votes, whether quorum is met (yes-plus-no votes cast versus the quorum requirement), a yes/no split bar, and the total votes cast, marked **(still counting)** while the vote is open. Each choice card also carries its own vote count and share.
+
+An agenda that is still being voted on carries its counts inline from `getvoteinfo`. A settled agenda has to be reconstructed from the blocks it was voted in, so its tally is fetched only when the card scrolls into view and shows **Counting votes...** while that runs.
 
 **Setting your vote choice**
 
@@ -72,7 +75,7 @@ Each agenda lists its available choices (for example **abstain**, **yes**, **no*
 
 Your tickets then vote with this choice automatically as they are called to vote. You can change the choice at any time while the agenda is still open; the most recent choice is what your tickets will cast.
 
-**API**: `GET /api/wallet/governance/agendas`, `POST /api/wallet/governance/agendas/set`
+**API**: `GET /api/wallet/governance/agendas`, `GET /api/wallet/governance/agendas/{id}/votes` (per-agenda tally), `POST /api/wallet/governance/agendas/set`
 
 ---
 
@@ -166,6 +169,10 @@ The proposals list is cached on the backend so the external server is not hit on
 - The button shows **updated X ago** and, while cooling down, **Refresh in Xm** with a live countdown.
 - If you refresh during the cooldown the server returns a 429 and the countdown re-syncs to match the server.
 
+**Loading more**
+
+The list holds one page of proposals per status bucket. When the server reports that more exist, a **Load more proposals** button sits at the bottom of the list; it fetches the next page for the filter you are on and extends the list in place.
+
 #### Proposal detail view
 
 Clicking a proposal opens its detail page (`/wallet/governance/proposals/:token`), which is also cached per proposal with its own refresh + cooldown. It shows:
@@ -194,6 +201,19 @@ Voting is intentionally gated so the heavy work only runs when you ask for it.
 4. In the vote form, pick a choice (e.g. **yes** / **no** / **abstain**), enter your **wallet passphrase**, and click **Sign & cast**.
 5. The ballot is signed and broadcast. The modal reports how many ticket votes were **cast**, how many were **skipped**, and lists any per-ticket errors.
 
+#### politeiavoter mode
+
+The vote form also carries a **politeiavoter mode** checkbox, which trickles the votes out at random times over a window instead of submitting them in one batch. Ticking it reveals two inputs:
+
+- **Spread over (minutes)** - the length of the window. Default **360** (six hours).
+- **Bunches** - how many random windows over that period the votes are spread across. Default **1**.
+
+The submit button then reads **Sign & start trickle**. Every eligible vote is signed up front, with the wallet re-locked before the request returns, and a background worker submits them over the window. The modal closes as soon as the worker starts.
+
+A **trickle card** is pinned to the top of the Proposals tab for each run, one per proposal, showing a cast/total progress bar, failed and pending counts, **Finishes in** and **Next in** countdowns, the last error if there was one, and an expandable **Activity** log of the worker's events. **Stop** ends a running trickle; **Dismiss** clears a finished one. While any run is active, a **Trickling N** badge appears in the governance header and links back to the Proposals tab.
+
+> A dashboard restart ends the run. It is safe to start it again afterwards: tickets that already cast are skipped.
+
 #### The local "you voted" cache
 
 After a successful cast - and also whenever the eligibility check discovers your wallet has already voted - dcrpulse records your choice locally in the wallet's config (keyed per network and per wallet). This local "you voted X" cache is what powers the **you voted: X** badges in the list and the **You voted "X"** notices on the detail page and in the modal, without re-deriving it from the chain on every view. The cached choice is layered onto the proposal data when it is served, so it survives restarts and refreshes.
@@ -202,7 +222,10 @@ After a successful cast - and also whenever the eligibility check discovers your
 - `GET /api/wallet/governance/proposals` (list), `POST /api/wallet/governance/proposals/refresh`
 - `GET /api/wallet/governance/proposals/{token}` (detail), `POST /api/wallet/governance/proposals/{token}/refresh`
 - `POST /api/wallet/governance/proposals/{token}/vote-eligibility` (compute eligibility on modal open)
+- `POST /api/wallet/governance/proposals/load-more` (next page for the current status filter)
 - `POST /api/wallet/governance/proposals/cast-vote` (sign + cast ballot)
+- `POST /api/wallet/governance/votetrickle/start`, `POST /api/wallet/governance/votetrickle/stop?token=<token>` (start or stop a politeiavoter-mode run)
+- `GET /api/wallet/governance/votetrickle/status` (one entry per run), `GET /api/wallet/governance/votetrickle/events` (WebSocket event stream, replaying the last 200 events on connect)
 
 When Politeia is disabled, these endpoints return **503 Service Unavailable**.
 
@@ -230,6 +253,8 @@ A live view of TSpends currently in the voting window (scanned from the mempool)
 - The current **yes / no tally** and a yes/no split bar.
 - Whether it is **passing** - a TSpend requires **60% yes** of the cast yes/no votes to pass (the 3/5 required-approval multiplier).
 
+Expanding a card fetches that TSpend's full vote breakdown.
+
 When nothing is in voting it reads **No treasury votes in progress.**
 
 This panel shows the network-wide tally. To control how *your* wallet votes on these TSpends, use the **Treasury** tab in the wallet governance area.
@@ -252,8 +277,7 @@ Because dcrd does not serve the full historical list of TSpends, dcrpulse can sc
 - `POST /api/treasury/scan-history` - start a historical scan (rate-limited)
 - `GET /api/treasury/scan-progress` - scan progress
 - `GET /api/treasury/scan-results` - results of the last completed scan
-- `GET /api/treasury/mempool` - active TSpends in the mempool
-- `GET /api/treasury/votes/{txhash}/progress` - vote-counting progress for one TSpend
+- `GET /api/explorer/transactions/{txhash}` - the full vote breakdown for one TSpend, fetched when its card is expanded
 
 ---
 

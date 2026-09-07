@@ -70,6 +70,11 @@ In the Wallet Dashboard:
 
 #### 3. Enter Xpub Information
 
+**From the hardware wallet's SD card** (optional)
+- Loads the device's `accounts.dcr` export file so you pick accounts instead of pasting a key
+- On the device: **Accounts**, then **"Write to SD card"** (one account) or **"Export all to SD card"**
+- A file selection replaces the manual fields below, and the chosen accounts import one at a time, waiting out the 30-second rate limit between each
+
 **Extended Public Key (xpub)** (required)
 - Paste your extended public key
 - Starts with `dpub` for Decred mainnet (or `tpub` for testnet)
@@ -80,6 +85,11 @@ In the Wallet Dashboard:
 - 50 characters or fewer
 - Cannot be a reserved name (`mixed`, `unmixed`, `lightning`, `dex`, `imported`)
 - Cannot match an account that already exists
+
+**Account Index** (optional; shown only when the wallet you are importing into is itself watch-only)
+- The BIP44 account number you exported from the device (0, 1, 2, ...)
+- Leave it empty for a monitor-only xpub; set it to spend from this account through **Offline signing**
+- Must be 0 to 2147483647 and must not repeat an index another imported account already uses
 
 The import modal does not ask for a gap limit. The address gap limit is a
 wallet-wide setting applied by the `dcrwallet` daemon (see
@@ -109,7 +119,7 @@ After clicking **"Import Xpub"**:
      - System performance
 
 4. **Completion**
-   - Progress bar disappears at 99%
+   - Progress bar completes and hides once the wallet is synced
    - Dashboard cards appear
    - Balances and transactions visible
 
@@ -122,6 +132,9 @@ After clicking **"Import Xpub"**:
 |  Import Extended Public Key                 |
 +---------------------------------------------+
 |                                             |
+|  From the hardware wallet's SD card         |
+|  [ Import from file (accounts.dcr) ]        |
+|                                             |
 |  Extended Public Key (xpub) *               |
 |  +-------------------------------------+    |
 |  | dpubZF6ScrX...                      |    |
@@ -130,6 +143,11 @@ After clicking **"Import Xpub"**:
 |  Account Name *                             |
 |  +-------------------------------------+    |
 |  | savings-xpub                        |    |
+|  +-------------------------------------+    |
+|                                             |
+|  Account Index (optional, watch-only)       |
+|  +-------------------------------------+    |
+|  | 0                                   |    |
 |  +-------------------------------------+    |
 |                                             |
 |  Note: after import, the wallet rescans     |
@@ -200,13 +218,13 @@ curl -X POST http://localhost:8080/api/wallet/rescan \
 - Wallet prepares for rescan
 - Dashboard cards hidden
 - Progress bar appears
-- Normal polling paused
+- Normal 10s balance polling continues
 
 #### Phase 2: Scanning
 - Blockchain examined block by block
 - Transactions discovered and indexed
 - Balances calculated
-- Progress updates every 2 seconds
+- Progress updates arrive roughly once per second
 
 **What you see**:
 ```
@@ -214,7 +232,7 @@ curl -X POST http://localhost:8080/api/wallet/rescan \
 |  Scanning Blockchain                       |
 |  [==================--------]  68%         |
 |                                            |
-|  Block 1,016,234 / 1,016,401               |
+|  Block 758,120 / 1,113,281                 |
 |  Finding your transactions...              |
 +--------------------------------------------+
 ```
@@ -225,11 +243,11 @@ curl -X POST http://localhost:8080/api/wallet/rescan \
 - Large gap limit (1000): 30-60 minutes
 
 #### Phase 3: Completion
-- Progress reaches 99%
-- Progress bar auto-hides
+- Progress reaches 100%
+- Progress bar auto-hides once the wallet is synced
 - Dashboard cards reappear
 - Data refreshed immediately
-- Normal polling resumes
+- Balance polling was never interrupted
 
 ---
 
@@ -240,7 +258,7 @@ Real-time progress tracking during wallet rescan operations.
 ### Progress Bar Features
 
 #### Visual Display
-- **Percentage**: 0-99%
+- **Percentage**: 0-100%
 - **Progress Bar**: Animated fill
 - **Block Count**: Current / Total
 - **Status Message**: Operation description
@@ -248,14 +266,13 @@ Real-time progress tracking during wallet rescan operations.
 #### Live Updates
 - **Source**: gRPC rescan stream pushed over a WebSocket
 - **Granularity**: Updates as each block range is scanned
-- **Fallback**: A log-based stream covers daemon-driven rescans
-- **Auto-Hide**: Disappears at 99% completion
+- **Auto-Hide**: Disappears once the wallet is synced, not at a percentage threshold
 
 #### Dashboard Behavior
 - **During Sync**: Cards hidden, progress visible
 - **After Sync**: Cards appear, progress hidden
 - **On Navigation**: Persists if rescan active
-- **Background**: Pauses other polling
+- **Background**: Balance polling carries on; sync state arrives over the WebSocket
 
 ---
 
@@ -276,31 +293,10 @@ Action: Wait for completion
 
 ---
 
-#### Stale Sync Detection
-```
-Status: Rescan inactive (logs stale)
-Progress: N/A
-Action: Rescan completed or stalled
-```
-
-**What happens**:
-- Last log entry > 2 minutes old
-- Considered inactive
-- Polling stops automatically
-- Dashboard resumes normal operation
-
-**Triggers**:
-- Rescan genuinely completed
-- Wallet crashed or stopped
-- Log rotation
-- File permission issues
-
----
-
 #### Sync Completion
 ```
 Status: Complete
-Progress: 99%
+Progress: 100%
 Action: Dashboard refreshes
 ```
 
@@ -308,19 +304,20 @@ Action: Dashboard refreshes
 - Progress bar auto-hides
 - Dashboard cards appear
 - Data fetched immediately
-- Normal 30s polling resumes
+- Normal 10s balance polling continues
 
 ---
 
 ### Progress Tracking Technical Details
 
 The dashboard runs a user-initiated rescan over gRPC and streams progress to the
-browser over a WebSocket. A separate log-based stream covers rescans that the
-`dcrwallet` daemon starts on its own (for example, after a restore).
+browser over a WebSocket. The same stream carries the sync state the `dcrwallet`
+daemon reports on its own (for example, after a restore), so there is one source
+of progress for both.
 
 #### Dashboard: rescan stream
 
-**Location**: `dashboard/internal/handlers/wallet.go`
+**Location**: `dashboard/internal/handlers/wallet_grpc.go` (the WebSocket fan-out)
 
 **Process**:
 1. Starts the gRPC `Rescan` stream from a begin height (block 0 on xpub import).
@@ -328,9 +325,10 @@ browser over a WebSocket. A separate log-based stream covers rescans that the
 3. Fans out each update to subscribed WebSocket clients.
 4. Marks the rescan finished when the stream completes.
 
-WebSocket endpoints:
-- `/api/wallet/grpc/stream-rescan` - gRPC rescan progress (block height).
-- `/api/wallet/stream-rescan-progress` - log-based progress for daemon-driven rescans.
+WebSocket endpoint:
+- `/api/wallet/grpc/stream-rescan` - the wallet sync snapshot (phase, percentage,
+  block height). It pushes the current snapshot on connect, then one frame per
+  update, with a 15-second keepalive ping.
 
 #### Dashboard frontend: progress display
 
@@ -374,7 +372,7 @@ while a rescan is active, shows the progress bar, and re-fetches data from
 
 ### Gap Limit Selection
 
-The standing gap limit stays at `20` — dcrwallet's BIP0044 default, the value
+The standing gap limit stays at `20` - dcrwallet's BIP0044 default, the value
 Decrediton ships. When funds sit at higher address indices (a restored or
 legacy wallet), do not raise the standing limit: run Settings → Wallet →
 Address discovery with a larger one-shot gap for that scan.
@@ -388,7 +386,7 @@ Address discovery with a larger one-shot gap for that scan.
 The standing limit is set on the `dcrwallet` daemon through the
 `DCRWALLET_GAP_LIMIT` environment variable (default `20` everywhere). If you
 change it in `.env`, recreate the container with `docker compose up -d
-dcrwallet` — a plain restart keeps the old environment.
+dcrwallet` - a plain restart keeps the old environment.
 
 ---
 
@@ -431,9 +429,9 @@ dcrwallet` — a plain restart keeps the old environment.
    docker compose ps dcrwallet
    ```
 
-3. **Stale detection active**:
-   - Logs older than 2 minutes
-   - Rescan may have completed
+3. **Rescan already finished**:
+   - Progress comes from dcrwallet's gRPC notifications, not from the log
+   - A finished rescan simply stops sending them
    - Refresh page to check
 
 4. **Wallet crashed**:
@@ -499,10 +497,10 @@ dcrwallet` — a plain restart keeps the old environment.
 **Problem**: Expected transactions not showing
 
 **Solutions**:
-1. **Increase gap limit**:
+1. **Run a one-shot address discovery**:
    - Used addresses may be at high indices
-   - Try 500 or 1000
-   - Re-import xpub with higher limit
+   - Settings -> Wallet -> Address discovery, with a gap of 500 or 1000
+   - Re-importing the xpub changes nothing: the import does not take a gap limit
 
 2. **Wrong account**:
    - Ensure correct account xpub
@@ -525,10 +523,10 @@ dcrwallet` — a plain restart keeps the old environment.
 **Problem**: Balance lower than expected
 
 **Solutions**:
-1. **Increase gap limit**:
-   - Current limit may be too low
+1. **Run a one-shot address discovery**:
+   - The standing limit of 20 may be too low
    - High address indices not scanned
-   - Try doubling the gap limit
+   - Settings -> Wallet -> Address discovery, doubling the one-shot gap
 
 2. **Multiple accounts**:
    - Import xpubs for all accounts
@@ -537,7 +535,7 @@ dcrwallet` — a plain restart keeps the old environment.
 
 3. **Rescan incomplete**:
    - Wait for 100% completion
-   - Check progress bar reached 99%
+   - Check the progress bar reached 100%
    - Allow background finalization
 
 4. **Verify in source wallet**:
@@ -635,14 +633,42 @@ Gap Limit 1000: ~50 minutes
 - Track transaction history
 
 **Cannot do**:
-- Send transactions
+- Sign transactions in the app (spend through **Offline signing** instead, below)
 - Purchase tickets
 - Sign messages
 - Access private keys
 - Vote with tickets
 - Revoke tickets
 
-**Use case**: Safe monitoring without spending risk.
+**Use case**: Safe monitoring, with spending kept on an external signer.
+
+---
+
+### Offline Signing
+
+A watch-only wallet holds no private keys, so it cannot sign in the app. It
+spends through the **Offline signing** tab under **On-Chain Transactions**,
+which replaces the **Send** tab for watch-only wallets and is the tab they open
+by default. The flow is built for an air-gapped hardware wallet such as the
+Foundation Passport, so the keys never leave the device.
+
+1. **Export an unsigned transaction** - build the transaction in the dashboard,
+   then download `unsigned.dcrtx` or scan the QR shown beside it (transactions
+   too large for one QR are file-only).
+2. **Sign it on the device** - carry the file across on microSD, or scan the QR.
+   Verify the amount and recipient on the device before approving.
+3. **Import the signed transaction** - drop in the device's `.dcrtx` file or
+   paste the signed hex; the dashboard decodes it into a preview to check.
+4. **Broadcast** - publish the signed transaction to the network.
+
+The same tab exports `balance.dcr`, a per-account balance file the device reads
+to show balances on its own screen. Put it in the same microSD folder as the
+`.dcrtx` files.
+
+**API**: `POST /api/wallet/build-sign-request`,
+`POST /api/wallet/decode-signed-transaction`,
+`POST /api/wallet/broadcast-signed-transaction`, and
+`GET /api/wallet/device-balance`. None of them use private keys.
 
 ---
 
@@ -661,7 +687,7 @@ Import xpubs for multiple accounts:
 
 2. **Import each individually**:
    - Use Import Xpub modal for each
-   - Set appropriate gap limit per account
+   - Give each account a distinct name (there is no per-import gap limit)
    - Wait for each rescan to complete
 
 3. **View in dashboard**:

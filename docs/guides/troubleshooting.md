@@ -18,7 +18,8 @@ When something goes wrong, follow these steps:
 
 3. **Check connectivity**:
    - Dashboard UI: `http://localhost:8080`
-   - API health: `http://localhost:8080/api/health`
+   - API health: `http://localhost:8080/api/health` (401 once the app password
+     is on; `/api/auth/status` answers either way)
 
 4. **Verify credentials** in `.env` file
 
@@ -514,12 +515,12 @@ docker compose ps dcrwallet
 # Should show "Up" status
 ```
 
-#### 3. Check for Stale Detection
+#### 3. Check Whether the Rescan Is Still Running
 ```bash
-# Dashboard logs
-docker compose logs dashboard | grep -i "stale\|rescan"
+# Sync state comes from dcrwallet's gRPC notifications, not the log
+curl http://localhost:8080/api/wallet/sync-progress
 
-# If "stale" detected, rescan may have completed
+# phase: "rescanning" means it is still going
 ```
 
 #### 4. Restart Wallet
@@ -538,13 +539,13 @@ docker exec dcrpulse-dcrwallet dcrctl \
   --rpcpass=your_wallet_password \
   --rpcserver=127.0.0.1:9110 \
   --rpccert=/app-data/dcrd/rpc.cert \
-  rescan
+  rescanwallet
 ```
 
 #### 6. Check Blockchain Sync
 ```bash
 # Ensure dcrd is fully synced first
-curl http://localhost:8080/api/node/status | jq '.syncProgress'
+curl http://localhost:8080/api/dashboard | jq '.nodeStatus.syncProgress'
 
 # Should be 100
 ```
@@ -587,7 +588,7 @@ docker exec dcrpulse-dcrwallet dcrctl \
   --rpcpass=your_wallet_password \
   --rpcserver=127.0.0.1:9110 \
   --rpccert=/app-data/dcrd/rpc.cert \
-  listaddresses
+  getaddressesbyaccount your_imported_account
 
 # Compare with source wallet addresses
 ```
@@ -602,17 +603,14 @@ curl http://localhost:8080/api/wallet/sync-progress
 
 #### 5. Verify Network Match
 ```bash
-# Ensure mainnet xpub for mainnet node
-# Check .env:
-cat .env | grep NETWORK
-
-# Should be NETWORK=mainnet or empty (defaults to mainnet)
+# The stack is mainnet-only, so the xpub must be a mainnet key.
+# A testnet xpub imports but never finds funds.
 ```
 
 #### 6. Check Blockchain Sync
 ```bash
 # Transactions only appear after their block is synced
-curl http://localhost:8080/api/node/status | jq '.blocks'
+curl http://localhost:8080/api/dashboard | jq '.blockchainInfo.blockHeight'
 
 # Compare with transaction block height
 ```
@@ -957,10 +955,10 @@ curl http://localhost:8080
 
 #### 4. Verify the API Responds
 ```bash
-# Test the API
-curl http://localhost:8080/api/health
+# Answers without a session, whether or not the app password is on
+curl http://localhost:8080/api/auth/status
 
-# Should return JSON that includes "status":"healthy"
+# Should return JSON describing the app-password state
 ```
 
 #### 5. Clear Browser Cache
@@ -996,12 +994,13 @@ docker compose up -d dashboard
 # Health check
 curl http://localhost:8080/api/health
 
-# Node status
-curl http://localhost:8080/api/node/status
-
-# Dashboard data
+# Node and chain data
 curl http://localhost:8080/api/dashboard
 ```
+
+Both sit behind the app-password gate. With the password on they answer `401`
+with an `X-Dashboard-Auth: required` header until you send the session cookie -
+that is the gate working, not a broken API.
 
 #### 3. Check Network Tab
 - Open browser DevTools (F12)

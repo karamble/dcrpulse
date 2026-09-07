@@ -77,24 +77,30 @@ You can choose **Remind me later** to dismiss the reminder for the session.
 
 Once unlocked and connected, the page shows the registration screen for `dex.decred.org:7232` until your account is registered. After a seed restore the client first runs account discovery against the server; if it finds a live bond, it skips straight to trading.
 
-The registration screen shows the server's markets and bond requirements, then walks you through two steps:
+The registration screen shows the server's markets and bond requirements, and its own summary states the shape of the flow: choose a bond asset, fund its wallet, then post the bond to register.
 
-**1. Fund your DEX account**
+**Choosing a bond asset**
 
-- A **deposit address** for the dex account is shown (with a copy button).
-- Send at least the required bond amount in DCR (plus a little for network fees) to that address.
+When the server accepts more than one bond asset, a **Bond asset** selector lists them with the per-tier amount and a readiness badge - **Ready** (a synced wallet already holding at least one tier), **Fund** (a wallet that needs more), or **Setup** (no wallet for that asset yet). DCR is selected by default when the server offers it, otherwise the first asset in the list. Switching asset re-runs the funding check against that asset's wallet.
+
+**1. Create or fund the bond wallet**
+
+- If you have no wallet for the selected asset, step 1 becomes a wallet-creation step: pick a wallet type from the ones the client lists for that asset, fill in its configuration, and supply a **Wallet password** for the types that take one - seeded types (Native / SPV) derive theirs from the DCRDEX seed and reject an external password.
+- Once the wallet exists, its **deposit address** is shown (with a copy button).
+- Send at least the bond plus a network-fee buffer to that address; the screen states the exact amount to send. The buffer is the client's own per-asset figure, read from `GET /api/dcrdex/bondsfeebuffer`.
 - Your **current balance** updates automatically as the deposit confirms; a sync indicator is shown while the wallet is still syncing.
 
 **2. Post your bond**
 
-- **Tiers** - Choose how many tiers to bond. Each tier locks a fixed amount of DCR for a set expiry period as a refundable bond, and raises your trading limit and reputation on the server.
+- **Tiers** - Choose how many tiers to bond. Each tier locks a fixed amount of the bond asset for a set expiry period as a refundable bond, and raises your trading limit and reputation on the server.
 - The screen shows the **total bond**, the expiry in days, and the required confirmations.
-- Posting requires the dex account to be funded above the bond amount; the button stays disabled until it is.
-- **Post bond and register** asks for an explicit confirmation, then spends the bond.
+- Posting requires the wallet to be synced and to hold the bond plus the fee buffer; the button stays disabled until it is.
+- **Post bond & register** asks for an explicit confirmation, then spends the bond.
+- The post then runs in the background: the screen reports the bond as submitted and waiting to broadcast, then as broadcast and waiting for the server to register the account. A post still in flight is picked back up when you reload the page.
 
-**About bonds:** A fidelity bond is what lets you trade without an account fee. It is time-locked DCR that deters spam and fake orders by holding you accountable for trades you start. The bond is refundable to your wallet after it expires, and auto-renews while maintained. If you back out of a trade during settlement you are penalized: your effective trading tier drops and you may need to post additional bond to restore it.
+**About bonds:** A fidelity bond is what lets you trade without an account fee. It is time-locked funds in the bond asset that deter spam and fake orders by holding you accountable for trades you start. The bond is refundable to your wallet after it expires, and auto-renews while maintained. If you back out of a trade during settlement you are penalized: your effective trading tier drops and you may need to post additional bond to restore it.
 
-Posting spends real DCR on mainnet, so it is always behind a confirmation step.
+Posting spends real funds from that wallet on mainnet, so it is always behind a confirmation step.
 
 ---
 
@@ -367,7 +373,9 @@ The DEX feature is served under `/api/dcrdex/...`. The handlers proxy to the bis
 
 **Registration and bonds**
 - `GET /api/dcrdex/account` - per-server account (tier, reputation, bonds)
-- `POST /api/dcrdex/postbond` - post a fidelity bond
+- `GET /api/dcrdex/bondsfeebuffer?assetID=<id>` - the fee buffer to reserve on top of the bond
+- `POST /api/dcrdex/postbond` - post a fidelity bond; answers `202` and posts in the background
+- `GET /api/dcrdex/postbond/status?host=<host>` - the phase of that background post, polled until it broadcasts or fails
 - `POST /api/dcrdex/bondopts` - set auto-renew / target tier / bond options
 
 **Markets and config**

@@ -165,12 +165,12 @@ For treasury spends, an extra section shows:
 
 ### Treasury Spend Approval (TSpend only)
 Treasury spends are approved by stakeholder voting, so the page also renders a voting panel:
-- A status badge - **Ongoing Vote** or **Voting Complete**, plus an approval classification (Fast Approval / Approval / Rejected) once voting finishes
+- A status badge - **Ongoing Vote** or **Voting Complete**, plus **Approved** or **Rejected** once voting has finished with votes cast
 - An **approval rate** bar and percentage
 - **Quorum** status (votes cast versus required)
 - A breakdown of **Yes** / **No** votes, **Eligible Votes**, **Votes Cast** with turnout, voting start/end times, and the voting period block range (start and end blocks are clickable)
 
-Counting votes requires scanning the blocks in the voting window. While that scan runs, the panel shows a live **"Counting Votes..."** progress bar (current block, percent complete, estimated time remaining, and running Yes/No tallies), polled every 2 seconds until counting finishes.
+The tally arrives with the transaction itself - your node answers it from `gettreasuryspendvotes`, and quorum and the required approval percentage are derived from the network's consensus parameters - so there is no separate counting step. The panel is collapsible and opens expanded here; collapsed, it keeps the yes percentage, the yes/no split bar, and the Yes/No counts.
 
 ### Inputs and Outputs
 A detailed inputs/outputs list:
@@ -196,9 +196,7 @@ A **Transaction Fee** summary at the bottom shows inputs minus outputs.
 ### Raw Transaction
 When available, an expandable **Show Hex** panel displays the full raw transaction hex with a copy button.
 
-**API routes**:
-- Transaction: `GET /api/explorer/transactions/{txhash}`
-- Vote-counting progress (TSpend): `GET /api/treasury/votes/{txhash}/progress`
+**API route**: `GET /api/explorer/transactions/{txhash}` (a TSpend's voting panel is served from the same response)
 
 ---
 
@@ -259,7 +257,7 @@ The explorer includes a standalone dcrtime proof checker, reached from the **Ver
 
 ## API Reference
 
-All explorer endpoints are read-only `GET` requests under `/api/explorer` (plus the treasury vote-progress endpoint), backed by your local dcrd node:
+All explorer endpoints are read-only `GET` requests under `/api/explorer`, backed by your local dcrd node:
 
 | Route | Purpose |
 | --- | --- |
@@ -270,7 +268,6 @@ All explorer endpoints are read-only `GET` requests under `/api/explorer` (plus 
 | `GET /api/explorer/transactions/{txhash}` | Transaction detail |
 | `GET /api/explorer/address/{address}` | Address validation, existence, and tickets |
 | `GET /api/explorer/mempool` | Current mempool transactions |
-| `GET /api/treasury/votes/{txhash}/progress` | TSpend vote-counting progress |
 
 ---
 
@@ -288,7 +285,7 @@ All explorer endpoints are read-only `GET` requests under `/api/explorer` (plus 
 
 ### Treasury Spends
 1. Open a TSpend transaction to see its approval status and vote breakdown
-2. Let the vote-counting progress bar finish for the final tally on recent or ongoing votes
+2. Reload the page for a fresher tally on an ongoing vote - the counts cover the chain up to your node's best block
 
 ---
 
@@ -315,13 +312,13 @@ All explorer endpoints are read-only `GET` requests under `/api/explorer` (plus 
 2. Confirm dcrd is synced and producing/relaying new blocks
 3. Refresh the page
 
-### Vote Count Stuck
-**Problem**: A treasury spend's vote count does not finish
+### No Approval Panel on a Treasury Spend
+**Problem**: A TSpend transaction page shows no **Treasury Spend Approval** section
 
 **Solutions:**
-1. Vote counting scans every block in the voting window and can take time on a busy node
+1. The tally comes from dcrd's `gettreasuryspendvotes`; when that call fails the panel is left off entirely
 2. Ensure dcrd is responsive and fully synced
-3. Reopen the transaction to restart the progress scan
+3. Reload the transaction page to fetch the voting data again
 
 ---
 

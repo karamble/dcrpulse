@@ -96,7 +96,9 @@ Contacts are sorted **unread first, then alphabetically** by display nick. The l
 
 Selecting a contact loads the **last 100 messages** of history. The composer at the bottom grows as you type. Features:
 
-- **Plain text** with automatic linkification of URLs.
+- **Inline markdown** - bold (`**`), italic (`*`), inline code (backticks) and strikethrough (`~~`) are rendered in the message body. `https` links are turned into anchors, both bare and in `[label](https://...)` form; other schemes stay literal text.
+- **Emoji picker** - the **Insert emoji** button opens a searchable, categorized grid of emojis. The popover stays open so you can add several in a row, and closes on outside-click or Escape.
+- **Formatting menu** - the **Text formatting** button wraps the composer's current selection in the matching delimiters for bold, italic, code, strikethrough, or a link, and inserts a placeholder when nothing is selected.
 - **Attachments** via the paperclip button, which opens a menu of the three ways a file can reach the other side:
   - **Upload a file** - the original behaviour. Compressible images open a preview/compression modal; a compressed copy small enough is embedded inline in the message, while larger images and other files are pushed to the contact as a direct file transfer. A direct transfer arrives unasked and carries no price.
   - **Offer for download** - the file is registered as one of your shared files and the message carries a reference to it. The contact sees a download chip and fetches the bytes when they choose, paying over Lightning first if you set a price. You pick the price in DCR (0 for a free offer) and who may fetch it: only this contact, which is the default, or all your subscribers. The upload runs inside the modal with a progress bar and can be cancelled. Up to 200 MB.

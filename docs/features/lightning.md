@@ -169,12 +169,16 @@ To receive payments you need **inbound** capacity, which an outbound-only node l
 - Warns if you have **no outbound capacity**, since you need outbound funds to pay the provider's fee.
 - Enter **Add Inbound Capacity (DCR)** (minimum 0.00001 DCR).
 - An **Advanced** section lets you override the **LP Server Address** and **LP Server Cert (PEM)**. By default these are pre-filled from the built-in provider for the active network.
-- Click **Continue** to fetch the provider's policy and a fee estimate.
+- Click **Continue** to start the request. It runs the whole flow, so the modal waits on **"Fetching the provider's policy. Nothing is paid yet."** while the handshake reaches the provider.
 
-**Step 2 - Confirm:**
-- Shows the **requested channel size**, **estimated fee**, **minimum channel lifetime**, **max channels per node**, and the **server node** and addresses.
+**Step 2 - Confirm the live quote:**
+- The request stops inside the provider handshake to ask about the fee just quoted, and the modal retitles itself **"Confirm LN Payment to Open Receive Channel"**. The figure confirmed here is the figure paid.
+- Shows what **leaves your balance** (the provider's fee, plus the routing fee to reach it), the **inbound capacity gained**, the **minimum channel lifetime**, **max channels per node**, and the **server node** and addresses. The channel amount is the provider's own funds, not yours.
+- The quote expires: a countdown states that the request is dropped in the remaining seconds if you do not answer.
 - Warns that the provider may close the channel after the minimum lifetime if not enough payments flow through it, and that the channel becomes active after up to 6 confirmations.
-- Click **Pay** to pay the provider's invoice and request the channel.
+- Click **Pay** to accept and pay, or **Back** to refuse, which drops the request and returns you to the form.
+
+The prompt is pushed over a WebSocket stream, and the modal asks for any still-waiting prompt on connect, so reopening it mid-request picks the confirmation back up.
 
 **Step 3 - Progress:**
 - The dashboard pays the invoice and waits for the provider's channel to appear pending.
@@ -353,12 +357,16 @@ All Lightning endpoints live under the `/api/wallet/ln/` route group. The dashbo
 - `GET  /api/wallet/ln/peer-presets` - peer presets from the Bison Relay seeder
 - `GET  /api/wallet/ln/autopilot` - read autopilot status
 - `POST /api/wallet/ln/autopilot` - toggle autopilot
+- `GET  /api/wallet/ln/autopilot/scores?pubkeys=<csv>` - autopilot heuristic scores for 1 to 100 node pubkeys
 - `GET  /api/wallet/ln/graph/search` - substring search of graph nodes
 
 ### Inbound Liquidity
 - `GET  /api/wallet/ln/liquidity/defaults` - built-in liquidity provider for the active network
 - `POST /api/wallet/ln/liquidity/estimate` - fetch the provider policy and fee estimate
-- `POST /api/wallet/ln/liquidity/request` - pay the provider and request the inbound channel
+- `POST /api/wallet/ln/liquidity/request` - run the whole request: provider handshake, confirmation, payment, pending channel
+- `POST /api/wallet/ln/liquidity/confirm` - answer the pending fee prompt (approve or refuse)
+- `GET  /api/wallet/ln/liquidity/confirm/pending` - the prompt still waiting for an answer, if any
+- `GET  /api/wallet/ln/liquidity/confirm/events` - WebSocket stream of confirm prompts
 
 ### Send
 - `POST /api/wallet/ln/send/decode` - decode a BOLT-11 invoice

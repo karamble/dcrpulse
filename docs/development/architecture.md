@@ -23,16 +23,17 @@ outbound daemon traffic when enabled.
 │  ┌──────────────┬──────────────┬──────────────┬───────────────┐ │
 │  │   Handlers   │   Services   │     RPC      │  Middleware   │ │
 │  └──────────────┴──────────────┴──────────────┴───────────────┘ │
+│  agents MCP :8090 (off by default, bearer token)                 │
 └───┬──────────┬──────────┬──────────┬──────────┬──────────────────┘
-    │ JSON-RPC │ JSON-RPC │  gRPC    │  RPC     │  RPC
-    │  + gRPC  │          │          │          │
+    │ JSON-RPC │ JSON-RPC │  gRPC    │  HTTPS   │  HTTPS
+    │          │  + gRPC  │          │  + WSS   │  + WSS
 ┌───▼────┐ ┌───▼──────┐ ┌─▼──────┐ ┌─▼────────┐ ┌─▼──────────┐
 │  dcrd  │ │dcrwallet │ │ dcrlnd │ │brclientd │ │  dcrdex    │
-│ 9108/  │ │ 9110 RPC │ │ 10009  │ │7676 RPC  │ │ (bisonw)   │
+│ 9108/  │ │ 9110 RPC │ │ 10009  │ │7676 setup│ │ (bisonw)   │
 │ 9109   │ │ 9111 grpc│ │ gRPC   │ │7677 stat │ │ 5757/5758  │
 └───┬────┘ └──────────┘ └────────┘ └──────────┘ └────────────┘
-    │
-    │ Decred P2P Protocol (Port 9108)
+    │                                BR bridge MCP :8891
+    │ Decred P2P Protocol (Port 9108) (off by default)
     │
 ┌───▼─────────────────────┐        ┌─────────────────────────┐
 │   Decred Network        │        │   tor (SOCKS 9050,      │
@@ -190,39 +191,44 @@ environment variables.
 └──────┬──────┘
        │ 1. GET /api/dashboard
        │
-┌──────▼──────────────────────────────────────┐
-│            dashboard (backend)              │
-│                                             │
-│  2. GetDashboardDataHandler                 │
-│         │                                   │
-│         ├─► 3. FetchNodeStatus()           │
-│         │       └─► dcrd.GetInfo()         │
-│         │                                   │
-│         ├─► 4. FetchBlockchainInfo()       │
-│         │       └─► dcrd.GetBlockchainInfo()│
-│         │                                   │
-│         ├─► 5. FetchNetworkPeers()         │
-│         │       └─► dcrd.GetPeerInfo()     │
-│         │                                   │
-│         ├─► 6. FetchMempoolInfo()          │
-│         │       └─► dcrd.GetRawMempool()   │
-│         │                                   │
-│         └─► 7. FetchSupplyInfo()           │
-│                 └─► dcrd.GetCoinSupply()   │
-│                                             │
-│  8. Aggregate all data                     │
-│  9. Return JSON response                   │
-└──────┬──────────────────────────────────────┘
+┌──────▼───────────────────────────────────────────────┐
+│            dashboard (backend)                       │
+│                                                      │
+│  2. GetDashboardDataHandler                          │
+│         └─► 3. services.FetchDashboardData()         │
+│                  │                                   │
+│                  │  builds one chainSnapshot, then   │
+│                  │  runs seven sections CONCURRENTLY │
+│                  │                                   │
+│                  ├─► nodeStatus                      │
+│                  ├─► blockchainInfo                  │
+│                  ├─► networkInfo                     │
+│                  ├─► peers                           │
+│                  ├─► supplyInfo                      │
+│                  ├─► stakingInfo                     │
+│                  └─► mempoolInfo                     │
+│                                                      │
+│  4. A section that fails is named in Degraded[]      │
+│     (fixed order, not completion order) and the      │
+│     rest of the page still renders.                  │
+│  5. getblockchaininfo backs four sections, so a      │
+│     transport failure there is reported as a         │
+│     daemon error instead of zeroed sections.         │
+│  6. Return JSON response                             │
+└──────┬───────────────────────────────────────────────┘
        │
-       │ 10. Response (JSON)
+       │ 7. Response (JSON, possibly with Degraded[])
        │
 ┌──────▼──────┐
 │   Browser   │
 │             │
-│ 11. Update  │
-│     UI      │
+│ 8. Update   │
+│    UI       │
 └─────────────┘
 ```
+
+The snapshot is shared so the sections that need the same `getblockchaininfo`
+or block data pay for one RPC between them, not one each.
 
 Node sync progress is additionally pushed over a WebSocket
 (`/api/node/sync/stream`) and refreshed on dcrd block-connected notifications
@@ -238,36 +244,47 @@ rather than a fixed poll interval.
 └──────┬──────┘
        │ 1. GET /api/wallet/dashboard
        │
-┌──────▼──────────────────────────────────────┐
-│            dashboard (backend)              │
-│                                             │
-│  2. GetWalletDashboardHandler              │
-│         │                                   │
-│         ├─► 3. FetchWalletStatus()         │
-│         │       └─► wallet.WalletInfo()    │
-│         │                                   │
-│         ├─► 4. FetchAccountInfo()          │
-│         │       └─► wallet.GetBalance()    │
-│         │                                   │
-│         ├─► 5. FetchAllAccounts()          │
-│         │       └─► wallet.GetBalance()    │
-│         │                                   │
-│         └─► 6. FetchWalletStakingInfo()    │
-│                 ├─► wallet.GetStakeInfo()  │
-│                 ├─► dcrd.GetStakeDifficulty()│
-│                 └─► dcrd.EstimateStakeDiff()│
-│                                             │
-│  7. Aggregate all data                     │
-│  8. Return JSON response                   │
-└──────┬──────────────────────────────────────┘
+┌──────▼───────────────────────────────────────────────┐
+│            dashboard (backend)                       │
+│                                                      │
+│  2. GetWalletDashboardHandler                        │
+│       refuses early if dcrd is in initial block      │
+│       download or still starting (503 with the       │
+│       poller's own note)                             │
+│                                                      │
+│  3. FetchWalletStatus()  - sequential; an error      │
+│       here aborts the whole request                  │
+│                                                      │
+│  4. then THREE goroutines, concurrently:             │
+│         ├─► fetchAccountInfo()   ┐ share one         │
+│         ├─► fetchAllAccounts()   ┘ memoized          │
+│         │        getbalance, so both read the        │
+│         │        same block                          │
+│         └─► FetchWalletStakingInfo()  (optional)     │
+│                 ├─► wallet.GetStakeInfo()            │
+│                 ├─► dcrd.GetStakeDifficulty()        │
+│                 └─► dcrd.EstimateStakeDiff()         │
+│                                                      │
+│     A failure in any of the three is logged and      │
+│     folded into zero values; the page still renders. │
+│                                                      │
+│  5. ctx.Err() checked last: a fetch cut short by     │
+│     the deadline returns the data AND an error, so   │
+│     the handler answers 408 rather than 200 with     │
+│     zeroed balances.                                 │
+└──────┬───────────────────────────────────────────────┘
        │
-       │ 9. Response (JSON)
+       │ 6. Response (JSON), or 408 on timeout
        │
 ┌──────▼──────┐
 │   Browser   │
 │             │
-│ 10. Update  │
-│     UI      │
+│ 7. Update   │
+│    UI, or   │
+│    keep the │
+│    last good│
+│    data on  │
+│    a 408    │
 └─────────────┘
 ```
 
@@ -279,73 +296,77 @@ rather than a fixed poll interval.
 ┌─────────────┐
 │   Browser   │
 └──────┬──────┘
-       │ 1. POST /api/wallet/importxpub
-       │    Body: {xpub, gapLimit}
+       │ 1. POST /api/wallet/importxpub   (rate limited 1 / 30s)
+       │    Body: {xpub, accountName, accountIndex?}
        │
-┌──────▼──────────────────────────────────────┐
-│            dashboard (backend)              │
-│                                             │
-│  2. ImportXpubHandler                       │
-│         │                                   │
-│         ├─► 3. Validate input              │
-│         │                                   │
-│         ├─► 4. wallet.ImportXpub()         │
-│         │       (RPC to dcrwallet)          │
-│         │                                   │
-│         └─► 5. Trigger rescan              │
-└──────┬──────────────────────────────────────┘
+┌──────▼───────────────────────────────────────────────┐
+│            dashboard (backend)                       │
+│                                                      │
+│  2. ImportXpubHandler validates SYNCHRONOUSLY and    │
+│     rejects before any work starts:                  │
+│       400 name missing / too long / reserved,        │
+│           accountIndex out of BIP44 range            │
+│       409 index already imported, name taken,        │
+│           xpub already imported                      │
+│                                                      │
+│  3. Answers 200 immediately, then in a goroutine:    │
+│       ├─► importxpub      (JSON-RPC to dcrwallet)    │
+│       ├─► record the BIP44 index for the new account │
+│       ├─► discoverusage   (JSON-RPC)                 │
+│       └─► startRescanViaGrpc(0)                      │
+└──────┬───────────────────────────────────────────────┘
        │
-       │ 6. Response: {status: "success"}
+       │ 4. Response: {success, message}
        │
 ┌──────▼──────┐
 │   Browser   │
 │             │
-│ 7. Show     │
-│    progress │
-│             │
-│ 8. Poll:    │
-│    GET /api/│
+│ 5. One-shot │
+│    GET      │
+│    /api/    │
 │    wallet/  │
 │    sync-    │
 │    progress │
+│    on mount │
+│             │
+│ 6. Then     │
+│    opens    │
+│    the      │
+│    WebSocket│
 └──────┬──────┘
-       │ (Every 2s)
+       │  ws /api/wallet/grpc/stream-rescan
+       │  (server pushes the current snapshot on connect)
        │
-┌──────▼──────────────────────────────────────┐
-│            dashboard (backend)              │
-│                                             │
-│  9. GetSyncProgressHandler                  │
-│         │                                   │
-│         ├─► 10. Read dcrwallet.log         │
-│         │        (Last 500 lines)           │
-│         │                                   │
-│         ├─► 11. Parse rescan messages      │
-│         │        Extract: progress %,       │
-│         │        current block, total       │
-│         │                                   │
-│         ├─► 12. Check timestamp            │
-│         │        (< 2 min = active)         │
-│         │                                   │
-│         └─► 13. Return progress            │
-└──────┬──────────────────────────────────────┘
+┌──────▼───────────────────────────────────────────────┐
+│            dashboard (backend)                       │
+│                                                      │
+│  7. dcrwallet's gRPC sync notifications arrive and   │
+│     ApplyRpcSyncNotification updates one in-memory   │
+│     SyncSnapshot: phase, peer count, cfilter and     │
+│     header counts, rescan height, last error.        │
+│                                                      │
+│  8. Both the WebSocket and GetSyncProgressHandler    │
+│     read that same snapshot. Nothing parses a log.   │
+└──────┬───────────────────────────────────────────────┘
        │
-       │ 14. Response: {isRescanning, progress, ...}
+       │ 9. Frames: {phase, isRescanning, progress, ...}
        │
 ┌──────▼──────┐
 │   Browser   │
 │             │
-│ 15. Update  │
+│ 10. Update  │
 │     progress│
-│     bar     │
-│             │
-│ 16. Repeat  │
+│     bar,    │
 │     until   │
-│     complete│
+│     phase   │
+│     reads   │
+│     synced  │
 └─────────────┘
 ```
 
-A real-time gRPC-backed stream is also available
-(`/api/wallet/grpc/stream-rescan`) for live rescan progress.
+Progress is snapshot-driven end to end: there is no log-scraping path and no
+staleness timer. A rescan that has finished simply stops producing
+notifications and the phase settles on `synced`.
 
 ---
 
@@ -497,41 +518,49 @@ generated DEX asset catalog. **`dashboard/pkg/`** - shared helpers (`bisonw`,
 
 The frontend is a single-page app routed by React Router. Top-level pages live in
 `dashboard/web/src/pages/`, reusable and feature components in
-`dashboard/web/src/components/` (grouped by area: `wallet/`, `lightning/`,
-`staking/`, `governance/`, `bisonrelay/`, `onchain/`, `settings/`, `auth/`), and
-API integration in `dashboard/web/src/services/`.
+`dashboard/web/src/components/` (grouped by area: `accounts/`, `alerts/`,
+`auth/`, `bisonrelay/`, `common/`, `dex/`, `explorer/`, `governance/`,
+`lightning/`, `onchain/`, `privacy/`, `settings/`, `staking/`, `timestamp/`,
+`wallet/`), and API integration in `dashboard/web/src/services/`.
 
 ```
 src/
 ├── App.tsx                   # Routes + layout shell
 ├── main.tsx                  # Entry point
 │
-├── pages/                    # Page-level components, e.g.
+├── pages/                    # Page-level components (20 files)
 │   ├── NodeDashboard.tsx    # Node monitoring (route: /)
 │   ├── WalletDashboard.tsx  # Wallet hub (route: /wallet)
+│   ├── WalletSelection.tsx  # Multi-wallet picker
 │   ├── AccountsPage.tsx     # Accounts
 │   ├── StakingPage.tsx      # Staking (sub-tabs)
 │   ├── GovernancePage.tsx   # Consensus/Treasury/Proposals
+│   ├── GovernanceDashboard.tsx # Treasury (route: /treasury)
 │   ├── LightningPage.tsx    # Lightning (sub-tabs)
 │   ├── PrivacyPage.tsx      # Mixer / privacy
 │   ├── TimestampPage.tsx    # dcrtime timestamping
+│   ├── VerifyTimestampPage.tsx # Standalone proof verification
 │   ├── ExplorerLanding.tsx  # Block explorer
-│   ├── GovernanceDashboard.tsx # Treasury (route: /treasury)
+│   ├── BlockDetail.tsx MempoolView.tsx AddressView.tsx
+│   ├── TransactionDetail.tsx OnChainTransactions.tsx
 │   ├── DexPage.tsx          # DCRDEX (route: /dex)
+│   ├── AlertsPage.tsx       # Alert center
 │   └── SettingsPage.tsx     # Settings (sub-tabs)
 │
-├── components/               # Reusable + feature UI
+├── components/               # Reusable + feature UI (15 area dirs)
 │   ├── Header.tsx           # App header/navigation
 │   ├── Footer.tsx           # Daemon version footer
-│   ├── wallet/ lightning/ staking/ governance/
+│   ├── wallet/ accounts/ staking/ governance/ privacy/
+│   ├── lightning/ dex/ explorer/ onchain/ timestamp/
 │   ├── bisonrelay/          # Bison Relay (route: /br)
-│   ├── onchain/ settings/ auth/
-│   └── ...
+│   └── alerts/ settings/ auth/ common/
 │
 ├── services/                 # API integration layer
 │   ├── api.ts               # Axios client, core API functions
-│   ├── lightningApi.ts dcrdexApi.ts bisonrelayApi.ts ...
-│   └── themes/              # CSS-variable theming
+│   ├── lightningApi.ts dcrdexApi.ts bisonrelayApi.ts
+│   ├── msigApi.ts explorerApi.ts treasuryApi.ts timestampApi.ts
+│   ├── auth.ts socket.ts    # Session + WebSocket helpers
+│   └── themes/ tor/         # CSS-variable theming, Tor helpers
 │
 └── index.css                 # Global styles (Tailwind)
 ```
@@ -1005,9 +1034,13 @@ Host Machine
 
 **Access**: `http://localhost:8080`
 
+Two more listeners exist but ship off: the agents MCP server on the dashboard
+(`8090` in the container) and the Bison Relay bridge on brclientd (`8891`).
+Both bind loopback on the host by default.
+
 ---
 
-### Production (Future)
+### Production behind a reverse proxy
 
 ```
 Server
@@ -1019,8 +1052,10 @@ Server
 
 **Access**: `https://your-domain.com`
 
-When behind a reverse proxy, set `TRUSTED_PROXY=true` so the same-origin checks
-honor `X-Forwarded-Host`.
+Behind a reverse proxy, set `TRUSTED_PROXY=true` so the same-origin checks honor
+`X-Forwarded-Host`, and list the domain in `DASHBOARD_ALLOWED_HOSTS` or every
+proxied request is refused with 403. Both are read from the dashboard's own
+environment. See [Production Deployment](../deployment/production.md).
 
 ---
 

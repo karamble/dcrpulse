@@ -8,7 +8,7 @@ Decred mixing is account based. Instead of mixing individual coins one at a time
 
 The mixer runs inside the dashboard process and drives dcrwallet over gRPC. Mix cycles are coordinated peer-to-peer over the Decred network through dcrd; the dashboard does not relay any of your coins to a third party.
 
-**Access**: Click the **"Privacy"** button in the header navigation.
+**Access**: Open the **Wallet** section, then **Privacy** in the wallet sidebar. The entry is hidden for watch-only wallets.
 
 **Requires a full wallet.** Mixing needs to sign transactions and spend coins, so it only works with an RPC-connected wallet that holds private keys. Watch-only (xpub) wallets cannot mix.
 

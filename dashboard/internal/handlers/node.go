@@ -37,7 +37,7 @@ func GetDashboardDataHandler(w http.ResponseWriter, r *http.Request) {
 
 // StreamNodeSyncHandler streams dcrd sync-progress snapshots over a WebSocket,
 // pushed on each block-connected notification instead of the 30s poll. Mirrors
-// the wallet's StreamRescanProgressHandler.
+// the wallet's StreamRescanGrpcHandler.
 func StreamNodeSyncHandler(w http.ResponseWriter, r *http.Request) {
 	streamEventsWS(w, r, nodeLog, "node-sync",
 		[]services.NodeSyncSnapshot{services.GetNodeSyncSnapshot()},
