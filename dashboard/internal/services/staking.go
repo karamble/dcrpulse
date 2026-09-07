@@ -159,7 +159,10 @@ func rememberVSPUsed(ctx context.Context, host, pubkey string) {
 	}
 	if err := wc.Save(); err != nil {
 		stkeLog.Warnf("rememberVSPUsed: save: %v", err)
+		return
 	}
+	// The autobuyer settings report this host's pubkey.
+	invalidateAutobuyerSettings()
 }
 
 func fetchVSPRegistry(ctx context.Context) ([]types.VSPInfo, error) {

@@ -823,7 +823,12 @@ func RenameAccount(ctx context.Context, accountNumber uint32, newName string) er
 		AccountNumber: accountNumber,
 		NewName:       newName,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// The autobuyer settings name their account.
+	invalidateAutobuyerSettings()
+	return nil
 }
 
 // GetAccountExtendedPubKey returns the BIP32 extended public key for the given
@@ -935,19 +940,22 @@ func IsClaimableReservedName(ctx context.Context, name string) (bool, error) {
 // FindPrivacyAccounts looks up the mixer's mixed and unmixed accounts by name.
 // `configured` is true only when both exist.
 func FindPrivacyAccounts(ctx context.Context) (mixed uint32, change uint32, configured bool, err error) {
-	accounts, err := FetchAllAccounts(ctx)
+	// gRPC Accounts carries names and numbers and reports failure; the
+	// balance listing this used to go through was never needed here.
+	if rpc.WalletGrpcClient == nil {
+		return 0, 0, false, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	resp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
 	if err != nil {
-		return 0, 0, false, err
+		return 0, 0, false, fmt.Errorf("list accounts: %w", err)
 	}
 	var foundMixed, foundChange bool
-	for _, a := range accounts {
+	for _, a := range resp.Accounts {
 		switch a.AccountName {
 		case PrivacyMixedAccountName:
-			mixed = a.AccountNumber
-			foundMixed = true
+			mixed, foundMixed = a.AccountNumber, true
 		case PrivacyChangeAccountName:
-			change = a.AccountNumber
-			foundChange = true
+			change, foundChange = a.AccountNumber, true
 		}
 	}
 	return mixed, change, foundMixed && foundChange, nil
@@ -989,24 +997,11 @@ type TicketAccounts struct {
 // which carries names and numbers and reports failure, so a wallet that cannot
 // be read fails the purchase instead of quietly buying a plain ticket.
 func ResolveTicketAccounts(ctx context.Context, account, changeAccount uint32) (TicketAccounts, error) {
-	if rpc.WalletGrpcClient == nil {
-		return TicketAccounts{}, fmt.Errorf("wallet gRPC client not initialized")
-	}
-	resp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	mixed, change, configured, err := FindPrivacyAccounts(ctx)
 	if err != nil {
-		return TicketAccounts{}, fmt.Errorf("list accounts: %w", err)
+		return TicketAccounts{}, err
 	}
-	var mixed, change uint32
-	var haveMixed, haveChange bool
-	for _, a := range resp.Accounts {
-		switch a.AccountName {
-		case PrivacyMixedAccountName:
-			mixed, haveMixed = a.AccountNumber, true
-		case PrivacyChangeAccountName:
-			change, haveChange = a.AccountNumber, true
-		}
-	}
-	if haveMixed && haveChange {
+	if configured {
 		return TicketAccounts{Source: mixed, Change: change, Mixed: true}, nil
 	}
 	return TicketAccounts{Source: account, Change: changeAccount}, nil
