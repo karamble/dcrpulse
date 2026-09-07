@@ -183,6 +183,13 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
+	return transactionDetailFromVerbose(ctx, rawTx), nil
+}
+
+// transactionDetailFromVerbose converts a verbose reply into the dashboard's
+// shape. Split from the fetch so the mempool pages can run it over a cached
+// reply instead of asking dcrd again; mirrors blockDetailFromVerbose.
+func transactionDetailFromVerbose(ctx context.Context, rawTx *chainjson.TxRawResult) *types.TransactionDetail {
 
 	// Convert inputs
 	inputs := make([]types.TxInput, 0, len(rawTx.Vin))
@@ -292,7 +299,7 @@ func FetchTransaction(ctx context.Context, txHash string) (*types.TransactionDet
 		RecipientCount: recipientCount,
 		VotingInfo:     votingInfo,
 		VoteInfo:       voteInfo,
-	}, nil
+	}
 }
 
 // ssgenVoteInfo decodes a vote transaction's content from its serialized hex:
@@ -655,10 +662,15 @@ func FetchMempoolTransactions(ctx context.Context) (*types.MempoolTransactions, 
 	}
 
 	// Get raw mempool transaction hashes
-	hashes, err := rpc.DcrdClient.GetRawMempool(ctx, chainjson.GRMAll)
+	hashes, err := mempoolHashes(ctx, chainjson.GRMAll)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mempool: %w", err)
 	}
+
+	// Every hash dcrd still lists stays cached; the rest are mined or evicted
+	// and are dropped here. This is the only caller holding the full mempool,
+	// so it is the one that can prune exactly.
+	retainMempoolTxs(hashes)
 
 	// Limit to reasonable number for performance
 	maxTxs := 500
@@ -682,14 +694,12 @@ func FetchMempoolTransactions(ctx context.Context) (*types.MempoolTransactions, 
 	// Fetch each transaction
 	transactions := make([]types.TransactionSummary, 0, len(hashes))
 	for _, hash := range hashes {
-		tx, err := FetchTransaction(ctx, hash.String())
+		rawTx, err := mempoolRawTx(ctx, hash)
 		if err != nil {
 			nodeLog.Warnf("Failed to fetch mempool transaction %s: %v", hash, err)
 			continue
 		}
-
-		// Convert to TransactionSummary
-		transactions = append(transactions, tx.TransactionSummary)
+		transactions = append(transactions, transactionDetailFromVerbose(ctx, rawTx).TransactionSummary)
 	}
 
 	return &types.MempoolTransactions{

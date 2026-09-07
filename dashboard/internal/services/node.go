@@ -551,28 +551,36 @@ const maxCoinJoinScan = 100
 // classifies by consensus type, so only the CoinJoin heuristic still needs a
 // transaction's outputs, and only for regular ones.
 func analyzeMempoolTransactions(ctx context.Context) (tickets, votes, revocations, regular, coinjoins int) {
-	mempoolCount := func(txType chainjson.GetRawMempoolTxTypeCmd) int {
-		hashes, err := rpc.DcrdClient.GetRawMempool(ctx, txType)
+	// The hashes are kept, not just counted: the same listing that gives the
+	// count is what the transaction cache is pruned against below.
+	listing := func(txType chainjson.GetRawMempoolTxTypeCmd) []*chainhash.Hash {
+		hashes, err := mempoolHashes(ctx, txType)
 		if err != nil {
 			nodeLog.Warnf("Failed to read the %s mempool: %v", txType, err)
-			return 0
+			return nil
 		}
-		return len(hashes)
+		return hashes
 	}
 
-	tickets = mempoolCount(chainjson.GRMTickets)
-	votes = mempoolCount(chainjson.GRMVotes)
-	revocations = mempoolCount(chainjson.GRMRevocations)
+	ticketHashes := listing(chainjson.GRMTickets)
+	voteHashes := listing(chainjson.GRMVotes)
+	revocationHashes := listing(chainjson.GRMRevocations)
+	tickets, votes, revocations = len(ticketHashes), len(voteHashes), len(revocationHashes)
 
 	// Each count is the daemon's own, so a treasury transaction is neither a
 	// staking one nor a regular one and is simply not among these. The card
 	// therefore does not account for every transaction the mempool holds.
-	regularHashes, err := rpc.DcrdClient.GetRawMempool(ctx, chainjson.GRMRegular)
+	regularHashes, err := mempoolHashes(ctx, chainjson.GRMRegular)
 	if err != nil {
 		nodeLog.Warnf("Failed to read the regular mempool: %v", err)
 		return tickets, votes, revocations, 0, 0
 	}
 	regular = len(regularHashes)
+
+	// Prune to what this pass saw. The four filtered sets leave out treasury
+	// transactions, so a mempool tspend the explorer cached is dropped here and
+	// refetched once by that page - cheap, and tspends are rare.
+	retainMempoolTxs(ticketHashes, voteHashes, revocationHashes, regularHashes)
 
 	// CoinJoins are a subset of the regular transactions and the one thing
 	// dcrd cannot label, so only those are still read one by one.
@@ -611,7 +619,7 @@ func looksLikeCoinJoin(numInputs int, values []float64) bool {
 // isCoinJoinMempoolTx reports whether a mempool transaction looks like a
 // CoinJoin.
 func isCoinJoinMempoolTx(ctx context.Context, txHash *chainhash.Hash) bool {
-	tx, err := rpc.DcrdClient.GetRawTransactionVerbose(ctx, txHash)
+	tx, err := mempoolRawTx(ctx, txHash)
 	if err != nil {
 		return false
 	}

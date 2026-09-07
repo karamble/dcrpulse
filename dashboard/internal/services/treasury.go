@@ -105,7 +105,7 @@ func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 
 	// dcrd filters the mempool by transaction type, so ask it for the treasury
 	// spends rather than fetching every entry to classify it here.
-	hashes, err := rpc.DcrdClient.GetRawMempool(ctx, chainjson.GRMTSpend)
+	hashes, err := mempoolHashes(ctx, chainjson.GRMTSpend)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mempool: %w", err)
 	}

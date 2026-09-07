@@ -20,6 +20,7 @@ import (
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	dcrwpb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"encoding/hex"
@@ -446,10 +447,10 @@ func GetLightningActivity(ctx context.Context) (*types.LightningActivity, error)
 
 // ---- Channels (Decrediton parity) ------------------------------------------
 
-var (
-	nodeAliasMu    sync.Mutex
-	nodeAliasCache = map[string]string{}
-)
+// Aliases do not change under a pubkey, so the same keyed cache the mempool
+// pages use serves here; there is no live set to prune against, and the graph's
+// node count bounds it in practice.
+var nodeAliasCache utils.Memo[string, string]
 
 // lightningNodeAlias resolves a node's advertised alias via GetNodeInfo.
 // Non-empty aliases are cached for the process lifetime; misses are not,
@@ -460,21 +461,16 @@ func lightningNodeAlias(ctx context.Context, client lnrpc.LightningClient, pubke
 	if pubkey == "" {
 		return ""
 	}
-	nodeAliasMu.Lock()
-	alias, ok := nodeAliasCache[pubkey]
-	nodeAliasMu.Unlock()
-	if ok {
+	if alias, ok := nodeAliasCache.Get(pubkey); ok {
 		return alias
 	}
 	resp, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{PubKey: pubkey})
 	if err != nil {
 		return ""
 	}
-	alias = resp.GetNode().GetAlias()
+	alias := resp.GetNode().GetAlias()
 	if alias != "" {
-		nodeAliasMu.Lock()
-		nodeAliasCache[pubkey] = alias
-		nodeAliasMu.Unlock()
+		nodeAliasCache.Put(pubkey, alias)
 	}
 	return alias
 }

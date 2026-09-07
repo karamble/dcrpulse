@@ -37,9 +37,7 @@ func (f *fakeLightningClient) GetNodeInfo(ctx context.Context, in *lnrpc.NodeInf
 
 func resetAliasCache(t *testing.T) {
 	t.Helper()
-	nodeAliasMu.Lock()
-	nodeAliasCache = map[string]string{}
-	nodeAliasMu.Unlock()
+	nodeAliasCache.Retain(nil)
 }
 
 // The passed client is the one used; the global is never consulted. Left nil
