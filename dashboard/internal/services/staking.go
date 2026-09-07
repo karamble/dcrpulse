@@ -640,6 +640,7 @@ func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, accts 
 	// Successful purchase - remember the VSP we used for next time the
 	// picker is opened, even when the registry toggle is off. Mirrors
 	// Decrediton's dispatch(updateUsedVSPs(vsp)) in ControlActions.js:379.
+	invalidateTicketList()
 	rememberVSPUsed(ctx, vspHost, vspPubkey)
 
 	return out, nil
@@ -648,7 +649,85 @@ func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, accts 
 // ListTickets streams every wallet ticket and joins each with its VSP fee
 // state. Errors from the VSP-fee-status calls are non-fatal: the records are
 // still returned, just without a FeeStatus value.
+// The tickets page, the dashboard card, the agent tool and the vote check all
+// list the same tickets, none sharing a result, and a listing costs a stream of
+// every ticket ever owned plus four fee-status calls. One listing is kept for
+// ticketListTTL per wallet and tip, and dropped early when this process
+// changes the set: a purchase or a fee-status run.
+var ticketListTTL = 10 * time.Second
+
+var ticketListCache struct {
+	mu      sync.Mutex
+	wallet  string
+	tip     int64
+	at      time.Time
+	records []types.TicketRecord
+}
+
+func invalidateTicketList() {
+	ticketListCache.mu.Lock()
+	ticketListCache.records = nil
+	ticketListCache.mu.Unlock()
+}
+
+// ListTickets lists the wallet's tickets with fee status and maturity, from
+// the recent listing when there is one.
 func ListTickets(ctx context.Context) ([]types.TicketRecord, error) {
+	wallet, tip := CurrentWalletName(), GetNodeSyncSnapshot().Blocks
+	ticketListCache.mu.Lock()
+	if c := &ticketListCache; c.records != nil && c.wallet == wallet && c.tip == tip && time.Since(c.at) < ticketListTTL {
+		out := append([]types.TicketRecord(nil), c.records...)
+		ticketListCache.mu.Unlock()
+		return out, nil
+	}
+	ticketListCache.mu.Unlock()
+
+	records, err := listTickets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ticketListCache.mu.Lock()
+	ticketListCache.wallet, ticketListCache.tip, ticketListCache.at = wallet, tip, time.Now()
+	ticketListCache.records = append([]types.TicketRecord(nil), records...)
+	ticketListCache.mu.Unlock()
+	return records, nil
+}
+
+// ticketSeen is what the autobuyer's poll needs of a ticket.
+type ticketSeen struct {
+	hash   string
+	height int32
+}
+
+// recentTicketHashes lists tickets mined at or after sinceHeight plus the
+// unmined ones: a start height with no end ranges through the unmined set in
+// dcrwallet. Hash and height only; no fee status, no maturity.
+func recentTicketHashes(ctx context.Context, sinceHeight int32) ([]ticketSeen, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	stream, err := rpc.WalletGrpcClient.GetTickets(ctx, &pb.GetTicketsRequest{StartingBlockHeight: sinceHeight})
+	if err != nil {
+		return nil, fmt.Errorf("GetTickets RPC: %w", err)
+	}
+	var out []ticketSeen
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			return out, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("GetTickets stream: %w", err)
+		}
+		rec := ticketRecordFromResponse(resp)
+		if rec.Hash == "" {
+			continue
+		}
+		out = append(out, ticketSeen{hash: rec.Hash, height: rec.BlockHeight})
+	}
+}
+
+func listTickets(ctx context.Context) ([]types.TicketRecord, error) {
 	if rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("wallet gRPC client not initialized")
 	}
@@ -867,6 +946,7 @@ func SyncFailedVSPTickets(ctx context.Context, vspHost, vspPubkey string, accoun
 	}); err != nil {
 		return nil, fmt.Errorf("ProcessManagedTickets RPC: %w", err)
 	}
+	invalidateTicketList()
 	rememberVSPUsed(ctx, vspHost, vspPubkey)
 
 	after := countFeeStatuses(fetchFeeStatusMap(ctx))
@@ -913,6 +993,7 @@ func ProcessUnmanagedVSPTickets(ctx context.Context, vspHost, vspPubkey string, 
 	}); err != nil {
 		return nil, fmt.Errorf("ProcessUnmanagedTickets RPC: %w", err)
 	}
+	invalidateTicketList()
 	rememberVSPUsed(ctx, vspHost, vspPubkey)
 
 	after := countFeeStatuses(fetchFeeStatusMap(ctx))

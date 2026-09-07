@@ -248,7 +248,7 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceA
 	pollCtx, pollCancel := context.WithCancel(ctx)
 	defer pollCancel()
 	pollDone := make(chan struct{})
-	go pollAutobuyerTickets(pollCtx, pollDone)
+	go pollAutobuyerTickets(pollCtx, pollDone, autobuyerSinceHeight(ctx))
 
 	// Stream Recv loop. Empty responses are expected; we only react to errors.
 	for {
@@ -279,44 +279,67 @@ func setAutobuyerErr(msg string) {
 	recordAutobuyerEvent("error", msg)
 }
 
+// autobuyerSinceHeight is the tip when the autobuyer starts: the poll lists
+// tickets from there, since anything it buys is mined later or still unmined.
+// Zero, the unbounded listing, only when no tip can be read.
+func autobuyerSinceHeight(ctx context.Context) int32 {
+	if tip := GetNodeSyncSnapshot().Blocks; tip > 0 {
+		return int32(tip)
+	}
+	if rpc.DcrdClient != nil {
+		if tip, err := rpc.DcrdClient.GetBlockCount(ctx); err == nil && tip > 0 {
+			return int32(tip)
+		}
+	}
+	return 0
+}
+
+// autobuyerPollState is what one poll tick carries to the next.
+type autobuyerPollState struct {
+	since  int32
+	seen   map[string]struct{}
+	primed bool
+}
+
+// autobuyerTick lists the tickets the autobuyer can have bought and records an
+// event for each one not seen before. The first tick only primes.
+func autobuyerTick(ctx context.Context, st *autobuyerPollState) {
+	listCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	tickets, err := recentTicketHashes(listCtx, st.since)
+	if err != nil {
+		if ctx.Err() == nil {
+			stkeLog.Warnf("autobuyer poll: %v", err)
+		}
+		return
+	}
+	next := make(map[string]struct{}, len(tickets))
+	for _, t := range tickets {
+		next[t.hash] = struct{}{}
+		if !st.primed {
+			continue
+		}
+		if _, ok := st.seen[t.hash]; ok {
+			continue
+		}
+		height := "unmined"
+		if t.height > 0 {
+			height = fmt.Sprintf("%d", t.height)
+		}
+		recordAutobuyerEvent("info", fmt.Sprintf("Autobuyer purchased ticket %s (height %s)", t.hash, height))
+	}
+	st.seen = next
+	st.primed = true
+}
+
 // pollAutobuyerTickets emits an event for each new ticket purchase tx the
 // wallet observes while the autobuyer is running.
-func pollAutobuyerTickets(ctx context.Context, done chan<- struct{}) {
+func pollAutobuyerTickets(ctx context.Context, done chan<- struct{}, sinceHeight int32) {
 	defer close(done)
-	seen := make(map[string]struct{})
-	primed := false
-
-	tick := func() {
-		listCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		tickets, err := ListTickets(listCtx)
-		if err != nil {
-			if ctx.Err() == nil {
-				stkeLog.Warnf("autobuyer poll: %v", err)
-			}
-			return
-		}
-		next := make(map[string]struct{}, len(tickets))
-		for _, t := range tickets {
-			next[t.Hash] = struct{}{}
-			if !primed {
-				continue
-			}
-			if _, ok := seen[t.Hash]; ok {
-				continue
-			}
-			height := "unmined"
-			if t.BlockHeight > 0 {
-				height = fmt.Sprintf("%d", t.BlockHeight)
-			}
-			recordAutobuyerEvent("info", fmt.Sprintf("Autobuyer purchased ticket %s (height %s)", t.Hash, height))
-		}
-		seen = next
-		primed = true
-	}
+	st := &autobuyerPollState{since: sinceHeight, seen: make(map[string]struct{})}
 
 	// Prime immediately so the first new purchase produces an event.
-	tick()
+	autobuyerTick(ctx, st)
 
 	ticker := time.NewTicker(autobuyerPollInterval)
 	defer ticker.Stop()
@@ -325,7 +348,7 @@ func pollAutobuyerTickets(ctx context.Context, done chan<- struct{}) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			tick()
+			autobuyerTick(ctx, st)
 		}
 	}
 }
