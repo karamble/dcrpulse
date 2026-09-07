@@ -45,7 +45,9 @@ export const BrMcpSection = () => {
   const [newBot, setNewBot] = useState('');
   const [newIp, setNewIp] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Result of the last save, shown under the button. The section has several
+  // fields and a Save that is easy to forget, so a click needs an answer.
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [needsAppPassword, setNeedsAppPassword] = useState(false);
@@ -59,7 +61,6 @@ export const BrMcpSection = () => {
       setSettings(s);
       setDraft((d) => d ?? s);
       setNeedsAppPassword(false);
-      setError(null);
     } catch (e) {
       const res = (e as { response?: { status?: number; headers?: Record<string, string> } })
         .response;
@@ -97,7 +98,7 @@ export const BrMcpSection = () => {
 
   const apply = async (next: BrMcpSettings) => {
     setBusy(true);
-    setError(null);
+    setSaveResult(null);
     try {
       const applied = await setBrMcpSettings(next);
       setSettings(applied);
@@ -105,8 +106,9 @@ export const BrMcpSection = () => {
       if (applied.token) {
         setMintedToken(applied.token);
       }
+      setSaveResult({ ok: true, text: 'BR-MCP settings saved' });
     } catch (err: any) {
-      setError(apiError(err, 'Save failed'));
+      setSaveResult({ ok: false, text: apiError(err, 'Failed to save BR-MCP settings') });
     } finally {
       setBusy(false);
     }
@@ -466,7 +468,7 @@ export const BrMcpSection = () => {
         ))}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="space-y-1.5">
         <button
           type="button"
           onClick={() => apply(draft)}
@@ -475,7 +477,16 @@ export const BrMcpSection = () => {
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save BR-MCP settings'}
         </button>
-        {error && <span className="text-xs text-destructive">{error}</span>}
+        {saveResult && (
+          <div
+            className={`flex items-center gap-1.5 text-xs ${
+              saveResult.ok ? 'text-success' : 'text-destructive'
+            }`}
+          >
+            {saveResult.ok ? <Check className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+            {saveResult.text}
+          </div>
+        )}
       </div>
 
       {settings.enabled && (
@@ -524,7 +535,7 @@ export const BrMcpSection = () => {
           )}
           {spend.entries.length > 0 && (
             <div className="space-y-1">
-              <h4 className="text-sm font-semibold">Recent payments</h4>
+              <h4 className="text-sm font-semibold">Recent payments and refusals</h4>
               {spend.entries
                 .slice(-8)
                 .reverse()
@@ -555,6 +566,19 @@ export const BrMcpSection = () => {
                         >
                           Failed
                         </span>
+                      )}
+                      {e.status === 'refused' && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded bg-warning/20 text-warning text-[10px] font-semibold">
+                          Refused
+                        </span>
+                      )}
+                      {/* A refusal spent nothing, so say what was asked for
+                          and why it was turned down. */}
+                      {e.status === 'refused' && (
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">
+                          Call to bot {e.bot.slice(0, 8)} requested {fmtDcr(e.amountDcr)} but was
+                          refused{e.err ? `: ${e.err}` : ''}
+                        </div>
                       )}
                     </div>
                     <span className="text-muted-foreground shrink-0">

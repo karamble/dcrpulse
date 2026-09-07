@@ -111,4 +111,3 @@ func TestRedactBridgeTokenReportsNoTokenSet(t *testing.T) {
 		t.Error("TokenSet is true with no token configured")
 	}
 }
-
