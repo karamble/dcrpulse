@@ -39,6 +39,7 @@ import { AgentAllowedIPs } from './AgentAllowedIPs';
 import { AgentSpendGrant } from './AgentSpendGrant';
 import { ConfigSection, domainLabel } from './ConfigSection';
 import { McpHelpModal } from './McpHelpModal';
+import { PlaintextTokenWarning } from './PlaintextTokenWarning';
 
 const fmtDate = (iso: string) => {
   const t = Date.parse(iso);
@@ -57,6 +58,8 @@ interface Feedback {
 
 export const AgentsSection = () => {
   const [settings, setSettings] = useState<MCPSettings | null>(null);
+  // The plaintext-token warning, shown on every off-to-on switch.
+  const [confirmOn, setConfirmOn] = useState(false);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -312,7 +315,7 @@ export const AgentsSection = () => {
           </div>
           <button
             type="button"
-            onClick={() => toggleEnabled(!settings.enabled)}
+            onClick={() => (settings.enabled ? toggleEnabled(false) : setConfirmOn(true))}
             disabled={busy}
             className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               settings.enabled
@@ -322,6 +325,16 @@ export const AgentsSection = () => {
           >
             {settings.enabled ? 'On' : 'Off'}
           </button>
+        {confirmOn && (
+          <PlaintextTokenWarning
+            surface="agents"
+            onCancel={() => setConfirmOn(false)}
+            onConfirm={() => {
+              setConfirmOn(false);
+              toggleEnabled(true);
+            }}
+          />
+        )}
         </div>
 
         {settings.agents.length > 0 && (

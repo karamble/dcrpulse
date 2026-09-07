@@ -18,6 +18,7 @@ import {
 import { McpHelpModal } from './McpHelpModal';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
+import { PlaintextTokenWarning } from './PlaintextTokenWarning';
 
 const UID_RE = /^[0-9a-f]{64}$/i;
 
@@ -36,6 +37,8 @@ const fmtDcr = (v: number) =>
 // callable-bot allowlist, and resolves payments parked for approval.
 export const BrMcpSection = () => {
   const [settings, setSettings] = useState<BrMcpSettings | null>(null);
+  // The plaintext-token warning, shown on every off-to-on switch.
+  const [confirmOn, setConfirmOn] = useState(false);
   const [draft, setDraft] = useState<BrMcpSettings | null>(null);
   const [pending, setPending] = useState<BrMcpPendingPayment[]>([]);
   const [spend, setSpend] = useState<{ entries: BrMcpSpendEntry[]; todayDcr: number }>({
@@ -236,7 +239,7 @@ export const BrMcpSection = () => {
         </div>
         <button
           type="button"
-          onClick={() => apply({ ...draft, enabled: !settings.enabled })}
+          onClick={() => (settings.enabled ? apply({ ...draft, enabled: false }) : setConfirmOn(true))}
           disabled={busy}
           className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
             settings.enabled
@@ -246,6 +249,16 @@ export const BrMcpSection = () => {
         >
           {settings.enabled ? 'On' : 'Off'}
         </button>
+        {confirmOn && (
+          <PlaintextTokenWarning
+            surface="bridge"
+            onCancel={() => setConfirmOn(false)}
+            onConfirm={() => {
+              setConfirmOn(false);
+              apply({ ...draft, enabled: true });
+            }}
+          />
+        )}
       </div>
 
       {showHelp && (
