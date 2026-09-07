@@ -812,7 +812,9 @@ func LightningLiquidityEstimateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // LightningLiquidityRequestHandler pays the liquidity provider and returns
-// once its channel back to this node is seen pending.
+// once its channel back to this node is seen pending. The provider's live fee
+// is confirmed by the operator mid-request, so the deadline covers that read
+// as well as the channel open.
 func LightningLiquidityRequestHandler(w http.ResponseWriter, r *http.Request) {
 	var req types.RequestLiquidityRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -823,12 +825,43 @@ func LightningLiquidityRequestHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "chanSizeAtoms must be at least 1000 (0.00001 DCR)", http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
 	defer cancel()
-	out, err := services.RequestLiquidityChannel(ctx, &req)
+	out, err := services.RequestLiquidityChannel(ctx, &req, services.PromptLiquidityConfirm)
 	if err != nil {
 		lightningWriteErr(w, "RequestLiquidityChannel", err)
 		return
 	}
 	writeJSON(w, out)
+}
+
+// StreamLiquidityConfirmEventsHandler streams the fee-confirmation prompts a
+// liquidity request raises. Nothing is replayed on connect, so the page asks
+// for the pending prompt on open instead.
+func StreamLiquidityConfirmEventsHandler(w http.ResponseWriter, r *http.Request) {
+	streamEventsWS(w, r, lghtLog, "liquidity-confirm",
+		nil, services.SubscribeLiquidityConfirmEvents)
+}
+
+// LightningLiquidityConfirmPendingHandler reports the prompt still waiting for
+// an answer, so a reloaded page re-attaches to a request already in flight.
+func LightningLiquidityConfirmPendingHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{"pending": services.PendingLiquidityConfirm()})
+}
+
+// LightningLiquidityConfirmHandler answers one fee-confirmation prompt.
+func LightningLiquidityConfirmHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID      string `json:"id"`
+		Approve bool   `json:"approve"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := services.ResolveLiquidityConfirm(req.ID, req.Approve); err != nil {
+		writeJSONError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"success": true})
 }

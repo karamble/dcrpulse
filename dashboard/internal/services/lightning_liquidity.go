@@ -177,6 +177,40 @@ func lpErr(err error) error {
 // after PolicyFetched returns nil.
 var errEstimateAbort = errors.New("liquidity estimate complete")
 
+// liquidityQuote prices one provider policy for the requested channel size.
+// Both the estimate and the live confirmation hand the caller this same shape,
+// so the figures a user is shown cannot drift from the ones that are checked.
+func liquidityQuote(chanSizeAtoms int64, p lpclient.ServerPolicy) types.LiquidityEstimateResponse {
+	return types.LiquidityEstimateResponse{
+		ChanSizeAtoms:          chanSizeAtoms,
+		EstimatedFeeAtoms:      int64(lpclient.EstimatedInvoiceAmount(uint64(chanSizeAtoms), p.ChanInvoiceFeeRate)),
+		MinChanSizeAtoms:       int64(p.MinChanSize),
+		MaxChanSizeAtoms:       int64(p.MaxChanSize),
+		MaxNbChannels:          uint32(p.MaxNbChannels),
+		MinChanLifetimeSeconds: int64(p.MinChanLifetime / time.Second),
+		Node:                   p.Node.String(),
+		Addresses:              p.NodeAddresses,
+	}
+}
+
+// LiquidityConfirmer decides whether to pay the fee the provider's live policy
+// implies. It runs before anything is paid, so returning an error aborts the
+// request with nothing spent. RequestLiquidityChannel takes one as a required
+// argument: there is no zero value meaning "pay whatever is asked".
+type LiquidityConfirmer func(ctx context.Context, quote types.LiquidityEstimateResponse) error
+
+// ApprovedFeeCeiling confirms a quote against a ceiling the caller named in
+// advance. A zero ceiling approves a free channel and nothing more, so a caller
+// that names no ceiling cannot pay anything.
+func ApprovedFeeCeiling(atoms int64) LiquidityConfirmer {
+	return func(_ context.Context, q types.LiquidityEstimateResponse) error {
+		if q.EstimatedFeeAtoms > atoms {
+			return fmt.Errorf("liquidity provider quotes a fee of %d atoms, above the approved %d atoms; request a new estimate", q.EstimatedFeeAtoms, atoms)
+		}
+		return nil
+	}
+}
+
 // EstimateLiquidityChannel fetches the LP policy for the requested channel
 // size and returns the estimated fee plus the policy limits without paying
 // anything. The dcrlnlpd client validates size bounds, the per-node channel
@@ -197,16 +231,7 @@ func EstimateLiquidityChannel(ctx context.Context, req *types.RequestLiquidityEs
 		Address:      server,
 		Certificates: certBytes,
 		PolicyFetched: func(p lpclient.ServerPolicy) error {
-			out = types.LiquidityEstimateResponse{
-				ChanSizeAtoms:          req.ChanSizeAtoms,
-				EstimatedFeeAtoms:      int64(lpclient.EstimatedInvoiceAmount(uint64(req.ChanSizeAtoms), p.ChanInvoiceFeeRate)),
-				MinChanSizeAtoms:       int64(p.MinChanSize),
-				MaxChanSizeAtoms:       int64(p.MaxChanSize),
-				MaxNbChannels:          uint32(p.MaxNbChannels),
-				MinChanLifetimeSeconds: int64(p.MinChanLifetime / time.Second),
-				Node:                   p.Node.String(),
-				Addresses:              p.NodeAddresses,
-			}
+			out = liquidityQuote(req.ChanSizeAtoms, p)
 			return errEstimateAbort
 		},
 	})
@@ -223,13 +248,26 @@ func EstimateLiquidityChannel(ctx context.Context, req *types.RequestLiquidityEs
 	return nil, fmt.Errorf("liquidity estimate did not abort as expected")
 }
 
-// RequestLiquidityChannel pays the LP and returns once its channel to us is
-// seen pending. dcrlnlpd's RequestChannel only returns when the channel is
+// RequestLiquidityChannel confirms the provider's live fee through confirm and,
+// if that returns nil, pays the LP and returns once its channel to us is seen
+// pending. The confirmation runs on the caller's context, so a caller that goes
+// away aborts before anything is paid. dcrlnlpd's RequestChannel only returns when the channel is
 // fully OPEN (several confirmations), so it runs detached on a background
 // context and the HTTP caller is answered at the PendingChannel callback;
 // cancelling the watcher at that point would not stop the LP-driven open
 // anyway, but letting it run keeps the event stream observed.
-func RequestLiquidityChannel(ctx context.Context, req *types.RequestLiquidityRequest) (*types.RequestLiquidityResponse, error) {
+func RequestLiquidityChannel(ctx context.Context, req *types.RequestLiquidityRequest,
+	confirm LiquidityConfirmer) (*types.RequestLiquidityResponse, error) {
+
+	// Above the client check on purpose: below it a caller reads "dcrlnd not
+	// available" and never learns the real reason. The size guard also keeps a
+	// negative from wrapping through the uint64 the pricing takes.
+	if req.ChanSizeAtoms <= 0 {
+		return nil, fmt.Errorf("chanSizeAtoms must be positive")
+	}
+	if confirm == nil {
+		return nil, fmt.Errorf("no fee confirmation supplied")
+	}
 	lnc := rpc.Dcrlnd()
 	if lnc.Lightning == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
@@ -248,14 +286,10 @@ func RequestLiquidityChannel(ctx context.Context, req *types.RequestLiquidityReq
 		LC:           lnc.Lightning,
 		Address:      server,
 		Certificates: certBytes,
+		// Upstream calls this after it has priced the channel and before it
+		// asks for the invoice, so refusing here costs nothing.
 		PolicyFetched: func(p lpclient.ServerPolicy) error {
-			// Guard against the LP changing its fee rate between the
-			// estimate the user approved and this request.
-			fee := int64(lpclient.EstimatedInvoiceAmount(uint64(req.ChanSizeAtoms), p.ChanInvoiceFeeRate))
-			if req.ApprovedFeeAtoms > 0 && fee > req.ApprovedFeeAtoms {
-				return fmt.Errorf("liquidity provider now quotes a fee of %d atoms, above the approved %d atoms; request a new estimate", fee, req.ApprovedFeeAtoms)
-			}
-			return nil
+			return confirm(ctx, liquidityQuote(req.ChanSizeAtoms, p))
 		},
 		PendingChannel: func(chanID string, capacity uint64) {
 			select {

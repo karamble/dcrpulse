@@ -4,6 +4,8 @@
 
 package types
 
+import "time"
+
 // LightningStatus is the high-level state the dashboard frontend uses
 // to decide whether to render the setup wizard, the unlock screen, or
 // the Overview tab. Mirrors the staged ConnectPage flow Decrediton
@@ -480,13 +482,27 @@ type LiquidityEstimateResponse struct {
 }
 
 // RequestLiquidityRequest is the body for /wallet/ln/liquidity/request.
-// ApprovedFeeAtoms is the fee the user confirmed; the request aborts if the
-// LP's recomputed fee exceeds it.
+// ApprovedFeeAtoms is the agent surface's ceiling: an MCP caller names the
+// most it will pay and the request aborts if the provider's live policy
+// prices the channel above it. The browser sends no ceiling because it
+// confirms the live figure instead.
 type RequestLiquidityRequest struct {
 	ChanSizeAtoms    int64  `json:"chanSizeAtoms"`
 	ApprovedFeeAtoms int64  `json:"approvedFeeAtoms"`
 	Server           string `json:"server,omitempty"`
 	CertPEM          string `json:"certPem,omitempty"`
+}
+
+// LiquidityConfirmEvent carries one liquidity-fee confirmation prompt to the
+// browser. Kind is "prompt" when an answer is wanted and "resolved" once the
+// prompt is gone, so a second tab can drop its dialog. Quote is the provider's
+// live policy priced for the requested channel, which is the figure that will
+// actually be paid.
+type LiquidityConfirmEvent struct {
+	ID        string                    `json:"id"`
+	Kind      string                    `json:"kind"`
+	Quote     LiquidityEstimateResponse `json:"quote"`
+	ExpiresAt time.Time                 `json:"expiresAt"`
 }
 
 // RequestLiquidityResponse is returned once the LP's channel back to this

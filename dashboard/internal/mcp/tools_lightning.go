@@ -439,7 +439,7 @@ var lightningTools = []toolDef{
 				ChanSizeAtoms:    int64(size),
 				ApprovedFeeAtoms: feeAtoms,
 			}
-			resp, err := services.RequestLiquidityChannel(ctx, req)
+			resp, err := services.RequestLiquidityChannel(ctx, req, services.ApprovedFeeCeiling(feeAtoms))
 			if err != nil {
 				detail := err.Error()
 				// The provider flow runs on its own context, so once it has

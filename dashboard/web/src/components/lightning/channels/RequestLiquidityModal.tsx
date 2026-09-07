@@ -2,17 +2,19 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, ChevronDown, Loader2, X } from 'lucide-react';
 import {
   LightningBalance,
-  LiquidityEstimate,
+  LiquidityConfirmEvent,
   RequestLiquidityResult,
-  estimateLiquidityChannel,
   getLightningBalance,
   getLightningChannels,
   getLiquidityDefaults,
+  getPendingLiquidityConfirm,
   requestLiquidityChannel,
+  resolveLiquidityConfirm,
+  subscribeLiquidityConfirm,
 } from '../../../services/lightningApi';
 import { fmtDcr } from '../StatCard';
 import { parseDcrAmount } from '../../../utils/amounts';
@@ -36,10 +38,12 @@ const humanizeSeconds = (s: number): string => {
   return `${m} minute${m === 1 ? '' : 's'}`;
 };
 
-type Step = 'form' | 'confirm' | 'progress';
+type Step = 'form' | 'waiting' | 'confirm' | 'progress';
 
 // Request an inbound channel from a dcrlnlpd liquidity provider, mirroring
-// bruig's NeedsInChannelScreen + LNConfirmRecvChanPaymentScreen flow.
+// bruig's NeedsInChannelScreen + LNConfirmRecvChanPaymentScreen flow: the
+// request stops inside the provider handshake and asks about the fee the
+// provider has just quoted, so the figure confirmed here is the figure paid.
 export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
   const [step, setStep] = useState<Step>('form');
   const [amountDcr, setAmountDcr] = useState('');
@@ -48,10 +52,14 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [balance, setBalance] = useState<LightningBalance | null>(null);
   const [openChannels, setOpenChannels] = useState<number | null>(null);
-  const [estimate, setEstimate] = useState<LiquidityEstimate | null>(null);
+  const [prompt, setPrompt] = useState<LiquidityConfirmEvent | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(0);
   const [result, setResult] = useState<RequestLiquidityResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set while answering "no", so the refusal the request comes back with is
+  // the expected end of the flow rather than something to report.
+  const cancelling = useRef(false);
 
   useEffect(() => {
     getLiquidityDefaults()
@@ -70,45 +78,73 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
       .catch(() => {});
   }, []);
 
+  // The stream replays nothing, so a modal opened while a request is already
+  // waiting asks for the prompt on connect and on every reconnect.
+  useEffect(() => {
+    const attach = (ev: LiquidityConfirmEvent | null) => {
+      if (!ev) return;
+      if (ev.kind === 'resolved') {
+        setPrompt((cur) => (cur && cur.id === ev.id ? null : cur));
+        return;
+      }
+      setPrompt(ev);
+      setStep('confirm');
+    };
+    return subscribeLiquidityConfirm(attach, {
+      onOpen: () => {
+        getPendingLiquidityConfirm().then(attach).catch(() => {});
+      },
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!prompt) return;
+    const tick = () =>
+      setSecondsLeft(
+        Math.max(0, Math.round((new Date(prompt.expiresAt).getTime() - Date.now()) / 1000)),
+      );
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [prompt]);
+
   const amount = parseDcrAmount(amountDcr);
   const chanSizeAtoms = amount.atoms;
 
-  const runEstimate = async () => {
+  // Continue starts the request. It runs for the whole flow: the provider
+  // handshake, the confirmation below, the payment and the pending channel.
+  const runRequest = async () => {
+    setStep('waiting');
     setSubmitting(true);
     setError(null);
+    cancelling.current = false;
     try {
-      const est = await estimateLiquidityChannel(
+      const res = await requestLiquidityChannel(
         chanSizeAtoms,
         server.trim() || undefined,
         certPem.trim() || undefined,
       );
-      setEstimate(est);
-      setStep('confirm');
+      setResult(res);
+      setStep('progress');
+      onSuccess?.(res.channelPoint);
     } catch (e: any) {
-      setError(apiError(e, 'Estimate failed'));
+      if (cancelling.current) return; // answering "no" is not a failure
+      setError(apiError(e, 'Request failed'));
+      setStep('progress');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const runRequest = async () => {
-    if (!estimate) return;
-    setStep('progress');
-    setSubmitting(true);
-    setError(null);
+  const answerPrompt = async (approve: boolean) => {
+    if (!prompt) return;
+    cancelling.current = !approve;
+    setStep(approve ? 'progress' : 'form');
+    setPrompt(null);
     try {
-      const res = await requestLiquidityChannel(
-        estimate.chanSizeAtoms,
-        estimate.estimatedFeeAtoms,
-        server.trim() || undefined,
-        certPem.trim() || undefined,
-      );
-      setResult(res);
-      onSuccess?.(res.channelPoint);
+      await resolveLiquidityConfirm(prompt.id, approve);
     } catch (e: any) {
-      setError(apiError(e, 'Request failed'));
-    } finally {
-      setSubmitting(false);
+      setError(apiError(e, 'Confirmation failed'));
     }
   };
 
@@ -225,7 +261,7 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
                 Cancel
               </button>
               <button
-                onClick={runEstimate}
+                onClick={runRequest}
                 disabled={submitting || !!amount.error || chanSizeAtoms < 1000}
                 className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
               >
@@ -236,33 +272,69 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
           </div>
         )}
 
-        {step === 'confirm' && estimate && (
+        {step === 'waiting' && (
           <div className="p-6 space-y-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Fetching the provider's policy. Nothing is paid yet.</span>
+            </div>
+            {error && (
+              <div className="flex items-start gap-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span className="break-words">{error}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 'confirm' && prompt && (
+          <div className="p-6 space-y-4">
+            <p className="text-sm">
+              You pay the provider{' '}
+              <span className="font-semibold tabular-nums">
+                {fmtDcr(prompt.quote.estimatedFeeAtoms)}
+              </span>{' '}
+              over Lightning, plus the routing fee to reach it. In return the
+              provider opens a{' '}
+              <span className="font-semibold tabular-nums">
+                {fmtDcr(prompt.quote.chanSizeAtoms)}
+              </span>{' '}
+              channel back to this node. The channel amount is the provider's
+              own funds and is not taken from your balance.
+            </p>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Requested channel size</span>
-                <span className="font-medium tabular-nums">{fmtDcr(estimate.chanSizeAtoms)}</span>
+                <span className="text-muted-foreground">Leaves your balance</span>
+                <span className="font-semibold tabular-nums">
+                  {fmtDcr(prompt.quote.estimatedFeeAtoms)}
+                </span>
               </div>
               <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Estimated fee</span>
-                <span className="font-medium tabular-nums">{fmtDcr(estimate.estimatedFeeAtoms)}</span>
+                <span className="text-muted-foreground">Inbound capacity gained</span>
+                <span className="font-medium tabular-nums">{fmtDcr(prompt.quote.chanSizeAtoms)}</span>
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Minimum channel lifetime</span>
-                <span className="font-medium">{humanizeSeconds(estimate.minChanLifetimeSeconds)}</span>
+                <span className="font-medium">
+                  {humanizeSeconds(prompt.quote.minChanLifetimeSeconds)}
+                </span>
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Max channels per node</span>
-                <span className="font-medium tabular-nums">{estimate.maxNbChannels}</span>
+                <span className="font-medium tabular-nums">{prompt.quote.maxNbChannels}</span>
               </div>
             </div>
             <div className="space-y-1 text-xs text-muted-foreground">
               <div>Server node</div>
-              <div className="font-mono break-all text-foreground/80">{estimate.node}</div>
-              {estimate.addresses.length > 0 && (
-                <div className="font-mono break-all">{estimate.addresses.join(', ')}</div>
+              <div className="font-mono break-all text-foreground/80">{prompt.quote.node}</div>
+              {prompt.quote.addresses.length > 0 && (
+                <div className="font-mono break-all">{prompt.quote.addresses.join(', ')}</div>
               )}
             </div>
+            <p className="text-xs text-muted-foreground">
+              This is the provider's live quote. It is paid only if you accept,
+              and the request is dropped in {secondsLeft}s if you do not answer.
+            </p>
             <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-xs text-foreground/80 flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
               <span>
@@ -281,17 +353,15 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
               <button
                 onClick={() => {
                   setError(null);
-                  setStep('form');
+                  answerPrompt(false);
                 }}
-                disabled={submitting}
-                className="px-4 py-2 rounded-lg bg-muted/20 hover:bg-muted/30 text-sm disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-muted/20 hover:bg-muted/30 text-sm"
               >
                 Back
               </button>
               <button
-                onClick={runRequest}
-                disabled={submitting}
-                className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition disabled:opacity-50"
+                onClick={() => answerPrompt(true)}
+                className="px-4 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm transition"
               >
                 Pay
               </button>
@@ -329,8 +399,10 @@ export const RequestLiquidityModal = ({ onClose, onSuccess }: Props) => {
               {!submitting && !result && (
                 <button
                   onClick={() => {
+                    // Back to the form, not to the confirmation: that prompt
+                    // belonged to a request that has already ended.
                     setError(null);
-                    setStep('confirm');
+                    setStep('form');
                   }}
                   className="px-4 py-2 rounded-lg bg-muted/20 hover:bg-muted/30 text-sm"
                 >

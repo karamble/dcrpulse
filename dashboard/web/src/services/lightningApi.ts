@@ -627,16 +627,47 @@ export const estimateLiquidityChannel = async (
   return data;
 };
 
+// The browser names no approved fee: the provider's live policy is confirmed
+// mid-request over subscribeLiquidityConfirm, so the figure shown is the figure
+// paid. The deadline covers that read as well as the channel open.
 export const requestLiquidityChannel = async (
   chanSizeAtoms: number,
-  approvedFeeAtoms: number,
   server?: string,
   certPem?: string,
 ): Promise<RequestLiquidityResult> => {
   const { data } = await api.post<RequestLiquidityResult>(
     '/wallet/ln/liquidity/request',
-    { chanSizeAtoms, approvedFeeAtoms, server, certPem },
-    { timeout: 130000 },
+    { chanSizeAtoms, server, certPem },
+    { timeout: 190000 },
   );
   return data;
+};
+
+// A liquidity request stops inside the provider handshake to ask the operator
+// about the fee it just quoted. kind is 'prompt' while an answer is wanted and
+// 'resolved' once the prompt is gone, so a second tab drops its dialog.
+export interface LiquidityConfirmEvent {
+  id: string;
+  kind: 'prompt' | 'resolved';
+  quote: LiquidityEstimate;
+  expiresAt: string;
+}
+
+export const subscribeLiquidityConfirm = (
+  onEvent: (e: LiquidityConfirmEvent) => void,
+  opts?: SubscribeOpts,
+): (() => void) =>
+  subscribeJSON<LiquidityConfirmEvent>('/api/wallet/ln/liquidity/confirm/events', onEvent, opts);
+
+// Nothing is replayed on connect, so a page that opens or reconnects mid-request
+// asks for the prompt still waiting.
+export const getPendingLiquidityConfirm = async (): Promise<LiquidityConfirmEvent | null> => {
+  const { data } = await api.get<{ pending: LiquidityConfirmEvent | null }>(
+    '/wallet/ln/liquidity/confirm/pending',
+  );
+  return data.pending;
+};
+
+export const resolveLiquidityConfirm = async (id: string, approve: boolean): Promise<void> => {
+  await api.post('/wallet/ln/liquidity/confirm', { id, approve });
 };
