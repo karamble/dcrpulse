@@ -48,22 +48,15 @@ func mergeOwnedMCPSettings(current json.RawMessage, wire brMCPSettingsWire) (map
 // redactBridgeToken blanks the bearer secret for a reply, recording only that
 // one exists. The plaintext is returned by the call that mints it and never
 // again, the way an agent token is (mcp.AgentInfo carries no token at all).
+//
+// TokenSet is kept when the daemon already reported it: brclientd holds a hash
+// and sends token_set with no token, so deriving the flag from the value alone
+// would report "no token" on every read.
 func redactBridgeToken(s types.BRMCPSettings) types.BRMCPSettings {
-	s.TokenSet = s.Token != ""
+	s.TokenSet = s.TokenSet || s.Token != ""
 	s.Token = ""
 	s.RecycleToken = false
 	return s
-}
-
-// bridgeTokenForApply picks the token a save sends to brclientd. An empty token
-// is brclientd's "mint a fresh one" signal, so only an explicit recycle may send
-// it: echoing the caller's field would recycle on every ordinary save now that
-// the caller is never given the current value.
-func bridgeTokenForApply(recycle bool, current string) string {
-	if recycle {
-		return ""
-	}
-	return current
 }
 
 // BisonrelayMCPSettingsHandler round-trips the BR-MCP client settings.
@@ -92,22 +85,16 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid per-day cap", http.StatusBadRequest)
 			return
 		}
-		// Read the daemon's settings first, failing closed: the merge needs them,
-		// and an ordinary save carries the existing token through from here
-		// rather than from the caller, who is never told what it is.
+		// Read the daemon's settings first, failing closed: the merge below
+		// needs them.
 		current, err := rpc.BrclientdMCPSettings(r.Context())
 		if err != nil {
 			brWriteErr(w, err)
 			return
 		}
-		cur, err := services.DecodeBRMCPSettings(current)
-		if err != nil {
-			http.Error(w, "parse settings: "+err.Error(), http.StatusBadGateway)
-			return
-		}
 		wire := brMCPSettingsWire{
 			Enabled:             view.Enabled,
-			Token:               bridgeTokenForApply(view.RecycleToken, cur.Token),
+			RecycleToken:        view.RecycleToken,
 			Mode:                view.Mode,
 			PerCallCapAtoms:     int64(perCall),
 			PerDayCapAtoms:      int64(perDay),

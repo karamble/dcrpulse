@@ -24,8 +24,14 @@ import (
 // address is not here - it is brclientd startup config (mcplisten), not a
 // runtime setting.
 type BRMCPSettingsWire struct {
-	Enabled             bool               `json:"enabled"`
-	Token               string             `json:"token"`
+	Enabled bool `json:"enabled"`
+	// Token is set only on the reply to a save that minted one - brclientd
+	// keeps a hash, so that is the single moment the plaintext exists.
+	// TokenSet reports that one exists; RecycleToken asks for a fresh one and
+	// is the only way to change it.
+	Token               string             `json:"token,omitempty"`
+	TokenSet            bool               `json:"token_set"`
+	RecycleToken        bool               `json:"recycle_token,omitempty"`
 	Mode                string             `json:"mode"`
 	PerCallCapAtoms     int64              `json:"per_call_cap_atoms"`
 	PerDayCapAtoms      int64              `json:"per_day_cap_atoms"`
@@ -48,6 +54,7 @@ func BRMCPSettingsToView(w BRMCPSettingsWire) types.BRMCPSettings {
 	return types.BRMCPSettings{
 		Enabled:             w.Enabled,
 		Token:               w.Token,
+		TokenSet:            w.TokenSet,
 		Mode:                w.Mode,
 		PerCallCapDcr:       dcrutil.Amount(w.PerCallCapAtoms).ToCoin(),
 		PerDayCapDcr:        dcrutil.Amount(w.PerDayCapAtoms).ToCoin(),

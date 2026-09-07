@@ -80,9 +80,9 @@ func TestMergeOwnedMCPSettingsRejectsMalformedCurrent(t *testing.T) {
 }
 
 // The bridge bearer token is a durable credential, so it follows the same rule
-// as an agent token: shown once by the call that mints it, never at rest. That
-// makes the save path the delicate half - an empty token is brclientd's "mint a
-// fresh one" signal, and the caller no longer holds the real value to echo.
+// as an agent token: shown once by the call that mints it, never at rest.
+// brclientd keeps only a hash and decides minting from an explicit recycle
+// flag, so this layer only has to avoid handing the plaintext back out.
 
 func TestRedactBridgeTokenBlanksIt(t *testing.T) {
 	got := redactBridgeToken(types.BRMCPSettings{Enabled: true, Token: "s3cret", Mode: "ask"})
@@ -97,22 +97,18 @@ func TestRedactBridgeTokenBlanksIt(t *testing.T) {
 	}
 }
 
+// The daemon reports token_set with no token, so the flag has to survive the
+// redaction rather than be re-derived from a value that is deliberately absent.
+func TestRedactBridgeTokenKeepsTheDaemonsTokenSet(t *testing.T) {
+	got := redactBridgeToken(types.BRMCPSettings{Enabled: true, TokenSet: true})
+	if !got.TokenSet {
+		t.Error("a token the daemon reported was redacted away into 'no token'")
+	}
+}
+
 func TestRedactBridgeTokenReportsNoTokenSet(t *testing.T) {
 	if got := redactBridgeToken(types.BRMCPSettings{Enabled: true}); got.TokenSet {
 		t.Error("TokenSet is true with no token configured")
 	}
 }
 
-// The regression this pairs with: every ordinary save would otherwise recycle
-// the token and cut off every agent using it.
-func TestBridgeTokenForApplyKeepsTheCurrentOne(t *testing.T) {
-	if got := bridgeTokenForApply(false, "s3cret"); got != "s3cret" {
-		t.Errorf("an ordinary save sent %q, want the current token carried through", got)
-	}
-}
-
-func TestBridgeTokenForApplyMintsOnRecycle(t *testing.T) {
-	if got := bridgeTokenForApply(true, "s3cret"); got != "" {
-		t.Errorf("a recycle sent %q, want the empty token that mints a fresh one", got)
-	}
-}
