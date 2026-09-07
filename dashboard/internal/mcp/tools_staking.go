@@ -338,7 +338,7 @@ var stakingTools = []toolDef{
 				recordSpend(a, "staking_purchase", accts.Source, 0, in.VSPHost, "denied", err.Error())
 				return nil, err
 			}
-			info, err := services.FetchStakingInfo()
+			info, err := services.FetchStakingInfo(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("ticket price unavailable: %w", err)
 			}

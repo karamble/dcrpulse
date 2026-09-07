@@ -14,34 +14,35 @@ import (
 
 // Accessors for the agent MCP tools. The dashboard reads these values through
 // FetchDashboardData's shared snapshot; the tools read them one at a time, so
-// each call carries its own snapshot.
+// each call carries its own snapshot and the caller's context, so an agent that
+// hangs up does not leave the RPCs running.
 
-func FetchNodeStatus() (*types.NodeStatus, error) {
-	return fetchNodeStatus(context.Background(), &chainSnapshot{})
+func FetchNodeStatus(ctx context.Context) (*types.NodeStatus, error) {
+	return fetchNodeStatus(ctx, &chainSnapshot{})
 }
 
-func FetchBlockchainInfo() (*types.BlockchainInfo, error) {
-	return fetchBlockchainInfo(context.Background(), &chainSnapshot{})
+func FetchBlockchainInfo(ctx context.Context) (*types.BlockchainInfo, error) {
+	return fetchBlockchainInfo(ctx, &chainSnapshot{})
 }
 
-func FetchNetworkInfo() (*types.NetworkInfo, error) {
-	return fetchNetworkInfo(context.Background(), &chainSnapshot{})
+func FetchNetworkInfo(ctx context.Context) (*types.NetworkInfo, error) {
+	return fetchNetworkInfo(ctx, &chainSnapshot{})
 }
 
-func FetchPeers() ([]types.Peer, error) {
-	return fetchPeers(context.Background(), &chainSnapshot{})
+func FetchPeers(ctx context.Context) ([]types.Peer, error) {
+	return fetchPeers(ctx, &chainSnapshot{})
 }
 
-func FetchSupplyInfo() (*types.SupplyInfo, error) {
-	return fetchSupplyInfo(context.Background(), &chainSnapshot{})
+func FetchSupplyInfo(ctx context.Context) (*types.SupplyInfo, error) {
+	return fetchSupplyInfo(ctx, &chainSnapshot{})
 }
 
-func FetchStakingInfo() (*types.StakingInfo, error) {
-	return fetchStakingInfo(context.Background(), &chainSnapshot{})
+func FetchStakingInfo(ctx context.Context) (*types.StakingInfo, error) {
+	return fetchStakingInfo(ctx, &chainSnapshot{})
 }
 
-func FetchMempoolInfo() (*types.MempoolInfo, error) {
-	return fetchMempoolInfo(context.Background(), &chainSnapshot{})
+func FetchMempoolInfo(ctx context.Context) (*types.MempoolInfo, error) {
+	return fetchMempoolInfo(ctx, &chainSnapshot{})
 }
 
 // AgentAddress is one funded receiving address in wallet_addresses output.
