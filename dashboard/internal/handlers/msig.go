@@ -66,8 +66,7 @@ func MsigWalletsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		entries = append(entries, entry)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(struct {
+	writeJSON(w, struct {
 		WalletName string        `json:"walletName"`
 		Wallets    []walletEntry `json:"wallets"`
 	}{walletName, entries})
@@ -101,8 +100,7 @@ func MsigInviteHandler(w http.ResponseWriter, r *http.Request) {
 		msigPassphraseError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rec)
+	writeJSON(w, rec)
 }
 
 // MsigActivateHandler is the initiator's checkpoint: every cosigner's key is
@@ -229,8 +227,7 @@ func MsigDetailHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // MsigReceiveHandler hands out the next receive address of an HD shared
@@ -253,8 +250,7 @@ func MsigReceiveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(struct {
+	writeJSON(w, struct {
 		Address string `json:"address"`
 		Index   uint32 `json:"index"`
 	}{addr, index})
@@ -275,8 +271,7 @@ func MsigManualOutboxHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(struct {
+	writeJSON(w, struct {
 		Frames []msig.ManualFrame `json:"frames"`
 	}{frames})
 }
@@ -322,8 +317,7 @@ func MsigImportHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(res)
+	writeJSON(w, res)
 }
 
 // MsigBackupHandler exports the backup card for one shared wallet.
@@ -340,8 +334,7 @@ func MsigBackupHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(card)
+	writeJSON(w, card)
 }
 
 // MsigPendingHandler lists open invites and deferred imports across all
@@ -354,8 +347,7 @@ func MsigPendingHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(struct {
+	writeJSON(w, struct {
 		Items []msig.PendingItem `json:"items"`
 		Count int                `json:"count"`
 	}{items, len(items)})
@@ -408,8 +400,7 @@ func MsigProposeHandler(w http.ResponseWriter, r *http.Request) {
 		msigPassphraseError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(prop)
+	writeJSON(w, prop)
 }
 
 // MsigSignHandler adds this wallet's signature to an incoming request.
@@ -522,8 +513,7 @@ func MsigRestoreHandler(w http.ResponseWriter, r *http.Request) {
 		msigPassphraseError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rec)
+	writeJSON(w, rec)
 }
 
 // MsigRefreshHandler retries unsent frames, resumes wallet-gated steps

@@ -37,11 +37,6 @@ func timestampArchive(w http.ResponseWriter) (*timestamp.Store, bool) {
 	return store, true
 }
 
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
-}
-
 type createTimestampRequest struct {
 	Digest      string   `json:"digest"`
 	Filename    string   `json:"filename"`

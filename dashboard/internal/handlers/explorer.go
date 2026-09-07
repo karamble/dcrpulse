@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -34,8 +33,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, result)
 }
 
 // GetRecentBlocksHandler returns a list of recent blocks with pagination
@@ -71,8 +69,7 @@ func GetRecentBlocksHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	writeJSON(w, response)
 }
 
 // GetBlockByHeightHandler returns detailed block info by height
@@ -96,8 +93,7 @@ func GetBlockByHeightHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(block)
+	writeJSON(w, block)
 }
 
 // GetBlockByHashHandler returns detailed block info by hash
@@ -120,8 +116,7 @@ func GetBlockByHashHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(block)
+	writeJSON(w, block)
 }
 
 // GetTransactionHandler returns detailed transaction info
@@ -144,8 +139,7 @@ func GetTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tx)
+	writeJSON(w, tx)
 }
 
 // GetAddressHandler returns address information (limited without addrindex)
@@ -168,8 +162,7 @@ func GetAddressHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(info)
+	writeJSON(w, info)
 }
 
 // GetMempoolTransactionsHandler returns all current mempool transactions
@@ -184,6 +177,5 @@ func GetMempoolTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(mempool)
+	writeJSON(w, mempool)
 }

@@ -27,8 +27,7 @@ func LightningStatusHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	status := services.LightningStatus(ctx)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(status)
+	writeJSON(w, status)
 }
 
 // LightningSetupHandler — creates the dedicated lightning dcrwallet
@@ -150,8 +149,7 @@ func LightningInfoHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "GetLightningInfo", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(info)
+	writeJSON(w, info)
 }
 
 // LightningBalanceHandler — merged wallet + channel balance for the
@@ -164,8 +162,7 @@ func LightningBalanceHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "GetLightningBalance", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(bal)
+	writeJSON(w, bal)
 }
 
 // LightningActivityHandler — recent invoices + payments merged into
@@ -178,8 +175,7 @@ func LightningActivityHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "GetLightningActivity", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(act)
+	writeJSON(w, act)
 }
 
 func lightningWriteErr(w http.ResponseWriter, label string, err error) {
@@ -214,8 +210,7 @@ func lightningList(w http.ResponseWriter, r *http.Request, timeout time.Duration
 		lightningWriteErr(w, label, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // LightningChannelsHandler — merged list of open/pending/closed channels.
@@ -251,8 +246,7 @@ func LightningOpenChannelHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "OpenLightningChannel", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // LightningCloseChannelHandler — streaming CloseChannel, returns when
@@ -274,16 +268,14 @@ func LightningCloseChannelHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "CloseLightningChannel", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // LightningPeerPresetsHandler — cached brseeder list (always non-empty
 // thanks to the hardcoded hub0 fallback).
 func LightningPeerPresetsHandler(w http.ResponseWriter, r *http.Request) {
 	presets := services.LightningPeerPresets(r.Context())
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"presets": presets})
+	writeJSON(w, map[string]any{"presets": presets})
 }
 
 // LightningAutopilotStatusHandler — current autopilot active flag.
@@ -343,8 +335,7 @@ func LightningAutopilotScoresHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "GetLightningAutopilotScores", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // LightningGraphSearchHandler — substring search of DescribeGraph nodes.
@@ -357,8 +348,7 @@ func LightningGraphSearchHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "SearchLightningNodes", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // LightningChannelEventsHandler — WebSocket; fans out dcrlnd's
@@ -452,8 +442,7 @@ func LightningNetworkHandler(w http.ResponseWriter, r *http.Request) {
 		lghtLog.Warnf("GetTopLightningNodes (best-effort): %v", terr)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // ---- Send tab --------------------------------------------------------------
@@ -480,8 +469,7 @@ func LightningDecodePayReqHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "DecodeLightningInvoice", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // LightningSendPaymentHandler is a WebSocket endpoint that forwards
@@ -596,8 +584,7 @@ func LightningAddInvoiceHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "AddLightningInvoice", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(inv)
+	writeJSON(w, inv)
 }
 
 // LightningInvoicesHandler returns the wallet's invoice history for the
@@ -695,8 +682,7 @@ func LightningBackupExportHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "ExportLightningChannelBackup", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // LightningBackupVerifyHandler validates a user-uploaded backup blob.
@@ -713,8 +699,7 @@ func LightningBackupVerifyHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	resp := services.VerifyLightningChannelBackup(ctx, req.BackupBase64)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // LightningWatchtowersHandler lists registered watchtowers.
@@ -778,8 +763,7 @@ func LightningGraphNodeHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "QueryLightningNodeInfo", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // LightningGraphRoutesHandler queries candidate payment routes.
@@ -800,8 +784,7 @@ func LightningGraphRoutesHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "QueryLightningRoutes", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // ---- Liquidity (inbound channel request) -----------------------------------
@@ -816,8 +799,7 @@ func LightningLiquidityDefaultsHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "GetLiquidityDefaults", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // LightningLiquidityEstimateHandler fetches the LP policy and estimated fee
@@ -839,8 +821,7 @@ func LightningLiquidityEstimateHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "EstimateLiquidityChannel", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // LightningLiquidityRequestHandler pays the liquidity provider and returns
@@ -862,6 +843,5 @@ func LightningLiquidityRequestHandler(w http.ResponseWriter, r *http.Request) {
 		lightningWriteErr(w, "RequestLiquidityChannel", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }

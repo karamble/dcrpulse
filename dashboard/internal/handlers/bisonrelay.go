@@ -41,8 +41,7 @@ func BisonrelayVersionHandler(w http.ResponseWriter, r *http.Request) {
 		brWriteErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(ver)
+	writeJSON(w, ver)
 }
 
 // BisonrelayStatusHandler proxies brclientd's /status endpoint, returning
@@ -260,8 +259,7 @@ func BisonrelayFileSendHandler(w http.ResponseWriter, r *http.Request) {
 		brWriteErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(result)
+	writeJSON(w, result)
 }
 
 // BisonrelayDownloadHandler serves a completed file-transfer download that
@@ -335,8 +333,7 @@ func BisonrelayDownloadsListHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, fileEntry{Name: e.Name(), Size: fi.Size(), ModTime: fi.ModTime().Unix()})
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string][]fileEntry{"files": out})
+	writeJSON(w, map[string][]fileEntry{"files": out})
 }
 
 // BisonrelayContactsHandler proxies brclientd's /contacts endpoint.
@@ -906,8 +903,7 @@ func BisonrelayPostCommentHandler(w http.ResponseWriter, r *http.Request) {
 		brWriteErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"identifier": identifier})
+	writeJSON(w, map[string]string{"identifier": identifier})
 }
 
 // BisonrelayPostReceiveReceiptsHandler returns the receive receipts for one
@@ -1317,8 +1313,7 @@ func BisonrelayPostsRenderHandler(w http.ResponseWriter, r *http.Request) {
 		"markdown": req.Post,
 		"segments": segments,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // BisonrelayPagesRenderHandler renders draft page markdown into structured
@@ -1333,8 +1328,7 @@ func BisonrelayPagesRenderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, map[string]any{
 		"markdown": req.Markdown,
 		"segments": services.SplitAndRenderBRPage(req.Markdown),
 	})
@@ -1398,8 +1392,7 @@ func BisonrelayPostBodyHandler(w http.ResponseWriter, r *http.Request) {
 		"segments":   segments,
 		"attributes": pm.Attributes,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // maxResolvedQuotes bounds how many quote embeds one post body resolves.
@@ -1497,8 +1490,7 @@ func BisonrelayPagesFetchHandler(w http.ResponseWriter, r *http.Request) {
 		"async_target_id": fetched.AsyncTargetID,
 		"segments":        services.SplitAndRenderBRPage(fetched.Markdown),
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // sanitizeBRFormData coerces a page form's submitted values to the JSON types
@@ -1792,8 +1784,7 @@ func BisonrelayBackupPrepareHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	st := brBackupStatusLocked()
 	brBackupMu.Unlock()
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(st)
+	writeJSON(w, st)
 }
 
 // BisonrelayBackupStatusHandler reports the prepared-backup slot so the UI
@@ -1802,8 +1793,7 @@ func BisonrelayBackupStatusHandler(w http.ResponseWriter, r *http.Request) {
 	brBackupMu.Lock()
 	st := brBackupStatusLocked()
 	brBackupMu.Unlock()
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(st)
+	writeJSON(w, st)
 }
 
 // runBrBackupPrepare fetches the tarball from brclientd's /backup and spools
@@ -2291,8 +2281,7 @@ func BisonrelayPMHandler(w http.ResponseWriter, r *http.Request) {
 		brWriteErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"body": body})
+	writeJSON(w, map[string]string{"body": body})
 }
 
 // BisonrelayInviteWriteHandler asks brclientd to mint a fresh OOB invite.
@@ -2304,8 +2293,7 @@ func BisonrelayInviteWriteHandler(w http.ResponseWriter, r *http.Request) {
 		brWriteErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	writeJSON(w, map[string]string{
 		"invite_bytes": result.InviteBytes,
 		"invite_key":   result.InviteKey,
 	})

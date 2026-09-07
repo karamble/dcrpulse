@@ -104,8 +104,7 @@ func MCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		Notify:      mcp.Oversight(),
 		Logging:     mcp.Logging(),
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // SetMCPEnabledHandler starts or stops the MCP listener and persists the new
@@ -130,8 +129,7 @@ func SetMCPEnabledHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	running, bind, port := mcp.Status()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(struct {
+	writeJSON(w, struct {
 		Enabled bool   `json:"enabled"`
 		Bind    string `json:"bind"`
 		Port    string `json:"port"`
@@ -162,9 +160,7 @@ func CreateMCPTokenHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to create agent token", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(struct {
+	writeJSONStatus(w, http.StatusCreated, struct {
 		ID    string `json:"id"`
 		Name  string `json:"name"`
 		Token string `json:"token"`

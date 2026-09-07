@@ -26,8 +26,7 @@ func GetTreasuryInfoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(info)
+	writeJSON(w, info)
 }
 
 // GetTreasuryBalanceHistoryHandler returns the treasury balance-over-time
@@ -43,8 +42,7 @@ func GetTreasuryBalanceHistoryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(series)
+	writeJSON(w, series)
 }
 
 // TriggerTSpendScanHandler triggers a historical blockchain scan for TSpends
@@ -71,8 +69,7 @@ func TriggerTSpendScanHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("Historical TSpend scan started from block %d", req.StartHeight),
 	})
@@ -87,14 +84,12 @@ func GetTSpendScanProgressHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(progress)
+	writeJSON(w, progress)
 }
 
 // GetTSpendScanResultsHandler returns the results from the last completed scan
 func GetTSpendScanResultsHandler(w http.ResponseWriter, r *http.Request) {
 	results := services.GetScanResults()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	writeJSON(w, results)
 }

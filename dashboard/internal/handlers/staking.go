@@ -47,8 +47,7 @@ func ListVSPsHandler(w http.ResponseWriter, r *http.Request) {
 		envelope.UsedVSPs = used
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(envelope)
+	writeJSON(w, envelope)
 }
 
 // VSPInfoHandler probes one VSP host's /api/v3/vspinfo.
@@ -70,8 +69,7 @@ func VSPInfoHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(info)
+	writeJSON(w, info)
 }
 
 // PurchaseTicketsHandler triggers a ticket purchase via dcrwallet.
@@ -143,15 +141,13 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // PurchaseStatusHandler reports whether a background (mixed) purchase is running
 // plus the most recent terminal result, so a reloaded page can re-attach.
 func PurchaseStatusHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(services.PurchaseStatusSnapshot())
+	writeJSON(w, services.PurchaseStatusSnapshot())
 }
 
 // StreamPurchaseEventsHandler upgrades to WebSocket and streams manual ticket
@@ -171,8 +167,7 @@ func ListTicketsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tickets)
+	writeJSON(w, tickets)
 }
 
 // AutobuyerStatusHandler returns running flag + last error + persisted settings.
@@ -180,8 +175,7 @@ func AutobuyerStatusHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	status := services.AutobuyerStatusSnapshot(ctx)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	writeJSON(w, status)
 }
 
 // GetAutobuyerSettingsHandler returns the persisted settings or null.
@@ -322,8 +316,7 @@ func vspTicketRepair(w http.ResponseWriter, r *http.Request, label string,
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(summary)
+	writeJSON(w, summary)
 }
 
 // SyncFailedVSPTicketsHandler retries VSP fee payments for failed tickets.

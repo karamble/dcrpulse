@@ -101,8 +101,7 @@ func rescanStream(beginHeight int32) {
 
 // GetWalletStatusHandler handles requests for wallet status
 func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletClient == nil {
-		http.Error(w, "Wallet RPC client not initialized", http.StatusServiceUnavailable)
+	if !walletRPCReady(w) {
 		return
 	}
 
@@ -133,14 +132,12 @@ func GetWalletStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	writeJSON(w, status)
 }
 
 // GetWalletDashboardHandler handles requests for complete wallet dashboard data
 func GetWalletDashboardHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletClient == nil {
-		http.Error(w, "Wallet RPC client not initialized", http.StatusServiceUnavailable)
+	if !walletRPCReady(w) {
 		return
 	}
 
@@ -216,8 +213,7 @@ func rejectWatchOnly(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletClient == nil {
-		http.Error(w, "Wallet RPC client not initialized", http.StatusServiceUnavailable)
+	if !walletRPCReady(w) {
 		return
 	}
 
@@ -357,14 +353,12 @@ func ImportXpubHandler(w http.ResponseWriter, r *http.Request) {
 		Message: fmt.Sprintf("Xpub import started for account '%s'. Now discovering addresses and rescanning blockchain. This typically takes 5-30 minutes.", accountName),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	writeJSON(w, response)
 }
 
 // RescanWalletHandler handles wallet rescan requests
 func RescanWalletHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletClient == nil {
-		http.Error(w, "Wallet RPC client not initialized", http.StatusServiceUnavailable)
+	if !walletRPCReady(w) {
 		return
 	}
 
@@ -410,21 +404,18 @@ func RescanWalletHandler(w http.ResponseWriter, r *http.Request) {
 		Message: fmt.Sprintf("Discovering addresses and rescanning blockchain from block %d. This may take 30+ minutes.", req.BeginHeight),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	writeJSON(w, response)
 }
 
 func GetSyncProgressHandler(w http.ResponseWriter, r *http.Request) {
 	snap := services.GetSyncSnapshot()
 	payload := snapshotPayload(snap)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(payload)
+	writeJSON(w, payload)
 }
 
 // ListTransactionsHandler handles requests for wallet transaction history
 func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletClient == nil {
-		http.Error(w, "Wallet RPC client not initialized", http.StatusServiceUnavailable)
+	if !walletRPCReady(w) {
 		return
 	}
 
@@ -456,8 +447,7 @@ func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(transactions)
+	writeJSON(w, transactions)
 }
 
 // ExportTransactionsHandler serves a Decrediton-format CSV export of the
@@ -466,8 +456,7 @@ func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 // transactions). The CSV is built fully before sending so a failure mid-build
 // surfaces as a clean error instead of a truncated download.
 func ExportTransactionsHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "Wallet gRPC client not initialized", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 
@@ -607,8 +596,7 @@ func phaseProgress(snap services.SyncSnapshot) (int64, int64) {
 }
 
 func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletRPCReady(w) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -622,8 +610,7 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	for i := range accounts {
 		accounts[i].SharedWallet = shared[accounts[i].AccountNumber]
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(accounts)
+	writeJSON(w, accounts)
 }
 
 // importedAccountNumber is dcrwallet's reserved bucket for unencrypted
@@ -632,8 +619,7 @@ func GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 const importedAccountNumber uint32 = 2147483647
 
 func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 	if rejectWatchOnly(w, r) {
@@ -687,13 +673,11 @@ func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]uint32{"accountNumber": num})
+	writeJSON(w, map[string]uint32{"accountNumber": num})
 }
 
 func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 
@@ -778,8 +762,7 @@ func RenameAccountHandler(w http.ResponseWriter, r *http.Request) {
 // still claim, so the accounts UI can offer them instead of guessing. Shares its
 // rule with the rename handler.
 func ClaimableAccountNamesHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -791,8 +774,7 @@ func ClaimableAccountNamesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to list claimable account names", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(names)
+	writeJSON(w, names)
 }
 
 type privacyStatusResponse struct {
@@ -804,8 +786,7 @@ type privacyStatusResponse struct {
 }
 
 func PrivacyStatusHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -828,8 +809,7 @@ func PrivacyStatusHandler(w http.ResponseWriter, r *http.Request) {
 		resp.ChangeAccount = &c
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
@@ -837,8 +817,7 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, reason, http.StatusServiceUnavailable)
 		return
 	}
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 	if rejectWatchOnly(w, r) {
@@ -876,8 +855,7 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]uint32{
+	writeJSON(w, map[string]uint32{
 		"mixedAccount":  mixed,
 		"changeAccount": change,
 	})
@@ -885,7 +863,7 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 
 func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.AccountMixerClient == nil {
-		http.Error(w, "mixer gRPC client not initialized", http.StatusServiceUnavailable)
+		walletUnavailable(w)
 		return
 	}
 	if rejectWatchOnly(w, r) {
@@ -977,8 +955,7 @@ func MixerDebugHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
+	writeJSON(w, map[string]bool{"enabled": req.Enabled})
 }
 
 func StreamMixerEventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -987,8 +964,7 @@ func StreamMixerEventsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetAccountExtendedPubKeyHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 	accountStr := r.URL.Query().Get("accountNumber")
@@ -1016,13 +992,11 @@ func GetAccountExtendedPubKeyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to fetch extended pubkey", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"xpub": xpub})
+	writeJSON(w, map[string]string{"xpub": xpub})
 }
 
 func ValidateAddressHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 	address := r.URL.Query().Get("address")
@@ -1037,8 +1011,7 @@ func ValidateAddressHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("validate failed: %v", err), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types.ValidateAddressResponse{
+	writeJSON(w, types.ValidateAddressResponse{
 		IsValid:       resp.IsValid,
 		IsMine:        resp.IsMine,
 		AccountNumber: resp.AccountNumber,
@@ -1097,7 +1070,7 @@ func resolveTxOutputs(ctx context.Context, req *types.ConstructTransactionReques
 
 func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletGrpcClient == nil || rpc.DecodeMessageClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		walletUnavailable(w)
 		return
 	}
 	// Constructing an unsigned transaction uses no private keys, so it is allowed
@@ -1129,13 +1102,11 @@ func ConstructTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 	if rejectWatchOnly(w, r) {
@@ -1185,13 +1156,12 @@ func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types.SignPublishTransactionResponse{TxHash: txHash})
+	writeJSON(w, types.SignPublishTransactionResponse{TxHash: txHash})
 }
 
 func NextAddressHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletClient == nil || rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		walletUnavailable(w)
 		return
 	}
 	accountStr := r.URL.Query().Get("account")
@@ -1211,8 +1181,7 @@ func NextAddressHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to derive address: %v", err), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types.NextAddressResponse{
+	writeJSON(w, types.NextAddressResponse{
 		Address:       addr,
 		AccountNumber: uint32(accountU64),
 	})

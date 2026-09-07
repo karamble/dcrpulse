@@ -47,7 +47,7 @@ func decodeSignedTxInput(b64, text string) ([]byte, error) {
 // watch-only wallets.
 func DecodeSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletGrpcClient == nil || rpc.DecodeMessageClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		walletUnavailable(w)
 		return
 	}
 	var req types.DecodeSignedTxRequest
@@ -73,15 +73,13 @@ func DecodeSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(preview)
+	writeJSON(w, preview)
 }
 
 // BroadcastSignedTransactionHandler publishes an already-signed transaction. It
 // uses no private keys and is allowed for watch-only wallets.
 func BroadcastSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 	var req types.BroadcastSignedTxRequest
@@ -122,8 +120,7 @@ func BroadcastSignedTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types.BroadcastSignedTxResponse{TxHash: txHash})
+	writeJSON(w, types.BroadcastSignedTxResponse{TxHash: txHash})
 }
 
 // ParseAccountExportHandler decodes a device account-export file (accounts.dcr)
@@ -154,8 +151,7 @@ func ParseAccountExportHandler(w http.ResponseWriter, r *http.Request) {
 	if !req.NewWallet {
 		services.AnnotateAccountExportConflicts(ctx, entries)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types.ParseAccountExportResponse{Entries: entries})
+	writeJSON(w, types.ParseAccountExportResponse{Entries: entries})
 }
 
 // DeviceBalanceHandler exports the wallet's per-account balances and the DCR/USD
@@ -163,8 +159,7 @@ func ParseAccountExportHandler(w http.ResponseWriter, r *http.Request) {
 // microSD file or a UR QR). It uses no private keys and is allowed for watch-only
 // wallets.
 func DeviceBalanceHandler(w http.ResponseWriter, r *http.Request) {
-	if rpc.WalletGrpcClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+	if !walletGRPCReady(w) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -179,8 +174,7 @@ func DeviceBalanceHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(export)
+	writeJSON(w, export)
 }
 
 // BuildSignRequestHandler constructs an unsigned transaction and returns it as a
@@ -188,7 +182,7 @@ func DeviceBalanceHandler(w http.ResponseWriter, r *http.Request) {
 // private keys and is allowed for watch-only wallets.
 func BuildSignRequestHandler(w http.ResponseWriter, r *http.Request) {
 	if rpc.WalletGrpcClient == nil || rpc.DecodeMessageClient == nil {
-		http.Error(w, "wallet not loaded", http.StatusServiceUnavailable)
+		walletUnavailable(w)
 		return
 	}
 	var req types.ConstructTransactionRequest
@@ -221,6 +215,5 @@ func BuildSignRequestHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(export)
+	writeJSON(w, export)
 }

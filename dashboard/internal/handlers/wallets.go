@@ -35,8 +35,7 @@ func ListWalletsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, map[string]any{
 		"wallets": wallets,
 		"active":  services.ActiveWalletName(),
 	})
@@ -85,8 +84,7 @@ func SelectWalletHandler(w http.ResponseWriter, r *http.Request) {
 	// the one that matters for authority. Both are needed.
 	mcp.InvalidateStakingProfile()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "active": services.ActiveWalletName()})
+	writeJSON(w, map[string]any{"success": true, "active": services.ActiveWalletName()})
 }
 
 // CloseWalletHandler closes the active wallet and returns to the wallet list.
@@ -100,8 +98,7 @@ func CloseWalletHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"success": true})
+	writeJSON(w, map[string]any{"success": true})
 }
 
 // CreateNamedWalletHandler creates a new named wallet and makes it active.
@@ -169,8 +166,7 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types.CreateWalletResponse{Success: true, Message: "Wallet created successfully"})
+	writeJSON(w, types.CreateWalletResponse{Success: true, Message: "Wallet created successfully"})
 }
 
 // RenameWalletHandler renames a non-active, non-default wallet.
@@ -193,8 +189,7 @@ func RenameWalletHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"success": true})
+	writeJSON(w, map[string]any{"success": true})
 }
 
 // DeleteWalletHandler backs up and removes a non-active wallet.
@@ -216,14 +211,7 @@ func DeleteWalletHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"success": true})
-}
-
-func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]any{"success": false, "message": msg})
+	writeJSON(w, map[string]any{"success": true})
 }
 
 // validateCreateWalletPassphrases enforces the create-wallet passphrase policy

@@ -15,8 +15,7 @@ import (
 // frontend uses it to decide between the login screen, the first-run setup
 // prompt, the locked screen, and the app.
 func AuthStatusHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, map[string]any{
 		"enabled":        auth.Enabled(),
 		"configured":     auth.Configured(),
 		"authenticated":  auth.Authenticated(r),

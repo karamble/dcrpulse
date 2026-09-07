@@ -150,8 +150,7 @@ func BisonrelayGCMessageHandler(w http.ResponseWriter, r *http.Request) {
 		brWriteErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"body": body})
+	writeJSON(w, map[string]string{"body": body})
 }
 
 // BisonrelayGCHistoryHandler paginates GC message history.

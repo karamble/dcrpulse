@@ -71,8 +71,7 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types.SettingsEnvelope{
+	writeJSON(w, types.SettingsEnvelope{
 		Wallet: &walletOut,
 		Global: &globalOut,
 	})
@@ -290,8 +289,7 @@ func GetLogsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, map[string]any{
 		"component": component,
 		"lines":     out,
 	})

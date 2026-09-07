@@ -30,8 +30,7 @@ func GetAgendasHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(agendas)
+	writeJSON(w, agendas)
 }
 
 // GetAgendaVotesHandler returns one agenda's vote tally over its own voting
@@ -54,8 +53,7 @@ func GetAgendaVotesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(votes)
+	writeJSON(w, votes)
 }
 
 // SetAgendaChoiceHandler updates one agenda's vote preference.
@@ -137,8 +135,7 @@ func treasuryPolicies(w http.ResponseWriter, r *http.Request, label string, list
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(policies)
+	writeJSON(w, policies)
 }
 
 // GetTSpendPoliciesHandler returns the per-TSpend policies.
@@ -188,9 +185,7 @@ func writeProposalsResponse(w http.ResponseWriter, status int, proposals []types
 		fetched = fetchedAt.Unix()
 		refreshAt = fetchedAt.Add(services.ProposalsRefreshCooldown).Unix()
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(types.ProposalsResponse{
+	writeJSONStatus(w, status, types.ProposalsResponse{
 		Proposals:          proposals,
 		FetchedAt:          fetched,
 		RefreshAvailableAt: refreshAt,
@@ -290,9 +285,7 @@ func writeProposalDetailResponse(w http.ResponseWriter, status int, detail *type
 		fetched = fetchedAt.Unix()
 		refreshAt = fetchedAt.Add(services.ProposalsRefreshCooldown).Unix()
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(types.ProposalDetailResponse{
+	writeJSONStatus(w, status, types.ProposalDetailResponse{
 		Detail:             detail,
 		FetchedAt:          fetched,
 		RefreshAvailableAt: refreshAt,
@@ -372,8 +365,7 @@ func PrepareProposalVoteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(elig)
+	writeJSON(w, elig)
 }
 
 // CastPoliteiaVoteHandler runs the sign + ballot-cast flow.
@@ -406,8 +398,7 @@ func CastPoliteiaVoteHandler(w http.ResponseWriter, r *http.Request) {
 		writePassphraseAwareError(w, "CastPoliteiaVote", err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, result)
 }
 
 // ---- shared local helpers --------------------------------------------------

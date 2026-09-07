@@ -40,8 +40,7 @@ func GetThemesHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(store)
+	writeJSON(w, store)
 }
 
 // SaveThemesHandler persists the theme store. Custom themes are stored

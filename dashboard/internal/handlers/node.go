@@ -6,7 +6,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -33,8 +32,7 @@ func GetDashboardDataHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	writeJSON(w, data)
 }
 
 // StreamNodeSyncHandler streams dcrd sync-progress snapshots over a WebSocket,
@@ -56,6 +54,5 @@ func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
 		"walletTLS":          rpc.WalletUsesTLS(),
 		"time":               time.Now(),
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	writeJSON(w, status)
 }

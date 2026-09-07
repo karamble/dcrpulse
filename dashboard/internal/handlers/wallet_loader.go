@@ -50,8 +50,7 @@ func WalletExistsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // WalletLoadedHandler checks if a wallet is currently loaded and ready
@@ -68,8 +67,7 @@ func WalletLoadedHandler(w http.ResponseWriter, r *http.Request) {
 		resp.Error = err.Error()
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // GenerateSeedHandler generates a new cryptographic seed.
@@ -89,8 +87,7 @@ func GenerateSeedHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // DecodeSeedHandler validates a user-supplied seed (mnemonic or hex) via the
@@ -114,8 +111,7 @@ func DecodeSeedHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types.DecodeSeedResponse{SeedHex: seedHex})
+	writeJSON(w, types.DecodeSeedResponse{SeedHex: seedHex})
 }
 
 // CreateWalletHandler creates a new wallet
@@ -161,8 +157,7 @@ func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 		Message: "Wallet created successfully",
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // OpenWalletHandler opens an existing wallet
@@ -195,6 +190,5 @@ func OpenWalletHandler(w http.ResponseWriter, r *http.Request) {
 		Message: "Wallet opened successfully",
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }

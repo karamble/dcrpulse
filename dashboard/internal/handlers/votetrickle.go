@@ -90,8 +90,7 @@ func StopVoteTrickleHandler(w http.ResponseWriter, r *http.Request) {
 // VoteTrickleStatusHandler returns the live status of every trickle run (one per
 // proposal currently or recently trickling).
 func VoteTrickleStatusHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(services.VoteTrickleWorkersSnapshot())
+	writeJSON(w, services.VoteTrickleWorkersSnapshot())
 }
 
 // StreamVoteTrickleEventsHandler upgrades to WebSocket and streams events
