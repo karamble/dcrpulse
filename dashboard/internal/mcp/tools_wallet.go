@@ -16,6 +16,7 @@ import (
 
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 // txListInput parameterizes wallet_transactions. Both fields are optional
@@ -161,7 +162,7 @@ var walletTools = []toolDef{
 			unsigned, err := services.ConstructTransaction(ctx, in.Account, []types.TxRecipient{{Address: in.Address, AmountAtoms: atoms}}, false)
 			if err != nil {
 				grants.refund(a.id, atoms)
-				zero(pass)
+				utils.Zero(pass)
 				recordSpend(a, "wallet_send", in.Account, in.AmountDCR, in.Address, "error", err.Error())
 				return nil, err
 			}

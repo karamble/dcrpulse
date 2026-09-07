@@ -21,6 +21,7 @@ import (
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	"github.com/decred/dcrd/dcrutil/v4"
 
@@ -665,7 +666,7 @@ func CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
 	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -856,7 +857,7 @@ func PrivacySetupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
 	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -920,7 +921,7 @@ func PrivacyStartHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
 	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -1155,7 +1156,7 @@ func SignPublishTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
 	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)

@@ -5,6 +5,8 @@
 package mcp
 
 import (
+	"dcrpulse/internal/utils"
+
 	"context"
 	"errors"
 	"fmt"
@@ -112,7 +114,7 @@ func (s *grantStore) set(agentID string, spec GrantSpec, now time.Time) {
 	// the grant and does start a fresh window.
 	spent, windowStart := int64(0), now
 	if old := s.byAgent[agentID]; old != nil {
-		zero(old.passphrase)
+		utils.Zero(old.passphrase)
 		if now.Sub(old.windowStart) < grantWindow {
 			spent, windowStart = old.spentAtoms, old.windowStart
 		}
@@ -158,7 +160,7 @@ func (s *grantStore) revoke(agentID string) bool {
 	s.mu.Lock()
 	g := s.byAgent[agentID]
 	if g != nil {
-		zero(g.passphrase)
+		utils.Zero(g.passphrase)
 		delete(s.byAgent, agentID)
 	}
 	s.mu.Unlock()
@@ -176,7 +178,7 @@ func (s *grantStore) revokeAll() int {
 	s.mu.Lock()
 	n := len(s.byAgent)
 	for id, g := range s.byAgent {
-		zero(g.passphrase)
+		utils.Zero(g.passphrase)
 		delete(s.byAgent, id)
 	}
 	s.mu.Unlock()
@@ -213,7 +215,7 @@ func (s *grantStore) currentLocked(agentID string, now time.Time) (*spendGrant, 
 		return nil, errNoGrant
 	}
 	if !g.expiry.IsZero() && !now.Before(g.expiry) {
-		zero(g.passphrase)
+		utils.Zero(g.passphrase)
 		delete(s.byAgent, agentID)
 		return nil, errGrantExpired
 	}
@@ -257,7 +259,7 @@ func (s *grantStore) authorize(ctx context.Context, agentID string, account uint
 	}
 	if err := gateApproval(ctx, agentID, action); err != nil {
 		s.refund(agentID, amountAtoms)
-		zero(pass)
+		utils.Zero(pass)
 		return nil, err
 	}
 	return pass, nil
@@ -419,7 +421,7 @@ func (s *grantStore) authorizeVSPFees(ctx context.Context, agentID string, accou
 	}
 	if err := gateApproval(ctx, agentID, action); err != nil {
 		s.refund(agentID, feeCeilingAtoms)
-		zero(pass)
+		utils.Zero(pass)
 		return nil, err
 	}
 	return pass, nil
@@ -520,12 +522,6 @@ func (s *grantStore) refund(agentID string, amountAtoms int64) {
 		if g.spentAtoms < 0 {
 			g.spentAtoms = 0
 		}
-	}
-}
-
-func zero(b []byte) {
-	for i := range b {
-		b[i] = 0
 	}
 }
 

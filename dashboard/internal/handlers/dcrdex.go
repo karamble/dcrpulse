@@ -24,6 +24,7 @@ import (
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/utils"
 	"dcrpulse/pkg/bisonw"
 	"dcrpulse/pkg/exchangerate"
 
@@ -311,7 +312,8 @@ func CreateDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	walletPass := []byte(req.WalletPass)
-	defer zeroBytes(walletPass)
+	defer utils.Zero(walletPass)
+	req.WalletPass = ""
 	if err := ensureDexAccount(ctx, walletPass); err != nil {
 		http.Error(w, "dex account: "+err.Error(), http.StatusBadGateway)
 		return
@@ -322,7 +324,7 @@ func CreateDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := web.NewWallet(ctx, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, cfg.ConfigMap(), req.WalletPass); err != nil {
+	if err := web.NewWallet(ctx, bisonw.AssetDCR, bisonw.WalletTypeDcrwalletRPC, cfg.ConfigMap(), string(walletPass)); err != nil {
 		dexWriteErr(w, err)
 		return
 	}

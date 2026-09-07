@@ -16,6 +16,7 @@ import (
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
@@ -102,7 +103,11 @@ func DecodeSeed(ctx context.Context, userInput string) (string, error) {
 // When discoverAccounts is true (restoring from an existing seed), the
 // post-create RpcSync runs with DiscoverAccounts enabled and the private
 // passphrase so dcrwallet rescans the chain and rebuilds the address index.
-func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex string, discoverAccounts bool) error {
+//
+// privatePass is a slice rather than a string because the discovery goroutine
+// below outlives this call by the length of a chain scan; the caller owns it,
+// and discovery gets its own copy to wipe.
+func CreateNewWallet(ctx context.Context, publicPass string, privatePass []byte, seedHex string, discoverAccounts bool) error {
 	if rpc.WalletLoaderClient == nil {
 		return fmt.Errorf("wallet loader client not initialized")
 	}
@@ -112,6 +117,9 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 	if err != nil {
 		return fmt.Errorf("invalid seed hex: %w", err)
 	}
+	// The seed is the wallet. The defer is the backstop for an early return;
+	// the wipe that matters happens the moment CreateWallet has taken it.
+	defer utils.Zero(seedBytes)
 
 	wlltLog.Infof("Creating wallet with seed length: %d bytes", len(seedBytes))
 
@@ -131,11 +139,12 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 
 	req := &pb.CreateWalletRequest{
 		PublicPassphrase:  []byte(publicPass),
-		PrivatePassphrase: []byte(privatePass),
+		PrivatePassphrase: privatePass,
 		Seed:              seedBytes,
 	}
 
 	_, err = rpc.WalletLoaderClient.CreateWallet(ctx, req)
+	utils.Zero(seedBytes) // dcrwallet has it now; nothing below needs it
 	if err != nil {
 		return fmt.Errorf("failed to create wallet: %w", err)
 	}
@@ -156,7 +165,7 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 	// active but the rest of the stack never repointed at it. Any account missed
 	// here is migrated by unlockAccountForSpend on first use.
 	if !discoverAccounts {
-		if err := ensureAllAccountsEncryptedRetry(ctx, []byte(privatePass)); err != nil {
+		if err := ensureAllAccountsEncryptedRetry(ctx, privatePass); err != nil {
 			wlltLog.Errorf("Wallet created but per-account encryption did not complete: %v", err)
 		}
 	}
@@ -169,7 +178,7 @@ func CreateNewWallet(ctx context.Context, publicPass, privatePass, seedHex strin
 	// once this stream ends.
 	if discoverAccounts {
 		discoveryLaunched = true
-		go runDiscoveryRpcSync(privatePass)
+		go runDiscoveryRpcSync(append([]byte(nil), privatePass...))
 	}
 
 	return nil
@@ -199,9 +208,11 @@ func CreateWatchOnlyWallet(ctx context.Context, publicPass, xpub string) error {
 	return nil
 }
 
-func runDiscoveryRpcSync(privatePass string) {
+// runDiscoveryRpcSync owns privatePass and wipes it when the scan ends.
+func runDiscoveryRpcSync(privatePass []byte) {
 	// Release the RpcSync slot for the supervisor once this discovery stream ends.
 	defer EndRestoreDiscovery()
+	defer utils.Zero(privatePass)
 	// A restore scans the whole chain, so this goroutine outlives its request by
 	// minutes or hours. The passphrase step below is the one cleanup path in this
 	// package that retries, so it is the only one that can still be issuing RPCs
@@ -226,7 +237,7 @@ func runDiscoveryRpcSync(privatePass string) {
 		Password:          []byte(rpc.DcrdConfig.RPCPassword),
 		Certificate:       cert,
 		DiscoverAccounts:  true,
-		PrivatePassphrase: []byte(privatePass),
+		PrivatePassphrase: privatePass,
 	}
 	// Run discovery on a cancellable context so we can stop the stream once the
 	// initial discovery+sync reaches SYNCED. dcrwallet keeps the wallet unlocked
@@ -269,7 +280,7 @@ func runDiscoveryRpcSync(privatePass string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := ensureAllAccountsEncryptedRetry(ctx, []byte(privatePass)); err != nil {
+	if err := ensureAllAccountsEncryptedRetry(ctx, privatePass); err != nil {
 		wlltLog.Errorf("Discovery RPC sync: set account passphrases: %v", err)
 	}
 }

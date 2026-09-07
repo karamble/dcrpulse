@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/utils"
 )
 
 // StartVoteTrickleHandler signs a proposal's eligible votes up front (the wallet
@@ -44,7 +45,8 @@ func StartVoteTrickleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
+	req.Passphrase = ""
 
 	// Signing every eligible ticket up front can take a while; allow for it.
 	// (The worker itself then runs detached in the background.)

@@ -12,6 +12,7 @@ import (
 
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 type setVoteChoiceInput struct {
@@ -209,7 +210,7 @@ var governanceTools = []toolDef{
 				recordSpend(a, "governance_set_vote_choice", 0, 0, in.AgendaID, "denied", err.Error())
 				return nil, err
 			}
-			defer zero(pass)
+			defer utils.Zero(pass)
 			if _, err := services.SetAgendaChoice(ctx, in.AgendaID, in.ChoiceID, pass); err != nil {
 				recordSpend(a, "governance_set_vote_choice", 0, 0, in.AgendaID, "error", err.Error())
 				return nil, err
@@ -225,7 +226,7 @@ var governanceTools = []toolDef{
 				recordSpend(a, "governance_cast_proposal_vote", 0, 0, in.Token, "denied", err.Error())
 				return nil, err
 			}
-			defer zero(pass)
+			defer utils.Zero(pass)
 			res, err := services.CastPoliteiaVote(ctx, types.CastPoliteiaVoteRequest{Token: in.Token, VoteOption: in.VoteOption}, pass)
 			if err != nil {
 				recordSpend(a, "governance_cast_proposal_vote", 0, 0, in.Token, "error", err.Error())
@@ -242,7 +243,7 @@ var governanceTools = []toolDef{
 				recordSpend(a, "governance_set_treasury_policy", 0, 0, in.Key, "denied", err.Error())
 				return nil, err
 			}
-			defer zero(pass)
+			defer utils.Zero(pass)
 			if _, err := services.SetTreasuryKeyPolicy(ctx, in.Key, in.Policy, pass); err != nil {
 				recordSpend(a, "governance_set_treasury_policy", 0, 0, in.Key, "error", err.Error())
 				return nil, err
@@ -258,7 +259,7 @@ var governanceTools = []toolDef{
 				recordSpend(a, "governance_set_tspend_policy", 0, 0, in.Hash, "denied", err.Error())
 				return nil, err
 			}
-			defer zero(pass)
+			defer utils.Zero(pass)
 			if _, err := services.SetTSpendPolicyForHash(ctx, in.Hash, in.Policy, pass); err != nil {
 				recordSpend(a, "governance_set_tspend_policy", 0, 0, in.Hash, "error", err.Error())
 				return nil, err
@@ -274,7 +275,7 @@ var governanceTools = []toolDef{
 				recordSpend(a, "governance_vote_trickle_start", 0, 0, in.Token, "denied", err.Error())
 				return nil, err
 			}
-			defer zero(pass)
+			defer utils.Zero(pass)
 			bunches := in.Bunches
 			if bunches < 1 {
 				bunches = 1

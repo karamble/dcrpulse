@@ -16,6 +16,7 @@ import (
 	"github.com/decred/dcrd/dcrutil/v4"
 
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/utils"
 )
 
 // ImportMsigScript registers a redeem script with the wallet so the P2SH
@@ -162,11 +163,7 @@ func SignMsigTransaction(ctx context.Context, rawTxHex string, prevInputs []Msig
 	if rpc.WalletClient == nil || rpc.WalletGrpcClient == nil {
 		return "", fmt.Errorf("wallet RPC clients not initialized")
 	}
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer utils.Zero(passphrase)
 
 	beginUnlockedOp()
 	defer endUnlockedOp()
@@ -242,11 +239,7 @@ func SignMsigMessage(ctx context.Context, account uint32, address, message strin
 	if rpc.WalletGrpcClient == nil {
 		return "", fmt.Errorf("wallet gRPC client not initialized")
 	}
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer utils.Zero(passphrase)
 
 	beginUnlockedOp()
 	defer endUnlockedOp()

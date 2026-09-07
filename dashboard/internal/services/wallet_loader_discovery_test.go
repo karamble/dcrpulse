@@ -79,7 +79,7 @@ func TestDiscoveryStopsWhenTheStreamFails(t *testing.T) {
 	withHooks(t, "alpha")
 	w := withDiscoveryFakes(t, &fakeSyncStream{err: fmt.Errorf("daemon went away")})
 
-	runDiscoveryRpcSync("passphrase")
+	runDiscoveryRpcSync([]byte("passphrase"))
 
 	if w.accountsCalls != 0 {
 		t.Fatalf("the passphrase step ran %d times after a failed discovery stream, want 0", w.accountsCalls)
@@ -97,7 +97,7 @@ func TestDiscoverySkipsPassphrasesAfterAWalletSwitch(t *testing.T) {
 		onRecv: func() { setActiveWalletName("beta") },
 	})
 
-	runDiscoveryRpcSync("passphrase")
+	runDiscoveryRpcSync([]byte("passphrase"))
 
 	if w.accountsCalls != 0 {
 		t.Fatalf("the passphrase step ran %d times against another wallet, want 0", w.accountsCalls)
@@ -110,7 +110,7 @@ func TestDiscoveryStillSetsPassphrasesOnItsOwnWallet(t *testing.T) {
 	withHooks(t, "alpha")
 	w := withDiscoveryFakes(t, &fakeSyncStream{resp: &pb.RpcSyncResponse{Synced: true}})
 
-	runDiscoveryRpcSync("passphrase")
+	runDiscoveryRpcSync([]byte("passphrase"))
 
 	if w.accountsCalls == 0 {
 		t.Fatal("a clean discovery did not reach the passphrase step on its own wallet")

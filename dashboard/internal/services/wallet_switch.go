@@ -142,7 +142,7 @@ func CloseActiveWallet(ctx context.Context) error {
 // CreateNamedWallet creates a new seed-based wallet under the given name,
 // switching the daemon to its appdata first, then running the standard
 // create/restore flow.
-func CreateNamedWallet(ctx context.Context, name, publicPass, privatePass, seedHex string, discoverAccounts bool) error {
+func CreateNamedWallet(ctx context.Context, name, publicPass string, privatePass []byte, seedHex string, discoverAccounts bool) error {
 	network, err := newWalletSlot(ctx, name)
 	if err != nil {
 		return err

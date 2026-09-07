@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/utils"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
@@ -114,8 +115,9 @@ func setMixerErr(msg string) {
 
 // StartMixer launches the P2P mixer goroutine. Returns an error if it's
 // already running or if the gRPC client isn't wired. The passphrase byte slice
-// is owned by this function for the duration of the call.
+// is consumed: it is wiped before this returns, on every path.
 func StartMixer(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) error {
+	defer utils.Zero(passphrase)
 	// The autobuyer mixes inline and a ticket purchase pauses-then-restarts
 	// the mixer itself; all three spend the mixed account, so they never run
 	// together (the recorded S-02 follow-up).
@@ -138,6 +140,9 @@ func StartMixer(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint
 // the passphrase belong to that wallet, so if the active wallet changed while the
 // purchase ran they would start a mixer over a different wallet's accounts.
 func restartMixerAfterPurchase(wallet string, passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) error {
+	// Consumed like StartMixer: the purchase hands over its own copy and has no
+	// other owner to wipe it.
+	defer utils.Zero(passphrase)
 	if now := ActiveWalletName(); now != wallet {
 		msg := fmt.Sprintf("mixer not restarted after the ticket purchase: the active wallet changed from %q to %q", wallet, now)
 		setMixerErr(msg)

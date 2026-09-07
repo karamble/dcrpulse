@@ -12,6 +12,7 @@ import (
 
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	"decred.org/dcrwallet/v5/pgpwordlist"
 )
@@ -137,7 +138,11 @@ func CreateWalletHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	err := services.CreateNewWallet(ctx, req.PublicPassphrase, req.PrivatePassphrase, req.SeedHex, req.DiscoverAccounts)
+	privatePass := []byte(req.PrivatePassphrase)
+	defer utils.Zero(privatePass)
+	req.PrivatePassphrase, req.ConfirmPrivatePassphrase = "", ""
+
+	err := services.CreateNewWallet(ctx, req.PublicPassphrase, privatePass, req.SeedHex, req.DiscoverAccounts)
 	if err != nil {
 		wlltLog.Errorf("Error creating wallet: %v", err)
 		resp := types.CreateWalletResponse{

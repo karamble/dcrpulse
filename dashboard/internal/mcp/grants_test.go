@@ -340,3 +340,29 @@ func TestGrantVSPFees(t *testing.T) {
 		t.Fatalf("refused run reserved %d atoms, want 0", got)
 	}
 }
+
+// Switching agent access off has to release the wallet passphrases the grants
+// hold. The teardown path already ends listen streams, stops the bridge feed
+// and cancels parked approvals; the held secret was the one thing left behind,
+// and an operator who turns the surface off expects it gone.
+func TestDisablingMCPZeroesHeldPassphrases(t *testing.T) {
+	prev := grants
+	grants = newGrantStore()
+	t.Cleanup(func() { grants = prev })
+
+	grants.set("a", GrantSpec{Accounts: []uint32{0}, Passphrase: []byte("zerome")}, time.Now())
+	g := grants.byAgent["a"]
+
+	// persistEnabled writes the dashboard config, which is absent under test;
+	// the release happens before it, so its error is not what is under test.
+	_ = SetEnabled(false)
+
+	for _, b := range g.passphrase {
+		if b != 0 {
+			t.Fatal("turning MCP off left a wallet passphrase readable in memory")
+		}
+	}
+	if _, ok := grants.info("a"); ok {
+		t.Fatal("the grant survived the surface being turned off")
+	}
+}

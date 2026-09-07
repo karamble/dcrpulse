@@ -22,6 +22,7 @@ import (
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
@@ -481,11 +482,7 @@ func StartPurchaseWorker(account, numTickets uint32, vspHost, vspPubkey string, 
 
 	go func() {
 		defer endTicketPurchase()
-		defer func() {
-			for i := range passCopy {
-				passCopy[i] = 0
-			}
-		}()
+		defer utils.Zero(passCopy)
 
 		// Detached context: the request context is cancelled once the 202 is
 		// written, so the worker owns its own. No deadline is set: PurchaseTickets

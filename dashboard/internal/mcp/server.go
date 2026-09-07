@@ -323,6 +323,13 @@ func SetEnabled(enabled bool) error {
 		stopListenerLocked()
 	}
 	srvMu.Unlock()
+	if !enabled {
+		// Turning agent access off releases the wallet passphrases the grants
+		// hold. Outside srvMu so the grant lock is never taken under it.
+		if n := grants.revokeAll(); n > 0 {
+			mcpLog.Infof("MCP disabled: revoked %d spend grant(s) and zeroed the held passphrase(s)", n)
+		}
+	}
 	return persistEnabled(enabled)
 }
 

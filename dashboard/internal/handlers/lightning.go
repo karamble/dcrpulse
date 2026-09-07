@@ -16,6 +16,7 @@ import (
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	"github.com/gorilla/websocket"
 )
@@ -60,7 +61,7 @@ func LightningSetupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	passphrase := []byte(req.Passphrase)
 	req.Passphrase = ""
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
 
 	setupCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -129,7 +130,7 @@ func LightningUnlockHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	passphrase := []byte(req.Passphrase)
 	req.Passphrase = ""
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()

@@ -16,6 +16,7 @@ import (
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 // GetSettingsHandler returns the per-wallet + global settings envelope.
@@ -194,8 +195,8 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 
 	oldPass := []byte(req.OldPassphrase)
 	newPass := []byte(req.NewPassphrase)
-	defer zeroBytes(oldPass)
-	defer zeroBytes(newPass)
+	defer utils.Zero(oldPass)
+	defer utils.Zero(newPass)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
@@ -250,7 +251,9 @@ func ChangePassphraseHandler(w http.ResponseWriter, r *http.Request) {
 
 	// The passphrase has already changed at this point, so a failure here is
 	// reported rather than retried: bisonw is left holding the previous one.
-	if err := syncDexWalletPassphrase(ctx, req.NewPassphrase); err != nil {
+	dexPass := req.NewPassphrase
+	req.OldPassphrase, req.NewPassphrase = "", ""
+	if err := syncDexWalletPassphrase(ctx, dexPass); err != nil {
 		settLog.Errorf("ChangePrivatePassphrase: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

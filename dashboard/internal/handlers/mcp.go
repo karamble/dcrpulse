@@ -18,6 +18,7 @@ import (
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/mcp"
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/utils"
 )
 
 const maxAgentNameLen = 64
@@ -272,7 +273,7 @@ func SetMCPGrantHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	pass := []byte(req.Passphrase)
 	req.Passphrase = ""
-	defer wipe(pass)
+	defer utils.Zero(pass)
 
 	// Drop unknown scopes; learn whether any retained scope signs with the
 	// passphrase (needsPass) or draws on the DCR spend budget (needsFund).
@@ -430,10 +431,4 @@ func SetMCPLoggingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func wipe(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
 }

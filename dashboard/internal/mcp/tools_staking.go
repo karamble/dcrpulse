@@ -16,6 +16,7 @@ import (
 
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 // normVSPHost canonicalizes a VSP host for comparison: the public registry and
@@ -174,7 +175,7 @@ func vspMaintenanceRun(ctx context.Context, a *agent, tool string, in vspTicketM
 		}
 		return nil, err
 	}
-	defer zero(pass)
+	defer utils.Zero(pass)
 
 	summary, workErr := work(ctx, changeAccount, pass)
 
@@ -359,7 +360,7 @@ var stakingTools = []toolDef{
 				}
 				return nil, err
 			}
-			defer zero(pass)
+			defer utils.Zero(pass)
 			resp, err := services.PurchaseTickets(ctx, in.Account, in.NumTickets, in.VSPHost, in.VSPPubkey, changeAccount, pass)
 			if err != nil {
 				// Only a failure that provably precedes the spend may release

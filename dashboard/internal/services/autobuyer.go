@@ -14,6 +14,7 @@ import (
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/dcrutil/v4"
@@ -65,8 +66,10 @@ func recordAutobuyerEvent(level, msg string) {
 	autobuyerBus.publish(ev)
 }
 
-// StartAutobuyer launches the ticket-autobuyer goroutine.
+// StartAutobuyer launches the ticket-autobuyer goroutine. The passphrase byte
+// slice is consumed: it is wiped before this returns, on every path.
 func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error {
+	defer utils.Zero(passphrase)
 	if rpc.TicketBuyerClient == nil || rpc.WalletGrpcClient == nil {
 		return fmt.Errorf("wallet gRPC clients unavailable")
 	}

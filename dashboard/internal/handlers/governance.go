@@ -14,6 +14,7 @@ import (
 
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	"github.com/gorilla/mux"
 )
@@ -73,7 +74,8 @@ func SetAgendaChoiceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pass := []byte(req.Passphrase)
-	defer zeroBytes(pass)
+	defer utils.Zero(pass)
+	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -112,7 +114,8 @@ func SetTreasuryKeyPolicyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pass := []byte(req.Passphrase)
-	defer zeroBytes(pass)
+	defer utils.Zero(pass)
+	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -161,7 +164,8 @@ func SetTSpendPolicyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pass := []byte(req.Passphrase)
-	defer zeroBytes(pass)
+	defer utils.Zero(pass)
+	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -388,7 +392,8 @@ func CastPoliteiaVoteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pass := []byte(req.Passphrase)
-	defer zeroBytes(pass)
+	defer utils.Zero(pass)
+	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()

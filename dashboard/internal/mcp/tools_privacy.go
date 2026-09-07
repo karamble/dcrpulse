@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/utils"
 )
 
 // privacyStatusResult is the composed view of the CoinShuffle++ mixer state,
@@ -47,7 +48,7 @@ var privacyTools = []toolDef{
 				recordSpend(a, "privacy_mixer_start", 0, 0, "mixer", "denied", err.Error())
 				return nil, err
 			}
-			defer zero(pass)
+			defer utils.Zero(pass)
 			mixed, change, configured, err := services.FindPrivacyAccounts(ctx)
 			if err != nil {
 				recordSpend(a, "privacy_mixer_start", 0, 0, "mixer", "error", err.Error())

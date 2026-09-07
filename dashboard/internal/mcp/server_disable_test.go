@@ -97,7 +97,9 @@ func TestListenGateRegistersAndReleases(t *testing.T) {
 		<-ctx.Done() // parked, as the real listen handler is
 		return nil, nil
 	}
-	go func() { _, _ = listenGate(testAgent("gate-open", "gate", nil))(next)(context.Background(), "subscriptions/listen", nil) }()
+	go func() {
+		_, _ = listenGate(testAgent("gate-open", "gate", nil))(next)(context.Background(), "subscriptions/listen", nil)
+	}()
 	<-done
 
 	surface.mu.Lock()

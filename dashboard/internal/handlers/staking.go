@@ -14,6 +14,7 @@ import (
 
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 // ListVSPsHandler returns the registry + per-wallet used_vsps envelope.
@@ -97,7 +98,8 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
+	req.Passphrase = ""
 
 	// A privacy/mixed purchase must CSPP-mix the split transaction before the
 	// ticket can be bought, which only happens every ~10 minutes, far longer
@@ -249,7 +251,8 @@ func StartAutobuyerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
+	req.Passphrase = ""
 
 	settings := req.AutobuyerSettings
 	if err := services.StartAutobuyer(&settings, passphrase); err != nil {
@@ -300,7 +303,8 @@ func vspTicketRepair(w http.ResponseWriter, r *http.Request, label string,
 	}
 
 	passphrase := []byte(req.Passphrase)
-	defer zeroBytes(passphrase)
+	defer utils.Zero(passphrase)
+	req.Passphrase = ""
 
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()

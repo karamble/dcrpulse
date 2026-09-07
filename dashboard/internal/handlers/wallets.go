@@ -16,6 +16,7 @@ import (
 	"dcrpulse/internal/mcp"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 // daemonSwitchTimeout bounds operations that relaunch the dcrwallet daemon and
@@ -156,7 +157,11 @@ func CreateNamedWalletHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := services.CreateNamedWallet(ctx, name, req.PublicPassphrase, req.PrivatePassphrase, req.SeedHex, req.DiscoverAccounts); err != nil {
+	privatePass := []byte(req.PrivatePassphrase)
+	defer utils.Zero(privatePass)
+	req.PrivatePassphrase, req.ConfirmPrivatePassphrase = "", ""
+
+	if err := services.CreateNamedWallet(ctx, name, req.PublicPassphrase, privatePass, req.SeedHex, req.DiscoverAccounts); err != nil {
 		wlltLog.Errorf("Error creating wallet %q: %v", name, err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)

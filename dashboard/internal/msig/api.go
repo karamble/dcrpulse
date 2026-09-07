@@ -5,6 +5,8 @@
 package msig
 
 import (
+	"dcrpulse/internal/utils"
+
 	"context"
 	"fmt"
 	"sort"
@@ -104,7 +106,7 @@ func ExportBackupCard(ctx context.Context, id string) (*BackupCard, error) {
 // and one deferred rescan bounded by the creation height recovers the
 // history.
 func ImportBackupCard(ctx context.Context, card *BackupCard, passphrase []byte) (*WalletRecord, error) {
-	defer zero(passphrase)
+	defer utils.Zero(passphrase)
 	if card == nil || card.Record == nil {
 		return nil, fmt.Errorf("the backup file is empty")
 	}

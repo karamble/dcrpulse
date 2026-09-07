@@ -22,6 +22,7 @@ import (
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
@@ -1719,11 +1720,7 @@ func SignAndPublishTransaction(ctx context.Context, sourceAccount uint32, unsign
 	if rpc.WalletGrpcClient == nil {
 		return "", fmt.Errorf("wallet gRPC client not initialized")
 	}
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer utils.Zero(passphrase)
 
 	beginUnlockedOp()
 	defer endUnlockedOp()

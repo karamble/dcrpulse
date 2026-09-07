@@ -5,6 +5,8 @@
 package msig
 
 import (
+	"dcrpulse/internal/utils"
+
 	"context"
 	"fmt"
 	"strings"
@@ -66,7 +68,7 @@ func newDedicatedAccount(ctx context.Context, label, tempID string, passphrase [
 // its own table) and the invite frames wait in the outbox for the user
 // to hand over.
 func CreateSharedWalletHD(ctx context.Context, label string, m int, invitees []InviteePeer, transport string, passphrase []byte) (*WalletRecord, error) {
-	defer zero(passphrase)
+	defer utils.Zero(passphrase)
 	network, err := networkSeam(ctx)
 	if err != nil {
 		return nil, err
@@ -158,7 +160,7 @@ func CreateSharedWalletHD(ctx context.Context, label string, m int, invitees []I
 // AcceptInviteHD contributes this wallet's xpub to an HD round. The
 // dedicated account is created here, so declining stays free.
 func AcceptInviteHD(ctx context.Context, id string, passphrase []byte) error {
-	defer zero(passphrase)
+	defer utils.Zero(passphrase)
 	network, err := networkSeam(ctx)
 	if err != nil {
 		return err
@@ -356,7 +358,7 @@ func maybeReviewInitiatorHD(ctx context.Context, store *Store, tempID string) {
 // is derived, but nothing is imported or announced until the initiator signs
 // the key set, which is also the moment it has to look at who is in it.
 func ActivateRound(ctx context.Context, id string, passphrase []byte) error {
-	defer zero(passphrase)
+	defer utils.Zero(passphrase)
 	network, err := networkSeam(ctx)
 	if err != nil {
 		return err
@@ -546,7 +548,7 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 // passphrase and therefore a human. See attest.go for what this does and does
 // not prove.
 func ConfirmRoster(ctx context.Context, id string, passphrase []byte) error {
-	defer zero(passphrase)
+	defer utils.Zero(passphrase)
 	network, err := networkSeam(ctx)
 	if err != nil {
 		return err
@@ -743,10 +745,4 @@ func completeCosignerImportHD(ctx context.Context, store *Store, tempID string) 
 	// ready is recovered by the roster re-announce, which answers with the
 	// stored signature rather than a bare frame.
 	msigLog.Infof("HD shared wallet %q active at %s", rec.Label, rec.Address)
-}
-
-func zero(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
 }
