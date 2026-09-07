@@ -52,6 +52,21 @@ func (m *Memo[K, V]) Retain(keep map[K]bool) int {
 	return evicted
 }
 
+// RetainWhere drops every entry keep rejects, for callers whose live set is a
+// property of the value (a block's height) rather than a list of keys.
+func (m *Memo[K, V]) RetainWhere(keep func(K, V) bool) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	evicted := 0
+	for k, v := range m.entries {
+		if !keep(k, v) {
+			delete(m.entries, k)
+			evicted++
+		}
+	}
+	return evicted
+}
+
 // Len reports how many entries are held.
 func (m *Memo[K, V]) Len() int {
 	m.mu.Lock()

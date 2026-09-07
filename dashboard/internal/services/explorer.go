@@ -38,7 +38,7 @@ func FetchRecentBlocksPaginated(ctx context.Context, page int, pageSize int) (*t
 	}
 
 	// Get current block count (total blocks)
-	currentHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
+	currentHeight, err := blockCountSeam(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block count: %w", err)
 	}
@@ -64,16 +64,39 @@ func FetchRecentBlocksPaginated(ctx context.Context, page int, pageSize int) (*t
 		}, nil
 	}
 
-	// Fetch blocks for this page
+	// Walk the chain backwards from one hash lookup: each summary names its
+	// parent, and a block below the tip cannot change, so only blocks this
+	// process has not seen cost a fetch. Confirmations are the tip's distance.
 	blocks := make([]types.BlockSummary, 0, pageSize)
+	hash, err := blockHashSeam(ctx, startHeight)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block hash: %w", err)
+	}
 	for h := startHeight; h >= endHeight; h-- {
-		block, err := FetchBlockSummaryByHeight(ctx, h)
+		s, err := blockSummaryByHash(ctx, hash)
 		if err != nil {
 			nodeLog.Warnf("Failed to fetch block %d: %v", h, err)
+			if h == 0 {
+				break
+			}
+			// Skip it, as before, and pick the walk up at the next height.
+			if hash, err = blockHashSeam(ctx, h-1); err != nil {
+				nodeLog.Warnf("Failed to get block hash for height %d: %v", h-1, err)
+				break
+			}
 			continue
 		}
-		blocks = append(blocks, *block)
+		s.Confirmations = currentHeight - s.Height + 1
+		blocks = append(blocks, s)
+		if s.Height == 0 {
+			break
+		}
+		if hash, err = chainhash.NewHashFromStr(s.PreviousHash); err != nil {
+			nodeLog.Warnf("Block %s names an invalid parent %q: %v", s.Hash, s.PreviousHash, err)
+			break
+		}
 	}
+	retainRecentBlocks(currentHeight)
 
 	return &types.PaginatedBlocksResponse{
 		Blocks:      blocks,
@@ -81,34 +104,6 @@ func FetchRecentBlocksPaginated(ctx context.Context, page int, pageSize int) (*t
 		PageSize:    pageSize,
 		TotalBlocks: totalBlocks,
 		TotalPages:  totalPages,
-	}, nil
-}
-
-// FetchBlockSummaryByHeight gets basic block info by height
-func FetchBlockSummaryByHeight(ctx context.Context, height int64) (*types.BlockSummary, error) {
-	// Get block hash
-	hash, err := rpc.DcrdClient.GetBlockHash(ctx, height)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get block hash: %w", err)
-	}
-
-	// The verbose block carries every field a summary needs, so it answers on
-	// its own. verbosetx stays off: a count does not need the transactions
-	// themselves, and a listing page asks for up to a hundred of these.
-	block, err := rpc.DcrdClient.GetBlockVerbose(ctx, hash, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get block: %w", err)
-	}
-
-	return &types.BlockSummary{
-		Height:        block.Height,
-		Hash:          block.Hash,
-		PreviousHash:  block.PreviousHash,
-		Timestamp:     time.Unix(block.Time, 0),
-		Confirmations: block.Confirmations,
-		TxCount:       len(block.Tx) + len(block.STx),
-		Size:          int64(block.Size),
-		Difficulty:    block.Difficulty,
 	}, nil
 }
 
