@@ -973,6 +973,45 @@ func TicketMixingParams(ctx context.Context) (TicketMixing, bool) {
 	return TicketMixing{Mixed: mixed, Change: change}, true
 }
 
+// TicketAccounts is where a ticket purchase spends from and sends change to,
+// resolved once by the caller; PurchaseTickets spends exactly these and derives
+// nothing. When Mixed is set, Source is the mixed account and Change the unmixed
+// one, and every mixing field of the request comes from Source.
+type TicketAccounts struct {
+	Source uint32
+	Change uint32
+	Mixed  bool
+}
+
+// ResolveTicketAccounts applies the privacy override once: on a wallet with the
+// mixed and unmixed accounts the ticket is funded from the mixed one and change
+// goes to the unmixed one, whatever the caller named. It reads gRPC Accounts,
+// which carries names and numbers and reports failure, so a wallet that cannot
+// be read fails the purchase instead of quietly buying a plain ticket.
+func ResolveTicketAccounts(ctx context.Context, account, changeAccount uint32) (TicketAccounts, error) {
+	if rpc.WalletGrpcClient == nil {
+		return TicketAccounts{}, fmt.Errorf("wallet gRPC client not initialized")
+	}
+	resp, err := rpc.WalletGrpcClient.Accounts(ctx, &pb.AccountsRequest{})
+	if err != nil {
+		return TicketAccounts{}, fmt.Errorf("list accounts: %w", err)
+	}
+	var mixed, change uint32
+	var haveMixed, haveChange bool
+	for _, a := range resp.Accounts {
+		switch a.AccountName {
+		case PrivacyMixedAccountName:
+			mixed, haveMixed = a.AccountNumber, true
+		case PrivacyChangeAccountName:
+			change, haveChange = a.AccountNumber, true
+		}
+	}
+	if haveMixed && haveChange {
+		return TicketAccounts{Source: mixed, Change: change, Mixed: true}, nil
+	}
+	return TicketAccounts{Source: account, Change: changeAccount}, nil
+}
+
 // SetupPrivacyAccounts creates whichever of "mixed" / "unmixed" is missing.
 // Idempotent — if both exist, returns their numbers without touching anything.
 func SetupPrivacyAccounts(ctx context.Context, passphrase []byte) (mixed uint32, change uint32, err error) {

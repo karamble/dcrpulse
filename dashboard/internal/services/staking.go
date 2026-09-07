@@ -452,7 +452,7 @@ func recordPurchaseEvent(level, msg string) {
 // terminal result/error are emitted as purchase events and streamed to the
 // frontend over the purchase-events WebSocket. The passphrase is copied because
 // the goroutine outlives the request and the caller zeroes its own slice.
-func StartPurchaseWorker(account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) error {
+func StartPurchaseWorker(accts TicketAccounts, numTickets uint32, vspHost, vspPubkey string, passphrase []byte) error {
 	if rpc.WalletGrpcClient == nil {
 		return fmt.Errorf("wallet gRPC client not initialized")
 	}
@@ -464,8 +464,10 @@ func StartPurchaseWorker(account, numTickets uint32, vspHost, vspPubkey string, 
 	}
 	// Check the passphrase before detaching: once the worker is running the
 	// caller has its 202 and a failure could only be reported as an event.
+	// Against the account the purchase will unlock, which on a privacy wallet
+	// is the mixed account rather than the one the caller named.
 	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	err := verifyAccountPassphrase(verifyCtx, account, passphrase)
+	err := verifyAccountPassphrase(verifyCtx, accts.Source, passphrase)
 	verifyCancel()
 	if err != nil {
 		return err
@@ -493,7 +495,7 @@ func StartPurchaseWorker(account, numTickets uint32, vspHost, vspPubkey string, 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		resp, err := purchaseTicketsCore(ctx, 0, account, numTickets, vspHost, vspPubkey, changeAccount, passCopy)
+		resp, err := purchaseTicketsCore(ctx, 0, accts, numTickets, vspHost, vspPubkey, passCopy)
 		if err != nil {
 			setPurchaseResult(nil, "", err.Error())
 			emitPurchaseEvent(types.PurchaseEvent{Level: "error", Kind: "error", Message: "Purchase failed: " + err.Error()})
@@ -522,12 +524,12 @@ const purchaseTimeout = 2 * time.Hour
 
 // PurchaseTickets runs a ticket purchase synchronously under the single-flight
 // guard. Used for plain (non-privacy) purchases, which complete quickly.
-func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
+func PurchaseTickets(ctx context.Context, accts TicketAccounts, numTickets uint32, vspHost, vspPubkey string, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
 	if !tryBeginTicketPurchase() {
 		return nil, fmt.Errorf("a ticket purchase is already in progress")
 	}
 	defer endTicketPurchase()
-	return purchaseTicketsCore(ctx, purchaseTimeout, account, numTickets, vspHost, vspPubkey, changeAccount, passphrase)
+	return purchaseTicketsCore(ctx, purchaseTimeout, accts, numTickets, vspHost, vspPubkey, passphrase)
 }
 
 // purchaseTicketsCore calls dcrwallet's PurchaseTickets gRPC with the modern VSP
@@ -535,7 +537,7 @@ func PurchaseTickets(ctx context.Context, account, numTickets uint32, vspHost, v
 // caller owns the single-flight guard (see tryBeginTicketPurchase) and bounds the
 // detached wallet call with spendTimeout; 0 leaves it unbounded, which the mixed
 // background worker needs since CSPP pairing has no fixed ceiling.
-func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, account, numTickets uint32, vspHost, vspPubkey string, changeAccount uint32, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
+func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, accts TicketAccounts, numTickets uint32, vspHost, vspPubkey string, passphrase []byte) (*types.PurchaseTicketsResponse, error) {
 	if rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("wallet gRPC client not initialized")
 	}
@@ -546,18 +548,11 @@ func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, accoun
 		return nil, fmt.Errorf("vspHost and vspPubkey are required")
 	}
 
-	// When privacy is configured, buy mixed tickets: fund + split + mix from the
-	// "mixed" account, send change to the "unmixed" account, and enable mixing.
-	// The backend is the source of truth here, overriding the caller's account so
-	// a privacy-enabled wallet can never produce a half-mixed ticket. Otherwise
-	// buy plainly with change going back to the source account.
-	sourceAccount := account
-	changeAcct := changeAccount
-	mixing, mixed := TicketMixingParams(ctx)
-	if mixed {
-		sourceAccount = mixing.Mixed
-		changeAcct = mixing.Change
-	}
+	// The caller resolved the accounts once (ResolveTicketAccounts) and, where
+	// there is a grant, checked it against them. Spend exactly those: a mixed
+	// purchase funds, splits and mixes from the mixed account and sends change
+	// to the unmixed one; a plain one spends the accounts as named.
+	sourceAccount, changeAcct, mixed := accts.Source, accts.Change, accts.Mixed
 
 	// The continuous mixer and a ticket purchase both spend the mixed account,
 	// so they must not run together: pause a running mixer for the purchase and
@@ -568,7 +563,7 @@ func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, accoun
 		// The caller zeroes the passphrase once this returns, but a restarted
 		// mixer keeps it for its lifetime, so hand it a copy.
 		mixerPass := append([]byte(nil), passphrase...)
-		mixerMixed, mixerChange := mixing.Mixed, mixing.Change
+		mixerMixed, mixerChange := sourceAccount, changeAcct
 		mixerWallet := ActiveWalletName()
 		defer func() {
 			if err := restartMixerAfterPurchase(mixerWallet, mixerPass, mixerMixed, privacyMixedAccountBranch, mixerChange); err != nil {
@@ -607,8 +602,8 @@ func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, accoun
 	}
 	if mixed {
 		purchaseReq.EnableMixing = true
-		purchaseReq.MixedAccount = mixing.Mixed
-		purchaseReq.MixedSplitAccount = mixing.Mixed
+		purchaseReq.MixedAccount = sourceAccount
+		purchaseReq.MixedSplitAccount = sourceAccount
 		purchaseReq.MixedAccountBranch = privacyMixedAccountBranch
 	}
 

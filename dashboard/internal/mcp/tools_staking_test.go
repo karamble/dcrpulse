@@ -20,6 +20,8 @@ import (
 // not bounded by the reserved ticket price, so an unchecked change account puts
 // funds into one the operator never covered.
 func TestStakingPurchaseChecksBothAccounts(t *testing.T) {
+	// The accounts are resolved from the wallet before the gate runs.
+	withWalletStub(t, plainWalletStub{})
 	const agentID = "staking-accounts"
 	grants.set(agentID, GrantSpec{
 		Accounts:   []uint32{0},

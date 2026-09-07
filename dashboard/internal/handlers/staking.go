@@ -105,8 +105,13 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	// immediately, and stream progress + the result over the purchase-events
 	// WebSocket. Plain (non-privacy) purchases finish in seconds and stay
 	// synchronous.
-	if _, mixed := services.TicketMixingParams(r.Context()); mixed {
-		if err := services.StartPurchaseWorker(req.Account, req.NumTickets, req.VspHost, req.VspPubkey, req.ChangeAccount, passphrase); err != nil {
+	accts, err := services.ResolveTicketAccounts(r.Context(), req.Account, req.ChangeAccount)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if accts.Mixed {
+		if err := services.StartPurchaseWorker(accts, req.NumTickets, req.VspHost, req.VspPubkey, passphrase); err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "already in progress") {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
@@ -124,7 +129,7 @@ func PurchaseTicketsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 
-	resp, err := services.PurchaseTickets(ctx, req.Account, req.NumTickets, req.VspHost, req.VspPubkey, req.ChangeAccount, passphrase)
+	resp, err := services.PurchaseTickets(ctx, accts, req.NumTickets, req.VspHost, req.VspPubkey, passphrase)
 	if err != nil {
 		msg := err.Error()
 		lower := strings.ToLower(msg)

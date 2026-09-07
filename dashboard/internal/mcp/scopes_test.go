@@ -136,6 +136,9 @@ var goldenAccountGatedTools = []string{"staking_purchase", "wallet_send"}
 // can reach a real spend: a scope-gated tool names its scope and an
 // account-gated one refuses on the account.
 func TestWriteToolScopesAreDeclared(t *testing.T) {
+	// staking_purchase resolves its accounts from the wallet before its
+	// account gate can refuse; a plain wallet lets that gate be seen.
+	withWalletStub(t, plainWalletStub{})
 	const agentID = "scope-census"
 	grants.set(agentID, GrantSpec{PerTxAtoms: 1, DailyAtoms: 1}, time.Now())
 	t.Cleanup(func() { grants.revoke(agentID) })

@@ -310,22 +310,22 @@ var stakingTools = []toolDef{
 				recordSpend(a, "staking_purchase", in.Account, 0, in.VSPHost, "denied", err.Error())
 				return nil, err
 			}
-			// The service overrides the caller's account when privacy is
-			// configured, funding the ticket from the mixed account. Resolve that
-			// here so the grant is checked against the account the purchase
-			// actually spends from, not the one the agent named.
-			srcAccount := in.Account
+			// On a privacy wallet the ticket is funded from the mixed account
+			// with change to the unmixed one, whatever the agent named. Resolve
+			// that once, here: the grant is checked against these accounts and
+			// the service spends exactly these, so the two cannot disagree.
 			changeAccount := in.ChangeAccount
 			if changeAccount == 0 {
 				changeAccount = in.Account
 			}
-			if mixing, mixed := services.TicketMixingParams(ctx); mixed {
-				srcAccount = mixing.Mixed
-				changeAccount = mixing.Change
+			accts, err := services.ResolveTicketAccounts(ctx, in.Account, changeAccount)
+			if err != nil {
+				recordSpend(a, "staking_purchase", in.Account, 0, in.VSPHost, "error", err.Error())
+				return nil, err
 			}
 			// The ticket is funded from one account and the split's change
 			// lands in the other, so both must be covered by the grant.
-			for _, acct := range []uint32{srcAccount, changeAccount} {
+			for _, acct := range []uint32{accts.Source, accts.Change} {
 				if err := grants.precheckAccount(a.id, acct, time.Now()); err != nil {
 					recordSpend(a, "staking_purchase", acct, 0, in.VSPHost, "denied", err.Error())
 					return nil, err
@@ -335,7 +335,7 @@ var stakingTools = []toolDef{
 			// an unconstrained host here would let an agent seed that list and
 			// launder its own host into the maintenance tools' allowlist.
 			if _, err := resolveKnownVSP(ctx, in.VSPHost, in.VSPPubkey); err != nil {
-				recordSpend(a, "staking_purchase", srcAccount, 0, in.VSPHost, "denied", err.Error())
+				recordSpend(a, "staking_purchase", accts.Source, 0, in.VSPHost, "denied", err.Error())
 				return nil, err
 			}
 			info, err := services.FetchStakingInfo()
@@ -357,17 +357,17 @@ var stakingTools = []toolDef{
 			costDCR := info.TicketPrice * float64(in.NumTickets)
 			totalAtoms := perTicketAtoms * int64(in.NumTickets)
 			// Ticket purchases have no recipient address; the allowlist is skipped.
-			pass, err := grants.authorize(ctx, a.id, srcAccount, totalAtoms, "", time.Now())
+			pass, err := grants.authorize(ctx, a.id, accts.Source, totalAtoms, "", time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
-					recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")
+					recordSpend(a, "staking_purchase", accts.Source, costDCR, in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
-					recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "denied", err.Error())
+					recordSpend(a, "staking_purchase", accts.Source, costDCR, in.VSPHost, "denied", err.Error())
 				}
 				return nil, err
 			}
 			defer utils.Zero(pass)
-			resp, err := services.PurchaseTickets(ctx, in.Account, in.NumTickets, in.VSPHost, in.VSPPubkey, changeAccount, pass)
+			resp, err := services.PurchaseTickets(ctx, accts, in.NumTickets, in.VSPHost, in.VSPPubkey, pass)
 			if err != nil {
 				// Only a failure that provably precedes the spend may release
 				// the reservation; see services.ErrSpendStarted.
@@ -377,10 +377,10 @@ var stakingTools = []toolDef{
 				} else {
 					detail = "reservation kept, the purchase may still complete: " + detail
 				}
-				recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "error", detail)
+				recordSpend(a, "staking_purchase", accts.Source, costDCR, in.VSPHost, "error", detail)
 				return nil, err
 			}
-			recordSpend(a, "staking_purchase", srcAccount, costDCR, in.VSPHost, "ok",
+			recordSpend(a, "staking_purchase", accts.Source, costDCR, in.VSPHost, "ok",
 				fmt.Sprintf("%d ticket(s)", len(resp.TicketHashes)))
 			return resp, nil
 		}),
