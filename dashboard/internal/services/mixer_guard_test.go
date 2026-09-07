@@ -42,7 +42,7 @@ func TestStartMixerRefusedDuringTicketPurchase(t *testing.T) {
 func TestRestartAfterPurchaseYieldsToTheAutobuyer(t *testing.T) {
 	restore := setAutobuyerRunning(true)
 	t.Cleanup(restore)
-	err := restartMixerAfterPurchase([]byte("x"), 1, 0, 2)
+	err := restartMixerAfterPurchase(ActiveWalletName(), []byte("x"), 1, 0, 2)
 	if err == nil || !strings.Contains(err.Error(), "autobuyer") {
 		t.Fatalf("restart did not yield to the autobuyer: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestRestartAfterPurchaseIgnoresThePurchaseFlag(t *testing.T) {
 	rpc.AccountMixerClient = nil
 	t.Cleanup(func() { rpc.AccountMixerClient = prev })
 
-	err := restartMixerAfterPurchase([]byte("x"), 1, 0, 2)
+	err := restartMixerAfterPurchase(ActiveWalletName(), []byte("x"), 1, 0, 2)
 	if err == nil || !strings.Contains(err.Error(), "gRPC client unavailable") {
 		t.Fatalf("restart did not pass the guards during its own purchase: %v", err)
 	}

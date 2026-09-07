@@ -202,6 +202,11 @@ func CreateWatchOnlyWallet(ctx context.Context, publicPass, xpub string) error {
 func runDiscoveryRpcSync(privatePass string) {
 	// Release the RpcSync slot for the supervisor once this discovery stream ends.
 	defer EndRestoreDiscovery()
+	// A restore scans the whole chain, so this goroutine outlives its request by
+	// minutes or hours. The passphrase step below is the one cleanup path in this
+	// package that retries, so it is the only one that can still be issuing RPCs
+	// after a wallet switch repointed the shared clients.
+	startedOn := ActiveWalletName()
 	if rpc.WalletLoaderClient == nil {
 		return
 	}
@@ -240,8 +245,11 @@ func runDiscoveryRpcSync(privatePass string) {
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
+			// Not SYNCED, so discovery never finished: the accounts the step
+			// below would seal may not all exist yet. Returning also stops it
+			// running against whatever wallet a switch has since loaded.
 			wlltLog.Warnf("Discovery RPC sync stream ended: %v", err)
-			break
+			return
 		}
 		ApplyRpcSyncNotification(resp)
 		if resp.Synced {
@@ -255,6 +263,10 @@ func runDiscoveryRpcSync(privatePass string) {
 	// discovery) give every account the same per-account passphrase as the wallet
 	// passphrase so they all unlock uniformly via UnlockAccount. Mirrors
 	// Decrediton's setAccountsPass-on-SYNCED. Best-effort: log on failure.
+	if now := ActiveWalletName(); now != startedOn {
+		wlltLog.Warnf("Discovery RPC sync: skipping account passphrases, the active wallet changed from %q to %q", startedOn, now)
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := ensureAllAccountsEncryptedRetry(ctx, []byte(privatePass)); err != nil {

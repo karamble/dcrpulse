@@ -186,12 +186,14 @@ func runAutobuyer(ctx context.Context, settings types.AutobuyerSettings, sourceA
 		autobuyerCancel = nil
 		autobuyerMu.Unlock()
 	}()
-	// Re-lock whatever StartAutobuyer opened once the buyer stops.
+	// Re-lock whatever StartAutobuyer opened once the buyer stops, unless the
+	// wallet changed underneath this run.
+	startedOn := ActiveWalletName()
 	if didUnlockSource {
-		defer relockAccount(sourceAccount, setAutobuyerErr)
+		defer relockAccountFor(startedOn, sourceAccount, setAutobuyerErr)
 	}
 	if didUnlockChange {
-		defer relockAccount(mixing.Change, setAutobuyerErr)
+		defer relockAccountFor(startedOn, mixing.Change, setAutobuyerErr)
 	}
 
 	recordAutobuyerEvent("info", fmt.Sprintf("Autobuyer starting (account=%d vsp=%s balanceToMaintain=%.8f DCR)",

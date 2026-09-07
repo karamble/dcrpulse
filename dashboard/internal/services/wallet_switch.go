@@ -37,6 +37,14 @@ func SwitchWallet(ctx context.Context, name, publicPass string) error {
 	if err := ValidateWalletName(name); err != nil {
 		return err
 	}
+	// Refused before any lookup so a busy wallet reports the worker holding it
+	// rather than whichever daemon call fails first. Re-selecting the active
+	// wallet only reloads it, so it is exempt: the workers already belong to it.
+	if name != ActiveWalletName() {
+		if err := walletSwitchGuard(); err != nil {
+			return err
+		}
+	}
 	network, err := CurrentNetwork(ctx)
 	if err != nil {
 		return err
@@ -113,6 +121,10 @@ func reconnectStackServices(ctx context.Context, name string) {
 // CloseActiveWallet closes the current wallet and idles the supervisor so the UI
 // returns to the wallet list.
 func CloseActiveWallet(ctx context.Context) error {
+	if err := walletSwitchGuard(); err != nil {
+		return err
+	}
+
 	PauseSync()
 	defer ResumeSync()
 
@@ -208,6 +220,10 @@ func newWalletSlot(ctx context.Context, name string) (string, error) {
 // the supervisor at the new one, wait for the relaunch, reconnect the gRPC
 // clients, and wait for the loader to answer. Caller must hold PauseSync.
 func switchDaemonToNewWallet(ctx context.Context, name, network string) error {
+	if err := walletSwitchGuard(); err != nil {
+		return err
+	}
+
 	closeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	if err := CloseWallet(closeCtx); err != nil {
 		wlltLog.Warnf("Create wallet: close current (continuing): %v", err)

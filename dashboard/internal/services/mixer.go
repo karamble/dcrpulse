@@ -133,13 +133,34 @@ func StartMixer(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint
 // purchase's last step), so only the autobuyer guard applies: one started
 // mid-purchase owns the mixed account now, and the mixer stays stopped with
 // the reason on the mixer log.
-func restartMixerAfterPurchase(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) error {
+//
+// wallet is the wallet the purchase paused the mixer on. The account numbers and
+// the passphrase belong to that wallet, so if the active wallet changed while the
+// purchase ran they would start a mixer over a different wallet's accounts.
+func restartMixerAfterPurchase(wallet string, passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) error {
+	if now := ActiveWalletName(); now != wallet {
+		msg := fmt.Sprintf("mixer not restarted after the ticket purchase: the active wallet changed from %q to %q", wallet, now)
+		setMixerErr(msg)
+		return fmt.Errorf("%s", msg)
+	}
 	if IsAutobuyerRunning() {
 		msg := "mixer not restarted after the ticket purchase: the ticket autobuyer is running"
 		setMixerErr(msg)
 		return fmt.Errorf("%s", msg)
 	}
 	return startMixerCore(passphrase, mixedAccount, mixedBranch, changeAccount)
+}
+
+// relockAccountFor locks an account only while wallet is still the active one.
+// The stale case is a worker whose relock defer fires after a wallet switch: the
+// number would then lock the same-numbered account on the new wallet, which may
+// be one that wallet's own mixer or autobuyer is holding open.
+func relockAccountFor(wallet string, accountNumber uint32, onErr func(string)) {
+	if now := ActiveWalletName(); now != wallet {
+		wlltLog.Warnf("Skipping relock of account %d: the active wallet changed from %q to %q", accountNumber, wallet, now)
+		return
+	}
+	relockAccount(accountNumber, onErr)
 }
 
 func startMixerCore(passphrase []byte, mixedAccount, mixedBranch, changeAccount uint32) error {
@@ -200,8 +221,10 @@ func runMixer(ctx context.Context, mixedAccount, mixedBranch, changeAccount uint
 		mixerCancel = nil
 		mixerMu.Unlock()
 	}()
-	// Relock the change account StartMixer unlocked when the mixer stops.
-	defer relockAccount(changeAccount, setMixerErr)
+	// Relock the change account StartMixer unlocked when the mixer stops, unless
+	// the wallet changed underneath this run.
+	startedOn := ActiveWalletName()
+	defer relockAccountFor(startedOn, changeAccount, setMixerErr)
 
 	recordMixerEvent("info", fmt.Sprintf("Mixer starting (mixed=%d branch=%d change=%d)", mixedAccount, mixedBranch, changeAccount))
 

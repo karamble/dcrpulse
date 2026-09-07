@@ -3,8 +3,9 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, KeyRound, LogOut, Search, Wallet } from 'lucide-react';
+import { AlertCircle, CheckCircle2, KeyRound, LogOut, Search, Wallet } from 'lucide-react';
 import { changePassphrase, closeActiveWallet, discoverAddresses, getSettings } from '../../services/api';
+import { apiError } from '../../utils/apiError';
 import { ChangePassphraseModal } from './ChangePassphraseModal';
 import { DiscoverAddressesModal } from './DiscoverAddressesModal';
 
@@ -14,6 +15,7 @@ export const WalletSection = () => {
   const [discoverModalOpen, setDiscoverModalOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackIsError, setFeedbackIsError] = useState(false);
 
   useEffect(() => {
     getSettings()
@@ -27,6 +29,7 @@ export const WalletSection = () => {
   // Lightning re-unlock step before dismissing itself.
   const handleChangePassphrase = async (oldPass: string, newPass: string, dexAppPass?: string) => {
     await changePassphrase(oldPass, newPass, dexAppPass);
+    setFeedbackIsError(false);
     setFeedback('Private passphrase changed.');
   };
 
@@ -34,11 +37,13 @@ export const WalletSection = () => {
     await discoverAddresses(passphrase, gap);
     setDiscoverModalOpen(false);
     setGapLimit(gap);
+    setFeedbackIsError(false);
     setFeedback('Address discovery complete - rescanning the chain to fetch their history.');
   };
 
   const handleCloseWallet = async () => {
     setClosing(true);
+    setFeedbackIsError(false);
     setFeedback(null);
     try {
       await closeActiveWallet();
@@ -47,7 +52,10 @@ export const WalletSection = () => {
     } catch (err) {
       console.error('closeActiveWallet failed:', err);
       setClosing(false);
-      setFeedback('Failed to close wallet.');
+      // The backend refuses while the mixer, autobuyer or a ticket purchase is
+      // running, and that reason is the whole point of the message.
+      setFeedbackIsError(true);
+      setFeedback(apiError(err, 'Failed to close wallet.'));
     }
   };
 
@@ -59,8 +67,8 @@ export const WalletSection = () => {
       </div>
 
       {feedback && (
-        <div className="flex items-center gap-2 text-sm text-success">
-          <CheckCircle2 className="h-4 w-4" />
+        <div className={`flex items-center gap-2 text-sm ${feedbackIsError ? 'text-destructive' : 'text-success'}`}>
+          {feedbackIsError ? <AlertCircle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
           {feedback}
         </div>
       )}

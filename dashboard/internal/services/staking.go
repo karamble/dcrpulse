@@ -572,8 +572,9 @@ func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, accoun
 		// mixer keeps it for its lifetime, so hand it a copy.
 		mixerPass := append([]byte(nil), passphrase...)
 		mixerMixed, mixerChange := mixing.Mixed, mixing.Change
+		mixerWallet := ActiveWalletName()
 		defer func() {
-			if err := restartMixerAfterPurchase(mixerPass, mixerMixed, privacyMixedAccountBranch, mixerChange); err != nil {
+			if err := restartMixerAfterPurchase(mixerWallet, mixerPass, mixerMixed, privacyMixedAccountBranch, mixerChange); err != nil {
 				stkeLog.Warnf("restart mixer after ticket purchase: %v", err)
 			}
 		}()
@@ -589,7 +590,10 @@ func purchaseTicketsCore(ctx context.Context, spendTimeout time.Duration, accoun
 		return nil, err
 	}
 	if didUnlock {
-		defer relockAccount(sourceAccount, func(msg string) { stkeLog.Infof("ticket purchase: %s", msg) })
+		// A mixed purchase waits a full CSPP epoch, so this relock can fire long
+		// after the unlock: pin it to the wallet whose account was opened.
+		unlockedOn := ActiveWalletName()
+		defer relockAccountFor(unlockedOn, sourceAccount, func(msg string) { stkeLog.Infof("ticket purchase: %s", msg) })
 	}
 
 	// Do not set Passphrase. The source account is already unlocked per-account

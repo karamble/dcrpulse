@@ -7,6 +7,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -40,6 +41,22 @@ func ListWalletsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// walletSwitchStatus maps a switch or close failure to its HTTP status. The
+// identity match runs before the substring match so a future refusal wording
+// cannot be claimed by it.
+func walletSwitchStatus(err error) int {
+	switch {
+	case errors.Is(err, services.ErrSwitchWhileMixing),
+		errors.Is(err, services.ErrSwitchWhilePurchasing):
+		return http.StatusConflict
+	// A passphrase mismatch surfaces from OpenWallet; report it as a 401 so the
+	// UI can prompt again (mirrors OpenWalletHandler).
+	case strings.Contains(err.Error(), "passphrase"), strings.Contains(err.Error(), "open wallet"):
+		return http.StatusUnauthorized
+	}
+	return http.StatusInternalServerError
+}
+
 // SelectWalletHandler switches the active wallet, relaunching the daemon.
 func SelectWalletHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -56,13 +73,7 @@ func SelectWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := services.SwitchWallet(ctx, req.Name, req.PublicPassphrase); err != nil {
 		wlltLog.Errorf("Error selecting wallet %q: %v", req.Name, err)
-		status := http.StatusInternalServerError
-		// A passphrase mismatch surfaces from OpenWallet; report it as a 401 so
-		// the UI can prompt again (mirrors OpenWalletHandler).
-		if strings.Contains(err.Error(), "passphrase") || strings.Contains(err.Error(), "open wallet") {
-			status = http.StatusUnauthorized
-		}
-		writeJSONError(w, status, err.Error())
+		writeJSONError(w, walletSwitchStatus(err), err.Error())
 		return
 	}
 
@@ -84,7 +95,7 @@ func CloseWalletHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := services.CloseActiveWallet(ctx); err != nil {
 		wlltLog.Errorf("Error closing wallet: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), walletSwitchStatus(err))
 		return
 	}
 

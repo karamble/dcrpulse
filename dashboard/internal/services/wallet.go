@@ -1688,6 +1688,27 @@ func spendGuard() error {
 	return nil
 }
 
+// ErrSwitchWhileMixing and ErrSwitchWhilePurchasing are the wallet-switch twins
+// of the spend errors. Repointing the daemon does not stop these workers, and
+// their deferred calls carry the old wallet's account numbers and passphrase, so
+// a switch underneath one of them acts on the next wallet.
+var ErrSwitchWhileMixing = fmt.Errorf("stop the privacy mixer or ticket autobuyer before switching wallets")
+
+var ErrSwitchWhilePurchasing = fmt.Errorf("wait for the ticket purchase to finish before switching wallets")
+
+// walletSwitchGuard reports why the active wallet must not change right now, or
+// nil. Same three workers and the same precedence as spendGuard: report the one
+// the user can act on.
+func walletSwitchGuard() error {
+	if IsMixerRunning() || IsAutobuyerRunning() {
+		return ErrSwitchWhileMixing
+	}
+	if IsTicketPurchaseInProgress() {
+		return ErrSwitchWhilePurchasing
+	}
+	return nil
+}
+
 // publishTimeout bounds the publish once it can no longer be cancelled.
 const publishTimeout = 60 * time.Second
 
