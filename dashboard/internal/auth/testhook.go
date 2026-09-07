@@ -5,7 +5,9 @@
 package auth
 
 // PointAtForTest aims the package at a config file and returns a func that
-// restores both the path and the loaded state. Only compiled into tests.
+// restores both the path and the loaded state. It is a shipping function rather
+// than an export_test.go one so tests in other packages can put auth into a
+// password-set state; rpc.SwapDcrlndClients exists for the same reason.
 func PointAtForTest(path string) func() {
 	prev := cfgPath
 	cfgPath = func() string { return path }

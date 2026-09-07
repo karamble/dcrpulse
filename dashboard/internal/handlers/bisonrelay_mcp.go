@@ -45,6 +45,27 @@ func mergeOwnedMCPSettings(current json.RawMessage, wire brMCPSettingsWire) (map
 	return merged, nil
 }
 
+// redactBridgeToken blanks the bearer secret for a reply, recording only that
+// one exists. The plaintext is returned by the call that mints it and never
+// again, the way an agent token is (mcp.AgentInfo carries no token at all).
+func redactBridgeToken(s types.BRMCPSettings) types.BRMCPSettings {
+	s.TokenSet = s.Token != ""
+	s.Token = ""
+	s.RecycleToken = false
+	return s
+}
+
+// bridgeTokenForApply picks the token a save sends to brclientd. An empty token
+// is brclientd's "mint a fresh one" signal, so only an explicit recycle may send
+// it: echoing the caller's field would recycle on every ordinary save now that
+// the caller is never given the current value.
+func bridgeTokenForApply(recycle bool, current string) string {
+	if recycle {
+		return ""
+	}
+	return current
+}
+
 // BisonrelayMCPSettingsHandler round-trips the BR-MCP client settings.
 func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -54,7 +75,7 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			brWriteErr(w, err)
 			return
 		}
-		writeJSON(w, view)
+		writeJSON(w, redactBridgeToken(view))
 	case http.MethodPost:
 		var view types.BRMCPSettings
 		if err := json.NewDecoder(r.Body).Decode(&view); err != nil {
@@ -71,9 +92,22 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid per-day cap", http.StatusBadRequest)
 			return
 		}
+		// Read the daemon's settings first, failing closed: the merge needs them,
+		// and an ordinary save carries the existing token through from here
+		// rather than from the caller, who is never told what it is.
+		current, err := rpc.BrclientdMCPSettings(r.Context())
+		if err != nil {
+			brWriteErr(w, err)
+			return
+		}
+		cur, err := services.DecodeBRMCPSettings(current)
+		if err != nil {
+			http.Error(w, "parse settings: "+err.Error(), http.StatusBadGateway)
+			return
+		}
 		wire := brMCPSettingsWire{
 			Enabled:             view.Enabled,
-			Token:               view.Token,
+			Token:               bridgeTokenForApply(view.RecycleToken, cur.Token),
 			Mode:                view.Mode,
 			PerCallCapAtoms:     int64(perCall),
 			PerDayCapAtoms:      int64(perDay),
@@ -83,12 +117,7 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			TipWaitSecs:         view.TipWaitSecs,
 		}
 		// Merge over the daemon's current settings rather than replacing them,
-		// failing closed if the current copy cannot be read.
-		current, err := rpc.BrclientdMCPSettings(r.Context())
-		if err != nil {
-			brWriteErr(w, err)
-			return
-		}
+		// so a field a newer brclientd stores survives the save.
 		merged, err := mergeOwnedMCPSettings(current, wire)
 		if err != nil {
 			http.Error(w, "parse settings: "+err.Error(), http.StatusBadGateway)
@@ -104,7 +133,14 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-		writeJSON(w, applied)
+		// The one time the plaintext is shown is the reply to the call that
+		// minted it; the operator has no other way to learn it.
+		if view.RecycleToken {
+			applied.TokenSet = applied.Token != ""
+			writeJSON(w, applied)
+			return
+		}
+		writeJSON(w, redactBridgeToken(applied))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

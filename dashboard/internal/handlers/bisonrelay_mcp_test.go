@@ -7,6 +7,8 @@ package handlers
 import (
 	"encoding/json"
 	"testing"
+
+	"dcrpulse/internal/types"
 )
 
 // A save must not erase settings fields the daemon knows and this build does
@@ -74,5 +76,43 @@ func TestMergeOwnedMCPSettingsPreservesUnknownFields(t *testing.T) {
 func TestMergeOwnedMCPSettingsRejectsMalformedCurrent(t *testing.T) {
 	if _, err := mergeOwnedMCPSettings(json.RawMessage(`not json`), brMCPSettingsWire{}); err == nil {
 		t.Fatal("malformed current settings did not error")
+	}
+}
+
+// The bridge bearer token is a durable credential, so it follows the same rule
+// as an agent token: shown once by the call that mints it, never at rest. That
+// makes the save path the delicate half - an empty token is brclientd's "mint a
+// fresh one" signal, and the caller no longer holds the real value to echo.
+
+func TestRedactBridgeTokenBlanksIt(t *testing.T) {
+	got := redactBridgeToken(types.BRMCPSettings{Enabled: true, Token: "s3cret", Mode: "ask"})
+	if got.Token != "" {
+		t.Errorf("token = %q, want it blanked", got.Token)
+	}
+	if !got.TokenSet {
+		t.Error("TokenSet is false, so the UI cannot tell a token exists")
+	}
+	if got.Enabled != true || got.Mode != "ask" {
+		t.Errorf("redaction disturbed the other fields: %+v", got)
+	}
+}
+
+func TestRedactBridgeTokenReportsNoTokenSet(t *testing.T) {
+	if got := redactBridgeToken(types.BRMCPSettings{Enabled: true}); got.TokenSet {
+		t.Error("TokenSet is true with no token configured")
+	}
+}
+
+// The regression this pairs with: every ordinary save would otherwise recycle
+// the token and cut off every agent using it.
+func TestBridgeTokenForApplyKeepsTheCurrentOne(t *testing.T) {
+	if got := bridgeTokenForApply(false, "s3cret"); got != "s3cret" {
+		t.Errorf("an ordinary save sent %q, want the current token carried through", got)
+	}
+}
+
+func TestBridgeTokenForApplyMintsOnRecycle(t *testing.T) {
+	if got := bridgeTokenForApply(true, "s3cret"); got != "" {
+		t.Errorf("a recycle sent %q, want the empty token that mints a fresh one", got)
 	}
 }

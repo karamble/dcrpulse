@@ -1877,7 +1877,12 @@ export const deleteBisonrelayLocalPage = async (name: string): Promise<void> => 
 
 export interface BrMcpSettings {
   enabled: boolean;
+  // token carries the bearer secret only on the reply to a recycle, the one
+  // call that mints it; every other reply blanks it and sets tokenSet.
   token: string;
+  tokenSet: boolean;
+  // recycleToken is request-only: it asks brclientd for a fresh token.
+  recycleToken?: boolean;
   mode: 'approval' | 'autopay';
   perCallCapDcr: number;
   perDayCapDcr: number;

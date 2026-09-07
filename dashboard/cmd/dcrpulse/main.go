@@ -572,10 +572,13 @@ func main() {
 	api.HandleFunc("/br/events", handlers.BisonrelayEventsHandler).Methods("GET")
 	// BR-MCP client bridge (agent access to Bison Relay tool bots), proxied
 	// to brclientd's mcpclient endpoints.
-	api.HandleFunc("/br/mcp/settings", handlers.BisonrelayMCPSettingsHandler).Methods("GET", "POST")
-	api.HandleFunc("/br/mcp/pending", handlers.BisonrelayMCPPendingHandler).Methods("GET")
-	api.HandleFunc("/br/mcp/pending/resolve", handlers.BisonrelayMCPResolvePendingHandler).Methods("POST")
-	api.HandleFunc("/br/mcp/spend", handlers.BisonrelayMCPSpendHandler).Methods("GET")
+	// The bridge holds a durable bearer token, sets the caps that bound what it
+	// pays, and approves real payments, so it is gated like the agent surface's
+	// own settings above rather than left on RequireAuth's pass-through.
+	api.Handle("/br/mcp/settings", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPSettingsHandler))).Methods("GET", "POST")
+	api.Handle("/br/mcp/pending", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPPendingHandler))).Methods("GET")
+	api.Handle("/br/mcp/pending/resolve", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPResolvePendingHandler))).Methods("POST")
+	api.Handle("/br/mcp/spend", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPSpendHandler))).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")

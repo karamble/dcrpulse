@@ -9,7 +9,14 @@ import (
 	"net/http"
 
 	"dcrpulse/internal/auth"
+	"dcrpulse/internal/mcp"
 )
+
+// stopAgentSurface stops the agent surface and releases the wallet passphrases
+// its spend grants hold. A var so a test can watch that disabling the password
+// reaches it, without binding a port; mirrors rpc.SwapDcrlndClients, which
+// exists for the same reason.
+var stopAgentSurface = func() error { return mcp.SetEnabled(false) }
 
 // AuthStatusHandler reports the app-password state. Unauthenticated; the
 // frontend uses it to decide between the login screen, the first-run setup
@@ -124,5 +131,12 @@ func AuthDisableHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.ClearSessionCookie(w, r)
+	// Only once the password is actually gone: reaching this on a failed
+	// attempt would let anyone who can POST a wrong password stop the agent
+	// surface. The listener refuses to start without a password, so leaving it
+	// serving here would keep agents holding passphrases nothing can revoke.
+	if err := stopAgentSurface(); err != nil {
+		settLog.Errorf("Disabling the app password could not persist the agent surface state: %v", err)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

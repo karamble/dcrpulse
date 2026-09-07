@@ -19,9 +19,16 @@ type BRMCPDenied struct {
 // BRMCPSettings is the bridge configuration as the frontend round-trips it.
 // The listener address is not here - it is brclientd startup config
 // (mcplisten), not a runtime setting.
+//
+// Token carries the bearer secret only on the reply to the call that mints it,
+// mirroring an agent token; every other reply blanks it and reports TokenSet
+// instead. RecycleToken is request-only: it asks brclientd for a fresh token,
+// which is what an empty token used to mean on the wire.
 type BRMCPSettings struct {
 	Enabled             bool         `json:"enabled"`
 	Token               string       `json:"token"`
+	TokenSet            bool         `json:"tokenSet"`
+	RecycleToken        bool         `json:"recycleToken,omitempty"`
 	Mode                string       `json:"mode"`
 	PerCallCapDcr       float64      `json:"perCallCapDcr"`
 	PerDayCapDcr        float64      `json:"perDayCapDcr"`

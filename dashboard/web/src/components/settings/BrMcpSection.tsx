@@ -3,7 +3,8 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Check, Copy, HelpCircle, Loader2, Radio, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, Check, Copy, HelpCircle, KeyRound, Loader2, Radio, RefreshCw } from 'lucide-react';
 import {
   BrMcpPendingPayment,
   BrMcpSettings,
@@ -47,14 +48,25 @@ export const BrMcpSection = () => {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [needsAppPassword, setNeedsAppPassword] = useState(false);
+  // The bearer token is returned by the recycle that mints it and never again,
+  // so it lives here rather than in settings, and only until the page moves on.
+  const [mintedToken, setMintedToken] = useState<string | null>(null);
 
   const refreshSettings = useCallback(async () => {
     try {
       const s = await getBrMcpSettings();
       setSettings(s);
       setDraft((d) => d ?? s);
+      setNeedsAppPassword(false);
       setError(null);
-    } catch {
+    } catch (e) {
+      const res = (e as { response?: { status?: number; headers?: Record<string, string> } })
+        .response;
+      if (res?.status === 401 && res.headers?.['x-dashboard-auth'] === 'password-required') {
+        setNeedsAppPassword(true);
+        return;
+      }
       /* brclientd may still be starting; keep last state */
     }
   }, []);
@@ -89,7 +101,10 @@ export const BrMcpSection = () => {
     try {
       const applied = await setBrMcpSettings(next);
       setSettings(applied);
-      setDraft(applied);
+      setDraft({ ...applied, recycleToken: false });
+      if (applied.token) {
+        setMintedToken(applied.token);
+      }
     } catch (err: any) {
       setError(apiError(err, 'Save failed'));
     } finally {
@@ -107,8 +122,8 @@ export const BrMcpSection = () => {
   };
 
   const copyToken = () => {
-    if (!settings?.token || !navigator.clipboard) return;
-    navigator.clipboard.writeText(settings.token).then(
+    if (!mintedToken || !navigator.clipboard) return;
+    navigator.clipboard.writeText(mintedToken).then(
       () => {
         setCopied(true);
         window.setTimeout(() => setCopied(false), 2000);
@@ -117,20 +132,43 @@ export const BrMcpSection = () => {
     );
   };
 
-  // Recycle the bearer token: clearing it makes brclientd mint a fresh one and
-  // live-restart the listener. Any agent still using the old token is cut off,
-  // so confirm first.
+  // Recycle the bearer token: brclientd mints a fresh one and live-restarts the
+  // listener. Any agent still using the old token is cut off, so confirm first.
+  // This is also the only way to see a token again, since it is never read back.
   const recycleToken = () => {
     if (!draft) return;
     if (
       !window.confirm(
-        'Generate a new bearer token? Any agent using the current token will stop working until you give it the new one.',
+        'Generate a new bearer token? Any agent using the current token will stop working until you give it the new one. This is the only time the new token is shown.',
       )
     ) {
       return;
     }
-    apply({ ...draft, token: '' });
+    apply({ ...draft, recycleToken: true });
   };
+
+  if (needsAppPassword) {
+    return (
+      <div className="p-4 rounded-lg bg-warning/10 border border-warning/40 flex items-start gap-3">
+        <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+        <div className="text-sm">
+          <span className="font-medium block text-warning">Set a dashboard app password first</span>
+          <span className="text-muted-foreground">
+            The bridge holds a bearer token, sets the caps that bound what it pays, and approves
+            payments, so it needs a logged-in session. Set an app password under Settings &gt;
+            Security, then come back.
+          </span>
+          <Link
+            to="/wallet/settings/security"
+            className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-primary text-white font-semibold text-sm"
+          >
+            <KeyRound className="h-4 w-4" />
+            Set app password
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (!settings || !draft) {
     return null;
@@ -213,23 +251,35 @@ export const BrMcpSection = () => {
           title="Connect an AI agent to BR-MCP"
           agentName="braibot"
           connectUrl={BR_MCP_CONNECT_URL}
-          token={settings.token || undefined}
-          tokenHint="Enable BR-MCP to generate a bearer token."
+          token={mintedToken || undefined}
+          tokenHint={
+            settings.tokenSet
+              ? 'The bearer token is shown only when it is generated. Recycle it below to see a new one.'
+              : 'Enable BR-MCP to generate a bearer token.'
+          }
           onClose={() => setShowHelp(false)}
         />
       )}
-      {settings.enabled && settings.token && (
+      {settings.enabled && (settings.tokenSet || mintedToken) && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/10 border border-border/50 text-xs">
           <span className="text-muted-foreground shrink-0">Bearer token</span>
-          <code className="font-mono truncate flex-1">{settings.token}</code>
-          <button
-            type="button"
-            onClick={copyToken}
-            className="p-1 rounded text-muted-foreground hover:text-foreground"
-            aria-label="Copy token"
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
+          <code className="font-mono truncate flex-1">
+            {mintedToken ?? '\u2022'.repeat(24)}
+          </code>
+          {mintedToken && (
+            <button
+              type="button"
+              onClick={copyToken}
+              className="p-1 rounded text-muted-foreground hover:text-foreground"
+              aria-label="Copy token"
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-success" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={recycleToken}
@@ -241,6 +291,11 @@ export const BrMcpSection = () => {
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
         </div>
+      )}
+      {mintedToken && (
+        <p className="text-xs text-warning">
+          Copy this token now. It is not stored here and will not be shown again.
+        </p>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
