@@ -3,10 +3,11 @@
 // license that can be found in the LICENSE file.
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, AlertTriangle, Info, ShieldCheck } from 'lucide-react';
-import { dexAccountState, getDexAccount, postDexBond, setDexBondOptions, type DexAccount } from '../../services/dcrdexApi';
+import { AlertCircle, AlertTriangle, Check, Info, Loader2, ShieldCheck } from 'lucide-react';
+import { dexAccountState, getDexAccount, setDexBondOptions, type DexAccount } from '../../services/dcrdexApi';
 import { fmtAmt } from './dexFormat';
 import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
+import { useDexBondPost } from './useDexBondPost';
 import { startVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
 
@@ -126,9 +127,12 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
   const [penaltyComps, setPenaltyComps] = useState('');
   const [bondAssetID, setBondAssetID] = useState(0);
 
-  // Post-bond form state.
+  // Post-bond form state. The post itself outlives the request (the backend
+  // answers 202 and posts in the background), so the hook tracks it.
   const [postTiers, setPostTiers] = useState(1);
   const [confirming, setConfirming] = useState(false);
+  const bondPost = useDexBondPost(host);
+  const posting = bondPost.phase === 'submitting';
 
   const refresh = () => {
     getDexAccount(host)
@@ -178,17 +182,8 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
 
   const postBond = async () => {
     if (!acct) return;
-    setBusy(true);
-    setActionErr(null);
-    try {
-      await postDexBond(host, acct.bondPerTierAtoms * postTiers, acct.bondAssetID);
-      setConfirming(false);
-      refresh();
-    } catch (e: any) {
-      setActionErr(apiError(e, 'Bond posting failed'));
-    } finally {
-      setBusy(false);
-    }
+    setConfirming(false);
+    await bondPost.submit(acct.bondPerTierAtoms * postTiers, acct.bondAssetID);
   };
 
   if (err) {
@@ -385,10 +380,18 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
           {!confirming ? (
             <button
               type="button"
+              disabled={posting}
               onClick={() => setConfirming(true)}
-              className="w-full bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90"
+              className="w-full flex items-center justify-center gap-2 bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Post bond
+              {posting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Posting bond…
+                </>
+              ) : (
+                'Post bond'
+              )}
             </button>
           ) : (
             <>
@@ -399,7 +402,7 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={posting}
                   onClick={() => setConfirming(false)}
                   className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-background/50 transition-colors disabled:opacity-50"
                 >
@@ -407,14 +410,26 @@ export const DexAccountPanel = ({ host }: { host: string }) => {
                 </button>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={posting}
                   onClick={postBond}
                   className="flex-1 bg-gradient-primary text-white font-semibold rounded-lg px-4 py-2 transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {busy ? 'Posting…' : 'Confirm'}
+                  Confirm
                 </button>
               </div>
             </>
+          )}
+          {bondPost.phase === 'broadcast' && (
+            <div className="flex items-start gap-1.5 text-xs text-success">
+              <Check className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>Bond submitted to {host}. It appears under Pending bonds as it confirms.</span>
+            </div>
+          )}
+          {bondPost.phase === 'error' && (
+            <div className="flex items-start gap-1.5 text-xs text-destructive">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span className="break-words">Bond posting failed: {bondPost.error}</span>
+            </div>
           )}
         </Card>
       </div>

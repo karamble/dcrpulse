@@ -1272,34 +1272,27 @@ func GetDcrdexBondsFeeBufferHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]float64{"feeBuffer": atomsToConv(raw, dexassets.ConvFactor(uint32(assetID)))})
 }
 
-// bondSubmitState tracks an in-flight async PostBond per DEX host. bisonw's
-// postbond returns after broadcast (confirmations arrive later over the notify
-// feed), so the dashboard fires it in the background and returns 202 - the
-// request never blocks and a browser disconnect cannot cancel the bond. A
-// pre-broadcast RPC failure has NO bisonw notification, so it is recorded here
-// for PostDcrdexBondStatusHandler to surface to the UI.
-type bondSubmitState struct {
-	Phase string `json:"phase"` // submitting | broadcast | error | none
-	Error string `json:"error,omitempty"`
-}
+// dexBondSession and postDexBondTx are the two calls a test cannot make for
+// real: the session gate reads rpc's logged-in web client, and PostBond spends.
+var (
+	dexBondSession = dexWebSession
+	postDexBondTx  = func(ctx context.Context, web *bisonw.WebClient, host string, bond uint64, assetID uint32, maintain *bool) error {
+		return web.PostBond(ctx, host, "", bond, assetID, maintain)
+	}
+)
 
-var bondSubmit = struct {
-	sync.Mutex
-	m map[string]bondSubmitState
-}{m: map[string]bondSubmitState{}}
-
-func setBondSubmit(host string, s bondSubmitState) {
-	bondSubmit.Lock()
-	bondSubmit.m[host] = s
-	bondSubmit.Unlock()
-}
+// dexBondPostTimeout stays under bisonw's 2min webserver write timeout, so a
+// slow bond surfaces here instead of as a torn reply.
+const dexBondPostTimeout = 110 * time.Second
 
 // PostDcrdexBondHandler posts a fidelity bond to register/maintain a DEX
 // account. This spends real funds on mainnet; the dashboard only calls it on
 // explicit user action. It returns 202 immediately and posts the bond in a
 // detached background goroutine (mirroring bisonw's postbond, which returns
 // after broadcast); confirmation progress arrives over /api/dcrdex/notify and a
-// pre-broadcast failure is exposed via /dcrdex/postbond/status.
+// pre-broadcast failure is exposed via /dcrdex/postbond/status. One post per
+// host at a time: a second request while one is in flight gets 409 with a body
+// whose phase is "submitting", which tells it apart from the locked 409.
 func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req struct {
@@ -1312,7 +1305,7 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host and bond are required", http.StatusBadRequest)
 		return
 	}
-	web, ok := dexWebSession(w)
+	web, ok := dexBondSession(w)
 	if !ok {
 		return
 	}
@@ -1323,36 +1316,37 @@ func PostDcrdexBondHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	host := req.Host
 	bond, maintain := req.Bond, req.MaintainTier
-	setBondSubmit(host, bondSubmitState{Phase: "submitting"})
+	if !services.BeginDexBondPost(host) {
+		writeJSONStatus(w, http.StatusConflict, map[string]any{
+			"success": false,
+			"message": "a bond is already being posted to " + host,
+			"phase":   "submitting",
+		})
+		return
+	}
 	go func() {
-		// bisonw's webserver cuts responses at its 2min write timeout; stay
-		// under it so a slow bond surfaces here instead of as a torn reply.
-		ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), dexBondPostTimeout)
 		defer cancel()
-		if err := web.PostBond(ctx, host, "", bond, assetID, maintain); err != nil {
+		err := postDexBondTx(ctx, web, host, bond, assetID, maintain)
+		if err != nil {
 			dexcLog.Errorf("DCRDEX PostBond(%s) failed: %v", host, err)
-			setBondSubmit(host, bondSubmitState{Phase: "error", Error: err.Error()})
-			return
+			if errors.Is(err, context.DeadlineExceeded) {
+				// bisonw's postbond runs without a request context, so
+				// our giving up does not stop it broadcasting.
+				err = fmt.Errorf("bisonw gave no reply within %s; the bond may still broadcast. Check Pending bonds before posting again", dexBondPostTimeout)
+			}
 		}
-		setBondSubmit(host, bondSubmitState{Phase: "broadcast"})
+		services.EndDexBondPost(host, err)
 	}()
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"accepted": true})
 }
 
-// PostDcrdexBondStatusHandler reports the state of the most recent async
-// PostBond for a host (query param "host"), so the UI can surface a
-// pre-broadcast failure that bisonw does not emit as a notification.
+// PostDcrdexBondStatusHandler reports the state of the most recent bond post
+// for a host (query param "host"), so the UI can surface a pre-broadcast
+// failure that bisonw does not emit as a notification.
 func PostDcrdexBondStatusHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	host := r.URL.Query().Get("host")
-	bondSubmit.Lock()
-	s, ok := bondSubmit.m[host]
-	bondSubmit.Unlock()
-	if !ok {
-		s = bondSubmitState{Phase: "none"}
-	}
-	_ = json.NewEncoder(w).Encode(s)
+	writeJSON(w, services.DexBondPostState(r.URL.Query().Get("host")))
 }
 
 // DcrdexWSHandler is a transparent WebSocket relay between the browser and

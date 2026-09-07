@@ -527,7 +527,9 @@ export const accelerateDexOrder = async (
 // returns 202 immediately and posts the bond in the background (like bisonw's
 // postbond, which returns after broadcast); confirmation progress then arrives
 // over the notification feed, and a pre-broadcast failure is reported by
-// getDexPostBondStatus.
+// getDexPostBondStatus. One post per host at a time: while one is in flight the
+// backend answers 409 with a JSON body whose phase is "submitting" (the locked
+// case is also a 409, with a plain-text body).
 export const postDexBond = async (host: string, bond: number, assetID?: number): Promise<void> => {
   await api.post('/dcrdex/postbond', { host, bond, assetID });
 };

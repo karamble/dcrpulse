@@ -11,9 +11,7 @@ import {
   getDexBondsFeeBuffer,
   getDexConfig,
   getDexExchanges,
-  getDexPostBondStatus,
   getDexWallets,
-  postDexBond,
   type DexAsset,
   type DexBondAsset,
   type DexConfig,
@@ -25,6 +23,7 @@ import { DexServerBanner } from './DexServerBanner';
 import { DexWalletConfigForm } from './DexWalletConfigForm';
 import { fmtAmt } from './dexFormat';
 import { useDexConn, useDexRefreshOnNotes } from './DexLiveProvider';
+import { useDexBondPost } from './useDexBondPost';
 import { startVisiblePoll, useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
 
@@ -49,7 +48,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const bondPost = useDexBondPost(host);
   const [err, setErr] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(true);
   const [discoverRun, setDiscoverRun] = useState(0);
@@ -142,23 +141,15 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverConnected]);
 
-  // After submitting, the bond posts in the background, so poll until the account
-  // appears (its acctID is set once the bond broadcasts) and hand off to the
-  // trading view, or surface a pre-broadcast failure from the status endpoint.
+  // The bond posts in the background (useDexBondPost follows it), so poll until
+  // the account appears and hand off to the trading view. bisonw registers the
+  // account before it broadcasts the bond, so this fires while the post is
+  // still in flight; the account panel then adopts that in-flight state.
   useEffect(() => {
-    if (!submitting) return;
+    if (bondPost.phase !== 'submitting' && bondPost.phase !== 'broadcast') return;
     let cancelled = false;
     const check = async () => {
       try {
-        const s = await getDexPostBondStatus(host);
-        if (cancelled) return;
-        if (s.phase === 'error') {
-          setErr(s.error || 'Bond posting failed');
-          setSubmitting(false);
-          setBusy(false);
-          setConfirming(false);
-          return;
-        }
         const ex = await getDexExchanges();
         if (!cancelled && ex[host]?.acctID) onRegistered();
       } catch {
@@ -172,7 +163,7 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submitting, host]);
+  }, [bondPost.phase, host]);
 
   // Wallet types creatable for the selected bond asset (base coin or token).
   const walletDefs = useMemo<DexWalletDefinition[]>(() => {
@@ -269,18 +260,11 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
   };
 
   const post = async () => {
-    setBusy(true);
     setErr(null);
-    try {
-      await postDexBond(host, bondAtoms, assetID);
-      // The backend posts the bond in the background; the effect above polls for
-      // the broadcast (or a pre-broadcast error) and then hands off to trading.
-      setSubmitting(true);
-    } catch (e: any) {
-      setErr(apiError(e, 'Bond posting failed'));
-      setBusy(false);
-      setConfirming(false);
-    }
+    setConfirming(false);
+    // The backend posts in the background; the hook follows it to broadcast or
+    // failure and the effect above hands off once the account appears.
+    await bondPost.submit(bondAtoms, assetID);
   };
 
   // Per-asset readiness badge for the selector (rough: funded for one tier).
@@ -476,10 +460,10 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
           )}
         </div>
 
-        {err && (
+        {(err || bondPost.error) && (
           <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/30 text-sm text-destructive flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span className="break-words">{err}</span>
+            <span className="break-words">{err || bondPost.error}</span>
           </div>
         )}
 
@@ -536,10 +520,12 @@ export const DexRegister = ({ host, onRegistered }: DexRegisterProps) => {
               </span>
             </div>
 
-            {submitting ? (
+            {bondPost.phase === 'submitting' || bondPost.phase === 'broadcast' ? (
               <div className="flex items-center justify-center gap-3 rounded-lg bg-muted/10 border border-border/50 px-4 py-3 text-sm text-muted-foreground">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
-                Submitting bond to {host}. Waiting for it to broadcast...
+                {bondPost.phase === 'submitting'
+                  ? <>Submitting bond to {host}. Waiting for it to broadcast...</>
+                  : <>Bond broadcast. Waiting for {host} to register the account...</>}
               </div>
             ) : !confirming ? (
               <button

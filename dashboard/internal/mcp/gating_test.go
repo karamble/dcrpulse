@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
 )
 
 // minimalArgs builds a schema-valid argument map for a tool by filling every
@@ -271,5 +272,55 @@ func TestFundToolsRespectTheCaps(t *testing.T) {
 				t.Errorf("refused, but not by the caps - the reservation may have been dropped: %q", txt)
 			}
 		})
+	}
+}
+
+// A bond post already in flight from the browser must refuse the agent too, and
+// the refusal must hand back the reservation it took, or the agent's next post
+// dies on the daily cap instead of reaching the DEX.
+func TestDexPostBondToolRefusesWhileAPostIsInFlight(t *testing.T) {
+	const host = "inflight.mcp.test:7232"
+	const bond = int64(100000000)
+	domains := map[string]bool{}
+	for _, d := range catalogDomains() {
+		domains[d] = true
+	}
+	const id = "bond-inflight"
+	grants.set(id, GrantSpec{
+		Accounts: []uint32{0}, PerTxAtoms: bond, DailyAtoms: bond,
+		WriteScopes: []string{scopeDex, scopeDexSpend},
+	}, time.Now())
+	t.Cleanup(func() { grants.revoke(id) })
+	cs := connectTo(t, testAgent(id, "bond", domains))
+	call := func() *mcp.CallToolResult {
+		out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+			Name: "dex_post_bond", Arguments: map[string]any{"host": host, "bond": bond},
+		})
+		if err != nil {
+			t.Fatalf("unexpected transport error: %v", err)
+		}
+		return out
+	}
+
+	if !services.BeginDexBondPost(host) {
+		t.Fatal("could not seed an in-flight post")
+	}
+	out := call()
+	if !out.IsError || !strings.Contains(resultText(out), "already being posted") {
+		t.Fatalf("posted over an in-flight bond: %q", resultText(out))
+	}
+	services.EndDexBondPost(host, nil)
+
+	// The daily cap equals one bond, so only a refunded reservation lets this
+	// call reach the DEX gate, which is locked in a test process.
+	out = call()
+	if !out.IsError {
+		t.Fatal("posted a bond in a test process")
+	}
+	if txt := resultText(out); !strings.Contains(txt, dexLocked().Error()) {
+		t.Fatalf("second call refused by %q, want the DEX lock; was the reservation refunded?", txt)
+	}
+	if s := services.DexBondPostState(host); s.Phase != "error" || s.Error != "DCRDEX is locked" {
+		t.Fatalf("registry after the agent's locked attempt: %+v", s)
 	}
 }

@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -15,6 +16,7 @@ import (
 
 	"dcrpulse/internal/dexassets"
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
 	"dcrpulse/pkg/bisonw"
 
 	"github.com/decred/dcrd/dcrutil/v4"
@@ -1184,8 +1186,19 @@ var dexTools = []toolDef{
 				}
 				return nil, err
 			}
+			// One post per host at a time, shared with the dashboard's own
+			// bond route, so an agent and the browser cannot double-post.
+			if !services.BeginDexBondPost(in.Host) {
+				grants.refund(a.id, capAtoms)
+				err := fmt.Errorf("a bond is already being posted to %s", in.Host)
+				recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "error", err.Error())
+				return nil, err
+			}
 			if !rpc.DcrdexUnlocked() {
 				grants.refund(a.id, capAtoms)
+				// The browser may be watching this host; record the
+				// dashboard's wording rather than the agent's.
+				services.EndDexBondPost(in.Host, errors.New("DCRDEX is locked"))
 				err := dexLocked()
 				recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
@@ -1193,13 +1206,16 @@ var dexTools = []toolDef{
 			client, err := rpc.DcrdexWebClient()
 			if err != nil {
 				grants.refund(a.id, capAtoms)
+				services.EndDexBondPost(in.Host, err)
 				return nil, err
 			}
 			if err := client.PostBond(ctx, in.Host, "", in.Bond, bisonw.AssetDCR, in.MaintainTier); err != nil {
 				grants.refund(a.id, capAtoms)
+				services.EndDexBondPost(in.Host, err)
 				recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
 			}
+			services.EndDexBondPost(in.Host, nil)
 			recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "ok", "")
 			return map[string]bool{"ok": true}, nil
 		}),
