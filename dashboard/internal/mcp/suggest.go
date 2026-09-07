@@ -22,6 +22,10 @@ import (
 // and the tools fall back to describing their fields plainly.
 const stakingProfileTTL = 30 * time.Minute
 
+// fetchStakingProfile is the wallet read behind the hints; a test parks it to
+// stand in for a wedged wallet.
+var fetchStakingProfile = services.GetStakingProfile
+
 var profileCache struct {
 	mu   sync.Mutex
 	at   time.Time
@@ -37,7 +41,7 @@ func cachedStakingProfile() types.StakingProfile {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	profileCache.prof = services.GetStakingProfile(ctx)
+	profileCache.prof = fetchStakingProfile(ctx)
 	profileCache.at = time.Now()
 	profileCache.have = true
 	return profileCache.prof

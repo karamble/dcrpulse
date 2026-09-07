@@ -479,15 +479,36 @@ func persistedEnabled() (val bool, ok bool) {
 var (
 	serversMu sync.Mutex
 	servers   = map[string]*mcp.Server{}
+	// serversGen moves on every invalidation, so a build that was in flight
+	// when one landed does not install a server built against the old state.
+	serversGen uint64
 )
 
 func scopedServerFor(a *agent) *mcp.Server {
 	serversMu.Lock()
-	defer serversMu.Unlock()
 	if s := servers[a.id]; s != nil {
+		serversMu.Unlock()
 		return s
 	}
+	gen := serversGen
+	serversMu.Unlock()
+
+	// Built with the lock released: the staking descriptions may wait on the
+	// wallet, and block, freeze and every other agent's request need the lock.
 	s := buildServer(a)
+
+	serversMu.Lock()
+	defer serversMu.Unlock()
+	if cached := servers[a.id]; cached != nil {
+		// Another caller built it meanwhile. Listen streams attach to one
+		// server, so both callers share that one.
+		return cached
+	}
+	if serversGen != gen {
+		// An invalidation landed during the build: serve this request from
+		// it, but do not cache what may reflect the old grant or wallet.
+		return s
+	}
 	servers[a.id] = s
 	return s
 }
@@ -495,6 +516,7 @@ func scopedServerFor(a *agent) *mcp.Server {
 func invalidateAgentServer(id string) {
 	serversMu.Lock()
 	delete(servers, id)
+	serversGen++
 	serversMu.Unlock()
 	// The discarded server keeps whatever listen streams were open against it,
 	// and nothing notifies it again, so those streams would go quiet with
@@ -517,6 +539,7 @@ func invalidateAllServers() {
 	for id := range servers {
 		delete(servers, id)
 	}
+	serversGen++
 	serversMu.Unlock()
 	surface.endAllListens()
 }
