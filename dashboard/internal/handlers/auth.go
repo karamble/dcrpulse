@@ -46,6 +46,8 @@ func AuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !auth.Verify(req.Password) {
+		// The trace an operator reads back after a burst of guesses.
+		settLog.Warnf("Login refused for %s: incorrect password", r.RemoteAddr)
 		http.Error(w, "incorrect password", http.StatusUnauthorized)
 		return
 	}

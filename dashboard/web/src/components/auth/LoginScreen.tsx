@@ -21,10 +21,15 @@ export function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
       setPassword('');
       onSuccess();
     } catch (err: any) {
+      // The login limiter is shared by everyone who can reach the port, so a
+      // 429 the operator did not cause means someone else is trying passwords.
+      const status = err?.response?.status;
       setError(
-        err?.response?.status === 401
+        status === 401
           ? 'Incorrect password.'
-          : err?.message || 'Login failed.',
+          : status === 429
+            ? 'Too many login attempts on this dashboard right now. If they are not yours, something on your network is trying passwords. Wait a moment and try again.'
+            : err?.message || 'Login failed.',
       );
       setBusy(false);
     }

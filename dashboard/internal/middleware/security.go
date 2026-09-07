@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	dcrlog "dcrpulse/internal/log"
 )
 
 // buildCSP assembles the document Content-Security-Policy. Any sha256 hashes in
@@ -240,6 +242,9 @@ func RateLimit(name string, every time.Duration, burst int) func(http.Handler) h
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !lim.Allow() {
+				// A refusal the operator did not cause is someone else at
+				// the port; leave a trace of who.
+				dcrlog.HTTP.Warnf("Rate limit %q refused %s", name, r.RemoteAddr)
 				http.Error(w, "rate limit exceeded, retry later", http.StatusTooManyRequests)
 				return
 			}
