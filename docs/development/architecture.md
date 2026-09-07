@@ -820,8 +820,9 @@ COPY --from=builder /go/bin/dcrd /usr/local/bin/
 
 **Optional app password**: A single-password gate (`internal/auth`) can be
 enabled to protect the whole API and UI behind a signed, HttpOnly session cookie.
-It is off by default and fails open if its config cannot load, so a broken config
-never locks the user out.
+It is off by default. If its persisted state exists but cannot be read, the gate
+locks the whole API until the config is repaired and the dashboard restarted,
+since it cannot tell whether a password was set; an absent config leaves it off.
 
 **Request hardening** (`internal/middleware`):
 - `SecurityHeaders` sets a strict Content-Security-Policy plus

@@ -21,10 +21,11 @@ type GlobalCfg struct {
 
 // LoadGlobalCfg reads /dashboard-data/config.json. Absent file → empty doc.
 func LoadGlobalCfg() (*GlobalCfg, error) {
-	return loadGlobalCfgAt(GlobalCfgPath())
+	return LoadGlobalCfgAt(GlobalCfgPath())
 }
 
-func loadGlobalCfgAt(path string) (*GlobalCfg, error) {
+// LoadGlobalCfgAt reads the global config document at path.
+func LoadGlobalCfgAt(path string) (*GlobalCfg, error) {
 	raw, err := readRawJSON(path)
 	if err != nil {
 		return nil, err

@@ -11,16 +11,18 @@ import (
 	"dcrpulse/internal/auth"
 )
 
-// AuthStatusHandler reports the app-password state. Unauthenticated and
-// boolean-only; the frontend uses it to decide between the login screen, the
-// first-run setup prompt, and the app.
+// AuthStatusHandler reports the app-password state. Unauthenticated; the
+// frontend uses it to decide between the login screen, the first-run setup
+// prompt, the locked screen, and the app.
 func AuthStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{
+	json.NewEncoder(w).Encode(map[string]any{
 		"enabled":        auth.Enabled(),
 		"configured":     auth.Configured(),
 		"authenticated":  auth.Authenticated(r),
 		"setupDismissed": auth.SetupDismissed(),
+		"locked":         auth.Locked(),
+		"lockReason":     auth.LockReason(),
 	})
 }
 

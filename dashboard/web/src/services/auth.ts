@@ -9,6 +9,10 @@ export interface AuthStatus {
   configured: boolean;
   authenticated: boolean;
   setupDismissed: boolean;
+  // The persisted auth state could not be read; every API route is refused
+  // until the config is repaired and the dashboard restarted.
+  locked: boolean;
+  lockReason?: string;
 }
 
 export const getAuthStatus = async (): Promise<AuthStatus> => {

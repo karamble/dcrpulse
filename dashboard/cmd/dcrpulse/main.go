@@ -218,9 +218,10 @@ func main() {
 	// the public dcrtime server commits their digests to the chain.
 	timestamp.StartWorker(context.Background())
 
-	// Load the optional dashboard app-password gate (off unless configured).
+	// Load the optional dashboard app-password gate (off unless configured). An
+	// unreadable config locks the API rather than leaving it open.
 	if err := auth.Init(); err != nil {
-		dcrpLog.Warnf("could not load app-password config (auth disabled): %v", err)
+		dcrpLog.Errorf("dashboard locked: app-password config could not be loaded: %v", err)
 	}
 
 	// Setup router
@@ -746,7 +747,7 @@ func main() {
 	// interface the port reaches on the host is Docker's decision, so compose
 	// hands the value over rather than the process trying to observe it.
 	if bind := strings.TrimSpace(os.Getenv("DASHBOARD_HOST_BIND")); bind != "" &&
-		bind != "127.0.0.1" && bind != "localhost" && bind != "::1" && !auth.Enabled() {
+		bind != "127.0.0.1" && bind != "localhost" && bind != "::1" && !auth.Enabled() && !auth.Locked() {
 		dcrpLog.Warnf("the dashboard is published on %s with no app password set; "+
 			"anyone who can reach this port can use the wallet API", bind)
 	}

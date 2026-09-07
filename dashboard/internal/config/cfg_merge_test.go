@@ -20,11 +20,11 @@ func TestGlobalCfgSaveKeepsAnotherWritersKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 
 	// Both writers load before either saves, which is the race window.
-	auth, err := loadGlobalCfgAt(path)
+	auth, err := LoadGlobalCfgAt(path)
 	if err != nil {
 		t.Fatalf("load auth: %v", err)
 	}
-	theme, err := loadGlobalCfgAt(path)
+	theme, err := LoadGlobalCfgAt(path)
 	if err != nil {
 		t.Fatalf("load theme: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestGlobalCfgSaveKeepsAnotherWritersKey(t *testing.T) {
 		t.Fatalf("save theme: %v", err)
 	}
 
-	reread, err := loadGlobalCfgAt(path)
+	reread, err := LoadGlobalCfgAt(path)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}

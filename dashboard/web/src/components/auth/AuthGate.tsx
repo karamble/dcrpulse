@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react';
 import { getAuthStatus, type AuthStatus } from '../../services/auth';
 import { setUnauthorizedHandler } from '../../services/api';
 import { LoginScreen } from './LoginScreen';
+import { LockedScreen } from './LockedScreen';
 import { AppPasswordFirstRun } from './AppPasswordFirstRun';
 
 interface AuthContextValue {
@@ -47,6 +48,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         configured: false,
         authenticated: false,
         setupDismissed: true,
+        locked: false,
       });
     } finally {
       setLoading(false);
@@ -70,6 +72,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
+  }
+
+  if (status?.locked) {
+    return <LockedScreen reason={status.lockReason} />;
   }
 
   if (status?.enabled && !status.authenticated) {
