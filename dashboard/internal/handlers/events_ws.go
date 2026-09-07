@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"dcrpulse/internal/middleware"
-
 	"github.com/decred/slog"
 	"github.com/gorilla/websocket"
 )
@@ -21,12 +19,8 @@ import (
 // quiet stream emits nothing for hours, and only traffic makes the browser
 // notice the connection died.
 func streamEventsWS[T any](w http.ResponseWriter, r *http.Request, log slog.Logger, label string, replay []T, subscribe func() (<-chan T, func())) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Errorf("Failed to upgrade %s WebSocket: %v", label, err)
+	conn, ok := upgradeWS(w, r, log, label, wsBrowserMsgLimit)
+	if !ok {
 		return
 	}
 	defer conn.Close()

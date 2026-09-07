@@ -188,6 +188,9 @@ func (c *BrclientdWSClient) dialAndServe(ctx context.Context) error {
 		pingInterval = 20 * time.Second
 		readDeadline = 60 * time.Second
 	)
+	// brclientd relays Bison Relay payloads, so upstream's payload maximum is
+	// the bound; without one gorilla buffers a frame of any size.
+	conn.SetReadLimit(BRMaxPayloadBytes)
 	_ = conn.SetReadDeadline(time.Now().Add(readDeadline))
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(readDeadline))

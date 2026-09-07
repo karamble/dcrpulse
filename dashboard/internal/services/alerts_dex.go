@@ -7,14 +7,11 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"time"
 
 	"dcrpulse/internal/alerts"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/pkg/bisonw"
-
-	"github.com/gorilla/websocket"
 )
 
 // StartDexWatcher owns a backend bisonw /ws subscription for trade events
@@ -61,9 +58,7 @@ func StartDexWatcher(ctx context.Context) {
 }
 
 func watchDexNotifications(ctx context.Context, client *bisonw.Client) error {
-	tlsConfig, wsURL, basicAuth := client.WSDialInfo()
-	dialer := &websocket.Dialer{TLSClientConfig: tlsConfig, HandshakeTimeout: 15 * time.Second}
-	conn, _, err := dialer.Dial(wsURL, http.Header{"Authorization": {basicAuth}})
+	conn, _, err := rpc.DialDcrdexWS(ctx, client)
 	if err != nil {
 		return err
 	}

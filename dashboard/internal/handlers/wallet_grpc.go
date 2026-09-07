@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 
 	"github.com/gorilla/websocket"
@@ -19,12 +18,8 @@ import (
 // snapshot update as the RpcSync supervisor + user-initiated rescans feed
 // the snapshot. Replaces the previous heuristic polling + log-parsing path.
 func StreamRescanGrpcHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		wlltLog.Errorf("Failed to upgrade to WebSocket: %v", err)
+	conn, ok := upgradeWS(w, r, wlltLog, "wallet rescan", wsBrowserMsgLimit)
+	if !ok {
 		return
 	}
 	defer conn.Close()

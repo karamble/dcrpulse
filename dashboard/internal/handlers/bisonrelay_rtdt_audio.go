@@ -13,15 +13,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 )
-
-var rtdtAudioBrowserUpgrader = websocket.Upgrader{
-	ReadBufferSize:  4096,
-	WriteBufferSize: 4096,
-	CheckOrigin:     middleware.SameOriginWS,
-}
 
 // BisonrelayRTDTAudioHandler bridges a browser WebSocket to brclientd's
 // /rtdt/sessions/{rv}/audio. Binary frames are forwarded blindly in
@@ -63,12 +56,12 @@ func BisonrelayRTDTAudioHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "brclientd dial: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	upstream.SetReadLimit(rpc.BRRTDTMaxMessageBytes)
 	defer upstream.Close()
 	brelLog.Infof("RTDT audio: upstream WS open rv=%s", rv)
 
-	browser, err := rtdtAudioBrowserUpgrader.Upgrade(w, r, nil)
-	if err != nil {
-		brelLog.Errorf("RTDT audio: browser upgrade rv=%s err=%v", rv, err)
+	browser, ok := upgradeWS(w, r, brelLog, "RTDT audio browser", rpc.BRRTDTMaxMessageBytes)
+	if !ok {
 		return
 	}
 	defer browser.Close()

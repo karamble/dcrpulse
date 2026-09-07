@@ -5,6 +5,8 @@
 package rpc
 
 import (
+	brrpc "github.com/companyzero/bisonrelay/rpc"
+
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -1436,16 +1438,33 @@ func readBrclientdBody(resp *http.Response, path brPath, limit int64) ([]byte, e
 	return body, nil
 }
 
-const (
+// Bison Relay ceilings come from upstream rather than being restated here, so
+// a protocol bump follows at compile time instead of drifting. brclientd's HTTP
+// and WebSocket API carries message PAYLOADS, so the payload maximum is the one
+// that binds.
+var (
+	// BRMaxPayloadBytes is the largest payload Bison Relay will carry in one
+	// message: upstream rpc.MaxPayloadSizeForVersion, 1 MiB on the current
+	// protocol version and 10 MiB on the next.
+	BRMaxPayloadBytes = int64(brrpc.MaxPayloadSizeForVersion(brrpc.MaxMsgSizeV1))
+
+	// BRRTDTMaxMessageBytes is the largest full RTDT message: upstream
+	// rpc.RTDTMaxMessageSize, which upstream itself uses to size every RTDT
+	// buffer on both the client and the server.
+	BRRTDTMaxMessageBytes = int64(brrpc.RTDTMaxMessageSize)
+
 	// brclientdControlRespLimit bounds the control endpoints, which all return
-	// small JSON summaries.
-	brclientdControlRespLimit = 1 << 20 // 1 MiB
+	// small JSON summaries. Equal to upstream's payload maximum on the current
+	// protocol version.
+	brclientdControlRespLimit = int64(brrpc.MaxPayloadSizeForVersion(brrpc.MaxMsgSizeV0))
 
 	// brclientdPageRespLimit bounds a page fetch. Bison Relay only fulfils a
-	// resource reply that fits one message payload, 1 MiB on the current
-	// protocol version and 10 MiB on the next, so this cannot reject a page a
-	// peer could legitimately serve.
-	brclientdPageRespLimit = 16 << 20 // 16 MiB
+	// resource reply that fits one message payload, but the reply carries that
+	// payload base64-encoded inside JSON, which inflates it by about 4/3 before
+	// escaping. The ceiling is therefore the payload maximum with headroom, not
+	// the payload maximum itself, so it cannot reject a page a peer could
+	// legitimately serve.
+	brclientdPageRespLimit = BRMaxPayloadBytes * 2
 )
 
 // brclientdDoPostJSONRaw issues the POST with a caller-supplied client so the

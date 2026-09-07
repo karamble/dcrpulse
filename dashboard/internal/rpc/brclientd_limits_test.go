@@ -5,6 +5,8 @@
 package rpc
 
 import (
+	brrpc "github.com/companyzero/bisonrelay/rpc"
+
 	"bytes"
 	"context"
 	"io"
@@ -124,13 +126,22 @@ func (s schemeRewriter) RoundTrip(r *http.Request) (*http.Response, error) {
 // The two named limits must stay distinct and in the right order, since the
 // whole point is that a page gets more headroom than a control call.
 func TestBrclientdLimits(t *testing.T) {
-	if brclientdControlRespLimit != 1<<20 {
-		t.Errorf("control limit = %d, want 1 MiB", brclientdControlRespLimit)
+	// The limits are upstream's, not numbers restated here, so a protocol bump
+	// follows at compile time. Asserted as relationships for the same reason.
+	if want := int64(brrpc.MaxPayloadSizeForVersion(brrpc.MaxMsgSizeV0)); brclientdControlRespLimit != want {
+		t.Errorf("control limit = %d, want upstream V0 payload max %d", brclientdControlRespLimit, want)
 	}
-	// 16 MiB clears the protocol's 1 MiB reply ceiling, and the 10 MiB one a
-	// future MaxMsgSizeV1 server would allow, with room for JSON escaping.
-	if brclientdPageRespLimit != 16<<20 {
-		t.Errorf("page limit = %d, want 16 MiB", brclientdPageRespLimit)
+	// A page reply is the payload base64-encoded inside JSON, so the ceiling
+	// must exceed the payload maximum or it would reject a page a peer could
+	// legitimately serve.
+	if brclientdPageRespLimit <= BRMaxPayloadBytes {
+		t.Errorf("page limit %d does not clear the payload max %d", brclientdPageRespLimit, BRMaxPayloadBytes)
+	}
+	if want := int64(brrpc.MaxPayloadSizeForVersion(brrpc.MaxMsgSizeV1)); BRMaxPayloadBytes != want {
+		t.Errorf("payload max = %d, want upstream V1 %d", BRMaxPayloadBytes, want)
+	}
+	if BRRTDTMaxMessageBytes != int64(brrpc.RTDTMaxMessageSize) {
+		t.Errorf("RTDT bound = %d, want upstream %d", BRRTDTMaxMessageBytes, brrpc.RTDTMaxMessageSize)
 	}
 	if brclientdPageRespLimit <= brclientdControlRespLimit {
 		t.Error("the page limit must exceed the control limit")

@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 	"dcrpulse/internal/utils"
@@ -355,12 +354,8 @@ func LightningGraphSearchHandler(w http.ResponseWriter, r *http.Request) {
 // SubscribeChannelEvents stream. Origin-checked via the existing
 // middleware.SameOriginWS upgrader.
 func LightningChannelEventsHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		lghtLog.Errorf("LightningChannelEventsHandler upgrade: %v", err)
+	conn, ok := upgradeWS(w, r, lghtLog, "lightning channel events", wsBrowserMsgLimit)
+	if !ok {
 		return
 	}
 	defer conn.Close()
@@ -482,12 +477,8 @@ func LightningDecodePayReqHandler(w http.ResponseWriter, r *http.Request) {
 // snapshots until the server closes. On non-transport errors a final
 // JSON frame `{"error": "..."}` is written before the socket closes.
 func LightningSendPaymentHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		lghtLog.Errorf("LightningSendPaymentHandler upgrade: %v", err)
+	conn, ok := upgradeWS(w, r, lghtLog, "lightning send payment", wsBrowserMsgLimit)
+	if !ok {
 		return
 	}
 	defer conn.Close()
@@ -599,12 +590,8 @@ func LightningInvoicesHandler(w http.ResponseWriter, r *http.Request) {
 // SubscribeInvoices snapshots so the Receive tab updates live as
 // invoices settle, expire, or are canceled.
 func LightningInvoiceEventsHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: middleware.SameOriginWS,
-	}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		lghtLog.Errorf("LightningInvoiceEventsHandler upgrade: %v", err)
+	conn, ok := upgradeWS(w, r, lghtLog, "lightning invoice events", wsBrowserMsgLimit)
+	if !ok {
 		return
 	}
 	defer conn.Close()

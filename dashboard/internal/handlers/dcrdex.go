@@ -20,7 +20,6 @@ import (
 
 	"dcrpulse/internal/config"
 	"dcrpulse/internal/dexassets"
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/utils"
@@ -1385,18 +1384,13 @@ func DcrdexNotifyWSHandler(w http.ResponseWriter, r *http.Request) {
 // relayBisonwWS upgrades the browser connection and pipes it bidirectionally to
 // the given bisonw client's /ws endpoint, supplying the pinned TLS + auth.
 func relayBisonwWS(w http.ResponseWriter, r *http.Request, client *bisonw.Client) {
-	tlsConfig, wsURL, basicAuth := client.WSDialInfo()
-
-	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
-	front, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		dexcLog.Errorf("dcrdex ws upgrade: %v", err)
+	front, ok := upgradeWS(w, r, dexcLog, "dcrdex", wsDexMsgLimit)
+	if !ok {
 		return
 	}
 	defer front.Close()
 
-	dialer := &websocket.Dialer{TLSClientConfig: tlsConfig, HandshakeTimeout: 15 * time.Second}
-	up, resp, err := dialer.Dial(wsURL, http.Header{"Authorization": {basicAuth}})
+	up, resp, err := rpc.DialDcrdexWS(r.Context(), client)
 	if err != nil {
 		msg := "dcrdex ws: " + err.Error()
 		if resp != nil {

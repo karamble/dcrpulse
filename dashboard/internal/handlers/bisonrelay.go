@@ -25,7 +25,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
-	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/utils"
@@ -88,10 +87,8 @@ func BisonrelaySetAvatarHandler(w http.ResponseWriter, r *http.Request) {
 // GCM events from brclientd to the browser. Each frame is a JSON object
 // with {type, payload}; payload is the raw event JSON.
 func BisonrelayEventsHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{CheckOrigin: middleware.SameOriginWS}
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		brelLog.Errorf("BisonrelayEventsHandler upgrade: %v", err)
+	conn, ok := upgradeWS(w, r, brelLog, "bison relay events", rpc.BRMaxPayloadBytes)
+	if !ok {
 		return
 	}
 	defer conn.Close()

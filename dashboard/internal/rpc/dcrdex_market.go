@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -62,9 +61,7 @@ func dexMarketSnapshot(ctx context.Context, host string, base, quote uint32, dur
 	if err != nil {
 		return nil, nil, err
 	}
-	tlsConfig, wsURL, basicAuth := c.WSDialInfo()
-	dialer := &websocket.Dialer{TLSClientConfig: tlsConfig, HandshakeTimeout: 15 * time.Second}
-	conn, resp, err := dialer.DialContext(ctx, wsURL, http.Header{"Authorization": {basicAuth}})
+	conn, resp, err := DialDcrdexWS(ctx, c)
 	if err != nil {
 		if resp != nil {
 			return nil, nil, fmt.Errorf("dcrdex ws: %w (http %d)", err, resp.StatusCode)
