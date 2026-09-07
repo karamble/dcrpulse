@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Shield, AlertCircle, CheckCircle2, RefreshCw, Loader2, Info } from 'lucide-react';
 import {
   TorSettings,
@@ -40,6 +40,17 @@ export const TorSection = () => {
   const [control, setControl] = useState<TorControl | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
+  // Everything shown here changes on the order of minutes, except right after
+  // a change: then the section polls quickly until every daemon has picked the
+  // new revision up, and for half a minute after a save or a new identity.
+  const [burst, setBurst] = useState(false);
+  const burstTimer = useRef<number | undefined>(undefined);
+  const startBurst = useCallback(() => {
+    window.clearTimeout(burstTimer.current);
+    setBurst(true);
+    burstTimer.current = window.setTimeout(() => setBurst(false), 30000);
+  }, []);
+  useEffect(() => () => window.clearTimeout(burstTimer.current), []);
 
   const refresh = useCallback(async () => {
     try {
@@ -56,7 +67,10 @@ export const TorSection = () => {
     getTorSettings().then(setSettings).catch(() => {});
   }, []);
 
-  useVisiblePoll(refresh, 5000);
+  const rev = settings ? String(settings.rev) : '';
+  const applying =
+    !!settings && settings.enabled && (status?.daemons.some((d) => d.running && d.torRev !== rev) ?? false);
+  useVisiblePoll(refresh, applying || burst ? 3000 : 15000);
 
   const apply = async (patch: Partial<TorSettings>) => {
     if (!settings) return;
@@ -68,6 +82,7 @@ export const TorSection = () => {
       const saved = await saveTorSettings(next);
       setSettings(saved);
       setFeedback({ kind: 'info', text: 'Saved. Applying to the daemons...' });
+      startBurst();
       refresh();
     } catch {
       setFeedback({ kind: 'error', text: 'Failed to save Tor settings' });
@@ -82,6 +97,7 @@ export const TorSection = () => {
     try {
       await torNewIdentity();
       setFeedback({ kind: 'info', text: 'Requested a new Tor identity' });
+      startBurst();
       refresh();
     } catch {
       setFeedback({ kind: 'error', text: 'Failed to request a new identity (is Tor enabled?)' });
@@ -93,10 +109,6 @@ export const TorSection = () => {
   if (!settings) {
     return <div className="text-muted-foreground">Loading...</div>;
   }
-
-  const rev = String(settings.rev);
-  const applying =
-    settings.enabled && (status?.daemons.some((d) => d.running && d.torRev !== rev) ?? false);
 
   const daemonBadge = (d: TorStatus['daemons'][number]) => {
     if (!d.running) {

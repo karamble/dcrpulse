@@ -100,7 +100,7 @@ func onionHostname(hsDir string) string {
 
 // TorDaemonStates reads each supervisor's control-state file for its live Tor
 // routing flag.
-func TorDaemonStates() []types.TorDaemonState {
+func TorDaemonStates(s types.TorSettings) []types.TorDaemonState {
 	type stateFile struct {
 		PID    int    `json:"pid"`
 		Tor    bool   `json:"tor"`
@@ -129,7 +129,6 @@ func TorDaemonStates() []types.TorDaemonState {
 	// The dashboard's own external calls (rate oracle, Politeia, VSP, BR
 	// seeder, invite bot) switch per request, so its entry tracks the
 	// toggle directly instead of a supervisor state file.
-	s := ReadTorSettings()
 	out = append(out, types.TorDaemonState{
 		Name:    "dashboard",
 		Running: true,
@@ -141,11 +140,12 @@ func TorDaemonStates() []types.TorDaemonState {
 
 // TorStatusSnapshot aggregates the Tor picture for the settings UI.
 func TorStatusSnapshot() types.TorStatus {
+	s := ReadTorSettings()
 	return types.TorStatus{
-		Settings:       ReadTorSettings(),
+		Settings:       s,
 		ProxyReachable: TorProxyReachable(),
 		OnionAddress:   onionHostname("dcrd-hs"),
 		LnOnionAddress: onionHostname("dcrlnd-hs"),
-		Daemons:        TorDaemonStates(),
+		Daemons:        TorDaemonStates(s),
 	}
 }
