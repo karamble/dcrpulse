@@ -247,3 +247,30 @@ func RateLimit(name string, every time.Duration, burst int) func(http.Handler) h
 		})
 	}
 }
+
+// Allowance is a named bucket that a browser route and the MCP tool for the
+// same job share, so the two surfaces draw one allowance between them and its
+// shape is written once.
+type Allowance struct {
+	Name  string
+	Every time.Duration
+	Burst int
+}
+
+func (a Allowance) Limiter() *rate.Limiter { return Limiter(a.Name, a.Every, a.Burst) }
+
+func (a Allowance) Middleware() func(http.Handler) http.Handler {
+	return RateLimit(a.Name, a.Every, a.Burst)
+}
+
+// The shared allowances. Each job is minutes long, leans on a daemon or a
+// third-party service, or (Unlock) costs a daemon a key derivation per call.
+var (
+	TreasuryScan     = Allowance{"treasury-scan", 60 * time.Second, 1}
+	DexRescan        = Allowance{"dex-rescan", 60 * time.Second, 1}
+	DexDiscover      = Allowance{"dex-discover", 10 * time.Second, 1}
+	VSPSync          = Allowance{"vsp-sync", 30 * time.Second, 1}
+	VSPUnmanaged     = Allowance{"vsp-unmanaged", 30 * time.Second, 1}
+	TimestampRefresh = Allowance{"timestamp-refresh", 30 * time.Second, 1}
+	Unlock           = Allowance{"unlock", time.Second, 5}
+)

@@ -251,8 +251,12 @@ func main() {
 
 	// DCRDEX routes
 	api.HandleFunc("/dcrdex/status", handlers.GetDcrdexStatusHandler).Methods("GET")
-	api.HandleFunc("/dcrdex/init", handlers.InitDcrdexHandler).Methods("POST")
-	api.HandleFunc("/dcrdex/unlock", handlers.UnlockDcrdexHandler).Methods("POST")
+	api.Handle("/dcrdex/init",
+		middleware.Unlock.Middleware()(
+			http.HandlerFunc(handlers.InitDcrdexHandler))).Methods("POST")
+	api.Handle("/dcrdex/unlock",
+		middleware.Unlock.Middleware()(
+			http.HandlerFunc(handlers.UnlockDcrdexHandler))).Methods("POST")
 	api.HandleFunc("/dcrdex/lock", handlers.LockDcrdexHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet", handlers.CreateDcrdexWalletHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet", handlers.GetDcrdexWalletHandler).Methods("GET")
@@ -287,7 +291,9 @@ func main() {
 	api.HandleFunc("/dcrdex/wallet/open", handlers.OpenDcrdexWalletHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/close", handlers.CloseDcrdexWalletHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/toggle", handlers.ToggleDcrdexWalletHandler).Methods("POST")
-	api.HandleFunc("/dcrdex/wallet/rescan", handlers.RescanDcrdexWalletHandler).Methods("POST")
+	api.Handle("/dcrdex/wallet/rescan",
+		middleware.DexRescan.Middleware()(
+			http.HandlerFunc(handlers.RescanDcrdexWalletHandler))).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/new-address", handlers.NewDexDepositAddressHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/wallet/address-used", handlers.DexAddressUsedHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/wallet/peers", handlers.GetDcrdexWalletPeersHandler).Methods("GET")
@@ -297,7 +303,9 @@ func main() {
 	api.HandleFunc("/dcrdex/rates", handlers.GetDcrdexRatesHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/seed", handlers.ExportDcrdexSeedHandler).Methods("POST")
 	api.HandleFunc("/dcrdex/seed/backed-up", handlers.MarkDcrdexSeedBackedUpHandler).Methods("POST")
-	api.HandleFunc("/dcrdex/discover-account", handlers.DiscoverDcrdexAccountHandler).Methods("POST")
+	api.Handle("/dcrdex/discover-account",
+		middleware.DexDiscover.Middleware()(
+			http.HandlerFunc(handlers.DiscoverDcrdexAccountHandler))).Methods("POST")
 	api.HandleFunc("/dcrdex/mm/status", handlers.GetDcrdexMMStatusHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/mm/marketreport", handlers.GetDcrdexMMMarketReportHandler).Methods("GET")
 	api.HandleFunc("/dcrdex/mm/runlogs", handlers.GetDcrdexMMRunLogsHandler).Methods("GET")
@@ -340,7 +348,9 @@ func main() {
 	api.HandleFunc("/wallet/decode-seed", handlers.DecodeSeedHandler).Methods("POST")
 	api.HandleFunc("/wallet/seed-words", handlers.SeedWordsHandler).Methods("GET")
 	api.HandleFunc("/wallet/create", handlers.CreateWalletHandler).Methods("POST")
-	api.HandleFunc("/wallet/open", handlers.OpenWalletHandler).Methods("POST")
+	api.Handle("/wallet/open",
+		middleware.Unlock.Middleware()(
+			http.HandlerFunc(handlers.OpenWalletHandler))).Methods("POST")
 	api.HandleFunc("/wallet/status", handlers.GetWalletStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/dashboard", handlers.GetWalletDashboardHandler).Methods("GET")
 	api.HandleFunc("/wallet/transactions", handlers.ListTransactionsHandler).Methods("GET")
@@ -365,8 +375,12 @@ func main() {
 	api.HandleFunc("/wallet/staking/purchase/status", handlers.PurchaseStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/staking/purchase/events", handlers.StreamPurchaseEventsHandler).Methods("GET")
 	api.HandleFunc("/wallet/staking/tickets", handlers.ListTicketsHandler).Methods("GET")
-	api.HandleFunc("/wallet/staking/sync-failed-vsp-tickets", handlers.SyncFailedVSPTicketsHandler).Methods("POST")
-	api.HandleFunc("/wallet/staking/process-unmanaged-vsp-tickets", handlers.ProcessUnmanagedVSPTicketsHandler).Methods("POST")
+	api.Handle("/wallet/staking/sync-failed-vsp-tickets",
+		middleware.VSPSync.Middleware()(
+			http.HandlerFunc(handlers.SyncFailedVSPTicketsHandler))).Methods("POST")
+	api.Handle("/wallet/staking/process-unmanaged-vsp-tickets",
+		middleware.VSPUnmanaged.Middleware()(
+			http.HandlerFunc(handlers.ProcessUnmanagedVSPTicketsHandler))).Methods("POST")
 	api.HandleFunc("/wallet/staking/autobuyer/status", handlers.AutobuyerStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/staking/autobuyer/settings", handlers.GetAutobuyerSettingsHandler).Methods("GET")
 	api.HandleFunc("/wallet/staking/autobuyer/settings", handlers.SaveAutobuyerSettingsHandler).Methods("POST")
@@ -410,7 +424,9 @@ func main() {
 	api.HandleFunc("/timestamp/records/{digest}/proof", handlers.TimestampProofHandler).Methods("GET")
 	api.HandleFunc("/timestamp/verify", handlers.VerifyTimestampHandler).Methods("POST")
 	api.HandleFunc("/timestamp/validate", handlers.ValidateTimestampHandler).Methods("POST")
-	api.HandleFunc("/timestamp/refresh", handlers.RefreshTimestampsHandler).Methods("POST")
+	api.Handle("/timestamp/refresh",
+		middleware.TimestampRefresh.Middleware()(
+			http.HandlerFunc(handlers.RefreshTimestampsHandler))).Methods("POST")
 	api.HandleFunc("/timestamp/status", handlers.TimestampStatusHandler).Methods("GET")
 	api.HandleFunc("/timestamp/export", handlers.ExportTimestampsHandler).Methods("GET")
 	api.HandleFunc("/tor", handlers.GetTorHandler).Methods("GET")
@@ -438,7 +454,9 @@ func main() {
 	api.HandleFunc("/wallet/governance/proposals/{token}/vote-eligibility", handlers.PrepareProposalVoteHandler).Methods("POST")
 	api.HandleFunc("/br/version", handlers.BisonrelayVersionHandler).Methods("GET")
 	api.HandleFunc("/br/status", handlers.BisonrelayStatusHandler).Methods("GET")
-	api.HandleFunc("/br/setup", handlers.BisonrelaySetupHandler).Methods("POST")
+	api.Handle("/br/setup",
+		middleware.Unlock.Middleware()(
+			http.HandlerFunc(handlers.BisonrelaySetupHandler))).Methods("POST")
 	api.HandleFunc("/br/backup", handlers.BisonrelayBackupHandler).Methods("GET")
 	api.HandleFunc("/br/backup/prepare", handlers.BisonrelayBackupPrepareHandler).Methods("POST")
 	api.HandleFunc("/br/backup/status", handlers.BisonrelayBackupStatusHandler).Methods("GET")
@@ -581,7 +599,9 @@ func main() {
 	api.Handle("/br/mcp/spend", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayMCPSpendHandler))).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
-	api.HandleFunc("/wallet/ln/unlock", handlers.LightningUnlockHandler).Methods("POST")
+	api.Handle("/wallet/ln/unlock",
+		middleware.Unlock.Middleware()(
+			http.HandlerFunc(handlers.LightningUnlockHandler))).Methods("POST")
 	api.HandleFunc("/wallet/ln/info", handlers.LightningInfoHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/balance", handlers.LightningBalanceHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/activity", handlers.LightningActivityHandler).Methods("GET")
@@ -668,7 +688,7 @@ func main() {
 	api.HandleFunc("/treasury/info", handlers.GetTreasuryInfoHandler).Methods("GET")
 	api.HandleFunc("/treasury/balance-history", handlers.GetTreasuryBalanceHistoryHandler).Methods("GET")
 	api.Handle("/treasury/scan-history",
-		middleware.RateLimit("treasury-scan", 60*time.Second, 1)(
+		middleware.TreasuryScan.Middleware()(
 			http.HandlerFunc(handlers.TriggerTSpendScanHandler))).Methods("POST")
 	api.HandleFunc("/treasury/scan-progress", handlers.GetTSpendScanProgressHandler).Methods("GET")
 	api.HandleFunc("/treasury/scan-results", handlers.GetTSpendScanResultsHandler).Methods("GET")

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"dcrpulse/internal/dexassets"
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 	"dcrpulse/pkg/bisonw"
@@ -975,11 +976,14 @@ var dexTools = []toolDef{
 			return map[string]bool{"ok": true}, nil
 		}),
 	agentTool("dex", "dex_wallet_rescan",
-		"Trigger a rescan of a DEX wallet by asset id. Requires a spend grant with DEX trading enabled.",
+		"Trigger a rescan of a DEX wallet by asset id. Requires a spend grant with DEX trading enabled. One start per minute, shared with the dashboard.",
 		func(ctx context.Context, a *agent, in dexRescanWalletInput) (any, error) {
 			target := fmt.Sprintf("asset=%d", in.AssetID)
 			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
 				recordSpend(a, "dex_wallet_rescan", 0, 0, target, "denied", err.Error())
+				return nil, err
+			}
+			if err := allow(middleware.DexRescan); err != nil {
 				return nil, err
 			}
 			client, err := rpc.DcrdexClient()
@@ -1030,10 +1034,13 @@ var dexTools = []toolDef{
 			return map[string]bool{"ok": true}, nil
 		}),
 	agentTool("dex", "dex_discover_account",
-		"Re-discover the account on a DEX server (after a seed restore) and report whether it is already paid. Requires a spend grant with DEX trading enabled and the DEX unlocked.",
+		"Re-discover the account on a DEX server (after a seed restore) and report whether it is already paid. Requires a spend grant with DEX trading enabled and the DEX unlocked. Limited to one call per ten seconds, shared with the dashboard.",
 		func(ctx context.Context, a *agent, in dexHostInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
 				recordSpend(a, "dex_discover_account", 0, 0, in.Host, "denied", err.Error())
+				return nil, err
+			}
+			if err := allow(middleware.DexDiscover); err != nil {
 				return nil, err
 			}
 			if !rpc.DcrdexUnlocked() {

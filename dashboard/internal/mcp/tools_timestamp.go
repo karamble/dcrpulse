@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/timestamp"
 )
@@ -322,10 +323,13 @@ var timestampTools = []toolDef{
 			return rec, nil
 		}),
 	agentTool("timestamp", "timestamp_refresh",
-		"Trigger an immediate dcrtime anchor poll, advancing not-yet-anchored records, then return the refreshed archive. Requires a grant with timestamp write enabled.",
+		"Trigger an immediate dcrtime anchor poll, advancing not-yet-anchored records, then return the refreshed archive. Requires a grant with timestamp write enabled. One poll per 30 seconds, shared with the dashboard.",
 		func(ctx context.Context, a *agent, _ emptyInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeTimestamp, time.Now()); err != nil {
 				recordSpend(a, "timestamp_refresh", 0, 0, "", "denied", err.Error())
+				return nil, err
+			}
+			if err := allow(middleware.TimestampRefresh); err != nil {
 				return nil, err
 			}
 			timestamp.RefreshAnchors(ctx)

@@ -6,8 +6,6 @@ package mcp
 
 import (
 	"context"
-	"errors"
-	"time"
 
 	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
@@ -40,10 +38,8 @@ var treasuryTools = []toolDef{
 	readTool("treasury", "treasury_scan_start",
 		"Start a local historical blockchain scan for TSpends. This reads the chain only; it spends no funds. One start per minute, shared with the dashboard.",
 		func(ctx context.Context, in scanStartInput) (any, error) {
-			// The same bucket as the dashboard's /treasury/scan-history
-			// route, so browser and agent share one allowance.
-			if !middleware.Limiter("treasury-scan", 60*time.Second, 1).Allow() {
-				return nil, errors.New("rate limit exceeded, retry later")
+			if err := allow(middleware.TreasuryScan); err != nil {
+				return nil, err
 			}
 			startHeight := in.StartHeight
 			if startHeight < treasuryActivationHeight {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/decred/dcrd/dcrutil/v4"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
 	"dcrpulse/internal/utils"
@@ -103,7 +104,7 @@ func vspFeeCandidates(tickets []types.TicketRecord, unmanaged bool) (int, float6
 // The wallet RPCs behind these tools report no amounts, so the worst-case fee is
 // reserved up front and the share belonging to tickets the run did not resolve
 // is refunded afterwards, the same shape ln_pay uses for its routing fee.
-func vspMaintenanceRun(ctx context.Context, a *agent, tool string, in vspTicketMaintenanceInput, unmanaged bool,
+func vspMaintenanceRun(ctx context.Context, a *agent, tool string, allowance middleware.Allowance, in vspTicketMaintenanceInput, unmanaged bool,
 	work func(context.Context, uint32, []byte) (*types.SyncFailedVSPTicketsResponse, error)) (any, error) {
 	if in.VSPHost == "" || in.VSPPubkey == "" {
 		return nil, fmt.Errorf("vspHost and vspPubkey are required (see staking_vsps)")
@@ -124,6 +125,11 @@ func vspMaintenanceRun(ctx context.Context, a *agent, tool string, in vspTicketM
 			recordSpend(a, tool, acct, 0, in.VSPHost, "denied", err.Error())
 			return nil, err
 		}
+	}
+	// Granted, so the run may spend the shared allowance: one per interval
+	// across agent and dashboard, ahead of any VSP or wallet traffic.
+	if err := allow(allowance); err != nil {
+		return nil, err
 	}
 	vsp, err := resolveKnownVSP(ctx, in.VSPHost, in.VSPPubkey)
 	if err != nil {
@@ -427,20 +433,20 @@ var stakingTools = []toolDef{
 		}),
 	agentToolDesc("staking", "staking_sync_failed_vsp_tickets",
 		func(a *agent) string {
-			return "Retry VSP fee payments for the wallet's failed tickets. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase." + stakingHint(a)
+			return "Retry VSP fee payments for the wallet's failed tickets. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase. One run per 30 seconds, shared with the dashboard." + stakingHint(a)
 		},
 		func(ctx context.Context, a *agent, in vspTicketMaintenanceInput) (any, error) {
-			return vspMaintenanceRun(ctx, a, "staking_sync_failed_vsp_tickets", in, false,
+			return vspMaintenanceRun(ctx, a, "staking_sync_failed_vsp_tickets", middleware.VSPSync, in, false,
 				func(ctx context.Context, changeAccount uint32, pass []byte) (*types.SyncFailedVSPTicketsResponse, error) {
 					return services.SyncFailedVSPTickets(ctx, in.VSPHost, in.VSPPubkey, in.Account, changeAccount, pass)
 				})
 		}),
 	agentToolDesc("staking", "staking_process_unmanaged_vsp_tickets",
 		func(a *agent) string {
-			return "Re-associate the wallet's untracked tickets with a VSP. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase." + stakingHint(a)
+			return "Re-associate the wallet's untracked tickets with a VSP. Pays real fees: requires a staking grant covering both the fee and change accounts, the VSP must be one this wallet has used or a registry entry, and the worst-case fee is reserved against the grant caps (the unused part is returned once the run settles). Signs with the held passphrase. One run per 30 seconds, shared with the dashboard." + stakingHint(a)
 		},
 		func(ctx context.Context, a *agent, in vspTicketMaintenanceInput) (any, error) {
-			return vspMaintenanceRun(ctx, a, "staking_process_unmanaged_vsp_tickets", in, true,
+			return vspMaintenanceRun(ctx, a, "staking_process_unmanaged_vsp_tickets", middleware.VSPUnmanaged, in, true,
 				func(ctx context.Context, changeAccount uint32, pass []byte) (*types.SyncFailedVSPTicketsResponse, error) {
 					return services.ProcessUnmanagedVSPTickets(ctx, in.VSPHost, in.VSPPubkey, in.Account, changeAccount, pass)
 				})
