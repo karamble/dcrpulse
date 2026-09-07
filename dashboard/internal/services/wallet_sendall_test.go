@@ -6,11 +6,12 @@ package services
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 )
@@ -35,8 +36,8 @@ func TestConstructTransactionRejectsSendAllWithManyOutputs(t *testing.T) {
 	if err == nil {
 		t.Fatal("send-all with two recipients was accepted")
 	}
-	if !strings.Contains(err.Error(), "single recipient") {
-		t.Fatalf("refusal does not name the reason: %v", err)
+	if !errors.Is(err, utils.ErrSendAllSingleRecipient) {
+		t.Fatalf("refusal = %v, want the shared sentinel", err)
 	}
 
 	// The regression pin: one recipient must still get past the guard, which is

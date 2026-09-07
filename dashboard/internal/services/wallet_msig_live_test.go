@@ -211,11 +211,7 @@ func TestMsigLiveHDMainnet(t *testing.T) {
 	}
 
 	pass := promptPassphrase(t)
-	defer func() {
-		for i := range pass {
-			pass[i] = 0
-		}
-	}()
+	defer utils.Zero(pass)
 	passCopy := func() []byte { return append([]byte(nil), pass...) }
 
 	host := utils.EnvOr("DCRWALLET_RPC_HOST", "localhost")

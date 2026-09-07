@@ -1587,7 +1587,7 @@ func ConstructTransaction(ctx context.Context, sourceAccount uint32, outputs []t
 	// cannot honour a second recipient or a stated amount. Refuse rather than
 	// silently reinterpret; msig/spend.go answers the same way.
 	if sendAll && len(outputs) != 1 {
-		return nil, fmt.Errorf("send all pays a single recipient")
+		return nil, utils.ErrSendAllSingleRecipient
 	}
 	if rpc.WalletGrpcClient == nil {
 		return nil, fmt.Errorf("wallet gRPC client not initialized")

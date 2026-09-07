@@ -6,10 +6,11 @@ package handlers
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 // The browser path used to collapse a send-all request to its first recipient
@@ -27,7 +28,7 @@ func TestResolveTxOutputsRejectsSendAllWithManyOutputs(t *testing.T) {
 	if err == nil {
 		t.Fatalf("send-all with two recipients resolved to %v, want a refusal", got)
 	}
-	if !strings.Contains(err.Error(), "single recipient") {
-		t.Fatalf("refusal does not name the reason: %v", err)
+	if !errors.Is(err, utils.ErrSendAllSingleRecipient) {
+		t.Fatalf("refusal = %v, want the shared sentinel", err)
 	}
 }

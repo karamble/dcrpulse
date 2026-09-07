@@ -1065,7 +1065,7 @@ func resolveTxOutputs(ctx context.Context, req *types.ConstructTransactionReques
 		// Checked before the address lookup so it needs no RPC. Collapsing to
 		// the first recipient here would quietly reinterpret the request.
 		if len(recipients) != 1 {
-			return nil, fmt.Errorf("send all pays a single recipient")
+			return nil, utils.ErrSendAllSingleRecipient
 		}
 		if strings.TrimSpace(recipients[0].Address) == "" {
 			return nil, fmt.Errorf("address required")

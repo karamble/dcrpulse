@@ -16,6 +16,7 @@ import (
 	"github.com/decred/dcrd/wire"
 
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/utils"
 )
 
 // Spend seams, mirroring the handshake ones so the relay is testable
@@ -100,11 +101,7 @@ func requireActive(store *Store, rec *WalletRecord) error {
 // sum minus the fee and any amount in the request is ignored. Change
 // pays a fresh internal ladder index; the dedicated account signs.
 func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, sendAll bool, queueUIDs []string, note string, hopTTL time.Duration, passphrase []byte) (*Proposal, error) {
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer utils.Zero(passphrase)
 	network, err := networkSeam(ctx)
 	if err != nil {
 		return nil, err
@@ -120,7 +117,7 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 		return nil, fmt.Errorf("no recipients")
 	}
 	if sendAll && len(recipients) != 1 {
-		return nil, fmt.Errorf("send all pays a single recipient")
+		return nil, utils.ErrSendAllSingleRecipient
 	}
 	if len(note) > MaxNoteLen {
 		return nil, fmt.Errorf("note exceeds %d characters", MaxNoteLen)
@@ -492,11 +489,7 @@ func AbortProposal(ctx context.Context, walletID, txid string) error {
 // dedicated account signs after its branch indices are synced through
 // the imported window.
 func SignIncomingProposal(ctx context.Context, walletID, txid string, passphrase []byte) error {
-	defer func() {
-		for i := range passphrase {
-			passphrase[i] = 0
-		}
-	}()
+	defer utils.Zero(passphrase)
 	network, err := networkSeam(ctx)
 	if err != nil {
 		return err
