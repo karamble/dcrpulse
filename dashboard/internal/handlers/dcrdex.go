@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -339,8 +338,8 @@ func dexDCRWalletCfg() (bisonw.DCRWalletRPCConfig, error) {
 		Account:   dexAccountName,
 		Username:  rpc.WalletConfig.RPCUser,
 		Password:  rpc.WalletConfig.RPCPassword,
-		RPCListen: dexEnv("DCRWALLET_RPC_HOST", rpc.WalletConfig.RPCHost) + ":" + dexEnv("DCRWALLET_RPC_PORT", rpc.WalletConfig.RPCPort),
-		RPCCert:   dexEnv("DCRDEX_DCRWALLET_CERT", rpc.WalletConfig.RPCCert),
+		RPCListen: utils.EnvOr("DCRWALLET_RPC_HOST", rpc.WalletConfig.RPCHost) + ":" + utils.EnvOr("DCRWALLET_RPC_PORT", rpc.WalletConfig.RPCPort),
+		RPCCert:   utils.EnvOr("DCRDEX_DCRWALLET_CERT", rpc.WalletConfig.RPCCert),
 	}
 	if cfg.Username == "" || cfg.Password == "" {
 		return cfg, fmt.Errorf("dcrwallet RPC credentials are not configured")
@@ -536,13 +535,6 @@ func ensureDexAccount(ctx context.Context, passphrase []byte) error {
 	}
 	_, err = services.CreateAccount(ctx, dexAccountName, passphrase)
 	return err
-}
-
-func dexEnv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
 
 // DcrdexWalletInfo is the read-only view of DCRDEX's Decred wallet used by the
@@ -2462,7 +2454,8 @@ func dexProxyJSON(w http.ResponseWriter, call func() (json.RawMessage, error)) {
 		dexWriteErr(w, err)
 		return
 	}
-	w.Write(raw)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
 }
 
 func dexWalletActionBody(r *http.Request) (dexWalletAction, error) {

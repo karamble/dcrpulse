@@ -27,6 +27,7 @@ import (
 	"dcrpulse/internal/msig"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 
 	. "dcrpulse/internal/services"
 )
@@ -193,24 +194,18 @@ func TestMsigLiveHDMainnet(t *testing.T) {
 	if os.Getenv("DCRPULSE_MSIG_LIVE") != "1" {
 		t.Skip("set DCRPULSE_MSIG_LIVE=1 to run the live wallet drill")
 	}
-	envOr := func(key, def string) string {
-		if v := os.Getenv(key); v != "" {
-			return v
-		}
-		return def
-	}
 	user := os.Getenv("DCRWALLET_RPC_USER")
 	rpcPass := os.Getenv("DCRWALLET_RPC_PASS")
 	cert := os.Getenv("DCRWALLET_RPC_CERT")
 	if user == "" || rpcPass == "" || cert == "" {
 		t.Skip("DCRWALLET_RPC_USER, DCRWALLET_RPC_PASS and DCRWALLET_RPC_CERT are required")
 	}
-	srcAccount64, err := strconv.ParseUint(envOr("DCRPULSE_MSIG_LIVE_ACCOUNT", "0"), 10, 32)
+	srcAccount64, err := strconv.ParseUint(utils.EnvOr("DCRPULSE_MSIG_LIVE_ACCOUNT", "0"), 10, 32)
 	if err != nil {
 		t.Fatalf("bad account env: %v", err)
 	}
 	srcAccount := uint32(srcAccount64)
-	fundAtoms, err := strconv.ParseInt(envOr("DCRPULSE_MSIG_LIVE_ATOMS", "100000"), 10, 64)
+	fundAtoms, err := strconv.ParseInt(utils.EnvOr("DCRPULSE_MSIG_LIVE_ATOMS", "100000"), 10, 64)
 	if err != nil || fundAtoms < 20000 {
 		t.Fatalf("bad funding amount")
 	}
@@ -223,9 +218,9 @@ func TestMsigLiveHDMainnet(t *testing.T) {
 	}()
 	passCopy := func() []byte { return append([]byte(nil), pass...) }
 
-	host := envOr("DCRWALLET_RPC_HOST", "localhost")
+	host := utils.EnvOr("DCRWALLET_RPC_HOST", "localhost")
 	if err := rpc.InitWalletClient(rpc.Config{
-		RPCHost: host, RPCPort: envOr("DCRWALLET_RPC_PORT", "9110"),
+		RPCHost: host, RPCPort: utils.EnvOr("DCRWALLET_RPC_PORT", "9110"),
 		RPCUser: user, RPCPassword: rpcPass, RPCCert: cert,
 	}); err != nil {
 		t.Fatalf("wallet JSON-RPC init: %v", err)
@@ -234,7 +229,7 @@ func TestMsigLiveHDMainnet(t *testing.T) {
 	// key path derived from the cert path, so both files must sit side by
 	// side wherever the cert lives.
 	if err := rpc.InitWalletGrpcClient(rpc.GrpcConfig{
-		GrpcHost: host, GrpcPort: envOr("DCRWALLET_GRPC_PORT", "9111"), GrpcCert: cert,
+		GrpcHost: host, GrpcPort: utils.EnvOr("DCRWALLET_GRPC_PORT", "9111"), GrpcCert: cert,
 	}); err != nil {
 		t.Fatalf("wallet gRPC init: %v", err)
 	}

@@ -19,11 +19,6 @@ import (
 // BR-MCP). brclientd speaks atoms; the frontend speaks DCR, converted by the
 // services decoders that the agent-facing MCP resource shares.
 
-func brMCPJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
-}
-
 // brMCPSettingsWire is the daemon-side settings shape the save path posts.
 type brMCPSettingsWire = services.BRMCPSettingsWire
 
@@ -59,7 +54,7 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			brWriteErr(w, err)
 			return
 		}
-		brMCPJSON(w, view)
+		writeJSON(w, view)
 	case http.MethodPost:
 		var view types.BRMCPSettings
 		if err := json.NewDecoder(r.Body).Decode(&view); err != nil {
@@ -109,7 +104,7 @@ func BisonrelayMCPSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-		brMCPJSON(w, applied)
+		writeJSON(w, applied)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -122,7 +117,7 @@ func BisonrelayMCPPendingHandler(w http.ResponseWriter, r *http.Request) {
 		brWriteErr(w, err)
 		return
 	}
-	brMCPJSON(w, struct {
+	writeJSON(w, struct {
 		Pending []types.BRMCPPending `json:"pending"`
 	}{Pending: pending})
 }
@@ -151,5 +146,5 @@ func BisonrelayMCPSpendHandler(w http.ResponseWriter, r *http.Request) {
 		brWriteErr(w, err)
 		return
 	}
-	brMCPJSON(w, spend)
+	writeJSON(w, spend)
 }

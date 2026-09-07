@@ -12,14 +12,9 @@ import (
 	"dcrpulse/internal/types"
 )
 
-func torWriteJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
-}
-
 // GetTorHandler returns the current Tor toggle settings.
 func GetTorHandler(w http.ResponseWriter, r *http.Request) {
-	torWriteJSON(w, services.ReadTorSettings())
+	writeJSON(w, services.ReadTorSettings())
 }
 
 // SetTorHandler persists Tor settings, bumping the rev so the supervisors
@@ -35,18 +30,18 @@ func SetTorHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	torWriteJSON(w, out)
+	writeJSON(w, out)
 }
 
 // GetTorStatusHandler returns proxy reachability, per-daemon routing state, and
 // the dcrd and lightning onion addresses.
 func GetTorStatusHandler(w http.ResponseWriter, r *http.Request) {
-	torWriteJSON(w, services.TorStatusSnapshot())
+	writeJSON(w, services.TorStatusSnapshot())
 }
 
 // GetTorControlHandler returns live data from the Tor control port.
 func GetTorControlHandler(w http.ResponseWriter, r *http.Request) {
-	torWriteJSON(w, services.TorControlSnapshot())
+	writeJSON(w, services.TorControlSnapshot())
 }
 
 // TorNewIdentityHandler signals Tor to build fresh circuits (NEWNYM).

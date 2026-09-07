@@ -18,6 +18,7 @@ import (
 
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/config"
+	"dcrpulse/internal/utils"
 )
 
 const serverVersion = "0.1.0"
@@ -131,16 +132,9 @@ type Config struct {
 func ConfigFromEnv() Config {
 	return Config{
 		Enable: os.Getenv("MCP_ENABLE") == "true",
-		Bind:   envOr("MCP_BIND", "127.0.0.1"),
-		Port:   envOr("MCP_PORT", "8090"),
+		Bind:   utils.EnvOr("MCP_BIND", "127.0.0.1"),
+		Port:   utils.EnvOr("MCP_PORT", "8090"),
 	}
-}
-
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
 
 // Listener runtime state. The server can be started and stopped at runtime from
