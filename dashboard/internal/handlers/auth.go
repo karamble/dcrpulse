@@ -90,9 +90,17 @@ func AuthSkipSetupHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// AuthLogoutHandler clears the session cookie.
+// AuthLogoutHandler clears the cookie and rotates the session secret, so the
+// cookie just cleared, and any captured copy of it, stops verifying everywhere.
 func AuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	auth.ClearSessionCookie(w, r)
+	if err := auth.Revoke(); err != nil {
+		// The browser lands on the login screen either way; this line is how
+		// the operator learns the old cookie is still valid.
+		settLog.Errorf("Logout could not revoke the session: %v", err)
+		http.Error(w, "logout could not revoke the session: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -222,6 +222,29 @@ func Disable(current string) error {
 	return nil
 }
 
+// Revoke rotates the session secret, so every cookie minted so far stops
+// verifying on every device: the stateless cookie has no session table to
+// strike a row from. A no-op while the gate is off. The new secret is
+// persisted before it is used, as in Change; a failed write leaves the old one
+// live in memory and on disk rather than half-revoked, where a restart would
+// quietly bring a revoked cookie back.
+func Revoke() error {
+	sec := make([]byte, 32)
+	if _, err := rand.Read(sec); err != nil {
+		return err
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !enabled {
+		return nil
+	}
+	if err := persistLocked(enabled, hash, sec, dismissed); err != nil {
+		return err
+	}
+	secret = sec
+	return nil
+}
+
 // MarkSetupDismissed records that the user declined the first-run prompt.
 func MarkSetupDismissed() error {
 	mu.Lock()
