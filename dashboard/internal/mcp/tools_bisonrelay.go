@@ -305,6 +305,10 @@ type brRTDTRemoveInput struct {
 	Reason string `json:"reason,omitempty" jsonschema:"optional reason"`
 }
 
+type brTipsInput struct {
+	UID string `json:"uid" jsonschema:"contact identity whose tip attempts to read, 64-hex uid"`
+}
+
 func brPageSize(n int) int {
 	if n <= 0 {
 		return 50
@@ -329,6 +333,26 @@ func brContactEntries(ctx context.Context) ([]map[string]any, error) {
 		return nil, fmt.Errorf("decode contacts: %w", err)
 	}
 	return envelope.Entries, nil
+}
+
+// brKXAttempts fetches the in-progress key exchanges and drops the
+// rendezvous point each one routes over, the same way br_contacts drops
+// the reset RVs.
+func brKXAttempts(ctx context.Context) ([]map[string]any, error) {
+	raw, err := rpc.BrclientdKXList(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		KXs []map[string]any `json:"kxs"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, fmt.Errorf("decode kx list: %w", err)
+	}
+	for _, kx := range envelope.KXs {
+		delete(kx, "initial_rv")
+	}
+	return envelope.KXs, nil
 }
 
 // brContactStrings pulls the identity handles out of one contacts entry.
@@ -538,6 +562,35 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_contact_groups",
 		"Get the Bison Relay contact group layout (groups and per-contact assignments).",
 		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdContactGroups(ctx) }),
+	readTool("bisonrelay", "br_kx_list",
+		"List in-progress Bison Relay key exchanges: handshakes that have not completed into contacts yet. Use this to find out why a resolved nick still cannot be messaged. The rendezvous point each one routes over is omitted.",
+		func(ctx context.Context, _ emptyInput) (any, error) {
+			kxs, err := brKXAttempts(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"kxs": kxs}, nil
+		}),
+	readTool("bisonrelay", "br_kx_searches",
+		"List outstanding Bison Relay key-exchange searches: targets being looked up by nick that have not resolved yet.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdKXSearches(ctx) }),
+	readTool("bisonrelay", "br_kx_mediateids",
+		"List outstanding mediated-identity requests, where one contact is asked to introduce another. Read-only: requesting or cancelling a mediation is not available to agents.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdMediateIDs(ctx) }),
+	readTool("bisonrelay", "br_tips",
+		"List Lightning tip attempts to one contact, completed and in flight. Requires 'uid'. Amounts are in MILLI-atoms (amount_matoms): 1 DCR is 1e11 matoms, not 1e8.",
+		func(ctx context.Context, in brTipsInput) (any, error) {
+			if !brUIDRe.MatchString(in.UID) {
+				return nil, fmt.Errorf("uid must be 64 hex characters")
+			}
+			if err := refuseOversightContact(ctx, in.UID); err != nil {
+				return nil, err
+			}
+			return rpc.BrclientdTipAttempts(ctx, in.UID)
+		}),
+	readTool("bisonrelay", "br_tips_running",
+		"List the Lightning tip attempts brclientd is currently driving, with the next action and when it is due. Amounts are in MILLI-atoms (amount_matoms): 1 DCR is 1e11 matoms, not 1e8.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdRunningTipAttempts(ctx) }),
 	readTool("bisonrelay", "br_notifications",
 		"List recent Bison Relay notifications. Optional count (default 50).",
 		func(ctx context.Context, in brNotificationsInput) (any, error) {
@@ -597,6 +650,9 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_groupchats",
 		"List Bison Relay group chats.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdGCList(ctx) }),
+	readTool("bisonrelay", "br_gc_invites",
+		"List pending group-chat invites, and the re-invites that were blocked. Returns both 'invites' and 'blocked_reinvites'. br_gc_invites_accept takes the 'id' of an entry here.",
+		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdGCInvitesList(ctx) }),
 	readTool("bisonrelay", "br_groupchat",
 		"Get a group chat's details, members, and blocklist. Requires 'gcid'.",
 		func(ctx context.Context, in brGCInput) (any, error) {
@@ -1229,6 +1285,15 @@ var bisonrelayTools = []toolDef{
 			}
 			recordSpend(a, "br_gc_part", 0, 0, in.GCID, "ok", "")
 			return map[string]any{"gcid": in.GCID, "parted": true}, nil
+		}),
+	readTool("bisonrelay", "br_rtdt_messages",
+		"Read the chat buffer of a realtime-voice session. Requires 'rv'. The buffer is in memory and lives only as long as the session, so it is empty once the session ends.",
+		func(ctx context.Context, in brRTDTRVInput) (any, error) {
+			rv, err := rpc.ParseShortIDHex(in.RV)
+			if err != nil {
+				return nil, err
+			}
+			return rpc.BrclientdRTDTMessages(ctx, rv)
 		}),
 	agentTool("bisonrelay", "br_rtdt_create",
 		"Create a Bison Relay realtime-voice (RTDT) session. Requires a grant with Bison Relay write enabled. Returns the session metadata.",
