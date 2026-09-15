@@ -844,7 +844,8 @@ var dexTools = []toolDef{
 				return nil, err
 			}
 			amountDCR := dcrutil.Amount(outlay).ToCoin()
-			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDex, outlay, dexSpendAction(outlay), time.Now()); err != nil {
+			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDex, outlay, dexSpendAction(outlay), time.Now())
+			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -853,19 +854,19 @@ var dexTools = []toolDef{
 				return nil, err
 			}
 			if !rpc.DcrdexUnlocked() {
-				grants.refund(a.id, outlay)
+				h.refund(outlay)
 				err := dexLocked()
 				recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
 			}
 			client, err := rpc.DcrdexWebClient()
 			if err != nil {
-				grants.refund(a.id, outlay)
+				h.refund(outlay)
 				return nil, err
 			}
 			raw, err := client.Trade(ctx, in.Host, in.IsLimit, in.Sell, in.Base, in.Quote, in.Qty, in.Rate, in.TifNow, nil)
 			if err != nil {
-				grants.refund(a.id, outlay)
+				h.refund(outlay)
 				recordSpend(a, "dex_place_order", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
 			}
@@ -1220,7 +1221,8 @@ var dexTools = []toolDef{
 			}
 			capAtoms := int64(in.Bond)
 			amountDCR := dcrutil.Amount(capAtoms).ToCoin()
-			if err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, dexSpendAction(capAtoms), time.Now()); err != nil {
+			h, err := grants.authorizeSpendScoped(ctx, a.id, scopeDexSpend, capAtoms, dexSpendAction(capAtoms), time.Now())
+			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -1231,13 +1233,13 @@ var dexTools = []toolDef{
 			// One post per host at a time, shared with the dashboard's own
 			// bond route, so an agent and the browser cannot double-post.
 			if !services.BeginDexBondPost(in.Host) {
-				grants.refund(a.id, capAtoms)
+				h.refund(capAtoms)
 				err := fmt.Errorf("a bond is already being posted to %s", in.Host)
 				recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err
 			}
 			if !rpc.DcrdexUnlocked() {
-				grants.refund(a.id, capAtoms)
+				h.refund(capAtoms)
 				// The browser may be watching this host; record the
 				// dashboard's wording rather than the agent's.
 				services.EndDexBondPost(in.Host, errors.New("DCRDEX is locked"))
@@ -1247,12 +1249,12 @@ var dexTools = []toolDef{
 			}
 			client, err := rpc.DcrdexWebClient()
 			if err != nil {
-				grants.refund(a.id, capAtoms)
+				h.refund(capAtoms)
 				services.EndDexBondPost(in.Host, err)
 				return nil, err
 			}
 			if err := client.PostBond(ctx, in.Host, "", in.Bond, bisonw.AssetDCR, in.MaintainTier); err != nil {
-				grants.refund(a.id, capAtoms)
+				h.refund(capAtoms)
 				services.EndDexBondPost(in.Host, err)
 				recordSpend(a, "dex_post_bond", 0, amountDCR, in.Host, "error", err.Error())
 				return nil, err

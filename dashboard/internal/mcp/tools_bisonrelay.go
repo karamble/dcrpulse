@@ -841,7 +841,8 @@ var bisonrelayTools = []toolDef{
 			// client takes a fee limit), so dcrlnd applies its own default curve
 			// and the reservation covers that same curve instead.
 			reserved := atoms + services.RoutingFeeCeilingAtoms(atoms)
-			if err := grants.authorizeLightning(ctx, a.id, reserved, time.Now()); err != nil {
+			h, err := grants.authorizeLightning(ctx, a.id, reserved, time.Now())
+			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "br_tip_user", 0, in.AmountDCR, in.UID, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -852,7 +853,7 @@ var bisonrelayTools = []toolDef{
 			if err := refuseOversightContact(ctx, in.UID); err != nil {
 				// Nothing has been handed to brclientd yet, so this refusal
 				// provably spends nothing and the whole reservation comes back.
-				grants.refund(a.id, reserved)
+				h.refund(reserved)
 				recordSpend(a, "br_tip_user", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
@@ -1739,9 +1740,12 @@ var bisonrelayTools = []toolDef{
 			// The routing fee rides on top of the price ceiling, so reserve it
 			// too; a free download reserves nothing, since the curve is 0 at 0.
 			reserved := capAtoms + services.RoutingFeeCeilingAtoms(capAtoms)
+			// A free download leaves the hold zero, so the refund is a no-op.
+			var h hold
 			if capAtoms > 0 {
 				action := fmt.Sprintf("pay up to %s to download a Bison Relay file from %s", dcrAmountStr(capAtoms), in.UID)
-				if err := grants.authorizeSpendScoped(ctx, a.id, scopeLightning, reserved, action, time.Now()); err != nil {
+				var err error
+				if h, err = grants.authorizeSpendScoped(ctx, a.id, scopeLightning, reserved, action, time.Now()); err != nil {
 					if tripwire(a.id, err) {
 						recordSpend(a, "br_content_get", 0, capDCR, in.UID, "blocked", "spend-limit violation: grant revoked and token blocked")
 					} else {
@@ -1751,7 +1755,7 @@ var bisonrelayTools = []toolDef{
 				}
 			}
 			if err := rpc.BrclientdContentGet(ctx, in.UID, in.FID, in.MaxCostAtoms); err != nil {
-				grants.refund(a.id, reserved)
+				h.refund(reserved)
 				recordSpend(a, "br_content_get", 0, capDCR, in.UID, "error", err.Error())
 				return nil, err
 			}

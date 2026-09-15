@@ -84,7 +84,7 @@ func TestWalletChangeRevokesGrantsAndZeroesPassphrases(t *testing.T) {
 			t.Fatalf("the held passphrase was not zeroed: byte %d is %#x", i, b)
 		}
 	}
-	if _, err := grants.authorize(context.Background(), spender, 0, 1, "addr", time.Now()); err == nil {
+	if _, _, err := grants.authorize(context.Background(), spender, 0, 1, "addr", time.Now()); err == nil {
 		t.Error("account 0 was still authorised after the wallet changed")
 	}
 	if err := grants.authorizeAction(scoped, scopeTimestamp, time.Now()); err == nil {

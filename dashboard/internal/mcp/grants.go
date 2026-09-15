@@ -71,6 +71,32 @@ type spendGrant struct {
 
 	spentAtoms  int64 // spent in the current rolling window (all DCR fund moves)
 	windowStart time.Time
+
+	// gen identifies this grant instance. A reservation carries the gen it was
+	// charged against so a refund cannot land on a different instance: revoking
+	// and re-issuing starts a fresh window, and crediting an old hold into it
+	// would hand back headroom the new grant never spent.
+	gen uint64
+}
+
+// hold is the receipt for a reservation, and the only way to refund one. It
+// names the grant instance the amount was charged to, captured at reserve time:
+// a tool holds a reservation across the whole spend, and the operator may
+// revoke and re-issue while it runs, so reading the instance at refund time
+// would read the wrong one.
+type hold struct {
+	store   *grantStore
+	agentID string
+	gen     uint64
+}
+
+// refund returns atoms to the grant the reservation was charged against. It is
+// a no-op when that grant is gone or has been replaced.
+func (h hold) refund(atoms int64) {
+	if h.store == nil {
+		return
+	}
+	h.store.refund(h.agentID, h.gen, atoms)
 }
 
 // GrantSpec is the user-provided definition of a spend grant.
@@ -100,6 +126,7 @@ type GrantInfo struct {
 type grantStore struct {
 	mu      sync.Mutex
 	byAgent map[string]*spendGrant
+	nextGen uint64 // monotonic; every grant instance gets its own
 }
 
 func newGrantStore() *grantStore { return &grantStore{byAgent: map[string]*spendGrant{}} }
@@ -112,11 +139,18 @@ func (s *grantStore) set(agentID string, spec GrantSpec, now time.Time) {
 	// the agent's spending, not to the grant document, so editing an unrelated
 	// field must not hand back headroom already used. An explicit revoke drops
 	// the grant and does start a fresh window.
-	spent, windowStart := int64(0), now
+	//
+	// The generation follows the window, not the document: a reservation may be
+	// refunded exactly while the spend it made is still counted. An edit that
+	// carries the window keeps the generation, so a payment in flight is still
+	// refundable; a fresh window gets a fresh generation, so a hold charged to
+	// the old one cannot credit it.
+	s.nextGen++
+	spent, windowStart, gen := int64(0), now, s.nextGen
 	if old := s.byAgent[agentID]; old != nil {
 		utils.Zero(old.passphrase)
 		if now.Sub(old.windowStart) < grantWindow {
-			spent, windowStart = old.spentAtoms, old.windowStart
+			spent, windowStart, gen = old.spentAtoms, old.windowStart, old.gen
 		}
 	}
 	accounts := make(map[uint32]bool, len(spec.Accounts))
@@ -136,6 +170,7 @@ func (s *grantStore) set(agentID string, spec GrantSpec, now time.Time) {
 		}
 	}
 	s.byAgent[agentID] = &spendGrant{
+		gen:         gen,
 		accounts:    accounts,
 		perTxAtoms:  spec.PerTxAtoms,
 		dailyAtoms:  spec.DailyAtoms,
@@ -224,7 +259,7 @@ func (s *grantStore) currentLocked(agentID string, now time.Time) (*spendGrant, 
 
 // reserveLocked enforces the per-transaction and daily caps and reserves the
 // amount against the rolling window. The caller must hold s.mu.
-func (g *spendGrant) reserveLocked(amountAtoms int64, now time.Time) error {
+func (s *grantStore) reserveLocked(g *spendGrant, amountAtoms int64, now time.Time) error {
 	if amountAtoms <= 0 {
 		return errBadAmount
 	}
@@ -234,8 +269,10 @@ func (g *spendGrant) reserveLocked(amountAtoms int64, now time.Time) error {
 		return errPerTxExceeded
 	}
 	if now.Sub(g.windowStart) >= grantWindow {
-		g.spentAtoms = 0
-		g.windowStart = now
+		// A new window is a new generation: it spends from zero, so a hold
+		// charged to the window that just ended must not credit it.
+		s.nextGen++
+		g.spentAtoms, g.windowStart, g.gen = 0, now, s.nextGen
 	}
 	if g.spentAtoms+amountAtoms > g.dailyAtoms {
 		return errDailyExceeded
@@ -246,46 +283,47 @@ func (g *spendGrant) reserveLocked(amountAtoms int64, now time.Time) error {
 
 // authorize validates a proposed wallet send against the agent's grant, reserves
 // the amount, and (when BR oversight is on) blocks for the operator's approval.
-// On success it returns a private copy of the passphrase for immediate use; call
-// refund if the spend subsequently fails.
-func (s *grantStore) authorize(ctx context.Context, agentID string, account uint32, amountAtoms int64, toAddr string, now time.Time) ([]byte, error) {
-	pass, err := s.reserveForSend(agentID, account, amountAtoms, toAddr, now)
+// On success it returns a private copy of the passphrase for immediate use and
+// the hold to refund with if the spend subsequently fails.
+func (s *grantStore) authorize(ctx context.Context, agentID string, account uint32, amountAtoms int64, toAddr string, now time.Time) ([]byte, hold, error) {
+	pass, gen, err := s.reserveForSend(agentID, account, amountAtoms, toAddr, now)
 	if err != nil {
-		return nil, err
+		return nil, hold{}, err
 	}
+	h := hold{store: s, agentID: agentID, gen: gen}
 	action := fmt.Sprintf("spend %s", dcrAmountStr(amountAtoms))
 	if toAddr != "" {
 		action = fmt.Sprintf("send %s to %s", dcrAmountStr(amountAtoms), toAddr)
 	}
 	if err := gateApproval(ctx, agentID, action); err != nil {
-		s.refund(agentID, amountAtoms)
+		h.refund(amountAtoms)
 		utils.Zero(pass)
-		return nil, err
+		return nil, hold{}, err
 	}
-	return pass, nil
+	return pass, h, nil
 }
 
 // reserveForSend performs the locked grant validation and reservation for a
 // wallet send, returning a private copy of the passphrase.
-func (s *grantStore) reserveForSend(agentID string, account uint32, amountAtoms int64, toAddr string, now time.Time) ([]byte, error) {
+func (s *grantStore) reserveForSend(agentID string, account uint32, amountAtoms int64, toAddr string, now time.Time) ([]byte, uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if !g.accounts[account] {
-		return nil, errAccountNotGranted
+		return nil, 0, errAccountNotGranted
 	}
 	// The allowlist constrains address sends only; non-send spends (e.g. ticket
 	// purchases) pass an empty address and are not allowlist-checked.
 	if toAddr != "" && len(g.allowlist) > 0 && !g.allowlist[toAddr] {
-		return nil, errAddrNotAllowed
+		return nil, 0, errAddrNotAllowed
 	}
-	if err := g.reserveLocked(amountAtoms, now); err != nil {
-		return nil, err
+	if err := s.reserveLocked(g, amountAtoms, now); err != nil {
+		return nil, 0, err
 	}
-	return append([]byte(nil), g.passphrase...), nil
+	return append([]byte(nil), g.passphrase...), g.gen, nil
 }
 
 // precheckAccount verifies a grant exists and covers the account, without
@@ -384,81 +422,88 @@ func (s *grantStore) authorizeActionGated(ctx context.Context, agentID, scope, a
 // authorizeLightning checks the lightning scope, reserves amountAtoms against
 // the (shared) daily cap, and (when BR oversight is on) blocks for the
 // operator's approval. No passphrase is returned: dcrlnd is unlocked separately.
-// Call refund if the payment then fails.
-func (s *grantStore) authorizeLightning(ctx context.Context, agentID string, amountAtoms int64, now time.Time) error {
-	if err := s.reserveLightning(agentID, amountAtoms, now); err != nil {
-		return err
+// It returns the hold to refund with if the payment then fails.
+func (s *grantStore) authorizeLightning(ctx context.Context, agentID string, amountAtoms int64, now time.Time) (hold, error) {
+	gen, err := s.reserveLightning(agentID, amountAtoms, now)
+	if err != nil {
+		return hold{}, err
 	}
+	h := hold{store: s, agentID: agentID, gen: gen}
 	if err := gateApproval(ctx, agentID, fmt.Sprintf("make a Lightning payment of %s", dcrAmountStr(amountAtoms))); err != nil {
-		s.refund(agentID, amountAtoms)
-		return err
+		h.refund(amountAtoms)
+		return hold{}, err
 	}
-	return nil
+	return h, nil
 }
 
-func (s *grantStore) reserveLightning(agentID string, amountAtoms int64, now time.Time) error {
+func (s *grantStore) reserveLightning(agentID string, amountAtoms int64, now time.Time) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if !g.writeScopes[scopeLightning] {
-		return scopeDenied(scopeLightning)
+		return 0, scopeDenied(scopeLightning)
 	}
-	return g.reserveLocked(amountAtoms, now)
+	if err := s.reserveLocked(g, amountAtoms, now); err != nil {
+		return 0, err
+	}
+	return g.gen, nil
 }
 
 // authorizeVSPFees checks the staking scope and both fee accounts, reserves a
 // worst-case fee ceiling against the caps, and (when BR oversight is on) blocks
 // for the operator's approval. The real cost of a VSP fee run is only knowable
 // afterwards, so the caller reserves the ceiling here and refunds the unused
-// part once the run settles. Returns a private copy of the passphrase.
-func (s *grantStore) authorizeVSPFees(ctx context.Context, agentID string, account, changeAccount uint32, feeCeilingAtoms int64, action string, now time.Time) ([]byte, error) {
-	pass, err := s.reserveVSPFees(agentID, account, changeAccount, feeCeilingAtoms, now)
+// part once the run settles. Returns a private copy of the passphrase and the
+// hold to refund the unused part with.
+func (s *grantStore) authorizeVSPFees(ctx context.Context, agentID string, account, changeAccount uint32, feeCeilingAtoms int64, action string, now time.Time) ([]byte, hold, error) {
+	pass, gen, err := s.reserveVSPFees(agentID, account, changeAccount, feeCeilingAtoms, now)
 	if err != nil {
-		return nil, err
+		return nil, hold{}, err
 	}
+	h := hold{store: s, agentID: agentID, gen: gen}
 	if err := gateApproval(ctx, agentID, action); err != nil {
-		s.refund(agentID, feeCeilingAtoms)
+		h.refund(feeCeilingAtoms)
 		utils.Zero(pass)
-		return nil, err
+		return nil, hold{}, err
 	}
-	return pass, nil
+	return pass, h, nil
 }
 
 // reserveVSPFees performs the locked validation and reservation for a VSP fee
 // run, returning a private copy of the passphrase. A zero ceiling (nothing to
 // pay for) still requires the scope and both accounts.
-func (s *grantStore) reserveVSPFees(agentID string, account, changeAccount uint32, feeCeilingAtoms int64, now time.Time) ([]byte, error) {
+func (s *grantStore) reserveVSPFees(agentID string, account, changeAccount uint32, feeCeilingAtoms int64, now time.Time) ([]byte, uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
 		if errors.Is(err, errNoGrant) {
-			return nil, noScopeGrant(scopeStaking)
+			return nil, 0, noScopeGrant(scopeStaking)
 		}
-		return nil, err
+		return nil, 0, err
 	}
 	if !g.writeScopes[scopeStaking] {
-		return nil, scopeDenied(scopeStaking)
+		return nil, 0, scopeDenied(scopeStaking)
 	}
 	// The fee leaves the fee account and the change lands in the change
 	// account, so both must be covered by the grant.
 	if !g.accounts[account] || !g.accounts[changeAccount] {
-		return nil, errAccountNotGranted
+		return nil, 0, errAccountNotGranted
 	}
 	// A run that cannot say what it might spend does not get the passphrase. The
 	// callee pays the fees the VSP asks for, not the ones the local ticket view
 	// predicted, so a zero ceiling would authorize an unbounded run rather than
 	// an empty one.
 	if feeCeilingAtoms <= 0 {
-		return nil, errBadAmount
+		return nil, 0, errBadAmount
 	}
-	if err := g.reserveLocked(feeCeilingAtoms, now); err != nil {
-		return nil, err
+	if err := s.reserveLocked(g, feeCeilingAtoms, now); err != nil {
+		return nil, 0, err
 	}
-	return append([]byte(nil), g.passphrase...), nil
+	return append([]byte(nil), g.passphrase...), g.gen, nil
 }
 
 // authorizeSpendScoped checks the given fund scope and, when amountAtoms>0
@@ -467,61 +512,74 @@ func (s *grantStore) reserveVSPFees(agentID string, account, changeAccount uint3
 // a non-DCR amount. No wallet passphrase (the DEX and dcrlnd are unlocked
 // separately). The action describes the spend in the operator's approval
 // message, so it comes from the caller rather than being fixed here: the same
-// reservation serves DEX moves and paid Bison Relay downloads. Call refund if a
-// reserved spend then fails.
-func (s *grantStore) authorizeSpendScoped(ctx context.Context, agentID, scope string, amountAtoms int64, action string, now time.Time) error {
-	if err := s.reserveSpendScoped(agentID, scope, amountAtoms, now); err != nil {
-		return err
+// reservation serves DEX moves and paid Bison Relay downloads. It returns the
+// hold to refund with if a reserved spend then fails; a scope-only call reserves
+// nothing, and refunding its hold is a no-op.
+func (s *grantStore) authorizeSpendScoped(ctx context.Context, agentID, scope string, amountAtoms int64, action string, now time.Time) (hold, error) {
+	gen, err := s.reserveSpendScoped(agentID, scope, amountAtoms, now)
+	if err != nil {
+		return hold{}, err
 	}
+	h := hold{store: s, agentID: agentID, gen: gen}
 	if err := gateApproval(ctx, agentID, action); err != nil {
-		if amountAtoms > 0 {
-			s.refund(agentID, amountAtoms)
-		}
-		return err
+		h.refund(amountAtoms)
+		return hold{}, err
 	}
-	return nil
+	return h, nil
 }
 
-func (s *grantStore) reserveSpendScoped(agentID, scope string, amountAtoms int64, now time.Time) error {
+func (s *grantStore) reserveSpendScoped(agentID, scope string, amountAtoms int64, now time.Time) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, err := s.currentLocked(agentID, now)
 	if err != nil {
 		if errors.Is(err, errNoGrant) {
-			return noScopeGrant(scope)
+			return 0, noScopeGrant(scope)
 		}
-		return err
+		return 0, err
 	}
 	if !g.writeScopes[scope] {
-		return scopeDenied(scope)
+		return 0, scopeDenied(scope)
 	}
 	// Only a zero amount means "not DCR-denominated". A negative one is a
 	// caller bug (an unsigned amount that overflowed int64) and must not slip
 	// past the caps the way a zero legitimately does.
 	if amountAtoms < 0 {
-		return errBadAmount
+		return 0, errBadAmount
 	}
 	if amountAtoms > 0 {
-		return g.reserveLocked(amountAtoms, now)
+		if err := s.reserveLocked(g, amountAtoms, now); err != nil {
+			return 0, err
+		}
 	}
-	return nil
+	return g.gen, nil
 }
 
 // refund returns reserved spend headroom after a failed transaction. Only a
 // positive amount is meaningful: refunding zero is a no-op and refunding a
 // negative would add to the spent total and, via the clamp below, hand back the
 // whole window's headroom.
-func (s *grantStore) refund(agentID string, amountAtoms int64) {
+func (s *grantStore) refund(agentID string, gen uint64, amountAtoms int64) {
 	if amountAtoms <= 0 {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if g := s.byAgent[agentID]; g != nil {
-		g.spentAtoms -= amountAtoms
-		if g.spentAtoms < 0 {
-			g.spentAtoms = 0
-		}
+	g := s.byAgent[agentID]
+	if g == nil {
+		return
+	}
+	if g.gen != gen {
+		// The window this was charged to is gone. Drop the credit: the
+		// alternative is handing the current grant headroom it never spent,
+		// at the moment the operator was tightening it. Under-crediting an
+		// agent is recoverable; over-crediting one is not.
+		mcpLog.Warnf("Agent %s: dropped a %d atom refund charged to a replaced grant", agentID, amountAtoms)
+		return
+	}
+	g.spentAtoms -= amountAtoms
+	if g.spentAtoms < 0 {
+		g.spentAtoms = 0
 	}
 }
 

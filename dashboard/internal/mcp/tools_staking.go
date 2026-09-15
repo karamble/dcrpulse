@@ -172,7 +172,7 @@ func vspMaintenanceRun(ctx context.Context, a *agent, tool string, allowance mid
 	ceilingAtoms := int64(ceiling)
 	action := fmt.Sprintf("pay up to %s in VSP fees for %d %s ticket(s) at %s",
 		dcrAmountStr(ceilingAtoms), count, noun, in.VSPHost)
-	pass, err := grants.authorizeVSPFees(ctx, a.id, in.Account, changeAccount, ceilingAtoms, action, time.Now())
+	pass, h, err := grants.authorizeVSPFees(ctx, a.id, in.Account, changeAccount, ceilingAtoms, action, time.Now())
 	if err != nil {
 		if tripwire(a.id, err) {
 			recordSpend(a, tool, in.Account, ceiling.ToCoin(), in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -197,7 +197,7 @@ func vspMaintenanceRun(ctx context.Context, a *agent, tool string, allowance mid
 			if refund > ceilingAtoms {
 				refund = ceilingAtoms
 			}
-			grants.refund(a.id, refund)
+			h.refund(refund)
 			charged = ceilingAtoms - refund
 			if resolved = count - remaining; resolved < 0 {
 				resolved = 0
@@ -357,7 +357,7 @@ var stakingTools = []toolDef{
 			costDCR := info.TicketPrice * float64(in.NumTickets)
 			totalAtoms := perTicketAtoms * int64(in.NumTickets)
 			// Ticket purchases have no recipient address; the allowlist is skipped.
-			pass, err := grants.authorize(ctx, a.id, accts.Source, totalAtoms, "", time.Now())
+			pass, h, err := grants.authorize(ctx, a.id, accts.Source, totalAtoms, "", time.Now())
 			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "staking_purchase", accts.Source, costDCR, in.VSPHost, "blocked", "spend-limit violation: grant revoked and token blocked")
@@ -373,7 +373,7 @@ var stakingTools = []toolDef{
 				// the reservation; see services.ErrSpendStarted.
 				detail := err.Error()
 				if !errors.Is(err, services.ErrSpendStarted) {
-					grants.refund(a.id, totalAtoms)
+					h.refund(totalAtoms)
 				} else {
 					detail = "reservation kept, the purchase may still complete: " + detail
 				}

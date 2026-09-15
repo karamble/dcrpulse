@@ -133,7 +133,8 @@ var lightningTools = []toolDef{
 			}
 			reserved := amtAtoms + feeCeiling
 			amtDCR := dcrutil.Amount(amtAtoms).ToCoin()
-			if err := grants.authorizeLightning(ctx, a.id, reserved, time.Now()); err != nil {
+			h, err := grants.authorizeLightning(ctx, a.id, reserved, time.Now())
+			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -147,7 +148,7 @@ var lightningTools = []toolDef{
 			}
 			ch, err := services.StreamLightningPayment(ctx, req)
 			if err != nil {
-				grants.refund(a.id, reserved)
+				h.refund(reserved)
 				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "error", err.Error())
 				return nil, err
 			}
@@ -162,10 +163,10 @@ var lightningTools = []toolDef{
 			case "confirmed":
 				// Return the fee headroom the route did not use.
 				if unused := feeCeiling - last.FeeAtoms; unused > 0 {
-					grants.refund(a.id, unused)
+					h.refund(unused)
 				}
 			case "failed":
-				grants.refund(a.id, reserved)
+				h.refund(reserved)
 				recordSpend(a, "ln_pay", 0, amtDCR, dec.Destination, "error", "payment failed")
 				return nil, fmt.Errorf("payment failed")
 			default:
@@ -224,7 +225,8 @@ var lightningTools = []toolDef{
 				}
 				pushAtoms = int64(p)
 			}
-			if err := grants.authorizeLightning(ctx, a.id, localAtoms, time.Now()); err != nil {
+			h, err := grants.authorizeLightning(ctx, a.id, localAtoms, time.Now())
+			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_open_channel", 0, in.LocalDCR, in.PeerURI, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -243,7 +245,7 @@ var lightningTools = []toolDef{
 				// Only a failure that provably precedes the funding request may
 				// release the reservation; see services.ErrSpendStarted.
 				if !errors.Is(err, services.ErrSpendStarted) {
-					grants.refund(a.id, localAtoms)
+					h.refund(localAtoms)
 				} else {
 					detail += "; reservation kept, the funding may still complete"
 				}
@@ -424,7 +426,8 @@ var lightningTools = []toolDef{
 			if d, derr := services.GetLiquidityDefaults(ctx); derr == nil && d != nil {
 				provider = d.Server
 			}
-			if err := grants.authorizeLightning(ctx, a.id, reserved, time.Now()); err != nil {
+			h, err := grants.authorizeLightning(ctx, a.id, reserved, time.Now())
+			if err != nil {
 				if tripwire(a.id, err) {
 					recordSpend(a, "ln_liquidity_request", 0, feeDCR, provider, "blocked", "spend-limit violation: grant revoked and token blocked")
 				} else {
@@ -445,7 +448,7 @@ var lightningTools = []toolDef{
 				// The provider flow runs on its own context, so once it has
 				// begun a failure here does not mean the fee went unpaid.
 				if !errors.Is(err, services.ErrSpendStarted) {
-					grants.refund(a.id, reserved)
+					h.refund(reserved)
 				} else {
 					detail = "reservation kept, the fee may still be paid: " + detail
 				}
