@@ -198,11 +198,6 @@ services:
       - ${DCRDEX_DATA_DIR:-dcrdex-data}:/app-data/dcrdex:ro
       - ${DASHBOARD_DATA_DIR:-dashboard-data}:/dashboard-data
       - ${TOR_DATA_DIR:-tor-data}:/app-data/tor:ro
-      # The dashboard is the only writer of the gaming policy, and the only
-      # member of gaming-net besides the sandbox itself. It reads the
-      # sandbox's state read-only, the way it reads every other supervisor's.
-      - gaming-control:/control
-      - gaming-data:/gaming-data:ro
     environment:
       - PORT=8080
       - DASHBOARD_HOST_BIND=${DASHBOARD_HOST_BIND:-127.0.0.1}
