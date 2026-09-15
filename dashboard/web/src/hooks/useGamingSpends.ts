@@ -67,8 +67,16 @@ const signature = (s: GamingSpendsSnapshot): string =>
 const publish = (next: GamingSpendsSnapshot) => {
   if (signature(next) === signature(snapshot)) {
     // Keep the newer clock even when nothing else moved, without waking
-    // anybody: a countdown reads it on its own tick.
-    snapshot = { ...snapshot, serverNow: next.serverNow, offset: next.offset };
+    // anybody: a countdown reads it on its own tick. lastOkAt rides along for
+    // the same reason it is absent from the signature - it says the read
+    // happened, not what it found, and an empty list that never records a
+    // successful read leaves the panel reading "loading" forever.
+    snapshot = {
+      ...snapshot,
+      serverNow: next.serverNow,
+      offset: next.offset,
+      lastOkAt: next.lastOkAt,
+    };
     return;
   }
   snapshot = next;
