@@ -249,23 +249,6 @@ func main() {
 		"/api/br/store/files/upload": true,
 	}
 
-	// The gaming tunnel authenticates with a per-game bearer token, so it
-	// sits outside the browser API: that API requires same-origin and a
-	// dashboard session, and a game running as its own process has neither.
-	gaming := r.PathPrefix("/gaming").Subrouter()
-	gaming.Use(handlers.GamingTunnelAuth)
-	gaming.HandleFunc("/send", handlers.BisonrelayGamingSendHandler).Methods("POST")
-	gaming.HandleFunc("/events", handlers.BisonrelayGamingEventsHandler).Methods("GET")
-	gaming.HandleFunc("/chain/tip", handlers.BisonrelayGamingChainTipHandler).Methods("GET")
-	gaming.HandleFunc("/chain/outpoint", handlers.BisonrelayGamingOutpointHandler).Methods("GET")
-	gaming.HandleFunc("/chain/blockhash", handlers.BisonrelayGamingBlockHashHandler).Methods("GET")
-	// The one way coin moves without anybody being asked: a game reclaiming
-	// its own timelocked money, which only it can sign for. Bounded rather
-	// than approved - see the handler.
-	gaming.HandleFunc("/chain/broadcast", handlers.BisonrelayGamingBroadcastHandler).Methods("POST")
-	gaming.HandleFunc("/spend", handlers.BisonrelayGamingSpendHandler).Methods("POST")
-	gaming.HandleFunc("/spend/status", handlers.BisonrelayGamingSpendStatusHandler).Methods("GET")
-
 	// API routes. The body cap is Bison Relay's payload maximum on the protocol
 	// version servers ship with: the largest legitimate JSON body on this surface
 	// is a BR message, and anything bigger could not be delivered anyway.
@@ -645,9 +628,6 @@ func main() {
 	api.Handle("/br/gaming/games", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingGamesHandler))).Methods("GET")
 	api.Handle("/br/gaming/spends", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSpendsHandler))).Methods("GET")
 	api.Handle("/br/gaming/spends/decide", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSpendDecideHandler))).Methods("POST")
-		auth.RequireAppPassword(
-			middleware.RateLimit("gaming-ui-session", time.Second, 3)(
-				http.HandlerFunc(handlers.BisonrelayGamingUISessionHandler)))).Methods("POST")
 
 	api.Handle("/br/gaming/state", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingStateHandler))).Methods("GET")
 	api.Handle("/br/gaming/reclaim", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingReclaimHandler))).Methods("POST")
@@ -660,9 +640,6 @@ func main() {
 	api.Handle("/br/gaming/credential", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCredentialHandler))).Methods("POST")
 	api.Handle("/br/gaming/credential/revoke", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCredentialRevokeHandler))).Methods("POST")
 
-	api.Handle("/br/gaming/tables", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingTablesHandler))).Methods("GET")
-
-	api.Handle("/br/gaming/table-bonds", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingTableBondsHandler))).Methods("GET")
 	api.HandleFunc("/wallet/ln/status", handlers.LightningStatusHandler).Methods("GET")
 	api.HandleFunc("/wallet/ln/setup", handlers.LightningSetupHandler).Methods("POST")
 	api.Handle("/wallet/ln/unlock",
