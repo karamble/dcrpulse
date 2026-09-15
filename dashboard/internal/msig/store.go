@@ -563,8 +563,17 @@ func (s *Store) UpdateWallet(id string, fn func(*WalletRecord) error) error {
 func (s *Store) MarkProcessed(mid string, now time.Time) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, dup := s.data.ProcessedMids[mid]; dup {
+	if !s.markProcessedLocked(mid, now) {
 		return false, nil
+	}
+	return true, s.saveLocked()
+}
+
+// markProcessedLocked journals a mid and reports whether it was new. The
+// caller must hold s.mu and save.
+func (s *Store) markProcessedLocked(mid string, now time.Time) bool {
+	if _, dup := s.data.ProcessedMids[mid]; dup {
+		return false
 	}
 	if len(s.data.ProcessedMids) > 8192 {
 		cutoff := now.Add(-seenTTL).Unix()
@@ -575,14 +584,20 @@ func (s *Store) MarkProcessed(mid string, now time.Time) (bool, error) {
 		}
 	}
 	s.data.ProcessedMids[mid] = now.Unix()
-	return true, s.saveLocked()
+	return true
 }
 
-// AppendOutbox persists a frame before its first send attempt.
+// AppendOutbox persists a frame before its first send attempt, and journals
+// its mid. Journaling our own sends is what keeps a frame from coming back at
+// us as if a peer had sent it: history replay serves both directions and tells
+// them apart only by nick, which the relay cannot always supply, and a hand-off
+// card can be pasted back into the node that exported it. A mid we minted is
+// never one we should act on.
 func (s *Store) AppendOutbox(item *OutboxItem) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.Outbox = append(s.data.Outbox, item)
+	s.markProcessedLocked(item.MID, time.Now())
 	return s.saveLocked()
 }
 

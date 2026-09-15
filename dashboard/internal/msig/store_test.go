@@ -114,3 +114,28 @@ func TestOpenStoreRefusesFutureSchema(t *testing.T) {
 		t.Fatalf("future schema accepted; a downgrade would strip its fields")
 	}
 }
+
+// A frame this node minted must never be one it acts on. History replay serves
+// both directions and separates them by nick, which the relay cannot always
+// supply, and a hand-over card can be pasted back into the node that exported
+// it; journaling the mid at send time makes both land in the machinery that
+// already absorbs a peer's repeats, whatever the frame turns out to be.
+func TestOutboxJournalsItsOwnMid(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "msig.json"), "w1")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := s.AppendOutbox(&OutboxItem{MID: "m1", ToUID: "peer", Body: "b", State: OutboxSending}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if !s.SeenMid("m1") {
+		t.Error("SeenMid = false for a mid this node sent")
+	}
+	if fresh, err := s.MarkProcessed("m1", time.Now()); err != nil || fresh {
+		t.Errorf("MarkProcessed = %v, %v; want false and nil: our own frame came back and read as new", fresh, err)
+	}
+	// A peer's mid is untouched by any of this.
+	if fresh, err := s.MarkProcessed("m2", time.Now()); err != nil || !fresh {
+		t.Errorf("MarkProcessed(peer mid) = %v, %v; want true and nil", fresh, err)
+	}
+}

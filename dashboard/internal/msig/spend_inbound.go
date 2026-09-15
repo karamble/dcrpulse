@@ -75,7 +75,13 @@ func inboundSignReq(ctx context.Context, store *Store, rec *WalletRecord, msg *M
 		autoDecline("the transaction does not match its stated id")
 		return
 	}
-	if _, prop, ok := store.Proposal(rec.TempID, msg.TxID); ok && prop.Terminal() {
+	// A payment this node already knows is never rewritten by a request for
+	// it. The relay asks each cosigner once, so a second request for a txid
+	// already held is either a member replaying the frame or our own request
+	// coming back, and taking it would hand the payment's identity - who is
+	// relaying it, who to answer, and the queue itself - to whoever sent it.
+	if _, _, ok := store.Proposal(rec.TempID, msg.TxID); ok {
+		msigLog.Warnf("payment request %s for %q is already known; leaving it as it stands", msg.TxID[:12], rec.Label)
 		return
 	}
 	// Refuse anything spending outputs a local proposal already claims.
@@ -130,8 +136,10 @@ func inboundSignReq(ctx context.Context, store *Store, rec *WalletRecord, msg *M
 		return
 	}
 	err = store.UpdateProposal(rec.TempID, msg.TxID, true, func(_ *WalletRecord, p *Proposal) error {
-		if p.Terminal() {
-			return fmt.Errorf("already resolved")
+		// Only a proposal this call just minted has no role yet, so this is
+		// the check above again, re-run under the lock.
+		if p.Role != "" {
+			return fmt.Errorf("already known")
 		}
 		*p = *prop
 		p.CreatedAt = now.Unix()

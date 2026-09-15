@@ -764,3 +764,96 @@ func TestSpendEightParticipants(t *testing.T) {
 		t.Fatalf("after the queue: %s with %d sigs", final.Status, final.SigCount)
 	}
 }
+
+// resendSignReq re-frames an existing payment request under a fresh message id
+// and delivers it to one node as if the named member had sent it. This is what
+// a member bouncing the frame looks like on the wire; the mid journal cannot
+// absorb it, because the id is new.
+func (sh *spendHarness) resendSignReq(t *testing.T, walletID, txid, rawTx, from, to string) {
+	t.Helper()
+	payload, err := EncodeMessage(&Message{
+		Type: TypeSignReq, WalletID: walletID, TxID: txid, RawTx: rawTx,
+	})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	mid, _ := NewID()
+	body, _ := Encode(payload, mid, time.Now().Add(time.Hour))
+	sender := sh.nodeByNick(from)
+	sh.current = sh.nodeByNick(to)
+	handleInbound(sender.uid, sender.nick, body, time.Now())
+}
+
+// A payment request names who to answer, and answering is how a signature
+// leaves this node. A member who was never asked can re-send someone else's
+// request; taking it would point the reply at them.
+func TestSpendSecondRequestCannotCaptureALiveProposal(t *testing.T) {
+	sh, tempID := newSpendHarness(t, 2, "alice", "bob", "carol")
+	rec := sh.record("alice", tempID)
+	sh.fund(rec.Address, 500_000_000, 0)
+
+	sh.as("alice")
+	prop, err := ProposeSpend(sh.ctx, tempID,
+		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
+		[]string{sh.nodeByNick("bob").uid, sh.nodeByNick("carol").uid}, "", 0, []byte("pass"))
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	sh.pumpTo("bob")
+	before := sh.proposal(t, "bob", tempID, prop.TxID)
+	if before.Status != ProposalIncoming || before.FromUID != sh.nodeByNick("alice").uid {
+		t.Fatalf("bob holds %s from %s, want incoming from alice", before.Status, before.FromNick)
+	}
+
+	sh.resendSignReq(t, rec.Address, prop.TxID, prop.RawTx, "carol", "bob")
+
+	after := sh.proposal(t, "bob", tempID, prop.TxID)
+	if after.FromUID != sh.nodeByNick("alice").uid {
+		t.Errorf("the reply address moved to %s: a signature would go to the wrong member", after.FromNick)
+	}
+	if after.Status != before.Status || after.Role != before.Role || after.RawTx != before.RawTx {
+		t.Errorf("a re-sent request rewrote the payment: %s/%s", after.Role, after.Status)
+	}
+}
+
+// History replay serves both directions and tells them apart by nick, which the
+// relay cannot always supply. A proposer that reads back its own request must
+// not take it for a request from the cosigner it sent it to: that would hand
+// away the relay queue and leave the payment unable to finish or be cancelled.
+func TestSpendOwnRequestReplayedBackIsIgnored(t *testing.T) {
+	sh, tempID := newSpendHarness(t, 2, "alice", "bob")
+	rec := sh.record("alice", tempID)
+	sh.fund(rec.Address, 500_000_000, 0)
+
+	sh.as("alice")
+	prop, err := ProposeSpend(sh.ctx, tempID,
+		[]Recipient{{Address: rec.Address, Atoms: 100_000_000}},
+		false,
+		[]string{sh.nodeByNick("bob").uid}, "", 0, []byte("pass"))
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	if len(sh.queue) != 1 {
+		t.Fatalf("propose queued %d frames, want 1", len(sh.queue))
+	}
+	own := sh.queue[0].body
+
+	// Replay alice's own frame at alice, attributed to bob the way an empty
+	// local nick leaves it.
+	bob := sh.nodeByNick("bob")
+	alice := sh.nodeByNick("alice")
+	sh.current = alice
+	handleInbound(bob.uid, alice.nick, own, time.Now())
+
+	mine := sh.proposal(t, "alice", tempID, prop.TxID)
+	if mine.Role != RoleInitiator || mine.Status != ProposalCollecting {
+		t.Fatalf("alice's own request captured her payment: %s/%s", mine.Role, mine.Status)
+	}
+	if len(mine.Queue) == 0 {
+		t.Fatalf("the relay queue was lost, so the payment can never finish")
+	}
+	if mine.FromUID != "" {
+		t.Errorf("alice's payment now answers to %q", mine.FromNick)
+	}
+}
