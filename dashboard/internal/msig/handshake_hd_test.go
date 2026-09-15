@@ -633,3 +633,181 @@ func TestExpiredOutboxFrameRetired(t *testing.T) {
 		t.Fatalf("expired frame was re-sent: %d sends", len(hd.queue))
 	}
 }
+
+// deliverRoster builds a roster for this round, signs it as the initiator, and
+// hands it to one cosigner the way an inbound frame arrives. It is the one
+// thing the ceremony helpers cannot do: send a roster the initiator never
+// legitimately builds.
+func (hd *hdHarness) deliverRoster(t *testing.T, tempID, initiator, to string, m, n int, xpubs []string) {
+	t.Helper()
+	params := chaincfg.SimNetParams()
+	address, err := WalletIDForRoster(m, xpubs, params)
+	if err != nil {
+		t.Fatalf("derive wallet id: %v", err)
+	}
+	digest := AttestRosterMessage("simnet", tempID, m, n, address, xpubs)
+	hd.as(initiator)
+	init := hd.record(initiator, tempID)
+	sig, err := signMessageSeam(hd.ctx, init.OwnHD.Account, "", digest, []byte("wallet-pass"))
+	if err != nil {
+		t.Fatalf("sign roster: %v", err)
+	}
+	payload, err := EncodeMessage(&Message{
+		Type: TypeRoster, Ver: ProtoHD, TempID: tempID, Label: "hd drill",
+		M: m, N: n, Network: "simnet", Xpubs: xpubs, Address: address, Attest: sig,
+	})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	mid, _ := NewID()
+	body, _ := Encode(payload, mid, time.Now().Add(time.Hour))
+	from := hd.nodeByNick(initiator)
+	hd.current = hd.nodeByNick(to)
+	handleInbound(from.uid, from.nick, body, time.Now())
+}
+
+// swapLastXpub returns the roster with its highest key replaced by a stranger's,
+// re-sorted. Every other check the cosigner runs still passes: the set is the
+// right size for the round, it still holds the cosigner's own key and the
+// initiator's, the address re-derives, and the initiator signs it. Only the
+// membership changed, which is the whole point.
+func swapLastXpub(t *testing.T, xpubs []string, stranger string) []string {
+	t.Helper()
+	params := chaincfg.SimNetParams()
+	out := append([]string(nil), xpubs[:len(xpubs)-1]...)
+	return SortXpubs(append(out, testXpub(t, stranger, 1, params)))
+}
+
+// A cosigner that has verified a roster holds that roster. The initiator
+// sending a different key set afterwards is the split view the attestations
+// exist to close, and it arrives while the holder is still looking at the first
+// one, so it must not be able to move the record under them.
+func TestHDSecondRosterFailsAConfirmingCosigner(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob", "carol")
+	tempID := hd.createHD(t, 2, "alice", "bob", "carol")
+	hd.acceptAll(t, tempID, "bob", "carol")
+	hd.as("alice")
+	if err := ActivateRound(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	hd.pump()
+
+	before := hd.record("bob", tempID)
+	if before.Status != StatusConfirming {
+		t.Fatalf("bob is %s, want confirming", before.Status)
+	}
+
+	hd.deliverRoster(t, tempID, "alice", "bob", 2, 3, swapLastXpub(t, before.Xpubs, "mallory"))
+
+	after := hd.record("bob", tempID)
+	if after.Status != StatusFailed {
+		t.Fatalf("a second, different roster left bob %s, want failed", after.Status)
+	}
+	if after.Address != before.Address || after.RosterDigest != before.RosterDigest ||
+		strings.Join(after.Xpubs, ",") != strings.Join(before.Xpubs, ",") {
+		t.Errorf("the roster was replaced: address %q digest %q keys %v",
+			after.Address, after.RosterDigest, after.Xpubs)
+	}
+}
+
+// The other direction. An initiator re-announces the roster every sweep, so a
+// cosigner that has not confirmed yet sees the same roster again and again;
+// that must stay a no-op rather than failing the round. It also must not
+// answer with a ready, because a ready carrying no signature reads as a
+// cosigner that never confirmed and would fail the round on the other side.
+func TestHDRepeatedRosterLeavesAConfirmingCosignerAlone(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob", "carol")
+	tempID := hd.createHD(t, 2, "alice", "bob", "carol")
+	hd.acceptAll(t, tempID, "bob", "carol")
+	hd.as("alice")
+	if err := ActivateRound(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	hd.pump()
+
+	before := hd.record("bob", tempID)
+	hd.queue = nil
+	hd.deliverRoster(t, tempID, "alice", "bob", 2, 3, before.Xpubs)
+
+	after := hd.record("bob", tempID)
+	if after.Status != StatusConfirming {
+		t.Fatalf("a repeated roster moved bob to %s, want confirming", after.Status)
+	}
+	if len(hd.queue) != 0 {
+		t.Errorf("bob answered a repeat with %d frame(s) before confirming anything", len(hd.queue))
+	}
+
+	// And the round still finishes.
+	hd.as("bob")
+	if err := ConfirmRoster(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("confirm after a repeat: %v", err)
+	}
+	hd.pump()
+	hd.as("carol")
+	if err := ConfirmRoster(hd.ctx, tempID, []byte("wallet-pass")); err != nil {
+		t.Fatalf("carol confirm: %v", err)
+	}
+	hd.pump()
+	if got := hd.record("bob", tempID).Status; got != StatusActive {
+		t.Fatalf("bob is %s after a repeated roster, want active", got)
+	}
+}
+
+// The attestation set is what decides an address is handed out, so it is
+// checked again against the record it is about to activate, not only against
+// the one it arrived at.
+func TestHDStaleAttestationsCannotActivate(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob", "carol")
+	tempID := hd.createHD(t, 2, "alice", "bob", "carol")
+	hd.acceptAll(t, tempID, "bob", "carol")
+	hd.settle(t, tempID, "alice", "bob", "carol")
+
+	rec := hd.record("bob", tempID)
+	if len(rec.Attests) == 0 {
+		t.Fatalf("bob holds no attestations to go stale")
+	}
+	// Put the record back where it was the moment before it activated, with a
+	// key set the signatures do not cover.
+	stale := swapLastXpub(t, rec.Xpubs, "mallory")
+	if err := hd.store("bob").UpdateWallet(tempID, func(r *WalletRecord) error {
+		r.Status = StatusAttested
+		r.Xpubs = stale
+		return nil
+	}); err != nil {
+		t.Fatalf("rewind: %v", err)
+	}
+
+	hd.as("bob")
+	maybeCompleteAttested(hd.ctx, hd.store("bob"), tempID)
+
+	got := hd.record("bob", tempID)
+	if got.Status != StatusFailed {
+		t.Fatalf("a wallet activated on signatures over another key set: %s", got.Status)
+	}
+	if !strings.Contains(got.FailReason, "do not cover") {
+		t.Errorf("fail reason %q does not say the signatures miss the keys", got.FailReason)
+	}
+}
+
+// An active shared wallet can hold funds, so no inbound frame may destroy one.
+// A contradicting roster is refused by being ignored, not by failing the round.
+func TestHDSecondRosterNeverFailsAnActiveWallet(t *testing.T) {
+	hd := newHDHarness(t, "alice", "bob", "carol")
+	tempID := hd.createHD(t, 2, "alice", "bob", "carol")
+	hd.acceptAll(t, tempID, "bob", "carol")
+	hd.settle(t, tempID, "alice", "bob", "carol")
+
+	before := hd.record("bob", tempID)
+	if before.Status != StatusActive {
+		t.Fatalf("bob is %s, want active", before.Status)
+	}
+	hd.deliverRoster(t, tempID, "alice", "bob", 2, 3, swapLastXpub(t, before.Xpubs, "mallory"))
+
+	after := hd.record("bob", tempID)
+	if after.Status != StatusActive {
+		t.Fatalf("a contradicting roster took an active wallet to %s", after.Status)
+	}
+	if after.Address != before.Address {
+		t.Errorf("the active wallet's address changed to %q", after.Address)
+	}
+}

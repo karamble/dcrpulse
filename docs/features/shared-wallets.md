@@ -224,9 +224,14 @@ initiator only, not to each other.
    against its own roster digest, requiring one valid signature per key,
    and only then imports its windows and becomes active.
 
-A settled wallet accepts a byte-identical roster again purely to fill in
-missing peer identities and to re-answer a lost `ready`; membership
-itself never changes after activation.
+A cosigner that has verified a roster holds that roster. It accepts a
+byte-identical one again purely to fill in missing peer identities and,
+once it has confirmed, to re-answer a lost `ready`; a different key set
+fails the round rather than replacing it, because the signatures the
+round has already collected cover the first one. Membership never
+changes from the moment a roster verifies. An active wallet is the one
+exception to failing: it may hold funds, so a contradicting roster is
+ignored rather than allowed to end it.
 
 ### Cosigner attestation
 

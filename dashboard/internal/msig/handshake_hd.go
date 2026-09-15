@@ -437,32 +437,6 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 	if fromUID != rec.InitiatorUID {
 		return
 	}
-	if rec.Status != StatusAccepted && rec.Status != StatusConfirming && rec.Status != StatusPendingImport {
-		// A settled record accepts a byte-identical roster purely to
-		// fill in peer identities a pre-tuple build never delivered.
-		// Nothing else changes: membership settled at activation. The
-		// repeat is also answered with a fresh ready, so an initiator
-		// stuck activating on a lost ready recovers by re-announcing.
-		// Attested is included: a cosigner that confirmed but whose ready
-		// was lost is exactly the case this recovery exists for, and it
-		// cannot reach active until the initiator hears that ready.
-		if (rec.Status == StatusActive || rec.Status == StatusAttested) && rosterMatchesRecord(rec, msg) {
-			if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
-				return mergeRosterPeers(r, msg)
-			}); err != nil {
-				msigLog.Error(err)
-			}
-			// The stored signature rides the repeat: a ready without one
-			// reads as a cosigner that never confirmed, and would fail
-			// the very round this re-announce exists to recover.
-			if err := sendFrame(store, rec.InitiatorUID, &Message{
-				Type: TypeReady, TempID: rec.TempID, WalletID: rec.Address, Attest: rec.OwnAttest,
-			}, ""); err != nil {
-				msigLog.Warnf("ready: %v", err)
-			}
-		}
-		return
-	}
 	fail := func(reason string) {
 		if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
 			r.Status = StatusFailed
@@ -472,6 +446,50 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 			msigLog.Error(err)
 		}
 		msigLog.Warnf("roster for %q rejected: %s", rec.Label, reason)
+	}
+	switch rec.Status {
+	case StatusAccepted:
+		// The first roster of the round. Verified and stored below.
+	case StatusConfirming, StatusAttested, StatusPendingImport, StatusActive:
+		// The roster is write-once. A record that already holds one takes a
+		// byte-identical roster again and nothing else: the repeat fills in
+		// peer identities a pre-tuple build never delivered, and re-answers a
+		// ready the initiator never heard, so an initiator stuck activating
+		// recovers by re-announcing. Membership never changes.
+		if !rosterMatchesRecord(rec, msg) {
+			// A different key set from the one this node verified and may
+			// already have signed, which is the split view the attestations
+			// exist to close. Nothing is imported and no receive address is
+			// handed out before active, so failing the round is safe and
+			// leaves the holder a reason. An active wallet can hold funds,
+			// and no inbound frame may destroy one, so that case is logged.
+			if rec.Status == StatusActive {
+				msigLog.Warnf("roster for %q ignored: it contradicts the settled key set", rec.Label)
+				return
+			}
+			fail("the initiator sent a second, different key set for this round")
+			return
+		}
+		if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
+			return mergeRosterPeers(r, msg)
+		}); err != nil {
+			msigLog.Error(err)
+		}
+		// The stored signature rides the repeat: a ready without one reads as
+		// a cosigner that never confirmed, and would fail the very round this
+		// re-announce exists to recover. A cosigner still confirming has not
+		// signed yet, so it stays quiet until its holder does.
+		if rec.OwnAttest != "" {
+			if err := sendFrame(store, rec.InitiatorUID, &Message{
+				Type: TypeReady, TempID: rec.TempID, WalletID: rec.Address, Attest: rec.OwnAttest,
+			}, ""); err != nil {
+				msigLog.Warnf("ready: %v", err)
+			}
+		}
+		return
+	default:
+		// No roster belongs in this state, and a terminal round stays terminal.
+		return
 	}
 	if msg.Ver != ProtoHD || len(msg.Xpubs) == 0 {
 		fail("the initiator sent a non-HD roster for an HD round")
@@ -527,6 +545,14 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 		return
 	}
 	if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
+		// Attestations belong to a key set, so writing one clears them. The
+		// switch above means this only ever runs on a record that has none;
+		// keeping it here puts the invariant where the write is rather than
+		// leaving it to be read out of the state machine.
+		r.Attests = nil
+		for _, p := range r.Peers {
+			p.AttestSig = ""
+		}
 		r.Xpubs = append([]string(nil), msg.Xpubs...)
 		r.Address = msg.Address
 		r.RosterDigest = digest
@@ -573,6 +599,11 @@ func ConfirmRoster(ctx context.Context, id string, passphrase []byte) error {
 		if r.Status != StatusConfirming {
 			return fmt.Errorf("this wallet is not waiting to be confirmed")
 		}
+		// The signature covers the digest read above, so it may only be stored
+		// against that same digest.
+		if r.RosterDigest != rec.RosterDigest {
+			return fmt.Errorf("the key set changed while it was being confirmed")
+		}
 		r.OwnAttest = sig
 		r.Status = StatusAttested
 		return nil
@@ -597,6 +628,26 @@ func ConfirmRoster(ctx context.Context, id string, passphrase []byte) error {
 func maybeCompleteAttested(ctx context.Context, store *Store, tempID string) {
 	rec, ok := store.Wallet(tempID)
 	if !ok || !rec.HD || rec.Status != StatusAttested || len(rec.Attests) == 0 {
+		return
+	}
+	// The set was verified when it arrived, against the record as it stood
+	// then. Check it again against the record as it stands now: these are the
+	// signatures that decide whether an address is handed out, and a set that
+	// covers a different key set than the one about to be imported must not
+	// be one of them.
+	params, err := paramsForNetwork(rec.Network)
+	if err == nil {
+		err = VerifyRosterAttests(rec, rec.Attests, params)
+	}
+	if err != nil {
+		if uerr := store.UpdateWallet(tempID, func(r *WalletRecord) error {
+			r.Status = StatusFailed
+			r.FailReason = fmt.Sprintf("the cosigner signatures do not cover this wallet's keys: %v", err)
+			return nil
+		}); uerr != nil {
+			msigLog.Error(uerr)
+		}
+		msigLog.Warnf("attestations for %q rejected: %v", rec.Label, err)
 		return
 	}
 	if err := store.UpdateWallet(tempID, func(r *WalletRecord) error {
