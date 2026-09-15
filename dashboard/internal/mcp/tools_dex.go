@@ -194,11 +194,34 @@ type dexMMRunLogsInput struct {
 }
 
 type dexSetBondOptionsInput struct {
-	Host         string `json:"host" jsonschema:"DEX server host"`
-	TargetTier   *int   `json:"targetTier,omitempty" jsonschema:"auto-renew target tier; 0 disables auto-renewal; omit to leave unchanged"`
-	MaxBondedDcr *int   `json:"maxBondedDcr,omitempty" jsonschema:"max bonded amount in atoms; omit to leave unchanged"`
-	BondAssetID  *int   `json:"bondAssetId,omitempty" jsonschema:"bond asset id; omit to leave unchanged"`
-	PenaltyComps *int   `json:"penaltyComps,omitempty" jsonschema:"penalty compensation count; omit to leave unchanged"`
+	Host         string   `json:"host" jsonschema:"DEX server host"`
+	TargetTier   *int     `json:"targetTier,omitempty" jsonschema:"auto-renew target tier; 0 disables auto-renewal; omit to leave unchanged"`
+	MaxBondedDcr *float64 `json:"maxBondedDcr,omitempty" jsonschema:"maximum that may be locked in bonds, in whole units of the bond asset (DCR unless bondAssetId says otherwise); 0 resets to the server default; omit to leave unchanged"`
+	BondAssetID  *int     `json:"bondAssetId,omitempty" jsonschema:"bond asset id; omit to leave unchanged"`
+	PenaltyComps *int     `json:"penaltyComps,omitempty" jsonschema:"penalty compensation count; omit to leave unchanged"`
+}
+
+// bondCeilingAtoms converts the conventional bond ceiling an agent supplied into
+// the atoms SetBondOptions takes. The scale is the BOND ASSET's, not always
+// DCR's, so this takes an assetID and mirrors what SetDcrdexBondOptionsHandler
+// does for the same JSON field rather than assuming 1e8. A nil field is "leave
+// unchanged", which that call spells -1; zero is a real instruction (reset to
+// the server default) and must not collapse into the same sentinel.
+func bondCeilingAtoms(v *float64, assetID uint32) (int, error) {
+	if v == nil {
+		return -1, nil
+	}
+	if math.IsNaN(*v) || math.IsInf(*v, 0) {
+		return 0, fmt.Errorf("maxBondedDcr is not a valid amount")
+	}
+	if *v < 0 {
+		return 0, fmt.Errorf("maxBondedDcr must not be negative")
+	}
+	atoms := dexConvToAtoms(*v, assetID)
+	if atoms > math.MaxInt64 {
+		return 0, fmt.Errorf("maxBondedDcr is out of range")
+	}
+	return int(atoms), nil
 }
 
 type dexWalletAssetInput struct {
@@ -879,6 +902,11 @@ var dexTools = []toolDef{
 			if in.TargetTier != nil {
 				action = fmt.Sprintf("set the DEX auto-bond target tier on %s to %d", in.Host, *in.TargetTier)
 			}
+			if in.MaxBondedDcr != nil {
+				// The ceiling bounds what auto-renewal may lock without any
+				// further approval, so the operator must see it to approve it.
+				action = fmt.Sprintf("%s, with at most %g of the bond asset locked in bonds", action, *in.MaxBondedDcr)
+			}
 			if err := grants.authorizeActionGated(ctx, a.id, scopeDexSpend, action, time.Now()); err != nil {
 				recordSpend(a, "dex_set_bond_options", 0, 0, in.Host, "denied", err.Error())
 				return nil, err
@@ -888,23 +916,30 @@ var dexTools = []toolDef{
 				recordSpend(a, "dex_set_bond_options", 0, 0, in.Host, "error", err.Error())
 				return nil, err
 			}
-			client, err := rpc.DcrdexClient()
-			if err != nil {
-				return nil, err
+			client, cerr := rpc.DcrdexClient()
+			if cerr != nil {
+				return nil, cerr
 			}
 			// -1 leaves an option unchanged (see bisonw.SetBondOptions).
-			targetTier, maxBonded, bondAsset, penaltyComps := -1, -1, -1, -1
+			targetTier, bondAsset, penaltyComps := -1, -1, -1
 			if in.TargetTier != nil {
 				targetTier = *in.TargetTier
-			}
-			if in.MaxBondedDcr != nil {
-				maxBonded = *in.MaxBondedDcr
 			}
 			if in.BondAssetID != nil {
 				bondAsset = *in.BondAssetID
 			}
 			if in.PenaltyComps != nil {
 				penaltyComps = *in.PenaltyComps
+			}
+			// The ceiling is in the bond asset's units, so the asset has to be
+			// resolved first; unchanged means DCR, as the HTTP handler assumes.
+			bondAssetID := uint32(bisonw.AssetDCR)
+			if bondAsset >= 0 {
+				bondAssetID = uint32(bondAsset)
+			}
+			maxBonded, err := bondCeilingAtoms(in.MaxBondedDcr, bondAssetID)
+			if err != nil {
+				return nil, err
 			}
 			if err := client.SetBondOptions(ctx, in.Host, targetTier, maxBonded, bondAsset, penaltyComps); err != nil {
 				recordSpend(a, "dex_set_bond_options", 0, 0, in.Host, "error", err.Error())
