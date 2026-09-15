@@ -256,9 +256,6 @@ func (s *surfaceState) removeListen(id uint64) {
 	s.mu.Unlock()
 }
 
-// Start records the listener address, registers the optional bootstrap token,
-// and brings the server up if it should be enabled. The enabled state is the
-// persisted dashboard toggle when present, otherwise the env default.
 // newListenerServer is the MCP listener's http.Server, shaped like the
 // dashboard's own: idle keep-alives are reaped and the server's own log lines
 // go through the daemon logger rather than stderr.
@@ -271,6 +268,9 @@ func newListenerServer(h http.Handler) *http.Server {
 	}
 }
 
+// Start records the listener address and brings the server up if it should be
+// enabled. The enabled state is the persisted dashboard toggle when present,
+// otherwise the env default.
 func Start(cfg Config) {
 	srvMu.Lock()
 	runBind, runPort = cfg.Bind, cfg.Port

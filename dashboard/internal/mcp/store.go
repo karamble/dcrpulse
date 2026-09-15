@@ -23,8 +23,7 @@ type persistedAgent struct {
 	Blocked    bool      `json:"blocked,omitempty"`
 }
 
-// snapshot captures the current roster for persistence, excluding the ephemeral
-// environment bootstrap agent.
+// snapshot captures the current roster for persistence.
 func (r *registry) snapshot() []persistedAgent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
