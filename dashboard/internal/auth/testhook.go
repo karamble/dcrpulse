@@ -4,6 +4,8 @@
 
 package auth
 
+import "time"
+
 // PointAtForTest aims the package at a config file and returns a func that
 // restores both the path and the loaded state. It is a shipping function rather
 // than an export_test.go one so tests in other packages can put auth into a
@@ -13,11 +15,17 @@ func PointAtForTest(path string) func() {
 	cfgPath = func() string { return path }
 	mu.Lock()
 	pEn, pHash, pSec, pDis, pErr := enabled, hash, secret, dismissed, loadErr
+	// The backoff counter is process state like the rest: clear it for the
+	// test and put it back afterwards, or one test's failed logins decide
+	// whether the next one is allowed to check a password at all.
+	pFail, pBlocked := failures, blockedUntil
+	failures, blockedUntil = 0, time.Time{}
 	mu.Unlock()
 	return func() {
 		cfgPath = prev
 		mu.Lock()
 		enabled, hash, secret, dismissed, loadErr = pEn, pHash, pSec, pDis, pErr
+		failures, blockedUntil = pFail, pBlocked
 		mu.Unlock()
 	}
 }

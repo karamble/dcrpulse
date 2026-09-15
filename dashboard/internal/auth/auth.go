@@ -40,7 +40,50 @@ var (
 	secret    []byte // HMAC key for signed session cookies
 	dismissed bool   // user declined the first-run setup prompt
 	loadErr   error  // why the persisted state could not be read; locks the gate
+
+	// Consecutive failed password checks, and when the next one is allowed.
+	// Deliberately in memory only, like loadErr and unlike the four persisted
+	// fields above: persisting it would put an attacker-driven write loop on
+	// the operator's config file, and a restart clearing it is the operator's
+	// way out of a backoff someone else caused. They have box access; whoever
+	// is guessing does not.
+	failures     int
+	blockedUntil time.Time
 )
+
+// ErrTooManyAttempts reports that the password was not checked at all because
+// too many consecutive checks have failed. Callers should surface it as 429
+// rather than "incorrect password", which is what Change and Disable would
+// otherwise report.
+var ErrTooManyAttempts = errors.New("too many failed attempts")
+
+// Password length is deliberately unconstrained, so this backoff is the only
+// thing between a short password and the whole API. It counts CONSECUTIVE
+// FAILURES rather than attempts: whoever knows the password clears the counter
+// on their first try, so tightening it does not let a stranger at the port lock
+// the operator out. That is what the per-attempt limiter in middleware could
+// not do, and why it had to stay lenient.
+const (
+	backoffFreeTries = 5 // honest typos never wait
+	backoffBase      = time.Second
+	backoffCap       = 15 * time.Minute // reached only after 15 wrong in a row
+)
+
+// backoffDelay is the wait imposed after n consecutive failures.
+func backoffDelay(n int) time.Duration {
+	if n <= backoffFreeTries {
+		return 0
+	}
+	shift := n - backoffFreeTries
+	if shift >= 63 {
+		return backoffCap
+	}
+	d := backoffBase << uint(shift)
+	if d > backoffCap || d <= 0 {
+		return backoffCap
+	}
+	return d
+}
 
 // cfgPath locates the global config; tests point it at a temp file.
 var cfgPath = config.GlobalCfgPath
@@ -169,15 +212,36 @@ func Setup(password string) error {
 	return nil
 }
 
-// Verify reports whether password matches the configured hash.
-func Verify(password string) bool {
-	mu.RLock()
-	h := append([]byte(nil), hash...)
-	mu.RUnlock()
-	if len(h) == 0 {
-		return false
+// Verify reports whether password matches the configured hash. The second
+// return is non-zero when the password was NOT checked because the backoff is
+// in effect; callers must treat that as 429 and not as a wrong password.
+//
+// The block is tested before bcrypt so a refused attempt costs no key
+// derivation, and the lock is released across the compare because bcrypt runs
+// for ~100ms: holding it would serialize every caller and hand out a cheaper
+// denial of service than the one being closed.
+func Verify(password string) (bool, time.Duration) {
+	mu.Lock()
+	if wait := time.Until(blockedUntil); wait > 0 {
+		mu.Unlock()
+		return false, wait
 	}
-	return bcrypt.CompareHashAndPassword(h, []byte(password)) == nil
+	h := append([]byte(nil), hash...)
+	mu.Unlock()
+	if len(h) == 0 {
+		return false, 0
+	}
+	ok := bcrypt.CompareHashAndPassword(h, []byte(password)) == nil
+
+	mu.Lock()
+	defer mu.Unlock()
+	if ok {
+		failures, blockedUntil = 0, time.Time{}
+		return true, 0
+	}
+	failures++
+	blockedUntil = time.Now().Add(backoffDelay(failures))
+	return false, 0
 }
 
 // Change replaces the password after verifying the current one. A fresh session
@@ -187,7 +251,10 @@ func Change(current, next string) error {
 	if next == "" {
 		return errors.New("new password must not be empty")
 	}
-	if !Verify(current) {
+	if ok, wait := Verify(current); !ok {
+		if wait > 0 {
+			return fmt.Errorf("%w: retry in %s", ErrTooManyAttempts, wait.Round(time.Second))
+		}
 		return errors.New("current password is incorrect")
 	}
 	h, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
@@ -210,7 +277,10 @@ func Change(current, next string) error {
 // Disable turns the gate off after verifying the current password. The hash
 // and secret are cleared so all sessions become invalid.
 func Disable(current string) error {
-	if !Verify(current) {
+	if ok, wait := Verify(current); !ok {
+		if wait > 0 {
+			return fmt.Errorf("%w: retry in %s", ErrTooManyAttempts, wait.Round(time.Second))
+		}
 		return errors.New("current password is incorrect")
 	}
 	mu.Lock()

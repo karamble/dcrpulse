@@ -6,7 +6,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"math"
 	"net/http"
+	"strconv"
+	"time"
 
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/mcp"
@@ -17,6 +21,17 @@ import (
 // reaches it, without binding a port; mirrors rpc.SwapDcrlndClients, which
 // exists for the same reason.
 var stopAgentSurface = func() error { return mcp.SetEnabled(false) }
+
+// retryAfter sets the RFC 7231 header, rounded up so a client that waits
+// exactly that long is not refused again. Nothing else in the tree sets it;
+// the login screen reads the status today and can read this next.
+func retryAfter(w http.ResponseWriter, d time.Duration) {
+	secs := int(math.Ceil(d.Seconds()))
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+}
 
 // AuthStatusHandler reports the app-password state. Unauthenticated; the
 // frontend uses it to decide between the login screen, the first-run setup
@@ -45,7 +60,14 @@ func AuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "app password is not enabled", http.StatusBadRequest)
 		return
 	}
-	if !auth.Verify(req.Password) {
+	ok, wait := auth.Verify(req.Password)
+	if wait > 0 {
+		settLog.Warnf("Login refused for %s: backoff, %s remaining", r.RemoteAddr, wait.Round(time.Second))
+		retryAfter(w, wait)
+		http.Error(w, "too many failed attempts, retry later", http.StatusTooManyRequests)
+		return
+	}
+	if !ok {
 		// The trace an operator reads back after a burst of guesses.
 		settLog.Warnf("Login refused for %s: incorrect password", r.RemoteAddr)
 		http.Error(w, "incorrect password", http.StatusUnauthorized)
@@ -118,6 +140,10 @@ func AuthChangeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := auth.Change(req.Current, req.New); err != nil {
+		if errors.Is(err, auth.ErrTooManyAttempts) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -137,6 +163,10 @@ func AuthDisableHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := auth.Disable(req.Current); err != nil {
+		if errors.Is(err, auth.ErrTooManyAttempts) {
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
