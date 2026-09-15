@@ -18,6 +18,16 @@ import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const SEEN_KEY = 'brNotesSeen';
 
+// dashboardPath keeps the bell inside the dashboard. A note's link is written
+// by the daemon, and a router asked to follow one that starts with two slashes,
+// or a slash and a backslash, leaves the site entirely. Only a plain in-app
+// path is followed.
+const dashboardPath = (link?: string): string | undefined => {
+  if (!link || link[0] !== '/') return undefined;
+  if (link[1] === '/' || link[1] === '\\') return undefined;
+  return link;
+};
+
 // Live event types that correspond to persisted notes and warrant an
 // immediate refetch of the bell list.
 const REFRESH_EVENT_TYPES = new Set([
@@ -136,7 +146,7 @@ export const BrNotifications = () => {
               <p className="text-xs text-muted-foreground p-4 text-center">No notifications yet.</p>
             ) : (
               notes.map((n) => {
-                const link = n.link;
+                const link = dashboardPath(n.link);
                 return (
                   <div
                     key={n.id}
