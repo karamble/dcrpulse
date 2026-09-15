@@ -1453,10 +1453,16 @@ var (
 	// buffer on both the client and the server.
 	BRRTDTMaxMessageBytes = int64(brrpc.RTDTMaxMessageSize)
 
+	// BRMaxPayloadBytesV0 is the payload maximum on the protocol version Bison
+	// Relay servers ship with (rpc.PropMaxMsgSizeVersionDefault). It is the
+	// conservative ceiling: a peer on a default server refuses more than this,
+	// so nothing the dashboard accepts above it could be delivered anyway.
+	BRMaxPayloadBytesV0 = int64(brrpc.MaxPayloadSizeForVersion(brrpc.MaxMsgSizeV0))
+
 	// brclientdControlRespLimit bounds the control endpoints, which all return
 	// small JSON summaries. Equal to upstream's payload maximum on the current
 	// protocol version.
-	brclientdControlRespLimit = int64(brrpc.MaxPayloadSizeForVersion(brrpc.MaxMsgSizeV0))
+	brclientdControlRespLimit = BRMaxPayloadBytesV0
 
 	// brclientdPageRespLimit bounds a page fetch. Bison Relay only fulfils a
 	// resource reply that fits one message payload, but the reply carries that

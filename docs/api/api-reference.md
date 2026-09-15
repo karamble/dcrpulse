@@ -26,7 +26,7 @@ Decred Pulse is a single-user dashboard. There are two layers in front of every 
 
 2. **Optional app-password gate.** A single dashboard-wide password can be enabled under `/api/auth/*`. It is **off by default**, in which case the gate is a pass-through. When enabled, every `/api` route requires a valid signed session cookie (`dcrpulse_session`, HttpOnly, SameSite=Strict, 30-day TTL); only the login handshake (`/api/auth/login` and `/api/auth/status`) is exempt so the client can reach it. A failed gate returns `401 Unauthorized` with an `X-Dashboard-Auth: required` header so the frontend can distinguish it from a downstream daemon `401`.
 
-Request bodies on state-changing methods are capped at 1 MiB. The cap skips `multipart/*` requests, but no route accepts one today: uploads (avatars, file sends, store files) arrive base64-encoded in JSON and are bounded by the same 1 MiB. A handful of expensive or daemon-cycling routes are additionally rate limited (see the per-group notes below) and return `429 Too Many Requests` when the allowance is exceeded.
+Request bodies on state-changing methods are capped at Bison Relay's message payload maximum for the protocol version servers ship with, currently 1 MiB: the largest legitimate JSON body on this surface is a BR message, and anything larger could not be delivered. The cap is unconditional, whatever the request claims its content type to be. Four upload routes are exempt because they stream to brclientd under their own, larger caps: `/br/backup/restore` (5 GiB), `/br/files/send` (1 GiB), `/br/files/add` and `/br/store/files/upload` (200 MiB each). Everything else, avatars included, arrives base64-encoded in JSON and is bounded by the same cap. A handful of expensive or daemon-cycling routes are additionally rate limited (see the per-group notes below) and return `429 Too Many Requests` when the allowance is exceeded.
 
 There is no separate RPC/credential layer for clients: the backend speaks to the daemons on the client's behalf using its environment-configured credentials.
 
@@ -1593,7 +1593,7 @@ Most endpoints are not rate limited (the dashboard is single-user). A token-buck
 
 - **Same-origin protected.** State-changing requests must originate from the dashboard's own host; cross-origin POST/PUT/PATCH/DELETE are rejected with `403`. WebSocket upgrades enforce the same origin check.
 - **Optional app-password gate.** When enabled, every `/api` route requires a signed `dcrpulse_session` cookie (see Authentication).
-- **Request-body cap.** JSON bodies on state-changing methods are limited to 1 MiB. The middleware skips `multipart/*`, which no route currently uses.
+- **Request-body cap.** Bodies on state-changing methods are limited to Bison Relay's payload maximum for the shipped protocol version, currently 1 MiB, regardless of content type. The four multipart upload routes are exempt by path and apply their own larger caps; exempting by path rather than by header matters, because a caller chooses its header but not the route it reached.
 - **Hardening headers.** Every response carries `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: no-referrer`, and a restrictive `Permissions-Policy`.
 - **Credentials stay server-side.** RPC credentials for the daemons are read from environment variables and never exposed to the frontend.
 

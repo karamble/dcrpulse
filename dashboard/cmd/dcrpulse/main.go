@@ -228,9 +228,25 @@ func main() {
 	r := mux.NewRouter()
 	r.Use(middleware.SecurityHeaders)
 
-	// API routes
+	// The upload routes stream their body to brclientd and each applies its own,
+	// far larger cap; the router-wide one has to stand aside rather than be
+	// raised, because the outer reader is the one that would trip. Registered
+	// below at /br/backup/restore, /br/files/send, /br/files/add and
+	// /br/store/files/upload.
+	uploadRoutes := map[string]bool{
+		"/api/br/backup/restore":     true,
+		"/api/br/files/send":         true,
+		"/api/br/files/add":          true,
+		"/api/br/store/files/upload": true,
+	}
+
+	// API routes. The body cap is Bison Relay's payload maximum on the protocol
+	// version servers ship with: the largest legitimate JSON body on this surface
+	// is a BR message, and anything bigger could not be delivered anyway.
 	api := r.PathPrefix("/api").Subrouter()
-	api.Use(middleware.RequireSameOrigin, middleware.LimitJSONBody(1<<20), auth.RequireAuth)
+	api.Use(middleware.RequireSameOrigin,
+		middleware.LimitJSONBody(rpc.BRMaxPayloadBytesV0, uploadRoutes),
+		auth.RequireAuth)
 
 	// Dashboard app-password (optional). /auth/status + /auth/login are exempt
 	// from RequireAuth so the user can reach the login handshake; every other

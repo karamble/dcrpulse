@@ -140,6 +140,15 @@ func TestBrclientdLimits(t *testing.T) {
 	if want := int64(brrpc.MaxPayloadSizeForVersion(brrpc.MaxMsgSizeV1)); BRMaxPayloadBytes != want {
 		t.Errorf("payload max = %d, want upstream V1 %d", BRMaxPayloadBytes, want)
 	}
+	// The router-wide API body cap is this symbol, so the version it reads from
+	// decides what a browser may send. It has to be the version servers ship
+	// with, or the dashboard accepts a message Bison Relay would refuse.
+	if want := int64(brrpc.MaxPayloadSizeForVersion(brrpc.PropMaxMsgSizeVersionDefault)); BRMaxPayloadBytesV0 != want {
+		t.Errorf("V0 payload max = %d, want the shipped default %d", BRMaxPayloadBytesV0, want)
+	}
+	if BRMaxPayloadBytesV0 >= BRMaxPayloadBytes {
+		t.Errorf("the shipped-default max %d must sit below the next version's %d", BRMaxPayloadBytesV0, BRMaxPayloadBytes)
+	}
 	if BRRTDTMaxMessageBytes != int64(brrpc.RTDTMaxMessageSize) {
 		t.Errorf("RTDT bound = %d, want upstream %d", BRRTDTMaxMessageBytes, brrpc.RTDTMaxMessageSize)
 	}
