@@ -18,6 +18,8 @@ services:
       - ${APP_DATA_DIR}/data/dcrlnd:/host/dcrlnd
       - ${APP_DATA_DIR}/data/brclientd:/host/brclientd
       - ${APP_DATA_DIR}/data/dcrdex:/host/dcrdex
+      - ${APP_DATA_DIR}/data/gaming-control:/host/gaming-control
+      - ${APP_DATA_DIR}/data/gaming:/host/gaming
       - ${APP_DATA_DIR}/data/tor:/host/tor
 
   dcrd:
@@ -253,8 +255,8 @@ services:
     networks:
       - gaming-net
     volumes:
-      - ${APP_DATA_DIR}/gaming-control:/control:ro
-      - ${APP_DATA_DIR}/gaming:/data
+      - ${APP_DATA_DIR}/data/gaming-control:/control:ro
+      - ${APP_DATA_DIR}/data/gaming:/data
     depends_on:
       init:
         condition: service_completed_successfully
