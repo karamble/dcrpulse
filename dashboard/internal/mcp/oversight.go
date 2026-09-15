@@ -58,16 +58,83 @@ type approvalVerdict struct {
 	cancelled bool
 }
 
-// oversightConfig reports whether the BR oversight loop is enabled and the hex
-// UID of the contact that receives approval requests and spend notifications.
-func oversightConfig() (enabled bool, contact string) {
-	gc, err := config.LoadGlobalCfg()
-	if err != nil {
-		return false, ""
+// cfgPath locates the global config; tests point it at a temp file. Mirrors
+// internal/auth, which needed the same seam for the same reason.
+var cfgPath = config.GlobalCfgPath
+
+// oversightState caches the last oversight settings read successfully. The
+// settings are read on every gated call, every audit row and every inbound PM,
+// so this is both what keeps an unreadable config from reopening the gate and
+// what keeps it from becoming a hot failing read.
+//
+// known is false only until the first successful read. An absent config counts
+// as a success and means "not configured", which readRawJSON already reports
+// separately from a file it cannot use.
+var oversightState struct {
+	mu       sync.RWMutex
+	enabled  bool
+	contact  string
+	known    bool
+	degraded bool // the last read failed; serving the cached values
+}
+
+// oversightConfig reports whether the BR oversight loop is enabled, the hex UID
+// of the contact that receives approval requests and spend notifications, and
+// whether the settings are known at all.
+//
+// A config that exists but cannot be read or parsed does NOT mean "off": it
+// means unknown, and the caller must not silently drop the operator's
+// checkpoint. Mirrors auth.Init, which locks the gate on the same distinction
+// rather than leaving it open. A wrong-typed key is treated the same way, since
+// it is corruption of the same document.
+func oversightConfig() (enabled bool, contact string, known bool) {
+	gc, err := config.LoadGlobalCfgAt(cfgPath())
+	if err == nil {
+		if _, e := gc.Get(config.KeyMCPNotifyEnabled, &enabled); e != nil {
+			err = e
+		}
 	}
-	_, _ = gc.Get(config.KeyMCPNotifyEnabled, &enabled)
-	_, _ = gc.Get(config.KeyMCPNotifyContact, &contact)
-	return enabled, strings.TrimSpace(contact)
+	if err == nil {
+		if _, e := gc.Get(config.KeyMCPNotifyContact, &contact); e != nil {
+			err = e
+		}
+	}
+	if err != nil {
+		return oversightDegraded(err)
+	}
+
+	contact = strings.TrimSpace(contact)
+	oversightState.mu.Lock()
+	defer oversightState.mu.Unlock()
+	if oversightState.degraded {
+		mcpLog.Warnf("Oversight settings readable again; the approval gate is back on the persisted state")
+	}
+	oversightState.enabled, oversightState.contact = enabled, contact
+	oversightState.known, oversightState.degraded = true, false
+	return enabled, contact, true
+}
+
+// oversightDegraded serves the cached settings after a failed read, logging only
+// on the transition so a config error cannot emit a line per spend attempt.
+func oversightDegraded(err error) (bool, string, bool) {
+	oversightState.mu.Lock()
+	defer oversightState.mu.Unlock()
+	if !oversightState.degraded {
+		oversightState.degraded = true
+		if oversightState.known {
+			mcpLog.Errorf("Oversight settings could not be read, using the last known state: %v", err)
+		} else {
+			mcpLog.Errorf("Oversight settings could not be read and have never been read; fund moves will be refused: %v", err)
+		}
+	}
+	return oversightState.enabled, oversightState.contact, oversightState.known
+}
+
+// oversightDegradedNow reports whether the settings are being served from cache.
+func oversightDegradedNow() bool {
+	oversightState.mu.RLock()
+	defer oversightState.mu.RUnlock()
+	return oversightState.degraded
 }
 
 // oversightSettings reads the oversight configuration. A variable so a test can
@@ -82,7 +149,7 @@ var sendApprovalPM = rpc.BrclientdSendPM
 
 // SetOversightConfig persists the BR oversight on/off state and target contact.
 func SetOversightConfig(enabled bool, contact string) error {
-	gc, err := config.LoadGlobalCfg()
+	gc, err := config.LoadGlobalCfgAt(cfgPath())
 	if err != nil {
 		return err
 	}
@@ -92,19 +159,32 @@ func SetOversightConfig(enabled bool, contact string) error {
 	if err := gc.Set(config.KeyMCPNotifyContact, strings.TrimSpace(contact)); err != nil {
 		return err
 	}
-	return gc.Save()
+	if err := gc.Save(); err != nil {
+		return err
+	}
+	// Refresh the cache: reads are served from it now, so without this the
+	// operator's toggle would not take effect until the next restart.
+	oversightState.mu.Lock()
+	oversightState.enabled, oversightState.contact = enabled, strings.TrimSpace(contact)
+	oversightState.known, oversightState.degraded = true, false
+	oversightState.mu.Unlock()
+	return nil
 }
 
 // OversightConfig is the dashboard-facing view of the oversight settings.
 type OversightConfig struct {
 	Enabled bool   `json:"enabled"`
 	Contact string `json:"contact"`
+	// Degraded reports that config.json could not be read and these are the
+	// last known values, so the Settings page can say the state is unknown
+	// rather than reporting a confident "off".
+	Degraded bool `json:"degraded"`
 }
 
 // Oversight returns the current oversight settings for the Settings UI.
 func Oversight() OversightConfig {
-	enabled, contact := oversightSettings()
-	return OversightConfig{Enabled: enabled, Contact: contact}
+	enabled, contact, _ := oversightSettings()
+	return OversightConfig{Enabled: enabled, Contact: contact, Degraded: oversightDegradedNow()}
 }
 
 // newApprovalID generates an approval id. A variable so a test can force the
@@ -270,7 +350,12 @@ var approvals = newApprovalRegistry()
 // timeout, or the agent's request being cancelled; it fails closed (refuse) if
 // the operator cannot be reached. The caller must hold no locks: this blocks.
 func gateApproval(ctx context.Context, agentID, action string) error {
-	enabled, contact := oversightSettings()
+	enabled, contact, known := oversightSettings()
+	// Ordered like RequireAuth, which tests Locked() before Enabled(): settings
+	// we have never read cannot be reported as "oversight off".
+	if !known {
+		return errApprovalUnreachable
+	}
 	if !enabled || contact == "" {
 		return nil
 	}
@@ -338,7 +423,7 @@ func startOversightConsumer() {
 		if json.Unmarshal(evt.Payload, &p) != nil {
 			continue
 		}
-		_, contact := oversightSettings()
+		_, contact, _ := oversightSettings()
 		if contact == "" || !strings.EqualFold(strings.TrimSpace(p.From), contact) {
 			continue
 		}
@@ -433,7 +518,7 @@ func spendNotice(e AuditEntry) string {
 // blocks are reported; routine denials are not, since the operator already saw
 // the approval request. Sent in the background so it never blocks the spend path.
 func notifySpend(e AuditEntry) {
-	enabled, contact := oversightSettings()
+	enabled, contact, _ := oversightSettings()
 	if !enabled || contact == "" {
 		return
 	}
@@ -478,7 +563,7 @@ var errOversightContact = errors.New("this contact receives dcrpulse's own appro
 // Nothing is refused when oversight is off, and a contact lookup that fails
 // refuses rather than guessing: only messages to one contact are affected.
 func refuseOversightContact(ctx context.Context, target string) error {
-	enabled, contact := oversightSettings()
+	enabled, contact, _ := oversightSettings()
 	if !enabled || contact == "" {
 		return nil
 	}

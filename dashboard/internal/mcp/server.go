@@ -282,7 +282,14 @@ func Start(cfg Config) {
 	applyPersistedLogging()
 
 	enabled := cfg.Enable
-	if v, ok := persistedEnabled(); ok {
+	v, ok, err := persistedEnabled()
+	if err != nil {
+		// Fail closed: an unreadable config must not let the env default
+		// override a Settings "off" for the surface that mints agent tokens.
+		mcpLog.Errorf("MCP server not started: the persisted on/off state could not be read, so a Settings \"off\" cannot be honoured: %v", err)
+		return
+	}
+	if ok {
 		enabled = v
 	}
 	if !enabled {
@@ -461,7 +468,7 @@ func buildHandler() http.Handler {
 // persistEnabled / persistedEnabled store the on/off toggle in the global config
 // so it survives restarts and overrides the env default.
 func persistEnabled(enabled bool) error {
-	gc, err := config.LoadGlobalCfg()
+	gc, err := config.LoadGlobalCfgAt(cfgPath())
 	if err != nil {
 		return err
 	}
@@ -471,17 +478,25 @@ func persistEnabled(enabled bool) error {
 	return gc.Save()
 }
 
-func persistedEnabled() (val bool, ok bool) {
-	gc, err := config.LoadGlobalCfg()
+// A config that exists but cannot be read or parsed is NOT "never toggled": the
+// operator may have turned the agent surface off, and falling back to the env
+// default would turn it back on. Absent or unset stays a clean fallback, which
+// is the same distinction readRawJSON already draws and auth.Init already acts
+// on.
+func persistedEnabled() (val bool, ok bool, err error) {
+	gc, err := config.LoadGlobalCfgAt(cfgPath())
 	if err != nil {
-		return false, false
+		return false, false, err
 	}
 	var v bool
 	found, err := gc.Get(config.KeyMCPEnabled, &v)
-	if err != nil || !found {
-		return false, false
+	if err != nil {
+		return false, false, err
 	}
-	return v, true
+	if !found {
+		return false, false, nil
+	}
+	return v, true, nil
 }
 
 // per-agent scoped server cache (keyed by agent id), invalidated on a grant

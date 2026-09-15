@@ -92,7 +92,7 @@ func TestNamesOversightContactIgnoresMalformedEntries(t *testing.T) {
 func withOversight(t *testing.T, contact string) {
 	t.Helper()
 	prevCfg, prevSend := oversightSettings, sendApprovalPM
-	oversightSettings = func() (bool, string) { return true, contact }
+	oversightSettings = func() (bool, string, bool) { return true, contact, true }
 	sendApprovalPM = func(_ context.Context, _, msg string) error {
 		open, close := strings.Index(msg, "["), strings.Index(msg, "]")
 		if open < 0 || close < open {

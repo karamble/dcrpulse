@@ -56,7 +56,7 @@ func withApprovalCapture(t *testing.T) func() []string {
 	var asked []string
 
 	prevCfg, prevSend := oversightSettings, sendApprovalPM
-	oversightSettings = func() (bool, string) { return true, overseer }
+	oversightSettings = func() (bool, string, bool) { return true, overseer, true }
 	sendApprovalPM = func(_ context.Context, _, msg string) error {
 		mu.Lock()
 		asked = append(asked, msg)
