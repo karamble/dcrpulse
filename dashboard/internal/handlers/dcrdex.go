@@ -1728,7 +1728,7 @@ func CancelDcrdexOrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "orderID is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexClient(w)
+	client, ok := dexUnlockedClient(w)
 	if !ok {
 		return
 	}
@@ -2482,7 +2482,7 @@ func CloseDcrdexWalletHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	assetID := req.AssetID
-	client, ok := dexClient(w)
+	client, ok := dexUnlockedClient(w)
 	if !ok {
 		return
 	}
@@ -2512,7 +2512,7 @@ func dexWalletExec(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "assetID is required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexClient(w)
+	client, ok := dexUnlockedClient(w)
 	if !ok {
 		return
 	}
@@ -2558,7 +2558,7 @@ func dexWalletPeerExec(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "assetID and address are required", http.StatusBadRequest)
 		return
 	}
-	client, ok := dexClient(w)
+	client, ok := dexUnlockedClient(w)
 	if !ok {
 		return
 	}

@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/time/rate"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
 )
@@ -270,6 +272,68 @@ func TestFundToolsRespectTheCaps(t *testing.T) {
 			if txt := resultText(out); !strings.Contains(txt, errPerTxExceeded.Error()) &&
 				!strings.Contains(txt, errDailyExceeded.Error()) {
 				t.Errorf("refused, but not by the caps - the reservation may have been dropped: %q", txt)
+			}
+		})
+	}
+}
+
+// lockBoundTools are the DEX writes that must refuse while the DEX is locked.
+// They reach bisonw over the RPC client, which keeps working after a lock, so
+// nothing but an explicit check stops them; the tools on the webserver session
+// are stopped by the session itself.
+var lockBoundTools = []struct {
+	name string
+	args map[string]any
+	// lift names the shared allowance this tool draws before it reaches the
+	// lock, if any. Another test in this package empties that bucket, and a
+	// limiter answering first would leave the lock untested.
+	lift *middleware.Allowance
+}{
+	{"dex_cancel_order", map[string]any{"orderId": "ab12"}, nil},
+	{"dex_wallet_close", map[string]any{"assetId": 42}, nil},
+	{"dex_wallet_toggle", map[string]any{"assetId": 42, "disable": true}, nil},
+	{"dex_wallet_rescan", map[string]any{"assetId": 42}, &middleware.DexRescan},
+	{"dex_add_peer", map[string]any{"assetId": 42, "address": "1.2.3.4:9108"}, nil},
+	{"dex_remove_peer", map[string]any{"assetId": 42, "address": "1.2.3.4:9108"}, nil},
+}
+
+// TestDexWritesRefuseWhileLocked pins the lock as a control the agent surface
+// honours. Locking the DEX is the operator saying stop, and these six went on
+// working through it because the RPC path has no session to lose. Checking the
+// scope alone cannot see that: every one of them holds the DEX scope and still
+// ran.
+//
+// The suite has no daemons, so there is no session and DcrdexUnlocked is always
+// false. That is what makes the assertion exact: with the check, each tool
+// refuses with the lock message; without it, the call falls through and dies
+// further in, on the RPC client instead.
+func TestDexWritesRefuseWhileLocked(t *testing.T) {
+	domains := map[string]bool{}
+	for _, d := range catalogDomains() {
+		domains[d] = true
+	}
+	for i, c := range lockBoundTools {
+		t.Run(c.name, func(t *testing.T) {
+			if c.lift != nil {
+				lim := c.lift.Limiter()
+				prev := lim.Limit()
+				lim.SetLimit(rate.Inf)
+				t.Cleanup(func() { lim.SetLimit(prev) })
+			}
+			id := fmt.Sprintf("lock-bound-%d", i)
+			grants.set(id, GrantSpec{WriteScopes: []string{scopeDex}}, time.Now())
+			t.Cleanup(func() { grants.revoke(id) })
+
+			cs := connectTo(t, testAgent(id, "lock", domains))
+			out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: c.name, Arguments: c.args})
+			if err != nil {
+				t.Fatalf("unexpected transport error: %v", err)
+			}
+			if !out.IsError {
+				t.Fatalf("ran with the DEX locked")
+			}
+			if txt := resultText(out); !strings.Contains(txt, dexLocked().Error()) {
+				t.Errorf("refused by %q, want the DEX lock: the tool reached bisonw through the lock", txt)
 			}
 		})
 	}

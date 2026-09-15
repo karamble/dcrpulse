@@ -874,10 +874,15 @@ var dexTools = []toolDef{
 			return raw, nil
 		}),
 	agentTool("dex", "dex_cancel_order",
-		"Cancel a standing DCRDEX order. Requires a spend grant with DEX trading enabled.",
+		"Cancel a standing DCRDEX order. Requires a spend grant with DEX trading enabled and the DEX unlocked.",
 		func(ctx context.Context, a *agent, in dexCancelInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
 				recordSpend(a, "dex_cancel_order", 0, 0, in.OrderID, "denied", err.Error())
+				return nil, err
+			}
+			if !rpc.DcrdexUnlocked() {
+				err := dexLocked()
+				recordSpend(a, "dex_cancel_order", 0, 0, in.OrderID, "error", err.Error())
 				return nil, err
 			}
 			client, err := rpc.DcrdexClient()
@@ -974,11 +979,16 @@ var dexTools = []toolDef{
 			return map[string]bool{"ok": true}, nil
 		}),
 	agentTool("dex", "dex_wallet_close",
-		"Lock a DEX wallet by asset id. Requires a spend grant with DEX trading enabled.",
+		"Lock a DEX wallet by asset id. Requires a spend grant with DEX trading enabled and the DEX unlocked.",
 		func(ctx context.Context, a *agent, in dexWalletAssetInput) (any, error) {
 			target := fmt.Sprintf("asset=%d", in.AssetID)
 			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
 				recordSpend(a, "dex_wallet_close", 0, 0, target, "denied", err.Error())
+				return nil, err
+			}
+			if !rpc.DcrdexUnlocked() {
+				err := dexLocked()
+				recordSpend(a, "dex_wallet_close", 0, 0, target, "error", err.Error())
 				return nil, err
 			}
 			client, err := rpc.DcrdexClient()
@@ -993,11 +1003,16 @@ var dexTools = []toolDef{
 			return map[string]bool{"ok": true}, nil
 		}),
 	agentTool("dex", "dex_wallet_toggle",
-		"Enable or disable a DEX wallet by asset id. Requires a spend grant with DEX trading enabled.",
+		"Enable or disable a DEX wallet by asset id. Requires a spend grant with DEX trading enabled and the DEX unlocked.",
 		func(ctx context.Context, a *agent, in dexToggleWalletInput) (any, error) {
 			target := fmt.Sprintf("asset=%d disable=%t", in.AssetID, in.Disable)
 			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
 				recordSpend(a, "dex_wallet_toggle", 0, 0, target, "denied", err.Error())
+				return nil, err
+			}
+			if !rpc.DcrdexUnlocked() {
+				err := dexLocked()
+				recordSpend(a, "dex_wallet_toggle", 0, 0, target, "error", err.Error())
 				return nil, err
 			}
 			client, err := rpc.DcrdexClient()
@@ -1012,7 +1027,7 @@ var dexTools = []toolDef{
 			return map[string]bool{"ok": true}, nil
 		}),
 	agentTool("dex", "dex_wallet_rescan",
-		"Trigger a rescan of a DEX wallet by asset id. Requires a spend grant with DEX trading enabled. One start per minute, shared with the dashboard.",
+		"Trigger a rescan of a DEX wallet by asset id. Requires a spend grant with DEX trading enabled and the DEX unlocked. One start per minute, shared with the dashboard.",
 		func(ctx context.Context, a *agent, in dexRescanWalletInput) (any, error) {
 			target := fmt.Sprintf("asset=%d", in.AssetID)
 			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
@@ -1020,6 +1035,11 @@ var dexTools = []toolDef{
 				return nil, err
 			}
 			if err := allow(middleware.DexRescan); err != nil {
+				return nil, err
+			}
+			if !rpc.DcrdexUnlocked() {
+				err := dexLocked()
+				recordSpend(a, "dex_wallet_rescan", 0, 0, target, "error", err.Error())
 				return nil, err
 			}
 			client, err := rpc.DcrdexClient()
@@ -1034,10 +1054,15 @@ var dexTools = []toolDef{
 			return map[string]bool{"ok": true}, nil
 		}),
 	agentTool("dex", "dex_add_peer",
-		"Add a persistent peer to a DEX wallet. Requires a spend grant with DEX trading enabled.",
+		"Add a persistent peer to a DEX wallet. Requires a spend grant with DEX trading enabled and the DEX unlocked.",
 		func(ctx context.Context, a *agent, in dexWalletPeerInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
 				recordSpend(a, "dex_add_peer", 0, 0, in.Address, "denied", err.Error())
+				return nil, err
+			}
+			if !rpc.DcrdexUnlocked() {
+				err := dexLocked()
+				recordSpend(a, "dex_add_peer", 0, 0, in.Address, "error", err.Error())
 				return nil, err
 			}
 			client, err := rpc.DcrdexClient()
@@ -1052,10 +1077,15 @@ var dexTools = []toolDef{
 			return map[string]bool{"ok": true}, nil
 		}),
 	agentTool("dex", "dex_remove_peer",
-		"Remove a persistent peer from a DEX wallet. Requires a spend grant with DEX trading enabled.",
+		"Remove a persistent peer from a DEX wallet. Requires a spend grant with DEX trading enabled and the DEX unlocked.",
 		func(ctx context.Context, a *agent, in dexWalletPeerInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeDex, time.Now()); err != nil {
 				recordSpend(a, "dex_remove_peer", 0, 0, in.Address, "denied", err.Error())
+				return nil, err
+			}
+			if !rpc.DcrdexUnlocked() {
+				err := dexLocked()
+				recordSpend(a, "dex_remove_peer", 0, 0, in.Address, "error", err.Error())
 				return nil, err
 			}
 			client, err := rpc.DcrdexClient()
