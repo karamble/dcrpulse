@@ -23,7 +23,7 @@ import (
 //
 // If this fails and the change was meant: regenerate (`make proto`), check the
 // method set below still says what you want, and paste the new hash in.
-const contractSHA256 = "d66e22864192e44916d4c07b68f21495aa368ee274ac5e1ad1afd506947d68fd"
+const contractSHA256 = "bbcaffb2986f43c48afaa94cbdfcbf6afd90867d5aebd7aa1dffa914e5c5641d"
 
 func TestTheWireContractHasNotDrifted(t *testing.T) {
 	raw, err := os.ReadFile("gaming_bridge.proto")
@@ -49,8 +49,9 @@ func TestTheServiceOffersExactlyTheseCalls(t *testing.T) {
 		"Hello",
 		// the bridge->game channel and its reply half
 		"Respond", "ReportState",
-		// money - the only verbs where the bridge forms an opinion
-		"RequestSpend", "SpendStatus", "Broadcast",
+		// descriptor-bound money requests and read-only status
+		"FinancialKey", "PrepareDeposit", "RequestSpend", "SpendStatus",
+		"ProposePayout", "PayoutStatus", "FinancialState",
 		// frames and chain
 		"SendFrame", "ChainTip", "BlockHash", "Outpoint",
 	}
@@ -96,7 +97,6 @@ func TestNoRequestNamesItsOwnGame(t *testing.T) {
 	for _, m := range []proto.Message{
 		&RequestSpendRequest{},
 		&SendFrameRequest{},
-		&BroadcastRequest{},
 		&SpendStatusRequest{},
 		&SubscribeRequest{},
 	} {
@@ -106,6 +106,18 @@ func TestNoRequestNamesItsOwnGame(t *testing.T) {
 			case "game", "game_id":
 				t.Errorf("%s carries %q, so a game could name itself rather than "+
 					"being told what it is", d.Name(), name)
+			}
+		}
+	}
+}
+
+func TestGameControlCarriesNoFinancialAuthority(t *testing.T) {
+	for _, m := range []proto.Message{&BridgeRequest{}, &RespondRequest{}, &GameState{}} {
+		d := m.ProtoReflect().Descriptor()
+		for i := 0; i < d.Fields().Len(); i++ {
+			switch name := string(d.Fields().Get(i).Name()); name {
+			case "reclaim", "set_payout", "payout_address", "bond", "table_bonds", "stakes", "raw_tx_hex":
+				t.Errorf("%s exposes retired financial field %q", d.Name(), name)
 			}
 		}
 	}

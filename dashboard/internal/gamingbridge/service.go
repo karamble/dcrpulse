@@ -16,7 +16,7 @@ import (
 )
 
 // contractVersion is the version of the wire contract this bridge answers.
-const contractVersion = 1
+const contractVersion = 3
 
 // errNoChain is what a game is told when the node is not reachable.
 //
@@ -34,6 +34,9 @@ var errNoChain = status.Error(codes.Unavailable, "the chain is not reachable fro
 // caps set for another game.
 func (s *Server) Hello(ctx context.Context, req *gamingpb.HelloRequest) (*gamingpb.HelloReply, error) {
 	game := callerGame(ctx)
+	if req.GetBridgeContractVersion() != contractVersion {
+		return nil, status.Error(codes.FailedPrecondition, "bridge financial contract version 3 required")
+	}
 	if claimed := req.GetGameId(); claimed != "" && claimed != game {
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"this credential is registered to a different game than %q; it has been copied to the wrong place", claimed)
@@ -84,7 +87,12 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 	game := callerGame(ctx)
 
 	live := s.reg.add(game)
-	defer s.reg.remove(game, live)
+	defer func() {
+		s.reg.remove(game, live)
+		if s.cfg.OnPresence != nil {
+			s.cfg.OnPresence(game)
+		}
+	}()
 
 	var missed []string
 	if s.cfg.TakeMissed != nil {
@@ -102,6 +110,9 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 		Event: &gamingpb.BridgeEvent_Start{Start: start},
 	}); err != nil {
 		return err
+	}
+	if s.cfg.OnPresence != nil {
+		s.cfg.OnPresence(game)
 	}
 	if start.GetGap() {
 		gameLog.Infof("%s reconnected with a gap (%s), %d table(s) named",
@@ -267,14 +278,14 @@ func (s *Server) LockTerms(game string) (minRefund, bondLock uint32) {
 // about the amount: the caps and the account belong to the policy the operator
 // wrote, and this only carries the answer back.
 func (s *Server) RequestSpend(ctx context.Context, req *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error) {
-	if s.cfg.RequestSpend == nil {
-		return nil, errNotHere
+	if s.cfg.VerifiedSpend == nil || req.GetDepositId() == "" {
+		return nil, status.Error(codes.FailedPrecondition, "a bridge-verified deposit is required before payment approval")
 	}
 	game := callerGame(ctx)
 	if !s.allowCall(s.reqLim, game, requestSpendEvery, requestSpendBurst) {
 		return nil, status.Error(codes.ResourceExhausted, "asking to spend too often; wait and ask again")
 	}
-	spend, err := s.cfg.RequestSpend(ctx, game, req.GetAddress(), req.GetAmountAtoms(), req.GetReason())
+	spend, err := s.cfg.VerifiedSpend(ctx, game, req)
 	if err != nil {
 		return nil, spendErr(game, err)
 	}
@@ -301,22 +312,6 @@ func (s *Server) SpendStatus(ctx context.Context, req *gamingpb.SpendStatusReque
 	return spend, nil
 }
 
-// Broadcast relays a transaction the game signed itself.
-//
-// Bounded by shape rather than by intent, which is the only thing that can be
-// checked: the bridge cannot know what a game meant, and does know what a
-// transaction does.
-func (s *Server) Broadcast(ctx context.Context, req *gamingpb.BroadcastRequest) (*gamingpb.BroadcastReply, error) {
-	if s.cfg.Broadcast == nil {
-		return nil, errNotHere
-	}
-	txid, err := s.cfg.Broadcast(ctx, callerGame(ctx), req.GetRawTxHex())
-	if err != nil {
-		return nil, gameErr(callerGame(ctx), "Broadcast", codes.FailedPrecondition, err)
-	}
-	return &gamingpb.BroadcastReply{Txid: txid}, nil
-}
-
 // spendErr says which kind of no this was.
 //
 // A cap is the operator's standing decision working as intended, and a game
@@ -335,4 +330,66 @@ func spendErr(game string, err error) error {
 	default:
 		return gameErr(game, "RequestSpend", codes.FailedPrecondition, err)
 	}
+}
+
+// FinancialKey returns only bridge-controlled public financial authority.
+func (s *Server) FinancialKey(ctx context.Context, req *gamingpb.FinancialKeyRequest) (*gamingpb.FinancialKeyReply, error) {
+	if s.cfg.FinancialKey == nil {
+		return nil, errNotHere
+	}
+	game := callerGame(ctx)
+	if !s.allowCall(s.reqLim, game, requestSpendEvery, requestSpendBurst) {
+		return nil, status.Error(codes.ResourceExhausted, "financial requests too frequent")
+	}
+	key, err := s.cfg.FinancialKey(ctx, game, req.GetSid())
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, "financial authority is unavailable")
+	}
+	return key, nil
+}
+func (s *Server) PrepareDeposit(ctx context.Context, req *gamingpb.PrepareDepositRequest) (*gamingpb.PreparedDeposit, error) {
+	if s.cfg.PrepareDeposit == nil {
+		return nil, errNotHere
+	}
+	game := callerGame(ctx)
+	if !s.allowCall(s.reqLim, game, requestSpendEvery, requestSpendBurst) {
+		return nil, status.Error(codes.ResourceExhausted, "financial requests too frequent")
+	}
+	out, err := s.cfg.PrepareDeposit(ctx, game, req)
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, "deposit failed independent bridge verification")
+	}
+	return out, nil
+}
+
+func (s *Server) ProposePayout(ctx context.Context, req *gamingpb.ProposePayoutRequest) (*gamingpb.PayoutStatusReply, error) {
+	if s.cfg.ProposePayout == nil {
+		return nil, errNotHere
+	}
+	reply, err := s.cfg.ProposePayout(ctx, callerGame(ctx), req)
+	if err != nil {
+		return nil, gameErr(callerGame(ctx), "ProposePayout", codes.FailedPrecondition, err)
+	}
+	return reply, nil
+}
+func (s *Server) PayoutStatus(ctx context.Context, req *gamingpb.PayoutStatusRequest) (*gamingpb.PayoutStatusReply, error) {
+	if s.cfg.PayoutStatus == nil {
+		return nil, errNotHere
+	}
+	reply, err := s.cfg.PayoutStatus(ctx, callerGame(ctx), req.GetId())
+	if err != nil {
+		return nil, gameErr(callerGame(ctx), "PayoutStatus", codes.FailedPrecondition, err)
+	}
+	return reply, nil
+}
+
+func (s *Server) FinancialState(ctx context.Context, req *gamingpb.FinancialStateRequest) (*gamingpb.FinancialStateReply, error) {
+	if s.cfg.FinancialState == nil {
+		return nil, errNotHere
+	}
+	out, err := s.cfg.FinancialState(ctx, callerGame(ctx), req.GetSid())
+	if err != nil {
+		return nil, gameErr(callerGame(ctx), "FinancialState", codes.FailedPrecondition, err)
+	}
+	return out, nil
 }

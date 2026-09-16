@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { GamingLock, GamingReportedTable } from '../../services/gamingApi';
+import { GamingReportedTable } from '../../services/gamingApi';
 
 export type StageTone = 'muted' | 'info' | 'warning' | 'success';
 
@@ -29,21 +29,9 @@ const KNOWN_STATES: Record<string, string> = {
 // tableStage says what a table is doing, from the only three facts the bridge
 // carries about it.
 //
-// The order of these tests is the design. `state` never decides on its own,
-// because it cannot: `settled` covers a table about to deal and a table that
-// finished hours ago, and only `over` and `settling` tell those apart. So both
-// are checked before anything else, and no later branch may override them.
+// The game supplies presentation status only. Financial readiness and recovery
+// are rendered from the bridge authority ledger elsewhere.
 export const tableStage = (t: GamingReportedTable, tip: number): Stage => {
-  if (t.settling) {
-    return {
-      label: 'Settling',
-      tone: 'warning',
-      line:
-        'The game can still complete a cooperative settlement. Nothing of this table' +
-        ' is offered back until that is over - a refund now would spend an input the' +
-        ' settlement needs, and defeat the payout every seat signed.',
-    };
-  }
   if (t.over) {
     return {
       label: 'Finished',
@@ -90,20 +78,15 @@ export const tableStage = (t: GamingReportedTable, tip: number): Stage => {
   };
 };
 
-// locksFor is the coin a table is holding, joined on the session id the game
-// reports against both.
-export const locksFor = (locks: GamingLock[], sid: string): GamingLock[] =>
-  locks.filter((l) => l.sid === sid && !l.spent);
-
-// sortTables puts what needs attention first: money that is time-boxed, then
-// deadlines by how soon they fall, then everything that has finished.
+// sortTables puts active registration deadlines first, then other active
+// tables, then finished presentation state.
 export const sortTables = (tables: GamingReportedTable[], tip: number): GamingReportedTable[] =>
   [...tables].sort((a, b) => {
     const rank = (t: GamingReportedTable) =>
-      t.settling ? 0 : t.over ? 3 : tip > 0 && t.until > tip ? 1 : 2;
+	  t.over ? 2 : tip > 0 && t.until > tip ? 0 : 1;
     const ra = rank(a);
     const rb = rank(b);
     if (ra !== rb) return ra - rb;
-    if (ra === 1) return a.until - b.until;
+    if (ra === 0) return a.until - b.until;
     return a.sid.localeCompare(b.sid);
   });

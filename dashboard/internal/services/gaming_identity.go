@@ -248,16 +248,19 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 			return p.PerTableCapAtoms, p.PerDayCapAtoms, strings.TrimSpace(p.Account) != ""
 		},
 
-		RequestSpend: func(ctx context.Context, game, address string, atoms int64, reason string) (*gamingpb.Spend, error) {
-			spend, err := RequestGamingSpend(ctx, game, address, atoms, reason)
-			return spendProto(spend), spendBridgeErr(err)
+		FinancialKey:   GamingFinancialKeyReply,
+		PrepareDeposit: PrepareGamingDeposit,
+		FinancialState: GamingFinancialState,
+		ProposePayout:  ProposeGamingPayout,
+		PayoutStatus:   GamingPayoutStatus,
+		VerifiedSpend: func(ctx context.Context, game string, req *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error) {
+			spend, err := RequestGamingDepositSpend(ctx, game, req)
+			return spend, spendBridgeErr(err)
 		},
 		SpendStatus: func(game, id string) (*gamingpb.Spend, error) {
 			spend, err := GamingSpendFor(game, id)
 			return spendProto(spend), spendBridgeErr(err)
 		},
-		Broadcast: GamingBroadcast,
-
 		SendFrame: SendGamingFrame,
 		ChainTip: func(ctx context.Context) (int64, string, error) {
 			tip, err := GamingChainTipNow(ctx)
@@ -277,11 +280,13 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 				Coinbase:      o.Coinbase,
 			}, nil
 		},
-		// A game that has not said where it wants to be paid is told, the
-		// first time it reports itself. A seat that never says holds up
-		// the whole table's payout, not just its own share.
-		OnState:   PinGamingPayoutOnce,
-		OnConnect: GamingGameArrived,
+		OnConnect: func(game string) {
+			if err := RefreshGamingState(context.Background(), game); err != nil {
+				gameLog.Warnf("%s did not report its state: %v", game, err)
+			}
+		},
+		OnPresence:           GamingPresenceChanged,
+		StartFinancialWorker: StartGamingFinancialWorker,
 	}, nil
 }
 

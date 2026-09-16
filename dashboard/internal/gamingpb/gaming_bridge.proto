@@ -19,7 +19,7 @@
 
 syntax = "proto3";
 
-package dcrpulse.gaming.v1;
+package dcrpulse.gaming.v2;
 
 option go_package = "dcrpulse/internal/gamingpb;gamingpb";
 
@@ -56,6 +56,13 @@ service BridgeService {
   // NON-IDEMPOTENT. It must never be placed in a gRPC retry policy: a
   // transparent retry would ask for the same stake twice.
   rpc RequestSpend(RequestSpendRequest) returns (Spend);
+  // Financial authority is retained by the bridge. These return public data
+  // only; a game never receives a spending key or a general signing oracle.
+  rpc FinancialKey(FinancialKeyRequest) returns (FinancialKeyReply);
+  rpc PrepareDeposit(PrepareDepositRequest) returns (PreparedDeposit);
+  rpc ProposePayout(ProposePayoutRequest) returns (PayoutStatusReply);
+  rpc PayoutStatus(PayoutStatusRequest) returns (PayoutStatusReply);
+  rpc FinancialState(FinancialStateRequest) returns (FinancialStateReply);
 
   // SpendStatus reports what became of one of THIS game's requests.
   //
@@ -63,13 +70,6 @@ service BridgeService {
   // to ask is not the same as the answer being no, and only a call the game
   // makes itself can tell those apart.
   rpc SpendStatus(SpendStatusRequest) returns (Spend);
-
-  // Broadcast relays a transaction the game signed itself - a matured bond, a
-  // stake past its timelock, a settlement every member signed. Bounded by
-  // shape rather than by intent: every input spends game money the wallet does
-  // not own, and unless every input required more than one signature, every
-  // output pays an address the wallet does.
-  rpc Broadcast(BroadcastRequest) returns (BroadcastReply);
 
   // ---- frames and chain: opaque, read-only ----
 
@@ -99,6 +99,7 @@ message HelloRequest {
   uint32 game_protocol_version = 2;
 
   string client_version = 3;
+  uint32 bridge_contract_version = 7;
 
   // capabilities are the pushes this game can answer. One that cannot do a
   // thing says so, and the console stops offering it - which is how this
@@ -119,9 +120,8 @@ message HelloRequest {
 enum Capability {
   CAP_UNSPECIFIED = 0;
   CAP_ACCEPT_INVITE = 1;
-  CAP_RECLAIM = 2;
-  CAP_SET_PAYOUT = 3;
   CAP_SET_NAMES = 4;
+  reserved 2, 3;
 }
 
 message HelloReply {
@@ -217,57 +217,21 @@ message Frame {
 message BridgeRequest {
   string request_id = 1;
 
-  // deadline_unix is advisory for reads. A Reclaim MUST be completed and
-  // broadcast regardless - the coin is coming home either way - and its
-  // outcome reported through ReportState, which is the backstop for a reply
-  // that never arrived.
+  // deadline_unix bounds operator-requested game work.
   int64 deadline_unix = 2;
 
   oneof req {
     AcceptInvite accept_invite = 3;
-    Reclaim reclaim = 4;
-    SetPayoutAddress set_payout = 5;
     SetNames set_names = 6;
     RefreshState refresh_state = 7;
   }
+  reserved 4, 5;
 }
 
 message AcceptInvite {
   string invite = 1;
   string gcid = 2;
 }
-
-message Reclaim {
-  enum Kind {
-    BOND = 0;        // the standing fidelity bond
-    STAKE = 1;       // a table stake past its timelock
-    TABLE_BOND = 2;  // a forfeitable table bond past its window
-  }
-  Kind kind = 1;
-  string sid = 2;
-
-  // dest_addr is derived by the bridge from the game's own bound account. A
-  // game that chose where its refunds landed could simply choose itself.
-  string dest_addr = 3;
-
-  // outpoint names coin other than the seat's current stake - the way back for
-  // a deposit that was paid but never recorded.
-  string outpoint = 4;
-
-  // fee_atoms of 0 means the game's own default.
-  int64 fee_atoms = 5;
-}
-
-// SetPayoutAddress says where this player's winnings are to be paid.
-//
-// address is derived by the bridge from the game's own bound account, for the
-// same reason a Reclaim's dest_addr is: a game that chose where its winnings
-// landed could simply choose itself.
-//
-// Every seat must answer before a table can pay anybody: the settlement spends
-// the table's escrow and needs every signature, so one seat that has not said
-// holds up everyone's money.
-message SetPayoutAddress { string address = 1; }
 
 // SetNames is merged, not replaced: labels are cosmetic and a partial update
 // must not erase what it does not mention.
@@ -286,14 +250,13 @@ message RespondRequest {
 
   oneof result {
     AcceptInviteResult accept_invite = 4;
-    ReclaimResult reclaim = 5;
     GameState state = 6;
   }
+  reserved 5;
 }
 
 message RespondReply {}
 message AcceptInviteResult { string sid = 1; }
-message ReclaimResult { string txid = 1; }
 
 // ---- state ----
 
@@ -307,13 +270,6 @@ message GameState {
   uint64 seq = 3;
 
   repeated Table tables = 4;
-  Bond bond = 5;
-  repeated TableBond table_bonds = 6;
-
-  // payout_address is echoed back so the console can see a push that did not
-  // take.
-  string payout_address = 7;
-
   string chain_err = 8;
 
   // seed_backup_acknowledged stops the console nagging. The seed itself never
@@ -321,8 +277,7 @@ message GameState {
   // hold, and the game offers its own backup where the person already is.
   bool seed_backup_acknowledged = 9;
 
-  // stakes is every seat of ours still holding a buy-in.
-  repeated Stake stakes = 10;
+  reserved 5, 6, 7, 10;
 }
 
 message ReportStateReply {}
@@ -336,66 +291,13 @@ message Table {
   uint32 until = 6;
   bool over = 7;
 
-  // settling is true while this game could still complete a cooperative
-  // settlement for the table. A refund taken during that window spends an
-  // input the settlement needs, so the console does not offer one.
-  bool settling = 8;
-}
-
-// Bond and TableBond carry absolute facts only. A count of blocks remaining is
-// true for one block and then quietly wrong; a maturity height stays true while
-// the game is away, and the console derives the rest from the bridge's own tip.
-message Bond {
-  string address = 1;
-  string script_hex = 2;
-  string outpoint = 3;
-  int64 min_atoms = 4;
-  int64 atoms = 5;
-  int64 matures_at = 6;
-  bool has_deposit = 7;
-  bool spent = 8;
-
-  // spending is true while a spend of this output is in the mempool.
-  bool spending = 9;
-}
-
-message TableBond {
-  string sid = 1;
-  uint32 seat = 2;
-  string outpoint = 3;
-  string address = 4;
-  int64 atoms = 5;
-  int64 matures_at = 6;
-  bool spent = 7;
-
-  // spending is true while a spend of this output is in the mempool. Distinct
-  // from spent, which is the chain's settled answer: a broadcast can still be
-  // evicted, so the outpoint stays reported and stays this game's to reclaim.
-  bool spending = 8;
-}
-
-// Stake is one seat's buy-in, sitting behind its own refund timelock.
-//
-// Reported for the same reason a bond is: the console is where a person takes
-// coin back, and it cannot offer that for an outpoint it was never told about.
-message Stake {
-  string sid = 1;
-  uint32 seat = 2;
-  string outpoint = 3;
-  string address = 4;
-  int64 atoms = 5;
-  int64 matures_at = 6;
-  bool spent = 7;
-
-  // spending is true while a spend of this output is in the mempool. Distinct
-  // from spent, which is the chain's settled answer: a broadcast can still be
-  // evicted, so the outpoint stays reported and stays this game's to reclaim.
-  bool spending = 8;
+  reserved 8;
 }
 
 // ---- money ----
 
 message RequestSpendRequest {
+  string deposit_id = 4; // mandatory immutable bridge-verified descriptor
   string address = 1;
   int64 amount_atoms = 2;
 
@@ -424,9 +326,6 @@ message Spend {
 }
 
 message SpendSettled { string id = 1; }
-
-message BroadcastRequest { string raw_tx_hex = 1; }
-message BroadcastReply { string txid = 1; }
 
 // ---- frames and chain ----
 
@@ -472,3 +371,36 @@ message OutpointReply {
   int64 confirmations = 4;
   bool coinbase = 5;
 }
+
+// A table's financial key is generated by the authenticated bridge, scoped to
+// its actual network, wallet fingerprint, game and bound account.
+message FinancialKeyRequest { string sid = 1; }
+message FinancialKeyReply { string public_key = 1; string payout_address = 2; }
+message PrepareDepositRequest {
+  string sid = 1;
+  string kind = 2;
+  int64 amount_atoms = 3;
+  uint32 lock_blocks = 4;
+  string identity_key = 5;
+  repeated string members = 6;
+}
+message PreparedDeposit {
+  string id = 1;
+  string address = 2;
+  string redeem_script = 3;
+  string pk_script = 4;
+  string recovery_key = 5;
+}
+
+// Inputs identify funded stakes; scripts and values are rebuilt by the bridge.
+message PayoutInput { string owner_key = 1; string identity_key = 2; string txid = 3; uint32 vout = 4; }
+message PayoutPayment { string owner_key = 1; int64 amount_atoms = 2; }
+// Payment amounts are the gross game outcome. The bridge derives and deducts
+// the relay fee using the financial protocol's deterministic size policy.
+message ProposePayoutRequest { string sid = 1; repeated PayoutInput inputs = 2; repeated PayoutPayment payments = 3; reserved 4; }
+message PayoutStatusRequest { string id = 1; }
+message PayoutStatusReply { string id = 1; string sid = 2; string state = 3; string txid = 4; uint32 signatures = 5; uint32 required = 6; }
+
+message FinancialStateRequest { string sid = 1; }
+message DepositStatus { string id = 1; string kind = 2; string state = 3; string outpoint = 4; int64 amount_atoms = 5; uint32 lock_blocks = 6; int64 confirmations = 7; }
+message FinancialStateReply { string sid = 1; bool closed = 2; repeated DepositStatus deposits = 3; string terms_hash = 4; string payout_address = 5; }

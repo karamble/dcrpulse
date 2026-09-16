@@ -74,7 +74,7 @@ func TestAGameIsToldWhatItIs(t *testing.T) {
 
 	ctx, cancel := callCtx(t)
 	defer cancel()
-	reply, err := c.Hello(ctx, &gamingpb.HelloRequest{ClientVersion: "test"})
+	reply, err := c.Hello(ctx, &gamingpb.HelloRequest{ClientVersion: "test", BridgeContractVersion: 3})
 	if err != nil {
 		t.Fatalf("a game cannot find out what this bridge considers it to be, "+
 			"so a misplaced credential stays invisible: %v", err)
@@ -98,7 +98,7 @@ func TestAGameThatClaimsAnotherNameIsRefused(t *testing.T) {
 
 	ctx, cancel := callCtx(t)
 	defer cancel()
-	_, err := c.Hello(ctx, &gamingpb.HelloRequest{GameId: "not-poker", ClientVersion: "test"})
+	_, err := c.Hello(ctx, &gamingpb.HelloRequest{GameId: "not-poker", ClientVersion: "test", BridgeContractVersion: 3})
 	if err == nil {
 		t.Fatal("a game was admitted under a name its credential does not carry, so a credential " +
 			"on the wrong machine looks like a working one")
@@ -120,7 +120,7 @@ func TestAGameLearnsTheNetworkBeforeItSpends(t *testing.T) {
 
 	ctx, cancel := callCtx(t)
 	defer cancel()
-	reply, err := c.Hello(ctx, &gamingpb.HelloRequest{GameId: "poker", ClientVersion: "test"})
+	reply, err := c.Hello(ctx, &gamingpb.HelloRequest{GameId: "poker", ClientVersion: "test", BridgeContractVersion: 3})
 	if err != nil {
 		t.Fatalf("a game cannot learn which chain this bridge is on, so it can only find out "+
 			"by paying into a script nobody can spend: %v", err)
@@ -256,6 +256,7 @@ func TestAnOverCapSpendIsRefusedBeforeAnyoneIsAsked(t *testing.T) {
 	ctx, cancel := callCtx(t)
 	defer cancel()
 	_, err := c.RequestSpend(ctx, &gamingpb.RequestSpendRequest{
+		DepositId:   "verified-test-deposit",
 		Address:     "DsUZxxoHJSty8DCfwfartwTYbuhmVct7tJu",
 		AmountAtoms: 1 << 40, // far past any cap an operator would set
 		Reason:      "a buy-in nobody agreed to",
@@ -282,6 +283,7 @@ func TestNothingIsPaidWithoutAPerson(t *testing.T) {
 	ctx, cancel := callCtx(t)
 	defer cancel()
 	spend, err := c.RequestSpend(ctx, &gamingpb.RequestSpendRequest{
+		DepositId:   "verified-test-deposit",
 		Address:     "DsUZxxoHJSty8DCfwfartwTYbuhmVct7tJu",
 		AmountAtoms: 100000,
 		Reason:      "table buy-in",
@@ -312,6 +314,7 @@ func TestAGameCannotReadAnotherGamesSpend(t *testing.T) {
 	ctx, cancel := callCtx(t)
 	defer cancel()
 	spend, err := poker.RequestSpend(ctx, &gamingpb.RequestSpendRequest{
+		DepositId:   "verified-test-deposit",
 		Address:     "DsUZxxoHJSty8DCfwfartwTYbuhmVct7tJu",
 		AmountAtoms: 100000,
 		Reason:      "table buy-in",

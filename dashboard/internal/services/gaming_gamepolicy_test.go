@@ -5,12 +5,10 @@
 package services
 
 import (
-	"context"
 	"errors"
 	"math"
 	"strings"
 	"testing"
-	"time"
 
 	"dcrpulse/internal/types"
 )
@@ -130,57 +128,6 @@ func TestTheAccountAGameSpendsFromIsItsOwn(t *testing.T) {
 
 	if _, err := gamingAccountFor(s, "nobody"); err == nil {
 		t.Error("an unregistered game resolved an account")
-	}
-}
-
-// The account is resolved for the game that asked, taken from the same record
-// the amount and the address come from - so what is paid is what was shown, out
-// of the money that game was confined to.
-func TestASpendIsPaidFromItsOwnGamesAccount(t *testing.T) {
-	spendSeams(t)
-	chess := types.GamingSettings{
-		Enabled:         true,
-		RegisteredGames: []string{"chess"},
-		Policies: map[string]types.GamePolicy{"chess": {
-			Account: "chess-money", PerTableCapAtoms: 100_000_000,
-			PerDayCapAtoms: 500_000_000, ApprovalTimeoutSecs: 120,
-		}},
-	}
-	if _, err := WriteGamingSettings(chess, true); err != nil {
-		t.Fatalf("store a policy: %v", err)
-	}
-
-	asked := make(chan string, 1)
-	spendAccount = func(_ context.Context, game string) (uint32, error) {
-		asked <- game
-		return 1, nil
-	}
-	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
-		return []byte("unsigned"), nil
-	}
-	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
-		return []byte("signed"), nil
-	}
-	spendPublish = func(context.Context, []byte) (string, error) { return "txid00", nil }
-
-	if err := writeSpendLog(spendLog{Spends: []GamingSpend{{
-		ID: "bb22", Game: "chess", Address: "Tsaddr", AmountAtoms: 1_000_000,
-		State: GamingSpendPending, RequestedAt: time.Now().Unix(),
-		ExpiresAt: time.Now().Unix() + 300,
-	}}}, time.Now().Unix()); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	if _, err := ApproveGamingSpend(context.Background(), "bb22", []byte("pass")); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-	select {
-	case game := <-asked:
-		if game != "chess" {
-			t.Fatalf("chess's spend was paid from %q's account", game)
-		}
-	default:
-		t.Fatal("approving never resolved an account at all")
 	}
 }
 

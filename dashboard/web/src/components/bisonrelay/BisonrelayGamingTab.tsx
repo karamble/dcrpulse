@@ -1,3 +1,4 @@
+import { GamingPayoutApprovals } from './GamingPayoutApprovals';
 // Copyright (c) 2015-2026 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
@@ -17,6 +18,8 @@ import {
 } from 'lucide-react';
 import { dataOf, useAsyncResource } from '../../hooks/useAsyncResource';
 import { useActionMap } from '../../hooks/useActionMap';
+import { useVisiblePoll } from '../../hooks/useVisiblePoll';
+import { useBisonrelayLive } from './BisonrelayLiveProvider';
 import { useGamingSpends } from '../../hooks/useGamingSpends';
 import { BrSidebar, navigateTo, type BrSidebarItem } from './BrSidebar';
 import { ConfirmActionModal } from './BisonrelayUserSubNav';
@@ -39,7 +42,7 @@ import {
 } from '../../services/gamingApi';
 import { AccountInfo, getAccounts } from '../../services/api';
 import { GamingCreateTable } from './GamingCreateTable';
-import { GamingLockedCoin } from './GamingLockedCoin';
+import { GamingRecovery } from './GamingRecovery';
 import { CapValue, GamingCapField, capError, capFromDcr, capToDcr } from './GamingCapField';
 
 // blankPolicy is what an unedited card starts from. The server mints the real
@@ -75,7 +78,7 @@ const fmtWhen = (unix: number) => (unix ? new Date(unix * 1000).toLocaleDateStri
 // Account scope is enforced by this policy rather than by the wallet, because
 // dcrwallet accounts share one seed and one unlock passphrase. It is a boundary
 // above the wallet, never a cryptographic one below it.
-type GamingSection = 'approvals' | 'games' | 'tables' | 'bridge' | 'history';
+type GamingSection = 'approvals' | 'games' | 'tables' | 'bridge' | 'history' | 'recovery';
 
 // The rail's sections are deep-linkable, matching the Settings and Stats tabs
 // beside this one. Approvals is the landing section rather than a place to
@@ -83,7 +86,7 @@ type GamingSection = 'approvals' | 'games' | 'tables' | 'bridge' | 'history';
 const readHashSection = (): GamingSection => {
   const h = window.location.hash.replace(/^#/, '');
   const part = h.split('/')[1] ?? '';
-  if (part === 'games' || part === 'tables' || part === 'bridge' || part === 'history') {
+  if (part === 'games' || part === 'tables' || part === 'bridge' || part === 'history' || part === 'recovery') {
     return part;
   }
   return 'approvals';
@@ -94,6 +97,7 @@ const railItems: BrSidebarItem[] = [
   { id: 'games', label: 'Games', hash: 'gaming/games', icon: Gamepad2 },
   { id: 'tables', label: 'Tables', hash: 'gaming/tables', icon: LayoutGrid },
   { id: 'bridge', label: 'Bridge', hash: 'gaming/bridge', icon: Radio },
+  { id: 'recovery', label: 'Recovery', hash: 'gaming/recovery', icon: ShieldCheck },
   { id: 'history', label: 'History', hash: 'gaming/history', icon: History },
 ];
 
@@ -111,6 +115,16 @@ export const BisonrelayGamingTab = () => {
   // starting made a bound account render as "no account bound".
   const settingsRes = useAsyncResource(getGamingSettings, 'Could not load the gaming policy');
   const gamesRes = useAsyncResource(getGamingGames, 'Could not read the registered games');
+  // Presence changes arrive on the existing browser event feed. Polling repairs
+  // missed events/reconnect gaps without discarding any unsaved policy drafts.
+  const { addListener } = useBisonrelayLive();
+  const refreshGames = gamesRes.refresh;
+  useEffect(() => addListener((event) => {
+    if (event.type === 'gaming-presence') void refreshGames();
+  }), [addListener, refreshGames]);
+  useVisiblePoll(() => {
+    if (!gamesRes.refreshing) void refreshGames();
+  }, 5000, { immediate: false });
   const accountsRes = useAsyncResource(getAccounts, 'Could not read the wallet accounts');
   const bridgeRes = useAsyncResource(getGamingBridgeInfo, 'Could not reach the gaming bridge');
 
@@ -364,12 +378,17 @@ export const BisonrelayGamingTab = () => {
           )}
 
           {section === 'approvals' && (
+            <>
+            <GamingPayoutApprovals />
             <GamingSpendApprovals
               policies={settings.policies}
               bridgeEnabled={settings.enabled}
               gameCount={games.length}
             />
+            </>
           )}
+
+          {section === 'recovery' && <GamingRecovery />}
 
           {section === 'history' && (
             <GamingSpendApprovals
@@ -735,7 +754,10 @@ export const BisonrelayGamingTab = () => {
                       </div>
                     )}
 
-                    <GamingLockedCoin game={g.id} name={g.name} />
+					<p className="text-xs text-muted-foreground">
+					  Deposits and refunds are tracked under Gaming → Recovery and remain
+					  available even while the game is disconnected.
+					</p>
                   </div>
                 );
               })}
@@ -772,29 +794,10 @@ export const BisonrelayGamingTab = () => {
                 {stored(confirming.id).account ? ` (${stored(confirming.id).account})` : ''} and
                 both caps. Registering the id again does not bring any of it back.
               </p>
-              {(() => {
-                const st = gameStates.states[confirming.id]?.state;
-                const held = (st?.locks ?? []).filter((l) => !l.spent);
-                const sum = held.reduce((n, l) => n + l.atoms, 0);
-                if (!st) {
-                  return (
-                    <p className="text-warning">
-                      This console could not check what {confirming.name} has locked on the chain.
-                      If it holds any, removing the card takes away the only route to it.
-                    </p>
-                  );
-                }
-                return sum > 0 ? (
-                  <p className="text-warning">
-                    {confirming.name} has {formatAtomsTrimmed(sum)} DCR locked on the chain across{' '}
-                    {held.length} {held.length === 1 ? 'output' : 'outputs'}. This console reaches
-                    that coin only through this game's card, so removing it takes the route away.
-                  </p>
-                ) : (
-                  <p>{confirming.name} has nothing locked on the chain right now.</p>
-                );
-              })()}
-              <p>Not affected: nothing on the chain moves, and the account is untouched.</p>
+              <p className="text-warning">
+                Any bridge-tracked deposits remain in Gaming → Recovery. Removing the game
+                registration does not erase recovery records or move funds.
+              </p>
             </>
           }
         />

@@ -36,10 +36,12 @@ export const GamingCreateTable = ({
   bondLockBlocks: number;
   onClose: () => void;
 }) => {
-  const refundBlocks = Math.max(GAMING_REFUND_BLOCKS, minRefundBlocks);
+  const [refundBlocks, setRefundBlocks] = useState(Math.max(GAMING_REFUND_BLOCKS, minRefundBlocks));
+  const [admission, setAdmission] = useState("0.01");
+  const [admissionBlocks, setAdmissionBlocks] = useState(bondLockBlocks || 2016);
   const [gcs, setGcs] = useState<BisonrelayGC[]>([]);
   const [gcid, setGcid] = useState('');
-  const [buyin, setBuyin] = useState(0.001);
+  const [buyin, setBuyin] = useState("0.001");
   const [seats, setSeats] = useState(2);
   const [openBlocks, setOpenBlocks] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -75,9 +77,13 @@ export const GamingCreateTable = ({
   }, [requestClose]);
 
   const create = () => {
+    const parse = (raw: string) => { if (!/^\d+(\.\d{1,8})?$/.test(raw)) throw new Error('Use a positive DCR amount with up to eight decimals'); const [whole, fraction = ''] = raw.split('.'); const atoms = BigInt(whole) * 100000000n + BigInt(fraction.padEnd(8, '0')); if (atoms <= 0n || atoms > 2100000000000000n) throw new Error('Amount is outside monetary bounds'); return Number(atoms); };
+    let stakeAtoms: number, admissionAtoms: number;
+    try { stakeAtoms = parse(buyin); admissionAtoms = parse(admission); } catch (e) { setErr(e instanceof Error ? e.message : 'Invalid amount'); return; }
+
     setBusy(true);
     setErr(null);
-    createGamingTable(game, gcid, buyin, seats, openBlocks)
+    createGamingTable(game, gcid, stakeAtoms, seats, openBlocks, { refundBlocks, admissionAtoms, admissionBlocks, tableBondAtoms: 0, tableBondBlocks: 0 })
       .then((t) => setDone({ sid: t.sid, until: t.until, invite: t.invite }))
       .catch((e) => setErr(apiError(e, 'Could not create a table')))
       .finally(() => setBusy(false));
@@ -166,7 +172,7 @@ export const GamingCreateTable = ({
                   min={0}
                   step="0.001"
                   value={buyin}
-                  onChange={(e) => setBuyin(Number(e.target.value) || 0)}
+                  onChange={(e) => setBuyin(e.target.value)}
                   className={inputCls}
                 />
               </label>
@@ -196,6 +202,11 @@ export const GamingCreateTable = ({
               </label>
             </div>
 
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="text-xs space-y-1"><span className="block text-muted-foreground">Admission bond (DCR)</span><input type="text" inputMode="decimal" value={admission} onChange={e => setAdmission(e.target.value)} className={inputCls} /></label>
+              <label className="text-xs space-y-1"><span className="block text-muted-foreground">Bond refund delay (blocks)</span><input type="number" min={1} max={65535} value={admissionBlocks} onChange={e => setAdmissionBlocks(Number(e.target.value))} className={inputCls} /></label>
+              <label className="text-xs space-y-1"><span className="block text-muted-foreground">Stake refund delay (blocks)</span><input type="number" min={Math.max(1, minRefundBlocks)} max={65535} value={refundBlocks} onChange={e => setRefundBlocks(Number(e.target.value))} className={inputCls} /></label>
+            </div>
             <p className="text-xs text-muted-foreground">
               Registration closes {openBlocks === 1 ? 'one block' : `${openBlocks} blocks`} from
               now, roughly {blocksToDuration(openBlocks)} at the target rate, stated as a height
@@ -206,10 +217,10 @@ export const GamingCreateTable = ({
               if the table never deals.
             </p>
 
-            {bondLockBlocks > 0 && (
+            {admissionBlocks > 0 && (
               <p className="text-xs text-muted-foreground">
-                {label} locks a seat bond for {blocksToDuration(bondLockBlocks)} ({bondLockBlocks}{' '}
-                blocks) once the table forms.
+                {label} locks a seat bond for {blocksToDuration(admissionBlocks)} ({admissionBlocks}{' '}
+                blocks) from its funding confirmation.
               </p>
             )}
 
@@ -227,7 +238,7 @@ export const GamingCreateTable = ({
               <button
                 type="button"
                 onClick={create}
-                disabled={busy || !gcid || buyin <= 0}
+                disabled={busy || !gcid || !buyin}
                 className={primaryBtnCls}
               >
                 {busy && <Loader2 className="h-3 w-3 animate-spin inline mr-1" />}
