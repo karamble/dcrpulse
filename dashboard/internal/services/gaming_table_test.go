@@ -80,7 +80,11 @@ func TestCreatingMintsTheAdvertisedRefundLock(t *testing.T) {
 				}, nil
 			}
 
-			if _, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1); err != nil {
+			refundBlocks := uint32(288)
+			if c.advertised > refundBlocks {
+				refundBlocks = c.advertised
+			}
+			if _, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1, GamingTableFunds{RefundBlocks: refundBlocks, AdmissionAtoms: 1000000, AdmissionBlocks: 2016}); err != nil {
 				t.Fatalf("create a table: %v", err)
 			}
 			if minted != c.wantCSV {
@@ -104,7 +108,7 @@ func TestCreatingRefusesTermsNobodyCanPlay(t *testing.T) {
 		{2, 0, 1, "no buy-in is no stake"},
 		{2, 10_000_000, gamingMaxOpenBlocks + 1, "an invitation open for over a day is not worth keeping"},
 	} {
-		_, err := CreateGamingTable(t.Context(), "poker", strings.Repeat("ab", 32), c.buyin, c.seats, c.open)
+		_, err := CreateGamingTable(t.Context(), "poker", strings.Repeat("ab", 32), c.buyin, c.seats, c.open, GamingTableFunds{RefundBlocks: 288, AdmissionAtoms: 1000000, AdmissionBlocks: 2016})
 		if err == nil {
 			t.Errorf("%d seats at %d atoms open for %d blocks was accepted, and %s",
 				c.seats, c.buyin, c.open, c.why)

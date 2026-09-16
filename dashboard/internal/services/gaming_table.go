@@ -12,9 +12,10 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/decred/dcrd/dcrutil/v4"
+	"github.com/karamble/dcrgaming-sdk/pkg/finance"
 
 	"dcrpulse/internal/gamingbridge"
 	"dcrpulse/internal/gamingpb"
@@ -32,14 +33,15 @@ var ErrGamingGameNotConnected = gamingbridge.ErrGameNotConnected
 var (
 	tableChainTip  = GamingChainTipNow
 	tableGCMessage = rpc.BrclientdGCMessage
+	tableAuthorize = authorizeGamingTable
 )
 
 // AcceptGamingInvite hands an invitation to the game that can act on it, and
 // reports the table it joined.
 //
-// The host forms no opinion about the terms beyond which game they name: what
-// they mean is the game's business, and a host that judged them would be a
-// party to a table nobody agreed to trust.
+// Before the game sees the invitation, the bridge validates and durably binds
+// its financial terms to the selected wallet account.  The game is then only
+// told about a table the bridge is prepared to fund and recover independently.
 func AcceptGamingInvite(ctx context.Context, game, invite, gcid string) (string, error) {
 	if !gamingGameRegistered(game) {
 		return "", ErrGamingGameNotRegistered
@@ -51,6 +53,10 @@ func AcceptGamingInvite(ctx context.Context, game, invite, gcid string) (string,
 	// open for as long as the person's browser waits.
 	ctx, cancel := context.WithTimeout(ctx, gamingJoinTimeout)
 	defer cancel()
+
+	if err := tableAuthorize(ctx, game, invite, gcid); err != nil {
+		return "", err
+	}
 
 	reply, err := gamingRequest(ctx, game, &gamingpb.BridgeRequest{
 		Req: &gamingpb.BridgeRequest_AcceptInvite{
@@ -145,7 +151,7 @@ func gamingInviteLink(game, sid string, buyinAtoms uint64, seats, csvBlocks, unt
 // The seat is taken before the invitation is sent. A join that fails leaves an
 // invitation nobody is at; a send that fails leaves a table only this player
 // knows about, which nobody can join and which expires on its own.
-func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64, seats, openBlocks uint32) (GamingTable, error) {
+func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64, seats, openBlocks uint32, funds GamingTableFunds) (GamingTable, error) {
 	// Before anything with an effect: a seat taken for a table whose invitation
 	// can never be posted is worse than a refused request.
 	gc, err := parseGamingGCID(gcid)
@@ -175,12 +181,17 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 			buyinAtoms, game, p.PerTableCapAtoms)
 	}
 
-	// The refund lock is the longer of the default and what the game asked for
-	// on Hello. A game that needs more than the default (a longer hand, say)
-	// advertises it, and a table minted shorter is one its daemon refuses at
-	// AcceptInvite. A game that advertised nothing keeps the default.
+	if err := funds.Validate(); err != nil {
+		return GamingTable{}, err
+	}
+	if buyinAtoms > uint64(finance.MaxAtoms)/uint64(seats) {
+		return GamingTable{}, fmt.Errorf("table pot exceeds monetary bound")
+	}
 	minRefund, _ := gamingGameLockTerms(game)
-	csvBlocks := max(uint32(gamingRefundBlocks), minRefund)
+	if funds.RefundBlocks < minRefund {
+		return GamingTable{}, fmt.Errorf("game requires at least %d refund blocks", minRefund)
+	}
+	csvBlocks := funds.RefundBlocks
 
 	tip, err := tableChainTip(ctx)
 	if err != nil {
@@ -193,8 +204,20 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	if err != nil {
 		return GamingTable{}, err
 	}
+	if tip.Height < 0 || tip.Height > int64(^uint32(0)-openBlocks) {
+		return GamingTable{}, fmt.Errorf("invalid admission deadline")
+	}
 	until := uint32(tip.Height) + openBlocks
 	invite := gamingInviteLink(game, sid, buyinAtoms, seats, csvBlocks, until)
+	u, _ := url.Parse(invite)
+	q := u.Query()
+	q.Set("fv", "2")
+	q.Set("bond", strconv.FormatInt(funds.AdmissionAtoms, 10))
+	q.Set("bondcsv", strconv.FormatUint(uint64(funds.AdmissionBlocks), 10))
+	q.Set("tablebond", strconv.FormatInt(funds.TableBondAtoms, 10))
+	q.Set("tablebondcsv", strconv.FormatUint(uint64(funds.TableBondBlocks), 10))
+	u.RawQuery = q.Encode()
+	invite = u.String()
 
 	if _, err := AcceptGamingInvite(ctx, game, invite, gcid); err != nil {
 		return GamingTable{}, err
@@ -213,6 +236,25 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 
 // gamingAtomsText renders atoms for a chat message, trailing zeros trimmed.
 func gamingAtomsText(atoms uint64) string {
-	s := strconv.FormatFloat(dcrutil.Amount(atoms).ToCoin(), 'f', -1, 64)
-	return s
+	whole, fraction := atoms/100000000, atoms%100000000
+	if fraction == 0 {
+		return strconv.FormatUint(whole, 10)
+	}
+	return strings.TrimRight(fmt.Sprintf("%d.%08d", whole, fraction), "0")
+}
+
+// GamingTableFunds is explicit operator input. Defaults belong in the UI.
+type GamingTableFunds struct {
+	RefundBlocks    uint32 `json:"refundBlocks"`
+	AdmissionAtoms  int64  `json:"admissionAtoms"`
+	AdmissionBlocks uint32 `json:"admissionBlocks"`
+	TableBondAtoms  int64  `json:"tableBondAtoms"`
+	TableBondBlocks uint32 `json:"tableBondBlocks"`
+}
+
+func (f GamingTableFunds) Validate() error {
+	if f.RefundBlocks == 0 || f.RefundBlocks > finance.MaxLockBlocks || f.AdmissionAtoms <= 0 || f.AdmissionAtoms > finance.MaxAtoms || f.AdmissionBlocks == 0 || f.AdmissionBlocks > finance.MaxLockBlocks || f.TableBondAtoms < 0 || f.TableBondAtoms > finance.MaxAtoms || (f.TableBondAtoms > 0 && (f.TableBondBlocks == 0 || f.TableBondBlocks > finance.MaxLockBlocks)) {
+		return fmt.Errorf("invalid explicit bond amounts or refund delays")
+	}
+	return nil
 }

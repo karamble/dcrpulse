@@ -6,13 +6,10 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, Check, Loader2 } from 'lucide-react';
 import {
   GamePolicy,
-  GamingReportedTable,
   GamingSpend,
   decideGamingSpend,
   getGamingSpendHistory,
-  getGamingState,
 } from '../../services/gamingApi';
-import { validateAddress } from '../../services/api';
 import { Pagination } from '../explorer/Pagination';
 import { apiError } from '../../utils/apiError';
 import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
@@ -63,12 +60,6 @@ const isPassphraseRefusal = (text: string): boolean =>
   );
 
 const isWatchOnly = (text: string): boolean => /watch[- ]?only/i.test(text);
-
-interface Ownership {
-  state: 'checking' | 'mine' | 'theirs' | 'invalid' | 'unknown';
-  account?: number;
-  error?: string;
-}
 
 export const GamingSpendApprovals = ({
   policies,
@@ -179,45 +170,6 @@ export const GamingSpendApprovals = ({
   // the same rule, and the two had already drifted: the copy counted stale
   // pendings the server would have expired.
   const usedToday = (game: string): number => feed.usedToday[game] ?? 0;
-
-  // Whether the address a game named belongs to this wallet. For a buy-in the
-  // answer should be no; yes is the odd one, and "could not check" is its own
-  // answer rather than a quiet no.
-  const [owners, setOwners] = useState<Record<string, Ownership>>({});
-  useEffect(() => {
-    for (const s of pending) {
-      if (owners[s.address]) continue;
-      setOwners((o) => ({ ...o, [s.address]: { state: 'checking' } }));
-      validateAddress(s.address)
-        .then((v) =>
-          setOwners((o) => ({
-            ...o,
-            [s.address]: v.isValid
-              ? { state: v.isMine ? 'mine' : 'theirs', account: v.accountNumber }
-              : { state: 'invalid' },
-          })),
-        )
-        .catch((e) =>
-          setOwners((o) => ({
-            ...o,
-            [s.address]: { state: 'unknown', error: apiError(e, 'the check failed') },
-          })),
-        );
-    }
-  }, [pending, owners]);
-
-  // What the game says its open tables cost, so an amount can be corroborated
-  // without pretending the request named one.
-  const [tables, setTables] = useState<Record<string, GamingReportedTable[] | null>>({});
-  useEffect(() => {
-    for (const game of new Set(pending.map((s) => s.game))) {
-      if (game in tables) continue;
-      setTables((t) => ({ ...t, [game]: null }));
-      getGamingState(game)
-        .then((st) => setTables((t) => ({ ...t, [game]: st.tables ?? [] })))
-        .catch(() => setTables((t) => ({ ...t, [game]: null })));
-    }
-  }, [pending, tables]);
 
   const decide = async (s: GamingSpend, approve: boolean, passphrase?: string) => {
     setDeciding(s.id);
@@ -395,12 +347,11 @@ export const GamingSpendApprovals = ({
         const lapsed = left <= 0;
         const fresh = Date.now() - (firstSeen.current[s.id] ?? 0) < 1500;
         const p = policies?.[s.game];
-        const own = owners[s.address];
         const used = usedToday(s.game);
         const capAtoms = p?.perDayCapDcr ? Math.round(p.perDayCapDcr * 1e8) : 0;
         const reason = sanitizeReason(s.reason ?? '');
-        const known = tables[s.game];
-        const matches = (known ?? []).filter((t) => !t.over && t.buyinAtoms === s.amountAtoms);
+        const verified = !!s.depositId && !!s.tableId && s.fundingFeeAtoms > 0 && s.recoveryLockBlocks > 0;
+        const depositLabel = {seatbond: 'Admission bond', stake: 'Game stake', tablebond: 'Table bond'}[s.depositKind];
         const err = rowErr[s.id];
         const isArmed = armed?.id === s.id;
         const busyRow = deciding === s.id;
@@ -470,28 +421,7 @@ export const GamingSpendApprovals = ({
             <div className="text-xs space-y-0.5">
               <span className="text-muted-foreground block">To</span>
               <span className="block font-mono break-all">{s.address}</span>
-              {own?.state === 'mine' && (
-                <span className="block text-warning">
-                  This address is in your own wallet (account {own.account}). A buy-in that pays you
-                  back is not what a table looks like.
-                </span>
-              )}
-              {own?.state === 'theirs' && (
-                <span className="block text-muted-foreground">Not an address in this wallet.</span>
-              )}
-              {own?.state === 'invalid' && (
-                <span className="block text-destructive">
-                  This is not a valid address, so nothing could be paid to it.
-                </span>
-              )}
-              {own?.state === 'unknown' && (
-                <span className="block text-muted-foreground">
-                  Could not check whether this address is yours: {own.error}.
-                </span>
-              )}
-              {own?.state === 'checking' && (
-                <span className="block text-muted-foreground">Checking whose address this is.</span>
-              )}
+              <span className="block text-muted-foreground">Bridge-verified escrow · recovery key held by your wallet</span>
             </div>
 
             <p className="text-xs text-muted-foreground">
@@ -521,18 +451,15 @@ export const GamingSpendApprovals = ({
               )}
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              This request names no table; nothing links it to one but the line above.{' '}
-              {known === null || known === undefined
-                ? `${s.game} has not said what tables it holds, so there is nothing to compare it against.`
-                : matches.length === 1
-                  ? `${s.game} reports one open table with a ${fmtDcr(
-                      matches[0].buyinAtoms,
-                    )} DCR buy-in. The amount matches; that is all it proves.`
-                  : matches.length > 1
-                    ? `${s.game} reports ${matches.length} open tables with that buy-in.`
-                    : `${s.game} reports no open table with a ${fmtDcr(s.amountAtoms)} DCR buy-in.`}
-            </p>
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg bg-background/50 p-3 text-xs">
+              <dt className="text-muted-foreground">Deposit</dt><dd>{depositLabel ?? 'Unverified'}</dd>
+              <dt className="text-muted-foreground">Table</dt><dd className="font-mono break-all">{s.tableId}</dd>
+              <dt className="text-muted-foreground">Network fee</dt><dd>{fmtDcr(s.fundingFeeAtoms ?? 0)} DCR</dd>
+              <dt className="text-muted-foreground">Total wallet debit</dt><dd className="font-semibold">{fmtDcr(s.amountAtoms + (s.fundingFeeAtoms ?? 0))} DCR</dd>
+              <dt className="text-muted-foreground">Refund delay</dt><dd>{s.recoveryLockBlocks} blocks after confirmation</dd>
+            </dl>
+            <p className="text-xs text-muted-foreground">After closing the table, recover mature deposits in Gaming → Recovery. Other players do not need to approve your refund.</p>
+            {!verified && <p className="text-xs text-destructive">The bridge has not supplied complete verified payment terms. Approval is unavailable.</p>}
 
             {err && (
               <div className="text-xs space-y-1">
@@ -552,7 +479,7 @@ export const GamingSpendApprovals = ({
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void decide(s, true, armed.passphrase);
+                  if (verified) void decide(s, true, armed.passphrase);
                 }}
                 className="space-y-2"
               >
@@ -568,7 +495,7 @@ export const GamingSpendApprovals = ({
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <button
                     type="submit"
-                    disabled={busyRow || !armed.passphrase}
+                    disabled={busyRow || !verified || !armed.passphrase}
                     className="inline-flex items-center justify-center gap-1 min-h-9 px-3 py-2 rounded-lg bg-primary/20 text-primary text-xs font-medium hover:bg-primary/30 disabled:opacity-50"
                   >
                     {busyRow && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -596,7 +523,7 @@ export const GamingSpendApprovals = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setArmed({ id: s.id, passphrase: '' })}
+                  onClick={() => { if (verified) setArmed({ id: s.id, passphrase: '' }); }}
                   disabled={
                     busyRow || lapsed || stale || watchOnly || fresh || (armed !== null && !isArmed)
                   }

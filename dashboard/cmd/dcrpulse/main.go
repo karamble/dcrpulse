@@ -630,8 +630,8 @@ func main() {
 	api.Handle("/br/gaming/spends/decide", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingSpendDecideHandler))).Methods("POST")
 
 	api.Handle("/br/gaming/state", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingStateHandler))).Methods("GET")
-	api.Handle("/br/gaming/reclaim", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingReclaimHandler))).Methods("POST")
-	api.Handle("/br/gaming/payout", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingPayoutHandler))).Methods("POST")
+	api.Handle("/br/gaming/payouts", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingPayoutsHandler))).Methods("GET", "POST")
+	api.Handle("/br/gaming/recovery", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingRecoveryHandler))).Methods("GET", "POST")
 
 	api.Handle("/br/gaming/table", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCreateHandler))).Methods("POST")
 	api.Handle("/br/gaming/invite", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingInviteHandler))).Methods("POST")

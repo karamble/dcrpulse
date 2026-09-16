@@ -298,6 +298,17 @@ func (b *GamingBus) deliverFrame(payload json.RawMessage) {
 		// existing host being taught about it.
 		return
 	}
+	if isFinancialFrame(frame.Text) {
+		// Financial wallet/node work must not block the BR notification loop.
+		// Dropped messages are repaired by periodic authoritative gossip.
+		select {
+		case gamingFinancialInbox <- GamingFrameEvent{Game: frame.Game, GCID: evt.GCID, From: evt.From, Frame: frame.Text}:
+		default:
+			gameLog.Warnf("financial inbox full; awaiting peer retransmission")
+		}
+
+		return
+	}
 	gameLog.Debugf("delivering %q frame to %d subscriber(s)", frame.Game, b.subscribers(frame.Game))
 	b.broadcast(GamingFrameEvent{
 		Game:  frame.Game,
@@ -333,6 +344,9 @@ func gamingRegisteredIn(s types.GamingSettings, game string) bool {
 func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 	if !gamingGameRegistered(game) {
 		return ErrGamingGameNotRegistered
+	}
+	if isFinancialFrame(frame) {
+		return gamingbridge.GameSafe(errors.New("financial messages are reserved to the bridge"))
 	}
 	parsed, ok := parseGamingFrame(frame)
 	if !ok {

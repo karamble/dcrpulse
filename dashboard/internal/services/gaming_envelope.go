@@ -48,11 +48,20 @@ func parseGamingFrame(text string) (gamingFrame, bool) {
 		return gamingFrame{}, false
 	}
 
+	seen := map[string]bool{}
+	game := ""
 	for _, tok := range strings.Split(m[1], ",") {
 		k, v, ok := strings.Cut(tok, "=")
-		if ok && k == "game" && v != "" {
-			return gamingFrame{Game: v, Text: strings.TrimSpace(text)}, true
+		if !ok || k == "" || seen[k] || strings.TrimSpace(k) != k {
+			return gamingFrame{}, false
+		}
+		seen[k] = true
+		if k == "game" {
+			game = v
 		}
 	}
-	return gamingFrame{}, false
+	if game == "" {
+		return gamingFrame{}, false
+	}
+	return gamingFrame{Game: game, Text: strings.TrimSpace(text)}, true
 }

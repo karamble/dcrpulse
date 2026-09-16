@@ -86,13 +86,18 @@ type Config struct {
 	// SendFrame carries a frame the game built out to a table.
 	SendFrame func(ctx context.Context, game, gcid, frame string) error
 
-	// RequestSpend, SpendStatus and Broadcast are the money. They are named
+	// RequestSpend and SpendStatus are the funding request path. They are named
 	// here and implemented elsewhere for the same reason as everything else
 	// on this struct: what a spend is allowed to be is the operator's
 	// policy, and this package is not where it lives.
-	RequestSpend func(ctx context.Context, game, address string, amountAtoms int64, reason string) (*gamingpb.Spend, error)
-	SpendStatus  func(game, id string) (*gamingpb.Spend, error)
-	Broadcast    func(ctx context.Context, game, rawTxHex string) (string, error)
+	// VerifiedSpend is the mandatory descriptor-backed payment path.
+	FinancialState func(context.Context, string, string) (*gamingpb.FinancialStateReply, error)
+	ProposePayout  func(context.Context, string, *gamingpb.ProposePayoutRequest) (*gamingpb.PayoutStatusReply, error)
+	PayoutStatus   func(context.Context, string, string) (*gamingpb.PayoutStatusReply, error)
+	VerifiedSpend  func(context.Context, string, *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error)
+	FinancialKey   func(context.Context, string, string) (*gamingpb.FinancialKeyReply, error)
+	PrepareDeposit func(context.Context, string, *gamingpb.PrepareDepositRequest) (*gamingpb.PreparedDeposit, error)
+	SpendStatus    func(game, id string) (*gamingpb.Spend, error)
 
 	// ChainTip, BlockHash and Outpoint are the chain reads a game needs to
 	// agree deadlines and find its own money.
@@ -111,6 +116,14 @@ type Config struct {
 	// first moment anything can be pushed to it at all. Also its own
 	// goroutine: the stream must not wait on it.
 	OnConnect func(game string)
+
+	// OnPresence invalidates browser connection status after stream registration
+	// or removal. Called outside registry locks; it must return promptly.
+	OnPresence func(game string)
+
+	// StartFinancialWorker starts bridge-owned durable reconciliation with the
+	// listener lifetime. The host injects it so this package remains a leaf.
+	StartFinancialWorker func(context.Context)
 }
 
 // ErrSpendOverCap and ErrSpendNotFound are what the injected money functions
@@ -157,6 +170,7 @@ type Server struct {
 	mu   sync.Mutex
 	grpc *grpc.Server
 	lis  net.Listener
+	stop context.CancelFunc
 }
 
 const (
@@ -245,8 +259,13 @@ func (s *Server) Serve() error {
 	gamingpb.RegisterBridgeServiceServer(srv, s)
 
 	s.mu.Lock()
-	s.grpc, s.lis = srv, lis
+	workerCtx, stop := context.WithCancel(context.Background())
+	s.grpc, s.lis, s.stop = srv, lis, stop
 	s.mu.Unlock()
+	defer stop()
+	if s.cfg.StartFinancialWorker != nil {
+		s.cfg.StartFinancialWorker(workerCtx)
+	}
 
 	return srv.Serve(lis)
 }
@@ -270,8 +289,12 @@ func (s *Server) Addr() string {
 func (s *Server) Stop() {
 	s.mu.Lock()
 	srv := s.grpc
-	s.grpc, s.lis = nil, nil
+	stop := s.stop
+	s.grpc, s.lis, s.stop = nil, nil, nil
 	s.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
 	if srv == nil {
 		return
 	}

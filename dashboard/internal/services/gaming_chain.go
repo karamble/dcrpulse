@@ -51,6 +51,7 @@ type GamingOutpoint struct {
 	Found         bool   `json:"found"`
 	ValueAtoms    int64  `json:"valueAtoms"`
 	PkScriptHex   string `json:"pkScriptHex"`
+	ScriptVersion uint16 `json:"scriptVersion"`
 	Confirmations int64  `json:"confirmations"`
 	Coinbase      bool   `json:"coinbase"`
 }
@@ -131,6 +132,7 @@ func GamingChainOutpoint(ctx context.Context, txid string, vout uint32, includeM
 		Found:         true,
 		ValueAtoms:    int64(amt),
 		PkScriptHex:   out.ScriptPubKey.Hex,
+		ScriptVersion: out.ScriptPubKey.Version,
 		Confirmations: out.Confirmations,
 		Coinbase:      out.Coinbase,
 	}, nil

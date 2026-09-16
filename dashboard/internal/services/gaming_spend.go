@@ -24,6 +24,7 @@ import (
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
 	"github.com/decred/dcrd/wire"
 
+	"dcrpulse/internal/gamingfunds"
 	"dcrpulse/internal/types"
 )
 
@@ -78,7 +79,13 @@ type GamingSpend struct {
 	DecidedAt   int64            `json:"decidedAt,omitempty"`
 	// ExpiresAt is when an unanswered request stops being answerable. A
 	// game waiting on one needs to know the waiting ends.
-	ExpiresAt int64 `json:"expiresAt"`
+	ExpiresAt          int64  `json:"expiresAt"`
+	DepositID          string `json:"depositId,omitempty"`
+	TableID            string `json:"tableId"`
+	DepositKind        string `json:"depositKind"`
+	UnsignedTx         string `json:"-"` // persisted through the separate financial ledger
+	FundingFeeAtoms    int64  `json:"fundingFeeAtoms,omitempty"`
+	RecoveryLockBlocks uint32 `json:"recoveryLockBlocks,omitempty"`
 }
 
 // Pending reports whether the request is still awaiting a person.
@@ -356,28 +363,8 @@ func spendCountsOrPends(s GamingSpend, now int64) bool {
 // right here and is never touched, however late it runs. A swept entry
 // stops counting toward the day, the same accounting the ambiguous-publish
 // arm has always had.
-func sweepPublishingLocked(log *spendLog, now int64) bool {
-	changed := false
-	for i := range log.Spends {
-		s := &log.Spends[i]
-		if s.State != GamingSpendPublishing || spendApproving[s.ID] {
-			continue
-		}
-		if now >= s.ExpiresAt+spendPublishingGraceSecs {
-			s.State, s.DecidedAt, s.Error = GamingSpendFailed, now, spendInterruptedText
-			changed = true
-		}
-	}
-	return changed
-}
+func sweepPublishingLocked(log *spendLog, now int64) bool { return false }
 
-// checkSpendRequest is the policy decision that needs nothing but the request,
-// and it returns the policy it decided against so the caller need not look the
-// same game up twice.
-//
-// Whether a game is registered is read from the policy map rather than from a
-// second list, because the two are kept in step and a rule consulting whichever
-// it happens to hold is a rule that can disagree with itself.
 func checkSpendRequest(s types.GamingSettings, game, address string, amountAtoms int64) (types.GamePolicy, error) {
 	if !s.Enabled {
 		return types.GamePolicy{}, fmt.Errorf("%w: gaming is switched off", ErrGamingSpendRefused)
@@ -436,14 +423,114 @@ func checkSpendAgainstDay(p types.GamePolicy, amountAtoms, used int64) error {
 		ErrGamingSpendOverCap, amountAtoms, p.PerDayCapAtoms, used)
 }
 
+func spendFromFundingApproval(a gamingfunds.FundingApproval, now int64) GamingSpend {
+	state := GamingSpendPending
+	decided := int64(0)
+	txid := ""
+	if a.Preview.ExpiresAt <= now {
+		state = GamingSpendExpired
+		decided = a.Preview.ExpiresAt
+	}
+	if a.Deposit.FundingTx != "" {
+		txid = a.Deposit.FundingTx
+		state = GamingSpendPublishing
+		if a.Deposit.State == "mempool" || a.Deposit.State == "confirmed" {
+			state = GamingSpendApproved
+			decided = now
+		}
+	}
+	return GamingSpend{
+		ID:                 a.ID,
+		Game:               a.Scope.Game,
+		Address:            a.Deposit.Address,
+		AmountAtoms:        a.Deposit.Terms.Atoms,
+		Reason:             a.Preview.Reason,
+		State:              state,
+		TxID:               txid,
+		RequestedAt:        a.Preview.RequestedAt,
+		DecidedAt:          decided,
+		ExpiresAt:          a.Preview.ExpiresAt,
+		DepositID:          a.Deposit.ID,
+		TableID:            a.Deposit.Terms.Table,
+		DepositKind:        a.Deposit.Terms.Kind,
+		FundingFeeAtoms:    a.Preview.FeeAtoms,
+		RecoveryLockBlocks: a.Deposit.Terms.LockBlocks,
+	}
+}
+
+// recoverFundingApprovalsLocked makes the authority ledger the durable source
+// for approvals. The spend log remains a dashboard audit/index; a crash between
+// the authority write and that index write is repaired before status is served.
+// Caller holds spendMu.
+func recoverFundingApprovalsLocked(log *spendLog, now int64) (bool, error) {
+	store, err := gamingFundsStore()
+	if err != nil {
+		return false, err
+	}
+	approvals, err := store.FundingApprovals()
+	if err != nil {
+		return false, err
+	}
+	known := make(map[string]bool, len(log.Spends))
+	for _, sp := range log.Spends {
+		known[sp.ID] = true
+	}
+	changed := false
+	for _, approval := range approvals {
+		if known[approval.ID] {
+			continue
+		}
+		log.Spends = append(log.Spends, spendFromFundingApproval(approval, now))
+		known[approval.ID] = true
+		changed = true
+	}
+	return changed, nil
+}
+
+func existingFundingSpend(depositID string) (GamingSpend, bool, error) {
+	spendMu.Lock()
+	defer spendMu.Unlock()
+	now := time.Now().Unix()
+	log, err := readSpendLog()
+	if err != nil {
+		return GamingSpend{}, false, err
+	}
+	changed, err := recoverFundingApprovalsLocked(&log, now)
+	if err != nil {
+		return GamingSpend{}, false, err
+	}
+	if expireLocked(&log, now) {
+		changed = true
+	}
+	if changed {
+		if err := writeSpendLog(log, now); err != nil {
+			return GamingSpend{}, false, err
+		}
+	}
+	for _, prior := range log.Spends {
+		if prior.DepositID == depositID {
+			return prior, true, nil
+		}
+	}
+	return GamingSpend{}, false, nil
+}
+
 // RequestGamingSpend records a game's request, if policy will carry it.
 //
 // It does not spend. Nothing here can: the passphrase belongs to the person,
 // and this only gets as far as asking them.
-func RequestGamingSpend(ctx context.Context, game, address string, amountAtoms int64, reason string) (GamingSpend, error) {
+func requestGamingSpend(ctx context.Context, game, address string, amountAtoms int64, reason string, verified *verifiedGamingPayment) (GamingSpend, error) {
+	if verified == nil || verified.Deposit.ID == "" || verified.Deposit.Scope.Game != game || verified.Deposit.Address != address || verified.Deposit.Terms.Atoms != amountAtoms || verified.Unsigned == "" {
+		return GamingSpend{}, fmt.Errorf("%w: verified financial descriptor required", ErrGamingSpendRefused)
+	}
 	s := ReadGamingSettings()
 	game = strings.ToLower(strings.TrimSpace(game))
 	address = strings.TrimSpace(address)
+	if prior, ok, err := existingFundingSpend(verified.Deposit.ID); err != nil {
+		return GamingSpend{}, err
+	} else if ok {
+		return prior, nil
+	}
 
 	policy, err := checkSpendRequest(s, game, address, amountAtoms)
 	if err != nil {
@@ -467,8 +554,24 @@ func RequestGamingSpend(ctx context.Context, game, address string, amountAtoms i
 	if err != nil {
 		return GamingSpend{}, err
 	}
-	expireLocked(&log, now)
+	changed, err := recoverFundingApprovalsLocked(&log, now)
+	if err != nil {
+		return GamingSpend{}, err
+	}
+	if expireLocked(&log, now) {
+		changed = true
+	}
 	sweepPublishingLocked(&log, now)
+	for _, prior := range log.Spends {
+		if prior.DepositID == verified.Deposit.ID {
+			if changed {
+				if err := writeSpendLog(log, now); err != nil {
+					return GamingSpend{}, err
+				}
+			}
+			return prior, nil // one funding obligation, never a second charge
+		}
+	}
 
 	// A backlog past answering is refused, not queued: nothing here writes,
 	// so a game that keeps asking wears out nothing but its own turn.
@@ -505,14 +608,28 @@ func RequestGamingSpend(ctx context.Context, game, address string, amountAtoms i
 		return GamingSpend{}, err
 	}
 	out := GamingSpend{
-		ID:          id,
-		Game:        game,
-		Address:     address,
-		AmountAtoms: amountAtoms,
-		Reason:      strings.TrimSpace(reason),
-		State:       GamingSpendPending,
-		RequestedAt: now,
-		ExpiresAt:   now + int64(timeout),
+		DepositID: verified.Deposit.ID,
+		TableID:   verified.Deposit.Terms.Table, DepositKind: verified.Deposit.Terms.Kind,
+		FundingFeeAtoms:    verified.FeeAtoms,
+		RecoveryLockBlocks: verified.Deposit.Terms.LockBlocks,
+		ID:                 id,
+		Game:               game,
+		Address:            address,
+		AmountAtoms:        amountAtoms,
+		Reason:             strings.TrimSpace(reason),
+		State:              GamingSpendPending,
+		RequestedAt:        now,
+		ExpiresAt:          now + int64(timeout),
+	}
+	approval, err := ensureGamingFundingPreview(out, verified)
+	if err != nil {
+		return GamingSpend{}, err
+	}
+	out = spendFromFundingApproval(approval, now)
+	for _, prior := range log.Spends {
+		if prior.ID == out.ID {
+			return prior, nil
+		}
 	}
 	log.Spends = append(log.Spends, out)
 	if err := writeSpendLog(log, now); err != nil {
@@ -534,7 +651,13 @@ func GamingSpendFor(game, id string) (GamingSpend, error) {
 	if err != nil {
 		return GamingSpend{}, err
 	}
-	changed := expireLocked(&log, now)
+	changed, err := recoverFundingApprovalsLocked(&log, now)
+	if err != nil {
+		return GamingSpend{}, err
+	}
+	if expireLocked(&log, now) {
+		changed = true
+	}
 	if sweepPublishingLocked(&log, now) {
 		changed = true
 	}
@@ -562,7 +685,13 @@ func GamingSpendLedger() ([]GamingSpend, map[string]int64, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	changed := expireLocked(&log, now)
+	changed, err := recoverFundingApprovalsLocked(&log, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if expireLocked(&log, now) {
+		changed = true
+	}
 	if sweepPublishingLocked(&log, now) {
 		changed = true
 	}
@@ -693,12 +822,28 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 	if err != nil {
 		return req, err
 	}
-	unsigned, err := spendConstruct(ctx, account, req.Address, req.AmountAtoms)
+	dep, err := verifyGamingDeposit(ctx, req.Game, req.DepositID)
 	if err != nil {
+		return req, err
+	}
+	if dep.Scope.Account != account || dep.Address != req.Address || dep.Terms.Atoms != req.AmountAtoms {
+		return req, fmt.Errorf("approval no longer matches verified deposit")
+	}
+	unsigned, err := loadGamingFundingPreview(req.ID, dep.ID)
+	if err != nil {
+		return req, err
+	}
+	if _, err = validateGamingFunding(ctx, dep, unsigned); err != nil {
 		return req, err
 	}
 	signed, err := spendSign(ctx, account, unsigned, passphrase)
 	if err != nil {
+		return req, err
+	}
+	if err = sameFundingPrefix(unsigned, signed); err != nil {
+		return req, err
+	}
+	if _, err = validateGamingFunding(ctx, dep, signed); err != nil {
 		return req, err
 	}
 	// The broadcast is written down before it happens. After the network
@@ -711,9 +856,14 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 	if err := markSpendPublishing(id); err != nil {
 		return req, err
 	}
+	if err = saveGamingSignedFunding(req, dep, signed); err != nil {
+		return req, err
+	}
 	txid, err := spendPublish(ctx, signed)
 	if err != nil {
-		return recordSpendOutcome(req, GamingSpendFailed, "", err.Error())
+		var tx wire.MsgTx
+		_ = tx.FromBytes(signed)
+		return recordSpendOutcome(req, GamingSpendPublishing, tx.TxHash().String(), "broadcast outcome unknown; bridge will reconcile the recorded transaction")
 	}
 	return recordSpendOutcome(req, GamingSpendApproved, txid, "")
 }
@@ -769,27 +919,7 @@ func recordSpendOutcome(req GamingSpend, state GamingSpendState, txid, failure s
 	now := time.Now().Unix()
 	log, err := readSpendLog()
 	if err != nil {
-		// Money already moved, so the record lands even when the log
-		// cannot be read: the unreadable bytes are set aside for a
-		// person to look at, never deleted, and the outcome starts a
-		// fresh log. Losing the rolling day counter here is the lesser
-		// wrong - the greater one is a broadcast nobody wrote down.
-		aside := fmt.Sprintf("%s.corrupt-%d", gamingSpendLogPath(), now)
-		if renameErr := os.Rename(gamingSpendLogPath(), aside); renameErr != nil {
-			gameLog.Errorf("set the unreadable spend log aside: %v", renameErr)
-		}
-		gameLog.Errorf("spend log unreadable while recording spend %s (txid %q): %v; the old bytes are at %s",
-			req.ID, txid, err, aside)
-		out := req
-		out.State, out.TxID, out.Error, out.DecidedAt = state, txid, failure, now
-		if werr := writeSpendLog(spendLog{Spends: []GamingSpend{out}}, now); werr != nil {
-			gameLog.Errorf("record the outcome of spend %s (txid %q): %v", req.ID, txid, werr)
-			return out, werr
-		}
-		if state != GamingSpendApproved {
-			return out, fmt.Errorf("spend failed: %s", failure)
-		}
-		return out, nil
+		return req, fmt.Errorf("financial audit log unreadable; transaction remains in authority ledger: %w", err)
 	}
 	for i := range log.Spends {
 		s := &log.Spends[i]

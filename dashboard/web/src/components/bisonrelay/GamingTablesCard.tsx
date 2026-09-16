@@ -5,10 +5,7 @@
 import { useMemo, useState } from 'react';
 import { AlertCircle, LayoutGrid, RefreshCw } from 'lucide-react';
 import { GamingGame, GamingReportedState } from '../../services/gamingApi';
-import { formatAtomsTrimmed } from '../../utils/amounts';
-import { locksFor, sortTables, tableStage, type StageTone } from './gamingTables';
-
-const fmtDcr = (atoms: number): string => formatAtomsTrimmed(atoms);
+import { sortTables, tableStage, type StageTone } from './gamingTables';
 
 // The info tone is deliberately primary rather than an `info` class: there is
 // no info colour in this build, so bg-info would render as nothing at all.
@@ -113,11 +110,6 @@ export const GamingTablesCard = ({
                 .filter((t) => showOver || !t.over)
                 .map((t) => {
                   const stage = tableStage(t, r.tip);
-                  const held = locksFor(states[r.game]?.state?.locks ?? [], t.sid);
-                  const sum = held.reduce((n, l) => n + l.atoms, 0);
-                  const soonest = held.length
-                    ? Math.min(...held.map((l) => l.maturesAt || Number.MAX_SAFE_INTEGER))
-                    : 0;
                   return (
                     <div key={`${r.game}:${t.sid}`} className="py-2 space-y-1">
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
@@ -129,12 +121,7 @@ export const GamingTablesCard = ({
                           >
                             {stage.label}
                           </span>
-                          <span className="text-sm truncate">
-                            {fmtDcr(t.buyinAtoms)} DCR a seat &middot; table of {t.seats}
-                          </span>
-                        </span>
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {sum > 0 ? `${fmtDcr(sum)} DCR here` : 'nothing locked'}
+                          <span className="text-sm truncate">Table of {t.seats}</span>
                         </span>
                       </div>
 
@@ -151,16 +138,6 @@ export const GamingTablesCard = ({
                         </span>
                         <span className="block font-mono break-all">{t.sid}</span>
                         <span className="block">{stage.line}</span>
-                        {sum > 0 && soonest > 0 && soonest !== Number.MAX_SAFE_INTEGER && (
-                          <span className="block">
-                            The earliest of it comes free at block {soonest.toLocaleString()}.
-                          </span>
-                        )}
-                        {held.some((l) => l.spending) && (
-                          <span className="block text-warning">
-                            A reclaim of this table's coin is broadcast and waiting for a block.
-                          </span>
-                        )}
                       </div>
                     </div>
                   );

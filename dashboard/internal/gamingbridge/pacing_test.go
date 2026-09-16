@@ -23,11 +23,10 @@ func pacingRig() *Server {
 	ok := &gamingpb.Spend{Id: "x", State: "pending"}
 	return &Server{
 		cfg: Config{
-			RequestSpend: func(context.Context, string, string, int64, string) (*gamingpb.Spend, error) {
+			VerifiedSpend: func(context.Context, string, *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error) {
 				return ok, nil
 			},
 			SpendStatus: func(string, string) (*gamingpb.Spend, error) { return ok, nil },
-			Broadcast:   func(context.Context, string, string) (string, error) { return "txid", nil },
 		},
 		reqLim:    map[string]*rate.Limiter{},
 		statusLim: map[string]*rate.Limiter{},
@@ -43,11 +42,11 @@ func caller(game string) context.Context {
 // status poll answers Unavailable - never ResourceExhausted, which the
 // deployed game renders as "refused by the spending limit" - and a refused
 // request answers ResourceExhausted, which is exactly a limit to back off
-// from. Frames and broadcasts are never paced: gameplay is the one thing a
-// bridge must not slow down.
+// from. Frames are never paced: gameplay is the one thing a bridge must not
+// slow down.
 //
-// Kills: a limiter on Broadcast; the two refusal codes swapped; the bursts
-// drifting under what an honest game does in one breath.
+// Kills: the two refusal codes swapped; the bursts drifting under what an
+// honest game does in one breath.
 func TestOnlyAFloodMeetsThePacingAndHearsTheRightNo(t *testing.T) {
 	s := pacingRig()
 	ctx := caller("poker")
@@ -55,11 +54,11 @@ func TestOnlyAFloodMeetsThePacingAndHearsTheRightNo(t *testing.T) {
 	// Eight requests in one breath is the host's own outstanding ceiling;
 	// all pass here so the ceiling, not the pacing, is what answers.
 	for i := 0; i < 8; i++ {
-		if _, err := s.RequestSpend(ctx, &gamingpb.RequestSpendRequest{}); err != nil {
+		if _, err := s.RequestSpend(ctx, &gamingpb.RequestSpendRequest{DepositId: "verified-test-deposit"}); err != nil {
 			t.Fatalf("request %d of 8 was paced: %v", i+1, err)
 		}
 	}
-	_, err := s.RequestSpend(ctx, &gamingpb.RequestSpendRequest{})
+	_, err := s.RequestSpend(ctx, &gamingpb.RequestSpendRequest{DepositId: "verified-test-deposit"})
 	if status.Code(err) != codes.ResourceExhausted {
 		t.Fatalf("the ninth request in one breath came back %v, want ResourceExhausted", err)
 	}
@@ -81,14 +80,7 @@ func TestOnlyAFloodMeetsThePacingAndHearsTheRightNo(t *testing.T) {
 	}
 
 	// One game's flood is not another's problem.
-	if _, err := s.RequestSpend(caller("chess"), &gamingpb.RequestSpendRequest{}); err != nil {
+	if _, err := s.RequestSpend(caller("chess"), &gamingpb.RequestSpendRequest{DepositId: "verified-test-deposit"}); err != nil {
 		t.Fatalf("poker's flood paced chess: %v", err)
-	}
-
-	// Broadcast carries settlements and never waits behind a limiter.
-	for i := 0; i < 50; i++ {
-		if _, err := s.Broadcast(ctx, &gamingpb.BroadcastRequest{RawTxHex: "00"}); err != nil {
-			t.Fatalf("broadcast %d was paced: %v", i+1, err)
-		}
 	}
 }

@@ -81,6 +81,9 @@ type bridgeRig struct {
 	spendMu  sync.Mutex
 	spendSeq int
 	spends   map[string]*gamingpb.Spend
+
+	workerStarted chan struct{}
+	workerStopped chan struct{}
 }
 
 // loseFrames records that a game's table lost frames, as the fan-out would.
@@ -150,7 +153,7 @@ func newBridgeRig(t *testing.T) *bridgeRig {
 		t.Fatalf("mint the bridge's own certificate: %v", err)
 	}
 
-	r := &bridgeRig{BridgeCert: certPEM, allow: NewAllowlist()}
+	r := &bridgeRig{BridgeCert: certPEM, allow: NewAllowlist(), workerStarted: make(chan struct{}), workerStopped: make(chan struct{})}
 	r.appPassword.Store(true)
 	r.enabled.Store(true)
 
@@ -180,8 +183,17 @@ func newBridgeRig(t *testing.T) *bridgeRig {
 		// this bridge attributes a request to the game on the certificate,
 		// refuses an over-cap one in the words a cap deserves, and never
 		// hands one game another's answer.
-		RequestSpend: r.requestSpend,
-		SpendStatus:  r.spendStatus,
+		VerifiedSpend: func(ctx context.Context, game string, req *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error) {
+			return r.requestSpend(ctx, game, req.GetAddress(), req.GetAmountAtoms(), req.GetReason())
+		},
+		SpendStatus: r.spendStatus,
+		StartFinancialWorker: func(ctx context.Context) {
+			close(r.workerStarted)
+			go func() {
+				<-ctx.Done()
+				close(r.workerStopped)
+			}()
+		},
 	})
 	if err != nil {
 		t.Fatalf("prepare the bridge: %v", err)

@@ -114,38 +114,21 @@ export interface GamingTable {
 export const createGamingTable = async (
   game: string,
   gcid: string,
-  buyinDcr: number,
+  buyinAtoms: number,
   seats: number,
   openBlocks: number,
+ funds: { refundBlocks: number; admissionAtoms: number; admissionBlocks: number; tableBondAtoms: number; tableBondBlocks: number },
 ): Promise<GamingTable> => {
   const { data } = await api.post<GamingTable>('/br/gaming/table', {
     game,
     gcid,
-    buyinDcr,
+    buyinAtoms,
+    funds,
     seats,
     openBlocks,
   });
   return data;
 };
-
-// One piece of coin a game has locked on chain. maturesAt is absolute because a
-// count of blocks is true for one block and then quietly wrong; blocksLeft is
-// derived against the bridge's own tip when it answers.
-export interface GamingLock {
-  kind: 'bond' | 'stake' | 'tablebond';
-  sid?: string;
-  seat: number;
-  outpoint: string;
-  address?: string;
-  atoms: number;
-  maturesAt: number;
-  blocksLeft: number;
-  spendable: boolean;
-  // spending is a spend sitting in the mempool: the coin is still the game's,
-  // because a broadcast can be dropped, but nothing may ask for it again.
-  spending: boolean;
-  spent: boolean;
-}
 
 export interface GamingReportedTable {
   sid: string;
@@ -155,9 +138,6 @@ export interface GamingReportedTable {
   buyinAtoms: number;
   until: number;
   over: boolean;
-  // settling is true while the game could still complete a cooperative
-  // settlement. A refund taken then spends an input that settlement needs.
-  settling: boolean;
 }
 
 export interface GamingReportedState {
@@ -165,7 +145,6 @@ export interface GamingReportedState {
   reportedAt?: number;
   tipHeight?: number;
   tables?: GamingReportedTable[];
-  locks?: GamingLock[];
   chainErr?: string;
 }
 
@@ -177,23 +156,6 @@ export const getGamingState = async (
     `/br/gaming/state?game=${encodeURIComponent(game)}${refresh ? '&refresh=1' : ''}`,
   );
   return data;
-};
-
-// Reclaimed coin lands in the account the game is bound to. Where it goes is
-// not a parameter here on purpose: the server derives it.
-export const reclaimGaming = async (
-  game: string,
-  kind: 'bond' | 'stake' | 'tablebond',
-  sid?: string,
-  outpoint?: string,
-): Promise<string> => {
-  const { data } = await api.post<{ txid: string }>('/br/gaming/reclaim', {
-    game,
-    kind,
-    sid,
-    outpoint,
-  });
-  return data.txid;
 };
 
 export const acceptGamingInvite = async (
@@ -220,6 +182,11 @@ export type GamingSpendState =
   | 'failed';
 
 export interface GamingSpend {
+  depositId: string;
+  tableId: string;
+  depositKind: 'seatbond' | 'stake' | 'tablebond';
+  fundingFeeAtoms: number;
+  recoveryLockBlocks: number;
   id: string;
   game: string;
   address: string;
@@ -304,4 +271,46 @@ export const decideGamingSpend = async (
     passphrase: passphrase ?? '',
   });
   return data;
+};
+
+export interface RecoveryDeposit {
+  id: string; game: string; table: string; kind: string; atoms: number;
+  outpoint: string; lockBlocks: number; confirmations: number;
+  remainingBlocks: number; state: string; reason?: string;
+  canRecover: boolean; closed: boolean;
+}
+export interface RecoveryQuote {
+  id: string; depositId: string; destination: string; feeAtoms: number;
+  returnAtoms: number; expiresAt: number;
+}
+export const getGamingRecovery = async (): Promise<RecoveryDeposit[]> => {
+  const { data } = await api.get<{deposits: RecoveryDeposit[]}>('/br/gaming/recovery');
+  return data.deposits;
+};
+export const closeRecoveryTable = async (id: string): Promise<void> => {
+  await api.post('/br/gaming/recovery', {id, action: 'close'});
+};
+export const quoteRecovery = async (id: string): Promise<RecoveryQuote> => {
+  const { data } = await api.post<RecoveryQuote>('/br/gaming/recovery', {id, action: 'quote'});
+  return data;
+};
+export const confirmRecovery = async (id: string, quote: string, passphrase: string): Promise<{txid: string; pending: boolean; error?: string}> => {
+  const { data } = await api.post('/br/gaming/recovery', {id, quote, passphrase, action: 'confirm'});
+  return data;
+};
+
+export interface GamingPayout {
+ id: string; table: string; scope: { game: string }; state: string;
+ payments: { key: string; atoms: number }[]; destinations: Record<string, string>;
+ feeAtoms: number; expiresAt: number; signatures: Record<string, string[]>;
+}
+export const getGamingPayouts = async (): Promise<GamingPayout[]> => {
+ const { data } = await api.get<{ payouts: GamingPayout[] }>('/br/gaming/payouts');
+ return data.payouts ?? [];
+};
+export const approveGamingPayout = async (id: string, passphrase: string) => {
+ const { data } = await api.post('/br/gaming/payouts', { id, action: 'approve', passphrase }); return data;
+};
+export const rejectGamingPayout = async (id: string) => {
+ const { data } = await api.post('/br/gaming/payouts', { id, action: 'reject' }); return data;
 };
