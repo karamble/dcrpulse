@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"dcrpulse/internal/gamingfunds"
 	"dcrpulse/internal/gamingpb"
 	"testing"
 )
@@ -45,5 +46,22 @@ func TestFinancialMessageRejectsTrailingAndUnknownData(t *testing.T) {
 	}
 	if _, err := decodeFinancialMessage([]byte(`{"version":2,"want":true}`)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFinancialRosterRetriesAtMostOncePerBlock(t *testing.T) {
+	scope := gamingfunds.Scope{Game: "stakewars", Network: "simnet", Wallet: t.Name(), Account: 1}
+	if !claimFinancialRosterRetry(scope, "table", 100) {
+		t.Fatal("first retry was suppressed")
+	}
+	if claimFinancialRosterRetry(scope, "table", 100) {
+		t.Fatal("unchanged block retried the financial roster")
+	}
+	if !claimFinancialRosterRetry(scope, "table", 101) {
+		t.Fatal("new block did not permit async healing")
+	}
+	releaseFinancialRosterRetry(scope, "table", 101)
+	if !claimFinancialRosterRetry(scope, "table", 101) {
+		t.Fatal("failed delivery was not released for retry")
 	}
 }

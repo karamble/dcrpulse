@@ -42,10 +42,16 @@ func testStore(t *testing.T) (*Store, Scope, Terms) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if ready, err := s.RosterReady(scope, "a1"); err != nil || ready {
+		t.Fatalf("uncommitted roster readiness = %v, %v", ready, err)
+	}
 	for i := 2; i <= 3; i++ {
 		if _, err = s.CommitRoster(scope, "a1", fmt.Sprintf("%064x", i), hash); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if ready, err := s.RosterReady(scope, "a1"); err != nil || !ready {
+		t.Fatalf("committed roster readiness = %v, %v", ready, err)
 	}
 	terms := Terms{Version: Version, Game: scope.Game, Network: scope.Network, Account: scope.Account, Table: "a1", Kind: "stake", Atoms: auth.StakeAtoms, LockBlocks: auth.CSVBlocks, Identity: public(1), Recovery: public(2), Members: []string{public(3), public(2)}}
 	return s, scope, terms
