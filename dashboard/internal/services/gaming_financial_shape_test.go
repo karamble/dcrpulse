@@ -65,3 +65,16 @@ func TestFinancialRosterRetriesAtMostOncePerBlock(t *testing.T) {
 		t.Fatal("failed delivery was not released for retry")
 	}
 }
+
+func TestExpiredIncompleteFinancialRosterIsSilent(t *testing.T) {
+	table := gamingfunds.TableAuthorization{Seats: 2, Until: 100}
+	if financialRosterStale(table, 1, 100) {
+		t.Fatal("roster became stale before admission closed")
+	}
+	if !financialRosterStale(table, 1, 101) {
+		t.Fatal("expired incomplete roster remained noisy")
+	}
+	if financialRosterStale(table, 2, 101) {
+		t.Fatal("full roster lost its commitment-healing window")
+	}
+}
