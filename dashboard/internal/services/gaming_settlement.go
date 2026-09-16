@@ -198,8 +198,9 @@ func ApproveGamingPayout(ctx context.Context, id string, passphrase []byte) (*ga
 	if err != nil {
 		return nil, err
 	}
-	// A send failure retains approval and signatures for durable retry.
-	if err = sendFinancialMessage(ctx, p.Scope.Game, table.Group, p.Table, financialMessage{Settlement: id, Signatures: sigs, Want: true}); err != nil {
+	// Approval is a state transition. Publish its signatures once; BR group
+	// history supplies them to peers that connect later.
+	if err = sendFinancialMessage(ctx, p.Scope.Game, table.Group, p.Table, financialMessage{Settlement: id, Signatures: sigs}); err != nil {
 		return nil, err
 	}
 	refreshed, err := store.Settlement(p.Scope, id)

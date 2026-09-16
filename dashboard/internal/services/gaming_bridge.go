@@ -300,11 +300,12 @@ func (b *GamingBus) deliverFrame(payload json.RawMessage) {
 	}
 	if isFinancialFrame(frame.Text) {
 		// Financial wallet/node work must not block the BR notification loop.
-		// Dropped messages are repaired by periodic authoritative gossip.
+		// BR retains the original group-chat message; peers never rebroadcast
+		// unchanged authority state.
 		select {
 		case gamingFinancialInbox <- GamingFrameEvent{Game: frame.Game, GCID: evt.GCID, From: evt.From, Frame: frame.Text}:
 		default:
-			gameLog.Warnf("financial inbox full; awaiting peer retransmission")
+			gameLog.Warnf("financial inbox full; retained message was not processed")
 		}
 
 		return

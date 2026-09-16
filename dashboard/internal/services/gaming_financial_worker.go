@@ -28,50 +28,6 @@ var gamingFinancialWorker struct {
 }
 var gamingFinancialInbox = make(chan GamingFrameEvent, 128)
 
-// Keep healing an incomplete async authority roster through the table's stake
-// funding window. After this, an incomplete table is stale recovery state and
-// must not keep writing BR chat messages forever.
-const gamingFinancialRosterGraceBlocks int64 = 16
-
-var gamingFinancialRosterRetries struct {
-	sync.Mutex
-	last map[string]int64
-}
-
-func financialRosterRetryKey(scope gamingfunds.Scope, table string) string {
-	return scope.Game + "\x00" + scope.Network + "\x00" + scope.Wallet + "\x00" + strconv.FormatUint(uint64(scope.Account), 10) + "\x00" + table
-}
-
-// claimFinancialRosterRetry limits durable BR healing traffic to one request
-// per chain height. A failed send is released so the next worker pass can try
-// again; successful unchanged announcements wait for the next block.
-func claimFinancialRosterRetry(scope gamingfunds.Scope, table string, height int64) bool {
-	key := financialRosterRetryKey(scope, table)
-	gamingFinancialRosterRetries.Lock()
-	defer gamingFinancialRosterRetries.Unlock()
-	if gamingFinancialRosterRetries.last == nil {
-		gamingFinancialRosterRetries.last = map[string]int64{}
-	}
-	if last, ok := gamingFinancialRosterRetries.last[key]; ok && last == height {
-		return false
-	}
-	gamingFinancialRosterRetries.last[key] = height
-	return true
-}
-
-func releaseFinancialRosterRetry(scope gamingfunds.Scope, table string, height int64) {
-	key := financialRosterRetryKey(scope, table)
-	gamingFinancialRosterRetries.Lock()
-	defer gamingFinancialRosterRetries.Unlock()
-	if gamingFinancialRosterRetries.last[key] == height {
-		delete(gamingFinancialRosterRetries.last, key)
-	}
-}
-
-func financialRosterStale(table gamingfunds.TableAuthorization, participants int, height int64) bool {
-	return height >= 0 && height > int64(table.Until) && participants < int(table.Seats)
-}
-
 // observeGamingOperation first asks dcrd, which covers the mempool and nodes
 // with transaction indexing. Confirmed wallet transactions then fall back to
 // dcrwallet plus a block-header lookup, so reconciliation does not require
@@ -315,7 +271,8 @@ func StartGamingFinancialWorker(ctx context.Context) {
 				err := receiveFinancialFrame(work, event)
 				cancel()
 				if err != nil {
-					gameLog.Warnf("financial message rejected: %v", err)
+					// Old or malformed history must not fill normal operator logs.
+					gameLog.Debugf("financial message rejected: %v", err)
 				}
 			}
 		}
@@ -406,89 +363,6 @@ func reconcileGamingFinance(ctx context.Context) {
 		}
 	}
 	reconcileGamingDeposits(ctx, store)
-	// Durable public announcements and released signatures are retransmitted.
-	tables, err := store.Tables()
-	if err != nil {
-		return
-	}
-	tip := int64(-1)
-	if rpc.DcrdClient != nil {
-		if height, tipErr := rpc.DcrdClient.GetBlockCount(ctx); tipErr == nil {
-			tip = height
-		}
-	}
-	for _, table := range tables {
-		if ctx.Err() != nil {
-			return
-		}
-		if table.Closed {
-			continue
-		}
-		participants, participantErr := store.Participants(table.Scope, table.Table)
-		if participantErr != nil {
-			continue
-		}
-		// Once admission is closed, a roster still short of seats cannot
-		// become this table's financial roster. Keep its recovery records,
-		// but stop writing futile participant requests into the group chat.
-		// A full roster may continue healing missing commitments below.
-		if financialRosterStale(table, len(participants), tip) {
-			continue
-		}
-		ready, readyErr := store.RosterReady(table.Scope, table.Table)
-		if readyErr == nil && ready {
-			continue
-		}
-		if tip >= 0 && tip > int64(table.Until)+gamingFinancialRosterGraceBlocks {
-			continue
-		}
-		retryHeight := tip
-		if retryHeight < 0 {
-			// No node means no trustworthy table height. Keep async healing
-			// bounded to one attempt per target block interval instead.
-			retryHeight = time.Now().Unix() / int64((5 * time.Minute).Seconds())
-		}
-		if !claimFinancialRosterRetry(table.Scope, table.Table, retryHeight) {
-			continue
-		}
-		if _, err = store.WalletKey(table.Scope, table.Table); err != nil {
-			releaseFinancialRosterRetry(table.Scope, table.Table, retryHeight)
-			continue
-		}
-		if err = recoveryWalletMatches(ctx, table.Scope); err != nil {
-			releaseFinancialRosterRetry(table.Scope, table.Table, retryHeight)
-			continue
-		}
-		if err = announceGamingAuthority(ctx, table.Scope, table.Table, true); err != nil {
-			releaseFinancialRosterRetry(table.Scope, table.Table, retryHeight)
-			gameLog.Debugf("financial roster announcement pending: %v", err)
-		}
-	}
-	payouts, err := store.AllSettlements()
-	if err != nil {
-		return
-	}
-	for _, p := range payouts {
-		if ctx.Err() != nil {
-			return
-		}
-		if p.State != "awaiting_signatures" && p.State != "publishing" {
-			continue
-		}
-		table, err := store.AuthorizedTable(p.Scope, p.Table)
-		if err != nil {
-			continue
-		}
-		key, err := store.WalletKey(p.Scope, p.Table)
-		if err != nil {
-			continue
-		}
-		if sigs := p.Signatures[key.Public]; len(sigs) > 0 {
-			if err = sendFinancialMessage(ctx, p.Scope.Game, table.Group, p.Table, financialMessage{Settlement: p.ID, Signatures: sigs}); err != nil {
-				gameLog.Debugf("payout signature delivery pending: %v", err)
-			}
-		}
-	}
 }
 
 func reconcileGamingFundingHistory(txid string) {
