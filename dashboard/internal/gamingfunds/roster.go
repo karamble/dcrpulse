@@ -160,6 +160,38 @@ func (s *Store) RosterHash(scope Scope, table string) (string, error) {
 	}
 	return rosterHash(d.Peers[k]), nil
 }
+
+// RosterReady reports whether every expected financial participant is known
+// and has committed to the same roster. Once true, participant announcements
+// are durable bridge state and no longer need periodic BR retransmission.
+func (s *Store) RosterReady(scope Scope, table string) (bool, error) {
+	k, err := scopeKey(scope, table)
+	if err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return false, err
+	}
+	t, ok := d.Tables[k]
+	if !ok || t.Closed {
+		return false, fmt.Errorf("table not active")
+	}
+	peers := d.Peers[k]
+	if len(peers) != int(t.Seats) {
+		return false, nil
+	}
+	hash := rosterHash(peers)
+	for uid := range peers {
+		if d.RosterCommits[k][uid] != hash {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 func (s *Store) CommitRoster(scope Scope, table, authenticatedUID, hash string) (bool, error) {
 	k, err := scopeKey(scope, table)
 	if err != nil {

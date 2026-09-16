@@ -28,6 +28,46 @@ var gamingFinancialWorker struct {
 }
 var gamingFinancialInbox = make(chan GamingFrameEvent, 128)
 
+// Keep healing an incomplete async authority roster through the table's stake
+// funding window. After this, an incomplete table is stale recovery state and
+// must not keep writing BR chat messages forever.
+const gamingFinancialRosterGraceBlocks int64 = 16
+
+var gamingFinancialRosterRetries struct {
+	sync.Mutex
+	last map[string]int64
+}
+
+func financialRosterRetryKey(scope gamingfunds.Scope, table string) string {
+	return scope.Game + "\x00" + scope.Network + "\x00" + scope.Wallet + "\x00" + strconv.FormatUint(uint64(scope.Account), 10) + "\x00" + table
+}
+
+// claimFinancialRosterRetry limits durable BR healing traffic to one request
+// per chain height. A failed send is released so the next worker pass can try
+// again; successful unchanged announcements wait for the next block.
+func claimFinancialRosterRetry(scope gamingfunds.Scope, table string, height int64) bool {
+	key := financialRosterRetryKey(scope, table)
+	gamingFinancialRosterRetries.Lock()
+	defer gamingFinancialRosterRetries.Unlock()
+	if gamingFinancialRosterRetries.last == nil {
+		gamingFinancialRosterRetries.last = map[string]int64{}
+	}
+	if last, ok := gamingFinancialRosterRetries.last[key]; ok && last == height {
+		return false
+	}
+	gamingFinancialRosterRetries.last[key] = height
+	return true
+}
+
+func releaseFinancialRosterRetry(scope gamingfunds.Scope, table string, height int64) {
+	key := financialRosterRetryKey(scope, table)
+	gamingFinancialRosterRetries.Lock()
+	defer gamingFinancialRosterRetries.Unlock()
+	if gamingFinancialRosterRetries.last[key] == height {
+		delete(gamingFinancialRosterRetries.last, key)
+	}
+}
+
 // observeGamingOperation first asks dcrd, which covers the mempool and nodes
 // with transaction indexing. Confirmed wallet transactions then fall back to
 // dcrwallet plus a block-header lookup, so reconciliation does not require
@@ -367,6 +407,12 @@ func reconcileGamingFinance(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	tip := int64(-1)
+	if rpc.DcrdClient != nil {
+		if height, tipErr := rpc.DcrdClient.GetBlockCount(ctx); tipErr == nil {
+			tip = height
+		}
+	}
 	for _, table := range tables {
 		if ctx.Err() != nil {
 			return
@@ -374,13 +420,32 @@ func reconcileGamingFinance(ctx context.Context) {
 		if table.Closed {
 			continue
 		}
+		ready, readyErr := store.RosterReady(table.Scope, table.Table)
+		if readyErr == nil && ready {
+			continue
+		}
+		if tip >= 0 && tip > int64(table.Until)+gamingFinancialRosterGraceBlocks {
+			continue
+		}
+		retryHeight := tip
+		if retryHeight < 0 {
+			// No node means no trustworthy table height. Keep async healing
+			// bounded to one attempt per target block interval instead.
+			retryHeight = time.Now().Unix() / int64((5 * time.Minute).Seconds())
+		}
+		if !claimFinancialRosterRetry(table.Scope, table.Table, retryHeight) {
+			continue
+		}
 		if _, err = store.WalletKey(table.Scope, table.Table); err != nil {
+			releaseFinancialRosterRetry(table.Scope, table.Table, retryHeight)
 			continue
 		}
 		if err = recoveryWalletMatches(ctx, table.Scope); err != nil {
+			releaseFinancialRosterRetry(table.Scope, table.Table, retryHeight)
 			continue
 		}
 		if err = announceGamingAuthority(ctx, table.Scope, table.Table, true); err != nil {
+			releaseFinancialRosterRetry(table.Scope, table.Table, retryHeight)
 			gameLog.Debugf("financial roster announcement pending: %v", err)
 		}
 	}
