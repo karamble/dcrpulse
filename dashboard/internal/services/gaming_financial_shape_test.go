@@ -1,9 +1,10 @@
 package services
 
 import (
+	"bytes"
 	"context"
-	"dcrpulse/internal/gamingfunds"
 	"dcrpulse/internal/gamingpb"
+	"reflect"
 	"testing"
 )
 
@@ -25,7 +26,7 @@ func TestPayoutRejectsMalformedArraysBeforeWalletAccess(t *testing.T) {
 func TestGamingEnvelopeRejectsDuplicateRoutingFields(t *testing.T) {
 	for _, frame := range []string{
 		"--gaming[v=1,game=poker,game=stakewars]--QUJD",
-		"--gaming[v=1,game=poker,authority=2,authority=1]--QUJD",
+		"--gaming[v=1,game=poker,authority=3,authority=1]--QUJD",
 		"--gaming[v=1,game=poker, game=stakewars]--QUJD",
 	} {
 		if _, ok := parseGamingFrame(frame); ok {
@@ -33,48 +34,55 @@ func TestGamingEnvelopeRejectsDuplicateRoutingFields(t *testing.T) {
 		}
 	}
 }
-func TestFinancialMessageRejectsTrailingAndUnknownData(t *testing.T) {
-	for _, raw := range []string{
-		`{"version":2} {"version":2}`,
-		`{"version":2} null`,
-		`{"version":2,"privateKey":"no"}`,
-		`{"version":1}`,
+
+func TestFinancialParticipantMessageRoundTrip(t *testing.T) {
+	key := "0344e0ea14b52801d13e46ce0d4e815ba7633ce2a48c0b4a3cc2cd2d776aa7ea37"
+	for _, want := range []financialMessage{
+		{Key: key, Want: true},
+		{Key: key, RosterHash: "ad0c1dd7e0b540afe39b0a5ae9a6095352bad9e07e6ae77cf2592af2d074548f"},
 	} {
-		if _, err := decodeFinancialMessage([]byte(raw)); err == nil {
-			t.Fatal("ambiguous financial message accepted")
+		raw, err := encodeFinancialMessage(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := decodeFinancialMessage(raw); err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("round trip = %#v, %v", got, err)
+		}
+		if len(raw) != 34 && len(raw) != 66 {
+			t.Fatalf("participant message is %d bytes", len(raw))
 		}
 	}
-	if _, err := decodeFinancialMessage([]byte(`{"version":2,"want":true}`)); err != nil {
+}
+
+func TestFinancialSettlementMessageRoundTrip(t *testing.T) {
+	want := financialMessage{
+		Settlement: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Signatures: [][]byte{{1, 2, 3}, {4, 5}},
+	}
+	raw, err := encodeFinancialMessage(want)
+	if err != nil {
 		t.Fatal(err)
 	}
-}
-
-func TestFinancialRosterRetriesAtMostOncePerBlock(t *testing.T) {
-	scope := gamingfunds.Scope{Game: "stakewars", Network: "simnet", Wallet: t.Name(), Account: 1}
-	if !claimFinancialRosterRetry(scope, "table", 100) {
-		t.Fatal("first retry was suppressed")
-	}
-	if claimFinancialRosterRetry(scope, "table", 100) {
-		t.Fatal("unchanged block retried the financial roster")
-	}
-	if !claimFinancialRosterRetry(scope, "table", 101) {
-		t.Fatal("new block did not permit async healing")
-	}
-	releaseFinancialRosterRetry(scope, "table", 101)
-	if !claimFinancialRosterRetry(scope, "table", 101) {
-		t.Fatal("failed delivery was not released for retry")
+	got, err := decodeFinancialMessage(raw)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("round trip = %#v, %v", got, err)
 	}
 }
 
-func TestExpiredIncompleteFinancialRosterIsSilent(t *testing.T) {
-	table := gamingfunds.TableAuthorization{Seats: 2, Until: 100}
-	if financialRosterStale(table, 1, 100) {
-		t.Fatal("roster became stale before admission closed")
-	}
-	if !financialRosterStale(table, 1, 101) {
-		t.Fatal("expired incomplete roster remained noisy")
-	}
-	if financialRosterStale(table, 2, 101) {
-		t.Fatal("full roster lost its commitment-healing window")
+func TestFinancialMessageRejectsMalformedData(t *testing.T) {
+	key := bytes.Repeat([]byte{1}, 33)
+	for _, raw := range [][]byte{
+		nil,
+		{0x20},                                  // retired wire version
+		{0x30},                                  // no message kind
+		{0x33},                                  // ambiguous message kinds
+		append([]byte{0x31}, key[:32]...),       // short participant key
+		append(append([]byte{0x31}, key...), 0), // trailing participant data
+		append(bytes.Repeat([]byte{0}, 33), 1),  // invalid version and body
+		append([]byte{0x32}, bytes.Repeat([]byte{0}, 32)...), // missing signature count
+	} {
+		if _, err := decodeFinancialMessage(raw); err == nil {
+			t.Fatalf("malformed financial message accepted: %x", raw)
+		}
 	}
 }
