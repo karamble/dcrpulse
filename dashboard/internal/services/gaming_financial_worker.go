@@ -68,6 +68,10 @@ func releaseFinancialRosterRetry(scope gamingfunds.Scope, table string, height i
 	}
 }
 
+func financialRosterStale(table gamingfunds.TableAuthorization, participants int, height int64) bool {
+	return height >= 0 && height > int64(table.Until) && participants < int(table.Seats)
+}
+
 // observeGamingOperation first asks dcrd, which covers the mempool and nodes
 // with transaction indexing. Confirmed wallet transactions then fall back to
 // dcrwallet plus a block-header lookup, so reconciliation does not require
@@ -418,6 +422,17 @@ func reconcileGamingFinance(ctx context.Context) {
 			return
 		}
 		if table.Closed {
+			continue
+		}
+		participants, participantErr := store.Participants(table.Scope, table.Table)
+		if participantErr != nil {
+			continue
+		}
+		// Once admission is closed, a roster still short of seats cannot
+		// become this table's financial roster. Keep its recovery records,
+		// but stop writing futile participant requests into the group chat.
+		// A full roster may continue healing missing commitments below.
+		if financialRosterStale(table, len(participants), tip) {
 			continue
 		}
 		ready, readyErr := store.RosterReady(table.Scope, table.Table)
