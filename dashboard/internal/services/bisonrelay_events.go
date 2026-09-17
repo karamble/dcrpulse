@@ -186,13 +186,6 @@ func StartBrclientdNotifs(ctx context.Context) {
 					}
 					return
 				}
-				// Deployed brclientd versions deliver protocol envelopes through
-				// the ordinary GC notification. Recognise the envelope before
-				// browser fan-out: gaming frames are consumed by the bridge while
-				// normal chat continues unchanged.
-				if evt.Type == "gc-message" && Gaming().deliverFrame(evt.Payload) {
-					return
-				}
 				// Keepalives prove the stream is healthy but carry
 				// nothing for the browser fan-out or the event bus.
 				if evt.Type != "keepalive" {

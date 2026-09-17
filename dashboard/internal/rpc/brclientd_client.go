@@ -1092,6 +1092,22 @@ func BrclientdGCMessage(ctx context.Context, gcid ShortIDHex, message string, mo
 	})
 }
 
+// BrclientdGamingHistory returns only valid gaming protocol frames from one
+// group chat. Normal chat history deliberately excludes these frames.
+func BrclientdGamingHistory(ctx context.Context, gcid ShortIDHex, page, pageSize int) (json.RawMessage, error) {
+	if gcid.String() == "" {
+		return nil, ErrBadShortID
+	}
+	q := map[string]string{"gcid": gcid.String()}
+	if page > 0 {
+		q["page"] = strconv.Itoa(page)
+	}
+	if pageSize > 0 {
+		q["page_size"] = strconv.Itoa(pageSize)
+	}
+	return brclientdGetRaw(ctx, "/gaming/history", q)
+}
+
 func BrclientdGCHistory(ctx context.Context, gcid ShortIDHex, page, pageSize int) (json.RawMessage, error) {
 	q := map[string]string{}
 	if page > 0 {
