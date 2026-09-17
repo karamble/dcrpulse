@@ -531,19 +531,33 @@ export const BisonrelayGamingTab = () => {
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 space-y-1">
-                        <span className="font-medium block">
-                          {g.name}
-                          {g.name !== g.id && (
-                            <span className="text-muted-foreground font-normal font-mono text-xs">
-                              {' '}
-                              {g.id}
-                            </span>
-                          )}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">
+                            {g.name}
+                            {g.name !== g.id && (
+                              <span className="text-muted-foreground font-normal font-mono text-xs">
+                                {' '}
+                                {g.id}
+                              </span>
+                            )}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1.5 text-xs ${
+                              g.ready ? 'text-success' : 'text-muted-foreground'
+                            }`}
+                          >
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                g.ready ? 'bg-success' : 'bg-muted-foreground/40'
+                              }`}
+                            />
+                            {g.ready ? 'Connected' : 'Idle'}
+                          </span>
+                        </div>
                         <span className="text-xs text-muted-foreground block">
                           {g.ready
-                            ? 'Connected.'
-                            : 'Registered. Nothing has connected under this id yet.'}
+                            ? 'The game session is available to receive table invitations.'
+                            : 'Registered. No game session is connected under this id.'}
                         </span>
                         <div className="text-xs space-y-1 pt-1">
                           {settings.gameCredentials?.[g.id] ? (
