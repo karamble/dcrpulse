@@ -1,12 +1,55 @@
 package services
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	"dcrpulse/internal/types"
 )
 
-const testFrame = `--gaming[v=1,game=poker,gv=1,sid=0123456789abcdef,mid=0123456789abcdef,seq=1/1,exp=1783000000]--eyJhY3Rpb24iOiJmb2xkIn0=`
+func TestBridgeAuthoredEnvelopeMatchesWireV2Golden(t *testing.T) {
+	got, err := buildGamingFrame("poker", 5, "0123456789abcdef", []byte(`{"action":"fold"}`), time.Unix(1783000000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `--gaming[v=2,game=poker,gv=5,sid=0123456789abcdef,mid=388d6729aa34aa0da30879de821236cddb5efc55e839bd40f530ad7c3a3e2a23,seq=1/1,exp=1783000000]--eyJhY3Rpb24iOiJmb2xkIn0=`
+	if got != want {
+		t.Fatalf("bridge v2 envelope = %q, want %q", got, want)
+	}
+}
+
+const testFrame = `--gaming[v=2,game=poker,gv=1,sid=0123456789abcdef,mid=5736684151c34f0a17823de6822769dfafeb3170477c2079dec9d72e35aa5c5f,seq=1/1,exp=1783000000]--eyJhY3Rpb24iOiJmb2xkIn0=`
+
+func TestDeliverFrameRecognisesGCMessageEnvelope(t *testing.T) {
+	old := gamingBus
+	oldOnce := gamingBusOnce
+	t.Cleanup(func() { gamingBus, gamingBusOnce = old, oldOnce })
+
+	bus := &GamingBus{subs: make(map[*gamingSubscriber]struct{})}
+	payload, err := json.Marshal(map[string]string{
+		"gcid": "aa", "from": "bb", "message": testFrame,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The test game need not be registered to establish the routing decision:
+	// an unknown gaming envelope is still protocol traffic and must not appear
+	// as chat.
+	if !bus.deliverFrame(payload) {
+		t.Fatal("valid --gaming envelope in gc-message was not consumed")
+	}
+	payload, err = json.Marshal(map[string]string{
+		"gcid": "aa", "from": "bb", "message": "ordinary chat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bus.deliverFrame(payload) {
+		t.Fatal("ordinary gc-message was consumed by the gaming bridge")
+	}
+}
 
 // The bridge routes on the game key and reads nothing else.
 func TestParseGamingFrameReadsTheRoutingKey(t *testing.T) {
@@ -17,6 +60,9 @@ func TestParseGamingFrameReadsTheRoutingKey(t *testing.T) {
 	if f.Game != "poker" {
 		t.Fatalf("routing key is %q, want poker", f.Game)
 	}
+	if f.Version != "2" || f.MID == "" || f.Part != "1/1" {
+		t.Fatalf("wire identity was not parsed: %+v", f)
+	}
 	if f.Text != testFrame {
 		t.Fatal("the frame must be carried whole, not rewritten")
 	}
@@ -24,14 +70,14 @@ func TestParseGamingFrameReadsTheRoutingKey(t *testing.T) {
 
 // A game this host has never heard of is still a frame. Recognising it is what
 // lets the host drop it as unroutable instead of showing it as chat.
-func TestParseGamingFrameAcceptsUnknownGamesAndVersions(t *testing.T) {
-	for _, f := range []string{
-		`--gaming[v=1,game=chess,gv=1,sid=ab,mid=cd,seq=1/1,exp=0]--QUJD`,
-		`--gaming[v=99,game=poker,gv=42,sid=ab,mid=cd,seq=1/1,exp=0]--QUJD`,
-	} {
-		if _, ok := parseGamingFrame(f); !ok {
-			t.Errorf("frame not recognised: %q", f)
-		}
+func TestParseGamingFrameAcceptsUnknownGamesAndRejectsOldVersions(t *testing.T) {
+	unknown := strings.Replace(testFrame, "game=poker", "game=chess", 1)
+	if _, ok := parseGamingFrame(unknown); !ok {
+		t.Errorf("unknown game frame not recognised: %q", unknown)
+	}
+	old := strings.Replace(testFrame, "v=2", "v=1", 1)
+	if _, ok := parseGamingFrame(old); ok {
+		t.Errorf("retired wire version was accepted: %q", old)
 	}
 }
 
@@ -68,7 +114,7 @@ func TestGamingBusRoutesPerGame(t *testing.T) {
 	chess, cancelChess := bus.Subscribe("chess", 4)
 	defer cancelChess()
 
-	bus.broadcast(GamingFrameEvent{Game: "poker", GCID: "aa", From: "bb", Frame: testFrame})
+	bus.broadcast(GamingFrameEvent{Seq: 1, Game: "poker", GCID: "aa", From: "bb", Frame: testFrame})
 
 	select {
 	case ev := <-poker:
@@ -96,7 +142,7 @@ func TestGamingBusDropsRatherThanBlocks(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 100; i++ {
-			bus.broadcast(GamingFrameEvent{Game: "poker", Frame: testFrame})
+			bus.broadcast(GamingFrameEvent{Seq: uint64(i + 1), Game: "poker", Frame: testFrame})
 		}
 		close(done)
 	}()
@@ -109,7 +155,7 @@ func TestGamingBusUnsubscribeStopsDelivery(t *testing.T) {
 	ch, cancel := bus.Subscribe("poker", 1)
 	cancel()
 
-	bus.broadcast(GamingFrameEvent{Game: "poker", Frame: testFrame})
+	bus.broadcast(GamingFrameEvent{Seq: 1, Game: "poker", Frame: testFrame})
 	if _, open := <-ch; open {
 		t.Fatal("a cancelled subscription should be closed and empty")
 	}

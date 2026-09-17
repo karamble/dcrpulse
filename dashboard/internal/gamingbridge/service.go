@@ -94,18 +94,9 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 		}
 	}()
 
-	var missed []string
-	if s.cfg.TakeMissed != nil {
-		missed = s.cfg.TakeMissed(game)
-	}
-	// StreamStart first, always. It is the only place a gap is declared, and
-	// a game that inferred one from its own reconnect loop would resync every
-	// table on every failed dial.
-	missedAll := false
-	if s.cfg.TookMissedAll != nil {
-		missedAll = s.cfg.TookMissedAll(game)
-	}
-	start := s.reg.streamStart(game, req, missed, missedAll)
+	// StreamStart first, always. The durable inbox then replays every frame
+	// after FromSeq before it switches to live delivery.
+	start := s.reg.streamStart(req)
 	if err := stream.Send(&gamingpb.BridgeEvent{
 		Event: &gamingpb.BridgeEvent_Start{Start: start},
 	}); err != nil {
@@ -113,10 +104,6 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 	}
 	if s.cfg.OnPresence != nil {
 		s.cfg.OnPresence(game)
-	}
-	if start.GetGap() {
-		gameLog.Infof("%s reconnected with a gap (%s), %d table(s) named",
-			game, start.GetGapScope(), len(start.GetGapGcids()))
 	}
 	// Now that there is a stream, the host can ask this game about itself.
 	// A game volunteers nothing, so without this the console never learns
@@ -127,7 +114,7 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 
 	var frames <-chan Frame
 	if s.cfg.Frames != nil {
-		ch, stop := s.cfg.Frames(game, frameBuffer)
+		ch, stop := s.cfg.Frames(game, start.GetFromSeq(), frameBuffer)
 		defer stop()
 		frames = ch
 	}

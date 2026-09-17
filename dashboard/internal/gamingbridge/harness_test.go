@@ -73,35 +73,12 @@ type bridgeRig struct {
 	appPassword atomic.Bool
 	enabled     atomic.Bool
 
-	// missed stands in for the fan-out having dropped frames for a table
-	// while nothing was connected.
-	missedMu sync.Mutex
-	missed   map[string][]string
-
 	spendMu  sync.Mutex
 	spendSeq int
 	spends   map[string]*gamingpb.Spend
 
 	workerStarted chan struct{}
 	workerStopped chan struct{}
-}
-
-// loseFrames records that a game's table lost frames, as the fan-out would.
-func (r *bridgeRig) loseFrames(game, gcid string) {
-	r.missedMu.Lock()
-	defer r.missedMu.Unlock()
-	if r.missed == nil {
-		r.missed = map[string][]string{}
-	}
-	r.missed[game] = append(r.missed[game], gcid)
-}
-
-func (r *bridgeRig) takeMissed(game string) []string {
-	r.missedMu.Lock()
-	defer r.missedMu.Unlock()
-	out := r.missed[game]
-	delete(r.missed, game)
-	return out
 }
 
 // requestSpend records a request the way the policy would, and refuses the
@@ -176,7 +153,6 @@ func newBridgeRig(t *testing.T) *bridgeRig {
 		Policy: func(string) (int64, int64, bool) {
 			return testPerTableCap, testPerDayCap, true
 		},
-		TakeMissed: func(game string) []string { return r.takeMissed(game) },
 
 		// The money, stood in for. The cap arithmetic itself belongs to the
 		// policy and is tested where it lives; what is asserted here is that

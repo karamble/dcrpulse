@@ -11,7 +11,6 @@ import (
 	"dcrpulse/internal/gamingfunds"
 	"dcrpulse/internal/rpc"
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
-	gw "github.com/karamble/dcrgaming-sdk/pkg/gaming/wire"
 )
 
 // authority is a bridge-reserved extension to the async --gaming envelope.
@@ -35,19 +34,17 @@ type financialMessage struct {
 	Key        string
 	Settlement string
 	Signatures [][]byte
-	Want       bool
 }
 
 const (
 	financialWireVersion  = byte(3)
 	financialParticipant  = byte(1)
 	financialSettlement   = byte(2)
-	financialWant         = byte(4)
 	financialRoster       = byte(8)
 	financialVersionShift = 4
 )
 
-func financialPart(raw string) (*gw.Part, error) {
+func financialPart(raw string) (*gamingFrame, error) {
 	if len(raw) > 32768 || !isFinancialFrame(raw) {
 		return nil, fmt.Errorf("invalid financial frame")
 	}
@@ -63,11 +60,11 @@ func financialPart(raw string) (*gw.Part, error) {
 			return nil, fmt.Errorf("unsupported financial wire version")
 		}
 	}
-	part, ok := gw.Parse(raw)
-	if !ok || part.Total != 1 || part.Seq != 1 || part.Expired(time.Now()) {
+	part, ok := parseGamingFrame(raw)
+	if !ok || part.Total != 1 || part.Seq != 1 || (part.Expiry > 0 && time.Now().Unix() > part.Expiry) {
 		return nil, fmt.Errorf("invalid financial envelope")
 	}
-	return part, nil
+	return &part, nil
 }
 
 func localGamingUID(ctx context.Context) (string, error) {
@@ -93,15 +90,29 @@ func sendFinancialMessage(ctx context.Context, game, group, table string, msg fi
 	if err != nil {
 		return err
 	}
-	parts, err := gw.Encode(game, 2, table, raw, time.Now().Add(10*time.Minute), 24000)
-	if err != nil || len(parts) != 1 {
+	encoded, err := buildGamingFrame(game, 2, table, raw, time.Time{})
+	if err != nil || len(encoded) > 32768 {
 		return fmt.Errorf("financial message exceeds single-message limit")
 	}
-	frame := strings.Replace(parts[0], "--gaming[", "--gaming[authority=3,", 1)
-	return rpc.BrclientdGCMessage(ctx, id, frame, 0)
+	frame := strings.Replace(encoded, "--gaming[", "--gaming[authority=3,", 1)
+	parsed, ok := parseGamingFrame(frame)
+	if !ok {
+		return fmt.Errorf("financial message produced an invalid gaming envelope")
+	}
+	fresh, err := claimOrReconcileGamingFrame(ctx, game, group, parsed, frame)
+	if err != nil {
+		return err
+	}
+	if !fresh {
+		return nil
+	}
+	if err := rpc.BrclientdGCMessage(ctx, id, frame, 0); err != nil {
+		return err
+	}
+	return markGamingFrameSent(game, group, parsed, frame)
 }
 
-func announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table string, want bool) error {
+func announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table string) error {
 	store, err := gamingFundsStore()
 	if err != nil {
 		return err
@@ -133,18 +144,10 @@ func announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table
 			break
 		}
 	}
-	if want {
-		if known {
-			return nil
-		}
-		// BR group-chat history is durable. Send the state once, then record
-		// it locally so repeated game requests do not rebroadcast it.
-		if err = sendFinancialMessage(ctx, scope.Game, accepted.Group, table, financialMessage{Key: peer.Key, Want: true}); err != nil {
-			return err
-		}
-		return store.RecordParticipant(scope, table, accepted.Group, uid, peer)
+	if !known {
+		err = store.RecordParticipant(scope, table, accepted.Group, uid, peer)
 	}
-	if err = store.RecordParticipant(scope, table, accepted.Group, uid, peer); err != nil {
+	if err != nil {
 		return err
 	}
 	hash, err := store.RosterHash(scope, table)
@@ -168,7 +171,7 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 	if part.Game != event.Game {
 		return fmt.Errorf("financial game mismatch")
 	}
-	msg, err := decodeFinancialMessage(part.Chunk)
+	msg, err := decodeFinancialMessage(part.Payload)
 	if err != nil {
 		return err
 	}
@@ -206,17 +209,6 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 			return err
 		}
 		participant := gamingfunds.Participant{UID: event.From, Key: msg.Key, Destination: expected.String(), TermsHash: accepted.TermsHash()}
-		participants, err := store.Participants(scope, part.SID)
-		if err != nil {
-			return err
-		}
-		isNew := true
-		for _, known := range participants {
-			if known.UID == event.From {
-				isNew = false
-				break
-			}
-		}
 		if err = store.RecordParticipant(scope, part.SID, event.GCID, event.From, participant); err != nil {
 			return err
 		}
@@ -240,8 +232,8 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 				return err
 			}
 		}
-		if (msg.Want && isNew) || changed {
-			return announceGamingAuthority(ctx, scope, part.SID, false)
+		if changed {
+			return announceGamingAuthority(ctx, scope, part.SID)
 		}
 		return nil
 	}
@@ -268,7 +260,7 @@ func decodeFinancialMessage(raw []byte) (financialMessage, error) {
 	payload := raw[1:]
 	switch flags & (financialParticipant | financialSettlement) {
 	case financialParticipant:
-		if flags & ^(financialParticipant|financialWant|financialRoster) != 0 {
+		if flags & ^(financialParticipant|financialRoster) != 0 {
 			return msg, fmt.Errorf("invalid participant flags")
 		}
 		want := 33
@@ -279,7 +271,6 @@ func decodeFinancialMessage(raw []byte) (financialMessage, error) {
 			return msg, fmt.Errorf("invalid participant message")
 		}
 		msg.Key = hex.EncodeToString(payload[:33])
-		msg.Want = flags&financialWant != 0
 		if flags&financialRoster != 0 {
 			msg.RosterHash = hex.EncodeToString(payload[33:])
 		}
@@ -321,9 +312,6 @@ func encodeFinancialMessage(msg financialMessage) ([]byte, error) {
 			return nil, fmt.Errorf("invalid financial key")
 		}
 		flags := financialParticipant
-		if msg.Want {
-			flags |= financialWant
-		}
 		out := append([]byte{financialWireVersion<<financialVersionShift | flags}, key...)
 		if msg.RosterHash != "" {
 			hash, err := hex.DecodeString(msg.RosterHash)
@@ -335,7 +323,7 @@ func encodeFinancialMessage(msg financialMessage) ([]byte, error) {
 		}
 		return out, nil
 	}
-	if msg.Settlement == "" || len(msg.Signatures) == 0 || len(msg.Signatures) > 255 || msg.Want || msg.RosterHash != "" {
+	if msg.Settlement == "" || len(msg.Signatures) == 0 || len(msg.Signatures) > 255 || msg.RosterHash != "" {
 		return nil, fmt.Errorf("invalid settlement message")
 	}
 	id, err := hex.DecodeString(msg.Settlement)

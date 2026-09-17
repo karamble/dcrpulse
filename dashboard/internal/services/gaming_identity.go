@@ -225,20 +225,17 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 		Enabled:           func() bool { return ReadGamingSettings().Enabled },
 		Allow:             gamingAllow,
 
-		Frames: func(game string, buf int) (<-chan gamingbridge.Frame, func()) {
-			in, stop := Gaming().Subscribe(game, buf)
+		Frames: func(game string, after uint64, buf int) (<-chan gamingbridge.Frame, func()) {
+			in, stop := Gaming().SubscribeFrom(game, after, buf)
 			out := make(chan gamingbridge.Frame, buf)
 			go func() {
 				defer close(out)
 				for ev := range in {
-					out <- gamingbridge.Frame{GCID: ev.GCID, From: ev.From, Frame: ev.Frame}
+					out <- gamingbridge.Frame{Seq: ev.Seq, GCID: ev.GCID, From: ev.From, Frame: ev.Frame}
 				}
 			}()
 			return out, stop
 		},
-		TakeMissed:    Gaming().TakeMissed,
-		TookMissedAll: Gaming().TookMissedAll,
-
 		Network: func() (string, bool) {
 			net, err := CurrentNetwork(context.Background())
 			return net, err == nil
