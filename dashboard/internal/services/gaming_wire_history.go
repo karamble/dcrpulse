@@ -22,7 +22,7 @@ type gamingHistoryPage struct {
 
 func gamingFrameInHistory(ctx context.Context, gcid rpc.ShortIDHex, frame string) (bool, error) {
 	for page := 0; page < 10000; page++ {
-		raw, err := rpc.BrclientdGCHistory(ctx, gcid, page, 500)
+		raw, err := rpc.BrclientdGamingHistory(ctx, gcid, page, 500)
 		if err != nil {
 			return false, err
 		}
@@ -108,7 +108,7 @@ func (b *GamingBus) RecoverHistory() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		var pages []gamingHistoryPage
 		for page := 0; page < 10000; page++ {
-			raw, err := rpc.BrclientdGCHistory(ctx, id, page, 500)
+			raw, err := rpc.BrclientdGamingHistory(ctx, id, page, 500)
 			if err != nil {
 				gameLog.Warnf("recover gaming history for %s: %v", gcid, err)
 				break
