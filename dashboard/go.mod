@@ -67,7 +67,7 @@ require (
 	github.com/decred/dcrd/connmgr/v3 v3.1.3 // indirect
 	github.com/decred/dcrd/container/apbf v1.0.1 // indirect
 	github.com/decred/dcrd/container/lru v1.0.0 // indirect
-	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
+	github.com/decred/dcrd/crypto/blake256 v1.1.0
 	github.com/decred/dcrd/crypto/rand v1.0.1 // indirect
 	github.com/decred/dcrd/crypto/ripemd160 v1.0.2 // indirect
 	github.com/decred/dcrd/database/v3 v3.0.3 // indirect
@@ -110,7 +110,7 @@ require (
 	github.com/jrick/bitset v1.0.0 // indirect
 	github.com/jrick/wsrpc/v2 v2.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/karamble/dcrgaming-sdk v0.3.1-0.20260916224754-3e9479f36a1d
+	github.com/karamble/dcrgaming-sdk v0.3.1-0.20260917004041-f8e207516d78
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
