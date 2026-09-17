@@ -58,21 +58,7 @@ type Config struct {
 	// Injected, like everything else here, so this package goes on depending
 	// on nothing: the bridge is handed a game's traffic rather than reaching
 	// for it.
-	Frames func(game string, buf int) (<-chan Frame, func())
-
-	// TakeMissed reports the tables whose frames could not be delivered since
-	// it was last asked, and forgets them.
-	//
-	// A game learns what it missed only at the start of a stream, so this is
-	// what turns a silent loss into one table's resync instead of every
-	// table's.
-	TakeMissed func(game string) []string
-
-	// TookMissedAll reports whether a game missed frames whose tables are
-	// unknown, and forgets it. Separate from TakeMissed because loss upstream
-	// of this process names no table: the event that would have said which one
-	// never arrived, so the only honest answer is that everything is suspect.
-	TookMissedAll func(game string) bool
+	Frames func(game string, after uint64, buf int) (<-chan Frame, func())
 
 	// Network is the chain this bridge is on, which a game must be told
 	// before it builds anything: a game on the wrong network makes scripts

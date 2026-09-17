@@ -262,17 +262,30 @@ func StartGamingFinancialWorker(ctx context.Context) {
 	workers.Add(2)
 	go func() {
 		defer workers.Done()
+		replay := time.NewTicker(30 * time.Second)
+		defer replay.Stop()
+		process := func(event GamingFrameEvent) {
+			work, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err := receiveFinancialFrame(work, event)
+			cancel()
+			if err != nil {
+				// Invalid records stay harmless; dependency failures are retried
+				// from the durable local inbox without peer traffic.
+				gameLog.Debugf("financial message rejected: %v", err)
+			}
+		}
+		for _, event := range Gaming().financialReplay() {
+			process(event)
+		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case event := <-gamingFinancialInbox:
-				work, cancel := context.WithTimeout(ctx, 10*time.Second)
-				err := receiveFinancialFrame(work, event)
-				cancel()
-				if err != nil {
-					// Old or malformed history must not fill normal operator logs.
-					gameLog.Debugf("financial message rejected: %v", err)
+				process(event)
+			case <-replay.C:
+				for _, event := range Gaming().financialReplay() {
+					process(event)
 				}
 			}
 		}

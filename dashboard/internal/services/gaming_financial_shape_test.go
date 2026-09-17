@@ -38,7 +38,6 @@ func TestGamingEnvelopeRejectsDuplicateRoutingFields(t *testing.T) {
 func TestFinancialParticipantMessageRoundTrip(t *testing.T) {
 	key := "0344e0ea14b52801d13e46ce0d4e815ba7633ce2a48c0b4a3cc2cd2d776aa7ea37"
 	for _, want := range []financialMessage{
-		{Key: key, Want: true},
 		{Key: key, RosterHash: "ad0c1dd7e0b540afe39b0a5ae9a6095352bad9e07e6ae77cf2592af2d074548f"},
 	} {
 		raw, err := encodeFinancialMessage(want)
@@ -76,6 +75,7 @@ func TestFinancialMessageRejectsMalformedData(t *testing.T) {
 		{0x20},                                  // retired wire version
 		{0x30},                                  // no message kind
 		{0x33},                                  // ambiguous message kinds
+		append([]byte{0x35}, key...),            // retired want/reply flag
 		append([]byte{0x31}, key[:32]...),       // short participant key
 		append(append([]byte{0x31}, key...), 0), // trailing participant data
 		append(bytes.Repeat([]byte{0}, 33), 1),  // invalid version and body

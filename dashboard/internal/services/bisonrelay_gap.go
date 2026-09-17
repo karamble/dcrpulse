@@ -96,10 +96,10 @@ func noteNotifGap(n uint64, why, epoch string) {
 	// every one after it.
 	key := fmt.Sprintf("%s/%d", epoch, time.Now().Unix()/60)
 	alerts.Emit("br_notif_gap",
-		fmt.Sprintf("Lost %s event(s) from Bison Relay: %s. Games at a table have been asked to resynchronise.",
+		fmt.Sprintf("Lost %s event(s) from Bison Relay: %s. Gaming history recovery has started.",
 			describeGap(n), why), key)
 
-	Gaming().resyncAllGames(why)
+	go Gaming().RecoverHistory()
 }
 
 // unknownGap stands for "some events were lost and there is no way to count

@@ -20,6 +20,8 @@ var (
 	ErrGamingNotAFrame         = gamingbridge.GameSafe(errors.New("not a gaming frame"))
 	ErrGamingWrongGame         = gamingbridge.GameSafe(errors.New("frame belongs to another game"))
 	ErrGamingBadGCID           = gamingbridge.GameSafe(errors.New("not a group chat id"))
+	ErrGamingWireVersion       = gamingbridge.GameSafe(errors.New("unsupported gaming wire version"))
+	ErrGamingMessageID         = gamingbridge.GameSafe(errors.New("gaming message identity does not match its payload"))
 )
 
 // The gaming bridge is a tunnel between registered games and Bison Relay.
@@ -52,6 +54,8 @@ var (
 
 // GamingFrameEvent is one inbound frame, addressed to a game.
 type GamingFrameEvent struct {
+	// Seq is assigned and persisted before the event reaches a game.
+	Seq uint64 `json:"seq"`
 	// Game is the routing key from the envelope.
 	Game string `json:"game"`
 	// GCID identifies the group chat, which for a game is the table.
@@ -62,11 +66,15 @@ type GamingFrameEvent struct {
 	From string `json:"from"`
 	// Frame is the whole envelope, untouched.
 	Frame string `json:"frame"`
+	// Financial frames stay inside dcrpulse and are never delivered to a game.
+	Financial bool `json:"financial,omitempty"`
 }
 
 type gamingSubscriber struct {
 	game string
 	ch   chan GamingFrameEvent
+	last uint64
+	once sync.Once
 }
 
 // GamingBus fans inbound frames out to the games that are listening.
@@ -79,31 +87,22 @@ type GamingBus struct {
 	mu   sync.RWMutex
 	subs map[*gamingSubscriber]struct{}
 
-	// missedMu guards missed, which records the tables whose frames reached
-	// nobody: either the game was not connected, or it was not draining.
-	//
-	// Remembered because a loss the game is never told about is the worst
-	// kind. Nothing here buffers frames, so the only repair is for the game
-	// to resynchronise - and it can only do that for the right tables if the
-	// bridge kept the names.
-	missedMu sync.Mutex
-	missed   map[string]map[string]struct{}
-
-	// missedAll records games that missed frames whose tables are unknown,
-	// because the loss happened upstream of this process and the event that
-	// would have named a table never arrived.
-	missedAll map[string]struct{}
-
-	// resync closes every live game stream so the games resubscribe and are
-	// told what they missed. Injected rather than called directly because the
-	// bridge depends on this package, not the other way round.
-	resync func(reason string)
+	// wireMu serializes durable inbox append with replay subscription. Holding
+	// it until a replaying subscriber is registered closes the replay/live gap.
+	wireMu      sync.Mutex
+	wireDir     string
+	wireNext    map[string]uint64
+	wireRecords map[string][]GamingFrameEvent
+	wireSeen    map[string]struct{}
 }
 
 // SetGamingResync wires the bridge's stream-closing hook. Called once at
 // startup, before any game can connect.
 func (b *GamingBus) SetGamingResync(fn func(reason string)) {
-	b.resync = fn
+	// Durable inbox replay and local BR-history recovery replaced peer resync.
+	// The startup hook remains until the surrounding application wiring is
+	// removed; it deliberately installs no callback.
+	_ = fn
 }
 
 var (
@@ -132,8 +131,42 @@ func (b *GamingBus) Subscribe(game string, buf int) (<-chan GamingFrameEvent, fu
 	return s.ch, func() {
 		b.mu.Lock()
 		delete(b.subs, s)
+		s.once.Do(func() { close(s.ch) })
 		b.mu.Unlock()
-		close(s.ch)
+	}
+}
+
+// SubscribeFrom atomically registers a listener and queues every durable frame
+// after the sequence it already processed. Live delivery continues on the same
+// channel, so there is no replay/live race.
+func (b *GamingBus) SubscribeFrom(game string, after uint64, buf int) (<-chan GamingFrameEvent, func()) {
+	if buf <= 0 {
+		buf = 64
+	}
+	b.wireMu.Lock()
+	backlog, err := b.loadGamingFramesLocked(game, after)
+	if err != nil {
+		gameLog.Errorf("load %s gaming inbox: %v", game, err)
+		ch := make(chan GamingFrameEvent)
+		close(ch)
+		b.wireMu.Unlock()
+		return ch, func() {}
+	}
+	capacity := buf + len(backlog)
+	s := &gamingSubscriber{game: game, ch: make(chan GamingFrameEvent, capacity), last: after}
+	b.mu.Lock()
+	for _, ev := range backlog {
+		s.ch <- ev
+		s.last = ev.Seq
+	}
+	b.subs[s] = struct{}{}
+	b.mu.Unlock()
+	b.wireMu.Unlock()
+	return s.ch, func() {
+		b.mu.Lock()
+		delete(b.subs, s)
+		s.once.Do(func() { close(s.ch) })
+		b.mu.Unlock()
 	}
 }
 
@@ -153,112 +186,28 @@ func (b *GamingBus) subscribers(game string) int {
 
 // broadcast delivers a frame to every listener for its game.
 //
-// A listener that is not draining is skipped rather than waited for. Blocking
-// here would stall the single stream that every table shares, so one wedged
-// game would take down the others; a game that cannot keep up loses frames and
-// has to resynchronise, which its protocol needs to handle regardless because
-// Bison Relay does not guarantee delivery either.
+// A listener that is not draining is closed rather than allowed to lose a
+// frame. The SDK reconnects and resumes from its last accepted durable
+// sequence; no peer message is sent.
 func (b *GamingBus) broadcast(ev GamingFrameEvent) {
-	b.mu.RLock()
-	delivered, dropped := 0, false
+	b.mu.Lock()
 	for s := range b.subs {
 		if s.game != ev.Game {
 			continue
 		}
+		if ev.Seq <= s.last {
+			continue
+		}
 		select {
 		case s.ch <- ev:
-			delivered++
+			s.last = ev.Seq
 		default:
-			dropped = true
-			gameLog.Warnf("%s is not draining its frames; dropping one", s.game)
+			delete(b.subs, s)
+			s.once.Do(func() { close(s.ch) })
+			gameLog.Warnf("%s is not draining its frames; closing its stream for durable replay", s.game)
 		}
 	}
-	b.mu.RUnlock()
-
-	// Nobody listening is a loss too, and the commonest one: a game runs on a
-	// machine of the person's choosing and is off more often than not.
-	if delivered == 0 || dropped {
-		b.noteMissed(ev.Game, ev.GCID)
-	}
-}
-
-// noteMissed remembers a table whose frame reached nobody.
-func (b *GamingBus) noteMissed(game, gcid string) {
-	if gcid == "" {
-		return
-	}
-	b.missedMu.Lock()
-	defer b.missedMu.Unlock()
-	if b.missed == nil {
-		b.missed = make(map[string]map[string]struct{})
-	}
-	if b.missed[game] == nil {
-		b.missed[game] = make(map[string]struct{})
-	}
-	b.missed[game][gcid] = struct{}{}
-}
-
-// noteMissedAll remembers that a game missed frames without knowing which
-// tables they were for.
-//
-// Loss upstream of this process has no gcid to name: the event never arrived,
-// so nothing says what it was about. That is the difference between a gap this
-// bus observed and one it was told about, and it is why the answer has to be
-// "resynchronise everything" rather than a list.
-func (b *GamingBus) noteMissedAll(game string) {
-	b.missedMu.Lock()
-	defer b.missedMu.Unlock()
-	if b.missedAll == nil {
-		b.missedAll = make(map[string]struct{})
-	}
-	b.missedAll[game] = struct{}{}
-}
-
-// TookMissedAll reports whether a game missed frames whose tables are unknown,
-// and forgets it. Taken once, for the same reason as TakeMissed.
-func (b *GamingBus) TookMissedAll(game string) bool {
-	b.missedMu.Lock()
-	defer b.missedMu.Unlock()
-	_, ok := b.missedAll[game]
-	delete(b.missedAll, game)
-	return ok
-}
-
-// resyncAllGames tells every registered game that it may have missed anything.
-//
-// Recorded before the streams are closed, never after: a game that reconnects
-// against an unmarked bridge is told it resumed cleanly, which is the failure
-// this exists to remove rather than a smaller version of it.
-func (b *GamingBus) resyncAllGames(reason string) {
-	games := ReadGamingSettings().RegisteredGames
-	if len(games) == 0 {
-		return
-	}
-	for _, game := range games {
-		b.noteMissedAll(game)
-	}
-	if fn := b.resync; fn != nil {
-		fn(reason)
-	}
-}
-
-// TakeMissed reports the tables a game missed frames on and forgets them.
-//
-// Taken rather than read, because it is answered once, into the opening event
-// of a stream. A game told the same gap twice would resynchronise twice.
-func (b *GamingBus) TakeMissed(game string) []string {
-	b.missedMu.Lock()
-	defer b.missedMu.Unlock()
-	set := b.missed[game]
-	if len(set) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(set))
-	for gcid := range set {
-		out = append(out, gcid)
-	}
-	delete(b.missed, game)
-	return out
+	b.mu.Unlock()
 }
 
 // gamingFrameEvent is the notification type brclientd forwards gaming envelope
@@ -266,7 +215,10 @@ func (b *GamingBus) TakeMissed(game string) []string {
 // chat path would badge a conversation the user never had.
 const gamingFrameEvent = "gaming-frame"
 
-// deliverFrame routes one inbound frame to the game it belongs to.
+// deliverFrame routes one inbound frame to the game it belongs to and reports
+// whether the notification carried a gaming envelope. gc-message notifications
+// share this path with ordinary chat, so the caller uses the result to suppress
+// protocol traffic from the browser without swallowing human messages.
 //
 // Frames reach us on brclientd's /notifications feed, the same in-process path
 // every other kind of Bison Relay message takes here, fed by an OnGCMNtfn (or
@@ -274,7 +226,7 @@ const gamingFrameEvent = "gaming-frame"
 // which is how the MCP bridge receives as well. The clientrpc ChatService
 // streams are not used: they replay their whole backlog on every (re)subscribe,
 // which is why the chat path avoids them too.
-func (b *GamingBus) deliverFrame(payload json.RawMessage) {
+func (b *GamingBus) deliverFrame(payload json.RawMessage) bool {
 	var evt struct {
 		GCID    string `json:"gcid"`
 		From    string `json:"from"`
@@ -282,41 +234,63 @@ func (b *GamingBus) deliverFrame(payload json.RawMessage) {
 	}
 	if err := json.Unmarshal(payload, &evt); err != nil {
 		gameLog.Warnf("undecodable frame event: %v", err)
-		return
+		return false
 	}
-	frame, ok := parseGamingFrame(evt.Message)
+	return b.deliverGamingMessage(evt.GCID, evt.From, evt.Message)
+}
+
+// deliverGamingMessage is the common live-notification and history-recovery
+// path. Both sources carry the exact stored BR message.
+func (b *GamingBus) deliverGamingMessage(gcid, from, message string) bool {
+	frame, ok := parseGamingFrame(message)
 	if !ok {
-		// brclientd forwards envelopes and nothing else, so reaching
-		// here means the two sides disagree about the envelope format.
-		gameLog.Warnf("forwarded event from %s is not a frame (%d bytes)",
-			evt.From, len(evt.Message))
-		return
+		return false
 	}
 	if !gamingGameRegistered(frame.Game) {
 		// A game this installation does not have. Dropping it is what
 		// makes the namespace work: a new game can appear without every
 		// existing host being taught about it.
-		return
+		return true
 	}
 	if isFinancialFrame(frame.Text) {
+		event := GamingFrameEvent{Game: frame.Game, GCID: gcid, From: from, Frame: frame.Text, Financial: true}
+		_, fresh, err := b.persistGamingFrame(event)
+		if err != nil {
+			gameLog.Errorf("persist %q financial frame before processing: %v", frame.Game, err)
+			return true
+		}
+		if !fresh {
+			return true
+		}
 		// Financial wallet/node work must not block the BR notification loop.
-		// BR retains the original group-chat message; peers never rebroadcast
-		// unchanged authority state.
+		// The durable inbox heals a full worker queue locally.
 		select {
-		case gamingFinancialInbox <- GamingFrameEvent{Game: frame.Game, GCID: evt.GCID, From: evt.From, Frame: frame.Text}:
+		case gamingFinancialInbox <- event:
 		default:
-			gameLog.Warnf("financial inbox full; retained message was not processed")
+			gameLog.Warnf("financial worker queue full; durable message will be replayed locally")
 		}
 
-		return
+		return true
+	}
+	seq, fresh, err := b.persistGamingFrame(GamingFrameEvent{
+		Game: frame.Game, GCID: gcid, From: from, Frame: frame.Text,
+	})
+	if err != nil {
+		gameLog.Errorf("persist %q frame before delivery: %v", frame.Game, err)
+		return true
+	}
+	if !fresh {
+		return true
 	}
 	gameLog.Debugf("delivering %q frame to %d subscriber(s)", frame.Game, b.subscribers(frame.Game))
 	b.broadcast(GamingFrameEvent{
+		Seq:   seq,
 		Game:  frame.Game,
-		GCID:  evt.GCID,
-		From:  evt.From,
+		GCID:  gcid,
+		From:  from,
 		Frame: frame.Text,
 	})
+	return true
 }
 
 // gamingGameRegistered reports whether the operator added a game. The
@@ -356,6 +330,15 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 	if parsed.Game != game {
 		return ErrGamingWrongGame
 	}
+	if parsed.Version != "2" {
+		return ErrGamingWireVersion
+	}
+	// The bridge cannot verify a full-payload MID from an isolated fragment.
+	// Current game/control messages are bounded to one BR frame; this keeps the
+	// hostile game from evading durable deduplication by inventing random MIDs.
+	if parsed.Total != 1 || parsed.Seq != 1 || parsed.MID != gamingMessageID(parsed.Game, parsed.GameVersion, parsed.SID, parsed.Payload) {
+		return ErrGamingMessageID
+	}
 	// A game says what it likes inside a frame, because its peers check that;
 	// where the frame is sent is the host's decision. Lowercase only, so one
 	// group chat cannot be named two ways in the per-game bookkeeping.
@@ -363,7 +346,17 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 	if err != nil {
 		return err
 	}
-	return rpc.BrclientdGCMessage(ctx, id, frame, 0)
+	fresh, err := claimOrReconcileGamingFrame(ctx, game, gcid, parsed, frame)
+	if err != nil {
+		return gamingbridge.GameSafe(err)
+	}
+	if !fresh {
+		return nil
+	}
+	if err := rpc.BrclientdGCMessage(ctx, id, frame, 0); err != nil {
+		return err
+	}
+	return markGamingFrameSent(game, gcid, parsed, frame)
 }
 
 // parseGamingGCID checks a group chat id in the one spelling the gaming paths

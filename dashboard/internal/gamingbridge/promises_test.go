@@ -334,60 +334,30 @@ func TestAGameCannotReadAnotherGamesSpend(t *testing.T) {
 	}
 }
 
-// A game is told it missed something, and told which tables.
-//
-// This is the whole of how a game knows to resynchronise. Nothing buffers
-// frames, so a loss is permanent and the only repair is for the game to go and
-// ask its table again - which it will not do unless the bridge says so. Naming
-// the tables is the difference between one resync and one per table.
-func TestAGameIsToldWhichTablesItMissed(t *testing.T) {
+// Reconnects resume the durable bridge inbox. They never ask peers to replay
+// protocol state, and an old process epoch starts again at the durable origin.
+func TestAStreamResumesItsDurableInboxCursor(t *testing.T) {
 	r := newBridgeRig(t)
 	creds := r.register(t, "poker")
 	client := r.dial(t, creds)
 
-	// First connection: the game holds nothing, so there is nothing to be
-	// consistent with and everything is suspect.
 	first := openStream(t, client, &gamingpb.SubscribeRequest{})
-	if !first.GetGap() {
-		t.Fatal("a game connecting for the first time was told it was up to date, so it will " +
-			"never ask its tables where they got to")
+	if first.GetGap() || first.GetFromSeq() != 0 || first.GetEpoch() == "" {
+		t.Fatalf("first durable cursor = %+v", first)
 	}
 
-	// Reconnecting with exactly what the bridge last sent: nothing was lost,
-	// and claiming otherwise would cost a resync of every table on every
-	// reconnect.
 	second := openStream(t, client, &gamingpb.SubscribeRequest{
-		Epoch: first.GetEpoch(), LastSeq: first.GetFromSeq(),
+		Epoch: first.GetEpoch(), LastSeq: 42,
 	})
-	if second.GetGap() {
-		t.Fatalf("a game that missed nothing was told to resynchronise (%v), so a brief outage "+
-			"costs a resync per reconnect attempt per table", second.GetGapScope())
+	if second.GetGap() || second.GetFromSeq() != 42 {
+		t.Fatalf("resumed durable cursor = %+v", second)
 	}
 
-	// Now a table's frames were dropped while nothing was connected.
-	r.loseFrames("poker", "table-one")
 	third := openStream(t, client, &gamingpb.SubscribeRequest{
-		Epoch: second.GetEpoch(), LastSeq: second.GetFromSeq(),
+		Epoch: "obsolete-process", LastSeq: 42,
 	})
-	if !third.GetGap() {
-		t.Fatal("frames were lost and the game was told it was up to date, so it will act on a " +
-			"table state it never received")
-	}
-	if third.GetGapScope() != gamingpb.GapScope_GAP_SCOPED {
-		t.Errorf("the gap was reported as %v rather than scoped, so the game resynchronises every "+
-			"table when one was affected", third.GetGapScope())
-	}
-	if len(third.GetGapGcids()) != 1 || third.GetGapGcids()[0] != "table-one" {
-		t.Errorf("the gap named %v, not the table that actually lost frames", third.GetGapGcids())
-	}
-
-	// Reported once. A game told the same gap twice resynchronises twice.
-	fourth := openStream(t, client, &gamingpb.SubscribeRequest{
-		Epoch: third.GetEpoch(), LastSeq: third.GetFromSeq(),
-	})
-	if fourth.GetGap() {
-		t.Fatalf("the same gap was declared again (%v), so a game would resynchronise on every "+
-			"reconnect for the rest of the process's life", fourth.GetGapGcids())
+	if third.GetGap() || third.GetFromSeq() != 0 {
+		t.Fatalf("obsolete epoch did not restart durable replay: %+v", third)
 	}
 }
 

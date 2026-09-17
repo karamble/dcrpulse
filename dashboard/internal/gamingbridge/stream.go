@@ -5,8 +5,6 @@
 package gamingbridge
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"sync"
 
 	"dcrpulse/internal/gamingpb"
@@ -18,6 +16,7 @@ import (
 // depending on nothing: the bridge is handed frames, it does not go and get
 // them.
 type Frame struct {
+	Seq   uint64
 	GCID  string
 	From  string
 	Frame string
@@ -39,15 +38,12 @@ const frameBuffer = 64
 // told where it is in a stream unless this counts, and cannot be told what it
 // missed unless this remembers.
 type registry struct {
-	// epoch changes every time the process starts, because everything below
-	// is in memory: a game holding a sequence number from before a restart is
-	// holding a number this bridge can no longer place.
+	// epoch identifies the durable inbox contract. It remains stable across
+	// process restarts because frame sequence numbers are persisted by the host.
 	epoch string
 
 	mu      sync.Mutex
 	streams map[string]map[*liveStream]struct{}
-	seq     map[string]uint64
-	missed  map[string]map[string]struct{}
 
 	// states is the last thing each game reported, kept so the console can
 	// render a game that is not connected right now as it last was.
@@ -81,17 +77,9 @@ func (l *liveStream) close() {
 }
 
 func newRegistry() *registry {
-	var seed [16]byte
-	if _, err := rand.Read(seed[:]); err != nil {
-		// An epoch nobody can generate is not a reason to refuse to run.
-		// A fixed one only costs a resync that would have happened anyway.
-		gameLog.Warnf("could not generate a stream epoch, so every reconnect will resync: %v", err)
-	}
 	return &registry{
-		epoch:   hex.EncodeToString(seed[:]),
+		epoch:   "dcrpulse-gaming-inbox-v2",
 		streams: make(map[string]map[*liveStream]struct{}),
-		seq:     make(map[string]uint64),
-		missed:  make(map[string]map[string]struct{}),
 		states:  make(map[string]*gamingpb.GameState),
 		locks:   make(map[string]lockTerms),
 	}
@@ -195,76 +183,20 @@ func (r *registry) closeGame(game string) {
 // A game resyncs when and only when gap is true, so this has to be right in
 // both directions: claiming a gap that did not happen costs a resync of every
 // table, and missing one leaves the game quietly out of date.
-func (r *registry) streamStart(game string, req *gamingpb.SubscribeRequest, missedGCIDs []string, missedAll bool) *gamingpb.StreamStart {
+func (r *registry) streamStart(req *gamingpb.SubscribeRequest) *gamingpb.StreamStart {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	// Anything this bridge dropped while the game was away, plus anything the
-	// fan-out beneath dropped because nothing was listening.
-	for _, gcid := range missedGCIDs {
-		r.noteMissedLocked(game, gcid)
+	after := req.GetLastSeq()
+	if req.GetEpoch() != r.epoch {
+		after = 0
 	}
-
-	start := &gamingpb.StreamStart{Epoch: r.epoch, FromSeq: r.seq[game]}
-
-	switch {
-	case missedAll:
-		// Something upstream of this bridge lost events, so nothing that
-		// arrived can be trusted to be everything, and there is no gcid to
-		// name: the event that would have said which table never got here.
-		start.Gap = true
-		start.GapScope = gamingpb.GapScope_GAP_ALL
-	case req.GetEpoch() != r.epoch:
-		// A different epoch means a different process. Nothing from before
-		// can be placed, so everything is suspect.
-		start.Gap = true
-		start.GapScope = gamingpb.GapScope_GAP_ALL
-	case req.GetLastSeq() != r.seq[game]:
-		// The game is behind what was sent, and this bridge keeps no
-		// backlog to work out which tables that covered.
-		start.Gap = true
-		start.GapScope = gamingpb.GapScope_GAP_ALL
-	case len(r.missed[game]) > 0:
-		// Known losses, and known which tables they were on - so the game
-		// resyncs those and leaves the rest alone.
-		start.Gap = true
-		start.GapScope = gamingpb.GapScope_GAP_SCOPED
-		for gcid := range r.missed[game] {
-			start.GapGcids = append(start.GapGcids, gcid)
-		}
-	}
-
-	// Reported once. Holding them would declare the same gap on every
-	// reconnect, and a game that resynced every time would never settle.
-	delete(r.missed, game)
-	return start
+	return &gamingpb.StreamStart{Epoch: r.epoch, FromSeq: after}
 }
 
-func (r *registry) noteMissedLocked(game, gcid string) {
-	if gcid == "" {
-		return
-	}
-	if r.missed[game] == nil {
-		r.missed[game] = make(map[string]struct{})
-	}
-	r.missed[game][gcid] = struct{}{}
-}
-
-func (r *registry) noteMissed(game, gcid string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.noteMissedLocked(game, gcid)
-}
-
-// frameEvent stamps a frame with the game's next sequence number.
+// frameEvent carries the durable sequence assigned before fan-out.
 func (r *registry) frameEvent(game string, f Frame) *gamingpb.BridgeEvent {
-	r.mu.Lock()
-	r.seq[game]++
-	seq := r.seq[game]
-	r.mu.Unlock()
-
 	return &gamingpb.BridgeEvent{Event: &gamingpb.BridgeEvent_Frame{Frame: &gamingpb.Frame{
-		Seq:   seq,
+		Seq:   f.Seq,
 		Gcid:  f.GCID,
 		From:  f.From,
 		Frame: f.Frame,

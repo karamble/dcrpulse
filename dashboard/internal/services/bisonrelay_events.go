@@ -181,7 +181,16 @@ func StartBrclientdNotifs(ctx context.Context) {
 				// would put game traffic on the operator's socket
 				// for the whole length of a hand.
 				if evt.Type == gamingFrameEvent {
-					Gaming().deliverFrame(evt.Payload)
+					if !Gaming().deliverFrame(evt.Payload) {
+						brelLog.Warnf("brclientd forwarded a gaming-frame event without a valid gaming envelope")
+					}
+					return
+				}
+				// Deployed brclientd versions deliver protocol envelopes through
+				// the ordinary GC notification. Recognise the envelope before
+				// browser fan-out: gaming frames are consumed by the bridge while
+				// normal chat continues unchanged.
+				if evt.Type == "gc-message" && Gaming().deliverFrame(evt.Payload) {
 					return
 				}
 				// Keepalives prove the stream is healthy but carry

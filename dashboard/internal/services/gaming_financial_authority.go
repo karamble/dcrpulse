@@ -82,7 +82,7 @@ func GamingFinancialKey(ctx context.Context, game, sid string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err = announceGamingAuthority(ctx, scope, sid, true); err != nil {
+	if err = announceGamingAuthority(ctx, scope, sid); err != nil {
 		return "", err
 	}
 	return pub, nil
