@@ -206,6 +206,15 @@ func ReadGamingSettings() types.GamingSettings {
 var ErrGamingNeedsAppPassword = errors.New(
 	"set and enable an App Password before turning the gaming bridge on")
 
+// ErrGamingReservedAccount is an account another part of the stack owns.
+//
+// The mixer, dcrlnd and DCRDEX find their funds by account name, and dcrwallet
+// keeps imported keys in one of its own. A game is untrusted code playing for
+// real money, so it does not get to spend from any of them - and it is refused
+// here, where the operator is choosing, rather than at the first payout.
+var ErrGamingReservedAccount = errors.New(
+	"that account belongs to another part of the stack and cannot fund a game")
+
 // normalizeGamingSettings is the policy a write is allowed to produce, given
 // what is already stored and whether the App Password is actually protecting
 // the dashboard right now.
@@ -232,6 +241,15 @@ func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive boo
 		Enabled:         in.Enabled,
 		RegisteredGames: registered,
 		Policies:        carryGamePolicies(cur.Policies, in.Policies, registered),
+	}
+
+	// The selector does not offer these, so reaching here means the request did
+	// not come from it.
+	for id, p := range out.Policies {
+		if IsReservedAccountName(p.Account) {
+			return types.GamingSettings{}, fmt.Errorf("%w: %q asked for %q",
+				ErrGamingReservedAccount, id, p.Account)
+		}
 	}
 
 	// Carry credentials across for games that are still registered. Removing
