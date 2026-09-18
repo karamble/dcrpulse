@@ -154,3 +154,60 @@ func TestAGameWithNoAccountBoundCanStakeNothing(t *testing.T) {
 		t.Errorf("the refusal does not name the game: %v", err)
 	}
 }
+
+// The dropdown does not offer the mixer, Lightning, DEX or imported accounts,
+// but a request that skips the dropdown must be refused too: a game bound to
+// one of them would spend funds another part of the stack is relying on.
+func TestAGameCannotBeFundedFromAReservedAccount(t *testing.T) {
+	for _, name := range []string{"lightning", "dex", "mixed", "unmixed", "imported"} {
+		in := types.GamingSettings{
+			Enabled:         true,
+			RegisteredGames: []string{"poker"},
+			Policies:        map[string]types.GamePolicy{"poker": {Account: name}},
+		}
+
+		_, err := normalizeGamingSettings(in, types.GamingSettings{}, true)
+		if err == nil {
+			t.Errorf("%q was accepted as a game's spending account", name)
+			continue
+		}
+		if !errors.Is(err, ErrGamingReservedAccount) {
+			t.Errorf("%q was refused for the wrong reason: %v", name, err)
+		}
+		// The operator has to be able to tell which game and which account.
+		for _, want := range []string{"poker", name} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal for %q does not mention %q: %v", name, want, err)
+			}
+		}
+	}
+}
+
+// The check lowercases, because the name is matched case-insensitively
+// everywhere else a daemon binds to it.
+func TestAReservedAccountIsRefusedWhateverItsCase(t *testing.T) {
+	in := types.GamingSettings{
+		Enabled:         true,
+		RegisteredGames: []string{"poker"},
+		Policies:        map[string]types.GamePolicy{"poker": {Account: "  Lightning "}},
+	}
+	if _, err := normalizeGamingSettings(in, types.GamingSettings{}, true); !errors.Is(err, ErrGamingReservedAccount) {
+		t.Errorf("a differently-cased reserved account slipped through: %v", err)
+	}
+}
+
+// An ordinary account is still the point of the feature.
+func TestAnOrdinaryAccountStillFundsAGame(t *testing.T) {
+	in := types.GamingSettings{
+		Enabled:         true,
+		RegisteredGames: []string{"poker"},
+		Policies:        map[string]types.GamePolicy{"poker": {Account: "poker-money"}},
+	}
+	out, err := normalizeGamingSettings(in, types.GamingSettings{}, true)
+	if err != nil {
+		t.Fatalf("an ordinary account was refused: %v", err)
+	}
+	if got := out.Policies["poker"].Account; got != "poker-money" {
+		t.Errorf("the account came back as %q, want poker-money", got)
+	}
+}

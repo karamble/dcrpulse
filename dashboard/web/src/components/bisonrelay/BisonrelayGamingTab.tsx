@@ -41,6 +41,7 @@ import {
   setGamingSettings,
 } from '../../services/gamingApi';
 import { AccountInfo, getAccounts } from '../../services/api';
+import { isReservedAccount } from '../accounts/AccountRow';
 import { GamingCreateTable } from './GamingCreateTable';
 import { GamingRecovery } from './GamingRecovery';
 import { CapValue, GamingCapField, capError, capFromDcr, capToDcr } from './GamingCapField';
@@ -131,6 +132,11 @@ export const BisonrelayGamingTab = () => {
   const settings = dataOf(settingsRes.state) ?? null;
   const games: GamingGame[] = dataOf(gamesRes.state) ?? [];
   const accounts: AccountInfo[] = dataOf(accountsRes.state) ?? [];
+  // A game is untrusted code spending real money, so it may not be pointed at
+  // the accounts the mixer, dcrlnd and DCRDEX find by name, nor at dcrwallet's
+  // imported bucket. isReservedAccount reads the flag the wallet API already
+  // sets, so there is no second list here to drift from the server's.
+  const selectableAccounts = accounts.filter((a) => !isReservedAccount(a));
   const bridge: GamingBridgeInfo | null = dataOf(bridgeRes.state) ?? null;
 
   // draft is a sparse patch per game, never a clone of the whole settings
@@ -652,10 +658,10 @@ export const BisonrelayGamingTab = () => {
                         >
                           <option value="">No account bound</option>
                           {p.account.trim() &&
-                            !accounts.some((a) => a.accountName === p.account) && (
+                            !selectableAccounts.some((a) => a.accountName === p.account) && (
                               <option value={p.account}>{p.account}</option>
                             )}
-                          {accounts.map((a) => (
+                          {selectableAccounts.map((a) => (
                             <option key={a.accountNumber} value={a.accountName}>
                               {a.accountName} ({fmtDcr(a.spendableBalance)} spendable)
                             </option>
