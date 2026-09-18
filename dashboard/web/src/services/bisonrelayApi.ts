@@ -1554,6 +1554,26 @@ export interface RTDTSession {
   live_peers?: RTDTLivePeer[];
 }
 
+// RTDTInvite is a call invitation that has arrived and not been answered.
+// Bison Relay stores these but cannot list them back, so brclientd keeps its
+// own copy and this is how a freshly loaded dashboard learns about a call.
+export interface RTDTInvite {
+  sess_rv: string;
+  inviter: string;
+  inviter_nick: string;
+  size: number;
+  description: string;
+  as_publisher: boolean;
+  peer_id: number;
+  is_instant: boolean;
+  received_ms: number;
+}
+
+export const listRTDTInvites = async (): Promise<RTDTInvite[]> => {
+  const { data } = await api.get<{ invites: RTDTInvite[] | null }>('/br/rtdt/invites');
+  return data?.invites ?? [];
+};
+
 export const listRTDTSessions = async (): Promise<RTDTSession[]> => {
   const { data } = await api.get<{ sessions: RTDTSession[] | null }>('/br/rtdt/sessions');
   return data?.sessions ?? [];

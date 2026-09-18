@@ -1155,6 +1155,12 @@ func BisonrelayStatsPostsHandler(w http.ResponseWriter, r *http.Request) {
 
 // ---- RTDT realtime-voice control plane ----------------------------------
 
+// BisonrelayRTDTInvitesHandler returns the unanswered call invitations, so a
+// dashboard that loads after a call came in can still show it.
+func BisonrelayRTDTInvitesHandler(w http.ResponseWriter, r *http.Request) {
+	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdRTDTInvites(r.Context()) })
+}
+
 // BisonrelayRTDTListHandler returns the list of RTDT sessions.
 func BisonrelayRTDTListHandler(w http.ResponseWriter, r *http.Request) {
 	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdRTDTList(r.Context()) })

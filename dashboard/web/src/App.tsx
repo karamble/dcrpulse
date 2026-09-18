@@ -9,6 +9,7 @@ import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { ExternalLinkGuard } from './components/ExternalLinkGuard';
 import { AlertsPill } from './components/alerts/AlertsPill';
+import { IncomingCallPill } from './components/bisonrelay/realtime/IncomingCallPill';
 import { ThemeProvider } from './services/themes/ThemeProvider';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
@@ -249,6 +250,7 @@ function AppContent() {
         />
       </div>
       <ExternalLinkGuard />
+      <IncomingCallPill />
       <AlertsPill />
     </div>
   );

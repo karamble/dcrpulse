@@ -8,7 +8,7 @@ import {
   FileText,
   FolderOpen,
   MessageSquare,
-  // Phone, // icon for the hidden Realtime tab (see tabs[] below)
+  Phone,
   Rss,
   Settings,
 } from 'lucide-react';
@@ -42,9 +42,7 @@ const tabs: TabDef[] = [
   { id: 'feed', label: 'Feed', icon: Rss, accessKey: 'b' },
   { id: 'files', label: 'Files', icon: FolderOpen, accessKey: 'c' },
   { id: 'stats', label: 'Stats', icon: BarChart3, accessKey: 'd' },
-  // Realtime (RTDT) is hidden from the nav: the upstream-BR build has no audio.
-  // Still reachable via the #realtime hash (route + render kept below) as an easter egg.
-  // { id: 'realtime', label: 'Realtime', icon: Phone },
+  { id: 'realtime', label: 'Realtime', icon: Phone, accessKey: 'g' },
   { id: 'pages', label: 'Pages', icon: FileText, accessKey: 'e' },
   { id: 'settings', label: 'Settings', icon: Settings, accessKey: 'f' },
 ];

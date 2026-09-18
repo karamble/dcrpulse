@@ -566,6 +566,7 @@ func main() {
 	api.HandleFunc("/br/stats/network", handlers.BisonrelayStatsNetworkHandler).Methods("GET")
 	api.HandleFunc("/br/stats/contacts", handlers.BisonrelayStatsContactsHandler).Methods("GET")
 	api.HandleFunc("/br/stats/posts", handlers.BisonrelayStatsPostsHandler).Methods("GET")
+	api.HandleFunc("/br/rtdt/invites", handlers.BisonrelayRTDTInvitesHandler).Methods("GET")
 	api.HandleFunc("/br/rtdt/sessions", handlers.BisonrelayRTDTListHandler).Methods("GET")
 	api.HandleFunc("/br/rtdt/sessions/create", handlers.BisonrelayRTDTCreateHandler).Methods("POST")
 	api.HandleFunc("/br/rtdt/sessions/create-instant", handlers.BisonrelayRTDTCreateInstantHandler).Methods("POST")

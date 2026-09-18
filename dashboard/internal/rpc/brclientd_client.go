@@ -976,6 +976,12 @@ func BrclientdStatsPosts(ctx context.Context) (json.RawMessage, error) {
 // routes. Audio (the binary WebSocket) is handled by a separate dashboard
 // proxy handler in Phase 3, not via this client.
 
+// BrclientdRTDTInvites returns the call invitations that have arrived and not
+// been answered yet.
+func BrclientdRTDTInvites(ctx context.Context) (json.RawMessage, error) {
+	return brclientdGetRaw(ctx, "/rtdt/invites", nil)
+}
+
 // BrclientdRTDTList returns the list of RTDT sessions known locally.
 func BrclientdRTDTList(ctx context.Context) (json.RawMessage, error) {
 	return brclientdGetRaw(ctx, "/rtdt/sessions", nil)
