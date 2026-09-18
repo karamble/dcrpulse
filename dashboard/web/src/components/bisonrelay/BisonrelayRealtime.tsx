@@ -39,6 +39,7 @@ import { IncomingInviteBanner } from './realtime/IncomingInviteBanner';
 import { InstantCallModal } from './realtime/InstantCallModal';
 import { InviteToRoomModal } from './realtime/InviteToRoomModal';
 import { NewRoomModal } from './realtime/NewRoomModal';
+import { callPhase, hasOwnerKey } from './realtime/callPhase';
 import { shallowEqual } from '../../utils/shallowEqual';
 import { apiError } from '../../utils/apiError';
 
@@ -268,10 +269,15 @@ const SectionList = ({
             <button
               type="button"
               onClick={() => onJoin(s.rv)}
-              disabled={busy}
+              disabled={busy || !hasOwnerKey(s)}
+              title={
+                hasOwnerKey(s)
+                  ? undefined
+                  : 'Waiting for the room owner\'s keys; joining now would mute them'
+              }
               className="px-3 py-1.5 rounded-md text-xs border border-border/50 text-foreground hover:bg-muted/30 inline-flex items-center gap-1.5 disabled:opacity-50"
             >
-              <Phone className="h-3 w-3" /> Join
+              <Phone className="h-3 w-3" /> {hasOwnerKey(s) ? 'Join' : 'Waiting…'}
             </button>
           )}
         </div>
@@ -305,15 +311,18 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
   const [showInvite, setShowInvite] = useState(false);
   const [busyAdmin, setBusyAdmin] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState<{ attempt: number; nextMs: number } | null>(null);
+  const [waitedTooLong, setWaitedTooLong] = useState(false);
   const { addListener } = useBisonrelayLive();
 
-  // The AudioPipeline starts immediately on mount. If brclientd's live
-  // UDP session isn't up yet (BR's POST /join returns before the live
-  // session is registered, typically a 2-5s gap), the first WS attempt
-  // 409s and the pipeline retries with the PRECONNECT backoff ladder.
-  // No UI gate needed - the badge shows "Reconnecting (try N)..." until
-  // the live session is ready and the WS upgrades cleanly.
+  const phase = callPhase(session);
+  const callIsLive = phase === 'live';
+
+  // The pipeline waits until Bison Relay has actually joined us. Starting it
+  // sooner only spends the reconnect ladder on 409s, and the audio socket has
+  // nothing to attach to until the live session exists. The ladder stays for
+  // real transients once we are live.
   useEffect(() => {
+    if (!callIsLive) return undefined;
     const p = new RealtimeAudioPipeline({
       rv,
       callbacks: {
@@ -333,7 +342,7 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
     return () => {
       p.stop();
     };
-  }, [rv]);
+  }, [rv, callIsLive]);
 
   // Tick outbound packet counter + per-peer activity / buffer state. Each
   // setter keeps the previous value when nothing changed, so a quiet call
@@ -371,6 +380,26 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
       /* leave previous */
     }
   }, [rv]);
+
+  // While waiting to be joined, refetch on a timer as well as on events: the
+  // join can land before this view mounts (answering from the pill navigates
+  // afterwards), and a reload produces no event at all.
+  useEffect(() => {
+    if (callIsLive) return undefined;
+    const id = setInterval(() => void reloadSession(), 2000);
+    return () => clearInterval(id);
+  }, [callIsLive, reloadSession]);
+
+  // Bison Relay delivers invitations store-and-forward, so a slow answer is
+  // normal. Say so after a minute rather than tearing the call down.
+  useEffect(() => {
+    if (callIsLive) {
+      setWaitedTooLong(false);
+      return undefined;
+    }
+    const id = setTimeout(() => setWaitedTooLong(true), 60000);
+    return () => clearTimeout(id);
+  }, [callIsLive, rv]);
 
   useEffect(() => {
     reloadSession();
@@ -482,6 +511,65 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
     if (pub && pub.alias) return pub.alias;
     return `peer ${peerID}`;
   };
+
+  // Until Bison Relay has joined us there is no audio to show and nothing to
+  // attach a socket to, so the call renders as what it actually is: a wait.
+  if (!callIsLive) {
+    const waiting: Record<string, { title: string; detail: string; action: string }> = {
+      ringing: {
+        title: 'Ringing…',
+        detail: 'Waiting for them to answer. Audio starts by itself once they do.',
+        action: 'Hang up',
+      },
+      'awaiting-host': {
+        title: 'Connecting…',
+        detail: 'Waiting for the caller to send the keys for this call.',
+        action: 'Leave',
+      },
+      connecting: {
+        title: 'Connecting…',
+        detail: 'Answered. Joining the call now.',
+        action: 'Leave',
+      },
+      'not-joined': {
+        title: 'Not in this room',
+        detail: 'Join it from the room list to start audio.',
+        action: 'Back',
+      },
+    };
+    const w = waiting[phase] ?? waiting.connecting;
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl bg-gradient-card border border-border/50 p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold flex items-center gap-2">
+                <Phone className="h-4 w-4 text-primary animate-pulse" /> {w.title}
+              </h3>
+              <div className="text-xs text-muted-foreground mt-1">{w.detail}</div>
+              <div className="text-[10px] text-muted-foreground font-mono break-all mt-1">
+                {rv}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onLeave}
+              className="shrink-0 px-3 py-1.5 rounded-md text-xs border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/30"
+            >
+              {w.action}
+            </button>
+          </div>
+          {waitedTooLong && (
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2.5 text-xs text-amber-300">
+              No answer yet. Bison Relay delivers invitations when the other side is
+              online, so this can still connect later.
+            </div>
+          )}
+          {err && <ErrorBanner msg={err} />}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

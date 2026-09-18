@@ -3,11 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  acceptRTDTSession,
-  joinRTDTSession,
-  listRTDTInvites,
-} from '../services/bisonrelayApi';
+import { acceptRTDTSession, listRTDTInvites } from '../services/bisonrelayApi';
 import { apiError } from '../utils/apiError';
 import { useBisonrelayLive } from '../components/bisonrelay/BisonrelayLiveProvider';
 
@@ -107,15 +103,10 @@ export const useIncomingCalls = () => {
     setBusyRV(call.sessRV);
     setError(null);
     try {
+      // Accepting is the whole job. Bison Relay joins us once the caller's
+      // session update lands, which is also when we gain the key to decrypt
+      // them; joining ourselves first would cache them as unkeyed for good.
       await acceptRTDTSession(call.sessRV, call.inviter, call.asPublisher);
-      try {
-        await joinRTDTSession(call.sessRV);
-      } catch (e: any) {
-        // Bison Relay auto-joins instant calls on accept, so /join then
-        // reports the session is already maintained. Only that is expected.
-        const msg = apiError(e, '');
-        if (!/already|pending|maintained/i.test(msg)) throw e;
-      }
       setCalls((prev) => prev.filter((c) => c.sessRV !== call.sessRV));
       return true;
     } catch (e: any) {

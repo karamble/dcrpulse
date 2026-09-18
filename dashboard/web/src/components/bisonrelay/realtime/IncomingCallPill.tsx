@@ -19,7 +19,9 @@ export const IncomingCallPill = () => {
 
   const answer = async () => {
     if (await accept(call)) {
-      window.location.hash = '#realtime';
+      // The room view only mounts for #realtime/room/<rv>; a bare #realtime
+      // would drop the user on the room list instead of into the call.
+      window.location.hash = `#realtime/room/${call.sessRV}`;
     }
   };
 

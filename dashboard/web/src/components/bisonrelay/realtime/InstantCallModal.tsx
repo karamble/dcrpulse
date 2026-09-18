@@ -8,7 +8,6 @@ import {
   BisonrelayContact,
   createInstantRTDTSession,
   getBisonrelayContacts,
-  joinRTDTSession,
 } from '../../../services/bisonrelayApi';
 import { apiError } from '../../../utils/apiError';
 import { displayNick } from '../bisonrelayNick';
@@ -47,15 +46,9 @@ export const InstantCallModal = ({
     setErr(null);
     try {
       const sess = await createInstantRTDTSession([uid]);
-      // CreateInstantRTDTSession on the BR side auto-joins the live
-      // session for the creator, but the join is asynchronous; explicitly
-      // call /join to ensure the live RTDT manager is up before the WS
-      // tries to attach an audio sink to it.
-      try {
-        await joinRTDTSession(sess.rv);
-      } catch {
-        /* OK if already joined */
-      }
+      // Deliberately no join here. Bison Relay joins the caller itself once
+      // the callee accepts, after it has sent out the publisher keys; joining
+      // sooner would put us on the wire before the callee can decrypt us.
       onJoined(sess.rv);
     } catch (e: any) {
       setErr(apiError(e, 'Call failed'));
