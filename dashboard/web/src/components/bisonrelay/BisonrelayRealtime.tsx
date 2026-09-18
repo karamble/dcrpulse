@@ -117,9 +117,12 @@ const RoomList = ({ onOpen }: { onOpen: (rv: string) => void }) => {
   useEffect(() => {
     reload();
     return addListener((evt) => {
-      if (evt.type.startsWith('rtdt-')) {
-        reload();
-      }
+      if (!evt.type.startsWith('rtdt-')) return;
+      // Round-trip samples and chat messages arrive constantly during a call
+      // and change nothing about the room list; refetching on them would put
+      // the list under steady load for no reason.
+      if (evt.type === 'rtdt-rtt' || evt.type === 'rtdt-chat') return;
+      reload();
     });
   }, [addListener, reload]);
 
@@ -312,6 +315,13 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
   const [busyAdmin, setBusyAdmin] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState<{ attempt: number; nextMs: number } | null>(null);
   const [waitedTooLong, setWaitedTooLong] = useState(false);
+  const [rttMs, setRttMs] = useState<number | null>(null);
+  const [answeredBy, setAnsweredBy] = useState<string | null>(null);
+  // Peers that have just left: shown briefly with a badge, then removed. `gone`
+  // is what keeps them out of the list afterwards, since Bison Relay still
+  // counts them among the session's publishers.
+  const [departed, setDeparted] = useState<Record<number, string>>({});
+  const [gone, setGone] = useState<number[]>([]);
   const { addListener } = useBisonrelayLive();
 
   const phase = callPhase(session);
@@ -401,14 +411,44 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
     return () => clearTimeout(id);
   }, [callIsLive, rv]);
 
+  // markDeparted shows a peer as gone for a moment, then removes them and
+  // releases their decoder. Without the release they would stay in the
+  // pipeline's peer set and go on being listed as live for the whole call.
+  const markDeparted = useCallback(
+    (peerID: number, label: string) => {
+      if (!peerID) return;
+      setDeparted((prev) => ({ ...prev, [peerID]: label }));
+      setTimeout(() => {
+        setDeparted((prev) => {
+          const next = { ...prev };
+          delete next[peerID];
+          return next;
+        });
+        setGone((prev) => (prev.includes(peerID) ? prev : [...prev, peerID]));
+        pipeline?.dropPeer(peerID);
+      }, 3000);
+    },
+    [pipeline],
+  );
+
   useEffect(() => {
     reloadSession();
     return addListener((evt) => {
       if (!evt.type.startsWith('rtdt-')) return;
       const payload = (evt.payload ?? {}) as Record<string, unknown>;
-      const sessRV = payload.sessRV ? String(payload.sessRV) : undefined;
-      if (sessRV && sessRV !== rv) return;
-      // Specific event handlers for the active call.
+
+      // Round-trip time is per-connection and carries no sessRV, so it has to
+      // be read before the session filter. It also arrives on every ping, which
+      // is why it must never fall through to a session refetch.
+      if (evt.type === 'rtdt-rtt') {
+        setRttMs(Number(payload.rttNs ?? 0) / 1e6);
+        return;
+      }
+
+      // Every remaining event carries a sessRV; one that does not is not ours
+      // to act on.
+      if (String(payload.sessRV ?? '') !== rv) return;
+
       switch (evt.type) {
         case 'rtdt-allowance-refreshed': {
           const added = Number(payload.addAllowance ?? 0);
@@ -420,16 +460,54 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
         case 'rtdt-send-error':
           setSendErr(String(payload.error ?? 'send error'));
           break;
+        case 'rtdt-invite-accepted':
+          setAnsweredBy(String(payload.acceptorNick || payload.acceptor || '') || 'They');
+          break;
+        case 'rtdt-peer-joined': {
+          // A peer coming back clears any departure we were showing for them.
+          const pid = Number(payload.peerID ?? 0);
+          setGone((prev) => prev.filter((x) => x !== pid));
+          setDeparted((prev) => {
+            if (!(pid in prev)) return prev;
+            const next = { ...prev };
+            delete next[pid];
+            return next;
+          });
+          break;
+        }
+        case 'rtdt-peer-exited':
+          markDeparted(Number(payload.peerID ?? 0), 'Left');
+          break;
+        case 'rtdt-peer-stalled':
+          // Removed from the server's member list rather than gone quiet.
+          markDeparted(Number(payload.peerID ?? 0), 'Dropped');
+          break;
+        case 'rtdt-chat':
+          // RTDTChatPanel owns this; refetching the session per message is
+          // pure waste on a busy call.
+          return;
+        case 'rtdt-peer-sound-changed':
+        case 'rtdt-hot-audio':
+          // Dead for us by design: both are raised from Bison Relay's own audio
+          // path, which never sees our frames because call audio rides the
+          // Random stream. The speaking indicator comes from received frames.
+          return;
+        case 'rtdt-session-updated':
+        case 'rtdt-live-joined':
+        case 'rtdt-joined-instant-call':
+          // Handled by the refetch below rather than here: the publishers list
+          // and the live flag are what carry callPhase from ringing to live.
+          break;
         case 'rtdt-kicked':
         case 'rtdt-removed':
         case 'rtdt-dissolved':
-          // Server-side teardown for our session: bounce back to list.
+          // RealtimeToast says who did it and why; this only has to leave.
           onLeave();
           return;
       }
       reloadSession();
     });
-  }, [addListener, onLeave, reloadSession, rv]);
+  }, [addListener, markDeparted, onLeave, reloadSession, rv]);
 
   // Best-effort leave on tab close so other peers see us drop.
   useEffect(() => {
@@ -517,8 +595,10 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
   if (!callIsLive) {
     const waiting: Record<string, { title: string; detail: string; action: string }> = {
       ringing: {
-        title: 'Ringing…',
-        detail: 'Waiting for them to answer. Audio starts by itself once they do.',
+        title: answeredBy ? 'Answered' : 'Ringing…',
+        detail: answeredBy
+          ? `${answeredBy} answered. Connecting…`
+          : 'Waiting for them to answer. Audio starts by itself once they do.',
         action: 'Hang up',
       },
       'awaiting-host': {
@@ -528,7 +608,7 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
       },
       connecting: {
         title: 'Connecting…',
-        detail: 'Answered. Joining the call now.',
+        detail: answeredBy ? `${answeredBy} answered. Joining the call now.` : 'Joining the call now.',
         action: 'Leave',
       },
       'not-joined': {
@@ -597,6 +677,11 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
               : reconnecting
                 ? `Reconnecting (try ${reconnecting.attempt})…`
                 : 'Connecting…'}
+            {rttMs !== null && (
+              <span className="opacity-70 tabular-nums" title="Round trip to the relay">
+                · {Math.round(rttMs)}ms
+              </span>
+            )}
           </div>
         </div>
 
@@ -691,6 +776,8 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
       <PeerRoster
         session={session}
         livePeerIDs={livePeerIDs}
+        departed={departed}
+        gone={gone}
         speakingMap={speakingMap}
         bufferDepthMap={bufferDepthMap}
         peerGains={peerGains}
@@ -758,6 +845,8 @@ const AllowanceTile = ({
 const PeerRoster = ({
   session,
   livePeerIDs,
+  departed,
+  gone,
   speakingMap,
   bufferDepthMap,
   peerGains,
@@ -769,6 +858,8 @@ const PeerRoster = ({
 }: {
   session: RTDTSession | null;
   livePeerIDs: number[];
+  departed: Record<number, string>;
+  gone: number[];
   speakingMap: Record<number, boolean>;
   bufferDepthMap: Record<number, number>;
   peerGains: Record<number, number>;
@@ -793,7 +884,8 @@ const PeerRoster = ({
   for (const id of livePeerIDs) {
     if (!known.has(id)) fromSession.push({ peerID: id });
   }
-  fromSession.sort((a, b) => a.peerID - b.peerID);
+  const rows = fromSession.filter((r) => !gone.includes(r.peerID));
+  rows.sort((a, b) => a.peerID - b.peerID);
 
   return (
     <div className="rounded-xl bg-gradient-card border border-border/50 p-5 space-y-3">
@@ -805,22 +897,25 @@ const PeerRoster = ({
         </span>
       </h4>
 
-      {fromSession.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-xs text-muted-foreground italic">
           No remote peers yet. Audio starts flowing as soon as another peer
           joins the session.
         </p>
       ) : (
         <div className="space-y-2">
-          {fromSession.map(({ peerID, pub }) => {
-            const isLive = livePeerIDs.includes(peerID);
+          {rows.map(({ peerID, pub }) => {
+            const leaving = departed[peerID];
+            const isLive = !leaving && livePeerIDs.includes(peerID);
             const speaking = !!speakingMap[peerID];
             const bufMs = bufferDepthMap[peerID];
             const gain = peerGains[peerID] ?? 1.0;
             return (
               <div
                 key={peerID}
-                className="grid grid-cols-[auto_1fr_auto] gap-3 items-center px-3 py-2 rounded-lg bg-background/40 border border-border/40"
+                className={`grid grid-cols-[auto_1fr_auto] gap-3 items-center px-3 py-2 rounded-lg bg-background/40 border border-border/40 transition-opacity duration-700 ${
+                  leaving ? 'opacity-30' : 'opacity-100'
+                }`}
               >
                 <div
                   className={`relative h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold ${
@@ -842,13 +937,19 @@ const PeerRoster = ({
                     {peerLabel(peerID)}
                   </div>
                   <div className="text-[10px] text-muted-foreground">
-                    {isLive
-                      ? bufMs !== undefined
-                        ? `Jitter buffer ${bufMs}ms`
-                        : 'Live'
-                      : 'Not in audio session'}
-                    {speaking && (
-                      <span className="ml-1.5 text-emerald-400">· Speaking</span>
+                    {leaving ? (
+                      <span className="text-amber-400">{leaving} the call</span>
+                    ) : (
+                      <>
+                        {isLive
+                          ? bufMs !== undefined
+                            ? `Jitter buffer ${bufMs}ms`
+                            : 'Live'
+                          : 'Not in audio session'}
+                        {speaking && (
+                          <span className="ml-1.5 text-emerald-400">· Speaking</span>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

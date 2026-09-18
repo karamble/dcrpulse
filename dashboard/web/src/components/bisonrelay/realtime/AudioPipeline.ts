@@ -556,6 +556,17 @@ export class RealtimeAudioPipeline {
     peer.scheduledTime = startAt + RealtimeAudioPipeline.FRAME_DURATION_SEC;
   }
 
+  // dropPeer releases a peer that has left the call. Without it a departed
+  // peer keeps its decoder and gain node for the life of the call and stays in
+  // livePeerIDs(), so the UI goes on listing someone who is gone.
+  dropPeer(peerID: number): void {
+    const peer = this.peers.get(peerID);
+    if (!peer) return;
+    try { peer.decoder.close(); } catch { /* ignore */ }
+    try { peer.gainNode.disconnect(); } catch { /* ignore */ }
+    this.peers.delete(peerID);
+  }
+
   private teardownInbound(): void {
     for (const peer of this.peers.values()) {
       try { peer.decoder.close(); } catch { /* ignore */ }
