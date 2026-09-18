@@ -2,16 +2,36 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+import { useEffect, useState } from 'react';
 import { Loader2, Phone, PhoneOff } from 'lucide-react';
-import { useIncomingCalls } from '../../../hooks/useIncomingCalls';
+import { useIncomingCalls } from './IncomingCallsProvider';
 
 // IncomingCallPill is the only place an incoming call is visible from anywhere
 // in the dashboard. It sits above the alerts pill, shows nothing while nobody
 // is calling, and answers the newest call in place so the user does not have to
 // find the Realtime tab first.
+// openRoom is the room the user is currently looking at, read from the hash the
+// Realtime tab navigates with. An invitation to that room is already answered,
+// so offering it again would be noise.
+const openRoom = (): string | null => {
+  const m = window.location.hash
+    .replace(/^#/, '')
+    .match(/^realtime\/room\/([0-9a-fA-F]{64})$/);
+  return m ? m[1] : null;
+};
+
 export const IncomingCallPill = () => {
   const { calls, accept, dismiss, busyRV, error } = useIncomingCalls();
-  const call = calls[calls.length - 1];
+  const [active, setActive] = useState<string | null>(openRoom);
+
+  useEffect(() => {
+    const onHashChange = () => setActive(openRoom());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  const waiting = calls.filter((c) => c.sessRV !== active);
+  const call = waiting[waiting.length - 1];
   if (!call) return null;
 
   const who = call.inviterNick || `${call.inviter.slice(0, 12)}...`;
@@ -32,8 +52,8 @@ export const IncomingCallPill = () => {
         <span className="text-xs font-semibold">
           {call.isInstant ? 'Incoming call' : 'Call invitation'}
         </span>
-        {calls.length > 1 && (
-          <span className="ml-auto text-[11px] opacity-80">+{calls.length - 1} waiting</span>
+        {waiting.length > 1 && (
+          <span className="ml-auto text-[11px] opacity-80">+{waiting.length - 1} waiting</span>
         )}
       </div>
 

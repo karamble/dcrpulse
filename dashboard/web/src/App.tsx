@@ -11,6 +11,7 @@ import { ExternalLinkGuard } from './components/ExternalLinkGuard';
 import { AlertsPill } from './components/alerts/AlertsPill';
 import { IncomingCallPill } from './components/bisonrelay/realtime/IncomingCallPill';
 import { RealtimeToast } from './components/bisonrelay/realtime/RealtimeToast';
+import { IncomingCallsProvider } from './components/bisonrelay/realtime/IncomingCallsProvider';
 import { ThemeProvider } from './services/themes/ThemeProvider';
 import { NodeDashboard } from './pages/NodeDashboard';
 import { WalletDashboard } from './pages/WalletDashboard';
@@ -264,7 +265,9 @@ function App() {
       <BrowserRouter>
         <AuthGate>
           <BisonrelayLiveProvider>
-            <AppContent />
+            <IncomingCallsProvider>
+              <AppContent />
+            </IncomingCallsProvider>
           </BisonrelayLiveProvider>
         </AuthGate>
       </BrowserRouter>

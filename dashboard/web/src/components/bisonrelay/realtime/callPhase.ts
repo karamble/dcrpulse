@@ -13,7 +13,8 @@ export type CallPhase =
   | 'ringing' // we called, nobody has answered yet
   | 'awaiting-host' // we answered, the caller's keys have not reached us
   | 'connecting' // keys are in place, Bison Relay's join is in flight
-  | 'not-joined' // a room we are a member of but have not joined
+  | 'joining' // a room we are joining ourselves, since BR only joins instant calls
+  | 'not-joined' // that join failed; the user has to ask for it
   | 'live'; // joined; audio may start
 
 // hasOwnerKey reports whether the session owner's publisher entry has arrived.
@@ -31,17 +32,22 @@ export const isOwner = (s: RTDTSession): boolean => {
   return !!me && me === s.owner;
 };
 
-export const callPhase = (s: RTDTSession | null): CallPhase => {
+// joinFailed is set once an automatic join has been tried and refused, which is
+// the only case where the user has to ask for one.
+export const callPhase = (s: RTDTSession | null, joinFailed = false): CallPhase => {
   if (!s) return 'connecting';
   if (s.live) return 'live';
 
   if (isOwner(s)) {
-    // Our own room: joining is an explicit choice, never a wait.
-    if (!s.is_instant) return 'not-joined';
+    // Bison Relay joins nobody into a room, not even its owner, so opening one
+    // we are not in means joining it.
+    if (!s.is_instant) return joinFailed ? 'not-joined' : 'joining';
     const answered = s.members.some((m) => m.peer_id !== s.local_peer_id && m.accepted);
     return answered ? 'connecting' : 'ringing';
   }
 
   if (!hasOwnerKey(s)) return 'awaiting-host';
-  return s.is_instant ? 'connecting' : 'not-joined';
+  // An instant call joins itself; a room is ours to join once we hold the keys.
+  if (s.is_instant) return 'connecting';
+  return joinFailed ? 'not-joined' : 'joining';
 };

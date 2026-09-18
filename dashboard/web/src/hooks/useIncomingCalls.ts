@@ -31,11 +31,15 @@ const fromEvent = (p: Record<string, unknown>): IncomingCall => ({
   receivedMs: Date.now(),
 });
 
-// useIncomingCalls tracks the calls waiting to be answered. It loads the
+// useIncomingCallsState tracks the calls waiting to be answered. It loads the
 // outstanding ones rather than only listening for new events, because an
 // invitation that arrived while this page was closed would otherwise never be
 // seen: the event is gone and Bison Relay cannot list its own stored invites.
-export const useIncomingCalls = () => {
+//
+// Call it once, from IncomingCallsProvider. Two copies of this state would each
+// answer only for themselves, leaving the other surface offering a call that
+// has already been taken.
+export const useIncomingCallsState = () => {
   const [calls, setCalls] = useState<IncomingCall[]>([]);
   const [busyRV, setBusyRV] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -119,3 +123,5 @@ export const useIncomingCalls = () => {
 
   return { calls, accept, dismiss, reload, busyRV, error };
 };
+
+export type IncomingCallsState = ReturnType<typeof useIncomingCallsState>;

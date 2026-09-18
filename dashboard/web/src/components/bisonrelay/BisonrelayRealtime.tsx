@@ -316,6 +316,8 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
   const [reconnecting, setReconnecting] = useState<{ attempt: number; nextMs: number } | null>(null);
   const [waitedTooLong, setWaitedTooLong] = useState(false);
   const [rttMs, setRttMs] = useState<number | null>(null);
+  const [joinFailed, setJoinFailed] = useState(false);
+  const joinTried = useRef<string | null>(null);
   const [answeredBy, setAnsweredBy] = useState<string | null>(null);
   // Peers that have just left: shown briefly with a badge, then removed. `gone`
   // is what keeps them out of the list afterwards, since Bison Relay still
@@ -324,7 +326,7 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
   const [gone, setGone] = useState<number[]>([]);
   const { addListener } = useBisonrelayLive();
 
-  const phase = callPhase(session);
+  const phase = callPhase(session, joinFailed);
   const callIsLive = phase === 'live';
 
   // The pipeline waits until Bison Relay has actually joined us. Starting it
@@ -399,6 +401,38 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
     const id = setInterval(() => void reloadSession(), 2000);
     return () => clearInterval(id);
   }, [callIsLive, reloadSession]);
+
+  // Bison Relay joins both ends of an instant call by itself, but it joins
+  // nobody into a room, so accepting a room invitation would otherwise leave
+  // the user sitting outside it. Join once the owner's publisher entry is here:
+  // that is the same condition the room list gates its Join button on, and it
+  // means brclientd will not refuse us for having no keys yet.
+  useEffect(() => {
+    if (!session || session.live || session.is_instant) return;
+    if (!hasOwnerKey(session)) return;
+    if (joinTried.current === rv) return;
+    joinTried.current = rv;
+    joinRTDTSession(rv)
+      .then(() => reloadSession())
+      .catch((e: any) => {
+        // The owner's own join from the create dialog may still be in flight,
+        // and Bison Relay reports a second one as already pending. That is the
+        // join we wanted, so wait for it rather than calling this a failure.
+        const msg = apiError(e, '');
+        if (/already|pending|maintained/i.test(msg)) {
+          void reloadSession();
+          return;
+        }
+        setJoinFailed(true);
+        setErr(apiError(e, 'Could not join this room'));
+      });
+  }, [session, rv, reloadSession]);
+
+  // A different room starts its own attempt.
+  useEffect(() => {
+    joinTried.current = null;
+    setJoinFailed(false);
+  }, [rv]);
 
   // Bison Relay delivers invitations store-and-forward, so a slow answer is
   // normal. Say so after a minute rather than tearing the call down.
@@ -611,9 +645,14 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
         detail: answeredBy ? `${answeredBy} answered. Joining the call now.` : 'Joining the call now.',
         action: 'Leave',
       },
+      joining: {
+        title: 'Joining the room…',
+        detail: 'Bison Relay does not join rooms on its own, so we are asking for you.',
+        action: 'Leave',
+      },
       'not-joined': {
         title: 'Not in this room',
-        detail: 'Join it from the room list to start audio.',
+        detail: 'Joining did not go through. Try again from here.',
         action: 'Back',
       },
     };
@@ -631,18 +670,35 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
                 {rv}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onLeave}
-              className="shrink-0 px-3 py-1.5 rounded-md text-xs border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/30"
-            >
-              {w.action}
-            </button>
+            <div className="shrink-0 flex items-center gap-2">
+              {phase === 'not-joined' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErr(null);
+                    setJoinFailed(false);
+                    joinTried.current = null;
+                    void reloadSession();
+                  }}
+                  className="px-3 py-1.5 rounded-md text-xs bg-gradient-primary text-white font-semibold inline-flex items-center gap-1.5"
+                >
+                  <Phone className="h-3 w-3" /> Join
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onLeave}
+                className="px-3 py-1.5 rounded-md text-xs border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/30"
+              >
+                {w.action}
+              </button>
+            </div>
           </div>
           {waitedTooLong && (
             <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2.5 text-xs text-amber-300">
-              No answer yet. Bison Relay delivers invitations when the other side is
-              online, so this can still connect later.
+              {phase === 'joining'
+                ? 'Still joining. The room is reachable but has not let us in yet.'
+                : 'No answer yet. Bison Relay delivers invitations when the other side is online, so this can still connect later.'}
             </div>
           )}
           {err && <ErrorBanner msg={err} />}

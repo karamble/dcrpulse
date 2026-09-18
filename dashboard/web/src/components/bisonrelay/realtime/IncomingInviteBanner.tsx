@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 import { Loader2, Phone, PhoneOff } from 'lucide-react';
-import { useIncomingCalls } from '../../../hooks/useIncomingCalls';
+import { useIncomingCalls } from './IncomingCallsProvider';
 
 // IncomingInviteBanner stacks the waiting calls at the top of the Realtime tab.
 // It shares useIncomingCalls with the global pill, so a call that arrived while
