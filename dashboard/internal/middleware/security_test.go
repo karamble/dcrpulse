@@ -137,3 +137,49 @@ func TestLimitJSONBodyCapsWhateverTheCallerClaims(t *testing.T) {
 		})
 	}
 }
+
+// headersFor runs SecurityHeaders over a trivial handler and returns what it set.
+func headersFor(t *testing.T) http.Header {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	SecurityHeaders(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	return rec.Header()
+}
+
+// Realtime calls capture the mic in our own document. An empty allowlist denies
+// every origin including ours, so getUserMedia fails before a call can start.
+func TestSecurityHeadersAllowOurOwnMicrophone(t *testing.T) {
+	pp := headersFor(t).Get("Permissions-Policy")
+
+	if !strings.Contains(pp, "microphone=(self)") {
+		t.Errorf("Permissions-Policy = %q, want the microphone allowed to our own origin", pp)
+	}
+	for _, denied := range []string{"camera=()", "geolocation=()", "payment=()", "usb=()"} {
+		if !strings.Contains(pp, denied) {
+			t.Errorf("Permissions-Policy = %q, lost the %s denial", pp, denied)
+		}
+	}
+}
+
+// The mic-tap worklet is served from our own origin precisely so script-src can
+// stay closed. Admitting blob: would let any injected string become a script.
+func TestSecurityHeadersKeepScriptsToOurOwnOrigin(t *testing.T) {
+	csp := headersFor(t).Get("Content-Security-Policy")
+
+	var scriptSrc string
+	for _, d := range strings.Split(csp, ";") {
+		if d = strings.TrimSpace(d); strings.HasPrefix(d, "script-src") {
+			scriptSrc = d
+		}
+	}
+	if scriptSrc == "" {
+		t.Fatalf("Content-Security-Policy = %q, has no script-src at all", csp)
+	}
+	if strings.Contains(scriptSrc, "blob:") {
+		t.Errorf("%q admits blob: scripts; serve the worklet from 'self' instead", scriptSrc)
+	}
+	if strings.Contains(scriptSrc, "unsafe-inline") || strings.Contains(scriptSrc, "unsafe-eval") {
+		t.Errorf("%q weakens script execution", scriptSrc)
+	}
+}

@@ -191,7 +191,9 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "SAMEORIGIN")
 		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=(), usb=()")
+		// Realtime calls capture the mic in our own document, so the
+		// microphone allowlist names self; an empty one denies every origin.
+		h.Set("Permissions-Policy", "geolocation=(), microphone=(self), camera=(), payment=(), usb=()")
 		h.Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})

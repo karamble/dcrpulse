@@ -292,7 +292,7 @@ export class RealtimeAudioPipeline {
     });
 
     const ctx = await this.ensureCtx();
-    await ctx.audioWorklet.addModule(workletURL());
+    await ctx.audioWorklet.addModule(MIC_TAP_WORKLET_URL);
     const source = ctx.createMediaStreamSource(stream);
     const worklet = new AudioWorkletNode(ctx, 'rtdt-mic-tap', {
       numberOfInputs: 1,
@@ -575,25 +575,7 @@ export class RealtimeAudioPipeline {
   }
 }
 
-// workletURL builds a data: URL for the mic-tap AudioWorklet so we don't
-// have to ship a separate static file. The worklet emits Float32Array
-// buffers on each render quantum to the main thread.
-let cachedWorkletURL: string | null = null;
-const workletURL = (): string => {
-  if (cachedWorkletURL) return cachedWorkletURL;
-  const src = `
-class RTDTMicTap extends AudioWorkletProcessor {
-  process(inputs) {
-    const ch = inputs[0] && inputs[0][0];
-    if (ch && ch.length) {
-      this.port.postMessage({ samples: ch.slice() });
-    }
-    return true;
-  }
-}
-registerProcessor('rtdt-mic-tap', RTDTMicTap);
-  `;
-  const blob = new Blob([src], { type: 'application/javascript' });
-  cachedWorkletURL = URL.createObjectURL(blob);
-  return cachedWorkletURL;
-};
+// The mic-tap worklet is served as a static file. Building it as a blob: URL
+// at runtime fails under the document CSP, which allows scripts from 'self'
+// only, and addModule then rejects with a bare AbortError.
+const MIC_TAP_WORKLET_URL = '/rtdt-mic-tap.worklet.js';
