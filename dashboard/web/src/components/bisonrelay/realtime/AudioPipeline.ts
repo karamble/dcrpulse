@@ -37,10 +37,18 @@ export interface PipelineOptions {
   callbacks?: PipelineCallbacks;
 }
 
+// isSecureContext reports whether the page may use WebCodecs and the
+// microphone at all. Both are secure-context only, so a dashboard served over
+// plain HTTP on anything but localhost hides them entirely - which reads as a
+// browser too old to support them when the browser is perfectly capable.
+export const inSecureContext = (): boolean =>
+  typeof window !== 'undefined' && window.isSecureContext;
+
 // supportsWebCodecsAudio returns whether the running browser has the
 // AudioEncoder + AudioData primitives needed for our outbound path.
 // Chrome/Edge stable >= 130, Firefox >= 130, Safari only partial as of
-// 2026-05.
+// 2026-05. Returns false in an insecure context whatever the browser is, so
+// check inSecureContext first when reporting why.
 export const supportsWebCodecsAudio = (): boolean => {
   return (
     typeof window !== 'undefined' &&

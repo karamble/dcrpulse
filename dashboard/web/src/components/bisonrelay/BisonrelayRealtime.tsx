@@ -34,7 +34,11 @@ import {
   sendBisonrelayRTDTChat,
 } from '../../services/bisonrelayApi';
 import { useBisonrelayLive } from './BisonrelayLiveProvider';
-import { RealtimeAudioPipeline, supportsWebCodecsAudio } from './realtime/AudioPipeline';
+import {
+  inSecureContext,
+  RealtimeAudioPipeline,
+  supportsWebCodecsAudio,
+} from './realtime/AudioPipeline';
 import { IncomingInviteBanner } from './realtime/IncomingInviteBanner';
 import { InstantCallModal } from './realtime/InstantCallModal';
 import { InviteToRoomModal } from './realtime/InviteToRoomModal';
@@ -64,6 +68,11 @@ export const BisonrelayRealtime = () => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  // Order matters: an insecure context hides WebCodecs, so asking "is it
+  // missing?" first would blame the browser for the page's own URL.
+  if (!inSecureContext()) {
+    return <InsecureContext />;
+  }
   if (!supportsWebCodecsAudio()) {
     return <ChromeRequired />;
   }
@@ -81,6 +90,32 @@ export const BisonrelayRealtime = () => {
     </div>
   );
 };
+
+// Served over plain HTTP on something other than localhost. Nothing about the
+// browser is wrong, so say what is.
+const InsecureContext = () => (
+  <div className="p-6 rounded-xl bg-gradient-card border border-border/50 flex items-start gap-3">
+    <div className="p-2 rounded-lg bg-amber-500/15 border border-amber-500/30 shrink-0">
+      <Radio className="h-5 w-5 text-amber-400" />
+    </div>
+    <div className="space-y-1">
+      <h3 className="text-sm font-semibold">Voice calls need a secure connection</h3>
+      <p className="text-xs text-muted-foreground">
+        Browsers only allow the microphone and the audio codec on an HTTPS page
+        or on localhost, and this dashboard is being served over plain HTTP from{' '}
+        <span className="font-mono">{window.location.host}</span>. Your browser is
+        fine; the address is the problem.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Reach it over HTTPS, or forward the port and open it as localhost:{' '}
+        <span className="font-mono break-all">
+          ssh -L 8135:127.0.0.1:8080 &lt;host&gt;
+        </span>{' '}
+        then <span className="font-mono">http://localhost:8135</span>.
+      </p>
+    </div>
+  </div>
+);
 
 const ChromeRequired = () => (
   <div className="p-6 rounded-xl bg-gradient-card border border-border/50 flex items-start gap-3">
