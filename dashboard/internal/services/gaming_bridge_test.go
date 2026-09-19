@@ -23,10 +23,8 @@ func TestBridgeAuthoredEnvelopeMatchesWireV2Golden(t *testing.T) {
 const testFrame = `--gaming[v=2,game=poker,gv=1,sid=0123456789abcdef,mid=5736684151c34f0a17823de6822769dfafeb3170477c2079dec9d72e35aa5c5f,seq=1/1,exp=1783000000]--eyJhY3Rpb24iOiJmb2xkIn0=`
 
 func TestDeliverFrameRecognisesGCMessageEnvelope(t *testing.T) {
-	old := gamingBus
-	oldOnce := gamingBusOnce
-	t.Cleanup(func() { gamingBus, gamingBusOnce = old, oldOnce })
-
+	// A bus of its own, so the singleton is neither read nor replaced. The
+	// routing decision is a method on the bus and needs nothing global.
 	bus := &GamingBus{subs: make(map[*gamingSubscriber]struct{})}
 	payload, err := json.Marshal(map[string]string{
 		"gcid": "aa", "from": "bb", "message": testFrame,
