@@ -49,6 +49,19 @@ type gamingSettingsView struct {
 	// It travels outward only: a caller that could set one could name another
 	// game's identity, and a game must not be able to choose its own either.
 	GameCredentials map[string]gameCredentialView `json:"gameCredentials"`
+
+	// TxIndexActive says whether dcrd is running its transaction index,
+	// which the bridge will not switch on without. It is environment, not
+	// policy: read from the node on every request and never stored, so an
+	// operator who sets txindex=1 and restarts dcrd sees the console free up
+	// without restarting dcrpulse.
+	//
+	// ChainReachable says whether the node could be asked at all. Both are
+	// false when dcrd is down, and the console needs to tell those apart:
+	// "your node has no index" sends an operator to edit a config file when
+	// the actual fault is a node that is not answering.
+	TxIndexActive  bool `json:"txIndexActive"`
+	ChainReachable bool `json:"chainReachable"`
 }
 
 // gameCredentialView is what the console is told about a game's credential.
@@ -57,7 +70,7 @@ type gameCredentialView struct {
 	IssuedAt    int64  `json:"issuedAt"`
 }
 
-func gamingToView(s types.GamingSettings) gamingSettingsView {
+func gamingToView(s types.GamingSettings, txIndexActive, chainReachable bool) gamingSettingsView {
 	if s.RegisteredGames == nil {
 		s.RegisteredGames = []string{}
 	}
@@ -80,6 +93,8 @@ func gamingToView(s types.GamingSettings) gamingSettingsView {
 		RegisteredGames: s.RegisteredGames,
 		Policies:        policies,
 		GameCredentials: creds,
+		TxIndexActive:   txIndexActive,
+		ChainReachable:  chainReachable,
 	}
 }
 
@@ -119,9 +134,15 @@ func gamingJSON(w http.ResponseWriter, v any) {
 
 // BisonrelayGamingSettingsHandler round-trips the gaming confinement policy.
 func BisonrelayGamingSettingsHandler(w http.ResponseWriter, r *http.Request) {
+	// An unreachable node refuses the same way a node with no index does -
+	// enabling on a guess parks the first payout at publishing - but it is
+	// reported differently, because it is a different thing to go and fix.
+	hasIndex, probeErr := services.DcrdHasTxIndex(r.Context())
+	txIndex := probeErr == nil && hasIndex
+	reachable := probeErr == nil
 	switch r.Method {
 	case http.MethodGet:
-		gamingJSON(w, gamingToView(services.ReadGamingSettings()))
+		gamingJSON(w, gamingToView(services.ReadGamingSettings(), txIndex, reachable))
 	case http.MethodPost:
 		var in gamingSettingsView
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -136,10 +157,13 @@ func BisonrelayGamingSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		// The bridge is only ever live behind the App Password: the caps
 		// below and the approval a spend waits on are worth nothing if the
 		// person approving cannot be told from anybody who reached the port.
-		saved, err := services.WriteGamingSettings(next, auth.Enabled())
+		// It is also only ever live over a dcrd that can be asked about a
+		// transaction, or the payouts it approves are signed and never sent.
+		saved, err := services.WriteGamingSettings(next, auth.Enabled(), txIndex)
 		switch {
 		case err == nil:
-		case errors.Is(err, services.ErrGamingNeedsAppPassword):
+		case errors.Is(err, services.ErrGamingNeedsAppPassword),
+			errors.Is(err, services.ErrGamingNeedsTxIndex):
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		case errors.Is(err, services.ErrGamingBadGameID):
@@ -149,7 +173,7 @@ func BisonrelayGamingSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		gamingJSON(w, gamingToView(saved))
+		gamingJSON(w, gamingToView(saved, txIndex, reachable))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

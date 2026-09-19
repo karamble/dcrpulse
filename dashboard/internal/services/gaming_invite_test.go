@@ -37,7 +37,7 @@ func inviteSeams(t *testing.T) {
 	}
 	tableGCMessage = func(context.Context, rpc.ShortIDHex, string, int) error { return nil }
 	tableAuthorize = func(context.Context, string, string, string) error { return nil }
-	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("seed settings: %v", err)
 	}
 }

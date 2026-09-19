@@ -109,7 +109,9 @@ openssl rand -base64 32
 **Example**: `DCRD_EXTRA_ARGS=--txindex --debuglevel=debug`
 
 **Notes**:
-- `--txindex` enables full transaction lookup by hash (required for the block explorer).
+- `--txindex` enables full transaction lookup by hash. Required for the block
+  explorer, timestamp verification and the gaming bridge; the gaming bridge
+  refuses to switch on without it.
 - First startup with `--txindex` triggers a full blockchain reindex, which can take hours.
 - The dcrd entrypoint always passes `--appdata=/app-data/dcrd` and the RPC flags from the compose `command:` block; do not duplicate those here.
 

@@ -30,6 +30,16 @@ export interface GamingSettings {
   // and useless for connecting with. It travels outward only - the server
   // issues credentials and never reads one back.
   gameCredentials?: Record<string, GameCredential>;
+  // txIndexActive says whether dcrd is running its transaction index, which
+  // the bridge will not switch on without. It is environment rather than
+  // policy: the server reads it from the node on every request and stores
+  // nothing, so setting txindex=1 and restarting dcrd frees the control up
+  // without restarting dcrpulse. Sending it back changes nothing.
+  txIndexActive?: boolean;
+  // chainReachable says whether dcrd could be asked at all. Both false is a
+  // node that is down, not a node with no index, and they need different
+  // things done about them.
+  chainReachable?: boolean;
 }
 
 export interface GameCredential {

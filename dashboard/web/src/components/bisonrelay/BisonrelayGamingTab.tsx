@@ -302,6 +302,14 @@ export const BisonrelayGamingTab = () => {
       k === 'settings:enabled' || k === 'settings:register' || /^game:.+:(save|remove)$/.test(k),
   );
 
+  // The bridge does not run over a dcrd that cannot be asked about a
+  // transaction. Absent is treated as present so an older server, which does
+  // not report the field at all, is not locked out of its own bridge; the
+  // server refuses the write regardless, so this only decides whether the
+  // operator finds out before pressing the button or after.
+  const txIndexActive = settings?.txIndexActive !== false;
+  const chainReachable = settings?.chainReachable !== false;
+
   if (settingsRes.state.status === 'error') {
     return (
       <div className="space-y-3 p-6">
@@ -427,6 +435,21 @@ export const BisonrelayGamingTab = () => {
                   Every buy-in asks you, with your wallet passphrase. There is no setting that pays
                   automatically - this dashboard never holds the passphrase.
                 </span>
+                {!chainReachable && (
+                  <span className="text-xs text-warning block pt-1">
+                    dcrd is not answering, so it cannot be checked. The bridge stays as it is until
+                    the node is back.
+                  </span>
+                )}
+                {chainReachable && !txIndexActive && (
+                  <span className="text-xs text-warning block pt-1">
+                    dcrd is running without its transaction index. Set{' '}
+                    <span className="font-mono">txindex=1</span> in dcrd.conf and restart dcrd.{' '}
+                    {settings.enabled
+                      ? 'Until then an approved payout is signed and never broadcast: it sits at publishing, and the money does not move.'
+                      : 'Until then the bridge cannot be turned on - it would approve payouts that are signed and never broadcast.'}
+                  </span>
+                )}
                 {acts.get('settings:enabled').phase === 'failed' && (
                   <span className="text-xs text-destructive block pt-1 break-words">
                     {(acts.get('settings:enabled') as { error: string }).error}
@@ -438,7 +461,14 @@ export const BisonrelayGamingTab = () => {
                 onClick={() =>
                   void apply('settings:enabled', { ...settings, enabled: !settings.enabled })
                 }
-                disabled={settingsWriteRunning}
+                disabled={settingsWriteRunning || (!settings.enabled && !txIndexActive)}
+                title={
+                  !settings.enabled && !txIndexActive
+                    ? chainReachable
+                      ? 'dcrd is running without its transaction index'
+                      : 'dcrd is not answering, so its transaction index cannot be checked'
+                    : undefined
+                }
                 className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   settings.enabled
                     ? 'bg-success/20 text-success hover:bg-success/30'
