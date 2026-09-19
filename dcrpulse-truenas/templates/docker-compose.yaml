@@ -1,0 +1,180 @@
+{% set tpl = ix_lib.base.render.Render(values) %}
+
+{# Read-only variants of the shared datasets (same source, mounted read-only elsewhere) #}
+{% set data_ro = tpl.funcs.deep_merge(values.storage.data, {"read_only": true}) %}
+{% set dcrlnd_ro = tpl.funcs.deep_merge(values.storage.dcrlnd, {"read_only": true}) %}
+{% set brclientd_ro = tpl.funcs.deep_merge(values.storage.brclientd, {"read_only": true}) %}
+{% set dcrdex_ro = tpl.funcs.deep_merge(values.storage.dcrdex, {"read_only": true}) %}
+{% set tor_ro = tpl.funcs.deep_merge(values.storage.tor, {"read_only": true}) %}
+
+{# Permissions container - chowns the writable datasets to the runtime user #}
+{% set perms = tpl.deps.perms(values.consts.perms_container_name) %}
+{% set perms_config = {"uid": values.consts.run_as_user, "gid": values.consts.run_as_group, "mode": "check"} %}
+
+{# ============================== Tor (SOCKS proxy) ============================== #}
+{% set tor = tpl.add_container(values.consts.tor_container_name, "tor_image") %}
+{% do tor.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+{% do tor.healthcheck.disable() %}
+{% do tor.environment.add_env("HOME", "/tmp") %}
+{% do tor.add_storage(values.consts.tor_data_dir, values.storage.tor) %}
+{% do perms.add_or_skip_action("tor", values.storage.tor, perms_config) %}
+
+{# ============================== dcrd (full node) ============================== #}
+{% set dcrd = tpl.add_container(values.consts.dcrd_container_name, "dcrd_image") %}
+{% do dcrd.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+{% do dcrd.environment.add_env("DCRD_EXTRA_ARGS", "--txindex" if values.decred.txindex_enabled else "") %}
+{% do dcrd.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
+{% do dcrd.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
+{% do dcrd.set_command([
+  "--rpcuser=" ~ values.decred.rpc_user,
+  "--rpcpass=" ~ values.decred.rpc_password,
+  "--rpclisten=0.0.0.0:" ~ values.consts.dcrd_rpc_port,
+  "--rpccert=" ~ values.consts.dcrd_rpc_cert,
+  "--rpckey=" ~ values.consts.dcrd_rpc_key,
+]) %}
+{% do dcrd.healthcheck.set_custom_test([
+  "CMD-SHELL",
+  "curl -k -u " ~ values.decred.rpc_user ~ ":" ~ values.decred.rpc_password ~
+  " -H 'Content-Type: application/json'" ~
+  " -d '{\"jsonrpc\":\"1.0\",\"method\":\"getinfo\",\"params\":[],\"id\":1}'" ~
+  " https://127.0.0.1:" ~ values.consts.dcrd_rpc_port ~ " || exit 1"
+]) %}
+{% do dcrd.healthcheck.set_start_period(120) %}
+{% do dcrd.set_grace_period(300) %}
+{% do dcrd.add_storage(values.consts.app_data_dir, values.storage.data) %}
+{% do dcrd.add_storage(values.consts.tor_mount_dir, tor_ro) %}
+{% do dcrd.add_port(values.network.p2p_port, {"container_port": values.consts.dcrd_p2p_port}) %}
+{% do perms.add_or_skip_action("data", values.storage.data, perms_config) %}
+
+{# ============================== dcrwallet ============================== #}
+{% set dcrwallet = tpl.add_container(values.consts.dcrwallet_container_name, "dcrwallet_image") %}
+{% do dcrwallet.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+{% do dcrwallet.environment.add_env("DCRWALLET_RPC_USER", values.decred.rpc_user) %}
+{% do dcrwallet.environment.add_env("DCRWALLET_RPC_PASS", values.decred.rpc_password) %}
+{% do dcrwallet.environment.add_env("DCRD_RPC_USER", values.decred.rpc_user) %}
+{% do dcrwallet.environment.add_env("DCRD_RPC_PASS", values.decred.rpc_password) %}
+{% do dcrwallet.environment.add_env("DCRD_RPC_HOST", values.consts.dcrd_container_name) %}
+{% do dcrwallet.environment.add_env("DCRWALLET_GAP_LIMIT", values.decred.gap_limit) %}
+{% do dcrwallet.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
+{% do dcrwallet.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
+{% do dcrwallet.healthcheck.set_custom_test([
+  "CMD-SHELL",
+  "nc -z 127.0.0.1 " ~ values.consts.dcrwallet_rpc_port ~
+  " && nc -z 127.0.0.1 " ~ values.consts.dcrwallet_grpc_port ~ " || exit 1"
+]) %}
+{% do dcrwallet.healthcheck.set_start_period(120) %}
+{% do dcrwallet.set_grace_period(60) %}
+{% do dcrwallet.add_storage(values.consts.app_data_dir, values.storage.data) %}
+{% do dcrwallet.depends.add_dependency(values.consts.dcrd_container_name, "service_healthy") %}
+
+{# ============================== dcrlnd (Lightning) ============================== #}
+{% set dcrlnd = tpl.add_container(values.consts.dcrlnd_container_name, "dcrlnd_image") %}
+{% do dcrlnd.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+{% do dcrlnd.environment.add_env("DCRWALLET_HOST", values.consts.dcrwallet_container_name) %}
+{% do dcrlnd.environment.add_env("DCRWALLET_GRPC_PORT", values.consts.dcrwallet_grpc_port) %}
+{% do dcrlnd.environment.add_env("LN_TESTNET", values.decred.ln_testnet) %}
+{% do dcrlnd.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
+{% do dcrlnd.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
+{% do dcrlnd.healthcheck.set_test("netcat", {"port": values.consts.dcrlnd_grpc_port}) %}
+{% do dcrlnd.healthcheck.set_start_period(300) %}
+{% do dcrlnd.set_grace_period(60) %}
+{# Outer /app-data is read-only; the nested mountpoints below are pre-created inside
+   the shared volume by the dcrwallet entrypoint (which always starts first). #}
+{% do dcrlnd.add_storage(values.consts.app_data_dir, data_ro) %}
+{% do dcrlnd.add_storage(values.consts.dcrlnd_dir, values.storage.dcrlnd) %}
+{% do dcrlnd.depends.add_dependency(values.consts.dcrwallet_container_name, "service_healthy") %}
+{% do perms.add_or_skip_action("dcrlnd", values.storage.dcrlnd, perms_config) %}
+
+{# ============================== brclientd (Bison Relay) ============================== #}
+{% set brclientd = tpl.add_container(values.consts.brclientd_container_name, "brclientd_image") %}
+{% do brclientd.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+{% do brclientd.healthcheck.disable() %}
+{% do brclientd.set_grace_period(60) %}
+{% do brclientd.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
+{% do brclientd.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
+{# Outer /app-data read-only; nested mountpoints pre-created by the dcrwallet entrypoint #}
+{% do brclientd.add_storage(values.consts.app_data_dir, data_ro) %}
+{% do brclientd.add_storage(values.consts.dcrlnd_dir, dcrlnd_ro) %}
+{% do brclientd.add_storage(values.consts.brclientd_dir, values.storage.brclientd) %}
+{% do brclientd.depends.add_dependency(values.consts.dcrlnd_container_name, "service_started") %}
+{% do perms.add_or_skip_action("brclientd", values.storage.brclientd, perms_config) %}
+
+{# ============================== dcrdex (decentralized exchange) ============================== #}
+{% set dcrdex = tpl.add_container(values.consts.dcrdex_container_name, "dcrdex_image") %}
+{# bisonw generates TLS certs bound to the container hostname; the dashboard validates
+   them when connecting to "dcrdex", so pin the hostname (matches upstream compose) #}
+{% do dcrdex.set_hostname(values.consts.dcrdex_container_name) %}
+{% do dcrdex.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+{% do dcrdex.healthcheck.disable() %}
+{% do dcrdex.set_grace_period(60) %}
+{% do dcrdex.environment.add_env("DCRDEX_RPC_USER", values.decred.rpc_user) %}
+{% do dcrdex.environment.add_env("DCRDEX_RPC_PASS", values.decred.rpc_password) %}
+{% do dcrdex.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
+{% do dcrdex.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
+{% do dcrdex.add_storage(values.consts.dcrdex_data_dir, values.storage.dcrdex) %}
+{% do dcrdex.add_storage(values.consts.app_data_dir, data_ro) %}
+{% do perms.add_or_skip_action("dcrdex", values.storage.dcrdex, perms_config) %}
+
+{# ============================== dashboard (web UI) ============================== #}
+{% set dashboard = tpl.add_container(values.consts.dashboard_container_name, "dashboard_image") %}
+{% do dashboard.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+{% do dashboard.healthcheck.disable() %}
+{% do dashboard.environment.add_env("PORT", values.consts.dashboard_port) %}
+{% do dashboard.environment.add_env("TOR_PROXY_IP", values.consts.tor_container_name) %}
+{% do dashboard.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
+{% do dashboard.environment.add_env("TOR_CONTROL_PORT", values.consts.tor_control_port) %}
+{% do dashboard.environment.add_env("DCRD_RPC_HOST", values.consts.dcrd_container_name) %}
+{% do dashboard.environment.add_env("DCRD_RPC_PORT", values.consts.dcrd_rpc_port) %}
+{% do dashboard.environment.add_env("DCRD_RPC_USER", values.decred.rpc_user) %}
+{% do dashboard.environment.add_env("DCRD_RPC_PASS", values.decred.rpc_password) %}
+{% do dashboard.environment.add_env("DCRD_RPC_CERT", values.consts.dcrd_rpc_cert) %}
+{% do dashboard.environment.add_env("DCRWALLET_RPC_HOST", values.consts.dcrwallet_container_name) %}
+{% do dashboard.environment.add_env("DCRWALLET_RPC_PORT", values.consts.dcrwallet_rpc_port) %}
+{% do dashboard.environment.add_env("DCRWALLET_GRPC_PORT", values.consts.dcrwallet_grpc_port) %}
+{% do dashboard.environment.add_env("DCRWALLET_RPC_USER", values.decred.rpc_user) %}
+{% do dashboard.environment.add_env("DCRWALLET_RPC_PASS", values.decred.rpc_password) %}
+{% do dashboard.environment.add_env("DCRWALLET_RPC_CERT", values.consts.dcrd_rpc_cert) %}
+{% do dashboard.environment.add_env("DCRLND_HOST", values.consts.dcrlnd_container_name) %}
+{% do dashboard.environment.add_env("DCRLND_GRPC_PORT", values.consts.dcrlnd_grpc_port) %}
+{% do dashboard.environment.add_env("DCRLND_TLS_CERT", values.consts.dcrlnd_tls_cert) %}
+{% do dashboard.environment.add_env("DCRLND_MACAROON", values.consts.dcrlnd_macaroon) %}
+{% do dashboard.environment.add_env("BRCLIENTD_HOST", values.consts.brclientd_container_name) %}
+{% do dashboard.environment.add_env("BRCLIENTD_PORT", values.consts.brclientd_port) %}
+{% do dashboard.environment.add_env("BRCLIENTD_STATUS_PORT", values.consts.brclientd_status_port) %}
+{% do dashboard.environment.add_env("BRCLIENTD_DATA_DIR", values.consts.brclientd_dir) %}
+{% do dashboard.environment.add_env("DCRDEX_RPC_HOST", values.consts.dcrdex_container_name) %}
+{% do dashboard.environment.add_env("DCRDEX_RPC_PORT", values.consts.dcrdex_rpc_port) %}
+{% do dashboard.environment.add_env("DCRDEX_RPC_USER", values.decred.rpc_user) %}
+{% do dashboard.environment.add_env("DCRDEX_RPC_PASS", values.decred.rpc_password) %}
+{% do dashboard.environment.add_env("DCRDEX_RPC_CERT", values.consts.dcrdex_rpc_cert) %}
+{% do dashboard.environment.add_env("DCRDEX_WS_PORT", values.consts.dcrdex_ws_port) %}
+{% do dashboard.environment.add_env("DCRDEX_WS_CERT", values.consts.dcrdex_ws_cert) %}
+{% do dashboard.add_storage(values.consts.app_data_dir, values.storage.data) %}
+{% do dashboard.add_storage(values.consts.dcrlnd_dir, values.storage.dcrlnd) %}
+{% do dashboard.add_storage(values.consts.brclientd_dir, brclientd_ro) %}
+{% do dashboard.add_storage(values.consts.dcrdex_dashboard_dir, dcrdex_ro) %}
+{% do dashboard.add_storage(values.consts.dashboard_data_dir, values.storage.dashboard) %}
+{% do dashboard.add_storage(values.consts.tor_mount_dir, tor_ro) %}
+{% do dashboard.add_port(values.network.web_port, {"container_port": values.consts.dashboard_port}) %}
+{% do dashboard.depends.add_dependency(values.consts.dcrd_container_name, "service_healthy") %}
+{% do dashboard.depends.add_dependency(values.consts.dcrwallet_container_name, "service_healthy") %}
+{% do perms.add_or_skip_action("dashboard", values.storage.dashboard, perms_config) %}
+
+{# ============================== Permissions / dependencies ============================== #}
+{% if perms.has_actions() %}
+  {% do perms.activate() %}
+  {% do tor.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+  {% do dcrd.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+  {% do dcrwallet.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+  {% do dcrlnd.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+  {% do brclientd.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+  {% do dcrdex.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+  {% do dashboard.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+{% endif %}
+
+{# ============================== Portal / notes ============================== #}
+{% do tpl.portals.add(values.network.web_port, {"name": "Web UI", "scheme": "http", "path": "/"}) %}
+{% do tpl.notes.add_info("The initial blockchain sync takes several hours and needs roughly 15GB+ of disk space. Progress is visible on the dashboard.") %}
+{% do tpl.notes.add_info("No wallet exists after install - create or restore one from the dashboard web UI. Lightning, DCRDEX and Bison Relay stay idle until you set them up there.") %}
+
+{{ tpl.render() | tojson }}
