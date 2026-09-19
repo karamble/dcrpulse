@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"dcrpulse/internal/gamingfunds"
@@ -28,10 +29,19 @@ var gamingFinancialWorker struct {
 }
 var gamingFinancialInbox = make(chan GamingFrameEvent, 128)
 
-// observeGamingOperation first asks dcrd, which covers the mempool and nodes
-// with transaction indexing. Confirmed wallet transactions then fall back to
-// dcrwallet plus a block-header lookup, so reconciliation does not require
-// dcrd's optional transaction index.
+// observeGamingOperation asks dcrd first, which answers for the mempool and,
+// with the transaction index, for anything mined.
+//
+// The index is required, not optional: the gaming bridge will not switch on
+// without it. Without it dcrd answers this with ErrRPCInternal rather than
+// ErrRPCNoTxInfo, so the fallback below never runs and reconciliation stops
+// before it can broadcast - a payout every seat signed then sits at publishing
+// for good.
+//
+// The dcrwallet fallback is a backstop for the wallet's own transactions, and
+// nothing wider. A settlement this operator receives nothing from is a foreign
+// transaction the wallet has no record of, so the fallback cannot stand in for
+// the index.
 func observeGamingOperation(ctx context.Context, id string) (gamingfunds.ChainObservation, bool, error) {
 	if rpc.DcrdClient == nil {
 		return gamingfunds.ChainObservation{}, false, ErrGamingChainUnavailable
@@ -88,6 +98,38 @@ func observeGamingOperation(ctx context.Context, id string) (gamingfunds.ChainOb
 		return gamingfunds.ChainObservation{}, false, err
 	}
 	return gamingfunds.ChainObservation{Known: true, Confirmations: confirmations, BlockHash: blockHash.String(), Height: int64(header.Height)}, true, nil
+}
+
+// gamingIndexComplained keeps the reconcile pass from saying the same thing
+// every thirty seconds, without it going unsaid.
+var gamingIndexComplained atomic.Bool
+
+// noteGamingIndexTrouble says why a reconcile pass could not look a transaction
+// up, when the reason is the one it will not recover from.
+//
+// A lookup can fail for a moment - dcrd restarting, a connection dropped - and
+// those pass by themselves, which is why the pass swallows them. A node running
+// without its transaction index does not pass: every later pass fails the same
+// way, an approved payout every seat signed is never broadcast, and the only
+// trace is a spend stuck at publishing.
+//
+// The node is asked rather than the error read. getinfo answers this exactly,
+// and the alternative is matching on an error string dcrd is free to reword.
+func noteGamingIndexTrouble(ctx context.Context, cause error) {
+	has, err := DcrdHasTxIndex(ctx)
+	if err != nil || has {
+		return
+	}
+	if gamingIndexComplained.CompareAndSwap(false, true) {
+		gameLog.Errorf("dcrd is running without its transaction index, so approved payouts cannot be broadcast. Set txindex=1 and restart dcrd. Last lookup failed with: %v", cause)
+	}
+}
+
+// noteGamingLookupWorks retracts that complaint, once, when dcrd answers again.
+func noteGamingLookupWorks() {
+	if gamingIndexComplained.CompareAndSwap(true, false) {
+		gameLog.Infof("dcrd is answering gaming transaction lookups again; approved payouts will be broadcast")
+	}
 }
 
 type observedGamingSpend struct {
@@ -339,8 +381,10 @@ func reconcileGamingFinance(ctx context.Context) {
 		}
 		observation, known, err := observeGamingOperation(ctx, op.ID)
 		if err != nil {
+			noteGamingIndexTrouble(ctx, err)
 			continue
 		}
+		noteGamingLookupWorks()
 		if known {
 			if err = store.ObserveOperation(op.ID, observation); err != nil {
 				gameLog.Errorf("record financial chain observation: %v", err)

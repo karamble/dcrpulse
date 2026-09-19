@@ -138,7 +138,7 @@ func TestTheAccountAGameSpendsFromIsItsOwn(t *testing.T) {
 func TestAGameWithNoAccountBoundCanStakeNothing(t *testing.T) {
 	s, err := normalizeGamingSettings(types.GamingSettings{
 		Enabled: true, RegisteredGames: []string{"poker"},
-	}, types.GamingSettings{}, true)
+	}, types.GamingSettings{}, true, true)
 	if err != nil {
 		t.Fatalf("registering an unfunded game was refused: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestAGameCannotBeFundedFromAReservedAccount(t *testing.T) {
 			Policies:        map[string]types.GamePolicy{"poker": {Account: name}},
 		}
 
-		_, err := normalizeGamingSettings(in, types.GamingSettings{}, true)
+		_, err := normalizeGamingSettings(in, types.GamingSettings{}, true, true)
 		if err == nil {
 			t.Errorf("%q was accepted as a game's spending account", name)
 			continue
@@ -191,7 +191,7 @@ func TestAReservedAccountIsRefusedWhateverItsCase(t *testing.T) {
 		RegisteredGames: []string{"poker"},
 		Policies:        map[string]types.GamePolicy{"poker": {Account: "  Lightning "}},
 	}
-	if _, err := normalizeGamingSettings(in, types.GamingSettings{}, true); !errors.Is(err, ErrGamingReservedAccount) {
+	if _, err := normalizeGamingSettings(in, types.GamingSettings{}, true, true); !errors.Is(err, ErrGamingReservedAccount) {
 		t.Errorf("a differently-cased reserved account slipped through: %v", err)
 	}
 }
@@ -203,7 +203,7 @@ func TestAnOrdinaryAccountStillFundsAGame(t *testing.T) {
 		RegisteredGames: []string{"poker"},
 		Policies:        map[string]types.GamePolicy{"poker": {Account: "poker-money"}},
 	}
-	out, err := normalizeGamingSettings(in, types.GamingSettings{}, true)
+	out, err := normalizeGamingSettings(in, types.GamingSettings{}, true, true)
 	if err != nil {
 		t.Fatalf("an ordinary account was refused: %v", err)
 	}

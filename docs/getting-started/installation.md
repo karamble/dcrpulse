@@ -770,7 +770,13 @@ wallet over plain HTTP, so enable the app password under Settings first.
 ### Transaction Indexing
 
 dcrd runs with `--txindex` enabled by default (set via `DCRD_EXTRA_ARGS` in
-`.env`), which allows full transaction lookup by hash for the block explorer.
+`.env`), which allows full transaction lookup by hash.
+
+The block explorer and timestamp verification need it. The gaming bridge
+requires it and will not switch on without it: approving a payout does not
+broadcast it, and the pass that does starts by looking the transaction up. On a
+node without the index that lookup fails in a way that cannot be told from "not
+mined", so a payout every seat signed would be signed and never sent.
 
 ```bash
 # .env

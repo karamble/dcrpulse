@@ -218,7 +218,7 @@ func TestAuthorityApprovalRebuildsExactDashboardRequest(t *testing.T) {
 // fail before signing or publishing because no immutable deposit backs it.
 func TestUnverifiedPendingSpendCannotBeApproved(t *testing.T) {
 	spendSeams(t)
-	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("store policy: %v", err)
 	}
 	seedPendingSpend(t, "aa11", time.Now().Unix()+300)
@@ -325,7 +325,7 @@ func TestPublishingCountsAsOutstandingAndStaysOnWirePending(t *testing.T) {
 
 func TestSettingsChangeOnlyRetiresPendingRequests(t *testing.T) {
 	spendSeams(t)
-	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("store policy: %v", err)
 	}
 	now := time.Now().Unix()
@@ -337,7 +337,7 @@ func TestSettingsChangeOnlyRetiresPendingRequests(t *testing.T) {
 	}
 	off := spendPolicy()
 	off.Enabled = false
-	if _, err := WriteGamingSettings(off, true); err != nil {
+	if _, err := WriteGamingSettings(off, true, true); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	log := mustReadSpendLog(t)
@@ -363,7 +363,7 @@ func TestAddressMustBelongToActiveNetwork(t *testing.T) {
 
 func TestUnreadableAuditLogRefusesEveryDecision(t *testing.T) {
 	spendSeams(t)
-	if _, err := WriteGamingSettings(spendPolicy(), true); err != nil {
+	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("store policy: %v", err)
 	}
 	if err := os.WriteFile(gamingSpendLogPath(), []byte("{not json"), 0o600); err != nil {

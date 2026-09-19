@@ -65,7 +65,7 @@ func TestAnUnroutableGameIdIsRefusedRatherThanDropped(t *testing.T) {
 
 	_, err := WriteGamingSettings(types.GamingSettings{
 		RegisteredGames: []string{"poker", "not a game id"},
-	}, true)
+	}, true, true)
 	if !errors.Is(err, ErrGamingBadGameID) {
 		t.Fatalf("got %v, want a refusal naming the rule", err)
 	}
@@ -98,7 +98,7 @@ func TestTheGamesListReportsOnlyWhatWasRegistered(t *testing.T) {
 	if _, err := WriteGamingSettings(types.GamingSettings{
 		RegisteredGames: []string{"backgammon", "poker"},
 		Policies:        map[string]types.GamePolicy{"poker": {Name: "Poker Night"}},
-	}, true); err != nil {
+	}, true, true); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 

@@ -206,6 +206,15 @@ func ReadGamingSettings() types.GamingSettings {
 var ErrGamingNeedsAppPassword = errors.New(
 	"set and enable an App Password before turning the gaming bridge on")
 
+// ErrGamingNeedsTxIndex is the other reason the bridge will not switch on.
+//
+// Without dcrd's transaction index the reconcile pass cannot tell "not mined"
+// from "cannot look", so a payout every seat has signed is never broadcast.
+// That failure is silent and the money stops, so it is refused here, where the
+// operator is choosing, rather than at the first payout.
+var ErrGamingNeedsTxIndex = errors.New(
+	"dcrd is running without its transaction index; set txindex=1 and restart dcrd before turning the gaming bridge on")
+
 // ErrGamingReservedAccount is an account another part of the stack owns.
 //
 // The mixer, dcrlnd and DCRDEX find their funds by account name, and dcrwallet
@@ -216,20 +225,23 @@ var ErrGamingReservedAccount = errors.New(
 	"that account belongs to another part of the stack and cannot fund a game")
 
 // normalizeGamingSettings is the policy a write is allowed to produce, given
-// what is already stored and whether the App Password is actually protecting
-// the dashboard right now.
+// what is already stored, whether the App Password is actually protecting the
+// dashboard right now, and whether dcrd is running its transaction index.
 //
-// appPasswordActive is an argument rather than a call into the auth package,
-// because the rule is "the bridge does not run without a human gate" and that
-// is a statement about a boolean, not about where the boolean came from. It is
-// also what lets the whole truth table be written out in a test.
+// Both preconditions are arguments rather than calls into auth and rpc, because
+// each rule is a statement about a boolean, not about where the boolean came
+// from. It is also what lets the whole truth table be written out in a test,
+// and it keeps an RPC round trip out of the settings mutex.
 //
 // It refuses rather than quietly switching the bridge off: an operator who
 // asked for it and got nothing, with no reason given, would go looking for a
 // bug in the wrong place.
-func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive bool) (types.GamingSettings, error) {
+func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive, txIndexActive bool) (types.GamingSettings, error) {
 	if in.Enabled && !appPasswordActive {
 		return types.GamingSettings{}, ErrGamingNeedsAppPassword
+	}
+	if in.Enabled && !txIndexActive {
+		return types.GamingSettings{}, ErrGamingNeedsTxIndex
 	}
 
 	registered, err := sanitizeRegisteredGames(in.RegisteredGames)
@@ -267,14 +279,15 @@ func normalizeGamingSettings(in, cur types.GamingSettings, appPasswordActive boo
 
 // WriteGamingSettings validates and persists the gaming state.
 //
-// appPasswordActive is passed in by the caller, which is what keeps this
-// package from depending on the auth package for a boolean.
-func WriteGamingSettings(in types.GamingSettings, appPasswordActive bool) (types.GamingSettings, error) {
+// appPasswordActive and txIndexActive are passed in by the caller. That keeps
+// this package from depending on auth for a boolean, and keeps dcrd's getinfo
+// off the path that holds gamingSettingsMu.
+func WriteGamingSettings(in types.GamingSettings, appPasswordActive, txIndexActive bool) (types.GamingSettings, error) {
 	gamingSettingsMu.Lock()
 	defer gamingSettingsMu.Unlock()
 
 	cur := ReadGamingSettings()
-	out, err := normalizeGamingSettings(in, cur, appPasswordActive)
+	out, err := normalizeGamingSettings(in, cur, appPasswordActive, txIndexActive)
 	if err != nil {
 		return types.GamingSettings{}, err
 	}

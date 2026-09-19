@@ -62,7 +62,7 @@ func TestTheViewCarriesNoCertificate(t *testing.T) {
 		}},
 	}
 
-	body, err := json.Marshal(gamingToView(stored))
+	body, err := json.Marshal(gamingToView(stored, true, true))
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
@@ -88,12 +88,50 @@ func TestPolicyCapsSurviveTheRoundTrip(t *testing.T) {
 		}},
 	}
 
-	back, err := gamingFromView(gamingToView(stored))
+	back, err := gamingFromView(gamingToView(stored, true, true))
 	if err != nil {
 		t.Fatalf("round trip: %v", err)
 	}
 	got, want := back.Policies["poker"], stored.Policies["poker"]
 	if got != want {
 		t.Fatalf("the policy came back as %+v, want %+v", got, want)
+	}
+}
+
+// The index is environment, not policy. It is reported to the console so the
+// enable control can be inactive and say why, and it must never be read back
+// off a POST as if the browser got to decide it.
+func TestTheTransactionIndexIsReportedButNeverAccepted(t *testing.T) {
+	view := gamingToView(types.GamingSettings{Enabled: true}, false, true)
+	body, err := json.Marshal(view)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if !strings.Contains(string(body), `"txIndexActive":false`) {
+		t.Fatalf("the console is not told the index is missing: %s", body)
+	}
+	if !strings.Contains(string(body), `"chainReachable":true`) {
+		t.Fatalf("a reachable node was reported as unreachable: %s", body)
+	}
+
+	// Both false is a node that is down, not a node with no index, and the
+	// console has to be able to tell those apart or it sends the operator to
+	// edit a config file over a node that simply is not answering.
+	down, err := json.Marshal(gamingToView(types.GamingSettings{}, false, false))
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if !strings.Contains(string(down), `"chainReachable":false`) {
+		t.Fatalf("an unreachable node is indistinguishable from a missing index: %s", down)
+	}
+
+	// A caller claiming the index is active changes nothing here: the value
+	// the handler uses comes from dcrd, not from this field.
+	back, err := gamingFromView(gamingSettingsView{Enabled: true, TxIndexActive: true})
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !back.Enabled {
+		t.Fatal("the rest of the view did not survive")
 	}
 }
