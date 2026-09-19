@@ -1,25 +1,25 @@
 images:
   dcrd_image:
     repository: ghcr.io/karamble/dcrpulse-dcrd
-    tag: sha-526dfe1
+    tag: sha-f8b8f5a
   dcrwallet_image:
     repository: ghcr.io/karamble/dcrpulse-dcrwallet
-    tag: sha-526dfe1
+    tag: sha-f8b8f5a
   dcrlnd_image:
     repository: ghcr.io/karamble/dcrpulse-dcrlnd
-    tag: sha-526dfe1
+    tag: sha-f8b8f5a
   brclientd_image:
     repository: ghcr.io/karamble/dcrpulse-brclientd
-    tag: sha-526dfe1
+    tag: sha-f8b8f5a
   dcrdex_image:
     repository: ghcr.io/karamble/dcrpulse-dcrdex
-    tag: sha-526dfe1
+    tag: sha-f8b8f5a
   dashboard_image:
     repository: ghcr.io/karamble/dcrpulse-dashboard
-    tag: sha-526dfe1
+    tag: sha-f8b8f5a
   tor_image:
     repository: ghcr.io/karamble/dcrpulse-tor
-    tag: sha-526dfe1
+    tag: sha-f8b8f5a
   container_utils_image:
     repository: ixsystems/container-utils
     tag: 1.0.2
