@@ -61,7 +61,7 @@ import {
 } from './embedParser';
 import { formatBytes } from '../../utils/bytes';
 import { EmbedRenderer, ImageViewerOpenFn } from './embedRender';
-import { linkifyChatText } from './chatLinkify';
+import { ChatMarkdown } from './chatMarkdown';
 import { splitLnInvoices } from './lnpayParse';
 import { LnPayChip } from './LnPayChip';
 import { QuoteBlock, splitLeadingQuote } from './quoteBlock';
@@ -3047,9 +3047,7 @@ const MessageBodySegments = ({
             part.kind === 'invoice' ? (
               <LnPayChip key={`${i}-${j}`} invoice={part.invoice} />
             ) : part.text.trim() ? (
-              <p key={`${i}-${j}`} className="whitespace-pre-wrap break-words">
-                {linkifyChatText(part.text)}
-              </p>
+              <ChatMarkdown key={`${i}-${j}`} text={part.text} />
             ) : null,
           );
         }
