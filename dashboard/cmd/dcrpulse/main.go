@@ -604,6 +604,8 @@ func main() {
 	api.HandleFunc("/br/invites/write", handlers.BisonrelayInviteWriteHandler).Methods("POST")
 	api.HandleFunc("/br/invites/accept", handlers.BisonrelayInviteAcceptHandler).Methods("POST")
 	api.HandleFunc("/br/join-decred-pulse", handlers.JoinDecredPulseHandler).Methods("POST")
+	api.HandleFunc("/br/join-decred-pulse", handlers.CommunityJoinStatusHandler).Methods("GET")
+	api.HandleFunc("/br/join-decred-pulse/accept", handlers.CommunityJoinAcceptHandler).Methods("POST")
 	api.HandleFunc("/br/events", handlers.BisonrelayEventsHandler).Methods("GET")
 	// BR-MCP client bridge (agent access to Bison Relay tool bots), proxied
 	// to brclientd's mcpclient endpoints.

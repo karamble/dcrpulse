@@ -117,6 +117,19 @@ default unless you run your own brulse instance. The field accepts a URL that
 must start with `http://` or `https://`; clearing it resets the value to the
 default. Saving confirms the bot is reachable.
 
+Automatic community joining requires the bot's `/invite` response to include
+its `botUID` and intended `gcid`. Dcrpulse accepts only a BR invitation matching
+both identities and confirms membership by group ID. Names and aliases are not
+used to identify the community. Older bots still support key exchange, followed
+by manual invitation review and acceptance.
+
+`BRULSE_API_URL`, when set, overrides this saved setting. The current join target
+is saved locally so waiting can resume after a reload or restart. Changing the
+bot URL or local BR identity requires a new join request. A timed-out request can
+be resumed without asking the bot to issue another invite. Deploy the updated
+brulse response before updating clients that require automatic joining.
+
+
 ---
 
 ## Tor Tab

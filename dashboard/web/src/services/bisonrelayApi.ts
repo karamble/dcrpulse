@@ -475,8 +475,24 @@ export const acceptBisonrelayInvite = async (invite: string): Promise<void> => {
 // community "Decred Pulse" group chat and redeems it locally, starting key
 // exchange with the bot. The group-chat invite arrives separately once KX
 // completes.
-export const joinDecredPulse = async (): Promise<void> => {
-  await api.post('/br/join-decred-pulse');
+export interface CommunityJoin {
+  id: string;
+  botUID?: string;
+  gcid?: string;
+  status: 'waiting' | 'uncertain' | 'manual';
+  joined: boolean;
+}
+
+export const joinDecredPulse = async (restart = false): Promise<CommunityJoin> => {
+  const { data } = await api.post<CommunityJoin>('/br/join-decred-pulse', { restart });
+  return data;
+};
+export const getCommunityJoin = async (): Promise<CommunityJoin | null> => {
+  const { data } = await api.get<CommunityJoin | null>('/br/join-decred-pulse');
+  return data;
+};
+export const acceptCommunityJoin = async (id: string): Promise<void> => {
+  await api.post('/br/join-decred-pulse/accept', { id });
 };
 
 export const renameBisonrelayContact = async (

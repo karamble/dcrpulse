@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -86,21 +87,33 @@ type botChallenge struct {
 	PoWRequired bool   `json:"powRequired"`
 }
 
-// RequestDecredPulseInvite asks the bot for an invite for the given Bison Relay
-// public identity (hex), solving the proof-of-work challenge if one is
-// required, and returns the redeemable invite key (brpik1...).
-func RequestDecredPulseInvite(ctx context.Context, pubkeyHex string) (string, error) {
+// DecredPulseInvite binds the invitation key to its issuing bot and target group.
+type DecredPulseInvite struct {
+	InviteKey string `json:"inviteKey"`
+	BotUID    string `json:"botUID"`
+	GCID      string `json:"gcid"`
+}
+
+func validCommunityID(s string) bool {
+	b, err := hex.DecodeString(s)
+	return err == nil && len(b) == 32 && hex.EncodeToString(b) == s
+}
+
+func RequestDecredPulseInvite(ctx context.Context, pubkeyHex string) (DecredPulseInvite, error) {
+	return requestDecredPulseInviteAt(ctx, decredPulseBotURL(), pubkeyHex)
+}
+
+func requestDecredPulseInviteAt(ctx context.Context, base, pubkeyHex string) (DecredPulseInvite, error) {
 	if !DecredPulseBotEnabled() {
-		return "", fmt.Errorf("Decred Pulse bot requests are disabled in settings")
+		return DecredPulseInvite{}, fmt.Errorf("Decred Pulse bot requests are disabled in settings")
 	}
-	base := decredPulseBotURL()
 
 	ctx, cancel := context.WithTimeout(ctx, decredPulseBotTimeout)
 	defer cancel()
 
 	ch, err := fetchBotChallenge(ctx, base)
 	if err != nil {
-		return "", err
+		return DecredPulseInvite{}, err
 	}
 
 	var nonce, solution string
@@ -108,7 +121,7 @@ func RequestDecredPulseInvite(ctx context.Context, pubkeyHex string) (string, er
 		nonce = ch.Nonce
 		solution, err = solvePoW(ctx, ch.Nonce, ch.Bits)
 		if err != nil {
-			return "", err
+			return DecredPulseInvite{}, err
 		}
 	}
 
@@ -174,7 +187,7 @@ func CheckDecredPulseBotHealth(ctx context.Context, baseURL string) error {
 	return nil
 }
 
-func requestBotInvite(ctx context.Context, base, pubkeyHex, nonce, solution string) (string, error) {
+func requestBotInvite(ctx context.Context, base, pubkeyHex, nonce, solution string) (DecredPulseInvite, error) {
 	payload := map[string]string{
 		"pubkey":      pubkeyHex,
 		"powNonce":    nonce,
@@ -182,32 +195,35 @@ func requestBotInvite(ctx context.Context, base, pubkeyHex, nonce, solution stri
 	}
 	buf, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return DecredPulseInvite{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/invite", bytes.NewReader(buf))
 	if err != nil {
-		return "", err
+		return DecredPulseInvite{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := externalHTTPClient.Do(req)
 	if err != nil {
-		return "", err
+		return DecredPulseInvite{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return "", fmt.Errorf("invite bot: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return DecredPulseInvite{}, fmt.Errorf("invite bot: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	var out struct {
-		InviteKey string `json:"inviteKey"`
-	}
+	var out DecredPulseInvite
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<10)).Decode(&out); err != nil {
-		return "", fmt.Errorf("decode invite response: %w", err)
+		return DecredPulseInvite{}, fmt.Errorf("decode invite response: %w", err)
 	}
 	if out.InviteKey == "" {
-		return "", fmt.Errorf("invite bot returned an empty invite key")
+		return DecredPulseInvite{}, fmt.Errorf("invite bot returned an empty invite key")
 	}
-	return out.InviteKey, nil
+	// A legacy bot may omit both IDs, but partially supplied/invalid metadata
+	// must never establish an automatic join binding.
+	if (out.BotUID != "" || out.GCID != "") && (!validCommunityID(out.BotUID) || !validCommunityID(out.GCID)) {
+		return DecredPulseInvite{}, fmt.Errorf("invite bot returned invalid community identities")
+	}
+	return out, nil
 }
 
 // solvePoW finds a solution string such that sha256(nonce ":" solution) has at

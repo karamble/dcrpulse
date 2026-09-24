@@ -1,62 +1,57 @@
 // Copyright (c) 2015-2026 The Decred developers
-// Use of this source code is governed by an ISC
-// license that can be found in the LICENSE file.
-
+// Use of this source code is governed by an ISC license.
 package handlers
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/hex"
+	"dcrpulse/internal/services"
 	"encoding/json"
 	"net/http"
 	"time"
-
-	"dcrpulse/internal/rpc"
-	"dcrpulse/internal/services"
 )
 
-// JoinDecredPulseHandler requests an invite into the community "Decred Pulse"
-// group chat from the brulse invite bot and redeems it locally. Redeeming the
-// invite starts key exchange with the bot; once it completes the bot sends a
-// group-chat invite which the frontend accepts. No funds are involved.
 func JoinDecredPulseHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-
-	// Resolve the local user's own Bison Relay public identity and convert it
-	// from brclientd's base64 encoding to the hex the bot expects.
-	raw, err := rpc.BrclientdUserPublicIdentity(ctx)
-	if err != nil {
-		http.Error(w, "could not read local identity: "+err.Error(), http.StatusBadGateway)
-		return
+	var req struct {
+		Restart bool `json:"restart"`
 	}
-	var id struct {
-		Identity string `json:"identity"`
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid join request", http.StatusBadRequest)
+			return
+		}
 	}
-	if err := json.Unmarshal(raw, &id); err != nil || id.Identity == "" {
-		http.Error(w, "could not determine local identity", http.StatusBadGateway)
-		return
-	}
-	idBytes, err := base64.StdEncoding.DecodeString(id.Identity)
-	if err != nil || len(idBytes) == 0 {
-		http.Error(w, "malformed local identity", http.StatusBadGateway)
-		return
-	}
-	pubkeyHex := hex.EncodeToString(idBytes)
-
-	// Ask the bot for an invite (solving its proof-of-work challenge).
-	inviteKey, err := services.RequestDecredPulseInvite(ctx, pubkeyHex)
+	joined, err := services.BeginCommunityJoin(ctx, req.Restart)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-
-	// Redeem the invite to begin KX with the bot.
-	if err := rpc.BrclientdRedeemPaidInviteKey(ctx, inviteKey); err != nil {
-		http.Error(w, "could not redeem invite: "+err.Error(), http.StatusBadGateway)
+	writeJSON(w, joined)
+}
+func CommunityJoinStatusHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	joined, err := services.CommunityJoinStatus(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-
-	writeJSON(w, map[string]string{"status": "ok"})
+	writeJSON(w, joined)
+}
+func CommunityJoinAcceptHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, "join id is required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := services.AcceptCommunityJoin(ctx, req.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

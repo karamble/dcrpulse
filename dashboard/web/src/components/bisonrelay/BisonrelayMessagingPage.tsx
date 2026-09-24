@@ -29,7 +29,6 @@ import {
   BisonrelayGC,
   BisonrelayMessage,
   BisonrelayPMAttachment,
-  acceptBisonrelayGCInvite,
   acceptBisonrelayInvite,
   acceptBisonrelayKxSuggestion,
   getBisonrelayContacts,
@@ -37,7 +36,8 @@ import {
   getBisonrelayIdentity,
   getBisonrelayMessages,
   joinDecredPulse,
-  listBisonrelayGCInvites,
+  getCommunityJoin,
+  acceptCommunityJoin,
   listBisonrelayGCs,
   sendBisonrelayFile,
   unshareBisonrelayFile,
@@ -92,11 +92,6 @@ import { contactByUid, displayNick } from './bisonrelayNick';
 const MAX_INLINE_BYTES = 800 * 1024;
 const MAX_TRANSFER_BYTES = 1024 * 1024 * 1024;
 
-// DECRED_PULSE_GC is the name of the community welcome group chat the invite
-// bot adds new users to. The "Join Decred chat networks" action is hidden once
-// the user is already a member.
-const DECRED_PULSE_GC = 'Decred Pulse';
-
 const ImageViewerCtx = createContext<ImageViewerOpenFn | null>(null);
 
 // ActiveTarget tags the chat-window subject as either a 1:1 PM contact or
@@ -150,10 +145,14 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
   const [showInviteCreate, setShowInviteCreate] = useState(false);
   const [showInviteAccept, setShowInviteAccept] = useState(false);
   const [showJoinDecredPulse, setShowJoinDecredPulse] = useState(false);
-  const inDecredPulse = useMemo(
-    () => gcs.some((g) => g.name === DECRED_PULSE_GC || g.alias === DECRED_PULSE_GC),
-    [gcs]
-  );
+  const [inDecredPulse, setInDecredPulse] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getCommunityJoin().then((join) => {
+      if (!cancelled) setInDecredPulse(join?.joined === true);
+    }).catch(() => { if (!cancelled) setInDecredPulse(false); });
+    return () => { cancelled = true; };
+  }, [gcs, showJoinDecredPulse]);
   // Our own identity in hex, to resolve "ourself" in member lists (the local
   // user is never in our own contacts). Best-effort; consumers fall back to the
   // raw uid if it is unavailable.
@@ -2538,19 +2537,24 @@ const EmptyThread = ({
 // JoinDecredPulseModal walks the user through joining the community "Decred
 // Pulse" group chat via the welcome bot: it requests an invite (no funds), then
 // waits for the bot's group-chat invite to arrive and auto-accepts it.
-const JoinDecredPulseModal = ({
+export const JoinDecredPulseModal = ({
   onClose,
   onJoined,
 }: {
   onClose: () => void;
   onJoined: () => void;
 }) => {
-  type Phase = 'intro' | 'joining' | 'waiting' | 'done' | 'timeout' | 'error';
+  type Phase = 'intro' | 'joining' | 'waiting' | 'done' | 'timeout' | 'error' | 'manual';
   const [phase, setPhase] = useState<Phase>('intro');
   const [err, setErr] = useState<string | null>(null);
 
-  // Once the invite has been requested, poll for the incoming group-chat invite
-  // and accept it as soon as it arrives.
+  const [joinID, setJoinID] = useState('');
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
   useEffect(() => {
     if (phase !== 'waiting') return;
     let cancelled = false;
@@ -2559,48 +2563,45 @@ const JoinDecredPulseModal = ({
     const tick = async () => {
       attempts++;
       try {
-        // Success is membership in the group chat, regardless of which path
-        // accepted the invite (this modal or the incoming-invites banner).
-        const groups = await listBisonrelayGCs();
-        if (groups.some((g) => g.name === DECRED_PULSE_GC || g.alias === DECRED_PULSE_GC)) {
-          if (cancelled) return;
-          onJoined();
-          setPhase('done');
-          timer = window.setTimeout(() => {
-            if (!cancelled) onClose();
-          }, 1500);
+        const join = await getCommunityJoin();
+        if (cancelled) return;
+        if (!join || join.id !== joinID) {
+          setErr('The bot or local identity changed. Start a new community join.');
+          setPhase('error');
           return;
         }
-        // Accept the bot's group-chat invite as soon as it arrives.
-        const { invites } = await listBisonrelayGCInvites();
-        const inv = invites.find((i) => i.name === DECRED_PULSE_GC && !i.accepted);
-        if (inv) {
-          await acceptBisonrelayGCInvite(inv.id);
+        if (join.joined) {
+          onJoined();
+          setPhase('done');
+          timer = window.setTimeout(() => { if (!cancelled) onClose(); }, 1500);
+          return;
         }
+        // The backend selects only the invite whose authenticated sender and
+        // group match this saved join. No name-based fallback exists.
+        if (cancelled) return;
+        await acceptCommunityJoin(joinID);
       } catch {
-        // Keep polling; transient errors are expected while KX completes.
+        // Transient BR failures and delayed delivery are expected.
       }
       if (cancelled) return;
-      if (attempts >= 40) {
-        setPhase('timeout');
-        return;
-      }
+      if (attempts >= 40) { setPhase('timeout'); return; }
       timer = window.setTimeout(tick, 3000);
     };
     timer = window.setTimeout(tick, 3000);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [phase, onClose, onJoined]);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [phase, joinID, onClose, onJoined]);
 
-  const confirm = async () => {
+  const confirm = async (restart = false) => {
     setErr(null);
     setPhase('joining');
     try {
-      await joinDecredPulse();
-      setPhase('waiting');
+      const join = await joinDecredPulse(restart);
+      if (!mounted.current) return;
+      setJoinID(join.id);
+      if (join.joined) { onJoined(); setPhase('done'); }
+      else setPhase(join.status === 'manual' ? 'manual' : 'waiting');
     } catch (e: any) {
+      if (!mounted.current) return;
       setErr(apiError(e, 'Request failed'));
       setPhase('error');
     }
@@ -2646,7 +2647,7 @@ const JoinDecredPulseModal = ({
               Cancel
             </button>
             <button
-              onClick={confirm}
+              onClick={() => void confirm()}
               className="px-3 py-1.5 rounded-md bg-gradient-primary text-white text-xs font-semibold inline-flex items-center gap-1.5"
             >
               <Users className="h-3.5 w-3.5" /> Join Decred Pulse
@@ -2676,6 +2677,18 @@ const JoinDecredPulseModal = ({
           when it does you can accept it from the invites banner at the top of
           this page.
         </p>
+      )}
+      {phase === 'manual' && (
+        <p className="text-sm text-muted-foreground">
+          This bot does not provide community identity information. Key exchange was
+          requested; review and accept any group invitation manually from the invites banner.
+        </p>
+      )}
+      {(phase === 'timeout' || phase === 'error' || phase === 'manual') && (
+        <div className="flex justify-end gap-2">
+          <button onClick={() => void confirm()} className="px-3 py-1.5 rounded-md text-xs hover:bg-muted/30">Resume waiting</button>
+          <button onClick={() => void confirm(true)} className="px-3 py-1.5 rounded-md text-xs hover:bg-muted/30">Request a new invite</button>
+        </div>
       )}
       {phase === 'error' && (
         <div className="flex items-start gap-2 text-sm text-destructive">
