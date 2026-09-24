@@ -227,14 +227,7 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 
 		Frames: func(game string, after uint64, buf int) (<-chan gamingbridge.Frame, func()) {
 			in, stop := Gaming().SubscribeFrom(game, after, buf)
-			out := make(chan gamingbridge.Frame, buf)
-			go func() {
-				defer close(out)
-				for ev := range in {
-					out <- gamingbridge.Frame{Seq: ev.Seq, GCID: ev.GCID, From: ev.From, Frame: ev.Frame}
-				}
-			}()
-			return out, stop
+			return forwardGamingFrames(in, stop, buf)
 		},
 		Network: func() (string, bool) {
 			net, err := CurrentNetwork(context.Background())
@@ -390,5 +383,50 @@ func spendBridgeErr(err error) error {
 		return gamingbridge.GameSafe(fmt.Errorf("%w: %s", gamingbridge.ErrSpendNotFound, err))
 	default:
 		return err
+	}
+}
+
+// forwardGamingFrames converts bus events for one bridge subscription. Stopping
+// it releases both the bus subscription and this worker, even if nobody drains
+// out. Only the worker closes out; durable inbox records remain for reconnect.
+func forwardGamingFrames(in <-chan GamingFrameEvent, unsubscribe func(), buf int) (<-chan gamingbridge.Frame, func()) {
+	out := make(chan gamingbridge.Frame, buf)
+	cancelled := make(chan struct{})
+	finished := make(chan struct{})
+	var once sync.Once
+	go func() {
+		defer close(finished)
+		defer close(out)
+		for {
+			// Do not keep consuming a ready backlog after explicit cancellation.
+			select {
+			case <-cancelled:
+				return
+			default:
+			}
+			var ev GamingFrameEvent
+			select {
+			case <-cancelled:
+				return
+			case next, ok := <-in:
+				if !ok {
+					return
+				}
+				ev = next
+			}
+			select {
+			case <-cancelled:
+				return
+			case out <- gamingbridge.Frame{Seq: ev.Seq, GCID: ev.GCID, From: ev.From, Frame: ev.Frame}:
+			}
+		}
+	}()
+	return out, func() {
+		once.Do(func() {
+			close(cancelled)
+			unsubscribe()
+		})
+		// Unsubscribe has released the bus lock before waiting for the worker.
+		<-finished
 	}
 }
