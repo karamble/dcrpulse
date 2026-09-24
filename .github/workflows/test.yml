@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test frontend
+        run: npm test
+
       # tsc then vite, so a type error fails the job.
       - name: Build
         run: npm run build
