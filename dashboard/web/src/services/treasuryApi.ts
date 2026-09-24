@@ -76,7 +76,8 @@ export async function triggerTSpendScan(startHeight?: number): Promise<{ success
     body: JSON.stringify({ startHeight: startHeight || 552448 }),
   });
   if (!response.ok) {
-    throw new Error('Failed to trigger TSpend scan');
+    const reason = (await response.text()).trim();
+    throw new Error(reason || 'Failed to trigger TSpend scan');
   }
   return response.json();
 }

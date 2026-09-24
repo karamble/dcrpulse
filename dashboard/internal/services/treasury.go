@@ -6,6 +6,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/dcrutil/v4"
 	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
+	"github.com/decred/dcrd/rpcclient/v8"
 )
 
 // Constants for treasury
@@ -300,30 +302,77 @@ func extractTSpendHistory(tx chainjson.TxRawResult, blockHeight int64, blockHash
 	}
 }
 
-// TriggerHistoricalScan starts a background scan of the blockchain for all TSpends
-func TriggerHistoricalScan(startHeight int64) error {
-	scanMutex.Lock()
-	if isScanRunning {
-		scanMutex.Unlock()
+// ErrInvalidScanHeight identifies a start beyond the captured chain tip.
+var ErrInvalidScanHeight = errors.New("invalid treasury scan start height")
+
+// TriggerHistoricalScan validates admission before replacing shared scan state.
+// Once admitted, the background scan outlives the requesting HTTP/MCP call.
+func TriggerHistoricalScan(ctx context.Context, startHeight int64) error {
+	scanMutex.RLock()
+	running := isScanRunning
+	scanMutex.RUnlock()
+	if running {
 		return fmt.Errorf("scan already in progress")
 	}
-	isScanRunning = true
-
-	// Validate startHeight
 	if startHeight < TreasuryActivationHeight {
 		startHeight = TreasuryActivationHeight
 	}
+	client := rpc.DcrdClient
+	if client == nil {
+		return fmt.Errorf("dcrd client not available")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	currentHeight, err := client.GetBlockCount(ctx)
+	if err != nil {
+		return fmt.Errorf("get block count for scan: %w", err)
+	}
+	if currentHeight < 0 {
+		return fmt.Errorf("invalid chain tip: %d", currentHeight)
+	}
+	if startHeight > currentHeight {
+		return fmt.Errorf("%w: requested %d exceeds current chain tip %d", ErrInvalidScanHeight, startHeight, currentHeight)
+	}
 
+	scanMutex.Lock()
+	defer scanMutex.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if isScanRunning {
+		return fmt.Errorf("scan already in progress")
+	}
+	isScanRunning = true
 	currentScanHeight = startHeight
+	totalScanHeight = currentHeight
 	tspendFoundCount = 0
 	scanResults = []types.TSpendHistory{}
 	newTSpendBuffer = []types.TSpendHistory{}
 	scanFailedCount = 0
 	scanSafeHeight = 0
-	scanMutex.Unlock()
-
-	go scanHistoricalTSpendsBackground(startHeight)
+	go scanHistoricalTSpendsBackground(client, startHeight, currentHeight)
 	return nil
+}
+
+// firstScanHeight aligns only when the next TVI fits inside the validated range.
+func firstScanHeight(start, tip int64) (int64, bool) {
+	if start < 1 || tip < start {
+		return 0, false
+	}
+	delta := (TreasuryVoteInterval - start%TreasuryVoteInterval) % TreasuryVoteInterval
+	if delta > tip-start {
+		return 0, false
+	}
+	return start + delta, true
+}
+
+// nextScanHeight checks the remaining range before adding, including after a
+// failed block read. Neither alignment nor iteration can wrap below zero.
+func nextScanHeight(height, tip int64) (int64, bool) {
+	if height < 1 || tip < height || tip-height < TreasuryVoteInterval {
+		return 0, false
+	}
+	return height + TreasuryVoteInterval, true
 }
 
 // safeResumeHeight returns the height a later scan may safely resume above. A
@@ -346,15 +395,15 @@ func safeResumeHeight(lastScanned int64, failed []int64) int64 {
 }
 
 // readScanBlock fetches one block for the historical scan.
-func readScanBlock(ctx context.Context, height int64) (*chainjson.GetBlockVerboseResult, error) {
-	blockHash, err := rpc.DcrdClient.GetBlockHash(ctx, height)
+func readScanBlock(ctx context.Context, client *rpcclient.Client, height int64) (*chainjson.GetBlockVerboseResult, error) {
+	blockHash, err := client.GetBlockHash(ctx, height)
 	if err != nil {
 		return nil, fmt.Errorf("get block hash: %w", err)
 	}
 
 	// verboseTx=true returns every tx's full vin/vout inline (rawtx/rawstx),
 	// so no per-transaction getrawtransaction call is needed.
-	block, err := rpc.DcrdClient.GetBlockVerbose(ctx, blockHash, true)
+	block, err := client.GetBlockVerbose(ctx, blockHash, true)
 	if err != nil {
 		return nil, fmt.Errorf("getblock %s: %w", blockHash, err)
 	}
@@ -363,11 +412,11 @@ func readScanBlock(ctx context.Context, height int64) (*chainjson.GetBlockVerbos
 
 // readScanBlockRetry retries readScanBlock, so that a transient dcrd failure
 // does not silently cost the scan a block.
-func readScanBlockRetry(ctx context.Context, height int64) (*chainjson.GetBlockVerboseResult, error) {
+func readScanBlockRetry(ctx context.Context, client *rpcclient.Client, height int64) (*chainjson.GetBlockVerboseResult, error) {
 	var err error
 	for attempt := 1; attempt <= scanBlockAttempts; attempt++ {
 		var block *chainjson.GetBlockVerboseResult
-		if block, err = readScanBlock(ctx, height); err == nil {
+		if block, err = readScanBlock(ctx, client, height); err == nil {
 			return block, nil
 		}
 		govnLog.Warnf("Failed to read block %d (attempt %d/%d): %v", height, attempt, scanBlockAttempts, err)
@@ -384,48 +433,37 @@ func readScanBlockRetry(ctx context.Context, height int64) (*chainjson.GetBlockV
 }
 
 // scanHistoricalTSpendsBackground performs the historical scan in the background
-func scanHistoricalTSpendsBackground(startHeight int64) {
+func scanHistoricalTSpendsBackground(client *rpcclient.Client, startHeight, currentHeight int64) {
 	ctx := context.Background()
-
-	currentHeight, err := rpc.DcrdClient.GetBlockCount(ctx)
-	if err != nil {
-		govnLog.Errorf("Error getting block count for scan: %v", err)
+	var failedHeights []int64
+	defer func() {
 		scanMutex.Lock()
 		isScanRunning = false
-		// No block was reached, so hold the resume point below the start
-		// rather than let the client advance over unscanned ground.
-		scanSafeHeight = safeResumeHeight(startHeight, []int64{startHeight})
+		scanFailedCount = len(failedHeights)
+		scanSafeHeight = safeResumeHeight(currentScanHeight, failedHeights)
+		found, safeHeight := tspendFoundCount, scanSafeHeight
 		scanMutex.Unlock()
+		if len(failedHeights) > 0 {
+			govnLog.Warnf("Historical TSpend scan finished with %d unread block(s), first at %d. Found %d TSpends; resume height held at %d",
+				len(failedHeights), failedHeights[0], found, safeHeight)
+			return
+		}
+		govnLog.Infof("Historical TSpend scan complete. Found %d TSpends", found)
+	}()
+
+	firstTVI, ok := firstScanHeight(startHeight, currentHeight)
+	if !ok {
 		return
 	}
-
-	scanMutex.Lock()
-	totalScanHeight = currentHeight
-	scanMutex.Unlock()
-
-	// TSpends may only be mined in blocks on a treasury-vote-interval (TVI)
-	// boundary (height % TVI == 0), so stride by the TVI and skip the ~99.7%
-	// of blocks that cannot contain one. Align the start up to the first TVI
-	// boundary at/after startHeight.
-	firstTVI := startHeight
-	if firstTVI < 1 {
-		firstTVI = 1
-	}
-	if rem := firstTVI % TreasuryVoteInterval; rem != 0 {
-		firstTVI += TreasuryVoteInterval - rem
-	}
-
 	govnLog.Infof("Starting historical TSpend scan from block %d to %d (TVI stride %d)", firstTVI, currentHeight, TreasuryVoteInterval)
 
-	var failedHeights []int64
-
-	for h := firstTVI; h <= currentHeight; h += TreasuryVoteInterval {
+	for h, more := firstTVI, true; more; h, more = nextScanHeight(h, currentHeight) {
 		// Update progress
 		scanMutex.Lock()
 		currentScanHeight = h
 		scanMutex.Unlock()
 
-		block, err := readScanBlockRetry(ctx, h)
+		block, err := readScanBlockRetry(ctx, client, h)
 		if err != nil {
 			govnLog.Errorf("Dropping block %d from the scan after %d attempts: %v", h, scanBlockAttempts, err)
 			failedHeights = append(failedHeights, h)
@@ -447,20 +485,6 @@ func scanHistoricalTSpendsBackground(startHeight int64) {
 			}
 		}
 	}
-
-	scanMutex.Lock()
-	isScanRunning = false
-	scanFailedCount = len(failedHeights)
-	scanSafeHeight = safeResumeHeight(currentScanHeight, failedHeights)
-	found, safeHeight := tspendFoundCount, scanSafeHeight
-	scanMutex.Unlock()
-
-	if len(failedHeights) > 0 {
-		govnLog.Warnf("Historical TSpend scan finished with %d unread block(s), first at %d. Found %d TSpends; resume height held at %d",
-			len(failedHeights), failedHeights[0], found, safeHeight)
-		return
-	}
-	govnLog.Infof("Historical TSpend scan complete. Found %d TSpends", found)
 }
 
 // GetScanProgress returns the current scan progress

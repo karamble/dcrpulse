@@ -241,7 +241,7 @@ export const GovernanceDashboard = () => {
       setScanProgress(progress);
     } catch (error) {
       console.error('Failed to trigger scan:', error);
-      alert('Failed to start scan. Please check your connection to the backend.');
+      alert(error instanceof Error ? error.message : 'Failed to start scan.');
     }
   };
 

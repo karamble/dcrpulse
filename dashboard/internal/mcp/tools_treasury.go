@@ -17,7 +17,7 @@ const treasuryActivationHeight int64 = 552448
 
 // scanStartInput parameterizes treasury_scan_start.
 type scanStartInput struct {
-	StartHeight int64 `json:"startHeight,omitempty" jsonschema:"block height to start the scan from; defaults to and is clamped to the treasury activation height"`
+	StartHeight int64 `json:"startHeight,omitempty" jsonschema:"block height to start the scan from; defaults to and is clamped to the treasury activation height; must not exceed the current chain tip"`
 }
 
 // treasuryTools are the read-only "treasury" domain tools plus the local
@@ -45,7 +45,7 @@ var treasuryTools = []toolDef{
 			if startHeight < treasuryActivationHeight {
 				startHeight = treasuryActivationHeight
 			}
-			if err := services.TriggerHistoricalScan(startHeight); err != nil {
+			if err := services.TriggerHistoricalScan(ctx, startHeight); err != nil {
 				return nil, err
 			}
 			return map[string]any{"started": true, "startHeight": startHeight}, nil

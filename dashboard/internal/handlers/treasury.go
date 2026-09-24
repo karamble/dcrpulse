@@ -7,7 +7,9 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -52,20 +54,28 @@ func TriggerTSpendScanHandler(w http.ResponseWriter, r *http.Request) {
 		StartHeight int64 `json:"startHeight"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// If no body or invalid, default to treasury activation height
-		req.StartHeight = 552448
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid scan request: startHeight must be an int64", http.StatusBadRequest)
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid scan request: expected one JSON object", http.StatusBadRequest)
+		return
+	}
+	if req.StartHeight < services.TreasuryActivationHeight {
+		req.StartHeight = services.TreasuryActivationHeight
 	}
 
-	// If startHeight is 0 or invalid, use treasury activation height
-	if req.StartHeight < 552448 {
-		req.StartHeight = 552448
-	}
-
-	err := services.TriggerHistoricalScan(req.StartHeight)
+	err := services.TriggerHistoricalScan(r.Context(), req.StartHeight)
 	if err != nil {
 		govnLog.Errorf("Error triggering TSpend scan: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if errors.Is(err, services.ErrInvalidScanHeight) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 
