@@ -448,6 +448,14 @@ func BuildEmbedTag(name, mime, dataB64 string) string {
 	return "--embed[" + strings.Join(parts, ",") + "]--"
 }
 
+// BuildAudioNoteEmbedTag renders the tag bruig sends for a voice note: alt,
+// type, filename, data, with alt written raw exactly as bruig does.
+func BuildAudioNoteEmbedTag(filename, dataB64 string) string {
+	filename = strings.ReplaceAll(filename, ",", "")
+	filename = strings.ReplaceAll(filename, "=", "")
+	return "--embed[alt=Audio note,type=audio/ogg,filename=" + filename + ",data=" + dataB64 + "]--"
+}
+
 func parseBREmbedTag(inner string) BRPostBodySegment {
 	seg := BRPostBodySegment{Kind: "embed"}
 	for _, part := range strings.Split(inner, ",") {

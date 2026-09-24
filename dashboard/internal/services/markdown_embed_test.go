@@ -26,3 +26,16 @@ func TestBuildEmbedTag(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildAudioNoteEmbedTag locks the voice-note tag to bruig's: alt before
+// type, then filename, then data, and "Audio note" with its literal space.
+func TestBuildAudioNoteEmbedTag(t *testing.T) {
+	got := BuildAudioNoteEmbedTag("2026-09-24-20_33_52-audionote.opus", "T2dnUw==")
+	want := "--embed[alt=Audio note,type=audio/ogg,filename=2026-09-24-20_33_52-audionote.opus,data=T2dnUw==]--"
+	if got != want {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
+	if got := BuildAudioNoteEmbedTag("a,b=c.opus", "X"); got != "--embed[alt=Audio note,type=audio/ogg,filename=abc.opus,data=X]--" {
+		t.Fatalf("filename separators not stripped: %q", got)
+	}
+}

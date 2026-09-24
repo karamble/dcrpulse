@@ -601,6 +601,7 @@ func main() {
 	api.HandleFunc("/br/gc/{gcid}/alias", handlers.BisonrelayGCAliasHandler).Methods("POST")
 	api.HandleFunc("/br/gc/{gcid}/resend-list", handlers.BisonrelayGCResendListHandler).Methods("POST")
 	api.HandleFunc("/br/pm", handlers.BisonrelayPMHandler).Methods("POST")
+	api.HandleFunc("/br/audionote", handlers.BisonrelayAudioNoteHandler).Methods("POST")
 	api.HandleFunc("/br/invites/write", handlers.BisonrelayInviteWriteHandler).Methods("POST")
 	api.HandleFunc("/br/invites/accept", handlers.BisonrelayInviteAcceptHandler).Methods("POST")
 	api.HandleFunc("/br/join-decred-pulse", handlers.JoinDecredPulseHandler).Methods("POST")

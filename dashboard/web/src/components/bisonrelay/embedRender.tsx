@@ -7,6 +7,7 @@ import { DownloadEmbed } from './DownloadEmbed';
 import { EmbedSegment, embedFileUrl, isImageMime } from './embedParser';
 import { formatBytes } from '../../utils/bytes';
 import { QuoteEmbedCard } from './QuoteEmbedCard';
+import { AudioNoteEmbed } from './audionote/AudioNoteEmbed';
 
 // ImageViewerOpenFn opens the shared image lightbox. Callers supply their own
 // opener: the chat reads it from context, the feed wraps its viewer state.
@@ -51,6 +52,11 @@ export const EmbedRenderer = ({
       );
     }
     return <DownloadEmbed seg={embed} uid={downloadUid ?? ''} self={downloadSelf} />;
+  }
+  // A voice note, ours or bruig's, is an inline audio/ogg embed; anything
+  // past the render bound stays a download chip like an oversized image.
+  if (embed.mime === 'audio/ogg' && embed.dataB64 && embed.dataB64.length <= (MAX_INLINE_RENDER_BYTES * 4) / 3) {
+    return <AudioNoteEmbed dataB64={embed.dataB64} filename={embed.filename || embed.name} />;
   }
   const inlineUrl = embed.dataB64 ? `data:${embed.mime};base64,${embed.dataB64}` : '';
   const fileUrl = inlineUrl || embedFileUrl(embed.localFilename);

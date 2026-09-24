@@ -183,3 +183,19 @@ func TestSecurityHeadersKeepScriptsToOurOwnOrigin(t *testing.T) {
 		t.Errorf("%q weakens script execution", scriptSrc)
 	}
 }
+
+// Voice notes play from an object URL built in the page, and a note received
+// from a peer arrives as inline bytes, so media may come from blob: and data:.
+// Nothing else widens: scripts stay on our own origin.
+func TestTheDocumentPolicyPlaysInlineAudio(t *testing.T) {
+	policy := buildCSP(nil)
+	var mediaSrc string
+	for _, d := range strings.Split(policy, ";") {
+		if d = strings.TrimSpace(d); strings.HasPrefix(d, "media-src") {
+			mediaSrc = d
+		}
+	}
+	if mediaSrc != "media-src 'self' blob: data:" {
+		t.Errorf("media-src = %q, want 'self' blob: data:", mediaSrc)
+	}
+}

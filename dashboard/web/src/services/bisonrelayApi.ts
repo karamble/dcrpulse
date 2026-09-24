@@ -433,6 +433,20 @@ export const sendBisonrelayPM = async (
   return data ?? { body: msg };
 };
 
+// sendBisonrelayAudioNote sends a voice note as a PM: the raw Opus packets,
+// length-prefixed and base64'd, which the server muxes and wraps as bruig
+// does. The returned body is the whole message, for the optimistic echo.
+export const sendBisonrelayAudioNote = async (
+  user: string,
+  packetsB64: string,
+): Promise<BisonrelayPMSendResult> => {
+  const { data } = await api.post<BisonrelayPMSendResult>('/br/audionote', {
+    user,
+    packets_b64: packetsB64,
+  });
+  return data;
+};
+
 export interface BisonrelayFileSendResult {
   filename: string;
   size: number;

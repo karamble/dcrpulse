@@ -43,6 +43,7 @@ import {
   unshareBisonrelayFile,
   sendBisonrelayGCMessage,
   sendBisonrelayPM,
+  sendBisonrelayAudioNote,
   subscribeBisonrelayPosts,
   tipBisonrelayContact,
   unsubscribeBisonrelayPosts,
@@ -73,6 +74,7 @@ import {
 } from './editor';
 import { EmojiPicker } from './EmojiPicker';
 import { ChatFormatMenu } from './ChatFormatMenu';
+import { AudioNoteButton } from './audionote/AudioNoteButton';
 import { TipModal } from './TipModal';
 import { ImageViewerModal, ViewerImage } from './ImageViewerModal';
 import { avatarDataUrl, colorForUid } from './bisonrelayAvatar';
@@ -1156,6 +1158,33 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     }
   };
 
+  // A voice note is its own PM: the server builds bruig's container and
+  // tag, and the returned body is what the echo shows. The typed draft is
+  // left alone.
+  const handleSendAudioNote = async (packetsB64: string): Promise<boolean> => {
+    if (!selected || selected.kind === 'group' || sending) return false;
+    setSending(true);
+    try {
+      const result = await sendBisonrelayAudioNote(nickOrUid(selected.value), packetsB64);
+      setMessages((prev) => [
+        ...prev,
+        {
+          message: result.body,
+          from: ownNick,
+          timestamp: Math.floor(Date.now() / 1000),
+          internal: false,
+          delivered: false,
+        },
+      ]);
+      return true;
+    } catch (err: any) {
+      setMessagesErr(apiError(err, 'Send failed'));
+      return false;
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleAttachPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = '';
@@ -1690,6 +1719,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
               onRemoveAttachment={removeAttachment}
               onRemoveQuotedEmbed={removeQuotedEmbed}
               onClearStagedReply={clearStagedReply}
+              onSendAudioNote={handleSendAudioNote}
               onShowTip={() => setShowTip(true)}
             />
             )}
@@ -1919,6 +1949,7 @@ interface ChatComposerProps {
   onRemoveQuotedEmbed: (qe: QuotedEmbed) => void;
   onClearStagedReply: () => void;
   onShowTip: () => void;
+  onSendAudioNote: (packetsB64: string) => Promise<boolean>;
 }
 
 // ChatComposer owns the draft text so per-keystroke re-renders stay inside
@@ -1948,6 +1979,7 @@ const ChatComposer = ({
   onRemoveQuotedEmbed,
   onClearStagedReply,
   onShowTip,
+  onSendAudioNote,
 }: ChatComposerProps) => {
   const [draft, setDraft] = useState('');
 
@@ -2106,6 +2138,9 @@ const ChatComposer = ({
           className="flex-1 min-w-0 px-1 py-1.5 bg-transparent text-foreground leading-normal resize-none overflow-y-auto max-h-[9rem] focus:outline-none disabled:opacity-50"
         />
         <ChatFormatMenu onWrap={wrapDraftSelection} disabled={sending} />
+        {!group && selectedContact && (
+          <AudioNoteButton disabled={sending || !!attachment} onSend={onSendAudioNote} />
+        )}
         <ChatAttachMenu
           group={group}
           disabled={sending}
