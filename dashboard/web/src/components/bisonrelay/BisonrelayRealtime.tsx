@@ -83,7 +83,7 @@ export const BisonrelayRealtime = () => {
     <div className="space-y-4">
       <IncomingInviteBanner activeRV={activeRV} onAccepted={goToRoom} />
       {activeRV ? (
-        <ActiveCallView rv={activeRV} onLeave={() => navigateTo('realtime')} />
+        <ActiveCallView key={activeRV} rv={activeRV} onLeave={() => navigateTo('realtime')} />
       ) : (
         <RoomList onOpen={goToRoom} />
       )}
@@ -328,6 +328,7 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
   const [pipeline, setPipeline] = useState<RealtimeAudioPipeline | null>(null);
   const [connected, setConnected] = useState(false);
   const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
   const [err, setErr] = useState<string | null>(null);
   const [sendErr, setSendErr] = useState<string | null>(null);
   const [packetsSent, setPacketsSent] = useState(0);
@@ -370,24 +371,31 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
   // real transients once we are live.
   useEffect(() => {
     if (!callIsLive) return undefined;
+    let active = true;
     const p = new RealtimeAudioPipeline({
       rv,
+      initialMuted: mutedRef.current,
       callbacks: {
         onConnected: () => {
+          if (!active) return;
           setConnected(true);
           setReconnecting(null);
         },
-        onDisconnected: () => setConnected(false),
-        onReconnecting: (attempt, nextMs) =>
-          setReconnecting({ attempt, nextMs }),
-        onError: (msg) => setErr(msg),
-        onInboundFrame: () => setPacketsInbound((n) => n + 1),
+        onDisconnected: () => { if (active) setConnected(false); },
+        onReconnecting: (attempt, nextMs) => {
+          if (active) setReconnecting({ attempt, nextMs });
+        },
+        onError: (msg) => { if (active) setErr(msg); },
+        onInboundFrame: () => { if (active) setPacketsInbound((n) => n + 1); },
       },
     });
-    p.start().catch((e) => setErr(e?.message ?? String(e)));
+    p.start().catch((e) => { if (active) setErr(e?.message ?? String(e)); });
     setPipeline(p);
     return () => {
+      active = false;
       p.stop();
+      setConnected(false);
+      setPipeline((current) => current === p ? null : current);
     };
   }, [rv, callIsLive]);
 
@@ -613,7 +621,8 @@ const ActiveCallView = ({ rv, onLeave }: { rv: string; onLeave: () => void }) =>
 
   const handleMuteToggle = () => {
     if (!pipeline) return;
-    const next = !muted;
+    const next = !mutedRef.current;
+    mutedRef.current = next;
     pipeline.setMuted(next);
     setMuted(next);
   };

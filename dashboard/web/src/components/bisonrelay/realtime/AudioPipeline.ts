@@ -35,6 +35,7 @@ export interface PipelineCallbacks {
 export interface PipelineOptions {
   rv: string;
   callbacks?: PipelineCallbacks;
+  initialMuted?: boolean;
 }
 
 // isSecureContext reports whether the page may use WebCodecs and the
@@ -59,10 +60,16 @@ export const supportsWebCodecsAudio = (): boolean => {
 
 interface OutboundState {
   stream: MediaStream;
+  source: MediaStreamAudioSourceNode;
   worklet: AudioWorkletNode;
-  encoder: AudioEncoder;
+  encoder: AudioEncoder | null;
+  ws: WebSocket;
+  generation: number;
+  epoch: number;
+  accum: Float32Array;
+  filled: number;
+  captureTsUs: number;
   ts: number;          // frame-counted, +20 per encoded chunk
-  muted: boolean;
   packetsSent: number;
   packetsRateLimited: number;
 }
@@ -122,6 +129,12 @@ export class RealtimeAudioPipeline {
   // trouble or brclientd restart.
   private static readonly PRECONNECT_DELAYS_MS = [500, 1000, 2000, 3000, 5000, 5000, 5000];
   private static readonly RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 30000];
+  // Consent outlives disposable capture/connection resources.
+  private desiredMuted: boolean;
+  private muteEpoch = 0;
+  private connectionGeneration = 0;
+  private pendingStream: MediaStream | null = null;
+  private cancelPendingOutbound: (() => void) | null = null;
   private stopped = false;
   private hadConnection = false;
   private reconnectAttempt = 0;
@@ -130,6 +143,7 @@ export class RealtimeAudioPipeline {
   constructor(opts: PipelineOptions) {
     this.rv = opts.rv;
     this.cb = opts.callbacks ?? {};
+    this.desiredMuted = opts.initialMuted ?? false;
   }
 
   // start opens the WebSocket and, on open, begins the outbound mic
@@ -139,6 +153,7 @@ export class RealtimeAudioPipeline {
     if (!supportsWebCodecsAudio()) {
       throw new Error('WebCodecs AudioEncoder is required. Use Chrome 130+, Edge 130+, or Firefox 130+.');
     }
+    if (this.ws || this.reconnectTimer) return;
     this.stopped = false;
     this.openSocket();
   }
@@ -147,42 +162,55 @@ export class RealtimeAudioPipeline {
   // called, reconnect is disabled even if a stale onclose fires later.
   stop(): void {
     this.stopped = true;
+    this.connectionGeneration++;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    const ws = this.ws;
+    this.ws = null;
     this.teardownOutbound();
     this.teardownInbound();
     if (this.ctx) {
-      try { this.ctx.close(); } catch { /* ignore */ }
+      const ctx = this.ctx;
       this.ctx = null;
+      try { void ctx.close().catch(() => { /* already closed */ }); } catch { /* ignore */ }
     }
-    if (this.ws) {
-      try { this.ws.close(); } catch { /* ignore */ }
-      this.ws = null;
-    }
+    try { ws?.close(); } catch { /* ignore */ }
+  }
+
+  private ownsSocket(ws: WebSocket, generation: number): boolean {
+    return !this.stopped && this.ws === ws && this.connectionGeneration === generation;
   }
 
   private openSocket(): void {
+    if (this.stopped) return;
+    const generation = ++this.connectionGeneration;
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${proto}//${window.location.host}/api/br/rtdt/sessions/${encodeURIComponent(this.rv)}/audio`;
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
+    const current = () => this.ownsSocket(ws, generation);
+    let opened = false;
 
     ws.onopen = () => {
+      if (!current() || opened) return;
+      opened = true;
       this.hadConnection = true;
       this.reconnectAttempt = 0;
       this.cb.onConnected?.();
-      this.startOutbound().catch((err) => {
-        this.cb.onError?.(err?.message ?? String(err));
+      this.startOutbound(ws, generation).catch((err) => {
+        if (current()) this.cb.onError?.(err?.message ?? String(err));
       });
     };
     ws.onclose = (ev) => {
-      this.cb.onDisconnected?.();
+      if (!current()) return;
+      this.connectionGeneration++;
+      this.ws = null;
       this.teardownOutbound();
       this.teardownInbound();
-      this.ws = null;
+      this.cb.onDisconnected?.();
       if (this.stopped) return;
       // 1008 (policy violation) is brclientd's "already attached in
       // another tab" signal. Do not retry that.
@@ -193,9 +221,11 @@ export class RealtimeAudioPipeline {
       this.scheduleReconnect();
     };
     ws.onerror = () => {
-      this.cb.onError?.('WebSocket error');
+      if (current()) this.cb.onError?.('WebSocket error');
     };
-    ws.onmessage = (e) => this.handleInbound(e.data);
+    ws.onmessage = (e) => {
+      if (current()) this.handleInbound(e.data);
+    };
   }
 
   private scheduleReconnect(): void {
@@ -210,13 +240,15 @@ export class RealtimeAudioPipeline {
       this.cb.onError?.(msg);
       return;
     }
+    const generation = this.connectionGeneration;
     const delay = ladder[this.reconnectAttempt];
     this.reconnectAttempt++;
     this.cb.onReconnecting?.(this.reconnectAttempt, delay);
+    if (this.stopped || generation !== this.connectionGeneration) return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {
+      if (this.stopped || generation !== this.connectionGeneration) return;
       this.reconnectTimer = null;
-      if (this.stopped) return;
       this.openSocket();
     }, delay);
   }
@@ -254,16 +286,25 @@ export class RealtimeAudioPipeline {
     };
   }
 
-  // setMuted gates the mic without tearing down the encoder pipeline.
-  // Muted = we still listen for inbound, but stop encoding outbound.
+  // Muting preserves inbound playback. Epoch changes revoke queued PCM and
+  // encoder outputs, including callbacks that arrive after a later unmute.
   setMuted(muted: boolean): void {
+    if (muted === this.desiredMuted) return;
+    this.desiredMuted = muted;
+    this.muteEpoch++;
+    this.pendingStream?.getAudioTracks().forEach((track) => { track.enabled = !muted; });
     if (this.out) {
-      this.out.muted = muted;
+      try {
+        this.applyMute(this.out);
+      } catch (err: any) {
+        this.teardownOutbound();
+        this.cb.onError?.(`AudioEncoder error: ${err?.message ?? err}`);
+      }
     }
   }
 
   isMuted(): boolean {
-    return this.out?.muted ?? true;
+    return this.desiredMuted;
   }
 
   outboundCounters(): { sent: number; rateLimited: number } {
@@ -274,117 +315,157 @@ export class RealtimeAudioPipeline {
   }
 
   private async ensureCtx(): Promise<AudioContext> {
-    if (this.ctx) {
-      if (this.ctx.state === 'suspended') {
-        try { await this.ctx.resume(); } catch { /* ignore */ }
-      }
-      return this.ctx;
+    const ctx = this.ctx ?? (this.ctx = new AudioContext({ sampleRate: 48000 }));
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch { /* ignore */ }
     }
-    this.ctx = new AudioContext({ sampleRate: 48000 });
-    if (this.ctx.state === 'suspended') {
-      try { await this.ctx.resume(); } catch { /* ignore */ }
-    }
-    return this.ctx;
+    // Never return a replacement context (or null) after a pending resume.
+    return ctx;
   }
 
-  private async startOutbound(): Promise<void> {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: 48000,
+  private async startOutbound(ws: WebSocket, generation: number): Promise<void> {
+    const current = () => this.ownsSocket(ws, generation);
+    if (!current()) return;
+    let stream: MediaStream | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let worklet: AudioWorkletNode | null = null;
+    let out: OutboundState | null = null;
+    let installed = false;
+    // Pending resources are owned even while resume/addModule is unresolved.
+    // Cleanup can run again when a late getUserMedia result finally arrives.
+    const dispose = () => {
+      if (out?.encoder) {
+        const encoder = out.encoder;
+        out.encoder = null;
+        try { encoder.close(); } catch { /* ignore */ }
+      }
+      if (worklet) {
+        worklet.port.onmessage = null;
+        try { worklet.port.close(); } catch { /* ignore */ }
+        try { worklet.disconnect(); } catch { /* ignore */ }
+      }
+      try { source?.disconnect(); } catch { /* ignore */ }
+      stream?.getTracks().forEach((track) => track.stop());
+      if (this.pendingStream === stream) this.pendingStream = null;
+      if (out && this.out === out) this.out = null;
+    };
+    this.cancelPendingOutbound = dispose;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 48000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      });
+      if (!current()) return;
+      this.pendingStream = stream;
+      stream.getAudioTracks().forEach((track) => { track.enabled = !this.desiredMuted; });
+      const ctx = await this.ensureCtx();
+      if (!current()) return;
+      await ctx.audioWorklet.addModule(MIC_TAP_WORKLET_URL);
+      if (!current()) return;
+      source = ctx.createMediaStreamSource(stream);
+      worklet = new AudioWorkletNode(ctx, 'rtdt-mic-tap', {
+        numberOfInputs: 1,
+        numberOfOutputs: 0,
         channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: false,
-    });
-
-    const ctx = await this.ensureCtx();
-    await ctx.audioWorklet.addModule(MIC_TAP_WORKLET_URL);
-    const source = ctx.createMediaStreamSource(stream);
-    const worklet = new AudioWorkletNode(ctx, 'rtdt-mic-tap', {
-      numberOfInputs: 1,
-      numberOfOutputs: 0,
-      channelCount: 1,
-    });
-    source.connect(worklet);
-
-    const Enc = (window as any).AudioEncoder as typeof AudioEncoder;
-    const AudioDataCtor = (window as any).AudioData as typeof AudioData;
-    const encoder = new Enc({
-      output: (chunk) => this.sendChunk(chunk),
-      error: (err) => this.cb.onError?.(`AudioEncoder error: ${err?.message ?? err}`),
-    });
-    // Bruig: gopus VOIP application, 48k mono, 20 ms frame, 40 kbps.
-    encoder.configure({
-      codec: 'opus',
-      sampleRate: 48000,
-      numberOfChannels: 1,
-      bitrate: 40000,
-      opus: {
-        application: 'voip',
-        frameDuration: 20000, // microseconds; 20 ms
-        useinbandfec: true,
-      },
-    } as AudioEncoderConfig);
-
-    this.out = {
-      stream,
-      worklet,
-      encoder,
-      ts: 0,
-      muted: false,
-      packetsSent: 0,
-      packetsRateLimited: 0,
-    };
-
-    // Forward PCM frames from the worklet to the encoder. The worklet
-    // posts {samples: Float32Array, timestamp: number} on each render
-    // quantum (128 samples = ~2.67 ms at 48 kHz); we accumulate into
-    // 20 ms chunks of 960 samples before feeding the encoder.
-    const samplesPerFrame = 960;
-    const accum = new Float32Array(samplesPerFrame);
-    let filled = 0;
-    let captureTsUs = 0;
-    worklet.port.onmessage = (e) => {
-      if (!this.out || this.out.muted) return;
-      const data: Float32Array = e.data.samples;
-      let offset = 0;
-      while (offset < data.length) {
-        const room = samplesPerFrame - filled;
-        const take = Math.min(room, data.length - offset);
-        accum.set(data.subarray(offset, offset + take), filled);
-        filled += take;
-        offset += take;
-        if (filled === samplesPerFrame) {
-          const ad = new AudioDataCtor({
-            format: 'f32-planar',
-            sampleRate: 48000,
-            numberOfFrames: samplesPerFrame,
-            numberOfChannels: 1,
-            timestamp: captureTsUs,
-            data: accum.slice(),
-          });
-          captureTsUs += 20000;
-          try {
-            this.out!.encoder.encode(ad);
-          } finally {
-            ad.close();
-          }
-          filled = 0;
-        }
-      }
-    };
+        processorOptions: { epoch: this.muteEpoch, muted: this.desiredMuted },
+      });
+      out = {
+        stream, source, worklet, ws, generation,
+        encoder: null, epoch: this.muteEpoch,
+        accum: new Float32Array(960), filled: 0, captureTsUs: 0,
+        ts: 0, packetsSent: 0, packetsRateLimited: 0,
+      };
+      const capture = out;
+      worklet.port.onmessage = (e) => this.encodeSamples(capture, e.data);
+      this.applyMute(capture);
+      this.out = capture;
+      source.connect(worklet);
+      installed = true;
+    } finally {
+      if (this.cancelPendingOutbound === dispose) this.cancelPendingOutbound = null;
+      if (this.pendingStream === stream) this.pendingStream = null;
+      if (!installed) dispose();
+    }
   }
 
-  private sendChunk(chunk: EncodedAudioChunk): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.out) return;
+  private applyMute(out: OutboundState): void {
+    out.epoch = this.muteEpoch;
+    out.filled = 0;
+    out.accum.fill(0);
+    const previousEncoder = out.encoder;
+    out.encoder = null;
+    try { previousEncoder?.close(); } catch { /* ignore */ }
+    out.stream.getAudioTracks().forEach((track) => { track.enabled = !this.desiredMuted; });
+    if (!this.desiredMuted) out.encoder = this.createEncoder(out);
+    out.worklet.port.postMessage({ epoch: out.epoch, muted: this.desiredMuted });
+  }
+
+  private createEncoder(out: OutboundState): AudioEncoder {
+    const Enc = (window as any).AudioEncoder as typeof AudioEncoder;
+    const epoch = out.epoch;
+    const encoder = new Enc({
+      output: (chunk) => this.sendChunk(out, encoder, epoch, chunk),
+      error: (err) => {
+        if (this.canSend(out, encoder, epoch)) this.cb.onError?.(`AudioEncoder error: ${err?.message ?? err}`);
+      },
+    });
+    try {
+      // Bruig: gopus VOIP application, 48k mono, 20 ms frame, 40 kbps.
+      encoder.configure({
+        codec: 'opus', sampleRate: 48000, numberOfChannels: 1, bitrate: 40000,
+        opus: { application: 'voip', frameDuration: 20000, useinbandfec: true },
+      } as AudioEncoderConfig);
+    } catch (err) {
+      try { encoder.close(); } catch { /* ignore */ }
+      throw err;
+    }
+    return encoder;
+  }
+
+  private canSend(out: OutboundState, encoder: AudioEncoder, epoch: number): boolean {
+    return this.ownsSocket(out.ws, out.generation) && out.ws.readyState === WebSocket.OPEN &&
+      this.out === out && out.encoder === encoder && !this.desiredMuted &&
+      out.epoch === epoch && this.muteEpoch === epoch;
+  }
+
+  private encodeSamples(out: OutboundState, message: { epoch: number; samples: Float32Array }): void {
+    const encoder = out.encoder;
+    if (!encoder || !this.canSend(out, encoder, message.epoch)) return;
+    const data = message.samples;
+    const AudioDataCtor = (window as any).AudioData as typeof AudioData;
+    let offset = 0;
+    while (offset < data.length) {
+      const take = Math.min(out.accum.length - out.filled, data.length - offset);
+      out.accum.set(data.subarray(offset, offset + take), out.filled);
+      out.filled += take;
+      offset += take;
+      if (out.filled === out.accum.length) {
+        const ad = new AudioDataCtor({
+          format: 'f32-planar', sampleRate: 48000,
+          numberOfFrames: out.accum.length, numberOfChannels: 1,
+          timestamp: out.captureTsUs, data: out.accum.slice(),
+        });
+        out.captureTsUs += 20000;
+        out.filled = 0;
+        try { encoder.encode(ad); } finally { ad.close(); }
+      }
+    }
+  }
+
+  private sendChunk(out: OutboundState, encoder: AudioEncoder, epoch: number, chunk: EncodedAudioChunk): void {
+    if (!this.canSend(out, encoder, epoch)) return;
 
     // Hard rate limit (LN allowance safety).
     const now = performance.now();
     this.rateWindow = this.rateWindow.filter((t) => now - t < RealtimeAudioPipeline.RATE_WINDOW_MS);
     if (this.rateWindow.length >= RealtimeAudioPipeline.RATE_LIMIT_PPS) {
-      this.out.packetsRateLimited++;
+      out.packetsRateLimited++;
       return;
     }
     this.rateWindow.push(now);
@@ -401,9 +482,9 @@ export class RealtimeAudioPipeline {
     buf[5] = 0;
     buf.set(opus, FRAME_HEADER_LEN);
     try {
-      this.ws.send(buf);
-      this.out.packetsSent++;
-      this.out.ts += 20;
+      out.ws.send(buf);
+      out.packetsSent++;
+      out.ts += 20;
     } catch (err: any) {
       this.cb.onError?.(`WS send: ${err?.message ?? err}`);
     }
@@ -584,17 +665,23 @@ export class RealtimeAudioPipeline {
   }
 
   private teardownOutbound(): void {
-    if (!this.out) return;
-    try { this.out.encoder.close(); } catch { /* ignore */ }
-    try { this.out.worklet.disconnect(); } catch { /* ignore */ }
-    try { this.out.stream.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
+    const cancelPending = this.cancelPendingOutbound;
+    this.cancelPendingOutbound = null;
+    cancelPending?.();
+    const out = this.out;
     this.out = null;
-    // Note: the shared AudioContext is owned by the pipeline and closed
-    // in stop(), not here.
+    if (!out) return;
+    out.worklet.port.onmessage = null;
+    try { out.encoder?.close(); } catch { /* ignore */ }
+    try { out.worklet.port.close(); } catch { /* ignore */ }
+    try { out.source.disconnect(); } catch { /* ignore */ }
+    try { out.worklet.disconnect(); } catch { /* ignore */ }
+    out.stream.getTracks().forEach((track) => track.stop());
+    // The shared context belongs to the call and stays available for playback.
   }
 }
 
 // The mic-tap worklet is served as a static file. Building it as a blob: URL
 // at runtime fails under the document CSP, which allows scripts from 'self'
 // only, and addModule then rejects with a bare AbortError.
-const MIC_TAP_WORKLET_URL = '/rtdt-mic-tap.worklet.js';
+const MIC_TAP_WORKLET_URL = '/rtdt-mic-tap.worklet.js?v=2';

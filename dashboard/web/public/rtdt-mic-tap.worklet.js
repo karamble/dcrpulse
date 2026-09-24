@@ -7,10 +7,20 @@
 // as a blob: URL at runtime, because the document CSP allows scripts from
 // 'self' only.
 class RTDTMicTap extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.epoch = options?.processorOptions?.epoch ?? 0;
+    this.muted = options?.processorOptions?.muted ?? true;
+    this.port.onmessage = ({ data }) => {
+      this.epoch = data.epoch;
+      this.muted = data.muted;
+    };
+  }
+
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
-    if (ch && ch.length) {
-      this.port.postMessage({ samples: ch.slice() });
+    if (!this.muted && ch && ch.length) {
+      this.port.postMessage({ epoch: this.epoch, samples: ch.slice() });
     }
     return true;
   }
