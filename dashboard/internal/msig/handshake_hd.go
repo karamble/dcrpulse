@@ -438,13 +438,7 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 		return
 	}
 	fail := func(reason string) {
-		if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
-			r.Status = StatusFailed
-			r.FailReason = reason
-			return nil
-		}); err != nil {
-			msigLog.Error(err)
-		}
+		failRound(store, rec.TempID, reason)
 		msigLog.Warnf("roster for %q rejected: %s", rec.Label, reason)
 	}
 	switch rec.Status {
@@ -471,6 +465,9 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 			return
 		}
 		if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
+			if r.Role != RoleCosigner || r.InitiatorUID != fromUID || r.Terminal() || !rosterMatchesRecord(r, msg) {
+				return fmt.Errorf("stale repeated roster")
+			}
 			return mergeRosterPeers(r, msg)
 		}); err != nil {
 			msigLog.Error(err)
@@ -545,6 +542,9 @@ func inboundRosterHD(ctx context.Context, store *Store, rec *WalletRecord, msg *
 		return
 	}
 	if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
+		if r.Status != StatusAccepted || r.Role != RoleCosigner || r.InitiatorUID != fromUID {
+			return fmt.Errorf("round no longer accepts a first roster")
+		}
 		// Attestations belong to a key set, so writing one clears them. The
 		// switch above means this only ever runs on a record that has none;
 		// keeping it here puts the invariant where the write is rather than
@@ -640,13 +640,7 @@ func maybeCompleteAttested(ctx context.Context, store *Store, tempID string) {
 		err = VerifyRosterAttests(rec, rec.Attests, params)
 	}
 	if err != nil {
-		if uerr := store.UpdateWallet(tempID, func(r *WalletRecord) error {
-			r.Status = StatusFailed
-			r.FailReason = fmt.Sprintf("the cosigner signatures do not cover this wallet's keys: %v", err)
-			return nil
-		}); uerr != nil {
-			msigLog.Error(uerr)
-		}
+		failRound(store, tempID, fmt.Sprintf("the cosigner signatures do not cover this wallet's keys: %v", err))
 		msigLog.Warnf("attestations for %q rejected: %v", rec.Label, err)
 		return
 	}

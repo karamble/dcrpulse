@@ -308,6 +308,8 @@ func TestSpendTwoOfThreeRelay(t *testing.T) {
 	if len(sh.broadcasts) != 1 || sh.broadcasts[0] != txid {
 		t.Fatalf("broadcasts: %v", sh.broadcasts)
 	}
+	sh.as("carol")
+	sweepProposals(sh.ctx, sh.store("carol"))
 	if got := sh.proposal(t, "carol", tempID, txid); got.Status != ProposalBroadcast {
 		t.Fatalf("carol never asked, but must know the broadcast: %s", got.Status)
 	}
@@ -602,6 +604,8 @@ func TestSpendBroadcastVerifiedAndRebroadcastConverges(t *testing.T) {
 	}
 	sh.pump()
 
+	sh.as("bob")
+	sweepProposals(sh.ctx, sh.store("bob"))
 	got := sh.proposal(t, "bob", tempID, prop.TxID)
 	if got.Status != ProposalBroadcast || got.Reason != "" {
 		t.Fatalf("bob after verified notice: %s (%q)", got.Status, got.Reason)
@@ -656,7 +660,7 @@ func TestSpendSignedConfirmsWhenNoticeLost(t *testing.T) {
 	}
 }
 
-func TestSpendNoticeForUnseenTxStaysCaveated(t *testing.T) {
+func TestSpendNoticeForUnseenTxWaitsForObservation(t *testing.T) {
 	sh, tempID := newSpendHarness(t, 2, "alice", "bob")
 	rec := sh.record("alice", tempID)
 
@@ -672,15 +676,17 @@ func TestSpendNoticeForUnseenTxStaysCaveated(t *testing.T) {
 	sh.current = sh.nodeByNick("bob")
 	handleInbound(alice.uid, alice.nick, body, time.Now())
 
-	got := sh.proposal(t, "bob", tempID, txid)
-	if got.Status != ProposalBroadcast || got.Reason == "" {
-		t.Fatalf("unverified notice: %s (%q)", got.Status, got.Reason)
+	if _, _, ok := sh.store("bob").Proposal(tempID, txid); ok {
+		t.Fatal("unverified notice created a proposal")
+	}
+	if r := sh.record("bob", tempID); r.BroadcastHints[txid] == nil {
+		t.Fatal("missing recovery hint")
 	}
 
 	sh.txConfs[txid] = 1
 	sh.as("bob")
 	sweepProposals(sh.ctx, sh.store("bob"))
-	got = sh.proposal(t, "bob", tempID, txid)
+	got := sh.proposal(t, "bob", tempID, txid)
 	if got.Status != ProposalConfirmed || got.Reason != "" {
 		t.Fatalf("after local confirmation: %s (%q)", got.Status, got.Reason)
 	}

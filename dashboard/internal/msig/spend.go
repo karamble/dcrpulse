@@ -302,7 +302,7 @@ func ProposeSpend(ctx context.Context, walletID string, recipients []Recipient, 
 // broadcasts once the threshold is met. Called after every signature.
 func advanceProposal(store *Store, walletID, txid string) {
 	rec, prop, ok := store.Proposal(walletID, txid)
-	if !ok || prop.Role != RoleInitiator || prop.Terminal() {
+	if !ok || prop.Role != RoleInitiator || prop.Terminal() || prop.Status == ProposalInvalid {
 		return
 	}
 	if prop.SigCount >= rec.M {
@@ -394,23 +394,49 @@ func advanceProposal(store *Store, walletID, txid string) {
 
 func broadcastProposal(store *Store, walletID, txid string) {
 	rec, prop, ok := store.Proposal(walletID, txid)
-	if !ok || prop.Terminal() {
+	if !ok || prop.Terminal() || prop.Status == ProposalInvalid {
+		return
+	}
+	// Recheck even persisted Ready records; old builds may have stored a
+	// signature count for a stack that cannot execute. Never release inputs.
+	tx, err := DecodeTxHex(prop.RawTx)
+	var signers map[string]bool
+	if err == nil {
+		var resolve InputResolver
+		resolve, err = resolverForInputs(rec, prop.Inputs)
+		if err == nil {
+			signers, err = VerifyProposalUpdateHD(tx, txid, resolve)
+		}
+		if err == nil && len(signers) < rec.M {
+			err = fmt.Errorf("not enough verified participants")
+		}
+	}
+	if err != nil {
+		reason := "invalid signatures: " + err.Error()
+		_ = store.UpdateProposal(walletID, txid, false, func(_ *WalletRecord, p *Proposal) error {
+			if p.Terminal() || p.RawTx != prop.RawTx {
+				return fmt.Errorf("stale validation")
+			}
+			p.Status, p.Reason = ProposalInvalid, reason
+			return nil
+		})
 		return
 	}
 	if err := store.UpdateProposal(walletID, txid, false, func(_ *WalletRecord, p *Proposal) error {
+		if p.Terminal() || p.RawTx != prop.RawTx || p.Status == ProposalInvalid {
+			return fmt.Errorf("stale broadcast")
+		}
 		p.Status = ProposalReady
+		p.SigCount, p.SignedBy = len(signers), signers
 		return nil
 	}); err != nil {
-		msigLog.Error(err)
 		return
 	}
 	if store.WalletName() != activeWalletSeam() {
-		msigLog.Infof("proposal %s ready; switch to wallet %q to broadcast", txid[:12], store.WalletName())
 		return
 	}
 	raw, err := hex.DecodeString(prop.RawTx)
 	if err != nil {
-		msigLog.Error(err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), walletCallTimeout)
@@ -459,6 +485,9 @@ func RebroadcastProposal(ctx context.Context, walletID, txid string) error {
 		return fmt.Errorf("this payment is not waiting to be broadcast")
 	}
 	broadcastProposal(store, rec.TempID, txid)
+	if _, p, ok := store.Proposal(rec.TempID, txid); ok && p.Status == ProposalInvalid {
+		return fmt.Errorf("%s", p.Reason)
+	}
 	return nil
 }
 
@@ -475,7 +504,7 @@ func AbortProposal(ctx context.Context, walletID, txid string) error {
 		return fmt.Errorf("unknown shared wallet %s", walletID)
 	}
 	return store.UpdateProposal(rec.TempID, txid, false, func(_ *WalletRecord, p *Proposal) error {
-		if p.Status != ProposalCollecting && p.Status != ProposalReady {
+		if p.Status != ProposalCollecting && p.Status != ProposalReady && p.Status != ProposalInvalid {
 			return fmt.Errorf("this payment can no longer be cancelled")
 		}
 		p.Status = ProposalAborted

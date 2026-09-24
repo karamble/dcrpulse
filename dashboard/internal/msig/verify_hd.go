@@ -64,7 +64,8 @@ func resolverForInputs(rec *WalletRecord, inputs []ProposalInput) (InputResolver
 // txid and returns the PARTICIPANTS (by roster xpub) whose signatures
 // are present on every input. The txid covers the whole prefix, so the
 // single comparison proves inputs, outputs, lock time and expiry are
-// untouched; only signature scripts can legally differ.
+// untouched. Witness metadata is outside the prefix hash; this check
+// verifies signature scripts, not chain authentication of witness metadata.
 func VerifyProposalUpdateHD(updated *wire.MsgTx, expectedTxID string, resolve InputResolver) (map[string]bool, error) {
 	if updated.TxHash().String() != expectedTxID {
 		return nil, fmt.Errorf("transaction prefix was altered: txid changed")

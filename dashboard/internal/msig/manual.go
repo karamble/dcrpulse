@@ -252,6 +252,13 @@ func ImportFrame(ctx context.Context, body, id, fromUID, fromLabel string) (*Imp
 	if msg.WalletID != "" && msg.WalletID != rec.Address && msg.WalletID != rec.TempID {
 		return nil, fmt.Errorf("this message belongs to a different shared wallet")
 	}
+	if msg.Type == TypeBroadcast {
+		outcome, err := store.admitBroadcastHint(rec.TempID, msg.TxID, fromUID, peer.Nick, now)
+		if err != nil {
+			return nil, err
+		}
+		return &ImportResult{Outcome: outcome, Type: msg.Type, WalletID: rec.TempID, Label: rec.Label}, nil
+	}
 	if store.SeenMid(frame.MID) {
 		return &ImportResult{Outcome: "duplicate", Type: msg.Type, WalletID: rec.TempID, Label: rec.Label}, nil
 	}

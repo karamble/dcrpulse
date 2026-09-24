@@ -325,6 +325,8 @@ export const msigProposalLabel = (status: string): string => {
       return 'Collecting signatures';
     case 'ready':
       return 'Ready to broadcast';
+    case 'invalid':
+      return 'Needs corrected signatures';
     case 'broadcast':
       return 'Broadcast';
     case 'confirmed':

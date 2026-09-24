@@ -29,6 +29,12 @@ func inboundSpend(ctx context.Context, m *Manager, msg *Message, frame *Frame, f
 		msigLog.Warnf("%s frame from a non-member for %q", msg.Type, rec.Label)
 		return
 	}
+	if msg.Type == TypeBroadcast {
+		if _, err := store.admitBroadcastHint(rec.TempID, msg.TxID, fromUID, fromNick, now); err != nil {
+			msigLog.Warnf("broadcast hint: %v", err)
+		}
+		return
+	}
 	fresh, err := store.MarkProcessed(frame.MID, now)
 	if err != nil {
 		msigLog.Warnf("journal: %v", err)
@@ -44,8 +50,6 @@ func inboundSpend(ctx context.Context, m *Manager, msg *Message, frame *Frame, f
 		inboundSig(store, rec, msg, fromUID)
 	case TypeSigDecline:
 		inboundSigDecline(store, rec, msg, fromUID, fromNick)
-	case TypeBroadcast:
-		inboundBroadcastNotice(ctx, store, rec, msg, fromUID, fromNick)
 	}
 }
 
@@ -220,13 +224,16 @@ func inboundSig(store *Store, rec *WalletRecord, msg *Message, fromUID string) {
 		msigLog.Warnf("rejecting returned transaction for %s: %v", msg.TxID[:12], err)
 		return
 	}
-	if len(signers) <= prop.SigCount {
+	if (prop.Status == ProposalInvalid && len(signers) < rec.M) || (prop.Status != ProposalInvalid && len(signers) <= prop.SigCount) {
 		msigLog.Warnf("returned transaction for %s adds no signature", msg.TxID[:12])
 		return
 	}
-	err = store.UpdateProposal(rec.TempID, msg.TxID, false, func(_ *WalletRecord, p *Proposal) error {
-		if p.Terminal() || len(signers) <= p.SigCount {
+	err = store.UpdateProposal(rec.TempID, msg.TxID, false, func(r *WalletRecord, p *Proposal) error {
+		if r.peerByUID(fromUID) == nil || r.RosterDigest != rec.RosterDigest || r.M != rec.M || r.Network != rec.Network || p.Role != RoleInitiator || p.Terminal() || p.RawTx != prop.RawTx || (p.Status == ProposalInvalid && len(signers) < rec.M) || (p.Status != ProposalInvalid && len(signers) <= p.SigCount) {
 			return fmt.Errorf("stale signature")
+		}
+		if p.Status == ProposalInvalid {
+			p.Status, p.Reason = ProposalCollecting, ""
 		}
 		p.RawTx = msg.RawTx
 		p.SigCount = len(signers)
@@ -265,52 +272,11 @@ func inboundSigDecline(store *Store, rec *WalletRecord, msg *Message, fromUID, f
 	advanceProposal(store, rec.TempID, msg.TxID)
 }
 
-// inboundBroadcastNotice records that a payment went out. Members who
-// were never asked to sign (the threshold was met without them) learn of
-// the spend only here, so an unknown txid creates an informational entry
-// carrying no transaction of its own. The notice itself is not trusted:
-// the record only turns broadcast once this wallet has seen the
-// transaction; until then the report is kept with its provenance and the
-// sweep's own lookup converges the state.
-func inboundBroadcastNotice(ctx context.Context, store *Store, rec *WalletRecord, msg *Message, fromUID, fromNick string) {
-	_, existing, known := store.Proposal(rec.TempID, msg.TxID)
-	if known && existing.Status == ProposalConfirmed {
-		return
-	}
-	var seen bool
-	if _, s, err := txLookupSeam(ctx, msg.TxID); err == nil {
-		seen = s
-	}
-	err := store.UpdateProposal(rec.TempID, msg.TxID, true, func(_ *WalletRecord, p *Proposal) error {
-		if p.Status == ProposalConfirmed {
-			return fmt.Errorf("already confirmed")
-		}
-		if p.Role == "" {
-			p.Role = RoleCosigner
-			p.FromUID = fromUID
-			p.FromNick = fromNick
-		}
-		if seen {
-			p.Status = ProposalBroadcast
-			p.Reason = ""
-		} else {
-			if p.Status == "" {
-				p.Status = ProposalBroadcast
-			}
-			p.Reason = fmt.Sprintf("%s reported this payment broadcast; not yet seen by this wallet", fromNick)
-		}
-		return nil
-	})
-	if err != nil {
-		return
-	}
-	msigLog.Infof("%s reported payment %s broadcast (seen locally: %t)", fromNick, msg.TxID[:12], seen)
-}
-
 // sweepProposals expires hops whose deadline passed and retires
 // proposals whose inputs were spent elsewhere. Runs for every store on
 // the periodic sweep; chain checks need the active wallet.
 func sweepProposals(ctx context.Context, store *Store) {
+	sweepBroadcastHints(ctx, store, time.Now())
 	now := time.Now().Unix()
 	for _, rec := range store.Wallets() {
 		for txid, prop := range rec.Proposals {

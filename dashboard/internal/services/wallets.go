@@ -19,8 +19,9 @@ import (
 // loads one wallet per process, so this is process-global state rather than a
 // per-request value. Empty means no wallet is selected (the UI shows the list).
 var (
-	activeWalletMu sync.RWMutex
-	activeWallet   string
+	activeWalletMu         sync.RWMutex
+	activeWallet           string
+	activeWalletGeneration uint64
 )
 
 // selectedWallet is the pointer file shape the dashboard writes for the
@@ -51,6 +52,14 @@ func CurrentWalletName() string {
 		return config.DefaultWalletName
 	}
 	return activeWallet
+}
+
+// WalletGeneration changes on every wallet selection, including a restart of
+// the same wallet. Background observations use it to discard stale RPC results.
+func WalletGeneration() uint64 {
+	activeWalletMu.RLock()
+	defer activeWalletMu.RUnlock()
+	return activeWalletGeneration
 }
 
 // ActiveWalletName returns the selected wallet's name, or "" when no wallet is
@@ -105,6 +114,7 @@ func setActiveWalletName(name string) {
 	activeWalletMu.Lock()
 	old := activeWallet
 	activeWallet = name
+	activeWalletGeneration++
 	activeWalletMu.Unlock()
 	notifyActiveWalletChange(ActiveWalletChange{Old: old, New: name})
 }

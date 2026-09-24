@@ -294,6 +294,10 @@ func inboundHandshake(ctx context.Context, m *Manager, msg *Message, frame *Fram
 
 func failRound(store *Store, tempID, reason string) {
 	if err := store.UpdateWallet(tempID, func(r *WalletRecord) error {
+		// A stale handshake/expiry snapshot cannot revoke an active wallet.
+		if r.Status == StatusActive || r.Terminal() {
+			return fmt.Errorf("round no longer accepts failure")
+		}
 		r.Status = StatusFailed
 		r.FailReason = reason
 		return nil
@@ -303,23 +307,26 @@ func failRound(store *Store, tempID, reason string) {
 	msigLog.Warnf("round %s failed: %s", tempID, reason)
 }
 
+func canDeclineRound(r *WalletRecord) bool {
+	return r.Role == RoleInitiator && (r.Status == StatusInviting || r.Status == StatusReviewing || r.Status == StatusActivating)
+}
+
 func inboundDecline(store *Store, rec *WalletRecord, msg *Message, fromUID, fromNick string) {
-	if rec.Role != RoleInitiator || rec.Terminal() {
-		return
-	}
-	if rec.peerByUID(fromUID) == nil {
+	if !canDeclineRound(rec) || rec.peerByUID(fromUID) == nil {
 		return
 	}
 	if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
-		if p := r.peerByUID(fromUID); p != nil {
-			p.State = PeerDeclined
-			p.Reason = msg.Reason
+		p := r.peerByUID(fromUID)
+		if !canDeclineRound(r) || p == nil {
+			return fmt.Errorf("stale decline")
 		}
+		p.State = PeerDeclined
+		p.Reason = msg.Reason
 		r.Status = StatusFailed
 		r.FailReason = "declined by " + fromNick
 		return nil
 	}); err != nil {
-		msigLog.Error(err)
+		return
 	}
 	msigLog.Infof("round %s declined by %s", rec.TempID, fromNick)
 }
@@ -339,6 +346,23 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 	if peer == nil {
 		return
 	}
+	// Verification happens outside the store lock. Bind its result to the
+	// exact live record again before any successful or failing mutation.
+	matches := func(r *WalletRecord) bool {
+		p := r.peerByUID(fromUID)
+		return r.Role == RoleInitiator && r.HD == rec.HD && r.Network == rec.Network &&
+			r.Address == msg.WalletID && r.RosterDigest == rec.RosterDigest && p != nil && p.Xpub == peer.Xpub
+	}
+	failActivation := func(reason string) {
+		_ = store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
+			if r.Status != StatusActivating || !matches(r) {
+				return fmt.Errorf("stale invalid ready")
+			}
+			r.Status, r.FailReason = StatusFailed, reason
+			return nil
+		})
+		msigLog.Warnf("invalid ready for %s: %s", rec.TempID, reason)
+	}
 	// A ready is a cosigner saying it confirmed the key set, so it has to
 	// carry the signature that proves it. Crediting one without would let a
 	// wallet go active on a roster somebody never actually signed off on.
@@ -349,15 +373,19 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 			return
 		}
 		if msg.Attest == "" {
-			failRound(store, rec.TempID, fmt.Sprintf("%s confirmed without signing the cosigner list; ask them to upgrade dcrpulse", peer.Nick))
+			failActivation(fmt.Sprintf("%s confirmed without signing the cosigner list; ask them to upgrade dcrpulse", peer.Nick))
 			return
 		}
 		if err := VerifyAttest(peer.Xpub, rec.RosterDigest, msg.Attest, params); err != nil {
-			failRound(store, rec.TempID, fmt.Sprintf("%s's signature over the cosigner list is not valid: %v", peer.Nick, err))
+			failActivation(fmt.Sprintf("%s's signature over the cosigner list is not valid: %v", peer.Nick, err))
 			return
 		}
 	}
+	activated := false
 	err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
+		if !matches(r) || (r.Status != StatusActivating && r.Status != StatusActive) {
+			return fmt.Errorf("stale ready")
+		}
 		p := r.peerByUID(fromUID)
 		if p == nil {
 			return fmt.Errorf("unknown peer")
@@ -373,6 +401,7 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 		}
 		if allReady && r.Status == StatusActivating {
 			r.Status = StatusActive
+			activated = true
 			r.Attests = collectAttests(r)
 		}
 		return nil
@@ -382,7 +411,7 @@ func inboundReady(store *Store, rec *WalletRecord, msg *Message, fromUID string,
 		return
 	}
 	updated, ok := store.Wallet(rec.TempID)
-	if !ok || updated.Status != StatusActive || rec.Status == StatusActive {
+	if !ok || updated.Status != StatusActive || !activated {
 		return
 	}
 	msigLog.Infof("shared wallet %q active at %s", updated.Label, updated.Address)
@@ -431,6 +460,9 @@ func inboundCancel(store *Store, rec *WalletRecord, fromUID string) {
 		return
 	}
 	if err := store.UpdateWallet(rec.TempID, func(r *WalletRecord) error {
+		if r.Role != RoleCosigner || r.InitiatorUID != fromUID || r.Terminal() || r.Status == StatusActive {
+			return fmt.Errorf("stale cancellation")
+		}
 		r.Status = StatusFailed
 		r.FailReason = "cancelled by the initiator"
 		return nil

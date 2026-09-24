@@ -75,7 +75,7 @@ func dataPushOverhead(n int) int {
 }
 
 func estSigScriptLen(m, redeemLen int) int {
-	// OP_0 for the dummy CHECKMULTISIG pops, m worst-case DER signatures
+	// One conservative padding byte, m worst-case DER signatures
 	// with hash type byte, one push opcode each, then the redeem script push.
 	return 1 + m*74 + dataPushOverhead(redeemLen) + redeemLen
 }
@@ -281,15 +281,37 @@ func AttributeSigs(tx *wire.MsgTx, idx int, redeemScript []byte, memberKeys [][]
 	if err != nil {
 		return nil, err
 	}
+	m, orderedKeys, err := ScriptDetails(redeemScript)
+	if err != nil {
+		return nil, err
+	}
+	if len(pushes) > m {
+		return nil, fmt.Errorf("input %d has too many signature slots", idx)
+	}
+	allowed := make(map[string]bool, len(memberKeys))
+	for _, pk := range memberKeys {
+		allowed[hex.EncodeToString(pk)] = true
+	}
 	signed := make(map[string]bool)
+	lastKey, padded := -1, false
 	for _, push := range pushes {
 		if len(push) == 0 {
+			padded = true
 			continue
+		}
+		if padded {
+			return nil, fmt.Errorf("input %d has a signature after padding", idx)
 		}
 		if len(push) < 9 {
 			return nil, fmt.Errorf("input %d carries a malformed signature", idx)
 		}
 		hashType := txscript.SigHashType(push[len(push)-1])
+		if err := txscript.CheckHashTypeEncoding(hashType); err != nil {
+			return nil, err
+		}
+		if err := txscript.CheckSignatureEncoding(push[:len(push)-1]); err != nil {
+			return nil, err
+		}
 		sig, err := ecdsa.ParseDERSignature(push[:len(push)-1])
 		if err != nil {
 			return nil, fmt.Errorf("input %d carries an unparseable signature: %v", idx, err)
@@ -299,19 +321,44 @@ func AttributeSigs(tx *wire.MsgTx, idx int, redeemScript []byte, memberKeys [][]
 			return nil, err
 		}
 		matched := false
-		for _, pk := range memberKeys {
+		for keyIndex, pk := range orderedKeys {
 			pub, err := secp256k1.ParsePubKey(pk)
 			if err != nil {
 				continue
 			}
 			if sig.Verify(hash, pub) {
-				signed[hex.EncodeToString(pk)] = true
+				kh := hex.EncodeToString(pk)
+				if !allowed[kh] || keyIndex <= lastKey {
+					return nil, fmt.Errorf("input %d has duplicate or unordered signatures", idx)
+				}
+				lastKey = keyIndex
+				signed[kh] = true
 				matched = true
 				break
 			}
 		}
 		if !matched {
 			return nil, fmt.Errorf("input %d carries a signature from a non-member key", idx)
+		}
+	}
+	if padded && len(pushes) != m {
+		return nil, fmt.Errorf("input %d has incomplete padding", idx)
+	}
+	if len(signed) == m {
+		// The version-0 P2SH script is network independent. Execute the actual
+		// returned stack, never a normalized/reordered replacement.
+		pkScript, err := txscript.NewScriptBuilder().AddOp(txscript.OP_HASH160).
+			AddData(dcrutil.Hash160(redeemScript)).AddOp(txscript.OP_EQUAL).Script()
+		if err != nil {
+			return nil, err
+		}
+		flags := txscript.ScriptVerifyCleanStack | txscript.ScriptVerifySigPushOnly | txscript.ScriptDiscourageUpgradableNops
+		vm, err := txscript.NewEngine(pkScript, tx, idx, flags, 0, nil)
+		if err != nil {
+			return nil, err
+		}
+		if err := vm.Execute(); err != nil {
+			return nil, fmt.Errorf("input %d multisig script: %w", idx, err)
 		}
 	}
 	return signed, nil

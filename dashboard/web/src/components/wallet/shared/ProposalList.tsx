@@ -179,7 +179,7 @@ export const ProposalList = ({
                   </button>
                 </>
               )}
-              {p.role === 'initiator' && (p.status === 'collecting' || p.status === 'ready') && (
+              {p.role === 'initiator' && (p.status === 'collecting' || p.status === 'ready' || p.status === 'invalid') && (
                 <button
                   type="button"
                   onClick={() => run(p.txid, () => abortMsigProposal(wallet.tempId, p.txid))}

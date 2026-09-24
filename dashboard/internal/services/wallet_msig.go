@@ -114,14 +114,15 @@ func ListSharedUTXOs(ctx context.Context, addresses []string) ([]SharedUTXO, err
 // does not know the transaction at all; that is a normal answer, not an
 // error.
 func MsigTxConfirmations(ctx context.Context, txid string) (int64, bool, error) {
-	if rpc.WalletClient == nil {
+	client := rpc.WalletClient
+	if client == nil {
 		return 0, false, fmt.Errorf("wallet RPC client not initialized")
 	}
 	param, err := json.Marshal(txid)
 	if err != nil {
 		return 0, false, err
 	}
-	raw, err := rpc.WalletClient.RawRequest(ctx, "gettransaction", []json.RawMessage{param})
+	raw, err := client.RawRequest(ctx, "gettransaction", []json.RawMessage{param})
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "no information") {
 			return 0, false, nil

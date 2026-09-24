@@ -28,7 +28,8 @@ import (
 // forward-readable (unknown JSON fields are dropped on the next save),
 // which is exactly why openStore refuses files written by a NEWER build:
 // silently stripping a future schema's fields would destroy state.
-const storeSchemaVersion = 3
+// Version 4 adds the live invalid-signature state; 5 adds bounded broadcast hints.
+const storeSchemaVersion = 5
 
 // TransportManual marks a wallet whose coordination frames are ferried
 // by the humans themselves instead of Bison Relay. The empty string is
@@ -94,6 +95,7 @@ const (
 const (
 	ProposalCollecting = "collecting"
 	ProposalReady      = "ready"
+	ProposalInvalid    = "invalid"
 	ProposalBroadcast  = "broadcast"
 	ProposalConfirmed  = "confirmed"
 	ProposalIncoming   = "incoming"
@@ -198,6 +200,7 @@ type QueueHop struct {
 // is stable from construction because Decred excludes signatures from it,
 // so it keys the proposal for its whole life.
 type Proposal struct {
+	NoticeOnly bool             `json:"noticeOnly,omitempty"`
 	TxID       string           `json:"txid"`
 	Role       string           `json:"role"`
 	Status     string           `json:"status"`
@@ -228,8 +231,11 @@ func (p *Proposal) Terminal() bool {
 
 // Live reports whether a proposal still holds a claim on its inputs.
 func (p *Proposal) Live() bool {
+	if p.NoticeOnly {
+		return false
+	}
 	switch p.Status {
-	case ProposalCollecting, ProposalReady, ProposalIncoming, ProposalSigned, ProposalBroadcast:
+	case ProposalCollecting, ProposalReady, ProposalInvalid, ProposalIncoming, ProposalSigned, ProposalBroadcast:
 		return true
 	}
 	return false
@@ -279,7 +285,9 @@ type WalletRecord struct {
 	CreatedAt     int64   `json:"createdAt"`
 	UpdatedAt     int64   `json:"updatedAt"`
 
-	Proposals map[string]*Proposal `json:"proposals,omitempty"`
+	Proposals      map[string]*Proposal      `json:"proposals,omitempty"`
+	BroadcastHints map[string]*BroadcastHint `json:"broadcastHints,omitempty"`
+	HintAdmissions map[string][]int64        `json:"hintAdmissions,omitempty"`
 }
 
 // Terminal reports whether the record can never progress again.
@@ -301,6 +309,7 @@ func (r *WalletRecord) peerByUID(uid string) *Peer {
 }
 
 type storeFile struct {
+	HintBudgets   hintBudgets              `json:"hintBudgets,omitempty"`
 	SchemaVersion int                      `json:"schemaVersion"`
 	Wallets       map[string]*WalletRecord `json:"wallets"`
 	ProcessedMids map[string]int64         `json:"processedMids"`
@@ -346,8 +355,17 @@ func openStore(path, walletName string) (*Store, error) {
 	if f.ProcessedMids == nil {
 		f.ProcessedMids = make(map[string]int64)
 	}
+	migrated := f.SchemaVersion < storeSchemaVersion
+	if f.SchemaVersion < 5 {
+		migrateBroadcastHints(&f, time.Now())
+	}
 	f.SchemaVersion = storeSchemaVersion
 	s.data = &f
+	if migrated {
+		if err := s.saveLocked(); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -383,6 +401,19 @@ func cloneRecord(r *WalletRecord) *WalletRecord {
 		return nil
 	}
 	c := *r
+	if r.BroadcastHints != nil {
+		c.BroadcastHints = make(map[string]*BroadcastHint, len(r.BroadcastHints))
+		for id, h := range r.BroadcastHints {
+			hc := *h
+			c.BroadcastHints[id] = &hc
+		}
+	}
+	if r.HintAdmissions != nil {
+		c.HintAdmissions = make(map[string][]int64, len(r.HintAdmissions))
+		for uid, ts := range r.HintAdmissions {
+			c.HintAdmissions[uid] = append([]int64(nil), ts...)
+		}
+	}
 	c.Peers = make([]*Peer, len(r.Peers))
 	for i, p := range r.Peers {
 		pc := *p
