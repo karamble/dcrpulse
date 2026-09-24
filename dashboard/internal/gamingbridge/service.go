@@ -86,6 +86,11 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 	ctx := stream.Context()
 	game := callerGame(ctx)
 
+	lifetime, _ := ctx.Value(credentialKey{}).(*credentialAdmission)
+	if !lifetime.valid() {
+		return errNotHere
+	}
+
 	live := s.reg.add(game)
 	defer func() {
 		s.reg.remove(game, live)
@@ -94,12 +99,37 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 		}
 	}()
 
+	// Admission checks never hold the allowlist lock across network writes.
+	// A send admitted before invalidation may finish, but the next cannot start.
+	check := func() error {
+		if !lifetime.valid() {
+			return errNotHere
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-live.done:
+			return errNotHere
+		default:
+			return nil
+		}
+	}
+	send := func(event *gamingpb.BridgeEvent) error {
+		if err := check(); err != nil {
+			return err
+		}
+		return stream.Send(event)
+	}
+
 	// StreamStart first, always. The durable inbox then replays every frame
 	// after FromSeq before it switches to live delivery.
 	start := s.reg.streamStart(req)
-	if err := stream.Send(&gamingpb.BridgeEvent{
+	if err := send(&gamingpb.BridgeEvent{
 		Event: &gamingpb.BridgeEvent_Start{Start: start},
 	}); err != nil {
+		return err
+	}
+	if err := check(); err != nil {
 		return err
 	}
 	if s.cfg.OnPresence != nil {
@@ -109,9 +139,16 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 	// A game volunteers nothing, so without this the console never learns
 	// what it holds - and nothing that depends on knowing can happen.
 	if s.cfg.OnConnect != nil {
-		go s.cfg.OnConnect(game)
+		go func() {
+			if check() == nil {
+				s.cfg.OnConnect(game)
+			}
+		}()
 	}
 
+	if err := check(); err != nil {
+		return err
+	}
 	var frames <-chan Frame
 	if s.cfg.Frames != nil {
 		ch, stop := s.cfg.Frames(game, start.GetFromSeq(), frameBuffer)
@@ -124,9 +161,11 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 		case <-ctx.Done():
 			return ctx.Err()
 
+		case <-lifetime.done:
+			return errNotHere
+
 		case <-live.done:
-			// The credential was withdrawn. Told the same way a stranger is
-			// told, because that is now what this caller is.
+			// The registry closed this stream (for example, on shutdown).
 			return errNotHere
 
 		case f, ok := <-frames:
@@ -136,12 +175,12 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 				// connected and receiving when it is only connected.
 				return status.Error(codes.Unavailable, "the frame feed closed")
 			}
-			if err := stream.Send(s.reg.frameEvent(game, f)); err != nil {
+			if err := send(s.reg.frameEvent(game, f)); err != nil {
 				return err
 			}
 
 		case ev := <-live.events:
-			if err := stream.Send(ev); err != nil {
+			if err := send(ev); err != nil {
 				return err
 			}
 		}

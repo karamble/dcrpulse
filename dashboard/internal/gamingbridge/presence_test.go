@@ -17,7 +17,8 @@ func (s presenceStream) Context() context.Context         { return s.ctx }
 func (s presenceStream) Send(*gamingpb.BridgeEvent) error { return nil }
 
 func TestPresenceNotifiesAfterRegistryChange(t *testing.T) {
-	server := &Server{reg: newRegistry()}
+	server := rotationServer(t)
+	credential := rotationCredential(t, server.allow, "stakewars")
 	counts := make(chan int, 8)
 	server.cfg.OnPresence = func(game string) { counts <- server.reg.count(game) }
 	expect := func(want int) {
@@ -32,7 +33,8 @@ func TestPresenceNotifiesAfterRegistryChange(t *testing.T) {
 		}
 	}
 	start := func() (context.CancelFunc, <-chan error) {
-		ctx, cancel := context.WithCancel(caller("stakewars"))
+		ctx := rotationContext(t, server, credential)
+		ctx, cancel := context.WithCancel(ctx)
 		done := make(chan error, 1)
 		go func() { done <- server.Subscribe(&gamingpb.SubscribeRequest{}, presenceStream{ctx: ctx}) }()
 		t.Cleanup(cancel)

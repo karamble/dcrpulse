@@ -141,12 +141,6 @@ func (r *registry) count(game string) int {
 	return len(r.streams[game])
 }
 
-// closeGame ends every stream a game is holding.
-//
-// This is what makes revoking take effect now rather than at the game's
-// convenience. A credential withdrawn while a stream is open would otherwise go
-// on receiving every table's traffic for as long as the game chose to stay
-// connected, which is exactly the situation an operator revokes in.
 // liveGames names the games with at least one open stream.
 func (r *registry) liveGames() []string {
 	r.mu.Lock()
@@ -160,6 +154,8 @@ func (r *registry) liveGames() []string {
 	return out
 }
 
+// closeGame ends all subscriptions during server shutdown. Credential
+// replacement and revocation instead invalidate their specific admissions.
 func (r *registry) closeGame(game string) {
 	r.mu.Lock()
 	set := r.streams[game]

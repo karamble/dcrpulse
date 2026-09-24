@@ -193,10 +193,6 @@ func New(cfg Config) (*Server, error) {
 		reqLim: map[string]*rate.Limiter{}, statusLim: map[string]*rate.Limiter{},
 	}
 
-	// Withdrawing a credential has to end the stream it is holding, and the
-	// allowlist is where withdrawing happens - including when the operator
-	// does it through the console rather than through this server.
-	cfg.Allow.OnRevoke(s.reg.closeGame)
 	return s, nil
 }
 

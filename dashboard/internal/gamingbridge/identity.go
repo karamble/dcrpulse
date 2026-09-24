@@ -109,18 +109,33 @@ type Allowlist struct {
 	mu sync.RWMutex
 	// byFingerprint maps a certificate's fingerprint to the game it is.
 	byFingerprint map[string]allowEntry
-
-	// onRevoke is told which game just lost its credential, so a stream it is
-	// holding can be ended rather than left running on the strength of a
-	// handshake that already happened.
-	onRevoke func(game string)
 }
 
 type allowEntry struct {
-	game string
+	game     string
+	lifetime *credentialAdmission
 	// cert is kept as the parsed certificate, not re-encoded, because the
 	// pool below matches on exact bytes.
 	cert *x509.Certificate
+}
+
+// credentialAdmission belongs to one admission, not merely a game name or
+// certificate fingerprint. Revoke followed by re-add can never revive it.
+// Only the allowlist closes done, while holding its write lock.
+type credentialAdmission struct {
+	done chan struct{}
+}
+
+func (l *credentialAdmission) valid() bool {
+	if l == nil {
+		return false
+	}
+	select {
+	case <-l.done:
+		return false
+	default:
+		return true
+	}
 }
 
 func NewAllowlist() *Allowlist {
@@ -140,23 +155,36 @@ func (a *Allowlist) Add(c Credential) error {
 		return fmt.Errorf("parse the credential for %q: %w", c.Game, err)
 	}
 
+	fingerprint := fingerprintOf(cert)
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if old, ok := a.byFingerprint[fingerprint]; ok && old.game == c.Game {
+		return nil // Reloading the same identity does not retire its streams.
+	}
 	for fp, e := range a.byFingerprint {
-		if e.game == c.Game {
+		if e.game == c.Game || fp == fingerprint {
+			close(e.lifetime.done)
 			delete(a.byFingerprint, fp)
 		}
 	}
-	a.byFingerprint[fingerprintOf(cert)] = allowEntry{game: c.Game, cert: cert}
+	a.byFingerprint[fingerprint] = allowEntry{
+		game: c.Game, cert: cert, lifetime: &credentialAdmission{done: make(chan struct{})},
+	}
 	return nil
 }
 
 // Resolve names the game a fingerprint belongs to.
 func (a *Allowlist) Resolve(fingerprint string) (string, bool) {
+	e, ok := a.resolve(fingerprint)
+	return e.game, ok
+}
+
+// resolve snapshots identity and its lifetime together with respect to rotation.
+func (a *Allowlist) resolve(fingerprint string) (allowEntry, bool) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	e, ok := a.byFingerprint[fingerprint]
-	return e.game, ok
+	return e, ok
 }
 
 // Revoke withdraws a game's credential.
@@ -167,26 +195,13 @@ func (a *Allowlist) Resolve(fingerprint string) (string, bool) {
 // reviewed.
 func (a *Allowlist) Revoke(game string) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	for fp, e := range a.byFingerprint {
 		if e.game == game {
+			close(e.lifetime.done)
 			delete(a.byFingerprint, fp)
 		}
 	}
-	notify := a.onRevoke
-	a.mu.Unlock()
-
-	// Outside the lock: what this ends is a stream, and whatever is holding
-	// that stream must never end up waiting on the allowlist to release.
-	if notify != nil {
-		notify(game)
-	}
-}
-
-// OnRevoke registers what to do when a credential is withdrawn.
-func (a *Allowlist) OnRevoke(f func(game string)) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.onRevoke = f
 }
 
 // pool builds the roots a handshake verifies against, from whatever is admitted

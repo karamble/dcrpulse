@@ -18,6 +18,9 @@ import (
 // nothing outside this package can put a game into a context.
 type callerKey struct{}
 
+// credentialKey binds a subscription to the admission that authenticated it.
+type credentialKey struct{}
+
 // callerGame is the game this call authenticated as.
 func callerGame(ctx context.Context) string {
 	game, _ := ctx.Value(callerKey{}).(string)
@@ -40,21 +43,26 @@ var errNotHere = status.Error(codes.Unimplemented, "")
 // ever loosened, this would stop resolving rather than quietly start trusting
 // whatever arrived.
 func (s *Server) resolveCaller(ctx context.Context) (string, bool) {
+	e, ok := s.resolveCredential(ctx)
+	return e.game, ok
+}
+
+func (s *Server) resolveCredential(ctx context.Context) (allowEntry, bool) {
 	if !s.live() {
-		return "", false
+		return allowEntry{}, false
 	}
 	p, ok := peer.FromContext(ctx)
 	if !ok {
-		return "", false
+		return allowEntry{}, false
 	}
 	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
 	if !ok {
-		return "", false
+		return allowEntry{}, false
 	}
 	if len(tlsInfo.State.VerifiedChains) == 0 || len(tlsInfo.State.VerifiedChains[0]) == 0 {
-		return "", false
+		return allowEntry{}, false
 	}
-	return s.allow.Resolve(fingerprintOf(tlsInfo.State.VerifiedChains[0][0]))
+	return s.allow.resolve(fingerprintOf(tlsInfo.State.VerifiedChains[0][0]))
 }
 
 // unaryIdentity resolves the caller before any handler runs.
@@ -76,11 +84,13 @@ func (s *Server) unaryIdentity(
 func (s *Server) streamIdentity(
 	srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler,
 ) error {
-	game, ok := s.resolveCaller(ss.Context())
+	entry, ok := s.resolveCredential(ss.Context())
 	if !ok {
 		return errNotHere
 	}
-	return handler(srv, &identifiedStream{ServerStream: ss, ctx: context.WithValue(ss.Context(), callerKey{}, game)})
+	ctx := context.WithValue(ss.Context(), callerKey{}, entry.game)
+	ctx = context.WithValue(ctx, credentialKey{}, entry.lifetime)
+	return handler(srv, &identifiedStream{ServerStream: ss, ctx: ctx})
 }
 
 // identifiedStream carries the resolved game, because a ServerStream's context
