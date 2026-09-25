@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
+	"dcrpulse/internal/middleware"
 	"dcrpulse/internal/rpc"
 )
 
@@ -29,6 +30,13 @@ func BisonrelayRTDTAudioHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	brelLog.Infof("RTDT audio: upgrade request rv=%s origin=%q", rv, r.Header.Get("Origin"))
+	// Checked before brclientd is contacted: a foreign page must not hold the
+	// call's single audio attachment even for the moment before the upgrade.
+	if !middleware.SameOriginWS(r) {
+		brelLog.Warnf("RTDT audio: refusing cross-origin upgrade rv=%s origin=%q", rv, r.Header.Get("Origin"))
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
 
 	tlsCfg, upstreamURL, err := rpc.BrclientdRTDTAudioDial(rv)
 	if err != nil {
