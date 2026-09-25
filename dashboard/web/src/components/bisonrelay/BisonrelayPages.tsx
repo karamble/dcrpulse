@@ -69,8 +69,10 @@ export const decodeSegments = (segs: string[]): string[] | null => {
 //   #pages/new                   -> new local page editor
 //   #pages/edit/<name>           -> edit a local page
 //   #pages/visit/<uid>/<path...> -> view a (local or remote) page
-export const readHash = (): View => {
-  const h = window.location.hash.replace(/^#/, '');
+export const readHash = (): View => parseHash(window.location.hash);
+
+export const parseHash = (hash: string): View => {
+  const h = hash.replace(/^#/, '');
   if (!h.startsWith('pages')) return { kind: 'mine' };
   const rest = h.slice('pages'.length).replace(/^\//, '');
   if (rest === '' || rest === 'mine') return { kind: 'mine' };
@@ -830,6 +832,11 @@ const PageSegments = ({
     )
       return;
     e.preventDefault();
+    if (href.startsWith('#pages/visit/')) {
+      const v = parseHash(href);
+      if (v.kind === 'visit') onNavigate(v.uid, v.path);
+      return;
+    }
     const resolved = resolvePageLink(href, currentUid);
     if (resolved) onNavigate(resolved.uid, resolved.path);
   };
@@ -837,7 +844,7 @@ const PageSegments = ({
   // renderSegment renders one non-grid segment (text, image/file embed, form).
   const renderSegment = (seg: BisonrelayPageSegment, i: number) => {
     if (seg.kind === 'text' && seg.html) {
-      return renderTextWithPayChips(seg.html, i);
+      return renderTextWithPayChips(rewritePageLinks(seg.html, currentUid), i);
     }
     if (seg.kind === 'embed' && seg.download && !seg.data_b64) {
       return <DownloadEmbed key={i} seg={seg} uid={currentUid} />;
@@ -895,7 +902,7 @@ const PageSegments = ({
           <div key={j} className="flex flex-col gap-2">
             {renderSegment(seg, j)}
             {caption && (
-              <div className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: caption.html || '' }} />
+              <div className={BR_PROSE_CLASSES} dangerouslySetInnerHTML={{ __html: rewritePageLinks(caption.html || '', currentUid) }} />
             )}
           </div>,
         );
@@ -938,7 +945,7 @@ const PageSegments = ({
             {caption && (
               <div
                 className={`${BR_PROSE_CLASSES} p-4`}
-                dangerouslySetInnerHTML={{ __html: caption.html || '' }}
+                dangerouslySetInnerHTML={{ __html: rewritePageLinks(caption.html || '', currentUid) }}
               />
             )}
           </article>,
@@ -997,6 +1004,25 @@ const PageSegments = ({
 // resolvePageLink turns a markdown href into a (uid, path) navigation target.
 // br://UID/seg/seg -> that user's page; a relative href -> the current user's
 // page at that absolute path (matches bruig's launchUrlAwait behaviour).
+// rewritePageLinks points every in-app link of a page at the dashboard's own
+// hash route, so a link opened in a new tab shows the same page and can never
+// resolve to another dashboard path. External and mail links stay as they are.
+export const rewritePageLinks = (html: string, currentUid: string): string => {
+  if (!html.includes('<a')) return html;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('a[href]').forEach((a) => {
+    const href = a.getAttribute('href') || '';
+    if (/^https?:\/\//i.test(href) || href.startsWith('mailto:')) return;
+    const target = resolvePageLink(href, currentUid);
+    if (!target) {
+      a.removeAttribute('href');
+      return;
+    }
+    a.setAttribute('href', `#pages/visit/${[target.uid, ...target.path].map(encodeURIComponent).join('/')}`);
+  });
+  return doc.body.innerHTML;
+};
+
 export const resolvePageLink = (href: string, currentUid: string): { uid: string; path: string[] } | null => {
   if (!href) return null;
   if (href.startsWith('br://')) {

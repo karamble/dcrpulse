@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { decodeSegments, readHash, resolvePageLink } from './BisonrelayPages';
+import { decodeSegments, parseHash, readHash, resolvePageLink, rewritePageLinks } from './BisonrelayPages';
 
 const UID = 'ab'.repeat(32);
 
@@ -44,5 +44,35 @@ describe('resolvePageLink', () => {
   it('resolves valid br:// and relative links', () => {
     expect(resolvePageLink(`br://${UID}/a%20b.md`, 'me')).toEqual({ uid: UID, path: ['a b.md'] });
     expect(resolvePageLink('/docs/x.md', UID)).toEqual({ uid: UID, path: ['docs', 'x.md'] });
+  });
+});
+
+describe('rewritePageLinks', () => {
+  const ME = 'cd'.repeat(32);
+  const hrefs = (html: string) =>
+    Array.from(new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a')).map((a) => a.getAttribute('href'));
+
+  it('points in-app links at the page route and leaves external links alone', () => {
+    const out = rewritePageLinks(
+      `<p><a href="docs/x.md">x</a> <a href="br://${UID}/a%20b.md">y</a> ` +
+        '<a href="https://example.com" target="_blank">z</a> <a href="mailto:a@b.c">m</a> <a href="%">bad</a></p>',
+      ME,
+    );
+    expect(hrefs(out)).toEqual([
+      `#pages/visit/${ME}/docs/x.md`,
+      `#pages/visit/${UID}/a%20b.md`,
+      'https://example.com',
+      'mailto:a@b.c',
+      null,
+    ]);
+  });
+
+  it('opens the same page the original link resolved to', () => {
+    for (const href of ['docs/x.md', `br://${UID}/a%20b.md`, '/', 'api/wallet/send']) {
+      const [out] = hrefs(rewritePageLinks(`<a href="${href}">l</a>`, ME));
+      const want = resolvePageLink(href, ME)!;
+      expect(out!.startsWith('#pages/visit/')).toBe(true);
+      expect(parseHash(out!)).toEqual({ kind: 'visit', uid: want.uid, path: want.path });
+    }
   });
 });
