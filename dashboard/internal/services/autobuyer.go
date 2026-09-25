@@ -68,6 +68,9 @@ func recordAutobuyerEvent(level, msg string) {
 
 // StartAutobuyer launches the ticket-autobuyer goroutine. The passphrase byte
 // slice is consumed: it is wiped before this returns, on every path.
+// rememberAutobuyerVSP records the autobuyer's VSP; a variable for tests.
+var rememberAutobuyerVSP = rememberVSPUsed
+
 func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error {
 	defer utils.Zero(passphrase)
 	if rpc.TicketBuyerClient == nil || rpc.WalletGrpcClient == nil {
@@ -104,10 +107,6 @@ func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error 
 	autobuyerLastErr = ""
 	sCopy := *settings
 	autobuyerMu.Unlock()
-
-	// Remember the VSP for the picker, matching Decrediton's
-	// dispatch(updateUsedVSPs(vsp)) in ControlActions.js:519.
-	rememberVSPUsed(ctx, sCopy.VspHost, sCopy.VspPubkey)
 
 	// When privacy is configured, the autobuyer buys mixed tickets: fund + split
 	// + mix from the "mixed" account, change to the "unmixed" account, mixing on.
@@ -156,6 +155,10 @@ func StartAutobuyer(settings *types.AutobuyerSettings, passphrase []byte) error 
 			return abort(err, "unlock change account")
 		}
 	}
+
+	// Remember the VSP for the picker once the passphrase has been accepted,
+	// matching Decrediton's dispatch(updateUsedVSPs(vsp)) in ControlActions.js:519.
+	rememberAutobuyerVSP(ctx, sCopy.VspHost, sCopy.VspPubkey)
 
 	// The passphrase is not needed past this point: the buyer signs with the
 	// account keys unlocked above and its RPC carries no passphrase.

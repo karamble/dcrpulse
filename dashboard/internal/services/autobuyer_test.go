@@ -118,3 +118,40 @@ func TestStartAutobuyerRefusesWhileMixerRunning(t *testing.T) {
 		t.Fatal("autobuyer must not report running after a refused start")
 	}
 }
+
+type wrongPassphraseWallet struct {
+	pb.WalletServiceClient // panic on anything unexpected
+}
+
+func (w *wrongPassphraseWallet) Accounts(ctx context.Context, req *pb.AccountsRequest, _ ...grpc.CallOption) (*pb.AccountsResponse, error) {
+	return &pb.AccountsResponse{}, nil
+}
+
+func (w *wrongPassphraseWallet) UnlockAccount(ctx context.Context, req *pb.UnlockAccountRequest, _ ...grpc.CallOption) (*pb.UnlockAccountResponse, error) {
+	return nil, fmt.Errorf("invalid passphrase")
+}
+
+// A start refused for a wrong passphrase leaves the remembered VSPs as they were.
+func TestStartAutobuyerRemembersTheVSPOnlyAfterUnlock(t *testing.T) {
+	prevBuyer := rpc.TicketBuyerClient
+	rpc.TicketBuyerClient = &fakeTicketBuyer{}
+	t.Cleanup(func() { rpc.TicketBuyerClient = prevBuyer })
+	prevWallet := rpc.WalletGrpcClient
+	rpc.WalletGrpcClient = &wrongPassphraseWallet{}
+	t.Cleanup(func() { rpc.WalletGrpcClient = prevWallet })
+	prevRemember := rememberAutobuyerVSP
+	remembered := 0
+	rememberAutobuyerVSP = func(context.Context, string, string) { remembered++ }
+	t.Cleanup(func() { rememberAutobuyerVSP = prevRemember })
+
+	err := StartAutobuyer(&types.AutobuyerSettings{VspHost: "vsp.example.org", VspPubkey: "pubkey"}, []byte("wrong"))
+	if err == nil || !strings.Contains(err.Error(), "invalid passphrase") {
+		t.Fatalf("StartAutobuyer = %v, want the unlock error", err)
+	}
+	if remembered != 0 {
+		t.Fatal("the VSP was remembered for a start that failed its passphrase check")
+	}
+	if IsAutobuyerRunning() {
+		t.Fatal("autobuyer reports running after a refused start")
+	}
+}
