@@ -1692,7 +1692,7 @@ var bisonrelayTools = []toolDef{
 			return res, nil
 		}),
 	agentTool("bisonrelay", "br_shop_place_order",
-		"Place an order for the items in your cart at a remote Bison Relay simplestore merchant. Returns the order page, and (when present) the extracted Lightning invoice to pay with ln_pay. Provide a shipping address only if an ordered product requires shipping. This creates an order but does not itself move funds. Requires a grant with Bison Relay write enabled.",
+		"Place an order for the items in your cart at a remote Bison Relay simplestore merchant. Returns the order page and, when the merchant issued one, its Lightning invoice together with the invoice's decoded amount and destination. The invoice is the merchant's claim: check its amount against the order total before paying it with ln_pay. Provide a shipping address only if an ordered product requires shipping. This creates an order but does not itself move funds. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brShopPlaceOrderInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
 				recordSpend(a, "br_shop_place_order", 0, 0, in.UID, "denied", err.Error())
@@ -1710,12 +1710,7 @@ var bisonrelayTools = []toolDef{
 				return nil, err
 			}
 			if m, ok := res.(map[string]any); ok {
-				if md, _ := m["markdown"].(string); md != "" {
-					if inv := extractLNInvoice(md); inv != "" {
-						m["invoice"] = inv
-						m["pay_type"] = "ln"
-					}
-				}
+				annotateOrderInvoice(ctx, m)
 			}
 			recordSpend(a, "br_shop_place_order", 0, 0, in.UID, "ok", "")
 			return res, nil
@@ -2154,6 +2149,29 @@ var lnInvoiceRE = regexp.MustCompile(`(?i)(?:lnpay://)?\b(ln[tsr]?dcr[0-9][a-z0-
 // extractLNInvoice pulls a bolt11 invoice out of a place-order reply's markdown,
 // stripping the "lnpay://" scheme so the result hands straight to ln_pay. Returns
 // "" when the page carries no LN invoice (e.g. an on-chain or custom template).
+// decodeOrderInvoice decodes a merchant's order invoice; a variable so tests can
+// stand in for dcrlnd.
+var decodeOrderInvoice = services.DecodeLightningInvoice
+
+// annotateOrderInvoice adds the invoice found in an order page, decoded, so the
+// amount the merchant asks for is visible next to the order. The order is
+// already placed, so a decode failure is reported rather than returned.
+func annotateOrderInvoice(ctx context.Context, m map[string]any) {
+	md, _ := m["markdown"].(string)
+	inv := extractLNInvoice(md)
+	if inv == "" {
+		return
+	}
+	m["invoice"] = inv
+	dec, err := decodeOrderInvoice(ctx, inv)
+	if err != nil {
+		m["invoice_error"] = err.Error()
+		return
+	}
+	m["invoice_decoded"] = dec
+	m["invoice_amount_dcr"] = dcrutil.Amount(dec.NumAtoms).ToCoin()
+}
+
 func extractLNInvoice(markdown string) string {
 	if m := lnInvoiceRE.FindStringSubmatch(markdown); m != nil {
 		return m[1]

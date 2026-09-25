@@ -37,6 +37,7 @@ import {
 import { getBisonrelayContacts, BisonrelayContact } from '../../services/bisonrelayApi';
 import { AgentAllowedIPs } from './AgentAllowedIPs';
 import { AgentSpendGrant } from './AgentSpendGrant';
+import { PeerSpendNotice } from './PeerSpendNotice';
 import { ConfigSection, domainLabel } from './ConfigSection';
 import { McpHelpModal } from './McpHelpModal';
 import { PlaintextTokenWarning } from './PlaintextTokenWarning';
@@ -683,6 +684,13 @@ export const AgentsSection = () => {
                     allowedIps={a.allowedIps ?? []}
                     lastDenied={a.lastDenied}
                     onChanged={refresh}
+                  />
+
+                  <PeerSpendNotice
+                    domains={a.domains}
+                    grant={settings.grants?.[a.id]}
+                    scopes={settings.writeScopes ?? []}
+                    oversightOn={settings.notify.enabled}
                   />
 
                   <AgentSpendGrant

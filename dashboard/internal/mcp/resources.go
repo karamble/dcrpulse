@@ -129,7 +129,9 @@ var resourceCatalog = []resourceDef{
 	{
 		domain: "bisonrelay", uri: resBRMessages, name: "Bison Relay messages",
 		desc: "Recent incoming private and group-chat messages, newest first. Updates as messages arrive.",
-		read: func(context.Context) (any, error) { return brRing.snapshot(), nil },
+		read: func(context.Context) (any, error) {
+			return map[string]any{"untrusted": peerContentNotice, "messages": brRing.snapshot()}, nil
+		},
 	},
 	{
 		domain: "lightning", uri: resLightning, name: "Lightning events",
