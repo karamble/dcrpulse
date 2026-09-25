@@ -14,6 +14,7 @@ import {
   type DexWalletState,
   type OrderEstimate,
   type OrderOption,
+  type SwapEstimate,
 } from '../../services/dcrdexApi';
 import { fmtAmt, fmtPrice } from './dexFormat';
 import { useDexRefreshOnNotes } from './DexLiveProvider';
@@ -64,7 +65,8 @@ export const DexOrderForm = ({ host, market, preview = false, pick, bestBid, bes
   // validation failure (insufficient funds/reserves) before the user commits.
   const [est, setEst] = useState<OrderEstimate | null>(null);
   const [estErr, setEstErr] = useState<string | null>(null);
-  const [maxLots, setMaxLots] = useState<number | null>(null);
+  // maxEst is bisonw's largest fundable order (maxbuy/maxsell).
+  const [maxEst, setMaxEst] = useState<SwapEstimate | null>(null);
 
   const baseSym = market.base;
   const quoteSym = market.quote.split('.')[0];
@@ -136,7 +138,7 @@ export const DexOrderForm = ({ host, market, preview = false, pick, bestBid, bes
     setOpts({});
     setEst(null);
     setEstErr(null);
-    setMaxLots(null);
+    setMaxEst(null);
     setErr(null);
     setConfirming(false);
   }, [host, market.baseID, market.quoteID]);
@@ -201,14 +203,25 @@ export const DexOrderForm = ({ host, market, preview = false, pick, bestBid, bes
   const fmtCell = (val: number, known: boolean, est2: boolean, sym: string) =>
     known ? `${est2 ? '~' : ''}${fmtAmt(val, 8)} ${sym}` : `${unknownQuote} ${sym}`;
 
-  // A buy locks the quote asset, a sell the base asset. Compare the order's
-  // notional requirement against the funding wallet's available balance.
+  // Funding gate, as bisonw's own order button: a limit order is held to
+  // bisonw's max estimate once known, and to one lot's worth of balance until
+  // then; a market order has no max and is compared to the balance.
   const baseAvail = wallets.find((w) => w.assetID === market.baseID)?.available;
   const quoteAvail = wallets.find((w) => w.assetID === market.quoteID)?.available;
-  const need = sell ? qtyEffective : isMarketBuy ? spendFloat : isLimit ? total : 0;
-  const have = sell ? baseAvail : quoteAvail;
-  const insufficient = have != null && hasQty && need > 0 && need > have;
-  const overMax = !isMarketBuy && maxLots != null && lots > maxLots;
+  const baseAvailAtoms = baseAvail != null ? Math.round(baseAvail * market.baseConvFactor) : null;
+  const quoteAvailAtoms = quoteAvail != null ? Math.round(quoteAvail * market.quoteConvFactor) : null;
+  const maxLots = maxEst?.lots ?? null;
+  let insufficient = false;
+  if (hasQty && !isLimit) {
+    insufficient = sell
+      ? baseAvailAtoms != null && qtyAtomic > baseAvailAtoms
+      : quoteAvailAtoms != null && spendAtomic > quoteAvailAtoms;
+  } else if (hasQty && sell) {
+    insufficient = (baseAvailAtoms != null && baseAvailAtoms < market.lotSize) || (maxEst != null && qtyAtomic > maxEst.value);
+  } else if (hasQty && msgRate > 0) {
+    const lotCost = market.lotSize * (msgRate / RateEncodingFactor);
+    insufficient = (quoteAvailAtoms != null && quoteAvailAtoms < lotCost) || (maxEst != null && lots > maxEst.lots);
+  }
 
   const valid = !preview && orderReady && !insufficient;
 
@@ -271,15 +284,13 @@ export const DexOrderForm = ({ host, market, preview = false, pick, bestBid, bes
     });
   }, [est]);
 
-  // Max fundable lots for the lots-based modes (guidance, not a hard gate). A
-  // market buy is sized by spend, so it has no lot max.
+  // bisonw's max fundable order for the lots-based modes; it gates a limit order
+  // and offers the "max" shortcut. A market buy is sized by spend, so it has none.
   const availKey = `${baseAvail ?? ''}:${quoteAvail ?? ''}`;
   const rateForMax = isLimit ? msgRate : 0;
   useEffect(() => {
-    if (preview || isMarketBuy) {
-      setMaxLots(null);
-      return;
-    }
+    setMaxEst(null);
+    if (preview || isMarketBuy) return;
     let cancelled = false;
     const t = window.setTimeout(() => {
       const pr = sell
@@ -287,11 +298,8 @@ export const DexOrderForm = ({ host, market, preview = false, pick, bestBid, bes
         : rateForMax > 0
           ? maxDexBuy(host, market.baseID, market.quoteID, rateForMax)
           : null;
-      if (!pr) {
-        setMaxLots(null);
-        return;
-      }
-      pr.then((r) => !cancelled && setMaxLots(r?.swap?.lots ?? null)).catch(() => !cancelled && setMaxLots(null));
+      if (!pr) return;
+      pr.then((r) => !cancelled && setMaxEst(r?.swap ?? null)).catch(() => {});
     }, 350);
     return () => {
       cancelled = true;
@@ -300,13 +308,12 @@ export const DexOrderForm = ({ host, market, preview = false, pick, bestBid, bes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview, isMarketBuy, sell, host, market.baseID, market.quoteID, rateForMax, availKey]);
 
-  // Network-fee estimate (worst case) in the from-asset (swap) and to-asset
-  // (redeem). For a token market the fee is paid in the parent gas asset; the
-  // conv-factor display here is approximate for that case.
-  const fromConv = sell ? market.baseConvFactor : market.quoteConvFactor;
-  const toConv = sell ? market.quoteConvFactor : market.baseConvFactor;
-  const fromSym = sell ? baseSym : quoteSym;
-  const toSym = sell ? quoteSym : baseSym;
+  // Network-fee estimate (worst case), in the asset that pays each side's fee:
+  // the parent chain for a token.
+  const fromConv = sell ? market.baseFeeConvFactor : market.quoteFeeConvFactor;
+  const toConv = sell ? market.quoteFeeConvFactor : market.baseFeeConvFactor;
+  const fromSym = sell ? market.baseFeeSymbol : market.quoteFeeSymbol;
+  const toSym = sell ? market.quoteFeeSymbol : market.baseFeeSymbol;
   const swapFee = est ? est.swap.estimate.realisticWorstCase / fromConv : 0;
   const redeemFee = est ? est.redeem.estimate.realisticWorstCase / toConv : 0;
   const boolOpts: OrderOption[] = est
@@ -522,9 +529,6 @@ export const DexOrderForm = ({ host, market, preview = false, pick, bestBid, bes
 
         {insufficient && <p className="text-[11px] text-destructive">Not enough funds available</p>}
         {!insufficient && estErr && orderReady && <p className="text-[11px] text-destructive break-words">{estErr}</p>}
-        {!insufficient && !estErr && overMax && (
-          <p className="text-[11px] text-warning">Exceeds the estimated max of {maxLots} lots; bisonw may reject it.</p>
-        )}
 
         <div className="mt-auto pt-2 space-y-2">
           {!confirming ? (

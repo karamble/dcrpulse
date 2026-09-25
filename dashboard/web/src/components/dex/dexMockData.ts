@@ -11,12 +11,12 @@ import type { Candle, MarketStats, MiniOrder, OrderBookState, Trade } from './us
 import { RateEncodingFactor } from './dexFormat';
 
 export const mockMarkets: DexMarket[] = [
-  { base: 'DCR', quote: 'BTC', baseID: 42, quoteID: 0, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e8 },
-  { base: 'DCR', quote: 'USDC.POLYGON', baseID: 42, quoteID: 966001, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e6 },
-  { base: 'BTC', quote: 'USDC.POLYGON', baseID: 0, quoteID: 966001, lotSize: 1e6, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e6 },
-  { base: 'LTC', quote: 'USDT.POLYGON', baseID: 2, quoteID: 966002, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e6 },
-  { base: 'ETH', quote: 'BTC', baseID: 60, quoteID: 0, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e9, quoteConvFactor: 1e8 },
-  { base: 'ZEC', quote: 'BTC', baseID: 133, quoteID: 0, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e8 },
+  { base: 'DCR', quote: 'BTC', baseID: 42, quoteID: 0, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e8, baseFeeConvFactor: 1e8, quoteFeeConvFactor: 1e8, baseFeeSymbol: 'DCR', quoteFeeSymbol: 'BTC' },
+  { base: 'DCR', quote: 'USDC.POLYGON', baseID: 42, quoteID: 966001, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e6, baseFeeConvFactor: 1e8, quoteFeeConvFactor: 1e9, baseFeeSymbol: 'DCR', quoteFeeSymbol: 'POLYGON' },
+  { base: 'BTC', quote: 'USDC.POLYGON', baseID: 0, quoteID: 966001, lotSize: 1e6, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e6, baseFeeConvFactor: 1e8, quoteFeeConvFactor: 1e9, baseFeeSymbol: 'BTC', quoteFeeSymbol: 'POLYGON' },
+  { base: 'LTC', quote: 'USDT.POLYGON', baseID: 2, quoteID: 966002, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e6, baseFeeConvFactor: 1e8, quoteFeeConvFactor: 1e9, baseFeeSymbol: 'LTC', quoteFeeSymbol: 'POLYGON' },
+  { base: 'ETH', quote: 'BTC', baseID: 60, quoteID: 0, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e9, quoteConvFactor: 1e8, baseFeeConvFactor: 1e9, quoteFeeConvFactor: 1e8, baseFeeSymbol: 'ETH', quoteFeeSymbol: 'BTC' },
+  { base: 'ZEC', quote: 'BTC', baseID: 133, quoteID: 0, lotSize: 1e8, rateStep: 1, baseConvFactor: 1e8, quoteConvFactor: 1e8, baseFeeConvFactor: 1e8, quoteFeeConvFactor: 1e8, baseFeeSymbol: 'ZEC', quoteFeeSymbol: 'BTC' },
 ];
 
 // Per-market reference mid-price driving the sample book, stats and candles.

@@ -79,6 +79,11 @@ export interface DexMarket {
   baseConvFactor: number; // base atoms per conventional unit
   quoteConvFactor: number; // quote atoms per conventional unit
   spot?: DexMarketSpot; // last/24h snapshot when connected
+  // The asset paying each side's network fee: the parent chain for a token.
+  baseFeeConvFactor: number;
+  quoteFeeConvFactor: number;
+  baseFeeSymbol: string;
+  quoteFeeSymbol: string;
 }
 
 export interface PlaceOrderParams {

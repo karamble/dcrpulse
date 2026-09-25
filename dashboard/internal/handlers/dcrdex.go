@@ -612,6 +612,26 @@ func atomsToConv(atoms, convFactor uint64) float64 {
 	return float64(atoms) / float64(convFactor)
 }
 
+// marketConvFactor is the conversion factor a market is sized with: the local
+// asset driver's, as bisonw's own UI does, and the server's only for an asset
+// the catalog does not know.
+func marketConvFactor(assetID uint32, server uint64) uint64 {
+	if cf := dexassets.ConvFactor(assetID); cf > 0 {
+		return cf
+	}
+	return server
+}
+
+// marketFeeAsset returns the conversion factor and symbol of the asset that pays
+// the network fee for assetID: the parent chain for a token, else the asset.
+func marketFeeAsset(assetID uint32, convFactor uint64, symbol string) (uint64, string) {
+	feeID := dexassets.FeeAsset(assetID)
+	if feeID == assetID {
+		return convFactor, symbol
+	}
+	return dexassets.ConvFactor(feeID), strings.ToUpper(dexassets.Symbol(feeID))
+}
+
 // convToAtoms converts a conventional amount to atomic units, rounding to the
 // nearest atom.
 func convToAtoms(amount float64, convFactor uint64) uint64 {
@@ -1029,6 +1049,12 @@ type DexMarket struct {
 	BaseConvFactor  uint64   `json:"baseConvFactor"`  // base atoms per conventional unit
 	QuoteConvFactor uint64   `json:"quoteConvFactor"` // quote atoms per conventional unit
 	Spot            *DexSpot `json:"spot,omitempty"`  // last/24h snapshot, when connected
+
+	// The asset paying each side's network fee: the parent chain for a token.
+	BaseFeeConvFactor  uint64 `json:"baseFeeConvFactor"`
+	QuoteFeeConvFactor uint64 `json:"quoteFeeConvFactor"`
+	BaseFeeSymbol      string `json:"baseFeeSymbol"`
+	QuoteFeeSymbol     string `json:"quoteFeeSymbol"`
 }
 
 // DexSpot is a market's current spot price plus 24h stats, mirroring
@@ -1203,16 +1229,24 @@ func GetDcrdexConfigHandler(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(cfgBondAssets, func(i, j int) bool { return cfgBondAssets[i].Symbol < cfgBondAssets[j].Symbol })
 	markets := make([]DexMarket, 0, len(xc.Markets))
 	for _, m := range xc.Markets {
+		base, quote := strings.ToUpper(m.BaseSymbol), strings.ToUpper(m.QuoteSymbol)
+		baseCF, quoteCF := marketConvFactor(m.BaseID, convFactor(m.BaseID)), marketConvFactor(m.QuoteID, convFactor(m.QuoteID))
+		baseFeeCF, baseFeeSym := marketFeeAsset(m.BaseID, baseCF, base)
+		quoteFeeCF, quoteFeeSym := marketFeeAsset(m.QuoteID, quoteCF, quote)
 		markets = append(markets, DexMarket{
-			Base:            strings.ToUpper(m.BaseSymbol),
-			Quote:           strings.ToUpper(m.QuoteSymbol),
-			BaseID:          m.BaseID,
-			QuoteID:         m.QuoteID,
-			LotSize:         m.LotSize,
-			RateStep:        m.RateStep,
-			BaseConvFactor:  convFactor(m.BaseID),
-			QuoteConvFactor: convFactor(m.QuoteID),
-			Spot:            m.Spot,
+			Base:               base,
+			Quote:              quote,
+			BaseID:             m.BaseID,
+			QuoteID:            m.QuoteID,
+			LotSize:            m.LotSize,
+			RateStep:           m.RateStep,
+			BaseConvFactor:     baseCF,
+			QuoteConvFactor:    quoteCF,
+			BaseFeeConvFactor:  baseFeeCF,
+			QuoteFeeConvFactor: quoteFeeCF,
+			BaseFeeSymbol:      baseFeeSym,
+			QuoteFeeSymbol:     quoteFeeSym,
+			Spot:               m.Spot,
 		})
 	}
 	sort.Slice(markets, func(i, j int) bool {
