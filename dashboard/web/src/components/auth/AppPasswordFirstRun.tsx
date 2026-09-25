@@ -5,9 +5,11 @@
 import { useState, type FormEvent } from 'react';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 import { setupAppPassword, skipAppPasswordSetup } from '../../services/auth';
+import { UnprotectedWarning } from './UnprotectedWarning';
 
 // AppPasswordFirstRun is the one-time prompt shown on a fresh dashboard. The
-// user can set an app password now or skip and run unprotected; either choice
+// user can set an app password now or, after acknowledging the warning, skip
+// and run unprotected; either choice
 // dismisses it for good (the backend records the dismissal). It can be enabled
 // later from Settings > Security.
 export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
@@ -16,6 +18,7 @@ export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmingSkip, setConfirmingSkip] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
 
   const enable = async (e: FormEvent) => {
     e.preventDefault();
@@ -59,22 +62,28 @@ export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
         className="relative w-full max-w-md p-6 rounded-xl bg-background border border-border/50 shadow-xl space-y-4"
       >
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
-            <ShieldCheck className="h-6 w-6 text-primary" />
+          <div className="p-3 rounded-xl bg-warning/10 border border-warning/30">
+            <ShieldCheck className="h-6 w-6 text-warning" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              Protect your dashboard
-              <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/20">
-                Recommended
-              </span>
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              We recommend setting an app password. This dashboard can move funds
-              and manage your store, Lightning node and DEX, so a login keeps
-              anyone who can reach this page from using it.
-            </p>
+            <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-warning/15 text-warning border border-warning/30">
+              Strongly recommended
+            </span>
+            <h2 className="text-lg font-semibold">Set an app password before you continue</h2>
           </div>
+        </div>
+        <div>
+          <p className="text-sm text-muted-foreground">
+            This dashboard can <strong className="text-foreground">spend your funds</strong>:
+            it pays Lightning invoices, sends tips and runs your DEX and store.
+            Without an app password, anything that can reach it gets that power
+            too. That includes{' '}
+            <strong className="text-foreground">
+              other apps on this device, other devices on your network, and
+              websites built to attack local services
+            </strong>
+            .
+          </p>
         </div>
         <input
           type="password"
@@ -97,28 +106,29 @@ export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
         )}
         {error && <p className="text-sm text-red-500">{error}</p>}
         {confirmingSkip ? (
-          <div className="space-y-2 pt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-            <p className="text-sm text-amber-200">
-              Continue without a password? Anyone who can open this dashboard will
-              have full access to your funds and store.
-            </p>
-            <div className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setConfirmingSkip(false)}
-                disabled={busy}
-                className="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-50"
-              >
-                Go back
-              </button>
+          <div className="space-y-3 pt-2">
+            <UnprotectedWarning acknowledged={acknowledged} onAcknowledge={setAcknowledged} />
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={skip}
-                disabled={busy}
-                className="px-4 py-2 rounded-lg border border-amber-500/50 text-amber-200 hover:bg-amber-500/10 disabled:opacity-50 flex items-center gap-2"
+                disabled={busy || !acknowledged}
+                className="px-4 py-2 rounded-lg border border-warning/50 text-warning hover:bg-warning/10 disabled:opacity-50 flex items-center gap-2"
               >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                Skip anyway
+                Leave unprotected
+              </button>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => {
+                  setConfirmingSkip(false);
+                  setAcknowledged(false);
+                }}
+                disabled={busy}
+                className="px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50"
+              >
+                Set a password
               </button>
             </div>
           </div>
@@ -128,9 +138,9 @@ export function AppPasswordFirstRun({ onDone }: { onDone: () => void }) {
               type="button"
               onClick={() => setConfirmingSkip(true)}
               disabled={busy}
-              className="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-50"
+              className="px-1 py-2 text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
             >
-              Skip for now
+              Continue without a password
             </button>
             <button
               type="submit"

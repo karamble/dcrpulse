@@ -32,6 +32,7 @@ import { TicketHistoryTab } from './components/staking/TicketHistoryTab';
 import { WatchOnlyGuard, RequireWatchOnly } from './components/common/WatchOnlyGuard';
 import { BisonrelayLiveProvider } from './components/bisonrelay/BisonrelayLiveProvider';
 import { AuthGate } from './components/auth/AuthGate';
+import { UnprotectedBanner } from './components/auth/UnprotectedWarning';
 import { getDashboardData } from './services/api';
 import { getLightningInfo } from './services/lightningApi';
 import { getBisonrelayVersion } from './services/bisonrelayApi';
@@ -160,6 +161,9 @@ function AppContent() {
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-6">
         <Header nodeVersion={nodeVersion} />
+        <div className="mt-3 empty:hidden">
+          <UnprotectedBanner />
+        </div>
       </div>
       <div
         className={

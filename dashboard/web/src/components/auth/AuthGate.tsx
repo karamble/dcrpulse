@@ -19,11 +19,14 @@ import { AppPasswordFirstRun } from './AppPasswordFirstRun';
 
 interface AuthContextValue {
   status: AuthStatus | null;
+  // False while the status could not be read and the gate failed open.
+  known: boolean;
   refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   status: null,
+  known: false,
   refresh: async () => {},
 });
 
@@ -36,11 +39,14 @@ export const useAuth = () => useContext(AuthContext);
 export function AuthGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [known, setKnown] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       setStatus(await getAuthStatus());
+      setKnown(true);
     } catch {
+      setKnown(false);
       // If status is unreachable, fail open (treat as disabled) so a backend
       // hiccup never hard-locks the dashboard.
       setStatus({
@@ -84,7 +90,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   const showFirstRun = !!status && !status.configured && !status.setupDismissed;
   return (
-    <AuthContext.Provider value={{ status, refresh }}>
+    <AuthContext.Provider value={{ status, known, refresh }}>
       {children}
       {showFirstRun && <AppPasswordFirstRun onDone={refresh} />}
     </AuthContext.Provider>

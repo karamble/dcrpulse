@@ -10,6 +10,7 @@ import {
   disableAppPassword,
 } from '../../services/auth';
 import { useAuth } from '../auth/AuthGate';
+import { UnprotectedWarning } from '../auth/UnprotectedWarning';
 import { apiError } from '../../utils/apiError';
 
 const inputClass =
@@ -27,6 +28,7 @@ export const SecuritySection = () => {
   const [cur, setCur] = useState('');
   const [next, setNext] = useState('');
   const [disPw, setDisPw] = useState('');
+  const [disAck, setDisAck] = useState(false);
 
   const enable = async (e: FormEvent) => {
     e.preventDefault();
@@ -92,6 +94,7 @@ export const SecuritySection = () => {
     try {
       await disableAppPassword(disPw);
       setDisPw('');
+      setDisAck(false);
       setMsg('App password disabled.');
       await refresh();
     } catch (e: any) {
@@ -114,14 +117,14 @@ export const SecuritySection = () => {
           {enabled ? (
             <ShieldCheck className="h-6 w-6 text-success" />
           ) : (
-            <ShieldOff className="h-6 w-6 text-muted-foreground" />
+            <ShieldOff className="h-6 w-6 text-warning" />
           )}
           <div>
             <h3 className="text-lg font-semibold">Dashboard app password</h3>
             <p className="text-sm text-muted-foreground">
               {enabled
                 ? 'A login is required to use this dashboard.'
-                : 'Optional. When enabled, a password is required to use this dashboard - it covers the whole API and all live connections.'}
+                : 'Not set: this dashboard is unprotected. Anything that can reach it, including other apps on this device and other devices on your network, can spend your funds. A password covers the whole API and all live connections.'}
             </p>
           </div>
         </div>
@@ -201,10 +204,7 @@ export const SecuritySection = () => {
             className="p-6 rounded-xl bg-gradient-card border border-red-500/30 space-y-3"
           >
             <h4 className="font-semibold text-red-500">Disable app password</h4>
-            <p className="text-sm text-muted-foreground">
-              Turns off the login requirement. Anyone who can reach the dashboard
-              will be able to use it.
-            </p>
+            <UnprotectedWarning acknowledged={disAck} onAcknowledge={setDisAck} />
             <input
               type="password"
               autoComplete="current-password"
@@ -215,7 +215,7 @@ export const SecuritySection = () => {
             />
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || !disAck}
               className="px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-semibold disabled:opacity-50 flex items-center gap-2"
             >
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
