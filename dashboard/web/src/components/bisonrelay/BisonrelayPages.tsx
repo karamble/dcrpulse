@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-import { FormEvent, MouseEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toYMDTime } from '../../utils/date';
 import { isImageMime } from './embedParser';
 import {
@@ -22,6 +22,7 @@ import {
   BisonrelayPageFormField,
   BisonrelayPageSegment,
   BisonrelayContact,
+  checkBisonrelayPageFields,
   deleteBisonrelayLocalPage,
   fetchBisonrelayPage,
   getBisonrelayContacts,
@@ -1059,6 +1060,8 @@ const PageForm = ({
     return m;
   }, [fields]);
   const [values, setValues] = useState<Record<string, string>>(initial);
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
   const [fieldErrs, setFieldErrs] = useState<Record<string, string>>({});
   const [submitErr, setSubmitErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -1067,21 +1070,27 @@ const PageForm = ({
   const asyncTarget = fields.find((f) => f.type === 'asynctarget')?.value ?? '';
   const submitField = fields.find((f) => f.type === 'submit');
 
-  // validateField mirrors bruig's FormField validator (forms.dart): a field is
+  // checkFields mirrors bruig's FormField validator (forms.dart): a field is
   // checked only when it carries a regexp, and the value must match it or the
   // field's regexpstr is shown. Authors mark a field required with regexp=".+".
-  // A malformed author regexp is treated as no constraint rather than blocking.
-  const validateField = (f: BisonrelayPageFormField, value: string): string | null => {
-    if (!f.regexp) return null;
-    // A visited page supplies this regexp; bound the pattern and the tested value
-    // so a catastrophic-backtracking pattern can't freeze the tab (JS has no regex
-    // timeout). Over-long inputs are treated as no-constraint rather than risking it.
-    if (f.regexp.length > 200 || value.length > 4096) return null;
+  // The page chooses the pattern, so the backend runs it with Go's regexp; a
+  // pattern that cannot be checked is no constraint, as a malformed one is.
+  const checkFields = async (
+    items: { f: BisonrelayPageFormField; value: string }[],
+  ): Promise<Record<string, string>> => {
+    const checked = items.filter(({ f }) => f.name && f.regexp);
+    if (checked.length === 0) return {};
+    let valid: boolean[];
     try {
-      return new RegExp(f.regexp).test(value) ? null : f.regexpstr || 'Invalid value';
+      valid = await checkBisonrelayPageFields(checked.map(({ f, value }) => ({ pattern: f.regexp as string, value })));
     } catch {
-      return null;
+      return {};
     }
+    const errs: Record<string, string> = {};
+    checked.forEach(({ f }, i) => {
+      if (valid[i] === false) errs[f.name as string] = f.regexpstr || 'Invalid value';
+    });
+    return errs;
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -1089,7 +1098,7 @@ const PageForm = ({
     if (!action || submitting) return;
     const data: Record<string, unknown> = {};
     const fieldTypes: Record<string, string> = {};
-    const errs: Record<string, string> = {};
+    const toCheck: { f: BisonrelayPageFormField; value: string }[] = [];
     for (const f of fields) {
       if (!f.name) continue;
       const v = values[f.name] ?? f.value ?? '';
@@ -1103,18 +1112,19 @@ const PageForm = ({
         data[f.name] = v;
       }
       fieldTypes[f.name] = f.type;
-      if (f.type === 'txtinput' || f.type === 'intinput') {
-        const msg = validateField(f, v);
-        if (msg) errs[f.name] = msg;
-      }
+      if (f.type === 'txtinput' || f.type === 'intinput') toCheck.push({ f, value: v });
     }
+    setSubmitting(true);
+    const errs = await checkFields(toCheck);
     if (Object.keys(errs).length > 0) {
+      setSubmitting(false);
       setFieldErrs(errs);
       return;
     }
     setFieldErrs({});
     const actionPath = decodeSegments(action.split('/').filter(Boolean));
     if (!actionPath) {
+      setSubmitting(false);
       setSubmitErr("This form's action is not a valid path.");
       return;
     }
@@ -1155,11 +1165,15 @@ const PageForm = ({
                   setValues((prev) => ({ ...prev, [f.name as string]: v }));
                   // Clear the field's error once the new value passes, so the
                   // message disappears as the user corrects it.
-                  if (fieldErr && !validateField(f, v)) {
-                    setFieldErrs((prev) => {
-                      const next = { ...prev };
-                      delete next[f.name as string];
-                      return next;
+                  if (fieldErr) {
+                    const name = f.name;
+                    void checkFields([{ f, value: v }]).then((errs) => {
+                      if (errs[name] || valuesRef.current[name] !== v) return;
+                      setFieldErrs((prev) => {
+                        const next = { ...prev };
+                        delete next[name];
+                        return next;
+                      });
                     });
                   }
                 }}

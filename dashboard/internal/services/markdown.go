@@ -254,6 +254,33 @@ type BRPageFormField struct {
 	RegexpStr string `json:"regexpstr,omitempty"`
 }
 
+// BRPageFieldCheck is one form value and the pattern its page gave it.
+type BRPageFieldCheck struct {
+	Pattern string `json:"pattern"`
+	Value   string `json:"value"`
+}
+
+// CheckBRPageFields reports, per field, whether the value matches its page's
+// pattern. The page chooses the pattern, so it is run by Go's regexp, whose
+// time is linear in the input. A missing, oversized or uncompilable pattern
+// (including JS-only syntax such as lookaround) is no constraint, as is an
+// oversized value.
+func CheckBRPageFields(fields []BRPageFieldCheck) []bool {
+	out := make([]bool, len(fields))
+	for i, f := range fields {
+		out[i] = true
+		if f.Pattern == "" || len(f.Pattern) > 200 || len(f.Value) > 4096 {
+			continue
+		}
+		re, err := regexp.Compile(f.Pattern)
+		if err != nil {
+			continue
+		}
+		out[i] = re.MatchString(f.Value)
+	}
+	return out
+}
+
 var (
 	// pageSectionStartRE matches bruig's --section id=ID -- start marker
 	// (note the trailing " --"); pages emit these on their own line.

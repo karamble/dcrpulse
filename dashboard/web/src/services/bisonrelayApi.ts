@@ -778,6 +778,15 @@ export const renderBisonrelayPageBody = async (
   return data;
 };
 
+// checkBisonrelayPageFields checks page form values against the patterns their
+// page gave them; one result per field, in order.
+export const checkBisonrelayPageFields = async (
+  fields: { pattern: string; value: string }[],
+): Promise<boolean[]> => {
+  const { data } = await api.post<{ valid: boolean[] }>('/br/pages/check', { fields });
+  return data.valid;
+};
+
 export const getBisonrelayPostBody = async (
   uid: string,
   pid: string,

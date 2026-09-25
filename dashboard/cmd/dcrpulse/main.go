@@ -525,6 +525,7 @@ func main() {
 	api.HandleFunc("/br/posts/new", handlers.BisonrelayPostsNewHandler).Methods("POST")
 	api.HandleFunc("/br/posts/render", handlers.BisonrelayPostsRenderHandler).Methods("POST")
 	api.HandleFunc("/br/pages/render", handlers.BisonrelayPagesRenderHandler).Methods("POST")
+	api.HandleFunc("/br/pages/check", handlers.BisonrelayPagesCheckHandler).Methods("POST")
 	api.HandleFunc("/br/shared-files", handlers.BisonrelaySharedFilesHandler).Methods("GET")
 	api.HandleFunc("/br/embeds/{contact}/{filename}", handlers.BisonrelayEmbedHandler).Methods("GET")
 	api.HandleFunc("/br/downloads/{contact}", handlers.BisonrelayDownloadsListHandler).Methods("GET")

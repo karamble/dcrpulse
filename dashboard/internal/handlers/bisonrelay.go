@@ -1336,6 +1336,23 @@ func BisonrelayPagesRenderHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// BisonrelayPagesCheckHandler checks page form values against the patterns
+// their page gave them, one result per field in request order.
+func BisonrelayPagesCheckHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Fields []services.BRPageFieldCheck `json:"fields"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.Fields) > 64 {
+		http.Error(w, "too many fields", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"valid": services.CheckBRPageFields(req.Fields)})
+}
+
 // BisonrelayPostsNewHandler authors a new post via brclientd.
 func BisonrelayPostsNewHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
