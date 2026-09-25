@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 // Months are UTC whatever the viewer's zone; run in one where they differ.
 vi.stubEnv('TZ', 'America/Sao_Paulo');
 import type { TAddRecord, TSpendRecord } from './treasuryStorage';
-import { flowsByMonth, monthlyRows, runway, yearlyRows } from './treasuryFlows';
+import { flowsByMonth, monthlyRows, recentSpend, yearlyRows } from './treasuryFlows';
 
 const spend = (timestamp: string, amountAtoms: number, feeAtoms = 0): TSpendRecord => ({
   txHash: `${timestamp}-${amountAtoms}`, amountAtoms, feeAtoms, payee: 'Ds', blockHeight: 1, timestamp, voteResult: 'approved',
@@ -42,26 +42,20 @@ describe('monthlyRows and yearlyRows', () => {
   });
 });
 
-describe('runway', () => {
+describe('recentSpend', () => {
   const now = new Date('2026-09-25T10:00:00Z');
 
-  it('spreads the last twelve full months of spending over the balance', () => {
-    const r = runway(
-      88_000_000_000_000,
+  it('sums the last twelve full UTC months of spending, fees included', () => {
+    const r = recentSpend(
       [
         spend('2025-09-01T00:00:00Z', 1_000_000_000_000, 10_000), // first second of the window
-        spend('2026-08-31T23:59:59Z', 200_000_000_000, 20_000), // last second
+        spend('2026-08-31T23:59:59Z', 200_000_000_000, 20_001), // last second
         spend('2025-08-31T23:59:59Z', 9_000_000_000_000), // before it
         spend('2026-09-02T00:00:00Z', 9_000_000_000_000), // the current month
       ],
       now,
     );
-    expect(r.outflowAtoms).toBe(1_200_000_030_000);
+    expect(r.outflowAtoms).toBe(1_200_000_030_001);
     expect(r.monthlyAtoms).toBe(100_000_002_500);
-    expect(r.months).toBeCloseTo(879.9999780000005, 6);
-  });
-
-  it('has no runway when nothing was spent', () => {
-    expect(runway(5, [], now).months).toBeNull();
   });
 });

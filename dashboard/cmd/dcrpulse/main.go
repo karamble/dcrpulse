@@ -710,6 +710,7 @@ func main() {
 	api.HandleFunc("/treasury/balance-history", handlers.GetTreasuryBalanceHistoryHandler).Methods("GET")
 	api.HandleFunc("/treasury/spend-limit", handlers.GetTreasurySpendLimitHandler).Methods("GET")
 	api.HandleFunc("/treasury/outlook", handlers.GetTreasuryOutlookHandler).Methods("GET")
+	api.HandleFunc("/treasury/runway", handlers.GetTreasuryRunwayHandler).Methods("GET")
 	api.Handle("/treasury/scan-history",
 		middleware.TreasuryScan.Middleware()(
 			http.HandlerFunc(handlers.TriggerTSpendScanHandler))).Methods("POST")

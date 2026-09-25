@@ -242,7 +242,7 @@ It reads treasury data straight from dcrd and tracks the historical record local
 Every flow on the page is measured, never inferred from the balance:
 
 - **Current balance** - the live treasury balance from dcrd (`gettreasurybalance`), with its USD value at today's rate.
-- **Runway** - the balance divided by the average monthly spend of the last twelve full UTC months, and that twelve-month spend.
+- **Runway** - how many months the balance lasts spending the average of the last twelve full UTC months each month, while each month adds the block reward projected on dcrd's subsidy schedule (it shrinks by 100/101 every 6,144 blocks). Shown with the month it runs out and the next month's net flow.
 - **Block reward, next 12 months** - dcrd's subsidy schedule (`CalcTreasurySubsidy`) over the coming months at the target block time. A projection.
 - **Total spent** and **contributions** - from the stored records; spends include the fee the treasury paid for each.
 - **Inflow vs outflow** - per year, or per month for one year: block reward and voluntary contributions stacked as inflow, spends as outflow, each counted in the UTC month of the block that carried it.
@@ -284,6 +284,7 @@ dcrd keeps no index of treasury flows, so dcrpulse reads them block by block and
 - `GET /api/treasury/balance-history` - balance at the first block of every UTC month
 - `GET /api/treasury/spend-limit` - the DCP-0013 spend limit for a treasury vote block after the tip
 - `GET /api/treasury/outlook` - projected block reward for the next twelve months
+- `GET /api/treasury/runway` - months the balance lasts at a monthly spend, with the block reward on dcrd's schedule
 - `POST /api/treasury/scan-history` - start a scan (rate-limited)
 - `GET /api/treasury/scan-progress` - scan progress
 - `GET /api/treasury/scan-results` - what the last scan recorded over the blocks it read

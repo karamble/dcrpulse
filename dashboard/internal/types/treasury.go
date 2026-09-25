@@ -114,3 +114,19 @@ type TreasuryOutlookMonth struct {
 	Blocks     int64  `json:"blocks"`
 	TBaseAtoms int64  `json:"tbaseAtoms"`
 }
+
+// TreasuryRunway is how many whole calendar months after FromHeight the
+// balance lasts at MonthlySpendAtoms, each month adding the block reward
+// projected at the target block time. Beyond is set when it outlasts
+// ProjectionMonths.
+type TreasuryRunway struct {
+	FromHeight         int64  `json:"fromHeight"`
+	BalanceAtoms       int64  `json:"balanceAtoms"`
+	MonthlySpendAtoms  int64  `json:"monthlySpendAtoms"`
+	FirstMonthNetAtoms int64  `json:"firstMonthNetAtoms"` // Block reward less spend, next month
+	TargetBlockSeconds int64  `json:"targetBlockSeconds"`
+	ProjectionMonths   int    `json:"projectionMonths"`
+	Months             int    `json:"months"`
+	ExhaustedMonth     string `json:"exhaustedMonth,omitempty"` // UTC "2006-01" the balance runs out in
+	Beyond             bool   `json:"beyond"`
+}

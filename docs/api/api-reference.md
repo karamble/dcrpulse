@@ -811,6 +811,7 @@ Read the project treasury balance, its spend limit and outlook, and scan its flo
 | `GET` | `/api/treasury/balance-history` | Treasury balance at the first block of every UTC month |
 | `GET` | `/api/treasury/spend-limit` | DCP-0013 spend limit for a treasury vote block after the tip |
 | `GET` | `/api/treasury/outlook` | Projected block reward for the next twelve months |
+| `GET` | `/api/treasury/runway` | Months the balance lasts at `monthlySpendAtoms`, with the block reward on dcrd's schedule |
 | `POST` | `/api/treasury/scan-history` | Scan every block from a height for treasury flows (rate limited) |
 | `GET` | `/api/treasury/scan-progress` | Scan progress |
 | `GET` | `/api/treasury/scan-results` | Block reward per month, contributions and spends over the scanned blocks |
@@ -1185,13 +1186,14 @@ gate is on, the session cookie.
 | `GET` | `/api/wallet/governance/votetrickle/status` |  |
 | `POST` | `/api/wallet/governance/votetrickle/stop` |  |
 
-### Treasury (7 routes)
+### Treasury (8 routes)
 
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/api/treasury/balance-history` |  |
 | `GET` | `/api/treasury/info` |  |
 | `GET` | `/api/treasury/outlook` |  |
+| `GET` | `/api/treasury/runway` |  |
 | `GET` | `/api/treasury/spend-limit` |  |
 | `POST` | `/api/treasury/scan-history` | Rate limit 1 per 60s |
 | `GET` | `/api/treasury/scan-progress` |  |

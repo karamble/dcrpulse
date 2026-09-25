@@ -69,9 +69,9 @@ export const yearlyRows = (byMonth: Map<string, Flow>, now: Date) => {
   return rows;
 };
 
-// runway spreads the last twelve complete UTC months of spending over the
-// balance. months is null when nothing was spent in that time.
-export const runway = (balanceAtoms: number, tspends: TSpendRecord[], now: Date) => {
+// recentSpend is what the last twelve complete UTC months spent, and its
+// monthly average in whole atoms.
+export const recentSpend = (tspends: TSpendRecord[], now: Date) => {
   const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
   const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 12, 1);
   let outflowAtoms = 0;
@@ -79,9 +79,5 @@ export const runway = (balanceAtoms: number, tspends: TSpendRecord[], now: Date)
     const at = new Date(t.timestamp).getTime();
     if (at >= start && at < end) outflowAtoms += t.amountAtoms + t.feeAtoms;
   }
-  return {
-    outflowAtoms,
-    monthlyAtoms: outflowAtoms / 12,
-    months: outflowAtoms > 0 ? balanceAtoms / (outflowAtoms / 12) : null,
-  };
+  return { outflowAtoms, monthlyAtoms: Math.floor(outflowAtoms / 12) };
 };

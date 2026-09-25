@@ -33,14 +33,28 @@ import {
   TAddRecord,
   TSpendRecord,
 } from '../../services/treasuryStorage';
-import { BalanceSample, getTreasuryOutlook, TreasuryOutlook } from '../../services/treasuryApi';
+import {
+  BalanceSample,
+  getTreasuryOutlook,
+  getTreasuryRunway,
+  TreasuryOutlook,
+  TreasuryRunway,
+} from '../../services/treasuryApi';
 import { getDexRates } from '../../services/dcrdexApi';
-import { flowsByMonth, monthlyRows, runway, yearlyRows } from '../../services/treasuryFlows';
+import { flowsByMonth, monthlyRows, recentSpend, yearlyRows } from '../../services/treasuryFlows';
 import { toDcr } from '../../utils/amounts';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const dcr = (v: number) =>
   v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// runwayText renders whole months as years and months.
+export const runwayText = (months: number): string => {
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  const parts = [y > 0 ? `${y} year${y === 1 ? '' : 's'}` : '', m > 0 || y === 0 ? `${m} month${m === 1 ? '' : 's'}` : ''];
+  return parts.filter(Boolean).join(' ');
+};
 
 const usd = (dcrAmount: number, rate: number | null) =>
   rate === null ? undefined : `$${Math.round(dcrAmount * rate).toLocaleString('en-US')} at today's rate`;
@@ -169,10 +183,13 @@ export const TreasuryStats = ({ balanceAtoms, series, refreshKey = 0 }: Treasury
       })),
     [flowYear, yearly, byMonth],
   );
-  const run = useMemo(
-    () => (balanceAtoms === null ? null : runway(balanceAtoms, tspends, new Date())),
-    [balanceAtoms, tspends],
-  );
+  const spent12 = useMemo(() => recentSpend(tspends, new Date()), [tspends]);
+  const [run, setRun] = useState<TreasuryRunway | null>(null);
+  useEffect(() => {
+    setRun(null);
+    if (spent12.monthlyAtoms <= 0) return;
+    getTreasuryRunway(spent12.monthlyAtoms).then(setRun).catch(() => {});
+  }, [spent12.monthlyAtoms]);
   const contributedAtoms = useMemo(() => tadds.reduce((s, t) => s + t.amountAtoms, 0), [tadds]);
   const outlookAtoms = outlook?.months.reduce((s, m) => s + m.tbaseAtoms, 0) ?? null;
 
@@ -210,18 +227,28 @@ export const TreasuryStats = ({ balanceAtoms, series, refreshKey = 0 }: Treasury
         />
         <StatCard
           label="Runway"
-          value={run?.months == null ? 'n/a' : `${Math.floor(run.months)} months`}
+          value={
+            spent12.monthlyAtoms <= 0
+              ? 'Not spending'
+              : run === null
+                ? '…'
+                : run.beyond
+                  ? `${run.projectionMonths / 12}+ years`
+                  : runwayText(run.months)
+          }
           sub={
-            run === null
-              ? 'Balance / average monthly spend'
-              : `At ${dcr(toDcr(run.monthlyAtoms))} DCR a month, the last 12 full months`
+            spent12.monthlyAtoms <= 0
+              ? 'Nothing spent in the last 12 full months'
+              : run === null
+                ? undefined
+                : `${run.exhaustedMonth ? `Until ${run.exhaustedMonth}, at` : 'At'} ${dcr(toDcr(run.monthlySpendAtoms))} DCR a month, with the block reward shrinking on dcrd's schedule; next month nets ${run.firstMonthNetAtoms >= 0 ? '+' : ''}${dcr(toDcr(run.firstMonthNetAtoms))} DCR`
           }
           icon={<Hourglass className="h-4 w-4 text-primary" />}
         />
         <StatCard
           label="Spent, Last 12 Months"
-          value={run === null ? '…' : `${dcr(toDcr(run.outflowAtoms))} DCR`}
-          sub={run === null ? undefined : usd(toDcr(run.outflowAtoms), rate) ?? 'Payments plus their fees'}
+          value={`${dcr(toDcr(spent12.outflowAtoms))} DCR`}
+          sub={usd(toDcr(spent12.outflowAtoms), rate) ?? 'Payments plus their fees'}
           icon={<Banknote className="h-4 w-4 text-warning" />}
           tone="warning"
         />

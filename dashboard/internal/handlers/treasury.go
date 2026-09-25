@@ -11,9 +11,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"dcrpulse/internal/services"
+
+	"github.com/decred/dcrd/dcrutil/v4"
 )
 
 // GetTreasuryInfoHandler returns current treasury status
@@ -77,6 +80,27 @@ func GetTreasuryOutlookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, outlook)
+}
+
+// GetTreasuryRunwayHandler returns how long the treasury balance lasts at the
+// monthly spend in monthlySpendAtoms.
+func GetTreasuryRunwayHandler(w http.ResponseWriter, r *http.Request) {
+	spend, err := strconv.ParseInt(r.URL.Query().Get("monthlySpendAtoms"), 10, 64)
+	if err != nil || spend <= 0 || spend > dcrutil.MaxAmount {
+		http.Error(w, "monthlySpendAtoms must be a positive amount of atoms", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	runway, err := services.TreasuryRunway(ctx, spend)
+	if err != nil {
+		govnLog.Errorf("Error computing treasury runway: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, runway)
 }
 
 // TriggerTSpendScanHandler triggers a historical blockchain scan for TSpends

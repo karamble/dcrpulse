@@ -69,3 +69,13 @@ func TestTreasuryScanHTTPRejectsInvalidHeight(t *testing.T) {
 		t.Fatal("invalid HTTP request launched scan")
 	}
 }
+
+func TestTreasuryRunwayRejectsABadSpend(t *testing.T) {
+	for _, q := range []string{"", "monthlySpendAtoms=0", "monthlySpendAtoms=-5", "monthlySpendAtoms=abc", "monthlySpendAtoms=2100000000000001"} {
+		rec := httptest.NewRecorder()
+		GetTreasuryRunwayHandler(rec, httptest.NewRequest(http.MethodGet, "/api/treasury/runway?"+q, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%q: status %d", q, rec.Code)
+		}
+	}
+}

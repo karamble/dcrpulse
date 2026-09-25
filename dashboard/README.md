@@ -183,6 +183,7 @@ docker-compose up dashboard
 - `GET /api/treasury/info` - Treasury information
 - `GET /api/treasury/spend-limit` - DCP-0013 spend limit
 - `GET /api/treasury/outlook` - Projected block reward
+- `GET /api/treasury/runway` - Treasury runway at a monthly spend
 - `POST /api/treasury/scan-history` - Scan blocks for treasury flows
 - `GET /api/treasury/scan-progress` - Scan progress
 

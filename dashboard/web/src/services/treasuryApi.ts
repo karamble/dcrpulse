@@ -167,3 +167,25 @@ export async function getTreasuryOutlook(): Promise<TreasuryOutlook> {
   }
   return response.json();
 }
+
+// How long the treasury balance lasts at a monthly spend, with the block
+// reward following dcrd's schedule at the target block time.
+export interface TreasuryRunway {
+  fromHeight: number;
+  balanceAtoms: number;
+  monthlySpendAtoms: number;
+  firstMonthNetAtoms: number;
+  targetBlockSeconds: number;
+  projectionMonths: number;
+  months: number;
+  exhaustedMonth?: string;
+  beyond: boolean;
+}
+
+export async function getTreasuryRunway(monthlySpendAtoms: number): Promise<TreasuryRunway> {
+  const response = await authFetch(`${API_BASE_URL}/treasury/runway?monthlySpendAtoms=${monthlySpendAtoms}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch the treasury runway');
+  }
+  return response.json();
+}

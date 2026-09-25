@@ -29,3 +29,33 @@ func TestTreasuryOutlookFollowsTheSubsidySchedule(t *testing.T) {
 		t.Fatalf("February %+v", feb)
 	}
 }
+
+func TestTreasuryRunway(t *testing.T) {
+	p := chaincfg.MainNetParams()
+	tipTime := time.Date(2026, time.June, 30, 23, 55, 0, 0, time.UTC).Unix()
+	// July's block reward from dcrd's getblocksubsidy, as in the outlook test.
+	const july = 3008*53075235 + 5920*52549738
+
+	// A month's spend one atom above July's block reward empties an empty
+	// treasury in July.
+	r := treasuryRunway(p, 1096767, tipTime, 0, july+1)
+	if r.Months != 0 || r.ExhaustedMonth != "2026-07" || r.Beyond || r.FirstMonthNetAtoms != -1 {
+		t.Fatalf("runway %+v", r)
+	}
+	// Spending exactly July's block reward leaves nothing, but not less than
+	// nothing; August's smaller reward then falls short.
+	r = treasuryRunway(p, 1096767, tipTime, 0, july)
+	if r.Months != 1 || r.ExhaustedMonth != "2026-08" {
+		t.Fatalf("runway %+v", r)
+	}
+	// Ten million DCR a month from 25 million lasts July and August.
+	r = treasuryRunway(p, 1096767, tipTime, 2_500_000_000_000_000, 1_000_000_000_000_000)
+	if r.Months != 2 || r.ExhaustedMonth != "2026-09" {
+		t.Fatalf("runway %+v", r)
+	}
+	// One atom a month never runs out within the projection.
+	r = treasuryRunway(p, 1096767, tipTime, 0, 1)
+	if !r.Beyond || r.Months != 1200 || r.ProjectionMonths != 1200 || r.ExhaustedMonth != "" {
+		t.Fatalf("runway %+v", r)
+	}
+}
