@@ -42,7 +42,7 @@ import {
 } from '../../services/treasuryApi';
 import { getDexRates } from '../../services/dcrdexApi';
 import { flowsByMonth, monthlyRows, recentSpend, yearlyRows } from '../../services/treasuryFlows';
-import { toDcr } from '../../utils/amounts';
+import { parseDcrAmount, toDcr } from '../../utils/amounts';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const dcr = (v: number) =>
@@ -109,6 +109,74 @@ const StatCard = ({ label, value, sub, icon, tone = 'default' }: StatCardProps) 
     </div>
   );
 };
+
+// RunwayCard projects how long the treasury lasts at a monthly spend: the
+// measured twelve-month average, or an amount the viewer types.
+export const RunwayCard = ({ measuredAtoms }: { measuredAtoms: number }) => {
+  const [input, setInput] = useState('');
+  const [run, setRun] = useState<TreasuryRunway | null>(null);
+  const typed = input.trim() === '' ? null : parseDcrAmount(input);
+  const spendAtoms = typed === null ? measuredAtoms : typed.error ? null : typed.atoms;
+
+  useEffect(() => {
+    if (spendAtoms === null || spendAtoms <= 0) return;
+    let current = true;
+    const timer = setTimeout(() => {
+      getTreasuryRunway(spendAtoms)
+        .then((r) => current && setRun(r))
+        .catch(() => {});
+    }, 400);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [spendAtoms]);
+
+  const idle = typed === null && measuredAtoms <= 0;
+  const value = idle
+    ? 'Not spending'
+    : run === null
+      ? '…'
+      : run.beyond
+        ? `${run.projectionMonths / 12}+ years`
+        : runwayText(run.months);
+  const source = typed === null ? "the last 12 months' average" : 'your amount';
+  return (
+    <div className="p-4 rounded-lg bg-muted/10 border border-border/50">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm text-muted-foreground font-medium">Runway</span>
+        <Hourglass className="h-4 w-4 text-primary" />
+      </div>
+      <div className="text-2xl font-bold">{value}</div>
+      <div className="text-xs text-muted-foreground mt-1">
+        {idle
+          ? 'Nothing spent in the last 12 full months'
+          : run === null
+            ? null
+            : `${run.exhaustedMonth ? `Until ${run.exhaustedMonth}, at` : 'At'} ${dcr(toDcr(run.monthlySpendAtoms))} DCR a month (${source}), with the block reward shrinking on dcrd's schedule; next month nets ${run.firstMonthNetAtoms >= 0 ? '+' : ''}${dcr(toDcr(run.firstMonthNetAtoms))} DCR`}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          aria-label="Monthly spend in DCR"
+          inputMode="decimal"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={measuredAtoms > 0 ? `${dcr(toDcr(measuredAtoms))} (last 12 months)` : 'Monthly spend, DCR'}
+          className="w-full min-w-0 bg-background border border-border rounded-md px-2 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
+        />
+        {typed !== null && (
+          <button type="button" onClick={() => setInput('')} className="text-xs text-primary whitespace-nowrap hover:underline">
+            Use measured
+          </button>
+        )}
+      </div>
+      {typed?.error && <div className="text-xs text-destructive mt-1">{typed.error}</div>}
+    </div>
+  );
+};
+
+// Series of the inflow vs outflow chart the legend can hide.
+type FlowSeries = 'blockReward' | 'contributions' | 'spends';
 
 const ChartCard = ({
   icon: Icon,
@@ -184,12 +252,13 @@ export const TreasuryStats = ({ balanceAtoms, series, refreshKey = 0 }: Treasury
     [flowYear, yearly, byMonth],
   );
   const spent12 = useMemo(() => recentSpend(tspends, new Date()), [tspends]);
-  const [run, setRun] = useState<TreasuryRunway | null>(null);
-  useEffect(() => {
-    setRun(null);
-    if (spent12.monthlyAtoms <= 0) return;
-    getTreasuryRunway(spent12.monthlyAtoms).then(setRun).catch(() => {});
-  }, [spent12.monthlyAtoms]);
+  const [hidden, setHidden] = useState<Set<FlowSeries>>(() => new Set());
+  const toggleSeries = (key: FlowSeries) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
   const contributedAtoms = useMemo(() => tadds.reduce((s, t) => s + t.amountAtoms, 0), [tadds]);
   const outlookAtoms = outlook?.months.reduce((s, m) => s + m.tbaseAtoms, 0) ?? null;
 
@@ -225,26 +294,7 @@ export const TreasuryStats = ({ balanceAtoms, series, refreshKey = 0 }: Treasury
           sub={balanceDcr === null ? 'Current on-chain balance' : usd(balanceDcr, rate) ?? 'Current on-chain balance'}
           icon={<Landmark className="h-4 w-4 text-primary" />}
         />
-        <StatCard
-          label="Runway"
-          value={
-            spent12.monthlyAtoms <= 0
-              ? 'Not spending'
-              : run === null
-                ? '…'
-                : run.beyond
-                  ? `${run.projectionMonths / 12}+ years`
-                  : runwayText(run.months)
-          }
-          sub={
-            spent12.monthlyAtoms <= 0
-              ? 'Nothing spent in the last 12 full months'
-              : run === null
-                ? undefined
-                : `${run.exhaustedMonth ? `Until ${run.exhaustedMonth}, at` : 'At'} ${dcr(toDcr(run.monthlySpendAtoms))} DCR a month, with the block reward shrinking on dcrd's schedule; next month nets ${run.firstMonthNetAtoms >= 0 ? '+' : ''}${dcr(toDcr(run.firstMonthNetAtoms))} DCR`
-          }
-          icon={<Hourglass className="h-4 w-4 text-primary" />}
-        />
+        <RunwayCard measuredAtoms={spent12.monthlyAtoms} />
         <StatCard
           label="Spent, Last 12 Months"
           value={`${dcr(toDcr(spent12.outflowAtoms))} DCR`}
@@ -313,10 +363,27 @@ export const TreasuryStats = ({ balanceAtoms, series, refreshKey = 0 }: Treasury
                   contentStyle={tooltipStyle}
                   formatter={(v: number, n: string) => [`${dcr(v)} DCR`, n]}
                 />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="blockReward" name="Block reward" stackId="in" fill="url(#gIn)" stroke={C.inflow} isAnimationActive={false} />
-                <Bar dataKey="contributions" name="Contributions" stackId="in" fill="url(#gAdd)" stroke={C.contribution} radius={[6, 6, 0, 0]} isAnimationActive={false} />
-                <Bar dataKey="spends" name="Spends" fill="url(#gOut)" stroke={C.outflow} radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                <Legend
+                  wrapperStyle={{ fontSize: 12, cursor: 'pointer' }}
+                  onClick={(e) => toggleSeries(e.dataKey as FlowSeries)}
+                  formatter={(name: string, e) => (
+                    <span style={hidden.has(e.dataKey as FlowSeries) ? { opacity: 0.4, textDecoration: 'line-through' } : undefined}>
+                      {name}
+                    </span>
+                  )}
+                />
+                <Bar
+                  dataKey="blockReward"
+                  name="Block reward"
+                  stackId="in"
+                  hide={hidden.has('blockReward')}
+                  fill="url(#gIn)"
+                  stroke={C.inflow}
+                  radius={hidden.has('contributions') ? [6, 6, 0, 0] : undefined}
+                  isAnimationActive={false}
+                />
+                <Bar dataKey="contributions" name="Contributions" stackId="in" hide={hidden.has('contributions')} fill="url(#gAdd)" stroke={C.contribution} radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="spends" name="Spends" hide={hidden.has('spends')} fill="url(#gOut)" stroke={C.outflow} radius={[6, 6, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
