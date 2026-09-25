@@ -33,6 +33,7 @@ import { WatchOnlyGuard, RequireWatchOnly } from './components/common/WatchOnlyG
 import { BisonrelayLiveProvider } from './components/bisonrelay/BisonrelayLiveProvider';
 import { AuthGate } from './components/auth/AuthGate';
 import { UnprotectedBanner } from './components/auth/UnprotectedWarning';
+import { RouteErrorBoundary } from './components/common/RouteErrorBoundary';
 import { getDashboardData } from './services/api';
 import { getLightningInfo } from './services/lightningApi';
 import { getBisonrelayVersion } from './services/bisonrelayApi';
@@ -172,79 +173,81 @@ function AppContent() {
             : 'max-w-7xl mx-auto px-3 sm:px-6 pt-6 pb-3 sm:pb-6 space-y-6'
         }
       >
-        <Suspense fallback={<RouteFallback />}>
-          <Routes>
-            <Route path="/" element={<NodeDashboard />} />
-            <Route path="/wallet" element={<WalletLayout />}>
-              <Route index element={<WalletDashboard />} />
-              <Route path="select" element={<WalletSelection embedded />} />
-              <Route path="privacy" element={<PrivacyPage />} />
-              <Route path="staking" element={<StakingPage />}>
-                <Route index element={<Navigate to="purchase" replace />} />
-                <Route path="purchase" element={<WatchOnlyGuard feature="Ticket purchasing"><PurchaseTab /></WatchOnlyGuard>} />
-                <Route path="autobuyer" element={<WatchOnlyGuard feature="The ticket auto buyer"><AutobuyerTab /></WatchOnlyGuard>} />
-                <Route path="status" element={<TicketStatusTab />} />
-                <Route path="history" element={<TicketHistoryTab />} />
-                <Route path="statistics" element={<StatisticsTab />} />
+        <RouteErrorBoundary key={location.pathname}>
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route path="/" element={<NodeDashboard />} />
+              <Route path="/wallet" element={<WalletLayout />}>
+                <Route index element={<WalletDashboard />} />
+                <Route path="select" element={<WalletSelection embedded />} />
+                <Route path="privacy" element={<PrivacyPage />} />
+                <Route path="staking" element={<StakingPage />}>
+                  <Route index element={<Navigate to="purchase" replace />} />
+                  <Route path="purchase" element={<WatchOnlyGuard feature="Ticket purchasing"><PurchaseTab /></WatchOnlyGuard>} />
+                  <Route path="autobuyer" element={<WatchOnlyGuard feature="The ticket auto buyer"><AutobuyerTab /></WatchOnlyGuard>} />
+                  <Route path="status" element={<TicketStatusTab />} />
+                  <Route path="history" element={<TicketHistoryTab />} />
+                  <Route path="statistics" element={<StatisticsTab />} />
+                </Route>
+                <Route path="governance" element={<GovernancePage />}>
+                  <Route index element={<Navigate to="consensus" replace />} />
+                  <Route path="consensus" element={<ConsensusTab />} />
+                  <Route path="treasury" element={<TreasuryTab />} />
+                  <Route path="proposals" element={<ProposalsTab />} />
+                  <Route path="proposals/:token" element={<ProposalDetailPage />} />
+                </Route>
+                <Route path="lightning" element={<LightningPage />}>
+                  <Route index element={<LightningOverviewTab />} />
+                  <Route path="channels" element={<ChannelsTab />} />
+                  <Route path="channels/:channelPoint" element={<ChannelDetailPage />} />
+                  <Route path="send" element={<LightningSendTab />} />
+                  <Route path="receive" element={<LightningReceiveTab />} />
+                  <Route path="advanced" element={<LightningAdvancedTab />} />
+                </Route>
+                <Route path="accounts" element={<AccountsPage />} />
+                <Route
+                  path="shared"
+                  element={<WatchOnlyGuard feature="Shared wallets"><SharedWalletsPage /></WatchOnlyGuard>}
+                />
+                <Route
+                  path="shared/:id"
+                  element={<WatchOnlyGuard feature="Shared wallets"><SharedWalletDetailPage /></WatchOnlyGuard>}
+                />
+                <Route path="timestamp" element={<TimestampPage />} />
+                <Route path="settings" element={<SettingsPage />}>
+                  <Route index element={<Navigate to="wallet" replace />} />
+                  <Route path="wallet" element={<WalletSection />} />
+                  <Route path="privacy" element={<PrivacySection />} />
+                  <Route path="logs" element={<LogsSection />} />
+                  <Route path="about" element={<AboutSection />} />
+                  <Route path="themes" element={<ThemesSection />} />
+                  <Route path="security" element={<SecuritySection />} />
+                  <Route path="tor" element={<TorSection />} />
+                  <Route path="alerts" element={<AlertsSection />} />
+                  <Route path="agents" element={<AgentsSection />} />
+                </Route>
+                <Route path="transactions" element={<OnChainTransactions />}>
+                  <Route index element={<OnChainTransactionsIndex />} />
+                  <Route path="send" element={<WatchOnlyGuard feature="Sending"><SendTab /></WatchOnlyGuard>} />
+                  <Route path="receive" element={<ReceiveTab />} />
+                  <Route path="history" element={<HistoryTab />} />
+                  <Route path="export" element={<ExportTab />} />
+                  <Route path="offline" element={<RequireWatchOnly><OfflineSigningTab /></RequireWatchOnly>} />
+                </Route>
               </Route>
-              <Route path="governance" element={<GovernancePage />}>
-                <Route index element={<Navigate to="consensus" replace />} />
-                <Route path="consensus" element={<ConsensusTab />} />
-                <Route path="treasury" element={<TreasuryTab />} />
-                <Route path="proposals" element={<ProposalsTab />} />
-                <Route path="proposals/:token" element={<ProposalDetailPage />} />
-              </Route>
-              <Route path="lightning" element={<LightningPage />}>
-                <Route index element={<LightningOverviewTab />} />
-                <Route path="channels" element={<ChannelsTab />} />
-                <Route path="channels/:channelPoint" element={<ChannelDetailPage />} />
-                <Route path="send" element={<LightningSendTab />} />
-                <Route path="receive" element={<LightningReceiveTab />} />
-                <Route path="advanced" element={<LightningAdvancedTab />} />
-              </Route>
-              <Route path="accounts" element={<AccountsPage />} />
-              <Route
-                path="shared"
-                element={<WatchOnlyGuard feature="Shared wallets"><SharedWalletsPage /></WatchOnlyGuard>}
-              />
-              <Route
-                path="shared/:id"
-                element={<WatchOnlyGuard feature="Shared wallets"><SharedWalletDetailPage /></WatchOnlyGuard>}
-              />
-              <Route path="timestamp" element={<TimestampPage />} />
-              <Route path="settings" element={<SettingsPage />}>
-                <Route index element={<Navigate to="wallet" replace />} />
-                <Route path="wallet" element={<WalletSection />} />
-                <Route path="privacy" element={<PrivacySection />} />
-                <Route path="logs" element={<LogsSection />} />
-                <Route path="about" element={<AboutSection />} />
-                <Route path="themes" element={<ThemesSection />} />
-                <Route path="security" element={<SecuritySection />} />
-                <Route path="tor" element={<TorSection />} />
-                <Route path="alerts" element={<AlertsSection />} />
-                <Route path="agents" element={<AgentsSection />} />
-              </Route>
-              <Route path="transactions" element={<OnChainTransactions />}>
-                <Route index element={<OnChainTransactionsIndex />} />
-                <Route path="send" element={<WatchOnlyGuard feature="Sending"><SendTab /></WatchOnlyGuard>} />
-                <Route path="receive" element={<ReceiveTab />} />
-                <Route path="history" element={<HistoryTab />} />
-                <Route path="export" element={<ExportTab />} />
-                <Route path="offline" element={<RequireWatchOnly><OfflineSigningTab /></RequireWatchOnly>} />
-              </Route>
-            </Route>
-            <Route path="/explorer" element={<ExplorerLanding />} />
-            <Route path="/explorer/block/:heightOrHash" element={<BlockDetail />} />
-            <Route path="/explorer/tx/:txhash" element={<TransactionDetail />} />
-            <Route path="/explorer/address/:address" element={<AddressView />} />
-            <Route path="/explorer/mempool" element={<MempoolView />} />
-            <Route path="/explorer/verify-timestamp" element={<VerifyTimestampPage />} />
-            <Route path="/treasury" element={<GovernanceDashboard />} />
-            <Route path="/alerts" element={<AlertsPage />} />
-            <Route path="/br" element={<BisonrelayPage />} />
-            <Route path="/dex" element={<DexPage />} />
-          </Routes>
-        </Suspense>
+              <Route path="/explorer" element={<ExplorerLanding />} />
+              <Route path="/explorer/block/:heightOrHash" element={<BlockDetail />} />
+              <Route path="/explorer/tx/:txhash" element={<TransactionDetail />} />
+              <Route path="/explorer/address/:address" element={<AddressView />} />
+              <Route path="/explorer/mempool" element={<MempoolView />} />
+              <Route path="/explorer/verify-timestamp" element={<VerifyTimestampPage />} />
+              <Route path="/treasury" element={<GovernanceDashboard />} />
+              <Route path="/alerts" element={<AlertsPage />} />
+              <Route path="/br" element={<BisonrelayPage />} />
+              <Route path="/dex" element={<DexPage />} />
+            </Routes>
+          </Suspense>
+        </RouteErrorBoundary>
         <Footer
           className={brPage ? 'hidden md:block' : undefined}
           dcrdVersion={nodeVersion}

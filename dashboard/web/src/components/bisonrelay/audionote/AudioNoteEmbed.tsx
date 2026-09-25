@@ -35,7 +35,16 @@ export const AudioNoteEmbed = ({
   filename: string;
   fallback: ReactNode;
 }) => {
-  const inline = useMemo(() => (dataB64 ? base64ToBytes(dataB64) : null), [dataB64]);
+  const inline = useMemo(() => {
+    if (!dataB64) return null;
+    // Undecodable data= is not a note: empty bytes fail the parse below and
+    // render the fallback, where a throw here would unmount the page.
+    try {
+      return base64ToBytes(dataB64);
+    } catch {
+      return new Uint8Array(0);
+    }
+  }, [dataB64]);
   const [fetched, setFetched] = useState<Uint8Array<ArrayBuffer> | null>(null);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
   const bytes = inline ?? fetched;

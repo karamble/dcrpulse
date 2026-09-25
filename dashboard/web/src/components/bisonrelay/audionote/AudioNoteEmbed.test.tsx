@@ -66,6 +66,12 @@ describe('AudioNoteEmbed', () => {
     expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
 
+  it('shows the chip for inline data that is not base64 instead of throwing', () => {
+    render(<EmbedRenderer embed={segment(inlineTag('%%%'))} />);
+    expect(screen.queryByRole('button', { name: /voice note/i })).toBeNull();
+    expect(screen.getByText('2026-09-24-20_33_52-audionote.opus')).toBeTruthy();
+  });
+
   it('leaves other inline files on the download chip', () => {
     render(<EmbedRenderer embed={segment('--embed[name=notes.txt,type=text/plain,data=QUJD]--')} />);
     expect(screen.queryByRole('button', { name: /voice note/i })).toBeNull();
