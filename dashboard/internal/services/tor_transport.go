@@ -57,10 +57,37 @@ func (t *externalTransport) RoundTrip(req *http.Request) (*http.Response, error)
 // proxy so name resolution happens inside Tor. There is no clearnet fallback:
 // with the toggle on and the proxy down, the request fails.
 func dialTorSOCKS(ctx context.Context, network, addr string) (net.Conn, error) {
+	return dialTor(ctx, network, addr, ReadTorSettings().Isolation)
+}
+
+// dialTorSOCKSIsolated dials with stream isolation whatever the setting, so
+// every connection gets its own circuit.
+func dialTorSOCKSIsolated(ctx context.Context, network, addr string) (net.Conn, error) {
+	return dialTor(ctx, network, addr, true)
+}
+
+func dialTor(ctx context.Context, network, addr string, isolation bool) (net.Conn, error) {
 	endpoint, ok := torProxyEndpoint()
 	if !ok {
 		return nil, errors.New("tor routing enabled but no proxy is configured")
 	}
-	p := &socks.Proxy{Addr: endpoint, TorIsolation: ReadTorSettings().Isolation}
+	p := &socks.Proxy{Addr: endpoint, TorIsolation: isolation}
 	return p.DialContext(ctx, network, addr)
+}
+
+// newBallotTransport sends every Politeia ballot on a fresh connection and,
+// over Tor, a fresh circuit, as politeiavoter does, so a trickle's ballots
+// cannot be linked by the connection they share.
+func newBallotTransport() *externalTransport {
+	clear := http.DefaultTransport.(*http.Transport).Clone()
+	clear.DisableKeepAlives = true
+	clear.MaxConnsPerHost = 1
+	return &externalTransport{
+		clear: clear,
+		tor: &http.Transport{
+			DialContext:       dialTorSOCKSIsolated,
+			DisableKeepAlives: true,
+			MaxConnsPerHost:   1,
+		},
+	}
 }

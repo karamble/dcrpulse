@@ -36,8 +36,11 @@ func torProxyEndpoint() (string, bool) {
 // ReadTorSettings returns the current Tor toggle state. When the pointer is
 // absent (Tor never enabled) it returns the disabled default.
 func ReadTorSettings() types.TorSettings {
-	return readTorSettings(config.TorPointerPath())
+	return readTorSettings(torSettingsPath())
 }
+
+// torSettingsPath is a var so tests can point the toggle at a temp file.
+var torSettingsPath = config.TorPointerPath
 
 var torUnreadableOnce sync.Once
 

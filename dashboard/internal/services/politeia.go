@@ -93,6 +93,8 @@ var (
 	// override a longer context, so a batch ballot could never outlive it.
 	// piPost is the only user and sets its own per-call deadline.
 	piHTTPClient = &http.Client{Transport: ExternalTransport()}
+	// piBallotClient carries castballot only; see newBallotTransport.
+	piBallotClient = &http.Client{Transport: newBallotTransport()}
 
 	// piListFetchMu single-flights cold list fetches so concurrent readers on
 	// an empty bucket trigger one upstream fetch, not one each. piListFailAt is
@@ -1042,7 +1044,7 @@ func CastPoliteiaVote(ctx context.Context, req types.CastPoliteiaVoteRequest, pa
 	// Timeout 0: the handler's budget bounds this. The request carries one
 	// signed vote per eligible ticket, so a fixed cap here cuts a large ballot
 	// mid-cast with no receipts recorded.
-	if err := piPost(ctx, "/ticketvote/v1/castballot", piCastBallotRequest{Votes: votes}, &resp, 0); err != nil {
+	if err := piPostBallot(ctx, piCastBallotRequest{Votes: votes}, &resp, 0); err != nil {
 		return nil, fmt.Errorf("castballot: %w", err)
 	}
 	for _, r := range resp.Receipts {
@@ -1334,6 +1336,15 @@ func piComments(ctx context.Context, token string) ([]piComment, error) {
 // leaves it to the caller's context, which the batch ballot needs since its
 // size scales with the wallet's ticket count.
 func piPost(ctx context.Context, path string, body any, out any, timeout time.Duration) error {
+	return piPostWith(ctx, piHTTPClient, path, body, out, timeout)
+}
+
+// piPostBallot posts a castballot on its own connection and circuit.
+func piPostBallot(ctx context.Context, body any, out any, timeout time.Duration) error {
+	return piPostWith(ctx, piBallotClient, "/ticketvote/v1/castballot", body, out, timeout)
+}
+
+func piPostWith(ctx context.Context, client *http.Client, path string, body any, out any, timeout time.Duration) error {
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -1348,7 +1359,7 @@ func piPost(ctx context.Context, path string, body any, out any, timeout time.Du
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := piHTTPClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

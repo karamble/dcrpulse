@@ -124,7 +124,7 @@ export const SecuritySection = () => {
             <p className="text-sm text-muted-foreground">
               {enabled
                 ? 'A login is required to use this dashboard.'
-                : 'Not set: this dashboard is unprotected. Anything that can reach it, including other apps on this device and other devices on your network, can spend your funds. A password covers the whole API and all live connections.'}
+                : 'Not set: this dashboard is open. Other apps on this device and other devices on your network can use it without logging in.'}
             </p>
           </div>
         </div>
