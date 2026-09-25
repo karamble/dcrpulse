@@ -6,7 +6,7 @@ import { formatAtomsTrimmed } from '../../utils/amounts';
 import { closeRecoveryTable, confirmRecovery, getGamingRecovery, quoteRecovery, RecoveryDeposit, RecoveryQuote } from '../../services/gamingApi';
 
 const labels: Record<string, string> = {seatbond: 'Admission bond', stake: 'Game stake', tablebond: 'Table bond'};
-const states: Record<string, string> = {awaiting_payment: 'Awaiting payment', locked: 'Time locked', close_table: 'Ready after table closure', recoverable: 'Ready to recover', recovery_pending: 'Recovery pending', needs_attention: 'Needs attention'};
+const states: Record<string, string> = {awaiting_payment: 'Awaiting payment', locked: 'Time locked', close_table: 'Ready after table closure', recoverable: 'Ready to recover', recovery_pending: 'Refund broadcast', spent: 'Refunded', needs_attention: 'Needs attention'};
 
 export function GamingRecovery() {
   const [rows, setRows] = useState<RecoveryDeposit[] | null>(null);
@@ -55,7 +55,7 @@ export function GamingRecovery() {
       <h3 id="recovery-title" className="text-lg font-semibold">Confirm recovery</h3><dl className="space-y-2 text-sm"><div><dt className="text-gray-400">Returned to your wallet</dt><dd className="text-xl">{formatAtomsTrimmed(quote.returnAtoms)} DCR</dd></div><div><dt className="text-gray-400">Transaction fee</dt><dd>{formatAtomsTrimmed(quote.feeAtoms)} DCR</dd></div><div><dt className="text-gray-400">Destination</dt><dd className="break-all font-mono text-xs">{quote.destination}</dd></div></dl>
       <p className="text-xs text-gray-400">The bridge will recheck the deposit, then sign and broadcast this refund. The quote expires after two minutes.</p>
       <label className="block text-sm">Wallet account passphrase<input type="password" autoComplete="off" value={passphrase} onChange={e => setPassphrase(e.target.value)} className="mt-1 w-full rounded border border-gray-600 bg-gray-950 p-2" /></label>
-      <div className="flex justify-end gap-3"><button type="button" disabled={!!busy} onClick={() => { setQuote(null); setPassphrase(''); }} className="px-3 py-2">Cancel</button><button type="button" disabled={!!busy || !!error} className="rounded-lg bg-emerald-600 px-4 py-2 disabled:opacity-40" onClick={() => void perform(quote.depositId, async () => { const result = await confirmRecovery(quote.depositId, quote.id, passphrase); if (result.error && !result.pending) throw new Error(result.error); setNotice(result.error || `Recovery submitted: ${result.txid}`); setQuote(null); setPassphrase(''); })}>Approve recovery</button></div>
+      <div className="flex justify-end gap-3"><button type="button" disabled={!!busy} onClick={() => { setQuote(null); setPassphrase(''); }} className="px-3 py-2">Cancel</button><button type="button" disabled={!!busy || !!error} className="rounded-lg bg-emerald-600 px-4 py-2 disabled:opacity-40" onClick={() => void perform(quote.depositId, async () => { const result = await confirmRecovery(quote.depositId, quote.id, passphrase); if (result.error && !result.pending) throw new Error(result.error); setNotice(result.error ? 'Refund signed and saved. The broadcast will be retried automatically.' : `Refund broadcast: ${result.txid}. It is in the mempool and confirms with the next block, usually within a few minutes.`); setQuote(null); setPassphrase(''); })}>Approve recovery</button></div>
     </div></div>}
   </section>;
 }

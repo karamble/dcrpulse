@@ -110,7 +110,7 @@ require (
 	github.com/jrick/bitset v1.0.0 // indirect
 	github.com/jrick/wsrpc/v2 v2.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/karamble/dcrgaming-sdk v0.3.1-0.20260917004041-f8e207516d78
+	github.com/karamble/dcrgaming-sdk v0.3.1-0.20260925172546-72d5a596537a
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect

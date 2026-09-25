@@ -1,6 +1,7 @@
 package gamingfunds
 
 import (
+	"decred.org/dcrwallet/v5/wallet/txrules"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -195,13 +196,23 @@ func TestStalledPayoutDoesNotPreventOwnerRefund(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	quote, err := s.QuoteRecovery(scope, deposits[0].ID, p.Destinations[public(2)], 10000, chaincfg.SimNetParams())
+	quote, err := s.QuoteRecovery(scope, deposits[0].ID, p.Destinations[public(2)], chaincfg.SimNetParams())
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, err := s.ApproveRecovery(scope, quote.ID, chaincfg.SimNetParams(), sign)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The fee is dcrwallet's relay fee for the refund.
+	// It is priced for the largest signature, at most two bytes over this one.
+	signed := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb, len(raw)))
+	largest := int64(txrules.FeeForSerializeSize(txrules.DefaultRelayFeePerKb, len(raw)+2))
+	if quote.FeeAtoms < signed || quote.FeeAtoms > largest {
+		t.Fatalf("recovery fee %d, relay fee for the %d-byte signed refund is %d", quote.FeeAtoms, len(raw), signed)
+	}
+	if quote.ReturnAtoms != deposits[0].Terms.Atoms-quote.FeeAtoms {
+		t.Fatalf("return %d does not deduct the fee from %d", quote.ReturnAtoms, deposits[0].Terms.Atoms)
 	}
 	if err = s.ApprovedBroadcast(scope, raw); err != nil {
 		t.Fatal(err)

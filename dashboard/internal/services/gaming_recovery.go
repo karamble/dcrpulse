@@ -65,7 +65,10 @@ func recoveryDeposit(id string) (gamingfunds.Deposit, error) {
 	}
 	return gamingfunds.Deposit{}, fmt.Errorf("unknown deposit")
 }
-func recoveryMempoolInputs(ctx context.Context) (map[string]bool, error) {
+
+// recoveryMempoolInputs maps each outpoint a mempool transaction spends to that
+// transaction's id.
+func recoveryMempoolInputs(ctx context.Context) (map[string]string, error) {
 	if rpc.DcrdClient == nil {
 		return nil, ErrGamingChainUnavailable
 	}
@@ -73,32 +76,84 @@ func recoveryMempoolInputs(ctx context.Context) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputs := map[string]bool{}
+	inputs := map[string]string{}
 	for _, hash := range hashes {
 		tx, err := rpc.DcrdClient.GetRawTransaction(ctx, hash)
 		if err != nil {
 			return nil, err
 		}
 		for _, in := range tx.MsgTx().TxIn {
-			inputs[in.PreviousOutPoint.String()] = true
+			inputs[in.PreviousOutPoint.String()] = hash.String()
 		}
 	}
 	return inputs, nil
 }
-func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[string]bool, poolErr error) GamingRecoveryView {
+
+// recoveryRefundTx is the id of the refund journaled for a deposit, if any.
+func recoveryRefundTx(depositID string) string {
+	store, err := gamingFundsStore()
+	if err != nil {
+		return ""
+	}
+	ops, err := store.Operations()
+	if err != nil {
+		return ""
+	}
+	for _, op := range ops {
+		if op.Kind != "recovery" {
+			continue
+		}
+		for _, id := range op.DepositIDs {
+			if id == depositID {
+				return op.ID
+			}
+		}
+	}
+	return ""
+}
+
+// spendReason describes a recorded spend of a deposit: the journaled refund
+// or another transaction, confirmed or still waiting for a block.
+func spendReason(spender, refund string, confirmed bool) string {
+	switch {
+	case confirmed && spender == refund:
+		return "Refunded to your wallet in " + spender
+	case confirmed:
+		return "Spent by transaction " + spender
+	case spender == refund:
+		return "Refund " + spender + " is in the mempool, waiting for a block"
+	default:
+		return "Transaction " + spender + " spends this output and is waiting for a block"
+	}
+}
+
+// pendingReason describes an output a mempool transaction spends, or that a
+// journaled refund reserves before it is seen in the mempool.
+func pendingReason(spender, refund string) string {
+	switch {
+	case spender != "" && spender == refund:
+		return "Refund " + spender + " is in the mempool, waiting for a block"
+	case spender != "":
+		return "Another transaction " + spender + " spends this output"
+	case refund != "":
+		return "Refund " + refund + " is signed; broadcasting, retried automatically"
+	default:
+		return "A transaction already reserves this output"
+	}
+}
+
+func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[string]string, poolErr error) GamingRecoveryView {
 	v := GamingRecoveryView{ID: dep.ID, Game: dep.Scope.Game, Table: dep.Terms.Table, Kind: dep.Terms.Kind, Atoms: dep.Terms.Atoms, Outpoint: dep.Outpoint, LockBlocks: dep.Terms.LockBlocks, Closed: dep.Closed, State: "needs_attention"}
 	if err := recoveryWalletMatches(ctx, dep.Scope); err != nil {
 		v.Reason = err.Error()
 		return v
 	}
 	if dep.SpendingTx != "" {
+		v.State = "recovery_pending"
 		if dep.State == "spent" {
 			v.State = "spent"
-			v.Reason = "Confirmed spend: " + dep.SpendingTx
-		} else {
-			v.State = "recovery_pending"
-			v.Reason = "Pending spend: " + dep.SpendingTx
 		}
+		v.Reason = spendReason(dep.SpendingTx, recoveryRefundTx(dep.ID), dep.State == "spent")
 		return v
 	}
 	if dep.Outpoint == "" {
@@ -129,9 +184,9 @@ func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[strin
 		v.Reason = "Cannot verify pending spends"
 		return v
 	}
-	if spends[dep.Outpoint] || dep.State == "recovery_pending" {
+	if spender := spends[dep.Outpoint]; spender != "" || dep.State == "recovery_pending" {
 		v.State = "recovery_pending"
-		v.Reason = "A transaction already reserves or spends this output"
+		v.Reason = pendingReason(spender, recoveryRefundTx(dep.ID))
 		return v
 	}
 	v.Confirmations = out.Confirmations
@@ -217,7 +272,7 @@ func QuoteGamingRecovery(ctx context.Context, id string) (gamingfunds.RecoveryQu
 	if err != nil {
 		return zero, err
 	}
-	return store.QuoteRecovery(dep.Scope, id, dest, 10000, params)
+	return store.QuoteRecovery(dep.Scope, id, dest, params)
 }
 func ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []byte) (string, error) {
 	dep, err := recoveryDeposit(id)

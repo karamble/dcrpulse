@@ -117,13 +117,16 @@ func (s *Store) CloseTable(scope Scope, table string) error {
 	}
 	return s.save(d)
 }
-func (s *Store) QuoteRecovery(scope Scope, id, dest string, fee int64, params stdaddr.AddressParams) (RecoveryQuote, error) {
+
+// QuoteRecovery prices the refund of a deposit to dest with dcrwallet's relay
+// rules, from the size of the signed refund.
+func (s *Store) QuoteRecovery(scope Scope, id, dest string, params stdaddr.AddressParams) (RecoveryQuote, error) {
 	var zero RecoveryQuote
 	a, err := stdaddr.DecodeAddress(dest, params)
 	if err != nil {
 		return zero, err
 	}
-	_ = a
+	_, pay := a.PaymentScript()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	d, err := s.load()
@@ -140,12 +143,18 @@ func (s *Store) QuoteRecovery(scope Scope, id, dest string, fee int64, params st
 	if dep.Outpoint == "" {
 		return zero, fmt.Errorf("deposit has no funded output")
 	}
-	if fee <= 0 || fee > 100000 || dep.Terms.Atoms-fee < 10000 {
-		return zero, fmt.Errorf("insufficient amount after recovery fee")
-	}
 	prev, err := parseOutput(dep.Outpoint)
 	if err != nil {
 		return zero, err
+	}
+	size, err := finance.RefundSize(finance.Input{Terms: dep.Terms, Outpoint: prev}, pay)
+	if err != nil {
+		return zero, err
+	}
+	rules := feeRules()
+	fee := rules.Fee(size)
+	if fee <= 0 || fee >= dep.Terms.Atoms || rules.Dust(dep.Terms.Atoms-fee, pay) {
+		return zero, fmt.Errorf("insufficient amount after recovery fee")
 	}
 	for _, op := range d.Operations {
 		for _, input := range op.Inputs {

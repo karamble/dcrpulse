@@ -416,7 +416,7 @@ func reconcileGamingFinance(ctx context.Context) {
 		}
 		// These exact signatures were authorized and persisted before any send.
 		if _, err = BroadcastSignedTransaction(ctx, raw); err != nil {
-			gameLog.Debugf("financial transaction %s remains pending: %v", op.ID, err)
+			gameLog.Warnf("financial transaction %s remains pending: %v", op.ID, err)
 		}
 	}
 	reconcileGamingDeposits(ctx, store)

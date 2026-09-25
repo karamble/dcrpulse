@@ -63,7 +63,7 @@ func (s *Store) ProposeSettlement(scope Scope, p finance.Payout, params stdaddr.
 	for _, peer := range d.Peers[k] {
 		destinations[peer.Key] = peer.Destination
 	}
-	built, err := finance.BuildPayout(p, destinations, params)
+	built, err := finance.BuildPayout(p, destinations, params, feeRules())
 	if err != nil {
 		return empty, err
 	}
