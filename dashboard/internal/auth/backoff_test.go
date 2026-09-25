@@ -7,6 +7,7 @@ package auth
 import (
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -98,8 +99,8 @@ func TestVerifySuccessResetsCounter(t *testing.T) {
 		t.Fatalf("Verify(correct) = %v, %v, want true, 0", ok, wait)
 	}
 	mu.RLock()
-	gotFailures := failures
-	gotBlocked := blockedUntil
+	gotFailures := loginBackoff.failures
+	gotBlocked := loginBackoff.blockedUntil
 	mu.RUnlock()
 	if gotFailures != 0 {
 		t.Errorf("failures = %d after success, want 0", gotFailures)
@@ -153,11 +154,82 @@ func TestPointAtForTestClearsBackoff(t *testing.T) {
 	}
 	restore := PointAtForTest(filepath.Join(t.TempDir(), "other.json"))
 	mu.RLock()
-	gotFailures := failures
-	gotBlocked := blockedUntil
+	gotFailures := loginBackoff.failures
+	gotBlocked := loginBackoff.blockedUntil
 	mu.RUnlock()
 	restore()
 	if gotFailures != 0 || !gotBlocked.IsZero() {
 		t.Errorf("PointAtForTest left failures = %d, blockedUntil = %v, want 0 and zero", gotFailures, gotBlocked)
+	}
+}
+
+// Guesses sent at the same moment must not all be checked: the first one holds
+// the block the others would have earned (EA-4).
+func TestConcurrentGuessesGetOneCheck(t *testing.T) {
+	setPassword(t, "correct horse")
+	mu.Lock()
+	loginBackoff = backoff{failures: backoffFreeTries + 1} // blocked before, now expired
+	mu.Unlock()
+
+	start := make(chan struct{})
+	results := make(chan time.Duration, 5)
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, wait := Verify("wrong")
+			results <- wait
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	checked := 0
+	for wait := range results {
+		if wait == 0 {
+			checked++
+		}
+	}
+	if checked != 1 {
+		t.Fatalf("%d of 5 concurrent guesses were checked, want 1", checked)
+	}
+	mu.Lock()
+	got := loginBackoff.failures
+	mu.Unlock()
+	if got != backoffFreeTries+2 {
+		t.Fatalf("failures = %d, want %d", got, backoffFreeTries+2)
+	}
+}
+
+// Wrong guesses at the login page do not stop a signed-in device from
+// changing or disabling the password (EA-5).
+func TestLoginGuessesDoNotBlockSignedInChecks(t *testing.T) {
+	setPassword(t, "correct horse")
+	for i := 0; i < backoffFreeTries+3; i++ {
+		Verify("wrong")
+	}
+	if _, wait := Verify("correct horse"); wait == 0 {
+		t.Fatal("login not blocked after repeated wrong guesses")
+	}
+	if err := Change("correct horse", "battery staple"); err != nil {
+		t.Fatalf("Change while logins are blocked = %v, want nil", err)
+	}
+	if err := Disable("battery staple"); err != nil {
+		t.Fatalf("Disable while logins are blocked = %v, want nil", err)
+	}
+}
+
+// A signed-in caller guessing the current password still backs off.
+func TestSignedInGuessesBackOff(t *testing.T) {
+	setPassword(t, "correct horse")
+	for i := 0; i <= backoffFreeTries; i++ {
+		if err := Disable("wrong"); errors.Is(err, ErrTooManyAttempts) {
+			t.Fatalf("attempt %d blocked within the free tries", i+1)
+		}
+	}
+	if err := Disable("wrong"); !errors.Is(err, ErrTooManyAttempts) {
+		t.Fatalf("Disable after %d wrong tries = %v, want ErrTooManyAttempts", backoffFreeTries+1, err)
 	}
 }

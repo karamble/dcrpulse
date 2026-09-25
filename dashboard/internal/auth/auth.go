@@ -47,9 +47,18 @@ var (
 	// the operator's config file, and a restart clearing it is the operator's
 	// way out of a backoff someone else caused. They have box access; whoever
 	// is guessing does not.
+	//
+	// Logins and the signed-in checks (change, disable) count separately, so
+	// guesses at the login page do not lock out a device already signed in.
+	loginBackoff   backoff
+	sessionBackoff backoff
+)
+
+// backoff is one counter of consecutive failures; guarded by mu.
+type backoff struct {
 	failures     int
 	blockedUntil time.Time
-)
+}
 
 // ErrTooManyAttempts reports that the password was not checked at all because
 // too many consecutive checks have failed. Callers should surface it as 429
@@ -221,26 +230,33 @@ func Setup(password string) error {
 // for ~100ms: holding it would serialize every caller and hand out a cheaper
 // denial of service than the one being closed.
 func Verify(password string) (bool, time.Duration) {
+	return verifyWith(&loginBackoff, password)
+}
+
+// verifyWith checks password against b. The attempt is counted as a failure
+// before the compare, so callers arriving while it runs already see the block
+// it would earn; a match then clears the count.
+func verifyWith(b *backoff, password string) (bool, time.Duration) {
 	mu.Lock()
-	if wait := time.Until(blockedUntil); wait > 0 {
+	if wait := time.Until(b.blockedUntil); wait > 0 {
 		mu.Unlock()
 		return false, wait
 	}
 	h := append([]byte(nil), hash...)
-	mu.Unlock()
 	if len(h) == 0 {
+		mu.Unlock()
 		return false, 0
 	}
+	b.failures++
+	b.blockedUntil = time.Now().Add(backoffDelay(b.failures))
+	mu.Unlock()
 	ok := bcrypt.CompareHashAndPassword(h, []byte(password)) == nil
-
-	mu.Lock()
-	defer mu.Unlock()
 	if ok {
-		failures, blockedUntil = 0, time.Time{}
+		mu.Lock()
+		b.failures, b.blockedUntil = 0, time.Time{}
+		mu.Unlock()
 		return true, 0
 	}
-	failures++
-	blockedUntil = time.Now().Add(backoffDelay(failures))
 	return false, 0
 }
 
@@ -251,7 +267,7 @@ func Change(current, next string) error {
 	if next == "" {
 		return errors.New("new password must not be empty")
 	}
-	if ok, wait := Verify(current); !ok {
+	if ok, wait := verifyWith(&sessionBackoff, current); !ok {
 		if wait > 0 {
 			return fmt.Errorf("%w: retry in %s", ErrTooManyAttempts, wait.Round(time.Second))
 		}
@@ -277,7 +293,7 @@ func Change(current, next string) error {
 // Disable turns the gate off after verifying the current password. The hash
 // and secret are cleared so all sessions become invalid.
 func Disable(current string) error {
-	if ok, wait := Verify(current); !ok {
+	if ok, wait := verifyWith(&sessionBackoff, current); !ok {
 		if wait > 0 {
 			return fmt.Errorf("%w: retry in %s", ErrTooManyAttempts, wait.Round(time.Second))
 		}
