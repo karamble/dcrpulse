@@ -53,28 +53,37 @@ type View =
   | { kind: 'edit'; name: string }
   | { kind: 'visit'; uid: string; path: string[] };
 
+// decodeSegments decodes percent-encoded path segments, or returns null when
+// any segment is malformed. Invisible control and format characters (bidi
+// overrides, zero-width) are dropped so the path shown is the path fetched.
+export const decodeSegments = (segs: string[]): string[] | null => {
+  try {
+    return segs.map((s) => decodeURIComponent(s).replace(/[\p{Cc}\p{Cf}]/gu, ''));
+  } catch {
+    return null;
+  }
+};
+
 // readHash parses the Pages sub-route out of the URL hash:
 //   #pages, #pages/mine          -> My Pages list
 //   #pages/new                   -> new local page editor
 //   #pages/edit/<name>           -> edit a local page
 //   #pages/visit/<uid>/<path...> -> view a (local or remote) page
-const readHash = (): View => {
+export const readHash = (): View => {
   const h = window.location.hash.replace(/^#/, '');
   if (!h.startsWith('pages')) return { kind: 'mine' };
   const rest = h.slice('pages'.length).replace(/^\//, '');
   if (rest === '' || rest === 'mine') return { kind: 'mine' };
   if (rest === 'new') return { kind: 'new' };
   if (rest.startsWith('edit/')) {
-    return { kind: 'edit', name: decodeURIComponent(rest.slice('edit/'.length)) };
+    const name = decodeSegments([rest.slice('edit/'.length)]);
+    return name ? { kind: 'edit', name: name[0] } : { kind: 'mine' };
   }
   // Bare "visit" (no uid) is the address-book landing: pick a contact to visit.
   if (rest === 'visit') return { kind: 'visit', uid: '', path: [] };
   if (rest.startsWith('visit/')) {
-    const segs = rest
-      .slice('visit/'.length)
-      .split('/')
-      .filter(Boolean)
-      .map(decodeURIComponent);
+    const segs = decodeSegments(rest.slice('visit/'.length).split('/').filter(Boolean));
+    if (!segs) return { kind: 'mine' };
     const uid = segs.shift() ?? '';
     return { kind: 'visit', uid, path: segs.length ? segs : ['index.md'] };
   }
@@ -988,16 +997,18 @@ const PageSegments = ({
 // resolvePageLink turns a markdown href into a (uid, path) navigation target.
 // br://UID/seg/seg -> that user's page; a relative href -> the current user's
 // page at that absolute path (matches bruig's launchUrlAwait behaviour).
-const resolvePageLink = (href: string, currentUid: string): { uid: string; path: string[] } | null => {
+export const resolvePageLink = (href: string, currentUid: string): { uid: string; path: string[] } | null => {
   if (!href) return null;
   if (href.startsWith('br://')) {
     const rest = href.slice('br://'.length);
-    const segs = rest.split('/').filter(Boolean).map(decodeURIComponent);
+    const segs = decodeSegments(rest.split('/').filter(Boolean));
+    if (!segs) return null;
     const uid = segs.shift() ?? '';
     if (!uid) return null;
     return { uid, path: segs.length ? segs : ['index.md'] };
   }
-  const segs = href.split('/').filter(Boolean).map(decodeURIComponent);
+  const segs = decodeSegments(href.split('/').filter(Boolean));
+  if (!segs) return null;
   // A bare "/" (or empty) targets the host's index, matching bruig.
   return { uid: currentUid, path: segs.length ? segs : ['index.md'] };
 };
@@ -1076,7 +1087,11 @@ const PageForm = ({
       return;
     }
     setFieldErrs({});
-    const actionPath = action.split('/').filter(Boolean).map(decodeURIComponent);
+    const actionPath = decodeSegments(action.split('/').filter(Boolean));
+    if (!actionPath) {
+      setSubmitErr("This form's action is not a valid path.");
+      return;
+    }
     // simplestore's order add-comment handler is the lone form that expects a
     // bare JSON value rather than a name-keyed object; send the single field's
     // value directly so it unmarshals (matches handleOrderAddComment).
