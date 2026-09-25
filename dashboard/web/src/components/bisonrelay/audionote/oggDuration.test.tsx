@@ -1,36 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import { oggDurationSeconds } from './oggDuration';
+import { parseOggOpus } from './oggDuration';
+import { oggOpusFile, oggPage, opusHead, opusTags } from './oggFixtures';
 
-// A minimal Ogg page: the parser reads only the capture pattern, the granule
-// and the lacing table, so the CRC can stay zero here.
-const page = (granule: number, payload: number[]): number[] => {
-  const g = [];
-  let rest = granule;
-  for (let i = 0; i < 8; i++) {
-    g.push(rest % 256);
-    rest = Math.floor(rest / 256);
-  }
-  return [0x4f, 0x67, 0x67, 0x53, 0, 0, ...g, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, payload.length, ...payload];
-};
-
-describe('oggDurationSeconds', () => {
-  it('reads the last audio page granule and ignores the headers', () => {
-    const bytes = new Uint8Array([
-      ...page(0, [1, 2, 3]),
-      ...page(0, [4]),
-      ...page(960, [5]),
-      ...page(2880, [6, 7]),
-    ]);
-    expect(oggDurationSeconds(bytes)).toBe(0.06);
+describe('parseOggOpus', () => {
+  it('accepts the stream bruig writes and reads its duration from the last granule', () => {
+    expect(parseOggOpus(oggOpusFile([960, 1920, 2880]))).toEqual({ seconds: 0.06, channels: 2 });
   });
 
   it('handles the 60 second maximum without precision loss', () => {
-    expect(oggDurationSeconds(new Uint8Array(page(2_880_000, [1])))).toBe(60);
+    expect(parseOggOpus(oggOpusFile([2_880_000]))?.seconds).toBe(60);
   });
 
-  it('returns null for something that is not Ogg or is cut short', () => {
-    expect(oggDurationSeconds(new Uint8Array([1, 2, 3]))).toBeNull();
-    expect(oggDurationSeconds(new Uint8Array(page(960, [1, 2]).slice(0, -1)))).toBeNull();
-    expect(oggDurationSeconds(new Uint8Array(page(0, [1])))).toBeNull();
+  it('rejects bytes that only claim to be a voice note', () => {
+    // Not Ogg at all, however the tag was labelled.
+    expect(parseOggOpus(new Uint8Array([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0]))).toBeNull();
+    // Ogg pages whose first packet is not an OpusHead (a Vorbis stream would look like this).
+    const vorbis = [1, ...Array.from('vorbis', (c) => c.charCodeAt(0)), 0, 0, 0, 0, 2, 0x80, 0xbb, 0, 0];
+    expect(parseOggOpus(oggOpusFile([960], vorbis))).toBeNull();
+    // A header that is right in every byte except its magic.
+    const wrongMagic = [...Array.from('NotOpus!', (c) => c.charCodeAt(0)), ...opusHead().slice(8)];
+    expect(parseOggOpus(oggOpusFile([960], wrongMagic))).toBeNull();
+    // Unknown OpusHead version, or a header claiming zero channels.
+    expect(parseOggOpus(oggOpusFile([960], opusHead(2, 2)))).toBeNull();
+    expect(parseOggOpus(oggOpusFile([960], opusHead(0)))).toBeNull();
+    // First page not flagged beginning-of-stream.
+    const noBOS = new Uint8Array([
+      ...oggPage({ typ: 0, granule: 0, seq: 0, payload: opusHead() }),
+      ...oggPage({ typ: 0, granule: 0, seq: 1, payload: opusTags() }),
+      ...oggPage({ typ: 4, granule: 960, seq: 2, payload: [1] }),
+    ]);
+    expect(parseOggOpus(noBOS)).toBeNull();
+    // Header pages with no audio behind them.
+    expect(parseOggOpus(oggOpusFile([]))).toBeNull();
+  });
+
+  it('rejects a stream that is cut short or has bytes after its last page', () => {
+    const good = oggOpusFile([960]);
+    expect(parseOggOpus(good.slice(0, good.length - 1))).toBeNull();
+    expect(parseOggOpus(new Uint8Array([...good, 0]))).toBeNull();
   });
 });

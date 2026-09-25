@@ -53,11 +53,6 @@ export const EmbedRenderer = ({
     }
     return <DownloadEmbed seg={embed} uid={downloadUid ?? ''} self={downloadSelf} />;
   }
-  // A voice note, ours or bruig's, is an inline audio/ogg embed; anything
-  // past the render bound stays a download chip like an oversized image.
-  if (embed.mime === 'audio/ogg' && embed.dataB64 && embed.dataB64.length <= (MAX_INLINE_RENDER_BYTES * 4) / 3) {
-    return <AudioNoteEmbed dataB64={embed.dataB64} filename={embed.filename || embed.name} />;
-  }
   const inlineUrl = embed.dataB64 ? `data:${embed.mime};base64,${embed.dataB64}` : '';
   const fileUrl = inlineUrl || embedFileUrl(embed.localFilename);
   if (!fileUrl) {
@@ -68,6 +63,21 @@ export const EmbedRenderer = ({
     );
   }
   const inlineBytes = embed.dataB64 ? Math.floor((embed.dataB64.length * 3) / 4) : 0;
+  // A voice note, ours or bruig's, is an audio/ogg embed: inline data= on our
+  // own echo, localfilename= once Bison Relay has logged a received one. The
+  // type is only the peer's claim; the player parses the bytes and hands back
+  // the plain chip when they are not an Opus stream, as it does past the
+  // render bound.
+  if (embed.mime === 'audio/ogg' && inlineBytes <= MAX_INLINE_RENDER_BYTES) {
+    return (
+      <AudioNoteEmbed
+        dataB64={embed.dataB64 || undefined}
+        fileUrl={embed.dataB64 ? undefined : fileUrl}
+        filename={embed.filename || embed.name}
+        fallback={<NonImageEmbed embed={embed} fileUrl={fileUrl} />}
+      />
+    );
+  }
   if (isImageMime(embed.mime) && inlineBytes <= MAX_INLINE_RENDER_BYTES) {
     const displayName = embed.name || embed.filename || 'image';
     return (
