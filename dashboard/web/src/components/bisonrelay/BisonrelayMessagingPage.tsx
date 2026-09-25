@@ -1090,7 +1090,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
         return true;
       }
 
-      const recipient = nickOrUid(selected.value);
+      const recipient = selected.value.id?.identity ?? '';
       if (attachment && attachment.mode === 'transfer') {
         if (text) {
           await sendBisonrelayPM(recipient, text);
@@ -1165,7 +1165,7 @@ export const BisonrelayMessagingPage = ({ ownNick }: { ownNick: string }) => {
     if (!selected || selected.kind === 'group' || sending) return false;
     setSending(true);
     try {
-      const result = await sendBisonrelayAudioNote(nickOrUid(selected.value), packetsB64);
+      const result = await sendBisonrelayAudioNote(selected.value.id?.identity ?? '', packetsB64);
       setMessages((prev) => [
         ...prev,
         {
@@ -2966,10 +2966,6 @@ function brIdentityToHex(s: string): string {
   } catch {
     return s;
   }
-}
-
-function nickOrUid(c: BisonrelayContact): string {
-  return c.nick_alias || c.id?.nick || c.id?.identity || '';
 }
 
 // heardAge renders a compact age ("3h", "2d") for when the contact was last

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"dcrpulse/internal/rpc"
@@ -28,11 +27,11 @@ func BisonrelayAudioNoteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	req.User = strings.TrimSpace(req.User)
-	if req.User == "" {
-		http.Error(w, "user is required", http.StatusBadRequest)
+	user, ok := brID(w, req.User, "user")
+	if !ok {
 		return
 	}
+	req.User = user
 	blob, err := base64.StdEncoding.DecodeString(req.PacketsB64)
 	if err != nil {
 		http.Error(w, "packets_b64: "+err.Error(), http.StatusBadRequest)

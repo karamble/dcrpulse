@@ -244,9 +244,8 @@ func BisonrelayFileSendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer part.Close()
 
-	user := fields["user"]
-	if user == "" {
-		http.Error(w, "user field is required", http.StatusBadRequest)
+	user, ok := brID(w, fields["user"], "user")
+	if !ok {
 		return
 	}
 
@@ -2181,10 +2180,11 @@ func BisonrelayContactTipHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if req.UID == "" {
-		http.Error(w, "uid is required", http.StatusBadRequest)
+	uid, ok := brID(w, req.UID, "uid")
+	if !ok {
 		return
 	}
+	req.UID = uid
 	if req.DCRAmount <= 0 {
 		http.Error(w, "dcrAmount must be positive", http.StatusBadRequest)
 		return
@@ -2250,12 +2250,12 @@ func BisonrelayPMHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	req.User = strings.TrimSpace(req.User)
-	req.Msg = strings.TrimSpace(req.Msg)
-	if req.User == "" {
-		http.Error(w, "user is required", http.StatusBadRequest)
+	user, ok := brID(w, req.User, "user")
+	if !ok {
 		return
 	}
+	req.User = user
+	req.Msg = strings.TrimSpace(req.Msg)
 	if req.Embed == nil && req.Msg == "" {
 		http.Error(w, "msg or embed is required", http.StatusBadRequest)
 		return
