@@ -1004,6 +1004,12 @@ export interface ExternalRequestSettings {
   vspListing: boolean;
   politeia: boolean;
   brseeder: boolean;
+  exchangeRates: boolean;
+}
+
+// Daemons a saved exchange-rates change could not be applied to yet.
+export interface SaveSettingsResult {
+  notApplied: string[];
 }
 
 export interface GlobalSettings {
@@ -1021,8 +1027,9 @@ export const getSettings = async (): Promise<SettingsEnvelope> => {
   return response.data;
 };
 
-export const saveSettings = async (e: SettingsEnvelope): Promise<void> => {
-  await api.post('/wallet/settings', e);
+export const saveSettings = async (e: SettingsEnvelope): Promise<SaveSettingsResult> => {
+  const { data } = await api.post<SaveSettingsResult>('/wallet/settings', e);
+  return { notApplied: data?.notApplied ?? [] };
 };
 
 export const changePassphrase = async (

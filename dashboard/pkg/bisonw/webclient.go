@@ -653,6 +653,12 @@ func (c *WebClient) OpenWallet(ctx context.Context, assetID uint32) error {
 	return c.callSession(ctx, http.MethodPost, "/api/openwallet", map[string]any{"assetID": assetID, "pass": ""}, nil)
 }
 
+// ToggleRateSource turns one of bisonw's fiat rate sources off or on. bisonw
+// keeps the choice in its database and treats a repeat as done.
+func (c *WebClient) ToggleRateSource(ctx context.Context, source string, disable bool) error {
+	return c.callSession(ctx, http.MethodPost, "/api/toggleratesource", map[string]any{"source": source, "disable": disable}, nil)
+}
+
 // NewWallet creates and unlocks an asset wallet. The form is flat: assetID,
 // walletType and config sit beside pass (wallet) and appPass (session slot).
 func (c *WebClient) NewWallet(ctx context.Context, assetID uint32, walletType string, cfg map[string]string, walletPass string) error {

@@ -703,7 +703,12 @@ var bisonrelayTools = []toolDef{
 		}),
 	readTool("bisonrelay", "br_rates",
 		"Get the latest DCR/USD and BTC/USD exchange rates known to brclientd.",
-		func(ctx context.Context, _ emptyInput) (any, error) { return rpc.BrclientdRates(ctx) }),
+		func(ctx context.Context, _ emptyInput) (any, error) {
+			if !services.ExchangeRatesEnabled() {
+				return nil, services.ErrExchangeRatesOff
+			}
+			return rpc.BrclientdRates(ctx)
+		}),
 	agentTool("bisonrelay", "br_store_save_product",
 		"Create or update a product in the Bison Relay storefront. Requires a grant with Bison Relay write enabled. Price is in DCR.",
 		func(ctx context.Context, a *agent, in brSaveProductInput) (any, error) {

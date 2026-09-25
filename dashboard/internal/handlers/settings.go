@@ -32,9 +32,10 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	walletOut := types.WalletSettings{GapLimit: 20}
 	globalOut := types.GlobalSettings{
 		ExternalRequests: types.ExternalRequestSettings{
-			VSPListing: true,
-			Politeia:   true,
-			Brseeder:   true,
+			VSPListing:    true,
+			Politeia:      true,
+			Brseeder:      true,
+			ExchangeRates: true,
 		},
 		DecredPulseBotURL: services.DefaultDecredPulseBotURL,
 	}
@@ -63,6 +64,9 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			if v, ok := allowed[config.ExternalRequestBrseeder]; ok {
 				globalOut.ExternalRequests.Brseeder = v
+			}
+			if v, ok := allowed[config.ExternalRequestExchangeRates]; ok {
+				globalOut.ExternalRequests.ExchangeRates = v
 			}
 		}
 		var botURL string
@@ -122,7 +126,9 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	result := types.SaveSettingsResult{NotApplied: []string{}}
 	if req.Global != nil {
+		ratesWere := services.ExchangeRatesEnabled()
 		gc, err := config.LoadGlobalCfg()
 		if err != nil {
 			settLog.Errorf("settings save: load global cfg: %v", err)
@@ -136,6 +142,7 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		allowed[config.ExternalRequestVSPListing] = req.Global.ExternalRequests.VSPListing
 		allowed[config.ExternalRequestPoliteia] = req.Global.ExternalRequests.Politeia
 		allowed[config.ExternalRequestBrseeder] = req.Global.ExternalRequests.Brseeder
+		allowed[config.ExternalRequestExchangeRates] = req.Global.ExternalRequests.ExchangeRates
 		if err := gc.SetAllowedExternalRequests(allowed); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -167,9 +174,14 @@ func SaveSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to save global settings", http.StatusInternalServerError)
 			return
 		}
+		if req.Global.ExternalRequests.ExchangeRates != ratesWere {
+			applyCtx, applyCancel := context.WithTimeout(r.Context(), 30*time.Second)
+			result.NotApplied = services.ApplyExchangeRates(applyCtx)
+			applyCancel()
+		}
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, result)
 }
 
 // ChangePassphraseHandler rotates the wallet's private passphrase.

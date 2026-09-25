@@ -111,4 +111,6 @@ const (
 	ExternalRequestBrseeder       = "brseeder"
 	ExternalRequestDecredPulseBot = "decred_pulse_bot"
 	ExternalRequestDcrtime        = "dcrtime"
+	// ExternalRequestExchangeRates has no Decrediton counterpart.
+	ExternalRequestExchangeRates = "exchange_rates"
 )

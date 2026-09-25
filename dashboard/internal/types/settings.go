@@ -17,6 +17,15 @@ type ExternalRequestSettings struct {
 	VSPListing bool `json:"vspListing"`
 	Politeia   bool `json:"politeia"`
 	Brseeder   bool `json:"brseeder"`
+	// ExchangeRates covers dcrpulse's own price lookups and those of the
+	// brclientd and bisonw it runs.
+	ExchangeRates bool `json:"exchangeRates"`
+}
+
+// SaveSettingsResult names the daemons a saved exchange-rates change could
+// not be applied to yet.
+type SaveSettingsResult struct {
+	NotApplied []string `json:"notApplied"`
 }
 
 // GlobalSettings is the cross-wallet preferences surface.

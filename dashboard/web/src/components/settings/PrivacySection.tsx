@@ -18,7 +18,18 @@ const defaultExternal: ExternalRequestSettings = {
   vspListing: true,
   politeia: true,
   brseeder: true,
+  exchangeRates: true,
 };
+
+// What a daemon the exchange-rates change could not reach needs.
+const notAppliedText: Record<string, string> = {
+  brclientd: 'Bison Relay is not running; start it and save again.',
+  dcrdex: 'DCRDEX picks this up the next time it is unlocked.',
+};
+
+// savedText is the confirmation after a save, naming anything still pending.
+export const savedText = (notApplied: string[]): string =>
+  ['Preferences saved.', ...notApplied.map((d) => notAppliedText[d] ?? `${d} could not be updated.`)].join(' ');
 
 const defaultBotUrl = 'https://brulse.decredcommunity.org';
 
@@ -33,7 +44,7 @@ export const PrivacySection = () => {
   useEffect(() => {
     getSettings()
       .then((s) => {
-        if (s.global?.externalRequests) setExternal(s.global.externalRequests);
+        if (s.global?.externalRequests) setExternal({ ...defaultExternal, ...s.global.externalRequests });
         if (s.global?.decredPulseBotUrl) setBotUrl(s.global.decredPulseBotUrl);
       })
       .catch(() => {});
@@ -62,8 +73,8 @@ export const PrivacySection = () => {
     setExternalBusy(true);
     setFeedback(null);
     try {
-      await saveSettings({ global: { externalRequests: next, decredPulseBotUrl: botUrl.trim() } });
-      setFeedback({ kind: 'info', text: 'Preferences saved.' });
+      const res = await saveSettings({ global: { externalRequests: next, decredPulseBotUrl: botUrl.trim() } });
+      setFeedback({ kind: 'info', text: savedText(res.notApplied) });
     } catch (err: any) {
       setFeedback({
         kind: 'error',
@@ -166,10 +177,13 @@ export const PrivacySection = () => {
           disabled={externalBusy}
           onChange={(v) => updateExternal({ ...external, brseeder: v })}
         />
-        <p className="text-xs text-muted-foreground">
-          These preferences are persisted now; enforcement at each call site will be wired in a
-          follow-up.
-        </p>
+        <Toggle
+          label="Exchange rates"
+          description="Fetch DCR and BTC prices for USD amounts: dcrpulse asks CryptoCompare and Kraken, Bison Relay asks api.decred.org (with Kraken as fallback), DCRDEX asks Messari, Coinpaprika and dcrdata. When disabled, none of them is asked and no USD amounts are shown."
+          checked={external.exchangeRates}
+          disabled={externalBusy}
+          onChange={(v) => updateExternal({ ...external, exchangeRates: v })}
+        />
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 p-3 rounded-lg bg-muted/10 border border-border/50">
           <div className="min-w-0">
             <span className="font-medium block">Decred Pulse bot URL</span>

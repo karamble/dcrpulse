@@ -1961,7 +1961,12 @@ func BisonrelayRestoreBackupHandler(w http.ResponseWriter, r *http.Request) {
 
 // BisonrelayRatesHandler proxies brclientd's /rates (DCR/USD + BTC/USD, with
 // the source that produced them and a last-updated stamp).
+// With exchange rates turned off it answers no price, as brclientd does then.
 func BisonrelayRatesHandler(w http.ResponseWriter, r *http.Request) {
+	if !services.ExchangeRatesEnabled() {
+		writeJSON(w, map[string]any{"dcr_usd": 0, "btc_usd": 0, "source": ""})
+		return
+	}
 	brProxyJSON(w, func() (json.RawMessage, error) { return rpc.BrclientdRates(r.Context()) })
 }
 

@@ -455,3 +455,29 @@ func TestLogout(t *testing.T) {
 		t.Fatal("a refused logout must keep the session")
 	}
 }
+
+// The toggle carries bisonw's apiToggleRateSource form: source and disable.
+func TestToggleRateSourceSendsSourceAndDisable(t *testing.T) {
+	var path string
+	var got struct {
+		Source  string `json:"source"`
+		Disable bool   `json:"disable"`
+	}
+	c := newTestWebClient(t, func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+	if err := c.ToggleRateSource(context.Background(), "Coinpaprika", true); err != nil {
+		t.Fatal(err)
+	}
+	if path != "/api/toggleratesource" || got.Source != "Coinpaprika" || !got.Disable {
+		t.Fatalf("%s %+v", path, got)
+	}
+	c.loggedIn = false
+	if err := c.ToggleRateSource(context.Background(), "Coinpaprika", true); !errors.Is(err, ErrDexLocked) {
+		t.Fatalf("locked bisonw: %v", err)
+	}
+}

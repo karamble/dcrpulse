@@ -219,6 +219,7 @@ func InitDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go ensureDexWalletSettings()
+	go applyExchangeRatesToDex()
 	if err := setDcrdexInitialized(); err != nil {
 		dexcLog.Errorf("persist initialized flag: %v", err)
 	}
@@ -252,6 +253,7 @@ func UnlockDcrdexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// Reconnects the wallet in bisonw, so it runs off the response.
 	go ensureDexWalletSettings()
+	go applyExchangeRatesToDex()
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
@@ -447,6 +449,15 @@ func syncDexWalletPassphrase(ctx context.Context, newPass string) error {
 	}
 	dexcLog.Info("dcr wallet password updated")
 	return nil
+}
+
+// applyExchangeRatesToDex repeats the exchange-rates setting once bisonw has
+// a session, since toggling its rate sources needs one. It runs after the
+// handler returns, so it has its own context.
+func applyExchangeRatesToDex() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	services.ApplyExchangeRates(ctx)
 }
 
 // ensureDexWalletSettings pushes the dcrwalletRPC settings to bisonw when its
@@ -2646,6 +2657,11 @@ var dexRateCache = exchangerate.New(services.ExternalTransport())
 // for DCR and BTC.
 func GetDcrdexRatesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	// Exchange rates turned off: no price, and nobody is asked for one.
+	if !services.ExchangeRatesEnabled() {
+		writeJSON(w, map[string]float64{})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 

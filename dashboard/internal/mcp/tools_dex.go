@@ -655,6 +655,9 @@ var dexTools = []toolDef{
 	readTool("dex", "dex_rates",
 		"Get current USD prices for DEX assets, from Kraken with a Bison Relay fallback for DCR and BTC.",
 		func(ctx context.Context, _ emptyInput) (any, error) {
+			if !services.ExchangeRatesEnabled() {
+				return nil, services.ErrExchangeRatesOff
+			}
 			return rpc.BrclientdRates(ctx)
 		}),
 	readTool("dex", "dex_orderbook",
@@ -703,7 +706,10 @@ var dexTools = []toolDef{
 			if err != nil {
 				return nil, err
 			}
-			rates, _ := rpc.BrclientdRates(ctx)
+			var rates json.RawMessage
+			if services.ExchangeRatesEnabled() {
+				rates, _ = rpc.BrclientdRates(ctx)
+			}
 			return dexMarketSummaries(exch, rates, in.Host, in.BaseID, in.QuoteID), nil
 		}),
 	readTool("dex", "dex_deposit_address",

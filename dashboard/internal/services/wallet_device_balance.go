@@ -74,6 +74,9 @@ var deviceRates = exchangerate.New(ExternalTransport())
 // request per export preparation, no caching. 0 = unavailable; the export
 // stays useful and the device hides fiat.
 func deviceBalanceRate(ctx context.Context) float64 {
+	if !ExchangeRatesEnabled() {
+		return 0
+	}
 	rctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 	rate, err := deviceRates.KrakenUSD(rctx, "dcr")

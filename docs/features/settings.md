@@ -97,7 +97,7 @@ chatty in the logs. The setting is applied to the running dcrwallet immediately.
 
 ### External Requests
 
-Three toggles control whether the dashboard reaches out to external services for
+Four toggles control whether the dashboard reaches out to external services for
 optional, convenience-only data. Each is on by default:
 
 - **VSP registry** - fetch the VSP list from api.decred.org for the Staking
@@ -107,6 +107,13 @@ optional, convenience-only data. Each is on by default:
 - **Bison Relay LN seeder** - fetch Lightning peer suggestions from
   bisonrelay.org for the Channels tab's open-channel form. When disabled, the
   form shows no presets and you must type a peer URI manually.
+- **Exchange rates** - fetch DCR and BTC prices for USD amounts. It covers every
+  component: dcrpulse's own lookups (CryptoCompare and Kraken), Bison Relay's
+  rate feed in brclientd (api.decred.org, with Kraken as fallback) and DCRDEX's
+  rate sources (Messari, Coinpaprika, dcrdata). When disabled, none of them is
+  asked and no USD amounts are shown. brclientd applies the change at once;
+  DCRDEX needs a session to change its sources, so a locked DCRDEX picks it up
+  the next time it is unlocked, and the save says so.
 
 These preferences are persisted to the global config.
 
