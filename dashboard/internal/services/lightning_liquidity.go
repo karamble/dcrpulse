@@ -216,7 +216,19 @@ func ApprovedFeeCeiling(atoms int64) LiquidityConfirmer {
 // anything. The dcrlnlpd client validates size bounds, the per-node channel
 // limit, outbound capacity and the payment route BEFORE PolicyFetched, so
 // those failures surface here as the raw library errors.
+// ErrLiquidityOverTor refuses a liquidity request while Tor is on. The
+// provider client dials directly with no way to route it through Tor, and the
+// request carries this node's Lightning identity.
+var ErrLiquidityOverTor = errors.New("liquidity requests cannot go through Tor yet, so they are refused while Tor is on; turn Tor off to request inbound liquidity")
+
+// liquidityTorEnabled is the Tor check the liquidity calls make; a variable so
+// tests can pin it.
+var liquidityTorEnabled = func() bool { return ReadTorSettings().Enabled }
+
 func EstimateLiquidityChannel(ctx context.Context, req *types.RequestLiquidityEstimateRequest) (*types.LiquidityEstimateResponse, error) {
+	if liquidityTorEnabled() {
+		return nil, ErrLiquidityOverTor
+	}
 	lnc := rpc.Dcrlnd()
 	if lnc.Lightning == nil {
 		return nil, fmt.Errorf("dcrlnd not available")
@@ -267,6 +279,9 @@ func RequestLiquidityChannel(ctx context.Context, req *types.RequestLiquidityReq
 	}
 	if confirm == nil {
 		return nil, fmt.Errorf("no fee confirmation supplied")
+	}
+	if liquidityTorEnabled() {
+		return nil, ErrLiquidityOverTor
 	}
 	lnc := rpc.Dcrlnd()
 	if lnc.Lightning == nil {

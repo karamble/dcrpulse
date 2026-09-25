@@ -6,11 +6,14 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"dcrpulse/internal/config"
@@ -33,12 +36,29 @@ func torProxyEndpoint() (string, bool) {
 // ReadTorSettings returns the current Tor toggle state. When the pointer is
 // absent (Tor never enabled) it returns the disabled default.
 func ReadTorSettings() types.TorSettings {
+	return readTorSettings(config.TorPointerPath())
+}
+
+var torUnreadableOnce sync.Once
+
+// readTorSettings reads the pointer at path. A pointer that exists but cannot
+// be read or parsed reads as Tor on: the setting is unknown, and guessing off
+// would send traffic over clearnet that the operator may have asked to hide.
+func readTorSettings(path string) types.TorSettings {
 	s := types.TorSettings{Isolation: true, CircuitLimit: torDefaultCircuitLimit}
-	data, err := os.ReadFile(config.TorPointerPath())
-	if err != nil {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
 		return s
 	}
-	_ = json.Unmarshal(data, &s)
+	if err == nil {
+		err = json.Unmarshal(data, &s)
+	}
+	if err != nil {
+		torUnreadableOnce.Do(func() {
+			settLog.Warnf("Tor setting %s is unreadable (%v); treating Tor as on until it is saved again", path, err)
+		})
+		return types.TorSettings{Enabled: true, Isolation: true, CircuitLimit: torDefaultCircuitLimit}
+	}
 	return s
 }
 
@@ -64,11 +84,7 @@ func WriteTorSettings(in types.TorSettings) (types.TorSettings, error) {
 	if err != nil {
 		return out, err
 	}
-	tmp := config.TorPointerPath() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return out, err
-	}
-	if err := os.Rename(tmp, config.TorPointerPath()); err != nil {
+	if err := writeFileSynced(config.TorPointerPath(), data, 0o644); err != nil {
 		return out, err
 	}
 	return out, nil
@@ -128,7 +144,8 @@ func TorDaemonStates(s types.TorSettings) []types.TorDaemonState {
 	}
 	// The dashboard's own external calls (rate oracle, Politeia, VSP, BR
 	// seeder, invite bot) switch per request, so its entry tracks the
-	// toggle directly instead of a supervisor state file.
+	// toggle directly instead of a supervisor state file. Liquidity provider
+	// requests cannot be routed and are refused while the toggle is on.
 	out = append(out, types.TorDaemonState{
 		Name:    "dashboard",
 		Running: true,
@@ -148,4 +165,35 @@ func TorStatusSnapshot() types.TorStatus {
 		LnOnionAddress: onionHostname("dcrlnd-hs"),
 		Daemons:        TorDaemonStates(s),
 	}
+}
+
+// writeFileSynced replaces path atomically and durably: the new content is
+// flushed before the rename and the rename before returning, so a crash
+// cannot leave a torn pointer behind.
+func writeFileSynced(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }

@@ -36,10 +36,21 @@ tor_field() {
 
 build_tor_args() {
     TOR_ARGS=""
+    unset HTTPS_PROXY HTTP_PROXY NO_PROXY
     [ "$(tor_field enabled false)" = "true" ] || return
     [ -n "${TOR_PROXY_IP}" ] && [ -n "${TOR_PROXY_PORT}" ] || return
     TOR_ARGS="--torproxy=${TOR_PROXY_IP}:${TOR_PROXY_PORT}"
     [ "$(tor_field isolation true)" = "true" ] && TOR_ARGS="${TOR_ARGS} --torisolation"
+    # --torproxy covers only the DEX server connection; bisonw's own HTTP
+    # (fiat rates) uses Go's default transport, which honours these. The
+    # stack's own services stay direct under every naming scheme in use.
+    no_proxy="localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    for svc in dcrd dcrwallet dcrlnd brclientd dashboard tor dcrdex; do
+        no_proxy="${no_proxy},${svc},dcrpulse-${svc},dcrpulse_${svc}_1"
+    done
+    export HTTPS_PROXY="socks5://${TOR_PROXY_IP}:${TOR_PROXY_PORT}"
+    export HTTP_PROXY="${HTTPS_PROXY}"
+    export NO_PROXY="${no_proxy}"
 }
 
 read_selected() {
