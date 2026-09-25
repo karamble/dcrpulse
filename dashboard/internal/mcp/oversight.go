@@ -556,52 +556,56 @@ func dcrAmountStr(atoms int64) string {
 // oversight contact.
 var errOversightContact = errors.New("this contact receives dcrpulse's own approval requests and cannot be addressed by an agent")
 
-// refuseOversightContact reports whether target names the configured oversight
-// contact. The BR tools accept a nick, alias or hex uid and let brclientd do the
-// resolving, so comparing against the stored hex alone would be bypassed by
-// passing the nick; the contact's own names are resolved and matched too.
-// Nothing is refused when oversight is off, and a contact lookup that fails
-// refuses rather than guessing: only messages to one contact are affected.
-func refuseOversightContact(ctx context.Context, target string) error {
-	enabled, contact, _ := oversightSettings()
-	if !enabled || contact == "" {
-		return nil
-	}
+var (
+	errNoSuchRecipient    = errors.New("no contact has that uid, nick or alias")
+	errAmbiguousRecipient = errors.New("more than one contact has that nick; name the contact by uid")
+
+	// recipientContacts is the contact list agentRecipient resolves names
+	// against; a variable so tests can stand in for brclientd.
+	recipientContacts = brContactEntries
+)
+
+// agentRecipient resolves the contact an agent names to a single uid: a 64-hex
+// uid as given, otherwise the one contact whose nick or alias equals the name
+// exactly. The oversight contact is refused by that uid, so whatever name the
+// agent used, the check and the send concern the same contact. A contact lookup
+// that fails refuses rather than guessing.
+func agentRecipient(ctx context.Context, target string) (string, error) {
 	target = strings.TrimSpace(target)
-	if target == "" {
-		return nil
+	uid := strings.ToLower(target)
+	if !brUIDRe.MatchString(target) {
+		entries, err := recipientContacts(ctx)
+		if err != nil {
+			return "", fmt.Errorf("resolve the recipient: %w", err)
+		}
+		if uid, err = matchRecipient(target, entries); err != nil {
+			return "", err
+		}
 	}
-	if strings.EqualFold(target, contact) {
-		return errOversightContact
+	if enabled, contact, _ := oversightSettings(); enabled && contact != "" &&
+		strings.EqualFold(uid, strings.TrimSpace(contact)) {
+		return "", errOversightContact
 	}
-	entries, err := brContactEntries(ctx)
-	if err != nil {
-		return fmt.Errorf("check the oversight contact: %w", err)
-	}
-	if namesOversightContact(target, contact, entries) {
-		return errOversightContact
-	}
-	return nil
+	return uid, nil
 }
 
-// namesOversightContact reports whether target is any name the oversight contact
-// answers to. brclientd resolves a nick or alias for us, so matching the stored
-// hex alone would leave those as a way around the refusal.
-func namesOversightContact(target, contact string, entries []map[string]any) bool {
-	// Trimmed here rather than relying on the caller: an untrimmed nick would
-	// otherwise slip past. An empty target cannot match, since every name is
-	// checked non-empty below.
-	target = strings.TrimSpace(target)
+// matchRecipient finds the one contact whose nick or alias is exactly name.
+// Uid prefixes and lookalike names are not accepted: brclientd resolves the
+// same way, and a looser match here would let the check and the send disagree.
+func matchRecipient(name string, entries []map[string]any) (string, error) {
+	var found string
 	for _, entry := range entries {
-		uid, nick, alias, name := brContactStrings(entry)
-		if !strings.EqualFold(strings.TrimSpace(uid), strings.TrimSpace(contact)) {
+		uid, nick, alias, _ := brContactStrings(entry)
+		if !brUIDRe.MatchString(uid) || name == "" || (name != nick && name != alias) {
 			continue
 		}
-		for _, own := range []string{uid, nick, alias, name} {
-			if own = strings.TrimSpace(own); own != "" && strings.EqualFold(target, own) {
-				return true
-			}
+		if found != "" && !strings.EqualFold(found, uid) {
+			return "", errAmbiguousRecipient
 		}
+		found = strings.ToLower(uid)
 	}
-	return false
+	if found == "" {
+		return "", errNoSuchRecipient
+	}
+	return found, nil
 }

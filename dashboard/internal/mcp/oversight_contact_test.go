@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -23,64 +24,72 @@ func contactEntry(uid, nick, alias, name string) map[string]any {
 	}
 }
 
-// The BR tools take a nick, alias or hex uid and let brclientd resolve it, so a
-// refusal that only knows the stored hex is walked around by passing the nick.
-func TestNamesOversightContactCoversEveryName(t *testing.T) {
-	entries := []map[string]any{
+func withContacts(t *testing.T, entries ...map[string]any) {
+	t.Helper()
+	prev := recipientContacts
+	recipientContacts = func(context.Context) ([]map[string]any, error) { return entries, nil }
+	t.Cleanup(func() { recipientContacts = prev })
+}
+
+const bystander = "ffff1111ffff1111ffff1111ffff1111ffff1111ffff1111ffff1111ffff1111"
+
+// Whatever name an agent uses, the oversight contact is refused, and a name
+// resolves to exactly the contact brclientd will deliver to: a uid prefix or a
+// lookalike name reaches nobody rather than slipping past the check.
+func TestAgentRecipientResolvesToTheContactThatReceivesIt(t *testing.T) {
+	withOversight(t, overseer)
+	withContacts(t,
 		contactEntry(overseer, "phone", "myphone", "Operator Phone"),
-		contactEntry("ffff1111ffff1111ffff1111ffff1111ffff1111ffff1111ffff1111ffff1111", "someoneelse", "friend", "A Friend"),
-	}
+		contactEntry(bystander, "someoneelse", "friend", "A Friend"),
+		// A contact that took a nick shaped like the overseer's uid.
+		contactEntry("eeee2222eeee2222eeee2222eeee2222eeee2222eeee2222eeee2222eeee2222", overseer+"\u200b", "", ""),
+	)
 	for _, tc := range []struct {
-		name   string
-		target string
-		want   bool
+		name, target, want string
+		err                error
 	}{
-		{name: "hex uid", target: overseer, want: true},
-		{name: "hex uid, different case", target: "A1B2C3D4E5F60718293A4B5C6D7E8F90A1B2C3D4E5F60718293A4B5C6D7E8F90", want: true},
-		{name: "nick", target: "phone", want: true},
-		{name: "local alias", target: "myphone", want: true},
-		{name: "display name", target: "Operator Phone", want: true},
-		{name: "nick with padding", target: "  phone  ", want: true},
-		{name: "another contact's uid", target: "ffff1111ffff1111ffff1111ffff1111ffff1111ffff1111ffff1111ffff1111"},
-		{name: "another contact's nick", target: "someoneelse"},
-		{name: "another contact's alias", target: "friend"},
-		{name: "unknown name", target: "nobody"},
-		{name: "empty", target: ""},
+		{name: "overseer uid", target: overseer, err: errOversightContact},
+		{name: "overseer uid, upper case", target: strings.ToUpper(overseer), err: errOversightContact},
+		{name: "overseer nick", target: "phone", err: errOversightContact},
+		{name: "overseer alias", target: "myphone", err: errOversightContact},
+		{name: "overseer nick, padded", target: "  phone  ", err: errOversightContact},
+		{name: "5-char uid prefix", target: overseer[:5], err: errNoSuchRecipient},
+		{name: "63-char uid prefix", target: overseer[:63], err: errNoSuchRecipient},
+		{name: "nick plus zero-width space", target: "phone\u200b", err: errNoSuchRecipient},
+		{name: "soft hyphen plus nick", target: "\u00adphone", err: errNoSuchRecipient},
+		{name: "display name", target: "Operator Phone", err: errNoSuchRecipient},
+		{name: "bystander uid", target: bystander, want: bystander},
+		{name: "bystander nick", target: "someoneelse", want: bystander},
+		{name: "bystander alias", target: "friend", want: bystander},
+		{name: "empty", target: "", err: errNoSuchRecipient},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := namesOversightContact(tc.target, overseer, entries); got != tc.want {
-				t.Errorf("namesOversightContact(%q) = %v, want %v", tc.target, got, tc.want)
+			got, err := agentRecipient(context.Background(), tc.target)
+			if tc.err != nil {
+				if !errors.Is(err, tc.err) {
+					t.Fatalf("agentRecipient(%q) = %q, %v; want %v", tc.target, got, err, tc.err)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("agentRecipient(%q) = %q, %v; want %q", tc.target, got, err, tc.want)
 			}
 		})
 	}
 }
 
-// A contact whose entry carries no nick or alias must still be matched by uid,
-// and empty fields must never match an empty-ish target.
-func TestNamesOversightContactHandlesSparseEntries(t *testing.T) {
-	entries := []map[string]any{contactEntry(overseer, "", "", "")}
-	if !namesOversightContact(overseer, overseer, entries) {
-		t.Error("the uid must match even when the contact has no names")
-	}
-	if namesOversightContact("", overseer, entries) {
-		t.Error("an empty target must not match empty name fields")
-	}
-	if namesOversightContact("   ", overseer, entries) {
-		t.Error("a blank target must not match empty name fields")
-	}
-}
-
-func TestNamesOversightContactIgnoresMalformedEntries(t *testing.T) {
+func TestMatchRecipientRefusesAmbiguousAndMalformedEntries(t *testing.T) {
 	entries := []map[string]any{
 		{"nick_alias": "orphan"},
 		{"id": "not a map"},
-		contactEntry(overseer, "phone", "", ""),
+		contactEntry(overseer, "twin", "", ""),
+		contactEntry(bystander, "twin", "", ""),
 	}
-	if !namesOversightContact("phone", overseer, entries) {
-		t.Error("a well-formed entry must still match past malformed ones")
+	if _, err := matchRecipient("twin", entries); !errors.Is(err, errAmbiguousRecipient) {
+		t.Fatalf("a nick two contacts share: err = %v, want ambiguous", err)
 	}
-	if namesOversightContact("orphan", overseer, entries) {
-		t.Error("an entry with no uid must not match the contact")
+	if _, err := matchRecipient("orphan", entries); !errors.Is(err, errNoSuchRecipient) {
+		t.Fatalf("an entry with no uid must not match: err = %v", err)
 	}
 }
 

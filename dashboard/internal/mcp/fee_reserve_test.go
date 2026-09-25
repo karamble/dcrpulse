@@ -53,7 +53,7 @@ func callTip(t *testing.T, agentID string, perTx int64, amountDCR float64) (*mcp
 	cs := connectTo(t, testAgent(agentID, "tipper", map[string]bool{"bisonrelay": true}))
 	return cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name:      "br_tip_user",
-		Arguments: map[string]any{"uid": "ff00", "amountDcr": amountDCR},
+		Arguments: map[string]any{"uid": strings.Repeat("ff00", 16), "amountDcr": amountDCR},
 	})
 }
 

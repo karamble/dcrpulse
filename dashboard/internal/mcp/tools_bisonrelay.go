@@ -583,9 +583,11 @@ var bisonrelayTools = []toolDef{
 			if !brUIDRe.MatchString(in.UID) {
 				return nil, fmt.Errorf("uid must be 64 hex characters")
 			}
-			if err := refuseOversightContact(ctx, in.UID); err != nil {
+			uid, err := agentRecipient(ctx, in.UID)
+			if err != nil {
 				return nil, err
 			}
+			in.UID = uid
 			return rpc.BrclientdTipAttempts(ctx, in.UID)
 		}),
 	readTool("bisonrelay", "br_tips_running",
@@ -603,9 +605,11 @@ var bisonrelayTools = []toolDef{
 	readTool("bisonrelay", "br_pm_history",
 		"Get paginated private-message history with a contact. Requires 'uid'; optional page and pageSize (default 50). Optional 'since' (unix seconds) and 'onlyEmbeds' filters scan newest-first and return only matching entries.",
 		func(ctx context.Context, in brPmHistoryInput) (any, error) {
-			if err := refuseOversightContact(ctx, in.UID); err != nil {
+			uid, err := agentRecipient(ctx, in.UID)
+			if err != nil {
 				return nil, err
 			}
+			in.UID = uid
 			if in.Since <= 0 && !in.OnlyEmbeds {
 				return rpc.BrclientdHistoryPM(ctx, in.UID, in.Page, brPageSize(in.PageSize))
 			}
@@ -753,10 +757,12 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_send_message", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
-			if err := refuseOversightContact(ctx, in.UID); err != nil {
+			uid, err := agentRecipient(ctx, in.UID)
+			if err != nil {
 				recordSpend(a, "br_send_message", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
+			in.UID = uid
 			if err := rpc.BrclientdSendPM(ctx, in.UID, in.Message); err != nil {
 				recordSpend(a, "br_send_message", 0, 0, in.UID, "error", err.Error())
 				return nil, err
@@ -794,10 +800,12 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
 				return nil, err
 			}
-			if err := refuseOversightContact(ctx, in.UID); err != nil {
+			uid, err := agentRecipient(ctx, in.UID)
+			if err != nil {
 				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
+			in.UID = uid
 			if err := rpc.BrclientdSendPM(ctx, in.UID, body); err != nil {
 				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
 				return nil, err
@@ -850,13 +858,15 @@ var bisonrelayTools = []toolDef{
 				}
 				return nil, err
 			}
-			if err := refuseOversightContact(ctx, in.UID); err != nil {
+			uid, err := agentRecipient(ctx, in.UID)
+			if err != nil {
 				// Nothing has been handed to brclientd yet, so this refusal
 				// provably spends nothing and the whole reservation comes back.
 				h.refund(reserved)
 				recordSpend(a, "br_tip_user", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
+			in.UID = uid
 			// One attempt, as upstream's own clients do. The tip flow is
 			// asynchronous, so retrying is not the caller's decision to make.
 			const tipAttempts = 1
@@ -1030,10 +1040,12 @@ var bisonrelayTools = []toolDef{
 				recordSpend(a, "br_file_send", 0, 0, in.UID, "error", err.Error())
 				return nil, err
 			}
-			if err := refuseOversightContact(ctx, in.UID); err != nil {
+			uid, err := agentRecipient(ctx, in.UID)
+			if err != nil {
 				recordSpend(a, "br_file_send", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
+			in.UID = uid
 			result, err := rpc.BrclientdSendFile(ctx, in.UID, in.Filename, in.Mime, bytes.NewReader(data))
 			if err != nil {
 				recordSpend(a, "br_file_send", 0, 0, in.UID, "error", err.Error())
@@ -1074,10 +1086,12 @@ var bisonrelayTools = []toolDef{
 			if name == "" {
 				name = filepath.Base(candidate)
 			}
-			if err := refuseOversightContact(ctx, in.UID); err != nil {
+			uid, err := agentRecipient(ctx, in.UID)
+			if err != nil {
 				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
+			in.UID = uid
 			result, err := rpc.BrclientdSendFile(ctx, in.UID, name, in.Mime, f)
 			if err != nil {
 				recordSpend(a, "br_file_send_path", 0, 0, in.UID, "error", err.Error())
@@ -1244,10 +1258,12 @@ var bisonrelayTools = []toolDef{
 			if err != nil {
 				return nil, err
 			}
-			if err := refuseOversightContact(ctx, in.UID); err != nil {
+			uid, err := agentRecipient(ctx, in.UID)
+			if err != nil {
 				recordSpend(a, "br_gc_invite", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
+			in.UID = uid
 			if err := rpc.BrclientdGCInvite(ctx, gcid, in.UID); err != nil {
 				recordSpend(a, "br_gc_invite", 0, 0, in.GCID, "error", err.Error())
 				return nil, err
