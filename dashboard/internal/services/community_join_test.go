@@ -247,3 +247,58 @@ func TestCommunityMalformedReplacementPreservesBinding(t *testing.T) {
 		t.Fatal("valid binding lost")
 	}
 }
+
+// Over a plaintext bot URL anyone on the path can hand us their own bot and
+// group, so the join still asks for the key exchange but never accepts a group
+// invitation on its own.
+func TestCommunityJoinOverAnUnauthenticatedURLIsManual(t *testing.T) {
+	pending := func(context.Context) (json.RawMessage, error) {
+		return json.RawMessage(fmt.Sprintf(`{"invites":[{"id":7,"from":"%s","gcid":"%s","expires":%d}]}`,
+			testBotUID, testGCID, time.Now().Unix()+60)), nil
+	}
+	for _, tc := range []struct {
+		url    string
+		manual bool
+	}{
+		{"http://bot.example", true},
+		{"http://203.0.113.9:8080", true},
+		{"https://bot.example", false},
+		{"http://abcdefghij234567.onion", false},
+		{"http://127.0.0.1:8080", false},
+		{"http://localhost:8080", false},
+		{"http://[::1]:8080", false},
+	} {
+		t.Run(tc.url, func(t *testing.T) {
+			m, accepted := joinFixture(t)
+			m.url = func() string { return tc.url }
+			m.invites = pending
+			j, err := m.begin(t.Context(), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := j.Status == "manual"; got != tc.manual || j.Insecure != tc.manual {
+				t.Fatalf("status %q insecure %v; want manual=%v", j.Status, j.Insecure, tc.manual)
+			}
+			_ = m.acceptMatching(t.Context(), j.ID)
+			if tc.manual && len(*accepted) != 0 {
+				t.Fatalf("accepted %v over an unauthenticated URL", *accepted)
+			}
+			if !tc.manual && (len(*accepted) != 1 || (*accepted)[0] != 7) {
+				t.Fatalf("accepted %v; want the matching invite", *accepted)
+			}
+		})
+	}
+}
+
+func TestCommunityJoinOverAnUnauthenticatedURLStaysManualWhenRedeemFails(t *testing.T) {
+	m, _ := joinFixture(t)
+	m.url = func() string { return "http://bot.example" }
+	m.redeem = func(context.Context, string) error { return errors.New("relay down") }
+	if _, err := m.begin(t.Context(), false); err == nil {
+		t.Fatal("a failed redemption was reported as success")
+	}
+	j, err := m.load()
+	if err != nil || j == nil || j.Status != "manual" || !j.Insecure {
+		t.Fatalf("saved join %+v, %v; want manual and insecure", j, err)
+	}
+}

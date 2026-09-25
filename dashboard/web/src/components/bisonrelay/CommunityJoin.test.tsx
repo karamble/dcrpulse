@@ -62,6 +62,15 @@ it('keeps legacy bots on the explicit manual path', async () => {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Request a new invite' })); });
   expect(joinDecredPulse).toHaveBeenLastCalledWith(true);
 });
+it('says why a join over an unencrypted bot address needs manual acceptance', async () => {
+  vi.mocked(joinDecredPulse).mockResolvedValue({ id: 'plain', status: 'manual', joined: false, insecure: true });
+  render(<JoinDecredPulseModal onClose={vi.fn()} onJoined={vi.fn()} />);
+  await start();
+  await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+  expect(screen.getByText(/bot address is not encrypted/)).toBeTruthy();
+  expect(screen.queryByText(/does not provide community identity/)).toBeNull();
+  expect(acceptCommunityJoin).not.toHaveBeenCalled();
+});
 it('resumes the existing saved attempt after reopening without requesting a replacement', async () => {
   const view = render(<JoinDecredPulseModal onClose={vi.fn()} onJoined={vi.fn()} />);
   await start(); view.unmount();

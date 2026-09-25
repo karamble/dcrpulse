@@ -495,6 +495,7 @@ export interface CommunityJoin {
   gcid?: string;
   status: 'waiting' | 'uncertain' | 'manual';
   joined: boolean;
+  insecure?: boolean;
 }
 
 export const joinDecredPulse = async (restart = false): Promise<CommunityJoin> => {

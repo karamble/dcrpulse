@@ -2584,6 +2584,7 @@ export const JoinDecredPulseModal = ({
   const [err, setErr] = useState<string | null>(null);
 
   const [joinID, setJoinID] = useState('');
+  const [insecure, setInsecure] = useState(false);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -2633,6 +2634,7 @@ export const JoinDecredPulseModal = ({
       const join = await joinDecredPulse(restart);
       if (!mounted.current) return;
       setJoinID(join.id);
+      setInsecure(!!join.insecure);
       if (join.joined) { onJoined(); setPhase('done'); }
       else setPhase(join.status === 'manual' ? 'manual' : 'waiting');
     } catch (e: any) {
@@ -2715,8 +2717,9 @@ export const JoinDecredPulseModal = ({
       )}
       {phase === 'manual' && (
         <p className="text-sm text-muted-foreground">
-          This bot does not provide community identity information. Key exchange was
-          requested; review and accept any group invitation manually from the invites banner.
+          {insecure
+            ? 'The bot address is not encrypted, so its reply could have been altered on the way. Key exchange was requested; review the group invitation and accept it yourself from the invites banner.'
+            : 'This bot does not provide community identity information. Key exchange was requested; review and accept any group invitation manually from the invites banner.'}
         </p>
       )}
       {(phase === 'timeout' || phase === 'error' || phase === 'manual') && (

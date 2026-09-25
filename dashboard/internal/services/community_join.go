@@ -10,8 +10,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +31,7 @@ type CommunityJoin struct {
 	GCID     string `json:"gcid,omitempty"`
 	Status   string `json:"status"`
 	Joined   bool   `json:"joined"`
+	Insecure bool   `json:"insecure,omitempty"`
 	URL      string `json:"-"`
 	LocalUID string `json:"-"`
 }
@@ -211,6 +215,11 @@ func (m *communityJoinManager) begin(ctx context.Context, restart bool) (*Commun
 	} else if !validCommunityID(j.BotUID) || !validCommunityID(j.GCID) {
 		return nil, fmt.Errorf("invalid community identity metadata")
 	}
+	// Over a URL that does not authenticate the bot, anyone on the path could
+	// have supplied the bot and group, so nothing is accepted automatically.
+	if !botURLAuthenticated(base) {
+		j.Status, j.Insecure = "manual", true
+	}
 	if err := m.current(ctx, j); err != nil {
 		return nil, err
 	}
@@ -220,9 +229,8 @@ func (m *communityJoinManager) begin(ctx context.Context, restart bool) (*Commun
 		return nil, err
 	}
 	if err := m.redeem(ctx, invite.InviteKey); err != nil {
-		j.Status = "uncertain"
-		if j.BotUID == "" {
-			j.Status = "manual"
+		if j.Status != "manual" {
+			j.Status = "uncertain"
 		}
 		if saveErr := m.save(j); saveErr != nil {
 			return nil, saveErr
@@ -299,4 +307,19 @@ func CommunityJoinStatus(ctx context.Context) (*CommunityJoin, error) {
 }
 func AcceptCommunityJoin(ctx context.Context, id string) error {
 	return communityJoins.acceptMatching(ctx, id)
+}
+
+// botURLAuthenticated reports whether a reply from base comes from the host it
+// names: TLS, an onion address, or this machine.
+func botURLAuthenticated(base string) bool {
+	u, err := url.Parse(base)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if u.Scheme == "https" || strings.HasSuffix(host, ".onion") || host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
