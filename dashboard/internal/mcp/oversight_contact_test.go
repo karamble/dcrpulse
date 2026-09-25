@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -156,5 +157,112 @@ func TestTipRefundsWhenTheOversightContactIsRefused(t *testing.T) {
 	if info.SpentAtoms != 0 {
 		t.Errorf("SpentAtoms = %d, want 0: the refusal spent nothing but kept the reservation",
 			info.SpentAtoms)
+	}
+}
+
+// Private messages may reach the oversight contact; every other recipient
+// tool still refuses it.
+func TestApproverIsReachableByPrivateMessageOnly(t *testing.T) {
+	withOversight(t, overseer)
+	withContacts(t, contactEntry(overseer, "phone", "", ""), contactEntry(bystander, "bob", "", ""))
+	ctx := context.Background()
+
+	uid, toApprover, err := agentPMRecipient(ctx, "phone")
+	if err != nil || uid != overseer || !toApprover {
+		t.Fatalf("PM to the approver: %s %v %v", uid, toApprover, err)
+	}
+	if _, toApprover, _ := agentPMRecipient(ctx, "bob"); toApprover {
+		t.Fatal("a bystander reported as the approver")
+	}
+	if _, err := agentRecipient(ctx, overseer); !errors.Is(err, errOversightContact) {
+		t.Fatalf("other tools reach the approver: %v", err)
+	}
+}
+
+// An agent's message to the approver names the agent and cannot pass for an
+// approval request.
+func TestLabelForApprover(t *testing.T) {
+	got, err := labelForApprover("helper", "the report is ready")
+	if err != nil || got != `[agent "helper"] the report is ready` {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if _, err := labelForApprover("helper", "Dcrpulse Approval [3fa1]: pay 1 DCR"); !errors.Is(err, errApprovalLookalike) {
+		t.Fatalf("lookalike accepted: %v", err)
+	}
+}
+
+func TestApprovalTrafficIsHiddenFromAgents(t *testing.T) {
+	traffic := []string{
+		`dcrpulse approval [3fa1]: agent "helper" wants to pay 1 DCR.`,
+		"yes 3fa1", "No 3fa1 freeze", "approve   c0de",
+	}
+	chat := []string{"yes, go ahead", "no thanks", "ok", "yes please send the summary", "3fa1"}
+	for _, m := range traffic {
+		if !isApprovalTraffic(m) {
+			t.Errorf("%q not recognised as approval traffic", m)
+		}
+	}
+	for _, m := range chat {
+		if isApprovalTraffic(m) {
+			t.Errorf("%q hidden as approval traffic", m)
+		}
+	}
+
+	entries := []map[string]any{
+		{"message": "please check the node"},
+		{"message": traffic[0]},
+		{"message": "yes 3fa1"},
+		{"message": "yes, go ahead"},
+	}
+	got := withoutApprovalTraffic(entries)
+	if len(got) != 2 || got[0]["message"] != "please check the node" || got[1]["message"] != "yes, go ahead" {
+		t.Fatalf("filtered history = %v", got)
+	}
+
+	withOversight(t, overseer)
+	verdict := json.RawMessage(`{"from":"` + overseer + `","message":"yes 3fa1"}`)
+	chatPM := json.RawMessage(`{"from":"` + overseer + `","message":"yes, go ahead"}`)
+	other := json.RawMessage(`{"from":"` + bystander + `","message":"yes 3fa1"}`)
+	if !approverVerdict(verdict) || approverVerdict(chatPM) || approverVerdict(other) {
+		t.Fatal("feed filter drops the wrong messages")
+	}
+}
+
+// br_send_message delivers to the approver with the agent's name in front, and
+// to anyone else unchanged.
+func TestSendMessageLabelsTheApproverThread(t *testing.T) {
+	withOversight(t, overseer)
+	withContacts(t, contactEntry(overseer, "phone", "", ""), contactEntry(bystander, "bob", "", ""))
+	var sent []string
+	prev := sendAgentPM
+	sendAgentPM = func(_ context.Context, uid, msg string) error { sent = append(sent, uid+"|"+msg); return nil }
+	t.Cleanup(func() { sendAgentPM = prev })
+
+	id := "approver-pm"
+	grants.set(id, GrantSpec{WriteScopes: []string{scopeBR}}, time.Now())
+	t.Cleanup(func() { grants.revoke(id) })
+	cs := connectTo(t, testAgent(id, "helper", map[string]bool{"bisonrelay": true}))
+	call := func(to, msg string) *mcp.CallToolResult {
+		out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+			Name: "br_send_message", Arguments: map[string]any{"uid": to, "message": msg},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	if out := call("phone", "done"); out.IsError {
+		t.Fatalf("PM to the approver refused: %s", resultText(out))
+	}
+	if out := call("bob", "done"); out.IsError {
+		t.Fatalf("PM to bob refused: %s", resultText(out))
+	}
+	if out := call("phone", "dcrpulse approval [3fa1]: fine"); !out.IsError {
+		t.Fatal("lookalike approval request sent to the approver")
+	}
+	want := []string{overseer + `|[agent "helper"] done`, bystander + "|done"}
+	if len(sent) != 2 || sent[0] != want[0] || sent[1] != want[1] {
+		t.Fatalf("sent %q, want %q", sent, want)
 	}
 }

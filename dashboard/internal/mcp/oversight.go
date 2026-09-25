@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -370,7 +371,7 @@ func gateApproval(ctx context.Context, agentID, action string) error {
 		name = agentID
 	}
 	mins := int(approvalTimeout / time.Minute)
-	msg := fmt.Sprintf("dcrpulse approval [%s]: agent %q wants to %s. Reply \"yes %s\" to approve, \"no %s\" to deny, or \"no %s freeze\" to deny and block this agent. Expires in %d min.",
+	msg := fmt.Sprintf(approvalPromptPrefix+"%s]: agent %q wants to %s. Reply \"yes %s\" to approve, \"no %s\" to deny, or \"no %s freeze\" to deny and block this agent. Expires in %d min.",
 		id, name, action, id, id, id, mins)
 
 	sctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -571,22 +572,92 @@ var (
 // agent used, the check and the send concern the same contact. A contact lookup
 // that fails refuses rather than guessing.
 func agentRecipient(ctx context.Context, target string) (string, error) {
+	uid, toApprover, err := agentPMRecipient(ctx, target)
+	if err != nil {
+		return "", err
+	}
+	if toApprover {
+		return "", errOversightContact
+	}
+	return uid, nil
+}
+
+// agentPMRecipient resolves a recipient like agentRecipient but reports the
+// oversight contact instead of refusing it: private messages may reach it,
+// labelled by labelForApprover.
+func agentPMRecipient(ctx context.Context, target string) (string, bool, error) {
 	target = strings.TrimSpace(target)
 	uid := strings.ToLower(target)
 	if !brUIDRe.MatchString(target) {
 		entries, err := recipientContacts(ctx)
 		if err != nil {
-			return "", fmt.Errorf("resolve the recipient: %w", err)
+			return "", false, fmt.Errorf("resolve the recipient: %w", err)
 		}
 		if uid, err = matchRecipient(target, entries); err != nil {
-			return "", err
+			return "", false, err
 		}
 	}
-	if enabled, contact, _ := oversightSettings(); enabled && contact != "" &&
-		strings.EqualFold(uid, strings.TrimSpace(contact)) {
-		return "", errOversightContact
+	return uid, isApprover(uid), nil
+}
+
+// isApprover reports whether uid is the configured oversight contact.
+func isApprover(uid string) bool {
+	enabled, contact, _ := oversightSettings()
+	return enabled && contact != "" && strings.EqualFold(strings.TrimSpace(uid), strings.TrimSpace(contact))
+}
+
+// approvalPromptPrefix starts every approval request dcrpulse sends.
+const approvalPromptPrefix = "dcrpulse approval ["
+
+// errApprovalLookalike refuses agent text for the oversight contact that could
+// be read as an approval request.
+var errApprovalLookalike = errors.New("a message to the oversight contact cannot contain \"dcrpulse approval\"")
+
+// approvalIDRE matches the shape of an approval id (newApprovalID).
+var approvalIDRE = regexp.MustCompile(`^[0-9a-f]{4}$`)
+
+// labelForApprover marks an agent's message to the oversight contact with the
+// agent's name, so it cannot pass for dcrpulse's own approval requests.
+func labelForApprover(agentName, text string) (string, error) {
+	if strings.Contains(strings.ToLower(text), "dcrpulse approval") {
+		return "", errApprovalLookalike
 	}
-	return uid, nil
+	return fmt.Sprintf("[agent %q] %s", agentName, text), nil
+}
+
+// isApprovalTraffic reports whether a message in the oversight thread is an
+// approval request or a verdict naming an approval id.
+func isApprovalTraffic(text string) bool {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, approvalPromptPrefix) {
+		return true
+	}
+	fields := strings.Fields(strings.ToLower(text))
+	if len(fields) < 2 {
+		return false
+	}
+	if _, ok := parseVerdict(fields[0]); !ok {
+		return false
+	}
+	for _, f := range fields[1:] {
+		if approvalIDRE.MatchString(f) {
+			return true
+		}
+	}
+	return false
+}
+
+// withoutApprovalTraffic drops approval requests and verdicts from history
+// entries of the oversight thread.
+func withoutApprovalTraffic(entries []map[string]any) []map[string]any {
+	out := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		if msg, _ := e["message"].(string); isApprovalTraffic(msg) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // matchRecipient finds the one contact whose nick or alias is exactly name.

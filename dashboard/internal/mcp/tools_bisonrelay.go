@@ -603,13 +603,16 @@ var bisonrelayTools = []toolDef{
 			return rpc.BrclientdRecentNotifications(ctx, n)
 		}),
 	readTool("bisonrelay", "br_pm_history",
-		"Get paginated private-message history with a contact. Requires 'uid'; optional page and pageSize (default 50). Optional 'since' (unix seconds) and 'onlyEmbeds' filters scan newest-first and return only matching entries.",
+		"Get paginated private-message history with a contact. Requires 'uid'; optional page and pageSize (default 50). Optional 'since' (unix seconds) and 'onlyEmbeds' filters scan newest-first and return only matching entries. With the operator's oversight contact, dcrpulse's approval requests and the replies to them are left out.",
 		func(ctx context.Context, in brPmHistoryInput) (any, error) {
-			uid, err := agentRecipient(ctx, in.UID)
+			uid, toApprover, err := agentPMRecipient(ctx, in.UID)
 			if err != nil {
 				return nil, err
 			}
 			in.UID = uid
+			if toApprover {
+				return approverPMHistory(ctx, in)
+			}
 			if in.Since <= 0 && !in.OnlyEmbeds {
 				return rpc.BrclientdHistoryPM(ctx, in.UID, in.Page, brPageSize(in.PageSize))
 			}
@@ -751,19 +754,22 @@ var bisonrelayTools = []toolDef{
 			return map[string]any{"sku": in.SKU, "ok": true}, nil
 		}),
 	agentTool("bisonrelay", "br_send_message",
-		"Send a private message to a Bison Relay contact (text only). Requires a grant with Bison Relay write enabled. To deliver a Lightning invoice, generate it with ln_add_invoice and send the bolt11 string as the message.",
+		"Send a private message to a Bison Relay contact (text only). A message to the operator's oversight contact is prefixed with [agent \"<name>\"] by dcrpulse and may not contain \"dcrpulse approval\". Requires a grant with Bison Relay write enabled. To deliver a Lightning invoice, generate it with ln_add_invoice and send the bolt11 string as the message.",
 		func(ctx context.Context, a *agent, in brSendMessageInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
 				recordSpend(a, "br_send_message", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
-			uid, err := agentRecipient(ctx, in.UID)
+			uid, toApprover, err := agentPMRecipient(ctx, in.UID)
+			if err == nil && toApprover {
+				in.Message, err = labelForApprover(a.name, in.Message)
+			}
 			if err != nil {
 				recordSpend(a, "br_send_message", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
 			in.UID = uid
-			if err := rpc.BrclientdSendPM(ctx, in.UID, in.Message); err != nil {
+			if err := sendAgentPM(ctx, in.UID, in.Message); err != nil {
 				recordSpend(a, "br_send_message", 0, 0, in.UID, "error", err.Error())
 				return nil, err
 			}
@@ -789,24 +795,27 @@ var bisonrelayTools = []toolDef{
 			return map[string]any{"gcid": in.GCID, "sent": true}, nil
 		}),
 	agentTool("bisonrelay", "br_send_message_image",
-		"Send a private message with an image attached inline in the chat (renders in the message bubble, not as a separate file download). The image is read from the agent outbox by relative path; the agent supplies only the path and an optional caption, and the tool reads the file and embeds it (no base64 handling by the agent). Inline images are capped at 800 KiB; for larger files use br_file_send_path. Requires a grant with Bison Relay write enabled.",
+		"Send a private message with an image attached inline in the chat (renders in the message bubble, not as a separate file download). The image is read from the agent outbox by relative path; the agent supplies only the path and an optional caption, and the tool reads the file and embeds it (no base64 handling by the agent). Inline images are capped at 800 KiB; for larger files use br_file_send_path. To the operator's oversight contact the caption is prefixed with [agent \"<name>\"]. Requires a grant with Bison Relay write enabled.",
 		func(ctx context.Context, a *agent, in brSendMessageImageInput) (any, error) {
 			if err := grants.authorizeAction(a.id, scopeBR, time.Now()); err != nil {
 				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
-			body, err := buildImageEmbedBody(in.Path, in.Message, in.Mime)
-			if err != nil {
-				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
-				return nil, err
+			uid, toApprover, err := agentPMRecipient(ctx, in.UID)
+			if err == nil && toApprover {
+				in.Message, err = labelForApprover(a.name, in.Message)
 			}
-			uid, err := agentRecipient(ctx, in.UID)
 			if err != nil {
 				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "denied", err.Error())
 				return nil, err
 			}
 			in.UID = uid
-			if err := rpc.BrclientdSendPM(ctx, in.UID, body); err != nil {
+			body, err := buildImageEmbedBody(in.Path, in.Message, in.Mime)
+			if err != nil {
+				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
+				return nil, err
+			}
+			if err := sendAgentPM(ctx, in.UID, body); err != nil {
 				recordSpend(a, "br_send_message_image", 0, 0, in.UID, "error", err.Error())
 				return nil, err
 			}
@@ -2002,6 +2011,36 @@ func readChatEmbed(ctx context.Context, localfilename string) ([]byte, error) {
 // bounded so a filter cannot walk an arbitrarily long history; sparse pages
 // (envelope frames are dropped server-side after pagination) are not treated
 // as the end of history.
+// sendAgentPM delivers an agent's private message; a variable so tests can
+// capture what is sent.
+var sendAgentPM = rpc.BrclientdSendPM
+
+// approverPMHistory is the oversight thread without its approval requests and
+// verdicts: one page as asked, or the filtered scan when filters are set.
+func approverPMHistory(ctx context.Context, in brPmHistoryInput) (any, error) {
+	if in.Since > 0 || in.OnlyEmbeds {
+		return filteredPMHistory(ctx, in)
+	}
+	raw, err := rpc.BrclientdHistoryPM(ctx, in.UID, in.Page, brPageSize(in.PageSize))
+	if err != nil {
+		return nil, err
+	}
+	var h map[string]any
+	if err := json.Unmarshal(raw, &h); err != nil {
+		return nil, fmt.Errorf("decode history: %w", err)
+	}
+	if list, ok := h["entries"].([]any); ok {
+		entries := make([]map[string]any, 0, len(list))
+		for _, e := range list {
+			if m, ok := e.(map[string]any); ok {
+				entries = append(entries, m)
+			}
+		}
+		h["entries"] = withoutApprovalTraffic(entries)
+	}
+	return h, nil
+}
+
 func filteredPMHistory(ctx context.Context, in brPmHistoryInput) (any, error) {
 	const maxPages = 10
 	pageSize := brPageSize(in.PageSize)
@@ -2034,6 +2073,9 @@ func filteredPMHistory(ctx context.Context, in brPmHistoryInput) (any, error) {
 				if !strings.Contains(msg, "--embed[") {
 					continue
 				}
+			}
+			if isApprover(in.UID) && isApprovalTraffic(fmt.Sprint(e["message"])) {
+				continue
 			}
 			out = append(out, e)
 		}

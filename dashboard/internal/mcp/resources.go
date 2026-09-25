@@ -308,12 +308,25 @@ func feedWalletSync() {
 	}
 }
 
+// approverVerdict reports whether a PM event is the oversight contact
+// answering an approval request; agents do not see those.
+func approverVerdict(payload json.RawMessage) bool {
+	var p struct {
+		From    string `json:"from"`
+		Message string `json:"message"`
+	}
+	return json.Unmarshal(payload, &p) == nil && isApprover(p.From) && isApprovalTraffic(p.Message)
+}
+
 func feedBRMessages() {
 	ch, cancel := services.Bisonrelay().Subscribe(64)
 	defer cancel()
 	for evt := range ch {
 		switch evt.Type {
 		case "pm", "gcm", "gc-message":
+			if evt.Type == "pm" && approverVerdict(evt.Payload) {
+				continue
+			}
 			brRing.add(evt)
 			notifyResourceUpdated(resBRMessages)
 		}
