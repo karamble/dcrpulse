@@ -34,10 +34,11 @@
 ]) %}
 {% do dcrd.healthcheck.set_custom_test([
   "CMD-SHELL",
-  "curl -k -u " ~ values.decred.rpc_user ~ ":" ~ values.decred.rpc_password ~
-  " -H 'Content-Type: application/json'" ~
-  " -d '{\"jsonrpc\":\"1.0\",\"method\":\"getinfo\",\"params\":[],\"id\":1}'" ~
-  " https://127.0.0.1:" ~ values.consts.dcrd_rpc_port ~ " || exit 1"
+  "echo | timeout 5 openssl s_client -connect 127.0.0.1:" ~ values.consts.dcrd_rpc_port ~
+  " -quiet -verify_quiet >/dev/null 2>&1 && exit 0;" ~
+  " tail -n 80 /app-data/dcrd/logs/*/dcrd.log 2>/dev/null | grep -qiE" ~
+  " 'upgrading database|upgrading utxo|upgrading spend journal|migrating database|migrating utxo|migrating versioning|reindexing|creating and storing gcs filters'" ~
+  " && exit 0; exit 1"
 ]) %}
 {% do dcrd.healthcheck.set_start_period(120) %}
 {% do dcrd.set_grace_period(300) %}
@@ -59,8 +60,7 @@
 {% do dcrwallet.environment.add_env("TOR_PROXY_PORT", values.consts.tor_proxy_port) %}
 {% do dcrwallet.healthcheck.set_custom_test([
   "CMD-SHELL",
-  "nc -z 127.0.0.1 " ~ values.consts.dcrwallet_rpc_port ~
-  " && nc -z 127.0.0.1 " ~ values.consts.dcrwallet_grpc_port ~ " || exit 1"
+  "S=/app-data/dcrwallet/control/state.json; [ -f \"$S\" ] && [ $(( $(date +%s) - $(stat -c %Y \"$S\") )) -lt 60 ]"
 ]) %}
 {% do dcrwallet.healthcheck.set_start_period(120) %}
 {% do dcrwallet.set_grace_period(60) %}
