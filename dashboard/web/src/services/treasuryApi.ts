@@ -28,6 +28,8 @@ export interface BalanceSample {
 export interface TSpendHistory {
   txHash: string;
   amount: number;
+  amountAtoms: number;
+  feeAtoms: number;
   payee: string;
   blockHeight: number;
   blockHash: string;
@@ -37,6 +39,7 @@ export interface TSpendHistory {
 
 export interface TreasuryInfo {
   balance: number;
+  balanceAtoms: number;
   balanceUsd: number;
   totalAdded: number;
   totalSpent: number;
@@ -51,6 +54,7 @@ export interface TSpendScanProgress {
   totalHeight: number;
   progress: number;
   tspendFound: number;
+  taddFound: number;
   newTSpends: TSpendHistory[];
   message: string;
   failedBlocks?: number;
@@ -91,8 +95,25 @@ export async function getTSpendScanProgress(): Promise<TSpendScanProgress> {
   return response.json();
 }
 
+export interface TreasuryTAdd {
+  txHash: string;
+  amountAtoms: number;
+  blockHeight: number;
+  blockHash: string;
+  timestamp: string;
+}
+
+// What the last scan recorded over blocks fromHeight through toHeight.
+export interface TreasuryScanResults {
+  fromHeight: number;
+  toHeight: number;
+  tspends: TSpendHistory[];
+  tadds: TreasuryTAdd[];
+  tbaseByMonth: Record<string, number>;
+}
+
 // Get scan results
-export async function getTSpendScanResults(): Promise<TSpendHistory[]> {
+export async function getTSpendScanResults(): Promise<TreasuryScanResults> {
   const response = await authFetch(`${API_BASE_URL}/treasury/scan-results`);
   if (!response.ok) {
     throw new Error('Failed to fetch scan results');
@@ -100,7 +121,7 @@ export async function getTSpendScanResults(): Promise<TSpendHistory[]> {
   return response.json();
 }
 
-// Get the treasury balance-over-time series (sampled ~monthly, cached server-side)
+// Get the treasury balance-over-time series (first block of every UTC month plus the tip, cached server-side)
 export async function getTreasuryBalanceHistory(): Promise<BalanceSample[]> {
   const response = await authFetch(`${API_BASE_URL}/treasury/balance-history`);
   if (!response.ok) {
@@ -109,3 +130,40 @@ export async function getTreasuryBalanceHistory(): Promise<BalanceSample[]> {
   return (await response.json()) ?? [];
 }
 
+
+// dcrd's DCP-0013 spend limit for a TVI block following the tip.
+export interface TreasurySpendLimit {
+  active: boolean;
+  height: number;
+  nextTvi: number;
+  atTvi: boolean;
+  policyWindowBlocks: number;
+  spentInWindowAtoms: number;
+  balanceAtoms: number;
+  maxSpendableAtoms: number;
+  floorAtoms: number;
+  allowedAtoms: number;
+}
+
+export async function getTreasurySpendLimit(): Promise<TreasurySpendLimit> {
+  const response = await authFetch(`${API_BASE_URL}/treasury/spend-limit`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch the treasury spend limit');
+  }
+  return response.json();
+}
+
+// Projected block reward per calendar month, at the target block time.
+export interface TreasuryOutlook {
+  fromHeight: number;
+  targetBlockSeconds: number;
+  months: { month: string; blocks: number; tbaseAtoms: number }[];
+}
+
+export async function getTreasuryOutlook(): Promise<TreasuryOutlook> {
+  const response = await authFetch(`${API_BASE_URL}/treasury/outlook`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch the treasury outlook');
+  }
+  return response.json();
+}

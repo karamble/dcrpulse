@@ -181,7 +181,9 @@ docker-compose up dashboard
 
 ### Treasury Endpoints
 - `GET /api/treasury/info` - Treasury information
-- `POST /api/treasury/scan-history` - Trigger TSpend scan
+- `GET /api/treasury/spend-limit` - DCP-0013 spend limit
+- `GET /api/treasury/outlook` - Projected block reward
+- `POST /api/treasury/scan-history` - Scan blocks for treasury flows
 - `GET /api/treasury/scan-progress` - Scan progress
 
 ## Frontend Routes

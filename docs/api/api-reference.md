@@ -803,15 +803,17 @@ See [Governance](../features/governance.md).
 
 ## Treasury
 
-Read the project treasury balance and scan its TSpend history. The full-history scan is expensive and rate limited (1 / 60s).
+Read the project treasury balance, its spend limit and outlook, and scan its flows block by block. A scan is expensive and rate limited (1 / 60s).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/treasury/info` | Treasury balance and summary |
-| `GET` | `/api/treasury/balance-history` | Treasury balance over time |
-| `POST` | `/api/treasury/scan-history` | Trigger a full TSpend history scan (rate limited) |
-| `GET` | `/api/treasury/scan-progress` | TSpend scan progress |
-| `GET` | `/api/treasury/scan-results` | TSpend scan results |
+| `GET` | `/api/treasury/balance-history` | Treasury balance at the first block of every UTC month |
+| `GET` | `/api/treasury/spend-limit` | DCP-0013 spend limit for a treasury vote block after the tip |
+| `GET` | `/api/treasury/outlook` | Projected block reward for the next twelve months |
+| `POST` | `/api/treasury/scan-history` | Scan every block from a height for treasury flows (rate limited) |
+| `GET` | `/api/treasury/scan-progress` | Scan progress |
+| `GET` | `/api/treasury/scan-results` | Block reward per month, contributions and spends over the scanned blocks |
 
 See [Governance](../features/governance.md).
 
@@ -1183,12 +1185,14 @@ gate is on, the session cookie.
 | `GET` | `/api/wallet/governance/votetrickle/status` |  |
 | `POST` | `/api/wallet/governance/votetrickle/stop` |  |
 
-### Treasury (5 routes)
+### Treasury (7 routes)
 
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/api/treasury/balance-history` |  |
 | `GET` | `/api/treasury/info` |  |
+| `GET` | `/api/treasury/outlook` |  |
+| `GET` | `/api/treasury/spend-limit` |  |
 | `POST` | `/api/treasury/scan-history` | Rate limit 1 per 60s |
 | `GET` | `/api/treasury/scan-progress` |  |
 | `GET` | `/api/treasury/scan-results` |  |

@@ -1,25 +1,41 @@
-// Copyright (c) 2015-2025 The Decred developers
+// Copyright (c) 2015-2026 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
+import type { TreasuryScanResults } from './treasuryApi';
+
 const STORAGE_KEY = 'decred-pulse-treasury-history';
 const SCAN_STATUS_KEY = 'decred-pulse-treasury-scan-status';
-const STORAGE_VERSION = 1;
+const STORAGE_VERSION = 2;
 
+// The first block with a treasury.
+export const TREASURY_ACTIVATION_HEIGHT = 552448;
+
+// Amounts are in atoms throughout.
 export interface TSpendRecord {
   txHash: string;
-  amount: number;
+  amountAtoms: number;
+  feeAtoms: number;
   payee: string;
   blockHeight: number;
   timestamp: string;
   voteResult: 'approved' | 'rejected';
-  detectedAt: string;
 }
 
+export interface TAddRecord {
+  txHash: string;
+  amountAtoms: number;
+  blockHeight: number;
+  timestamp: string;
+}
+
+// Everything the treasury received and paid from activation through
+// lastSyncHeight: spends, contributions, and the block reward per UTC month.
 export interface TreasuryStorageData {
   version: number;
   tspends: TSpendRecord[];
-  totalSpent: number;
+  tadds: TAddRecord[];
+  tbaseByMonth: Record<string, number>;
   lastSyncHeight: number;
 }
 
@@ -30,214 +46,133 @@ export interface ScanStatus {
   failedBlocks?: number;
 }
 
-// Initialize storage if it doesn't exist
-const initStorage = (): void => {
-  const existing = localStorage.getItem(STORAGE_KEY);
-  if (!existing) {
-    const initial: TreasuryStorageData = {
-      version: STORAGE_VERSION,
-      tspends: [],
-      totalSpent: 0,
-      lastSyncHeight: 0,
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-  }
+const empty = (): TreasuryStorageData => ({
+  version: STORAGE_VERSION,
+  tspends: [],
+  tadds: [],
+  tbaseByMonth: {},
+  lastSyncHeight: 0,
+});
+
+const isStorageData = (d: unknown): d is TreasuryStorageData => {
+  const s = d as TreasuryStorageData;
+  return (
+    !!s &&
+    s.version === STORAGE_VERSION &&
+    Array.isArray(s.tspends) &&
+    Array.isArray(s.tadds) &&
+    typeof s.tbaseByMonth === 'object' &&
+    s.tbaseByMonth !== null &&
+    Number.isSafeInteger(s.lastSyncHeight)
+  );
 };
 
-// Get storage object
+// Data from an older storage version reads as empty; the snapshot refills it.
 const getStorage = (): TreasuryStorageData => {
   try {
-    initStorage();
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (!data) {
-      return { version: STORAGE_VERSION, tspends: [], totalSpent: 0, lastSyncHeight: 0 };
-    }
-    const parsed = JSON.parse(data) as TreasuryStorageData;
-    return parsed;
-  } catch (error) {
-    console.error('Failed to parse treasury storage:', error);
-    return { version: STORAGE_VERSION, tspends: [], totalSpent: 0, lastSyncHeight: 0 };
+    const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    return isStorageData(parsed) ? parsed : empty();
+  } catch {
+    return empty();
   }
 };
 
-// Save storage object
 const saveStorage = (storage: TreasuryStorageData): void => {
   try {
-    const serialized = JSON.stringify(storage);
-    localStorage.setItem(STORAGE_KEY, serialized);
-    
-    // Verify it was saved correctly
-    const verification = localStorage.getItem(STORAGE_KEY);
-    if (!verification) {
-      console.error('Storage verification failed: data was not persisted to localStorage');
-    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(storage));
   } catch (error) {
     console.error('Failed to save treasury data:', error);
     throw new Error('Failed to save treasury data. Storage quota may be exceeded.');
   }
 };
 
-// Save a new TSpend to localStorage
-export const saveTSpend = (tspend: TSpendRecord): boolean => {
-  const storage = getStorage();
-  
-  // Check for duplicates
-  if (storage.tspends.some(t => t.txHash === tspend.txHash)) {
-    return false; // Already exists
-  }
+export const getAllTSpends = (): TSpendRecord[] =>
+  getStorage().tspends.sort((a, b) => b.blockHeight - a.blockHeight);
 
-  storage.tspends.push(tspend);
-  storage.totalSpent += tspend.amount;
-  
-  // Update lastSyncHeight to the highest block height we've seen
-  if (tspend.blockHeight > storage.lastSyncHeight) {
-    storage.lastSyncHeight = tspend.blockHeight;
-  }
-  
-  saveStorage(storage);
-  return true;
-};
+export const getAllTAdds = (): TAddRecord[] =>
+  getStorage().tadds.sort((a, b) => b.blockHeight - a.blockHeight);
 
-// Save multiple TSpends (for batch operations like scan results)
-export const saveTSpends = (tspends: TSpendRecord[]): number => {
-  const storage = getStorage();
-  let addedCount = 0;
-  let maxHeight = storage.lastSyncHeight;
+export const getTBaseByMonth = (): Record<string, number> => getStorage().tbaseByMonth;
 
-  const existingHashes = new Set(storage.tspends.map(t => t.txHash));
-
-  for (const tspend of tspends) {
-    if (!existingHashes.has(tspend.txHash)) {
-      storage.tspends.push(tspend);
-      storage.totalSpent += tspend.amount;
-      existingHashes.add(tspend.txHash);
-      addedCount++;
-      
-      // Track the highest block height
-      if (tspend.blockHeight > maxHeight) {
-        maxHeight = tspend.blockHeight;
-      }
-    }
-  }
-
-  if (addedCount > 0) {
-    storage.lastSyncHeight = maxHeight;
-    saveStorage(storage);
-  }
-
-  return addedCount;
-};
-
-// Get all stored TSpends
-export const getAllTSpends = (): TSpendRecord[] => {
-  const storage = getStorage();
-  // Sort by block height descending (most recent first)
-  return storage.tspends.sort((a, b) => b.blockHeight - a.blockHeight);
-};
-
-// Get treasury statistics
 export const getTreasuryStats = () => {
   const storage = getStorage();
-  const averageAmount = storage.tspends.length > 0 ? storage.totalSpent / storage.tspends.length : 0;
-
+  const totalSpentAtoms = storage.tspends.reduce((s, t) => s + t.amountAtoms + t.feeAtoms, 0);
   return {
-    totalSpent: storage.totalSpent,
+    totalSpentAtoms,
     count: storage.tspends.length,
-    averageAmount,
     lastSyncHeight: storage.lastSyncHeight,
   };
 };
 
-// Export treasury data as JSON
-export const exportTreasuryData = (): string => {
+// applyScanResults adds a scan's results when they continue exactly where the
+// stored data ends, and reports whether it did. Results that overlap or leave a
+// gap are refused, so nothing is counted twice.
+export const applyScanResults = (r: TreasuryScanResults): boolean => {
   const storage = getStorage();
-  return JSON.stringify(storage, null, 2);
+  const next = storage.lastSyncHeight > 0 ? storage.lastSyncHeight + 1 : TREASURY_ACTIVATION_HEIGHT;
+  if (r.fromHeight !== next || r.toHeight < r.fromHeight) {
+    return false;
+  }
+  const spends = new Set(storage.tspends.map((t) => t.txHash));
+  for (const t of r.tspends ?? []) {
+    if (spends.has(t.txHash)) continue;
+    storage.tspends.push({
+      txHash: t.txHash,
+      amountAtoms: t.amountAtoms,
+      feeAtoms: t.feeAtoms,
+      payee: t.payee,
+      blockHeight: t.blockHeight,
+      timestamp: t.timestamp,
+      voteResult: t.voteResult,
+    });
+  }
+  const adds = new Set(storage.tadds.map((t) => t.txHash));
+  for (const t of r.tadds ?? []) {
+    if (adds.has(t.txHash)) continue;
+    storage.tadds.push({
+      txHash: t.txHash,
+      amountAtoms: t.amountAtoms,
+      blockHeight: t.blockHeight,
+      timestamp: t.timestamp,
+    });
+  }
+  for (const [month, atoms] of Object.entries(r.tbaseByMonth ?? {})) {
+    storage.tbaseByMonth[month] = (storage.tbaseByMonth[month] ?? 0) + atoms;
+  }
+  storage.lastSyncHeight = r.toHeight;
+  saveStorage(storage);
+  return true;
 };
 
-// Import treasury data from JSON
-export const importTreasuryData = (json: string): { success: boolean; count: number; error?: string } => {
+// The whole stored data set; the shipped snapshot is one of these.
+export const exportTreasuryData = (): string => JSON.stringify(getStorage(), null, 2);
+
+// Replaces the stored data with an export that reaches further.
+export const importTreasuryData = (json: string): { success: boolean; error?: string } => {
   try {
-    const imported = JSON.parse(json) as TreasuryStorageData;
-
-    if (!imported.tspends || !Array.isArray(imported.tspends)) {
-      return { success: false, count: 0, error: 'Invalid JSON format' };
+    const imported: unknown = JSON.parse(json);
+    if (!isStorageData(imported)) {
+      return { success: false, error: `Not a version ${STORAGE_VERSION} treasury export` };
     }
-
-    const storage = getStorage();
-    const existingHashes = new Set(storage.tspends.map(t => t.txHash));
-    
-    let importedCount = 0;
-    let maxHeight = storage.lastSyncHeight;
-
-    for (const tspend of imported.tspends) {
-      if (!tspend.txHash || !tspend.amount) {
-        continue;
-      }
-
-      if (existingHashes.has(tspend.txHash)) {
-        continue; // Skip duplicates
-      }
-
-      storage.tspends.push(tspend);
-      storage.totalSpent += tspend.amount;
-      existingHashes.add(tspend.txHash);
-      importedCount++;
-      
-      // Track the highest block height
-      if (tspend.blockHeight && tspend.blockHeight > maxHeight) {
-        maxHeight = tspend.blockHeight;
-      }
+    if (imported.lastSyncHeight <= getStorage().lastSyncHeight) {
+      return { success: false, error: 'The stored data already reaches this height' };
     }
-
-    if (importedCount > 0) {
-      storage.lastSyncHeight = maxHeight;
-      saveStorage(storage);
-    }
-
-    return { success: true, count: importedCount };
+    saveStorage(imported);
+    return { success: true };
   } catch (error) {
-    return { 
-      success: false, 
-      count: 0, 
-      error: error instanceof Error ? error.message : 'Invalid JSON format' 
-    };
+    return { success: false, error: error instanceof Error ? error.message : 'Invalid JSON format' };
   }
 };
 
-// Clear all treasury data
-export const clearTreasuryData = (): void => {
-  const initial: TreasuryStorageData = {
-    version: STORAGE_VERSION,
-    tspends: [],
-    totalSpent: 0,
-    lastSyncHeight: 0,
-  };
-  saveStorage(initial);
-};
+export const clearTreasuryData = (): void => saveStorage(empty());
 
-// Get the last synced block height
-export const getLastSyncHeight = (): number => {
-  const storage = getStorage();
-  return storage.lastSyncHeight;
-};
+export const getLastSyncHeight = (): number => getStorage().lastSyncHeight;
 
-// Update the last synced block height
-export const updateLastSyncHeight = (height: number): void => {
-  const storage = getStorage();
-  if (height > storage.lastSyncHeight) {
-    storage.lastSyncHeight = height;
-    saveStorage(storage);
-  }
-};
-
-// Scan status management
 export const getScanStatus = (): ScanStatus | null => {
   try {
     const data = localStorage.getItem(SCAN_STATUS_KEY);
-    if (!data) return null;
-    return JSON.parse(data) as ScanStatus;
-  } catch (error) {
-    console.error('Failed to parse scan status:', error);
+    return data ? (JSON.parse(data) as ScanStatus) : null;
+  } catch {
     return null;
   }
 };
@@ -250,44 +185,23 @@ export const saveScanStatus = (status: ScanStatus): void => {
   }
 };
 
-// Load and sync with the historical TSpend snapshot
-export const syncWithSnapshot = async (): Promise<{ success: boolean; synced: number; error?: string }> => {
+// Loads the shipped snapshot when it reaches further than the stored data.
+export const syncWithSnapshot = async (): Promise<{ success: boolean; synced: boolean; error?: string }> => {
   try {
-    
-    // Check current storage BEFORE fetching snapshot
-    const currentStorage = getStorage();
-    const currentCount = currentStorage.tspends.length;
-    
-    // Fetch the snapshot from public folder
     const response = await fetch('/tspend-snapshot.json');
     if (!response.ok) {
-      throw new Error('Failed to fetch TSpend snapshot');
+      throw new Error('Failed to fetch the treasury snapshot');
     }
-    
-    const snapshot = await response.json() as TreasuryStorageData;
-    
-    if (!snapshot.tspends || !Array.isArray(snapshot.tspends)) {
+    const snapshot: unknown = await response.json();
+    if (!isStorageData(snapshot)) {
       throw new Error('Invalid snapshot format');
     }
-    
-    const snapshotCount = snapshot.tspends.length;
-    
-    // If we already have more or equal TSpends than the snapshot, skip
-    if (currentCount >= snapshotCount) {
-      return { success: true, synced: 0 };
+    if (snapshot.lastSyncHeight <= getStorage().lastSyncHeight) {
+      return { success: true, synced: false };
     }
-    
-    // Sync snapshot data
-    const syncedCount = saveTSpends(snapshot.tspends);
-
-    return { success: true, synced: syncedCount };
-    
+    saveStorage(snapshot);
+    return { success: true, synced: true };
   } catch (error) {
-    console.error('Failed to sync with snapshot:', error);
-    return { 
-      success: false, 
-      synced: 0, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    };
+    return { success: false, synced: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 };

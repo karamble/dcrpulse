@@ -7,9 +7,10 @@ import {
   ArrowDownUp,
   Banknote,
   Coins,
+  Gift,
   Hash,
+  Hourglass,
   Landmark,
-  Maximize2,
   TrendingUp,
 } from 'lucide-react';
 import {
@@ -24,12 +25,25 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { getAllTSpends, getTreasuryStats, TSpendRecord } from '../../services/treasuryStorage';
-import { BalanceSample } from '../../services/treasuryApi';
+import {
+  getAllTAdds,
+  getAllTSpends,
+  getTBaseByMonth,
+  getTreasuryStats,
+  TAddRecord,
+  TSpendRecord,
+} from '../../services/treasuryStorage';
+import { BalanceSample, getTreasuryOutlook, TreasuryOutlook } from '../../services/treasuryApi';
+import { getDexRates } from '../../services/dcrdexApi';
+import { flowsByMonth, monthlyRows, runway, yearlyRows } from '../../services/treasuryFlows';
+import { toDcr } from '../../utils/amounts';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 
 const dcr = (v: number) =>
   v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const usd = (dcrAmount: number, rate: number | null) =>
+  rate === null ? undefined : `$${Math.round(dcrAmount * rate).toLocaleString('en-US')} at today's rate`;
 
 // Vibrant chart palette using literal hsl() (recharts SVG attrs do NOT resolve
 // `hsl(var(--x))`, so the theme tokens are inlined here as concrete colors).
@@ -38,6 +52,7 @@ const C = {
   balance: 'hsl(173 80% 50%)', // teal
   year: 'hsl(265 90% 68%)', // violet
   inflow: 'hsl(150 75% 48%)', // green
+  contribution: 'hsl(45 95% 55%)', // amber
   outflow: 'hsl(350 90% 63%)', // rose
 };
 
@@ -105,42 +120,29 @@ const ChartCard = ({
   </div>
 );
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-// Balance from the nearest sample strictly before the given unix-seconds cutoff
-// (0 before the series starts).
-const balanceAtTime = (series: BalanceSample[], cutoff: number): number => {
-  let bal = 0;
-  for (const s of series) {
-    if (s.time < cutoff) bal = s.balance;
-    else break;
-  }
-  return bal;
-};
-
-// Balance at the end of the given calendar year (nearest sample on or before
-// Dec 31 of that year).
-const balanceAtYearEnd = (series: BalanceSample[], year: number): number =>
-  balanceAtTime(series, Date.UTC(year + 1, 0, 1) / 1000);
-
 interface TreasuryStatsProps {
-  balance: number | null;
+  balanceAtoms: number | null;
   series: BalanceSample[];
-  // Bumped when a scan or snapshot sync writes new TSpends to localStorage.
+  // Bumped when a scan or snapshot sync writes new records to localStorage.
   refreshKey?: number;
 }
 
-// balance and series come from GovernanceDashboard's shared treasury poll.
-export const TreasuryStats = ({ balance, series, refreshKey = 0 }: TreasuryStatsProps) => {
+// The balance and series come from GovernanceDashboard's shared treasury poll;
+// every flow comes from the records the scans stored.
+export const TreasuryStats = ({ balanceAtoms, series, refreshKey = 0 }: TreasuryStatsProps) => {
   const [tspends, setTspends] = useState<TSpendRecord[]>(() => getAllTSpends());
+  const [tadds, setTadds] = useState<TAddRecord[]>(() => getAllTAdds());
+  const [tbase, setTbase] = useState<Record<string, number>>(() => getTBaseByMonth());
   const [stats, setStats] = useState(() => getTreasuryStats());
+  const [rate, setRate] = useState<number | null>(null);
+  const [outlook, setOutlook] = useState<TreasuryOutlook | null>(null);
   // 'all' shows the per-year flow chart; a year shows that year's monthly view.
   const [flowYear, setFlowYear] = useState('all');
 
-  // localStorage only, no network: the shared poll on the page supplies the
-  // balance and the series.
   const refreshLocal = () => {
     setTspends(getAllTSpends());
+    setTadds(getAllTAdds());
+    setTbase(getTBaseByMonth());
     setStats(getTreasuryStats());
   };
   useEffect(() => {
@@ -148,14 +150,31 @@ export const TreasuryStats = ({ balance, series, refreshKey = 0 }: TreasuryStats
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
   useVisiblePoll(refreshLocal, 30000, { immediate: false });
+  useEffect(() => {
+    getDexRates()
+      .then((r) => setRate(r.dcr > 0 ? r.dcr : null))
+      .catch(() => {});
+    getTreasuryOutlook().then(setOutlook).catch(() => {});
+  }, []);
 
-  const largest = useMemo(() => tspends.reduce((m, t) => Math.max(m, t.amount), 0), [tspends]);
-  const thisYearSpent = useMemo(() => {
-    const y = new Date().getUTCFullYear();
-    return tspends
-      .filter((t) => new Date(t.timestamp).getUTCFullYear() === y)
-      .reduce((s, t) => s + t.amount, 0);
-  }, [tspends]);
+  const byMonth = useMemo(() => flowsByMonth(tspends, tadds, tbase), [tspends, tadds, tbase]);
+  const yearly = useMemo(() => yearlyRows(byMonth, new Date()), [byMonth]);
+  const flowRows = useMemo(
+    () =>
+      (flowYear === 'all' ? yearly : monthlyRows(byMonth, Number(flowYear), new Date())).map((r) => ({
+        label: r.label,
+        blockReward: toDcr(r.blockRewardAtoms),
+        contributions: toDcr(r.contributionsAtoms),
+        spends: toDcr(r.spendsAtoms),
+      })),
+    [flowYear, yearly, byMonth],
+  );
+  const run = useMemo(
+    () => (balanceAtoms === null ? null : runway(balanceAtoms, tspends, new Date())),
+    [balanceAtoms, tspends],
+  );
+  const contributedAtoms = useMemo(() => tadds.reduce((s, t) => s + t.amountAtoms, 0), [tadds]);
+  const outlookAtoms = outlook?.months.reduce((s, m) => s + m.tbaseAtoms, 0) ?? null;
 
   const cumulativeData = useMemo(() => {
     const sorted = [...tspends].sort(
@@ -163,23 +182,9 @@ export const TreasuryStats = ({ balance, series, refreshKey = 0 }: TreasuryStats
     );
     let running = 0;
     return sorted.map((t) => {
-      running += t.amount;
-      return { date: t.timestamp.slice(0, 10), cumulative: running };
+      running += t.amountAtoms + t.feeAtoms;
+      return { date: t.timestamp.slice(0, 10), cumulative: toDcr(running) };
     });
-  }, [tspends]);
-
-  const perYearData = useMemo(() => {
-    const byYear = new Map<string, { amount: number; count: number }>();
-    for (const t of tspends) {
-      const y = String(new Date(t.timestamp).getUTCFullYear());
-      const e = byYear.get(y) ?? { amount: 0, count: 0 };
-      e.amount += t.amount;
-      e.count += 1;
-      byYear.set(y, e);
-    }
-    return Array.from(byYear, ([year, v]) => ({ year, amount: v.amount, count: v.count })).sort(
-      (a, b) => a.year.localeCompare(b.year),
-    );
   }, [tspends]);
 
   const balanceData = useMemo(
@@ -191,126 +196,100 @@ export const TreasuryStats = ({ balance, series, refreshKey = 0 }: TreasuryStats
     [series],
   );
 
-  const flowData = useMemo(() => {
-    if (series.length === 0) return [];
-    return perYearData.map((p) => {
-      const y = Number(p.year);
-      const outflow = p.amount;
-      const net = balanceAtYearEnd(series, y) - balanceAtYearEnd(series, y - 1);
-      const inflow = Math.max(0, net + outflow);
-      return { year: String(y), inflow, outflow };
-    });
-  }, [series, perYearData]);
-
-  // Monthly inflow/outflow for the selected year, derived the same way as the
-  // per-year flow (net balance change between month ends, plus that month's
-  // outflow). The current year stops at the current month.
-  const monthlyFlowData = useMemo(() => {
-    if (flowYear === 'all' || series.length === 0) return [];
-    const y = Number(flowYear);
-    const out = new Array(12).fill(0) as number[];
-    for (const t of tspends) {
-      const d = new Date(t.timestamp);
-      if (d.getUTCFullYear() === y) out[d.getUTCMonth()] += t.amount;
-    }
-    const now = new Date();
-    const lastMonth = y === now.getUTCFullYear() ? now.getUTCMonth() : 11;
-    const rows: { month: string; inflow: number; outflow: number }[] = [];
-    for (let m = 0; m <= lastMonth; m++) {
-      const outflow = out[m];
-      const net = balanceAtTime(series, Date.UTC(y, m + 1, 1) / 1000) - balanceAtTime(series, Date.UTC(y, m, 1) / 1000);
-      rows.push({ month: MONTHS[m], inflow: Math.max(0, net + outflow), outflow });
-    }
-    return rows;
-  }, [flowYear, tspends, series]);
+  const balanceDcr = balanceAtoms === null ? null : toDcr(balanceAtoms);
+  const spentDcr = toDcr(stats.totalSpentAtoms);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
           label="Treasury Balance"
-          value={balance === null ? '…' : `${dcr(balance)} DCR`}
-          sub="Current on-chain balance"
+          value={balanceDcr === null ? '…' : `${dcr(balanceDcr)} DCR`}
+          sub={balanceDcr === null ? 'Current on-chain balance' : usd(balanceDcr, rate) ?? 'Current on-chain balance'}
           icon={<Landmark className="h-4 w-4 text-primary" />}
         />
         <StatCard
-          label="Total Spent"
-          value={`${dcr(stats.totalSpent)} DCR`}
-          sub="Lifetime, all TSpends"
-          icon={<TrendingUp className="h-4 w-4 text-warning" />}
+          label="Runway"
+          value={run?.months == null ? 'n/a' : `${Math.floor(run.months)} months`}
+          sub={
+            run === null
+              ? 'Balance / average monthly spend'
+              : `At ${dcr(toDcr(run.monthlyAtoms))} DCR a month, the last 12 full months`
+          }
+          icon={<Hourglass className="h-4 w-4 text-primary" />}
+        />
+        <StatCard
+          label="Spent, Last 12 Months"
+          value={run === null ? '…' : `${dcr(toDcr(run.outflowAtoms))} DCR`}
+          sub={run === null ? undefined : usd(toDcr(run.outflowAtoms), rate) ?? 'Payments plus their fees'}
+          icon={<Banknote className="h-4 w-4 text-warning" />}
           tone="warning"
         />
         <StatCard
-          label="Payments"
-          value={stats.count.toLocaleString()}
-          sub="Approved TSpends"
+          label="Block Reward, Next 12 Months"
+          value={outlookAtoms === null ? '…' : `${dcr(toDcr(outlookAtoms))} DCR`}
+          sub={outlook ? `Projected at ${outlook.targetBlockSeconds / 60}-minute blocks` : 'Projected'}
+          icon={<Coins className="h-4 w-4 text-success" />}
+          tone="success"
+        />
+        <StatCard
+          label="Total Spent"
+          value={`${dcr(spentDcr)} DCR`}
+          sub={`${stats.count.toLocaleString()} payments, fees included`}
           icon={<Hash className="h-4 w-4 text-primary" />}
         />
         <StatCard
-          label="Average Payment"
-          value={`${dcr(stats.averageAmount)} DCR`}
-          sub="Total spent / count"
-          icon={<Coins className="h-4 w-4 text-primary" />}
-        />
-        <StatCard
-          label="Largest Payment"
-          value={`${dcr(largest)} DCR`}
-          sub="Single biggest TSpend"
-          icon={<Maximize2 className="h-4 w-4 text-primary" />}
-        />
-        <StatCard
-          label="Spent This Year"
-          value={`${dcr(thisYearSpent)} DCR`}
-          sub={String(new Date().getUTCFullYear())}
-          icon={<Banknote className="h-4 w-4 text-primary" />}
+          label="Contributions"
+          value={`${dcr(toDcr(contributedAtoms))} DCR`}
+          sub={`${tadds.length.toLocaleString()} voluntary, beyond the block reward`}
+          icon={<Gift className="h-4 w-4 text-primary" />}
         />
       </div>
 
-      {tspends.length === 0 ? (
+      {stats.lastSyncHeight === 0 ? (
         <div className="p-6 rounded-xl bg-gradient-card border border-border/50 text-sm text-muted-foreground">
-          No TSpend history yet. Run the historical scan to populate statistics.
+          No treasury history yet. Scan new blocks to populate statistics.
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ChartCard icon={TrendingUp} title="Cumulative Treasury Spend">
+          <ChartCard
+            icon={ArrowDownUp}
+            title={flowYear === 'all' ? 'Inflow vs Outflow per Year' : `Inflow vs Outflow ${flowYear}`}
+            caption={`Block reward, contributions and spends (fees included) as recorded in each block, through block ${stats.lastSyncHeight.toLocaleString()}.`}
+            action={
+              <select
+                value={flowYear}
+                onChange={(e) => setFlowYear(e.target.value)}
+                className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
+              >
+                <option value="all">All time</option>
+                {yearly.map((r) => (
+                  <option key={r.label} value={r.label}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            }
+          >
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={cumulativeData} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
-                <defs>{fadeGrad('gSpend', C.spend)}</defs>
+              <BarChart data={flowRows} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
+                <defs>
+                  {fadeGrad('gIn', C.inflow, 0.95)}
+                  {fadeGrad('gAdd', C.contribution, 0.95)}
+                  {fadeGrad('gOut', C.outflow, 0.95)}
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-                <XAxis dataKey="date" tick={axisTick} stroke="rgba(148,163,184,0.3)" />
-                <YAxis tick={axisTick} stroke="rgba(148,163,184,0.3)" width={70} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(v: number) => [`${dcr(v)} DCR`, 'Cumulative']}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="cumulative"
-                  stroke={C.spend}
-                  strokeWidth={2.5}
-                  fill="url(#gSpend)"
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </ChartCard>
-
-          <ChartCard icon={Banknote} title="Spend per Year">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={perYearData} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
-                <defs>{fadeGrad('gYear', C.year, 0.95)}</defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-                <XAxis dataKey="year" tick={axisTick} stroke="rgba(148,163,184,0.3)" />
+                <XAxis dataKey="label" tick={axisTick} stroke="rgba(148,163,184,0.3)" />
                 <YAxis tick={axisTick} stroke="rgba(148,163,184,0.3)" width={70} />
                 <Tooltip
                   cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                   contentStyle={tooltipStyle}
-                  formatter={(v: number, _n, p: any) => [
-                    `${dcr(v)} DCR (${p?.payload?.count ?? 0} payments)`,
-                    'Spent',
-                  ]}
+                  formatter={(v: number, n: string) => [`${dcr(v)} DCR`, n]}
                 />
-                <Bar dataKey="amount" fill="url(#gYear)" stroke={C.year} radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="blockReward" name="Block reward" stackId="in" fill="url(#gIn)" stroke={C.inflow} isAnimationActive={false} />
+                <Bar dataKey="contributions" name="Contributions" stackId="in" fill="url(#gAdd)" stroke={C.contribution} radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="spends" name="Spends" fill="url(#gOut)" stroke={C.outflow} radius={[6, 6, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -340,51 +319,27 @@ export const TreasuryStats = ({ balance, series, refreshKey = 0 }: TreasuryStats
             </ChartCard>
           )}
 
-          {flowData.length > 0 && (
-            <ChartCard
-              icon={ArrowDownUp}
-              title={flowYear === 'all' ? 'Inflow vs Outflow per Year' : `Inflow vs Outflow ${flowYear}`}
-              caption={
-                flowYear === 'all'
-                  ? 'Inflow is derived from the net balance change plus outflow (not a separate TAdds scan).'
-                  : `Monthly inflow/outflow for ${flowYear}. Inflow is derived from the net balance change (approximate; the treasury balance is sampled about monthly).`
-              }
-              action={
-                <select
-                  value={flowYear}
-                  onChange={(e) => setFlowYear(e.target.value)}
-                  className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
-                >
-                  <option value="all">All time</option>
-                  {perYearData.map((p) => (
-                    <option key={p.year} value={p.year}>
-                      {p.year}
-                    </option>
-                  ))}
-                </select>
-              }
-            >
+          {cumulativeData.length > 0 && (
+            <ChartCard icon={TrendingUp} title="Cumulative Treasury Spend">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={flowYear === 'all' ? flowData : monthlyFlowData}
-                  margin={{ top: 10, right: 20, bottom: 0, left: 0 }}
-                >
-                  <defs>
-                    {fadeGrad('gIn', C.inflow, 0.95)}
-                    {fadeGrad('gOut', C.outflow, 0.95)}
-                  </defs>
+                <AreaChart data={cumulativeData} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
+                  <defs>{fadeGrad('gSpend', C.spend)}</defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-                  <XAxis dataKey={flowYear === 'all' ? 'year' : 'month'} tick={axisTick} stroke="rgba(148,163,184,0.3)" />
+                  <XAxis dataKey="date" tick={axisTick} stroke="rgba(148,163,184,0.3)" />
                   <YAxis tick={axisTick} stroke="rgba(148,163,184,0.3)" width={70} />
                   <Tooltip
-                    cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                     contentStyle={tooltipStyle}
-                    formatter={(v: number, n: string) => [`${dcr(v)} DCR`, n]}
+                    formatter={(v: number) => [`${dcr(v)} DCR`, 'Cumulative']}
                   />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="inflow" name="Inflow" fill="url(#gIn)" stroke={C.inflow} radius={[6, 6, 0, 0]} isAnimationActive={false} />
-                  <Bar dataKey="outflow" name="Outflow" fill="url(#gOut)" stroke={C.outflow} radius={[6, 6, 0, 0]} isAnimationActive={false} />
-                </BarChart>
+                  <Area
+                    type="monotone"
+                    dataKey="cumulative"
+                    stroke={C.spend}
+                    strokeWidth={2.5}
+                    fill="url(#gSpend)"
+                    isAnimationActive={false}
+                  />
+                </AreaChart>
               </ResponsiveContainer>
             </ChartCard>
           )}

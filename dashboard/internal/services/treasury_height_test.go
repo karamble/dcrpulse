@@ -4,6 +4,7 @@ package services
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,34 +20,59 @@ import (
 
 	"dcrpulse/internal/types"
 	"github.com/decred/dcrd/rpcclient/v8"
+	"github.com/decred/dcrd/wire"
 )
 
 type treasuryScanSnapshot struct {
-	Running              bool
-	Current, Total, Safe int64
-	Found, Failed        int
-	Results, Buffer      []types.TSpendHistory
+	Running                     bool
+	Start, Current, Total, Safe int64
+	Found, TAddFound, Failed    int
+	Results, Buffer             []types.TSpendHistory
+	TAdds                       []types.TreasuryTAdd
+	TBase                       map[string]int64
 }
 
 func scanSnapshot() treasuryScanSnapshot {
 	scanMutex.RLock()
 	defer scanMutex.RUnlock()
-	return treasuryScanSnapshot{isScanRunning, currentScanHeight, totalScanHeight, scanSafeHeight, tspendFoundCount, scanFailedCount, append([]types.TSpendHistory(nil), scanResults...), append([]types.TSpendHistory(nil), newTSpendBuffer...)}
+	tbase := make(map[string]int64, len(scanTBase))
+	for k, v := range scanTBase {
+		tbase[k] = v
+	}
+	return treasuryScanSnapshot{isScanRunning, scanStartHeight, currentScanHeight, totalScanHeight, scanSafeHeight,
+		tspendFoundCount, taddFoundCount, scanFailedCount,
+		append([]types.TSpendHistory(nil), scanResults...), append([]types.TSpendHistory(nil), newTSpendBuffer...),
+		append([]types.TreasuryTAdd(nil), scanTAdds...), tbase}
 }
 func setScanSnapshot(s treasuryScanSnapshot) {
 	scanMutex.Lock()
 	defer scanMutex.Unlock()
-	isScanRunning, currentScanHeight, totalScanHeight, scanSafeHeight = s.Running, s.Current, s.Total, s.Safe
-	tspendFoundCount, scanFailedCount = s.Found, s.Failed
-	scanResults, newTSpendBuffer = s.Results, s.Buffer
+	isScanRunning, scanStartHeight, currentScanHeight, totalScanHeight, scanSafeHeight = s.Running, s.Start, s.Current, s.Total, s.Safe
+	tspendFoundCount, taddFoundCount, scanFailedCount = s.Found, s.TAddFound, s.Failed
+	scanResults, newTSpendBuffer, scanTAdds, scanTBase = s.Results, s.Buffer, s.TAdds, s.TBase
 }
 func seedScan(t *testing.T) treasuryScanSnapshot {
 	t.Helper()
 	old := scanSnapshot()
 	t.Cleanup(func() { setScanSnapshot(old) })
-	s := treasuryScanSnapshot{Current: 600000, Total: 600100, Safe: 599999, Found: 1, Failed: 1, Results: []types.TSpendHistory{{TxHash: "prior"}}, Buffer: []types.TSpendHistory{{TxHash: "buffered"}}}
+	networkMu.Lock()
+	oldNet := networkVal
+	networkVal = "mainnet"
+	networkMu.Unlock()
+	t.Cleanup(func() { networkMu.Lock(); networkVal = oldNet; networkMu.Unlock() })
+	s := treasuryScanSnapshot{Start: 599990, Current: 600000, Total: 600100, Safe: 599999, Found: 1, TAddFound: 1, Failed: 1,
+		Results: []types.TSpendHistory{{TxHash: "prior"}}, Buffer: []types.TSpendHistory{{TxHash: "buffered"}},
+		TAdds: []types.TreasuryTAdd{{TxHash: "prior add"}}, TBase: map[string]int64{"2021-05": 7}}
 	setScanSnapshot(s)
 	return s
+}
+
+// scanTBaseAtoms is the treasurybase every fake block pays; scanBlockTime puts
+// block h at a minute past activation per height, from 2021-05-26 01:00 UTC.
+const scanTBaseAtoms = 54683468
+
+func scanBlockTime(h int64) int64 {
+	return time.Date(2021, time.May, 26, 1, 0, 0, 0, time.UTC).Unix() + 60*(h-TreasuryActivationHeight)
 }
 func awaitTreasuryScan(t *testing.T) treasuryScanSnapshot {
 	t.Helper()
@@ -84,7 +110,7 @@ func treasuryRPC(t *testing.T, tip int64, hook func(string, int64) (any, bool)) 
 			heights = append(heights, h)
 			mu.Unlock()
 		}
-		if q.Method == "getblock" {
+		if q.Method == "gettreasurybalance" || q.Method == "getblockheader" {
 			var hash string
 			json.Unmarshal(q.Params[0], &hash)
 			h, _ = strconv.ParseInt(strings.TrimLeft(hash, "0"), 16, 64)
@@ -105,11 +131,12 @@ func treasuryRPC(t *testing.T, tip int64, hook func(string, int64) (any, bool)) 
 				result = tip
 			case "getblockhash":
 				result = fmt.Sprintf("%064x", h)
-			case "getblock":
-				tx := map[string]any{"txid": "spend", "version": 3, "vout": []any{
-					map[string]any{"value": 1, "scriptPubKey": map[string]any{"type": "treasurygen"}},
-				}}
-				result = map[string]any{"height": h, "hash": fmt.Sprintf("%064x", h), "rawstx": []any{tx}}
+			case "gettreasurybalance":
+				result = map[string]any{"hash": fmt.Sprintf("%064x", h), "height": h, "balance": 0, "updates": []int64{scanTBaseAtoms}}
+			case "getblockheader":
+				hdr := wire.BlockHeader{Height: uint32(h), Timestamp: time.Unix(scanBlockTime(h), 0)}
+				b, _ := hdr.Bytes()
+				result = hex.EncodeToString(b)
 			default:
 				t.Errorf("unexpected RPC %s", q.Method)
 			}
@@ -176,15 +203,15 @@ func TestTreasuryScanAdmissionFailuresPreserveState(t *testing.T) {
 	}
 }
 func TestTreasuryScanRanges(t *testing.T) {
+	act := int64(TreasuryActivationHeight)
 	for _, tc := range []struct {
 		name       string
 		start, tip int64
 		want       []int64
 	}{
-		{"default", 0, 552700, []int64{552672}}, {"negative", -10, 552700, []int64{552672}}, {"below activation", 1, 552700, []int64{552672}},
-		{"activation", 552448, 552700, []int64{552672}}, {"aligned", 552672, 552960, []int64{552672, 552960}},
-		{"unaligned", 552673, 552960, []int64{552960}}, {"tip aligned", 552672, 552672, []int64{552672}},
-		{"tip unaligned", 552700, 552700, nil}, {"no boundary", 552673, 552700, nil},
+		{"default", 0, act + 2, []int64{act, act + 1, act + 2}}, {"negative", -10, act + 1, []int64{act, act + 1}},
+		{"below activation", 1, act, []int64{act}}, {"inside", act + 5, act + 7, []int64{act + 5, act + 6, act + 7}},
+		{"tip", act + 9, act + 9, []int64{act + 9}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			seedScan(t)
@@ -194,11 +221,16 @@ func TestTreasuryScanRanges(t *testing.T) {
 					t.Fatal(err)
 				}
 				s := awaitTreasuryScan(t)
-				if s.Current > tc.tip || s.Safe > tc.tip || s.Total != tc.tip || s.Failed != 0 {
+				if s.Current != tc.tip || s.Safe != tc.tip || s.Total != tc.tip || s.Failed != 0 {
 					t.Fatalf("bad progress %+v", s)
 				}
-				if s.Found != len(tc.want) || len(s.Results) != len(tc.want) || len(s.Buffer) != len(tc.want) {
+				wantTBase := map[string]int64{"2021-05": scanTBaseAtoms * int64(len(tc.want))}
+				if s.Found != 0 || len(s.Results) != 0 || len(s.TAdds) != 0 || !reflect.DeepEqual(s.TBase, wantTBase) {
 					t.Fatalf("results not replaced correctly: %+v", s)
+				}
+				r := GetScanResults()
+				if r.FromHeight != tc.want[0] || r.ToHeight != tc.tip {
+					t.Fatalf("results cover %d-%d, want %d-%d", r.FromHeight, r.ToHeight, tc.want[0], tc.tip)
 				}
 			}
 			want := append(append([]int64(nil), tc.want...), tc.want...)
@@ -208,47 +240,41 @@ func TestTreasuryScanRanges(t *testing.T) {
 		})
 	}
 }
-func TestTreasuryScanArithmetic(t *testing.T) {
-	last := int64(math.MaxInt64) - int64(math.MaxInt64)%TreasuryVoteInterval
-	for _, tc := range []struct {
-		start, tip, want int64
-		ok               bool
-	}{
-		{last - 1, math.MaxInt64, last, true}, {last, math.MaxInt64, last, true}, {last + 1, math.MaxInt64, 0, false}, {math.MaxInt64, math.MaxInt64, 0, false},
-		{-1, math.MaxInt64, 0, false}, {1, -1, 0, false}, {552673, 552700, 0, false},
-	} {
-		h, ok := firstScanHeight(tc.start, tc.tip)
-		if h != tc.want || ok != tc.ok {
-			t.Fatalf("first(%d,%d)=(%d,%v)", tc.start, tc.tip, h, ok)
-		}
+func TestTreasuryScanCountsEachBlockInItsOwnMonth(t *testing.T) {
+	seedScan(t)
+	// Block times advance a minute per height, so June 2021 starts at this height.
+	june := TreasuryActivationHeight + (time.Date(2021, time.June, 1, 0, 0, 0, 0, time.UTC).Unix()-scanBlockTime(TreasuryActivationHeight))/60
+	treasuryRPC(t, june+1, nil)
+	if err := TriggerHistoricalScan(context.Background(), june-2); err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := nextScanHeight(last, math.MaxInt64); ok {
-		t.Fatal("wrapped final increment")
-	}
-	if h, ok := nextScanHeight(last-TreasuryVoteInterval, math.MaxInt64); !ok || h != last {
-		t.Fatal("lost valid last interval")
+	awaitTreasuryScan(t)
+	got := GetScanResults().TBaseByMonth
+	want := map[string]int64{"2021-05": 2 * scanTBaseAtoms, "2021-06": 2 * scanTBaseAtoms}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("block reward by month = %v, want %v", got, want)
 	}
 }
-func TestTreasuryScanFailedReadStillAdvancesSafely(t *testing.T) {
-	for _, last := range []int64{552960, int64(math.MaxInt64) - int64(math.MaxInt64)%TreasuryVoteInterval} {
-		t.Run(fmt.Sprint(last), func(t *testing.T) {
-			seedScan(t)
-			first := last - TreasuryVoteInterval
-			reads := treasuryRPC(t, last, func(m string, h int64) (any, bool) {
-				if m == "getblockhash" && h == first {
-					return errors.New("unread block"), true
-				}
-				return nil, false
-			})
-			if err := TriggerHistoricalScan(context.Background(), first); err != nil {
-				t.Fatal(err)
-			}
-			s := awaitTreasuryScan(t)
-			want := []int64{first, first, first, last}
-			if !reflect.DeepEqual(reads(), want) || s.Failed != 1 || s.Safe != first-1 || s.Found != 1 {
-				t.Fatalf("reads=%v state=%+v", reads(), s)
-			}
-		})
+func TestTreasuryScanStopsAtAnUnreadableBlock(t *testing.T) {
+	seedScan(t)
+	first := int64(TreasuryActivationHeight + 10)
+	reads := treasuryRPC(t, first+5, func(m string, h int64) (any, bool) {
+		if m == "getblockhash" && h == first+1 {
+			return errors.New("unread block"), true
+		}
+		return nil, false
+	})
+	if err := TriggerHistoricalScan(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	s := awaitTreasuryScan(t)
+	want := []int64{first, first + 1, first + 1, first + 1}
+	if !reflect.DeepEqual(reads(), want) || s.Failed != 1 || s.Safe != first {
+		t.Fatalf("reads=%v state=%+v", reads(), s)
+	}
+	r := GetScanResults()
+	if r.ToHeight != first || r.TBaseByMonth["2021-05"] != scanTBaseAtoms {
+		t.Fatalf("results %+v, want only block %d", r, first)
 	}
 }
 func TestTreasuryScanTransientRetry(t *testing.T) {
@@ -267,7 +293,7 @@ func TestTreasuryScanTransientRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := awaitTreasuryScan(t)
-	if len(reads()) != 2 || s.Failed != 0 || s.Safe != 552672 || s.Found != 1 {
+	if len(reads()) != 2 || s.Failed != 0 || s.Safe != 552672 || s.TBase["2021-05"] != scanTBaseAtoms {
 		t.Fatalf("retry failed: %+v", s)
 	}
 }
@@ -340,7 +366,7 @@ func TestTreasuryScanConcurrentAdmissionAndDetachedWorker(t *testing.T) {
 	}
 	blockOnce.Do(func() { close(releaseBlock) })
 	s := awaitTreasuryScan(t)
-	if s.Failed != 0 || s.Found != 1 {
+	if s.Failed != 0 || s.TBase["2021-05"] != scanTBaseAtoms {
 		t.Fatalf("request cancellation killed accepted worker: %+v", s)
 	}
 }

@@ -62,7 +62,7 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
 
     const result = importTreasuryData(importText);
     if (result.success) {
-      alert(`Successfully imported ${result.count} TSpends`);
+      alert('Treasury data imported');
       setImportText('');
       setShowImport(false);
       setLocalStats(getTreasuryStats());
@@ -73,7 +73,7 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
   };
 
   const handleClearDatabase = () => {
-    if (!confirm('Are you sure you want to clear all stored TSpend data?\n\nThis will permanently delete all locally stored treasury spend records. This action cannot be undone.')) {
+    if (!confirm('Are you sure you want to clear all stored treasury data?\n\nThis deletes the locally stored treasury records; the shipped snapshot reloads with the page. This action cannot be undone.')) {
       return;
     }
 
@@ -88,14 +88,11 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
     }
   };
 
-  const formatAmount = (amount: number) => {
-    const integerPart = Math.floor(amount);
-    const formattedInteger = integerPart.toLocaleString('en-US');
-    const fullAmount = amount.toFixed(8);
-    const mainPart = amount.toFixed(2);
-    const decimalPart = fullAmount.substring(mainPart.length);
-    
-    return { mainPart: formattedInteger + mainPart.substring(integerPart.toString().length), decimalPart };
+  // Splits an atom amount into "1,234.56" and the remaining six decimals.
+  const formatAmount = (atoms: number) => {
+    const whole = Math.floor(atoms / 1e8);
+    const frac = String(atoms % 1e8).padStart(8, '0');
+    return { mainPart: `${whole.toLocaleString('en-US')}.${frac.slice(0, 2)}`, decimalPart: frac.slice(2) };
   };
 
   const formatHash = (hash: string) => {
@@ -129,7 +126,7 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
     return toYMD(date);
   };
 
-  const { mainPart, decimalPart } = formatAmount(localStats.totalSpent);
+  const { mainPart, decimalPart } = formatAmount(localStats.totalSpentAtoms);
 
   return (
     <div className="p-6 rounded-xl bg-gradient-card border border-border/50">
@@ -144,7 +141,7 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
             <span className="text-xl">DCR</span>
           </h3>
           <p className="text-xs text-muted-foreground">
-            {localStats.count} payments • Last sync: Block {localStats.lastSyncHeight.toLocaleString()}
+            {localStats.count} payments, fees included • Last sync: Block {localStats.lastSyncHeight.toLocaleString()}
           </p>
         </div>
         <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
@@ -157,7 +154,7 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
         <button
           onClick={handleExport}
           className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-border/50 hover:bg-muted/10 transition-colors"
-          title="Export TSpend data as JSON"
+          title="Export treasury data as JSON"
         >
           <Download className="h-4 w-4" />
           Export
@@ -165,7 +162,7 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
         <button
           onClick={() => setShowImport(!showImport)}
           className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-border/50 hover:bg-muted/10 transition-colors"
-          title="Import TSpend data from JSON"
+          title="Import treasury data from JSON"
         >
           <Upload className="h-4 w-4" />
           Import
@@ -173,7 +170,7 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
         <button
           onClick={handleClearDatabase}
           className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-red-500/50 text-red-500 hover:bg-red-500/10 transition-colors"
-          title="Clear all stored TSpend data"
+          title="Clear all stored treasury data"
         >
           <Trash2 className="h-4 w-4" />
           Clear
@@ -220,7 +217,7 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
                 <span className="text-xs text-muted-foreground">({storedTSpends.length} total)</span>
               </div>
               <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                {storedTSpends.map((tspend: any) => (
+                {storedTSpends.map((tspend) => (
                   <div
                     key={tspend.txHash}
                     className="p-3 rounded-lg bg-muted/5 border border-border/30 hover:bg-muted/10 transition-colors"
@@ -228,8 +225,8 @@ export const TreasuryPaymentsCard = ({ refreshKey = 0 }: TreasuryPaymentsCardPro
                     <div className="flex items-center justify-between mb-2">
                       <code className="text-sm font-mono">{formatHash(tspend.txHash)}</code>
                       <span className="text-sm font-semibold text-success">
-                        {formatAmount(tspend.amount).mainPart}
-                        <span className="text-xs opacity-70">{formatAmount(tspend.amount).decimalPart}</span>
+                        {formatAmount(tspend.amountAtoms).mainPart}
+                        <span className="text-xs opacity-70">{formatAmount(tspend.amountAtoms).decimalPart}</span>
                         {' DCR'}
                       </span>
                     </div>

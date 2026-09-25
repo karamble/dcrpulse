@@ -27,16 +27,16 @@ var treasuryTools = []toolDef{
 		"Get the Decred treasury overview (balance and recent treasury activity).",
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.FetchTreasuryInfo(ctx) }),
 	readTool("treasury", "treasury_balance_history",
-		"Get the treasury balance-over-time series (sampled at ~monthly cadence, cached).",
+		"Get the treasury balance-over-time series (the first block of every UTC month plus the tip, cached).",
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.TreasuryBalanceHistory(ctx) }),
 	readTool("treasury", "treasury_scan_progress",
-		"Get the current historical TSpend scan progress.",
+		"Get the current treasury scan progress.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.GetScanProgress() }),
 	readTool("treasury", "treasury_scan_results",
-		"Get the results from the last completed historical TSpend scan.",
+		"Get what the last treasury scan recorded over the blocks it read: treasury spends, contributions, and the block reward per UTC month, in atoms.",
 		func(ctx context.Context, _ emptyInput) (any, error) { return services.GetScanResults(), nil }),
 	readTool("treasury", "treasury_scan_start",
-		"Start a local historical blockchain scan for TSpends. This reads the chain only; it spends no funds. One start per minute, shared with the dashboard.",
+		"Start a local blockchain scan of every block for treasury spends, contributions and block reward. This reads the chain only; it spends no funds. One start per minute, shared with the dashboard.",
 		func(ctx context.Context, in scanStartInput) (any, error) {
 			if err := allow(middleware.TreasuryScan); err != nil {
 				return nil, err

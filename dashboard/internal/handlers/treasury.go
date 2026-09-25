@@ -32,7 +32,7 @@ func GetTreasuryInfoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetTreasuryBalanceHistoryHandler returns the treasury balance-over-time
-// series (sampled at ~monthly cadence, cached in-process).
+// series (the first block of every UTC month plus the tip, cached in-process).
 func GetTreasuryBalanceHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -45,6 +45,38 @@ func GetTreasuryBalanceHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, series)
+}
+
+// GetTreasurySpendLimitHandler returns dcrd's DCP-0013 treasury spend limit
+// for a TVI block following the tip.
+func GetTreasurySpendLimitHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	limit, err := services.TreasurySpendLimit(ctx)
+	if err != nil {
+		govnLog.Errorf("Error computing treasury spend limit: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, limit)
+}
+
+// GetTreasuryOutlookHandler returns the projected treasury block reward for
+// the next twelve months.
+func GetTreasuryOutlookHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	outlook, err := services.TreasuryOutlook(ctx)
+	if err != nil {
+		govnLog.Errorf("Error computing treasury outlook: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, outlook)
 }
 
 // TriggerTSpendScanHandler triggers a historical blockchain scan for TSpends

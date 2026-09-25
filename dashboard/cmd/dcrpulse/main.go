@@ -708,6 +708,8 @@ func main() {
 	// Treasury/Governance routes
 	api.HandleFunc("/treasury/info", handlers.GetTreasuryInfoHandler).Methods("GET")
 	api.HandleFunc("/treasury/balance-history", handlers.GetTreasuryBalanceHistoryHandler).Methods("GET")
+	api.HandleFunc("/treasury/spend-limit", handlers.GetTreasurySpendLimitHandler).Methods("GET")
+	api.HandleFunc("/treasury/outlook", handlers.GetTreasuryOutlookHandler).Methods("GET")
 	api.Handle("/treasury/scan-history",
 		middleware.TreasuryScan.Middleware()(
 			http.HandlerFunc(handlers.TriggerTSpendScanHandler))).Methods("POST")

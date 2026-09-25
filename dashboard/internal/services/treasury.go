@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -27,15 +26,7 @@ import (
 const (
 	TreasuryActivationHeight = 552448 // Block where treasury was first activated (May 2021)
 
-	// TreasuryVoteInterval is mainnet's TVI. Per DCP-0006 a TSpend may only be
-	// mined in a block whose height is a non-zero multiple of the TVI (dcrd
-	// standalone.IsTreasuryVoteInterval / ErrNotTVI), so only these blocks can
-	// contain a TSpend and the historical scan can stride by it. Mainnet-
-	// specific, like TreasuryActivationHeight.
-	TreasuryVoteInterval = 288
-
-	// A block dropped from the scan leaves a permanent hole in the treasury
-	// history, so retry it. A full scan reads only ~1,900 blocks.
+	// A block the scan cannot read ends it, so retry it first.
 	scanBlockAttempts   = 3
 	scanBlockRetryDelay = 500 * time.Millisecond
 )
@@ -44,10 +35,14 @@ const (
 var (
 	scanMutex         sync.RWMutex
 	isScanRunning     bool
+	scanStartHeight   int64
 	currentScanHeight int64
 	totalScanHeight   int64
 	tspendFoundCount  int
+	taddFoundCount    int
 	scanResults       []types.TSpendHistory
+	scanTAdds         []types.TreasuryTAdd
+	scanTBase         map[string]int64
 	newTSpendBuffer   []types.TSpendHistory // Buffer for TSpends found since last progress check
 	scanFailedCount   int                   // Blocks the last scan could not read
 	scanSafeHeight    int64                 // Height a later scan may resume above
@@ -75,7 +70,8 @@ func FetchTreasuryInfo(ctx context.Context) (*types.TreasuryInfo, error) {
 	}
 
 	return &types.TreasuryInfo{
-		Balance:       balance,
+		Balance:       balance.ToCoin(),
+		BalanceAtoms:  int64(balance),
 		BalanceUSD:    0, // TODO: Add USD conversion if needed
 		TotalAdded:    0, // Tracked in frontend localStorage
 		TotalSpent:    0, // Tracked in frontend localStorage
@@ -86,7 +82,7 @@ func FetchTreasuryInfo(ctx context.Context) (*types.TreasuryInfo, error) {
 }
 
 // getTreasuryBalance retrieves current treasury balance from dcrd
-func getTreasuryBalance(ctx context.Context) (float64, error) {
+func getTreasuryBalance(ctx context.Context) (dcrutil.Amount, error) {
 	if rpc.DcrdClient == nil {
 		return 0, fmt.Errorf("dcrd client not available")
 	}
@@ -96,7 +92,7 @@ func getTreasuryBalance(ctx context.Context) (float64, error) {
 		return 0, fmt.Errorf("failed to get treasury balance: %w", err)
 	}
 
-	return dcrutil.Amount(treasuryBalance.Balance).ToCoin(), nil
+	return dcrutil.Amount(treasuryBalance.Balance), nil
 }
 
 // scanMempoolForTSpends scans the mempool for active treasury spend transactions
@@ -156,60 +152,126 @@ func scanMempoolForTSpends(ctx context.Context) ([]types.TSpend, error) {
 	return tspends, nil
 }
 
-// Treasury balance-over-time series, sampled at a coarse cadence and cached.
+// Treasury balance-over-time series, sampled at the first block of every UTC
+// month and cached. Month starts never change once found, so only new months
+// and the tip are fetched on refresh.
 var (
-	balanceHistMu   sync.RWMutex
-	balanceHistData []types.BalanceSample
-	balanceHistAt   time.Time
+	balanceHistMu     sync.Mutex
+	balanceHistMonths []types.BalanceSample
+	balanceHistData   []types.BalanceSample
+	balanceHistAt     time.Time
 )
 
-const (
-	balanceHistTTL      = 1 * time.Hour
-	balanceSampleStride = 8640 // ~30 days of blocks (5 min/block)
-)
+const balanceHistTTL = 1 * time.Hour
 
-// TreasuryBalanceHistory returns the treasury balance sampled from activation
-// to tip at ~monthly cadence (plus the tip). Cheap: ~1 + 2/sample RPC calls
-// (~120 total). Cached in-process for balanceHistTTL.
+// TreasuryBalanceHistory returns the treasury balance at activation, at the
+// first block of every UTC month since, and at the tip. Cached in-process for
+// balanceHistTTL.
 func TreasuryBalanceHistory(ctx context.Context) ([]types.BalanceSample, error) {
 	if rpc.DcrdClient == nil {
 		return nil, fmt.Errorf("dcrd client not available")
 	}
 
-	balanceHistMu.RLock()
+	balanceHistMu.Lock()
+	defer balanceHistMu.Unlock()
 	if balanceHistData != nil && time.Since(balanceHistAt) < balanceHistTTL {
-		cached := balanceHistData
-		balanceHistMu.RUnlock()
-		return cached, nil
+		return balanceHistData, nil
 	}
-	balanceHistMu.RUnlock()
 
 	tip, err := rpc.DcrdClient.GetBlockCount(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get block count: %w", err)
 	}
-
-	var out []types.BalanceSample
-	for h := int64(TreasuryActivationHeight); h <= tip; h += balanceSampleStride {
-		s, err := balanceSampleAt(ctx, h)
-		if err != nil {
-			govnLog.Warnf("Treasury balance sample at %d: %v", h, err)
-			continue
-		}
-		out = append(out, *s)
+	months, err := extendMonthStarts(ctx, balanceHistMonths, tip, balanceSampleAt, blockTimeAt)
+	if err != nil {
+		return nil, err
 	}
-	// Always include the current tip as the final point.
-	if len(out) == 0 || out[len(out)-1].Height != tip {
+	balanceHistMonths = months
+
+	out := append([]types.BalanceSample(nil), months...)
+	if out[len(out)-1].Height != tip {
 		if s, err := balanceSampleAt(ctx, tip); err == nil {
 			out = append(out, *s)
 		}
 	}
-
-	balanceHistMu.Lock()
 	balanceHistData = out
 	balanceHistAt = time.Now()
-	balanceHistMu.Unlock()
 	return out, nil
+}
+
+// extendMonthStarts appends a sample at the first block of every UTC month
+// that has begun by the tip, starting from the activation block.
+func extendMonthStarts(ctx context.Context, have []types.BalanceSample, tip int64,
+	sampleAt func(context.Context, int64) (*types.BalanceSample, error),
+	timeAt func(context.Context, int64) (int64, error)) ([]types.BalanceSample, error) {
+
+	out := append([]types.BalanceSample(nil), have...)
+	if len(out) == 0 {
+		s, err := sampleAt(ctx, TreasuryActivationHeight)
+		if err != nil {
+			return nil, fmt.Errorf("treasury balance at activation: %w", err)
+		}
+		out = append(out, *s)
+	}
+	tipTime, err := timeAt(ctx, tip)
+	if err != nil {
+		return nil, fmt.Errorf("tip time: %w", err)
+	}
+	for {
+		last := out[len(out)-1]
+		next := nextMonthStart(last.Time)
+		if next > tipTime || last.Height >= tip {
+			return out, nil
+		}
+		h, err := firstBlockAtOrAfter(ctx, last.Height+1, tip, next, timeAt)
+		if err != nil {
+			return nil, fmt.Errorf("first block of %s: %w", time.Unix(next, 0).UTC().Format("2006-01"), err)
+		}
+		s, err := sampleAt(ctx, h)
+		if err != nil {
+			return nil, fmt.Errorf("treasury balance at %d: %w", h, err)
+		}
+		out = append(out, *s)
+	}
+}
+
+// nextMonthStart returns the start of the UTC month after the given time.
+func nextMonthStart(unix int64) int64 {
+	t := time.Unix(unix, 0).UTC()
+	return time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, time.UTC).Unix()
+}
+
+// firstBlockAtOrAfter returns the lowest height in [lo, hi] whose block time
+// is at or after cutoff, or hi when none is.
+func firstBlockAtOrAfter(ctx context.Context, lo, hi, cutoff int64,
+	timeAt func(context.Context, int64) (int64, error)) (int64, error) {
+
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		t, err := timeAt(ctx, mid)
+		if err != nil {
+			return 0, err
+		}
+		if t >= cutoff {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	return lo, nil
+}
+
+// blockTimeAt returns the block time at one height.
+func blockTimeAt(ctx context.Context, h int64) (int64, error) {
+	hash, err := rpc.DcrdClient.GetBlockHash(ctx, h)
+	if err != nil {
+		return 0, err
+	}
+	hdr, err := rpc.DcrdClient.GetBlockHeaderVerbose(ctx, hash)
+	if err != nil {
+		return 0, err
+	}
+	return hdr.Time, nil
 }
 
 // balanceSampleAt returns the treasury balance + block time at one height.
@@ -231,25 +293,6 @@ func balanceSampleAt(ctx context.Context, h int64) (*types.BalanceSample, error)
 		Time:    hdr.Time,
 		Balance: dcrutil.Amount(bal.Balance).ToCoin(),
 	}, nil
-}
-
-// isTreasurySpend checks if a transaction is a treasury spend (not treasurybase)
-func isTreasurySpend(tx chainjson.TxRawResult) bool {
-	// A real TSpend carries the treasuryspend field on its input.
-	for _, vin := range tx.Vin {
-		if vin.TreasurySpend != "" {
-			return true
-		}
-	}
-
-	// Secondary check: a treasurygen output type on a version 3 transaction.
-	for _, vout := range tx.Vout {
-		if strings.Contains(strings.ToLower(vout.ScriptPubKey.Type), "treasurygen") && tx.Version == 3 {
-			return true
-		}
-	}
-
-	return false
 }
 
 // extractTSpendInfo extracts TSpend information from a transaction
@@ -276,29 +319,6 @@ func extractTSpendInfo(tx chainjson.TxRawResult, currentHeight int64) *types.TSp
 		BlocksRemaining: blocksRemaining,
 		Status:          "voting",
 		DetectedAt:      time.Now(),
-	}
-}
-
-// extractTSpendHistory extracts historical TSpend information
-func extractTSpendHistory(tx chainjson.TxRawResult, blockHeight int64, blockHash string, blockTime int64) *types.TSpendHistory {
-	// Sum the outputs; the last address-bearing output names the payee.
-	amount := 0.0
-	payee := ""
-	for _, vout := range tx.Vout {
-		amount += vout.Value
-		if len(vout.ScriptPubKey.Addresses) > 0 {
-			payee = vout.ScriptPubKey.Addresses[0]
-		}
-	}
-
-	return &types.TSpendHistory{
-		TxHash:      tx.Txid,
-		Amount:      amount,
-		Payee:       payee,
-		BlockHeight: blockHeight,
-		BlockHash:   blockHash,
-		Timestamp:   time.Unix(blockTime, 0),
-		VoteResult:  "approved",
 	}
 }
 
@@ -343,36 +363,19 @@ func TriggerHistoricalScan(ctx context.Context, startHeight int64) error {
 		return fmt.Errorf("scan already in progress")
 	}
 	isScanRunning = true
+	scanStartHeight = startHeight
 	currentScanHeight = startHeight
 	totalScanHeight = currentHeight
 	tspendFoundCount = 0
+	taddFoundCount = 0
 	scanResults = []types.TSpendHistory{}
+	scanTAdds = []types.TreasuryTAdd{}
+	scanTBase = map[string]int64{}
 	newTSpendBuffer = []types.TSpendHistory{}
 	scanFailedCount = 0
 	scanSafeHeight = 0
 	go scanHistoricalTSpendsBackground(client, startHeight, currentHeight)
 	return nil
-}
-
-// firstScanHeight aligns only when the next TVI fits inside the validated range.
-func firstScanHeight(start, tip int64) (int64, bool) {
-	if start < 1 || tip < start {
-		return 0, false
-	}
-	delta := (TreasuryVoteInterval - start%TreasuryVoteInterval) % TreasuryVoteInterval
-	if delta > tip-start {
-		return 0, false
-	}
-	return start + delta, true
-}
-
-// nextScanHeight checks the remaining range before adding, including after a
-// failed block read. Neither alignment nor iteration can wrap below zero.
-func nextScanHeight(height, tip int64) (int64, bool) {
-	if height < 1 || tip < height || tip-height < TreasuryVoteInterval {
-		return 0, false
-	}
-	return height + TreasuryVoteInterval, true
 }
 
 // safeResumeHeight returns the height a later scan may safely resume above. A
@@ -394,45 +397,10 @@ func safeResumeHeight(lastScanned int64, failed []int64) int64 {
 	return first - 1
 }
 
-// readScanBlock fetches one block for the historical scan.
-func readScanBlock(ctx context.Context, client *rpcclient.Client, height int64) (*chainjson.GetBlockVerboseResult, error) {
-	blockHash, err := client.GetBlockHash(ctx, height)
-	if err != nil {
-		return nil, fmt.Errorf("get block hash: %w", err)
-	}
-
-	// verboseTx=true returns every tx's full vin/vout inline (rawtx/rawstx),
-	// so no per-transaction getrawtransaction call is needed.
-	block, err := client.GetBlockVerbose(ctx, blockHash, true)
-	if err != nil {
-		return nil, fmt.Errorf("getblock %s: %w", blockHash, err)
-	}
-	return block, nil
-}
-
-// readScanBlockRetry retries readScanBlock, so that a transient dcrd failure
-// does not silently cost the scan a block.
-func readScanBlockRetry(ctx context.Context, client *rpcclient.Client, height int64) (*chainjson.GetBlockVerboseResult, error) {
-	var err error
-	for attempt := 1; attempt <= scanBlockAttempts; attempt++ {
-		var block *chainjson.GetBlockVerboseResult
-		if block, err = readScanBlock(ctx, client, height); err == nil {
-			return block, nil
-		}
-		govnLog.Warnf("Failed to read block %d (attempt %d/%d): %v", height, attempt, scanBlockAttempts, err)
-
-		if attempt < scanBlockAttempts {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(scanBlockRetryDelay):
-			}
-		}
-	}
-	return nil, err
-}
-
-// scanHistoricalTSpendsBackground performs the historical scan in the background
+// scanHistoricalTSpendsBackground reads every block from startHeight to
+// currentHeight and records what each paid into and out of the treasury. It
+// stops at the first block it cannot read, so the results always cover one
+// unbroken range of blocks.
 func scanHistoricalTSpendsBackground(client *rpcclient.Client, startHeight, currentHeight int64) {
 	ctx := context.Background()
 	var failedHeights []int64
@@ -444,45 +412,46 @@ func scanHistoricalTSpendsBackground(client *rpcclient.Client, startHeight, curr
 		found, safeHeight := tspendFoundCount, scanSafeHeight
 		scanMutex.Unlock()
 		if len(failedHeights) > 0 {
-			govnLog.Warnf("Historical TSpend scan finished with %d unread block(s), first at %d. Found %d TSpends; resume height held at %d",
-				len(failedHeights), failedHeights[0], found, safeHeight)
+			govnLog.Warnf("Treasury scan stopped at unreadable block %d. Found %d TSpends; resume height held at %d",
+				failedHeights[0], found, safeHeight)
 			return
 		}
-		govnLog.Infof("Historical TSpend scan complete. Found %d TSpends", found)
+		govnLog.Infof("Treasury scan complete. Found %d TSpends", found)
 	}()
 
-	firstTVI, ok := firstScanHeight(startHeight, currentHeight)
-	if !ok {
+	params, err := chainParams(ctx)
+	if err != nil {
+		govnLog.Errorf("Treasury scan cannot start: %v", err)
+		failedHeights = append(failedHeights, startHeight)
 		return
 	}
-	govnLog.Infof("Starting historical TSpend scan from block %d to %d (TVI stride %d)", firstTVI, currentHeight, TreasuryVoteInterval)
+	govnLog.Infof("Starting treasury scan from block %d to %d", startHeight, currentHeight)
 
-	for h, more := firstTVI, true; more; h, more = nextScanHeight(h, currentHeight) {
-		// Update progress
+	for h := startHeight; h <= currentHeight; h++ {
 		scanMutex.Lock()
 		currentScanHeight = h
 		scanMutex.Unlock()
 
-		block, err := readScanBlockRetry(ctx, client, h)
+		f, err := readTreasuryFlowsRetry(ctx, client, h, params)
 		if err != nil {
-			govnLog.Errorf("Dropping block %d from the scan after %d attempts: %v", h, scanBlockAttempts, err)
+			govnLog.Errorf("Treasury scan stops at block %d after %d attempts: %v", h, scanBlockAttempts, err)
 			failedHeights = append(failedHeights, h)
-			continue
+			return
 		}
 
-		allTxs := append(block.RawTx, block.RawSTx...)
-		for _, tx := range allTxs {
-			if isTreasurySpend(tx) {
-				history := extractTSpendHistory(tx, block.Height, block.Hash, block.Time)
-				if history != nil {
-					scanMutex.Lock()
-					scanResults = append(scanResults, *history)
-					newTSpendBuffer = append(newTSpendBuffer, *history)
-					tspendFoundCount++
-					govnLog.Infof("TSpend found at height %d: %s (amount: %.2f DCR)", block.Height, history.TxHash, history.Amount)
-					scanMutex.Unlock()
-				}
-			}
+		scanMutex.Lock()
+		scanTBase[flowMonth(f.time)] += f.tbase
+		scanTAdds = append(scanTAdds, f.tadds...)
+		taddFoundCount += len(f.tadds)
+		scanResults = append(scanResults, f.tspends...)
+		newTSpendBuffer = append(newTSpendBuffer, f.tspends...)
+		tspendFoundCount += len(f.tspends)
+		scanMutex.Unlock()
+		for _, t := range f.tspends {
+			govnLog.Infof("TSpend found at height %d: %s (%v)", h, t.TxHash, dcrutil.Amount(t.AmountAtoms))
+		}
+		if h == currentHeight {
+			return
 		}
 	}
 }
@@ -497,14 +466,14 @@ func GetScanProgress() (*types.TSpendScanProgress, error) {
 		progress = float64(currentScanHeight-TreasuryActivationHeight) / float64(totalScanHeight-TreasuryActivationHeight) * 100
 	}
 
-	message := "Scanning blockchain for treasury spends..."
+	message := "Scanning the blockchain for treasury flows..."
 	if !isScanRunning {
 		switch {
 		case scanFailedCount > 0:
-			message = fmt.Sprintf("Scan incomplete: %d block(s) could not be read. Found %d treasury spends so far; scan again to cover the rest",
-				scanFailedCount, tspendFoundCount)
-		case tspendFoundCount > 0:
-			message = fmt.Sprintf("Scan complete. Found %d treasury spends", tspendFoundCount)
+			message = fmt.Sprintf("Scan stopped at an unreadable block. Found %d treasury spends and %d contributions so far; scan again to cover the rest",
+				tspendFoundCount, taddFoundCount)
+		case tspendFoundCount > 0 || taddFoundCount > 0 || len(scanTBase) > 0:
+			message = fmt.Sprintf("Scan complete. Found %d treasury spends and %d contributions", tspendFoundCount, taddFoundCount)
 		default:
 			message = "No scan in progress"
 		}
@@ -521,6 +490,7 @@ func GetScanProgress() (*types.TSpendScanProgress, error) {
 		TotalHeight:   totalScanHeight,
 		Progress:      progress,
 		TSpendFound:   tspendFoundCount,
+		TAddFound:     taddFoundCount,
 		NewTSpends:    newTSpends,
 		Message:       message,
 		FailedBlocks:  scanFailedCount,
@@ -528,15 +498,22 @@ func GetScanProgress() (*types.TSpendScanProgress, error) {
 	}, nil
 }
 
-// GetScanResults returns the results from the last completed scan
-func GetScanResults() []types.TSpendHistory {
+// GetScanResults returns what the last scan recorded, over the blocks it read.
+func GetScanResults() types.TreasuryScanResults {
 	scanMutex.RLock()
 	defer scanMutex.RUnlock()
 
-	// Return a copy
-	results := make([]types.TSpendHistory, len(scanResults))
-	copy(results, scanResults)
-	return results
+	tbase := make(map[string]int64, len(scanTBase))
+	for m, v := range scanTBase {
+		tbase[m] = v
+	}
+	return types.TreasuryScanResults{
+		FromHeight:   scanStartHeight,
+		ToHeight:     scanSafeHeight,
+		TSpends:      append([]types.TSpendHistory{}, scanResults...),
+		TAdds:        append([]types.TreasuryTAdd{}, scanTAdds...),
+		TBaseByMonth: tbase,
+	}
 }
 
 // tspendVoteTally asks dcrd for the yes/no counts of the given tspends, keyed by

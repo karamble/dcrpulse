@@ -18,7 +18,7 @@ dcrpulse presents these in two separate places:
 - This is where you cast or change votes. All vote and policy changes require your wallet passphrase.
 
 **Treasury monitor** (`/treasury`)
-- A standalone, node-level page for watching the treasury: current balance, balance-over-time chart, payment history, active treasury votes, and a historical TSpend scanner.
+- A standalone, node-level page for watching the treasury: current balance, runway, measured inflow and outflow, balance-over-time chart, payment history, active treasury votes, the DCP-0013 spend limit, and a treasury flow scanner.
 - Read-only with respect to voting - it shows what the network is doing but does not cast votes itself.
 
 ---
@@ -239,10 +239,14 @@ It reads treasury data straight from dcrd and tracks the historical record local
 
 ### Treasury Statistics and Charts
 
-The top of the page shows treasury statistics and a balance-over-time chart, backed by:
+Every flow on the page is measured, never inferred from the balance:
 
-- **Current balance** - the live treasury balance from dcrd (`gettreasurybalance`).
-- **Balance history** - a balance-over-time series sampled at a coarse (roughly monthly) cadence and cached on the backend, used to draw the chart.
+- **Current balance** - the live treasury balance from dcrd (`gettreasurybalance`), with its USD value at today's rate.
+- **Runway** - the balance divided by the average monthly spend of the last twelve full UTC months, and that twelve-month spend.
+- **Block reward, next 12 months** - dcrd's subsidy schedule (`CalcTreasurySubsidy`) over the coming months at the target block time. A projection.
+- **Total spent** and **contributions** - from the stored records; spends include the fee the treasury paid for each.
+- **Inflow vs outflow** - per year, or per month for one year: block reward and voluntary contributions stacked as inflow, spends as outflow, each counted in the UTC month of the block that carried it.
+- **Balance history** - the treasury balance at the first block of every UTC month, cached on the backend.
 
 ### Active Treasury Votes
 
@@ -259,24 +263,30 @@ When nothing is in voting it reads **No treasury votes in progress.**
 
 This panel shows the network-wide tally. To control how *your* wallet votes on these TSpends, use the **Treasury** tab in the wallet governance area.
 
-### Historical TSpend Scanner
+### Treasury Spend Limit
 
-Because dcrd does not serve the full historical list of TSpends, dcrpulse can scan the blockchain for them and store the results in your browser's local storage.
+dcrd's DCP-0013 expenditure rule, mirrored from dcrd's own code because no RPC exposes it: over a window of 6,912 blocks the treasury may spend the larger of 4% of its balance (plus what the window already spent) and a fixed floor, less what the window already spent. The card shows what that rule allows at the next treasury vote block, the window limit, the window's spends, and the balance counted. It is hidden when the agenda is not active.
 
-- **Scan Historical TSpends** button starts a scan from where it last left off (or from the treasury activation height, block 552,448, on a first run).
-- The scan strides by the treasury vote interval, since a block can only contain a TSpend on that cadence.
-- A **progress bar** shows current height, total height, and TSpends found while the scan runs.
-- Newly found TSpends are saved to local storage as they are discovered, and a final sync at the end catches anything missed if the browser was closed mid-scan.
-- The **last scan** date, height, and total found are shown after completion.
+### Treasury Flow Scanner
 
-> Because the historical record lives in browser local storage, it is per-browser. Other clients (or a different browser) will not see a scan you ran locally until they scan themselves.
+dcrd keeps no index of treasury flows, so dcrpulse reads them block by block and stores the results in your browser's local storage. The app ships a snapshot up to a recent block, so a scan only reads the blocks after it.
+
+- **Scan New Blocks** starts a scan one block above the stored height. Scans run only when you start them.
+- For every block, dcrd's `gettreasurybalance` lists each treasury credit and debit. A block with nothing but its treasurybase adds to that month's block reward; any other block is fetched and its transactions classified with dcrd's own stake rules into contributions (TAdds), spends and their fees, which must reproduce dcrd's list exactly.
+- The scan stops at the first block it cannot read, so the stored data always covers one unbroken range. The next scan continues from there.
+- Results are taken in once the scan finishes, and only when they continue exactly where the stored data ends, so nothing is counted twice.
+- **Export** writes the whole stored data set as JSON; **Import** replaces the stored data with an export that reaches further.
+
+> Because the historical record lives in browser local storage, it is per-browser. A different browser starts from the shipped snapshot.
 
 **API**:
 - `GET /api/treasury/info` - current balance + active (mempool) TSpends
-- `GET /api/treasury/balance-history` - balance-over-time series
-- `POST /api/treasury/scan-history` - start a historical scan (rate-limited)
+- `GET /api/treasury/balance-history` - balance at the first block of every UTC month
+- `GET /api/treasury/spend-limit` - the DCP-0013 spend limit for a treasury vote block after the tip
+- `GET /api/treasury/outlook` - projected block reward for the next twelve months
+- `POST /api/treasury/scan-history` - start a scan (rate-limited)
 - `GET /api/treasury/scan-progress` - scan progress
-- `GET /api/treasury/scan-results` - results of the last completed scan
+- `GET /api/treasury/scan-results` - what the last scan recorded over the blocks it read
 - `GET /api/explorer/transactions/{txhash}` - the full vote breakdown for one TSpend, fetched when its card is expanded
 
 ---

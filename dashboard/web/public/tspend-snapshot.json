@@ -1,385 +1,576 @@
 {
-  "version": 1,
+  "lastSyncHeight": 1118350,
+  "tadds": [
+    {
+      "txHash": "7169c4314b5b2bcb33f0066a0a22e315ff48fd7c299865383eee761c58d14806",
+      "amountAtoms": 9900000,
+      "blockHeight": 559785,
+      "timestamp": "2021-06-02T20:55:27Z"
+    },
+    {
+      "txHash": "4a6701a9e68266efdfdfc23576697eb0660b2b0b2904c63de2f6563003baa10c",
+      "amountAtoms": 99990000,
+      "blockHeight": 637622,
+      "timestamp": "2022-02-28T21:46:16Z"
+    },
+    {
+      "txHash": "3bd091c975fe2bdeeb8460aa92379f13e88bf6b84f3bee71a9d6d4b747557c2a",
+      "amountAtoms": 499999900000,
+      "blockHeight": 637646,
+      "timestamp": "2022-02-28T23:47:41Z"
+    },
+    {
+      "txHash": "194c5da0924d8330f344997a8892e73bbe072811146f486ccc10de1d9f2bf4d4",
+      "amountAtoms": 2240000000000,
+      "blockHeight": 637962,
+      "timestamp": "2022-03-02T00:47:48Z"
+    },
+    {
+      "txHash": "c53683cb15d101132eec84355d8207f115cc0e630ce9ac72325ccf19411a63f5",
+      "amountAtoms": 2233299900000,
+      "blockHeight": 638185,
+      "timestamp": "2022-03-02T22:46:47Z"
+    },
+    {
+      "txHash": "d2a7c8d5b8b765fefa542a212b759ab6a171f499e5bcdb5094435e85434b99f8",
+      "amountAtoms": 4466599000000,
+      "blockHeight": 638999,
+      "timestamp": "2022-03-05T16:18:39Z"
+    },
+    {
+      "txHash": "135d886a843c99621fd617bd72b3ee88790ef27c235fd35a54ebee0dad2f4e7c",
+      "amountAtoms": 6699900000000,
+      "blockHeight": 639858,
+      "timestamp": "2022-03-08T17:18:16Z"
+    },
+    {
+      "txHash": "853d00230e7e6b3bd9cca09a9bd2d3da2a1db7c7db327daa0e178203d0a5eafe",
+      "amountAtoms": 6699900000000,
+      "blockHeight": 640158,
+      "timestamp": "2022-03-09T18:15:03Z"
+    },
+    {
+      "txHash": "ccb58a35ac3dd0ffd75cfdb413c76a9eb8da0f138dfa21dee834617a280f6e71",
+      "amountAtoms": 6699900000000,
+      "blockHeight": 640205,
+      "timestamp": "2022-03-09T22:16:56Z"
+    },
+    {
+      "txHash": "559414c32822ef2d2982115ad173530226248dd4a70dd3c3679f7983a4fbf677",
+      "amountAtoms": 6699900000000,
+      "blockHeight": 641221,
+      "timestamp": "2022-03-13T16:27:28Z"
+    },
+    {
+      "txHash": "6668af33a6b1ea2d0fe3e1085326dcb501ee652127b636b350bbef7b4a92a9ac",
+      "amountAtoms": 6699899000000,
+      "blockHeight": 641633,
+      "timestamp": "2022-03-14T21:10:39Z"
+    },
+    {
+      "txHash": "921cae8c12e3934659ef203ae77098ef545378e76da86ca107bebb0e55635bfb",
+      "amountAtoms": 6699900000000,
+      "blockHeight": 642125,
+      "timestamp": "2022-03-16T14:56:11Z"
+    },
+    {
+      "txHash": "e2a1e9264de6a98a68ac7958fd7b0171bef2b89f3a54b59316d1809c30425935",
+      "amountAtoms": 12140700000000,
+      "blockHeight": 642790,
+      "timestamp": "2022-03-18T23:04:11Z"
+    },
+    {
+      "txHash": "fdb3cf64e61bd218fc802df0ec07061cdda3b63cce64d61927772dd59244e8fd",
+      "amountAtoms": 10000,
+      "blockHeight": 1106817,
+      "timestamp": "2026-08-16T11:11:14Z"
+    },
+    {
+      "txHash": "d40719daf7eb14891e4c0b87f0cd7374793f04b6fa651ec6ed4a2577a0900889",
+      "amountAtoms": 10000,
+      "blockHeight": 1106831,
+      "timestamp": "2026-08-16T12:20:51Z"
+    },
+    {
+      "txHash": "bf3703dd1720ff21e9adf46e9136781921f8d5501bbd34117f475ec23063557c",
+      "amountAtoms": 10000,
+      "blockHeight": 1106837,
+      "timestamp": "2026-08-16T13:23:27Z"
+    },
+    {
+      "txHash": "fcb8eaecee42134b71caa8c66f47c281163ee6f6264b4db92756b3f56f82e9d6",
+      "amountAtoms": 10000,
+      "blockHeight": 1106854,
+      "timestamp": "2026-08-16T14:26:55Z"
+    },
+    {
+      "txHash": "02657ede8c2a0c46f62c1ec234f1fbd9e9865e0bbb7d9b174bc5f07fc5146db7",
+      "amountAtoms": 10000,
+      "blockHeight": 1106860,
+      "timestamp": "2026-08-16T15:02:01Z"
+    },
+    {
+      "txHash": "6eb4a7c4ca16ecc19328db514377f6fe93af324462c2c507f32af5461c5ff795",
+      "amountAtoms": 10000,
+      "blockHeight": 1107195,
+      "timestamp": "2026-08-17T19:09:00Z"
+    }
+  ],
+  "tbaseByMonth": {
+    "2021-05": 876005663590,
+    "2021-06": 1048865810750,
+    "2021-07": 1130856842076,
+    "2021-08": 1092641253090,
+    "2021-09": 1026172487888,
+    "2021-10": 1065544558894,
+    "2021-11": 1019130881376,
+    "2021-12": 1023308216220,
+    "2022-01": 1010962382980,
+    "2022-02": 904415880590,
+    "2022-03": 985227026666,
+    "2022-04": 947456544631,
+    "2022-05": 939685902111,
+    "2022-06": 912465343464,
+    "2022-07": 919561454384,
+    "2022-08": 921407377852,
+    "2022-09": 883934795006,
+    "2022-10": 893568048592,
+    "2022-11": 846083108820,
+    "2022-12": 870144119937,
+    "2023-01": 855153701691,
+    "2023-02": 761187207452,
+    "2023-03": 837925436521,
+    "2023-04": 794903700771,
+    "2023-05": 808264351462,
+    "2023-06": 773243352584,
+    "2023-07": 785260851354,
+    "2023-08": 714892417726,
+    "2023-09": 835884377968,
+    "2023-10": 761820518902,
+    "2023-11": 705659765587,
+    "2023-12": 745970885144,
+    "2024-01": 723446125213,
+    "2024-02": 671076649755,
+    "2024-03": 700229338191,
+    "2024-04": 675522089684,
+    "2024-05": 682642062590,
+    "2024-06": 650717585966,
+    "2024-07": 667889423674,
+    "2024-08": 652562664456,
+    "2024-09": 621172665208,
+    "2024-10": 644253075432,
+    "2024-11": 604709475144,
+    "2024-12": 620739900825,
+    "2025-01": 612643562715,
+    "2025-02": 543991680828,
+    "2025-03": 594759913236,
+    "2025-04": 567151977990,
+    "2025-05": 572662181838,
+    "2025-06": 552007847884,
+    "2025-07": 562987888580,
+    "2025-08": 552476354058,
+    "2025-09": 527640713923,
+    "2025-10": 533994930123,
+    "2025-11": 523047114912,
+    "2025-12": 519999140552,
+    "2026-01": 517692666480,
+    "2026-02": 459007345608,
+    "2026-03": 499777006446,
+    "2026-04": 476673425246,
+    "2026-05": 486052108516,
+    "2026-06": 462649693456,
+    "2026-07": 468763608558,
+    "2026-08": 464377869382,
+    "2026-09": 369791495706
+  },
   "tspends": [
     {
       "txHash": "7507bcc72bfde895065034e12e6d462f2360163cd0c879f0db35514f9456b2c1",
-      "amount": 0.1,
+      "amountAtoms": 10000000,
+      "feeAtoms": 2550,
       "payee": "DsdvnoeMgtzMRx7CKvpekthMrZyrY4QMELC",
       "blockHeight": 556416,
       "timestamp": "2021-05-22T01:22:34Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:35.958Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "f57f2f35abcfc58cb8d45da6315982610203c1335ee0d68b36240f22c24a557a",
-      "amount": 1006.2399260100002,
+      "amountAtoms": 100623992601,
+      "feeAtoms": 14390,
       "payee": "DsUy6M1kUarcUC4Qvbg751PQTtYsZGVNN4Z",
       "blockHeight": 619776,
       "timestamp": "2021-12-28T18:29:50Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:40.967Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "c20c6ead8a45a03020b3083691ee79bf6abd74f4a6054cbf7a6d20753443e252",
-      "amount": 1156.08207206,
+      "amountAtoms": 115608207206,
+      "feeAtoms": 11800,
       "payee": "DsYky54WBtKaZfy9TXWsBWRkhzK9spiYKdr",
       "blockHeight": 628704,
       "timestamp": "2022-01-28T20:40:35Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:41.968Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "18cede674d4d47919e7fcdb48fef0f56162a1a2f9536d5f08ac70e093a14e4f5",
-      "amount": 2425.9783481200006,
+      "amountAtoms": 242597834812,
+      "feeAtoms": 10320,
       "payee": "DscC8isCpbbSbgY9gRXLdcnLK4PmMbJeB5K",
       "blockHeight": 671616,
       "timestamp": "2022-06-27T19:09:43Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:45.978Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "453e713358bb3c5662ebc1f58c50c50ceb66a950dae925701d8e25a3c4c72d4e",
-      "amount": 3205.3292943899996,
+      "amountAtoms": 320532929439,
+      "feeAtoms": 9580,
       "payee": "DscMCvsDGCNWx7t1wZYKe7sH7pxkxDqgNqu",
       "blockHeight": 679104,
       "timestamp": "2022-07-24T04:38:48Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:46.983Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "c3f990e6c43babdfb782be90ca58ca6f6f8b6bcd3da96a622aba098d4e88c012",
-      "amount": 3787.95026938,
+      "amountAtoms": 378795026938,
+      "feeAtoms": 10320,
       "payee": "DsV8nQZVGYMqrPzFUKC8a8zEMBaWzXWeREt",
       "blockHeight": 688896,
       "timestamp": "2022-08-27T06:38:18Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:47.979Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "c8a4d7fae86645449561a3b414ac7df0ea33b5de03e58ded345ad71c485c9c6b",
-      "amount": 3088.63007258,
+      "amountAtoms": 308863007258,
+      "feeAtoms": 12540,
       "payee": "DseL9WbiRuujmp41rcnMQJcnaNi5uheEazD",
       "blockHeight": 696960,
       "timestamp": "2022-09-24T05:43:30Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:48.980Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "f79381e591ef46c9ed911d936a9c329d62ac63cd9674d9c2db5855d2e4317358",
-      "amount": 2645.9398327199997,
+      "amountAtoms": 264593983272,
+      "feeAtoms": 13650,
       "payee": "DsgWMbNQp7NCziQP3ccm2wxiiM2tKwtWGmU",
       "blockHeight": 708192,
       "timestamp": "2022-11-02T10:43:38Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:50.036Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "95ebb23a0846417eb1aa6a59bf6b4ad49d8cd72ff44c869d4af366fd1aef402e",
-      "amount": 3218.3387894800003,
+      "amountAtoms": 321833878948,
+      "feeAtoms": 11430,
       "payee": "DsoHsrkwhjx7Yhf5y3g7JsfmXDCzmnnvQ9Y",
       "blockHeight": 717696,
       "timestamp": "2022-12-05T17:08:39Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:52.034Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "49f141f51421a499d319bc617a4430f87db3a73ffa605dee8408eefb081bd11b",
-      "amount": 3907.99406934,
+      "amountAtoms": 390799406934,
+      "feeAtoms": 11060,
       "payee": "DsmZco1KF4kmTecKsvsq8VBrvv8jnu9QDh2",
       "blockHeight": 726048,
       "timestamp": "2023-01-03T16:19:33Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:52.034Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "e09505dbb877e5efdd184129858be5655a3de235cdac2cfa749442f0ccf7de81",
-      "amount": 3389.12062839,
+      "amountAtoms": 338912062839,
+      "feeAtoms": 12170,
       "payee": "DsaZUKETZ5Nb4ZzRhhsFUNF7yHE7wp45mm7",
       "blockHeight": 737280,
       "timestamp": "2023-02-11T17:41:20Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:54.802Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "57c226c50632baf64aa3bb366e11c586c38689248a067b4642173a6a96fd47d0",
-      "amount": 4270.815683489998,
+      "amountAtoms": 427081568349,
+      "feeAtoms": 12170,
       "payee": "DsbnjEZ8WgDKAuHB5xZX4dvfT1EmALSWtm2",
       "blockHeight": 745920,
       "timestamp": "2023-03-13T21:22:23Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:54.802Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "5aa2142e4dce72d28fb3cef3e7d1b565a90655304fdd284016fb585cc96431e9",
-      "amount": 3087.20807323,
+      "amountAtoms": 308720807323,
+      "feeAtoms": 10690,
       "payee": "Dsj7mToHgCoUJD24c8C4qhDsV8UjGvvHUXE",
       "blockHeight": 755712,
       "timestamp": "2023-04-16T19:18:40Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:56.141Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "5efdb2de7cbea2682d389aa274a1ef79c5996201226054b28e08e286b1809519",
-      "amount": 3590.74770416,
+      "amountAtoms": 359074770416,
+      "feeAtoms": 10690,
       "payee": "Dsnd6QLoYXfcCTTed99SvWGqRnrpWZvJAVt",
       "blockHeight": 765504,
       "timestamp": "2023-05-20T22:27:24Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:57.143Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "4734a7e88ecb366d5c3be8510c35e846ff5a117fa92e24a0ad9329ac65b4925f",
-      "amount": 4604.85410485,
+      "amountAtoms": 460485410485,
+      "feeAtoms": 9580,
       "payee": "DsmHtqky3644Cvx444XDg6pLrc4xaHimGPr",
       "blockHeight": 772128,
       "timestamp": "2023-06-13T00:25:31Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:58.293Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "bf3fcf63697c2191260690aa8471088e863e4f25434564196f8110464b669a51",
-      "amount": 4943.225335670001,
+      "amountAtoms": 494322533567,
+      "feeAtoms": 14020,
       "payee": "DsVt9agfhgmrpxkfVF5SVPH1FtQzh9mS3Yb",
       "blockHeight": 784224,
       "timestamp": "2023-07-25T05:39:39Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:43:59.263Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "144c17b0542e4aecb6c2b00b905552b001055dcf8298a0cd8ce0c1409e4bb2e4",
-      "amount": 5961.44912281,
+      "amountAtoms": 596144912281,
+      "feeAtoms": 11800,
       "payee": "DsS69nag1YsRrx3PdFcgXdPfRdMyiLdaAJk",
       "blockHeight": 794016,
       "timestamp": "2023-08-28T10:38:33Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:00.262Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "dad857ec261237d51247d4bfae1a1ffb4348c8a7ed8933b2b877e6cac1d75436",
-      "amount": 8411.62732131,
+      "amountAtoms": 841162732131,
+      "feeAtoms": 21790,
       "payee": "DsafpJ4ngiiARwhKD1MRCME1PpXe96Xpf52",
       "blockHeight": 804096,
       "timestamp": "2023-10-01T00:27:08Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:01.265Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "ca24ed5e5d4819ca68b270a78345be07d5a18890b83ada366e970807425e8bfc",
-      "amount": 8471.34266029,
+      "amountAtoms": 847134266029,
+      "feeAtoms": 20680,
       "payee": "DsbqZHuySraw65eiHdWm7en2jVZ72kuZbLk",
       "blockHeight": 818784,
       "timestamp": "2023-11-21T02:00:09Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:03.268Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "bbe950023801d9a9a082b15374cb5b30385172431dec0961207b2adb7197e82d",
-      "amount": 8427.448034070001,
+      "amountAtoms": 842744803407,
+      "feeAtoms": 12910,
       "payee": "DsYuwCtBPaB3qJF97HSmP7Nv3hhFxgJA1fX",
       "blockHeight": 826848,
       "timestamp": "2023-12-19T07:52:53Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:03.268Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "d310ad4c1e3695ab29ac0e7f034bc74b84994cb4443043de5f7993678ada0b95",
-      "amount": 8177.000733679998,
+      "amountAtoms": 817700073368,
+      "feeAtoms": 14020,
       "payee": "DsRMMkPRthknqHoB32EdVuNRF3urapP5ggU",
       "blockHeight": 836640,
       "timestamp": "2024-01-21T23:15:07Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:04.318Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "f87024987ee5c5c30e331716eff5bf5092d20e7411fb0a666016855b1a79f46c",
-      "amount": 3762.7409938099995,
+      "amountAtoms": 376274099381,
+      "feeAtoms": 9210,
       "payee": "DsYaqZptGU7xisF1YZzveCYL9w5RKhyk7Fq",
       "blockHeight": 850464,
       "timestamp": "2024-03-09T17:24:42Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:06.340Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "6fa5cab238f83ed7ac4e54d2e3b257f73ed6b58ce30df81b31e4c75e28c43af6",
-      "amount": 4552.74684691,
+      "amountAtoms": 455274684691,
+      "feeAtoms": 12910,
       "payee": "Dsj5uaUfNUaES6kDyCr1sWFRiDfQEezAT4r",
       "blockHeight": 857664,
       "timestamp": "2024-04-03T23:23:45Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:06.340Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "e9f1dac20a5448748ad802f15c5980230dcb0b7bccec94c44fcdc378e48cd5ad",
-      "amount": 4109.129437310001,
+      "amountAtoms": 410912943731,
+      "feeAtoms": 11060,
       "payee": "DsTG4ksrQ4nEw9qECxaqFpk8ptrc67rh8xb",
       "blockHeight": 870912,
       "timestamp": "2024-05-19T20:13:06Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:08.336Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "ec75a48e1c7bfe2892e29c5725f10ce473fcd9a41c9989a2d2e2402e1b1a92ee",
-      "amount": 5841.30124083,
+      "amountAtoms": 584130124083,
+      "feeAtoms": 13650,
       "payee": "DsWViRPXjMPVfdfsx6oSE27DXdGE17Ka82w",
       "blockHeight": 883872,
       "timestamp": "2024-07-03T20:12:04Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:09.435Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "8634a20b06d3d1f0b171a992c541b3a844b6b73e20fd0c2f3cef3aab5c4fe8d5",
-      "amount": 4017.298103230001,
+      "amountAtoms": 401729810323,
+      "feeAtoms": 7730,
       "payee": "Dsp4PxSFC64YbbKtZujoV2MDpyLpcNCbQNK",
       "blockHeight": 891648,
       "timestamp": "2024-07-30T17:40:30Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:10.472Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "d00acf2dbc9b9bce3d3df3db74ad52808568824079d8b91147aef124d132d0df",
-      "amount": 4374.525433299999,
+      "amountAtoms": 437452543330,
+      "feeAtoms": 8470,
       "payee": "DsRVYSuv2KHutAWE39NRZdVr28TfYeyTYVb",
       "blockHeight": 903456,
       "timestamp": "2024-09-09T21:35:59Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:11.548Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "80b55fa6ed15275cea78b8d289901652dc280703ca7cd6c48e902c84b8836526",
-      "amount": 5222.62499149,
+      "amountAtoms": 522262499149,
+      "feeAtoms": 7730,
       "payee": "DsjGALd8mQ5xpdw2VekhWUh5rPAzu9nwcn7",
       "blockHeight": 913248,
       "timestamp": "2024-10-14T01:07:03Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:12.540Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "fcc62361588e0609bbed14db7e8de8222fe696598b19d21e07393adae023ae67",
-      "amount": 6457.65481837,
+      "amountAtoms": 645765481837,
+      "feeAtoms": 7730,
       "payee": "DsReSymfhq93R9nbPrUsUq4F3VCwV1RncpY",
       "blockHeight": 921600,
       "timestamp": "2024-11-12T00:44:21Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:13.542Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "9c8e1af91d1d82d838f3fbaa9713428aa689bba74794909fe01e52af2dca96cc",
-      "amount": 6803.13393826,
+      "amountAtoms": 680313393826,
+      "feeAtoms": 14020,
       "payee": "Dsg9WAT6Sk47vLsathB95Qgee4MJvWMJXBM",
       "blockHeight": 931680,
       "timestamp": "2024-12-16T21:25:33Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:15.605Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "1d11754f4bd174bb62ddfbf2366c46a0298a2a90fa8cc390a17dd8ef274ccfe4",
-      "amount": 5040.50052091,
+      "amountAtoms": 504050052091,
+      "feeAtoms": 11060,
       "payee": "DsVwD6iVJQHq8e7SfWXDugLAtW8qxTGradF",
       "blockHeight": 943200,
       "timestamp": "2025-01-25T16:50:47Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:15.605Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "7cc8215870835c04063347db1b1f9bb90bb424ff8ce2b6cd32b22fff8ba8e340",
-      "amount": 6643.4321371999995,
+      "amountAtoms": 664343213720,
+      "feeAtoms": 12540,
       "payee": "DsWSJ3bTgaDZkskHRvEave2W5Bs9SZNxeAT",
       "blockHeight": 960192,
       "timestamp": "2025-03-25T11:30:01Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:17.590Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "d212d85b2737c6576aabb5c80e00c8e79dc3b67e015c665aff02fedd5437f619",
-      "amount": 5600.24491203,
+      "amountAtoms": 560024491203,
+      "feeAtoms": 8470,
       "payee": "DsR13HPCZVHgshauqNBLVvzJH1LGJniv5ER",
       "blockHeight": 972288,
       "timestamp": "2025-05-06T20:03:44Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:19.594Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "52d36455668854b743c7795d0081533e12636aab343e0b7cd859a7032a82bb20",
-      "amount": 6409.495925590002,
+      "amountAtoms": 640949592559,
+      "feeAtoms": 8470,
       "payee": "DsfqnicsmiToXFFFYDWs1xH8jJaEC6Yk6FD",
       "blockHeight": 982656,
       "timestamp": "2025-06-11T17:55:26Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:20.593Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "7b8fdf9489f352dceda5706c3a6145eed11a9fed1923113960c651d8dac004bf",
-      "amount": 5815.775235229999,
+      "amountAtoms": 581577523523,
+      "feeAtoms": 8470,
       "payee": "DsVZSsdYEtT2YDh5T5CoQcDmHa5Hoc1tDEt",
       "blockHeight": 991872,
       "timestamp": "2025-07-13T12:41:19Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:21.649Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "74d192e838ea3f183c364cdf3eec7e960204bebdb6ab02dc8487dcea11377e02",
-      "amount": 5572.7036497300005,
+      "amountAtoms": 557270364973,
+      "feeAtoms": 8840,
       "payee": "DsUtGtYa8mrKtZL2RBQX4qSStxDUa1rXQ69",
       "blockHeight": 1003680,
       "timestamp": "2025-08-23T17:21:20Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:22.735Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "36e4e2c03d6f3b8398bf78bdef8aeeedb210fb2056d46321a5315714e2b380fd",
-      "amount": 5159.243305949999,
+      "amountAtoms": 515924330595,
+      "feeAtoms": 7360,
       "payee": "Dsm3iuziG4G5cNetw7EDzXn4zvqXCUbVBYX",
       "blockHeight": 1012032,
       "timestamp": "2025-09-21T16:14:14Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:23.740Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "381af81ac0bcfe5b0b7febe2dbc0086ba33b2e29d7a932fa8b9d1cd57648510f",
-      "amount": 5106.6984124,
+      "amountAtoms": 510669841240,
+      "feeAtoms": 8470,
       "payee": "DsWpxkVQwCPV3ETo1a75KcQtqdAd3Jo594K",
       "blockHeight": 1025856,
       "timestamp": "2025-11-08T05:17:13Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:24.809Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "0d5e1a2c5ea3ff30f8ea3f65ff32a7655f8903bf98a21e75bb73af280a39844a",
-      "amount": 5298.55836173,
+      "amountAtoms": 529855836173,
+      "feeAtoms": 6620,
       "payee": "DsoXf5eziz53YcFd2hY9i2uU1wv5Yd4rkZj",
       "blockHeight": 1033632,
       "timestamp": "2025-12-05T05:11:32Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:25.814Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "ec1407f612201877a0cf4719cc36917e3a1b200e958812d6e9144068c256807c",
-      "amount": 2804.3795181800006,
+      "amountAtoms": 280437951818,
+      "feeAtoms": 12170,
       "payee": "DsmMuwBb5MBP22N7iuFw9s3x6FyDXt8ikcE",
       "blockHeight": 1048608,
       "timestamp": "2026-01-26T03:31:28Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:27.808Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "d77c7ba958bd8cd5eda58019a1b2a9dd36a886964e1ae60c44f23e4a6a198d43",
-      "amount": 12723.570751010002,
+      "amountAtoms": 1272357075101,
+      "feeAtoms": 9950,
       "payee": "DsosCJpyRrmnNUndRQRk9vaoeHcbTMkN1va",
       "blockHeight": 1061280,
       "timestamp": "2026-03-11T00:26:36Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:28.811Z"
+      "voteResult": "approved"
     },
     {
       "txHash": "9f65d78531acd1603fb82b985409bc63977bce03106564c0361d25f76d7da864",
-      "amount": 6063.087513089999,
+      "amountAtoms": 606308751309,
+      "feeAtoms": 14020,
       "payee": "DsgYFgHVxYmCC9pVo5PRU8YrTsw7r1C226e",
       "blockHeight": 1080576,
       "timestamp": "2026-05-17T04:02:09Z",
-      "voteResult": "approved",
-      "detectedAt": "2026-05-25T20:44:30.896Z"
+      "voteResult": "approved"
+    },
+    {
+      "txHash": "0c4820bca4a5084e4ab3f22fd9a8a3323664851633fa3914848b7c0b65758712",
+      "amountAtoms": 692696980252,
+      "feeAtoms": 12540,
+      "payee": "DskwGjyiirNwx91iRALDudkGBEkq2VMayRg",
+      "blockHeight": 1106208,
+      "timestamp": "2026-08-14T09:03:07Z",
+      "voteResult": "approved"
     }
   ],
-  "totalSpent": 205156.26812258997,
-  "lastSyncHeight": 1082881
+  "version": 2
 }

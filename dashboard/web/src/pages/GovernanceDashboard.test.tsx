@@ -8,13 +8,14 @@ vi.mock('../services/api', () => ({ authFetch: vi.fn() }));
 vi.mock('../hooks/useVisiblePoll', () => ({ useVisiblePoll: () => {} }));
 vi.mock('../services/treasuryStorage', () => ({
   getScanStatus: () => null, getLastSyncHeight: () => 600000,
-  syncWithSnapshot: async () => ({ success: true, synced: 0 }),
-  saveTSpends: vi.fn(), saveScanStatus: vi.fn(), updateLastSyncHeight: vi.fn(),
+  syncWithSnapshot: async () => ({ success: true, synced: false }),
+  applyScanResults: vi.fn(), saveScanStatus: vi.fn(), TREASURY_ACTIVATION_HEIGHT: 552448,
 }));
 vi.mock('../components/governance/TreasuryValueCard', () => ({ TreasuryValueCard: () => null }));
 vi.mock('../components/governance/TreasuryPaymentsCard', () => ({ TreasuryPaymentsCard: () => null }));
 vi.mock('../components/governance/TreasuryStats', () => ({ TreasuryStats: () => null }));
 vi.mock('../components/governance/ActiveTreasuryVotes', () => ({ ActiveTreasuryVotes: () => null }));
+vi.mock('../components/governance/TreasurySpendLimitCard', () => ({ TreasurySpendLimitCard: () => null }));
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 beforeEach(() => { vi.mocked(authFetch).mockReset(); });
@@ -30,7 +31,7 @@ describe('treasury scan admission errors', () => {
       return new Response(JSON.stringify(String(url).endsWith('/scan-progress') ? { isScanning: false, tspendFound: 0 } : []));
     });
     render(<GovernanceDashboard />);
-    fireEvent.click(screen.getByRole('button', { name: 'Scan Historical TSpends' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Scan New Blocks' }));
     await waitFor(() => expect(alert).toHaveBeenCalledWith(reason));
     expect(authFetch).toHaveBeenCalledWith('/api/treasury/scan-history', expect.objectContaining({ body: '{"startHeight":600001}' }));
     expect(screen.queryByText('Scanning...')).toBeNull();
