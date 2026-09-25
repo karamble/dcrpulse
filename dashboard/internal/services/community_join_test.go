@@ -178,6 +178,51 @@ func TestCommunityJoinLegacyAndPersistenceFailure(t *testing.T) {
 	}
 }
 
+// A saved join that no longer parses or validates must not block joining: it
+// reads as no join, a new join replaces it, and nothing is accepted for it.
+func TestCommunityJoinBrokenSaveStartsFresh(t *testing.T) {
+	broken := map[string]string{
+		"not json": "{",
+		"invalid":  `{"join":{"id":"abc","status":"waiting"},"url":"https://custom.example","localUID":"` + testLocalUID + `"}`,
+	}
+	for name, content := range broken {
+		m, accepted := joinFixture(t)
+		ctx := t.Context()
+		if err := os.WriteFile(m.path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if j, err := m.status(ctx); j != nil || err != nil {
+			t.Fatalf("%s: status = %+v, %v; want no join", name, j, err)
+		}
+		if err := m.acceptMatching(ctx, "abc"); err == nil || len(*accepted) != 0 {
+			t.Fatalf("%s: accepted an invite for a broken saved join", name)
+		}
+		j, err := m.begin(ctx, false)
+		if err != nil || j.Status != "waiting" {
+			t.Fatalf("%s: begin = %+v, %v", name, j, err)
+		}
+		if saved, err := m.load(); err != nil || saved == nil || saved.ID != j.ID {
+			t.Fatalf("%s: saved join after begin = %+v, %v; want the new join", name, saved, err)
+		}
+	}
+
+	// A file that cannot be read at all is not treated as absent: no new
+	// invite is requested from the bot.
+	m, _ := joinFixture(t)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(m.path), "file"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	m.path = filepath.Join(filepath.Dir(m.path), "file", "join.json")
+	invites := 0
+	m.invite = func(context.Context, string, string) (DecredPulseInvite, error) {
+		invites++
+		return DecredPulseInvite{}, nil
+	}
+	if _, err := m.begin(t.Context(), true); err == nil || invites != 0 {
+		t.Fatalf("unreadable save: begin err = %v, invites = %d; want an error and no invite", err, invites)
+	}
+}
+
 type communityRoundTrip func(*http.Request) (*http.Response, error)
 
 func (f communityRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

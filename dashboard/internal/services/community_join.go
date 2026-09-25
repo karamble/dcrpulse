@@ -102,18 +102,25 @@ func (m *communityJoinManager) load() (*CommunityJoin, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A saved join that no longer parses or validates is no saved join: the
+	// next join replaces it, and nothing is accepted on its behalf.
 	var disk communityJoinDisk
 	if err := json.Unmarshal(raw, &disk); err != nil {
-		return nil, err
+		discardedJoinOnce.Do(func() { brelLog.Warnf("Ignoring unreadable saved community join %s: %v", m.path, err) })
+		return nil, nil
 	}
 	j := disk.Join
 	j.URL, j.LocalUID = disk.URL, disk.LocalUID
 	if j.ID == "" || !validCommunityID(j.LocalUID) || j.URL == "" ||
 		(j.Status != "manual" && (!validCommunityID(j.BotUID) || !validCommunityID(j.GCID))) {
-		return nil, fmt.Errorf("invalid saved community join")
+		discardedJoinOnce.Do(func() { brelLog.Warnf("Ignoring invalid saved community join %s", m.path) })
+		return nil, nil
 	}
 	return &j, nil
 }
+
+var discardedJoinOnce sync.Once
+
 func (m *communityJoinManager) save(j *CommunityJoin) error {
 	raw, err := json.Marshal(communityJoinDisk{Join: *j, URL: j.URL, LocalUID: j.LocalUID})
 	if err != nil {
