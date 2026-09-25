@@ -35,7 +35,21 @@ const QUOTE_RE = /^\s{0,3}>\s?(.*)$/;
 const UL_RE = /^(\s*)[-*+]\s+(.*)$/;
 const OL_RE = /^(\s*)\d{1,9}[.)]\s+(.*)$/;
 const DELIM_CELL_RE = /^:?-+:?$/;
-const TRAILING_HASHES_RE = /\s+#+\s*$/;
+
+// stripClosingHashes drops an ATX heading's closing "#" run and the whitespace
+// around it, which must be preceded by whitespace ("## foo#" keeps its "#").
+// A backward scan, where the equivalent regex is quadratic on long whitespace.
+const stripClosingHashes = (s: string): string => {
+  const ws = (c: string) => /\s/.test(c);
+  let end = s.length;
+  while (end > 0 && ws(s[end - 1])) end--;
+  let h = end;
+  while (h > 0 && s[h - 1] === '#') h--;
+  if (h === end) return s;
+  let w = h;
+  while (w > 0 && ws(s[w - 1])) w--;
+  return w < h ? s.slice(0, w) : s;
+};
 
 // Nested quotes and lists recurse; cap the depth so a pathological run of ">"
 // cannot exhaust the stack.
@@ -178,7 +192,7 @@ export const parseBlocks = (src: string, depth = 0): Block[] => {
       blocks.push({
         kind: 'heading',
         level: atx[1].length,
-        text: atx[2].replace(TRAILING_HASHES_RE, ''),
+        text: stripClosingHashes(atx[2]),
       });
       i++;
       continue;

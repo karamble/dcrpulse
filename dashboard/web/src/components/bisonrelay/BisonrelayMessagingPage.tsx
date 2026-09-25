@@ -3035,7 +3035,9 @@ const MessageBody = ({
 }) => {
   const openViewer = useContext(ImageViewerCtx);
   const trimmed = body.trim();
-  const sent = trimmed.match(SENT_FILE_RE);
+  // A real notice is one short line; the length check keeps the backtracking
+  // match off long peer text.
+  const sent = trimmed.length <= 1024 ? trimmed.match(SENT_FILE_RE) : null;
   if (sent) {
     return <SentFileChip filename={sent[1]} />;
   }

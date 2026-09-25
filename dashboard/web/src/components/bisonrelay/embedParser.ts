@@ -38,23 +38,37 @@ export interface DownloadSegment {
 
 export type MessageSegment = TextSegment | EmbedSegment | DownloadSegment;
 
-const TAG_RE = /--(embed|download)\[(.*?)\]--/g;
+// A tag is --embed[...]-- or --download[...]-- on one line, closed by the
+// first "]--" after it. The scan below matches what /--(embed|download)\[(.*?)\]--/
+// does, but finds each close and line end once instead of rescanning the rest
+// of the line from every opening, which is quadratic on peer text.
+const TAG_START_RE = /--(embed|download)\[/g;
+const LINE_END_RE = /[\n\r\u2028\u2029]/g;
 
 export function parseEmbeds(body: string): MessageSegment[] {
   if (!body) return [];
   const segments: MessageSegment[] = [];
   let lastIndex = 0;
-  TAG_RE.lastIndex = 0;
-  for (let m = TAG_RE.exec(body); m !== null; m = TAG_RE.exec(body)) {
+  let close = -2;
+  let lineEnd = -2;
+  TAG_START_RE.lastIndex = 0;
+  for (let m = TAG_START_RE.exec(body); m !== null; m = TAG_START_RE.exec(body)) {
+    const inner = m.index + m[0].length;
+    if (close !== -1 && close < inner) close = body.indexOf(']--', inner);
+    if (close === -1) break;
+    if (lineEnd !== -1 && lineEnd < inner) {
+      LINE_END_RE.lastIndex = inner;
+      lineEnd = LINE_END_RE.exec(body)?.index ?? -1;
+    }
+    if (lineEnd !== -1 && lineEnd < close) continue;
     if (m.index > lastIndex) {
       segments.push({ kind: 'text', text: body.substring(lastIndex, m.index) });
     }
-    if (m[1] === 'embed') {
-      segments.push(parseEmbedArgs(m[0], m[2]));
-    } else {
-      segments.push(parseDownloadArgs(m[0], m[2]));
-    }
-    lastIndex = m.index + m[0].length;
+    const raw = body.substring(m.index, close + 3);
+    const args = body.substring(inner, close);
+    segments.push(m[1] === 'embed' ? parseEmbedArgs(raw, args) : parseDownloadArgs(raw, args));
+    lastIndex = close + 3;
+    TAG_START_RE.lastIndex = lastIndex;
   }
   if (lastIndex < body.length) {
     segments.push({ kind: 'text', text: body.substring(lastIndex) });

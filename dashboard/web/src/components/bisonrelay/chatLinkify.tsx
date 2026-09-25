@@ -5,7 +5,15 @@
 import { ReactNode } from 'react';
 
 // Trailing punctuation that is unlikely to be part of a bare url.
-const TRAILING_PUNCT = /[).,!?;:'"\]}]+$/;
+const TRAILING_PUNCT = new Set([...').,!?;:\'"]}']);
+
+// trailingPunct returns the run of TRAILING_PUNCT at the end of url, walking
+// back from the end so a long run costs its length once.
+const trailingPunct = (url: string): string => {
+  let i = url.length;
+  while (i > 0 && TRAILING_PUNCT.has(url[i - 1])) i--;
+  return url.slice(i);
+};
 
 const ANCHOR_CLASS =
   'text-primary underline underline-offset-2 hover:no-underline break-words';
@@ -19,11 +27,12 @@ const anchor = (key: string, href: string, label: ReactNode): ReactNode => (
 // One regex matching, in priority order at each position: inline code, a
 // markdown https link [label](https://...), a bare https url, bold (**),
 // strikethrough (~~), italic (*). Only https links are turned into anchors, so
-// http/other schemes stay literal. Every pattern is linear (no nested
-// quantifiers), so there is no catastrophic-backtracking risk; the message
-// length bounds the work.
+// http/other schemes stay literal. The regex is retried at every position, so
+// a pattern that can scan far without matching would be quadratic on peer
+// text: the link label is therefore bounded, and every other alternative
+// either matches or fails within its first characters.
 const TOKEN_RE =
-  /(`[^`\n]+`)|(\[[^\]\n]+\]\(https:\/\/[^\s)]+\))|(https:\/\/[^\s]+)|(\*\*[\s\S]+?\*\*)|(~~[\s\S]+?~~)|(\*[^*\n]+?\*)/g;
+  /(`[^`\n]+`)|(\[[^\]\n]{1,256}\]\(https:\/\/[^\s)]+\))|(https:\/\/[^\s]+)|(\*\*[\s\S]+?\*\*)|(~~[\s\S]+?~~)|(\*[^*\n]+?\*)/g;
 
 // renderChatInline turns a chat text segment into React nodes, rendering inline
 // markdown (bold/italic/inline-code/strikethrough) and https links. Everything
@@ -52,7 +61,7 @@ const renderChatInline = (text: string, kp = 'i'): ReactNode[] => {
       const url = mdLink.slice(mdLink.indexOf('](', close) + 2, -1);
       nodes.push(anchor(key, url, label));
     } else if (bareUrl) {
-      const trailing = bareUrl.match(TRAILING_PUNCT)?.[0] ?? '';
+      const trailing = trailingPunct(bareUrl);
       const url = trailing ? bareUrl.slice(0, -trailing.length) : bareUrl;
       nodes.push(anchor(key, url, url));
       if (trailing) nodes.push(trailing);
