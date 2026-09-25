@@ -13,6 +13,7 @@ import {
   getTorStatus,
   getTorControl,
   torNewIdentity,
+  torDaemonLabels,
 } from '../../services/tor/client';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { formatBytes } from '../../utils/bytes';
@@ -24,15 +25,6 @@ const Stat = ({ label, value }: { label: string; value: string }) => (
     <div className="font-mono mt-1">{value}</div>
   </div>
 );
-
-const daemonLabels: Record<string, string> = {
-  dcrd: 'Node (dcrd)',
-  dcrwallet: 'Wallet (dcrwallet)',
-  dcrlnd: 'Lightning (dcrlnd)',
-  dcrdex: 'Dex (bisonw)',
-  brclientd: 'Bison Relay (brclientd)',
-  dashboard: 'Dashboard',
-};
 
 export const TorSection = () => {
   const [settings, setSettings] = useState<TorSettings | null>(null);
@@ -284,7 +276,7 @@ export const TorSection = () => {
               key={d.name}
               className="flex items-center justify-between gap-4 p-3 rounded-lg bg-muted/10 border border-border/50"
             >
-              <span className="font-medium">{daemonLabels[d.name] || d.name}</span>
+              <span className="font-medium">{torDaemonLabels[d.name]?.long || d.name}</span>
               {daemonBadge(d)}
             </div>
           ))}

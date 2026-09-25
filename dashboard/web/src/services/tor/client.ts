@@ -39,6 +39,16 @@ export interface TorControl {
   error?: string;
 }
 
+// Display names for the services whose Tor routing the status reports.
+export const torDaemonLabels: Record<string, { short: string; long: string }> = {
+  dcrd: { short: 'Node', long: 'Node (dcrd)' },
+  dcrwallet: { short: 'Wallet', long: 'Wallet (dcrwallet)' },
+  dcrlnd: { short: 'Lightning', long: 'Lightning (dcrlnd)' },
+  dcrdex: { short: 'DEX', long: 'Dex (bisonw)' },
+  brclientd: { short: 'Bison Relay', long: 'Bison Relay (brclientd)' },
+  dashboard: { short: 'Dashboard', long: 'Dashboard' },
+};
+
 export const getTorSettings = async (): Promise<TorSettings> => {
   const { data } = await api.get<TorSettings>('/tor');
   return data;

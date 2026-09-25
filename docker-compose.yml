@@ -257,6 +257,8 @@ services:
     depends_on:
       dcrd:
         condition: service_started
+      dcrlnd:
+        condition: service_started
     networks:
       - decred-network
 

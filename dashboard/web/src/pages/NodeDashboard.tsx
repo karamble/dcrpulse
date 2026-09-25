@@ -15,6 +15,7 @@ import { StakingStats } from '../components/StakingStats';
 import { MempoolActivity } from '../components/MempoolActivity';
 import { RecentAlertsCard } from '../components/alerts/RecentAlertsCard';
 import { TicketPoolCard } from '../components/TicketPoolCard';
+import { TorStrip, TorStripState, nodeWaitMessage } from '../components/tor/TorStrip';
 import { getDashboardData, DashboardData } from '../services/api';
 import { useVisiblePoll } from '../hooks/useVisiblePoll';
 
@@ -56,6 +57,7 @@ export const NodeDashboard = () => {
   // notification (smoother than the 30s dashboard poll). Falls back to the
   // polled dashboard data when no snapshot has arrived.
   const [nodeSync, setNodeSync] = useState<NodeSync | null>(null);
+  const [torState, setTorState] = useState<TorStripState | null>(null);
 
   const fetchData = async () => {
     try {
@@ -185,11 +187,13 @@ export const NodeDashboard = () => {
           status={nodeStage}
           syncProgress={node?.syncProgress ?? 0}
           version={stale('nodeStatus') ? undefined : data?.nodeStatus.version}
-          syncMessage={node?.syncMessage || 'Starting up'}
+          syncMessage={nodeWaitMessage(nodeStage, node?.syncMessage || 'Starting up', torState)}
           startupNote={nodeSync?.startupNote ?? (error && !data ? error : undefined)}
           startupLog={nodeSync?.startupLog}
         />
       )}
+
+      <TorStrip onState={setTorState} />
 
       {/* Nothing behind these cards while dcrd is not serving, so explain the
           wait instead of rendering a grid of unavailable readings. */}

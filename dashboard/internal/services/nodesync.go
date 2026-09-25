@@ -96,6 +96,15 @@ func syncFromChainInfo(ci *chainjson.GetBlockChainInfoResult) NodeSyncSnapshot {
 		return snap
 	}
 
+	// The whole chain is here but dcrd has no peer to confirm the tip yet, as
+	// after a restart while its peers are still unreachable.
+	if ci.Blocks >= ci.SyncHeight {
+		snap.Status = "connecting"
+		snap.SyncPhase = "starting"
+		snap.SyncMessage = "Waiting for peers"
+		return snap
+	}
+
 	snap.Status = "syncing"
 	if ci.Headers < ci.SyncHeight {
 		snap.SyncPhase = "headers"
