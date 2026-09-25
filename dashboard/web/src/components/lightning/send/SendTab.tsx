@@ -18,7 +18,9 @@ type Filter = 'all' | 'confirmed' | 'pending' | 'failed';
 
 export const SendTab = () => {
   const [payReq, setPayReq] = useState('');
-  const [decoded, setDecoded] = useState<LightningDecodedPayReq | null>(null);
+  // decoded is the invoice shown for review together with the exact string it
+  // was decoded from; only that invoice can be paid.
+  const [decoded, setDecoded] = useState<{ invoice: string; req: LightningDecodedPayReq } | null>(null);
   const [decodeError, setDecodeError] = useState<string | null>(null);
   const [decoding, setDecoding] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -38,11 +40,11 @@ export const SendTab = () => {
   // ---- Decode-on-change (Decrediton: useEffect on payRequest change) -------
   useEffect(() => {
     const trimmed = payReq.trim();
+    setDecoded(null);
+    setExpired(false);
     if (!trimmed) {
-      setDecoded(null);
       setDecodeError(null);
       setDecoding(false);
-      setExpired(false);
       return;
     }
     let cancelled = false;
@@ -51,7 +53,7 @@ export const SendTab = () => {
       decodeLnPayReq(trimmed)
         .then((r) => {
           if (cancelled) return;
-          setDecoded(r);
+          setDecoded({ invoice: trimmed, req: r });
           setDecodeError(null);
         })
         .catch((err: any) => {
@@ -87,28 +89,31 @@ export const SendTab = () => {
   // ---- Send handler --------------------------------------------------------
   const canSend = useMemo(() => {
     if (!decoded || expired || sending) return false;
-    if (decoded.numAtoms === 0 && sendValue <= 0) return false;
+    // decoded is cleared on every edit; this keeps the invariant explicit.
+    if (decoded.invoice !== payReq.trim()) return false;
+    if (decoded.req.numAtoms === 0 && sendValue <= 0) return false;
     return true;
-  }, [decoded, expired, sending, sendValue]);
+  }, [decoded, expired, sending, sendValue, payReq]);
 
   const onSend = () => {
     if (!decoded || !canSend) return;
+    const { invoice, req } = decoded;
     setSendError(null);
     setSending(true);
     setCurrentSnap({
-      paymentHash: decoded.paymentHash,
-      destination: decoded.destination,
-      valueAtoms: decoded.numAtoms > 0 ? decoded.numAtoms : sendValue,
+      paymentHash: req.paymentHash,
+      destination: req.destination,
+      valueAtoms: req.numAtoms > 0 ? req.numAtoms : sendValue,
       feeAtoms: 0,
       creationDate: Math.floor(Date.now() / 1000),
       status: 'pending',
-      paymentRequest: payReq.trim(),
+      paymentRequest: invoice,
     });
     cleanupRef.current = streamLnPayment(
       {
-        payReq: payReq.trim(),
-        amt: decoded.numAtoms === 0 ? sendValue : undefined,
-        feeLimitAtoms: lnFeeLimitAtoms(decoded.numAtoms > 0 ? decoded.numAtoms : sendValue),
+        payReq: invoice,
+        amt: req.numAtoms === 0 ? sendValue : undefined,
+        feeLimitAtoms: lnFeeLimitAtoms(req.numAtoms > 0 ? req.numAtoms : sendValue),
       },
       (snap) => {
         setCurrentSnap(snap);
@@ -238,7 +243,7 @@ export const SendTab = () => {
 
         {decoded && (
           <DecodedPayRequest
-            decoded={decoded}
+            decoded={decoded.req}
             sendValue={sendValue}
             onSendValueChange={setSendValue}
             onExpiredChange={setExpired}
