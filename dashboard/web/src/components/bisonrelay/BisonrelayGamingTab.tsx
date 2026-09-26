@@ -1,4 +1,4 @@
-import { GamingPayoutApprovals } from './GamingPayoutApprovals';
+import { GamingApprovalsPanel } from './GamingApprovalsPanel';
 // Copyright (c) 2015-2026 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
@@ -392,25 +392,17 @@ export const BisonrelayGamingTab = () => {
           )}
 
           {section === 'approvals' && (
-            <>
-            <GamingPayoutApprovals />
-            <GamingSpendApprovals
+            <GamingApprovalsPanel
               policies={settings.policies}
               bridgeEnabled={settings.enabled}
               gameCount={games.length}
             />
-            </>
           )}
 
           {section === 'recovery' && <GamingRecovery />}
 
           {section === 'history' && (
-            <GamingSpendApprovals
-              mode="history"
-              policies={settings.policies}
-              bridgeEnabled={settings.enabled}
-              gameCount={games.length}
-            />
+            <GamingSpendApprovals />
           )}
 
           {section === 'tables' && (
