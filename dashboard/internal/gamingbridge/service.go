@@ -200,6 +200,9 @@ func (s *Server) SendFrame(ctx context.Context, req *gamingpb.SendFrameRequest) 
 	if s.cfg.SendFrame == nil {
 		return nil, errNotHere
 	}
+	if !s.allowCall(s.frameLim, callerGame(ctx), sendFrameEvery, sendFrameBurst) {
+		return nil, status.Error(codes.ResourceExhausted, "sending frames too fast; wait and send again")
+	}
 	if err := s.cfg.SendFrame(ctx, callerGame(ctx), req.GetGcid(), req.GetFrame()); err != nil {
 		return nil, gameErr(callerGame(ctx), "SendFrame", codes.InvalidArgument, err)
 	}

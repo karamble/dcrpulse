@@ -144,14 +144,14 @@ type Server struct {
 	reg   *registry
 	pend  *pending
 
-	// The two money RPCs are paced per game. The numbers sit far above
-	// any honest caller - the deployed game polls a spend every three
-	// seconds and retries transport trouble at five - so only a flood
-	// ever meets them. Frames and streams are never paced: gameplay is
-	// the one thing a bridge must not slow down.
+	// The two money RPCs and frame sends are paced per game. The numbers
+	// sit far above any honest caller - the deployed game polls a spend
+	// every three seconds and retries transport trouble at five, and sends
+	// a frame per player action - so only a flood ever meets them.
 	limMu     sync.Mutex
 	reqLim    map[string]*rate.Limiter
 	statusLim map[string]*rate.Limiter
+	frameLim  map[string]*rate.Limiter
 
 	mu   sync.Mutex
 	grpc *grpc.Server
@@ -166,6 +166,8 @@ const (
 	requestSpendBurst = 8
 	spendStatusEvery  = 200 * time.Millisecond
 	spendStatusBurst  = 20
+	sendFrameEvery    = 250 * time.Millisecond
+	sendFrameBurst    = 120
 )
 
 // allowCall answers whether one game may make one more paced call.
@@ -191,6 +193,7 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg: cfg, allow: cfg.Allow, reg: newRegistry(), pend: newPending(),
 		reqLim: map[string]*rate.Limiter{}, statusLim: map[string]*rate.Limiter{},
+		frameLim: map[string]*rate.Limiter{},
 	}
 
 	return s, nil

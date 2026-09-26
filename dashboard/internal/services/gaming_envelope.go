@@ -140,8 +140,14 @@ func buildGamingFrame(game string, gameVersion int, sid string, payload []byte, 
 	if !expiry.IsZero() {
 		exp = expiry.Unix()
 	}
+	return canonicalGamingFrame(game, gameVersion, sid, mid, exp, payload), nil
+}
+
+// canonicalGamingFrame is the one-part v2 envelope exactly as the SDK's
+// wire.Encode writes it: fixed key order, no other keys, standard base64.
+func canonicalGamingFrame(game string, gameVersion int, sid, mid string, exp int64, payload []byte) string {
 	return fmt.Sprintf("--gaming[v=2,game=%s,gv=%d,sid=%s,mid=%s,seq=1/1,exp=%d]--%s",
-		game, gameVersion, sid, mid, exp, base64.StdEncoding.EncodeToString(payload)), nil
+		game, gameVersion, sid, mid, exp, base64.StdEncoding.EncodeToString(payload))
 }
 
 func gamingMessageID(game string, gameVersion int, sid string, payload []byte) string {

@@ -236,3 +236,24 @@ func gamingAcceptedGroups() map[string]struct{} {
 	}
 	return out
 }
+
+// gamingTableGroup reports whether gcid is the group of one of game's tables.
+func gamingTableGroup(game, gcid string) bool {
+	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err != nil {
+		return false
+	}
+	store, err := gamingFundsStore()
+	if err != nil {
+		return false
+	}
+	tables, err := store.Tables()
+	if err != nil {
+		return false
+	}
+	for _, t := range tables {
+		if t.Scope.Game == game && t.Group == gcid {
+			return true
+		}
+	}
+	return false
+}

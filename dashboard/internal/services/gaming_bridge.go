@@ -357,6 +357,14 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 	if _, err := parseGamingGCID(gcid); err != nil {
 		return err
 	}
+	if !gamingTableGroup(game, gcid) {
+		return gamingbridge.GameSafe(errors.New("not a group of one of this game's tables"))
+	}
+	// Only the canonical envelope goes out, so no readable text rides along
+	// in the header.
+	if strings.TrimSpace(frame) != canonicalGamingFrame(parsed.Game, parsed.GameVersion, parsed.SID, parsed.MID, parsed.Expiry, parsed.Payload) {
+		return gamingbridge.GameSafe(errors.New("frame is not in canonical form"))
+	}
 	fresh, err := claimOrReconcileGamingFrame(ctx, game, gcid, parsed, frame)
 	if err != nil {
 		return gamingbridge.GameSafe(err)
