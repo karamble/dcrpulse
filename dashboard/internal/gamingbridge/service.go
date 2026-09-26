@@ -394,6 +394,22 @@ func (s *Server) PrepareDeposit(ctx context.Context, req *gamingpb.PrepareDeposi
 	return out, nil
 }
 
+// BindRoster takes a seated table's signed roster, so only seated players
+// enter the bridge's financial roster. Paced like a spend request.
+func (s *Server) BindRoster(ctx context.Context, req *gamingpb.BindRosterRequest) (*gamingpb.BindRosterReply, error) {
+	if s.cfg.BindRoster == nil {
+		return nil, errNotHere
+	}
+	game := callerGame(ctx)
+	if !s.allowCall(s.reqLim, game, requestSpendEvery, requestSpendBurst) {
+		return nil, status.Error(codes.Unavailable, "handed over rosters too quickly; try again in a moment")
+	}
+	if err := s.cfg.BindRoster(ctx, game, req); err != nil {
+		return nil, gameErr(game, "BindRoster", codes.FailedPrecondition, err)
+	}
+	return &gamingpb.BindRosterReply{}, nil
+}
+
 func (s *Server) ProposePayout(ctx context.Context, req *gamingpb.ProposePayoutRequest) (*gamingpb.PayoutStatusReply, error) {
 	if s.cfg.ProposePayout == nil {
 		return nil, errNotHere

@@ -38,6 +38,9 @@ func testStore(t *testing.T) (*Store, Scope, Terms) {
 			t.Fatal(err)
 		}
 	}
+	if err = s.BindSeats(scope, "a1", []string{public(2), public(3)}); err != nil {
+		t.Fatal(err)
+	}
 	hash, err := s.RosterHash(scope, "a1")
 	if err != nil {
 		t.Fatal(err)

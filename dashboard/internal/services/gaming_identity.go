@@ -242,6 +242,7 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 		PrepareDeposit: PrepareGamingDeposit,
 		FinancialState: GamingFinancialState,
 		ProposePayout:  ProposeGamingPayout,
+		BindRoster:     BindGamingRoster,
 		PayoutStatus:   GamingPayoutStatus,
 		VerifiedSpend: func(ctx context.Context, game string, req *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error) {
 			spend, err := RequestGamingDepositSpend(ctx, game, req)

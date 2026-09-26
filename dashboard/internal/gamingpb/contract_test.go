@@ -23,7 +23,7 @@ import (
 //
 // If this fails and the change was meant: regenerate (`make proto`), check the
 // method set below still says what you want, and paste the new hash in.
-const contractSHA256 = "bbcaffb2986f43c48afaa94cbdfcbf6afd90867d5aebd7aa1dffa914e5c5641d"
+const contractSHA256 = "c117e6c3dae60c7548dd878075c8041306f6e2e71ef4f19e0155a4fd9ab9ad9d"
 
 func TestTheWireContractHasNotDrifted(t *testing.T) {
 	raw, err := os.ReadFile("gaming_bridge.proto")
@@ -51,7 +51,7 @@ func TestTheServiceOffersExactlyTheseCalls(t *testing.T) {
 		"Respond", "ReportState",
 		// descriptor-bound money requests and read-only status
 		"FinancialKey", "PrepareDeposit", "RequestSpend", "SpendStatus",
-		"ProposePayout", "PayoutStatus", "FinancialState",
+		"ProposePayout", "PayoutStatus", "FinancialState", "BindRoster",
 		// frames and chain
 		"SendFrame", "ChainTip", "BlockHash", "Outpoint",
 	}

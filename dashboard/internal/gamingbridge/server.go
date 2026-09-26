@@ -79,6 +79,7 @@ type Config struct {
 	// VerifiedSpend is the mandatory descriptor-backed payment path.
 	FinancialState func(context.Context, string, string) (*gamingpb.FinancialStateReply, error)
 	ProposePayout  func(context.Context, string, *gamingpb.ProposePayoutRequest) (*gamingpb.PayoutStatusReply, error)
+	BindRoster     func(context.Context, string, *gamingpb.BindRosterRequest) error
 	PayoutStatus   func(context.Context, string, string) (*gamingpb.PayoutStatusReply, error)
 	VerifiedSpend  func(context.Context, string, *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error)
 	FinancialKey   func(context.Context, string, string) (*gamingpb.FinancialKeyReply, error)

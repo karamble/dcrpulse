@@ -48,6 +48,7 @@ const (
 	BridgeService_ProposePayout_FullMethodName  = "/dcrpulse.gaming.v2.BridgeService/ProposePayout"
 	BridgeService_PayoutStatus_FullMethodName   = "/dcrpulse.gaming.v2.BridgeService/PayoutStatus"
 	BridgeService_FinancialState_FullMethodName = "/dcrpulse.gaming.v2.BridgeService/FinancialState"
+	BridgeService_BindRoster_FullMethodName     = "/dcrpulse.gaming.v2.BridgeService/BindRoster"
 	BridgeService_SpendStatus_FullMethodName    = "/dcrpulse.gaming.v2.BridgeService/SpendStatus"
 	BridgeService_SendFrame_FullMethodName      = "/dcrpulse.gaming.v2.BridgeService/SendFrame"
 	BridgeService_ChainTip_FullMethodName       = "/dcrpulse.gaming.v2.BridgeService/ChainTip"
@@ -89,6 +90,9 @@ type BridgeServiceClient interface {
 	ProposePayout(ctx context.Context, in *ProposePayoutRequest, opts ...grpc.CallOption) (*PayoutStatusReply, error)
 	PayoutStatus(ctx context.Context, in *PayoutStatusRequest, opts ...grpc.CallOption) (*PayoutStatusReply, error)
 	FinancialState(ctx context.Context, in *FinancialStateRequest, opts ...grpc.CallOption) (*FinancialStateReply, error)
+	// BindRoster hands the bridge a seated table's signed joins and commits,
+	// once, so only seated players are admitted to its financial roster.
+	BindRoster(ctx context.Context, in *BindRosterRequest, opts ...grpc.CallOption) (*BindRosterReply, error)
 	// SpendStatus reports what became of one of THIS game's requests.
 	//
 	// Polling is the answer of record, not the SpendSettled push. Not being able
@@ -223,6 +227,16 @@ func (c *bridgeServiceClient) FinancialState(ctx context.Context, in *FinancialS
 	return out, nil
 }
 
+func (c *bridgeServiceClient) BindRoster(ctx context.Context, in *BindRosterRequest, opts ...grpc.CallOption) (*BindRosterReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BindRosterReply)
+	err := c.cc.Invoke(ctx, BridgeService_BindRoster_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *bridgeServiceClient) SpendStatus(ctx context.Context, in *SpendStatusRequest, opts ...grpc.CallOption) (*Spend, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Spend)
@@ -307,6 +321,9 @@ type BridgeServiceServer interface {
 	ProposePayout(context.Context, *ProposePayoutRequest) (*PayoutStatusReply, error)
 	PayoutStatus(context.Context, *PayoutStatusRequest) (*PayoutStatusReply, error)
 	FinancialState(context.Context, *FinancialStateRequest) (*FinancialStateReply, error)
+	// BindRoster hands the bridge a seated table's signed joins and commits,
+	// once, so only seated players are admitted to its financial roster.
+	BindRoster(context.Context, *BindRosterRequest) (*BindRosterReply, error)
 	// SpendStatus reports what became of one of THIS game's requests.
 	//
 	// Polling is the answer of record, not the SpendSettled push. Not being able
@@ -361,6 +378,9 @@ func (UnimplementedBridgeServiceServer) PayoutStatus(context.Context, *PayoutSta
 }
 func (UnimplementedBridgeServiceServer) FinancialState(context.Context, *FinancialStateRequest) (*FinancialStateReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method FinancialState not implemented")
+}
+func (UnimplementedBridgeServiceServer) BindRoster(context.Context, *BindRosterRequest) (*BindRosterReply, error) {
+	return nil, status.Error(codes.Unimplemented, "method BindRoster not implemented")
 }
 func (UnimplementedBridgeServiceServer) SpendStatus(context.Context, *SpendStatusRequest) (*Spend, error) {
 	return nil, status.Error(codes.Unimplemented, "method SpendStatus not implemented")
@@ -571,6 +591,24 @@ func _BridgeService_FinancialState_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BridgeService_BindRoster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BindRosterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BridgeServiceServer).BindRoster(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BridgeService_BindRoster_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BridgeServiceServer).BindRoster(ctx, req.(*BindRosterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _BridgeService_SpendStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SpendStatusRequest)
 	if err := dec(in); err != nil {
@@ -703,6 +741,10 @@ var BridgeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FinancialState",
 			Handler:    _BridgeService_FinancialState_Handler,
+		},
+		{
+			MethodName: "BindRoster",
+			Handler:    _BridgeService_BindRoster_Handler,
 		},
 		{
 			MethodName: "SpendStatus",

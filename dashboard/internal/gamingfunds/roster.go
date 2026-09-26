@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/karamble/dcrgaming-sdk/pkg/finance"
 	"sort"
+	"strings"
 )
 
 // Participant is learned from an authenticated BR sender, not a game RPC.
@@ -64,6 +65,24 @@ func (s *Store) RecordParticipant(scope Scope, table, group, authenticatedUID st
 			return fmt.Errorf("participant financial authority changed")
 		}
 		return nil
+	}
+	seated, bound := d.Seated[k]
+	if !bound && len(peers) == 0 {
+		// Nobody is known to be seated yet: keep the announcement until the
+		// game hands over the signed roster.
+		for _, old := range d.Candidates[k] {
+			if old.UID == authenticatedUID {
+				if old != p {
+					return fmt.Errorf("participant financial authority changed")
+				}
+				return nil
+			}
+		}
+		d.Candidates[k] = append(d.Candidates[k], p)
+		return s.save(d)
+	}
+	if bound && !containsKey(seated, p.Key) {
+		return fmt.Errorf("not a seated player")
 	}
 	if len(peers) >= int(accepted.Seats) {
 		return fmt.Errorf("financial roster already full")
@@ -192,4 +211,78 @@ func (s *Store) CommitRoster(scope Scope, table, authenticatedUID, hash string) 
 	commits[authenticatedUID] = hash
 	d.RosterCommits[k] = commits
 	return true, s.save(d)
+}
+
+// BindSeats records a table's seated financial keys, verified from the game's
+// signed roster, and admits the announcements already waiting for them. It is
+// written once; the same set again is a no-op. Of two announcements of one
+// key, the earlier is kept.
+func (s *Store) BindSeats(scope Scope, table string, keys []string) error {
+	k, err := scopeKey(scope, table)
+	if err != nil {
+		return err
+	}
+	norm := make([]string, 0, len(keys))
+	for _, key := range keys {
+		pub, err := finance.PublicKey(key)
+		if err != nil {
+			return err
+		}
+		h := hex.EncodeToString(pub)
+		if containsKey(norm, h) {
+			return fmt.Errorf("duplicate seated key")
+		}
+		norm = append(norm, h)
+	}
+	sort.Strings(norm)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return err
+	}
+	t, ok := d.Tables[k]
+	if !ok || t.Closed {
+		return fmt.Errorf("table not active")
+	}
+	if len(norm) != int(t.Seats) {
+		return fmt.Errorf("seated roster does not fill the table")
+	}
+	if old, ok := d.Seated[k]; ok {
+		if strings.Join(old, ",") != strings.Join(norm, ",") {
+			return fmt.Errorf("seated roster already bound differently")
+		}
+		return nil
+	}
+	d.Seated[k] = norm
+	peers := d.Peers[k]
+	if peers == nil {
+		peers = map[string]Participant{}
+	}
+	taken := map[string]bool{}
+	for _, p := range peers {
+		taken[p.Key] = true
+	}
+	for _, p := range d.Candidates[k] {
+		if !containsKey(norm, p.Key) || taken[p.Key] || len(peers) >= int(t.Seats) {
+			continue
+		}
+		if _, dup := peers[p.UID]; dup {
+			continue
+		}
+		peers[p.UID] = p
+		taken[p.Key] = true
+	}
+	d.Peers[k] = peers
+	delete(d.Candidates, k)
+	return s.save(d)
+}
+
+func containsKey(keys []string, key string) bool {
+	for _, k := range keys {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }

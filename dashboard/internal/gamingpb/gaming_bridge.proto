@@ -63,6 +63,9 @@ service BridgeService {
   rpc ProposePayout(ProposePayoutRequest) returns (PayoutStatusReply);
   rpc PayoutStatus(PayoutStatusRequest) returns (PayoutStatusReply);
   rpc FinancialState(FinancialStateRequest) returns (FinancialStateReply);
+  // BindRoster hands the bridge a seated table's signed joins and commits,
+  // once, so only seated players are admitted to its financial roster.
+  rpc BindRoster(BindRosterRequest) returns (BindRosterReply);
 
   // SpendStatus reports what became of one of THIS game's requests.
   //
@@ -400,6 +403,35 @@ message PayoutPayment { string owner_key = 1; int64 amount_atoms = 2; }
 message ProposePayoutRequest { string sid = 1; repeated PayoutInput inputs = 2; repeated PayoutPayment payments = 3; reserved 4; }
 message PayoutStatusRequest { string id = 1; }
 message PayoutStatusReply { string id = 1; string sid = 2; string state = 3; string txid = 4; uint32 signatures = 5; uint32 required = 6; }
+
+// A seated table as the game's formation holds it. Each join is signed by its
+// seat's session key and names that seat's bridge financial key as the
+// recovery key of its bond script; each commit is a seat's signature over the
+// roster. The bridge verifies them itself.
+message RosterTerms {
+  string game = 1;
+  int32 game_version = 2;
+  string sid = 3;
+  uint64 buyin_atoms = 4;
+  uint32 seats = 5;
+  uint32 csv_blocks = 6;
+  uint32 until = 7;
+  uint64 bond_atoms = 8;
+  uint32 bond_lock_blocks = 9;
+  uint64 accuse_fee_atoms = 10;
+  uint64 forfeit_bond_atoms = 11;
+}
+message SignedJoin {
+  bytes key = 1;
+  bytes log_key = 2;
+  bytes sig = 3;
+  string bond_outpoint = 4;
+  bytes bond_script = 5;
+  bytes bond_pop = 6;
+}
+message SignedCommit { bytes roster = 1; bytes signer = 2; bytes sig = 3; }
+message BindRosterRequest { RosterTerms terms = 1; repeated SignedJoin joins = 2; repeated SignedCommit commits = 3; }
+message BindRosterReply {}
 
 message FinancialStateRequest { string sid = 1; }
 message DepositStatus { string id = 1; string kind = 2; string state = 3; string outpoint = 4; int64 amount_atoms = 5; uint32 lock_blocks = 6; int64 confirmations = 7; }

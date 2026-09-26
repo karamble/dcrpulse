@@ -83,6 +83,11 @@ type diskState struct {
 	Operations    map[string]Operation              `json:"operations"`
 	Previews      map[string]PaymentPreview         `json:"previews"`
 	Quotes        map[string]RecoveryQuote          `json:"quotes"`
+	// Seated is each table's seated financial keys, as the game's signed
+	// roster names them. Candidates are key announcements waiting for it,
+	// in arrival order.
+	Seated     map[string][]string      `json:"seated,omitempty"`
+	Candidates map[string][]Participant `json:"candidates,omitempty"`
 }
 
 // Store serializes and durably records financial authority before any external
@@ -191,6 +196,12 @@ func decodeState(b []byte) (diskState, error) {
 	}
 	if d.RosterCommits == nil || d.Settlements == nil || d.Peers == nil || d.Version != Version || d.Keys == nil || d.Deposits == nil || d.Operations == nil || d.Tables == nil || d.Previews == nil || d.Quotes == nil {
 		return d, fmt.Errorf("incomplete or unsupported financial store")
+	}
+	if d.Seated == nil {
+		d.Seated = map[string][]string{}
+	}
+	if d.Candidates == nil {
+		d.Candidates = map[string][]Participant{}
 	}
 	return d, nil
 }

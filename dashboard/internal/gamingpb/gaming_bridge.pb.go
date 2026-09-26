@@ -2642,6 +2642,374 @@ func (x *PayoutStatusReply) GetRequired() uint32 {
 	return 0
 }
 
+// A seated table as the game's formation holds it. Each join is signed by its
+// seat's session key and names that seat's bridge financial key as the
+// recovery key of its bond script; each commit is a seat's signature over the
+// roster. The bridge verifies them itself.
+type RosterTerms struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Game             string                 `protobuf:"bytes,1,opt,name=game,proto3" json:"game,omitempty"`
+	GameVersion      int32                  `protobuf:"varint,2,opt,name=game_version,json=gameVersion,proto3" json:"game_version,omitempty"`
+	Sid              string                 `protobuf:"bytes,3,opt,name=sid,proto3" json:"sid,omitempty"`
+	BuyinAtoms       uint64                 `protobuf:"varint,4,opt,name=buyin_atoms,json=buyinAtoms,proto3" json:"buyin_atoms,omitempty"`
+	Seats            uint32                 `protobuf:"varint,5,opt,name=seats,proto3" json:"seats,omitempty"`
+	CsvBlocks        uint32                 `protobuf:"varint,6,opt,name=csv_blocks,json=csvBlocks,proto3" json:"csv_blocks,omitempty"`
+	Until            uint32                 `protobuf:"varint,7,opt,name=until,proto3" json:"until,omitempty"`
+	BondAtoms        uint64                 `protobuf:"varint,8,opt,name=bond_atoms,json=bondAtoms,proto3" json:"bond_atoms,omitempty"`
+	BondLockBlocks   uint32                 `protobuf:"varint,9,opt,name=bond_lock_blocks,json=bondLockBlocks,proto3" json:"bond_lock_blocks,omitempty"`
+	AccuseFeeAtoms   uint64                 `protobuf:"varint,10,opt,name=accuse_fee_atoms,json=accuseFeeAtoms,proto3" json:"accuse_fee_atoms,omitempty"`
+	ForfeitBondAtoms uint64                 `protobuf:"varint,11,opt,name=forfeit_bond_atoms,json=forfeitBondAtoms,proto3" json:"forfeit_bond_atoms,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *RosterTerms) Reset() {
+	*x = RosterTerms{}
+	mi := &file_gaming_bridge_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RosterTerms) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RosterTerms) ProtoMessage() {}
+
+func (x *RosterTerms) ProtoReflect() protoreflect.Message {
+	mi := &file_gaming_bridge_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RosterTerms.ProtoReflect.Descriptor instead.
+func (*RosterTerms) Descriptor() ([]byte, []int) {
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *RosterTerms) GetGame() string {
+	if x != nil {
+		return x.Game
+	}
+	return ""
+}
+
+func (x *RosterTerms) GetGameVersion() int32 {
+	if x != nil {
+		return x.GameVersion
+	}
+	return 0
+}
+
+func (x *RosterTerms) GetSid() string {
+	if x != nil {
+		return x.Sid
+	}
+	return ""
+}
+
+func (x *RosterTerms) GetBuyinAtoms() uint64 {
+	if x != nil {
+		return x.BuyinAtoms
+	}
+	return 0
+}
+
+func (x *RosterTerms) GetSeats() uint32 {
+	if x != nil {
+		return x.Seats
+	}
+	return 0
+}
+
+func (x *RosterTerms) GetCsvBlocks() uint32 {
+	if x != nil {
+		return x.CsvBlocks
+	}
+	return 0
+}
+
+func (x *RosterTerms) GetUntil() uint32 {
+	if x != nil {
+		return x.Until
+	}
+	return 0
+}
+
+func (x *RosterTerms) GetBondAtoms() uint64 {
+	if x != nil {
+		return x.BondAtoms
+	}
+	return 0
+}
+
+func (x *RosterTerms) GetBondLockBlocks() uint32 {
+	if x != nil {
+		return x.BondLockBlocks
+	}
+	return 0
+}
+
+func (x *RosterTerms) GetAccuseFeeAtoms() uint64 {
+	if x != nil {
+		return x.AccuseFeeAtoms
+	}
+	return 0
+}
+
+func (x *RosterTerms) GetForfeitBondAtoms() uint64 {
+	if x != nil {
+		return x.ForfeitBondAtoms
+	}
+	return 0
+}
+
+type SignedJoin struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	LogKey        []byte                 `protobuf:"bytes,2,opt,name=log_key,json=logKey,proto3" json:"log_key,omitempty"`
+	Sig           []byte                 `protobuf:"bytes,3,opt,name=sig,proto3" json:"sig,omitempty"`
+	BondOutpoint  string                 `protobuf:"bytes,4,opt,name=bond_outpoint,json=bondOutpoint,proto3" json:"bond_outpoint,omitempty"`
+	BondScript    []byte                 `protobuf:"bytes,5,opt,name=bond_script,json=bondScript,proto3" json:"bond_script,omitempty"`
+	BondPop       []byte                 `protobuf:"bytes,6,opt,name=bond_pop,json=bondPop,proto3" json:"bond_pop,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignedJoin) Reset() {
+	*x = SignedJoin{}
+	mi := &file_gaming_bridge_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignedJoin) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignedJoin) ProtoMessage() {}
+
+func (x *SignedJoin) ProtoReflect() protoreflect.Message {
+	mi := &file_gaming_bridge_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignedJoin.ProtoReflect.Descriptor instead.
+func (*SignedJoin) Descriptor() ([]byte, []int) {
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *SignedJoin) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *SignedJoin) GetLogKey() []byte {
+	if x != nil {
+		return x.LogKey
+	}
+	return nil
+}
+
+func (x *SignedJoin) GetSig() []byte {
+	if x != nil {
+		return x.Sig
+	}
+	return nil
+}
+
+func (x *SignedJoin) GetBondOutpoint() string {
+	if x != nil {
+		return x.BondOutpoint
+	}
+	return ""
+}
+
+func (x *SignedJoin) GetBondScript() []byte {
+	if x != nil {
+		return x.BondScript
+	}
+	return nil
+}
+
+func (x *SignedJoin) GetBondPop() []byte {
+	if x != nil {
+		return x.BondPop
+	}
+	return nil
+}
+
+type SignedCommit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Roster        []byte                 `protobuf:"bytes,1,opt,name=roster,proto3" json:"roster,omitempty"`
+	Signer        []byte                 `protobuf:"bytes,2,opt,name=signer,proto3" json:"signer,omitempty"`
+	Sig           []byte                 `protobuf:"bytes,3,opt,name=sig,proto3" json:"sig,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignedCommit) Reset() {
+	*x = SignedCommit{}
+	mi := &file_gaming_bridge_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignedCommit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignedCommit) ProtoMessage() {}
+
+func (x *SignedCommit) ProtoReflect() protoreflect.Message {
+	mi := &file_gaming_bridge_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignedCommit.ProtoReflect.Descriptor instead.
+func (*SignedCommit) Descriptor() ([]byte, []int) {
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *SignedCommit) GetRoster() []byte {
+	if x != nil {
+		return x.Roster
+	}
+	return nil
+}
+
+func (x *SignedCommit) GetSigner() []byte {
+	if x != nil {
+		return x.Signer
+	}
+	return nil
+}
+
+func (x *SignedCommit) GetSig() []byte {
+	if x != nil {
+		return x.Sig
+	}
+	return nil
+}
+
+type BindRosterRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Terms         *RosterTerms           `protobuf:"bytes,1,opt,name=terms,proto3" json:"terms,omitempty"`
+	Joins         []*SignedJoin          `protobuf:"bytes,2,rep,name=joins,proto3" json:"joins,omitempty"`
+	Commits       []*SignedCommit        `protobuf:"bytes,3,rep,name=commits,proto3" json:"commits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindRosterRequest) Reset() {
+	*x = BindRosterRequest{}
+	mi := &file_gaming_bridge_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindRosterRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindRosterRequest) ProtoMessage() {}
+
+func (x *BindRosterRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gaming_bridge_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindRosterRequest.ProtoReflect.Descriptor instead.
+func (*BindRosterRequest) Descriptor() ([]byte, []int) {
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *BindRosterRequest) GetTerms() *RosterTerms {
+	if x != nil {
+		return x.Terms
+	}
+	return nil
+}
+
+func (x *BindRosterRequest) GetJoins() []*SignedJoin {
+	if x != nil {
+		return x.Joins
+	}
+	return nil
+}
+
+func (x *BindRosterRequest) GetCommits() []*SignedCommit {
+	if x != nil {
+		return x.Commits
+	}
+	return nil
+}
+
+type BindRosterReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindRosterReply) Reset() {
+	*x = BindRosterReply{}
+	mi := &file_gaming_bridge_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindRosterReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindRosterReply) ProtoMessage() {}
+
+func (x *BindRosterReply) ProtoReflect() protoreflect.Message {
+	mi := &file_gaming_bridge_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindRosterReply.ProtoReflect.Descriptor instead.
+func (*BindRosterReply) Descriptor() ([]byte, []int) {
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{42}
+}
+
 type FinancialStateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Sid           string                 `protobuf:"bytes,1,opt,name=sid,proto3" json:"sid,omitempty"`
@@ -2651,7 +3019,7 @@ type FinancialStateRequest struct {
 
 func (x *FinancialStateRequest) Reset() {
 	*x = FinancialStateRequest{}
-	mi := &file_gaming_bridge_proto_msgTypes[38]
+	mi := &file_gaming_bridge_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2663,7 +3031,7 @@ func (x *FinancialStateRequest) String() string {
 func (*FinancialStateRequest) ProtoMessage() {}
 
 func (x *FinancialStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[38]
+	mi := &file_gaming_bridge_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2676,7 +3044,7 @@ func (x *FinancialStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinancialStateRequest.ProtoReflect.Descriptor instead.
 func (*FinancialStateRequest) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{38}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *FinancialStateRequest) GetSid() string {
@@ -2701,7 +3069,7 @@ type DepositStatus struct {
 
 func (x *DepositStatus) Reset() {
 	*x = DepositStatus{}
-	mi := &file_gaming_bridge_proto_msgTypes[39]
+	mi := &file_gaming_bridge_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2713,7 +3081,7 @@ func (x *DepositStatus) String() string {
 func (*DepositStatus) ProtoMessage() {}
 
 func (x *DepositStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[39]
+	mi := &file_gaming_bridge_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2726,7 +3094,7 @@ func (x *DepositStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DepositStatus.ProtoReflect.Descriptor instead.
 func (*DepositStatus) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{39}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *DepositStatus) GetId() string {
@@ -2791,7 +3159,7 @@ type FinancialStateReply struct {
 
 func (x *FinancialStateReply) Reset() {
 	*x = FinancialStateReply{}
-	mi := &file_gaming_bridge_proto_msgTypes[40]
+	mi := &file_gaming_bridge_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2803,7 +3171,7 @@ func (x *FinancialStateReply) String() string {
 func (*FinancialStateReply) ProtoMessage() {}
 
 func (x *FinancialStateReply) ProtoReflect() protoreflect.Message {
-	mi := &file_gaming_bridge_proto_msgTypes[40]
+	mi := &file_gaming_bridge_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2816,7 +3184,7 @@ func (x *FinancialStateReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinancialStateReply.ProtoReflect.Descriptor instead.
 func (*FinancialStateReply) Descriptor() ([]byte, []int) {
-	return file_gaming_bridge_proto_rawDescGZIP(), []int{40}
+	return file_gaming_bridge_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *FinancialStateReply) GetSid() string {
@@ -3038,7 +3406,41 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"\n" +
 	"signatures\x18\x05 \x01(\rR\n" +
 	"signatures\x12\x1a\n" +
-	"\brequired\x18\x06 \x01(\rR\brequired\")\n" +
+	"\brequired\x18\x06 \x01(\rR\brequired\"\xe3\x02\n" +
+	"\vRosterTerms\x12\x12\n" +
+	"\x04game\x18\x01 \x01(\tR\x04game\x12!\n" +
+	"\fgame_version\x18\x02 \x01(\x05R\vgameVersion\x12\x10\n" +
+	"\x03sid\x18\x03 \x01(\tR\x03sid\x12\x1f\n" +
+	"\vbuyin_atoms\x18\x04 \x01(\x04R\n" +
+	"buyinAtoms\x12\x14\n" +
+	"\x05seats\x18\x05 \x01(\rR\x05seats\x12\x1d\n" +
+	"\n" +
+	"csv_blocks\x18\x06 \x01(\rR\tcsvBlocks\x12\x14\n" +
+	"\x05until\x18\a \x01(\rR\x05until\x12\x1d\n" +
+	"\n" +
+	"bond_atoms\x18\b \x01(\x04R\tbondAtoms\x12(\n" +
+	"\x10bond_lock_blocks\x18\t \x01(\rR\x0ebondLockBlocks\x12(\n" +
+	"\x10accuse_fee_atoms\x18\n" +
+	" \x01(\x04R\x0eaccuseFeeAtoms\x12,\n" +
+	"\x12forfeit_bond_atoms\x18\v \x01(\x04R\x10forfeitBondAtoms\"\xaa\x01\n" +
+	"\n" +
+	"SignedJoin\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key\x12\x17\n" +
+	"\alog_key\x18\x02 \x01(\fR\x06logKey\x12\x10\n" +
+	"\x03sig\x18\x03 \x01(\fR\x03sig\x12#\n" +
+	"\rbond_outpoint\x18\x04 \x01(\tR\fbondOutpoint\x12\x1f\n" +
+	"\vbond_script\x18\x05 \x01(\fR\n" +
+	"bondScript\x12\x19\n" +
+	"\bbond_pop\x18\x06 \x01(\fR\abondPop\"P\n" +
+	"\fSignedCommit\x12\x16\n" +
+	"\x06roster\x18\x01 \x01(\fR\x06roster\x12\x16\n" +
+	"\x06signer\x18\x02 \x01(\fR\x06signer\x12\x10\n" +
+	"\x03sig\x18\x03 \x01(\fR\x03sig\"\xbc\x01\n" +
+	"\x11BindRosterRequest\x125\n" +
+	"\x05terms\x18\x01 \x01(\v2\x1f.dcrpulse.gaming.v2.RosterTermsR\x05terms\x124\n" +
+	"\x05joins\x18\x02 \x03(\v2\x1e.dcrpulse.gaming.v2.SignedJoinR\x05joins\x12:\n" +
+	"\acommits\x18\x03 \x03(\v2 .dcrpulse.gaming.v2.SignedCommitR\acommits\"\x11\n" +
+	"\x0fBindRosterReply\")\n" +
 	"\x15FinancialStateRequest\x12\x10\n" +
 	"\x03sid\x18\x01 \x01(\tR\x03sid\"\xcf\x01\n" +
 	"\rDepositStatus\x12\x0e\n" +
@@ -3066,8 +3468,7 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"\bGAP_NONE\x10\x00\x12\x0e\n" +
 	"\n" +
 	"GAP_SCOPED\x10\x01\x12\v\n" +
-	"\aGAP_ALL\x10\x022\xbb\n" +
-	"\n" +
+	"\aGAP_ALL\x10\x022\x95\v\n" +
 	"\rBridgeService\x12I\n" +
 	"\x05Hello\x12 .dcrpulse.gaming.v2.HelloRequest\x1a\x1e.dcrpulse.gaming.v2.HelloReply\x12T\n" +
 	"\tSubscribe\x12$.dcrpulse.gaming.v2.SubscribeRequest\x1a\x1f.dcrpulse.gaming.v2.BridgeEvent0\x01\x12O\n" +
@@ -3078,7 +3479,9 @@ const file_gaming_bridge_proto_rawDesc = "" +
 	"\x0ePrepareDeposit\x12).dcrpulse.gaming.v2.PrepareDepositRequest\x1a#.dcrpulse.gaming.v2.PreparedDeposit\x12`\n" +
 	"\rProposePayout\x12(.dcrpulse.gaming.v2.ProposePayoutRequest\x1a%.dcrpulse.gaming.v2.PayoutStatusReply\x12^\n" +
 	"\fPayoutStatus\x12'.dcrpulse.gaming.v2.PayoutStatusRequest\x1a%.dcrpulse.gaming.v2.PayoutStatusReply\x12d\n" +
-	"\x0eFinancialState\x12).dcrpulse.gaming.v2.FinancialStateRequest\x1a'.dcrpulse.gaming.v2.FinancialStateReply\x12P\n" +
+	"\x0eFinancialState\x12).dcrpulse.gaming.v2.FinancialStateRequest\x1a'.dcrpulse.gaming.v2.FinancialStateReply\x12X\n" +
+	"\n" +
+	"BindRoster\x12%.dcrpulse.gaming.v2.BindRosterRequest\x1a#.dcrpulse.gaming.v2.BindRosterReply\x12P\n" +
 	"\vSpendStatus\x12&.dcrpulse.gaming.v2.SpendStatusRequest\x1a\x19.dcrpulse.gaming.v2.Spend\x12U\n" +
 	"\tSendFrame\x12$.dcrpulse.gaming.v2.SendFrameRequest\x1a\".dcrpulse.gaming.v2.SendFrameReply\x12R\n" +
 	"\bChainTip\x12#.dcrpulse.gaming.v2.ChainTipRequest\x1a!.dcrpulse.gaming.v2.ChainTipReply\x12U\n" +
@@ -3098,7 +3501,7 @@ func file_gaming_bridge_proto_rawDescGZIP() []byte {
 }
 
 var file_gaming_bridge_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_gaming_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_gaming_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_gaming_bridge_proto_goTypes = []any{
 	(Capability)(0),               // 0: dcrpulse.gaming.v2.Capability
 	(GapScope)(0),                 // 1: dcrpulse.gaming.v2.GapScope
@@ -3140,10 +3543,15 @@ var file_gaming_bridge_proto_goTypes = []any{
 	(*ProposePayoutRequest)(nil),  // 37: dcrpulse.gaming.v2.ProposePayoutRequest
 	(*PayoutStatusRequest)(nil),   // 38: dcrpulse.gaming.v2.PayoutStatusRequest
 	(*PayoutStatusReply)(nil),     // 39: dcrpulse.gaming.v2.PayoutStatusReply
-	(*FinancialStateRequest)(nil), // 40: dcrpulse.gaming.v2.FinancialStateRequest
-	(*DepositStatus)(nil),         // 41: dcrpulse.gaming.v2.DepositStatus
-	(*FinancialStateReply)(nil),   // 42: dcrpulse.gaming.v2.FinancialStateReply
-	nil,                           // 43: dcrpulse.gaming.v2.SetNames.NamesEntry
+	(*RosterTerms)(nil),           // 40: dcrpulse.gaming.v2.RosterTerms
+	(*SignedJoin)(nil),            // 41: dcrpulse.gaming.v2.SignedJoin
+	(*SignedCommit)(nil),          // 42: dcrpulse.gaming.v2.SignedCommit
+	(*BindRosterRequest)(nil),     // 43: dcrpulse.gaming.v2.BindRosterRequest
+	(*BindRosterReply)(nil),       // 44: dcrpulse.gaming.v2.BindRosterReply
+	(*FinancialStateRequest)(nil), // 45: dcrpulse.gaming.v2.FinancialStateRequest
+	(*DepositStatus)(nil),         // 46: dcrpulse.gaming.v2.DepositStatus
+	(*FinancialStateReply)(nil),   // 47: dcrpulse.gaming.v2.FinancialStateReply
+	nil,                           // 48: dcrpulse.gaming.v2.SetNames.NamesEntry
 }
 var file_gaming_bridge_proto_depIdxs = []int32{
 	0,  // 0: dcrpulse.gaming.v2.HelloRequest.capabilities:type_name -> dcrpulse.gaming.v2.Capability
@@ -3156,48 +3564,53 @@ var file_gaming_bridge_proto_depIdxs = []int32{
 	10, // 7: dcrpulse.gaming.v2.BridgeRequest.accept_invite:type_name -> dcrpulse.gaming.v2.AcceptInvite
 	11, // 8: dcrpulse.gaming.v2.BridgeRequest.set_names:type_name -> dcrpulse.gaming.v2.SetNames
 	12, // 9: dcrpulse.gaming.v2.BridgeRequest.refresh_state:type_name -> dcrpulse.gaming.v2.RefreshState
-	43, // 10: dcrpulse.gaming.v2.SetNames.names:type_name -> dcrpulse.gaming.v2.SetNames.NamesEntry
+	48, // 10: dcrpulse.gaming.v2.SetNames.names:type_name -> dcrpulse.gaming.v2.SetNames.NamesEntry
 	15, // 11: dcrpulse.gaming.v2.RespondRequest.accept_invite:type_name -> dcrpulse.gaming.v2.AcceptInviteResult
 	16, // 12: dcrpulse.gaming.v2.RespondRequest.state:type_name -> dcrpulse.gaming.v2.GameState
 	18, // 13: dcrpulse.gaming.v2.GameState.tables:type_name -> dcrpulse.gaming.v2.Table
 	35, // 14: dcrpulse.gaming.v2.ProposePayoutRequest.inputs:type_name -> dcrpulse.gaming.v2.PayoutInput
 	36, // 15: dcrpulse.gaming.v2.ProposePayoutRequest.payments:type_name -> dcrpulse.gaming.v2.PayoutPayment
-	41, // 16: dcrpulse.gaming.v2.FinancialStateReply.deposits:type_name -> dcrpulse.gaming.v2.DepositStatus
-	2,  // 17: dcrpulse.gaming.v2.BridgeService.Hello:input_type -> dcrpulse.gaming.v2.HelloRequest
-	5,  // 18: dcrpulse.gaming.v2.BridgeService.Subscribe:input_type -> dcrpulse.gaming.v2.SubscribeRequest
-	13, // 19: dcrpulse.gaming.v2.BridgeService.Respond:input_type -> dcrpulse.gaming.v2.RespondRequest
-	16, // 20: dcrpulse.gaming.v2.BridgeService.ReportState:input_type -> dcrpulse.gaming.v2.GameState
-	19, // 21: dcrpulse.gaming.v2.BridgeService.RequestSpend:input_type -> dcrpulse.gaming.v2.RequestSpendRequest
-	31, // 22: dcrpulse.gaming.v2.BridgeService.FinancialKey:input_type -> dcrpulse.gaming.v2.FinancialKeyRequest
-	33, // 23: dcrpulse.gaming.v2.BridgeService.PrepareDeposit:input_type -> dcrpulse.gaming.v2.PrepareDepositRequest
-	37, // 24: dcrpulse.gaming.v2.BridgeService.ProposePayout:input_type -> dcrpulse.gaming.v2.ProposePayoutRequest
-	38, // 25: dcrpulse.gaming.v2.BridgeService.PayoutStatus:input_type -> dcrpulse.gaming.v2.PayoutStatusRequest
-	40, // 26: dcrpulse.gaming.v2.BridgeService.FinancialState:input_type -> dcrpulse.gaming.v2.FinancialStateRequest
-	20, // 27: dcrpulse.gaming.v2.BridgeService.SpendStatus:input_type -> dcrpulse.gaming.v2.SpendStatusRequest
-	23, // 28: dcrpulse.gaming.v2.BridgeService.SendFrame:input_type -> dcrpulse.gaming.v2.SendFrameRequest
-	25, // 29: dcrpulse.gaming.v2.BridgeService.ChainTip:input_type -> dcrpulse.gaming.v2.ChainTipRequest
-	27, // 30: dcrpulse.gaming.v2.BridgeService.BlockHash:input_type -> dcrpulse.gaming.v2.BlockHashRequest
-	29, // 31: dcrpulse.gaming.v2.BridgeService.Outpoint:input_type -> dcrpulse.gaming.v2.OutpointRequest
-	3,  // 32: dcrpulse.gaming.v2.BridgeService.Hello:output_type -> dcrpulse.gaming.v2.HelloReply
-	6,  // 33: dcrpulse.gaming.v2.BridgeService.Subscribe:output_type -> dcrpulse.gaming.v2.BridgeEvent
-	14, // 34: dcrpulse.gaming.v2.BridgeService.Respond:output_type -> dcrpulse.gaming.v2.RespondReply
-	17, // 35: dcrpulse.gaming.v2.BridgeService.ReportState:output_type -> dcrpulse.gaming.v2.ReportStateReply
-	21, // 36: dcrpulse.gaming.v2.BridgeService.RequestSpend:output_type -> dcrpulse.gaming.v2.Spend
-	32, // 37: dcrpulse.gaming.v2.BridgeService.FinancialKey:output_type -> dcrpulse.gaming.v2.FinancialKeyReply
-	34, // 38: dcrpulse.gaming.v2.BridgeService.PrepareDeposit:output_type -> dcrpulse.gaming.v2.PreparedDeposit
-	39, // 39: dcrpulse.gaming.v2.BridgeService.ProposePayout:output_type -> dcrpulse.gaming.v2.PayoutStatusReply
-	39, // 40: dcrpulse.gaming.v2.BridgeService.PayoutStatus:output_type -> dcrpulse.gaming.v2.PayoutStatusReply
-	42, // 41: dcrpulse.gaming.v2.BridgeService.FinancialState:output_type -> dcrpulse.gaming.v2.FinancialStateReply
-	21, // 42: dcrpulse.gaming.v2.BridgeService.SpendStatus:output_type -> dcrpulse.gaming.v2.Spend
-	24, // 43: dcrpulse.gaming.v2.BridgeService.SendFrame:output_type -> dcrpulse.gaming.v2.SendFrameReply
-	26, // 44: dcrpulse.gaming.v2.BridgeService.ChainTip:output_type -> dcrpulse.gaming.v2.ChainTipReply
-	28, // 45: dcrpulse.gaming.v2.BridgeService.BlockHash:output_type -> dcrpulse.gaming.v2.BlockHashReply
-	30, // 46: dcrpulse.gaming.v2.BridgeService.Outpoint:output_type -> dcrpulse.gaming.v2.OutpointReply
-	32, // [32:47] is the sub-list for method output_type
-	17, // [17:32] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	40, // 16: dcrpulse.gaming.v2.BindRosterRequest.terms:type_name -> dcrpulse.gaming.v2.RosterTerms
+	41, // 17: dcrpulse.gaming.v2.BindRosterRequest.joins:type_name -> dcrpulse.gaming.v2.SignedJoin
+	42, // 18: dcrpulse.gaming.v2.BindRosterRequest.commits:type_name -> dcrpulse.gaming.v2.SignedCommit
+	46, // 19: dcrpulse.gaming.v2.FinancialStateReply.deposits:type_name -> dcrpulse.gaming.v2.DepositStatus
+	2,  // 20: dcrpulse.gaming.v2.BridgeService.Hello:input_type -> dcrpulse.gaming.v2.HelloRequest
+	5,  // 21: dcrpulse.gaming.v2.BridgeService.Subscribe:input_type -> dcrpulse.gaming.v2.SubscribeRequest
+	13, // 22: dcrpulse.gaming.v2.BridgeService.Respond:input_type -> dcrpulse.gaming.v2.RespondRequest
+	16, // 23: dcrpulse.gaming.v2.BridgeService.ReportState:input_type -> dcrpulse.gaming.v2.GameState
+	19, // 24: dcrpulse.gaming.v2.BridgeService.RequestSpend:input_type -> dcrpulse.gaming.v2.RequestSpendRequest
+	31, // 25: dcrpulse.gaming.v2.BridgeService.FinancialKey:input_type -> dcrpulse.gaming.v2.FinancialKeyRequest
+	33, // 26: dcrpulse.gaming.v2.BridgeService.PrepareDeposit:input_type -> dcrpulse.gaming.v2.PrepareDepositRequest
+	37, // 27: dcrpulse.gaming.v2.BridgeService.ProposePayout:input_type -> dcrpulse.gaming.v2.ProposePayoutRequest
+	38, // 28: dcrpulse.gaming.v2.BridgeService.PayoutStatus:input_type -> dcrpulse.gaming.v2.PayoutStatusRequest
+	45, // 29: dcrpulse.gaming.v2.BridgeService.FinancialState:input_type -> dcrpulse.gaming.v2.FinancialStateRequest
+	43, // 30: dcrpulse.gaming.v2.BridgeService.BindRoster:input_type -> dcrpulse.gaming.v2.BindRosterRequest
+	20, // 31: dcrpulse.gaming.v2.BridgeService.SpendStatus:input_type -> dcrpulse.gaming.v2.SpendStatusRequest
+	23, // 32: dcrpulse.gaming.v2.BridgeService.SendFrame:input_type -> dcrpulse.gaming.v2.SendFrameRequest
+	25, // 33: dcrpulse.gaming.v2.BridgeService.ChainTip:input_type -> dcrpulse.gaming.v2.ChainTipRequest
+	27, // 34: dcrpulse.gaming.v2.BridgeService.BlockHash:input_type -> dcrpulse.gaming.v2.BlockHashRequest
+	29, // 35: dcrpulse.gaming.v2.BridgeService.Outpoint:input_type -> dcrpulse.gaming.v2.OutpointRequest
+	3,  // 36: dcrpulse.gaming.v2.BridgeService.Hello:output_type -> dcrpulse.gaming.v2.HelloReply
+	6,  // 37: dcrpulse.gaming.v2.BridgeService.Subscribe:output_type -> dcrpulse.gaming.v2.BridgeEvent
+	14, // 38: dcrpulse.gaming.v2.BridgeService.Respond:output_type -> dcrpulse.gaming.v2.RespondReply
+	17, // 39: dcrpulse.gaming.v2.BridgeService.ReportState:output_type -> dcrpulse.gaming.v2.ReportStateReply
+	21, // 40: dcrpulse.gaming.v2.BridgeService.RequestSpend:output_type -> dcrpulse.gaming.v2.Spend
+	32, // 41: dcrpulse.gaming.v2.BridgeService.FinancialKey:output_type -> dcrpulse.gaming.v2.FinancialKeyReply
+	34, // 42: dcrpulse.gaming.v2.BridgeService.PrepareDeposit:output_type -> dcrpulse.gaming.v2.PreparedDeposit
+	39, // 43: dcrpulse.gaming.v2.BridgeService.ProposePayout:output_type -> dcrpulse.gaming.v2.PayoutStatusReply
+	39, // 44: dcrpulse.gaming.v2.BridgeService.PayoutStatus:output_type -> dcrpulse.gaming.v2.PayoutStatusReply
+	47, // 45: dcrpulse.gaming.v2.BridgeService.FinancialState:output_type -> dcrpulse.gaming.v2.FinancialStateReply
+	44, // 46: dcrpulse.gaming.v2.BridgeService.BindRoster:output_type -> dcrpulse.gaming.v2.BindRosterReply
+	21, // 47: dcrpulse.gaming.v2.BridgeService.SpendStatus:output_type -> dcrpulse.gaming.v2.Spend
+	24, // 48: dcrpulse.gaming.v2.BridgeService.SendFrame:output_type -> dcrpulse.gaming.v2.SendFrameReply
+	26, // 49: dcrpulse.gaming.v2.BridgeService.ChainTip:output_type -> dcrpulse.gaming.v2.ChainTipReply
+	28, // 50: dcrpulse.gaming.v2.BridgeService.BlockHash:output_type -> dcrpulse.gaming.v2.BlockHashReply
+	30, // 51: dcrpulse.gaming.v2.BridgeService.Outpoint:output_type -> dcrpulse.gaming.v2.OutpointReply
+	36, // [36:52] is the sub-list for method output_type
+	20, // [20:36] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_gaming_bridge_proto_init() }
@@ -3226,7 +3639,7 @@ func file_gaming_bridge_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gaming_bridge_proto_rawDesc), len(file_gaming_bridge_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   42,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
