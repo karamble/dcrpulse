@@ -1108,6 +1108,36 @@ func BrclientdGamingHistory(ctx context.Context, gcid ShortIDHex, page, pageSize
 	return brclientdGetRaw(ctx, "/gaming/history", q)
 }
 
+// BrclientdGamingHistoryPrune drops one group chat's frames from brclientd's
+// gaming journal. Only for a group whose funds are all settled.
+func BrclientdGamingHistoryPrune(ctx context.Context, gcid ShortIDHex) error {
+	if gcid.String() == "" {
+		return ErrBadShortID
+	}
+	cli, err := brclientdClient()
+	if err != nil {
+		return err
+	}
+	endpoint, err := brclientdEndpoint(statusPort, "/gaming/history", map[string]string{"gcid": gcid.String()})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return fmt.Errorf("brclientd /gaming/history: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("brclientd /gaming/history: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
 func BrclientdGCHistory(ctx context.Context, gcid ShortIDHex, page, pageSize int) (json.RawMessage, error) {
 	q := map[string]string{}
 	if page > 0 {

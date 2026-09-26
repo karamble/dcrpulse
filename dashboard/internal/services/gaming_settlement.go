@@ -117,6 +117,7 @@ func GamingPayoutStatus(ctx context.Context, game, id string) (*gamingpb.PayoutS
 	}
 	return payoutStatus(p), nil
 }
+
 // GamingPayoutView is a payout proposal as the operator reviews it, with their
 // own share picked out.
 type GamingPayoutView struct {

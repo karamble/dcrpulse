@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 const gamingInboxFile = "gaming-wire-inbox-v2.jsonl"
@@ -130,21 +131,87 @@ func readGamingInbox(path string, next map[string]uint64, records map[string][]G
 	scan := bufio.NewScanner(f)
 	scan.Buffer(make([]byte, 64*1024), gamingWireMaxLine)
 	for line := 1; scan.Scan(); line++ {
-		var ev GamingFrameEvent
-		if err := json.Unmarshal(scan.Bytes(), &ev); err != nil {
+		var rec gamingInboxLine
+		if err := json.Unmarshal(scan.Bytes(), &rec); err != nil {
 			return fmt.Errorf("line %d: %w", line, err)
 		}
-		if ev.Seq == 0 || ev.Game == "" || ev.GCID == "" || ev.Frame == "" {
+		ev := rec.GamingFrameEvent
+		if ev.Seq == 0 || ev.Game == "" || (!rec.Mark && (ev.GCID == "" || ev.Frame == "")) {
 			return fmt.Errorf("line %d: incomplete gaming frame", line)
 		}
 		if ev.Seq <= next[ev.Game] {
 			return fmt.Errorf("line %d: non-increasing sequence for %q", line, ev.Game)
 		}
 		next[ev.Game] = ev.Seq
+		if rec.Mark {
+			continue
+		}
 		records[ev.Game] = append(records[ev.Game], ev)
 		seen[gamingFrameKey(ev)] = struct{}{}
 	}
 	return scan.Err()
+}
+
+// gamingInboxLine is one inbox line. A mark carries only a game's highest seq
+// from before a prune.
+type gamingInboxLine struct {
+	GamingFrameEvent
+	Mark bool `json:"mark,omitempty"`
+}
+
+// pruneGamingGroup removes one group chat's frames from the inbox. Each game
+// keeps a mark with the highest seq it was issued, so no cursor sees a seq
+// twice after a restart.
+func (b *GamingBus) pruneGamingGroup(gcid string) (int, error) {
+	b.wireMu.Lock()
+	defer b.wireMu.Unlock()
+	if _, err := b.loadGamingFramesLocked("", 0); err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, records := range b.wireRecords {
+		for _, ev := range records {
+			if ev.GCID == gcid {
+				removed++
+			}
+		}
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	games := make([]string, 0, len(b.wireNext))
+	for game := range b.wireNext {
+		games = append(games, game)
+	}
+	sort.Strings(games)
+	var buf bytes.Buffer
+	for _, game := range games {
+		var last uint64
+		for _, ev := range b.wireRecords[game] {
+			if ev.GCID == gcid {
+				continue
+			}
+			raw, err := json.Marshal(ev)
+			if err != nil {
+				return 0, err
+			}
+			buf.Write(append(raw, '\n'))
+			last = ev.Seq
+		}
+		if last < b.wireNext[game] {
+			raw, err := json.Marshal(gamingInboxLine{GamingFrameEvent{Seq: b.wireNext[game], Game: game}, true})
+			if err != nil {
+				return 0, err
+			}
+			buf.Write(append(raw, '\n'))
+		}
+	}
+	if err := writeFileSynced(filepath.Join(GamingStateDir, gamingInboxFile), buf.Bytes(), 0o600); err != nil {
+		return 0, err
+	}
+	// Reload from the new file on next use.
+	b.wireDir = ""
+	return removed, nil
 }
 
 func (b *GamingBus) financialReplay() []GamingFrameEvent {

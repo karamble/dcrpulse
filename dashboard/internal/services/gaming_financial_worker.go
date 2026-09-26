@@ -336,6 +336,7 @@ func StartGamingFinancialWorker(ctx context.Context) {
 		defer workers.Done()
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
+		var pruned time.Time
 		for {
 			select {
 			case <-ctx.Done():
@@ -344,6 +345,10 @@ func StartGamingFinancialWorker(ctx context.Context) {
 				work, cancel := context.WithTimeout(ctx, 25*time.Second)
 				reconcileGamingFinance(work)
 				cancel()
+				if time.Since(pruned) >= time.Hour {
+					pruned = time.Now()
+					pruneSettledGaming(ctx)
+				}
 			}
 		}
 	}()
@@ -420,6 +425,33 @@ func reconcileGamingFinance(ctx context.Context) {
 		}
 	}
 	reconcileGamingDeposits(ctx, store)
+}
+
+// gamingPruneDepth is how deep every spend of a group's deposits must be
+// before its protocol history goes.
+const gamingPruneDepth = 144
+
+// pruneSettledGaming drops the protocol history of paid-out tables. A spend
+// dcrd cannot find counts as not deep, so nothing goes on doubt.
+func pruneSettledGaming(ctx context.Context) {
+	store, err := gamingFundsStore()
+	if err != nil {
+		return
+	}
+	work, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	groups, err := store.PrunableGroups(time.Now().Unix(), gamingPruneDepth, func(txid string) (int64, error) {
+		observation, known, err := observeGamingOperation(work, txid)
+		if err != nil || !known {
+			return 0, err
+		}
+		return observation.Confirmations, nil
+	})
+	if err != nil {
+		gameLog.Debugf("gaming history prune skipped: %v", err)
+		return
+	}
+	Gaming().pruneSettledGamingHistory(work, groups)
 }
 
 func reconcileGamingFundingHistory(txid string) {

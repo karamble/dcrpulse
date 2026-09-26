@@ -94,6 +94,10 @@ type GamingBus struct {
 	wireNext    map[string]uint64
 	wireRecords map[string][]GamingFrameEvent
 	wireSeen    map[string]struct{}
+
+	// prunedGroups are the settled groups whose history this run already
+	// dropped; guarded by gamingHistoryRecovery.
+	prunedGroups map[string]struct{}
 }
 
 // SetGamingResync wires the bridge's stream-closing hook. Called once at
