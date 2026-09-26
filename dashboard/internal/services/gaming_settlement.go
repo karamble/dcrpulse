@@ -117,12 +117,61 @@ func GamingPayoutStatus(ctx context.Context, game, id string) (*gamingpb.PayoutS
 	}
 	return payoutStatus(p), nil
 }
-func GamingPayouts(ctx context.Context) ([]gamingfunds.Settlement, error) {
+// GamingPayoutView is a payout proposal as the operator reviews it, with their
+// own share picked out.
+type GamingPayoutView struct {
+	gamingfunds.Settlement
+	// Mine is nil when the operator has no stake among the inputs.
+	Mine *GamingPayoutShare `json:"mine"`
+}
+
+// GamingPayoutShare is what the operator put into a payout and gets out of it.
+type GamingPayoutShare struct {
+	Key          string `json:"key"`
+	Address      string `json:"address"`
+	StakeAtoms   int64  `json:"stakeAtoms"`
+	ReceiveAtoms int64  `json:"receiveAtoms"`
+}
+
+// payoutShare finds the operator's input and payment by their table key. A
+// payout's owner key is the input's recovery key, and payments name it.
+func payoutShare(p gamingfunds.Settlement, key gamingfunds.WalletKey) (GamingPayoutShare, bool) {
+	share := GamingPayoutShare{Key: key.Public, Address: key.Address}
+	staked := false
+	for _, in := range p.Inputs {
+		if in.Terms.Recovery == key.Public {
+			share.StakeAtoms += in.Terms.Atoms
+			staked = true
+		}
+	}
+	for _, pay := range p.Payments {
+		if pay.Key == key.Public {
+			share.ReceiveAtoms += pay.Atoms
+		}
+	}
+	return share, staked
+}
+
+func GamingPayouts(ctx context.Context) ([]GamingPayoutView, error) {
 	store, err := gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
-	return store.AllSettlements()
+	all, err := store.AllSettlements()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]GamingPayoutView, 0, len(all))
+	for _, p := range all {
+		view := GamingPayoutView{Settlement: p}
+		if key, err := store.WalletKey(p.Scope, p.Table); err == nil {
+			if share, ok := payoutShare(p, key); ok {
+				view.Mine = &share
+			}
+		}
+		out = append(out, view)
+	}
+	return out, nil
 }
 
 func gamingPayoutByID(store *gamingfunds.Store, id string) (gamingfunds.Settlement, error) {
