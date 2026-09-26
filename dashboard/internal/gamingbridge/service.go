@@ -92,6 +92,9 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 	}
 
 	live := s.reg.add(game)
+	if live == nil {
+		return status.Error(codes.ResourceExhausted, "too many streams for this game")
+	}
 	defer func() {
 		s.reg.remove(game, live)
 		if s.cfg.OnPresence != nil {

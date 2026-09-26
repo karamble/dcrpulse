@@ -118,9 +118,10 @@ func TestSlowGameReconnectsAndReplaysInsteadOfLosingFrames(t *testing.T) {
 
 func TestFinancialFramesReplayOnlyInsideBridge(t *testing.T) {
 	withGamingWireDir(t)
+	payoutLedger(t, "awaiting_signatures")
 	b := &GamingBus{subs: make(map[*gamingSubscriber]struct{})}
 	ev := GamingFrameEvent{
-		Game: "poker", GCID: "table", From: "alice", Frame: testFrame, Financial: true,
+		Game: "poker", GCID: pruneGCA, From: "alice", Frame: testFrame, Financial: true,
 	}
 	if seq, fresh, err := b.persistGamingFrame(ev); err != nil || !fresh || seq != 1 {
 		t.Fatalf("persist financial frame = %d, %v, %v", seq, fresh, err)

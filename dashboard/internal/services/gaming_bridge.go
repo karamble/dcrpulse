@@ -94,6 +94,8 @@ type GamingBus struct {
 	wireNext    map[string]uint64
 	wireRecords map[string][]GamingFrameEvent
 	wireSeen    map[string]struct{}
+	// financialDone are financial frames this process already applied.
+	financialDone map[string]struct{}
 
 	// prunedGroups are the settled groups whose history this run already
 	// dropped; guarded by gamingHistoryRecovery.
@@ -256,9 +258,14 @@ func (b *GamingBus) deliverGamingMessage(gcid, from, message string) bool {
 		// existing host being taught about it.
 		return true
 	}
+	if _, ok := gamingAcceptedGroups()[gcid]; !ok {
+		// Not a group of any table the operator accepted. Accepting one reads
+		// its earlier frames back from brclientd's journal.
+		return true
+	}
 	if isFinancialFrame(frame.Text) {
 		event := GamingFrameEvent{Game: frame.Game, GCID: gcid, From: from, Frame: frame.Text, Financial: true}
-		_, fresh, err := b.persistGamingFrame(event)
+		seq, fresh, err := b.persistGamingFrame(event)
 		if err != nil {
 			gameLog.Errorf("persist %q financial frame before processing: %v", frame.Game, err)
 			return true
@@ -266,6 +273,7 @@ func (b *GamingBus) deliverGamingMessage(gcid, from, message string) bool {
 		if !fresh {
 			return true
 		}
+		event.Seq = seq
 		// Financial wallet/node work must not block the BR notification loop.
 		// The durable inbox heals a full worker queue locally.
 		select {

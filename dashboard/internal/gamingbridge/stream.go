@@ -110,6 +110,12 @@ func (r *registry) hello(game string) lockTerms {
 }
 
 // add registers a new stream for a game.
+// maxStreamsPerGame bounds a game's concurrent streams. A game runs one,
+// briefly more while it reconnects; each copies the game's durable backlog.
+const maxStreamsPerGame = 4
+
+// add registers a stream, or returns nil when the game already has
+// maxStreamsPerGame open.
 func (r *registry) add(game string) *liveStream {
 	l := &liveStream{
 		events: make(chan *gamingpb.BridgeEvent, pushBuffer),
@@ -117,6 +123,9 @@ func (r *registry) add(game string) *liveStream {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if len(r.streams[game]) >= maxStreamsPerGame {
+		return nil
+	}
 	if r.streams[game] == nil {
 		r.streams[game] = make(map[*liveStream]struct{})
 	}

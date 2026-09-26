@@ -128,6 +128,7 @@ func TestRecoverHistoryDeliversOnlyAuthenticatedPeers(t *testing.T) {
 	if err := writeGamingSettingsLocked(settings); err != nil {
 		t.Fatal(err)
 	}
+	payoutLedger(t, "awaiting_signatures")
 	b := newWireBus()
 	mustPersist(t, b, "poker", pruneGCA, 0)
 	withHistorySeams(t, historyPages(

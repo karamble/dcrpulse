@@ -105,17 +105,9 @@ func (b *GamingBus) knownGamingGCIDs() map[string]struct{} {
 	b.wireMu.Unlock()
 
 	// A table whose frames all arrived while the dashboard was down is known
-	// only from the ledger. Read an existing ledger only; opening creates one.
-	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err == nil {
-		if store, err := gamingFundsStore(); err == nil {
-			if tables, err := store.Tables(); err == nil {
-				for _, t := range tables {
-					if t.Group != "" {
-						out[t.Group] = struct{}{}
-					}
-				}
-			}
-		}
+	// only from the ledger.
+	for group := range gamingAcceptedGroups() {
+		out[group] = struct{}{}
 	}
 
 	gamingOutbox.Lock()
@@ -219,4 +211,28 @@ func (b *GamingBus) pruneSettledGamingHistory(ctx context.Context, groups []stri
 			gameLog.Infof("pruned %d gaming frames of settled group %s", removed, group)
 		}
 	}
+}
+
+// gamingAcceptedGroups is the group chat of every table in the payout ledger,
+// closed ones included, since those still settle and recover. Only an existing
+// ledger is read; opening one would create it.
+func gamingAcceptedGroups() map[string]struct{} {
+	out := make(map[string]struct{})
+	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err != nil {
+		return out
+	}
+	store, err := gamingFundsStore()
+	if err != nil {
+		return out
+	}
+	tables, err := store.Tables()
+	if err != nil {
+		return out
+	}
+	for _, t := range tables {
+		if t.Group != "" {
+			out[t.Group] = struct{}{}
+		}
+	}
+	return out
 }

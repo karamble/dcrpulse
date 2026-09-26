@@ -306,16 +306,7 @@ func StartGamingFinancialWorker(ctx context.Context) {
 		defer workers.Done()
 		replay := time.NewTicker(30 * time.Second)
 		defer replay.Stop()
-		process := func(event GamingFrameEvent) {
-			work, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err := receiveFinancialFrame(work, event)
-			cancel()
-			if err != nil {
-				// Invalid records stay harmless; dependency failures are retried
-				// from the durable local inbox without peer traffic.
-				gameLog.Debugf("financial message rejected: %v", err)
-			}
-		}
+		process := func(event GamingFrameEvent) { processFinancialFrame(ctx, event) }
 		for _, event := range Gaming().financialReplay() {
 			process(event)
 		}
@@ -425,6 +416,24 @@ func reconcileGamingFinance(ctx context.Context) {
 		}
 	}
 	reconcileGamingDeposits(ctx, store)
+}
+
+// receiveFinancial applies one financial frame. Settable for tests.
+var receiveFinancial = receiveFinancialFrame
+
+// processFinancialFrame applies one stored financial frame and keeps it out of
+// later replays once applied.
+func processFinancialFrame(ctx context.Context, event GamingFrameEvent) {
+	work, cancel := context.WithTimeout(ctx, 10*time.Second)
+	err := receiveFinancial(work, event)
+	cancel()
+	if err != nil {
+		// Invalid records stay harmless; dependency failures are retried
+		// from the durable local inbox without peer traffic.
+		gameLog.Debugf("financial message rejected: %v", err)
+		return
+	}
+	Gaming().markFinancialApplied(event)
 }
 
 // gamingPruneDepth is how deep every spend of a group's deposits must be
