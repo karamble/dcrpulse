@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
-import { ArchiveRestore, ArrowDownToLine, Download, Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArchiveRestore, ArrowDownToLine, Download, Loader2, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
 import { formatAtomsTrimmed } from '../../utils/amounts';
-import { archiveRecovery, closeRecoveryTable, confirmRecovery, getGamingLedgerBackup, getGamingRecovery, quoteRecovery, RecoveryDeposit, RecoveryQuote } from '../../services/gamingApi';
+import { archiveRecovery, closeRecoveryTable, confirmRecovery, getGamingLedgerBackup, getGamingRecovery, quoteRecovery, RecoveryDeposit, RecoveryQuote, restoreGamingLedger } from '../../services/gamingApi';
 
 const labels: Record<string, string> = {seatbond: 'Admission bond', stake: 'Game stake', tablebond: 'Table bond'};
 const states: Record<string, string> = {awaiting_payment: 'Awaiting payment', locked: 'Time locked', close_table: 'Ready after table closure', recoverable: 'Ready to recover', recovery_pending: 'Refund broadcast', spent: 'Refunded', needs_attention: 'Needs attention'};
@@ -48,6 +48,8 @@ export function GamingRecovery() {
   const [passphrase, setPassphrase] = useState('');
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const pickFile = useRef<HTMLInputElement>(null);
   const loading = useRef(false);
   const action = useRef(false);
   const downloadBackup = async () => {
@@ -79,6 +81,15 @@ export function GamingRecovery() {
     catch (e) { setNotice(apiError(e, 'Recovery needs attention')); }
     finally { action.current = false; setBusy(''); }
   };
+  // A backup can only go back while the ledger is empty or missing.
+  const canRestore = rows?.length === 0 || /ledger missing/.test(error);
+  const restore = (file: File) => void perform('restore', async () => {
+    const result = await restoreGamingLedger(file);
+    setRestoreFile(null);
+    setNotice(result.unownedKeys > 0
+      ? `Ledger restored. ${result.unownedKeys} deposit key${result.unownedKeys === 1 ? ' is' : 's are'} not known to this wallet yet, so those deposits cannot be recovered until it has derived their addresses.`
+      : 'Ledger restored.');
+  });
   return <section className="space-y-5">
     <div className="flex items-start justify-between gap-4">
       <div><h2 className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck className="h-5 w-5 text-emerald-400" /> Recover your deposits</h2>
@@ -86,10 +97,18 @@ export function GamingRecovery() {
         <p className="mt-1 text-xs text-gray-500">The backup holds every deposit, open and settled, with its terms and transactions. It contains no keys, but it does show your games and amounts.</p></div>
       <div className="flex shrink-0 gap-2">
         <button type="button" disabled={saving} onClick={() => void downloadBackup()} className="flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm disabled:opacity-40">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download backup</button>
+        {canRestore && <>
+          <input ref={pickFile} type="file" accept=".json,application/json" className="hidden" aria-label="Backup file" onChange={e => { setRestoreFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+          <button type="button" disabled={!!busy} onClick={() => pickFile.current?.click()} className="flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm disabled:opacity-40"><Upload className="h-4 w-4" />Restore backup</button>
+        </>}
         <button type="button" onClick={() => void load()} className="rounded-lg border border-gray-700 p-2" aria-label="Refresh recovery status"><RefreshCw className="h-4 w-4" /></button>
       </div>
     </div>
     {error && <p role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">{error} Recovery actions are disabled until fresh verification succeeds.</p>}
+    {restoreFile && <div role="alertdialog" aria-label="Restore the deposit ledger" className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+      <p>Restore every deposit from <span className="break-all font-mono">{restoreFile.name}</span>? This only works while the gaming ledger is empty, and only for the wallet that made the backup.</p>
+      <div className="flex gap-2"><button type="button" disabled={!!busy} onClick={() => setRestoreFile(null)} className="rounded-lg px-3 py-2">Cancel</button><button type="button" disabled={!!busy} onClick={() => restore(restoreFile)} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 font-medium disabled:opacity-40">{busy === 'restore' && <Loader2 className="h-4 w-4 animate-spin" />}Restore ledger</button></div>
+    </div>}
     {notice && <p role="status" className="break-all rounded-lg bg-blue-500/10 p-3 text-sm">{notice}</p>}
     {rows === null && !error && <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Checking the deposit ledger…</p>}
     {rows?.length === 0 && <p className="rounded-xl border border-gray-700 p-5 text-sm text-gray-400">No deposits have been registered in the bridge ledger.</p>}

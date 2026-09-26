@@ -216,7 +216,9 @@ func decodeState(b []byte) (diskState, error) {
 }
 
 const backupFormat = 1
-const maxBackupBytes = 64 << 20
+
+// MaxBackupBytes is the largest ledger backup a restore accepts.
+const MaxBackupBytes = 64 << 20
 
 type backupEnvelope struct {
 	Format    uint32          `json:"format"`
@@ -251,7 +253,7 @@ func (s *Store) ExportBackup() ([]byte, error) {
 }
 
 func decodeBackup(raw []byte) ([]byte, error) {
-	if len(raw) == 0 || len(raw) > maxBackupBytes {
+	if len(raw) == 0 || len(raw) > MaxBackupBytes {
 		return nil, fmt.Errorf("financial backup is empty or too large")
 	}
 	var envelope backupEnvelope
@@ -272,9 +274,72 @@ func decodeBackup(raw []byte) ([]byte, error) {
 	return append([]byte(nil), envelope.Ledger...), nil
 }
 
-// RestoreBackup restores a missing authority ledger while holding the same
-// exclusive directory lock as Open. It never overwrites an existing ledger;
-// an operator must preserve and inspect a damaged file before replacing it.
+// BackupScopes returns every distinct wallet scope a backup's records name.
+func BackupScopes(raw []byte) ([]Scope, error) {
+	d, err := decodeBackupState(raw)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[Scope]bool{}
+	var out []Scope
+	add := func(s Scope) {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	for _, r := range d.Deposits {
+		add(r.Scope)
+	}
+	for _, r := range d.Keys {
+		add(r.Scope)
+	}
+	for _, r := range d.Tables {
+		add(r.Scope)
+	}
+	for _, r := range d.Operations {
+		add(r.Scope)
+	}
+	for _, r := range d.Settlements {
+		add(r.Scope)
+	}
+	return out, nil
+}
+
+// BackupKeys returns the wallet key locators a backup holds.
+func BackupKeys(raw []byte) ([]WalletKey, error) {
+	d, err := decodeBackupState(raw)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WalletKey, 0, len(d.Keys))
+	for _, k := range d.Keys {
+		out = append(out, k)
+	}
+	return out, nil
+}
+
+func decodeBackupState(raw []byte) (diskState, error) {
+	ledger, err := decodeBackup(raw)
+	if err != nil {
+		return diskState{}, err
+	}
+	return decodeState(ledger)
+}
+
+// isEmptyState reports whether a ledger holds no records at all.
+func isEmptyState(d diskState) bool {
+	return len(d.RosterCommits) == 0 && len(d.Settlements) == 0 && len(d.Peers) == 0 && len(d.Tables) == 0 &&
+		len(d.Keys) == 0 && len(d.Deposits) == 0 && len(d.Operations) == 0 && len(d.Previews) == 0 &&
+		len(d.Quotes) == 0 && len(d.Seated) == 0 && len(d.Proofs) == 0 && len(d.Candidates) == 0
+}
+
+// ErrLedgerHasRecords refuses a restore over a ledger that is in use.
+var ErrLedgerHasRecords = errors.New("financial ledger already exists")
+
+// RestoreBackup restores a missing or empty authority ledger while holding the
+// same exclusive directory lock as Open. It never overwrites a ledger holding
+// records; an operator must preserve and inspect that file before replacing it.
 func RestoreBackup(dir string, raw []byte) error {
 	ledger, err := decodeBackup(raw)
 	if err != nil {
@@ -291,8 +356,10 @@ func RestoreBackup(dir string, raw []byte) error {
 	if err = unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return fmt.Errorf("financial store is already owned: %w", err)
 	}
-	if _, err = os.Stat(filepath.Join(dir, "authority.json")); err == nil {
-		return fmt.Errorf("financial ledger already exists")
+	if b, err := os.ReadFile(filepath.Join(dir, "authority.json")); err == nil {
+		if d, err := decodeState(b); err != nil || !isEmptyState(d) {
+			return ErrLedgerHasRecords
+		}
 	} else if !os.IsNotExist(err) {
 		return err
 	}

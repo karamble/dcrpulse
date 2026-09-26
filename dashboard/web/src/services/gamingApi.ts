@@ -302,6 +302,12 @@ export const getGamingLedgerBackup = async (): Promise<Blob> => {
   const { data } = await api.get<Blob>('/br/gaming/recovery/backup', {responseType: 'blob'});
   return data;
 };
+// restoreGamingLedger sends a downloaded backup back untouched; the server only
+// restores it while the ledger is missing or empty.
+export const restoreGamingLedger = async (file: File): Promise<{restored: boolean; unownedKeys: number}> => {
+  const { data } = await api.post<{restored: boolean; unownedKeys: number}>('/br/gaming/recovery/restore', await file.text(), {headers: {'Content-Type': 'application/json'}});
+  return data;
+};
 // archiveRecovery hides a refunded or paid-out deposit from the recovery list,
 // or shows it again; the ledger keeps the record either way.
 export const archiveRecovery = async (id: string, archived: boolean): Promise<void> => {

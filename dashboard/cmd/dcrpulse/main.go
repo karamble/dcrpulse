@@ -240,13 +240,14 @@ func main() {
 	// The upload routes stream their body to brclientd and each applies its own,
 	// far larger cap; the router-wide one has to stand aside rather than be
 	// raised, because the outer reader is the one that would trip. Registered
-	// below at /br/backup/restore, /br/files/send, /br/files/add and
-	// /br/store/files/upload.
+	// below at /br/backup/restore, /br/files/send, /br/files/add,
+	// /br/store/files/upload and /br/gaming/recovery/restore.
 	uploadRoutes := map[string]bool{
-		"/api/br/backup/restore":     true,
-		"/api/br/files/send":         true,
-		"/api/br/files/add":          true,
-		"/api/br/store/files/upload": true,
+		"/api/br/backup/restore":          true,
+		"/api/br/gaming/recovery/restore": true,
+		"/api/br/files/send":              true,
+		"/api/br/files/add":               true,
+		"/api/br/store/files/upload":      true,
 	}
 
 	// API routes. The body cap is Bison Relay's payload maximum on the protocol
@@ -637,6 +638,7 @@ func main() {
 	api.Handle("/br/gaming/payouts", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingPayoutsHandler))).Methods("GET", "POST")
 	api.Handle("/br/gaming/recovery", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingRecoveryHandler))).Methods("GET", "POST")
 	api.Handle("/br/gaming/recovery/backup", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingLedgerBackupHandler))).Methods("GET")
+	api.Handle("/br/gaming/recovery/restore", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingLedgerRestoreHandler))).Methods("POST")
 
 	api.Handle("/br/gaming/table", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCreateHandler))).Methods("POST")
 	api.Handle("/br/gaming/invite", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingInviteHandler))).Methods("POST")

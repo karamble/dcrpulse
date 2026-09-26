@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -349,4 +351,78 @@ func ArchiveGamingRecovery(ctx context.Context, id string, archived bool) error 
 		return err
 	}
 	return store.SetDepositArchived(id, archived)
+}
+
+// Restore refusals the operator can act on.
+var (
+	ErrGamingBackupInvalid     = errors.New("this is not a valid gaming ledger backup")
+	ErrGamingBackupWrongWallet = errors.New("this backup belongs to another wallet or network")
+)
+
+// Wallet checks the restore runs; tests replace them.
+var (
+	restoreWalletMatches = recoveryWalletMatches
+	restoreKeyOwned      = verifyGamingWalletKey
+)
+
+// RestoreGamingLedger restores the financial ledger from a backup, only while
+// the ledger is missing or empty and only for this wallet. It returns how many
+// of the restored keys this wallet cannot sign for yet.
+func RestoreGamingLedger(ctx context.Context, raw []byte) (int, error) {
+	scopes, err := gamingfunds.BackupScopes(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %v", ErrGamingBackupInvalid, err)
+	}
+	for _, scope := range scopes {
+		if err = restoreWalletMatches(ctx, scope); err != nil {
+			return 0, fmt.Errorf("%w: %v", ErrGamingBackupWrongWallet, err)
+		}
+	}
+	keys, err := gamingfunds.BackupKeys(raw)
+	if err != nil {
+		return 0, err
+	}
+	if err = restoreGamingLedgerFile(raw); err != nil {
+		return 0, err
+	}
+	unowned := 0
+	games := map[string]bool{}
+	for _, key := range keys {
+		if restoreKeyOwned(ctx, key) != nil {
+			unowned++
+		}
+		games[key.Scope.Game] = true
+	}
+	for _, scope := range scopes {
+		games[scope.Game] = true
+	}
+	for game := range games {
+		GamingPresenceChanged(game)
+	}
+	return unowned, nil
+}
+
+// restoreGamingLedgerFile swaps the ledger on disk while no store holds it.
+func restoreGamingLedgerFile(raw []byte) error {
+	financeStores.Lock()
+	defer financeStores.Unlock()
+	path := filepath.Join(GamingStateDir, "financial-authority")
+	if s := financeStores.stores[path]; s != nil {
+		if err := s.Close(); err != nil {
+			return err
+		}
+		delete(financeStores.stores, path)
+	}
+	if err := gamingfunds.RestoreBackup(path, raw); err != nil {
+		return err
+	}
+	s, err := gamingfunds.Open(path)
+	if err != nil {
+		return err
+	}
+	if financeStores.stores == nil {
+		financeStores.stores = map[string]*gamingfunds.Store{}
+	}
+	financeStores.stores[path] = s
+	return nil
 }

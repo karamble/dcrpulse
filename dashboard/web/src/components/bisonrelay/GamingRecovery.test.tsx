@@ -10,16 +10,18 @@ vi.mock('../../hooks/useVisiblePoll', async () => {
 });
 let rows: RecoveryDeposit[] = [];
 const archived: [string, boolean][] = [];
+const restored: File[] = [];
 vi.mock('../../services/gamingApi', () => ({
   getGamingRecovery: async () => rows,
   archiveRecovery: async (id: string, on: boolean) => { archived.push([id, on]); },
   getGamingLedgerBackup: async () => served,
+  restoreGamingLedger: async (f: File) => { restored.push(f); return { restored: true, unownedKeys: 2 }; },
   closeRecoveryTable: vi.fn(),
   quoteRecovery: vi.fn(),
   confirmRecovery: vi.fn(),
 }));
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); rows = []; archived.length = 0; });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); rows = []; archived.length = 0; restored.length = 0; });
 
 describe('GamingRecovery', () => {
   it('saves the ledger backup exactly as served', async () => {
@@ -86,5 +88,25 @@ describe('archiving', () => {
     expect(await screen.findByText('stakewars · table old-table')).toBeTruthy();
     fireEvent.click(screen.getByText('Restore'));
     await waitFor(() => expect(archived).toEqual([['gone', false]]));
+  });
+});
+
+describe('restoring the ledger', () => {
+  it('restores the chosen file after confirmation and reports keys the wallet lacks', async () => {
+    render(<GamingRecovery />);
+    await screen.findByText('No deposits have been registered in the bridge ledger.');
+    const file = new File(['{"format":1}'], 'gaming-ledger-1790422024.json', { type: 'application/json' });
+    fireEvent.change(screen.getByLabelText('Backup file'), { target: { files: [file] } });
+    expect(restored).toEqual([]);
+    fireEvent.click(screen.getByText('Restore ledger'));
+    await waitFor(() => expect(restored).toEqual([file]));
+    expect(await screen.findByText(/2 deposit keys are not known to this wallet yet/)).toBeTruthy();
+  });
+
+  it('offers no restore while the ledger holds deposits', async () => {
+    rows = [dep({ id: 'here', state: 'locked', remainingBlocks: 3 })];
+    render(<GamingRecovery />);
+    await screen.findByText('Time locked');
+    expect(screen.queryByText('Restore backup')).toBeNull();
   });
 });
