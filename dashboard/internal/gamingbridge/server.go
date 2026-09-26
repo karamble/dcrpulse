@@ -223,7 +223,7 @@ func (s *Server) Serve() error {
 	}
 
 	srv := grpc.NewServer(
-		grpc.Creds(credentials.NewTLS(serverTLSConfig(cert, s.allow))),
+		grpc.Creds(credentials.NewTLS(serverTLSConfig(cert, s.allow, s.live))),
 		grpc.ChainUnaryInterceptor(s.unaryIdentity),
 		grpc.ChainStreamInterceptor(s.streamIdentity),
 		// The same ceiling the browser API puts on a request body. A game

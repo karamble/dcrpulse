@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -249,5 +250,21 @@ func TestTheStreamIsIdentifiedTheSameWay(t *testing.T) {
 	if st.Code() == codes.Unimplemented && !strings.Contains(st.Message(), "Subscribe") {
 		t.Fatalf("a registered game's subscription was refused as a stranger's (%q), "+
 			"so the stream is not resolving identity the way calls do", st.Message())
+	}
+}
+
+// A switched-off bridge completes no TLS handshake, so nothing past TLS is
+// reachable while it is off; switched back on, it verifies against the
+// allowlist again.
+func TestASwitchedOffBridgeRefusesTheHandshake(t *testing.T) {
+	var on atomic.Bool
+	cfg := serverTLSConfig(tls.Certificate{}, NewAllowlist(), on.Load)
+	if got, err := cfg.GetConfigForClient(&tls.ClientHelloInfo{}); err == nil || got != nil {
+		t.Fatalf("switched off: config %v, err %v", got, err)
+	}
+	on.Store(true)
+	got, err := cfg.GetConfigForClient(&tls.ClientHelloInfo{})
+	if err != nil || got == nil || got.ClientCAs == nil || got.ClientAuth != tls.RequireAndVerifyClientCert {
+		t.Fatalf("switched on: config %+v, err %v", got, err)
 	}
 }

@@ -229,12 +229,18 @@ func (a *Allowlist) pool() *x509.CertPool {
 // it afterwards, because this way the standard verifier does the work - and it
 // enforces the validity window, which a hand-rolled check would have to
 // remember to do.
-func serverTLSConfig(cert tls.Certificate, allow *Allowlist) *tls.Config {
+//
+// A switched-off bridge completes no handshake at all, so nothing past TLS is
+// reachable while it is off.
+func serverTLSConfig(cert tls.Certificate, allow *Allowlist, live func() bool) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			if !live() {
+				return nil, errors.New("the gaming bridge is switched off")
+			}
 			return &tls.Config{
 				Certificates: []tls.Certificate{cert},
 				MinVersion:   tls.VersionTLS12,
