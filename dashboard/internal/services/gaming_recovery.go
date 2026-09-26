@@ -29,6 +29,7 @@ type GamingRecoveryView struct {
 	Reason          string `json:"reason,omitempty"`
 	CanRecover      bool   `json:"canRecover"`
 	Closed          bool   `json:"closed"`
+	Archived        bool   `json:"archived"`
 }
 
 func recoveryWalletMatches(ctx context.Context, scope gamingfunds.Scope) error {
@@ -143,7 +144,7 @@ func pendingReason(spender, refund string) string {
 }
 
 func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[string]string, poolErr error) GamingRecoveryView {
-	v := GamingRecoveryView{ID: dep.ID, Game: dep.Scope.Game, Table: dep.Terms.Table, Kind: dep.Terms.Kind, Atoms: dep.Terms.Atoms, Outpoint: dep.Outpoint, LockBlocks: dep.Terms.LockBlocks, Closed: dep.Closed, State: "needs_attention"}
+	v := GamingRecoveryView{ID: dep.ID, Game: dep.Scope.Game, Table: dep.Terms.Table, Kind: dep.Terms.Kind, Atoms: dep.Terms.Atoms, Outpoint: dep.Outpoint, LockBlocks: dep.Terms.LockBlocks, Closed: dep.Closed, Archived: dep.Archived, State: "needs_attention"}
 	if err := recoveryWalletMatches(ctx, dep.Scope); err != nil {
 		v.Reason = err.Error()
 		return v
@@ -338,4 +339,14 @@ func GamingLedgerBackup() ([]byte, error) {
 		return nil, err
 	}
 	return store.ExportBackup()
+}
+
+// ArchiveGamingRecovery hides a refunded or paid-out deposit from the recovery
+// list, or shows it again. The ledger keeps the record either way.
+func ArchiveGamingRecovery(ctx context.Context, id string, archived bool) error {
+	store, err := gamingFundsStore()
+	if err != nil {
+		return err
+	}
+	return store.SetDepositArchived(id, archived)
 }

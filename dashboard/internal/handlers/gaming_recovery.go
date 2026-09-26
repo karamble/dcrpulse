@@ -30,6 +30,12 @@ func BisonrelayGamingRecoveryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Action {
+	case "archive", "unarchive":
+		if err := services.ArchiveGamingRecovery(r.Context(), req.ID, req.Action == "archive"); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		gamingJSON(w, map[string]bool{"archived": req.Action == "archive"})
 	case "close":
 		if err := services.CloseGamingRecoveryTable(r.Context(), req.ID); err != nil {
 			http.Error(w, err.Error(), http.StatusConflict)

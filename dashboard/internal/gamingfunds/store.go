@@ -45,6 +45,9 @@ type Deposit struct {
 	State         string `json:"state"`
 	Closed        bool   `json:"closed"`
 	Error         string `json:"error,omitempty"`
+	// Archived hides a finished deposit from the recovery list; the record
+	// itself is kept.
+	Archived bool `json:"archived,omitempty"`
 }
 
 type Operation struct {
@@ -939,4 +942,28 @@ func (t TableAuthorization) CheckDeposit(d Terms) error {
 		return fmt.Errorf("deposit roster differs from table size")
 	}
 	return nil
+}
+
+// SetDepositArchived hides a spent deposit from the recovery list, or shows it
+// again. Only a spent deposit can be archived; its record is never removed.
+func (s *Store) SetDepositArchived(id string, archived bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return err
+	}
+	dep, ok := d.Deposits[id]
+	if !ok {
+		return fmt.Errorf("unknown deposit")
+	}
+	if archived && dep.State != "spent" {
+		return fmt.Errorf("only a refunded or paid-out deposit can be archived")
+	}
+	if dep.Archived == archived {
+		return nil
+	}
+	dep.Archived = archived
+	d.Deposits[id] = dep
+	return s.save(d)
 }

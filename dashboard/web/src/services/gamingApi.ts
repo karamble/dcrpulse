@@ -287,7 +287,7 @@ export interface RecoveryDeposit {
   id: string; game: string; table: string; kind: string; atoms: number;
   outpoint: string; lockBlocks: number; confirmations: number;
   remainingBlocks: number; state: string; reason?: string;
-  canRecover: boolean; closed: boolean;
+  canRecover: boolean; closed: boolean; archived: boolean;
 }
 export interface RecoveryQuote {
   id: string; depositId: string; destination: string; feeAtoms: number;
@@ -301,6 +301,11 @@ export const getGamingRecovery = async (): Promise<RecoveryDeposit[]> => {
 export const getGamingLedgerBackup = async (): Promise<Blob> => {
   const { data } = await api.get<Blob>('/br/gaming/recovery/backup', {responseType: 'blob'});
   return data;
+};
+// archiveRecovery hides a refunded or paid-out deposit from the recovery list,
+// or shows it again; the ledger keeps the record either way.
+export const archiveRecovery = async (id: string, archived: boolean): Promise<void> => {
+  await api.post('/br/gaming/recovery', {id, action: archived ? 'archive' : 'unarchive'});
 };
 export const closeRecoveryTable = async (id: string): Promise<void> => {
   await api.post('/br/gaming/recovery', {id, action: 'close'});

@@ -1,12 +1,43 @@
 import { useCallback, useRef, useState } from 'react';
-import { ArrowDownToLine, Download, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArchiveRestore, ArrowDownToLine, Download, Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
 import { formatAtomsTrimmed } from '../../utils/amounts';
-import { closeRecoveryTable, confirmRecovery, getGamingLedgerBackup, getGamingRecovery, quoteRecovery, RecoveryDeposit, RecoveryQuote } from '../../services/gamingApi';
+import { archiveRecovery, closeRecoveryTable, confirmRecovery, getGamingLedgerBackup, getGamingRecovery, quoteRecovery, RecoveryDeposit, RecoveryQuote } from '../../services/gamingApi';
 
 const labels: Record<string, string> = {seatbond: 'Admission bond', stake: 'Game stake', tablebond: 'Table bond'};
 const states: Record<string, string> = {awaiting_payment: 'Awaiting payment', locked: 'Time locked', close_table: 'Ready after table closure', recoverable: 'Ready to recover', recovery_pending: 'Refund broadcast', spent: 'Refunded', needs_attention: 'Needs attention'};
+
+// rank puts what the operator can act on first, then what is still locked,
+// then what waits for payment or a broadcast, then what is finished.
+const rank = (r: RecoveryDeposit): number => {
+  switch (r.state) {
+    case 'recoverable': case 'close_table': case 'needs_attention': return 0;
+    case 'locked': return 1;
+    case 'awaiting_payment': return 2;
+    case 'recovery_pending': return 3;
+    default: return 4;
+  }
+};
+const byRank = (a: RecoveryDeposit, b: RecoveryDeposit): number =>
+  rank(a) - rank(b) || (rank(a) === 1 ? a.remainingBlocks - b.remainingBlocks : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+export interface RecoveryGroup { table: string; game: string; items: RecoveryDeposit[] }
+
+// recoveryGroups gathers one table's deposits under one heading, ordered by
+// the table's most urgent deposit.
+export function recoveryGroups(rows: RecoveryDeposit[]): RecoveryGroup[] {
+  const groups = new Map<string, RecoveryGroup>();
+  for (const r of rows) {
+    const key = `${r.game}\u0000${r.table}`;
+    const g = groups.get(key) ?? { table: r.table, game: r.game, items: [] };
+    g.items.push(r);
+    groups.set(key, g);
+  }
+  const out = [...groups.values()];
+  for (const g of out) g.items.sort(byRank);
+  return out.sort((a, b) => byRank(a.items[0], b.items[0]) || (a.table < b.table ? -1 : a.table > b.table ? 1 : 0));
+}
 
 export function GamingRecovery() {
   const [rows, setRows] = useState<RecoveryDeposit[] | null>(null);
@@ -16,6 +47,7 @@ export function GamingRecovery() {
   const [notice, setNotice] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const loading = useRef(false);
   const action = useRef(false);
   const downloadBackup = async () => {
@@ -61,15 +93,28 @@ export function GamingRecovery() {
     {notice && <p role="status" className="break-all rounded-lg bg-blue-500/10 p-3 text-sm">{notice}</p>}
     {rows === null && !error && <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Checking the deposit ledger…</p>}
     {rows?.length === 0 && <p className="rounded-xl border border-gray-700 p-5 text-sm text-gray-400">No deposits have been registered in the bridge ledger.</p>}
-    <div className="grid gap-3">{rows?.map(row => <article key={row.id} className="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+    {(['active', 'archived'] as const).map(part => {
+      const list = (rows ?? []).filter(r => r.archived === (part === 'archived'));
+      if (part === 'archived' && !showArchived) return null;
+      return <div key={part} className="space-y-5">{recoveryGroups(list).map(g => <section key={`${part}-${g.game}-${g.table}`} className="space-y-3" aria-label={`Table ${g.table || 'identity'}`}>
+        <h3 className="break-all font-mono text-xs text-gray-400">{g.game} · table {g.table || 'identity'}</h3>
+        <div className="grid gap-3">{g.items.map(row => <article key={row.id} className="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-medium">{labels[row.kind] ?? row.kind} <span className="text-sm text-gray-400">· {row.game}</span></h3><p className="mt-1 text-xl font-semibold">{formatAtomsTrimmed(row.atoms)} DCR</p></div><span className="rounded-full bg-gray-700/50 px-3 py-1 text-xs">{states[row.state] ?? row.state}</span></div>
-      <p className="mt-3 break-all font-mono text-xs text-gray-500">Table {row.table || 'identity'}{row.outpoint && <><br />{row.outpoint}</>}</p>
+      {row.outpoint && <p className="mt-3 break-all font-mono text-xs text-gray-500">{row.outpoint}</p>}
       {row.state === 'locked' && <div className="mt-3"><progress className="h-1.5 w-full accent-emerald-400" max={row.lockBlocks} value={Math.max(0, row.confirmations)} /><p className="mt-1 text-xs text-gray-400">{row.remainingBlocks.toLocaleString()} blocks remaining · approximately {Math.ceil(row.remainingBlocks * 5 / 60)} hours</p></div>}
       {row.reason && <p className="mt-2 text-sm text-gray-400">{row.reason}</p>}
       <div className="mt-3 flex gap-2">{row.state === 'close_table' && <button type="button" disabled={!!busy || !!error} onClick={() => void perform(row.id, async () => { await closeRecoveryTable(row.id); setNotice('Table closed locally. Deposits remain tracked.'); })} className="rounded-lg border border-gray-600 px-3 py-2 text-sm disabled:opacity-40">Close table</button>}
       {row.canRecover && <button type="button" disabled={!!busy || !!error} onClick={() => void perform(row.id, async () => setQuote(await quoteRecovery(row.id)))} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium disabled:opacity-40"><ArrowDownToLine className="h-4 w-4" />Take it back</button>}
+      {row.state === 'spent' && !row.archived && <button type="button" disabled={!!busy} onClick={() => void perform(row.id, () => archiveRecovery(row.id, true))} className="ml-auto rounded-lg border border-gray-700 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40" aria-label="Archive" title="Archive: hide from this list, keep the record"><Trash2 className="h-4 w-4" /></button>}
+      {row.archived && <button type="button" disabled={!!busy} onClick={() => void perform(row.id, () => archiveRecovery(row.id, false))} className="ml-auto flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm disabled:opacity-40"><ArchiveRestore className="h-4 w-4" />Restore</button>}
       {busy === row.id && <Loader2 className="h-5 w-5 animate-spin" />}</div>
     </article>)}</div>
+      </section>)}</div>;
+    })}
+    {(rows ?? []).some(r => r.archived) && <div className="space-y-1">
+      <button type="button" onClick={() => setShowArchived(v => !v)} className="text-sm text-gray-400 underline hover:no-underline">{showArchived ? 'Hide archived' : `Show archived (${(rows ?? []).filter(r => r.archived).length})`}</button>
+      <p className="text-xs text-gray-500">Archiving hides a finished deposit from this list. Its record stays in the ledger and in the backup.</p>
+    </div>}
     {quote && <div role="dialog" aria-modal="true" aria-labelledby="recovery-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-lg space-y-4 rounded-2xl border border-gray-700 bg-gray-900 p-6">
       <h3 id="recovery-title" className="text-lg font-semibold">Confirm recovery</h3><dl className="space-y-2 text-sm"><div><dt className="text-gray-400">Returned to your wallet</dt><dd className="text-xl">{formatAtomsTrimmed(quote.returnAtoms)} DCR</dd></div><div><dt className="text-gray-400">Transaction fee</dt><dd>{formatAtomsTrimmed(quote.feeAtoms)} DCR</dd></div><div><dt className="text-gray-400">Destination</dt><dd className="break-all font-mono text-xs">{quote.destination}</dd></div></dl>
       <p className="text-xs text-gray-400">The bridge will recheck the deposit, then sign and broadcast this refund. The quote expires after two minutes.</p>

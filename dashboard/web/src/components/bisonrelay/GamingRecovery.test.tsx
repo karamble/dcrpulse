@@ -1,21 +1,25 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GamingRecovery } from './GamingRecovery';
+import type { RecoveryDeposit } from '../../services/gamingApi';
+import { GamingRecovery, recoveryGroups } from './GamingRecovery';
 
 const served = new Blob(['{"format":1,"ledger":{"a": 1}}'], { type: 'application/json' });
 vi.mock('../../hooks/useVisiblePoll', async () => {
   const { useEffect } = await import('react');
   return { useVisiblePoll: (fn: () => void) => useEffect(() => fn(), []) };
 });
+let rows: RecoveryDeposit[] = [];
+const archived: [string, boolean][] = [];
 vi.mock('../../services/gamingApi', () => ({
-  getGamingRecovery: async () => [],
+  getGamingRecovery: async () => rows,
+  archiveRecovery: async (id: string, on: boolean) => { archived.push([id, on]); },
   getGamingLedgerBackup: async () => served,
   closeRecoveryTable: vi.fn(),
   quoteRecovery: vi.fn(),
   confirmRecovery: vi.fn(),
 }));
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); rows = []; archived.length = 0; });
 
 describe('GamingRecovery', () => {
   it('saves the ledger backup exactly as served', async () => {
@@ -31,5 +35,56 @@ describe('GamingRecovery', () => {
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
     expect(saved).toEqual([served]);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:backup');
+  });
+});
+
+const dep = (over: Partial<RecoveryDeposit>): RecoveryDeposit => ({
+  id: 'd', game: 'stakewars', table: 't1', kind: 'seatbond', atoms: 1000000, outpoint: 'op', lockBlocks: 2016,
+  confirmations: 10, remainingBlocks: 0, state: 'spent', canRecover: false, closed: true, archived: false, ...over,
+});
+
+describe('recovery order', () => {
+  it('puts actionable deposits first, locked ones by time left, finished last', () => {
+    const groups = recoveryGroups([
+      dep({ id: 'done', table: 'tA', state: 'spent' }),
+      dep({ id: 'late', table: 'tB', state: 'locked', remainingBlocks: 900 }),
+      dep({ id: 'soon', table: 'tC', state: 'locked', remainingBlocks: 10 }),
+      dep({ id: 'ready', table: 'tD', state: 'recoverable', canRecover: true }),
+      dep({ id: 'paying', table: 'tE', state: 'awaiting_payment' }),
+      dep({ id: 'flying', table: 'tF', state: 'recovery_pending' }),
+    ]);
+    expect(groups.map((g) => g.items[0].id)).toEqual(['ready', 'soon', 'late', 'paying', 'flying', 'done']);
+  });
+
+  it("keeps a table's deposits together, led by its most urgent one", () => {
+    const groups = recoveryGroups([
+      dep({ id: 'bond', table: 't1', state: 'spent' }),
+      dep({ id: 'other', table: 't2', state: 'locked', remainingBlocks: 5 }),
+      dep({ id: 'stake', table: 't1', kind: 'stake', state: 'close_table' }),
+    ]);
+    expect(groups.map((g) => [g.table, g.items.map((i) => i.id)])).toEqual([['t1', ['stake', 'bond']], ['t2', ['other']]]);
+  });
+});
+
+describe('archiving', () => {
+  it('offers the trash only on finished deposits and archives through the ledger', async () => {
+    rows = [dep({ id: 'done', state: 'spent' }), dep({ id: 'ready', table: 't2', state: 'recoverable', canRecover: true })];
+    render(<GamingRecovery />);
+    await screen.findByText('Ready to recover');
+    const trash = screen.getAllByLabelText('Archive');
+    expect(trash).toHaveLength(1);
+    fireEvent.click(trash[0]);
+    await waitFor(() => expect(archived).toEqual([['done', true]]));
+  });
+
+  it('hides archived deposits until asked, then restores them', async () => {
+    rows = [dep({ id: 'gone', table: 'old-table', archived: true }), dep({ id: 'here', table: 'live-table', state: 'locked', remainingBlocks: 3 })];
+    render(<GamingRecovery />);
+    await screen.findByText('stakewars · table live-table');
+    expect(screen.queryByText('stakewars · table old-table')).toBeNull();
+    fireEvent.click(screen.getByText('Show archived (1)'));
+    expect(await screen.findByText('stakewars · table old-table')).toBeTruthy();
+    fireEvent.click(screen.getByText('Restore'));
+    await waitFor(() => expect(archived).toEqual([['gone', false]]));
   });
 });
