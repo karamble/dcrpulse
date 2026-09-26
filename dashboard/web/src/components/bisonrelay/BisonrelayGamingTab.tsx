@@ -44,6 +44,8 @@ import { AccountInfo, getAccounts } from '../../services/api';
 import { isReservedAccount } from '../accounts/AccountRow';
 import { GamingCreateTable } from './GamingCreateTable';
 import { GamingRecovery } from './GamingRecovery';
+import { GamingAppPasswordNotice } from './GamingAppPasswordNotice';
+import { needsAppPassword } from '../../utils/apiError';
 import { CapValue, GamingCapField, capError, capFromDcr, capToDcr } from './GamingCapField';
 
 // blankPolicy is what an unedited card starts from. The server mints the real
@@ -309,6 +311,10 @@ export const BisonrelayGamingTab = () => {
   // operator finds out before pressing the button or after.
   const txIndexActive = settings?.txIndexActive !== false;
   const chainReachable = settings?.chainReachable !== false;
+
+  if (settingsRes.state.status === 'error' && needsAppPassword(settingsRes.state.cause)) {
+    return <GamingAppPasswordNotice />;
+  }
 
   if (settingsRes.state.status === 'error') {
     return (

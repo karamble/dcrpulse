@@ -22,7 +22,7 @@ export type Async<T> =
   // is the best available truth, so it stays on screen and the error goes
   // beside it rather than replacing it.
   | { status: 'stale'; data: T; at: number; error: string }
-  | { status: 'error'; error: string };
+  | { status: 'error'; error: string; cause?: unknown };
 
 // dataOf returns what we hold, or undefined when we have never had an answer.
 export const dataOf = <T>(s: Async<T>): T | undefined =>
@@ -79,7 +79,7 @@ export function useAsyncResource<T>(
       setState(
         have
           ? { status: 'stale', data: have.data, at: have.at, error: text }
-          : { status: 'error', error: text },
+          : { status: 'error', error: text, cause: err },
       );
     } finally {
       if (mine === gen.current) setRefreshing(false);

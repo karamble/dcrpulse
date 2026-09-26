@@ -16,3 +16,10 @@ export const apiError = (err: unknown, fallback: string): string => {
   if (e?.message) return e.message;
   return fallback;
 };
+
+// needsAppPassword reports whether a request was refused only because no
+// dashboard app password is set, which the server marks with a header.
+export const needsAppPassword = (err: unknown): boolean => {
+  const res = (err as { response?: { status?: number; headers?: Record<string, string> } } | null | undefined)?.response;
+  return res?.status === 401 && res.headers?.['x-dashboard-auth'] === 'password-required';
+};
