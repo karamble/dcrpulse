@@ -297,6 +297,11 @@ export const getGamingRecovery = async (): Promise<RecoveryDeposit[]> => {
   const { data } = await api.get<{deposits: RecoveryDeposit[]}>('/br/gaming/recovery');
   return data.deposits;
 };
+// The ledger backup is kept as the exact bytes served: its checksum covers them.
+export const getGamingLedgerBackup = async (): Promise<Blob> => {
+  const { data } = await api.get<Blob>('/br/gaming/recovery/backup', {responseType: 'blob'});
+  return data;
+};
 export const closeRecoveryTable = async (id: string): Promise<void> => {
   await api.post('/br/gaming/recovery', {id, action: 'close'});
 };

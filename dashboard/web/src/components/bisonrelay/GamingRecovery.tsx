@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
-import { ArrowDownToLine, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArrowDownToLine, Download, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
 import { formatAtomsTrimmed } from '../../utils/amounts';
-import { closeRecoveryTable, confirmRecovery, getGamingRecovery, quoteRecovery, RecoveryDeposit, RecoveryQuote } from '../../services/gamingApi';
+import { closeRecoveryTable, confirmRecovery, getGamingLedgerBackup, getGamingRecovery, quoteRecovery, RecoveryDeposit, RecoveryQuote } from '../../services/gamingApi';
 
 const labels: Record<string, string> = {seatbond: 'Admission bond', stake: 'Game stake', tablebond: 'Table bond'};
 const states: Record<string, string> = {awaiting_payment: 'Awaiting payment', locked: 'Time locked', close_table: 'Ready after table closure', recoverable: 'Ready to recover', recovery_pending: 'Refund broadcast', spent: 'Refunded', needs_attention: 'Needs attention'};
@@ -15,8 +15,23 @@ export function GamingRecovery() {
   const [quote, setQuote] = useState<RecoveryQuote | null>(null);
   const [notice, setNotice] = useState('');
   const [passphrase, setPassphrase] = useState('');
+  const [saving, setSaving] = useState(false);
   const loading = useRef(false);
   const action = useRef(false);
+  const downloadBackup = async () => {
+    setSaving(true); setNotice('');
+    try {
+      const url = URL.createObjectURL(await getGamingLedgerBackup());
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gaming-ledger-${Math.floor(Date.now() / 1000)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) { setNotice(apiError(e, 'Could not export the deposit ledger')); }
+    finally { setSaving(false); }
+  };
   const load = useCallback(async () => {
     if (loading.current) return;
     loading.current = true;
@@ -35,8 +50,12 @@ export function GamingRecovery() {
   return <section className="space-y-5">
     <div className="flex items-start justify-between gap-4">
       <div><h2 className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck className="h-5 w-5 text-emerald-400" /> Recover your deposits</h2>
-        <p className="mt-1 text-sm text-gray-400">Bonds and stakes remain recorded here when a game closes. Recovery eligibility is checked against your node.</p></div>
-      <button type="button" onClick={() => void load()} className="rounded-lg border border-gray-700 p-2" aria-label="Refresh recovery status"><RefreshCw className="h-4 w-4" /></button>
+        <p className="mt-1 text-sm text-gray-400">Bonds and stakes remain recorded here when a game closes. Recovery eligibility is checked against your node.</p>
+        <p className="mt-1 text-xs text-gray-500">The backup holds every deposit, open and settled, with its terms and transactions. It contains no keys, but it does show your games and amounts.</p></div>
+      <div className="flex shrink-0 gap-2">
+        <button type="button" disabled={saving} onClick={() => void downloadBackup()} className="flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm disabled:opacity-40">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download backup</button>
+        <button type="button" onClick={() => void load()} className="rounded-lg border border-gray-700 p-2" aria-label="Refresh recovery status"><RefreshCw className="h-4 w-4" /></button>
+      </div>
     </div>
     {error && <p role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">{error} Recovery actions are disabled until fresh verification succeeds.</p>}
     {notice && <p role="status" className="break-all rounded-lg bg-blue-500/10 p-3 text-sm">{notice}</p>}

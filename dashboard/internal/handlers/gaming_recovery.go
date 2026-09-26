@@ -58,3 +58,17 @@ func BisonrelayGamingRecoveryHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown recovery action", http.StatusBadRequest)
 	}
 }
+
+// BisonrelayGamingLedgerBackupHandler serves the financial ledger backup as a
+// file, byte for byte, so its checksum still verifies on restore.
+func BisonrelayGamingLedgerBackupHandler(w http.ResponseWriter, r *http.Request) {
+	raw, err := services.GamingLedgerBackup()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(raw)
+}

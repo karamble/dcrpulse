@@ -328,3 +328,14 @@ func ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []b
 	GamingPresenceChanged(dep.Scope.Game)
 	return txid, nil
 }
+
+// GamingLedgerBackup returns the whole financial ledger as a self-checking
+// backup: open and settled deposits, their terms and scripts, and every
+// funding, payout and refund transaction. It holds no private keys.
+func GamingLedgerBackup() ([]byte, error) {
+	store, err := gamingFundsStore()
+	if err != nil {
+		return nil, err
+	}
+	return store.ExportBackup()
+}
