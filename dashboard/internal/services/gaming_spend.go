@@ -341,6 +341,29 @@ func spentInDayLocked(log spendLog, game string, now int64, excludeID string) in
 	return total
 }
 
+// tableCommittedLocked totals what one game has asked for or paid at one
+// table: stake and bonds together, pending, publishing or approved, of any
+// age. The table cap is on the table, not on each deposit.
+func tableCommittedLocked(log spendLog, game, table string, excludeID string) int64 {
+	if table == "" {
+		return 0
+	}
+	var total int64
+	for _, s := range log.Spends {
+		if s.Game != game || s.TableID != table || (!spendOutstanding(s) && s.State != GamingSpendApproved) {
+			continue
+		}
+		if excludeID != "" && s.ID == excludeID {
+			continue
+		}
+		if s.AmountAtoms < 0 || s.AmountAtoms > math.MaxInt64-total {
+			return math.MaxInt64
+		}
+		total += s.AmountAtoms
+	}
+	return total
+}
+
 // spendOutstanding reports whether an entry is still in flight: awaiting a
 // person, or approved and being broadcast. Both hold a slot in the per-game
 // ceiling, because both are exposure nobody has finished accounting for.
@@ -422,6 +445,31 @@ func checkSpendAgainstDay(p types.GamePolicy, amountAtoms, used int64) error {
 	return fmt.Errorf(
 		"%w: %d atoms would pass the daily cap of %d, with %d already spent or awaiting an answer",
 		ErrGamingSpendOverCap, amountAtoms, p.PerDayCapAtoms, used)
+}
+
+// checkSpendAgainstTable bounds a request by what its table has left under
+// the per-table cap, in the same form as checkSpendAgainstDay.
+func checkSpendAgainstTable(p types.GamePolicy, game string, amountAtoms, used int64) error {
+	if p.PerTableCapAtoms <= 0 {
+		return nil
+	}
+	if used >= 0 && amountAtoms <= p.PerTableCapAtoms-used {
+		return nil
+	}
+	return fmt.Errorf("%w: %d atoms would pass %q's per-table cap of %d, with %d already committed to this table",
+		ErrGamingSpendOverCap, amountAtoms, game, p.PerTableCapAtoms, used)
+}
+
+// checkGamingTableCap checks a new deposit against its table's remaining cap
+// before the deposit is registered.
+func checkGamingTableCap(p types.GamePolicy, game, table string, amountAtoms int64) error {
+	spendMu.Lock()
+	defer spendMu.Unlock()
+	log, err := readSpendLog()
+	if err != nil {
+		return err
+	}
+	return checkSpendAgainstTable(p, game, amountAtoms, tableCommittedLocked(log, game, table, ""))
 }
 
 func spendFromFundingApproval(a gamingfunds.FundingApproval, now int64) GamingSpend {
@@ -588,6 +636,9 @@ func requestGamingSpend(ctx context.Context, game, address string, amountAtoms i
 	}
 
 	if err := checkSpendAgainstDay(policy, amountAtoms, spentInDayLocked(log, game, now, "")); err != nil {
+		return GamingSpend{}, err
+	}
+	if err := checkSpendAgainstTable(policy, game, amountAtoms, tableCommittedLocked(log, game, verified.Deposit.Terms.Table, "")); err != nil {
 		return GamingSpend{}, err
 	}
 
@@ -806,6 +857,9 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 	policy, err := checkSpendRequest(ReadGamingSettings(), req.Game, req.Address, req.AmountAtoms)
 	if err == nil {
 		err = checkSpendAgainstDay(policy, req.AmountAtoms, spentInDayLocked(log, req.Game, now, req.ID))
+	}
+	if err == nil {
+		err = checkSpendAgainstTable(policy, req.Game, req.AmountAtoms, tableCommittedLocked(log, req.Game, req.TableID, req.ID))
 	}
 	if err != nil {
 		spendMu.Unlock()

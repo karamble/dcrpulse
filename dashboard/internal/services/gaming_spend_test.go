@@ -382,3 +382,88 @@ func TestUnreadableAuditLogRefusesEveryDecision(t *testing.T) {
 		t.Fatal("corrupt log was served as empty history")
 	}
 }
+
+func TestTableCapCoversStakeAndBondsTogether(t *testing.T) {
+	now := time.Now().Unix()
+	log := spendLog{Spends: []GamingSpend{
+		{ID: "stake", Game: "poker", TableID: "t1", State: GamingSpendApproved, AmountAtoms: 60_000_000, DecidedAt: now - 3*86400},
+		{ID: "seat", Game: "poker", TableID: "t1", State: GamingSpendPending, AmountAtoms: 30_000_000},
+		{ID: "gone", Game: "poker", TableID: "t1", State: GamingSpendDenied, AmountAtoms: 90_000_000},
+		{ID: "late", Game: "poker", TableID: "t1", State: GamingSpendExpired, AmountAtoms: 70_000_000},
+		{ID: "other", Game: "poker", TableID: "t2", State: GamingSpendApproved, AmountAtoms: 80_000_000},
+		{ID: "chess", Game: "chess", TableID: "t1", State: GamingSpendApproved, AmountAtoms: 40_000_000},
+		{ID: "ident", Game: "poker", State: GamingSpendApproved, AmountAtoms: 5_000_000, DecidedAt: now - 60},
+	}}
+	if got := tableCommittedLocked(log, "poker", "t1", ""); got != 90_000_000 {
+		t.Fatalf("t1 committed %d, want 90000000", got)
+	}
+	if got := tableCommittedLocked(log, "poker", "t1", "seat"); got != 60_000_000 {
+		t.Fatalf("t1 without its own request %d, want 60000000", got)
+	}
+	if got := tableCommittedLocked(log, "poker", "", ""); got != 0 {
+		t.Fatalf("no table counted %d", got)
+	}
+	p := spendPolicy().Policies["poker"]
+	if err := checkSpendAgainstTable(p, "poker", 10_000_000, tableCommittedLocked(log, "poker", "t1", "")); err != nil {
+		t.Fatalf("table bond that fits was refused: %v", err)
+	}
+	if err := checkSpendAgainstTable(p, "poker", 10_000_001, tableCommittedLocked(log, "poker", "t1", "")); !errors.Is(err, ErrGamingSpendOverCap) {
+		t.Fatalf("deposit past the table cap returned %v", err)
+	}
+	if err := checkSpendAgainstTable(p, "poker", 20_000_000, tableCommittedLocked(log, "poker", "t2", "")); err != nil {
+		t.Fatalf("another table's budget was shared: %v", err)
+	}
+	if err := checkSpendAgainstTable(p, "poker", 1, -1); !errors.Is(err, ErrGamingSpendOverCap) {
+		t.Fatalf("negative committed total returned %v", err)
+	}
+	p.PerTableCapAtoms = 0
+	if err := checkSpendAgainstTable(p, "poker", math.MaxInt64, 0); err != nil {
+		t.Fatalf("zero table cap is unlimited, got %v", err)
+	}
+	log.Spends = append(log.Spends, GamingSpend{Game: "poker", TableID: "t1", State: GamingSpendPending, AmountAtoms: math.MaxInt64})
+	if got := tableCommittedLocked(log, "poker", "t1", ""); got != math.MaxInt64 {
+		t.Fatalf("overflowing table total became %d", got)
+	}
+}
+
+func TestApprovalRechecksTheTableCap(t *testing.T) {
+	spendSeams(t)
+	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
+		t.Fatalf("store policy: %v", err)
+	}
+	now := time.Now().Unix()
+	if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+		{ID: "dd44", Game: "poker", TableID: "t9", Address: "Tsaddr", AmountAtoms: 40_000_000, State: GamingSpendApproved, DecidedAt: now - 60},
+		{ID: "ee55", Game: "poker", TableID: "t9", Address: "Tsaddr", AmountAtoms: 70_000_000, State: GamingSpendPending, RequestedAt: now, ExpiresAt: now + 300},
+	}}, now); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
+	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+		t.Fatal("a request past its table cap reached signing")
+		return nil, nil
+	}
+	if _, err := ApproveGamingSpend(context.Background(), "ee55", []byte("pass")); !errors.Is(err, ErrGamingSpendOverCap) {
+		t.Fatalf("approval past the table cap returned %v", err)
+	}
+	if got := mustReadSpendLog(t).Spends[1].State; got != GamingSpendPending {
+		t.Fatalf("refused approval changed state to %q", got)
+	}
+}
+
+func TestDepositRegistrationChecksTheTableCap(t *testing.T) {
+	spendSeams(t)
+	now := time.Now().Unix()
+	if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+		{ID: "ff66", Game: "poker", TableID: "t4", AmountAtoms: 95_000_000, State: GamingSpendApproved, DecidedAt: now - 60},
+	}}, now); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	p := spendPolicy().Policies["poker"]
+	if err := checkGamingTableCap(p, "poker", "t4", 5_000_001); !errors.Is(err, ErrGamingSpendOverCap) {
+		t.Fatalf("bond past the table cap returned %v", err)
+	}
+	if err := checkGamingTableCap(p, "poker", "t4", 5_000_000); err != nil {
+		t.Fatalf("bond inside the table cap refused: %v", err)
+	}
+}

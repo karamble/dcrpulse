@@ -716,7 +716,7 @@ export const BisonrelayGamingTab = () => {
                       </label>
 
                       <GamingCapField
-                        label="Max buy-in per table (DCR)"
+                        label="Max per table, stake and bonds (DCR)"
                         value={capOf(g.id, 'perTable')}
                         onChange={(v) => setPolicy(g.id, { perTable: v })}
                       />

@@ -121,7 +121,11 @@ func PrepareGamingDeposit(ctx context.Context, game string, req *gamingpb.Prepar
 	if err != nil {
 		return nil, err
 	}
-	if _, err = checkSpendRequest(ReadGamingSettings(), game, address, terms.Atoms); err != nil {
+	policy, err := checkSpendRequest(ReadGamingSettings(), game, address, terms.Atoms)
+	if err != nil {
+		return nil, err
+	}
+	if err = checkGamingTableCap(policy, game, terms.Table, terms.Atoms); err != nil {
 		return nil, err
 	}
 	dep, err := store.Register(scope, terms, params)

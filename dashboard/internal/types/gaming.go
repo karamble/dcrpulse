@@ -33,7 +33,8 @@ type GamePolicy struct {
 	// drawn from another's.
 	Account string `json:"account"`
 
-	// PerTableCapAtoms bounds a single buy-in.
+	// PerTableCapAtoms bounds everything one table may draw: stake and bonds
+	// together.
 	PerTableCapAtoms int64 `json:"perTableCapAtoms"`
 
 	// PerDayCapAtoms bounds everything this game stakes in a rolling day,
