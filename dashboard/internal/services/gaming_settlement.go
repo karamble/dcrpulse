@@ -124,6 +124,9 @@ type GamingPayoutView struct {
 	gamingfunds.Settlement
 	// Mine is nil when the operator has no stake among the inputs.
 	Mine *GamingPayoutShare `json:"mine"`
+	// SignaturesSent says whether our signatures reached Bison Relay: "sent",
+	// "uncertain" or "unsent"; empty when we have none waiting on peers.
+	SignaturesSent string `json:"signaturesSent,omitempty"`
 }
 
 // GamingPayoutShare is what the operator put into a payout and gets out of it.
@@ -169,10 +172,69 @@ func GamingPayouts(ctx context.Context) ([]GamingPayoutView, error) {
 			if share, ok := payoutShare(p, key); ok {
 				view.Mine = &share
 			}
+			view.SignaturesSent = payoutSignaturesSent(store, p, key)
 		}
 		out = append(out, view)
 	}
 	return out, nil
+}
+
+// payoutSignaturesSent reads, never sends, the state of our signature message
+// for a payout still collecting signatures.
+func payoutSignaturesSent(store *gamingfunds.Store, p gamingfunds.Settlement, key gamingfunds.WalletKey) string {
+	sigs := p.Signatures[key.Public]
+	if p.State != "awaiting_signatures" || len(sigs) == 0 {
+		return ""
+	}
+	table, err := store.AuthorizedTable(p.Scope, p.Table)
+	if err != nil {
+		return ""
+	}
+	parsed, frame, err := financialFrame(p.Scope.Game, p.Table, financialMessage{Settlement: p.ID, Signatures: sigs})
+	if err != nil {
+		return ""
+	}
+	state, err := gamingFrameSendState(p.Scope.Game, table.Group, parsed, frame)
+	switch {
+	case err != nil:
+		return ""
+	case state == "sent":
+		return "sent"
+	case state == "claimed":
+		return "uncertain"
+	default:
+		return "unsent"
+	}
+}
+
+// SendGamingPayoutSignatures is the operator's one send of signatures that
+// Bison Relay never accepted. It signs nothing; the stored signatures go out
+// through the same claim, so a message that was sent is never sent again.
+func SendGamingPayoutSignatures(ctx context.Context, id string) (*gamingpb.PayoutStatusReply, error) {
+	store, err := gamingFundsStore()
+	if err != nil {
+		return nil, err
+	}
+	p, err := gamingPayoutByID(store, id)
+	if err != nil {
+		return nil, err
+	}
+	key, err := store.WalletKey(p.Scope, p.Table)
+	if err != nil {
+		return nil, err
+	}
+	sigs := p.Signatures[key.Public]
+	if p.State != "awaiting_signatures" || len(sigs) == 0 {
+		return nil, fmt.Errorf("payout has no signatures of ours waiting to be sent")
+	}
+	table, err := store.AuthorizedTable(p.Scope, p.Table)
+	if err != nil {
+		return nil, err
+	}
+	if err = sendFinancialMessage(ctx, p.Scope.Game, table.Group, p.Table, financialMessage{Settlement: id, Signatures: sigs}); err != nil {
+		return nil, err
+	}
+	return payoutStatus(p), nil
 }
 
 func gamingPayoutByID(store *gamingfunds.Store, id string) (gamingfunds.Settlement, error) {

@@ -346,8 +346,7 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 	// A game says what it likes inside a frame, because its peers check that;
 	// where the frame is sent is the host's decision. Lowercase only, so one
 	// group chat cannot be named two ways in the per-game bookkeeping.
-	id, err := parseGamingGCID(gcid)
-	if err != nil {
+	if _, err := parseGamingGCID(gcid); err != nil {
 		return err
 	}
 	fresh, err := claimOrReconcileGamingFrame(ctx, game, gcid, parsed, frame)
@@ -357,10 +356,7 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 	if !fresh {
 		return nil
 	}
-	if err := rpc.BrclientdGCMessage(ctx, id, frame, 0); err != nil {
-		return err
-	}
-	return markGamingFrameSent(game, gcid, parsed, frame)
+	return sendClaimedGamingFrame(ctx, game, gcid, parsed, frame)
 }
 
 // parseGamingGCID checks a group chat id in the one spelling the gaming paths

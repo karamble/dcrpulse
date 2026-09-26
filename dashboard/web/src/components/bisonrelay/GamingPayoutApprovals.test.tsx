@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GamingPayout } from '../../services/gamingApi';
 import { GamingPayoutApprovals, PayoutShare } from './GamingPayoutApprovals';
@@ -9,7 +9,9 @@ vi.mock('../../services/gamingApi', () => ({
   getGamingPayouts: async () => rows,
   approveGamingPayout: vi.fn(),
   rejectGamingPayout: vi.fn(),
+  sendGamingPayoutSignatures: (id: string) => { sent.push(id); return Promise.resolve({}); },
 }));
+const sent: string[] = [];
 
 afterEach(cleanup);
 
@@ -32,6 +34,28 @@ describe('GamingPayoutApprovals', () => {
     expect(line).toContain('1 DCR');
     expect(line).toContain('1.9999 DCR');
     expect(line).toContain('net +0.9999 DCR');
+  });
+});
+
+describe('signature delivery', () => {
+  it('offers one send only when Bison Relay never took our signatures', async () => {
+    sent.length = 0;
+    rows = [payout({ id: 'unsent', state: 'awaiting_signatures', signaturesSent: 'unsent' })];
+    render(<GamingPayoutApprovals />);
+    expect(await screen.findByText(/did not reach Bison Relay/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Send signatures'));
+    await waitFor(() => expect(sent).toEqual(['unsent']));
+  });
+  it('says an unknown outcome plainly', async () => {
+    rows = [payout({ state: 'awaiting_signatures', signaturesSent: 'uncertain' })];
+    render(<GamingPayoutApprovals />);
+    expect(await screen.findByText(/could not be confirmed/)).toBeTruthy();
+  });
+  it('shows nothing once sent', async () => {
+    rows = [payout({ state: 'awaiting_signatures', signaturesSent: 'sent' })];
+    render(<GamingPayoutApprovals />);
+    expect(await screen.findByText('You')).toBeTruthy();
+    expect(screen.queryByText('Send signatures')).toBeNull();
   });
 });
 

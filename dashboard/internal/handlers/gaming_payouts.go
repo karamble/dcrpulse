@@ -27,7 +27,7 @@ func BisonrelayGamingPayoutsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil || req.ID == "" || (req.Action != "approve" && req.Action != "reject") {
+	if err := decoder.Decode(&req); err != nil || req.ID == "" || (req.Action != "approve" && req.Action != "reject" && req.Action != "send") {
 		http.Error(w, "Invalid payout decision", http.StatusBadRequest)
 		return
 	}
@@ -35,9 +35,12 @@ func BisonrelayGamingPayoutsHandler(w http.ResponseWriter, r *http.Request) {
 		reply any
 		err   error
 	)
-	if req.Action == "reject" {
+	switch req.Action {
+	case "reject":
 		reply, err = services.RejectGamingPayout(r.Context(), req.ID)
-	} else {
+	case "send":
+		reply, err = services.SendGamingPayoutSignatures(r.Context(), req.ID)
+	default:
 		reply, err = services.ApproveGamingPayout(r.Context(), req.ID, []byte(req.Passphrase))
 	}
 	req.Passphrase = ""

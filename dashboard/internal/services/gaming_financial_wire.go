@@ -81,35 +81,31 @@ func localGamingUID(ctx context.Context) (string, error) {
 	return hex.EncodeToString(public.Identity), nil
 }
 
-func sendFinancialMessage(ctx context.Context, game, group, table string, msg financialMessage) error {
-	id, err := parseGamingGCID(group)
-	if err != nil {
-		return err
-	}
+// financialFrame is the exact envelope a financial message is sent as; the
+// same message always yields the same bytes.
+func financialFrame(game, table string, msg financialMessage) (gamingFrame, string, error) {
 	raw, err := encodeFinancialMessage(msg)
 	if err != nil {
-		return err
+		return gamingFrame{}, "", err
 	}
 	encoded, err := buildGamingFrame(game, 2, table, raw, time.Time{})
 	if err != nil || len(encoded) > 32768 {
-		return fmt.Errorf("financial message exceeds single-message limit")
+		return gamingFrame{}, "", fmt.Errorf("financial message exceeds single-message limit")
 	}
 	frame := strings.Replace(encoded, "--gaming[", "--gaming[authority=3,", 1)
 	parsed, ok := parseGamingFrame(frame)
 	if !ok {
-		return fmt.Errorf("financial message produced an invalid gaming envelope")
+		return gamingFrame{}, "", fmt.Errorf("financial message produced an invalid gaming envelope")
 	}
-	fresh, err := claimOrReconcileGamingFrame(ctx, game, group, parsed, frame)
+	return parsed, frame, nil
+}
+
+func sendFinancialMessage(ctx context.Context, game, group, table string, msg financialMessage) error {
+	parsed, frame, err := financialFrame(game, table, msg)
 	if err != nil {
 		return err
 	}
-	if !fresh {
-		return nil
-	}
-	if err := rpc.BrclientdGCMessage(ctx, id, frame, 0); err != nil {
-		return err
-	}
-	return markGamingFrameSent(game, group, parsed, frame)
+	return sendGamingFrameOnce(ctx, game, group, parsed, frame)
 }
 
 func announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table string) error {

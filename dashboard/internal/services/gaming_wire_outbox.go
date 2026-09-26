@@ -2,6 +2,7 @@ package services
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"dcrpulse/internal/rpc"
 )
 
 const gamingOutboxFile = "gaming-wire-outbox-v2.jsonl"
@@ -82,7 +85,7 @@ func readGamingSendClaims(path string) (map[string]gamingSendState, error) {
 			return nil, fmt.Errorf("line %d: %w", line, err)
 		}
 		key := gamingSendKey(claim)
-		if claim.State != "claimed" && claim.State != "sent" {
+		if claim.State != "claimed" && claim.State != "sent" && claim.State != "released" {
 			return nil, fmt.Errorf("line %d: invalid send state", line)
 		}
 		if old, exists := claims[key]; exists {
@@ -103,9 +106,9 @@ func readGamingSendClaims(path string) (map[string]gamingSendState, error) {
 
 // claimGamingFrameSend durably consumes one physical-send opportunity. The
 // claim is synced before the BR RPC begins, so a game retry or bridge restart
-// can never publish the same immutable wire part again. An RPC failure is
-// returned to the original caller and remains final; recovery comes from BR
-// history and bridge inbox replay, never peer retransmission.
+// can never publish the same immutable wire part again. Only a claim released
+// because brclientd refused the send can be claimed again; recovery otherwise
+// comes from BR history and bridge inbox replay, never peer retransmission.
 func claimGamingFrameSend(game, gcid string, frame gamingFrame, text string) (bool, error) {
 	gamingOutbox.Lock()
 	defer gamingOutbox.Unlock()
@@ -125,7 +128,9 @@ func claimGamingFrameSend(game, gcid string, frame gamingFrame, text string) (bo
 		if old.state == "sent" {
 			return false, nil
 		}
-		return false, errGamingSendUncertain
+		if old.state != "released" {
+			return false, errGamingSendUncertain
+		}
 	}
 	if err := appendGamingSendClaimLocked(claim); err != nil {
 		return false, err
@@ -183,4 +188,81 @@ func markGamingFrameSent(game, gcid string, frame gamingFrame, text string) erro
 	}
 	gamingOutbox.claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
 	return nil
+}
+
+// releaseGamingFrameClaim frees a claim whose send brclientd refused, so the
+// message never reached Bison Relay and may be sent once later.
+func releaseGamingFrameClaim(game, gcid string, frame gamingFrame, text string) error {
+	gamingOutbox.Lock()
+	defer gamingOutbox.Unlock()
+	if err := loadGamingSendClaimsLocked(); err != nil {
+		return err
+	}
+	digest := sha256.Sum256([]byte(text))
+	claim := gamingSendClaim{
+		Game: game, GCID: gcid, MID: frame.MID, Part: frame.Part,
+		Digest: hex.EncodeToString(digest[:]), ClaimedAt: time.Now().Unix(), State: "released",
+	}
+	key := gamingSendKey(claim)
+	old, exists := gamingOutbox.claims[key]
+	if !exists || old.digest != claim.Digest || old.state != "claimed" {
+		return fmt.Errorf("gaming message is not an open claim")
+	}
+	if err := appendGamingSendClaimLocked(claim); err != nil {
+		return err
+	}
+	gamingOutbox.claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
+	return nil
+}
+
+// gamingFrameSendState reports a message's send state: "sent", "claimed"
+// (outcome unknown), "released" or "" for never claimed.
+func gamingFrameSendState(game, gcid string, frame gamingFrame, text string) (string, error) {
+	gamingOutbox.Lock()
+	defer gamingOutbox.Unlock()
+	if err := loadGamingSendClaimsLocked(); err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256([]byte(text))
+	key := gamingSendKey(gamingSendClaim{Game: game, GCID: gcid, MID: frame.MID, Part: frame.Part})
+	old, exists := gamingOutbox.claims[key]
+	if !exists {
+		return "", nil
+	}
+	if old.digest != hex.EncodeToString(digest[:]) {
+		return "", fmt.Errorf("gaming message identity collision")
+	}
+	return old.state, nil
+}
+
+// gamingGCSend posts to a group chat. Settable for tests; production never sets it.
+var gamingGCSend = rpc.BrclientdGCMessage
+
+// sendGamingFrameOnce sends a frame to Bison Relay at most once. A send that
+// brclientd refused releases the claim; any other failure leaves the outcome
+// unknown, to be settled only from brclientd's own record of what it sent.
+func sendGamingFrameOnce(ctx context.Context, game, gcid string, parsed gamingFrame, frame string) error {
+	fresh, err := claimOrReconcileGamingFrame(ctx, game, gcid, parsed, frame)
+	if err != nil || !fresh {
+		return err
+	}
+	return sendClaimedGamingFrame(ctx, game, gcid, parsed, frame)
+}
+
+// sendClaimedGamingFrame performs the one send a fresh claim allows.
+func sendClaimedGamingFrame(ctx context.Context, game, gcid string, parsed gamingFrame, frame string) error {
+	id, err := parseGamingGCID(gcid)
+	if err != nil {
+		return err
+	}
+	if err := gamingGCSend(ctx, id, frame, 0); err != nil {
+		var refused *rpc.BrclientdStatusError
+		if errors.As(err, &refused) {
+			if relErr := releaseGamingFrameClaim(game, gcid, parsed, frame); relErr != nil {
+				gameLog.Errorf("release refused gaming send: %v", relErr)
+			}
+		}
+		return err
+	}
+	return markGamingFrameSent(game, gcid, parsed, frame)
 }

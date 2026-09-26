@@ -322,6 +322,7 @@ export interface GamingPayout {
  payments: { key: string; atoms: number }[]; destinations: Record<string, string>;
  feeAtoms: number; expiresAt: number; signatures: Record<string, string[]>;
  mine?: GamingPayoutShare | null;
+ signaturesSent?: 'sent' | 'uncertain' | 'unsent';
 }
 export const getGamingPayouts = async (): Promise<GamingPayout[]> => {
  const { data } = await api.get<{ payouts: GamingPayout[] }>('/br/gaming/payouts');
@@ -329,6 +330,9 @@ export const getGamingPayouts = async (): Promise<GamingPayout[]> => {
 };
 export const approveGamingPayout = async (id: string, passphrase: string) => {
  const { data } = await api.post('/br/gaming/payouts', { id, action: 'approve', passphrase }); return data;
+};
+export const sendGamingPayoutSignatures = async (id: string) => {
+ const { data } = await api.post('/br/gaming/payouts', { id, action: 'send' }); return data;
 };
 export const rejectGamingPayout = async (id: string) => {
  const { data } = await api.post('/br/gaming/payouts', { id, action: 'reject' }); return data;

@@ -1473,9 +1473,21 @@ func brclientdPostJSON(ctx context.Context, path brPath, body any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return fmt.Errorf("brclientd %s: HTTP %d: %s", path, resp.StatusCode, buf)
+		return &BrclientdStatusError{Path: string(path), Code: resp.StatusCode, Body: string(buf)}
 	}
 	return nil
+}
+
+// BrclientdStatusError is brclientd answering a request with a failure
+// status, as opposed to the request not reaching it or its answer being lost.
+type BrclientdStatusError struct {
+	Path string
+	Code int
+	Body string
+}
+
+func (e *BrclientdStatusError) Error() string {
+	return fmt.Sprintf("brclientd %s: HTTP %d: %s", e.Path, e.Code, e.Body)
 }
 
 // brclientdPostJSONRaw is the variant of brclientdPostJSON used when the

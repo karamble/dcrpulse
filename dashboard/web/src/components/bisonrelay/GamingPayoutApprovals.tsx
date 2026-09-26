@@ -3,7 +3,7 @@ import { ShieldCheck } from 'lucide-react';
 import { useVisiblePoll } from '../../hooks/useVisiblePoll';
 import { apiError } from '../../utils/apiError';
 import { formatAtomsTrimmed } from '../../utils/amounts';
-import { approveGamingPayout, getGamingPayouts, GamingPayout, rejectGamingPayout } from '../../services/gamingApi';
+import { approveGamingPayout, getGamingPayouts, GamingPayout, rejectGamingPayout, sendGamingPayoutSignatures } from '../../services/gamingApi';
 
 export function GamingPayoutApprovals() {
   const [rows, setRows] = useState<GamingPayout[]>([]);
@@ -21,6 +21,11 @@ export function GamingPayoutApprovals() {
   useVisiblePoll(() => void load(), 5000);
   const outputs = (p: GamingPayout) => p.payments.map(pay => <p key={pay.key} className="text-sm"><strong>{formatAtomsTrimmed(pay.atoms)} DCR</strong>{p.mine?.key === pay.key && <span className="ml-2 rounded bg-emerald-600/30 px-1.5 text-xs font-medium text-emerald-300">You</span>}<span className="block break-all font-mono text-xs text-gray-400">{p.destinations[pay.key]}</span></p>);
   const share = (p: GamingPayout) => <PayoutShare payout={p} />;
+  const sendSignatures = (p: GamingPayout) => {
+    if (busy) return;
+    setBusy(true); setError('');
+    void sendGamingPayoutSignatures(p.id).then(() => load()).catch(e => setError(apiError(e, 'Sending signatures failed'))).finally(() => setBusy(false));
+  };
   return <section className="space-y-3">
     <h3 className="flex items-center gap-2 font-semibold"><ShieldCheck className="h-5 w-5 text-emerald-400" /> Match payouts</h3>
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
@@ -31,6 +36,10 @@ export function GamingPayoutApprovals() {
       {share(p)}
       {outputs(p)}
       <p className="text-xs text-gray-400">Fee {formatAtomsTrimmed(p.feeAtoms)} DCR · {Object.keys(p.signatures).length}/{Object.keys(p.destinations).length} approvals</p>
+      {(p.signaturesSent === 'unsent' || p.signaturesSent === 'uncertain') && <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+        <p role="status">{p.signaturesSent === 'unsent' ? 'Your signatures did not reach Bison Relay, so the other players cannot complete this payout.' : 'Delivery of your signatures to Bison Relay could not be confirmed.'}</p>
+        <button type="button" disabled={busy} onClick={() => sendSignatures(p)} className="rounded-lg border border-amber-500/60 px-3 py-2 disabled:opacity-40">Send signatures</button>
+      </div>}
       {p.state === 'awaiting_approval' && <button type="button" disabled={busy || Date.now() >= p.expiresAt * 1000} onClick={() => { setSelected(p); setPassphrase(''); setError(''); }} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm disabled:opacity-40">Review payout</button>}
     </article>)}
     {selected && <div role="dialog" aria-modal="true" aria-labelledby="payout-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-lg space-y-4 rounded-xl border border-gray-700 bg-gray-900 p-6">
