@@ -1,7 +1,9 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,6 +12,11 @@ import (
 
 	"dcrpulse/internal/gamingfunds"
 	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/utils"
+
+	"github.com/decred/dcrd/crypto/blake256"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
 )
 
@@ -32,12 +39,15 @@ func isFinancialFrame(raw string) bool {
 type financialMessage struct {
 	RosterHash string
 	Key        string
+	// Proof is the key's signature over keyProofHash, binding the key to the
+	// announcer's own Bison Relay identity and this table.
+	Proof      []byte
 	Settlement string
 	Signatures [][]byte
 }
 
 const (
-	financialWireVersion  = byte(3)
+	financialWireVersion  = byte(4)
 	financialParticipant  = byte(1)
 	financialSettlement   = byte(2)
 	financialRoster       = byte(8)
@@ -121,7 +131,7 @@ func announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table
 	if err != nil {
 		return err
 	}
-	uid, err := localGamingUID(ctx)
+	uid, err := gamingSelfUID(ctx)
 	if err != nil {
 		return err
 	}
@@ -155,8 +165,112 @@ func announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table
 			return err
 		}
 	}
-	return sendFinancialMessage(ctx, scope.Game, accepted.Group, table, financialMessage{Key: peer.Key, RosterHash: hash})
+	proof, err := store.KeyProof(scope, table)
+	if err != nil {
+		return err
+	}
+	if proof == "" {
+		// The key is proven when the seat bond is approved; it is announced
+		// from then on.
+		return nil
+	}
+	raw, err := hex.DecodeString(proof)
+	if err != nil {
+		return err
+	}
+	return sendFinancialMessage(ctx, scope.Game, accepted.Group, table, financialMessage{Key: peer.Key, RosterHash: hash, Proof: raw})
 }
+
+// keyProofHash is what a table's financial key signs to announce itself for
+// its owner's own Bison Relay identity at one table.
+func keyProofHash(uid, game, sid, gcid, termsHash string, key []byte) ([32]byte, error) {
+	id, err := hex.DecodeString(uid)
+	if err != nil || len(id) != 32 || len(key) != 33 {
+		return [32]byte{}, fmt.Errorf("invalid key proof inputs")
+	}
+	var b bytes.Buffer
+	b.WriteString("dcrpulse/gaming/financial-key/v1\x00")
+	b.Write(id)
+	for _, s := range []string{game, sid, gcid, termsHash} {
+		_ = binary.Write(&b, binary.BigEndian, uint32(len(s)))
+		b.WriteString(s)
+	}
+	b.Write(key)
+	return blake256.Sum256(b.Bytes()), nil
+}
+
+// verifyKeyProof checks that key signed the proof for uid at this table.
+func verifyKeyProof(proof []byte, uid, game, sid, gcid, termsHash string, key []byte) error {
+	hash, err := keyProofHash(uid, game, sid, gcid, termsHash, key)
+	if err != nil {
+		return err
+	}
+	pub, err := secp256k1.ParsePubKey(key)
+	if err != nil {
+		return err
+	}
+	sig, err := ecdsa.ParseDERSignature(proof)
+	if err != nil {
+		return fmt.Errorf("invalid key proof: %w", err)
+	}
+	if !sig.Verify(hash[:], pub) {
+		return fmt.Errorf("key proof does not verify")
+	}
+	return nil
+}
+
+// gamingKeyProofSign proves this bridge's key for a table. Settable for tests.
+var gamingKeyProofSign = signGamingKeyProof
+
+// signGamingKeyProof has the wallet sign this table's key proof, with the
+// passphrase of the seat-bond approval, and records it. Once per table.
+func signGamingKeyProof(ctx context.Context, scope gamingfunds.Scope, table string, passphrase []byte) error {
+	defer utils.Zero(passphrase)
+	store, err := gamingFundsStore()
+	if err != nil {
+		return err
+	}
+	if proof, err := store.KeyProof(scope, table); err != nil || proof != "" {
+		return err
+	}
+	accepted, err := store.AuthorizedTable(scope, table)
+	if err != nil {
+		return err
+	}
+	key, err := store.WalletKey(scope, table)
+	if err != nil {
+		return err
+	}
+	uid, err := gamingSelfUID(ctx)
+	if err != nil {
+		return err
+	}
+	pub, err := hex.DecodeString(key.Public)
+	if err != nil {
+		return err
+	}
+	hash, err := keyProofHash(uid, scope.Game, table, accepted.Group, accepted.TermsHash(), pub)
+	if err != nil {
+		return err
+	}
+	sig, err := withGamingWalletSigner(ctx, scope, passphrase, func(sign gamingfunds.WalletSigner) ([]byte, error) {
+		return sign(key, hash[:])
+	})
+	if err != nil {
+		return err
+	}
+	if err := verifyKeyProof(sig, uid, scope.Game, table, accepted.Group, accepted.TermsHash(), pub); err != nil {
+		return err
+	}
+	return store.SaveKeyProof(scope, table, hex.EncodeToString(sig))
+}
+
+// The wallet scope and chain a received frame is judged against. Settable
+// for tests; production never sets them.
+var (
+	receiveScope  = gamingFinancialScope
+	receiveParams = chainParams
+)
 
 // receiveFinancialFrame runs only on the authenticated BR inbound path.
 func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
@@ -171,7 +285,7 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 	if err != nil {
 		return err
 	}
-	scope, err := gamingFinancialScope(ctx, event.Game)
+	scope, err := receiveScope(ctx, event.Game)
 	if err != nil {
 		return err
 	}
@@ -186,7 +300,7 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 	if accepted.Group != event.GCID {
 		return fmt.Errorf("financial message arrived in wrong group")
 	}
-	params, err := chainParams(ctx)
+	params, err := receiveParams(ctx)
 	if err != nil {
 		return err
 	}
@@ -196,6 +310,11 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 		}
 		key, err := hex.DecodeString(msg.Key)
 		if err != nil {
+			return err
+		}
+		// The key must have signed for exactly this sender, table and group,
+		// so nobody can announce another player's key as their own.
+		if err := verifyKeyProof(msg.Proof, event.From, event.Game, part.SID, event.GCID, accepted.TermsHash(), key); err != nil {
 			return err
 		}
 		// UID comes from authenticated BR delivery. Payout destination and
@@ -259,17 +378,18 @@ func decodeFinancialMessage(raw []byte) (financialMessage, error) {
 		if flags & ^(financialParticipant|financialRoster) != 0 {
 			return msg, fmt.Errorf("invalid participant flags")
 		}
-		want := 33
+		fixed := 33
 		if flags&financialRoster != 0 {
-			want += 32
+			fixed += 32
 		}
-		if len(payload) != want {
+		if len(payload) < fixed+2 || int(payload[fixed]) != len(payload)-fixed-1 || payload[fixed] == 0 {
 			return msg, fmt.Errorf("invalid participant message")
 		}
 		msg.Key = hex.EncodeToString(payload[:33])
 		if flags&financialRoster != 0 {
-			msg.RosterHash = hex.EncodeToString(payload[33:])
+			msg.RosterHash = hex.EncodeToString(payload[33:fixed])
 		}
+		msg.Proof = append([]byte(nil), payload[fixed+1:]...)
 		return msg, nil
 	case financialSettlement:
 		if flags != financialSettlement || len(payload) < 33 {
@@ -317,7 +437,11 @@ func encodeFinancialMessage(msg financialMessage) ([]byte, error) {
 			out[0] |= financialRoster
 			out = append(out, hash...)
 		}
-		return out, nil
+		if len(msg.Proof) == 0 || len(msg.Proof) > 255 {
+			return nil, fmt.Errorf("financial key announcement needs its proof")
+		}
+		out = append(out, byte(len(msg.Proof)))
+		return append(out, msg.Proof...), nil
 	}
 	if msg.Settlement == "" || len(msg.Signatures) == 0 || len(msg.Signatures) > 255 || msg.RosterHash != "" {
 		return nil, fmt.Errorf("invalid settlement message")

@@ -86,7 +86,10 @@ type diskState struct {
 	// Seated is each table's seated financial keys, as the game's signed
 	// roster names them. Candidates are key announcements waiting for it,
 	// in arrival order.
-	Seated     map[string][]string      `json:"seated,omitempty"`
+	Seated map[string][]string `json:"seated,omitempty"`
+	// Proofs is this bridge's signed proof, per table, that the table's
+	// financial key announces for its own Bison Relay identity.
+	Proofs     map[string]string        `json:"proofs,omitempty"`
 	Candidates map[string][]Participant `json:"candidates,omitempty"`
 }
 
@@ -202,6 +205,9 @@ func decodeState(b []byte) (diskState, error) {
 	}
 	if d.Candidates == nil {
 		d.Candidates = map[string][]Participant{}
+	}
+	if d.Proofs == nil {
+		d.Proofs = map[string]string{}
 	}
 	return d, nil
 }

@@ -148,3 +148,28 @@ func TestALedgerWithoutSeatsStillLoads(t *testing.T) {
 		t.Fatalf("old ledger: %v", err)
 	}
 }
+
+func TestAKeyProofIsWrittenOnce(t *testing.T) {
+	s, scope, _ := seatedStore(t)
+	if got, err := s.KeyProof(scope, "a1"); err != nil || got != "" {
+		t.Fatalf("proof before any = %q, %v", got, err)
+	}
+	if err := s.SaveKeyProof(scope, "a1", "zz"); err == nil {
+		t.Fatal("stored a proof that is not hex")
+	}
+	if err := s.SaveKeyProof(scope, "a2", "0102"); err == nil {
+		t.Fatal("stored a proof for an unknown table")
+	}
+	if err := s.SaveKeyProof(scope, "a1", "0102"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveKeyProof(scope, "a1", "0102"); err != nil {
+		t.Fatalf("the same proof again: %v", err)
+	}
+	if err := s.SaveKeyProof(scope, "a1", "0304"); err == nil {
+		t.Fatal("a second proof replaced the first")
+	}
+	if got, _ := s.KeyProof(scope, "a1"); got != "0102" {
+		t.Fatalf("proof = %q", got)
+	}
+}

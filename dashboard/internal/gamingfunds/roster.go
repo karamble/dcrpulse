@@ -286,3 +286,47 @@ func containsKey(keys []string, key string) bool {
 	}
 	return false
 }
+
+// SaveKeyProof records this bridge's key proof for a table, once.
+func (s *Store) SaveKeyProof(scope Scope, table, proof string) error {
+	k, err := scopeKey(scope, table)
+	if err != nil {
+		return err
+	}
+	if _, err := hex.DecodeString(proof); err != nil || proof == "" {
+		return fmt.Errorf("invalid key proof")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return err
+	}
+	if _, ok := d.Tables[k]; !ok {
+		return fmt.Errorf("unknown table")
+	}
+	if old, ok := d.Proofs[k]; ok {
+		if old != proof {
+			return fmt.Errorf("key proof already recorded")
+		}
+		return nil
+	}
+	d.Proofs[k] = proof
+	return s.save(d)
+}
+
+// KeyProof is this bridge's key proof for a table, or "" before the seat bond
+// was approved.
+func (s *Store) KeyProof(scope Scope, table string) (string, error) {
+	k, err := scopeKey(scope, table)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return "", err
+	}
+	return d.Proofs[k], nil
+}

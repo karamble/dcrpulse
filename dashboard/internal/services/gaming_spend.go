@@ -26,6 +26,7 @@ import (
 
 	"dcrpulse/internal/gamingfunds"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 // Games play for real money, and this is the one place any of it moves.
@@ -757,6 +758,8 @@ func DenyGamingSpend(id string) (GamingSpend, error) {
 // request left approvable after a possible broadcast is the documented
 // double-payment. That one records failed, as every failure used to.
 func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (GamingSpend, error) {
+	// Wiped however the approval ends, not only when it reaches signing.
+	defer utils.Zero(passphrase)
 	spendMu.Lock()
 	now := time.Now().Unix()
 	log, err := readSpendLog()
@@ -836,6 +839,12 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 	if _, err = validateGamingFunding(ctx, dep, unsigned); err != nil {
 		return req, err
 	}
+	// The seat bond is the first approval a table gets, so its passphrase
+	// also proves the table's financial key before the key is announced.
+	proven, err := proveSeatBondKey(ctx, dep, passphrase)
+	if err != nil {
+		return req, err
+	}
 	signed, err := spendSign(ctx, account, unsigned, passphrase)
 	if err != nil {
 		return req, err
@@ -858,6 +867,11 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 	}
 	if err = saveGamingSignedFunding(req, dep, signed); err != nil {
 		return req, err
+	}
+	if proven {
+		if err := announceGamingAuthority(ctx, dep.Scope, dep.Terms.Table); err != nil {
+			gameLog.Warnf("announce proven financial key: %v", err)
+		}
 	}
 	txid, err := spendPublish(ctx, signed)
 	if err != nil {
@@ -1033,4 +1047,16 @@ func newSpendID() (string, error) {
 		return "", fmt.Errorf("generate id: %w", err)
 	}
 	return hex.EncodeToString(buf[:]), nil
+}
+
+// proveSeatBondKey proves a table's financial key when the deposit is its seat
+// bond, with a copy of the approval's passphrase. It reports whether it did.
+func proveSeatBondKey(ctx context.Context, dep gamingfunds.Deposit, passphrase []byte) (bool, error) {
+	if dep.Terms.Kind != "seatbond" || dep.Terms.Table == "" {
+		return false, nil
+	}
+	if err := gamingKeyProofSign(ctx, dep.Scope, dep.Terms.Table, append([]byte(nil), passphrase...)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
