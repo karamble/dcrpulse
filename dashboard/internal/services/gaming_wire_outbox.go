@@ -46,37 +46,59 @@ func loadGamingSendClaimsLocked() error {
 	if gamingOutbox.dir == GamingStateDir && gamingOutbox.claims != nil {
 		return nil
 	}
-	gamingOutbox.dir = GamingStateDir
-	gamingOutbox.claims = make(map[string]gamingSendState)
-	f, err := os.Open(filepath.Join(GamingStateDir, gamingOutboxFile))
+	path := filepath.Join(GamingStateDir, gamingOutboxFile)
+	claims, err := readGamingSendClaims(path)
+	if err != nil {
+		return fmt.Errorf("gaming outbox %s: %w", path, err)
+	}
+	// Installed only once the whole file read cleanly.
+	gamingOutbox.dir, gamingOutbox.claims = GamingStateDir, claims
+	return nil
+}
+
+// readGamingSendClaims reads the outbox file. A missing file has no claims.
+func readGamingSendClaims(path string) (map[string]gamingSendState, error) {
+	claims := make(map[string]gamingSendState)
+	dropped, err := healTornTail(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return claims, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if dropped > 0 {
+		gameLog.Warnf("gaming outbox %s: dropped an unfinished last record (%d bytes)", path, dropped)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
 	defer f.Close()
 	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, 64*1024), gamingWireMaxLine)
 	for line := 1; scan.Scan(); line++ {
 		var claim gamingSendClaim
 		if err := json.Unmarshal(scan.Bytes(), &claim); err != nil {
-			return fmt.Errorf("line %d: %w", line, err)
+			return nil, fmt.Errorf("line %d: %w", line, err)
 		}
 		key := gamingSendKey(claim)
 		if claim.State != "claimed" && claim.State != "sent" {
-			return fmt.Errorf("line %d: invalid send state", line)
+			return nil, fmt.Errorf("line %d: invalid send state", line)
 		}
-		if old, exists := gamingOutbox.claims[key]; exists {
+		if old, exists := claims[key]; exists {
 			if old.digest != claim.Digest {
-				return fmt.Errorf("line %d: message identity collision", line)
+				return nil, fmt.Errorf("line %d: message identity collision", line)
 			}
 			if old.state == "sent" && claim.State != "sent" {
-				return fmt.Errorf("line %d: send state went backwards", line)
+				return nil, fmt.Errorf("line %d: send state went backwards", line)
 			}
 		}
-		gamingOutbox.claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
+		claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
 	}
-	return scan.Err()
+	if err := scan.Err(); err != nil {
+		return nil, err
+	}
+	return claims, nil
 }
 
 // claimGamingFrameSend durably consumes one physical-send opportunity. The

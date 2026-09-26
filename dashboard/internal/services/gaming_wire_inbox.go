@@ -2,6 +2,7 @@ package services
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -29,44 +30,74 @@ func gamingFrameKey(ev GamingFrameEvent) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// gamingWireMaxLine is the longest line either wire journal writes or reads.
+// A 1 MiB frame whose every byte JSON escapes to six fits with room to spare.
+const gamingWireMaxLine = 8 << 20
+
+// healTornTail drops a final line with no newline: an append that never
+// completed, so nothing acted on it. It returns how many bytes it dropped.
+func healTornTail(path string) (int64, error) {
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	size := info.Size()
+	if size == 0 {
+		return 0, nil
+	}
+	last := make([]byte, 1)
+	if _, err := f.ReadAt(last, size-1); err != nil {
+		return 0, err
+	}
+	if last[0] == '\n' {
+		return 0, nil
+	}
+	// Walk back to the previous newline; everything after it is the torn write.
+	keep := int64(0)
+	buf := make([]byte, 64*1024)
+	for end := size; end > 0 && keep == 0; {
+		start := end - int64(len(buf))
+		if start < 0 {
+			start = 0
+		}
+		chunk := buf[:end-start]
+		if _, err := f.ReadAt(chunk, start); err != nil {
+			return 0, err
+		}
+		if i := bytes.LastIndexByte(chunk, '\n'); i >= 0 {
+			keep = start + int64(i) + 1
+		}
+		end = start
+	}
+	if err := f.Truncate(keep); err != nil {
+		return 0, err
+	}
+	if err := f.Sync(); err != nil {
+		return 0, err
+	}
+	return size - keep, nil
+}
+
 // loadGamingFramesLocked loads the append-only inbox and returns the requested
-// replay. b.wireMu must be held by the caller.
+// replay. The file is installed only once it has read cleanly, so a bad file
+// fails every call instead of leaving part of it in place. b.wireMu must be
+// held by the caller.
 func (b *GamingBus) loadGamingFramesLocked(game string, after uint64) ([]GamingFrameEvent, error) {
 	dir := GamingStateDir
 	if b.wireDir != dir {
-		b.wireDir = dir
-		b.wireNext = make(map[string]uint64)
-		b.wireRecords = make(map[string][]GamingFrameEvent)
-		b.wireSeen = make(map[string]struct{})
+		next := make(map[string]uint64)
+		records := make(map[string][]GamingFrameEvent)
+		seen := make(map[string]struct{})
 		path := filepath.Join(dir, gamingInboxFile)
-		f, err := os.Open(path)
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+		if err := readGamingInbox(path, next, records, seen); err != nil {
+			return nil, fmt.Errorf("gaming inbox %s: %w", path, err)
 		}
-		if err != nil {
-			return nil, err
-		}
-		defer f.Close()
-		scan := bufio.NewScanner(f)
-		scan.Buffer(make([]byte, 64*1024), 2<<20)
-		for line := 1; scan.Scan(); line++ {
-			var ev GamingFrameEvent
-			if err := json.Unmarshal(scan.Bytes(), &ev); err != nil {
-				return nil, fmt.Errorf("line %d: %w", line, err)
-			}
-			if ev.Seq == 0 || ev.Game == "" || ev.GCID == "" || ev.Frame == "" {
-				return nil, fmt.Errorf("line %d: incomplete gaming frame", line)
-			}
-			if ev.Seq <= b.wireNext[ev.Game] {
-				return nil, fmt.Errorf("line %d: non-increasing sequence for %q", line, ev.Game)
-			}
-			b.wireNext[ev.Game] = ev.Seq
-			b.wireRecords[ev.Game] = append(b.wireRecords[ev.Game], ev)
-			b.wireSeen[gamingFrameKey(ev)] = struct{}{}
-		}
-		if err := scan.Err(); err != nil {
-			return nil, err
-		}
+		b.wireDir, b.wireNext, b.wireRecords, b.wireSeen = dir, next, records, seen
 	}
 	records := b.wireRecords[game]
 	out := make([]GamingFrameEvent, 0, len(records))
@@ -76,6 +107,44 @@ func (b *GamingBus) loadGamingFramesLocked(game string, after uint64) ([]GamingF
 		}
 	}
 	return out, nil
+}
+
+// readGamingInbox reads the inbox file into the given maps. A missing file is
+// an empty inbox.
+func readGamingInbox(path string, next map[string]uint64, records map[string][]GamingFrameEvent, seen map[string]struct{}) error {
+	dropped, err := healTornTail(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if dropped > 0 {
+		gameLog.Warnf("gaming inbox %s: dropped an unfinished last record (%d bytes)", path, dropped)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, 64*1024), gamingWireMaxLine)
+	for line := 1; scan.Scan(); line++ {
+		var ev GamingFrameEvent
+		if err := json.Unmarshal(scan.Bytes(), &ev); err != nil {
+			return fmt.Errorf("line %d: %w", line, err)
+		}
+		if ev.Seq == 0 || ev.Game == "" || ev.GCID == "" || ev.Frame == "" {
+			return fmt.Errorf("line %d: incomplete gaming frame", line)
+		}
+		if ev.Seq <= next[ev.Game] {
+			return fmt.Errorf("line %d: non-increasing sequence for %q", line, ev.Game)
+		}
+		next[ev.Game] = ev.Seq
+		records[ev.Game] = append(records[ev.Game], ev)
+		seen[gamingFrameKey(ev)] = struct{}{}
+	}
+	return scan.Err()
 }
 
 func (b *GamingBus) financialReplay() []GamingFrameEvent {
@@ -116,6 +185,9 @@ func (b *GamingBus) persistGamingFrame(ev GamingFrameEvent) (uint64, bool, error
 	raw, err := json.Marshal(ev)
 	if err != nil {
 		return 0, false, err
+	}
+	if len(raw)+1 > gamingWireMaxLine {
+		return 0, false, fmt.Errorf("gaming frame of %d bytes is longer than the inbox keeps", len(raw))
 	}
 	path := filepath.Join(GamingStateDir, gamingInboxFile)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
