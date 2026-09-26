@@ -165,6 +165,9 @@ func StartBrclientdNotifs(ctx context.Context) {
 					sawEvent = true
 					alerts.Resolve("br_disconnected", "")
 				}
+				if gaps.firstContact() {
+					go Gaming().RecoverHistory()
+				}
 				switch n, why := gaps.observe(evt.Seq, evt.Epoch, evt.Missed); {
 				case n > 0:
 					noteNotifGap(n, why, evt.Epoch)

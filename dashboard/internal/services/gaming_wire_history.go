@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -101,6 +103,20 @@ func (b *GamingBus) knownGamingGCIDs() map[string]struct{} {
 		}
 	}
 	b.wireMu.Unlock()
+
+	// A table whose frames all arrived while the dashboard was down is known
+	// only from the ledger. Read an existing ledger only; opening creates one.
+	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err == nil {
+		if store, err := gamingFundsStore(); err == nil {
+			if tables, err := store.Tables(); err == nil {
+				for _, t := range tables {
+					if t.Group != "" {
+						out[t.Group] = struct{}{}
+					}
+				}
+			}
+		}
+	}
 
 	gamingOutbox.Lock()
 	if loadGamingSendClaimsLocked() == nil {

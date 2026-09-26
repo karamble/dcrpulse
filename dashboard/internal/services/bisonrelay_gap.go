@@ -22,6 +22,18 @@ import (
 type notifGapState struct {
 	lastSeq   uint64
 	lastEpoch string
+	contacted bool
+}
+
+// firstContact is true for the first event this process sees. Frames that
+// reached brclientd while the dashboard was down are only in its journal, so
+// that is when gaming history is read back.
+func (s *notifGapState) firstContact() bool {
+	if s.contacted {
+		return false
+	}
+	s.contacted = true
+	return true
 }
 
 // observe folds one event into the state and reports how many events were lost
