@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -53,6 +54,12 @@ var assets = []asset{
 	{"usdt", "USDT", "USDTUSD", "USDTZUSD", "", ""},
 	{"dgb", "DGB", "", "", "", ""},
 	{"firo", "FIRO", "", "", "", ""},
+}
+
+// usablePrice reports whether p can stand as a USD price: positive and finite.
+// NaN is not positive, so it is refused too.
+func usablePrice(p float64) bool {
+	return p > 0 && !math.IsInf(p, 1)
 }
 
 // Cache fetches and caches USD rates.
@@ -169,7 +176,7 @@ func (c *Cache) fetchCryptoCompare(ctx context.Context) (map[string]float64, err
 	}
 	out := make(map[string]float64, len(res))
 	for cc, quote := range res {
-		if sym, ok := byCC[cc]; ok && quote["USD"] > 0 {
+		if sym, ok := byCC[cc]; ok && usablePrice(quote["USD"]) {
 			out[sym] = quote["USD"]
 		}
 	}
@@ -212,7 +219,7 @@ func (c *Cache) KrakenUSD(ctx context.Context, symbol string) (float64, error) {
 		return 0, fmt.Errorf("kraken: no ticker for %q", symbol)
 	}
 	price, err := strconv.ParseFloat(t.C[0], 64)
-	if err != nil || price <= 0 {
+	if err != nil || !usablePrice(price) {
 		return 0, fmt.Errorf("kraken: bad price for %q", symbol)
 	}
 	return price, nil
@@ -250,7 +257,10 @@ func (c *Cache) fetchKraken(ctx context.Context) (map[string]float64, error) {
 		if !ok || len(t.C) == 0 {
 			return 0
 		}
-		f, _ := strconv.ParseFloat(t.C[0], 64)
+		f, err := strconv.ParseFloat(t.C[0], 64)
+		if err != nil || !usablePrice(f) {
+			return 0
+		}
 		return f
 	}
 	btcUSD := last(btcUSDResultKey)
@@ -261,8 +271,8 @@ func (c *Cache) fetchKraken(ctx context.Context) (map[string]float64, error) {
 			continue
 		}
 		if a.krBTCKey != "" && btcUSD > 0 {
-			if b := last(a.krBTCKey); b > 0 {
-				out[a.symbol] = b * btcUSD
+			if p := last(a.krBTCKey) * btcUSD; usablePrice(p) {
+				out[a.symbol] = p
 			}
 		}
 	}
