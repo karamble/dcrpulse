@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,5 +234,42 @@ func TestPayoutSignaturesNothingOnceAssembled(t *testing.T) {
 	}
 	if _, err := SendGamingPayoutSignatures(context.Background(), id); err == nil || *calls != 0 {
 		t.Fatalf("send on an assembled payout = %v, sends %d", err, *calls)
+	}
+}
+
+func TestASendThatNeverReachedBrclientdCompletesOnce(t *testing.T) {
+	withGamingWireDir(t)
+	parsed := testParsedFrame(t)
+	calls := withGCSend(t, &rpc.BrclientdNotReachedError{Err: errors.New("dial tcp: connection refused")})
+
+	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err == nil {
+		t.Fatal("a send that never left reported success")
+	}
+	if got := sendState(t, parsed); got != "released" {
+		t.Fatalf("state after an unreached send = %q", got)
+	}
+	for i := 0; i < 2; i++ {
+		if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if *calls != 2 || sendState(t, parsed) != "sent" {
+		t.Fatalf("calls = %d, state %q", *calls, sendState(t, parsed))
+	}
+}
+
+func TestAnUncertainSendReachesTheGameAsRetryable(t *testing.T) {
+	withGamingWireDir(t)
+	registerPoker(t)
+	payoutLedger(t, "awaiting_signatures")
+	withGCSend(t, errors.New("brclientd /gc: connection reset by peer"))
+	withHistorySeams(t, historyPages())
+
+	if err := SendGamingFrame(context.Background(), "poker", pruneGCA, testFrame); err == nil {
+		t.Fatal("lost send reported success")
+	}
+	err := SendGamingFrame(context.Background(), "poker", pruneGCA, testFrame)
+	if !errors.Is(err, errGamingSendUncertain) || fmt.Sprintf("%T", err) != "gamingbridge.gameRetryError" {
+		t.Fatalf("uncertain send reached the game as %T %v", err, err)
 	}
 }

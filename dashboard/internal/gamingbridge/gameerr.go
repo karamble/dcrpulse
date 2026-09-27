@@ -27,6 +27,21 @@ func GameSafe(err error) error {
 	return gameSafeError{err: err}
 }
 
+// gameRetryError marks a game-safe error the game should retry later.
+type gameRetryError struct{ err error }
+
+func (e gameRetryError) Error() string { return e.err.Error() }
+func (e gameRetryError) Unwrap() error { return e.err }
+
+// GameRetry marks err as game-safe and worth retrying: it reaches the game as
+// Unavailable with its own text.
+func GameRetry(err error) error {
+	if err == nil {
+		return nil
+	}
+	return gameRetryError{err: err}
+}
+
 // gameErr renders err for a game at the given code, or, when it was not
 // written for one, logs it in full and returns a fixed message.
 //
@@ -34,6 +49,10 @@ func GameSafe(err error) error {
 // act on it, and a code that says otherwise would stop it retrying something
 // that may well succeed later.
 func gameErr(game, method string, code codes.Code, err error) error {
+	var retry gameRetryError
+	if errors.As(err, &retry) {
+		return status.Error(codes.Unavailable, retry.Error())
+	}
 	var safe gameSafeError
 	if errors.As(err, &safe) {
 		// The marked error's own text, not the outer wrapper's, which may have
