@@ -340,3 +340,42 @@ func TestClosedTableDoesNotAssembleLatePayoutSignatures(t *testing.T) {
 		t.Fatal("released signature record lost")
 	}
 }
+
+func TestExpiredPayoutCannotReturnBesideANewerOne(t *testing.T) {
+	s, scope, a := payoutStore(t)
+	first, err := s.ProposeSettlement(scope, a, chaincfg.SimNetParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	d, err := s.load()
+	if err == nil {
+		row := d.Settlements[first.ID]
+		row.ExpiresAt = time.Now().Add(-time.Second).Unix()
+		d.Settlements[first.ID] = row
+		err = s.save(d)
+	}
+	s.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Settlement(scope, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	b := a
+	half := a.Inputs[0].Terms.Atoms
+	b.Payments = []finance.Payment{{Key: public(2), Atoms: half}, {Key: public(3), Atoms: half}}
+	second, err := s.ProposeSettlement(scope, b, chaincfg.SimNetParams())
+	if err != nil {
+		t.Fatalf("new split after the old one expired: %v", err)
+	}
+	if _, err = s.ProposeSettlement(scope, a, chaincfg.SimNetParams()); err == nil {
+		t.Fatal("the expired split came back beside the live one")
+	}
+	if got, err := s.Settlement(scope, first.ID); err != nil || got.State != "expired" {
+		t.Fatalf("expired split = %+v %v", got, err)
+	}
+	if got, err := s.Settlement(scope, second.ID); err != nil || got.State != "awaiting_approval" {
+		t.Fatalf("live split = %+v %v", got, err)
+	}
+}

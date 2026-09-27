@@ -107,6 +107,9 @@ func (s *Store) ProposeSettlement(scope Scope, p finance.Payout, params stdaddr.
 			return empty, fmt.Errorf("conflicting payout intent")
 		}
 		if old.State == "expired" {
+			if liveProposal(d, scope, old.Table) {
+				return empty, fmt.Errorf("table already has a payout proposal")
+			}
 			old.State = "awaiting_approval"
 			old.ExpiresAt = now.Add(10 * time.Minute).Unix()
 			old.Signatures = map[string][][]byte{}
@@ -117,10 +120,8 @@ func (s *Store) ProposeSettlement(scope Scope, p finance.Payout, params stdaddr.
 		}
 		return old, nil
 	}
-	for _, old := range d.Settlements {
-		if old.Scope == scope && old.Table == p.Table && old.State != "expired" && old.State != "rejected" {
-			return empty, fmt.Errorf("table already has a payout proposal")
-		}
+	if liveProposal(d, scope, p.Table) {
+		return empty, fmt.Errorf("table already has a payout proposal")
 	}
 	out := Settlement{ID: id, Scope: scope, Table: p.Table, Raw: hex.EncodeToString(raw), Inputs: inputs, Payments: append([]finance.Payment(nil), built.Payments...), Destinations: destinations, FeeAtoms: built.FeeAtoms, ExpiresAt: now.Add(10 * time.Minute).Unix(), State: "awaiting_approval", Signatures: map[string][][]byte{}}
 	d.Settlements[id] = out
@@ -129,6 +130,18 @@ func (s *Store) ProposeSettlement(scope Scope, p finance.Payout, params stdaddr.
 	}
 	return out, nil
 }
+
+// liveProposal reports whether a table has a payout proposal that has neither
+// expired nor been rejected.
+func liveProposal(d diskState, scope Scope, table string) bool {
+	for _, old := range d.Settlements {
+		if old.Scope == scope && old.Table == table && old.State != "expired" && old.State != "rejected" {
+			return true
+		}
+	}
+	return false
+}
+
 func formatOutput(hash string, index uint32) string { return fmt.Sprintf("%s:%d", hash, index) }
 
 func (s *Store) Settlement(scope Scope, id string) (Settlement, error) {
