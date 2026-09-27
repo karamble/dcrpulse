@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RecoveryDeposit } from '../../services/gamingApi';
 import { confirmRecovery, quoteRecovery } from '../../services/gamingApi';
-import { GamingRecovery, recoveryGroups } from './GamingRecovery';
+import { GamingRecovery, recoveryGroups, refusal } from './GamingRecovery';
 
 const served = new Blob(['{"format":1,"ledger":{"a": 1}}'], { type: 'application/json' });
 vi.mock('../../hooks/useVisiblePoll', async () => {
@@ -113,17 +113,62 @@ describe('restoring the ledger', () => {
 });
 
 describe('recovery passphrase', () => {
-  it('empties the passphrase field once it is sent, even when the refund fails', async () => {
+  const open = async () => {
     rows = [dep({ id: 'ready', state: 'recoverable', canRecover: true })];
     vi.mocked(quoteRecovery).mockResolvedValueOnce({ id: 'q1', depositId: 'ready', destination: 'DsBack', feeAtoms: 2000, returnAtoms: 998000, expiresAt: 0 });
-    vi.mocked(confirmRecovery).mockRejectedValueOnce(new Error('wrong passphrase'));
     render(<GamingRecovery />);
     fireEvent.click(await screen.findByText('Take it back'));
     const field = (await screen.findByLabelText('Wallet account passphrase')) as HTMLInputElement;
     fireEvent.change(field, { target: { value: 'hunter2' } });
     fireEvent.click(screen.getByText('Approve recovery'));
-    await screen.findByText(/wrong passphrase/);
-    expect((screen.getByLabelText('Wallet account passphrase') as HTMLInputElement).value).toBe('');
+    return field;
+  };
+
+  it('empties the passphrase field once it is sent, even when the refund fails', async () => {
+    vi.mocked(confirmRecovery).mockRejectedValueOnce(new Error('wrong passphrase'));
+    const field = await open();
+    await within(screen.getByRole('dialog')).findByRole('alert');
+    expect(field.value).toBe('');
     expect(vi.mocked(confirmRecovery)).toHaveBeenCalledWith('ready', 'q1', 'hunter2');
+  });
+
+  // The page behind the dialog is covered, so a refusal is said in the dialog.
+  it('says a refused passphrase in the dialog, until the next try', async () => {
+    vi.mocked(confirmRecovery).mockResolvedValueOnce({ txid: '', pending: false, error: 'unlock source account: rpc error: code = InvalidArgument desc = invalid passphrase' });
+    const field = await open();
+    const alert = await within(screen.getByRole('dialog')).findByRole('alert');
+    expect(alert.textContent).toBe('Wrong passphrase.');
+    fireEvent.change(field, { target: { value: 'h' } });
+    expect(within(screen.getByRole('dialog')).queryByRole('alert')).toBeNull();
+  });
+
+  it('opens again without the last refusal', async () => {
+    vi.mocked(confirmRecovery).mockResolvedValueOnce({ txid: '', pending: false, error: 'invalid passphrase' });
+    await open();
+    await within(screen.getByRole('dialog')).findByRole('alert');
+    fireEvent.click(screen.getByText('Cancel'));
+    vi.mocked(quoteRecovery).mockResolvedValueOnce({ id: 'q2', depositId: 'ready', destination: 'DsBack', feeAtoms: 2000, returnAtoms: 998000, expiresAt: 0 });
+    fireEvent.click(screen.getByText('Take it back'));
+    await screen.findByLabelText('Wallet account passphrase');
+    expect(within(screen.getByRole('dialog')).queryByRole('alert')).toBeNull();
+  });
+
+  it('closes on a refund that was signed and waits to be broadcast', async () => {
+    vi.mocked(confirmRecovery).mockResolvedValueOnce({ txid: 'ab', pending: true, error: 'broadcast: connection refused' });
+    await open();
+    await screen.findByText(/broadcast will be retried automatically/);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('says any other failure in its own words', async () => {
+    vi.mocked(confirmRecovery).mockResolvedValueOnce({ txid: '', pending: false, error: 'quote expired' });
+    await open();
+    expect((await within(screen.getByRole('dialog')).findByRole('alert')).textContent).toBe('quote expired');
+  });
+
+  it('names a refused passphrase however the wallet words it', () => {
+    expect(refusal('invalid passphrase')).toBe('Wrong passphrase.');
+    expect(refusal('unlock source account: Passphrase incorrect')).toBe('Wrong passphrase.');
+    expect(refusal('output already spent')).toBe('output already spent');
   });
 });

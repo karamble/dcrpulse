@@ -22,6 +22,10 @@ const rank = (r: RecoveryDeposit): number => {
 const byRank = (a: RecoveryDeposit, b: RecoveryDeposit): number =>
   rank(a) - rank(b) || (rank(a) === 1 ? a.remainingBlocks - b.remainingBlocks : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
+// refusal is what the recovery dialog says when approving failed; a wallet
+// that refused the passphrase is said so plainly.
+export const refusal = (msg: string): string => /passphrase/i.test(msg) ? 'Wrong passphrase.' : msg;
+
 export interface RecoveryGroup { table: string; game: string; items: RecoveryDeposit[] }
 
 // recoveryGroups gathers one table's deposits under one heading, ordered by
@@ -46,6 +50,7 @@ export function GamingRecovery() {
   const [quote, setQuote] = useState<RecoveryQuote | null>(null);
   const [notice, setNotice] = useState('');
   const [passphrase, setPassphrase] = useState('');
+  const [approveError, setApproveError] = useState('');
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
@@ -80,6 +85,18 @@ export function GamingRecovery() {
     try { await work(); await load(); }
     catch (e) { setNotice(apiError(e, 'Recovery needs attention')); }
     finally { action.current = false; setBusy(''); }
+  };
+  const approve = (q: RecoveryQuote) => {
+    const typed = passphrase;
+    setPassphrase('');
+    void perform(q.depositId, async () => {
+      let result;
+      try { result = await confirmRecovery(q.depositId, q.id, typed); }
+      catch (e) { setApproveError(refusal(apiError(e, 'Recovery needs attention'))); return; }
+      if (result.error && !result.pending) { setApproveError(refusal(result.error)); return; }
+      setNotice(result.error ? 'Refund signed and saved. The broadcast will be retried automatically.' : `Refund broadcast: ${result.txid}. It is in the mempool and confirms with the next block, usually within a few minutes.`);
+      setQuote(null);
+    });
   };
   // A backup can only go back while the ledger is empty or missing.
   const canRestore = rows?.length === 0 || /ledger missing/.test(error);
@@ -137,8 +154,9 @@ export function GamingRecovery() {
     {quote && <div role="dialog" aria-modal="true" aria-labelledby="recovery-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-lg space-y-4 rounded-2xl border border-gray-700 bg-gray-900 p-6">
       <h3 id="recovery-title" className="text-lg font-semibold">Confirm recovery</h3><dl className="space-y-2 text-sm"><div><dt className="text-gray-400">Returned to your wallet</dt><dd className="text-xl">{formatAtomsTrimmed(quote.returnAtoms)} DCR</dd></div><div><dt className="text-gray-400">Transaction fee</dt><dd>{formatAtomsTrimmed(quote.feeAtoms)} DCR</dd></div><div><dt className="text-gray-400">Destination</dt><dd className="break-all font-mono text-xs">{quote.destination}</dd></div></dl>
       <p className="text-xs text-gray-400">The bridge will recheck the deposit, then sign and broadcast this refund. The quote expires after two minutes.</p>
-      <label className="block text-sm">Wallet account passphrase<input type="password" autoComplete="off" value={passphrase} onChange={e => setPassphrase(e.target.value)} className="mt-1 w-full rounded border border-gray-600 bg-gray-950 p-2" /></label>
-      <div className="flex justify-end gap-3"><button type="button" disabled={!!busy} onClick={() => { setQuote(null); setPassphrase(''); }} className="px-3 py-2">Cancel</button><button type="button" disabled={!!busy || !!error} className="rounded-lg bg-emerald-600 px-4 py-2 disabled:opacity-40" onClick={() => { const typed = passphrase; setPassphrase(''); void perform(quote.depositId, async () => { const result = await confirmRecovery(quote.depositId, quote.id, typed); if (result.error && !result.pending) throw new Error(result.error); setNotice(result.error ? 'Refund signed and saved. The broadcast will be retried automatically.' : `Refund broadcast: ${result.txid}. It is in the mempool and confirms with the next block, usually within a few minutes.`); setQuote(null); }); }}>Approve recovery</button></div>
+      <label className="block text-sm">Wallet account passphrase<input type="password" autoComplete="off" value={passphrase} onChange={e => { setPassphrase(e.target.value); setApproveError(''); }} className="mt-1 w-full rounded border border-gray-600 bg-gray-950 p-2" /></label>
+      {approveError && <p role="alert" className="text-sm text-red-400">{approveError}</p>}
+      <div className="flex justify-end gap-3"><button type="button" disabled={!!busy} onClick={() => { setQuote(null); setPassphrase(''); setApproveError(''); }} className="px-3 py-2">Cancel</button><button type="button" disabled={!!busy || !!error} className="rounded-lg bg-emerald-600 px-4 py-2 disabled:opacity-40" onClick={() => approve(quote)}>Approve recovery</button></div>
     </div></div>}
   </section>;
 }
