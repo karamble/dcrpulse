@@ -240,9 +240,16 @@ func (gamingWallet) MinedTransactions(ctx context.Context, start int32, fn func(
 
 type gamingRelay struct{}
 
+// The brclientd calls the relay makes. Settable for tests.
+var (
+	gamingBRIdentity = rpc.BrclientdUserPublicIdentity
+	gamingBRSend     = rpc.BrclientdGCMessage
+	gamingBRHistory  = rpc.BrclientdGCHistory
+)
+
 func (gamingRelay) Identity(ctx context.Context) ([32]byte, string, error) {
 	var uid [32]byte
-	raw, err := rpc.BrclientdUserPublicIdentity(ctx)
+	raw, err := gamingBRIdentity(ctx)
 	if err != nil {
 		return uid, "", err
 	}
@@ -266,7 +273,7 @@ func (gamingRelay) SendGroupMessage(ctx context.Context, gcid [32]byte, text str
 	if err != nil {
 		return err
 	}
-	err = rpc.BrclientdGCMessage(ctx, id, text, 0)
+	err = gamingBRSend(ctx, id, text, 0)
 	var refused *rpc.BrclientdStatusError
 	if errors.As(err, &refused) {
 		return fmt.Errorf("%w: %w", gamingcore.ErrNotSent, err)
@@ -279,7 +286,7 @@ func (gamingRelay) GroupHistory(ctx context.Context, gcid [32]byte, page, pageSi
 	if err != nil {
 		return nil, err
 	}
-	raw, err := rpc.BrclientdGCHistory(ctx, id, page, pageSize)
+	raw, err := gamingBRHistory(ctx, id, page, pageSize)
 	if err != nil {
 		return nil, err
 	}

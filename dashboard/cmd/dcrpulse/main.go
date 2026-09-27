@@ -984,37 +984,11 @@ func waitForWalletLoaded(ctx context.Context) bool {
 // that also holds a wallet, a node and a Lightning daemon, and refusing to start
 // any of that because a game could not be served would be the wrong trade.
 func startGamingBridge() {
-	gamingcore.LoadGamingAllowlist()
-
 	addr := net.JoinHostPort(
 		getEnv("GAMING_BRIDGE_HOST", "0.0.0.0"),
 		getEnv("GAMING_BRIDGE_PORT", "8443"),
 	)
-	cfg, err := gamingcore.GamingBridgeConfig(addr)
-	if err != nil {
-		gameLog.Errorf("the gaming bridge has no certificate, so no game can connect: %v", err)
-		return
+	if err := gamingcore.Start(addr); err != nil {
+		gameLog.Errorf("%v", err)
 	}
-	srv, err := gamingbridge.New(cfg)
-	if err != nil {
-		gameLog.Errorf("could not prepare the gaming bridge: %v", err)
-		return
-	}
-
-	// What the console reports as connected. A live stream is the only honest
-	// answer: a game is registered here and run on a machine of the person's
-	// choosing, so registered and connected are different questions.
-	gamingcore.SetGamingConnected(srv.SubscriberCount)
-	gamingcore.SetGamingRequest(srv.Request)
-	gamingcore.SetGamingState(srv.State)
-	gamingcore.SetGamingLockTerms(srv.LockTerms)
-	// How a loss upstream of the bridge reaches the games. The bridge cannot
-	// see that kind of gap for itself, so the notification stream tells it.
-	gamingcore.Gaming().SetGamingResync(srv.ResyncAll)
-
-	go func() {
-		if err := srv.Serve(); err != nil {
-			gameLog.Errorf("the gaming bridge stopped: %v", err)
-		}
-	}()
 }

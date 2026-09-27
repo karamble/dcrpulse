@@ -292,37 +292,55 @@ var gamingBridgePort string
 // never started.
 func GamingBridgePort() string { return gamingBridgePort }
 
-// gamingConnected reports how many streams a game is holding.
+// Start brings up the listener games connect to on addr and serves it. It is
+// called once, after Configure.
 //
-// A function set from main rather than a call into the bridge package, because
-// that package is a leaf: it depends on nothing here, which is what lets this
-// one use its allowlist without the two importing each other.
+// A failure is returned, not fatal: gaming is one section of a wallet app, and
+// refusing to run the rest because a game could not be served would be the
+// wrong trade.
+func Start(addr string) error {
+	LoadGamingAllowlist()
+	cfg, err := GamingBridgeConfig(addr)
+	if err != nil {
+		return fmt.Errorf("the gaming bridge has no certificate, so no game can connect: %w", err)
+	}
+	srv, err := gamingbridge.New(cfg)
+	if err != nil {
+		return fmt.Errorf("could not prepare the gaming bridge: %w", err)
+	}
+	// What the console reports as connected. A live stream is the only honest
+	// answer: a game is registered here and run on a machine of the person's
+	// choosing, so registered and connected are different questions.
+	gamingConnected = srv.SubscriberCount
+	gamingRequest = srv.Request
+	gamingState = srv.State
+	gamingLockTerms = srv.LockTerms
+	// How a loss upstream of the bridge reaches the games. The bridge cannot
+	// see that kind of gap for itself, so the notification stream tells it.
+	Gaming().SetGamingResync(srv.ResyncAll)
+	go func() {
+		if err := srv.Serve(); err != nil {
+			gameLog.Errorf("the gaming bridge stopped: %v", err)
+		}
+	}()
+	return nil
+}
+
+// gamingConnected reports how many streams a game is holding. Start sets it and
+// the three below from the listener, which is a leaf: it depends on nothing
+// here, which is what lets this package use its allowlist without the two
+// importing each other.
 var gamingConnected func(game string) int
 
-// SetGamingConnected wires the listener's view of who is connected.
-func SetGamingConnected(f func(game string) int) { gamingConnected = f }
-
 // gamingRequest asks a connected game to do something and waits for its answer.
-// Set from main for the same reason as gamingConnected.
 var gamingRequest func(ctx context.Context, game string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error)
-
-// SetGamingRequest wires the listener's request path.
-func SetGamingRequest(f func(ctx context.Context, game string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error)) {
-	gamingRequest = f
-}
 
 // gamingState is the last state a game reported, cached by the listener.
 var gamingState func(game string) *gamingpb.GameState
 
-// SetGamingState wires the listener's view of what each game last reported.
-func SetGamingState(f func(game string) *gamingpb.GameState) { gamingState = f }
-
 // gamingLockTerms is the refund and bond timelocks a game advertised on Hello,
 // cached by the listener.
 var gamingLockTerms func(game string) (minRefund, bondLock uint32)
-
-// SetGamingLockTerms wires the listener's view of each game's advertised locks.
-func SetGamingLockTerms(f func(game string) (minRefund, bondLock uint32)) { gamingLockTerms = f }
 
 // gamingGameLockTerms is the advertised locks for a game, or zero when there is
 // no listener or the game advertised none.
