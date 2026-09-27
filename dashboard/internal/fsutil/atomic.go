@@ -14,8 +14,9 @@ import (
 )
 
 // AtomicWriteJSON writes data to path via a temp file in the same directory,
-// chmods it 0600 and renames it into place, so a crash never leaves a torn
-// file. The directory must already exist.
+// chmods it 0600, syncs it and renames it into place, then syncs the directory,
+// so a crash leaves either the old file or the new one, never a torn or lost
+// write. The directory must already exist.
 func AtomicWriteJSON(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".tmp-*.json")
@@ -28,6 +29,11 @@ func AtomicWriteJSON(path string, data []byte) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("write temp: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("sync temp: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
 		return fmt.Errorf("close temp: %w", err)
@@ -39,6 +45,14 @@ func AtomicWriteJSON(path string, data []byte) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		os.Remove(tmpName)
 		return fmt.Errorf("rename: %w", err)
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("open directory: %w", err)
+	}
+	defer d.Close()
+	if err := d.Sync(); err != nil {
+		return fmt.Errorf("sync directory: %w", err)
 	}
 	return nil
 }

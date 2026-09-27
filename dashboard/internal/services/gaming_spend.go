@@ -24,6 +24,7 @@ import (
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
 	"github.com/decred/dcrd/wire"
 
+	"dcrpulse/internal/fsutil"
 	"dcrpulse/internal/gamingfunds"
 	"dcrpulse/internal/types"
 	"dcrpulse/internal/utils"
@@ -287,11 +288,10 @@ func writeSpendLog(log spendLog, now int64) error {
 	if err != nil {
 		return err
 	}
-	tmp := gamingSpendLogPath() + ".tmp"
-	if err := os.WriteFile(tmp, blob, 0o600); err != nil {
+	if err := fsutil.AtomicWriteJSON(gamingSpendLogPath(), blob); err != nil {
 		return fmt.Errorf("write spend log: %w", err)
 	}
-	return os.Rename(tmp, gamingSpendLogPath())
+	return nil
 }
 
 // expireLocked marks anything nobody answered in time. A request that stays
