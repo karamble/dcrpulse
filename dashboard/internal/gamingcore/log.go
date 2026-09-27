@@ -4,17 +4,10 @@
 
 package gamingcore
 
-import (
-	"time"
+import "github.com/decred/slog"
 
-	dcrlog "dcrpulse/internal/log"
-)
+// gameLog is where the bridge writes. It says nothing until UseLogger.
+var gameLog = slog.Disabled
 
-var gameLog = dcrlog.GAME
-
-// ackTimeout bounds one acknowledgement to Bison Relay.
-const ackTimeout = 30 * time.Second
-
-// importedXpubAccountBase is the first account number dcrwallet gives an
-// imported xpub account.
-const importedXpubAccountBase = uint32(1) << 31
+// UseLogger sets the logger the bridge writes to.
+func UseLogger(logger slog.Logger) { gameLog = logger }

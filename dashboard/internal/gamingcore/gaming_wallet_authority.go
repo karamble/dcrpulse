@@ -8,10 +8,13 @@ import (
 	"sync"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/utils"
 )
 
 var gamingKeyMu sync.Mutex
+
+// importedXpubAccountBase is the first account number dcrwallet gives an
+// imported xpub account.
+const importedXpubAccountBase = uint32(1) << 31
 
 func verifyGamingWalletKey(ctx context.Context, key gamingfunds.WalletKey) error {
 	// Only seed-derived accounts are eligible. An imported xpub can report
@@ -80,7 +83,7 @@ func ensureGamingWalletKey(ctx context.Context, store *gamingfunds.Store, scope 
 // withGamingWalletSigner is reachable from dashboard approval handlers only.
 // Hashes are computed by the authority from an already validated transaction.
 func withGamingWalletSigner(ctx context.Context, scope gamingfunds.Scope, passphrase []byte, fn func(gamingfunds.WalletSigner) ([]byte, error)) ([]byte, error) {
-	defer utils.Zero(passphrase)
+	defer clear(passphrase)
 	if err := recoveryWalletMatches(ctx, scope); err != nil {
 		return nil, err
 	}

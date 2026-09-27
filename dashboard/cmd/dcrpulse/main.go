@@ -210,6 +210,8 @@ func main() {
 	services.StartBrclientdNotifs(context.Background())
 	// The gaming bridge runs on this dashboard's node, wallet, Bison Relay
 	// client and App Password.
+	gamingcore.UseLogger(dcrlog.GAME)
+	gamingbridge.UseLogger(dcrlog.GAME)
 	gamingcore.Configure(config.StackControlDir(), services.GamingHost(auth.Enabled))
 	// Game frames come from Bison Relay's GCMStream replay log, on the same
 	// WS, and are routed to the gaming bridge from there.

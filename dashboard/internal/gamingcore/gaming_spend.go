@@ -24,9 +24,7 @@ import (
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
 	"github.com/decred/dcrd/wire"
 
-	"dcrpulse/internal/fsutil"
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/utils"
 )
 
 // Games play for real money, and this is the one place any of it moves.
@@ -247,7 +245,7 @@ func writeSpendLog(log spendLog, now int64) error {
 	if err != nil {
 		return err
 	}
-	if err := fsutil.AtomicWriteJSON(gamingSpendLogPath(), blob); err != nil {
+	if err := atomicWriteJSON(gamingSpendLogPath(), blob); err != nil {
 		return fmt.Errorf("write spend log: %w", err)
 	}
 	return nil
@@ -776,7 +774,7 @@ func DenyGamingSpend(id string) (GamingSpend, error) {
 // double-payment. That one records failed, as every failure used to.
 func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (GamingSpend, error) {
 	// Wiped however the approval ends, not only when it reaches signing.
-	defer utils.Zero(passphrase)
+	defer clear(passphrase)
 	spendMu.Lock()
 	now := time.Now().Unix()
 	log, err := readSpendLog()
@@ -866,7 +864,7 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 		return req, err
 	}
 	signed, err := spendSign(ctx, account, unsigned, passphrase)
-	utils.Zero(passphrase)
+	clear(passphrase)
 	if err != nil {
 		return req, err
 	}

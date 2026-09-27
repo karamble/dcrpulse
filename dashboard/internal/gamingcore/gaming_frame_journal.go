@@ -14,8 +14,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
-	"dcrpulse/internal/fsutil"
 )
 
 // gamingJournalFile keeps every gaming frame the bridge received, with the
@@ -207,7 +205,7 @@ func pruneGamingJournal(gcid string) (int, error) {
 		buf.Write(raw)
 		buf.WriteByte('\n')
 	}
-	if err := fsutil.AtomicWriteJSON(filepath.Join(GamingStateDir, gamingJournalFile), buf.Bytes()); err != nil {
+	if err := atomicWriteJSON(filepath.Join(GamingStateDir, gamingJournalFile), buf.Bytes()); err != nil {
 		return 0, err
 	}
 	j.seen = kept

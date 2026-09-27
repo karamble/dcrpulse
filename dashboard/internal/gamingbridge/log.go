@@ -4,6 +4,10 @@
 
 package gamingbridge
 
-import dcrlog "dcrpulse/internal/log"
+import "github.com/decred/slog"
 
-var gameLog = dcrlog.GAME
+// gameLog is where the listener writes. It says nothing until UseLogger.
+var gameLog = slog.Disabled
+
+// UseLogger sets the logger the listener writes to.
+func UseLogger(logger slog.Logger) { gameLog = logger }

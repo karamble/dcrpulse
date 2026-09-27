@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/utils"
 
 	"github.com/decred/dcrd/crypto/blake256"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
@@ -220,7 +219,7 @@ var gamingKeyProofSign = signGamingKeyProof
 // signGamingKeyProof has the wallet sign this table's key proof, with the
 // passphrase of the seat-bond approval, and records it. Once per table.
 func signGamingKeyProof(ctx context.Context, scope gamingfunds.Scope, table string, passphrase []byte) error {
-	defer utils.Zero(passphrase)
+	defer clear(passphrase)
 	store, err := gamingFundsStore()
 	if err != nil {
 		return err
