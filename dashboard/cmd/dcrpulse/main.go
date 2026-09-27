@@ -642,6 +642,7 @@ func main() {
 	api.Handle("/br/gaming/recovery/restore", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingLedgerRestoreHandler))).Methods("POST")
 
 	api.Handle("/br/gaming/table", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingCreateHandler))).Methods("POST")
+	api.Handle("/br/gaming/table/status", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingTableStatusHandler))).Methods("GET")
 	api.Handle("/br/gaming/invite", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingInviteHandler))).Methods("POST")
 
 	api.Handle("/br/gaming/bridge", auth.RequireAppPassword(http.HandlerFunc(handlers.BisonrelayGamingBridgeInfoHandler))).Methods("GET")

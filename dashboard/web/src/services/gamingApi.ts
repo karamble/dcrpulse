@@ -168,6 +168,24 @@ export const getGamingState = async (
   return data;
 };
 
+// What the ledger says about one table: accepted, its latest seat bond and
+// stake requests, and its payout. A table never accepted reports only
+// accepted: false.
+export interface GamingTableStatus {
+  accepted: boolean;
+  closed: boolean;
+  seatBond?: { state: GamingSpendState; txid?: string };
+  stake?: { state: GamingSpendState; txid?: string };
+  payout?: { id: string; state: string; chain?: GamingPayoutChain };
+}
+
+export const getGamingTableStatus = async (game: string, sid: string): Promise<GamingTableStatus> => {
+  const { data } = await api.get<GamingTableStatus>(
+    `/br/gaming/table/status?game=${encodeURIComponent(game)}&sid=${encodeURIComponent(sid)}`,
+  );
+  return data;
+};
+
 export const acceptGamingInvite = async (
   game: string,
   invite: string,

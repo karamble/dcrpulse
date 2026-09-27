@@ -4,12 +4,42 @@
 
 import { useContext, useEffect, useState } from 'react';
 import { Check, Gamepad2, Loader2 } from 'lucide-react';
-import { GamingGame, acceptGamingInvite, getGamingGames } from '../../services/gamingApi';
+import {
+  GamingGame,
+  GamingTableStatus,
+  acceptGamingInvite,
+  getGamingGames,
+  getGamingTableStatus,
+} from '../../services/gamingApi';
 import { GamingInvite, termsComplete } from './gamingInviteParse';
 import { GamingChatCtx } from './gamingChatContext';
 import { blocksToDuration } from '../../utils/blocks';
 
 const fmtDcr = (atoms: number): string => (atoms / 1e8).toFixed(8).replace(/\.?0+$/, '');
+
+// tableLine says where an accepted table stands, from the ledger: its payout
+// once there is one, otherwise whether it was closed or its seat bond paid.
+const tableLine = (s: GamingTableStatus, name: string): string => {
+  const p = s.payout;
+  if (p && p.state !== 'expired' && p.state !== 'rejected') {
+    if (p.state === 'confirmed') {
+      const n = p.chain?.confirmations ?? 0;
+      return `Table finished · payout confirmed${n > 0 ? ` (${n} confirmation${n === 1 ? '' : 's'})` : ''}.`;
+    }
+    if (p.state === 'publishing') {
+      return p.chain?.state === 'mempool' ? 'Table finished · payout in the mempool.' : 'Table finished · payout being published.';
+    }
+    return p.state === 'awaiting_approval'
+      ? 'Table finished · the payout waits for your approval.'
+      : 'Table finished · the payout is collecting signatures.';
+  }
+  if (s.closed) return 'Table closed.';
+  if (s.seatBond?.state === 'approved') {
+    return s.stake?.state === 'approved' ? 'Accepted · seat bond and stake paid.' : 'Accepted · seat bond paid.';
+  }
+  if (s.seatBond?.state === 'pending') return 'Accepted · the seat bond waits for your approval.';
+  return `Accepted. ${name} is forming the table.`;
+};
 
 // GamingInviteChip renders a gaming:// invite found in a chat message, the same
 // way an lnpay:// invoice renders as a pay chip.
@@ -31,7 +61,29 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
   const [accepted, setAccepted] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<GamingTableStatus | null>(null);
+  const [statusChecked, setStatusChecked] = useState(!invite.sid);
   const gcid = useContext(GamingChatCtx);
+
+  // The ledger remembers what this installation did with the table, so a
+  // reopened chat shows it instead of offering Accept again.
+  useEffect(() => {
+    if (!invite.sid) return;
+    let cancelled = false;
+    getGamingTableStatus(invite.game, invite.sid)
+      .then((s) => {
+        if (!cancelled) setStatus(s);
+      })
+      .catch(() => {
+        /* Without the ledger the chip still offers what the invite states. */
+      })
+      .finally(() => {
+        if (!cancelled) setStatusChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [invite.game, invite.sid, accepted]);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,10 +151,15 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
         <span className="text-xs text-muted-foreground">This invitation does not state complete terms.</span>
       )}
 
-      {loading ? (
+      {loading || !statusChecked ? (
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           <Loader2 className="h-3 w-3 animate-spin" />
           Checking whether {name} is registered...
+        </span>
+      ) : status?.accepted ? (
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Check className="h-3 w-3" />
+          {tableLine(status, name)}
         </span>
       ) : !game ? (
         <span className="text-xs text-muted-foreground">
@@ -112,7 +169,7 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
       ) : accepted ? (
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <Check className="h-3 w-3" />
-          Joined. {name} is forming the table.
+          Accepted. {name} is forming the table.
         </span>
       ) : !gcid ? (
         // A table plays in the conversation its invitation arrived in, so

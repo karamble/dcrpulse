@@ -115,6 +115,23 @@ func BisonrelayGamingStateHandler(w http.ResponseWriter, r *http.Request) {
 	gamingJSON(w, gamingStateView(state, tip))
 }
 
+// BisonrelayGamingTableStatusHandler reports what the ledger holds for one
+// table, so an invitation can show that it was accepted, paid and settled.
+func BisonrelayGamingTableStatusHandler(w http.ResponseWriter, r *http.Request) {
+	game := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("game")))
+	sid := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sid")))
+	if game == "" || !services.ValidGamingTableID(sid) {
+		http.Error(w, "game and table id are required", http.StatusBadRequest)
+		return
+	}
+	status, err := services.ReadGamingTableStatus(game, sid)
+	if err != nil {
+		http.Error(w, "Gaming ledger unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	gamingJSON(w, status)
+}
+
 func gamingStateView(s *gamingpb.GameState, tip int64) map[string]any {
 	tables := make([]map[string]any, 0, len(s.GetTables()))
 	for _, t := range s.GetTables() {
