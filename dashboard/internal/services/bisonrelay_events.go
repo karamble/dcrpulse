@@ -82,29 +82,28 @@ func StartBisonrelayStreams(ctx context.Context) {
 	}()
 	// PM and GC messages are delivered via brclientd's in-process /notifications
 	// stream ("pm" / "gc-message"), which fires once per newly-received message.
-	// We deliberately do not subscribe to ChatService.PMStream/GCMStream here:
-	// those are replay-log streams that re-stream the whole backlog on every
-	// (re)subscribe, which re-badged already-read conversations on restart.
-	go runStream(ctx, ws, "ChatService.KXStream", "ChatService.AckKXCompleted", "kx", func(payload json.RawMessage) (any, bool) {
-		var kx struct {
-			SequenceID int64 `json:"sequenceId"`
-		}
-		_ = json.Unmarshal(payload, &kx)
-		if kx.SequenceID == 0 {
-			return nil, false
-		}
-		return map[string]int64{"sequenceId": kx.SequenceID}, true
-	})
-	go runStream(ctx, ws, "ContentService.DownloadsCompletedStream", "ContentService.AckDownloadCompleted", "download", func(payload json.RawMessage) (any, bool) {
-		var dl struct {
-			SequenceID int64 `json:"sequenceId"`
-		}
-		_ = json.Unmarshal(payload, &dl)
-		if dl.SequenceID == 0 {
-			return nil, false
-		}
-		return map[string]int64{"sequenceId": dl.SequenceID}, true
-	})
+	// The chat path does not use ChatService.PMStream/GCMStream: those replay
+	// everything unacknowledged on each (re)subscribe, which suits the gaming
+	// intake but would re-badge read conversations here.
+	go runStream(ctx, ws, "ChatService.KXStream", "ChatService.AckKXCompleted", "kx", ackBySequenceID)
+	go runStream(ctx, ws, "ContentService.DownloadsCompletedStream", "ContentService.AckDownloadCompleted", "download", ackBySequenceID)
+}
+
+// ackBySequenceID builds the ack parameters for a stream event. Bison Relay's
+// clientrpc writes its 64-bit ids as JSON strings (protojson); json.Number
+// reads that form and a plain number alike.
+func ackBySequenceID(payload json.RawMessage) (any, bool) {
+	var ev struct {
+		SequenceID json.Number `json:"sequenceId"`
+	}
+	if err := json.Unmarshal(payload, &ev); err != nil {
+		return nil, false
+	}
+	seq, err := ev.SequenceID.Int64()
+	if err != nil || seq <= 0 {
+		return nil, false
+	}
+	return map[string]int64{"sequenceId": seq}, true
 }
 
 // notifReconnect cancels the in-flight /notifications attempt so the stream

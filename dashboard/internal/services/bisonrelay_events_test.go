@@ -5,8 +5,12 @@
 package services
 
 import (
+	"encoding/json"
 	"sync"
 	"testing"
+
+	"github.com/companyzero/bisonrelay/clientrpc/types"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // The acker exists because acknowledging from the stream callback deadlocked
@@ -140,5 +144,33 @@ func TestSequenceIDOf(t *testing.T) {
 	}
 	if _, ok := sequenceIDOf("not a map"); ok {
 		t.Error("sequenceIDOf accepted a non-map")
+	}
+}
+
+// The ack parameters come from events exactly as Bison Relay's clientrpc
+// writes them, where a 64-bit id is a JSON string.
+func TestAckBySequenceIDReadsBisonRelayEvents(t *testing.T) {
+	kx, err := protojson.Marshal(&types.KXCompleted{SequenceId: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dl, err := protojson.Marshal(&types.DownloadCompletedResponse{SequenceId: 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for payload, want := range map[string]int64{
+		string(kx):         7,
+		string(dl):         9,
+		`{"sequenceId":5}`: 5,
+	} {
+		p, ok := ackBySequenceID(json.RawMessage(payload))
+		if seq, got := sequenceIDOf(p); !ok || !got || seq != want {
+			t.Errorf("%s: ack = %v, %v; want sequenceId %d", payload, p, ok, want)
+		}
+	}
+	for _, payload := range []string{`{}`, `{"sequenceId":"0"}`, `{"sequenceId":"x"}`, `not json`} {
+		if p, ok := ackBySequenceID(json.RawMessage(payload)); ok {
+			t.Errorf("%s: acked %v", payload, p)
+		}
 	}
 }
