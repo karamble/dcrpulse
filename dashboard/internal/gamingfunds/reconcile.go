@@ -174,10 +174,20 @@ func (s *Store) ObserveOperation(id string, facts ChainObservation) error {
 				if prev.String() != input {
 					continue
 				}
-				if facts.Known && facts.Confirmations > 0 {
+				switch {
+				case facts.Known && facts.Confirmations > 0:
 					dep.SpendingTx = id
 					dep.State = "spent"
-				} else if dep.SpendingTx == id {
+				case dep.SpendingTx == id && dep.State == "spent":
+					// A confirmed spend that is no longer confirmed.
+					dep.SpendingTx = ""
+					dep.State = "needs_attention"
+				case facts.Known && dep.State != "needs_attention":
+					// Our own spend is in the mempool: the output is already
+					// on its way out and must not read as unspent.
+					dep.SpendingTx = id
+					dep.State = "spend_pending"
+				case dep.SpendingTx == id:
 					dep.SpendingTx = ""
 					dep.State = "needs_attention"
 				}
