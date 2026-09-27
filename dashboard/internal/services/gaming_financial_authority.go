@@ -297,7 +297,7 @@ func authorizeGamingTable(ctx context.Context, game, invite, gcid string) error 
 		return fmt.Errorf("invalid refund lock")
 	}
 	seats, err := strconv.ParseUint(q.Get("seats"), 10, 32)
-	if err != nil {
+	if err != nil || seats < gamingMinSeats || seats > gamingMaxSeats {
 		return fmt.Errorf("invalid seat count")
 	}
 	until, err := strconv.ParseUint(q.Get("until"), 10, 32)

@@ -5,7 +5,7 @@
 import { useContext, useEffect, useState } from 'react';
 import { Check, Gamepad2, Loader2 } from 'lucide-react';
 import { GamingGame, acceptGamingInvite, getGamingGames } from '../../services/gamingApi';
-import { GamingInvite } from './gamingInviteParse';
+import { GamingInvite, termsComplete } from './gamingInviteParse';
 import { GamingChatCtx } from './gamingChatContext';
 import { blocksToDuration } from '../../utils/blocks';
 
@@ -29,6 +29,7 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const gcid = useContext(GamingChatCtx);
 
@@ -55,6 +56,8 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
   // is the answer rather than a separate case.
   const name = game?.name ?? invite.game;
   const ready = game?.ready ?? false;
+  const complete = termsComplete(invite);
+  const commitAtoms = (invite.buyinAtoms ?? 0) + (invite.bondAtoms ?? 0) + (invite.tableBondAtoms ?? 0);
 
   const accept = async () => {
     if (!gcid) return;
@@ -82,26 +85,19 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
         {invite.kind === 'table' ? ' table' : ` ${invite.kind}`}
       </span>
 
-      <span className="text-xs text-muted-foreground">
-        {invite.buyinAtoms !== null && <>Buy-in {fmtDcr(invite.buyinAtoms)} DCR. </>}
-        {invite.seats !== null && <>{invite.seats} seats. </>}
-        {invite.buyinAtoms === null && invite.seats === null && <>No terms stated. </>}
-      </span>
-
-      {(() => {
-        // The refund lock rides in the invite (csv=); the bond lock is game
-        // metadata. Fall back to the game's advertised minimum when an older
-        // invite carries no csv.
-        const refund = invite.csv ?? game?.minRefundBlocks ?? 0;
-        const bond = game?.bondLockBlocks ?? 0;
-        if (refund <= 0 && bond <= 0) return null;
-        return (
-          <span className="text-xs text-muted-foreground">
-            {refund > 0 && <>Refund lock {blocksToDuration(refund)}. </>}
-            {bond > 0 && <>Seat bond locks {blocksToDuration(bond)}. </>}
-          </span>
-        );
-      })()}
+      {complete ? (
+        // Only the invite's own terms: they are what accept commits to.
+        <span className="flex flex-col text-xs text-muted-foreground">
+          <span>Buy-in {fmtDcr(invite.buyinAtoms!)} DCR, refund lock {blocksToDuration(invite.csv!)}.</span>
+          <span>Seat bond {fmtDcr(invite.bondAtoms!)} DCR, locked {blocksToDuration(invite.bondCsv!)}.</span>
+          {invite.tableBondAtoms! > 0 && (
+            <span>Table bond {fmtDcr(invite.tableBondAtoms!)} DCR, locked {blocksToDuration(invite.tableBondCsv!)}.</span>
+          )}
+          <span>{invite.seats} seats.</span>
+        </span>
+      ) : (
+        <span className="text-xs text-muted-foreground">This invitation does not state complete terms.</span>
+      )}
 
       {loading ? (
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -124,7 +120,7 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
         <span className="text-xs text-muted-foreground">
           Open this invitation in its group chat to join.
         </span>
-      ) : !ready ? (
+      ) : !complete ? null : !ready ? (
         // Registered and connected are different answers, and a button here
         // would send a click nothing is listening for.
         <span className="text-xs text-muted-foreground">
@@ -132,15 +128,41 @@ export const GamingInviteChip = ({ invite }: { invite: GamingInvite }) => {
         </span>
       ) : (
         <span className="flex flex-col gap-1">
-          <button
-            type="button"
-            onClick={accept}
-            disabled={accepting}
-            className="self-start inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/20 hover:bg-primary/30 disabled:opacity-50 text-xs font-medium"
-          >
-            {accepting && <Loader2 className="h-3 w-3 animate-spin" />}
-            {accepting ? 'Joining...' : 'Accept'}
-          </button>
+          {confirming ? (
+            <>
+              <span className="text-xs">
+                Accepting lets {name} ask you for up to {fmtDcr(commitAtoms)} DCR at this table, each
+                deposit locked until its refund delay passes. Each deposit still needs your approval.
+              </span>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  disabled={accepting}
+                  className="px-2 py-1 rounded-md text-xs disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={accept}
+                  disabled={accepting}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/20 hover:bg-primary/30 disabled:opacity-50 text-xs font-medium"
+                >
+                  {accepting && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {accepting ? 'Joining...' : 'Join table'}
+                </button>
+              </span>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="self-start inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-xs font-medium"
+            >
+              Accept
+            </button>
+          )}
           {error && <span className="text-xs text-destructive break-words">{error}</span>}
         </span>
       )}

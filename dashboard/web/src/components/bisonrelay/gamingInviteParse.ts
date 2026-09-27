@@ -33,6 +33,16 @@ export type GamingInvite = {
   seats: number | null;
   /** The refund lock in blocks, when the invite states one. */
   csv: number | null;
+  /** The financial protocol version; accept requires "2". */
+  fv: string | null;
+  /** Seat bond in atoms and its refund lock in blocks. */
+  bondAtoms: number | null;
+  bondCsv: number | null;
+  /** Table bond in atoms (0 when none) and its refund lock in blocks. */
+  tableBondAtoms: number | null;
+  tableBondCsv: number | null;
+  /** The block height admission closes at. */
+  until: number | null;
   /** The session the invite refers to, carried through to accept. */
   sid: string;
   /** The whole link, so accept can hand it back untouched. */
@@ -57,10 +67,23 @@ const parseInvite = (game: string, kind: string, query: string, raw: string): Ga
     buyinAtoms: intOrNull(params.get('buyin')),
     seats: intOrNull(params.get('seats')),
     csv: intOrNull(params.get('csv')),
+    fv: params.get('fv'),
+    bondAtoms: intOrNull(params.get('bond')),
+    bondCsv: intOrNull(params.get('bondcsv')),
+    tableBondAtoms: intOrNull(params.get('tablebond')),
+    tableBondCsv: intOrNull(params.get('tablebondcsv')),
+    until: intOrNull(params.get('until')),
     sid: params.get('sid') ?? '',
     raw,
   };
 };
+
+// termsComplete reports whether an invite states every financial term accept
+// commits to, the same set the bridge requires.
+export const termsComplete = (i: GamingInvite): boolean =>
+  i.fv === '2' &&
+  !!i.buyinAtoms && !!i.seats && !!i.csv && !!i.bondAtoms && !!i.bondCsv && i.until !== null &&
+  i.tableBondAtoms !== null && i.tableBondCsv !== null && (i.tableBondAtoms === 0 || i.tableBondCsv > 0);
 
 // splitGamingInvites splits a chat segment around game invites so the caller can
 // interleave prose with invite chips, mirroring splitLnInvoices. Returns a

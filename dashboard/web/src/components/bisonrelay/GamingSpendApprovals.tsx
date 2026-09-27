@@ -14,6 +14,7 @@ import { Pagination } from '../explorer/Pagination';
 import { apiError } from '../../utils/apiError';
 import { formatAtomsTrimmed, toDcr } from '../../utils/amounts';
 import { refreshGamingSpends, useGamingSpends } from '../../hooks/useGamingSpends';
+import { blocksToDuration } from '../../utils/blocks';
 
 const fmtDcr = (atoms: number): string => formatAtomsTrimmed(atoms);
 const fmtWhen = (unix: number): string =>
@@ -226,7 +227,7 @@ export function GamingSpendRequestCard({ s, now, policy: p, used, stale, d }: {
         <dt className="text-muted-foreground">Table</dt><dd className="font-mono break-all">{s.tableId}</dd>
         <dt className="text-muted-foreground">Network fee</dt><dd>{fmtDcr(s.fundingFeeAtoms ?? 0)} DCR</dd>
         <dt className="text-muted-foreground">Total wallet debit</dt><dd className="font-semibold">{fmtDcr(s.amountAtoms + (s.fundingFeeAtoms ?? 0))} DCR</dd>
-        <dt className="text-muted-foreground">Refund delay</dt><dd>{s.recoveryLockBlocks} blocks after confirmation</dd>
+        <dt className="text-muted-foreground">Refund delay</dt><dd>{blocksToDuration(s.recoveryLockBlocks)} ({s.recoveryLockBlocks} blocks) after confirmation</dd>
       </dl>
       <p className="text-xs text-muted-foreground">After closing the table, recover mature deposits in Gaming → Recovery. Other players do not need to approve your refund.</p>
       {!verified && <p className="text-xs text-destructive">The bridge has not supplied complete verified payment terms. Approval is unavailable.</p>}

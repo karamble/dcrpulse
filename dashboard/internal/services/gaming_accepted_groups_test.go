@@ -101,3 +101,14 @@ func TestAppliedFinancialFramesLeaveTheReplay(t *testing.T) {
 		t.Fatalf("replay = %+v", got)
 	}
 }
+
+func TestAcceptRefusesSeatCountsCreateWouldRefuse(t *testing.T) {
+	withGamingWireDir(t)
+	for seats, refused := range map[string]bool{"1": true, "2": false, "6": false, "7": true, "13": true} {
+		invite := "gaming://poker/table?fv=2&sid=a1&buyin=100000&csv=288&seats=" + seats
+		err := authorizeGamingTable(t.Context(), "poker", invite, pruneGCA)
+		if got := err != nil && err.Error() == "invalid seat count"; got != refused {
+			t.Errorf("seats=%s: %v", seats, err)
+		}
+	}
+}
