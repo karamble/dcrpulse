@@ -152,10 +152,6 @@ func TestBrclientdWireBytes(t *testing.T) {
 			_, err := BrclientdGCHistory(c, gcID, 2, 50)
 			return err
 		}, "GET " + status + "/gc/" + testGCID + "/history?page=2&page_size=50"},
-		{"gaming history", func(c context.Context) error {
-			_, err := BrclientdGamingHistory(c, gcID, 2, 50)
-			return err
-		}, "GET " + status + "/gaming/history?gcid=" + testGCID + "&page=2&page_size=50"},
 		// Two-segment action: brclientd matches it as one string, so the
 		// slash must survive.
 		{"gc history clear", func(c context.Context) error {
@@ -355,7 +351,6 @@ func TestEveryIdentifierRouteRefusesTheZeroID(t *testing.T) {
 		"GCInvite":          func(c context.Context) error { return BrclientdGCInvite(c, zero, testUID) },
 		"GCMessage":         func(c context.Context) error { return BrclientdGCMessage(c, zero, "x", 0) },
 		"GCHistory":         func(c context.Context) error { _, e := BrclientdGCHistory(c, zero, 1, 1); return e },
-		"GamingHistory":     func(c context.Context) error { _, e := BrclientdGamingHistory(c, zero, 1, 1); return e },
 		"GCClearHistory":    func(c context.Context) error { return BrclientdGCClearHistory(c, zero) },
 		"GCPart":            func(c context.Context) error { return BrclientdGCPart(c, zero, "x") },
 		"GCKill":            func(c context.Context) error { return BrclientdGCKill(c, zero, "x") },
@@ -380,9 +375,9 @@ func TestEveryIdentifierRouteRefusesTheZeroID(t *testing.T) {
 		"RTDTAudioDial":     func(context.Context) error { _, _, e := BrclientdRTDTAudioDial(zero); return e },
 	}
 
-	// 26 wrappers plus the audio dialler.
-	if len(routes) != 27 {
-		t.Fatalf("covering %d identifier routes, want 27", len(routes))
+	// 25 wrappers plus the audio dialler.
+	if len(routes) != 26 {
+		t.Fatalf("covering %d identifier routes, want 26", len(routes))
 	}
 
 	for name, call := range routes {

@@ -4,59 +4,66 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"dcrpulse/internal/rpc"
 )
 
 var gamingHistoryRecovery sync.Mutex
 
-// Settable so the recovery and prune rules run without a live brclientd.
+// Settable so these rules run without a live brclientd.
 // Production sets none of them.
 var (
-	gamingHistoryFetch = rpc.BrclientdGamingHistory
-	gamingHistoryPrune = rpc.BrclientdGamingHistoryPrune
-	gamingSelfUID      = localGamingUID
+	gamingGCHistoryFetch = rpc.BrclientdGCHistory
+	gamingSelfNick       = localGamingNick
+	gamingSelfUID        = localGamingUID
 )
 
-type gamingHistoryPage struct {
+type gamingGCHistoryPage struct {
 	Entries []struct {
 		Message string `json:"message"`
 		From    string `json:"from"`
-		Sent    bool   `json:"sent"`
 	} `json:"entries"`
 }
 
-// isGamingUID reports whether from is a 64-hex BR UID in the form brclientd
-// writes, rather than a nick from an older history page.
-func isGamingUID(from string) bool {
-	if len(from) != 64 {
-		return false
+// localGamingNick is the nick BR logs this client's own messages under.
+func localGamingNick(ctx context.Context) (string, error) {
+	raw, err := rpc.BrclientdUserPublicIdentity(ctx)
+	if err != nil {
+		return "", err
 	}
-	for _, c := range from {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
+	var public struct {
+		Nick string `json:"nick"`
 	}
-	return true
+	if err = json.Unmarshal(raw, &public); err != nil || public.Nick == "" {
+		return "", fmt.Errorf("BR nick unavailable")
+	}
+	return public.Nick, nil
 }
 
+// gamingFrameInHistory reports whether BR's own log of the group holds frame as
+// a message from this client. BR logs a group message under the sender's nick
+// before it queues the send, so an entry here means BR took it.
 func gamingFrameInHistory(ctx context.Context, gcid rpc.ShortIDHex, frame string) (bool, error) {
+	nick, err := gamingSelfNick(ctx)
+	if err != nil {
+		return false, err
+	}
 	for page := 0; page < 10000; page++ {
-		raw, err := gamingHistoryFetch(ctx, gcid, page, 500)
+		raw, err := gamingGCHistoryFetch(ctx, gcid, page, 500)
 		if err != nil {
 			return false, err
 		}
-		var got gamingHistoryPage
+		var got gamingGCHistoryPage
 		if err := json.Unmarshal(raw, &got); err != nil {
 			return false, err
 		}
 		for _, entry := range got.Entries {
-			if entry.Sent && strings.TrimSpace(entry.Message) == strings.TrimSpace(frame) {
+			if entry.From == nick && strings.TrimSpace(entry.Message) == strings.TrimSpace(frame) {
 				return true, nil
 			}
 		}
@@ -123,66 +130,30 @@ func (b *GamingBus) knownGamingGCIDs() map[string]struct{} {
 	return out
 }
 
-// RecoverHistory rebuilds the durable inbox from brclientd's gaming journal
-// after a notification sequence gap. It never sends a peer message. Exact
-// duplicates disappear in persistGamingFrame; our own sends and entries without
-// an authenticated UID are skipped.
+// RecoverHistory delivers the journaled frames of every group the bridge knows,
+// oldest first. It never sends a peer message; exact duplicates disappear in
+// persistGamingFrame.
 func (b *GamingBus) RecoverHistory() {
 	if !gamingHistoryRecovery.TryLock() {
 		return
 	}
 	defer gamingHistoryRecovery.Unlock()
-	uidCtx, uidCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	self, err := gamingSelfUID(uidCtx)
-	uidCancel()
-	if err != nil {
-		gameLog.Warnf("recover gaming history: %v", err)
-		return
-	}
 	for gcid := range b.knownGamingGCIDs() {
-		id, err := parseGamingGCID(gcid)
+		records, err := gamingJournalHistory(gcid)
 		if err != nil {
+			gameLog.Warnf("recover gaming history for %s: %v", gcid, err)
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		var pages []gamingHistoryPage
-		for page := 0; page < 10000; page++ {
-			raw, err := gamingHistoryFetch(ctx, id, page, 500)
-			if err != nil {
-				gameLog.Warnf("recover gaming history for %s: %v", gcid, err)
-				break
-			}
-			var got gamingHistoryPage
-			if err := json.Unmarshal(raw, &got); err != nil {
-				gameLog.Warnf("decode gaming history for %s: %v", gcid, err)
-				break
-			}
-			if len(got.Entries) == 0 {
-				break
-			}
-			pages = append(pages, got)
-			if len(got.Entries) < 500 {
-				break
-			}
-		}
-		cancel()
-		// Page zero is newest. Apply oldest pages first and preserve the
-		// oldest-first order within each page.
-		for page := len(pages) - 1; page >= 0; page-- {
-			for _, entry := range pages[page].Entries {
-				if entry.Sent || entry.From == self || !isGamingUID(entry.From) {
-					continue
-				}
-				b.deliverGamingMessage(gcid, entry.From, entry.Message)
-			}
+		for _, rec := range records {
+			b.deliverGamingMessage(gcid, rec.From, rec.Message)
 		}
 	}
 }
 
 // pruneSettledGamingHistory drops the protocol history of group chats whose
-// funds are all paid out, once per group per run. brclientd's journal goes
-// first: history recovery reads it, so the inbox is only pruned once nothing
-// can replay into it.
+// funds are all paid out, once per group per run. The journal goes first:
+// history recovery reads it, so the inbox is only pruned once nothing can
+// replay into it.
 func (b *GamingBus) pruneSettledGamingHistory(ctx context.Context, groups []string) {
 	gamingHistoryRecovery.Lock()
 	defer gamingHistoryRecovery.Unlock()
@@ -190,11 +161,7 @@ func (b *GamingBus) pruneSettledGamingHistory(ctx context.Context, groups []stri
 		if _, done := b.prunedGroups[group]; done {
 			continue
 		}
-		id, err := parseGamingGCID(group)
-		if err != nil {
-			continue
-		}
-		if err := gamingHistoryPrune(ctx, id); err != nil {
+		if _, err := pruneGamingJournal(group); err != nil {
 			gameLog.Warnf("prune gaming journal of %s: %v", group, err)
 			continue
 		}

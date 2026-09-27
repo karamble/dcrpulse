@@ -86,7 +86,7 @@ func TestSendOnceNeverRepeatsAnUnknownOutcome(t *testing.T) {
 	withGamingWireDir(t)
 	parsed := testParsedFrame(t)
 	calls := withGCSend(t, errors.New("brclientd /gc: context deadline exceeded"))
-	withHistorySeams(t, historyPages())
+	withGCHistory(t, "me")
 
 	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err == nil {
 		t.Fatal("lost send reported success")
@@ -97,8 +97,8 @@ func TestSendOnceNeverRepeatsAnUnknownOutcome(t *testing.T) {
 	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); !errors.Is(err, errGamingSendUncertain) {
 		t.Fatalf("second attempt = %v", err)
 	}
-	// brclientd's own record of the send settles it, still without sending.
-	withHistorySeams(t, historyPages(map[string]any{"message": testFrame, "from": pruneSelf, "sent": true}))
+	// BR's own log of the send settles it, still without sending.
+	withGCHistory(t, "me", map[string]any{"message": testFrame, "from": "me"})
 	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestPayoutSignaturesSendOnlyWhatBRNeverTook(t *testing.T) {
 func TestPayoutSignaturesUncertainIsReported(t *testing.T) {
 	withGamingWireDir(t)
 	_, id := payoutLedger(t, "awaiting_signatures")
-	withHistorySeams(t, historyPages())
+	withGCHistory(t, "me")
 	calls := withGCSend(t, errors.New("brclientd /gc: connection reset"))
 	if _, err := SendGamingPayoutSignatures(context.Background(), id); err == nil {
 		t.Fatal("lost send reported success")

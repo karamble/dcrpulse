@@ -676,7 +676,7 @@ var bisonrelayTools = []toolDef{
 			if err != nil {
 				return nil, err
 			}
-			return rpc.BrclientdGCHistory(ctx, gcid, in.Page, brPageSize(in.PageSize))
+			return services.GCChatHistory(ctx, gcid, in.Page, brPageSize(in.PageSize))
 		}),
 	readTool("bisonrelay", "br_shared_files",
 		"List files the local user is sharing over Bison Relay.",

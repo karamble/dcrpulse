@@ -6,12 +6,16 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"dcrpulse/internal/rpc"
+	"dcrpulse/internal/services"
 )
 
 // TestResolveOutboxPath verifies the br_file_send_path sandbox guard: legitimate
@@ -156,5 +160,28 @@ func TestStoreTemplateToolsStillAcceptTmpl(t *testing.T) {
 		if txt := resultText(res); strings.Contains(txt, "invalid name") {
 			t.Errorf("%s refused index.tmpl: %q", tool, txt)
 		}
+	}
+}
+
+// Group history reaches an agent the same way it reaches the dashboard: game
+// frames are protocol traffic and are left out.
+func TestGroupChatHistoryToolLeavesOutGamingFrames(t *testing.T) {
+	const frame = `--gaming[v=2,game=poker,gv=1,sid=0123456789abcdef,mid=5736684151c34f0a17823de6822769dfafeb3170477c2079dec9d72e35aa5c5f,seq=1/1,exp=0]--eyJhY3Rpb24iOiJmb2xkIn0=`
+	t.Cleanup(services.SetGCHistoryFetch(func(context.Context, rpc.ShortIDHex, int, int) (json.RawMessage, error) {
+		return json.Marshal(map[string]any{"entries": []map[string]string{
+			{"message": frame}, {"message": "hello table"}, {"message": frame},
+		}})
+	}))
+	cs := connectTo(t, testAgent("br-gc-history-wiring", "wiring", map[string]bool{"bisonrelay": true}))
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "br_groupchat_history",
+		Arguments: map[string]any{"gcid": strings.Repeat("ab", 32)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	txt := resultText(res)
+	if res.IsError || strings.Contains(txt, "--gaming[") || !strings.Contains(txt, "hello table") {
+		t.Fatalf("history for an agent = %s", txt)
 	}
 }

@@ -70,7 +70,7 @@ func TestKeyIsAnnouncedOnlyOnceProven(t *testing.T) {
 	withGamingWireDir(t)
 	registerPoker(t)
 	store, _ := payoutLedger(t, "awaiting_signatures")
-	withHistorySeams(t, historyPages())
+	withGCHistory(t, "me")
 	var sent []string
 	old := gamingGCSend
 	gamingGCSend = func(_ context.Context, _ rpc.ShortIDHex, frame string, _ int) error {

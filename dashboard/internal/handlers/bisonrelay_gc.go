@@ -153,7 +153,7 @@ func BisonrelayGCMessageHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"body": body})
 }
 
-// BisonrelayGCHistoryHandler paginates GC message history.
+// BisonrelayGCHistoryHandler paginates GC chat history, without gaming frames.
 func BisonrelayGCHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	gcid, ok := brPathID(w, mux.Vars(r)["gcid"], "gcid")
 	if !ok {
@@ -161,13 +161,12 @@ func BisonrelayGCHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	body, err := rpc.BrclientdGCHistory(r.Context(), gcid, page, pageSize)
+	res, err := services.GCChatHistory(r.Context(), gcid, page, pageSize)
 	if err != nil {
 		brWriteErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	writeJSON(w, res)
 }
 
 // BisonrelayGCClearHistoryHandler wipes the locally stored scrollback for a GC.

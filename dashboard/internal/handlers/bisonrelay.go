@@ -24,6 +24,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	gamingwire "github.com/karamble/dcrgaming-sdk/pkg/gaming/wire"
 
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/services"
@@ -557,6 +558,12 @@ func BisonrelayFiltersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		if filterMatchesGamingFrames(body) {
+			http.Error(w, "regexp matches gaming protocol frames (--gaming[...]--); "+
+				"filtering them would interrupt active games, and they are already "+
+				"hidden from chat", http.StatusBadRequest)
+			return
+		}
 		raw, err := rpc.BrclientdUpsertFilter(r.Context(), body)
 		if err != nil {
 			status := http.StatusBadGateway
@@ -571,6 +578,25 @@ func BisonrelayFiltersHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// filterMatchesGamingFrames reports whether a content filter would reach gaming
+// frames. Bison Relay applies filters on the live receive path, before the
+// bridge sees a message, so such a rule would silently drop a player's moves.
+// An unreadable request is left for brclientd to refuse.
+func filterMatchesGamingFrames(body []byte) bool {
+	var req struct {
+		Regexp   string `json:"regexp"`
+		SkipGCMs bool   `json:"skip_gcms"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil || req.SkipGCMs {
+		return false
+	}
+	re, err := regexp.Compile(req.Regexp)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(gamingwire.SampleEnvelope)
 }
 
 // BisonrelayFilterDeleteHandler proxies brclientd's /filters/delete.

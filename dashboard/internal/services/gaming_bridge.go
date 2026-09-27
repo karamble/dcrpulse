@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -39,18 +38,13 @@ var (
 // Policy belongs where money moves - account scope, caps and grants apply when
 // a game asks to *spend*, not when it asks to speak.
 //
-// Frames reach the bridge on the /notifications stream, as their own event
-// type. brclientd keeps them out of chat history and refuses a content filter
-// that would match them - they are protocol, not conversation, and must not
-// badge the UI or surface as messages - but they ride the same stream as
-// everything else, and share its buffer.
-//
-// That sharing is why the stream carries a sequence: brclientd drops events for
-// a subscriber that falls behind, a single file transfer can drop hundreds, and
-// a frame lost there leaves no trace here. Nothing replays it, so a hole in the
-// numbering is the only way the loss is ever known about - which matters,
-// because a player who misses frames looks exactly like a player who walked
-// away, and is penalised as one.
+// Frames reach the bridge through ChatService.GCMStream, Bison Relay's replay
+// log of group messages: each carries the sender's authenticated UID and stays
+// in the log until the bridge has journaled it, so nothing a player sends is
+// lost to a restart or a slow reader. That matters, because a player who
+// misses frames looks exactly like a player who walked away, and is penalised
+// as one. The dashboard keeps them out of chat views and refuses a content
+// filter that would match them - they are protocol, not conversation.
 
 // GamingFrameEvent is one inbound frame, addressed to a game.
 type GamingFrameEvent struct {
@@ -216,37 +210,8 @@ func (b *GamingBus) broadcast(ev GamingFrameEvent) {
 	b.mu.Unlock()
 }
 
-// gamingFrameEvent is the notification type brclientd forwards gaming envelope
-// frames on. It is deliberately not "pm" or "gc-message": a frame that took the
-// chat path would badge a conversation the user never had.
-const gamingFrameEvent = "gaming-frame"
-
-// deliverFrame routes one inbound frame to the game it belongs to and reports
-// whether the notification carried a gaming envelope. gc-message notifications
-// share this path with ordinary chat, so the caller uses the result to suppress
-// protocol traffic from the browser without swallowing human messages.
-//
-// Frames reach us on brclientd's /notifications feed, the same in-process path
-// every other kind of Bison Relay message takes here, fed by an OnGCMNtfn (or
-// OnPMNtfn, for invites) registration on the client's notification manager -
-// which is how the MCP bridge receives as well. The clientrpc ChatService
-// streams are not used: they replay their whole backlog on every (re)subscribe,
-// which is why the chat path avoids them too.
-func (b *GamingBus) deliverFrame(payload json.RawMessage) bool {
-	var evt struct {
-		GCID    string `json:"gcid"`
-		From    string `json:"from"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(payload, &evt); err != nil {
-		gameLog.Warnf("undecodable frame event: %v", err)
-		return false
-	}
-	return b.deliverGamingMessage(evt.GCID, evt.From, evt.Message)
-}
-
-// deliverGamingMessage is the common live-notification and history-recovery
-// path. Both sources carry the exact stored BR message.
+// deliverGamingMessage is the common intake and history-recovery path. Both
+// sources carry the exact stored BR message.
 func (b *GamingBus) deliverGamingMessage(gcid, from, message string) bool {
 	frame, ok := parseGamingFrame(message)
 	if !ok {
@@ -261,7 +226,7 @@ func (b *GamingBus) deliverGamingMessage(gcid, from, message string) bool {
 	seated, ok := gamingTableSenders(frame.Game, frame.SID, gcid)
 	if !ok {
 		// Not a table of this game the operator accepted in this group.
-		// Accepting one reads its earlier frames back from brclientd's journal.
+		// Accepting one reads its earlier frames back from the journal.
 		return true
 	}
 	if isFinancialFrame(frame.Text) {

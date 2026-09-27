@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,25 +102,7 @@ func TestGamingInboxRejectsMarkOutOfOrder(t *testing.T) {
 	}
 }
 
-func historyPages(entries ...map[string]any) func(context.Context, rpc.ShortIDHex, int, int) (json.RawMessage, error) {
-	return func(_ context.Context, _ rpc.ShortIDHex, page, _ int) (json.RawMessage, error) {
-		if page > 0 {
-			return json.RawMessage(`{"entries":[]}`), nil
-		}
-		raw, err := json.Marshal(map[string]any{"entries": entries})
-		return raw, err
-	}
-}
-
-func withHistorySeams(t *testing.T, fetch func(context.Context, rpc.ShortIDHex, int, int) (json.RawMessage, error)) {
-	t.Helper()
-	oldFetch, oldSelf, oldPrune := gamingHistoryFetch, gamingSelfUID, gamingHistoryPrune
-	gamingHistoryFetch = fetch
-	gamingSelfUID = func(context.Context) (string, error) { return pruneSelf, nil }
-	t.Cleanup(func() { gamingHistoryFetch, gamingSelfUID, gamingHistoryPrune = oldFetch, oldSelf, oldPrune })
-}
-
-func TestRecoverHistoryDeliversOnlyAuthenticatedPeers(t *testing.T) {
+func TestRecoverHistoryDeliversJournaledFramesOfKnownGroups(t *testing.T) {
 	withGamingWireDir(t)
 	settings := DefaultGamingSettings()
 	settings.RegisteredGames = []string{"poker"}
@@ -131,14 +112,8 @@ func TestRecoverHistoryDeliversOnlyAuthenticatedPeers(t *testing.T) {
 	payoutLedger(t, "awaiting_signatures")
 	b := newWireBus()
 	mustPersist(t, b, "poker", pruneGCA, 0)
-	withHistorySeams(t, historyPages(
-		map[string]any{"message": wireFrame(1), "from": prunePeer},
-		map[string]any{"message": wireFrame(2), "from": "alice"},
-		map[string]any{"message": wireFrame(3), "from": pruneSelf},
-		map[string]any{"message": wireFrame(4), "from": prunePeer, "sent": true},
-		map[string]any{"message": wireFrame(5), "from": strings.Repeat("AB", 32)},
-		map[string]any{"message": wireFrame(6), "from": "abcdef"},
-	))
+	mustJournal(t, pruneGCA, prunePeer, 1, true)
+	mustJournal(t, pruneGCB, prunePeer, 2, true)
 	b.RecoverHistory()
 	got := inboxFrames(t, b, "poker")
 	if len(got) != 2 || got[1].Frame != wireFrame(1) || got[1].From != prunePeer {
@@ -146,13 +121,33 @@ func TestRecoverHistoryDeliversOnlyAuthenticatedPeers(t *testing.T) {
 	}
 }
 
+// withGCHistory stands in for BR's own log of a group, with this client
+// logging under nick and holding pruneSelf's identity.
+func withGCHistory(t *testing.T, nick string, entries ...map[string]any) {
+	t.Helper()
+	oldFetch, oldNick, oldUID := gamingGCHistoryFetch, gamingSelfNick, gamingSelfUID
+	gamingGCHistoryFetch = func(_ context.Context, _ rpc.ShortIDHex, page, _ int) (json.RawMessage, error) {
+		if page > 0 {
+			return json.RawMessage(`{"entries":[]}`), nil
+		}
+		return json.Marshal(map[string]any{"entries": entries})
+	}
+	gamingSelfNick = func(context.Context) (string, error) { return nick, nil }
+	gamingSelfUID = func(context.Context) (string, error) { return pruneSelf, nil }
+	t.Cleanup(func() { gamingGCHistoryFetch, gamingSelfNick, gamingSelfUID = oldFetch, oldNick, oldUID })
+}
+
 func TestFrameInHistoryCountsOnlyOwnSends(t *testing.T) {
 	id, _ := parseGamingGCID(pruneGCA)
-	withHistorySeams(t, historyPages(map[string]any{"message": wireFrame(1), "from": prunePeer}))
+	withGCHistory(t, "me", map[string]any{"message": wireFrame(1), "from": "peer"})
 	if found, err := gamingFrameInHistory(context.Background(), id, wireFrame(1)); err != nil || found {
 		t.Fatalf("peer copy counted as sent: %v, %v", found, err)
 	}
-	withHistorySeams(t, historyPages(map[string]any{"message": wireFrame(1), "from": pruneSelf, "sent": true}))
+	withGCHistory(t, "me", map[string]any{"message": wireFrame(2), "from": "me"})
+	if found, err := gamingFrameInHistory(context.Background(), id, wireFrame(1)); err != nil || found {
+		t.Fatalf("another own message counted as this send: %v, %v", found, err)
+	}
+	withGCHistory(t, "me", map[string]any{"message": wireFrame(1), "from": "me"})
 	if found, err := gamingFrameInHistory(context.Background(), id, wireFrame(1)); err != nil || !found {
 		t.Fatalf("own send not found: %v, %v", found, err)
 	}
@@ -163,29 +158,33 @@ func TestPruneSettledHistoryJournalFirstAndOnce(t *testing.T) {
 	b := newWireBus()
 	mustPersist(t, b, "poker", pruneGCA, 1)
 	mustPersist(t, b, "poker", pruneGCB, 2)
-	withHistorySeams(t, historyPages())
-	var calls []string
-	failing := true
-	gamingHistoryPrune = func(_ context.Context, id rpc.ShortIDHex) error {
-		calls = append(calls, id.String())
-		if failing {
-			return errors.New("brclientd down")
-		}
-		return nil
+	mustJournal(t, pruneGCA, prunePeer, 1, true)
+	path := filepath.Join(GamingStateDir, gamingJournalFile)
+	good, _ := os.ReadFile(path)
+	if err := os.WriteFile(path, append([]byte("not json\n"), good...), 0o600); err != nil {
+		t.Fatal(err)
 	}
+	reloadGamingJournal()
 
 	b.pruneSettledGamingHistory(context.Background(), []string{pruneGCA})
 	if got := inboxFrames(t, b, "poker"); len(got) != 2 {
 		t.Fatalf("inbox pruned although the journal was not: %+v", got)
 	}
-	failing = false
+	if err := os.WriteFile(path, good, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	b.pruneSettledGamingHistory(context.Background(), []string{pruneGCA})
 	if got := inboxFrames(t, b, "poker"); len(got) != 1 || got[0].GCID != pruneGCB {
 		t.Fatalf("inbox after prune = %+v", got)
 	}
+	if got := journalSeqs(t, pruneGCA); len(got) != 0 {
+		t.Fatalf("journal after prune = %v", got)
+	}
+	// Once per group per run: a frame journaled after the prune stays.
+	mustJournal(t, pruneGCA, prunePeer, 3, true)
 	b.pruneSettledGamingHistory(context.Background(), []string{pruneGCA})
-	if len(calls) != 2 || calls[0] != pruneGCA || calls[1] != pruneGCA {
-		t.Fatalf("journal prune calls = %v", calls)
+	if got := journalSeqs(t, pruneGCA); len(got) != 1 {
+		t.Fatalf("pruned twice in one run: %v", got)
 	}
 }
 

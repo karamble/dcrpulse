@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	gamingwire "github.com/karamble/dcrgaming-sdk/pkg/gaming/wire"
+
 	"dcrpulse/internal/alerts"
 	"dcrpulse/internal/rpc"
 )
@@ -165,28 +167,19 @@ func StartBrclientdNotifs(ctx context.Context) {
 					sawEvent = true
 					alerts.Resolve("br_disconnected", "")
 				}
-				if gaps.firstContact() {
-					go Gaming().RecoverHistory()
-				}
 				switch n, why := gaps.observe(evt.Seq, evt.Epoch, evt.Missed); {
 				case n > 0:
 					noteNotifGap(n, why, evt.Epoch)
 				case why != "":
 					// Nothing lost, but something worth seeing: a producer
 					// whose numbering misbehaves is a bug to chase, not a
-					// reason to make every game resynchronise.
+					// reason to raise an alert.
 					brelLog.Warnf("brclientd notification stream: %s", why)
 				}
-				// Game frames are protocol traffic for the gaming
-				// bridge, not chat. They go to the game that owns
-				// them and no further: a browser has no use for a
-				// poker table's wire format, and forwarding it
-				// would put game traffic on the operator's socket
-				// for the whole length of a hand.
-				if evt.Type == gamingFrameEvent {
-					if !Gaming().deliverFrame(evt.Payload) {
-						brelLog.Warnf("brclientd forwarded a gaming-frame event without a valid gaming envelope")
-					}
+				// Game frames are protocol traffic, not chat. The bridge
+				// reads them from the GCMStream replay log; a browser has
+				// no use for a table's wire format.
+				if evt.Type == "gc-message" && gcMessageIsGamingFrame(evt.Payload) {
 					return
 				}
 				// Keepalives prove the stream is healthy but carry
@@ -352,4 +345,16 @@ func sequenceIDOf(params any) (int64, bool) {
 	}
 	seq, ok := m["sequenceId"]
 	return seq, ok
+}
+
+// gcMessageIsGamingFrame reports whether a gc-message event carries a gaming
+// envelope.
+func gcMessageIsGamingFrame(payload json.RawMessage) bool {
+	var evt struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(payload, &evt); err != nil {
+		return false
+	}
+	return gamingwire.IsEnvelope(evt.Message)
 }

@@ -22,30 +22,24 @@ func TestBridgeAuthoredEnvelopeMatchesWireV2Golden(t *testing.T) {
 
 const testFrame = `--gaming[v=2,game=poker,gv=1,sid=0123456789abcdef,mid=5736684151c34f0a17823de6822769dfafeb3170477c2079dec9d72e35aa5c5f,seq=1/1,exp=1783000000]--eyJhY3Rpb24iOiJmb2xkIn0=`
 
-func TestDeliverFrameRecognisesGCMessageEnvelope(t *testing.T) {
-	// A bus of its own, so the singleton is neither read nor replaced. The
-	// routing decision is a method on the bus and needs nothing global.
-	bus := &GamingBus{subs: make(map[*gamingSubscriber]struct{})}
-	payload, err := json.Marshal(map[string]string{
-		"gcid": "aa", "from": "bb", "message": testFrame,
-	})
+func TestGCMessageGamingFramesStayOutOfTheBrowser(t *testing.T) {
+	frame, err := json.Marshal(map[string]string{"gcid": "aa", "from": "bb", "message": testFrame})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The test game need not be registered to establish the routing decision:
-	// an unknown gaming envelope is still protocol traffic and must not appear
-	// as chat.
-	if !bus.deliverFrame(payload) {
-		t.Fatal("valid --gaming envelope in gc-message was not consumed")
+	// An unknown game's envelope is still protocol traffic, not chat.
+	if !gcMessageIsGamingFrame(frame) {
+		t.Fatal("a gaming envelope in a gc-message would reach the browser")
 	}
-	payload, err = json.Marshal(map[string]string{
-		"gcid": "aa", "from": "bb", "message": "ordinary chat",
-	})
+	chat, err := json.Marshal(map[string]string{"gcid": "aa", "from": "bb", "message": "ordinary chat"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bus.deliverFrame(payload) {
-		t.Fatal("ordinary gc-message was consumed by the gaming bridge")
+	if gcMessageIsGamingFrame(chat) {
+		t.Fatal("ordinary chat was taken for a gaming frame")
+	}
+	if gcMessageIsGamingFrame(json.RawMessage(`{`)) {
+		t.Fatal("an undecodable event was taken for a gaming frame")
 	}
 }
 

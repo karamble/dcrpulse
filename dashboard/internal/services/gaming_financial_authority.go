@@ -331,7 +331,7 @@ func authorizeGamingTable(ctx context.Context, game, invite, gcid string) error 
 	if err = store.AuthorizeTable(gamingfunds.TableAuthorization{Scope: scope, Table: sid, StakeAtoms: buyin, CSVBlocks: uint32(csv), Seats: uint32(seats), Until: uint32(until), Group: gcid, AdmissionAtoms: bond, AdmissionBlocks: uint32(bondcsv), TableBondAtoms: tablebond, TableBondBlocks: uint32(tablebondcsv)}); err != nil {
 		return err
 	}
-	// Frames from this group were dropped until now; brclientd's journal has them.
+	// Frames from this group were dropped until now; the journal has them.
 	gamingRecoverAfterAccept()
 	return nil
 }
