@@ -19,24 +19,15 @@ const testTableGCID = "0123456789abcdef0123456789abcdef0123456789abcdef012345678
 
 const testGamingInvite = "gaming://poker/table?bond=1000000&bondcsv=2016&buyin=10000000&csv=288&fv=2&seats=2&sid=abc&tablebond=0&tablebondcsv=0&until=900001"
 
-// inviteSeams points the gaming state at a writable directory and puts the
-// staged calls back the way they were.
-func inviteSeams(t *testing.T) {
+// inviteSeams stages the calls creating a table makes and registers poker.
+func inviteSeams(t *testing.T, br *Bridge) {
 	t.Helper()
-	origDir, origRequest := GamingStateDir, gamingRequest
-	origTip, origMsg, origAuthorize := tableChainTip, tableGCMessage, tableAuthorize
-	GamingStateDir = t.TempDir()
-	t.Cleanup(func() {
-		GamingStateDir, gamingRequest = origDir, origRequest
-		tableChainTip, tableGCMessage = origTip, origMsg
-		tableAuthorize = origAuthorize
-	})
-	tableChainTip = func(context.Context) (GamingChainTip, error) {
+	br.tableChainTip = func(context.Context) (GamingChainTip, error) {
 		return GamingChainTip{Height: 900_000, Hash: strings.Repeat("ab", 32)}, nil
 	}
-	tableGCMessage = func(context.Context, [32]byte, string) error { return nil }
-	tableAuthorize = func(context.Context, string, string, string) error { return nil }
-	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
+	br.tableGCMessage = func(context.Context, [32]byte, string) error { return nil }
+	br.tableAuthorize = func(context.Context, string, string, string) error { return nil }
+	if _, err := br.WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("seed settings: %v", err)
 	}
 }
@@ -44,11 +35,12 @@ func inviteSeams(t *testing.T) {
 // An invitation goes to the game as an AcceptInvite, and the seat it reports
 // comes back.
 func TestAcceptingAnInviteReturnsTheSeatTheGameTook(t *testing.T) {
-	inviteSeams(t)
+	br := newTestBridge(t)
+	inviteSeams(t, br)
 
 	var got *gamingpb.AcceptInvite
 	var toGame string
-	gamingRequest = func(_ context.Context, game string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
+	br.gamingRequest = func(_ context.Context, game string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
 		toGame = game
 		got = req.GetAcceptInvite()
 		return &gamingpb.RespondRequest{
@@ -57,7 +49,7 @@ func TestAcceptingAnInviteReturnsTheSeatTheGameTook(t *testing.T) {
 		}, nil
 	}
 
-	sid, err := AcceptGamingInvite(t.Context(), "poker", testGamingInvite, "gc-1")
+	sid, err := br.AcceptGamingInvite(t.Context(), "poker", testGamingInvite, "gc-1")
 	if err != nil {
 		t.Fatalf("accepting a registered game's invitation failed: %v", err)
 	}
@@ -76,13 +68,14 @@ func TestAcceptingAnInviteReturnsTheSeatTheGameTook(t *testing.T) {
 // A game the operator never registered is refused before anything is asked of
 // the bridge.
 func TestAcceptingRefusesAnUnregisteredGame(t *testing.T) {
-	inviteSeams(t)
-	gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
+	br := newTestBridge(t)
+	inviteSeams(t, br)
+	br.gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
 		t.Error("an unregistered game was asked to take a seat")
 		return nil, nil
 	}
 
-	_, err := AcceptGamingInvite(t.Context(), "chess", "gaming://chess/table?sid=abc", "gc-1")
+	_, err := br.AcceptGamingInvite(t.Context(), "chess", "gaming://chess/table?sid=abc", "gc-1")
 	if !errors.Is(err, ErrGamingGameNotRegistered) {
 		t.Fatalf("accepting for an unregistered game returned %v, not ErrGamingGameNotRegistered", err)
 	}
@@ -91,12 +84,13 @@ func TestAcceptingRefusesAnUnregisteredGame(t *testing.T) {
 // The game's own refusal is what the person is told: it knows why the
 // invitation was not one it could act on.
 func TestAcceptingCarriesTheGamesRefusal(t *testing.T) {
-	inviteSeams(t)
-	gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
+	br := newTestBridge(t)
+	inviteSeams(t, br)
+	br.gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
 		return &gamingpb.RespondRequest{Ok: false, Error: "registration closed at block 900017"}, nil
 	}
 
-	_, err := AcceptGamingInvite(t.Context(), "poker", testGamingInvite, "gc-1")
+	_, err := br.AcceptGamingInvite(t.Context(), "poker", testGamingInvite, "gc-1")
 	if err == nil {
 		t.Fatal("a refusal from the game was reported as a seat taken")
 	}
@@ -108,10 +102,11 @@ func TestAcceptingCarriesTheGamesRefusal(t *testing.T) {
 // With no listener there is nothing holding a stream, which is a different
 // answer from a game that refused.
 func TestAcceptingWithNoBridgeSaysSo(t *testing.T) {
-	inviteSeams(t)
-	gamingRequest = nil
+	br := newTestBridge(t)
+	inviteSeams(t, br)
+	br.gamingRequest = nil
 
-	_, err := AcceptGamingInvite(t.Context(), "poker", testGamingInvite, "gc-1")
+	_, err := br.AcceptGamingInvite(t.Context(), "poker", testGamingInvite, "gc-1")
 	if !errors.Is(err, ErrGamingGameNotConnected) {
 		t.Fatalf("accepting with no bridge returned %v, not ErrGamingGameNotConnected", err)
 	}
@@ -121,22 +116,23 @@ func TestAcceptingWithNoBridgeSaysSo(t *testing.T) {
 // be taken stops the post: an invitation nobody is at is one others pay to join
 // and can never fill.
 func TestCreatingSeatsBeforeItAnnounces(t *testing.T) {
-	inviteSeams(t)
+	br := newTestBridge(t)
+	inviteSeams(t, br)
 
 	var order []string
-	gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
+	br.gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
 		order = append(order, "seat")
 		return &gamingpb.RespondRequest{
 			Ok:     true,
 			Result: &gamingpb.RespondRequest_AcceptInvite{AcceptInvite: &gamingpb.AcceptInviteResult{Sid: "seat-1"}},
 		}, nil
 	}
-	tableGCMessage = func(context.Context, [32]byte, string) error {
+	br.tableGCMessage = func(context.Context, [32]byte, string) error {
 		order = append(order, "announce")
 		return nil
 	}
 
-	table, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1, GamingTableFunds{RefundBlocks: 288, AdmissionAtoms: 1000000, AdmissionBlocks: 2016})
+	table, err := br.CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1, GamingTableFunds{RefundBlocks: 288, AdmissionAtoms: 1000000, AdmissionBlocks: 2016})
 	if err != nil {
 		t.Fatalf("create a table: %v", err)
 	}
@@ -150,16 +146,17 @@ func TestCreatingSeatsBeforeItAnnounces(t *testing.T) {
 
 // A seat the game refused must stop the invitation being posted at all.
 func TestCreatingDoesNotAnnounceATableItCouldNotJoin(t *testing.T) {
-	inviteSeams(t)
-	gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
+	br := newTestBridge(t)
+	inviteSeams(t, br)
+	br.gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
 		return &gamingpb.RespondRequest{Ok: false, Error: "no funds"}, nil
 	}
-	tableGCMessage = func(context.Context, [32]byte, string) error {
+	br.tableGCMessage = func(context.Context, [32]byte, string) error {
 		t.Error("a table was announced although the creator never took a seat")
 		return nil
 	}
 
-	_, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1, GamingTableFunds{RefundBlocks: 288, AdmissionAtoms: 1000000, AdmissionBlocks: 2016})
+	_, err := br.CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1, GamingTableFunds{RefundBlocks: 288, AdmissionAtoms: 1000000, AdmissionBlocks: 2016})
 	if err == nil {
 		t.Fatal("a table was created although the creator never took a seat")
 	}
@@ -171,18 +168,19 @@ func TestCreatingDoesNotAnnounceATableItCouldNotJoin(t *testing.T) {
 // A send that fails leaves a seated player, and saying otherwise would send
 // them looking for money that is committed.
 func TestCreatingSaysYouAreSeatedWhenTheChatRefuses(t *testing.T) {
-	inviteSeams(t)
-	gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
+	br := newTestBridge(t)
+	inviteSeams(t, br)
+	br.gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
 		return &gamingpb.RespondRequest{
 			Ok:     true,
 			Result: &gamingpb.RespondRequest_AcceptInvite{AcceptInvite: &gamingpb.AcceptInviteResult{Sid: "seat-1"}},
 		}, nil
 	}
-	tableGCMessage = func(context.Context, [32]byte, string) error {
+	br.tableGCMessage = func(context.Context, [32]byte, string) error {
 		return errors.New("group chat unreachable")
 	}
 
-	table, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1, GamingTableFunds{RefundBlocks: 288, AdmissionAtoms: 1000000, AdmissionBlocks: 2016})
+	table, err := br.CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1, GamingTableFunds{RefundBlocks: 288, AdmissionAtoms: 1000000, AdmissionBlocks: 2016})
 	if err == nil {
 		t.Fatal("an invitation that was never sent was reported as posted")
 	}

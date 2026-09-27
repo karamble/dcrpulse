@@ -135,7 +135,8 @@ func TestTheAccountAGameSpendsFromIsItsOwn(t *testing.T) {
 // traffic flows, and the unfunded game is refused where money moves, with a
 // message naming it.
 func TestAGameWithNoAccountBoundCanStakeNothing(t *testing.T) {
-	s, err := normalizeGamingSettings(GamingSettings{
+	br := newTestBridge(t)
+	s, err := br.normalizeGamingSettings(GamingSettings{
 		Enabled: true, RegisteredGames: []string{"poker"},
 	}, GamingSettings{}, true, true)
 	if err != nil {
@@ -158,8 +159,9 @@ func TestAGameWithNoAccountBoundCanStakeNothing(t *testing.T) {
 // but a request that skips the dropdown must be refused too: a game bound to
 // one of them would spend funds another part of the stack is relying on.
 func TestAGameCannotBeFundedFromAReservedAccount(t *testing.T) {
+	br := newTestBridge(t)
 	reserved := []string{"lightning", "dex", "mixed", "unmixed", "imported"}
-	withReservedAccounts(t, reserved...)
+	withReservedAccounts(t, br, reserved...)
 	for _, name := range reserved {
 		in := GamingSettings{
 			Enabled:         true,
@@ -167,7 +169,7 @@ func TestAGameCannotBeFundedFromAReservedAccount(t *testing.T) {
 			Policies:        map[string]GamePolicy{"poker": {Account: name}},
 		}
 
-		_, err := normalizeGamingSettings(in, GamingSettings{}, true, true)
+		_, err := br.normalizeGamingSettings(in, GamingSettings{}, true, true)
 		if err == nil {
 			t.Errorf("%q was accepted as a game's spending account", name)
 			continue
@@ -186,12 +188,13 @@ func TestAGameCannotBeFundedFromAReservedAccount(t *testing.T) {
 
 // An ordinary account is still the point of the feature.
 func TestAnOrdinaryAccountStillFundsAGame(t *testing.T) {
+	br := newTestBridge(t)
 	in := GamingSettings{
 		Enabled:         true,
 		RegisteredGames: []string{"poker"},
 		Policies:        map[string]GamePolicy{"poker": {Account: "poker-money"}},
 	}
-	out, err := normalizeGamingSettings(in, GamingSettings{}, true, true)
+	out, err := br.normalizeGamingSettings(in, GamingSettings{}, true, true)
 	if err != nil {
 		t.Fatalf("an ordinary account was refused: %v", err)
 	}
@@ -208,9 +211,7 @@ type reservedWallet struct {
 
 func (w reservedWallet) ReservedAccount(name string) bool { return slices.Contains(w.names, name) }
 
-func withReservedAccounts(t *testing.T, names ...string) {
+func withReservedAccounts(t *testing.T, br *Bridge, names ...string) {
 	t.Helper()
-	prev := host
-	host.Wallet = reservedWallet{names: names}
-	t.Cleanup(func() { host = prev })
+	br.host.Wallet = reservedWallet{names: names}
 }

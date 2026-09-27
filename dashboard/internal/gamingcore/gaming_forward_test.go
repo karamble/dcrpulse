@@ -61,18 +61,17 @@ func TestGamingForwardFullBufferConcurrentStop(t *testing.T) {
 }
 
 func TestGamingForwardCancelPreservesDurableReplay(t *testing.T) {
-	withGamingWireDir(t)
-	b := &GamingBus{subs: make(map[*gamingSubscriber]struct{})}
+	br := newTestBridge(t)
 	var payloads []string
 	for i := 0; i < 8; i++ {
 		ev := GamingFrameEvent{Game: "poker", GCID: "table", From: "alice",
 			Frame: strings.Replace(testFrame, "seq=1/1", "seq=1/"+strconv.Itoa(i+1), 1)}
 		payloads = append(payloads, ev.Frame)
-		if _, _, err := b.persistGamingFrame(ev); err != nil {
+		if _, _, err := br.persistGamingFrame(ev); err != nil {
 			t.Fatal(err)
 		}
 	}
-	in, unsubscribe := b.SubscribeFrom("poker", 0, 1)
+	in, unsubscribe := br.SubscribeFrom("poker", 0, 1)
 	out, stop := forwardGamingFrames(in, unsubscribe, 1)
 	accepted := <-out
 	if accepted.Seq != 1 {
@@ -81,11 +80,12 @@ func TestGamingForwardCancelPreservesDurableReplay(t *testing.T) {
 	done := make(chan struct{})
 	go func() { stop(); close(done) }()
 	waitGamingForward(t, done)
-	if b.subscribers("poker") != 0 {
+	if br.subscribers("poker") != 0 {
 		t.Fatal("cancelled subscriber remains registered")
 	}
-	// A new bus proves recovery uses durable storage, not abandoned channels.
-	restarted := &GamingBus{subs: make(map[*gamingSubscriber]struct{})}
+	// A new bridge on the same files proves recovery uses durable storage, not
+	// abandoned channels.
+	restarted := New(br.dataDir, br.host)
 	replay, cancel := restarted.SubscribeFrom("poker", accepted.Seq, 1)
 	frames, finish := forwardGamingFrames(replay, cancel, 1)
 	defer finish()

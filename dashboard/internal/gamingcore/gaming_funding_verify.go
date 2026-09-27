@@ -16,7 +16,7 @@ import (
 // validateGamingFunding inspects the concrete wallet-built transaction before
 // the approval is visible and again before signing. Only the exact registered
 // deposit and change to the bound account are allowed.
-func validateGamingFunding(ctx context.Context, dep gamingfunds.Deposit, raw []byte) (int64, error) {
+func (br *Bridge) validateGamingFunding(ctx context.Context, dep gamingfunds.Deposit, raw []byte) (int64, error) {
 	if len(raw) == 0 || len(raw) > maxGamingTxBytes {
 		return 0, fmt.Errorf("invalid funding transaction size")
 	}
@@ -27,7 +27,7 @@ func validateGamingFunding(ctx context.Context, dep gamingfunds.Deposit, raw []b
 	if len(tx.TxIn) == 0 || len(tx.TxOut) == 0 || tx.LockTime != 0 || tx.Expiry != 0 {
 		return 0, fmt.Errorf("unsupported funding transaction shape")
 	}
-	params, err := chainParams(ctx)
+	params, err := br.chainParams(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -42,7 +42,7 @@ func validateGamingFunding(ctx context.Context, dep gamingfunds.Deposit, raw []b
 			return 0, fmt.Errorf("duplicate or unsupported funding input")
 		}
 		seen[in.PreviousOutPoint] = true
-		facts, err := spendPrevout(ctx, in.PreviousOutPoint)
+		facts, err := br.spendPrevout(ctx, in.PreviousOutPoint)
 		if err != nil {
 			return 0, err
 		}
@@ -52,7 +52,7 @@ func validateGamingFunding(ctx context.Context, dep gamingfunds.Deposit, raw []b
 		if len(facts.Addresses) != 1 {
 			return 0, fmt.Errorf("funding input ownership is ambiguous")
 		}
-		owner, err := hostWallet().ValidateAddress(ctx, facts.Addresses[0])
+		owner, err := br.hostWallet().ValidateAddress(ctx, facts.Addresses[0])
 		if err != nil {
 			return 0, err
 		}
@@ -93,7 +93,7 @@ func validateGamingFunding(ctx context.Context, dep gamingfunds.Deposit, raw []b
 		if len(addresses) != 1 {
 			return 0, fmt.Errorf("unrecognized funding change")
 		}
-		owner, err := hostWallet().ValidateAddress(ctx, addresses[0].String())
+		owner, err := br.hostWallet().ValidateAddress(ctx, addresses[0].String())
 		if err != nil {
 			return 0, err
 		}

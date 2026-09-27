@@ -66,19 +66,17 @@ func TestKeyProofBindsKeySenderAndTable(t *testing.T) {
 }
 
 func TestKeyIsAnnouncedOnlyOnceProven(t *testing.T) {
-	withGamingWireDir(t)
-	registerPoker(t)
-	store, _ := payoutLedger(t, "awaiting_signatures")
-	withGCHistory(t, "me")
+	br := newTestBridge(t)
+	registerPoker(t, br)
+	store, _ := payoutLedger(t, br, "awaiting_signatures")
+	withGCHistory(t, br, "me")
 	var sent []string
-	old := gamingGCSend
-	gamingGCSend = func(_ context.Context, _ [32]byte, frame string) error {
+	br.gamingGCSend = func(_ context.Context, _ [32]byte, frame string) error {
 		sent = append(sent, frame)
 		return nil
 	}
-	t.Cleanup(func() { gamingGCSend = old })
 	scope := gamingfunds.Scope{Game: "poker", Network: "mainnet", Wallet: "fp"}
-	if err := announceGamingAuthority(context.Background(), scope, proofSID); err != nil {
+	if err := br.announceGamingAuthority(context.Background(), scope, proofSID); err != nil {
 		t.Fatal(err)
 	}
 	if len(sent) != 0 {
@@ -88,7 +86,7 @@ func TestKeyIsAnnouncedOnlyOnceProven(t *testing.T) {
 	if err := store.SaveKeyProof(scope, proofSID, proof); err != nil {
 		t.Fatal(err)
 	}
-	if err := announceGamingAuthority(context.Background(), scope, proofSID); err != nil {
+	if err := br.announceGamingAuthority(context.Background(), scope, proofSID); err != nil {
 		t.Fatal(err)
 	}
 	if len(sent) != 1 {
@@ -105,10 +103,10 @@ func TestKeyIsAnnouncedOnlyOnceProven(t *testing.T) {
 }
 
 func TestOnlyTheSeatBondProvesTheKey(t *testing.T) {
+	br := newTestBridge(t)
 	calls := 0
 	fail := false
-	old := gamingKeyProofSign
-	gamingKeyProofSign = func(_ context.Context, _ gamingfunds.Scope, table string, pass []byte) error {
+	br.gamingKeyProofSign = func(_ context.Context, _ gamingfunds.Scope, table string, pass []byte) error {
 		calls++
 		if table != proofSID || string(pass) != "pass" {
 			t.Errorf("proof asked for %q with %q", table, pass)
@@ -121,33 +119,30 @@ func TestOnlyTheSeatBondProvesTheKey(t *testing.T) {
 		}
 		return nil
 	}
-	t.Cleanup(func() { gamingKeyProofSign = old })
 	bond := gamingfunds.Deposit{Terms: gamingfunds.Terms{Kind: "seatbond", Table: proofSID}}
 	stake := gamingfunds.Deposit{Terms: gamingfunds.Terms{Kind: "stake", Table: proofSID}}
 	pass := []byte("pass")
-	if proven, err := proveSeatBondKey(context.Background(), stake, pass); err != nil || proven || calls != 0 {
+	if proven, err := br.proveSeatBondKey(context.Background(), stake, pass); err != nil || proven || calls != 0 {
 		t.Fatalf("stake = %v, %v, calls %d", proven, err, calls)
 	}
-	if proven, err := proveSeatBondKey(context.Background(), bond, pass); err != nil || !proven || calls != 1 {
+	if proven, err := br.proveSeatBondKey(context.Background(), bond, pass); err != nil || !proven || calls != 1 {
 		t.Fatalf("seat bond = %v, %v, calls %d", proven, err, calls)
 	}
 	if string(pass) != "pass" {
 		t.Fatal("the approval's own passphrase was consumed")
 	}
 	fail = true
-	if _, err := proveSeatBondKey(context.Background(), bond, pass); err == nil {
+	if _, err := br.proveSeatBondKey(context.Background(), bond, pass); err == nil {
 		t.Fatal("a failed proof let the approval continue")
 	}
 }
 
 func TestReceivedKeyAnnouncementsMustBeProven(t *testing.T) {
-	withGamingWireDir(t)
-	store, _ := payoutLedger(t, "awaiting_signatures")
+	br := newTestBridge(t)
+	store, _ := payoutLedger(t, br, "awaiting_signatures")
 	scope := gamingfunds.Scope{Game: "poker", Network: "mainnet", Wallet: "fp"}
-	oldScope, oldParams := receiveScope, receiveParams
-	receiveScope = func(context.Context, string) (gamingfunds.Scope, error) { return scope, nil }
-	receiveParams = func(context.Context) (*chaincfg.Params, error) { return chaincfg.MainNetParams(), nil }
-	t.Cleanup(func() { receiveScope, receiveParams = oldScope, oldParams })
+	br.receiveScope = func(context.Context, string) (gamingfunds.Scope, error) { return scope, nil }
+	br.receiveParams = func(context.Context) (*chaincfg.Params, error) { return chaincfg.MainNetParams(), nil }
 	accepted, err := store.AuthorizedTable(scope, proofSID)
 	if err != nil {
 		t.Fatal(err)
@@ -161,14 +156,14 @@ func TestReceivedKeyAnnouncementsMustBeProven(t *testing.T) {
 		return GamingFrameEvent{Game: "poker", GCID: pruneGCA, From: from, Frame: frame, Financial: true}
 	}
 	copier := strings.Repeat("3", 64)
-	if err := receiveFinancialFrame(context.Background(), event(copier, proof)); err == nil {
+	if err := br.receiveFinancialFrame(context.Background(), event(copier, proof)); err == nil {
 		t.Fatal("another account's copy of a key announcement was accepted")
 	}
 	forged, _ := signedProof(t, 6, prunePeer, proofSID, pruneGCA, accepted.TermsHash())
-	if err := receiveFinancialFrame(context.Background(), event(prunePeer, forged)); err == nil {
+	if err := br.receiveFinancialFrame(context.Background(), event(prunePeer, forged)); err == nil {
 		t.Fatal("a proof by another key was accepted")
 	}
-	if err := receiveFinancialFrame(context.Background(), event(prunePeer, proof)); err != nil {
+	if err := br.receiveFinancialFrame(context.Background(), event(prunePeer, proof)); err != nil {
 		t.Fatalf("a proven announcement was refused: %v", err)
 	}
 	own, err := store.WalletKey(scope, proofSID)

@@ -9,49 +9,44 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"sync"
 
 	"dcrpulse/internal/gamingfunds"
 	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
-var financeStores struct {
-	sync.Mutex
-	stores map[string]*gamingfunds.Store
-}
 var financialTableID = regexp.MustCompile(`^[0-9a-f]{1,32}$`)
 
-func gamingFundsStore() (*gamingfunds.Store, error) {
-	financeStores.Lock()
-	defer financeStores.Unlock()
-	path := filepath.Join(GamingStateDir, "financial-authority")
-	if financeStores.stores == nil {
-		financeStores.stores = map[string]*gamingfunds.Store{}
+func (br *Bridge) gamingFundsStore() (*gamingfunds.Store, error) {
+	br.financeStores.Lock()
+	defer br.financeStores.Unlock()
+	path := filepath.Join(br.dataDir, "financial-authority")
+	if br.financeStores.stores == nil {
+		br.financeStores.stores = map[string]*gamingfunds.Store{}
 	}
-	if s := financeStores.stores[path]; s != nil {
+	if s := br.financeStores.stores[path]; s != nil {
 		return s, nil
 	}
 	s, err := gamingfunds.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	financeStores.stores[path] = s
+	br.financeStores.stores[path] = s
 	return s, nil
 }
-func gamingFinancialScope(ctx context.Context, game string) (gamingfunds.Scope, error) {
+func (br *Bridge) gamingFinancialScope(ctx context.Context, game string) (gamingfunds.Scope, error) {
 	var scope gamingfunds.Scope
-	if !gamingGameRegistered(game) {
+	if !br.gamingGameRegistered(game) {
 		return scope, ErrGamingGameNotRegistered
 	}
-	account, err := gamingAccountNumber(ctx, game)
+	account, err := br.gamingAccountNumber(ctx, game)
 	if err != nil {
 		return scope, err
 	}
-	network, err := currentNetwork(ctx)
+	network, err := br.currentNetwork(ctx)
 	if err != nil {
 		return scope, err
 	}
-	xpub, err := hostWallet().AccountXPub(ctx, account)
+	xpub, err := br.hostWallet().AccountXPub(ctx, account)
 	if err != nil {
 		return scope, err
 	}
@@ -61,15 +56,15 @@ func gamingFinancialScope(ctx context.Context, game string) (gamingfunds.Scope, 
 	fingerprint := sha256.Sum256([]byte(xpub))
 	return gamingfunds.Scope{Game: game, Network: network, Wallet: hex.EncodeToString(fingerprint[:]), Account: account}, nil
 }
-func GamingFinancialKey(ctx context.Context, game, sid string) (string, error) {
+func (br *Bridge) GamingFinancialKey(ctx context.Context, game, sid string) (string, error) {
 	if sid != "" && !financialTableID.MatchString(sid) {
 		return "", fmt.Errorf("invalid table identifier")
 	}
-	scope, err := gamingFinancialScope(ctx, game)
+	scope, err := br.gamingFinancialScope(ctx, game)
 	if err != nil {
 		return "", err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return "", err
 	}
@@ -78,24 +73,24 @@ func GamingFinancialKey(ctx context.Context, game, sid string) (string, error) {
 			return "", err
 		}
 	}
-	pub, err := ensureGamingWalletKey(ctx, store, scope, sid)
+	pub, err := br.ensureGamingWalletKey(ctx, store, scope, sid)
 	if err != nil {
 		return "", err
 	}
-	if err = announceGamingAuthority(ctx, scope, sid); err != nil {
+	if err = br.announceGamingAuthority(ctx, scope, sid); err != nil {
 		return "", err
 	}
 	return pub, nil
 }
-func PrepareGamingDeposit(ctx context.Context, game string, req *gamingpb.PrepareDepositRequest) (*gamingpb.PreparedDeposit, error) {
+func (br *Bridge) PrepareGamingDeposit(ctx context.Context, game string, req *gamingpb.PrepareDepositRequest) (*gamingpb.PreparedDeposit, error) {
 	if req.GetSid() != "" && !financialTableID.MatchString(req.GetSid()) {
 		return nil, fmt.Errorf("invalid table identifier")
 	}
-	scope, err := gamingFinancialScope(ctx, game)
+	scope, err := br.gamingFinancialScope(ctx, game)
 	if err != nil {
 		return nil, err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -108,12 +103,12 @@ func PrepareGamingDeposit(ctx context.Context, game string, req *gamingpb.Prepar
 			return nil, fmt.Errorf("stake differs from the invitation approved in the dashboard")
 		}
 	}
-	pub, err := ensureGamingWalletKey(ctx, store, scope, req.GetSid())
+	pub, err := br.ensureGamingWalletKey(ctx, store, scope, req.GetSid())
 	if err != nil {
 		return nil, err
 	}
 	terms := gamingfunds.Terms{Version: gamingfunds.Version, Game: game, Network: scope.Network, Account: scope.Account, Table: req.GetSid(), Kind: req.GetKind(), Atoms: req.GetAmountAtoms(), LockBlocks: req.GetLockBlocks(), Identity: req.GetIdentityKey(), Recovery: pub, Members: req.GetMembers()}
-	params, err := chainParams(ctx)
+	params, err := br.chainParams(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -121,18 +116,18 @@ func PrepareGamingDeposit(ctx context.Context, game string, req *gamingpb.Prepar
 	if err != nil {
 		return nil, err
 	}
-	policy, err := checkSpendRequest(ReadGamingSettings(), game, address, terms.Atoms)
+	policy, err := checkSpendRequest(br.ReadGamingSettings(), game, address, terms.Atoms)
 	if err != nil {
 		return nil, err
 	}
-	if err = checkGamingTableCap(policy, game, terms.Table, terms.Atoms); err != nil {
+	if err = br.checkGamingTableCap(policy, game, terms.Table, terms.Atoms); err != nil {
 		return nil, err
 	}
 	dep, err := store.Register(scope, terms, params)
 	if err != nil {
 		return nil, err
 	}
-	if err = hostWallet().ImportScript(ctx, dep.Script); err != nil {
+	if err = br.hostWallet().ImportScript(ctx, dep.Script); err != nil {
 		return nil, err
 	}
 	if err = store.VerifyRecovery(scope, dep.ID, params); err != nil {
@@ -149,13 +144,13 @@ type verifiedGamingPayment struct {
 	FeeAtoms int64
 }
 
-func verifyGamingDeposit(ctx context.Context, game, id string) (gamingfunds.Deposit, error) {
+func (br *Bridge) verifyGamingDeposit(ctx context.Context, game, id string) (gamingfunds.Deposit, error) {
 	var empty gamingfunds.Deposit
-	scope, err := gamingFinancialScope(ctx, game)
+	scope, err := br.gamingFinancialScope(ctx, game)
 	if err != nil {
 		return empty, err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return empty, err
 	}
@@ -173,7 +168,7 @@ func verifyGamingDeposit(ctx context.Context, game, id string) (gamingfunds.Depo
 				return empty, err
 			}
 			if dep.Terms.Kind == "seatbond" {
-				tip, err := GamingChainTipNow(ctx)
+				tip, err := br.GamingChainTipNow(ctx)
 				if err != nil {
 					return empty, err
 				}
@@ -181,7 +176,7 @@ func verifyGamingDeposit(ctx context.Context, game, id string) (gamingfunds.Depo
 					return empty, fmt.Errorf("admission deadline passed or chain unavailable")
 				}
 			}
-			params, err := chainParams(ctx)
+			params, err := br.chainParams(ctx)
 			if err != nil {
 				return empty, err
 			}
@@ -197,7 +192,7 @@ func verifyGamingDeposit(ctx context.Context, game, id string) (gamingfunds.Depo
 			if keyErr != nil {
 				return empty, keyErr
 			}
-			if err = verifyGamingWalletKey(ctx, key); err != nil {
+			if err = br.verifyGamingWalletKey(ctx, key); err != nil {
 				return empty, err
 			}
 			if err = store.VerifyRecovery(scope, id, params); err != nil {
@@ -208,24 +203,24 @@ func verifyGamingDeposit(ctx context.Context, game, id string) (gamingfunds.Depo
 	}
 	return empty, fmt.Errorf("no verified deposit belongs to this game and wallet")
 }
-func RequestGamingDepositSpend(ctx context.Context, game string, req *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error) {
-	dep, err := verifyGamingDeposit(ctx, game, req.GetDepositId())
+func (br *Bridge) RequestGamingDepositSpend(ctx context.Context, game string, req *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error) {
+	dep, err := br.verifyGamingDeposit(ctx, game, req.GetDepositId())
 	if err != nil {
 		return nil, err
 	}
 	if req.GetAddress() != dep.Address || req.GetAmountAtoms() != dep.Terms.Atoms {
 		return nil, fmt.Errorf("payment differs from verified deposit")
 	}
-	unsigned, err := spendConstruct(ctx, dep.Scope.Account, dep.Address, dep.Terms.Atoms)
+	unsigned, err := br.spendConstruct(ctx, dep.Scope.Account, dep.Address, dep.Terms.Atoms)
 	if err != nil {
 		return nil, err
 	}
-	fee, err := validateGamingFunding(ctx, dep, unsigned)
+	fee, err := br.validateGamingFunding(ctx, dep, unsigned)
 	if err != nil {
 		return nil, err
 	}
 	proof := &verifiedGamingPayment{Deposit: dep, Unsigned: hex.EncodeToString(unsigned), FeeAtoms: fee}
-	sp, err := requestGamingSpend(ctx, game, dep.Address, dep.Terms.Atoms, req.GetReason(), proof)
+	sp, err := br.requestGamingSpend(ctx, game, dep.Address, dep.Terms.Atoms, req.GetReason(), proof)
 	return spendProto(sp), err
 }
 
@@ -235,8 +230,8 @@ func RequestGamingSpend(ctx context.Context, game, address string, atoms int64, 
 	return GamingSpend{}, fmt.Errorf("%w: a bridge-verified deposit and recovery authority are required", ErrGamingSpendRefused)
 }
 
-func ensureGamingFundingPreview(request GamingSpend, p *verifiedGamingPayment) (gamingfunds.FundingApproval, error) {
-	store, err := gamingFundsStore()
+func (br *Bridge) ensureGamingFundingPreview(request GamingSpend, p *verifiedGamingPayment) (gamingfunds.FundingApproval, error) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return gamingfunds.FundingApproval{}, err
 	}
@@ -249,22 +244,22 @@ func ensureGamingFundingPreview(request GamingSpend, p *verifiedGamingPayment) (
 		FeeAtoms:    p.FeeAtoms,
 	})
 }
-func loadGamingFundingPreview(id, deposit string) ([]byte, error) {
-	store, err := gamingFundsStore()
+func (br *Bridge) loadGamingFundingPreview(id, deposit string) ([]byte, error) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
 	return store.Preview(id, deposit)
 }
-func saveGamingSignedFunding(req GamingSpend, dep gamingfunds.Deposit, raw []byte) error {
-	store, err := gamingFundsStore()
+func (br *Bridge) saveGamingSignedFunding(req GamingSpend, dep gamingfunds.Deposit, raw []byte) error {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return err
 	}
 	return store.CommitFunding(req.ID, dep.Scope, dep.ID, raw)
 }
 
-func authorizeGamingTable(ctx context.Context, game, invite, gcid string) error {
+func (br *Bridge) authorizeGamingTable(ctx context.Context, game, invite, gcid string) error {
 	u, err := url.Parse(invite)
 	if err != nil || u.Scheme != "gaming" || u.Host != game || u.Path != "/table" {
 		return fmt.Errorf("invalid gaming invitation")
@@ -304,11 +299,11 @@ func authorizeGamingTable(ctx context.Context, game, invite, gcid string) error 
 	if err != nil {
 		return fmt.Errorf("invalid admission deadline")
 	}
-	scope, err := gamingFinancialScope(ctx, game)
+	scope, err := br.gamingFinancialScope(ctx, game)
 	if err != nil {
 		return err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return err
 	}
@@ -332,24 +327,20 @@ func authorizeGamingTable(ctx context.Context, game, invite, gcid string) error 
 		return err
 	}
 	// Frames from this group were dropped until now; the journal has them.
-	gamingRecoverAfterAccept()
+	br.gamingRecoverAfterAccept()
 	return nil
 }
 
-// gamingRecoverAfterAccept reads back a newly accepted table's earlier frames.
-// Settable for tests; production never sets it.
-var gamingRecoverAfterAccept = func() { go Gaming().RecoverHistory() }
-
-func GamingFinancialKeyReply(ctx context.Context, game, sid string) (*gamingpb.FinancialKeyReply, error) {
-	pub, err := GamingFinancialKey(ctx, game, sid)
+func (br *Bridge) GamingFinancialKeyReply(ctx context.Context, game, sid string) (*gamingpb.FinancialKeyReply, error) {
+	pub, err := br.GamingFinancialKey(ctx, game, sid)
 	if err != nil {
 		return nil, err
 	}
-	scope, err := gamingFinancialScope(ctx, game)
+	scope, err := br.gamingFinancialScope(ctx, game)
 	if err != nil {
 		return nil, err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -360,12 +351,12 @@ func GamingFinancialKeyReply(ctx context.Context, game, sid string) (*gamingpb.F
 	return &gamingpb.FinancialKeyReply{PublicKey: pub, PayoutAddress: key.Address}, nil
 }
 
-func GamingFinancialState(ctx context.Context, game, sid string) (*gamingpb.FinancialStateReply, error) {
-	scope, err := gamingFinancialScope(ctx, game)
+func (br *Bridge) GamingFinancialState(ctx context.Context, game, sid string) (*gamingpb.FinancialStateReply, error) {
+	scope, err := br.gamingFinancialScope(ctx, game)
 	if err != nil {
 		return nil, err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}

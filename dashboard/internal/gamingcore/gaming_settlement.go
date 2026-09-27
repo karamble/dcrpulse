@@ -12,13 +12,13 @@ import (
 	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
-func validateGamingPayoutInputs(ctx context.Context, inputs []finance.Input) error {
-	params, err := chainParams(ctx)
+func (br *Bridge) validateGamingPayoutInputs(ctx context.Context, inputs []finance.Input) error {
+	params, err := br.chainParams(ctx)
 	if err != nil {
 		return err
 	}
 	for _, input := range inputs {
-		facts, err := GamingChainOutpoint(ctx, input.Outpoint.Hash.String(), input.Outpoint.Index, true)
+		facts, err := br.GamingChainOutpoint(ctx, input.Outpoint.Hash.String(), input.Outpoint.Index, true)
 		if err != nil {
 			return err
 		}
@@ -39,7 +39,7 @@ func payoutStatus(p gamingfunds.Settlement) *gamingpb.PayoutStatusReply {
 	}
 	return &gamingpb.PayoutStatusReply{Id: p.ID, Sid: p.Table, State: p.State, Txid: txid, Signatures: uint32(len(p.Signatures)), Required: uint32(len(p.Destinations))}
 }
-func ProposeGamingPayout(ctx context.Context, game string, req *gamingpb.ProposePayoutRequest) (*gamingpb.PayoutStatusReply, error) {
+func (br *Bridge) ProposeGamingPayout(ctx context.Context, game string, req *gamingpb.ProposePayoutRequest) (*gamingpb.PayoutStatusReply, error) {
 	if req == nil || len(req.Inputs) < 2 || len(req.Inputs) > finance.MaxMembers || len(req.Payments) == 0 || len(req.Payments) > finance.MaxMembers {
 		return nil, fmt.Errorf("invalid payout proposal shape")
 	}
@@ -53,11 +53,11 @@ func ProposeGamingPayout(ctx context.Context, game string, req *gamingpb.Propose
 			return nil, fmt.Errorf("missing payout payment")
 		}
 	}
-	scope, err := gamingFinancialScope(ctx, game)
+	scope, err := br.gamingFinancialScope(ctx, game)
 	if err != nil {
 		return nil, err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -88,10 +88,10 @@ func ProposeGamingPayout(ctx context.Context, game string, req *gamingpb.Propose
 	for _, pay := range req.Payments {
 		proposal.Payments = append(proposal.Payments, finance.Payment{Key: pay.OwnerKey, Atoms: pay.AmountAtoms})
 	}
-	if err = validateGamingPayoutInputs(ctx, proposal.Inputs); err != nil {
+	if err = br.validateGamingPayoutInputs(ctx, proposal.Inputs); err != nil {
 		return nil, err
 	}
-	params, err := chainParams(ctx)
+	params, err := br.chainParams(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -99,15 +99,15 @@ func ProposeGamingPayout(ctx context.Context, game string, req *gamingpb.Propose
 	if err != nil {
 		return nil, err
 	}
-	GamingPresenceChanged(game)
+	br.GamingPresenceChanged(game)
 	return payoutStatus(p), nil
 }
-func GamingPayoutStatus(ctx context.Context, game, id string) (*gamingpb.PayoutStatusReply, error) {
-	scope, err := gamingFinancialScope(ctx, game)
+func (br *Bridge) GamingPayoutStatus(ctx context.Context, game, id string) (*gamingpb.PayoutStatusReply, error) {
+	scope, err := br.gamingFinancialScope(ctx, game)
 	if err != nil {
 		return nil, err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -181,8 +181,8 @@ func payoutShare(p gamingfunds.Settlement, key gamingfunds.WalletKey) (GamingPay
 	return share, staked
 }
 
-func GamingPayouts(ctx context.Context) ([]GamingPayoutView, error) {
-	store, err := gamingFundsStore()
+func (br *Bridge) GamingPayouts(ctx context.Context) ([]GamingPayoutView, error) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func GamingPayouts(ctx context.Context) ([]GamingPayoutView, error) {
 			if share, ok := payoutShare(p, key); ok {
 				view.Mine = &share
 			}
-			view.SignaturesSent = payoutSignaturesSent(store, p, key)
+			view.SignaturesSent = br.payoutSignaturesSent(store, p, key)
 		}
 		out = append(out, view)
 	}
@@ -207,7 +207,7 @@ func GamingPayouts(ctx context.Context) ([]GamingPayoutView, error) {
 
 // payoutSignaturesSent reads, never sends, the state of our signature message
 // for a payout still collecting signatures.
-func payoutSignaturesSent(store *gamingfunds.Store, p gamingfunds.Settlement, key gamingfunds.WalletKey) string {
+func (br *Bridge) payoutSignaturesSent(store *gamingfunds.Store, p gamingfunds.Settlement, key gamingfunds.WalletKey) string {
 	sigs := p.Signatures[key.Public]
 	if p.State != "awaiting_signatures" || len(sigs) == 0 {
 		return ""
@@ -220,7 +220,7 @@ func payoutSignaturesSent(store *gamingfunds.Store, p gamingfunds.Settlement, ke
 	if err != nil {
 		return ""
 	}
-	state, err := gamingFrameSendState(p.Scope.Game, table.Group, parsed, frame)
+	state, err := br.gamingFrameSendState(p.Scope.Game, table.Group, parsed, frame)
 	switch {
 	case err != nil:
 		return ""
@@ -236,8 +236,8 @@ func payoutSignaturesSent(store *gamingfunds.Store, p gamingfunds.Settlement, ke
 // SendGamingPayoutSignatures is the operator's one send of signatures that
 // Bison Relay never accepted. It signs nothing; the stored signatures go out
 // through the same claim, so a message that was sent is never sent again.
-func SendGamingPayoutSignatures(ctx context.Context, id string) (*gamingpb.PayoutStatusReply, error) {
-	store, err := gamingFundsStore()
+func (br *Bridge) SendGamingPayoutSignatures(ctx context.Context, id string) (*gamingpb.PayoutStatusReply, error) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func SendGamingPayoutSignatures(ctx context.Context, id string) (*gamingpb.Payou
 	if err != nil {
 		return nil, err
 	}
-	if err = sendFinancialMessage(ctx, p.Scope.Game, table.Group, p.Table, financialMessage{Settlement: id, Signatures: sigs}); err != nil {
+	if err = br.sendFinancialMessage(ctx, p.Scope.Game, table.Group, p.Table, financialMessage{Settlement: id, Signatures: sigs}); err != nil {
 		return nil, err
 	}
 	return payoutStatus(p), nil
@@ -278,8 +278,8 @@ func gamingPayoutByID(store *gamingfunds.Store, id string) (gamingfunds.Settleme
 
 // RejectGamingPayout is exclusively a dashboard action. It releases no key or
 // signature and makes an identical game retry observe the operator's refusal.
-func RejectGamingPayout(ctx context.Context, id string) (*gamingpb.PayoutStatusReply, error) {
-	store, err := gamingFundsStore()
+func (br *Bridge) RejectGamingPayout(ctx context.Context, id string) (*gamingpb.PayoutStatusReply, error) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -291,14 +291,14 @@ func RejectGamingPayout(ctx context.Context, id string) (*gamingpb.PayoutStatusR
 	if err != nil {
 		return nil, err
 	}
-	GamingPresenceChanged(p.Scope.Game)
+	br.GamingPresenceChanged(p.Scope.Game)
 	return payoutStatus(rejected), nil
 }
 
 // ApproveGamingPayout is exclusively a dashboard action. The game receives
 // status only; the bridge exchanges signatures on its own reserved BR channel.
-func ApproveGamingPayout(ctx context.Context, id string, passphrase []byte) (*gamingpb.PayoutStatusReply, error) {
-	store, err := gamingFundsStore()
+func (br *Bridge) ApproveGamingPayout(ctx context.Context, id string, passphrase []byte) (*gamingpb.PayoutStatusReply, error) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -306,14 +306,14 @@ func ApproveGamingPayout(ctx context.Context, id string, passphrase []byte) (*ga
 	if err != nil {
 		return nil, err
 	}
-	if err = recoveryWalletMatches(ctx, p.Scope); err != nil {
+	if err = br.recoveryWalletMatches(ctx, p.Scope); err != nil {
 		return nil, err
 	}
-	if err = validateGamingPayoutInputs(ctx, p.Inputs); err != nil {
+	if err = br.validateGamingPayoutInputs(ctx, p.Inputs); err != nil {
 		return nil, err
 	}
 	var sigs [][]byte
-	_, err = withGamingWalletSigner(ctx, p.Scope, passphrase, func(sign gamingfunds.WalletSigner) ([]byte, error) {
+	_, err = br.withGamingWalletSigner(ctx, p.Scope, passphrase, func(sign gamingfunds.WalletSigner) ([]byte, error) {
 		var err error
 		sigs, err = store.ApproveSettlement(p.Scope, id, sign)
 		return nil, err
@@ -321,11 +321,11 @@ func ApproveGamingPayout(ctx context.Context, id string, passphrase []byte) (*ga
 	if err != nil {
 		return nil, err
 	}
-	uid, err := localGamingUID(ctx)
+	uid, err := br.localGamingUID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	params, err := chainParams(ctx)
+	params, err := br.chainParams(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -338,13 +338,13 @@ func ApproveGamingPayout(ctx context.Context, id string, passphrase []byte) (*ga
 	}
 	// Approval is a state transition. Publish its signatures once; BR group
 	// history supplies them to peers that connect later.
-	if err = sendFinancialMessage(ctx, p.Scope.Game, table.Group, p.Table, financialMessage{Settlement: id, Signatures: sigs}); err != nil {
+	if err = br.sendFinancialMessage(ctx, p.Scope.Game, table.Group, p.Table, financialMessage{Settlement: id, Signatures: sigs}); err != nil {
 		return nil, err
 	}
 	refreshed, err := store.Settlement(p.Scope, id)
 	if err != nil {
 		return nil, err
 	}
-	GamingPresenceChanged(p.Scope.Game)
+	br.GamingPresenceChanged(p.Scope.Game)
 	return payoutStatus(refreshed), nil
 }

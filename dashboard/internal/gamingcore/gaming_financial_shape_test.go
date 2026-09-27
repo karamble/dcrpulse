@@ -10,6 +10,7 @@ import (
 
 // Malformed requests must fail before any wallet, node, or store access.
 func TestPayoutRejectsMalformedArraysBeforeWalletAccess(t *testing.T) {
+	br := newTestBridge(t)
 	for _, req := range []*gamingpb.ProposePayoutRequest{
 		nil,
 		{},
@@ -17,7 +18,7 @@ func TestPayoutRejectsMalformedArraysBeforeWalletAccess(t *testing.T) {
 		{Inputs: []*gamingpb.PayoutInput{{}, {}}, Payments: []*gamingpb.PayoutPayment{nil}},
 		{Inputs: make([]*gamingpb.PayoutInput, 14), Payments: []*gamingpb.PayoutPayment{{}}},
 	} {
-		if _, err := ProposeGamingPayout(context.Background(), "stakewars", req); err == nil {
+		if _, err := br.ProposeGamingPayout(context.Background(), "stakewars", req); err == nil {
 			t.Fatal("malformed payout accepted")
 		}
 	}

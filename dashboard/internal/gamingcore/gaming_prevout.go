@@ -21,8 +21,8 @@ type GamingPrevout struct {
 	ValueAtoms    int64
 }
 
-func lookupGamingPrevout(ctx context.Context, op wire.OutPoint) (GamingPrevout, error) {
-	node := hostNode()
+func (br *Bridge) lookupGamingPrevout(ctx context.Context, op wire.OutPoint) (GamingPrevout, error) {
+	node := br.hostNode()
 	if node == nil {
 		return GamingPrevout{}, ErrGamingChainUnavailable
 	}

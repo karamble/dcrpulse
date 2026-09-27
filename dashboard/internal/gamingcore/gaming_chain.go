@@ -55,8 +55,8 @@ type GamingOutpoint struct {
 }
 
 // GamingChainTipNow reports the best block.
-func GamingChainTipNow(ctx context.Context) (GamingChainTip, error) {
-	node := hostNode()
+func (br *Bridge) GamingChainTipNow(ctx context.Context) (GamingChainTip, error) {
+	node := br.hostNode()
 	if node == nil {
 		return GamingChainTip{}, ErrGamingChainUnavailable
 	}
@@ -74,8 +74,8 @@ func GamingChainTipNow(ctx context.Context) (GamingChainTip, error) {
 // they were choosing keys. Which is why a height is asked for rather than the
 // tip - the tip moves, and two peers reading it a second apart would seat the
 // same table differently.
-func GamingBlockHash(ctx context.Context, height int64) (string, error) {
-	node := hostNode()
+func (br *Bridge) GamingBlockHash(ctx context.Context, height int64) (string, error) {
+	node := br.hostNode()
 	if node == nil {
 		return "", ErrGamingChainUnavailable
 	}
@@ -102,8 +102,8 @@ func GamingBlockHash(ctx context.Context, height int64) (string, error) {
 // one, because an unconfirmed transaction can still be replaced. Finding which
 // output of a payment you just made is yours needs the opposite - it is not in
 // a block yet by definition.
-func GamingChainOutpoint(ctx context.Context, txid string, vout uint32, includeMempool bool) (GamingOutpoint, error) {
-	node := hostNode()
+func (br *Bridge) GamingChainOutpoint(ctx context.Context, txid string, vout uint32, includeMempool bool) (GamingOutpoint, error) {
+	node := br.hostNode()
 	if node == nil {
 		return GamingOutpoint{}, ErrGamingChainUnavailable
 	}

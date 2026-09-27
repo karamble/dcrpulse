@@ -74,8 +74,8 @@ func financialPart(raw string) (*gamingFrame, error) {
 	return &part, nil
 }
 
-func localGamingUID(ctx context.Context) (string, error) {
-	uid, _, err := hostRelay().Identity(ctx)
+func (br *Bridge) localGamingUID(ctx context.Context) (string, error) {
+	uid, _, err := br.hostRelay().Identity(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -104,16 +104,16 @@ func financialFrame(game, table string, msg financialMessage) (gamingFrame, stri
 	return parsed, frame, nil
 }
 
-func sendFinancialMessage(ctx context.Context, game, group, table string, msg financialMessage) error {
+func (br *Bridge) sendFinancialMessage(ctx context.Context, game, group, table string, msg financialMessage) error {
 	parsed, frame, err := financialFrame(game, table, msg)
 	if err != nil {
 		return err
 	}
-	return sendGamingFrameOnce(ctx, game, group, parsed, frame)
+	return br.sendGamingFrameOnce(ctx, game, group, parsed, frame)
 }
 
-func announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table string) error {
-	store, err := gamingFundsStore()
+func (br *Bridge) announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table string) error {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table
 	if err != nil {
 		return err
 	}
-	uid, err := gamingSelfUID(ctx)
+	uid, err := br.gamingSelfUID(ctx)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func announceGamingAuthority(ctx context.Context, scope gamingfunds.Scope, table
 	if err != nil {
 		return err
 	}
-	return sendFinancialMessage(ctx, scope.Game, accepted.Group, table, financialMessage{Key: peer.Key, RosterHash: hash, Proof: raw})
+	return br.sendFinancialMessage(ctx, scope.Game, accepted.Group, table, financialMessage{Key: peer.Key, RosterHash: hash, Proof: raw})
 }
 
 // keyProofHash is what a table's financial key signs to announce itself for
@@ -213,14 +213,11 @@ func verifyKeyProof(proof []byte, uid, game, sid, gcid, termsHash string, key []
 	return nil
 }
 
-// gamingKeyProofSign proves this bridge's key for a table. Settable for tests.
-var gamingKeyProofSign = signGamingKeyProof
-
 // signGamingKeyProof has the wallet sign this table's key proof, with the
 // passphrase of the seat-bond approval, and records it. Once per table.
-func signGamingKeyProof(ctx context.Context, scope gamingfunds.Scope, table string, passphrase []byte) error {
+func (br *Bridge) signGamingKeyProof(ctx context.Context, scope gamingfunds.Scope, table string, passphrase []byte) error {
 	defer clear(passphrase)
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return err
 	}
@@ -235,7 +232,7 @@ func signGamingKeyProof(ctx context.Context, scope gamingfunds.Scope, table stri
 	if err != nil {
 		return err
 	}
-	uid, err := gamingSelfUID(ctx)
+	uid, err := br.gamingSelfUID(ctx)
 	if err != nil {
 		return err
 	}
@@ -247,7 +244,7 @@ func signGamingKeyProof(ctx context.Context, scope gamingfunds.Scope, table stri
 	if err != nil {
 		return err
 	}
-	sig, err := withGamingWalletSigner(ctx, scope, passphrase, func(sign gamingfunds.WalletSigner) ([]byte, error) {
+	sig, err := br.withGamingWalletSigner(ctx, scope, passphrase, func(sign gamingfunds.WalletSigner) ([]byte, error) {
 		return sign(key, hash[:])
 	})
 	if err != nil {
@@ -259,15 +256,8 @@ func signGamingKeyProof(ctx context.Context, scope gamingfunds.Scope, table stri
 	return store.SaveKeyProof(scope, table, hex.EncodeToString(sig))
 }
 
-// The wallet scope and chain a received frame is judged against. Settable
-// for tests; production never sets them.
-var (
-	receiveScope  = gamingFinancialScope
-	receiveParams = chainParams
-)
-
 // receiveFinancialFrame runs only on the authenticated BR inbound path.
-func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
+func (br *Bridge) receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 	part, err := financialPart(event.Frame)
 	if err != nil {
 		return err
@@ -279,11 +269,11 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 	if err != nil {
 		return err
 	}
-	scope, err := receiveScope(ctx, event.Game)
+	scope, err := br.receiveScope(ctx, event.Game)
 	if err != nil {
 		return err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return err
 	}
@@ -294,7 +284,7 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 	if accepted.Group != event.GCID {
 		return fmt.Errorf("financial message arrived in wrong group")
 	}
-	params, err := receiveParams(ctx)
+	params, err := br.receiveParams(ctx)
 	if err != nil {
 		return err
 	}
@@ -332,7 +322,7 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 			return err
 		}
 		if hash != "" {
-			uid, err := localGamingUID(ctx)
+			uid, err := br.localGamingUID(ctx)
 			if err != nil {
 				return err
 			}
@@ -342,7 +332,7 @@ func receiveFinancialFrame(ctx context.Context, event GamingFrameEvent) error {
 			}
 		}
 		if changed {
-			return announceGamingAuthority(ctx, scope, part.SID)
+			return br.announceGamingAuthority(ctx, scope, part.SID)
 		}
 		return nil
 	}

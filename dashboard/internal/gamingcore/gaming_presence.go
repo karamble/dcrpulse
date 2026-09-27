@@ -5,6 +5,6 @@
 package gamingcore
 
 // GamingPresenceChanged tells the operator a game connected or went away.
-func GamingPresenceChanged(game string) {
-	hostOperator().PresenceChanged(game)
+func (br *Bridge) GamingPresenceChanged(game string) {
+	br.hostOperator().PresenceChanged(game)
 }

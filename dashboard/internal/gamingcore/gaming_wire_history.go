@@ -7,24 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
-)
-
-var gamingHistoryRecovery sync.Mutex
-
-// Settable so these rules run without a live brclientd.
-// Production sets none of them.
-var (
-	gamingGCHistoryFetch = func(ctx context.Context, gcid [32]byte, page, pageSize int) ([]GroupEntry, error) {
-		return hostRelay().GroupHistory(ctx, gcid, page, pageSize)
-	}
-	gamingSelfNick = localGamingNick
-	gamingSelfUID  = localGamingUID
 )
 
 // localGamingNick is the nick BR logs this client's own messages under.
-func localGamingNick(ctx context.Context) (string, error) {
-	_, nick, err := hostRelay().Identity(ctx)
+func (br *Bridge) localGamingNick(ctx context.Context) (string, error) {
+	_, nick, err := br.hostRelay().Identity(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -37,13 +24,13 @@ func localGamingNick(ctx context.Context) (string, error) {
 // gamingFrameInHistory reports whether BR's own log of the group holds frame as
 // a message from this client. BR logs a group message under the sender's nick
 // before it queues the send, so an entry here means BR took it.
-func gamingFrameInHistory(ctx context.Context, gcid [32]byte, frame string) (bool, error) {
-	nick, err := gamingSelfNick(ctx)
+func (br *Bridge) gamingFrameInHistory(ctx context.Context, gcid [32]byte, frame string) (bool, error) {
+	nick, err := br.gamingSelfNick(ctx)
 	if err != nil {
 		return false, err
 	}
 	for page := 0; page < 10000; page++ {
-		entries, err := gamingGCHistoryFetch(ctx, gcid, page, 500)
+		entries, err := br.gamingGCHistoryFetch(ctx, gcid, page, 500)
 		if err != nil {
 			return false, err
 		}
@@ -62,8 +49,8 @@ func gamingFrameInHistory(ctx context.Context, gcid [32]byte, frame string) (boo
 // claimOrReconcileGamingFrame claims the one permitted physical send. A claim
 // left uncertain by a crash is resolved against BR's own local history and is
 // never retried blindly.
-func claimOrReconcileGamingFrame(ctx context.Context, game, gcid string, parsed gamingFrame, frame string) (bool, error) {
-	fresh, err := claimGamingFrameSend(game, gcid, parsed, frame)
+func (br *Bridge) claimOrReconcileGamingFrame(ctx context.Context, game, gcid string, parsed gamingFrame, frame string) (bool, error) {
+	fresh, err := br.claimGamingFrameSend(game, gcid, parsed, frame)
 	if !errors.Is(err, errGamingSendUncertain) {
 		return fresh, err
 	}
@@ -71,11 +58,11 @@ func claimOrReconcileGamingFrame(ctx context.Context, game, gcid string, parsed 
 	if parseErr != nil {
 		return false, parseErr
 	}
-	found, historyErr := gamingFrameInHistory(ctx, id, frame)
+	found, historyErr := br.gamingFrameInHistory(ctx, id, frame)
 	if historyErr != nil || !found {
 		return false, errGamingSendUncertain
 	}
-	if markErr := markGamingFrameSent(game, gcid, parsed, frame); markErr != nil {
+	if markErr := br.markGamingFrameSent(game, gcid, parsed, frame); markErr != nil {
 		return false, markErr
 	}
 	return false, nil
@@ -84,53 +71,53 @@ func claimOrReconcileGamingFrame(ctx context.Context, game, gcid string, parsed 
 // knownGamingGCIDs returns chats the bridge has either sent a gaming frame to
 // or persisted one from. A local participant emits its own seat event, so an
 // active table enters this set before later formation traffic can matter.
-func (b *GamingBus) knownGamingGCIDs() map[string]struct{} {
+func (br *Bridge) knownGamingGCIDs() map[string]struct{} {
 	out := make(map[string]struct{})
-	b.wireMu.Lock()
-	if _, err := b.loadGamingFramesLocked("", 0); err == nil {
-		for _, records := range b.wireRecords {
+	br.wireMu.Lock()
+	if _, err := br.loadGamingFramesLocked("", 0); err == nil {
+		for _, records := range br.wireRecords {
 			for _, ev := range records {
 				out[ev.GCID] = struct{}{}
 			}
 		}
 	}
-	b.wireMu.Unlock()
+	br.wireMu.Unlock()
 
 	// A table whose frames all arrived while the dashboard was down is known
 	// only from the ledger.
-	for group := range gamingAcceptedGroups() {
+	for group := range br.gamingAcceptedGroups() {
 		out[group] = struct{}{}
 	}
 
-	gamingOutbox.Lock()
-	if loadGamingSendClaimsLocked() == nil {
-		for key := range gamingOutbox.claims {
+	br.gamingOutbox.Lock()
+	if br.loadGamingSendClaimsLocked() == nil {
+		for key := range br.gamingOutbox.claims {
 			parts := strings.Split(key, "\x00")
 			if len(parts) == 4 {
 				out[parts[1]] = struct{}{}
 			}
 		}
 	}
-	gamingOutbox.Unlock()
+	br.gamingOutbox.Unlock()
 	return out
 }
 
 // RecoverHistory delivers the journaled frames of every group the bridge knows,
 // oldest first. It never sends a peer message; exact duplicates disappear in
 // persistGamingFrame.
-func (b *GamingBus) RecoverHistory() {
-	if !gamingHistoryRecovery.TryLock() {
+func (br *Bridge) RecoverHistory() {
+	if !br.gamingHistoryRecovery.TryLock() {
 		return
 	}
-	defer gamingHistoryRecovery.Unlock()
-	for gcid := range b.knownGamingGCIDs() {
-		records, err := gamingJournalHistory(gcid)
+	defer br.gamingHistoryRecovery.Unlock()
+	for gcid := range br.knownGamingGCIDs() {
+		records, err := br.gamingJournalHistory(gcid)
 		if err != nil {
 			gameLog.Warnf("recover gaming history for %s: %v", gcid, err)
 			continue
 		}
 		for _, rec := range records {
-			b.deliverGamingMessage(gcid, rec.From, rec.Message)
+			br.deliverGamingMessage(gcid, rec.From, rec.Message)
 		}
 	}
 }
@@ -139,26 +126,26 @@ func (b *GamingBus) RecoverHistory() {
 // funds are all paid out, once per group per run. The journal goes first:
 // history recovery reads it, so the inbox is only pruned once nothing can
 // replay into it.
-func (b *GamingBus) pruneSettledGamingHistory(ctx context.Context, groups []string) {
-	gamingHistoryRecovery.Lock()
-	defer gamingHistoryRecovery.Unlock()
+func (br *Bridge) pruneSettledGamingHistory(ctx context.Context, groups []string) {
+	br.gamingHistoryRecovery.Lock()
+	defer br.gamingHistoryRecovery.Unlock()
 	for _, group := range groups {
-		if _, done := b.prunedGroups[group]; done {
+		if _, done := br.prunedGroups[group]; done {
 			continue
 		}
-		if _, err := pruneGamingJournal(group); err != nil {
+		if _, err := br.pruneGamingJournal(group); err != nil {
 			gameLog.Warnf("prune gaming journal of %s: %v", group, err)
 			continue
 		}
-		removed, err := b.pruneGamingGroup(group)
+		removed, err := br.pruneGamingGroup(group)
 		if err != nil {
 			gameLog.Warnf("prune gaming inbox of %s: %v", group, err)
 			continue
 		}
-		if b.prunedGroups == nil {
-			b.prunedGroups = make(map[string]struct{})
+		if br.prunedGroups == nil {
+			br.prunedGroups = make(map[string]struct{})
 		}
-		b.prunedGroups[group] = struct{}{}
+		br.prunedGroups[group] = struct{}{}
 		if removed > 0 {
 			gameLog.Infof("pruned %d gaming frames of settled group %s", removed, group)
 		}
@@ -168,12 +155,12 @@ func (b *GamingBus) pruneSettledGamingHistory(ctx context.Context, groups []stri
 // gamingAcceptedGroups is the group chat of every table in the payout ledger,
 // closed ones included, since those still settle and recover. Only an existing
 // ledger is read; opening one would create it.
-func gamingAcceptedGroups() map[string]struct{} {
+func (br *Bridge) gamingAcceptedGroups() map[string]struct{} {
 	out := make(map[string]struct{})
-	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(br.dataDir, "financial-authority", "authority.json")); err != nil {
 		return out
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return out
 	}
@@ -190,19 +177,19 @@ func gamingAcceptedGroups() map[string]struct{} {
 }
 
 // gamingTableGroup reports whether gcid is the group of one of game's tables.
-func gamingTableGroup(game, gcid string) bool {
-	_, ok := gamingGameGroups()[game+"\x00"+gcid]
+func (br *Bridge) gamingTableGroup(game, gcid string) bool {
+	_, ok := br.gamingGameGroups()[game+"\x00"+gcid]
 	return ok
 }
 
 // gamingGameGroups is every accepted table's game and group chat, keyed
 // game + NUL + gcid.
-func gamingGameGroups() map[string]struct{} {
+func (br *Bridge) gamingGameGroups() map[string]struct{} {
 	out := make(map[string]struct{})
-	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(br.dataDir, "financial-authority", "authority.json")); err != nil {
 		return out
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return out
 	}
@@ -220,11 +207,11 @@ func gamingGameGroups() map[string]struct{} {
 
 // gamingTableSenders reports whether game has an accepted table sid in group
 // gcid, and once its roster is complete, the seated players who may send.
-func gamingTableSenders(game, sid, gcid string) (map[string]bool, bool) {
-	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err != nil {
+func (br *Bridge) gamingTableSenders(game, sid, gcid string) (map[string]bool, bool) {
+	if _, err := os.Stat(filepath.Join(br.dataDir, "financial-authority", "authority.json")); err != nil {
 		return nil, false
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, false
 	}

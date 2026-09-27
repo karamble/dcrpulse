@@ -12,106 +12,94 @@ import (
 	"dcrpulse/internal/gamingfunds"
 )
 
-func registerPoker(t *testing.T) {
+func registerPoker(t *testing.T, br *Bridge) {
 	t.Helper()
 	settings := DefaultGamingSettings()
 	settings.RegisteredGames = []string{"poker"}
-	if err := writeGamingSettingsLocked(settings); err != nil {
+	if err := br.writeGamingSettingsLocked(settings); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestFramesOutsideAcceptedTablesAreNotStored(t *testing.T) {
-	withGamingWireDir(t)
-	registerPoker(t)
-	b := newWireBus()
-	if !b.deliverGamingMessage(pruneGCA, prunePeer, wireFrame(1)) {
+	br := newTestBridge(t)
+	registerPoker(t, br)
+	if !br.deliverGamingMessage(pruneGCA, prunePeer, wireFrame(1)) {
 		t.Fatal("a gaming frame was not recognised as one")
 	}
-	if got := inboxFrames(t, b, "poker"); len(got) != 0 {
+	if got := inboxFrames(t, br, "poker"); len(got) != 0 {
 		t.Fatalf("stored a frame of a group with no table: %+v", got)
 	}
-	payoutLedger(t, "awaiting_signatures")
-	b.deliverGamingMessage(pruneGCA, prunePeer, wireFrame(1))
-	b.deliverGamingMessage(pruneGCB, prunePeer, wireFrame(2))
-	got := inboxFrames(t, b, "poker")
+	payoutLedger(t, br, "awaiting_signatures")
+	br.deliverGamingMessage(pruneGCA, prunePeer, wireFrame(1))
+	br.deliverGamingMessage(pruneGCB, prunePeer, wireFrame(2))
+	got := inboxFrames(t, br, "poker")
 	if len(got) != 1 || got[0].GCID != pruneGCA {
 		t.Fatalf("stored = %+v", got)
 	}
 }
 
 func TestFinancialReplaySkipsUnknownGroupsAndAppliedFrames(t *testing.T) {
-	withGamingWireDir(t)
-	payoutLedger(t, "awaiting_signatures")
-	b := newWireBus()
+	br := newTestBridge(t)
+	payoutLedger(t, br, "awaiting_signatures")
 	for i, gcid := range []string{pruneGCA, pruneGCB, pruneGCA} {
 		ev := GamingFrameEvent{Game: "poker", GCID: gcid, From: prunePeer, Frame: wireFrame(byte(i)), Financial: true}
-		if _, _, err := b.persistGamingFrame(ev); err != nil {
+		if _, _, err := br.persistGamingFrame(ev); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got := b.financialReplay()
+	got := br.financialReplay()
 	if len(got) != 2 || got[0].GCID != pruneGCA || got[1].GCID != pruneGCA {
 		t.Fatalf("replay = %+v", got)
 	}
-	b.markFinancialApplied(got[0])
-	again := b.financialReplay()
+	br.markFinancialApplied(got[0])
+	again := br.financialReplay()
 	if len(again) != 1 || again[0].Seq != got[1].Seq {
 		t.Fatalf("replay after applying one = %+v", again)
 	}
 }
 
 func TestAcceptingATableReadsItsFramesBack(t *testing.T) {
+	br := newTestBridge(t)
 	calls := 0
-	old := gamingRecoverAfterAccept
-	gamingRecoverAfterAccept = func() { calls++ }
-	t.Cleanup(func() { gamingRecoverAfterAccept = old })
-	withGamingWireDir(t)
+	br.gamingRecoverAfterAccept = func() { calls++ }
 	// A malformed invitation never reaches the ledger and recovers nothing.
-	if err := authorizeGamingTable(t.Context(), "poker", "gaming://poker/nope", pruneGCA); err == nil || calls != 0 {
+	if err := br.authorizeGamingTable(t.Context(), "poker", "gaming://poker/nope", pruneGCA); err == nil || calls != 0 {
 		t.Fatalf("bad invite = %v, recoveries %d", err, calls)
 	}
 }
 
 func TestAppliedFinancialFramesLeaveTheReplay(t *testing.T) {
-	withGamingWireDir(t)
-	registerPoker(t)
-	payoutLedger(t, "awaiting_signatures")
-	b := Gaming()
-	old := receiveFinancial
-	t.Cleanup(func() {
-		receiveFinancial = old
-		b.wireMu.Lock()
-		b.financialDone = nil
-		b.wireMu.Unlock()
-	})
+	br := newTestBridge(t)
+	registerPoker(t, br)
+	payoutLedger(t, br, "awaiting_signatures")
 	fin := strings.Replace(wireFrame(1), "--gaming[", "--gaming[authority=3,", 1)
 	fin2 := strings.Replace(wireFrame(2), "--gaming[", "--gaming[authority=3,", 1)
 	for _, f := range []string{fin, fin2} {
-		b.deliverGamingMessage(pruneGCA, prunePeer, f)
+		br.deliverGamingMessage(pruneGCA, prunePeer, f)
 	}
 	var live []GamingFrameEvent
-	for len(gamingFinancialInbox) > 0 {
-		live = append(live, <-gamingFinancialInbox)
+	for len(br.gamingFinancialInbox) > 0 {
+		live = append(live, <-br.gamingFinancialInbox)
 	}
 	if len(live) != 2 || live[0].Seq == 0 {
 		t.Fatalf("live financial events = %+v", live)
 	}
-	receiveFinancial = func(context.Context, GamingFrameEvent) error { return errors.New("wallet locked") }
-	processFinancialFrame(context.Background(), live[1])
-	receiveFinancial = func(context.Context, GamingFrameEvent) error { return nil }
-	processFinancialFrame(context.Background(), live[0])
-	got := b.financialReplay()
+	br.receiveFinancial = func(context.Context, GamingFrameEvent) error { return errors.New("wallet locked") }
+	br.processFinancialFrame(context.Background(), live[1])
+	br.receiveFinancial = func(context.Context, GamingFrameEvent) error { return nil }
+	br.processFinancialFrame(context.Background(), live[0])
+	got := br.financialReplay()
 	if len(got) != 1 || got[0].Seq != live[1].Seq {
 		t.Fatalf("replay = %+v", got)
 	}
 }
 
 func TestAcceptRefusesSeatCountsCreateWouldRefuse(t *testing.T) {
-	withGamingWireDir(t)
+	br := newTestBridge(t)
 	for seats, refused := range map[string]bool{"1": true, "2": false, "6": false, "7": true, "13": true} {
 		invite := "gaming://poker/table?fv=2&sid=a1&buyin=100000&csv=288&seats=" + seats
-		err := authorizeGamingTable(t.Context(), "poker", invite, pruneGCA)
+		err := br.authorizeGamingTable(t.Context(), "poker", invite, pruneGCA)
 		if got := err != nil && err.Error() == "invalid seat count"; got != refused {
 			t.Errorf("seats=%s: %v", seats, err)
 		}
@@ -120,7 +108,7 @@ func TestAcceptRefusesSeatCountsCreateWouldRefuse(t *testing.T) {
 
 // seatedPokerLedger writes a poker table in group A with two seated keys,
 // bound or not, and the UIDs that have announced them.
-func seatedPokerLedger(t *testing.T, bound bool, announced map[string]string) {
+func seatedPokerLedger(t *testing.T, br *Bridge, bound bool, announced map[string]string) {
 	t.Helper()
 	scope := gamingfunds.Scope{Game: "poker", Network: "mainnet", Wallet: "fp"}
 	key, _ := json.Marshal(struct {
@@ -145,7 +133,7 @@ func seatedPokerLedger(t *testing.T, bound bool, announced map[string]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(GamingStateDir, "financial-authority")
+	dir := filepath.Join(br.dataDir, "financial-authority")
 	if err = os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -156,11 +144,11 @@ func seatedPokerLedger(t *testing.T, bound bool, announced map[string]string) {
 
 const strangerUID = "3333333333333333333333333333333333333333333333333333333333333333"
 
-func registerPokerAndStakeWars(t *testing.T) {
+func registerPokerAndStakeWars(t *testing.T, br *Bridge) {
 	t.Helper()
 	settings := DefaultGamingSettings()
 	settings.RegisteredGames = []string{"poker", "stakewars"}
-	if err := writeGamingSettingsLocked(settings); err != nil {
+	if err := br.writeGamingSettingsLocked(settings); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -184,12 +172,11 @@ func TestFramesAreBoundToTheirTableAndSeatedPlayers(t *testing.T) {
 		{"another game in the group", false, map[string]string{}, prunePeer, strings.Replace(wireFrame(6), "game=poker", "game=stakewars", 1), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			withGamingWireDir(t)
-			registerPokerAndStakeWars(t)
-			seatedPokerLedger(t, tc.bound, tc.announced)
-			b := newWireBus()
-			b.deliverGamingMessage(pruneGCA, tc.from, tc.frame)
-			got := len(inboxFrames(t, b, "poker")) + len(inboxFrames(t, b, "stakewars"))
+			br := newTestBridge(t)
+			registerPokerAndStakeWars(t, br)
+			seatedPokerLedger(t, br, tc.bound, tc.announced)
+			br.deliverGamingMessage(pruneGCA, tc.from, tc.frame)
+			got := len(inboxFrames(t, br, "poker")) + len(inboxFrames(t, br, "stakewars"))
 			if (got == 1) != tc.stored {
 				t.Fatalf("stored %d frames, want stored=%v", got, tc.stored)
 			}
@@ -198,16 +185,15 @@ func TestFramesAreBoundToTheirTableAndSeatedPlayers(t *testing.T) {
 }
 
 func TestFinancialReplayKeepsToTheGamesOwnGroups(t *testing.T) {
-	withGamingWireDir(t)
-	seatedPokerLedger(t, false, map[string]string{})
-	b := newWireBus()
+	br := newTestBridge(t)
+	seatedPokerLedger(t, br, false, map[string]string{})
 	for i, game := range []string{"poker", "stakewars"} {
 		ev := GamingFrameEvent{Game: game, GCID: pruneGCA, From: prunePeer, Frame: wireFrame(byte(i)), Financial: true}
-		if _, _, err := b.persistGamingFrame(ev); err != nil {
+		if _, _, err := br.persistGamingFrame(ev); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got := b.financialReplay()
+	got := br.financialReplay()
 	if len(got) != 1 || got[0].Game != "poker" {
 		t.Fatalf("replay = %+v", got)
 	}

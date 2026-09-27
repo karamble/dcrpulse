@@ -19,31 +19,30 @@ func groupMessage(gcid, uid byte, text string) GroupMessage {
 }
 
 func TestReceiveGroupMessageJournalsAndDeliversFrames(t *testing.T) {
-	withGamingWireDir(t)
+	br := newTestBridge(t)
 	settings := DefaultGamingSettings()
 	settings.RegisteredGames = []string{"poker"}
-	if err := writeGamingSettingsLocked(settings); err != nil {
+	if err := br.writeGamingSettingsLocked(settings); err != nil {
 		t.Fatal(err)
 	}
-	payoutLedger(t, "awaiting_signatures")
-	b := newWireBus()
+	payoutLedger(t, br, "awaiting_signatures")
 
-	if err := b.receiveGroupMessage(groupMessage(0xaa, 0x22, wireFrame(1))); err != nil {
+	if err := br.receiveGroupMessage(groupMessage(0xaa, 0x22, wireFrame(1))); err != nil {
 		t.Fatalf("frame: %v", err)
 	}
-	recs, err := gamingJournalHistory(pruneGCA)
+	recs, err := br.gamingJournalHistory(pruneGCA)
 	if err != nil || len(recs) != 1 || recs[0].From != prunePeer || recs[0].TS != 1700000000 {
 		t.Fatalf("journal = %+v, %v", recs, err)
 	}
-	if got := inboxFrames(t, b, "poker"); len(got) != 1 || got[0].From != prunePeer || got[0].GCID != pruneGCA {
+	if got := inboxFrames(t, br, "poker"); len(got) != 1 || got[0].From != prunePeer || got[0].GCID != pruneGCA {
 		t.Fatalf("delivered = %+v", got)
 	}
 
 	// Ordinary chat is left alone.
-	if err := b.receiveGroupMessage(groupMessage(0xaa, 0x22, "hello table")); err != nil {
+	if err := br.receiveGroupMessage(groupMessage(0xaa, 0x22, "hello table")); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
-	if recs, _ = gamingJournalHistory(pruneGCA); len(recs) != 1 {
+	if recs, _ = br.gamingJournalHistory(pruneGCA); len(recs) != 1 {
 		t.Fatalf("journal after chat = %+v", recs)
 	}
 }

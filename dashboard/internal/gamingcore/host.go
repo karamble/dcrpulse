@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/chaincfg/v3"
@@ -141,58 +140,44 @@ type Operator interface {
 	PresenceChanged(game string)
 }
 
-var host Host
-
-// Configure hands the bridge its data directory and its host. It is called
-// once, before anything else in this package runs.
-func Configure(dataDir string, h Host) {
-	GamingStateDir = dataDir
-	host = h
-}
-
 // hostNode is the node's client, nil while there is none.
-func hostNode() Chain {
-	if host.Node == nil {
+func (br *Bridge) hostNode() Chain {
+	if br.host.Node == nil {
 		return nil
 	}
-	return host.Node()
+	return br.host.Node()
 }
 
-func hostWallet() Wallet {
-	if host.Wallet == nil {
+func (br *Bridge) hostWallet() Wallet {
+	if br.host.Wallet == nil {
 		return noWallet{}
 	}
-	return host.Wallet
+	return br.host.Wallet
 }
 
-func hostRelay() Relay {
-	if host.Relay == nil {
+func (br *Bridge) hostRelay() Relay {
+	if br.host.Relay == nil {
 		return noRelay{}
 	}
-	return host.Relay
+	return br.host.Relay
 }
 
-func hostOperator() Operator {
-	if host.Operator == nil {
+func (br *Bridge) hostOperator() Operator {
+	if br.host.Operator == nil {
 		return noOperator{}
 	}
-	return host.Operator
+	return br.host.Operator
 }
-
-var (
-	networkMu   sync.Mutex
-	networkName string
-)
 
 // currentNetwork is "mainnet", "testnet" or "simnet", as the node says. Only
 // an answer is kept; a failed lookup is asked again next time.
-func currentNetwork(ctx context.Context) (string, error) {
-	networkMu.Lock()
-	defer networkMu.Unlock()
-	if networkName != "" {
-		return networkName, nil
+func (br *Bridge) currentNetwork(ctx context.Context) (string, error) {
+	br.networkMu.Lock()
+	defer br.networkMu.Unlock()
+	if br.networkName != "" {
+		return br.networkName, nil
 	}
-	node := hostNode()
+	node := br.hostNode()
 	if node == nil {
 		return "", ErrGamingChainUnavailable
 	}
@@ -203,20 +188,20 @@ func currentNetwork(ctx context.Context) (string, error) {
 	chain := strings.ToLower(strings.TrimSpace(info.Chain))
 	switch {
 	case strings.Contains(chain, "main"):
-		networkName = "mainnet"
+		br.networkName = "mainnet"
 	case strings.Contains(chain, "test"):
-		networkName = "testnet"
+		br.networkName = "testnet"
 	case strings.Contains(chain, "sim"):
-		networkName = "simnet"
+		br.networkName = "simnet"
 	default:
-		networkName = chain
+		br.networkName = chain
 	}
-	return networkName, nil
+	return br.networkName, nil
 }
 
 // chainParams is the connected network's consensus parameters.
-func chainParams(ctx context.Context) (*chaincfg.Params, error) {
-	net, err := currentNetwork(ctx)
+func (br *Bridge) chainParams(ctx context.Context) (*chaincfg.Params, error) {
+	net, err := br.currentNetwork(ctx)
 	if err != nil {
 		return nil, err
 	}

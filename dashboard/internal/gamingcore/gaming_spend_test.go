@@ -39,38 +39,23 @@ func withPokerPolicy(s GamingSettings, edit func(*GamePolicy)) GamingSettings {
 	return s
 }
 
-func spendSeams(t *testing.T) {
+func spendSeams(t *testing.T, br *Bridge) {
 	t.Helper()
-	origDir, origAccount := GamingStateDir, spendAccount
-	origConstruct, origSign, origPublish := spendConstruct, spendSign, spendPublish
-	origDecode := spendDecodeAddress
-	GamingStateDir = t.TempDir()
-	spendDecodeAddress = func(context.Context, string) error { return nil }
-	spendMu.Lock()
-	spendApproving = map[string]bool{}
-	spendMu.Unlock()
-	t.Cleanup(func() {
-		GamingStateDir, spendAccount = origDir, origAccount
-		spendConstruct, spendSign, spendPublish = origConstruct, origSign, origPublish
-		spendDecodeAddress = origDecode
-		spendMu.Lock()
-		spendApproving = map[string]bool{}
-		spendMu.Unlock()
-	})
+	br.spendDecodeAddress = func(context.Context, string) error { return nil }
 }
 
-func mustReadSpendLog(t *testing.T) spendLog {
+func mustReadSpendLog(t *testing.T, br *Bridge) spendLog {
 	t.Helper()
-	log, err := readSpendLog()
+	log, err := br.readSpendLog()
 	if err != nil {
 		t.Fatalf("read spend log: %v", err)
 	}
 	return log
 }
 
-func seedPendingSpend(t *testing.T, id string, expiresAt int64) {
+func seedPendingSpend(t *testing.T, br *Bridge, id string, expiresAt int64) {
 	t.Helper()
-	if err := writeSpendLog(spendLog{Spends: []GamingSpend{{
+	if err := br.writeSpendLog(spendLog{Spends: []GamingSpend{{
 		ID: id, Game: "poker", Address: "Tsaddr", AmountAtoms: 1_000_000,
 		State: GamingSpendPending, RequestedAt: time.Now().Unix(), ExpiresAt: expiresAt,
 	}}}, time.Now().Unix()); err != nil {
@@ -109,20 +94,21 @@ func TestPolicyRefusesInvalidRequests(t *testing.T) {
 // The retired address-only entry point must remain fail-closed even for a
 // request that is otherwise inside policy. It must not consult the wallet.
 func TestAddressOnlySpendCannotCreateAnApproval(t *testing.T) {
-	spendSeams(t)
-	spendAccount = func(context.Context, string) (uint32, error) {
+	br := newTestBridge(t)
+	spendSeams(t, br)
+	br.spendAccount = func(context.Context, string) (uint32, error) {
 		t.Fatal("an address-only request reached the wallet account")
 		return 0, nil
 	}
-	spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
+	br.spendConstruct = func(context.Context, uint32, string, int64) ([]byte, error) {
 		t.Fatal("an address-only request constructed a transaction")
 		return nil, nil
 	}
-	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+	br.spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
 		t.Fatal("an address-only request reached signing")
 		return nil, nil
 	}
-	spendPublish = func(context.Context, []byte) (string, error) {
+	br.spendPublish = func(context.Context, []byte) (string, error) {
 		t.Fatal("an address-only request reached broadcast")
 		return "", nil
 	}
@@ -131,7 +117,7 @@ func TestAddressOnlySpendCannotCreateAnApproval(t *testing.T) {
 	if !errors.Is(err, ErrGamingSpendRefused) || !strings.Contains(err.Error(), "verified deposit") {
 		t.Fatalf("address-only request returned %v", err)
 	}
-	if _, statErr := os.Stat(gamingSpendLogPath()); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(br.gamingSpendLogPath()); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("a refused request wrote a spend log: %v", statErr)
 	}
 }
@@ -216,67 +202,71 @@ func TestAuthorityApprovalRebuildsExactDashboardRequest(t *testing.T) {
 // A hand-written pending record is not financial authority. Approval must
 // fail before signing or publishing because no immutable deposit backs it.
 func TestUnverifiedPendingSpendCannotBeApproved(t *testing.T) {
-	spendSeams(t)
-	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
+	br := newTestBridge(t)
+	spendSeams(t, br)
+	if _, err := br.WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("store policy: %v", err)
 	}
-	seedPendingSpend(t, "aa11", time.Now().Unix()+300)
-	spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
-	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+	seedPendingSpend(t, br, "aa11", time.Now().Unix()+300)
+	br.spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
+	br.spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
 		t.Fatal("unverified request reached signing")
 		return nil, nil
 	}
-	spendPublish = func(context.Context, []byte) (string, error) {
+	br.spendPublish = func(context.Context, []byte) (string, error) {
 		t.Fatal("unverified request reached broadcast")
 		return "", nil
 	}
 
-	if _, err := ApproveGamingSpend(context.Background(), "aa11", []byte("pass")); err == nil {
+	if _, err := br.ApproveGamingSpend(context.Background(), "aa11", []byte("pass")); err == nil {
 		t.Fatal("unverified request was approved")
 	}
-	if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendPending {
+	if got := mustReadSpendLog(t, br).Spends[0].State; got != GamingSpendPending {
 		t.Fatalf("refused approval changed state to %q", got)
 	}
 }
 
 func TestExpiredRequestCannotBeApproved(t *testing.T) {
-	spendSeams(t)
-	seedPendingSpend(t, "bb22", time.Now().Unix()-1)
-	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+	br := newTestBridge(t)
+	spendSeams(t, br)
+	seedPendingSpend(t, br, "bb22", time.Now().Unix()-1)
+	br.spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
 		t.Fatal("expired request reached signing")
 		return nil, nil
 	}
-	if _, err := ApproveGamingSpend(context.Background(), "bb22", []byte("pass")); !errors.Is(err, ErrGamingSpendNotPending) {
+	if _, err := br.ApproveGamingSpend(context.Background(), "bb22", []byte("pass")); !errors.Is(err, ErrGamingSpendNotPending) {
 		t.Fatalf("expired approval returned %v", err)
 	}
 }
 
 func TestPublishingAndOutcomeTransitionsAreDurable(t *testing.T) {
-	spendSeams(t)
-	seedPendingSpend(t, "cc33", time.Now().Unix()+300)
-	if err := markSpendPublishing("cc33"); err != nil {
+	br := newTestBridge(t)
+	spendSeams(t, br)
+	seedPendingSpend(t, br, "cc33", time.Now().Unix()+300)
+	if err := br.markSpendPublishing("cc33"); err != nil {
 		t.Fatalf("mark publishing: %v", err)
 	}
-	if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendPublishing {
+	if got := mustReadSpendLog(t, br).Spends[0].State; got != GamingSpendPublishing {
 		t.Fatalf("state before broadcast is %q", got)
 	}
-	out, err := recordSpendOutcome(GamingSpend{ID: "cc33"}, GamingSpendApproved, "txid00", "")
+	out, err := br.recordSpendOutcome(GamingSpend{ID: "cc33"}, GamingSpendApproved, "txid00", "")
 	if err != nil || out.State != GamingSpendApproved || out.TxID != "txid00" {
 		t.Fatalf("record outcome: %+v, %v", out, err)
 	}
-	if _, err := recordSpendOutcome(out, GamingSpendApproved, "txid99", ""); err == nil {
+	if _, err := br.recordSpendOutcome(out, GamingSpendApproved, "txid99", ""); err == nil {
 		t.Fatal("decided request was rewritten")
 	}
 }
 
 func TestAmbiguousBroadcastStaysPublishingForReconciliation(t *testing.T) {
-	spendSeams(t)
-	seedPendingSpend(t, "dd44", time.Now().Unix()+300)
-	if err := markSpendPublishing("dd44"); err != nil {
+	br := newTestBridge(t)
+	spendSeams(t, br)
+	seedPendingSpend(t, br, "dd44", time.Now().Unix()+300)
+	if err := br.markSpendPublishing("dd44"); err != nil {
 		t.Fatalf("mark publishing: %v", err)
 	}
 	const warning = "broadcast outcome unknown; bridge will reconcile the recorded transaction"
-	out, err := recordSpendOutcome(GamingSpend{ID: "dd44"}, GamingSpendPublishing, "possible-txid", warning)
+	out, err := br.recordSpendOutcome(GamingSpend{ID: "dd44"}, GamingSpendPublishing, "possible-txid", warning)
 	if err == nil {
 		t.Fatal("ambiguous broadcast reported success")
 	}
@@ -289,18 +279,19 @@ func TestAmbiguousBroadcastStaysPublishingForReconciliation(t *testing.T) {
 }
 
 func TestDenyRefusesPublishingPayment(t *testing.T) {
-	spendSeams(t)
+	br := newTestBridge(t)
+	spendSeams(t, br)
 	now := time.Now().Unix()
-	if err := writeSpendLog(spendLog{Spends: []GamingSpend{{
+	if err := br.writeSpendLog(spendLog{Spends: []GamingSpend{{
 		ID: "ee55", Game: "poker", State: GamingSpendPublishing,
 		RequestedAt: now, ExpiresAt: now + 300,
 	}}}, now); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if _, err := DenyGamingSpend("ee55"); !errors.Is(err, ErrGamingSpendNotPending) {
+	if _, err := br.DenyGamingSpend("ee55"); !errors.Is(err, ErrGamingSpendNotPending) {
 		t.Fatalf("deny returned %v", err)
 	}
-	if got := mustReadSpendLog(t).Spends[0].State; got != GamingSpendPublishing {
+	if got := mustReadSpendLog(t, br).Spends[0].State; got != GamingSpendPublishing {
 		t.Fatalf("deny changed publishing state to %q", got)
 	}
 }
@@ -323,12 +314,13 @@ func TestPublishingCountsAsOutstandingAndStaysOnWirePending(t *testing.T) {
 }
 
 func TestSettingsChangeOnlyRetiresPendingRequests(t *testing.T) {
-	spendSeams(t)
-	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
+	br := newTestBridge(t)
+	spendSeams(t, br)
+	if _, err := br.WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("store policy: %v", err)
 	}
 	now := time.Now().Unix()
-	if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+	if err := br.writeSpendLog(spendLog{Spends: []GamingSpend{
 		{ID: "p", Game: "poker", State: GamingSpendPending, AmountAtoms: 1, ExpiresAt: now + 300},
 		{ID: "b", Game: "poker", State: GamingSpendPublishing, AmountAtoms: 1, ExpiresAt: now + 300},
 	}}, now); err != nil {
@@ -336,10 +328,10 @@ func TestSettingsChangeOnlyRetiresPendingRequests(t *testing.T) {
 	}
 	off := spendPolicy()
 	off.Enabled = false
-	if _, err := WriteGamingSettings(off, true, true); err != nil {
+	if _, err := br.WriteGamingSettings(off, true, true); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	log := mustReadSpendLog(t)
+	log := mustReadSpendLog(t, br)
 	if log.Spends[0].State != GamingSpendExpired || log.Spends[1].State != GamingSpendPublishing {
 		t.Fatalf("settings change produced %+v", log.Spends)
 	}
@@ -361,23 +353,24 @@ func TestAddressMustBelongToActiveNetwork(t *testing.T) {
 }
 
 func TestUnreadableAuditLogRefusesEveryDecision(t *testing.T) {
-	spendSeams(t)
-	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
+	br := newTestBridge(t)
+	spendSeams(t, br)
+	if _, err := br.WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("store policy: %v", err)
 	}
-	if err := os.WriteFile(gamingSpendLogPath(), []byte("{not json"), 0o600); err != nil {
+	if err := os.WriteFile(br.gamingSpendLogPath(), []byte("{not json"), 0o600); err != nil {
 		t.Fatalf("corrupt log: %v", err)
 	}
 	if _, err := RequestGamingSpend(context.Background(), "poker", "Tsaddr", 1, "seat"); err == nil {
 		t.Fatal("legacy request crossed corrupt log")
 	}
-	if _, err := ApproveGamingSpend(context.Background(), "x", []byte("pass")); err == nil {
+	if _, err := br.ApproveGamingSpend(context.Background(), "x", []byte("pass")); err == nil {
 		t.Fatal("approval crossed corrupt log")
 	}
-	if _, err := DenyGamingSpend("x"); err == nil {
+	if _, err := br.DenyGamingSpend("x"); err == nil {
 		t.Fatal("denial crossed corrupt log")
 	}
-	if _, _, err := GamingSpendLedger(); err == nil {
+	if _, _, err := br.GamingSpendLedger(); err == nil {
 		t.Fatal("corrupt log was served as empty history")
 	}
 }
@@ -426,43 +419,45 @@ func TestTableCapCoversStakeAndBondsTogether(t *testing.T) {
 }
 
 func TestApprovalRechecksTheTableCap(t *testing.T) {
-	spendSeams(t)
-	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
+	br := newTestBridge(t)
+	spendSeams(t, br)
+	if _, err := br.WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("store policy: %v", err)
 	}
 	now := time.Now().Unix()
-	if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+	if err := br.writeSpendLog(spendLog{Spends: []GamingSpend{
 		{ID: "dd44", Game: "poker", TableID: "t9", Address: "Tsaddr", AmountAtoms: 40_000_000, State: GamingSpendApproved, DecidedAt: now - 60},
 		{ID: "ee55", Game: "poker", TableID: "t9", Address: "Tsaddr", AmountAtoms: 70_000_000, State: GamingSpendPending, RequestedAt: now, ExpiresAt: now + 300},
 	}}, now); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
-	spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
+	br.spendAccount = func(context.Context, string) (uint32, error) { return 1, nil }
+	br.spendSign = func(context.Context, uint32, []byte, []byte) ([]byte, error) {
 		t.Fatal("a request past its table cap reached signing")
 		return nil, nil
 	}
-	if _, err := ApproveGamingSpend(context.Background(), "ee55", []byte("pass")); !errors.Is(err, ErrGamingSpendOverCap) {
+	if _, err := br.ApproveGamingSpend(context.Background(), "ee55", []byte("pass")); !errors.Is(err, ErrGamingSpendOverCap) {
 		t.Fatalf("approval past the table cap returned %v", err)
 	}
-	if got := mustReadSpendLog(t).Spends[1].State; got != GamingSpendPending {
+	if got := mustReadSpendLog(t, br).Spends[1].State; got != GamingSpendPending {
 		t.Fatalf("refused approval changed state to %q", got)
 	}
 }
 
 func TestDepositRegistrationChecksTheTableCap(t *testing.T) {
-	spendSeams(t)
+	br := newTestBridge(t)
+	spendSeams(t, br)
 	now := time.Now().Unix()
-	if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+	if err := br.writeSpendLog(spendLog{Spends: []GamingSpend{
 		{ID: "ff66", Game: "poker", TableID: "t4", AmountAtoms: 95_000_000, State: GamingSpendApproved, DecidedAt: now - 60},
 	}}, now); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	p := spendPolicy().Policies["poker"]
-	if err := checkGamingTableCap(p, "poker", "t4", 5_000_001); !errors.Is(err, ErrGamingSpendOverCap) {
+	if err := br.checkGamingTableCap(p, "poker", "t4", 5_000_001); !errors.Is(err, ErrGamingSpendOverCap) {
 		t.Fatalf("bond past the table cap returned %v", err)
 	}
-	if err := checkGamingTableCap(p, "poker", "t4", 5_000_000); err != nil {
+	if err := br.checkGamingTableCap(p, "poker", "t4", 5_000_000); err != nil {
 		t.Fatalf("bond inside the table cap refused: %v", err)
 	}
 }

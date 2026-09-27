@@ -19,6 +19,7 @@ import (
 // Its approvals are real, and every payout they approve is signed and then
 // never broadcast.
 func TestTheBridgeCannotBeTurnedOnWithoutAHumanGate(t *testing.T) {
+	br := newTestBridge(t)
 	bound := func() GamingSettings {
 		return GamingSettings{Enabled: true}
 	}
@@ -74,7 +75,7 @@ func TestTheBridgeCannotBeTurnedOnWithoutAHumanGate(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := normalizeGamingSettings(tc.in, GamingSettings{}, tc.appPass, tc.txIndex)
+			out, err := br.normalizeGamingSettings(tc.in, GamingSettings{}, tc.appPass, tc.txIndex)
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("got %v, want %v", err, tc.wantErr)
@@ -97,7 +98,8 @@ func TestTheBridgeCannotBeTurnedOnWithoutAHumanGate(t *testing.T) {
 // The refusal has to say what to do about it, or the bridge simply appears not
 // to switch on.
 func TestTheRefusalNamesTheAppPassword(t *testing.T) {
-	_, err := normalizeGamingSettings(
+	br := newTestBridge(t)
+	_, err := br.normalizeGamingSettings(
 		GamingSettings{Enabled: true}, GamingSettings{}, false, true)
 	if err == nil {
 		t.Fatal("enabling without the gate was allowed")
@@ -110,7 +112,8 @@ func TestTheRefusalNamesTheAppPassword(t *testing.T) {
 // Same rule for the index. "Turn on txindex" is a one-line config change and a
 // restart, but only for an operator who is told that is what is wanted.
 func TestTheRefusalNamesTheTransactionIndex(t *testing.T) {
-	_, err := normalizeGamingSettings(
+	br := newTestBridge(t)
+	_, err := br.normalizeGamingSettings(
 		GamingSettings{Enabled: true}, GamingSettings{}, true, false)
 	if err == nil {
 		t.Fatal("enabling over a node with no index was allowed")
@@ -126,13 +129,14 @@ func TestTheRefusalNamesTheTransactionIndex(t *testing.T) {
 
 // A refused enable must not reach the file, whichever precondition refused it.
 func TestAnEnableRefusedForTheIndexIsNotStored(t *testing.T) {
-	spendSeams(t)
+	br := newTestBridge(t)
+	spendSeams(t, br)
 
-	if _, err := WriteGamingSettings(
+	if _, err := br.WriteGamingSettings(
 		GamingSettings{Enabled: true}, true, false); !errors.Is(err, ErrGamingNeedsTxIndex) {
 		t.Fatalf("got %v, want a refusal", err)
 	}
-	if ReadGamingSettings().Enabled {
+	if br.ReadGamingSettings().Enabled {
 		t.Fatal("an enable refused for the index was stored anyway")
 	}
 }
@@ -140,21 +144,22 @@ func TestAnEnableRefusedForTheIndexIsNotStored(t *testing.T) {
 // The stored policy is what a later read gets, so a refused enable must not
 // reach the file at all.
 func TestARefusedEnableIsNotStored(t *testing.T) {
-	spendSeams(t)
+	br := newTestBridge(t)
+	spendSeams(t, br)
 
-	if _, err := WriteGamingSettings(
+	if _, err := br.WriteGamingSettings(
 		GamingSettings{Enabled: true}, false, true); !errors.Is(err, ErrGamingNeedsAppPassword) {
 		t.Fatalf("got %v, want a refusal", err)
 	}
-	if ReadGamingSettings().Enabled {
+	if br.ReadGamingSettings().Enabled {
 		t.Fatal("a refused enable was stored anyway")
 	}
 
-	if _, err := WriteGamingSettings(
+	if _, err := br.WriteGamingSettings(
 		GamingSettings{Enabled: true}, true, true); err != nil {
 		t.Fatalf("enabling behind the gate: %v", err)
 	}
-	if !ReadGamingSettings().Enabled {
+	if !br.ReadGamingSettings().Enabled {
 		t.Fatal("an allowed enable was not stored")
 	}
 }

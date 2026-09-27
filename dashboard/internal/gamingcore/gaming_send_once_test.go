@@ -15,11 +15,10 @@ import (
 
 // withGCSend replaces the group-chat send with one that answers from errs in
 // turn (nil once they run out) and counts every call.
-func withGCSend(t *testing.T, errs ...error) *int {
+func withGCSend(t *testing.T, br *Bridge, errs ...error) *int {
 	t.Helper()
 	calls := 0
-	old := gamingGCSend
-	gamingGCSend = func(context.Context, [32]byte, string) error {
+	br.gamingGCSend = func(context.Context, [32]byte, string) error {
 		calls++
 		if len(errs) == 0 {
 			return nil
@@ -28,7 +27,6 @@ func withGCSend(t *testing.T, errs ...error) *int {
 		errs = errs[1:]
 		return err
 	}
-	t.Cleanup(func() { gamingGCSend = old })
 	return &calls
 }
 
@@ -41,11 +39,11 @@ func testParsedFrame(t *testing.T) gamingFrame {
 	return parsed
 }
 
-func freshOutboxLoad() { gamingOutbox.claims = nil }
+func freshOutboxLoad(br *Bridge) { br.gamingOutbox.claims = nil }
 
-func sendState(t *testing.T, parsed gamingFrame) string {
+func sendState(t *testing.T, br *Bridge, parsed gamingFrame) string {
 	t.Helper()
-	state, err := gamingFrameSendState("poker", pruneGCA, parsed, testFrame)
+	state, err := br.gamingFrameSendState("poker", pruneGCA, parsed, testFrame)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,71 +51,71 @@ func sendState(t *testing.T, parsed gamingFrame) string {
 }
 
 func TestSendOnceRetriesOnlyARefusedSend(t *testing.T) {
-	withGamingWireDir(t)
+	br := newTestBridge(t)
 	parsed := testParsedFrame(t)
-	calls := withGCSend(t, fmt.Errorf("%w: BR client not yet running", ErrNotSent))
+	calls := withGCSend(t, br, fmt.Errorf("%w: BR client not yet running", ErrNotSent))
 
-	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err == nil {
+	if err := br.sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err == nil {
 		t.Fatal("refused send reported success")
 	}
-	if got := sendState(t, parsed); got != "released" {
+	if got := sendState(t, br, parsed); got != "released" {
 		t.Fatalf("state after refusal = %q", got)
 	}
-	freshOutboxLoad()
-	if got := sendState(t, parsed); got != "released" {
+	freshOutboxLoad(br)
+	if got := sendState(t, br, parsed); got != "released" {
 		t.Fatalf("state after reload = %q", got)
 	}
-	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
+	if err := br.sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
 		t.Fatal(err)
 	}
-	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
+	if err := br.sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
 		t.Fatal(err)
 	}
-	freshOutboxLoad()
-	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
+	freshOutboxLoad(br)
+	if err := br.sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
 		t.Fatal(err)
 	}
-	if *calls != 2 || sendState(t, parsed) != "sent" {
-		t.Fatalf("calls = %d, state %q", *calls, sendState(t, parsed))
+	if *calls != 2 || sendState(t, br, parsed) != "sent" {
+		t.Fatalf("calls = %d, state %q", *calls, sendState(t, br, parsed))
 	}
 }
 
 func TestSendOnceNeverRepeatsAnUnknownOutcome(t *testing.T) {
-	withGamingWireDir(t)
+	br := newTestBridge(t)
 	parsed := testParsedFrame(t)
-	calls := withGCSend(t, errors.New("brclientd /gc: context deadline exceeded"))
-	withGCHistory(t, "me")
+	calls := withGCSend(t, br, errors.New("brclientd /gc: context deadline exceeded"))
+	withGCHistory(t, br, "me")
 
-	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err == nil {
+	if err := br.sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err == nil {
 		t.Fatal("lost send reported success")
 	}
-	if got := sendState(t, parsed); got != "claimed" {
+	if got := sendState(t, br, parsed); got != "claimed" {
 		t.Fatalf("state after lost answer = %q", got)
 	}
-	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); !errors.Is(err, errGamingSendUncertain) {
+	if err := br.sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); !errors.Is(err, errGamingSendUncertain) {
 		t.Fatalf("second attempt = %v", err)
 	}
 	// BR's own log of the send settles it, still without sending.
-	withGCHistory(t, "me", map[string]any{"message": testFrame, "from": "me"})
-	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
+	withGCHistory(t, br, "me", map[string]any{"message": testFrame, "from": "me"})
+	if err := br.sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
 		t.Fatal(err)
 	}
-	if *calls != 1 || sendState(t, parsed) != "sent" {
-		t.Fatalf("calls = %d, state %q", *calls, sendState(t, parsed))
+	if *calls != 1 || sendState(t, br, parsed) != "sent" {
+		t.Fatalf("calls = %d, state %q", *calls, sendState(t, br, parsed))
 	}
 }
 
 func TestOutboxRejectsReleaseAfterSent(t *testing.T) {
-	withGamingWireDir(t)
+	br := newTestBridge(t)
 	parsed := testParsedFrame(t)
-	withGCSend(t)
-	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
+	withGCSend(t, br)
+	if err := br.sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err != nil {
 		t.Fatal(err)
 	}
-	if err := releaseGamingFrameClaim("poker", pruneGCA, parsed, testFrame); err == nil {
+	if err := br.releaseGamingFrameClaim("poker", pruneGCA, parsed, testFrame); err == nil {
 		t.Fatal("released a sent message")
 	}
-	path := filepath.Join(GamingStateDir, gamingOutboxFile)
+	path := filepath.Join(br.dataDir, gamingOutboxFile)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -127,15 +125,15 @@ func TestOutboxRejectsReleaseAfterSent(t *testing.T) {
 	if err := os.WriteFile(path, []byte(string(raw)+released+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	freshOutboxLoad()
-	if _, err := gamingFrameSendState("poker", pruneGCA, parsed, testFrame); err == nil {
+	freshOutboxLoad(br)
+	if _, err := br.gamingFrameSendState("poker", pruneGCA, parsed, testFrame); err == nil {
 		t.Fatal("loaded a release after a send")
 	}
 }
 
 // payoutLedger writes a ledger holding one payout that awaits signatures,
 // with ours already stored, and opens it as the bridge does.
-func payoutLedger(t *testing.T, state string) (*gamingfunds.Store, string) {
+func payoutLedger(t *testing.T, br *Bridge, state string) (*gamingfunds.Store, string) {
 	t.Helper()
 	scope := gamingfunds.Scope{Game: "poker", Network: "mainnet", Wallet: "fp"}
 	key, _ := json.Marshal(struct {
@@ -158,23 +156,23 @@ func payoutLedger(t *testing.T, state string) (*gamingfunds.Store, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(GamingStateDir, "financial-authority")
+	dir := filepath.Join(br.dataDir, "financial-authority")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "authority.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return store, id
 }
 
-func payoutView(t *testing.T) GamingPayoutView {
+func payoutView(t *testing.T, br *Bridge) GamingPayoutView {
 	t.Helper()
-	views, err := GamingPayouts(context.Background())
+	views, err := br.GamingPayouts(context.Background())
 	if err != nil || len(views) != 1 {
 		t.Fatalf("payouts = %+v, %v", views, err)
 	}
@@ -182,25 +180,25 @@ func payoutView(t *testing.T) GamingPayoutView {
 }
 
 func TestPayoutSignaturesSendOnlyWhatBRNeverTook(t *testing.T) {
-	withGamingWireDir(t)
-	_, id := payoutLedger(t, "awaiting_signatures")
-	if got := payoutView(t).SignaturesSent; got != "unsent" {
+	br := newTestBridge(t)
+	_, id := payoutLedger(t, br, "awaiting_signatures")
+	if got := payoutView(t, br).SignaturesSent; got != "unsent" {
 		t.Fatalf("before any send = %q", got)
 	}
-	calls := withGCSend(t, fmt.Errorf("%w: send: offline", ErrNotSent))
-	if _, err := SendGamingPayoutSignatures(context.Background(), id); err == nil {
+	calls := withGCSend(t, br, fmt.Errorf("%w: send: offline", ErrNotSent))
+	if _, err := br.SendGamingPayoutSignatures(context.Background(), id); err == nil {
 		t.Fatal("refused send reported success")
 	}
-	if got := payoutView(t).SignaturesSent; got != "unsent" {
+	if got := payoutView(t, br).SignaturesSent; got != "unsent" {
 		t.Fatalf("after refusal = %q", got)
 	}
-	if _, err := SendGamingPayoutSignatures(context.Background(), id); err != nil {
+	if _, err := br.SendGamingPayoutSignatures(context.Background(), id); err != nil {
 		t.Fatal(err)
 	}
-	if got := payoutView(t).SignaturesSent; got != "sent" {
+	if got := payoutView(t, br).SignaturesSent; got != "sent" {
 		t.Fatalf("after send = %q", got)
 	}
-	if _, err := SendGamingPayoutSignatures(context.Background(), id); err != nil {
+	if _, err := br.SendGamingPayoutSignatures(context.Background(), id); err != nil {
 		t.Fatal(err)
 	}
 	if *calls != 2 {
@@ -209,29 +207,29 @@ func TestPayoutSignaturesSendOnlyWhatBRNeverTook(t *testing.T) {
 }
 
 func TestPayoutSignaturesUncertainIsReported(t *testing.T) {
-	withGamingWireDir(t)
-	_, id := payoutLedger(t, "awaiting_signatures")
-	withGCHistory(t, "me")
-	calls := withGCSend(t, errors.New("brclientd /gc: connection reset"))
-	if _, err := SendGamingPayoutSignatures(context.Background(), id); err == nil {
+	br := newTestBridge(t)
+	_, id := payoutLedger(t, br, "awaiting_signatures")
+	withGCHistory(t, br, "me")
+	calls := withGCSend(t, br, errors.New("brclientd /gc: connection reset"))
+	if _, err := br.SendGamingPayoutSignatures(context.Background(), id); err == nil {
 		t.Fatal("lost send reported success")
 	}
-	if got := payoutView(t).SignaturesSent; got != "uncertain" {
+	if got := payoutView(t, br).SignaturesSent; got != "uncertain" {
 		t.Fatalf("after a lost answer = %q", got)
 	}
-	if _, err := SendGamingPayoutSignatures(context.Background(), id); err == nil || *calls != 1 {
+	if _, err := br.SendGamingPayoutSignatures(context.Background(), id); err == nil || *calls != 1 {
 		t.Fatalf("second press = %v, sends %d", err, *calls)
 	}
 }
 
 func TestPayoutSignaturesNothingOnceAssembled(t *testing.T) {
-	withGamingWireDir(t)
-	_, id := payoutLedger(t, "publishing")
-	calls := withGCSend(t)
-	if got := payoutView(t).SignaturesSent; got != "" {
+	br := newTestBridge(t)
+	_, id := payoutLedger(t, br, "publishing")
+	calls := withGCSend(t, br)
+	if got := payoutView(t, br).SignaturesSent; got != "" {
 		t.Fatalf("assembled payout = %q", got)
 	}
-	if _, err := SendGamingPayoutSignatures(context.Background(), id); err == nil || *calls != 0 {
+	if _, err := br.SendGamingPayoutSignatures(context.Background(), id); err == nil || *calls != 0 {
 		t.Fatalf("send on an assembled payout = %v, sends %d", err, *calls)
 	}
 }

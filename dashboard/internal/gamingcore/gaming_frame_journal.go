@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
@@ -33,25 +32,16 @@ type gamingJournalRecord struct {
 	Mark    bool   `json:"mark,omitempty"`
 }
 
-// gamingFrameJournal is loaded for one directory at a time. A file that does
-// not read cleanly keeps it unloaded, so every call fails until it is repaired.
-var gamingFrameJournal struct {
-	sync.Mutex
-	dir  string
-	next uint64
-	seen map[string]struct{}
-}
-
 func gamingJournalKey(gcid, from, message string) string {
 	return gamingFrameKey(GamingFrameEvent{GCID: gcid, From: from, Frame: message})
 }
 
-func loadGamingJournalLocked() error {
-	j := &gamingFrameJournal
-	if j.seen != nil && j.dir == GamingStateDir {
+func (br *Bridge) loadGamingJournalLocked() error {
+	j := &br.gamingFrameJournal
+	if j.seen != nil && j.dir == br.dataDir {
 		return nil
 	}
-	path := filepath.Join(GamingStateDir, gamingJournalFile)
+	path := filepath.Join(br.dataDir, gamingJournalFile)
 	seen := make(map[string]struct{})
 	var last uint64
 	dropped, err := healTornTail(path)
@@ -73,7 +63,7 @@ func loadGamingJournalLocked() error {
 			return fmt.Errorf("gaming journal %s: %w", path, err)
 		}
 	}
-	j.dir, j.next, j.seen = GamingStateDir, last, seen
+	j.dir, j.next, j.seen = br.dataDir, last, seen
 	return nil
 }
 
@@ -109,11 +99,11 @@ func scanGamingJournal(path string, fn func(gamingJournalRecord)) error {
 
 // appendGamingJournal writes and syncs one received frame. A frame already in
 // the journal is not written again and reports false.
-func appendGamingJournal(gcid, from, message string, ts time.Time) (bool, error) {
-	j := &gamingFrameJournal
+func (br *Bridge) appendGamingJournal(gcid, from, message string, ts time.Time) (bool, error) {
+	j := &br.gamingFrameJournal
 	j.Lock()
 	defer j.Unlock()
-	if err := loadGamingJournalLocked(); err != nil {
+	if err := br.loadGamingJournalLocked(); err != nil {
 		return false, err
 	}
 	key := gamingJournalKey(gcid, from, message)
@@ -128,10 +118,10 @@ func appendGamingJournal(gcid, from, message string, ts time.Time) (bool, error)
 	if len(raw)+1 > gamingWireMaxLine {
 		return false, fmt.Errorf("gaming frame of %d bytes is longer than the journal keeps", len(raw))
 	}
-	if err := os.MkdirAll(GamingStateDir, 0o700); err != nil {
+	if err := os.MkdirAll(br.dataDir, 0o700); err != nil {
 		return false, err
 	}
-	f, err := os.OpenFile(filepath.Join(GamingStateDir, gamingJournalFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(filepath.Join(br.dataDir, gamingJournalFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return false, err
 	}
@@ -151,15 +141,15 @@ func appendGamingJournal(gcid, from, message string, ts time.Time) (bool, error)
 }
 
 // gamingJournalHistory returns one group's frames, oldest first.
-func gamingJournalHistory(gcid string) ([]gamingJournalRecord, error) {
-	j := &gamingFrameJournal
+func (br *Bridge) gamingJournalHistory(gcid string) ([]gamingJournalRecord, error) {
+	j := &br.gamingFrameJournal
 	j.Lock()
 	defer j.Unlock()
-	if err := loadGamingJournalLocked(); err != nil {
+	if err := br.loadGamingJournalLocked(); err != nil {
 		return nil, err
 	}
 	var out []gamingJournalRecord
-	err := scanGamingJournal(filepath.Join(GamingStateDir, gamingJournalFile), func(rec gamingJournalRecord) {
+	err := scanGamingJournal(filepath.Join(br.dataDir, gamingJournalFile), func(rec gamingJournalRecord) {
 		if !rec.Mark && rec.GCID == gcid {
 			out = append(out, rec)
 		}
@@ -169,18 +159,18 @@ func gamingJournalHistory(gcid string) ([]gamingJournalRecord, error) {
 
 // pruneGamingJournal removes one group's frames. The rewrite keeps a mark
 // with the highest seq issued, so seq never repeats after a restart.
-func pruneGamingJournal(gcid string) (int, error) {
-	j := &gamingFrameJournal
+func (br *Bridge) pruneGamingJournal(gcid string) (int, error) {
+	j := &br.gamingFrameJournal
 	j.Lock()
 	defer j.Unlock()
-	if err := loadGamingJournalLocked(); err != nil {
+	if err := br.loadGamingJournalLocked(); err != nil {
 		return 0, err
 	}
 	var buf bytes.Buffer
 	var last uint64
 	removed := 0
 	kept := make(map[string]struct{})
-	err := scanGamingJournal(filepath.Join(GamingStateDir, gamingJournalFile), func(rec gamingJournalRecord) {
+	err := scanGamingJournal(filepath.Join(br.dataDir, gamingJournalFile), func(rec gamingJournalRecord) {
 		if rec.Mark {
 			return
 		}
@@ -205,7 +195,7 @@ func pruneGamingJournal(gcid string) (int, error) {
 		buf.Write(raw)
 		buf.WriteByte('\n')
 	}
-	if err := atomicWriteJSON(filepath.Join(GamingStateDir, gamingJournalFile), buf.Bytes()); err != nil {
+	if err := atomicWriteJSON(filepath.Join(br.dataDir, gamingJournalFile), buf.Bytes()); err != nil {
 		return 0, err
 	}
 	j.seen = kept

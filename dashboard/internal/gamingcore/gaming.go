@@ -13,7 +13,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 )
 
 const (
@@ -156,27 +155,21 @@ func carryGameCredentials(prev map[string]GameCredential, registered []string) m
 	return out
 }
 
-// GamingStateDir is where the gaming section keeps its files: the policy saying
-// which account games may spend from and under what caps, the log of every
-// spend one has asked for, and the ledger. Configure sets it; the bridge's own
-// tests point it at a directory they may write.
-var GamingStateDir string
-
 // gamingSettingsPath is the policy file. Moving it is not a rename: it holds
 // the identity registered for each game, so a bridge that looks somewhere new
 // finds no registrations and every game it knew becomes a stranger.
-func gamingSettingsPath() string { return filepath.Join(GamingStateDir, "gaming.json") }
+func (br *Bridge) gamingSettingsPath() string { return filepath.Join(br.dataDir, "gaming.json") }
 
 // gamingSpendLogPath is the audit trail a person reads, and the record the
 // daily cap is counted from.
-func gamingSpendLogPath() string { return filepath.Join(GamingStateDir, "gaming-spends.json") }
+func (br *Bridge) gamingSpendLogPath() string { return filepath.Join(br.dataDir, "gaming-spends.json") }
 
 // ReadGamingSettings returns the stored gaming policy, falling back to the
 // disabled default when the file is absent or unreadable. Read failures are
 // deliberately not surfaced as an enabled policy.
-func ReadGamingSettings() GamingSettings {
+func (br *Bridge) ReadGamingSettings() GamingSettings {
 	s := DefaultGamingSettings()
-	data, err := os.ReadFile(gamingSettingsPath())
+	data, err := os.ReadFile(br.gamingSettingsPath())
 	if err != nil {
 		return s
 	}
@@ -226,7 +219,7 @@ var ErrGamingReservedAccount = errors.New(
 // It refuses rather than quietly switching the bridge off: an operator who
 // asked for it and got nothing, with no reason given, would go looking for a
 // bug in the wrong place.
-func normalizeGamingSettings(in, cur GamingSettings, appPasswordActive, txIndexActive bool) (GamingSettings, error) {
+func (br *Bridge) normalizeGamingSettings(in, cur GamingSettings, appPasswordActive, txIndexActive bool) (GamingSettings, error) {
 	if in.Enabled && !appPasswordActive {
 		return GamingSettings{}, ErrGamingNeedsAppPassword
 	}
@@ -248,7 +241,7 @@ func normalizeGamingSettings(in, cur GamingSettings, appPasswordActive, txIndexA
 	// The selector does not offer these, so reaching here means the request did
 	// not come from it.
 	for id, p := range out.Policies {
-		if hostWallet().ReservedAccount(p.Account) {
+		if br.hostWallet().ReservedAccount(p.Account) {
 			return GamingSettings{}, fmt.Errorf("%w: %q asked for %q",
 				ErrGamingReservedAccount, id, p.Account)
 		}
@@ -272,16 +265,16 @@ func normalizeGamingSettings(in, cur GamingSettings, appPasswordActive, txIndexA
 // appPasswordActive and txIndexActive are passed in by the caller. That keeps
 // this package from depending on auth for a boolean, and keeps dcrd's getinfo
 // off the path that holds gamingSettingsMu.
-func WriteGamingSettings(in GamingSettings, appPasswordActive, txIndexActive bool) (GamingSettings, error) {
-	gamingSettingsMu.Lock()
-	defer gamingSettingsMu.Unlock()
+func (br *Bridge) WriteGamingSettings(in GamingSettings, appPasswordActive, txIndexActive bool) (GamingSettings, error) {
+	br.gamingSettingsMu.Lock()
+	defer br.gamingSettingsMu.Unlock()
 
-	cur := ReadGamingSettings()
-	out, err := normalizeGamingSettings(in, cur, appPasswordActive, txIndexActive)
+	cur := br.ReadGamingSettings()
+	out, err := br.normalizeGamingSettings(in, cur, appPasswordActive, txIndexActive)
 	if err != nil {
 		return GamingSettings{}, err
 	}
-	if err := writeGamingSettingsLocked(out); err != nil {
+	if err := br.writeGamingSettingsLocked(out); err != nil {
 		return out, err
 	}
 
@@ -298,44 +291,36 @@ func WriteGamingSettings(in GamingSettings, appPasswordActive, txIndexActive boo
 	for _, g := range cur.RegisteredGames {
 		if !still[g] {
 			dropped[g] = true
-			gamingAllow.Revoke(g)
+			br.gamingAllow.Revoke(g)
 		}
 	}
 	switch {
 	case cur.Enabled && !out.Enabled:
-		if err := invalidatePendingSpends(func(string) bool { return true }, spendInvalidatedText); err != nil {
+		if err := br.invalidatePendingSpends(func(string) bool { return true }, spendInvalidatedText); err != nil {
 			gameLog.Warnf("retire pending spend requests: %v", err)
 		}
 	case len(dropped) > 0:
-		if err := invalidatePendingSpends(func(g string) bool { return dropped[g] }, spendInvalidatedText); err != nil {
+		if err := br.invalidatePendingSpends(func(g string) bool { return dropped[g] }, spendInvalidatedText); err != nil {
 			gameLog.Warnf("retire pending spend requests: %v", err)
 		}
 	}
 	return out, nil
 }
 
-// gamingSettingsMu serialises the read-modify-write of gaming.json.
-//
-// There are two writers now: saving the section, and issuing or revoking a
-// credential. Both read the whole file, change part of it and write it back, so
-// without this one could land between the other's read and write and lose a
-// registration or a credential.
-var gamingSettingsMu sync.Mutex
-
 // writeGamingSettingsLocked persists settings that have already been normalized.
-func writeGamingSettingsLocked(out GamingSettings) error {
-	if err := os.MkdirAll(GamingStateDir, 0o700); err != nil {
+func (br *Bridge) writeGamingSettingsLocked(out GamingSettings) error {
+	if err := os.MkdirAll(br.dataDir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := gamingSettingsPath() + ".tmp"
+	tmp := br.gamingSettingsPath() + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, gamingSettingsPath())
+	return os.Rename(tmp, br.gamingSettingsPath())
 }
 
 // GamingGames reports every game the operator registered, with the name they
@@ -349,15 +334,15 @@ func writeGamingSettingsLocked(out GamingSettings) error {
 // machine of the person's choosing, so it can be registered here and simply not
 // running, and reporting it as ready would send a player to a table nothing is
 // listening on.
-func GamingGames() []GamingGame {
-	s := ReadGamingSettings()
+func (br *Bridge) GamingGames() []GamingGame {
+	s := br.ReadGamingSettings()
 	out := make([]GamingGame, 0, len(s.RegisteredGames))
 	for _, id := range s.RegisteredGames {
-		minRefund, bondLock := gamingGameLockTerms(id)
+		minRefund, bondLock := br.gamingGameLockTerms(id)
 		out = append(out, GamingGame{
 			ID:              id,
 			Name:            gamingDisplayName(s, id),
-			Ready:           gamingGameConnected(id),
+			Ready:           br.gamingGameConnected(id),
 			MinRefundBlocks: minRefund,
 			BondLockBlocks:  bondLock,
 		})

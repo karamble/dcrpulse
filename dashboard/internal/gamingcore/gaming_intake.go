@@ -24,19 +24,19 @@ type GroupMessage struct {
 // journaled and then delivered; anything else is ignored. The host
 // acknowledges the message to its source only once this returns nil: an error
 // means the frame is not kept yet and has to come again.
-func ReceiveGroupMessage(m GroupMessage) error {
-	return Gaming().receiveGroupMessage(m)
+func (br *Bridge) ReceiveGroupMessage(m GroupMessage) error {
+	return br.receiveGroupMessage(m)
 }
 
-func (b *GamingBus) receiveGroupMessage(m GroupMessage) error {
+func (br *Bridge) receiveGroupMessage(m GroupMessage) error {
 	if !gamingwire.IsEnvelope(m.Text) {
 		return nil
 	}
 	gcid := hex.EncodeToString(m.GCID[:])
 	from := hex.EncodeToString(m.From[:])
-	if _, err := appendGamingJournal(gcid, from, m.Text, m.Time); err != nil {
+	if _, err := br.appendGamingJournal(gcid, from, m.Text, m.Time); err != nil {
 		return err
 	}
-	b.deliverGamingMessage(gcid, from, m.Text)
+	br.deliverGamingMessage(gcid, from, m.Text)
 	return nil
 }

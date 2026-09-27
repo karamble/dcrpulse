@@ -20,16 +20,16 @@ const statusSID = "8be1b656de75b8d54a12b0ffa4f08ff6"
 
 // writeStatusLedger puts a ledger holding the given tables, settlements and
 // operations where the bridge reads it.
-func writeStatusLedger(t *testing.T, tables, settlements, operations map[string]any) {
+func writeStatusLedger(t *testing.T, br *Bridge, tables, settlements, operations map[string]any) {
 	t.Helper()
 	t.Cleanup(func() {
-		financeStores.Lock()
-		path := filepath.Join(GamingStateDir, "financial-authority")
-		if s := financeStores.stores[path]; s != nil {
+		br.financeStores.Lock()
+		path := filepath.Join(br.dataDir, "financial-authority")
+		if s := br.financeStores.stores[path]; s != nil {
 			s.Close()
-			delete(financeStores.stores, path)
+			delete(br.financeStores.stores, path)
 		}
-		financeStores.Unlock()
+		br.financeStores.Unlock()
 	})
 	raw, err := json.Marshal(map[string]any{
 		"version": gamingfunds.Version, "rosterCommits": map[string]any{}, "peers": map[string]any{}, "keys": map[string]any{},
@@ -39,7 +39,7 @@ func writeStatusLedger(t *testing.T, tables, settlements, operations map[string]
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(GamingStateDir, "financial-authority")
+	dir := filepath.Join(br.dataDir, "financial-authority")
 	if err = os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -49,10 +49,11 @@ func writeStatusLedger(t *testing.T, tables, settlements, operations map[string]
 }
 
 func TestGamingPayoutsCarryTheirChainState(t *testing.T) {
-	spendSeams(t)
+	br := newTestBridge(t)
+	spendSeams(t, br)
 	scope := gamingfunds.Scope{Game: "stakewars", Network: "mainnet", Wallet: "fp"}
 	pending, mined, unsigned := strings.Repeat("8e", 32), strings.Repeat("9f", 32), strings.Repeat("a0", 32)
-	writeStatusLedger(t,
+	writeStatusLedger(t, br,
 		map[string]any{},
 		map[string]any{
 			pending:  map[string]any{"id": pending, "scope": scope, "table": statusSID, "state": "publishing"},
@@ -64,7 +65,7 @@ func TestGamingPayoutsCarryTheirChainState(t *testing.T) {
 			mined:   map[string]any{"id": mined, "scope": scope, "kind": "settlement", "state": "confirmed", "confirmations": 3},
 		})
 
-	views, err := GamingPayouts(context.Background())
+	views, err := br.GamingPayouts(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,14 +15,21 @@ import (
 	"dcrpulse/internal/gamingcore"
 )
 
-// seedSpendFile writes a spend log the way the service persists one, at the
-// path the redirected state directory makes it read from.
+// useTestGamingBridge points the gaming routes at a bridge with no host,
+// keeping its files in dir, for the rest of the test.
+func useTestGamingBridge(t *testing.T, dir string) {
+	t.Helper()
+	prev := gaming
+	gaming = gamingcore.New(dir, gamingcore.Host{})
+	t.Cleanup(func() { gaming = prev })
+}
+
+// seedSpendFile writes a spend log the way the bridge persists one, in the
+// directory of the bridge the routes act on.
 func seedSpendFile(t *testing.T, spends []gamingcore.GamingSpend) {
 	t.Helper()
 	dir := t.TempDir()
-	orig := gamingcore.GamingStateDir
-	gamingcore.GamingStateDir = dir
-	t.Cleanup(func() { gamingcore.GamingStateDir = orig })
+	useTestGamingBridge(t, dir)
 	blob, err := json.Marshal(map[string]any{"spends": spends})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

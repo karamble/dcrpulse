@@ -24,30 +24,17 @@ import (
 // ErrGamingGameNotConnected is a registered game that is not holding a stream.
 var ErrGamingGameNotConnected = gamingbridge.ErrGameNotConnected
 
-// The staged calls creating a table passes through: the height its deadline is
-// set from, and the chat the invitation is posted to. Settable for the same
-// reason as the spend seams - the order they run in is what stops a table being
-// announced that its creator never took a seat at, and a rule only exercisable
-// against a live node is one nobody has exercised. Production sets neither.
-var (
-	tableChainTip  = GamingChainTipNow
-	tableGCMessage = func(ctx context.Context, gcid [32]byte, text string) error {
-		return hostRelay().SendGroupMessage(ctx, gcid, text)
-	}
-	tableAuthorize = authorizeGamingTable
-)
-
 // AcceptGamingInvite hands an invitation to the game that can act on it, and
 // reports the table it joined.
 //
 // Before the game sees the invitation, the bridge validates and durably binds
 // its financial terms to the selected wallet account.  The game is then only
 // told about a table the bridge is prepared to fund and recover independently.
-func AcceptGamingInvite(ctx context.Context, game, invite, gcid string) (string, error) {
-	if !gamingGameRegistered(game) {
+func (br *Bridge) AcceptGamingInvite(ctx context.Context, game, invite, gcid string) (string, error) {
+	if !br.gamingGameRegistered(game) {
 		return "", ErrGamingGameNotRegistered
 	}
-	if gamingRequest == nil {
+	if br.gamingRequest == nil {
 		return "", ErrGamingGameNotConnected
 	}
 	// A connected game that never answers would otherwise hold the request
@@ -55,11 +42,11 @@ func AcceptGamingInvite(ctx context.Context, game, invite, gcid string) (string,
 	ctx, cancel := context.WithTimeout(ctx, gamingJoinTimeout)
 	defer cancel()
 
-	if err := tableAuthorize(ctx, game, invite, gcid); err != nil {
+	if err := br.tableAuthorize(ctx, game, invite, gcid); err != nil {
 		return "", err
 	}
 
-	reply, err := gamingRequest(ctx, game, &gamingpb.BridgeRequest{
+	reply, err := br.gamingRequest(ctx, game, &gamingpb.BridgeRequest{
 		Req: &gamingpb.BridgeRequest_AcceptInvite{
 			AcceptInvite: &gamingpb.AcceptInvite{Invite: invite, Gcid: gcid},
 		},
@@ -152,7 +139,7 @@ func gamingInviteLink(game, sid string, buyinAtoms uint64, seats, csvBlocks, unt
 // The seat is taken before the invitation is sent. A join that fails leaves an
 // invitation nobody is at; a send that fails leaves a table only this player
 // knows about, which nobody can join and which expires on its own.
-func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64, seats, openBlocks uint32, funds GamingTableFunds) (GamingTable, error) {
+func (br *Bridge) CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64, seats, openBlocks uint32, funds GamingTableFunds) (GamingTable, error) {
 	// Before anything with an effect: a seat taken for a table whose invitation
 	// can never be posted is worse than a refused request.
 	gc, err := parseGamingGCID(gcid)
@@ -173,7 +160,7 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	if buyinAtoms == 0 {
 		return GamingTable{}, fmt.Errorf("a table needs a buy-in")
 	}
-	p, registered := ReadGamingSettings().Policies[game]
+	p, registered := br.ReadGamingSettings().Policies[game]
 	if !registered {
 		return GamingTable{}, ErrGamingGameNotRegistered
 	}
@@ -188,13 +175,13 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	if buyinAtoms > uint64(finance.MaxAtoms)/uint64(seats) {
 		return GamingTable{}, fmt.Errorf("table pot exceeds monetary bound")
 	}
-	minRefund, _ := gamingGameLockTerms(game)
+	minRefund, _ := br.gamingGameLockTerms(game)
 	if funds.RefundBlocks < minRefund {
 		return GamingTable{}, fmt.Errorf("game requires at least %d refund blocks", minRefund)
 	}
 	csvBlocks := funds.RefundBlocks
 
-	tip, err := tableChainTip(ctx)
+	tip, err := br.tableChainTip(ctx)
 	if err != nil {
 		// Without a height there is no deadline every peer can check, and
 		// a table cannot be formed by guessing.
@@ -220,7 +207,7 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	u.RawQuery = q.Encode()
 	invite = u.String()
 
-	if _, err := AcceptGamingInvite(ctx, game, invite, gcid); err != nil {
+	if _, err := br.AcceptGamingInvite(ctx, game, invite, gcid); err != nil {
 		return GamingTable{}, err
 	}
 
@@ -229,7 +216,7 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	msg := fmt.Sprintf("Table for %d at %s DCR a seat. Registration closes at block %d.\n%s",
 		seats, gamingAtomsText(buyinAtoms), until, invite)
 	table := GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid}
-	if err := tableGCMessage(ctx, gc, msg); err != nil {
+	if err := br.tableGCMessage(ctx, gc, msg); err != nil {
 		return table, fmt.Errorf("you are seated, but the invitation could not be sent: %w", err)
 	}
 	return table, nil

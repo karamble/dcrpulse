@@ -54,13 +54,13 @@ func gamingPayoutRank(state string) int {
 
 // ReadGamingTableStatus reports one table of one game. A table this bridge
 // never accepted comes back with Accepted false and nothing else.
-func ReadGamingTableStatus(game, sid string) (GamingTableStatus, error) {
+func (br *Bridge) ReadGamingTableStatus(game, sid string) (GamingTableStatus, error) {
 	var out GamingTableStatus
 	// Only an existing ledger is read; opening one would create it.
-	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(br.dataDir, "financial-authority", "authority.json")); err != nil {
 		return out, nil
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return out, err
 	}
@@ -78,7 +78,7 @@ func ReadGamingTableStatus(game, sid string) (GamingTableStatus, error) {
 		return out, nil
 	}
 
-	spends, _, err := GamingSpendLedger()
+	spends, _, err := br.GamingSpendLedger()
 	if err != nil {
 		return out, err
 	}

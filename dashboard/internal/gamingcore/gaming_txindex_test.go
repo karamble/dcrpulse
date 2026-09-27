@@ -18,7 +18,7 @@ import (
 
 // fakeDcrd answers getinfo with whatever the caller currently wants, so a test
 // can change the node's mind between calls the way restarting dcrd does.
-func fakeDcrd(t *testing.T, txIndex *atomic.Bool) {
+func fakeDcrd(t *testing.T, br *Bridge, txIndex *atomic.Bool) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -51,9 +51,8 @@ func fakeDcrd(t *testing.T, txIndex *atomic.Bool) {
 	if err != nil {
 		t.Fatalf("test rpc client: %v", err)
 	}
-	prev := host
-	host.Node = func() Chain { return client }
-	t.Cleanup(func() { host = prev; client.Shutdown() })
+	br.host.Node = func() Chain { return client }
+	t.Cleanup(client.Shutdown)
 }
 
 // The operator's fix is to set txindex=1 and restart dcrd, and dcrpulse keeps
@@ -61,23 +60,24 @@ func fakeDcrd(t *testing.T, txIndex *atomic.Bool) {
 // already done, which is a worse failure than the one the gate prevents - and
 // an invisible one, since nothing about a stale "no" looks wrong.
 func TestTheIndexIsReadFromTheNodeEveryTime(t *testing.T) {
+	br := newTestBridge(t)
 	var txIndex atomic.Bool
-	fakeDcrd(t, &txIndex)
+	fakeDcrd(t, br, &txIndex)
 	ctx := context.Background()
 
-	if TxIndexActive(ctx) {
+	if br.TxIndexActive(ctx) {
 		t.Fatal("a node with no index read as having one")
 	}
 
 	// dcrd restarted with txindex=1. dcrpulse did not.
 	txIndex.Store(true)
-	if !TxIndexActive(ctx) {
+	if !br.TxIndexActive(ctx) {
 		t.Fatal("the index stayed cached off after the node was fixed, so the bridge would never switch on")
 	}
 
 	// And back, so an index that goes away is noticed too.
 	txIndex.Store(false)
-	if TxIndexActive(ctx) {
+	if br.TxIndexActive(ctx) {
 		t.Fatal("the index stayed cached on after the node lost it")
 	}
 }
@@ -86,14 +86,12 @@ func TestTheIndexIsReadFromTheNodeEveryTime(t *testing.T) {
 // recoverable and says what to do; enabling on a guess parks the first payout
 // at publishing with nothing to read.
 func TestAnUnreachableNodeReadsAsNoIndex(t *testing.T) {
-	prev := host
-	host.Node = nil
-	t.Cleanup(func() { host = prev })
+	br := newTestBridge(t)
 
-	if _, err := DcrdHasTxIndex(context.Background()); err == nil {
+	if _, err := br.DcrdHasTxIndex(context.Background()); err == nil {
 		t.Fatal("an absent dcrd answered without an error")
 	}
-	if TxIndexActive(context.Background()) {
+	if br.TxIndexActive(context.Background()) {
 		t.Fatal("an absent dcrd was taken as having the index")
 	}
 }

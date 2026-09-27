@@ -61,14 +61,12 @@ func TestCreatingMintsTheAdvertisedRefundLock(t *testing.T) {
 		{"game advertising nothing keeps the default", 0, "288"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			inviteSeams(t)
-
-			origLocks := gamingLockTerms
-			t.Cleanup(func() { gamingLockTerms = origLocks })
-			gamingLockTerms = func(string) (uint32, uint32) { return c.advertised, 0 }
+			br := newTestBridge(t)
+			inviteSeams(t, br)
+			br.gamingLockTerms = func(string) (uint32, uint32) { return c.advertised, 0 }
 
 			var minted string
-			gamingRequest = func(_ context.Context, _ string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
+			br.gamingRequest = func(_ context.Context, _ string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
 				u, err := url.Parse(req.GetAcceptInvite().GetInvite())
 				if err != nil {
 					t.Fatalf("the minted invite does not parse: %v", err)
@@ -84,7 +82,7 @@ func TestCreatingMintsTheAdvertisedRefundLock(t *testing.T) {
 			if c.advertised > refundBlocks {
 				refundBlocks = c.advertised
 			}
-			if _, err := CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1, GamingTableFunds{RefundBlocks: refundBlocks, AdmissionAtoms: 1000000, AdmissionBlocks: 2016}); err != nil {
+			if _, err := br.CreateGamingTable(t.Context(), "poker", testTableGCID, 10_000_000, 2, 1, GamingTableFunds{RefundBlocks: refundBlocks, AdmissionAtoms: 1000000, AdmissionBlocks: 2016}); err != nil {
 				t.Fatalf("create a table: %v", err)
 			}
 			if minted != c.wantCSV {
@@ -97,6 +95,7 @@ func TestCreatingMintsTheAdvertisedRefundLock(t *testing.T) {
 // A table is 2 to 6 seats and the buy-in is not optional. Refusing here means
 // an unusable invitation is never sent to a group chat.
 func TestCreatingRefusesTermsNobodyCanPlay(t *testing.T) {
+	br := newTestBridge(t)
 	for _, c := range []struct {
 		seats uint32
 		buyin uint64
@@ -108,7 +107,7 @@ func TestCreatingRefusesTermsNobodyCanPlay(t *testing.T) {
 		{2, 0, 1, "no buy-in is no stake"},
 		{2, 10_000_000, gamingMaxOpenBlocks + 1, "an invitation open for over a day is not worth keeping"},
 	} {
-		_, err := CreateGamingTable(t.Context(), "poker", strings.Repeat("ab", 32), c.buyin, c.seats, c.open, GamingTableFunds{RefundBlocks: 288, AdmissionAtoms: 1000000, AdmissionBlocks: 2016})
+		_, err := br.CreateGamingTable(t.Context(), "poker", strings.Repeat("ab", 32), c.buyin, c.seats, c.open, GamingTableFunds{RefundBlocks: 288, AdmissionAtoms: 1000000, AdmissionBlocks: 2016})
 		if err == nil {
 			t.Errorf("%d seats at %d atoms open for %d blocks was accepted, and %s",
 				c.seats, c.buyin, c.open, c.why)

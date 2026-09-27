@@ -14,23 +14,23 @@ import (
 
 // reloadGamingJournal makes the next call read the file again, as a restart
 // would.
-func reloadGamingJournal() {
-	gamingFrameJournal.Lock()
-	gamingFrameJournal.seen = nil
-	gamingFrameJournal.Unlock()
+func reloadGamingJournal(br *Bridge) {
+	br.gamingFrameJournal.Lock()
+	br.gamingFrameJournal.seen = nil
+	br.gamingFrameJournal.Unlock()
 }
 
-func mustJournal(t *testing.T, gcid, from string, n byte, wantFresh bool) {
+func mustJournal(t *testing.T, br *Bridge, gcid, from string, n byte, wantFresh bool) {
 	t.Helper()
-	fresh, err := appendGamingJournal(gcid, from, wireFrame(n), time.Unix(1700000000, 0))
+	fresh, err := br.appendGamingJournal(gcid, from, wireFrame(n), time.Unix(1700000000, 0))
 	if err != nil || fresh != wantFresh {
 		t.Fatalf("journal %s/%d = %v, %v; want fresh %v", gcid, n, fresh, err, wantFresh)
 	}
 }
 
-func journalSeqs(t *testing.T, gcid string) []uint64 {
+func journalSeqs(t *testing.T, br *Bridge, gcid string) []uint64 {
 	t.Helper()
-	recs, err := gamingJournalHistory(gcid)
+	recs, err := br.gamingJournalHistory(gcid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,16 +42,16 @@ func journalSeqs(t *testing.T, gcid string) []uint64 {
 }
 
 func TestGamingJournalKeepsSendersAndSeqAcrossReload(t *testing.T) {
-	withGamingWireDir(t)
-	mustJournal(t, pruneGCA, prunePeer, 1, true)
-	mustJournal(t, pruneGCB, pruneSelf, 2, true)
-	mustJournal(t, pruneGCA, prunePeer, 1, false)
+	br := newTestBridge(t)
+	mustJournal(t, br, pruneGCA, prunePeer, 1, true)
+	mustJournal(t, br, pruneGCB, pruneSelf, 2, true)
+	mustJournal(t, br, pruneGCA, prunePeer, 1, false)
 
-	reloadGamingJournal()
-	mustJournal(t, pruneGCA, prunePeer, 1, false)
-	mustJournal(t, pruneGCA, prunePeer, 3, true)
+	reloadGamingJournal(br)
+	mustJournal(t, br, pruneGCA, prunePeer, 1, false)
+	mustJournal(t, br, pruneGCA, prunePeer, 3, true)
 
-	recs, err := gamingJournalHistory(pruneGCA)
+	recs, err := br.gamingJournalHistory(pruneGCA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,9 +62,9 @@ func TestGamingJournalKeepsSendersAndSeqAcrossReload(t *testing.T) {
 }
 
 func TestGamingJournalDropsTornTail(t *testing.T) {
-	withGamingWireDir(t)
-	mustJournal(t, pruneGCA, prunePeer, 1, true)
-	path := filepath.Join(GamingStateDir, gamingJournalFile)
+	br := newTestBridge(t)
+	mustJournal(t, br, pruneGCA, prunePeer, 1, true)
+	path := filepath.Join(br.dataDir, gamingJournalFile)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -74,9 +74,9 @@ func TestGamingJournalDropsTornTail(t *testing.T) {
 	}
 	f.Close()
 
-	reloadGamingJournal()
-	mustJournal(t, pruneGCA, prunePeer, 2, true)
-	if got := journalSeqs(t, pruneGCA); len(got) != 2 || got[1] != 2 {
+	reloadGamingJournal(br)
+	mustJournal(t, br, pruneGCA, prunePeer, 2, true)
+	if got := journalSeqs(t, br, pruneGCA); len(got) != 2 || got[1] != 2 {
 		t.Fatalf("seqs after torn tail = %v", got)
 	}
 	raw, _ := os.ReadFile(path)
@@ -86,24 +86,24 @@ func TestGamingJournalDropsTornTail(t *testing.T) {
 }
 
 func TestGamingJournalRefusesDamageUntilRepaired(t *testing.T) {
-	withGamingWireDir(t)
-	mustJournal(t, pruneGCA, prunePeer, 1, true)
-	path := filepath.Join(GamingStateDir, gamingJournalFile)
+	br := newTestBridge(t)
+	mustJournal(t, br, pruneGCA, prunePeer, 1, true)
+	path := filepath.Join(br.dataDir, gamingJournalFile)
 	good, _ := os.ReadFile(path)
 	if err := os.WriteFile(path, append([]byte("not json\n"), good...), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	reloadGamingJournal()
-	if _, err := appendGamingJournal(pruneGCA, prunePeer, wireFrame(2), time.Now()); err == nil {
+	reloadGamingJournal(br)
+	if _, err := br.appendGamingJournal(pruneGCA, prunePeer, wireFrame(2), time.Now()); err == nil {
 		t.Fatal("appended to a damaged journal")
 	}
-	if _, err := gamingJournalHistory(pruneGCA); err == nil {
+	if _, err := br.gamingJournalHistory(pruneGCA); err == nil {
 		t.Fatal("read a damaged journal")
 	}
 	if err := os.WriteFile(path, good, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	mustJournal(t, pruneGCA, prunePeer, 2, true)
+	mustJournal(t, br, pruneGCA, prunePeer, 2, true)
 
 	// Records out of order are damage too.
 	ordered, _ := os.ReadFile(path)
@@ -111,38 +111,38 @@ func TestGamingJournalRefusesDamageUntilRepaired(t *testing.T) {
 	if err := os.WriteFile(path, []byte(lines[1]+lines[0]), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	reloadGamingJournal()
-	if _, err := gamingJournalHistory(pruneGCA); err == nil {
+	reloadGamingJournal(br)
+	if _, err := br.gamingJournalHistory(pruneGCA); err == nil {
 		t.Fatal("read a journal whose sequence goes backwards")
 	}
 }
 
 func TestGamingJournalPruneKeepsOthersAndSeq(t *testing.T) {
-	withGamingWireDir(t)
-	mustJournal(t, pruneGCA, prunePeer, 1, true)
-	mustJournal(t, pruneGCB, prunePeer, 2, true)
-	mustJournal(t, pruneGCA, prunePeer, 3, true)
+	br := newTestBridge(t)
+	mustJournal(t, br, pruneGCA, prunePeer, 1, true)
+	mustJournal(t, br, pruneGCB, prunePeer, 2, true)
+	mustJournal(t, br, pruneGCA, prunePeer, 3, true)
 
-	removed, err := pruneGamingJournal(pruneGCA)
+	removed, err := br.pruneGamingJournal(pruneGCA)
 	if err != nil || removed != 2 {
 		t.Fatalf("prune = %d, %v", removed, err)
 	}
-	if removed, err = pruneGamingJournal(pruneGCA); err != nil || removed != 0 {
+	if removed, err = br.pruneGamingJournal(pruneGCA); err != nil || removed != 0 {
 		t.Fatalf("second prune = %d, %v", removed, err)
 	}
-	if got := journalSeqs(t, pruneGCB); len(got) != 1 || got[0] != 2 {
+	if got := journalSeqs(t, br, pruneGCB); len(got) != 1 || got[0] != 2 {
 		t.Fatalf("other group after prune = %v", got)
 	}
 	// A pruned frame is no longer a duplicate, in this run or the next.
-	mustJournal(t, pruneGCA, prunePeer, 1, true)
-	if _, err := pruneGamingJournal(pruneGCA); err != nil {
+	mustJournal(t, br, pruneGCA, prunePeer, 1, true)
+	if _, err := br.pruneGamingJournal(pruneGCA); err != nil {
 		t.Fatal(err)
 	}
 
-	reloadGamingJournal()
-	mustJournal(t, pruneGCA, prunePeer, 1, true)
-	mustJournal(t, pruneGCB, prunePeer, 4, true)
-	if got := journalSeqs(t, pruneGCB); len(got) != 2 || got[1] != 6 {
+	reloadGamingJournal(br)
+	mustJournal(t, br, pruneGCA, prunePeer, 1, true)
+	mustJournal(t, br, pruneGCB, prunePeer, 4, true)
+	if got := journalSeqs(t, br, pruneGCB); len(got) != 2 || got[1] != 6 {
 		t.Fatalf("seq after prune and reload = %v", got)
 	}
 }

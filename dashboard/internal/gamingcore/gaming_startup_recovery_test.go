@@ -5,18 +5,17 @@ import (
 )
 
 func TestRecoverHistoryReadsTablesKnownOnlyFromTheLedger(t *testing.T) {
-	withGamingWireDir(t)
+	br := newTestBridge(t)
 	settings := DefaultGamingSettings()
 	settings.RegisteredGames = []string{"poker"}
-	if err := writeGamingSettingsLocked(settings); err != nil {
+	if err := br.writeGamingSettingsLocked(settings); err != nil {
 		t.Fatal(err)
 	}
-	payoutLedger(t, "awaiting_signatures")
-	mustJournal(t, pruneGCA, prunePeer, 1, true)
-	b := newWireBus()
-	b.RecoverHistory()
-	b.RecoverHistory()
-	got := inboxFrames(t, b, "poker")
+	payoutLedger(t, br, "awaiting_signatures")
+	mustJournal(t, br, pruneGCA, prunePeer, 1, true)
+	br.RecoverHistory()
+	br.RecoverHistory()
+	got := inboxFrames(t, br, "poker")
 	if len(got) != 1 || got[0].GCID != pruneGCA || got[0].From != prunePeer {
 		t.Fatalf("recovered %+v", got)
 	}

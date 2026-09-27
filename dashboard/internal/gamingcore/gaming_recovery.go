@@ -33,15 +33,15 @@ type GamingRecoveryView struct {
 	Archived        bool   `json:"archived"`
 }
 
-func recoveryWalletMatches(ctx context.Context, scope gamingfunds.Scope) error {
-	network, err := currentNetwork(ctx)
+func (br *Bridge) recoveryWalletMatches(ctx context.Context, scope gamingfunds.Scope) error {
+	network, err := br.currentNetwork(ctx)
 	if err != nil {
 		return err
 	}
 	if network != scope.Network {
 		return fmt.Errorf("connect the original network to recover this deposit")
 	}
-	xpub, err := hostWallet().AccountXPub(ctx, scope.Account)
+	xpub, err := br.hostWallet().AccountXPub(ctx, scope.Account)
 	if err != nil {
 		return err
 	}
@@ -51,8 +51,8 @@ func recoveryWalletMatches(ctx context.Context, scope gamingfunds.Scope) error {
 	}
 	return nil
 }
-func recoveryDeposit(id string) (gamingfunds.Deposit, error) {
-	store, err := gamingFundsStore()
+func (br *Bridge) recoveryDeposit(id string) (gamingfunds.Deposit, error) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return gamingfunds.Deposit{}, err
 	}
@@ -70,8 +70,8 @@ func recoveryDeposit(id string) (gamingfunds.Deposit, error) {
 
 // recoveryMempoolInputs maps each outpoint a mempool transaction spends to that
 // transaction's id.
-func recoveryMempoolInputs(ctx context.Context) (map[string]string, error) {
-	node := hostNode()
+func (br *Bridge) recoveryMempoolInputs(ctx context.Context) (map[string]string, error) {
+	node := br.hostNode()
 	if node == nil {
 		return nil, ErrGamingChainUnavailable
 	}
@@ -93,8 +93,8 @@ func recoveryMempoolInputs(ctx context.Context) (map[string]string, error) {
 }
 
 // recoveryRefundTx is the id of the refund journaled for a deposit, if any.
-func recoveryRefundTx(depositID string) string {
-	store, err := gamingFundsStore()
+func (br *Bridge) recoveryRefundTx(depositID string) string {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return ""
 	}
@@ -145,9 +145,9 @@ func pendingReason(spender, refund string) string {
 	}
 }
 
-func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[string]string, poolErr error) GamingRecoveryView {
+func (br *Bridge) recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[string]string, poolErr error) GamingRecoveryView {
 	v := GamingRecoveryView{ID: dep.ID, Game: dep.Scope.Game, Table: dep.Terms.Table, Kind: dep.Terms.Kind, Atoms: dep.Terms.Atoms, Outpoint: dep.Outpoint, LockBlocks: dep.Terms.LockBlocks, Closed: dep.Closed, Archived: dep.Archived, State: "needs_attention"}
-	if err := recoveryWalletMatches(ctx, dep.Scope); err != nil {
+	if err := br.recoveryWalletMatches(ctx, dep.Scope); err != nil {
 		v.Reason = err.Error()
 		return v
 	}
@@ -156,7 +156,7 @@ func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[strin
 		if dep.State == "spent" {
 			v.State = "spent"
 		}
-		v.Reason = spendReason(dep.SpendingTx, recoveryRefundTx(dep.ID), dep.State == "spent")
+		v.Reason = spendReason(dep.SpendingTx, br.recoveryRefundTx(dep.ID), dep.State == "spent")
 		return v
 	}
 	if dep.Outpoint == "" {
@@ -170,7 +170,7 @@ func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[strin
 		v.Reason = "Invalid recorded output"
 		return v
 	}
-	out, err := GamingChainOutpoint(ctx, tx, uint32(n), true)
+	out, err := br.GamingChainOutpoint(ctx, tx, uint32(n), true)
 	if err != nil {
 		v.Reason = err.Error()
 		return v
@@ -189,7 +189,7 @@ func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[strin
 	}
 	if spender := spends[dep.Outpoint]; spender != "" || dep.State == "recovery_pending" {
 		v.State = "recovery_pending"
-		v.Reason = pendingReason(spender, recoveryRefundTx(dep.ID))
+		v.Reason = pendingReason(spender, br.recoveryRefundTx(dep.ID))
 		return v
 	}
 	v.Confirmations = out.Confirmations
@@ -203,12 +203,12 @@ func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[strin
 		v.Reason = "Close the table locally before recovering funds"
 		return v
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		v.Reason = err.Error()
 		return v
 	}
-	params, err := chainParams(ctx)
+	params, err := br.chainParams(ctx)
 	if err != nil {
 		v.Reason = err.Error()
 		return v
@@ -221,8 +221,8 @@ func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[strin
 	v.CanRecover = true
 	return v
 }
-func GamingRecoveryList(ctx context.Context) ([]GamingRecoveryView, error) {
-	store, err := gamingFundsStore()
+func (br *Bridge) GamingRecoveryList(ctx context.Context) ([]GamingRecoveryView, error) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -230,59 +230,59 @@ func GamingRecoveryList(ctx context.Context) ([]GamingRecoveryView, error) {
 	if err != nil {
 		return nil, err
 	}
-	spends, poolErr := recoveryMempoolInputs(ctx)
+	spends, poolErr := br.recoveryMempoolInputs(ctx)
 	out := make([]GamingRecoveryView, 0, len(deps))
 	for _, dep := range deps {
-		out = append(out, recoveryView(ctx, dep, spends, poolErr))
+		out = append(out, br.recoveryView(ctx, dep, spends, poolErr))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
-func CloseGamingRecoveryTable(ctx context.Context, id string) error {
-	dep, err := recoveryDeposit(id)
+func (br *Bridge) CloseGamingRecoveryTable(ctx context.Context, id string) error {
+	dep, err := br.recoveryDeposit(id)
 	if err != nil {
 		return err
 	}
-	if err = recoveryWalletMatches(ctx, dep.Scope); err != nil {
+	if err = br.recoveryWalletMatches(ctx, dep.Scope); err != nil {
 		return err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return err
 	}
 	return store.CloseTable(dep.Scope, dep.Terms.Table)
 }
-func QuoteGamingRecovery(ctx context.Context, id string) (gamingfunds.RecoveryQuote, error) {
+func (br *Bridge) QuoteGamingRecovery(ctx context.Context, id string) (gamingfunds.RecoveryQuote, error) {
 	var zero gamingfunds.RecoveryQuote
-	dep, err := recoveryDeposit(id)
+	dep, err := br.recoveryDeposit(id)
 	if err != nil {
 		return zero, err
 	}
-	spends, poolErr := recoveryMempoolInputs(ctx)
-	view := recoveryView(ctx, dep, spends, poolErr)
+	spends, poolErr := br.recoveryMempoolInputs(ctx)
+	view := br.recoveryView(ctx, dep, spends, poolErr)
 	if !view.CanRecover {
 		return zero, fmt.Errorf("%s: %s", view.State, view.Reason)
 	}
-	dest, err := hostWallet().NextExternalAddress(ctx, dep.Scope.Account)
+	dest, err := br.hostWallet().NextExternalAddress(ctx, dep.Scope.Account)
 	if err != nil {
 		return zero, err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return zero, err
 	}
-	params, err := chainParams(ctx)
+	params, err := br.chainParams(ctx)
 	if err != nil {
 		return zero, err
 	}
 	return store.QuoteRecovery(dep.Scope, id, dest, params)
 }
-func ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []byte) (string, error) {
-	dep, err := recoveryDeposit(id)
+func (br *Bridge) ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []byte) (string, error) {
+	dep, err := br.recoveryDeposit(id)
 	if err != nil {
 		return "", err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return "", err
 	}
@@ -293,10 +293,10 @@ func ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []b
 	if quoted.ID != dep.ID {
 		return "", fmt.Errorf("quote belongs to a different deposit")
 	}
-	if err = recoveryWalletMatches(ctx, dep.Scope); err != nil {
+	if err = br.recoveryWalletMatches(ctx, dep.Scope); err != nil {
 		return "", err
 	}
-	owner, err := hostWallet().ValidateAddress(ctx, q.Destination)
+	owner, err := br.hostWallet().ValidateAddress(ctx, q.Destination)
 	if err != nil {
 		return "", err
 	}
@@ -304,17 +304,17 @@ func ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []b
 		return "", fmt.Errorf("recovery destination is not in the original account")
 	}
 	if q.TxID == "" {
-		spends, poolErr := recoveryMempoolInputs(ctx)
-		view := recoveryView(ctx, dep, spends, poolErr)
+		spends, poolErr := br.recoveryMempoolInputs(ctx)
+		view := br.recoveryView(ctx, dep, spends, poolErr)
 		if !view.CanRecover {
 			return "", fmt.Errorf("%s: %s", view.State, view.Reason)
 		}
 	}
-	params, err := chainParams(ctx)
+	params, err := br.chainParams(ctx)
 	if err != nil {
 		return "", err
 	}
-	raw, err := withGamingWalletSigner(ctx, dep.Scope, passphrase, func(sign gamingfunds.WalletSigner) ([]byte, error) {
+	raw, err := br.withGamingWalletSigner(ctx, dep.Scope, passphrase, func(sign gamingfunds.WalletSigner) ([]byte, error) {
 		return store.ApproveRecovery(dep.Scope, quote, params, sign)
 	})
 	if err != nil {
@@ -322,21 +322,21 @@ func ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []b
 	}
 	// Journaled bytes survive both failure and lost responses. Never rebuild an
 	// approved refund at a different destination or with a different fee.
-	txid, err := hostWallet().Broadcast(ctx, raw)
+	txid, err := br.hostWallet().Broadcast(ctx, raw)
 	if err != nil {
 		var tx wire.MsgTx
 		_ = tx.FromBytes(raw)
 		return tx.TxHash().String(), fmt.Errorf("recovery is journaled; broadcast outcome needs reconciliation: %w", err)
 	}
-	GamingPresenceChanged(dep.Scope.Game)
+	br.GamingPresenceChanged(dep.Scope.Game)
 	return txid, nil
 }
 
 // GamingLedgerBackup returns the whole financial ledger as a self-checking
 // backup: open and settled deposits, their terms and scripts, and every
 // funding, payout and refund transaction. It holds no private keys.
-func GamingLedgerBackup() ([]byte, error) {
-	store, err := gamingFundsStore()
+func (br *Bridge) GamingLedgerBackup() ([]byte, error) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return nil, err
 	}
@@ -345,8 +345,8 @@ func GamingLedgerBackup() ([]byte, error) {
 
 // ArchiveGamingRecovery hides a refunded or paid-out deposit from the recovery
 // list, or shows it again. The ledger keeps the record either way.
-func ArchiveGamingRecovery(ctx context.Context, id string, archived bool) error {
-	store, err := gamingFundsStore()
+func (br *Bridge) ArchiveGamingRecovery(ctx context.Context, id string, archived bool) error {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return err
 	}
@@ -359,22 +359,16 @@ var (
 	ErrGamingBackupWrongWallet = errors.New("this backup belongs to another wallet or network")
 )
 
-// Wallet checks the restore runs; tests replace them.
-var (
-	restoreWalletMatches = recoveryWalletMatches
-	restoreKeyOwned      = verifyGamingWalletKey
-)
-
 // RestoreGamingLedger restores the financial ledger from a backup, only while
 // the ledger is missing or empty and only for this wallet. It returns how many
 // of the restored keys this wallet cannot sign for yet.
-func RestoreGamingLedger(ctx context.Context, raw []byte) (int, error) {
+func (br *Bridge) RestoreGamingLedger(ctx context.Context, raw []byte) (int, error) {
 	scopes, err := gamingfunds.BackupScopes(raw)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", ErrGamingBackupInvalid, err)
 	}
 	for _, scope := range scopes {
-		if err = restoreWalletMatches(ctx, scope); err != nil {
+		if err = br.restoreWalletMatches(ctx, scope); err != nil {
 			return 0, fmt.Errorf("%w: %v", ErrGamingBackupWrongWallet, err)
 		}
 	}
@@ -382,13 +376,13 @@ func RestoreGamingLedger(ctx context.Context, raw []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err = restoreGamingLedgerFile(raw); err != nil {
+	if err = br.restoreGamingLedgerFile(raw); err != nil {
 		return 0, err
 	}
 	unowned := 0
 	games := map[string]bool{}
 	for _, key := range keys {
-		if restoreKeyOwned(ctx, key) != nil {
+		if br.restoreKeyOwned(ctx, key) != nil {
 			unowned++
 		}
 		games[key.Scope.Game] = true
@@ -397,21 +391,21 @@ func RestoreGamingLedger(ctx context.Context, raw []byte) (int, error) {
 		games[scope.Game] = true
 	}
 	for game := range games {
-		GamingPresenceChanged(game)
+		br.GamingPresenceChanged(game)
 	}
 	return unowned, nil
 }
 
 // restoreGamingLedgerFile swaps the ledger on disk while no store holds it.
-func restoreGamingLedgerFile(raw []byte) error {
-	financeStores.Lock()
-	defer financeStores.Unlock()
-	path := filepath.Join(GamingStateDir, "financial-authority")
-	if s := financeStores.stores[path]; s != nil {
+func (br *Bridge) restoreGamingLedgerFile(raw []byte) error {
+	br.financeStores.Lock()
+	defer br.financeStores.Unlock()
+	path := filepath.Join(br.dataDir, "financial-authority")
+	if s := br.financeStores.stores[path]; s != nil {
 		if err := s.Close(); err != nil {
 			return err
 		}
-		delete(financeStores.stores, path)
+		delete(br.financeStores.stores, path)
 	}
 	if err := gamingfunds.RestoreBackup(path, raw); err != nil {
 		return err
@@ -420,9 +414,9 @@ func restoreGamingLedgerFile(raw []byte) error {
 	if err != nil {
 		return err
 	}
-	if financeStores.stores == nil {
-		financeStores.stores = map[string]*gamingfunds.Store{}
+	if br.financeStores.stores == nil {
+		br.financeStores.stores = map[string]*gamingfunds.Store{}
 	}
-	financeStores.stores[path] = s
+	br.financeStores.stores[path] = s
 	return nil
 }

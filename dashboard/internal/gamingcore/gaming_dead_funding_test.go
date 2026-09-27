@@ -69,17 +69,17 @@ func TestAFailedRequestWithAReleasedDepositCanBeAskedAgain(t *testing.T) {
 	}
 }
 
-func fundingLedger(t *testing.T, tableClosed, depositClosed bool, table string) (*gamingfunds.Store, gamingfunds.Operation) {
+func fundingLedger(t *testing.T, br *Bridge, tableClosed, depositClosed bool, table string) (*gamingfunds.Store, gamingfunds.Operation) {
 	t.Helper()
-	GamingStateDir = t.TempDir()
+	br.dataDir = t.TempDir()
 	t.Cleanup(func() {
-		financeStores.Lock()
-		path := filepath.Join(GamingStateDir, "financial-authority")
-		if s := financeStores.stores[path]; s != nil {
+		br.financeStores.Lock()
+		path := filepath.Join(br.dataDir, "financial-authority")
+		if s := br.financeStores.stores[path]; s != nil {
 			s.Close()
-			delete(financeStores.stores, path)
+			delete(br.financeStores.stores, path)
 		}
-		financeStores.Unlock()
+		br.financeStores.Unlock()
 	})
 	scope := gamingfunds.Scope{Game: "poker", Network: "mainnet", Wallet: "fp"}
 	key, _ := json.Marshal(struct {
@@ -98,14 +98,14 @@ func fundingLedger(t *testing.T, tableClosed, depositClosed bool, table string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(GamingStateDir, "financial-authority")
+	dir := filepath.Join(br.dataDir, "financial-authority")
 	if err = os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err = os.WriteFile(filepath.Join(dir, "authority.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,8 +117,7 @@ func fundingLedger(t *testing.T, tableClosed, depositClosed bool, table string) 
 }
 
 func TestFundingOfAClosedTableIsNotBroadcastAgain(t *testing.T) {
-	old := GamingStateDir
-	t.Cleanup(func() { GamingStateDir = old })
+	br := newTestBridge(t)
 	for _, tc := range []struct {
 		name                       string
 		tableClosed, depositClosed bool
@@ -130,7 +129,7 @@ func TestFundingOfAClosedTableIsNotBroadcastAgain(t *testing.T) {
 		{"closed deposit", false, true, "0123456789abcdef", false},
 		{"identity deposit", false, false, "", true},
 	} {
-		store, op := fundingLedger(t, tc.tableClosed, tc.depositClosed, tc.table)
+		store, op := fundingLedger(t, br, tc.tableClosed, tc.depositClosed, tc.table)
 		if got := fundingStillWanted(store, op); got != tc.wanted {
 			t.Errorf("%s: wanted=%v", tc.name, got)
 		}
@@ -138,18 +137,19 @@ func TestFundingOfAClosedTableIsNotBroadcastAgain(t *testing.T) {
 }
 
 func TestDeadFundingFailsOnlyItsOwnRequest(t *testing.T) {
-	spendSeams(t)
+	br := newTestBridge(t)
+	spendSeams(t, br)
 	op := gamingfunds.Operation{ID: strings.Repeat("0f", 32), DepositIDs: []string{"dep1"}}
 	now := time.Now().Unix()
-	if err := writeSpendLog(spendLog{Spends: []GamingSpend{
+	if err := br.writeSpendLog(spendLog{Spends: []GamingSpend{
 		{ID: "a1", Game: "poker", DepositID: "dep1", State: GamingSpendPublishing, AmountAtoms: 5},
 		{ID: "b2", Game: "poker", DepositID: "dep2", State: GamingSpendPublishing, AmountAtoms: 5},
 		{ID: "c3", Game: "poker", DepositID: "dep1", State: GamingSpendApproved, TxID: strings.Repeat("aa", 32), AmountAtoms: 5, DecidedAt: now},
 	}}, now); err != nil {
 		t.Fatal(err)
 	}
-	failAbandonedFundingSpend(op, strings.Repeat("e1", 32))
-	got := mustReadSpendLog(t).Spends
+	br.failAbandonedFundingSpend(op, strings.Repeat("e1", 32))
+	got := mustReadSpendLog(t, br).Spends
 	if got[0].State != GamingSpendFailed || !strings.Contains(got[0].Error, strings.Repeat("e1", 32)) {
 		t.Fatalf("the dead funding's request = %+v", got[0])
 	}

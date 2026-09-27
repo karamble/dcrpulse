@@ -32,20 +32,12 @@ const bridgeCertLifetime = 10 * 365 * 24 * time.Hour
 // ErrGamingNoCredential is a game that has not been issued one.
 var ErrGamingNoCredential = errors.New("that game has no credential yet")
 
-// gamingAllow is the live allowlist the listener verifies against.
-//
-// One per process, held here rather than in the handler that mutates it,
-// because issuing a credential has to change what the running listener accepts
-// in the same act that writes it to disk. Two copies would mean a credential
-// that works only after a restart, or one that outlives being revoked.
-var gamingAllow = gamingbridge.NewAllowlist()
-
 // LoadGamingAllowlist rebuilds the allowlist from what was stored, and is
 // called once at startup. A credential the operator issued has to survive the
 // appliance restarting, or every game would need reconfiguring after an update.
-func LoadGamingAllowlist() {
-	for game, c := range ReadGamingSettings().GameCredentials {
-		if err := gamingAllow.Add(gamingbridge.Credential{
+func (br *Bridge) LoadGamingAllowlist() {
+	for game, c := range br.ReadGamingSettings().GameCredentials {
+		if err := br.gamingAllow.Add(gamingbridge.Credential{
 			Game:    game,
 			CertPEM: []byte(c.CertPEM),
 		}); err != nil {
@@ -80,16 +72,16 @@ type GamingCredentialMaterial struct {
 // what regenerating means: the old credential stops working immediately rather
 // than leaving two ways in, one of them on a machine the operator no longer
 // trusts.
-func IssueGamingCredential(game string) (GamingCredentialMaterial, error) {
-	gamingSettingsMu.Lock()
-	defer gamingSettingsMu.Unlock()
+func (br *Bridge) IssueGamingCredential(game string) (GamingCredentialMaterial, error) {
+	br.gamingSettingsMu.Lock()
+	defer br.gamingSettingsMu.Unlock()
 
-	s := ReadGamingSettings()
+	s := br.ReadGamingSettings()
 	if !gamingRegisteredIn(s, game) {
 		return GamingCredentialMaterial{}, ErrGamingGameNotRegistered
 	}
 
-	bridgeCert, _, err := gamingBridgeKeypairLocked()
+	bridgeCert, _, err := br.gamingBridgeKeypairLocked()
 	if err != nil {
 		return GamingCredentialMaterial{}, err
 	}
@@ -111,10 +103,10 @@ func IssueGamingCredential(game string) (GamingCredentialMaterial, error) {
 		CertPEM:     string(cred.CertPEM),
 		IssuedAt:    issued,
 	}
-	if err := writeGamingSettingsLocked(s); err != nil {
+	if err := br.writeGamingSettingsLocked(s); err != nil {
 		return GamingCredentialMaterial{}, err
 	}
-	if err := gamingAllow.Add(cred); err != nil {
+	if err := br.gamingAllow.Add(cred); err != nil {
 		return GamingCredentialMaterial{}, err
 	}
 
@@ -134,33 +126,36 @@ func IssueGamingCredential(game string) (GamingCredentialMaterial, error) {
 // The listener stops accepting it and any stream it is holding ends, before the
 // write, because the point of revoking is that it takes effect now and the disk
 // is only what makes it survive a restart.
-func RevokeGamingCredential(game string) error {
-	gamingSettingsMu.Lock()
-	defer gamingSettingsMu.Unlock()
+func (br *Bridge) RevokeGamingCredential(game string) error {
+	br.gamingSettingsMu.Lock()
+	defer br.gamingSettingsMu.Unlock()
 
-	s := ReadGamingSettings()
+	s := br.ReadGamingSettings()
 	if _, ok := s.GameCredentials[game]; !ok {
 		return ErrGamingNoCredential
 	}
-	gamingAllow.Revoke(game)
+	br.gamingAllow.Revoke(game)
 	delete(s.GameCredentials, game)
-	if err := writeGamingSettingsLocked(s); err != nil {
+	if err := br.writeGamingSettingsLocked(s); err != nil {
 		return err
 	}
 	// Requests the revoked game left waiting are answered too; a warning is
 	// all a failure earns, because the approval-time re-check keeps money
 	// shut either way.
-	if err := invalidatePendingSpends(func(g string) bool { return g == game }, spendInvalidatedText); err != nil {
+	if err := br.invalidatePendingSpends(func(g string) bool { return g == game }, spendInvalidatedText); err != nil {
 		gameLog.Warnf("retire %q's pending requests: %v", game, err)
 	}
 	gameLog.Infof("revoked the credential for %q", game)
 	return nil
 }
 
-var bridgeKeypairMu sync.Mutex
+func (br *Bridge) gamingBridgeCertPath() string {
+	return filepath.Join(br.dataDir, "gaming-bridge.cert")
+}
 
-func gamingBridgeCertPath() string { return filepath.Join(GamingStateDir, "gaming-bridge.cert") }
-func gamingBridgeKeyPath() string  { return filepath.Join(GamingStateDir, "gaming-bridge.key") }
+func (br *Bridge) gamingBridgeKeyPath() string {
+	return filepath.Join(br.dataDir, "gaming-bridge.key")
+}
 
 // GamingBridgeKeypair is the bridge's own identity, minted on first use.
 //
@@ -169,15 +164,15 @@ func gamingBridgeKeyPath() string  { return filepath.Join(GamingStateDir, "gamin
 // that a game which pinned it keeps trusting this bridge across restarts - a
 // pair regenerated at every boot would break every configured game on every
 // update.
-func GamingBridgeKeypair() (certPEM, keyPEM []byte, err error) {
-	bridgeKeypairMu.Lock()
-	defer bridgeKeypairMu.Unlock()
-	return gamingBridgeKeypairLocked()
+func (br *Bridge) GamingBridgeKeypair() (certPEM, keyPEM []byte, err error) {
+	br.bridgeKeypairMu.Lock()
+	defer br.bridgeKeypairMu.Unlock()
+	return br.gamingBridgeKeypairLocked()
 }
 
-func gamingBridgeKeypairLocked() (certPEM, keyPEM []byte, err error) {
-	cert, certErr := os.ReadFile(gamingBridgeCertPath())
-	key, keyErr := os.ReadFile(gamingBridgeKeyPath())
+func (br *Bridge) gamingBridgeKeypairLocked() (certPEM, keyPEM []byte, err error) {
+	cert, certErr := os.ReadFile(br.gamingBridgeCertPath())
+	key, keyErr := os.ReadFile(br.gamingBridgeKeyPath())
 	if certErr == nil && keyErr == nil {
 		return cert, key, nil
 	}
@@ -187,15 +182,15 @@ func gamingBridgeKeypairLocked() (certPEM, keyPEM []byte, err error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("mint the bridge's certificate: %w", err)
 	}
-	if err := os.MkdirAll(GamingStateDir, 0o700); err != nil {
+	if err := os.MkdirAll(br.dataDir, 0o700); err != nil {
 		return nil, nil, err
 	}
 	// The key first: a certificate on disk with no key beside it would be
 	// read back as a usable pair on the next call and fail at the listener.
-	if err := os.WriteFile(gamingBridgeKeyPath(), key, 0o600); err != nil {
+	if err := os.WriteFile(br.gamingBridgeKeyPath(), key, 0o600); err != nil {
 		return nil, nil, err
 	}
-	if err := os.WriteFile(gamingBridgeCertPath(), cert, 0o600); err != nil {
+	if err := os.WriteFile(br.gamingBridgeCertPath(), cert, 0o600); err != nil {
 		return nil, nil, err
 	}
 	gameLog.Infof("minted the gaming bridge's own certificate")
@@ -208,57 +203,57 @@ func gamingBridgeKeypairLocked() (certPEM, keyPEM []byte, err error) {
 // package depends on nothing, and everything it is handed is named in one
 // place, where it can be seen that a game is given chain reads and frame
 // carriage and no way to move money.
-func GamingBridgeConfig(addr string) (gamingbridge.Config, error) {
-	cert, key, err := GamingBridgeKeypair()
+func (br *Bridge) GamingBridgeConfig(addr string) (gamingbridge.Config, error) {
+	cert, key, err := br.GamingBridgeKeypair()
 	if err != nil {
 		return gamingbridge.Config{}, err
 	}
 	if _, port, err := net.SplitHostPort(addr); err == nil {
-		gamingBridgePort = port
+		br.gamingBridgePort = port
 	}
 	return gamingbridge.Config{
 		Addr:              addr,
 		ServerCert:        cert,
 		ServerKey:         key,
-		AppPasswordActive: func() bool { return hostOperator().Protected() },
-		Enabled:           func() bool { return ReadGamingSettings().Enabled },
-		Allow:             gamingAllow,
+		AppPasswordActive: func() bool { return br.hostOperator().Protected() },
+		Enabled:           func() bool { return br.ReadGamingSettings().Enabled },
+		Allow:             br.gamingAllow,
 
 		Frames: func(game string, after uint64, buf int) (<-chan gamingbridge.Frame, func()) {
-			in, stop := Gaming().SubscribeFrom(game, after, buf)
+			in, stop := br.SubscribeFrom(game, after, buf)
 			return forwardGamingFrames(in, stop, buf)
 		},
 		Network: func() (string, bool) {
-			net, err := currentNetwork(context.Background())
+			net, err := br.currentNetwork(context.Background())
 			return net, err == nil
 		},
 		Policy: func(game string) (int64, int64, bool) {
-			p := ReadGamingSettings().Policies[game]
+			p := br.ReadGamingSettings().Policies[game]
 			return p.PerTableCapAtoms, p.PerDayCapAtoms, strings.TrimSpace(p.Account) != ""
 		},
 
-		FinancialKey:   GamingFinancialKeyReply,
-		PrepareDeposit: PrepareGamingDeposit,
-		FinancialState: GamingFinancialState,
-		ProposePayout:  ProposeGamingPayout,
-		BindRoster:     BindGamingRoster,
-		PayoutStatus:   GamingPayoutStatus,
+		FinancialKey:   br.GamingFinancialKeyReply,
+		PrepareDeposit: br.PrepareGamingDeposit,
+		FinancialState: br.GamingFinancialState,
+		ProposePayout:  br.ProposeGamingPayout,
+		BindRoster:     br.BindGamingRoster,
+		PayoutStatus:   br.GamingPayoutStatus,
 		VerifiedSpend: func(ctx context.Context, game string, req *gamingpb.RequestSpendRequest) (*gamingpb.Spend, error) {
-			spend, err := RequestGamingDepositSpend(ctx, game, req)
+			spend, err := br.RequestGamingDepositSpend(ctx, game, req)
 			return spend, spendBridgeErr(err)
 		},
 		SpendStatus: func(game, id string) (*gamingpb.Spend, error) {
-			spend, err := GamingSpendFor(game, id)
+			spend, err := br.GamingSpendFor(game, id)
 			return spendProto(spend), spendBridgeErr(err)
 		},
-		SendFrame: SendGamingFrame,
+		SendFrame: br.SendGamingFrame,
 		ChainTip: func(ctx context.Context) (int64, string, error) {
-			tip, err := GamingChainTipNow(ctx)
+			tip, err := br.GamingChainTipNow(ctx)
 			return tip.Height, tip.Hash, err
 		},
-		BlockHash: GamingBlockHash,
+		BlockHash: br.GamingBlockHash,
 		Outpoint: func(ctx context.Context, txid string, vout uint32, mempool bool) (gamingbridge.Outpoint, error) {
-			o, err := GamingChainOutpoint(ctx, txid, vout, mempool)
+			o, err := br.GamingChainOutpoint(ctx, txid, vout, mempool)
 			if err != nil {
 				return gamingbridge.Outpoint{}, err
 			}
@@ -271,36 +266,28 @@ func GamingBridgeConfig(addr string) (gamingbridge.Config, error) {
 			}, nil
 		},
 		OnConnect: func(game string) {
-			if err := RefreshGamingState(context.Background(), game); err != nil {
+			if err := br.RefreshGamingState(context.Background(), game); err != nil {
 				gameLog.Warnf("%s did not report its state: %v", game, err)
 			}
 		},
-		OnPresence:           GamingPresenceChanged,
-		StartFinancialWorker: StartGamingFinancialWorker,
+		OnPresence:           br.GamingPresenceChanged,
+		StartFinancialWorker: br.StartGamingFinancialWorker,
 	}, nil
 }
 
-// gamingBridgePort is the port the listener came up on, recorded so the console
-// can tell the operator what to type into a game's wizard.
-//
-// Only the port. The address a game dials is the operator's own, which this
-// process cannot know - it sees a container's interfaces, not the route from
-// wherever the game happens to be running.
-var gamingBridgePort string
-
 // GamingBridgePort is the port games connect in on, or empty if the listener
 // never started.
-func GamingBridgePort() string { return gamingBridgePort }
+func (br *Bridge) GamingBridgePort() string { return br.gamingBridgePort }
 
 // Start brings up the listener games connect to on addr and serves it. It is
-// called once, after Configure.
+// called once.
 //
 // A failure is returned, not fatal: gaming is one section of a wallet app, and
 // refusing to run the rest because a game could not be served would be the
 // wrong trade.
-func Start(addr string) error {
-	LoadGamingAllowlist()
-	cfg, err := GamingBridgeConfig(addr)
+func (br *Bridge) Start(addr string) error {
+	br.LoadGamingAllowlist()
+	cfg, err := br.GamingBridgeConfig(addr)
 	if err != nil {
 		return fmt.Errorf("the gaming bridge has no certificate, so no game can connect: %w", err)
 	}
@@ -311,13 +298,13 @@ func Start(addr string) error {
 	// What the console reports as connected. A live stream is the only honest
 	// answer: a game is registered here and run on a machine of the person's
 	// choosing, so registered and connected are different questions.
-	gamingConnected = srv.SubscriberCount
-	gamingRequest = srv.Request
-	gamingState = srv.State
-	gamingLockTerms = srv.LockTerms
+	br.gamingConnected = srv.SubscriberCount
+	br.gamingRequest = srv.Request
+	br.gamingState = srv.State
+	br.gamingLockTerms = srv.LockTerms
 	// How a loss upstream of the bridge reaches the games. The bridge cannot
 	// see that kind of gap for itself, so the notification stream tells it.
-	Gaming().SetGamingResync(srv.ResyncAll)
+	br.SetGamingResync(srv.ResyncAll)
 	go func() {
 		if err := srv.Serve(); err != nil {
 			gameLog.Errorf("the gaming bridge stopped: %v", err)
@@ -326,35 +313,19 @@ func Start(addr string) error {
 	return nil
 }
 
-// gamingConnected reports how many streams a game is holding. Start sets it and
-// the three below from the listener, which is a leaf: it depends on nothing
-// here, which is what lets this package use its allowlist without the two
-// importing each other.
-var gamingConnected func(game string) int
-
-// gamingRequest asks a connected game to do something and waits for its answer.
-var gamingRequest func(ctx context.Context, game string, req *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error)
-
-// gamingState is the last state a game reported, cached by the listener.
-var gamingState func(game string) *gamingpb.GameState
-
-// gamingLockTerms is the refund and bond timelocks a game advertised on Hello,
-// cached by the listener.
-var gamingLockTerms func(game string) (minRefund, bondLock uint32)
-
 // gamingGameLockTerms is the advertised locks for a game, or zero when there is
 // no listener or the game advertised none.
-func gamingGameLockTerms(game string) (minRefund, bondLock uint32) {
-	if gamingLockTerms == nil {
+func (br *Bridge) gamingGameLockTerms(game string) (minRefund, bondLock uint32) {
+	if br.gamingLockTerms == nil {
 		return 0, 0
 	}
-	return gamingLockTerms(game)
+	return br.gamingLockTerms(game)
 }
 
-func gamingGameConnected(game string) bool {
+func (br *Bridge) gamingGameConnected(game string) bool {
 	// No listener means nothing is connected, which is the truthful answer
 	// rather than an optimistic one.
-	return gamingConnected != nil && gamingConnected(game) > 0
+	return br.gamingConnected != nil && br.gamingConnected(game) > 0
 }
 
 // spendProto is one spend on the wire.

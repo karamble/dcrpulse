@@ -10,28 +10,28 @@ import (
 	sdkwire "github.com/karamble/dcrgaming-sdk/pkg/gaming/wire"
 )
 
-func outboxClaims(t *testing.T) int {
+func outboxClaims(t *testing.T, br *Bridge) int {
 	t.Helper()
-	gamingOutbox.Lock()
-	defer gamingOutbox.Unlock()
-	gamingOutbox.claims = nil
-	if err := loadGamingSendClaimsLocked(); err != nil {
+	br.gamingOutbox.Lock()
+	defer br.gamingOutbox.Unlock()
+	br.gamingOutbox.claims = nil
+	if err := br.loadGamingSendClaimsLocked(); err != nil {
 		t.Fatal(err)
 	}
-	return len(gamingOutbox.claims)
+	return len(br.gamingOutbox.claims)
 }
 
 func TestGamesSendOnlyToTheirOwnTables(t *testing.T) {
-	withGamingWireDir(t)
-	registerPoker(t)
-	calls := withGCSend(t)
+	br := newTestBridge(t)
+	registerPoker(t, br)
+	calls := withGCSend(t, br)
 	for name, gcid := range map[string]string{"no table": pruneGCB, "before any ledger": pruneGCA} {
-		if err := SendGamingFrame(context.Background(), "poker", gcid, testFrame); err == nil {
+		if err := br.SendGamingFrame(context.Background(), "poker", gcid, testFrame); err == nil {
 			t.Fatalf("%s: send accepted", name)
 		}
 	}
-	payoutLedger(t, "awaiting_signatures")
-	if err := SendGamingFrame(context.Background(), "poker", pruneGCB, testFrame); err == nil {
+	payoutLedger(t, br, "awaiting_signatures")
+	if err := br.SendGamingFrame(context.Background(), "poker", pruneGCB, testFrame); err == nil {
 		t.Fatal("sent to a group with no table")
 	}
 	chess, err := buildGamingFrame("chess", 1, "0123456789abcdef", []byte(`{"action":"move"}`), time.Time{})
@@ -40,16 +40,16 @@ func TestGamesSendOnlyToTheirOwnTables(t *testing.T) {
 	}
 	settings := DefaultGamingSettings()
 	settings.RegisteredGames = []string{"poker", "chess"}
-	if err := writeGamingSettingsLocked(settings); err != nil {
+	if err := br.writeGamingSettingsLocked(settings); err != nil {
 		t.Fatal(err)
 	}
-	if err := SendGamingFrame(context.Background(), "chess", pruneGCA, chess); err == nil {
+	if err := br.SendGamingFrame(context.Background(), "chess", pruneGCA, chess); err == nil {
 		t.Fatal("chess sent to poker's table group")
 	}
-	if *calls != 0 || outboxClaims(t) != 0 {
+	if *calls != 0 || outboxClaims(t, br) != 0 {
 		t.Fatalf("refused sends reached brclientd %d times or claimed", *calls)
 	}
-	if err := SendGamingFrame(context.Background(), "poker", pruneGCA, testFrame); err != nil {
+	if err := br.SendGamingFrame(context.Background(), "poker", pruneGCA, testFrame); err != nil {
 		t.Fatal(err)
 	}
 	if *calls != 1 {
@@ -58,10 +58,10 @@ func TestGamesSendOnlyToTheirOwnTables(t *testing.T) {
 }
 
 func TestOnlyCanonicalFramesAreSent(t *testing.T) {
-	withGamingWireDir(t)
-	registerPoker(t)
-	payoutLedger(t, "awaiting_signatures")
-	calls := withGCSend(t)
+	br := newTestBridge(t)
+	registerPoker(t, br)
+	payoutLedger(t, br, "awaiting_signatures")
+	calls := withGCSend(t, br)
 	parsed := testParsedFrame(t)
 	body := base64.StdEncoding.EncodeToString(parsed.Payload)
 	head := testFrame[:strings.Index(testFrame, "]--")]
@@ -71,7 +71,7 @@ func TestOnlyCanonicalFramesAreSent(t *testing.T) {
 		"space in payload":  head + "]--" + body[:4] + " " + body[4:],
 		"url-safe unpadded": head + "]--" + base64.RawURLEncoding.EncodeToString(parsed.Payload),
 	} {
-		if err := SendGamingFrame(context.Background(), "poker", pruneGCA, frame); err == nil {
+		if err := br.SendGamingFrame(context.Background(), "poker", pruneGCA, frame); err == nil {
 			t.Errorf("%s: sent", name)
 		}
 	}
@@ -83,7 +83,7 @@ func TestOnlyCanonicalFramesAreSent(t *testing.T) {
 		t.Fatalf("sdk encode = %v, %v", frames, err)
 	}
 	for _, frame := range []string{testFrame, frames[0]} {
-		if err := SendGamingFrame(context.Background(), "poker", pruneGCA, frame); err != nil {
+		if err := br.SendGamingFrame(context.Background(), "poker", pruneGCA, frame); err != nil {
 			t.Fatalf("canonical frame refused: %v", err)
 		}
 	}

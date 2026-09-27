@@ -18,16 +18,14 @@ import "testing"
 // The directory is the host's; dcrpulse gives it /app-data/control. The names
 // under it are the bridge's, and these pin them.
 func TestTheGamingStateKeepsItsPlace(t *testing.T) {
-	old := GamingStateDir
-	GamingStateDir = "/app-data/control"
-	t.Cleanup(func() { GamingStateDir = old })
+	br := New("/app-data/control", Host{})
 	for _, tc := range []struct {
 		what string
 		got  string
 		want string
 	}{
-		{"policy", gamingSettingsPath(), "/app-data/control/gaming.json"},
-		{"spend log", gamingSpendLogPath(), "/app-data/control/gaming-spends.json"},
+		{"policy", br.gamingSettingsPath(), "/app-data/control/gaming.json"},
+		{"spend log", br.gamingSpendLogPath(), "/app-data/control/gaming-spends.json"},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("the gaming %s moved to %q from %q", tc.what, tc.got, tc.want)

@@ -37,11 +37,9 @@ func gcmPayload(t *testing.T, gcid, uid byte, text string, seq uint64) json.RawM
 
 func TestReceiveGCMHandsOnlyAttributableMessages(t *testing.T) {
 	var got []gamingcore.GroupMessage
-	prev := gamingReceive
-	gamingReceive = func(m gamingcore.GroupMessage) error { got = append(got, m); return nil }
-	t.Cleanup(func() { gamingReceive = prev })
+	keep := func(m gamingcore.GroupMessage) error { got = append(got, m); return nil }
 
-	seq, err := receiveGCM(gcmPayload(t, 0xaa, 0x22, testFrame, 7))
+	seq, err := receiveGCM(gcmPayload(t, 0xaa, 0x22, testFrame, 7), keep)
 	if err != nil || seq != 7 || len(got) != 1 {
 		t.Fatalf("frame = %d, %v, handed %d", seq, err, len(got))
 	}
@@ -55,18 +53,18 @@ func TestReceiveGCMHandsOnlyAttributableMessages(t *testing.T) {
 	_ = protojson.Unmarshal(bad, &m)
 	m.Uid = m.Uid[:16]
 	bad, _ = protojson.Marshal(&m)
-	if seq, err = receiveGCM(bad); err != nil || seq != 9 {
+	if seq, err = receiveGCM(bad, keep); err != nil || seq != 9 {
 		t.Fatalf("short uid = %d, %v", seq, err)
 	}
-	if seq, err = receiveGCM(json.RawMessage(`{`)); err != nil || seq != 0 {
+	if seq, err = receiveGCM(json.RawMessage(`{`), keep); err != nil || seq != 0 {
 		t.Fatalf("garbage = %d, %v", seq, err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("handed %d messages, want only the attributable one", len(got))
 	}
 	// A message the bridge could not keep is not acknowledged.
-	gamingReceive = func(gamingcore.GroupMessage) error { return errors.New("disk full") }
-	if seq, err = receiveGCM(gcmPayload(t, 0xaa, 0x22, testFrame, 10)); err == nil || seq != 0 {
+	refuse := func(gamingcore.GroupMessage) error { return errors.New("disk full") }
+	if seq, err = receiveGCM(gcmPayload(t, 0xaa, 0x22, testFrame, 10), refuse); err == nil || seq != 0 {
 		t.Fatalf("unkept frame = %d, %v", seq, err)
 	}
 }

@@ -88,9 +88,9 @@ func healTornTail(path string) (int64, error) {
 // replay. The file is installed only once it has read cleanly, so a bad file
 // fails every call instead of leaving part of it in place. b.wireMu must be
 // held by the caller.
-func (b *GamingBus) loadGamingFramesLocked(game string, after uint64) ([]GamingFrameEvent, error) {
-	dir := GamingStateDir
-	if b.wireDir != dir {
+func (br *Bridge) loadGamingFramesLocked(game string, after uint64) ([]GamingFrameEvent, error) {
+	dir := br.dataDir
+	if br.wireDir != dir {
 		next := make(map[string]uint64)
 		records := make(map[string][]GamingFrameEvent)
 		seen := make(map[string]struct{})
@@ -98,9 +98,9 @@ func (b *GamingBus) loadGamingFramesLocked(game string, after uint64) ([]GamingF
 		if err := readGamingInbox(path, next, records, seen); err != nil {
 			return nil, fmt.Errorf("gaming inbox %s: %w", path, err)
 		}
-		b.wireDir, b.wireNext, b.wireRecords, b.wireSeen = dir, next, records, seen
+		br.wireDir, br.wireNext, br.wireRecords, br.wireSeen = dir, next, records, seen
 	}
-	records := b.wireRecords[game]
+	records := br.wireRecords[game]
 	out := make([]GamingFrameEvent, 0, len(records))
 	for _, ev := range records {
 		if ev.Seq > after && !ev.Financial {
@@ -162,14 +162,14 @@ type gamingInboxLine struct {
 // pruneGamingGroup removes one group chat's frames from the inbox. Each game
 // keeps a mark with the highest seq it was issued, so no cursor sees a seq
 // twice after a restart.
-func (b *GamingBus) pruneGamingGroup(gcid string) (int, error) {
-	b.wireMu.Lock()
-	defer b.wireMu.Unlock()
-	if _, err := b.loadGamingFramesLocked("", 0); err != nil {
+func (br *Bridge) pruneGamingGroup(gcid string) (int, error) {
+	br.wireMu.Lock()
+	defer br.wireMu.Unlock()
+	if _, err := br.loadGamingFramesLocked("", 0); err != nil {
 		return 0, err
 	}
 	removed := 0
-	for _, records := range b.wireRecords {
+	for _, records := range br.wireRecords {
 		for _, ev := range records {
 			if ev.GCID == gcid {
 				removed++
@@ -179,15 +179,15 @@ func (b *GamingBus) pruneGamingGroup(gcid string) (int, error) {
 	if removed == 0 {
 		return 0, nil
 	}
-	games := make([]string, 0, len(b.wireNext))
-	for game := range b.wireNext {
+	games := make([]string, 0, len(br.wireNext))
+	for game := range br.wireNext {
 		games = append(games, game)
 	}
 	sort.Strings(games)
 	var buf bytes.Buffer
 	for _, game := range games {
 		var last uint64
-		for _, ev := range b.wireRecords[game] {
+		for _, ev := range br.wireRecords[game] {
 			if ev.GCID == gcid {
 				continue
 			}
@@ -198,39 +198,39 @@ func (b *GamingBus) pruneGamingGroup(gcid string) (int, error) {
 			buf.Write(append(raw, '\n'))
 			last = ev.Seq
 		}
-		if last < b.wireNext[game] {
-			raw, err := json.Marshal(gamingInboxLine{GamingFrameEvent{Seq: b.wireNext[game], Game: game}, true})
+		if last < br.wireNext[game] {
+			raw, err := json.Marshal(gamingInboxLine{GamingFrameEvent{Seq: br.wireNext[game], Game: game}, true})
 			if err != nil {
 				return 0, err
 			}
 			buf.Write(append(raw, '\n'))
 		}
 	}
-	if err := writeFileSynced(filepath.Join(GamingStateDir, gamingInboxFile), buf.Bytes(), 0o600); err != nil {
+	if err := writeFileSynced(filepath.Join(br.dataDir, gamingInboxFile), buf.Bytes(), 0o600); err != nil {
 		return 0, err
 	}
 	// Reload from the new file on next use.
-	b.wireDir = ""
+	br.wireDir = ""
 	return removed, nil
 }
 
 // financialReplay returns the stored financial frames still to apply: those of
 // accepted tables' groups not yet applied by this process.
-func (b *GamingBus) financialReplay() []GamingFrameEvent {
-	groups := gamingGameGroups()
-	b.wireMu.Lock()
-	defer b.wireMu.Unlock()
-	if _, err := b.loadGamingFramesLocked("", 0); err != nil {
+func (br *Bridge) financialReplay() []GamingFrameEvent {
+	groups := br.gamingGameGroups()
+	br.wireMu.Lock()
+	defer br.wireMu.Unlock()
+	if _, err := br.loadGamingFramesLocked("", 0); err != nil {
 		gameLog.Errorf("load durable financial inbox: %v", err)
 		return nil
 	}
 	var out []GamingFrameEvent
-	for _, records := range b.wireRecords {
+	for _, records := range br.wireRecords {
 		for _, ev := range records {
 			if _, ok := groups[ev.Game+"\x00"+ev.GCID]; !ok || !ev.Financial {
 				continue
 			}
-			if _, done := b.financialDone[financialDoneKey(ev)]; done {
+			if _, done := br.financialDone[financialDoneKey(ev)]; done {
 				continue
 			}
 			out = append(out, ev)
@@ -244,32 +244,32 @@ func financialDoneKey(ev GamingFrameEvent) string {
 }
 
 // markFinancialApplied keeps an applied financial frame out of later replays.
-func (b *GamingBus) markFinancialApplied(ev GamingFrameEvent) {
-	b.wireMu.Lock()
-	defer b.wireMu.Unlock()
-	if b.financialDone == nil {
-		b.financialDone = make(map[string]struct{})
+func (br *Bridge) markFinancialApplied(ev GamingFrameEvent) {
+	br.wireMu.Lock()
+	defer br.wireMu.Unlock()
+	if br.financialDone == nil {
+		br.financialDone = make(map[string]struct{})
 	}
-	b.financialDone[financialDoneKey(ev)] = struct{}{}
+	br.financialDone[financialDoneKey(ev)] = struct{}{}
 }
 
 // persistGamingFrame writes and syncs a frame before it can reach a game.
 // Exact BR history duplicates are ignored, so reconnecting a notification
 // source cannot replay the same protocol event into the game.
-func (b *GamingBus) persistGamingFrame(ev GamingFrameEvent) (uint64, bool, error) {
-	b.wireMu.Lock()
-	defer b.wireMu.Unlock()
-	if _, err := b.loadGamingFramesLocked(ev.Game, 0); err != nil {
+func (br *Bridge) persistGamingFrame(ev GamingFrameEvent) (uint64, bool, error) {
+	br.wireMu.Lock()
+	defer br.wireMu.Unlock()
+	if _, err := br.loadGamingFramesLocked(ev.Game, 0); err != nil {
 		return 0, false, err
 	}
 	key := gamingFrameKey(ev)
-	if _, exists := b.wireSeen[key]; exists {
+	if _, exists := br.wireSeen[key]; exists {
 		return 0, false, nil
 	}
-	if err := os.MkdirAll(GamingStateDir, 0o700); err != nil {
+	if err := os.MkdirAll(br.dataDir, 0o700); err != nil {
 		return 0, false, err
 	}
-	ev.Seq = b.wireNext[ev.Game] + 1
+	ev.Seq = br.wireNext[ev.Game] + 1
 	raw, err := json.Marshal(ev)
 	if err != nil {
 		return 0, false, err
@@ -277,7 +277,7 @@ func (b *GamingBus) persistGamingFrame(ev GamingFrameEvent) (uint64, bool, error
 	if len(raw)+1 > gamingWireMaxLine {
 		return 0, false, fmt.Errorf("gaming frame of %d bytes is longer than the inbox keeps", len(raw))
 	}
-	path := filepath.Join(GamingStateDir, gamingInboxFile)
+	path := filepath.Join(br.dataDir, gamingInboxFile)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return 0, false, err
@@ -292,8 +292,8 @@ func (b *GamingBus) persistGamingFrame(ev GamingFrameEvent) (uint64, bool, error
 	if closeErr != nil {
 		return 0, false, closeErr
 	}
-	b.wireNext[ev.Game] = ev.Seq
-	b.wireRecords[ev.Game] = append(b.wireRecords[ev.Game], ev)
-	b.wireSeen[key] = struct{}{}
+	br.wireNext[ev.Game] = ev.Seq
+	br.wireRecords[ev.Game] = append(br.wireRecords[ev.Game], ev)
+	br.wireSeen[key] = struct{}{}
 	return ev.Seq, true, nil
 }

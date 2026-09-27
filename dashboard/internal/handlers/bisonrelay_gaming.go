@@ -25,6 +25,13 @@ import (
 // under caps, through this policy. Storage speaks atoms; the frontend speaks
 // DCR, converted here the same way the BR-MCP handlers do.
 
+// gaming is the bridge the gaming routes act on.
+var gaming *gamingcore.Bridge
+
+// UseGamingBridge hands the gaming routes their bridge, once, before they
+// serve.
+func UseGamingBridge(b *gamingcore.Bridge) { gaming = b }
+
 // gamePolicyView is one game's policy, DCR-denominated.
 type gamePolicyView struct {
 	Name                string  `json:"name"`
@@ -137,12 +144,12 @@ func BisonrelayGamingSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	// An unreachable node refuses the same way a node with no index does -
 	// enabling on a guess parks the first payout at publishing - but it is
 	// reported differently, because it is a different thing to go and fix.
-	hasIndex, probeErr := gamingcore.DcrdHasTxIndex(r.Context())
+	hasIndex, probeErr := gaming.DcrdHasTxIndex(r.Context())
 	txIndex := probeErr == nil && hasIndex
 	reachable := probeErr == nil
 	switch r.Method {
 	case http.MethodGet:
-		gamingJSON(w, gamingToView(gamingcore.ReadGamingSettings(), txIndex, reachable))
+		gamingJSON(w, gamingToView(gaming.ReadGamingSettings(), txIndex, reachable))
 	case http.MethodPost:
 		var in gamingSettingsView
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -159,7 +166,7 @@ func BisonrelayGamingSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		// person approving cannot be told from anybody who reached the port.
 		// It is also only ever live over a dcrd that can be asked about a
 		// transaction, or the payouts it approves are signed and never sent.
-		saved, err := gamingcore.WriteGamingSettings(next, auth.Enabled(), txIndex)
+		saved, err := gaming.WriteGamingSettings(next, auth.Enabled(), txIndex)
 		switch {
 		case err == nil:
 		case errors.Is(err, gamingcore.ErrGamingNeedsAppPassword),
@@ -185,7 +192,7 @@ func BisonrelayGamingGamesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	gamingJSON(w, map[string]any{"games": gamingcore.GamingGames()})
+	gamingJSON(w, map[string]any{"games": gaming.GamingGames()})
 }
 
 // BisonrelayGamingSpendsHandler lists what games have asked to spend, and what
@@ -213,7 +220,7 @@ func BisonrelayGamingSpendsHandler(w http.ResponseWriter, r *http.Request) {
 		pageSize = 100
 	}
 
-	spends, usedToday, err := gamingcore.GamingSpendLedger()
+	spends, usedToday, err := gaming.GamingSpendLedger()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -283,9 +290,9 @@ func BisonrelayGamingSpendDecideHandler(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "passphrase is required to approve a spend", http.StatusBadRequest)
 			return
 		}
-		spend, err = gamingcore.ApproveGamingSpend(r.Context(), strings.TrimSpace(req.ID), passphrase)
+		spend, err = gaming.ApproveGamingSpend(r.Context(), strings.TrimSpace(req.ID), passphrase)
 	} else {
-		spend, err = gamingcore.DenyGamingSpend(strings.TrimSpace(req.ID))
+		spend, err = gaming.DenyGamingSpend(strings.TrimSpace(req.ID))
 	}
 
 	switch {
@@ -335,7 +342,7 @@ func BisonrelayGamingCredentialHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	material, err := gamingcore.IssueGamingCredential(strings.TrimSpace(req.Game))
+	material, err := gaming.IssueGamingCredential(strings.TrimSpace(req.Game))
 	switch {
 	case err == nil:
 	case errors.Is(err, gamingcore.ErrGamingGameNotRegistered):
@@ -370,7 +377,7 @@ func BisonrelayGamingCredentialRevokeHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	switch err := gamingcore.RevokeGamingCredential(strings.TrimSpace(req.Game)); {
+	switch err := gaming.RevokeGamingCredential(strings.TrimSpace(req.Game)); {
 	case err == nil:
 		gamingJSON(w, map[string]any{"revoked": true})
 	case errors.Is(err, gamingcore.ErrGamingNoCredential):
@@ -392,13 +399,13 @@ func BisonrelayGamingBridgeInfoHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cert, _, err := gamingcore.GamingBridgeKeypair()
+	cert, _, err := gaming.GamingBridgeKeypair()
 	if err != nil {
 		http.Error(w, "the bridge has no certificate: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	gamingJSON(w, map[string]any{
 		"bridgeCertPem": string(cert),
-		"port":          gamingcore.GamingBridgePort(),
+		"port":          gaming.GamingBridgePort(),
 	})
 }

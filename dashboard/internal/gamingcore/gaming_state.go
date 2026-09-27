@@ -9,24 +9,24 @@ import (
 
 // GamingReportedState is the game's cached, nonfinancial presentation state.
 // Financial status always comes from the bridge authority ledger.
-func GamingReportedState(game string) *gamingpb.GameState {
-	if gamingState == nil {
+func (br *Bridge) GamingReportedState(game string) *gamingpb.GameState {
+	if br.gamingState == nil {
 		return nil
 	}
-	return gamingState(game)
+	return br.gamingState(game)
 }
 
 // RefreshGamingState asks a connected game to update its presentation state.
-func RefreshGamingState(ctx context.Context, game string) error {
-	if !gamingGameRegistered(game) {
+func (br *Bridge) RefreshGamingState(ctx context.Context, game string) error {
+	if !br.gamingGameRegistered(game) {
 		return ErrGamingGameNotRegistered
 	}
-	if gamingRequest == nil {
+	if br.gamingRequest == nil {
 		return ErrGamingGameNotConnected
 	}
 	ctx, cancel := context.WithTimeout(ctx, gamingJoinTimeout)
 	defer cancel()
-	reply, err := gamingRequest(ctx, game, &gamingpb.BridgeRequest{
+	reply, err := br.gamingRequest(ctx, game, &gamingpb.BridgeRequest{
 		Req: &gamingpb.BridgeRequest_RefreshState{RefreshState: &gamingpb.RefreshState{}},
 	})
 	if err != nil {

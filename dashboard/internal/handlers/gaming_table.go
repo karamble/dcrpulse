@@ -45,7 +45,7 @@ func BisonrelayGamingCreateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	table, err := gamingcore.CreateGamingTable(r.Context(), game, gcid, uint64(buyin), req.Seats, req.OpenBlocks, req.Funds)
+	table, err := gaming.CreateGamingTable(r.Context(), game, gcid, uint64(buyin), req.Seats, req.OpenBlocks, req.Funds)
 	if err != nil {
 		gamingTableError(w, err)
 		return
@@ -79,7 +79,7 @@ func BisonrelayGamingInviteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sid, err := gamingcore.AcceptGamingInvite(r.Context(), game, req.Invite, gcid)
+	sid, err := gaming.AcceptGamingInvite(r.Context(), game, req.Invite, gcid)
 	if err != nil {
 		gamingTableError(w, err)
 		return
@@ -96,12 +96,12 @@ func BisonrelayGamingStateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("refresh") == "1" {
-		if err := gamingcore.RefreshGamingState(r.Context(), game); err != nil {
+		if err := gaming.RefreshGamingState(r.Context(), game); err != nil {
 			gamingTableError(w, err)
 			return
 		}
 	}
-	state := gamingcore.GamingReportedState(game)
+	state := gaming.GamingReportedState(game)
 	if state == nil {
 		// Never reported is not an error: a game that has not connected
 		// since this bridge started has nothing to say yet.
@@ -109,7 +109,7 @@ func BisonrelayGamingStateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var tip int64
-	if chain, err := gamingcore.GamingChainTipNow(r.Context()); err == nil {
+	if chain, err := gaming.GamingChainTipNow(r.Context()); err == nil {
 		tip = chain.Height
 	}
 	gamingJSON(w, gamingStateView(state, tip))
@@ -124,7 +124,7 @@ func BisonrelayGamingTableStatusHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "game and table id are required", http.StatusBadRequest)
 		return
 	}
-	status, err := gamingcore.ReadGamingTableStatus(game, sid)
+	status, err := gaming.ReadGamingTableStatus(game, sid)
 	if err != nil {
 		http.Error(w, "Gaming ledger unavailable", http.StatusServiceUnavailable)
 		return

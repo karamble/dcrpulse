@@ -59,9 +59,10 @@ func TestARegisteredGameIdIsTheRoutingKeyTheWireAccepts(t *testing.T) {
 // The operator types this now, so a dropped typo leaves them looking at a list
 // that did not grow, with nothing to read and nothing to correct.
 func TestAnUnroutableGameIdIsRefusedRatherThanDropped(t *testing.T) {
-	spendSeams(t)
+	br := newTestBridge(t)
+	spendSeams(t, br)
 
-	_, err := WriteGamingSettings(GamingSettings{
+	_, err := br.WriteGamingSettings(GamingSettings{
 		RegisteredGames: []string{"poker", "not a game id"},
 	}, true, true)
 	if !errors.Is(err, ErrGamingBadGameID) {
@@ -70,7 +71,7 @@ func TestAnUnroutableGameIdIsRefusedRatherThanDropped(t *testing.T) {
 	if !strings.Contains(err.Error(), "not a game id") {
 		t.Errorf("the refusal does not say which id was wrong: %v", err)
 	}
-	if got := ReadGamingSettings().RegisteredGames; len(got) != 0 {
+	if got := br.ReadGamingSettings().RegisteredGames; len(got) != 0 {
 		t.Fatalf("a refused write registered %v anyway", got)
 	}
 }
@@ -91,16 +92,17 @@ func TestRegisteringFoldsDuplicatesAndOrders(t *testing.T) {
 // knowing. A game has to be able to appear without the bridge being taught its
 // name, or a second game needs a release before it can play at all.
 func TestTheGamesListReportsOnlyWhatWasRegistered(t *testing.T) {
-	spendSeams(t)
+	br := newTestBridge(t)
+	spendSeams(t, br)
 
-	if _, err := WriteGamingSettings(GamingSettings{
+	if _, err := br.WriteGamingSettings(GamingSettings{
 		RegisteredGames: []string{"backgammon", "poker"},
 		Policies:        map[string]GamePolicy{"poker": {Name: "Poker Night"}},
 	}, true, true); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 
-	games := GamingGames()
+	games := br.GamingGames()
 	if len(games) != 2 {
 		t.Fatalf("listed %d games, want 2: %+v", len(games), games)
 	}

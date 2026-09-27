@@ -78,7 +78,7 @@ func TestParseGamingFrameLeavesChatAlone(t *testing.T) {
 // One game must not see another's traffic, and a listener that stalls must not
 // stall the stream every table shares.
 func TestGamingBusRoutesPerGame(t *testing.T) {
-	bus := &GamingBus{subs: make(map[*gamingSubscriber]struct{})}
+	bus := newTestBridge(t)
 
 	poker, cancelPoker := bus.Subscribe("poker", 4)
 	defer cancelPoker()
@@ -106,7 +106,7 @@ func TestGamingBusRoutesPerGame(t *testing.T) {
 // A game that stops draining loses frames rather than blocking every other
 // table on the same stream.
 func TestGamingBusDropsRatherThanBlocks(t *testing.T) {
-	bus := &GamingBus{subs: make(map[*gamingSubscriber]struct{})}
+	bus := newTestBridge(t)
 	_, cancel := bus.Subscribe("poker", 1)
 	defer cancel()
 
@@ -122,7 +122,7 @@ func TestGamingBusDropsRatherThanBlocks(t *testing.T) {
 
 // Unsubscribing must not leave a closed channel being written to.
 func TestGamingBusUnsubscribeStopsDelivery(t *testing.T) {
-	bus := &GamingBus{subs: make(map[*gamingSubscriber]struct{})}
+	bus := newTestBridge(t)
 	ch, cancel := bus.Subscribe("poker", 1)
 	cancel()
 

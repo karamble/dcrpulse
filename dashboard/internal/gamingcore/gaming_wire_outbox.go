@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
@@ -33,27 +32,21 @@ type gamingSendState struct {
 
 var errGamingSendUncertain = errors.New("gaming message publication is uncertain; reconcile local BR history")
 
-var gamingOutbox = struct {
-	sync.Mutex
-	dir    string
-	claims map[string]gamingSendState
-}{}
-
 func gamingSendKey(c gamingSendClaim) string {
 	return c.Game + "\x00" + c.GCID + "\x00" + c.MID + "\x00" + c.Part
 }
 
-func loadGamingSendClaimsLocked() error {
-	if gamingOutbox.dir == GamingStateDir && gamingOutbox.claims != nil {
+func (br *Bridge) loadGamingSendClaimsLocked() error {
+	if br.gamingOutbox.dir == br.dataDir && br.gamingOutbox.claims != nil {
 		return nil
 	}
-	path := filepath.Join(GamingStateDir, gamingOutboxFile)
+	path := filepath.Join(br.dataDir, gamingOutboxFile)
 	claims, err := readGamingSendClaims(path)
 	if err != nil {
 		return fmt.Errorf("gaming outbox %s: %w", path, err)
 	}
 	// Installed only once the whole file read cleanly.
-	gamingOutbox.dir, gamingOutbox.claims = GamingStateDir, claims
+	br.gamingOutbox.dir, br.gamingOutbox.claims = br.dataDir, claims
 	return nil
 }
 
@@ -107,10 +100,10 @@ func readGamingSendClaims(path string) (map[string]gamingSendState, error) {
 // can never publish the same immutable wire part again. Only a claim released
 // because brclientd refused the send can be claimed again; recovery otherwise
 // comes from BR history and bridge inbox replay, never peer retransmission.
-func claimGamingFrameSend(game, gcid string, frame gamingFrame, text string) (bool, error) {
-	gamingOutbox.Lock()
-	defer gamingOutbox.Unlock()
-	if err := loadGamingSendClaimsLocked(); err != nil {
+func (br *Bridge) claimGamingFrameSend(game, gcid string, frame gamingFrame, text string) (bool, error) {
+	br.gamingOutbox.Lock()
+	defer br.gamingOutbox.Unlock()
+	if err := br.loadGamingSendClaimsLocked(); err != nil {
 		return false, err
 	}
 	digest := sha256.Sum256([]byte(text))
@@ -119,7 +112,7 @@ func claimGamingFrameSend(game, gcid string, frame gamingFrame, text string) (bo
 		Digest: hex.EncodeToString(digest[:]), ClaimedAt: time.Now().Unix(), State: "claimed",
 	}
 	key := gamingSendKey(claim)
-	if old, exists := gamingOutbox.claims[key]; exists {
+	if old, exists := br.gamingOutbox.claims[key]; exists {
 		if old.digest != claim.Digest {
 			return false, fmt.Errorf("gaming message identity collision")
 		}
@@ -130,22 +123,22 @@ func claimGamingFrameSend(game, gcid string, frame gamingFrame, text string) (bo
 			return false, errGamingSendUncertain
 		}
 	}
-	if err := appendGamingSendClaimLocked(claim); err != nil {
+	if err := br.appendGamingSendClaimLocked(claim); err != nil {
 		return false, err
 	}
-	gamingOutbox.claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
+	br.gamingOutbox.claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
 	return true, nil
 }
 
-func appendGamingSendClaimLocked(claim gamingSendClaim) error {
-	if err := os.MkdirAll(GamingStateDir, 0o700); err != nil {
+func (br *Bridge) appendGamingSendClaimLocked(claim gamingSendClaim) error {
+	if err := os.MkdirAll(br.dataDir, 0o700); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(claim)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(GamingStateDir, gamingOutboxFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(filepath.Join(br.dataDir, gamingOutboxFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -162,10 +155,10 @@ func appendGamingSendClaimLocked(claim gamingSendClaim) error {
 	return nil
 }
 
-func markGamingFrameSent(game, gcid string, frame gamingFrame, text string) error {
-	gamingOutbox.Lock()
-	defer gamingOutbox.Unlock()
-	if err := loadGamingSendClaimsLocked(); err != nil {
+func (br *Bridge) markGamingFrameSent(game, gcid string, frame gamingFrame, text string) error {
+	br.gamingOutbox.Lock()
+	defer br.gamingOutbox.Unlock()
+	if err := br.loadGamingSendClaimsLocked(); err != nil {
 		return err
 	}
 	digest := sha256.Sum256([]byte(text))
@@ -174,26 +167,26 @@ func markGamingFrameSent(game, gcid string, frame gamingFrame, text string) erro
 		Digest: hex.EncodeToString(digest[:]), ClaimedAt: time.Now().Unix(), State: "sent",
 	}
 	key := gamingSendKey(claim)
-	old, exists := gamingOutbox.claims[key]
+	old, exists := br.gamingOutbox.claims[key]
 	if !exists || old.digest != claim.Digest {
 		return fmt.Errorf("gaming message was not claimed before send")
 	}
 	if old.state == "sent" {
 		return nil
 	}
-	if err := appendGamingSendClaimLocked(claim); err != nil {
+	if err := br.appendGamingSendClaimLocked(claim); err != nil {
 		return err
 	}
-	gamingOutbox.claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
+	br.gamingOutbox.claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
 	return nil
 }
 
 // releaseGamingFrameClaim frees a claim whose send brclientd refused, so the
 // message never reached Bison Relay and may be sent once later.
-func releaseGamingFrameClaim(game, gcid string, frame gamingFrame, text string) error {
-	gamingOutbox.Lock()
-	defer gamingOutbox.Unlock()
-	if err := loadGamingSendClaimsLocked(); err != nil {
+func (br *Bridge) releaseGamingFrameClaim(game, gcid string, frame gamingFrame, text string) error {
+	br.gamingOutbox.Lock()
+	defer br.gamingOutbox.Unlock()
+	if err := br.loadGamingSendClaimsLocked(); err != nil {
 		return err
 	}
 	digest := sha256.Sum256([]byte(text))
@@ -202,28 +195,28 @@ func releaseGamingFrameClaim(game, gcid string, frame gamingFrame, text string) 
 		Digest: hex.EncodeToString(digest[:]), ClaimedAt: time.Now().Unix(), State: "released",
 	}
 	key := gamingSendKey(claim)
-	old, exists := gamingOutbox.claims[key]
+	old, exists := br.gamingOutbox.claims[key]
 	if !exists || old.digest != claim.Digest || old.state != "claimed" {
 		return fmt.Errorf("gaming message is not an open claim")
 	}
-	if err := appendGamingSendClaimLocked(claim); err != nil {
+	if err := br.appendGamingSendClaimLocked(claim); err != nil {
 		return err
 	}
-	gamingOutbox.claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
+	br.gamingOutbox.claims[key] = gamingSendState{digest: claim.Digest, state: claim.State}
 	return nil
 }
 
 // gamingFrameSendState reports a message's send state: "sent", "claimed"
 // (outcome unknown), "released" or "" for never claimed.
-func gamingFrameSendState(game, gcid string, frame gamingFrame, text string) (string, error) {
-	gamingOutbox.Lock()
-	defer gamingOutbox.Unlock()
-	if err := loadGamingSendClaimsLocked(); err != nil {
+func (br *Bridge) gamingFrameSendState(game, gcid string, frame gamingFrame, text string) (string, error) {
+	br.gamingOutbox.Lock()
+	defer br.gamingOutbox.Unlock()
+	if err := br.loadGamingSendClaimsLocked(); err != nil {
 		return "", err
 	}
 	digest := sha256.Sum256([]byte(text))
 	key := gamingSendKey(gamingSendClaim{Game: game, GCID: gcid, MID: frame.MID, Part: frame.Part})
-	old, exists := gamingOutbox.claims[key]
+	old, exists := br.gamingOutbox.claims[key]
 	if !exists {
 		return "", nil
 	}
@@ -233,35 +226,30 @@ func gamingFrameSendState(game, gcid string, frame gamingFrame, text string) (st
 	return old.state, nil
 }
 
-// gamingGCSend posts to a group chat. Settable for tests; production never sets it.
-var gamingGCSend = func(ctx context.Context, gcid [32]byte, text string) error {
-	return hostRelay().SendGroupMessage(ctx, gcid, text)
-}
-
 // sendGamingFrameOnce sends a frame to Bison Relay at most once. A send that
 // brclientd refused releases the claim; any other failure leaves the outcome
 // unknown, to be settled only from brclientd's own record of what it sent.
-func sendGamingFrameOnce(ctx context.Context, game, gcid string, parsed gamingFrame, frame string) error {
-	fresh, err := claimOrReconcileGamingFrame(ctx, game, gcid, parsed, frame)
+func (br *Bridge) sendGamingFrameOnce(ctx context.Context, game, gcid string, parsed gamingFrame, frame string) error {
+	fresh, err := br.claimOrReconcileGamingFrame(ctx, game, gcid, parsed, frame)
 	if err != nil || !fresh {
 		return err
 	}
-	return sendClaimedGamingFrame(ctx, game, gcid, parsed, frame)
+	return br.sendClaimedGamingFrame(ctx, game, gcid, parsed, frame)
 }
 
 // sendClaimedGamingFrame performs the one send a fresh claim allows.
-func sendClaimedGamingFrame(ctx context.Context, game, gcid string, parsed gamingFrame, frame string) error {
+func (br *Bridge) sendClaimedGamingFrame(ctx context.Context, game, gcid string, parsed gamingFrame, frame string) error {
 	id, err := parseGamingGCID(gcid)
 	if err != nil {
 		return err
 	}
-	if err := gamingGCSend(ctx, id, frame); err != nil {
+	if err := br.gamingGCSend(ctx, id, frame); err != nil {
 		if errors.Is(err, ErrNotSent) {
-			if relErr := releaseGamingFrameClaim(game, gcid, parsed, frame); relErr != nil {
+			if relErr := br.releaseGamingFrameClaim(game, gcid, parsed, frame); relErr != nil {
 				gameLog.Errorf("release refused gaming send: %v", relErr)
 			}
 		}
 		return err
 	}
-	return markGamingFrameSent(game, gcid, parsed, frame)
+	return br.markGamingFrameSent(game, gcid, parsed, frame)
 }

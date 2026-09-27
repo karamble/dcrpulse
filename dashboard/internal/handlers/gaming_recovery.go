@@ -13,7 +13,7 @@ import (
 
 func BisonrelayGamingRecoveryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		rows, err := gamingcore.GamingRecoveryList(r.Context())
+		rows, err := gaming.GamingRecoveryList(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
@@ -38,19 +38,19 @@ func BisonrelayGamingRecoveryHandler(w http.ResponseWriter, r *http.Request) {
 	req.Passphrase = ""
 	switch req.Action {
 	case "archive", "unarchive":
-		if err := gamingcore.ArchiveGamingRecovery(r.Context(), req.ID, req.Action == "archive"); err != nil {
+		if err := gaming.ArchiveGamingRecovery(r.Context(), req.ID, req.Action == "archive"); err != nil {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 		gamingJSON(w, map[string]bool{"archived": req.Action == "archive"})
 	case "close":
-		if err := gamingcore.CloseGamingRecoveryTable(r.Context(), req.ID); err != nil {
+		if err := gaming.CloseGamingRecoveryTable(r.Context(), req.ID); err != nil {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 		gamingJSON(w, map[string]bool{"closed": true})
 	case "quote":
-		q, err := gamingcore.QuoteGamingRecovery(r.Context(), req.ID)
+		q, err := gaming.QuoteGamingRecovery(r.Context(), req.ID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
@@ -61,7 +61,7 @@ func BisonrelayGamingRecoveryHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "quote required", http.StatusBadRequest)
 			return
 		}
-		id, err := gamingcore.ConfirmGamingRecovery(r.Context(), req.ID, req.Quote, passphrase)
+		id, err := gaming.ConfirmGamingRecovery(r.Context(), req.ID, req.Quote, passphrase)
 		if err != nil {
 			gamingJSON(w, map[string]any{"txid": id, "pending": id != "", "error": err.Error()})
 			return
@@ -75,7 +75,7 @@ func BisonrelayGamingRecoveryHandler(w http.ResponseWriter, r *http.Request) {
 // BisonrelayGamingLedgerBackupHandler serves the financial ledger backup as a
 // file, byte for byte, so its checksum still verifies on restore.
 func BisonrelayGamingLedgerBackupHandler(w http.ResponseWriter, r *http.Request) {
-	raw, err := gamingcore.GamingLedgerBackup()
+	raw, err := gaming.GamingLedgerBackup()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -94,7 +94,7 @@ func BisonrelayGamingLedgerRestoreHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "backup file is too large or unreadable", http.StatusRequestEntityTooLarge)
 		return
 	}
-	unowned, err := gamingcore.RestoreGamingLedger(r.Context(), raw)
+	unowned, err := gaming.RestoreGamingLedger(r.Context(), raw)
 	switch {
 	case err == nil:
 		gamingJSON(w, map[string]any{"restored": true, "unownedKeys": unowned})

@@ -17,7 +17,8 @@ import (
 // covers the frame never being sent. Kills: removing the check, or moving it
 // after the send.
 func TestAGCIDThatCouldEscapeTheURLIsRefused(t *testing.T) {
-	inviteSeams(t)
+	br := newTestBridge(t)
+	inviteSeams(t, br)
 
 	const good = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
@@ -50,7 +51,7 @@ func TestAGCIDThatCouldEscapeTheURLIsRefused(t *testing.T) {
 			t.Errorf("%s: %q was accepted as a group chat id", name, gcid)
 		}
 		// testFrame names poker, which spendPolicy registers.
-		err := SendGamingFrame(context.Background(), "poker", gcid, testFrame)
+		err := br.SendGamingFrame(context.Background(), "poker", gcid, testFrame)
 		if !errors.Is(err, ErrGamingBadGCID) {
 			t.Errorf("%s: SendGamingFrame returned %v, want ErrGamingBadGCID", name, err)
 		}

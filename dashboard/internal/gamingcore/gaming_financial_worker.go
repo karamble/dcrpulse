@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"dcrpulse/internal/gamingfunds"
@@ -20,12 +19,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-var gamingFinancialWorker struct {
-	sync.Mutex
-	running bool
-}
-var gamingFinancialInbox = make(chan GamingFrameEvent, 128)
 
 // observeGamingOperation asks dcrd first, which answers for the mempool and,
 // with the transaction index, for anything mined.
@@ -40,8 +33,8 @@ var gamingFinancialInbox = make(chan GamingFrameEvent, 128)
 // nothing wider. A settlement this operator receives nothing from is a foreign
 // transaction the wallet has no record of, so the fallback cannot stand in for
 // the index.
-func observeGamingOperation(ctx context.Context, id string) (gamingfunds.ChainObservation, bool, error) {
-	node := hostNode()
+func (br *Bridge) observeGamingOperation(ctx context.Context, id string) (gamingfunds.ChainObservation, bool, error) {
+	node := br.hostNode()
 	if node == nil {
 		return gamingfunds.ChainObservation{}, false, ErrGamingChainUnavailable
 	}
@@ -62,7 +55,7 @@ func observeGamingOperation(ctx context.Context, id string) (gamingfunds.ChainOb
 	if !errors.As(err, &rpcErr) || rpcErr.Code != dcrjson.ErrRPCNoTxInfo {
 		return gamingfunds.ChainObservation{}, false, err
 	}
-	walletTx, ok, err := hostWallet().Transaction(ctx, *hash)
+	walletTx, ok, err := br.hostWallet().Transaction(ctx, *hash)
 	if err != nil {
 		return gamingfunds.ChainObservation{}, false, err
 	}
@@ -91,10 +84,6 @@ func observeGamingOperation(ctx context.Context, id string) (gamingfunds.ChainOb
 	return gamingfunds.ChainObservation{Known: true, Confirmations: confirmations, BlockHash: blockHash.String(), Height: int64(header.Height)}, true, nil
 }
 
-// gamingIndexComplained keeps the reconcile pass from saying the same thing
-// every thirty seconds, without it going unsaid.
-var gamingIndexComplained atomic.Bool
-
 // noteGamingIndexTrouble says why a reconcile pass could not look a transaction
 // up, when the reason is the one it will not recover from.
 //
@@ -106,19 +95,19 @@ var gamingIndexComplained atomic.Bool
 //
 // The node is asked rather than the error read. getinfo answers this exactly,
 // and the alternative is matching on an error string dcrd is free to reword.
-func noteGamingIndexTrouble(ctx context.Context, cause error) {
-	has, err := DcrdHasTxIndex(ctx)
+func (br *Bridge) noteGamingIndexTrouble(ctx context.Context, cause error) {
+	has, err := br.DcrdHasTxIndex(ctx)
 	if err != nil || has {
 		return
 	}
-	if gamingIndexComplained.CompareAndSwap(false, true) {
+	if br.gamingIndexComplained.CompareAndSwap(false, true) {
 		gameLog.Errorf("dcrd is running without its transaction index, so approved payouts cannot be broadcast. Set txindex=1 and restart dcrd. Last lookup failed with: %v", cause)
 	}
 }
 
 // noteGamingLookupWorks retracts that complaint, once, when dcrd answers again.
-func noteGamingLookupWorks() {
-	if gamingIndexComplained.CompareAndSwap(true, false) {
+func (br *Bridge) noteGamingLookupWorks() {
+	if br.gamingIndexComplained.CompareAndSwap(true, false) {
 		gameLog.Infof("dcrd is answering gaming transaction lookups again; approved payouts will be broadcast")
 	}
 }
@@ -139,8 +128,8 @@ func noteGamingSpend(found map[string]observedGamingSpend, outpoint, txid string
 	found[outpoint] = observedGamingSpend{txid: txid, confirmations: confirmations}
 }
 
-func scanGamingMempoolSpends(ctx context.Context, targets map[string]bool) (map[string]observedGamingSpend, error) {
-	node := hostNode()
+func (br *Bridge) scanGamingMempoolSpends(ctx context.Context, targets map[string]bool) (map[string]observedGamingSpend, error) {
+	node := br.hostNode()
 	if node == nil {
 		return nil, ErrGamingChainUnavailable
 	}
@@ -168,7 +157,7 @@ func scanGamingMempoolSpends(ctx context.Context, targets map[string]bool) (map[
 // history. This works without dcrd's optional transaction index and includes a
 // cooperative payout published by another participant when the watched escrow
 // script is imported.
-func scanGamingWalletSpends(ctx context.Context, deposits []gamingfunds.Deposit, targets map[string]bool) (map[string]observedGamingSpend, error) {
+func (br *Bridge) scanGamingWalletSpends(ctx context.Context, deposits []gamingfunds.Deposit, targets map[string]bool) (map[string]observedGamingSpend, error) {
 	start := int64(-1)
 	for _, dep := range deposits {
 		if !targets[dep.Outpoint] || dep.FundingHeight <= 0 {
@@ -182,16 +171,16 @@ func scanGamingWalletSpends(ctx context.Context, deposits []gamingfunds.Deposit,
 	if start < 0 {
 		return map[string]observedGamingSpend{}, nil
 	}
-	return scanGamingWalletSpendsFrom(ctx, start, targets)
+	return br.scanGamingWalletSpendsFrom(ctx, start, targets)
 }
 
 // scanGamingWalletSpendsFrom finds the wallet's mined spends of targets from
 // block start on.
-func scanGamingWalletSpendsFrom(ctx context.Context, start int64, targets map[string]bool) (map[string]observedGamingSpend, error) {
+func (br *Bridge) scanGamingWalletSpendsFrom(ctx context.Context, start int64, targets map[string]bool) (map[string]observedGamingSpend, error) {
 	if start > int64(^uint32(0)>>1) {
 		return nil, fmt.Errorf("gaming scan height is out of range")
 	}
-	node := hostNode()
+	node := br.hostNode()
 	if node == nil {
 		return nil, ErrGamingChainUnavailable
 	}
@@ -200,7 +189,7 @@ func scanGamingWalletSpendsFrom(ctx context.Context, start int64, targets map[st
 		return nil, err
 	}
 	found := map[string]observedGamingSpend{}
-	err = hostWallet().MinedTransactions(ctx, int32(start), func(height int32, txs [][]byte) error {
+	err = br.hostWallet().MinedTransactions(ctx, int32(start), func(height int32, txs [][]byte) error {
 		if int64(height) > tip {
 			return nil
 		}
@@ -255,7 +244,7 @@ func fundingSpender(opID string, inputs []string, spends map[string]observedGami
 // fundingSpentElsewhere asks the chain whether a rejected funding's inputs are
 // gone, and to whom. Its inputs are this wallet's own coins, so the wallet has
 // every spend of them.
-func fundingSpentElsewhere(ctx context.Context, op gamingfunds.Operation) string {
+func (br *Bridge) fundingSpentElsewhere(ctx context.Context, op gamingfunds.Operation) string {
 	missing := map[string]bool{}
 	start := int64(-1)
 	for _, in := range op.Inputs {
@@ -264,7 +253,7 @@ func fundingSpentElsewhere(ctx context.Context, op gamingfunds.Operation) string
 		if !ok || err != nil {
 			return ""
 		}
-		out, err := GamingChainOutpoint(ctx, txid, uint32(index), true)
+		out, err := br.GamingChainOutpoint(ctx, txid, uint32(index), true)
 		if err != nil {
 			return ""
 		}
@@ -275,7 +264,7 @@ func fundingSpentElsewhere(ctx context.Context, op gamingfunds.Operation) string
 		if err != nil {
 			return ""
 		}
-		node := hostNode()
+		node := br.hostNode()
 		if node == nil {
 			return ""
 		}
@@ -291,7 +280,7 @@ func fundingSpentElsewhere(ctx context.Context, op gamingfunds.Operation) string
 	if len(missing) == 0 {
 		return ""
 	}
-	spends, err := scanGamingWalletSpendsFrom(ctx, start, missing)
+	spends, err := br.scanGamingWalletSpendsFrom(ctx, start, missing)
 	if err != nil {
 		return ""
 	}
@@ -300,8 +289,8 @@ func fundingSpentElsewhere(ctx context.Context, op gamingfunds.Operation) string
 
 // abandonDeadFunding ends a funding the chain shows can never confirm and
 // frees its deposit, so the game can ask for it again.
-func abandonDeadFunding(ctx context.Context, store *gamingfunds.Store, op gamingfunds.Operation) {
-	spender := fundingSpentElsewhere(ctx, op)
+func (br *Bridge) abandonDeadFunding(ctx context.Context, store *gamingfunds.Store, op gamingfunds.Operation) {
+	spender := br.fundingSpentElsewhere(ctx, op)
 	if spender == "" {
 		return
 	}
@@ -310,14 +299,14 @@ func abandonDeadFunding(ctx context.Context, store *gamingfunds.Store, op gaming
 		return
 	}
 	gameLog.Infof("funding %s can never confirm: its coins were spent by %s; the deposit can be requested again", op.ID, spender)
-	failAbandonedFundingSpend(op, spender)
+	br.failAbandonedFundingSpend(op, spender)
 }
 
 // failAbandonedFundingSpend closes the request a dead funding answered.
-func failAbandonedFundingSpend(op gamingfunds.Operation, spender string) {
-	spendMu.Lock()
-	defer spendMu.Unlock()
-	log, err := readSpendLog()
+func (br *Bridge) failAbandonedFundingSpend(op gamingfunds.Operation, spender string) {
+	br.spendMu.Lock()
+	defer br.spendMu.Unlock()
+	log, err := br.readSpendLog()
 	if err != nil {
 		return
 	}
@@ -335,13 +324,13 @@ func failAbandonedFundingSpend(op gamingfunds.Operation, spender string) {
 		}
 	}
 	if changed {
-		if err = writeSpendLog(log, time.Now().Unix()); err != nil {
+		if err = br.writeSpendLog(log, time.Now().Unix()); err != nil {
 			gameLog.Errorf("record dead funding: %v", err)
 		}
 	}
 }
 
-func reconcileGamingDeposits(ctx context.Context, store *gamingfunds.Store) {
+func (br *Bridge) reconcileGamingDeposits(ctx context.Context, store *gamingfunds.Store) {
 	deposits, err := store.AllDeposits()
 	if err != nil {
 		return
@@ -352,13 +341,13 @@ func reconcileGamingDeposits(ctx context.Context, store *gamingfunds.Store) {
 			targets[dep.Outpoint] = true
 		}
 	}
-	if len(targets) == 0 || hostNode() == nil {
+	if len(targets) == 0 || br.hostNode() == nil {
 		return
 	}
-	mempool, mempoolErr := scanGamingMempoolSpends(ctx, targets)
-	confirmed, walletErr := scanGamingWalletSpends(ctx, deposits, targets)
+	mempool, mempoolErr := br.scanGamingMempoolSpends(ctx, targets)
+	confirmed, walletErr := br.scanGamingWalletSpends(ctx, deposits, targets)
 	for _, dep := range deposits {
-		if !targets[dep.Outpoint] || recoveryWalletMatches(ctx, dep.Scope) != nil {
+		if !targets[dep.Outpoint] || br.recoveryWalletMatches(ctx, dep.Scope) != nil {
 			continue
 		}
 		txid, indexText, ok := strings.Cut(dep.Outpoint, ":")
@@ -366,7 +355,7 @@ func reconcileGamingDeposits(ctx context.Context, store *gamingfunds.Store) {
 		if !ok || parseErr != nil {
 			continue
 		}
-		out, err := GamingChainOutpoint(ctx, txid, uint32(index), true)
+		out, err := br.GamingChainOutpoint(ctx, txid, uint32(index), true)
 		if err != nil {
 			continue
 		}
@@ -375,7 +364,7 @@ func reconcileGamingDeposits(ctx context.Context, store *gamingfunds.Store) {
 				_ = store.ObserveDeposit(dep.Scope, dep.ID, gamingfunds.DepositObservation{})
 				continue
 			}
-			operation, known, err := observeGamingOperation(ctx, dep.FundingTx)
+			operation, known, err := br.observeGamingOperation(ctx, dep.FundingTx)
 			if err != nil || !known {
 				continue
 			}
@@ -402,32 +391,32 @@ func reconcileGamingDeposits(ctx context.Context, store *gamingfunds.Store) {
 
 // StartGamingFinancialWorker resumes durable financial work without a running
 // game or browser. Call once at dashboard startup and cancel at shutdown.
-func StartGamingFinancialWorker(ctx context.Context) {
-	gamingFinancialWorker.Lock()
-	if gamingFinancialWorker.running {
-		gamingFinancialWorker.Unlock()
+func (br *Bridge) StartGamingFinancialWorker(ctx context.Context) {
+	br.gamingFinancialWorker.Lock()
+	if br.gamingFinancialWorker.running {
+		br.gamingFinancialWorker.Unlock()
 		return
 	}
-	gamingFinancialWorker.running = true
-	gamingFinancialWorker.Unlock()
+	br.gamingFinancialWorker.running = true
+	br.gamingFinancialWorker.Unlock()
 	var workers sync.WaitGroup
 	workers.Add(2)
 	go func() {
 		defer workers.Done()
 		replay := time.NewTicker(30 * time.Second)
 		defer replay.Stop()
-		process := func(event GamingFrameEvent) { processFinancialFrame(ctx, event) }
-		for _, event := range Gaming().financialReplay() {
+		process := func(event GamingFrameEvent) { br.processFinancialFrame(ctx, event) }
+		for _, event := range br.financialReplay() {
 			process(event)
 		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case event := <-gamingFinancialInbox:
+			case event := <-br.gamingFinancialInbox:
 				process(event)
 			case <-replay.C:
-				for _, event := range Gaming().financialReplay() {
+				for _, event := range br.financialReplay() {
 					process(event)
 				}
 			}
@@ -444,25 +433,25 @@ func StartGamingFinancialWorker(ctx context.Context) {
 				return
 			case <-ticker.C:
 				work, cancel := context.WithTimeout(ctx, 25*time.Second)
-				reconcileGamingFinance(work)
+				br.reconcileGamingFinance(work)
 				cancel()
 				if time.Since(pruned) >= time.Hour {
 					pruned = time.Now()
-					pruneSettledGaming(ctx)
+					br.pruneSettledGaming(ctx)
 				}
 			}
 		}
 	}()
 	go func() {
 		workers.Wait()
-		gamingFinancialWorker.Lock()
-		gamingFinancialWorker.running = false
-		gamingFinancialWorker.Unlock()
+		br.gamingFinancialWorker.Lock()
+		br.gamingFinancialWorker.running = false
+		br.gamingFinancialWorker.Unlock()
 	}()
 }
 
-func reconcileGamingFinance(ctx context.Context) {
-	store, err := gamingFundsStore()
+func (br *Bridge) reconcileGamingFinance(ctx context.Context) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		gameLog.Errorf("financial ledger unavailable: %v", err)
 		return
@@ -479,24 +468,24 @@ func reconcileGamingFinance(ctx context.Context) {
 		if !op.Approved || op.State == "awaiting_signatures" || op.State == gamingfunds.OperationAbandoned {
 			continue
 		}
-		if err = recoveryWalletMatches(ctx, op.Scope); err != nil {
+		if err = br.recoveryWalletMatches(ctx, op.Scope); err != nil {
 			continue
 		}
-		if hostNode() == nil {
+		if br.hostNode() == nil {
 			continue
 		}
-		observation, known, err := observeGamingOperation(ctx, op.ID)
+		observation, known, err := br.observeGamingOperation(ctx, op.ID)
 		if err != nil {
-			noteGamingIndexTrouble(ctx, err)
+			br.noteGamingIndexTrouble(ctx, err)
 			continue
 		}
-		noteGamingLookupWorks()
+		br.noteGamingLookupWorks()
 		if known {
 			if err = store.ObserveOperation(op.ID, observation); err != nil {
 				gameLog.Errorf("record financial chain observation: %v", err)
 			}
 			if op.Kind == "funding" {
-				reconcileGamingFundingHistory(op.ID)
+				br.reconcileGamingFundingHistory(op.ID)
 			}
 			continue
 		}
@@ -524,14 +513,14 @@ func reconcileGamingFinance(ctx context.Context) {
 			continue
 		}
 		// These exact signatures were authorized and persisted before any send.
-		if _, err = hostWallet().Broadcast(ctx, raw); err != nil {
+		if _, err = br.hostWallet().Broadcast(ctx, raw); err != nil {
 			gameLog.Warnf("financial transaction %s remains pending: %v", op.ID, err)
 			if op.Kind == "funding" && !transientBroadcastError(err) {
-				abandonDeadFunding(ctx, store, op)
+				br.abandonDeadFunding(ctx, store, op)
 			}
 		}
 	}
-	reconcileGamingDeposits(ctx, store)
+	br.reconcileGamingDeposits(ctx, store)
 }
 
 // fundingStillWanted reports whether a funding's deposit and table are still
@@ -558,14 +547,11 @@ func fundingStillWanted(store *gamingfunds.Store, op gamingfunds.Operation) bool
 	return true
 }
 
-// receiveFinancial applies one financial frame. Settable for tests.
-var receiveFinancial = receiveFinancialFrame
-
 // processFinancialFrame applies one stored financial frame and keeps it out of
 // later replays once applied.
-func processFinancialFrame(ctx context.Context, event GamingFrameEvent) {
+func (br *Bridge) processFinancialFrame(ctx context.Context, event GamingFrameEvent) {
 	work, cancel := context.WithTimeout(ctx, 10*time.Second)
-	err := receiveFinancial(work, event)
+	err := br.receiveFinancial(work, event)
 	cancel()
 	if err != nil {
 		// Invalid records stay harmless; dependency failures are retried
@@ -573,7 +559,7 @@ func processFinancialFrame(ctx context.Context, event GamingFrameEvent) {
 		gameLog.Debugf("financial message rejected: %v", err)
 		return
 	}
-	Gaming().markFinancialApplied(event)
+	br.markFinancialApplied(event)
 }
 
 // gamingPruneDepth is how deep every spend of a group's deposits must be
@@ -582,15 +568,15 @@ const gamingPruneDepth = 144
 
 // pruneSettledGaming drops the protocol history of paid-out tables. A spend
 // dcrd cannot find counts as not deep, so nothing goes on doubt.
-func pruneSettledGaming(ctx context.Context) {
-	store, err := gamingFundsStore()
+func (br *Bridge) pruneSettledGaming(ctx context.Context) {
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return
 	}
 	work, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	groups, err := store.PrunableGroups(time.Now().Unix(), gamingPruneDepth, func(txid string) (int64, error) {
-		observation, known, err := observeGamingOperation(work, txid)
+		observation, known, err := br.observeGamingOperation(work, txid)
 		if err != nil || !known {
 			return 0, err
 		}
@@ -600,18 +586,18 @@ func pruneSettledGaming(ctx context.Context) {
 		gameLog.Debugf("gaming history prune skipped: %v", err)
 		return
 	}
-	Gaming().pruneSettledGamingHistory(work, groups)
+	br.pruneSettledGamingHistory(work, groups)
 }
 
-func reconcileGamingFundingHistory(txid string) {
-	spendMu.Lock()
-	defer spendMu.Unlock()
-	log, err := readSpendLog()
+func (br *Bridge) reconcileGamingFundingHistory(txid string) {
+	br.spendMu.Lock()
+	defer br.spendMu.Unlock()
+	log, err := br.readSpendLog()
 	if err != nil {
 		return
 	}
 	changed := false
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return
 	}
@@ -635,7 +621,7 @@ func reconcileGamingFundingHistory(txid string) {
 		}
 	}
 	if changed {
-		if err = writeSpendLog(log, time.Now().Unix()); err != nil {
+		if err = br.writeSpendLog(log, time.Now().Unix()); err != nil {
 			gameLog.Errorf("reconcile funding history: %v", err)
 		}
 	}

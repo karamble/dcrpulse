@@ -15,7 +15,7 @@ import (
 // BindGamingRoster takes a seated table's roster from its game, verifies every
 // join and commit itself, and binds the table's financial roster to the seats'
 // bridge keys: the recovery key each join's bond names.
-func BindGamingRoster(ctx context.Context, game string, req *gamingpb.BindRosterRequest) error {
+func (br *Bridge) BindGamingRoster(ctx context.Context, game string, req *gamingpb.BindRosterRequest) error {
 	rt := req.GetTerms()
 	if rt == nil {
 		return fmt.Errorf("roster without terms")
@@ -29,11 +29,11 @@ func BindGamingRoster(ctx context.Context, game string, req *gamingpb.BindRoster
 	if terms.Game != game {
 		return fmt.Errorf("roster is for another game")
 	}
-	scope, err := gamingFinancialScope(ctx, game)
+	scope, err := br.gamingFinancialScope(ctx, game)
 	if err != nil {
 		return err
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func BindGamingRoster(ctx context.Context, game string, req *gamingpb.BindRoster
 	if err := store.BindSeats(scope, terms.SID, keys); err != nil {
 		return err
 	}
-	return announceGamingAuthority(ctx, scope, terms.SID)
+	return br.announceGamingAuthority(ctx, scope, terms.SID)
 }
 
 // rosterTermsMatch reports whether a roster's terms are the table the operator

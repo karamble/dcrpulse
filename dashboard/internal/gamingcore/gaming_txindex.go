@@ -25,8 +25,8 @@ import (
 // A cached "no" would go on refusing after the operator had already done the
 // work, which is a worse failure than the one this prevents. One getinfo per
 // settings read and per settings write costs nothing.
-func DcrdHasTxIndex(ctx context.Context) (bool, error) {
-	node := hostNode()
+func (br *Bridge) DcrdHasTxIndex(ctx context.Context) (bool, error) {
+	node := br.hostNode()
 	if node == nil {
 		return false, fmt.Errorf("dcrd is not connected")
 	}
@@ -42,7 +42,7 @@ func DcrdHasTxIndex(ctx context.Context) (bool, error) {
 // An unreachable dcrd reads as "no". Refusing to switch the bridge on is
 // recoverable and says so; switching it on because the node could not be asked
 // parks the first payout at publishing.
-func TxIndexActive(ctx context.Context) bool {
-	ok, err := DcrdHasTxIndex(ctx)
+func (br *Bridge) TxIndexActive(ctx context.Context) bool {
+	ok, err := br.DcrdHasTxIndex(ctx)
 	return err == nil && ok
 }

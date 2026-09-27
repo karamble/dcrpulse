@@ -35,36 +35,34 @@ func restoreFixture(t *testing.T) ([]byte, gamingfunds.Scope) {
 	return raw, scope
 }
 
-func stubRestoreWallet(t *testing.T, match, owned error) {
+func stubRestoreWallet(t *testing.T, br *Bridge, match, owned error) {
 	t.Helper()
-	oldDir, oldMatch, oldOwned := GamingStateDir, restoreWalletMatches, restoreKeyOwned
-	GamingStateDir = t.TempDir()
-	restoreWalletMatches = func(context.Context, gamingfunds.Scope) error { return match }
-	restoreKeyOwned = func(context.Context, gamingfunds.WalletKey) error { return owned }
+	br.restoreWalletMatches = func(context.Context, gamingfunds.Scope) error { return match }
+	br.restoreKeyOwned = func(context.Context, gamingfunds.WalletKey) error { return owned }
 	t.Cleanup(func() {
-		financeStores.Lock()
-		path := filepath.Join(GamingStateDir, "financial-authority")
-		if s := financeStores.stores[path]; s != nil {
+		br.financeStores.Lock()
+		path := filepath.Join(br.dataDir, "financial-authority")
+		if s := br.financeStores.stores[path]; s != nil {
 			s.Close()
-			delete(financeStores.stores, path)
+			delete(br.financeStores.stores, path)
 		}
-		financeStores.Unlock()
-		GamingStateDir, restoreWalletMatches, restoreKeyOwned = oldDir, oldMatch, oldOwned
+		br.financeStores.Unlock()
 	})
 }
 
 func TestRestoreGamingLedgerReplacesOpenEmptyStore(t *testing.T) {
+	br := newTestBridge(t)
 	raw, scope := restoreFixture(t)
-	stubRestoreWallet(t, nil, errors.New("not derived yet"))
-	before, err := gamingFundsStore()
+	stubRestoreWallet(t, br, nil, errors.New("not derived yet"))
+	before, err := br.gamingFundsStore()
 	if err != nil {
 		t.Fatal(err)
 	}
-	unowned, err := RestoreGamingLedger(context.Background(), raw)
+	unowned, err := br.RestoreGamingLedger(context.Background(), raw)
 	if err != nil || unowned != 1 {
 		t.Fatalf("restore = %d %v", unowned, err)
 	}
-	after, err := gamingFundsStore()
+	after, err := br.gamingFundsStore()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,12 +75,13 @@ func TestRestoreGamingLedgerReplacesOpenEmptyStore(t *testing.T) {
 }
 
 func TestRestoreGamingLedgerRefusesAnotherWallet(t *testing.T) {
+	br := newTestBridge(t)
 	raw, scope := restoreFixture(t)
-	stubRestoreWallet(t, errors.New("connect the original wallet"), nil)
-	if _, err := RestoreGamingLedger(context.Background(), raw); !errors.Is(err, ErrGamingBackupWrongWallet) {
+	stubRestoreWallet(t, br, errors.New("connect the original wallet"), nil)
+	if _, err := br.RestoreGamingLedger(context.Background(), raw); !errors.Is(err, ErrGamingBackupWrongWallet) {
 		t.Fatalf("restore from another wallet: %v", err)
 	}
-	store, err := gamingFundsStore()
+	store, err := br.gamingFundsStore()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,8 +91,9 @@ func TestRestoreGamingLedgerRefusesAnotherWallet(t *testing.T) {
 }
 
 func TestRestoreGamingLedgerRefusesInvalidBackup(t *testing.T) {
-	stubRestoreWallet(t, nil, nil)
-	if _, err := RestoreGamingLedger(context.Background(), []byte(`{"format":1}`)); !errors.Is(err, ErrGamingBackupInvalid) {
+	br := newTestBridge(t)
+	stubRestoreWallet(t, br, nil, nil)
+	if _, err := br.RestoreGamingLedger(context.Background(), []byte(`{"format":1}`)); !errors.Is(err, ErrGamingBackupInvalid) {
 		t.Fatalf("invalid backup: %v", err)
 	}
 }
