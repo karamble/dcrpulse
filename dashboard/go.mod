@@ -30,7 +30,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/jrick/logrotate v1.1.2
 	github.com/microcosm-cc/bluemonday v1.0.27
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sys v0.48.0
