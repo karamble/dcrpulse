@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"dcrpulse/internal/gamingpb"
 	"dcrpulse/internal/rpc"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // testTableGCID is a real group chat id: CreateGamingTable checks the shape

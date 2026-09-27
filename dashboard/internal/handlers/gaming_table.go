@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
-	"dcrpulse/internal/gamingpb"
 	"dcrpulse/internal/services"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // BisonrelayGamingCreateHandler proposes a table and puts it in a group chat.

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // waitAddr waits for the bridge's port to be open (want true) or closed.

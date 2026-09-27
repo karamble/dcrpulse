@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // These are the promises the feature exists to keep, and they are red until the

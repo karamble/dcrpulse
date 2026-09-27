@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/gamingpb"
 
 	"github.com/karamble/dcrgaming-sdk/pkg/escrow"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 	"github.com/karamble/dcrgaming-sdk/pkg/membership"
 )
 

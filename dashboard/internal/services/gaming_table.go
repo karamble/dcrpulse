@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/karamble/dcrgaming-sdk/pkg/finance"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 
 	"dcrpulse/internal/gamingbridge"
-	"dcrpulse/internal/gamingpb"
 	"dcrpulse/internal/rpc"
 )
 

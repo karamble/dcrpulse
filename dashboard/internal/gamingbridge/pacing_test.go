@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // pacingRig is a server whose money calls always succeed, so the only thing

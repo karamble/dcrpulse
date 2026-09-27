@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // GamingReportedState is the game's cached, nonfinancial presentation state.

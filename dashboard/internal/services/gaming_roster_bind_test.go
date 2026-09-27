@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/gamingpb"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/karamble/dcrgaming-sdk/pkg/escrow"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 	"github.com/karamble/dcrgaming-sdk/pkg/membership"
 )
 

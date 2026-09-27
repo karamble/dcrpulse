@@ -1,4 +1,4 @@
-.PHONY: proto help start stop restart restart-dcrd restart-dcrwallet restart-dcrlnd restart-brclientd restart-dcrdex restart-dashboard restart-tor logs logs-dcrd logs-dcrwallet logs-dcrlnd logs-brclientd logs-dcrdex logs-dashboard logs-tor build deploy deploy-dashboard push push-dcrd push-dcrwallet push-dcrlnd push-brclientd push-dcrdex push-dashboard push-tor login clean clean-dcrd clean-dcrwallet clean-build status shell-dcrd shell-dcrwallet shell-dcrlnd shell-brclientd shell-dcrdex shell-dashboard backup backup-wallet backup-certs restore restore-wallet
+.PHONY: help start stop restart restart-dcrd restart-dcrwallet restart-dcrlnd restart-brclientd restart-dcrdex restart-dashboard restart-tor logs logs-dcrd logs-dcrwallet logs-dcrlnd logs-brclientd logs-dcrdex logs-dashboard logs-tor build deploy deploy-dashboard push push-dcrd push-dcrwallet push-dcrlnd push-brclientd push-dcrdex push-dashboard push-tor login clean clean-dcrd clean-dcrwallet clean-build status shell-dcrd shell-dcrwallet shell-dcrlnd shell-brclientd shell-dcrdex shell-dashboard backup backup-wallet backup-certs restore restore-wallet
 
 # Force bash shell for bash-specific syntax (needed for clean target)
 SHELL := /bin/bash
@@ -369,18 +369,6 @@ install-frontend: ## Install frontend dependencies
 
 install-backend: ## Install backend dependencies
 	cd dashboard && go mod download
-
-proto: ## Regenerate the gaming bridge gRPC stubs (needs protoc + the two Go plugins)
-	@command -v protoc >/dev/null || { \
-		echo "protoc not found. Install it, then:"; \
-		echo "  go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11"; \
-		echo "  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2"; \
-		exit 1; }
-	cd dashboard && protoc --proto_path=internal/gamingpb \
-		--go_out=internal/gamingpb      --go_opt=paths=source_relative \
-		--go-grpc_out=internal/gamingpb --go-grpc_opt=paths=source_relative \
-		internal/gamingpb/gaming_bridge.proto
-	@echo "Stubs regenerated. Commit them: the image has no protoc."
 
 # Wallet-specific commands
 

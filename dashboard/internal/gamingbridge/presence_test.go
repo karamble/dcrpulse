@@ -2,7 +2,7 @@ package gamingbridge
 
 import (
 	"context"
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 	"google.golang.org/grpc"
 	"testing"
 	"time"

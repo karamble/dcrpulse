@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // The link has to be the one a game's own parser accepts, and the two live in

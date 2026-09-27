@@ -19,8 +19,8 @@ import (
 	"github.com/decred/dcrd/certgen"
 
 	"dcrpulse/internal/gamingbridge"
-	"dcrpulse/internal/gamingpb"
 	"dcrpulse/internal/types"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // bridgeCertLifetime is how long the bridge's own certificate is good for.

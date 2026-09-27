@@ -7,7 +7,7 @@ package gamingbridge
 import (
 	"sync"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // Frame is one Bison Relay message addressed to a game.

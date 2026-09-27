@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 func TestSubscriptionStopsFrameFeed(t *testing.T) {

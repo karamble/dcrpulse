@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/gamingpb"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/wire"
 	"github.com/karamble/dcrgaming-sdk/pkg/finance"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 func validateGamingPayoutInputs(ctx context.Context, inputs []finance.Input) error {

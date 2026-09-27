@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // acceptInviteReq is the console asking a game to take a seat.

@@ -11,7 +11,7 @@ import (
 	"errors"
 	"sync"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // ErrGameNotConnected is a request nothing was holding a stream to take.

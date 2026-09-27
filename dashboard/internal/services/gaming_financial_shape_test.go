@@ -3,7 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 	"reflect"
 	"testing"
 )

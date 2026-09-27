@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 var financeStores struct {

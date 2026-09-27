@@ -19,7 +19,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
-	"dcrpulse/internal/gamingpb"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // Config is everything the bridge needs to answer a port.
@@ -136,7 +136,7 @@ type Outpoint struct {
 
 // Server is the bridge's listener.
 //
-// It answers the contract in internal/gamingpb. Every method it does not
+// It answers the SDK's gamingpb contract. Every method it does not
 // implement answers Unimplemented, which is what the embedded generated type is
 // for - and while the transport is being built that is most of them.
 type Server struct {
