@@ -54,7 +54,8 @@ export const GamingApprovalsPanel = ({
   const publishing = feed.publishing;
   const decidedTotal = feed.decidedTotal;
   const refresh = refreshGamingSpends;
-  const d = useSpendDecisions();
+  const now = Math.floor(Date.now() / 1000) + feed.offset;
+  const d = useSpendDecisions(pending.filter((s) => now < s.expiresAt).map((s) => s.id));
   const { watchOnly } = d;
   const { rows: payouts, loadError, load } = useGamingPayouts();
   const actions = usePayoutActions(load);
@@ -68,7 +69,6 @@ export const GamingApprovalsPanel = ({
     const t = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [counting]);
-  const now = Math.floor(Date.now() / 1000) + feed.offset;
 
   // The panel is never absent. Somebody who has only ever seen it empty should
   // still know what answering one involves before they are asked to do it

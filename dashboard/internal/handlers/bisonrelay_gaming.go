@@ -17,6 +17,7 @@ import (
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/services"
 	"dcrpulse/internal/types"
+	"dcrpulse/internal/utils"
 )
 
 // The Bison Relay gaming section's confinement policy (Bison Relay > Gaming).
@@ -266,7 +267,12 @@ func BisonrelayGamingSpendDecideHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	if len(req.Passphrase) > 1024 {
+		http.Error(w, "passphrase too long", http.StatusBadRequest)
+		return
+	}
 	passphrase := []byte(req.Passphrase)
+	defer utils.Zero(passphrase)
 	req.Passphrase = ""
 
 	var (

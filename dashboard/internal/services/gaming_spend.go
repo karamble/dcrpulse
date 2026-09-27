@@ -907,6 +907,7 @@ func ApproveGamingSpend(ctx context.Context, id string, passphrase []byte) (Gami
 		return req, err
 	}
 	signed, err := spendSign(ctx, account, unsigned, passphrase)
+	utils.Zero(passphrase)
 	if err != nil {
 		return req, err
 	}

@@ -129,6 +129,7 @@ func withGamingWalletSigner(ctx context.Context, scope gamingfunds.Scope, passph
 	beginUnlockedOp()
 	defer endUnlockedOp()
 	unlocked, err := unlockAccountForSpend(ctx, scope.Account, passphrase)
+	utils.Zero(passphrase)
 	if err != nil {
 		return nil, err
 	}

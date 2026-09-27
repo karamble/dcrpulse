@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/utils"
 	"encoding/json"
 	"net/http"
 )
@@ -27,10 +28,13 @@ func BisonrelayGamingPayoutsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil || req.ID == "" || (req.Action != "approve" && req.Action != "reject" && req.Action != "send") {
+	if err := decoder.Decode(&req); err != nil || req.ID == "" || (req.Action != "approve" && req.Action != "reject" && req.Action != "send") || len(req.Passphrase) > 1024 {
 		http.Error(w, "Invalid payout decision", http.StatusBadRequest)
 		return
 	}
+	passphrase := []byte(req.Passphrase)
+	defer utils.Zero(passphrase)
+	req.Passphrase = ""
 	var (
 		reply any
 		err   error
@@ -41,9 +45,8 @@ func BisonrelayGamingPayoutsHandler(w http.ResponseWriter, r *http.Request) {
 	case "send":
 		reply, err = services.SendGamingPayoutSignatures(r.Context(), req.ID)
 	default:
-		reply, err = services.ApproveGamingPayout(r.Context(), req.ID, []byte(req.Passphrase))
+		reply, err = services.ApproveGamingPayout(r.Context(), req.ID, passphrase)
 	}
-	req.Passphrase = ""
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return

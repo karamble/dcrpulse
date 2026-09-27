@@ -4,6 +4,7 @@ import type { GamingPayout, GamingSpend } from '../../services/gamingApi';
 import type { GamingSpendsSnapshot } from '../../hooks/useGamingSpends';
 import { GamingApprovalsPanel, waitingOrder } from './GamingApprovalsPanel';
 import { PayoutShare } from './GamingPayoutApprovals';
+import { approveGamingPayout, decideGamingSpend } from '../../services/gamingApi';
 
 const now = Math.floor(Date.now() / 1000);
 let payouts: GamingPayout[] = [];
@@ -190,5 +191,71 @@ describe('PayoutShare', () => {
   it("warns when the operator's output cannot be identified", () => {
     render(<PayoutShare payout={payout({ mine: null })} />);
     expect(screen.getByRole('alert').textContent).toContain('could not be identified');
+  });
+});
+
+describe('the armed buy-in', () => {
+  // armA renders two waiting buy-ins, waits out the arrival guard, and opens
+  // the passphrase field on the first.
+  const armA = async () => {
+    const view = render(<GamingApprovalsPanel />);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 2000);
+    view.rerender(<GamingApprovalsPanel />);
+    fireEvent.click(screen.getAllByText('Approve...')[0]);
+    expect(await screen.findByPlaceholderText('Wallet passphrase')).toBeTruthy();
+    expect(screen.getByText('Answering another request.')).toBeTruthy();
+    return { view, clock };
+  };
+  const bApprove = () => { const all = screen.getAllByText('Approve...'); return all[all.length - 1] as HTMLButtonElement; };
+
+  it('frees the other requests when the armed one leaves the list', async () => {
+    feed.pending = [spend({ id: 'a1', game: 'stakewars' }), spend({ id: 'b2', game: 'orbitgolf' })];
+    const { view, clock } = await armA();
+    feed = { ...feed, pending: [spend({ id: 'b2', game: 'orbitgolf' })] };
+    view.rerender(<GamingApprovalsPanel />);
+    await waitFor(() => expect(screen.queryByText('Answering another request.')).toBeNull());
+    expect(screen.queryByPlaceholderText('Wallet passphrase')).toBeNull();
+    expect(bApprove().disabled).toBe(false);
+    clock.mockRestore();
+  });
+
+  it('frees the other requests when the armed one lapses', async () => {
+    feed.pending = [spend({ id: 'a1', game: 'stakewars' }), spend({ id: 'b2', game: 'orbitgolf' })];
+    const { view, clock } = await armA();
+    feed = { ...feed, pending: [spend({ id: 'a1', game: 'stakewars', expiresAt: now - 1 }), spend({ id: 'b2', game: 'orbitgolf' })] };
+    view.rerender(<GamingApprovalsPanel />);
+    await waitFor(() => expect(screen.queryByPlaceholderText('Wallet passphrase')).toBeNull());
+    expect(bApprove().disabled).toBe(false);
+    clock.mockRestore();
+  });
+
+  it('empties the passphrase field once it is sent, even when the approval fails', async () => {
+    vi.mocked(decideGamingSpend).mockRejectedValueOnce(new Error('wrong passphrase'));
+    feed.pending = [spend({ id: 'a1', game: 'stakewars' }), spend({ id: 'b2', game: 'orbitgolf' })];
+    const { clock } = await armA();
+    const field = screen.getByPlaceholderText('Wallet passphrase') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'hunter2' } });
+    fireEvent.click(screen.getByText(/^Approve 0\.05 DCR/));
+    await screen.findByText(/wrong passphrase/);
+    expect((screen.getByPlaceholderText('Wallet passphrase') as HTMLInputElement).value).toBe('');
+    expect(vi.mocked(decideGamingSpend)).toHaveBeenCalledWith('a1', true, 'hunter2');
+    clock.mockRestore();
+  });
+});
+
+describe('payout passphrase', () => {
+  it('leaves the dialog field empty while the approval is still on its way', async () => {
+    let settle: () => void = () => {};
+    vi.mocked(approveGamingPayout).mockReturnValueOnce(new Promise((resolve) => { settle = () => resolve({}); }));
+    payouts = [payout({ id: 'tx9' })];
+    render(<GamingApprovalsPanel />);
+    fireEvent.click(await screen.findByText('Review payout'));
+    const dialog = await screen.findByRole('dialog');
+    const field = dialog.querySelector('input[type="password"]') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'hunter2' } });
+    fireEvent.click(screen.getByText('Approve payout'));
+    expect(vi.mocked(approveGamingPayout)).toHaveBeenCalledWith('tx9', 'hunter2');
+    expect((dialog.querySelector('input[type="password"]') as HTMLInputElement).value).toBe('');
+    settle();
   });
 });

@@ -8,6 +8,7 @@ import (
 
 	"dcrpulse/internal/gamingfunds"
 	"dcrpulse/internal/services"
+	"dcrpulse/internal/utils"
 )
 
 func BisonrelayGamingRecoveryHandler(w http.ResponseWriter, r *http.Request) {
@@ -28,10 +29,13 @@ func BisonrelayGamingRecoveryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil || req.ID == "" {
+	if err := dec.Decode(&req); err != nil || req.ID == "" || len(req.Passphrase) > 1024 {
 		http.Error(w, "invalid recovery request", http.StatusBadRequest)
 		return
 	}
+	passphrase := []byte(req.Passphrase)
+	defer utils.Zero(passphrase)
+	req.Passphrase = ""
 	switch req.Action {
 	case "archive", "unarchive":
 		if err := services.ArchiveGamingRecovery(r.Context(), req.ID, req.Action == "archive"); err != nil {
@@ -57,7 +61,7 @@ func BisonrelayGamingRecoveryHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "quote required", http.StatusBadRequest)
 			return
 		}
-		id, err := services.ConfirmGamingRecovery(r.Context(), req.ID, req.Quote, []byte(req.Passphrase))
+		id, err := services.ConfirmGamingRecovery(r.Context(), req.ID, req.Quote, passphrase)
 		if err != nil {
 			gamingJSON(w, map[string]any{"txid": id, "pending": id != "", "error": err.Error()})
 			return

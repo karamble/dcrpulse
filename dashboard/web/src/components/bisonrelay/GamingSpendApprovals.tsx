@@ -65,8 +65,14 @@ const isWatchOnly = (text: string): boolean => /watch[- ]?only/i.test(text);
 // useSpendDecisions is the state every buy-in row shares. armed is the one row
 // whose passphrase field is open: one field for the whole panel, because two
 // live Approve buttons sharing it is a wrong-row payment waiting to happen.
-export function useSpendDecisions() {
+// answerable lists the requests that can still be approved; an armed row that
+// leaves it is closed, passphrase and all.
+export function useSpendDecisions(answerable: string[]) {
   const [armed, setArmed] = useState<{ id: string; passphrase: string } | null>(null);
+  const answerableKey = answerable.join(',');
+  useEffect(() => {
+    if (armed && !answerableKey.split(',').includes(armed.id)) setArmed(null);
+  }, [armed, answerableKey]);
   const [deciding, setDeciding] = useState<string | null>(null);
   const [rowErr, setRowErr] = useState<Record<string, string>>({});
   const [outcome, setOutcome] = useState<Record<string, { txid?: string; failed?: string }>>({});
@@ -74,6 +80,8 @@ export function useSpendDecisions() {
   const firstSeen = useRef<Record<string, number>>({});
 
   const decide = async (s: GamingSpend, approve: boolean, passphrase?: string) => {
+    // The passphrase leaves page state the moment it is sent; a retry retypes it.
+    setArmed((a) => (a && a.id === s.id ? { id: s.id, passphrase: '' } : a));
     setDeciding(s.id);
     setRowErr((r) => ({ ...r, [s.id]: '' }));
     try {

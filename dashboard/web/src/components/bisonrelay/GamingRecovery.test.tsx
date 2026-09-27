@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RecoveryDeposit } from '../../services/gamingApi';
+import { confirmRecovery, quoteRecovery } from '../../services/gamingApi';
 import { GamingRecovery, recoveryGroups } from './GamingRecovery';
 
 const served = new Blob(['{"format":1,"ledger":{"a": 1}}'], { type: 'application/json' });
@@ -108,5 +109,21 @@ describe('restoring the ledger', () => {
     render(<GamingRecovery />);
     await screen.findByText('Time locked');
     expect(screen.queryByText('Restore backup')).toBeNull();
+  });
+});
+
+describe('recovery passphrase', () => {
+  it('empties the passphrase field once it is sent, even when the refund fails', async () => {
+    rows = [dep({ id: 'ready', state: 'recoverable', canRecover: true })];
+    vi.mocked(quoteRecovery).mockResolvedValueOnce({ id: 'q1', depositId: 'ready', destination: 'DsBack', feeAtoms: 2000, returnAtoms: 998000, expiresAt: 0 });
+    vi.mocked(confirmRecovery).mockRejectedValueOnce(new Error('wrong passphrase'));
+    render(<GamingRecovery />);
+    fireEvent.click(await screen.findByText('Take it back'));
+    const field = (await screen.findByLabelText('Wallet account passphrase')) as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'hunter2' } });
+    fireEvent.click(screen.getByText('Approve recovery'));
+    await screen.findByText(/wrong passphrase/);
+    expect((screen.getByLabelText('Wallet account passphrase') as HTMLInputElement).value).toBe('');
+    expect(vi.mocked(confirmRecovery)).toHaveBeenCalledWith('ready', 'q1', 'hunter2');
   });
 });
