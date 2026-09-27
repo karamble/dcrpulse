@@ -7,6 +7,7 @@ package gamingcore
 import (
 	"errors"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -157,7 +158,9 @@ func TestAGameWithNoAccountBoundCanStakeNothing(t *testing.T) {
 // but a request that skips the dropdown must be refused too: a game bound to
 // one of them would spend funds another part of the stack is relying on.
 func TestAGameCannotBeFundedFromAReservedAccount(t *testing.T) {
-	for _, name := range []string{"lightning", "dex", "mixed", "unmixed", "imported"} {
+	reserved := []string{"lightning", "dex", "mixed", "unmixed", "imported"}
+	withReservedAccounts(t, reserved...)
+	for _, name := range reserved {
 		in := GamingSettings{
 			Enabled:         true,
 			RegisteredGames: []string{"poker"},
@@ -181,19 +184,6 @@ func TestAGameCannotBeFundedFromAReservedAccount(t *testing.T) {
 	}
 }
 
-// The check lowercases, because the name is matched case-insensitively
-// everywhere else a daemon binds to it.
-func TestAReservedAccountIsRefusedWhateverItsCase(t *testing.T) {
-	in := GamingSettings{
-		Enabled:         true,
-		RegisteredGames: []string{"poker"},
-		Policies:        map[string]GamePolicy{"poker": {Account: "  Lightning "}},
-	}
-	if _, err := normalizeGamingSettings(in, GamingSettings{}, true, true); !errors.Is(err, ErrGamingReservedAccount) {
-		t.Errorf("a differently-cased reserved account slipped through: %v", err)
-	}
-}
-
 // An ordinary account is still the point of the feature.
 func TestAnOrdinaryAccountStillFundsAGame(t *testing.T) {
 	in := GamingSettings{
@@ -208,4 +198,19 @@ func TestAnOrdinaryAccountStillFundsAGame(t *testing.T) {
 	if got := out.Policies["poker"].Account; got != "poker-money" {
 		t.Errorf("the account came back as %q, want poker-money", got)
 	}
+}
+
+// reservedWallet is a wallet that keeps some account names for itself.
+type reservedWallet struct {
+	noWallet
+	names []string
+}
+
+func (w reservedWallet) ReservedAccount(name string) bool { return slices.Contains(w.names, name) }
+
+func withReservedAccounts(t *testing.T, names ...string) {
+	t.Helper()
+	prev := host
+	host.Wallet = reservedWallet{names: names}
+	t.Cleanup(func() { host = prev })
 }

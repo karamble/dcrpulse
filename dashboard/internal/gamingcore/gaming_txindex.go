@@ -7,8 +7,6 @@ package gamingcore
 import (
 	"context"
 	"fmt"
-
-	"dcrpulse/internal/rpc"
 )
 
 // DcrdHasTxIndex reports whether dcrd is running its transaction index.
@@ -28,10 +26,11 @@ import (
 // work, which is a worse failure than the one this prevents. One getinfo per
 // settings read and per settings write costs nothing.
 func DcrdHasTxIndex(ctx context.Context) (bool, error) {
-	if rpc.DcrdClient == nil {
+	node := hostNode()
+	if node == nil {
 		return false, fmt.Errorf("dcrd is not connected")
 	}
-	info, err := rpc.DcrdClient.GetInfo(ctx)
+	info, err := node.GetInfo(ctx)
 	if err != nil {
 		return false, fmt.Errorf("asking dcrd which indexes it runs: %w", err)
 	}

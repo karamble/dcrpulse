@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"dcrpulse/internal/rpc"
 	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/decred/dcrd/wire"
 )
@@ -23,10 +22,11 @@ type GamingPrevout struct {
 }
 
 func lookupGamingPrevout(ctx context.Context, op wire.OutPoint) (GamingPrevout, error) {
-	if rpc.DcrdClient == nil {
+	node := hostNode()
+	if node == nil {
 		return GamingPrevout{}, ErrGamingChainUnavailable
 	}
-	out, err := rpc.DcrdClient.GetTxOut(ctx, &op.Hash, op.Index, op.Tree, true)
+	out, err := node.GetTxOut(ctx, &op.Hash, op.Index, op.Tree, true)
 	if err != nil {
 		return GamingPrevout{}, fmt.Errorf("read %s:%d: %w", op.Hash, op.Index, err)
 	}

@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
-	"dcrpulse/internal/rpc"
 )
 
 const gamingOutboxFile = "gaming-wire-outbox-v2.jsonl"
@@ -236,7 +234,9 @@ func gamingFrameSendState(game, gcid string, frame gamingFrame, text string) (st
 }
 
 // gamingGCSend posts to a group chat. Settable for tests; production never sets it.
-var gamingGCSend = rpc.BrclientdGCMessage
+var gamingGCSend = func(ctx context.Context, gcid [32]byte, text string) error {
+	return hostRelay().SendGroupMessage(ctx, gcid, text)
+}
 
 // sendGamingFrameOnce sends a frame to Bison Relay at most once. A send that
 // brclientd refused releases the claim; any other failure leaves the outcome
@@ -255,9 +255,8 @@ func sendClaimedGamingFrame(ctx context.Context, game, gcid string, parsed gamin
 	if err != nil {
 		return err
 	}
-	if err := gamingGCSend(ctx, id, frame, 0); err != nil {
-		var refused *rpc.BrclientdStatusError
-		if errors.As(err, &refused) {
+	if err := gamingGCSend(ctx, id, frame); err != nil {
+		if errors.Is(err, ErrNotSent) {
 			if relErr := releaseGamingFrameClaim(game, gcid, parsed, frame); relErr != nil {
 				gameLog.Errorf("release refused gaming send: %v", relErr)
 			}

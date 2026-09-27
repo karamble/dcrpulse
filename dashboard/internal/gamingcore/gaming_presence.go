@@ -4,18 +4,7 @@
 
 package gamingcore
 
-import (
-	"encoding/json"
-
-	"dcrpulse/internal/services"
-)
-
-// GamingPresenceChanged carries an invalidation, not a potentially reordered
-// ready flag. Browsers reread the current registry, including any other stream
-// still connected for this game. No credential or wallet data leaves here.
+// GamingPresenceChanged tells the operator a game connected or went away.
 func GamingPresenceChanged(game string) {
-	payload, _ := json.Marshal(struct {
-		Game string `json:"game"`
-	}{game})
-	services.PublishBisonrelayEvent("gaming-presence", payload)
+	hostOperator().PresenceChanged(game)
 }

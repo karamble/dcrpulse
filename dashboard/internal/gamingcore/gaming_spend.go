@@ -26,8 +26,6 @@ import (
 
 	"dcrpulse/internal/fsutil"
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/services"
-	"dcrpulse/internal/types"
 	"dcrpulse/internal/utils"
 )
 
@@ -140,67 +138,27 @@ var spendApproving = map[string]bool{}
 var (
 	spendAccount   = gamingAccountNumber
 	spendConstruct = func(ctx context.Context, account uint32, address string, amountAtoms int64) ([]byte, error) {
-		tx, err := services.ConstructTransaction(ctx, account, []types.TxRecipient{{
-			Address: address, AmountAtoms: amountAtoms,
-		}}, false)
-		if err != nil {
-			return nil, err
-		}
-		return tx.UnsignedTransaction, nil
+		return hostWallet().Construct(ctx, account, address, amountAtoms)
 	}
-	spendSign    = services.SignTransactionForSpend
-	spendPublish = services.PublishSignedTransaction
+	spendSign = func(ctx context.Context, account uint32, unsigned, passphrase []byte) ([]byte, error) {
+		return hostWallet().SignTransaction(ctx, account, unsigned, passphrase)
+	}
+	spendPublish = func(ctx context.Context, signed []byte) (string, error) {
+		return hostWallet().Publish(ctx, signed)
+	}
 	spendPrevout = lookupGamingPrevout
 
 	// spendDecodeAddress checks an address against the network this node
 	// is actually on. Staged like the wallet calls above and for the same
 	// reason; the rule itself is checkSpendAddress, which needs no chain.
 	spendDecodeAddress = func(ctx context.Context, address string) error {
-		params, err := services.ChainParams(ctx)
+		params, err := chainParams(ctx)
 		if err != nil {
 			return fmt.Errorf("cannot verify the address without the chain: %w", err)
 		}
 		return checkSpendAddress(address, params)
 	}
 )
-
-// GamingWalletCalls is that same set, named, so a caller outside this package
-// can stage them. A nil field is left alone.
-type GamingWalletCalls struct {
-	Account   func(ctx context.Context, game string) (uint32, error)
-	Construct func(ctx context.Context, account uint32, address string, amountAtoms int64) ([]byte, error)
-	Sign      func(ctx context.Context, account uint32, unsigned, passphrase []byte) ([]byte, error)
-	Publish   func(ctx context.Context, signed []byte) (string, error)
-	Prevout   func(ctx context.Context, op wire.OutPoint) (GamingPrevout, error)
-}
-
-// SetGamingWalletCalls installs the non-nil calls and returns a func putting
-// every one of them back. It is the seam the bridge's own tests drive the money
-// paths through; nothing in production calls it.
-func SetGamingWalletCalls(c GamingWalletCalls) (restore func()) {
-	prevAccount, prevConstruct := spendAccount, spendConstruct
-	prevSign, prevPublish, prevPrevout := spendSign, spendPublish, spendPrevout
-
-	if c.Account != nil {
-		spendAccount = c.Account
-	}
-	if c.Construct != nil {
-		spendConstruct = c.Construct
-	}
-	if c.Sign != nil {
-		spendSign = c.Sign
-	}
-	if c.Publish != nil {
-		spendPublish = c.Publish
-	}
-	if c.Prevout != nil {
-		spendPrevout = c.Prevout
-	}
-	return func() {
-		spendAccount, spendConstruct = prevAccount, prevConstruct
-		spendSign, spendPublish, spendPrevout = prevSign, prevPublish, prevPrevout
-	}
-}
 
 // spendLog is the whole record, oldest first.
 type spendLog struct {
@@ -1092,13 +1050,13 @@ func gamingAccountNumber(ctx context.Context, game string) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	accounts, err := services.FetchAllAccounts(ctx)
+	accounts, err := hostWallet().Accounts(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("read accounts: %w", err)
 	}
 	for _, a := range accounts {
-		if a.AccountName == name {
-			return a.AccountNumber, nil
+		if a.Name == name {
+			return a.Number, nil
 		}
 	}
 	return 0, fmt.Errorf("the account bound for %q, %q, is not in this wallet", game, name)

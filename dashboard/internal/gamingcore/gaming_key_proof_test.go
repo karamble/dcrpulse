@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/rpc"
 
 	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
@@ -73,7 +72,7 @@ func TestKeyIsAnnouncedOnlyOnceProven(t *testing.T) {
 	withGCHistory(t, "me")
 	var sent []string
 	old := gamingGCSend
-	gamingGCSend = func(_ context.Context, _ rpc.ShortIDHex, frame string, _ int) error {
+	gamingGCSend = func(_ context.Context, _ [32]byte, frame string) error {
 		sent = append(sent, frame)
 		return nil
 	}

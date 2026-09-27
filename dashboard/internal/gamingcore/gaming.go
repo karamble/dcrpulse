@@ -14,9 +14,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"dcrpulse/internal/config"
-	"dcrpulse/internal/services"
 )
 
 const (
@@ -159,18 +156,11 @@ func carryGameCredentials(prev map[string]GameCredential, registered []string) m
 	return out
 }
 
-// GamingStateDir is where the gaming section keeps its two files: the policy
-// saying which account games may spend from and under what caps, and the log of
-// every spend one has asked for.
-//
-// It is a value rather than the constant it starts as, and that is what makes
-// the rules below checkable. A path fixed at compile time is a path no test can
-// write, so every rule that had to read one - which game a credential belongs
-// to, what it may spend, what it has spent today - could only be exercised by
-// re-implementing it beside the real thing and asserting the copy. There was
-// one of those here and it was never once capable of failing. Production leaves
-// this alone; the bridge's own tests point it at a directory they may write.
-var GamingStateDir = config.StackControlDir()
+// GamingStateDir is where the gaming section keeps its files: the policy saying
+// which account games may spend from and under what caps, the log of every
+// spend one has asked for, and the ledger. Configure sets it; the bridge's own
+// tests point it at a directory they may write.
+var GamingStateDir string
 
 // gamingSettingsPath is the policy file. Moving it is not a rename: it holds
 // the identity registered for each game, so a bridge that looks somewhere new
@@ -258,7 +248,7 @@ func normalizeGamingSettings(in, cur GamingSettings, appPasswordActive, txIndexA
 	// The selector does not offer these, so reaching here means the request did
 	// not come from it.
 	for id, p := range out.Policies {
-		if services.IsReservedAccountName(p.Account) {
+		if hostWallet().ReservedAccount(p.Account) {
 			return GamingSettings{}, fmt.Errorf("%w: %q asked for %q",
 				ErrGamingReservedAccount, id, p.Account)
 		}

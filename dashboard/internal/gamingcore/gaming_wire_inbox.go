@@ -12,8 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-
-	"dcrpulse/internal/services"
 )
 
 const gamingInboxFile = "gaming-wire-inbox-v2.jsonl"
@@ -208,7 +206,7 @@ func (b *GamingBus) pruneGamingGroup(gcid string) (int, error) {
 			buf.Write(append(raw, '\n'))
 		}
 	}
-	if err := services.WriteFileSynced(filepath.Join(GamingStateDir, gamingInboxFile), buf.Bytes(), 0o600); err != nil {
+	if err := writeFileSynced(filepath.Join(GamingStateDir, gamingInboxFile), buf.Bytes(), 0o600); err != nil {
 		return 0, err
 	}
 	// Reload from the new file on next use.

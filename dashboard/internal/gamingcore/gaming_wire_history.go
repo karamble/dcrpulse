@@ -2,15 +2,12 @@ package gamingcore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"dcrpulse/internal/rpc"
 )
 
 var gamingHistoryRecovery sync.Mutex
@@ -18,56 +15,44 @@ var gamingHistoryRecovery sync.Mutex
 // Settable so these rules run without a live brclientd.
 // Production sets none of them.
 var (
-	gamingGCHistoryFetch = rpc.BrclientdGCHistory
-	gamingSelfNick       = localGamingNick
-	gamingSelfUID        = localGamingUID
+	gamingGCHistoryFetch = func(ctx context.Context, gcid [32]byte, page, pageSize int) ([]GroupEntry, error) {
+		return hostRelay().GroupHistory(ctx, gcid, page, pageSize)
+	}
+	gamingSelfNick = localGamingNick
+	gamingSelfUID  = localGamingUID
 )
-
-type gamingGCHistoryPage struct {
-	Entries []struct {
-		Message string `json:"message"`
-		From    string `json:"from"`
-	} `json:"entries"`
-}
 
 // localGamingNick is the nick BR logs this client's own messages under.
 func localGamingNick(ctx context.Context) (string, error) {
-	raw, err := rpc.BrclientdUserPublicIdentity(ctx)
+	_, nick, err := hostRelay().Identity(ctx)
 	if err != nil {
 		return "", err
 	}
-	var public struct {
-		Nick string `json:"nick"`
-	}
-	if err = json.Unmarshal(raw, &public); err != nil || public.Nick == "" {
+	if nick == "" {
 		return "", fmt.Errorf("BR nick unavailable")
 	}
-	return public.Nick, nil
+	return nick, nil
 }
 
 // gamingFrameInHistory reports whether BR's own log of the group holds frame as
 // a message from this client. BR logs a group message under the sender's nick
 // before it queues the send, so an entry here means BR took it.
-func gamingFrameInHistory(ctx context.Context, gcid rpc.ShortIDHex, frame string) (bool, error) {
+func gamingFrameInHistory(ctx context.Context, gcid [32]byte, frame string) (bool, error) {
 	nick, err := gamingSelfNick(ctx)
 	if err != nil {
 		return false, err
 	}
 	for page := 0; page < 10000; page++ {
-		raw, err := gamingGCHistoryFetch(ctx, gcid, page, 500)
+		entries, err := gamingGCHistoryFetch(ctx, gcid, page, 500)
 		if err != nil {
 			return false, err
 		}
-		var got gamingGCHistoryPage
-		if err := json.Unmarshal(raw, &got); err != nil {
-			return false, err
-		}
-		for _, entry := range got.Entries {
+		for _, entry := range entries {
 			if entry.From == nick && strings.TrimSpace(entry.Message) == strings.TrimSpace(frame) {
 				return true, nil
 			}
 		}
-		if len(got.Entries) < 500 {
+		if len(entries) < 500 {
 			return false, nil
 		}
 	}

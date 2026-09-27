@@ -12,8 +12,6 @@ import (
 	"strings"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/rpc"
-	"dcrpulse/internal/services"
 	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
 	"github.com/decred/dcrd/wire"
 )
@@ -36,14 +34,14 @@ type GamingRecoveryView struct {
 }
 
 func recoveryWalletMatches(ctx context.Context, scope gamingfunds.Scope) error {
-	network, err := services.CurrentNetwork(ctx)
+	network, err := currentNetwork(ctx)
 	if err != nil {
 		return err
 	}
 	if network != scope.Network {
 		return fmt.Errorf("connect the original network to recover this deposit")
 	}
-	xpub, err := services.GetAccountExtendedPubKey(ctx, scope.Account)
+	xpub, err := hostWallet().AccountXPub(ctx, scope.Account)
 	if err != nil {
 		return err
 	}
@@ -73,16 +71,17 @@ func recoveryDeposit(id string) (gamingfunds.Deposit, error) {
 // recoveryMempoolInputs maps each outpoint a mempool transaction spends to that
 // transaction's id.
 func recoveryMempoolInputs(ctx context.Context) (map[string]string, error) {
-	if rpc.DcrdClient == nil {
+	node := hostNode()
+	if node == nil {
 		return nil, ErrGamingChainUnavailable
 	}
-	hashes, err := rpc.DcrdClient.GetRawMempool(ctx, chainjson.GRMRegular)
+	hashes, err := node.GetRawMempool(ctx, chainjson.GRMRegular)
 	if err != nil {
 		return nil, err
 	}
 	inputs := map[string]string{}
 	for _, hash := range hashes {
-		tx, err := rpc.DcrdClient.GetRawTransaction(ctx, hash)
+		tx, err := node.GetRawTransaction(ctx, hash)
 		if err != nil {
 			return nil, err
 		}
@@ -209,7 +208,7 @@ func recoveryView(ctx context.Context, dep gamingfunds.Deposit, spends map[strin
 		v.Reason = err.Error()
 		return v
 	}
-	params, err := services.ChainParams(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
 		v.Reason = err.Error()
 		return v
@@ -264,7 +263,7 @@ func QuoteGamingRecovery(ctx context.Context, id string) (gamingfunds.RecoveryQu
 	if !view.CanRecover {
 		return zero, fmt.Errorf("%s: %s", view.State, view.Reason)
 	}
-	dest, err := services.GetNextAddress(ctx, dep.Scope.Account)
+	dest, err := hostWallet().NextExternalAddress(ctx, dep.Scope.Account)
 	if err != nil {
 		return zero, err
 	}
@@ -272,7 +271,7 @@ func QuoteGamingRecovery(ctx context.Context, id string) (gamingfunds.RecoveryQu
 	if err != nil {
 		return zero, err
 	}
-	params, err := services.ChainParams(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
 		return zero, err
 	}
@@ -297,7 +296,7 @@ func ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []b
 	if err = recoveryWalletMatches(ctx, dep.Scope); err != nil {
 		return "", err
 	}
-	owner, err := services.ValidateAddress(ctx, q.Destination)
+	owner, err := hostWallet().ValidateAddress(ctx, q.Destination)
 	if err != nil {
 		return "", err
 	}
@@ -311,7 +310,7 @@ func ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []b
 			return "", fmt.Errorf("%s: %s", view.State, view.Reason)
 		}
 	}
-	params, err := services.ChainParams(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -323,7 +322,7 @@ func ConfirmGamingRecovery(ctx context.Context, id, quote string, passphrase []b
 	}
 	// Journaled bytes survive both failure and lost responses. Never rebuild an
 	// approved refund at a different destination or with a different fee.
-	txid, err := services.BroadcastSignedTransaction(ctx, raw)
+	txid, err := hostWallet().Broadcast(ctx, raw)
 	if err != nil {
 		var tx wire.MsgTx
 		_ = tx.FromBytes(raw)

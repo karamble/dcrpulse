@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/rpc"
 )
 
 // withGCSend replaces the group-chat send with one that answers from errs in
@@ -19,7 +19,7 @@ func withGCSend(t *testing.T, errs ...error) *int {
 	t.Helper()
 	calls := 0
 	old := gamingGCSend
-	gamingGCSend = func(context.Context, rpc.ShortIDHex, string, int) error {
+	gamingGCSend = func(context.Context, [32]byte, string) error {
 		calls++
 		if len(errs) == 0 {
 			return nil
@@ -55,7 +55,7 @@ func sendState(t *testing.T, parsed gamingFrame) string {
 func TestSendOnceRetriesOnlyARefusedSend(t *testing.T) {
 	withGamingWireDir(t)
 	parsed := testParsedFrame(t)
-	calls := withGCSend(t, &rpc.BrclientdStatusError{Path: "/gc", Code: 503, Body: "BR client not yet running"})
+	calls := withGCSend(t, fmt.Errorf("%w: BR client not yet running", ErrNotSent))
 
 	if err := sendGamingFrameOnce(context.Background(), "poker", pruneGCA, parsed, testFrame); err == nil {
 		t.Fatal("refused send reported success")
@@ -187,7 +187,7 @@ func TestPayoutSignaturesSendOnlyWhatBRNeverTook(t *testing.T) {
 	if got := payoutView(t).SignaturesSent; got != "unsent" {
 		t.Fatalf("before any send = %q", got)
 	}
-	calls := withGCSend(t, &rpc.BrclientdStatusError{Path: "/gc", Code: 500, Body: "send: offline"})
+	calls := withGCSend(t, fmt.Errorf("%w: send: offline", ErrNotSent))
 	if _, err := SendGamingPayoutSignatures(context.Background(), id); err == nil {
 		t.Fatal("refused send reported success")
 	}

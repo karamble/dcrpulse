@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,9 +13,6 @@ import (
 	"time"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/rpc"
-	"dcrpulse/internal/services"
-	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrjson/v4"
 	chainjson "github.com/decred/dcrd/rpc/jsonrpc/types/v4"
@@ -45,14 +41,15 @@ var gamingFinancialInbox = make(chan GamingFrameEvent, 128)
 // transaction the wallet has no record of, so the fallback cannot stand in for
 // the index.
 func observeGamingOperation(ctx context.Context, id string) (gamingfunds.ChainObservation, bool, error) {
-	if rpc.DcrdClient == nil {
+	node := hostNode()
+	if node == nil {
 		return gamingfunds.ChainObservation{}, false, ErrGamingChainUnavailable
 	}
 	hash, err := chainhash.NewHashFromStr(id)
 	if err != nil {
 		return gamingfunds.ChainObservation{}, false, err
 	}
-	facts, err := rpc.DcrdClient.GetRawTransactionVerbose(ctx, hash)
+	facts, err := node.GetRawTransactionVerbose(ctx, hash)
 	if err == nil {
 		observation := gamingfunds.ChainObservation{Known: true, Confirmations: facts.Confirmations, BlockHash: facts.BlockHash, Height: facts.BlockHeight}
 		if facts.Confirmations == 0 {
@@ -65,37 +62,29 @@ func observeGamingOperation(ctx context.Context, id string) (gamingfunds.ChainOb
 	if !errors.As(err, &rpcErr) || rpcErr.Code != dcrjson.ErrRPCNoTxInfo {
 		return gamingfunds.ChainObservation{}, false, err
 	}
-	if rpc.WalletGrpcClient == nil {
-		return gamingfunds.ChainObservation{}, false, nil
-	}
-	walletTx, err := rpc.WalletGrpcClient.GetTransaction(ctx, &pb.GetTransactionRequest{TransactionHash: hash[:]})
-	if status.Code(err) == codes.NotFound {
-		return gamingfunds.ChainObservation{}, false, nil
-	}
+	walletTx, ok, err := hostWallet().Transaction(ctx, *hash)
 	if err != nil {
 		return gamingfunds.ChainObservation{}, false, err
 	}
-	if walletTx.GetTransaction() == nil {
+	if !ok {
 		return gamingfunds.ChainObservation{}, false, nil
 	}
-	known, err := finance.DecodeTransaction(walletTx.GetTransaction().GetTransaction())
+	known, err := finance.DecodeTransaction(walletTx.Raw)
 	if err != nil || known.TxHash() != *hash {
 		return gamingfunds.ChainObservation{}, false, fmt.Errorf("wallet returned inconsistent financial transaction")
 	}
-	confirmations := int64(walletTx.GetConfirmations())
+	confirmations := int64(walletTx.Confirmations)
 	if confirmations <= 0 {
 		// dcrd did not find it in the mempool. The wallet merely remembering an
 		// unmined transaction is not chain presence, so the exact journaled
 		// bytes remain eligible for rebroadcast.
 		return gamingfunds.ChainObservation{}, false, nil
 	}
-	blockBytes := walletTx.GetBlockHash()
-	if len(blockBytes) != chainhash.HashSize {
+	if walletTx.BlockHash == nil {
 		return gamingfunds.ChainObservation{}, false, fmt.Errorf("confirmed wallet transaction has no block hash")
 	}
-	var blockHash chainhash.Hash
-	copy(blockHash[:], blockBytes)
-	header, err := rpc.DcrdClient.GetBlockHeaderVerbose(ctx, &blockHash)
+	blockHash := *walletTx.BlockHash
+	header, err := node.GetBlockHeaderVerbose(ctx, &blockHash)
 	if err != nil {
 		return gamingfunds.ChainObservation{}, false, err
 	}
@@ -151,13 +140,17 @@ func noteGamingSpend(found map[string]observedGamingSpend, outpoint, txid string
 }
 
 func scanGamingMempoolSpends(ctx context.Context, targets map[string]bool) (map[string]observedGamingSpend, error) {
+	node := hostNode()
+	if node == nil {
+		return nil, ErrGamingChainUnavailable
+	}
 	found := map[string]observedGamingSpend{}
-	hashes, err := rpc.DcrdClient.GetRawMempool(ctx, chainjson.GRMRegular)
+	hashes, err := node.GetRawMempool(ctx, chainjson.GRMRegular)
 	if err != nil {
 		return nil, err
 	}
 	for _, hash := range hashes {
-		tx, err := rpc.DcrdClient.GetRawTransaction(ctx, hash)
+		tx, err := node.GetRawTransaction(ctx, hash)
 		if err != nil {
 			return nil, err
 		}
@@ -195,38 +188,27 @@ func scanGamingWalletSpends(ctx context.Context, deposits []gamingfunds.Deposit,
 // scanGamingWalletSpendsFrom finds the wallet's mined spends of targets from
 // block start on.
 func scanGamingWalletSpendsFrom(ctx context.Context, start int64, targets map[string]bool) (map[string]observedGamingSpend, error) {
-	if rpc.WalletGrpcClient == nil {
-		return nil, fmt.Errorf("wallet unavailable")
-	}
 	if start > int64(^uint32(0)>>1) {
 		return nil, fmt.Errorf("gaming scan height is out of range")
 	}
-	tip, err := rpc.DcrdClient.GetBlockCount(ctx)
-	if err != nil {
-		return nil, err
+	node := hostNode()
+	if node == nil {
+		return nil, ErrGamingChainUnavailable
 	}
-	stream, err := rpc.WalletGrpcClient.GetTransactions(ctx, &pb.GetTransactionsRequest{StartingBlockHeight: int32(start), EndingBlockHeight: -1})
+	tip, err := node.GetBlockCount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	found := map[string]observedGamingSpend{}
-	for {
-		response, err := stream.Recv()
-		if err == io.EOF {
-			break
+	err = hostWallet().MinedTransactions(ctx, int32(start), func(height int32, txs [][]byte) error {
+		if int64(height) > tip {
+			return nil
 		}
-		if err != nil {
-			return nil, err
-		}
-		block := response.GetMinedTransactions()
-		if block == nil || int64(block.GetHeight()) > tip {
-			continue
-		}
-		confirmations := tip - int64(block.GetHeight()) + 1
-		for _, details := range block.GetTransactions() {
-			tx, err := finance.DecodeTransaction(details.GetTransaction())
+		confirmations := tip - int64(height) + 1
+		for _, raw := range txs {
+			tx, err := finance.DecodeTransaction(raw)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			for _, in := range tx.TxIn {
 				outpoint := in.PreviousOutPoint.String()
@@ -235,6 +217,10 @@ func scanGamingWalletSpendsFrom(ctx context.Context, start int64, targets map[st
 				}
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return found, nil
 }
@@ -289,7 +275,11 @@ func fundingSpentElsewhere(ctx context.Context, op gamingfunds.Operation) string
 		if err != nil {
 			return ""
 		}
-		parent, err := rpc.DcrdClient.GetRawTransactionVerbose(ctx, hash)
+		node := hostNode()
+		if node == nil {
+			return ""
+		}
+		parent, err := node.GetRawTransactionVerbose(ctx, hash)
 		if err != nil || parent.Confirmations <= 0 {
 			return ""
 		}
@@ -362,7 +352,7 @@ func reconcileGamingDeposits(ctx context.Context, store *gamingfunds.Store) {
 			targets[dep.Outpoint] = true
 		}
 	}
-	if len(targets) == 0 || rpc.DcrdClient == nil {
+	if len(targets) == 0 || hostNode() == nil {
 		return
 	}
 	mempool, mempoolErr := scanGamingMempoolSpends(ctx, targets)
@@ -492,7 +482,7 @@ func reconcileGamingFinance(ctx context.Context) {
 		if err = recoveryWalletMatches(ctx, op.Scope); err != nil {
 			continue
 		}
-		if rpc.DcrdClient == nil {
+		if hostNode() == nil {
 			continue
 		}
 		observation, known, err := observeGamingOperation(ctx, op.ID)
@@ -534,7 +524,7 @@ func reconcileGamingFinance(ctx context.Context) {
 			continue
 		}
 		// These exact signatures were authorized and persisted before any send.
-		if _, err = services.BroadcastSignedTransaction(ctx, raw); err != nil {
+		if _, err = hostWallet().Broadcast(ctx, raw); err != nil {
 			gameLog.Warnf("financial transaction %s remains pending: %v", op.ID, err)
 			if op.Kind == "funding" && !transientBroadcastError(err) {
 				abandonDeadFunding(ctx, store, op)

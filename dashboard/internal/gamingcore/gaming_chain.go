@@ -12,8 +12,6 @@ import (
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrutil/v4"
-
-	"dcrpulse/internal/rpc"
 )
 
 // A game needs a chain and is not given a node of its own. Bonds are coin at an
@@ -58,10 +56,11 @@ type GamingOutpoint struct {
 
 // GamingChainTipNow reports the best block.
 func GamingChainTipNow(ctx context.Context) (GamingChainTip, error) {
-	if rpc.DcrdClient == nil {
+	node := hostNode()
+	if node == nil {
 		return GamingChainTip{}, ErrGamingChainUnavailable
 	}
-	hash, height, err := rpc.DcrdClient.GetBestBlock(ctx)
+	hash, height, err := node.GetBestBlock(ctx)
 	if err != nil {
 		return GamingChainTip{}, fmt.Errorf("best block: %w", err)
 	}
@@ -76,13 +75,14 @@ func GamingChainTipNow(ctx context.Context) (GamingChainTip, error) {
 // tip - the tip moves, and two peers reading it a second apart would seat the
 // same table differently.
 func GamingBlockHash(ctx context.Context, height int64) (string, error) {
-	if rpc.DcrdClient == nil {
+	node := hostNode()
+	if node == nil {
 		return "", ErrGamingChainUnavailable
 	}
 	if height < 0 {
 		return "", fmt.Errorf("height %d is not a block", height)
 	}
-	hash, err := rpc.DcrdClient.GetBlockHash(ctx, height)
+	hash, err := node.GetBlockHash(ctx, height)
 	if err != nil {
 		// Most often the chain has simply not got there yet, which is
 		// an ordinary thing for a table waiting on its deadline.
@@ -103,7 +103,8 @@ func GamingBlockHash(ctx context.Context, height int64) (string, error) {
 // output of a payment you just made is yours needs the opposite - it is not in
 // a block yet by definition.
 func GamingChainOutpoint(ctx context.Context, txid string, vout uint32, includeMempool bool) (GamingOutpoint, error) {
-	if rpc.DcrdClient == nil {
+	node := hostNode()
+	if node == nil {
 		return GamingOutpoint{}, ErrGamingChainUnavailable
 	}
 	hash, err := chainhash.NewHashFromStr(strings.TrimSpace(txid))
@@ -111,7 +112,7 @@ func GamingChainOutpoint(ctx context.Context, txid string, vout uint32, includeM
 		return GamingOutpoint{}, fmt.Errorf("txid: %w", err)
 	}
 
-	out, err := rpc.DcrdClient.GetTxOut(ctx, hash, vout, 0, includeMempool)
+	out, err := node.GetTxOut(ctx, hash, vout, 0, includeMempool)
 	if err != nil {
 		return GamingOutpoint{}, fmt.Errorf("outpoint: %w", err)
 	}

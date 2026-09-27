@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/services"
 	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
@@ -48,11 +47,11 @@ func gamingFinancialScope(ctx context.Context, game string) (gamingfunds.Scope, 
 	if err != nil {
 		return scope, err
 	}
-	network, err := services.CurrentNetwork(ctx)
+	network, err := currentNetwork(ctx)
 	if err != nil {
 		return scope, err
 	}
-	xpub, err := services.GetAccountExtendedPubKey(ctx, account)
+	xpub, err := hostWallet().AccountXPub(ctx, account)
 	if err != nil {
 		return scope, err
 	}
@@ -114,7 +113,7 @@ func PrepareGamingDeposit(ctx context.Context, game string, req *gamingpb.Prepar
 		return nil, err
 	}
 	terms := gamingfunds.Terms{Version: gamingfunds.Version, Game: game, Network: scope.Network, Account: scope.Account, Table: req.GetSid(), Kind: req.GetKind(), Atoms: req.GetAmountAtoms(), LockBlocks: req.GetLockBlocks(), Identity: req.GetIdentityKey(), Recovery: pub, Members: req.GetMembers()}
-	params, err := services.ChainParams(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +132,7 @@ func PrepareGamingDeposit(ctx context.Context, game string, req *gamingpb.Prepar
 	if err != nil {
 		return nil, err
 	}
-	if err = services.ImportMsigScript(ctx, dep.Script, false, 0); err != nil {
+	if err = hostWallet().ImportScript(ctx, dep.Script); err != nil {
 		return nil, err
 	}
 	if err = store.VerifyRecovery(scope, dep.ID, params); err != nil {
@@ -182,7 +181,7 @@ func verifyGamingDeposit(ctx context.Context, game, id string) (gamingfunds.Depo
 					return empty, fmt.Errorf("admission deadline passed or chain unavailable")
 				}
 			}
-			params, err := services.ChainParams(ctx)
+			params, err := chainParams(ctx)
 			if err != nil {
 				return empty, err
 			}

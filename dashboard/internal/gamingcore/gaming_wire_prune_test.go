@@ -2,13 +2,10 @@ package gamingcore
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"dcrpulse/internal/rpc"
 )
 
 const (
@@ -126,11 +123,17 @@ func TestRecoverHistoryDeliversJournaledFramesOfKnownGroups(t *testing.T) {
 func withGCHistory(t *testing.T, nick string, entries ...map[string]any) {
 	t.Helper()
 	oldFetch, oldNick, oldUID := gamingGCHistoryFetch, gamingSelfNick, gamingSelfUID
-	gamingGCHistoryFetch = func(_ context.Context, _ rpc.ShortIDHex, page, _ int) (json.RawMessage, error) {
+	gamingGCHistoryFetch = func(_ context.Context, _ [32]byte, page, _ int) ([]GroupEntry, error) {
 		if page > 0 {
-			return json.RawMessage(`{"entries":[]}`), nil
+			return nil, nil
 		}
-		return json.Marshal(map[string]any{"entries": entries})
+		out := make([]GroupEntry, 0, len(entries))
+		for _, e := range entries {
+			msg, _ := e["message"].(string)
+			from, _ := e["from"].(string)
+			out = append(out, GroupEntry{From: from, Message: msg})
+		}
+		return out, nil
 	}
 	gamingSelfNick = func(context.Context) (string, error) { return nick, nil }
 	gamingSelfUID = func(context.Context) (string, error) { return pruneSelf, nil }

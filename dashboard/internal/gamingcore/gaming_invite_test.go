@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"dcrpulse/internal/rpc"
 	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
@@ -35,7 +34,7 @@ func inviteSeams(t *testing.T) {
 	tableChainTip = func(context.Context) (GamingChainTip, error) {
 		return GamingChainTip{Height: 900_000, Hash: strings.Repeat("ab", 32)}, nil
 	}
-	tableGCMessage = func(context.Context, rpc.ShortIDHex, string, int) error { return nil }
+	tableGCMessage = func(context.Context, [32]byte, string) error { return nil }
 	tableAuthorize = func(context.Context, string, string, string) error { return nil }
 	if _, err := WriteGamingSettings(spendPolicy(), true, true); err != nil {
 		t.Fatalf("seed settings: %v", err)
@@ -132,7 +131,7 @@ func TestCreatingSeatsBeforeItAnnounces(t *testing.T) {
 			Result: &gamingpb.RespondRequest_AcceptInvite{AcceptInvite: &gamingpb.AcceptInviteResult{Sid: "seat-1"}},
 		}, nil
 	}
-	tableGCMessage = func(context.Context, rpc.ShortIDHex, string, int) error {
+	tableGCMessage = func(context.Context, [32]byte, string) error {
 		order = append(order, "announce")
 		return nil
 	}
@@ -155,7 +154,7 @@ func TestCreatingDoesNotAnnounceATableItCouldNotJoin(t *testing.T) {
 	gamingRequest = func(context.Context, string, *gamingpb.BridgeRequest) (*gamingpb.RespondRequest, error) {
 		return &gamingpb.RespondRequest{Ok: false, Error: "no funds"}, nil
 	}
-	tableGCMessage = func(context.Context, rpc.ShortIDHex, string, int) error {
+	tableGCMessage = func(context.Context, [32]byte, string) error {
 		t.Error("a table was announced although the creator never took a seat")
 		return nil
 	}
@@ -179,7 +178,7 @@ func TestCreatingSaysYouAreSeatedWhenTheChatRefuses(t *testing.T) {
 			Result: &gamingpb.RespondRequest_AcceptInvite{AcceptInvite: &gamingpb.AcceptInviteResult{Sid: "seat-1"}},
 		}, nil
 	}
-	tableGCMessage = func(context.Context, rpc.ShortIDHex, string, int) error {
+	tableGCMessage = func(context.Context, [32]byte, string) error {
 		return errors.New("group chat unreachable")
 	}
 

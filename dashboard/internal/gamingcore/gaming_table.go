@@ -19,7 +19,6 @@ import (
 	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 
 	"dcrpulse/internal/gamingbridge"
-	"dcrpulse/internal/rpc"
 )
 
 // ErrGamingGameNotConnected is a registered game that is not holding a stream.
@@ -32,7 +31,9 @@ var ErrGamingGameNotConnected = gamingbridge.ErrGameNotConnected
 // against a live node is one nobody has exercised. Production sets neither.
 var (
 	tableChainTip  = GamingChainTipNow
-	tableGCMessage = rpc.BrclientdGCMessage
+	tableGCMessage = func(ctx context.Context, gcid [32]byte, text string) error {
+		return hostRelay().SendGroupMessage(ctx, gcid, text)
+	}
 	tableAuthorize = authorizeGamingTable
 )
 
@@ -228,7 +229,7 @@ func CreateGamingTable(ctx context.Context, game, gcid string, buyinAtoms uint64
 	msg := fmt.Sprintf("Table for %d at %s DCR a seat. Registration closes at block %d.\n%s",
 		seats, gamingAtomsText(buyinAtoms), until, invite)
 	table := GamingTable{SID: sid, Invite: invite, Until: until, Height: tip.Height, GCID: gcid}
-	if err := tableGCMessage(ctx, gc, msg, 0); err != nil {
+	if err := tableGCMessage(ctx, gc, msg); err != nil {
 		return table, fmt.Errorf("you are seated, but the invitation could not be sent: %w", err)
 	}
 	return table, nil

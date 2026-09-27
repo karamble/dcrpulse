@@ -19,7 +19,6 @@ import (
 	"github.com/decred/dcrd/certgen"
 
 	"dcrpulse/internal/gamingbridge"
-	"dcrpulse/internal/services"
 	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
@@ -209,7 +208,7 @@ func gamingBridgeKeypairLocked() (certPEM, keyPEM []byte, err error) {
 // package depends on nothing, and everything it is handed is named in one
 // place, where it can be seen that a game is given chain reads and frame
 // carriage and no way to move money.
-func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridge.Config, error) {
+func GamingBridgeConfig(addr string) (gamingbridge.Config, error) {
 	cert, key, err := GamingBridgeKeypair()
 	if err != nil {
 		return gamingbridge.Config{}, err
@@ -221,7 +220,7 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 		Addr:              addr,
 		ServerCert:        cert,
 		ServerKey:         key,
-		AppPasswordActive: appPasswordActive,
+		AppPasswordActive: func() bool { return hostOperator().Protected() },
 		Enabled:           func() bool { return ReadGamingSettings().Enabled },
 		Allow:             gamingAllow,
 
@@ -230,7 +229,7 @@ func GamingBridgeConfig(addr string, appPasswordActive func() bool) (gamingbridg
 			return forwardGamingFrames(in, stop, buf)
 		},
 		Network: func() (string, bool) {
-			net, err := services.CurrentNetwork(context.Background())
+			net, err := currentNetwork(context.Background())
 			return net, err == nil
 		},
 		Policy: func(game string) (int64, int64, bool) {

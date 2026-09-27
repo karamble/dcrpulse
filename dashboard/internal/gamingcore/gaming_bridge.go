@@ -2,12 +2,12 @@ package gamingcore
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"sync"
 
 	"dcrpulse/internal/gamingbridge"
-	"dcrpulse/internal/rpc"
 )
 
 // Errors a game can be told about. Marked GameSafe because they were written
@@ -347,13 +347,13 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 // parseGamingGCID checks a group chat id in the one spelling the gaming paths
 // accept: lowercase, so one chat cannot be named two ways in the per-game
 // bookkeeping.
-func parseGamingGCID(gcid string) (rpc.ShortIDHex, error) {
-	if gcid != strings.ToLower(gcid) {
-		return rpc.ShortIDHex{}, ErrGamingBadGCID
+func parseGamingGCID(gcid string) ([32]byte, error) {
+	var id [32]byte
+	if gcid != strings.ToLower(gcid) || len(gcid) != 2*len(id) {
+		return id, ErrGamingBadGCID
 	}
-	id, err := rpc.ParseShortIDHex(gcid)
-	if err != nil {
-		return rpc.ShortIDHex{}, ErrGamingBadGCID
+	if _, err := hex.Decode(id[:], []byte(gcid)); err != nil {
+		return [32]byte{}, ErrGamingBadGCID
 	}
 	return id, nil
 }

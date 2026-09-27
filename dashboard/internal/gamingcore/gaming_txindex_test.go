@@ -13,8 +13,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"dcrpulse/internal/rpc"
-
 	"github.com/decred/dcrd/rpcclient/v8"
 )
 
@@ -53,9 +51,9 @@ func fakeDcrd(t *testing.T, txIndex *atomic.Bool) {
 	if err != nil {
 		t.Fatalf("test rpc client: %v", err)
 	}
-	prev := rpc.DcrdClient
-	rpc.DcrdClient = client
-	t.Cleanup(func() { rpc.DcrdClient = prev; client.Shutdown() })
+	prev := host
+	host.Node = func() Chain { return client }
+	t.Cleanup(func() { host = prev; client.Shutdown() })
 }
 
 // The operator's fix is to set txindex=1 and restart dcrd, and dcrpulse keeps
@@ -88,9 +86,9 @@ func TestTheIndexIsReadFromTheNodeEveryTime(t *testing.T) {
 // recoverable and says what to do; enabling on a guess parks the first payout
 // at publishing with nothing to read.
 func TestAnUnreachableNodeReadsAsNoIndex(t *testing.T) {
-	prev := rpc.DcrdClient
-	rpc.DcrdClient = nil
-	t.Cleanup(func() { rpc.DcrdClient = prev })
+	prev := host
+	host.Node = nil
+	t.Cleanup(func() { host = prev })
 
 	if _, err := DcrdHasTxIndex(context.Background()); err == nil {
 		t.Fatal("an absent dcrd answered without an error")

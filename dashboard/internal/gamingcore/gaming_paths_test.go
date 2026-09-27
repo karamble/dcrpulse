@@ -15,9 +15,12 @@ import "testing"
 // hand. The spend log is the audit trail a person reads and the record the
 // daily cap counts from, so losing track of it silently resets both.
 //
-// The directory is a variable so tests can point it at somewhere writable.
-// These assert what production actually gets.
+// The directory is the host's; dcrpulse gives it /app-data/control. The names
+// under it are the bridge's, and these pin them.
 func TestTheGamingStateKeepsItsPlace(t *testing.T) {
+	old := GamingStateDir
+	GamingStateDir = "/app-data/control"
+	t.Cleanup(func() { GamingStateDir = old })
 	for _, tc := range []struct {
 		what string
 		got  string

@@ -208,9 +208,12 @@ func main() {
 	// Persistent WS subscriptions to brclientd for chat / KX / GC events.
 	services.StartBisonrelayStreams(context.Background())
 	services.StartBrclientdNotifs(context.Background())
+	// The gaming bridge runs on this dashboard's node, wallet, Bison Relay
+	// client and App Password.
+	gamingcore.Configure(config.StackControlDir(), services.GamingHost(auth.Enabled))
 	// Game frames come from Bison Relay's GCMStream replay log, on the same
 	// WS, and are routed to the gaming bridge from there.
-	gamingcore.StartGamingIntake(context.Background())
+	services.StartGamingIntake(context.Background())
 
 	// Shared-wallet coordination frames arrive as typed "msig" events on
 	// the same notification pipeline. The ladder's deferred rescans ride
@@ -985,7 +988,7 @@ func startGamingBridge() {
 		getEnv("GAMING_BRIDGE_HOST", "0.0.0.0"),
 		getEnv("GAMING_BRIDGE_PORT", "8443"),
 	)
-	cfg, err := gamingcore.GamingBridgeConfig(addr, auth.Enabled)
+	cfg, err := gamingcore.GamingBridgeConfig(addr)
 	if err != nil {
 		gameLog.Errorf("the gaming bridge has no certificate, so no game can connect: %v", err)
 		return

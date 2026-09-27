@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/services"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/wire"
 	"github.com/karamble/dcrgaming-sdk/pkg/finance"
@@ -14,7 +13,7 @@ import (
 )
 
 func validateGamingPayoutInputs(ctx context.Context, inputs []finance.Input) error {
-	params, err := services.ChainParams(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
 		return err
 	}
@@ -92,7 +91,7 @@ func ProposeGamingPayout(ctx context.Context, game string, req *gamingpb.Propose
 	if err = validateGamingPayoutInputs(ctx, proposal.Inputs); err != nil {
 		return nil, err
 	}
-	params, err := services.ChainParams(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +325,7 @@ func ApproveGamingPayout(ctx context.Context, id string, passphrase []byte) (*ga
 	if err != nil {
 		return nil, err
 	}
-	params, err := services.ChainParams(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
 		return nil, err
 	}

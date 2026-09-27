@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/services"
 	"github.com/decred/dcrd/txscript/v4"
 	"github.com/decred/dcrd/txscript/v4/stdscript"
 	"github.com/decred/dcrd/wire"
@@ -28,7 +27,7 @@ func validateGamingFunding(ctx context.Context, dep gamingfunds.Deposit, raw []b
 	if len(tx.TxIn) == 0 || len(tx.TxOut) == 0 || tx.LockTime != 0 || tx.Expiry != 0 {
 		return 0, fmt.Errorf("unsupported funding transaction shape")
 	}
-	params, err := services.ChainParams(ctx)
+	params, err := chainParams(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -53,7 +52,7 @@ func validateGamingFunding(ctx context.Context, dep gamingfunds.Deposit, raw []b
 		if len(facts.Addresses) != 1 {
 			return 0, fmt.Errorf("funding input ownership is ambiguous")
 		}
-		owner, err := services.ValidateAddress(ctx, facts.Addresses[0])
+		owner, err := hostWallet().ValidateAddress(ctx, facts.Addresses[0])
 		if err != nil {
 			return 0, err
 		}
@@ -94,7 +93,7 @@ func validateGamingFunding(ctx context.Context, dep gamingfunds.Deposit, raw []b
 		if len(addresses) != 1 {
 			return 0, fmt.Errorf("unrecognized funding change")
 		}
-		owner, err := services.ValidateAddress(ctx, addresses[0].String())
+		owner, err := hostWallet().ValidateAddress(ctx, addresses[0].String())
 		if err != nil {
 			return 0, err
 		}

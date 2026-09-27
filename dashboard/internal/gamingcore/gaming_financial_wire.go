@@ -5,14 +5,11 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"dcrpulse/internal/gamingfunds"
-	"dcrpulse/internal/rpc"
-	"dcrpulse/internal/services"
 	"dcrpulse/internal/utils"
 
 	"github.com/decred/dcrd/crypto/blake256"
@@ -79,17 +76,14 @@ func financialPart(raw string) (*gamingFrame, error) {
 }
 
 func localGamingUID(ctx context.Context) (string, error) {
-	raw, err := rpc.BrclientdUserPublicIdentity(ctx)
+	uid, _, err := hostRelay().Identity(ctx)
 	if err != nil {
 		return "", err
 	}
-	var public struct {
-		Identity []byte `json:"identity"`
-	}
-	if err = json.Unmarshal(raw, &public); err != nil || len(public.Identity) != 32 {
+	if uid == ([32]byte{}) {
 		return "", fmt.Errorf("BR identity unavailable")
 	}
-	return hex.EncodeToString(public.Identity), nil
+	return hex.EncodeToString(uid[:]), nil
 }
 
 // financialFrame is the exact envelope a financial message is sent as; the
@@ -270,7 +264,7 @@ func signGamingKeyProof(ctx context.Context, scope gamingfunds.Scope, table stri
 // for tests; production never sets them.
 var (
 	receiveScope  = gamingFinancialScope
-	receiveParams = services.ChainParams
+	receiveParams = chainParams
 )
 
 // receiveFinancialFrame runs only on the authenticated BR inbound path.
