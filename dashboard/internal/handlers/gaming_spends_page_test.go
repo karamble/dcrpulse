@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"dcrpulse/internal/gamingcore"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
 )
 
 // useTestGamingBridge points the gaming routes at a bridge with no host,
@@ -20,13 +20,13 @@ import (
 func useTestGamingBridge(t *testing.T, dir string) {
 	t.Helper()
 	prev := gaming
-	gaming = gamingcore.New(dir, gamingcore.Host{})
+	gaming = bridge.New(dir, bridge.Host{})
 	t.Cleanup(func() { gaming = prev })
 }
 
 // seedSpendFile writes a spend log the way the bridge persists one, in the
 // directory of the bridge the routes act on.
-func seedSpendFile(t *testing.T, spends []gamingcore.GamingSpend) {
+func seedSpendFile(t *testing.T, spends []bridge.GamingSpend) {
 	t.Helper()
 	dir := t.TempDir()
 	useTestGamingBridge(t, dir)
@@ -45,18 +45,18 @@ func seedSpendFile(t *testing.T, spends []gamingcore.GamingSpend) {
 // so the console never re-derives the number the cap is enforced against.
 func TestSpendHistoryComesAPageAtATime(t *testing.T) {
 	now := time.Now().Unix()
-	var spends []gamingcore.GamingSpend
+	var spends []bridge.GamingSpend
 	spends = append(spends,
-		gamingcore.GamingSpend{ID: "p1", Game: "poker", State: gamingcore.GamingSpendPending,
+		bridge.GamingSpend{ID: "p1", Game: "poker", State: bridge.GamingSpendPending,
 			AmountAtoms: 100, RequestedAt: now - 1, ExpiresAt: now + 300},
-		gamingcore.GamingSpend{ID: "p2", Game: "poker", State: gamingcore.GamingSpendPending,
+		bridge.GamingSpend{ID: "p2", Game: "poker", State: bridge.GamingSpendPending,
 			AmountAtoms: 200, RequestedAt: now - 2, ExpiresAt: now + 300},
-		gamingcore.GamingSpend{ID: "b1", Game: "poker", State: gamingcore.GamingSpendPublishing,
+		bridge.GamingSpend{ID: "b1", Game: "poker", State: bridge.GamingSpendPublishing,
 			AmountAtoms: 400, RequestedAt: now - 3, ExpiresAt: now + 300},
 	)
 	for i := 0; i < 25; i++ {
-		spends = append(spends, gamingcore.GamingSpend{
-			ID: string(rune('a'+i)) + "-done", Game: "poker", State: gamingcore.GamingSpendDenied,
+		spends = append(spends, bridge.GamingSpend{
+			ID: string(rune('a'+i)) + "-done", Game: "poker", State: bridge.GamingSpendDenied,
 			AmountAtoms: 1, RequestedAt: now - int64(100+i), DecidedAt: now - int64(50+i),
 		})
 	}
@@ -69,11 +69,11 @@ func TestSpendHistoryComesAPageAtATime(t *testing.T) {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
 	var got struct {
-		Pending      []gamingcore.GamingSpend `json:"pending"`
-		Decided      []gamingcore.GamingSpend `json:"decided"`
-		DecidedTotal int                      `json:"decidedTotal"`
-		Page         int                      `json:"page"`
-		UsedToday    map[string]int64         `json:"usedToday"`
+		Pending      []bridge.GamingSpend `json:"pending"`
+		Decided      []bridge.GamingSpend `json:"decided"`
+		DecidedTotal int                  `json:"decidedTotal"`
+		Page         int                  `json:"page"`
+		UsedToday    map[string]int64     `json:"usedToday"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("parse: %v", err)
@@ -85,7 +85,7 @@ func TestSpendHistoryComesAPageAtATime(t *testing.T) {
 		t.Fatalf("page 2 of 10 came %d rows of %d total, page %d", len(got.Decided), got.DecidedTotal, got.Page)
 	}
 	for _, s := range got.Decided {
-		if s.State == gamingcore.GamingSpendPending || s.State == gamingcore.GamingSpendPublishing {
+		if s.State == bridge.GamingSpendPending || s.State == bridge.GamingSpendPublishing {
 			t.Fatalf("history holds %q, which is still in flight", s.State)
 		}
 	}

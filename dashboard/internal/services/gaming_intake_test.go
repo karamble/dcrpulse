@@ -14,9 +14,8 @@ import (
 	"time"
 
 	"github.com/companyzero/bisonrelay/clientrpc/types"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
 	"google.golang.org/protobuf/encoding/protojson"
-
-	"dcrpulse/internal/gamingcore"
 )
 
 // gcmPayload is a GCMStream event exactly as brclientd's clientrpc sends it.
@@ -36,8 +35,8 @@ func gcmPayload(t *testing.T, gcid, uid byte, text string, seq uint64) json.RawM
 }
 
 func TestReceiveGCMHandsOnlyAttributableMessages(t *testing.T) {
-	var got []gamingcore.GroupMessage
-	keep := func(m gamingcore.GroupMessage) error { got = append(got, m); return nil }
+	var got []bridge.GroupMessage
+	keep := func(m bridge.GroupMessage) error { got = append(got, m); return nil }
 
 	seq, err := receiveGCM(gcmPayload(t, 0xaa, 0x22, testFrame, 7), keep)
 	if err != nil || seq != 7 || len(got) != 1 {
@@ -63,7 +62,7 @@ func TestReceiveGCMHandsOnlyAttributableMessages(t *testing.T) {
 		t.Fatalf("handed %d messages, want only the attributable one", len(got))
 	}
 	// A message the bridge could not keep is not acknowledged.
-	refuse := func(gamingcore.GroupMessage) error { return errors.New("disk full") }
+	refuse := func(bridge.GroupMessage) error { return errors.New("disk full") }
 	if seq, err = receiveGCM(gcmPayload(t, 0xaa, 0x22, testFrame, 10), refuse); err == nil || seq != 0 {
 		t.Fatalf("unkept frame = %d, %v", seq, err)
 	}

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"dcrpulse/internal/gamingcore"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
 )
 
 // A credential is the game's identity and the bridge issues it.
@@ -52,10 +52,10 @@ func TestThePolicyViewNeverTakesACredentialBack(t *testing.T) {
 // secret itself; a settings page that carried either would put them in every
 // browser cache and every screenshot.
 func TestTheViewCarriesNoCertificate(t *testing.T) {
-	stored := gamingcore.GamingSettings{
+	stored := bridge.GamingSettings{
 		Enabled:         true,
 		RegisteredGames: []string{"poker"},
-		GameCredentials: map[string]gamingcore.GameCredential{"poker": {
+		GameCredentials: map[string]bridge.GameCredential{"poker": {
 			Fingerprint: "abc123",
 			CertPEM:     "-----BEGIN CERTIFICATE-----\nnot really\n-----END CERTIFICATE-----\n",
 			IssuedAt:    42,
@@ -78,10 +78,10 @@ func TestTheViewCarriesNoCertificate(t *testing.T) {
 // quietly move the decimal point, because both ends of that conversion are a
 // limit on real money.
 func TestPolicyCapsSurviveTheRoundTrip(t *testing.T) {
-	stored := gamingcore.GamingSettings{
+	stored := bridge.GamingSettings{
 		Enabled:         true,
 		RegisteredGames: []string{"poker"},
-		Policies: map[string]gamingcore.GamePolicy{"poker": {
+		Policies: map[string]bridge.GamePolicy{"poker": {
 			Name: "Poker", Account: "gaming",
 			PerTableCapAtoms: 100_000_000, PerDayCapAtoms: 512_345_678,
 			ApprovalTimeoutSecs: 120,
@@ -102,7 +102,7 @@ func TestPolicyCapsSurviveTheRoundTrip(t *testing.T) {
 // enable control can be inactive and say why, and it must never be read back
 // off a POST as if the browser got to decide it.
 func TestTheTransactionIndexIsReportedButNeverAccepted(t *testing.T) {
-	view := gamingToView(gamingcore.GamingSettings{Enabled: true}, false, true)
+	view := gamingToView(bridge.GamingSettings{Enabled: true}, false, true)
 	body, err := json.Marshal(view)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
@@ -117,7 +117,7 @@ func TestTheTransactionIndexIsReportedButNeverAccepted(t *testing.T) {
 	// Both false is a node that is down, not a node with no index, and the
 	// console has to be able to tell those apart or it sends the operator to
 	// edit a config file over a node that simply is not answering.
-	down, err := json.Marshal(gamingToView(gamingcore.GamingSettings{}, false, false))
+	down, err := json.Marshal(gamingToView(bridge.GamingSettings{}, false, false))
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}

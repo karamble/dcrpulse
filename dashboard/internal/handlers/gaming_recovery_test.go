@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"dcrpulse/internal/gamingfunds"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge/funds"
 )
 
 func TestGamingLedgerBackupDownloadRestores(t *testing.T) {
@@ -22,7 +22,7 @@ func TestGamingLedgerBackupDownloadRestores(t *testing.T) {
 	if rec.Header().Get("Content-Disposition") != "attachment" || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("headers = %v", rec.Header())
 	}
-	if err := gamingfunds.RestoreBackup(filepath.Join(t.TempDir(), "restored"), rec.Body.Bytes()); err != nil {
+	if err := funds.RestoreBackup(filepath.Join(t.TempDir(), "restored"), rec.Body.Bytes()); err != nil {
 		t.Fatalf("served backup does not restore: %v", err)
 	}
 }
@@ -41,12 +41,12 @@ func TestGamingLedgerRestoreRefusesLedgerWithRecords(t *testing.T) {
 	}
 
 	populated := filepath.Join(t.TempDir(), "financial-authority")
-	store, err := gamingfunds.Open(populated)
+	store, err := funds.Open(populated)
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope := gamingfunds.Scope{Game: "orbitgolf", Network: "mainnet", Wallet: "wallet-c", Account: 3}
-	if err = store.AuthorizeTable(gamingfunds.TableAuthorization{Scope: scope, Table: "g4", StakeAtoms: 700000, CSVBlocks: 16, AdmissionAtoms: 100000, AdmissionBlocks: 8, Seats: 2, Until: 100}); err != nil {
+	scope := funds.Scope{Game: "orbitgolf", Network: "mainnet", Wallet: "wallet-c", Account: 3}
+	if err = store.AuthorizeTable(funds.TableAuthorization{Scope: scope, Table: "g4", StakeAtoms: 700000, CSVBlocks: 16, AdmissionAtoms: 100000, AdmissionBlocks: 8, Seats: 2, Until: 100}); err != nil {
 		t.Fatal(err)
 	}
 	store.Close()

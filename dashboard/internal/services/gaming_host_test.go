@@ -15,11 +15,11 @@ import (
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"dcrpulse/internal/gamingcore"
 	"dcrpulse/internal/rpc"
 )
 
@@ -169,14 +169,14 @@ func TestGamingRelayTellsARefusalFromAnUnknownSend(t *testing.T) {
 	gcid[0] = 0xab
 
 	answer = &rpc.BrclientdStatusError{Path: "/gc", Code: 503, Body: "BR client not yet running"}
-	if err := r.SendGroupMessage(ctx, gcid, "x"); !errors.Is(err, gamingcore.ErrNotSent) {
+	if err := r.SendGroupMessage(ctx, gcid, "x"); !errors.Is(err, bridge.ErrNotSent) {
 		t.Fatalf("a refused send = %v, want not sent", err)
 	}
 	if gotID != hex.EncodeToString(gcid[:]) {
 		t.Fatalf("sent to %q", gotID)
 	}
 	answer = errors.New("connection reset")
-	if err := r.SendGroupMessage(ctx, gcid, "x"); err == nil || errors.Is(err, gamingcore.ErrNotSent) {
+	if err := r.SendGroupMessage(ctx, gcid, "x"); err == nil || errors.Is(err, bridge.ErrNotSent) {
 		t.Fatalf("an unknown outcome = %v, want an error that is not a refusal", err)
 	}
 	answer = nil
@@ -202,7 +202,7 @@ func TestGamingRelayReadsIdentityAndHistory(t *testing.T) {
 		t.Fatalf("identity = %x %q %v", got, nick, err)
 	}
 	entries, err := r.GroupHistory(ctx, [32]byte{}, 0, 500)
-	if err != nil || len(entries) != 2 || entries[0] != (gamingcore.GroupEntry{From: "me", Message: "a"}) || entries[1].From != "peer" {
+	if err != nil || len(entries) != 2 || entries[0] != (bridge.GroupEntry{From: "me", Message: "a"}) || entries[1].From != "peer" {
 		t.Fatalf("history = %+v, %v", entries, err)
 	}
 	gamingBRIdentity = func(context.Context) (json.RawMessage, error) {

@@ -6,8 +6,9 @@ import (
 	"io"
 	"net/http"
 
-	"dcrpulse/internal/gamingcore"
-	"dcrpulse/internal/gamingfunds"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge/funds"
+
 	"dcrpulse/internal/utils"
 )
 
@@ -89,7 +90,7 @@ func BisonrelayGamingLedgerBackupHandler(w http.ResponseWriter, r *http.Request)
 // BisonrelayGamingLedgerRestoreHandler restores the financial ledger from the
 // downloaded backup, sent byte for byte, while the ledger is missing or empty.
 func BisonrelayGamingLedgerRestoreHandler(w http.ResponseWriter, r *http.Request) {
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, gamingfunds.MaxBackupBytes))
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, funds.MaxBackupBytes))
 	if err != nil {
 		http.Error(w, "backup file is too large or unreadable", http.StatusRequestEntityTooLarge)
 		return
@@ -98,9 +99,9 @@ func BisonrelayGamingLedgerRestoreHandler(w http.ResponseWriter, r *http.Request
 	switch {
 	case err == nil:
 		gamingJSON(w, map[string]any{"restored": true, "unownedKeys": unowned})
-	case errors.Is(err, gamingfunds.ErrLedgerHasRecords):
+	case errors.Is(err, funds.ErrLedgerHasRecords):
 		http.Error(w, "the gaming ledger already holds records; it can only be restored while empty", http.StatusConflict)
-	case errors.Is(err, gamingcore.ErrGamingBackupInvalid), errors.Is(err, gamingcore.ErrGamingBackupWrongWallet):
+	case errors.Is(err, bridge.ErrGamingBackupInvalid), errors.Is(err, bridge.ErrGamingBackupWrongWallet):
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 	default:
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)

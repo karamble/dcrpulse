@@ -13,9 +13,9 @@ import (
 	"strings"
 
 	"github.com/decred/dcrd/dcrutil/v4"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
 
 	"dcrpulse/internal/auth"
-	"dcrpulse/internal/gamingcore"
 	"dcrpulse/internal/utils"
 )
 
@@ -26,11 +26,11 @@ import (
 // DCR, converted here the same way the BR-MCP handlers do.
 
 // gaming is the bridge the gaming routes act on.
-var gaming *gamingcore.Bridge
+var gaming *bridge.Bridge
 
 // UseGamingBridge hands the gaming routes their bridge, once, before they
 // serve.
-func UseGamingBridge(b *gamingcore.Bridge) { gaming = b }
+func UseGamingBridge(b *bridge.Bridge) { gaming = b }
 
 // gamePolicyView is one game's policy, DCR-denominated.
 type gamePolicyView struct {
@@ -77,7 +77,7 @@ type gameCredentialView struct {
 	IssuedAt    int64  `json:"issuedAt"`
 }
 
-func gamingToView(s gamingcore.GamingSettings, txIndexActive, chainReachable bool) gamingSettingsView {
+func gamingToView(s bridge.GamingSettings, txIndexActive, chainReachable bool) gamingSettingsView {
 	if s.RegisteredGames == nil {
 		s.RegisteredGames = []string{}
 	}
@@ -105,18 +105,18 @@ func gamingToView(s gamingcore.GamingSettings, txIndexActive, chainReachable boo
 	}
 }
 
-func gamingFromView(v gamingSettingsView) (gamingcore.GamingSettings, error) {
-	policies := make(map[string]gamingcore.GamePolicy, len(v.Policies))
+func gamingFromView(v gamingSettingsView) (bridge.GamingSettings, error) {
+	policies := make(map[string]bridge.GamePolicy, len(v.Policies))
 	for id, p := range v.Policies {
 		perTable, err := dcrutil.NewAmount(p.PerTableCapDcr)
 		if err != nil {
-			return gamingcore.GamingSettings{}, fmt.Errorf("%s per-table cap: %w", id, err)
+			return bridge.GamingSettings{}, fmt.Errorf("%s per-table cap: %w", id, err)
 		}
 		perDay, err := dcrutil.NewAmount(p.PerDayCapDcr)
 		if err != nil {
-			return gamingcore.GamingSettings{}, fmt.Errorf("%s per-day cap: %w", id, err)
+			return bridge.GamingSettings{}, fmt.Errorf("%s per-day cap: %w", id, err)
 		}
-		policies[id] = gamingcore.GamePolicy{
+		policies[id] = bridge.GamePolicy{
 			Name:                p.Name,
 			Account:             p.Account,
 			PerTableCapAtoms:    int64(perTable),
@@ -124,7 +124,7 @@ func gamingFromView(v gamingSettingsView) (gamingcore.GamingSettings, error) {
 			ApprovalTimeoutSecs: p.ApprovalTimeoutSecs,
 		}
 	}
-	return gamingcore.GamingSettings{
+	return bridge.GamingSettings{
 		Enabled:         v.Enabled,
 		RegisteredGames: v.RegisteredGames,
 		Policies:        policies,
@@ -169,11 +169,11 @@ func BisonrelayGamingSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		saved, err := gaming.WriteGamingSettings(next, auth.Enabled(), txIndex)
 		switch {
 		case err == nil:
-		case errors.Is(err, gamingcore.ErrGamingNeedsAppPassword),
-			errors.Is(err, gamingcore.ErrGamingNeedsTxIndex):
+		case errors.Is(err, bridge.ErrGamingNeedsAppPassword),
+			errors.Is(err, bridge.ErrGamingNeedsTxIndex):
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
-		case errors.Is(err, gamingcore.ErrGamingBadGameID):
+		case errors.Is(err, bridge.ErrGamingBadGameID):
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		default:
@@ -225,10 +225,10 @@ func BisonrelayGamingSpendsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	pending := []gamingcore.GamingSpend{}
-	decided := []gamingcore.GamingSpend{}
+	pending := []bridge.GamingSpend{}
+	decided := []bridge.GamingSpend{}
 	for _, s := range spends {
-		if s.State == gamingcore.GamingSpendPending || s.State == gamingcore.GamingSpendPublishing {
+		if s.State == bridge.GamingSpendPending || s.State == bridge.GamingSpendPublishing {
 			pending = append(pending, s)
 		} else {
 			decided = append(decided, s)
@@ -282,7 +282,7 @@ func BisonrelayGamingSpendDecideHandler(w http.ResponseWriter, r *http.Request) 
 	req.Passphrase = ""
 
 	var (
-		spend gamingcore.GamingSpend
+		spend bridge.GamingSpend
 		err   error
 	)
 	if req.Approve {
@@ -298,11 +298,11 @@ func BisonrelayGamingSpendDecideHandler(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case err == nil:
 		gamingJSON(w, spend)
-	case errors.Is(err, gamingcore.ErrGamingSpendNotFound):
+	case errors.Is(err, bridge.ErrGamingSpendNotFound):
 		http.Error(w, "no such spend request", http.StatusNotFound)
-	case errors.Is(err, gamingcore.ErrGamingSpendNotPending):
+	case errors.Is(err, bridge.ErrGamingSpendNotPending):
 		http.Error(w, "that request was already decided", http.StatusConflict)
-	case errors.Is(err, gamingcore.ErrGamingSpendRefused), errors.Is(err, gamingcore.ErrGamingGameNotRegistered):
+	case errors.Is(err, bridge.ErrGamingSpendRefused), errors.Is(err, bridge.ErrGamingGameNotRegistered):
 		// The settings changed under the request: approval is refused by
 		// policy as it stands now, and the row stays for a deny.
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -345,7 +345,7 @@ func BisonrelayGamingCredentialHandler(w http.ResponseWriter, r *http.Request) {
 	material, err := gaming.IssueGamingCredential(strings.TrimSpace(req.Game))
 	switch {
 	case err == nil:
-	case errors.Is(err, gamingcore.ErrGamingGameNotRegistered):
+	case errors.Is(err, bridge.ErrGamingGameNotRegistered):
 		http.Error(w, "register the game before issuing it a credential", http.StatusNotFound)
 		return
 	default:
@@ -380,7 +380,7 @@ func BisonrelayGamingCredentialRevokeHandler(w http.ResponseWriter, r *http.Requ
 	switch err := gaming.RevokeGamingCredential(strings.TrimSpace(req.Game)); {
 	case err == nil:
 		gamingJSON(w, map[string]any{"revoked": true})
-	case errors.Is(err, gamingcore.ErrGamingNoCredential):
+	case errors.Is(err, bridge.ErrGamingNoCredential):
 		http.Error(w, "that game has no credential to revoke", http.StatusNotFound)
 	default:
 		http.Error(w, "could not revoke: "+err.Error(), http.StatusInternalServerError)

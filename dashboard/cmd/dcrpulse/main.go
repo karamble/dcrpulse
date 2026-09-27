@@ -18,12 +18,12 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge/listener"
 
 	"dcrpulse/internal/alerts"
 	"dcrpulse/internal/auth"
 	"dcrpulse/internal/config"
-	"dcrpulse/internal/gamingbridge"
-	"dcrpulse/internal/gamingcore"
 	"dcrpulse/internal/handlers"
 	dcrlog "dcrpulse/internal/log"
 	"dcrpulse/internal/mcp"
@@ -210,9 +210,9 @@ func main() {
 	services.StartBrclientdNotifs(context.Background())
 	// The gaming bridge runs on this dashboard's node, wallet, Bison Relay
 	// client and App Password.
-	gamingcore.UseLogger(dcrlog.GAME)
-	gamingbridge.UseLogger(dcrlog.GAME)
-	gaming := gamingcore.New(config.StackControlDir(), services.GamingHost(auth.Enabled))
+	bridge.UseLogger(dcrlog.GAME)
+	listener.UseLogger(dcrlog.GAME)
+	gaming := bridge.New(config.StackControlDir(), services.GamingHost(auth.Enabled))
 	handlers.UseGamingBridge(gaming)
 	// Game frames come from Bison Relay's GCMStream replay log, on the same
 	// WS, and are routed to the gaming bridge from there.
@@ -984,12 +984,12 @@ func waitForWalletLoaded(ctx context.Context) bool {
 // A failure here is logged and not fatal. Gaming is one section of a dashboard
 // that also holds a wallet, a node and a Lightning daemon, and refusing to start
 // any of that because a game could not be served would be the wrong trade.
-func startGamingBridge(bridge *gamingcore.Bridge) {
+func startGamingBridge(b *bridge.Bridge) {
 	addr := net.JoinHostPort(
 		getEnv("GAMING_BRIDGE_HOST", "0.0.0.0"),
 		getEnv("GAMING_BRIDGE_PORT", "8443"),
 	)
-	if err := bridge.Start(addr); err != nil {
+	if err := b.Start(addr); err != nil {
 		gameLog.Errorf("%v", err)
 	}
 }

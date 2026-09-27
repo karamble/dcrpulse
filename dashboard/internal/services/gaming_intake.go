@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/companyzero/bisonrelay/clientrpc/types"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
 	gamingwire "github.com/karamble/dcrgaming-sdk/pkg/gaming/wire"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"dcrpulse/internal/gamingcore"
 	"dcrpulse/internal/rpc"
 )
 
@@ -25,12 +25,12 @@ const gamingIntakeRetry = 30 * time.Second
 var gamingIntakeFirstRetry = time.Second
 
 // StartGamingIntake reads every group message from brclientd's
-// ChatService.GCMStream and hands them to bridge. The stream is
+// ChatService.GCMStream and hands them to the gaming bridge. The stream is
 // Bison Relay's own replay log: a message stays there until acknowledged, so
 // frames that arrive while the dashboard is down are read on the next start,
 // each with the sender's authenticated UID. A message is acknowledged only
 // once its frame is in the journal.
-func StartGamingIntake(ctx context.Context, bridge *gamingcore.Bridge) {
+func StartGamingIntake(ctx context.Context, b *bridge.Bridge) {
 	ws := rpc.BrclientdWS()
 	q := newGamingIntakeQueue()
 	// The callback runs on the client's read goroutine and must not call back
@@ -39,7 +39,7 @@ func StartGamingIntake(ctx context.Context, bridge *gamingcore.Bridge) {
 	go func() {
 		defer cancel()
 		receive := func(payload json.RawMessage) (uint64, error) {
-			return receiveGCM(payload, bridge.ReceiveGroupMessage)
+			return receiveGCM(payload, b.ReceiveGroupMessage)
 		}
 		runGamingIntake(ctx, q, receive, func(ctx context.Context, seq uint64) error {
 			callCtx, cancelCall := context.WithTimeout(ctx, ackTimeout)
@@ -48,7 +48,7 @@ func StartGamingIntake(ctx context.Context, bridge *gamingcore.Bridge) {
 		})
 	}()
 	// Frames journaled before a restart but never delivered.
-	go bridge.RecoverHistory()
+	go b.RecoverHistory()
 }
 
 // gamingIntakeQueue holds stream payloads in arrival order until the intake
@@ -135,7 +135,7 @@ func runGamingIntake(ctx context.Context, q *gamingIntakeQueue,
 // returns its sequence id. A payload that cannot be read, or a message that cannot be attributed to
 // a sender and group, is skipped: it would never read, and the next ack covers
 // it.
-func receiveGCM(payload json.RawMessage, receive func(gamingcore.GroupMessage) error) (uint64, error) {
+func receiveGCM(payload json.RawMessage, receive func(bridge.GroupMessage) error) (uint64, error) {
 	var m types.GCReceivedMsg
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(payload, &m); err != nil {
 		gameLog.Warnf("gaming intake: undecodable group message: %v", err)
@@ -148,7 +148,7 @@ func receiveGCM(payload json.RawMessage, receive func(gamingcore.GroupMessage) e
 		}
 		return m.GetSequenceId(), nil
 	}
-	msg := gamingcore.GroupMessage{Text: text, Time: time.UnixMilli(m.GetTimestampMs())}
+	msg := bridge.GroupMessage{Text: text, Time: time.UnixMilli(m.GetTimestampMs())}
 	copy(msg.GCID[:], m.GetMsg().GetId())
 	copy(msg.From[:], m.GetUid())
 	if err := receive(msg); err != nil {

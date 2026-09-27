@@ -9,7 +9,6 @@ require (
 	github.com/companyzero/bisonrelay v0.2.5-0.20251216165537-8b1a3b4bd3d6
 	github.com/decred/dcrd/blockchain/stake/v5 v5.0.2
 	github.com/decred/dcrd/blockchain/standalone/v2 v2.2.2
-	github.com/decred/dcrd/certgen v1.2.0
 	github.com/decred/dcrd/chaincfg/chainhash v1.0.5
 	github.com/decred/dcrd/chaincfg/v3 v3.3.0
 	github.com/decred/dcrd/dcrec v1.0.1
@@ -39,6 +38,8 @@ require (
 	google.golang.org/protobuf v1.36.12
 )
 
+require github.com/decred/dcrd/certgen v1.2.0 // indirect
+
 // Exclude old genproto to avoid ambiguous import
 exclude google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
 
@@ -67,7 +68,7 @@ require (
 	github.com/decred/dcrd/connmgr/v3 v3.1.3 // indirect
 	github.com/decred/dcrd/container/apbf v1.0.1 // indirect
 	github.com/decred/dcrd/container/lru v1.0.0 // indirect
-	github.com/decred/dcrd/crypto/blake256 v1.1.0
+	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/decred/dcrd/crypto/rand v1.0.1 // indirect
 	github.com/decred/dcrd/crypto/ripemd160 v1.0.2 // indirect
 	github.com/decred/dcrd/database/v3 v3.0.3 // indirect
@@ -110,7 +111,7 @@ require (
 	github.com/jrick/bitset v1.0.0 // indirect
 	github.com/jrick/wsrpc/v2 v2.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/karamble/dcrgaming-sdk v0.3.1-0.20260927081833-403dc8465987
+	github.com/karamble/dcrgaming-sdk v0.3.1-0.20260927182119-1f5730969dd9
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
@@ -157,7 +158,7 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/exp v0.0.0-20260508232706-74f9aab9d74a // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

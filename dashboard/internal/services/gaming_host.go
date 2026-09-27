@@ -15,11 +15,11 @@ import (
 
 	pb "decred.org/dcrwallet/v5/rpc/walletrpc"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"dcrpulse/internal/config"
-	"dcrpulse/internal/gamingcore"
 	"dcrpulse/internal/rpc"
 	"dcrpulse/internal/types"
 	"dcrpulse/internal/utils"
@@ -28,9 +28,9 @@ import (
 // GamingHost is this dashboard as the gaming bridge's host: its dcrd, its
 // wallet, its Bison Relay client, and its operator, who is protected while
 // protected reports true.
-func GamingHost(protected func() bool) gamingcore.Host {
-	return gamingcore.Host{
-		Node: func() gamingcore.Chain {
+func GamingHost(protected func() bool) bridge.Host {
+	return bridge.Host{
+		Node: func() bridge.Chain {
 			if c := rpc.DcrdClient; c != nil {
 				return c
 			}
@@ -76,14 +76,14 @@ func requireGamingSigningMetadata(cfg interface {
 	return nil
 }
 
-func (gamingWallet) Accounts(ctx context.Context) ([]gamingcore.Account, error) {
+func (gamingWallet) Accounts(ctx context.Context) ([]bridge.Account, error) {
 	accounts, err := FetchAllAccounts(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]gamingcore.Account, 0, len(accounts))
+	out := make([]bridge.Account, 0, len(accounts))
 	for _, a := range accounts {
-		out = append(out, gamingcore.Account{Name: a.AccountName, Number: a.AccountNumber})
+		out = append(out, bridge.Account{Name: a.AccountName, Number: a.AccountNumber})
 	}
 	return out, nil
 }
@@ -94,12 +94,12 @@ func (gamingWallet) AccountXPub(ctx context.Context, account uint32) (string, er
 	return GetAccountExtendedPubKey(ctx, account)
 }
 
-func (gamingWallet) ValidateAddress(ctx context.Context, address string) (gamingcore.AddressInfo, error) {
+func (gamingWallet) ValidateAddress(ctx context.Context, address string) (bridge.AddressInfo, error) {
 	r, err := ValidateAddress(ctx, address)
 	if err != nil {
-		return gamingcore.AddressInfo{}, err
+		return bridge.AddressInfo{}, err
 	}
-	return gamingcore.AddressInfo{IsValid: r.IsValid, IsMine: r.IsMine, IsScript: r.IsScript, AccountNumber: r.AccountNumber, PubKey: r.PubKey}, nil
+	return bridge.AddressInfo{IsValid: r.IsValid, IsMine: r.IsMine, IsScript: r.IsScript, AccountNumber: r.AccountNumber, PubKey: r.PubKey}, nil
 }
 
 func (gamingWallet) NextInternalAddress(ctx context.Context, account uint32) (string, error) {
@@ -185,21 +185,21 @@ func (gamingWallet) Broadcast(ctx context.Context, signed []byte) (string, error
 	return BroadcastSignedTransaction(ctx, signed)
 }
 
-func (gamingWallet) Transaction(ctx context.Context, hash chainhash.Hash) (gamingcore.WalletTx, bool, error) {
+func (gamingWallet) Transaction(ctx context.Context, hash chainhash.Hash) (bridge.WalletTx, bool, error) {
 	if rpc.WalletGrpcClient == nil {
-		return gamingcore.WalletTx{}, false, nil
+		return bridge.WalletTx{}, false, nil
 	}
 	r, err := rpc.WalletGrpcClient.GetTransaction(ctx, &pb.GetTransactionRequest{TransactionHash: hash[:]})
 	if status.Code(err) == codes.NotFound {
-		return gamingcore.WalletTx{}, false, nil
+		return bridge.WalletTx{}, false, nil
 	}
 	if err != nil {
-		return gamingcore.WalletTx{}, false, err
+		return bridge.WalletTx{}, false, err
 	}
 	if r.GetTransaction() == nil {
-		return gamingcore.WalletTx{}, false, nil
+		return bridge.WalletTx{}, false, nil
 	}
-	tx := gamingcore.WalletTx{Raw: r.GetTransaction().GetTransaction(), Confirmations: r.GetConfirmations()}
+	tx := bridge.WalletTx{Raw: r.GetTransaction().GetTransaction(), Confirmations: r.GetConfirmations()}
 	if b := r.GetBlockHash(); len(b) == chainhash.HashSize {
 		var h chainhash.Hash
 		copy(h[:], b)
@@ -276,12 +276,12 @@ func (gamingRelay) SendGroupMessage(ctx context.Context, gcid [32]byte, text str
 	err = gamingBRSend(ctx, id, text, 0)
 	var refused *rpc.BrclientdStatusError
 	if errors.As(err, &refused) {
-		return fmt.Errorf("%w: %w", gamingcore.ErrNotSent, err)
+		return fmt.Errorf("%w: %w", bridge.ErrNotSent, err)
 	}
 	return err
 }
 
-func (gamingRelay) GroupHistory(ctx context.Context, gcid [32]byte, page, pageSize int) ([]gamingcore.GroupEntry, error) {
+func (gamingRelay) GroupHistory(ctx context.Context, gcid [32]byte, page, pageSize int) ([]bridge.GroupEntry, error) {
 	id, err := rpc.ParseShortIDHex(hex.EncodeToString(gcid[:]))
 	if err != nil {
 		return nil, err
@@ -299,9 +299,9 @@ func (gamingRelay) GroupHistory(ctx context.Context, gcid [32]byte, page, pageSi
 	if err := json.Unmarshal(raw, &got); err != nil {
 		return nil, err
 	}
-	out := make([]gamingcore.GroupEntry, 0, len(got.Entries))
+	out := make([]bridge.GroupEntry, 0, len(got.Entries))
 	for _, e := range got.Entries {
-		out = append(out, gamingcore.GroupEntry{From: e.From, Message: e.Message})
+		out = append(out, bridge.GroupEntry{From: e.From, Message: e.Message})
 	}
 	return out, nil
 }

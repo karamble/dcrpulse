@@ -10,18 +10,18 @@ import (
 	"net/http"
 	"strings"
 
-	"dcrpulse/internal/gamingcore"
+	"github.com/karamble/dcrgaming-sdk/pkg/gaming/bridge"
 	"github.com/karamble/dcrgaming-sdk/pkg/gaming/gamingpb"
 )
 
 // BisonrelayGamingCreateHandler proposes a table and puts it in a group chat.
 func BisonrelayGamingCreateHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Game       string                      `json:"game"`
-		GCID       string                      `json:"gcid"`
-		BuyInAtoms int64                       `json:"buyinAtoms"`
-		Funds      gamingcore.GamingTableFunds `json:"funds"`
-		Seats      uint32                      `json:"seats"`
+		Game       string                  `json:"game"`
+		GCID       string                  `json:"gcid"`
+		BuyInAtoms int64                   `json:"buyinAtoms"`
+		Funds      bridge.GamingTableFunds `json:"funds"`
+		Seats      uint32                  `json:"seats"`
 		// OpenBlocks is optional; zero takes the default.
 		OpenBlocks uint32 `json:"openBlocks"`
 	}
@@ -35,7 +35,7 @@ func BisonrelayGamingCreateHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no game named", http.StatusBadRequest)
 		return
 	}
-	if !gamingcore.ValidGamingGCID(gcid) {
+	if !bridge.ValidGamingGCID(gcid) {
 		http.Error(w, "gcid must be 64 hex characters", http.StatusBadRequest)
 		return
 	}
@@ -74,7 +74,7 @@ func BisonrelayGamingInviteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "game and invite are required", http.StatusBadRequest)
 		return
 	}
-	if !gamingcore.ValidGamingGCID(gcid) {
+	if !bridge.ValidGamingGCID(gcid) {
 		http.Error(w, "gcid must be 64 hex characters", http.StatusBadRequest)
 		return
 	}
@@ -120,7 +120,7 @@ func BisonrelayGamingStateHandler(w http.ResponseWriter, r *http.Request) {
 func BisonrelayGamingTableStatusHandler(w http.ResponseWriter, r *http.Request) {
 	game := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("game")))
 	sid := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sid")))
-	if game == "" || !gamingcore.ValidGamingTableID(sid) {
+	if game == "" || !bridge.ValidGamingTableID(sid) {
 		http.Error(w, "game and table id are required", http.StatusBadRequest)
 		return
 	}
@@ -160,9 +160,9 @@ func gamingStateView(s *gamingpb.GameState, tip int64) map[string]any {
 // the game itself issued.
 func gamingTableError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, gamingcore.ErrGamingGameNotRegistered):
+	case errors.Is(err, bridge.ErrGamingGameNotRegistered):
 		http.Error(w, err.Error(), http.StatusForbidden)
-	case errors.Is(err, gamingcore.ErrGamingGameNotConnected):
+	case errors.Is(err, bridge.ErrGamingGameNotConnected):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		http.Error(w, err.Error(), http.StatusBadGateway)
