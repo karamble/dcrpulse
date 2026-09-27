@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/netutil"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -108,8 +109,9 @@ type Config struct {
 	// or removal. Called outside registry locks; it must return promptly.
 	OnPresence func(game string)
 
-	// StartFinancialWorker starts bridge-owned durable reconciliation with the
-	// listener lifetime. The host injects it so this package remains a leaf.
+	// StartFinancialWorker starts bridge-owned durable reconciliation for as
+	// long as Serve runs, whether or not the port is open. The host injects it
+	// so this package remains a leaf.
 	StartFinancialWorker func(context.Context)
 }
 
@@ -213,17 +215,70 @@ func (s *Server) live() bool {
 	return s.cfg.Enabled() && s.cfg.AppPasswordActive()
 }
 
-// Serve starts listening and blocks until the bridge is stopped.
+// maxBridgeConns bounds the connections the bridge holds open at once. A
+// variable so a test can lower it.
+var maxBridgeConns = 64
+
+// Serve runs the bridge until Stop. The port is open only while the bridge is
+// switched on and the App Password is set; switching it off closes the port
+// and every connection on it. The financial worker runs the whole time, since
+// deposits already made keep needing it.
 func (s *Server) Serve() error {
 	cert, err := tls.X509KeyPair(s.cfg.ServerCert, s.cfg.ServerKey)
 	if err != nil {
 		return fmt.Errorf("load the bridge's own certificate: %w", err)
 	}
 
+	ctx, stop := context.WithCancel(context.Background())
+	s.mu.Lock()
+	if s.stop != nil {
+		s.mu.Unlock()
+		stop()
+		return errors.New("the gaming bridge is already serving")
+	}
+	s.stop = stop
+	s.mu.Unlock()
+	defer stop()
+	if s.cfg.StartFinancialWorker != nil {
+		s.cfg.StartFinancialWorker(ctx)
+	}
+
+	tick := time.NewTicker(livenessEvery)
+	defer tick.Stop()
+	failing := false
+	for {
+		listening := s.Addr() != ""
+		switch live := s.live(); {
+		case live && !listening:
+			if err := s.listen(cert); err != nil {
+				if !failing {
+					gameLog.Errorf("the gaming bridge cannot listen on %s: %v", s.cfg.Addr, err)
+				}
+				failing = true
+			} else {
+				failing = false
+			}
+		case !live && listening:
+			addr := s.Addr()
+			s.stopListener()
+			gameLog.Infof("gaming bridge switched off; port %s closed", addr)
+		}
+		select {
+		case <-ctx.Done():
+			s.stopListener()
+			return nil
+		case <-tick.C:
+		}
+	}
+}
+
+// listen opens the port and serves it until stopListener.
+func (s *Server) listen(cert tls.Certificate) error {
 	lis, err := net.Listen("tcp", s.cfg.Addr)
 	if err != nil {
-		return fmt.Errorf("listen on %s: %w", s.cfg.Addr, err)
+		return err
 	}
+	lis = netutil.LimitListener(lis, maxBridgeConns)
 
 	srv := grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(serverTLSConfig(cert, s.allow, s.live))),
@@ -232,6 +287,10 @@ func (s *Server) Serve() error {
 		// The same ceiling the browser API puts on a request body. A game
 		// is no more trusted than a browser is.
 		grpc.MaxRecvMsgSize(1<<20),
+		// A peer gets ten seconds to finish its handshake, and a connection
+		// a bounded number of streams.
+		grpc.ConnectionTimeout(10*time.Second),
+		grpc.MaxConcurrentStreams(32),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    30 * time.Second,
 			Timeout: 20 * time.Second,
@@ -248,15 +307,20 @@ func (s *Server) Serve() error {
 	gamingpb.RegisterBridgeServiceServer(srv, s)
 
 	s.mu.Lock()
-	workerCtx, stop := context.WithCancel(context.Background())
-	s.grpc, s.lis, s.stop = srv, lis, stop
+	s.grpc, s.lis = srv, lis
 	s.mu.Unlock()
-	defer stop()
-	if s.cfg.StartFinancialWorker != nil {
-		s.cfg.StartFinancialWorker(workerCtx)
-	}
-
-	return srv.Serve(lis)
+	gameLog.Infof("gaming bridge listening on %s", lis.Addr())
+	go func() {
+		if err := srv.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			gameLog.Errorf("the gaming bridge stopped serving: %v", err)
+		}
+		s.mu.Lock()
+		if s.grpc == srv {
+			s.grpc, s.lis = nil, nil
+		}
+		s.mu.Unlock()
+	}()
+	return nil
 }
 
 // Addr is where the bridge actually ended up listening, which is the only way
@@ -270,20 +334,28 @@ func (s *Server) Addr() string {
 	return s.lis.Addr().String()
 }
 
-// Stop ends the bridge.
-//
-// Graceful first, then not. A graceful stop waits for calls in flight, and the
-// subscription stream never ends on its own - so waiting for it without a
-// deadline is waiting forever.
+// Stop ends the bridge: the supervisor, the port and the financial worker.
 func (s *Server) Stop() {
 	s.mu.Lock()
-	srv := s.grpc
 	stop := s.stop
-	s.grpc, s.lis, s.stop = nil, nil, nil
+	s.stop = nil
 	s.mu.Unlock()
 	if stop != nil {
 		stop()
 	}
+	s.stopListener()
+}
+
+// stopListener closes the port and every connection on it.
+//
+// Graceful first, then not. A graceful stop waits for calls in flight, and the
+// subscription stream never ends on its own - so waiting for it without a
+// deadline is waiting forever.
+func (s *Server) stopListener() {
+	s.mu.Lock()
+	srv := s.grpc
+	s.grpc, s.lis = nil, nil
+	s.mu.Unlock()
 	if srv == nil {
 		return
 	}

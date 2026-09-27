@@ -1005,7 +1005,6 @@ func startGamingBridge() {
 	services.Gaming().SetGamingResync(srv.ResyncAll)
 
 	go func() {
-		gameLog.Infof("gaming bridge listening on %s", addr)
 		if err := srv.Serve(); err != nil {
 			gameLog.Errorf("the gaming bridge stopped: %v", err)
 		}
