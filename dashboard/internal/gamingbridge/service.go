@@ -7,6 +7,7 @@ package gamingbridge
 import (
 	"context"
 	"errors"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -105,7 +106,7 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 	// Admission checks never hold the allowlist lock across network writes.
 	// A send admitted before invalidation may finish, but the next cannot start.
 	check := func() error {
-		if !lifetime.valid() {
+		if !lifetime.valid() || !s.live() {
 			return errNotHere
 		}
 		select {
@@ -159,6 +160,11 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 		frames = ch
 	}
 
+	// Switching the bridge off, or losing the App Password, ends the stream
+	// as a revocation would.
+	liveTick := time.NewTicker(livenessEvery)
+	defer liveTick.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -166,6 +172,11 @@ func (s *Server) Subscribe(req *gamingpb.SubscribeRequest, stream grpc.ServerStr
 
 		case <-lifetime.done:
 			return errNotHere
+
+		case <-liveTick.C:
+			if !s.live() {
+				return errNotHere
+			}
 
 		case <-live.done:
 			// The registry closed this stream (for example, on shutdown).

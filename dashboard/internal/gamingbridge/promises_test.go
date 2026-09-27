@@ -381,3 +381,28 @@ func openStream(t *testing.T, c gamingpb.BridgeServiceClient, req *gamingpb.Subs
 	}
 	return start
 }
+
+// Switching the bridge off, or losing the App Password, ends a stream that was
+// already open, not only the next connection.
+func TestSwitchingTheBridgeOffEndsTheStreamItIsHolding(t *testing.T) {
+	for name, off := range map[string]func(*bridgeRig){
+		"bridge switched off":    func(r *bridgeRig) { r.enabled.Store(false) },
+		"app password withdrawn": func(r *bridgeRig) { r.appPassword.Store(false) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newBridgeRig(t)
+			stream, err := r.subscribe(t, "poker")
+			if err != nil {
+				t.Fatalf("subscribe: %v", err)
+			}
+			if _, err := recvWithin(t, stream); err != nil {
+				t.Fatalf("the subscription never opened: %v", err)
+			}
+			off(r)
+			_, err = recvWithin(t, stream)
+			if status.Code(err) != codes.Unimplemented {
+				t.Fatalf("the open stream ended with %v, want it closed as switched off", err)
+			}
+		})
+	}
+}

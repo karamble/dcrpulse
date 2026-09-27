@@ -6,6 +6,7 @@ package gamingbridge
 
 import (
 	"context"
+	"runtime/debug"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -101,3 +102,30 @@ type identifiedStream struct {
 }
 
 func (s *identifiedStream) Context() context.Context { return s.ctx }
+
+// recoverUnary keeps a panic in one call from ending the whole dashboard. The
+// game learns only that the call failed.
+func (s *Server) recoverUnary(
+	ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
+) (resp any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			gameLog.Errorf("%s panicked: %v\n%s", info.FullMethod, r, debug.Stack())
+			resp, err = nil, status.Error(codes.Internal, "internal error")
+		}
+	}()
+	return handler(ctx, req)
+}
+
+// recoverStream does the same for a stream.
+func (s *Server) recoverStream(
+	srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler,
+) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			gameLog.Errorf("%s panicked: %v\n%s", info.FullMethod, r, debug.Stack())
+			err = status.Error(codes.Internal, "internal error")
+		}
+	}()
+	return handler(srv, ss)
+}

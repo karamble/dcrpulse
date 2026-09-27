@@ -200,6 +200,9 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
+// livenessEvery is how often an open stream rechecks that the bridge is on.
+const livenessEvery = time.Second
+
 // live reports whether the bridge should be answering at all.
 //
 // Both halves, every time. The stored switch is the operator's intent and the
@@ -224,8 +227,8 @@ func (s *Server) Serve() error {
 
 	srv := grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(serverTLSConfig(cert, s.allow, s.live))),
-		grpc.ChainUnaryInterceptor(s.unaryIdentity),
-		grpc.ChainStreamInterceptor(s.streamIdentity),
+		grpc.ChainUnaryInterceptor(s.recoverUnary, s.unaryIdentity),
+		grpc.ChainStreamInterceptor(s.recoverStream, s.streamIdentity),
 		// The same ceiling the browser API puts on a request body. A game
 		// is no more trusted than a browser is.
 		grpc.MaxRecvMsgSize(1<<20),
