@@ -2,9 +2,14 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"dcrpulse/internal/gamingfunds"
 )
 
 func registerPoker(t *testing.T) {
@@ -110,5 +115,100 @@ func TestAcceptRefusesSeatCountsCreateWouldRefuse(t *testing.T) {
 		if got := err != nil && err.Error() == "invalid seat count"; got != refused {
 			t.Errorf("seats=%s: %v", seats, err)
 		}
+	}
+}
+
+// seatedPokerLedger writes a poker table in group A with two seated keys,
+// bound or not, and the UIDs that have announced them.
+func seatedPokerLedger(t *testing.T, bound bool, announced map[string]string) {
+	t.Helper()
+	scope := gamingfunds.Scope{Game: "poker", Network: "mainnet", Wallet: "fp"}
+	key, _ := json.Marshal(struct {
+		Scope gamingfunds.Scope
+		Table string
+	}{scope, "0123456789abcdef"})
+	peers := map[string]any{}
+	for uid, k := range announced {
+		peers[uid] = map[string]any{"uid": uid, "key": k}
+	}
+	ledger := map[string]any{
+		"version": gamingfunds.Version, "rosterCommits": map[string]any{}, "keys": map[string]any{},
+		"deposits": map[string]any{}, "operations": map[string]any{}, "previews": map[string]any{}, "quotes": map[string]any{},
+		"settlements": map[string]any{},
+		"tables":      map[string]any{string(key): map[string]any{"scope": scope, "table": "0123456789abcdef", "group": pruneGCA, "seats": 2, "until": 1}},
+		"peers":       map[string]any{string(key): peers},
+	}
+	if bound {
+		ledger["seated"] = map[string]any{string(key): []string{"02aa", "02bb"}}
+	}
+	raw, err := json.Marshal(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(GamingStateDir, "financial-authority")
+	if err = os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, "authority.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const strangerUID = "3333333333333333333333333333333333333333333333333333333333333333"
+
+func registerPokerAndStakeWars(t *testing.T) {
+	t.Helper()
+	settings := DefaultGamingSettings()
+	settings.RegisteredGames = []string{"poker", "stakewars"}
+	if err := writeGamingSettingsLocked(settings); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFramesAreBoundToTheirTableAndSeatedPlayers(t *testing.T) {
+	selfUID := strings.Repeat("11", 32)
+	complete := map[string]string{prunePeer: "02aa", selfUID: "02bb"}
+	for _, tc := range []struct {
+		name      string
+		bound     bool
+		announced map[string]string
+		from      string
+		frame     string
+		stored    bool
+	}{
+		{"seated player", true, complete, prunePeer, wireFrame(1), true},
+		{"unseated member once seated", true, complete, strangerUID, wireFrame(2), false},
+		{"any member before the seat draw", false, map[string]string{}, strangerUID, wireFrame(3), true},
+		{"any member while a seat is unannounced", true, map[string]string{prunePeer: "02aa"}, strangerUID, wireFrame(4), true},
+		{"another table in the group", false, map[string]string{}, prunePeer, strings.Replace(wireFrame(5), "sid=0123456789abcdef", "sid=0123456789abcdee", 1), false},
+		{"another game in the group", false, map[string]string{}, prunePeer, strings.Replace(wireFrame(6), "game=poker", "game=stakewars", 1), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withGamingWireDir(t)
+			registerPokerAndStakeWars(t)
+			seatedPokerLedger(t, tc.bound, tc.announced)
+			b := newWireBus()
+			b.deliverGamingMessage(pruneGCA, tc.from, tc.frame)
+			got := len(inboxFrames(t, b, "poker")) + len(inboxFrames(t, b, "stakewars"))
+			if (got == 1) != tc.stored {
+				t.Fatalf("stored %d frames, want stored=%v", got, tc.stored)
+			}
+		})
+	}
+}
+
+func TestFinancialReplayKeepsToTheGamesOwnGroups(t *testing.T) {
+	withGamingWireDir(t)
+	seatedPokerLedger(t, false, map[string]string{})
+	b := newWireBus()
+	for i, game := range []string{"poker", "stakewars"} {
+		ev := GamingFrameEvent{Game: game, GCID: pruneGCA, From: prunePeer, Frame: wireFrame(byte(i)), Financial: true}
+		if _, _, err := b.persistGamingFrame(ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := b.financialReplay()
+	if len(got) != 1 || got[0].Game != "poker" {
+		t.Fatalf("replay = %+v", got)
 	}
 }

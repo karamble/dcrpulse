@@ -239,21 +239,46 @@ func gamingAcceptedGroups() map[string]struct{} {
 
 // gamingTableGroup reports whether gcid is the group of one of game's tables.
 func gamingTableGroup(game, gcid string) bool {
+	_, ok := gamingGameGroups()[game+"\x00"+gcid]
+	return ok
+}
+
+// gamingGameGroups is every accepted table's game and group chat, keyed
+// game + NUL + gcid.
+func gamingGameGroups() map[string]struct{} {
+	out := make(map[string]struct{})
 	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err != nil {
-		return false
+		return out
 	}
 	store, err := gamingFundsStore()
 	if err != nil {
-		return false
+		return out
 	}
 	tables, err := store.Tables()
 	if err != nil {
-		return false
+		return out
 	}
 	for _, t := range tables {
-		if t.Scope.Game == game && t.Group == gcid {
-			return true
+		if t.Group != "" {
+			out[t.Scope.Game+"\x00"+t.Group] = struct{}{}
 		}
 	}
-	return false
+	return out
+}
+
+// gamingTableSenders reports whether game has an accepted table sid in group
+// gcid, and once its roster is complete, the seated players who may send.
+func gamingTableSenders(game, sid, gcid string) (map[string]bool, bool) {
+	if _, err := os.Stat(filepath.Join(GamingStateDir, "financial-authority", "authority.json")); err != nil {
+		return nil, false
+	}
+	store, err := gamingFundsStore()
+	if err != nil {
+		return nil, false
+	}
+	seated, found, err := store.TableSenders(game, sid, gcid)
+	if err != nil {
+		return nil, false
+	}
+	return seated, found
 }

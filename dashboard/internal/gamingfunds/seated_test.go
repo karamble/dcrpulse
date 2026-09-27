@@ -173,3 +173,49 @@ func TestAKeyProofIsWrittenOnce(t *testing.T) {
 		t.Fatalf("proof = %q", got)
 	}
 }
+
+func TestTableSendersFollowTheSeatedRoster(t *testing.T) {
+	s, scope, _ := testStore(t)
+	s.mu.Lock()
+	d, err := s.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, _ := scopeKey(scope, "a1")
+	table := d.Tables[k]
+	table.Group = "g1"
+	d.Tables[k] = table
+	if err = s.save(d); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Unlock()
+
+	for _, miss := range [][3]string{{"poker", "a1", "g1"}, {"stakewars", "b2", "g1"}, {"stakewars", "a1", "g2"}} {
+		if seated, found, err := s.TableSenders(miss[0], miss[1], miss[2]); err != nil || found || seated != nil {
+			t.Fatalf("%v matched: %v %v %v", miss, seated, found, err)
+		}
+	}
+	seated, found, err := s.TableSenders("stakewars", "a1", "g1")
+	uid2, uid3 := fmt.Sprintf("%064x", 2), fmt.Sprintf("%064x", 3)
+	if err != nil || !found || len(seated) != 2 || !seated[uid2] || !seated[uid3] {
+		t.Fatalf("complete roster = %v %v %v", seated, found, err)
+	}
+
+	s.mu.Lock()
+	d, _ = s.load()
+	delete(d.Peers[k], uid3)
+	_ = s.save(d)
+	s.mu.Unlock()
+	if seated, found, err = s.TableSenders("stakewars", "a1", "g1"); err != nil || !found || seated != nil {
+		t.Fatalf("a seat without its announcement = %v %v %v", seated, found, err)
+	}
+
+	s.mu.Lock()
+	d, _ = s.load()
+	delete(d.Seated, k)
+	_ = s.save(d)
+	s.mu.Unlock()
+	if seated, found, err = s.TableSenders("stakewars", "a1", "g1"); err != nil || !found || seated != nil {
+		t.Fatalf("unbound roster = %v %v %v", seated, found, err)
+	}
+}

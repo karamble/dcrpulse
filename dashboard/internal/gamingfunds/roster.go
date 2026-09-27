@@ -330,3 +330,45 @@ func (s *Store) KeyProof(scope Scope, table string) (string, error) {
 	}
 	return d.Proofs[k], nil
 }
+
+// TableSenders reports who may send a game's ordinary frames for table in
+// group gcid. found is false when no accepted table matches. seated stays nil,
+// meaning any group member, until every matching table's roster is bound and
+// each seated key has been announced by its Bison Relay identity.
+func (s *Store) TableSenders(game, table, gcid string) (seated map[string]bool, found bool, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return nil, false, err
+	}
+	union := map[string]bool{}
+	open := false
+	for k, t := range d.Tables {
+		if t.Scope.Game != game || t.Table != table || t.Group != gcid {
+			continue
+		}
+		found = true
+		keys, bound := d.Seated[k]
+		if !bound {
+			open = true
+			continue
+		}
+		byKey := map[string]string{}
+		for uid, p := range d.Peers[k] {
+			byKey[p.Key] = uid
+		}
+		for _, key := range keys {
+			uid, ok := byKey[key]
+			if !ok {
+				open = true
+				break
+			}
+			union[uid] = true
+		}
+	}
+	if !found || open {
+		return nil, found, nil
+	}
+	return union, true, nil
+}

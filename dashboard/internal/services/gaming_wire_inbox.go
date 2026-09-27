@@ -217,7 +217,7 @@ func (b *GamingBus) pruneGamingGroup(gcid string) (int, error) {
 // financialReplay returns the stored financial frames still to apply: those of
 // accepted tables' groups not yet applied by this process.
 func (b *GamingBus) financialReplay() []GamingFrameEvent {
-	groups := gamingAcceptedGroups()
+	groups := gamingGameGroups()
 	b.wireMu.Lock()
 	defer b.wireMu.Unlock()
 	if _, err := b.loadGamingFramesLocked("", 0); err != nil {
@@ -227,7 +227,7 @@ func (b *GamingBus) financialReplay() []GamingFrameEvent {
 	var out []GamingFrameEvent
 	for _, records := range b.wireRecords {
 		for _, ev := range records {
-			if _, ok := groups[ev.GCID]; !ok || !ev.Financial {
+			if _, ok := groups[ev.Game+"\x00"+ev.GCID]; !ok || !ev.Financial {
 				continue
 			}
 			if _, done := b.financialDone[financialDoneKey(ev)]; done {

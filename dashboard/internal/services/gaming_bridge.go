@@ -258,9 +258,10 @@ func (b *GamingBus) deliverGamingMessage(gcid, from, message string) bool {
 		// existing host being taught about it.
 		return true
 	}
-	if _, ok := gamingAcceptedGroups()[gcid]; !ok {
-		// Not a group of any table the operator accepted. Accepting one reads
-		// its earlier frames back from brclientd's journal.
+	seated, ok := gamingTableSenders(frame.Game, frame.SID, gcid)
+	if !ok {
+		// Not a table of this game the operator accepted in this group.
+		// Accepting one reads its earlier frames back from brclientd's journal.
 		return true
 	}
 	if isFinancialFrame(frame.Text) {
@@ -282,6 +283,10 @@ func (b *GamingBus) deliverGamingMessage(gcid, from, message string) bool {
 			gameLog.Warnf("financial worker queue full; durable message will be replayed locally")
 		}
 
+		return true
+	}
+	if seated != nil && !seated[from] {
+		gameLog.Debugf("dropping %q frame from %s, who holds no seat at table %s", frame.Game, from, frame.SID)
 		return true
 	}
 	seq, fresh, err := b.persistGamingFrame(GamingFrameEvent{
