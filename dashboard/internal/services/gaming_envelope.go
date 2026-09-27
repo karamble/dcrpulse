@@ -27,7 +27,7 @@ import (
 // recognises frames to keep them out of chat, a game implements the protocol,
 // and this routes them - three different jobs that happen to share one prefix.
 var (
-	gamingFrameRE   = regexp.MustCompile(`^--gaming\[([^\]]*)\]--([A-Za-z0-9+/=\s]*)$`)
+	gamingFrameRE   = regexp.MustCompile(`^--gaming\[([^\]]*)\]--([A-Za-z0-9+/=]*)$`)
 	gamingGameRE    = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 	gamingSessionRE = regexp.MustCompile(`^[0-9a-f]{1,32}$`)
 	gamingMessageRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -64,7 +64,7 @@ func parseGamingFrame(text string) (gamingFrame, bool) {
 	if m == nil {
 		return gamingFrame{}, false
 	}
-	payload := strings.Join(strings.Fields(m[2]), "")
+	payload := m[2]
 	if payload == "" {
 		return gamingFrame{}, false
 	}

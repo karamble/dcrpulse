@@ -95,6 +95,9 @@ func TestParseGamingFrameLeavesChatAlone(t *testing.T) {
 		// Siblings on the same thread.
 		`--mcp[v=1,sid=ab,mid=cd,seq=1/1,exp=0]--QUJD`,
 		`--embed[type=image/png,data=AAAA]--`,
+		// A valid header followed by prose whose letters join to base64.
+		testFrame[:strings.Index(testFrame, "]--")+3] + "nice hand",
+		testFrame[:strings.Index(testFrame, "]--")+3] + "QUJD QUJD",
 	} {
 		if _, ok := parseGamingFrame(text); ok {
 			t.Errorf("ordinary message taken for a frame: %q", text)
