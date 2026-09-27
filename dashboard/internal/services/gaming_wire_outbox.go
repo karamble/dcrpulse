@@ -35,9 +35,6 @@ type gamingSendState struct {
 
 var errGamingSendUncertain = errors.New("gaming message publication is uncertain; reconcile local BR history")
 
-// errGamingIdentityCollision is a message ID already sent with other bytes.
-var errGamingIdentityCollision = errors.New("gaming message identity collision")
-
 var gamingOutbox = struct {
 	sync.Mutex
 	dir    string
@@ -126,7 +123,7 @@ func claimGamingFrameSend(game, gcid string, frame gamingFrame, text string) (bo
 	key := gamingSendKey(claim)
 	if old, exists := gamingOutbox.claims[key]; exists {
 		if old.digest != claim.Digest {
-			return false, errGamingIdentityCollision
+			return false, fmt.Errorf("gaming message identity collision")
 		}
 		if old.state == "sent" {
 			return false, nil
@@ -233,7 +230,7 @@ func gamingFrameSendState(game, gcid string, frame gamingFrame, text string) (st
 		return "", nil
 	}
 	if old.digest != hex.EncodeToString(digest[:]) {
-		return "", errGamingIdentityCollision
+		return "", fmt.Errorf("gaming message identity collision")
 	}
 	return old.state, nil
 }
@@ -242,9 +239,8 @@ func gamingFrameSendState(game, gcid string, frame gamingFrame, text string) (st
 var gamingGCSend = rpc.BrclientdGCMessage
 
 // sendGamingFrameOnce sends a frame to Bison Relay at most once. A send that
-// brclientd refused or never received releases the claim; any other failure
-// leaves the outcome unknown, to be settled only from brclientd's own record
-// of what it sent.
+// brclientd refused releases the claim; any other failure leaves the outcome
+// unknown, to be settled only from brclientd's own record of what it sent.
 func sendGamingFrameOnce(ctx context.Context, game, gcid string, parsed gamingFrame, frame string) error {
 	fresh, err := claimOrReconcileGamingFrame(ctx, game, gcid, parsed, frame)
 	if err != nil || !fresh {
@@ -261,8 +257,7 @@ func sendClaimedGamingFrame(ctx context.Context, game, gcid string, parsed gamin
 	}
 	if err := gamingGCSend(ctx, id, frame, 0); err != nil {
 		var refused *rpc.BrclientdStatusError
-		var unreached *rpc.BrclientdNotReachedError
-		if errors.As(err, &refused) || errors.As(err, &unreached) {
+		if errors.As(err, &refused) {
 			if relErr := releaseGamingFrameClaim(game, gcid, parsed, frame); relErr != nil {
 				gameLog.Errorf("release refused gaming send: %v", relErr)
 			}

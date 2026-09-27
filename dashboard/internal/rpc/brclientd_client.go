@@ -16,12 +16,10 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/http/httptrace"
 	"net/textproto"
 	"os"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -1453,30 +1451,24 @@ func BrclientdStreamNotifications(ctx context.Context, onEvent func(BrclientdNot
 func brclientdPostJSON(ctx context.Context, path brPath, body any) error {
 	cli, err := brclientdClient()
 	if err != nil {
-		return &BrclientdNotReachedError{Err: err}
+		return err
 	}
 	url, err := brclientdEndpoint(statusPort, path, nil)
 	if err != nil {
-		return &BrclientdNotReachedError{Err: err}
+		return err
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return &BrclientdNotReachedError{Err: fmt.Errorf("marshal payload: %w", err)}
+		return fmt.Errorf("marshal payload: %w", err)
 	}
-	var connected atomic.Bool
-	trace := &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { connected.Store(true) }}
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), http.MethodPost, url, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
-		return &BrclientdNotReachedError{Err: fmt.Errorf("build request: %w", err)}
+		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := cli.Do(req)
 	if err != nil {
-		err = fmt.Errorf("brclientd %s: %w", path, err)
-		if !connected.Load() {
-			return &BrclientdNotReachedError{Err: err}
-		}
-		return err
+		return fmt.Errorf("brclientd %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
@@ -1485,13 +1477,6 @@ func brclientdPostJSON(ctx context.Context, path brPath, body any) error {
 	}
 	return nil
 }
-
-// BrclientdNotReachedError is a request that failed before any connection to
-// brclientd existed, so brclientd never saw it.
-type BrclientdNotReachedError struct{ Err error }
-
-func (e *BrclientdNotReachedError) Error() string { return e.Err.Error() }
-func (e *BrclientdNotReachedError) Unwrap() error { return e.Err }
 
 // BrclientdStatusError is brclientd answering a request with a failure
 // status, as opposed to the request not reaching it or its answer being lost.

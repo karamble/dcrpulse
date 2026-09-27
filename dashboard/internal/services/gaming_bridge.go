@@ -371,13 +371,8 @@ func SendGamingFrame(ctx context.Context, game, gcid, frame string) error {
 		return gamingbridge.GameSafe(errors.New("frame is not in canonical form"))
 	}
 	fresh, err := claimOrReconcileGamingFrame(ctx, game, gcid, parsed, frame)
-	switch {
-	case errors.Is(err, errGamingSendUncertain):
-		return gamingbridge.GameRetry(err)
-	case errors.Is(err, errGamingIdentityCollision):
+	if err != nil {
 		return gamingbridge.GameSafe(err)
-	case err != nil:
-		return err
 	}
 	if !fresh {
 		return nil
