@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -174,9 +175,6 @@ func scanGamingMempoolSpends(ctx context.Context, targets map[string]bool) (map[
 // cooperative payout published by another participant when the watched escrow
 // script is imported.
 func scanGamingWalletSpends(ctx context.Context, deposits []gamingfunds.Deposit, targets map[string]bool) (map[string]observedGamingSpend, error) {
-	if rpc.WalletGrpcClient == nil {
-		return nil, fmt.Errorf("wallet unavailable")
-	}
 	start := int64(-1)
 	for _, dep := range deposits {
 		if !targets[dep.Outpoint] || dep.FundingHeight <= 0 {
@@ -189,6 +187,15 @@ func scanGamingWalletSpends(ctx context.Context, deposits []gamingfunds.Deposit,
 	}
 	if start < 0 {
 		return map[string]observedGamingSpend{}, nil
+	}
+	return scanGamingWalletSpendsFrom(ctx, start, targets)
+}
+
+// scanGamingWalletSpendsFrom finds the wallet's mined spends of targets from
+// block start on.
+func scanGamingWalletSpendsFrom(ctx context.Context, start int64, targets map[string]bool) (map[string]observedGamingSpend, error) {
+	if rpc.WalletGrpcClient == nil {
+		return nil, fmt.Errorf("wallet unavailable")
 	}
 	if start > int64(^uint32(0)>>1) {
 		return nil, fmt.Errorf("gaming scan height is out of range")
@@ -229,6 +236,118 @@ func scanGamingWalletSpends(ctx context.Context, deposits []gamingfunds.Deposit,
 		}
 	}
 	return found, nil
+}
+
+// gamingAbandonDepth is how deep another spend of a funding's input must be
+// before the funding counts as dead.
+const gamingAbandonDepth = 2
+
+// transientBroadcastError reports a broadcast that got no answer, as opposed
+// to one the node rejected.
+func transientBroadcastError(err error) bool {
+	switch status.Code(err) {
+	case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled:
+		return true
+	}
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// fundingSpender names the other transaction that spent one of a funding's
+// inputs deep enough to make it dead, or "" when nothing proves that.
+func fundingSpender(opID string, inputs []string, spends map[string]observedGamingSpend) string {
+	for _, in := range inputs {
+		sp := spends[in]
+		if sp.conflict || sp.txid == "" || sp.txid == opID || sp.confirmations < gamingAbandonDepth {
+			continue
+		}
+		return sp.txid
+	}
+	return ""
+}
+
+// fundingSpentElsewhere asks the chain whether a rejected funding's inputs are
+// gone, and to whom. Its inputs are this wallet's own coins, so the wallet has
+// every spend of them.
+func fundingSpentElsewhere(ctx context.Context, op gamingfunds.Operation) string {
+	missing := map[string]bool{}
+	start := int64(-1)
+	for _, in := range op.Inputs {
+		txid, indexText, ok := strings.Cut(in, ":")
+		index, err := strconv.ParseUint(indexText, 10, 32)
+		if !ok || err != nil {
+			return ""
+		}
+		out, err := GamingChainOutpoint(ctx, txid, uint32(index), true)
+		if err != nil {
+			return ""
+		}
+		if out.Found {
+			continue
+		}
+		hash, err := chainhash.NewHashFromStr(txid)
+		if err != nil {
+			return ""
+		}
+		parent, err := rpc.DcrdClient.GetRawTransactionVerbose(ctx, hash)
+		if err != nil || parent.Confirmations <= 0 {
+			return ""
+		}
+		if h := parent.BlockHeight - 1; start < 0 || h < start {
+			start = h
+		}
+		missing[in] = true
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	spends, err := scanGamingWalletSpendsFrom(ctx, start, missing)
+	if err != nil {
+		return ""
+	}
+	return fundingSpender(op.ID, op.Inputs, spends)
+}
+
+// abandonDeadFunding ends a funding the chain shows can never confirm and
+// frees its deposit, so the game can ask for it again.
+func abandonDeadFunding(ctx context.Context, store *gamingfunds.Store, op gamingfunds.Operation) {
+	spender := fundingSpentElsewhere(ctx, op)
+	if spender == "" {
+		return
+	}
+	if err := store.AbandonFunding(op.ID, spender); err != nil {
+		gameLog.Errorf("abandon dead funding %s: %v", op.ID, err)
+		return
+	}
+	gameLog.Infof("funding %s can never confirm: its coins were spent by %s; the deposit can be requested again", op.ID, spender)
+	failAbandonedFundingSpend(op, spender)
+}
+
+// failAbandonedFundingSpend closes the request a dead funding answered.
+func failAbandonedFundingSpend(op gamingfunds.Operation, spender string) {
+	spendMu.Lock()
+	defer spendMu.Unlock()
+	log, err := readSpendLog()
+	if err != nil {
+		return
+	}
+	changed := false
+	for i := range log.Spends {
+		sp := &log.Spends[i]
+		if !slices.Contains(op.DepositIDs, sp.DepositID) {
+			continue
+		}
+		if sp.State == GamingSpendPublishing || sp.State == GamingSpendPending || (sp.State == GamingSpendApproved && sp.TxID == op.ID) {
+			sp.State = GamingSpendFailed
+			sp.Error = "its coins were spent by " + spender + "; the game can request this deposit again"
+			sp.DecidedAt = time.Now().Unix()
+			changed = true
+		}
+	}
+	if changed {
+		if err = writeSpendLog(log, time.Now().Unix()); err != nil {
+			gameLog.Errorf("record dead funding: %v", err)
+		}
+	}
 }
 
 func reconcileGamingDeposits(ctx context.Context, store *gamingfunds.Store) {
@@ -366,7 +485,7 @@ func reconcileGamingFinance(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if !op.Approved || op.State == "awaiting_signatures" {
+		if !op.Approved || op.State == "awaiting_signatures" || op.State == gamingfunds.OperationAbandoned {
 			continue
 		}
 		if err = recoveryWalletMatches(ctx, op.Scope); err != nil {
@@ -402,6 +521,9 @@ func reconcileGamingFinance(ctx context.Context) {
 				continue
 			}
 		}
+		if op.Kind == "funding" && !fundingStillWanted(store, op) {
+			continue
+		}
 		raw, err := hex.DecodeString(op.Raw)
 		if err != nil {
 			continue
@@ -413,9 +535,36 @@ func reconcileGamingFinance(ctx context.Context) {
 		// These exact signatures were authorized and persisted before any send.
 		if _, err = BroadcastSignedTransaction(ctx, raw); err != nil {
 			gameLog.Warnf("financial transaction %s remains pending: %v", op.ID, err)
+			if op.Kind == "funding" && !transientBroadcastError(err) {
+				abandonDeadFunding(ctx, store, op)
+			}
 		}
 	}
 	reconcileGamingDeposits(ctx, store)
+}
+
+// fundingStillWanted reports whether a funding's deposit and table are still
+// open. A closed one is observed but never broadcast again.
+func fundingStillWanted(store *gamingfunds.Store, op gamingfunds.Operation) bool {
+	deposits, err := store.AllDeposits()
+	if err != nil {
+		return false
+	}
+	for _, dep := range deposits {
+		if dep.FundingTx != op.ID {
+			continue
+		}
+		if dep.Closed {
+			return false
+		}
+		if dep.Terms.Table == "" {
+			continue
+		}
+		if _, err = store.AuthorizedTable(dep.Scope, dep.Terms.Table); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // receiveFinancial applies one financial frame. Settable for tests.

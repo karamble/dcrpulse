@@ -121,3 +121,76 @@ func TestFundingCommitRejectsTrailingBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAbandonedFundingFreesItsDepositAndInputs(t *testing.T) {
+	s, scope, dep, tx, _ := fundingPreview(t)
+	tx.TxIn[0].SignatureScript = []byte{0x51}
+	raw, err := tx.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.CommitFunding("approval", scope, dep.ID, raw); err != nil {
+		t.Fatal(err)
+	}
+	opID := tx.TxHash().String()
+	const spender = "7a3b000000000000000000000000000000000000000000000000000000000001"
+	if err = s.AbandonFunding(opID, opID); err == nil {
+		t.Fatal("a funding was abandoned for its own spend")
+	}
+	if err = s.AbandonFunding(opID, spender); err != nil {
+		t.Fatal(err)
+	}
+	deps, err := s.Deposits(scope)
+	if err != nil || len(deps) != 1 || deps[0].FundingTx != "" || deps[0].Outpoint != "" || deps[0].State != "prepared" {
+		t.Fatalf("deposit after abandon = %+v %v", deps, err)
+	}
+	if err = s.ObserveOperation(opID, ChainObservation{Known: true}); err != nil {
+		t.Fatal(err)
+	}
+	ops, _ := s.Operations()
+	if len(ops) != 1 || ops[0].State != OperationAbandoned {
+		t.Fatalf("abandoned funding was observed back: %+v", ops)
+	}
+	// The same wallet input funds the deposit again under a new approval.
+	tx.TxIn[0].SignatureScript = nil
+	tx.TxIn[0].Sequence--
+	again, err := tx.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	p := PaymentPreview{RequestedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(), DepositID: dep.ID, Unsigned: hex.EncodeToString(again), FeeAtoms: 1500}
+	if err = s.SavePreview("second", scope, p); err != nil {
+		t.Fatalf("new approval over the freed input: %v", err)
+	}
+	tx.TxIn[0].SignatureScript = []byte{0x51}
+	signed, err := tx.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.CommitFunding("second", scope, dep.ID, signed); err != nil {
+		t.Fatalf("new funding over the freed input: %v", err)
+	}
+}
+
+func TestOnlyAnUnseenFundingCanBeAbandoned(t *testing.T) {
+	s, scope, dep, tx, _ := fundingPreview(t)
+	tx.TxIn[0].SignatureScript = []byte{0x51}
+	raw, err := tx.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.CommitFunding("approval", scope, dep.ID, raw); err != nil {
+		t.Fatal(err)
+	}
+	opID := tx.TxHash().String()
+	if err = s.ObserveOperation(opID, ChainObservation{Known: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.AbandonFunding(opID, "7a3b000000000000000000000000000000000000000000000000000000000001"); err == nil {
+		t.Fatal("a funding in the mempool was abandoned")
+	}
+	if err = s.AbandonFunding("unknown", "7a3b000000000000000000000000000000000000000000000000000000000001"); err == nil {
+		t.Fatal("an unknown operation was abandoned")
+	}
+}

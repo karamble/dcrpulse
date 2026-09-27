@@ -132,7 +132,7 @@ func (s *Store) ObserveOperation(id string, facts ChainObservation) error {
 	if !ok {
 		return fmt.Errorf("unknown operation")
 	}
-	if op.State == "awaiting_signatures" {
+	if op.State == "awaiting_signatures" || op.State == OperationAbandoned {
 		return nil
 	}
 	op.State = "publishing"

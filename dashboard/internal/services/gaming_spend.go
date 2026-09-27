@@ -536,7 +536,14 @@ func recoverFundingApprovalsLocked(log *spendLog, now int64) (bool, error) {
 	return changed, nil
 }
 
-func existingFundingSpend(depositID string) (GamingSpend, bool, error) {
+// fundingSpendStands reports whether an earlier request still answers for a
+// deposit. A failed one whose funding the ledger has released does not, so the
+// deposit can be requested again without a second charge.
+func fundingSpendStands(prior GamingSpend, dep gamingfunds.Deposit) bool {
+	return prior.DepositID == dep.ID && (prior.State != GamingSpendFailed || dep.FundingTx != "")
+}
+
+func existingFundingSpend(dep gamingfunds.Deposit) (GamingSpend, bool, error) {
 	spendMu.Lock()
 	defer spendMu.Unlock()
 	now := time.Now().Unix()
@@ -557,7 +564,7 @@ func existingFundingSpend(depositID string) (GamingSpend, bool, error) {
 		}
 	}
 	for _, prior := range log.Spends {
-		if prior.DepositID == depositID {
+		if fundingSpendStands(prior, dep) {
 			return prior, true, nil
 		}
 	}
@@ -575,7 +582,7 @@ func requestGamingSpend(ctx context.Context, game, address string, amountAtoms i
 	s := ReadGamingSettings()
 	game = strings.ToLower(strings.TrimSpace(game))
 	address = strings.TrimSpace(address)
-	if prior, ok, err := existingFundingSpend(verified.Deposit.ID); err != nil {
+	if prior, ok, err := existingFundingSpend(verified.Deposit); err != nil {
 		return GamingSpend{}, err
 	} else if ok {
 		return prior, nil
@@ -612,7 +619,7 @@ func requestGamingSpend(ctx context.Context, game, address string, amountAtoms i
 	}
 	sweepPublishingLocked(&log, now)
 	for _, prior := range log.Spends {
-		if prior.DepositID == verified.Deposit.ID {
+		if fundingSpendStands(prior, verified.Deposit) {
 			if changed {
 				if err := writeSpendLog(log, now); err != nil {
 					return GamingSpend{}, err

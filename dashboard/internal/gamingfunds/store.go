@@ -615,6 +615,9 @@ func (s *Store) Reserve(op Operation) error {
 		return nil
 	}
 	for _, old := range d.Operations {
+		if !holdsInputs(old) {
+			continue
+		}
 		for _, a := range old.Inputs {
 			for _, b := range op.Inputs {
 				if a == b {
@@ -747,6 +750,9 @@ func (s *Store) reservePreview(id string, scope Scope, preview PaymentPreview, r
 		}
 	}
 	for _, op := range d.Operations {
+		if !holdsInputs(op) {
+			continue
+		}
 		for _, in := range tx.TxIn {
 			for _, held := range op.Inputs {
 				if in.PreviousOutPoint.String() == held {
@@ -861,6 +867,9 @@ func (s *Store) CommitFunding(requestID string, scope Scope, depositID string, r
 		return fmt.Errorf("funding already reserved")
 	}
 	for _, old := range d.Operations {
+		if !holdsInputs(old) {
+			continue
+		}
 		for _, a := range old.Inputs {
 			for _, b := range inputs {
 				if a == b {
@@ -882,7 +891,48 @@ func (s *Store) CommitFunding(requestID string, scope Scope, depositID string, r
 	d.Operations[id] = Operation{ID: id, Scope: scope, Kind: "funding", DepositIDs: []string{depositID}, Inputs: inputs, Raw: hexed, Approved: true, State: "publishing"}
 	dep.FundingTx = id
 	dep.State = "publishing"
+	dep.Error = ""
 	d.Deposits[depositID] = dep
+	return s.save(d)
+}
+
+// OperationAbandoned marks a funding that can never confirm because another
+// transaction spent one of its inputs.
+const OperationAbandoned = "abandoned"
+
+// holdsInputs reports whether an operation still reserves its wallet inputs.
+func holdsInputs(op Operation) bool { return op.State != OperationAbandoned }
+
+// AbandonFunding ends a funding whose input was spent by spender, and frees its
+// deposit for a new funding. Only a funding never seen on chain qualifies.
+func (s *Store) AbandonFunding(opID, spender string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return err
+	}
+	op, ok := d.Operations[opID]
+	if !ok || op.Kind != "funding" || op.State != "publishing" || spender == "" || spender == opID {
+		return fmt.Errorf("only an unseen funding can be abandoned")
+	}
+	op.State = OperationAbandoned
+	d.Operations[opID] = op
+	for id, dep := range d.Deposits {
+		if dep.FundingTx != opID {
+			continue
+		}
+		dep.FundingTx, dep.Outpoint, dep.FundingBlock = "", "", ""
+		dep.FundingHeight, dep.Confirmations = 0, 0
+		dep.State = "prepared"
+		dep.Error = "funding replaced by " + spender
+		d.Deposits[id] = dep
+		for pid, p := range d.Previews {
+			if p.DepositID == id {
+				delete(d.Previews, pid)
+			}
+		}
+	}
 	return s.save(d)
 }
 
